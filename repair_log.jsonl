@@ -1,0 +1,94 @@
+{"event": "swim_start", "target": "/Users/ioanganton/Music/media_claw/board_of_supervisors_special_meeting-3-26-26", "file_count": 45, "dry_run": true, "ts": "2026-04-04T23:30:03.194285+00:00"}
+{"event": "scout", "file": "slice_meeting.py", "status": "clean", "hash": "1c7e8aead84d0914", "ts": "2026-04-04T23:30:03.194932+00:00"}
+{"event": "scout", "file": "burn_subtitles.py", "status": "clean", "hash": "c61473164b51ca4d", "ts": "2026-04-04T23:30:03.195586+00:00"}
+{"event": "scout", "file": "organize_folders.py", "status": "clean", "hash": "b8521414687c195d", "ts": "2026-04-04T23:30:03.195850+00:00"}
+{"event": "scout", "file": "burn_moviepy.py", "status": "clean", "hash": "e045a750b9f1a31c", "ts": "2026-04-04T23:30:03.196406+00:00"}
+{"event": "scout", "file": "extract_sebastian_clips.py", "status": "clean", "hash": "f383a16c9982460d", "ts": "2026-04-04T23:30:03.196973+00:00"}
+{"event": "scout", "file": "scanner.py", "status": "clean", "hash": "e991093c3a43a613", "ts": "2026-04-04T23:30:03.197197+00:00"}
+{"event": "scout", "file": "extract_test_batch.py", "status": "clean", "hash": "e75a39c6c97dd439", "ts": "2026-04-04T23:30:03.197996+00:00"}
+{"event": "scout", "file": "extract_test_batch_v3.py", "status": "clean", "hash": "a1bacc4c8758ec32", "ts": "2026-04-04T23:30:03.198864+00:00"}
+{"event": "scout", "file": "extract_test_batch_v4.py", "status": "clean", "hash": "e4ee35a2cb73495d", "ts": "2026-04-04T23:30:03.199713+00:00"}
+{"event": "scout", "file": "extract_test_batch_v5.py", "status": "clean", "hash": "7b582a18e44cb934", "ts": "2026-04-04T23:30:03.200733+00:00"}
+{"event": "scout", "file": "extract_master_batch.py", "status": "clean", "hash": "dea946b630c594a4", "ts": "2026-04-04T23:30:03.202820+00:00"}
+{"event": "scout", "file": "extract_test_batch_v6.py", "status": "clean", "hash": "a09553c26d85fe15", "ts": "2026-04-04T23:30:03.203949+00:00"}
+{"event": "scout", "file": "extract_legal_masterpieces.py", "status": "clean", "hash": "f55341a6f935b3c2", "ts": "2026-04-04T23:30:03.204590+00:00"}
+{"event": "scout", "file": "patch_hallucinations.py", "status": "clean", "hash": "ff3aa27adb5b69db", "ts": "2026-04-04T23:30:03.204979+00:00"}
+{"event": "scout", "file": "extract_master_batch_FINAL.py", "status": "clean", "hash": "a09553c26d85fe15", "ts": "2026-04-04T23:30:03.205982+00:00"}
+{"event": "scout", "file": "extract_vip_killshots.py", "status": "clean", "hash": "33c9fdd9ba8c02ef", "ts": "2026-04-04T23:30:03.207041+00:00"}
+{"event": "scout", "file": "burn_dict_to_itt.py", "status": "clean", "hash": "d086722318f8517c", "ts": "2026-04-04T23:30:03.207385+00:00"}
+{"event": "scout", "file": "extract_remaining_35.py", "status": "clean", "hash": "47da3f683045e60d", "ts": "2026-04-04T23:30:03.209346+00:00"}
+{"event": "scout", "file": "extract_evidence_v2.py", "status": "clean", "hash": "49294e2138179d3e", "ts": "2026-04-04T23:30:03.210282+00:00"}
+{"event": "scout", "file": "extract_v3_evidence_batch.py", "status": "clean", "hash": "f4167cdf92aa8dba", "ts": "2026-04-04T23:30:03.211007+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_test.py", "status": "clean", "hash": "f6569bbfc10bf272", "ts": "2026-04-04T23:30:03.212079+00:00"}
+{"event": "scout", "file": "ocr_scanner.py", "status": "clean", "hash": "b58e97955619db9e", "ts": "2026-04-04T23:30:03.212339+00:00"}
+{"event": "scout", "file": "extract_master_batch_FINAL_V2.py", "status": "clean", "hash": "8cbf476143c9c371", "ts": "2026-04-04T23:30:03.213418+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_02.py", "status": "clean", "hash": "18ebf70d5a704136", "ts": "2026-04-04T23:30:03.214230+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_03.py", "status": "clean", "hash": "b3be8d371e57143f", "ts": "2026-04-04T23:30:03.215354+00:00"}
+{"event": "scout", "file": "extract_bari_bean_batch.py", "status": "clean", "hash": "2217acf25b48e89f", "ts": "2026-04-04T23:30:03.217030+00:00"}
+{"event": "scout", "file": "repair_master_subtitles.py", "status": "clean", "hash": "62bb8e9056292c0e", "ts": "2026-04-04T23:30:03.217381+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_04.py", "status": "clean", "hash": "692d5c7d101f1fae", "ts": "2026-04-04T23:30:03.218650+00:00"}
+{"event": "scout", "file": "extract_water_documentary.py", "status": "clean", "hash": "043d08d31947608b", "ts": "2026-04-04T23:30:03.219702+00:00"}
+{"event": "scout", "file": "extract_ceqa_documentary.py", "status": "clean", "hash": "a9ec04c4ccf9ebb2", "ts": "2026-04-04T23:30:03.220680+00:00"}
+{"event": "scout", "file": "extract_water_cinemascope.py", "status": "clean", "hash": "34e4e881f90b8f07", "ts": "2026-04-04T23:30:03.221855+00:00"}
+{"event": "scout", "file": "extract_v4_master_documentary.py", "status": "clean", "hash": "06bf5ce0dece1226", "ts": "2026-04-04T23:30:03.223106+00:00"}
+{"event": "scout", "file": "extract_v5_water_wars.py", "status": "clean", "hash": "3508712b302b6e32", "ts": "2026-04-04T23:30:03.224369+00:00"}
+{"event": "scout", "file": "extract_v6_water_wars_final.py", "status": "clean", "hash": "087c82d91ff578bc", "ts": "2026-04-04T23:30:03.225693+00:00"}
+{"event": "scout", "file": "extract_v6_imax_engine.py", "status": "clean", "hash": "696fcca6e1c153a6", "ts": "2026-04-04T23:30:03.227058+00:00"}
+{"event": "scout", "file": "hollywood_dictionaries.py", "status": "clean", "hash": "087c1049f61981bf", "ts": "2026-04-04T23:30:03.227319+00:00"}
+{"event": "scout", "file": "extract_doc01_zoning.py", "status": "clean", "hash": "9cf892e6c2d349db", "ts": "2026-04-04T23:30:03.228651+00:00"}
+{"event": "scout", "file": "extract_doc02_ceqa.py", "status": "clean", "hash": "2e4a3c1e7c7bd197", "ts": "2026-04-04T23:30:03.230099+00:00"}
+{"event": "scout", "file": "extract_doc03_150m.py", "status": "clean", "hash": "e1d73c1a98a5fbf1", "ts": "2026-04-04T23:30:03.231481+00:00"}
+{"event": "scout", "file": "deploy_5_silos.py", "status": "clean", "hash": "d0e062d13cbcb1d4", "ts": "2026-04-04T23:30:03.231737+00:00"}
+{"event": "fail", "file": "extract_doc05_permissions.py", "reason": "llm_empty", "ts": "2026-04-04T23:32:03.260822+00:00"}
+{"event": "fail", "file": "extract_doc06_air_quality.py", "reason": "llm_empty", "ts": "2026-04-04T23:34:03.295281+00:00"}
+{"event": "fail", "file": "extract_doc07_dust_control.py", "reason": "llm_empty", "ts": "2026-04-04T23:36:03.313282+00:00"}
+{"event": "fail", "file": "extract_doc08_master_plan.py", "reason": "llm_empty", "ts": "2026-04-04T23:38:03.341355+00:00"}
+{"event": "fail", "file": "extract_doc09_traffic_truth.py", "reason": "llm_empty", "ts": "2026-04-04T23:40:03.359003+00:00"}
+{"event": "swim_complete", "fixed": 0, "skipped": 0, "errors": 5, "ts": "2026-04-04T23:40:03.362599+00:00"}
+{"event": "swim_start", "target": "/Users/ioanganton/Music/media_claw/board_of_supervisors_special_meeting-3-26-26", "file_count": 45, "dry_run": true, "ts": "2026-04-04T23:51:23.533674+00:00"}
+{"event": "scout", "file": "slice_meeting.py", "status": "clean", "hash": "1c7e8aead84d0914", "ts": "2026-04-04T23:51:23.534559+00:00"}
+{"event": "scout", "file": "burn_subtitles.py", "status": "clean", "hash": "c61473164b51ca4d", "ts": "2026-04-04T23:51:23.535127+00:00"}
+{"event": "scout", "file": "organize_folders.py", "status": "clean", "hash": "b8521414687c195d", "ts": "2026-04-04T23:51:23.535422+00:00"}
+{"event": "scout", "file": "burn_moviepy.py", "status": "clean", "hash": "e045a750b9f1a31c", "ts": "2026-04-04T23:51:23.537428+00:00"}
+{"event": "scout", "file": "extract_sebastian_clips.py", "status": "clean", "hash": "f383a16c9982460d", "ts": "2026-04-04T23:51:23.538066+00:00"}
+{"event": "scout", "file": "scanner.py", "status": "clean", "hash": "e991093c3a43a613", "ts": "2026-04-04T23:51:23.538401+00:00"}
+{"event": "scout", "file": "extract_test_batch.py", "status": "clean", "hash": "e75a39c6c97dd439", "ts": "2026-04-04T23:51:23.539160+00:00"}
+{"event": "scout", "file": "extract_test_batch_v3.py", "status": "clean", "hash": "a1bacc4c8758ec32", "ts": "2026-04-04T23:51:23.540229+00:00"}
+{"event": "scout", "file": "extract_test_batch_v4.py", "status": "clean", "hash": "e4ee35a2cb73495d", "ts": "2026-04-04T23:51:23.541163+00:00"}
+{"event": "scout", "file": "extract_test_batch_v5.py", "status": "clean", "hash": "7b582a18e44cb934", "ts": "2026-04-04T23:51:23.542135+00:00"}
+{"event": "scout", "file": "extract_master_batch.py", "status": "clean", "hash": "dea946b630c594a4", "ts": "2026-04-04T23:51:23.543289+00:00"}
+{"event": "scout", "file": "extract_test_batch_v6.py", "status": "clean", "hash": "a09553c26d85fe15", "ts": "2026-04-04T23:51:23.544351+00:00"}
+{"event": "scout", "file": "extract_legal_masterpieces.py", "status": "clean", "hash": "f55341a6f935b3c2", "ts": "2026-04-04T23:51:23.544894+00:00"}
+{"event": "scout", "file": "patch_hallucinations.py", "status": "clean", "hash": "ff3aa27adb5b69db", "ts": "2026-04-04T23:51:23.545337+00:00"}
+{"event": "scout", "file": "extract_master_batch_FINAL.py", "status": "clean", "hash": "a09553c26d85fe15", "ts": "2026-04-04T23:51:23.546324+00:00"}
+{"event": "scout", "file": "extract_vip_killshots.py", "status": "clean", "hash": "33c9fdd9ba8c02ef", "ts": "2026-04-04T23:51:23.547370+00:00"}
+{"event": "scout", "file": "burn_dict_to_itt.py", "status": "clean", "hash": "d086722318f8517c", "ts": "2026-04-04T23:51:23.547792+00:00"}
+{"event": "scout", "file": "extract_remaining_35.py", "status": "clean", "hash": "47da3f683045e60d", "ts": "2026-04-04T23:51:23.548990+00:00"}
+{"event": "scout", "file": "extract_evidence_v2.py", "status": "clean", "hash": "49294e2138179d3e", "ts": "2026-04-04T23:51:23.549615+00:00"}
+{"event": "scout", "file": "extract_v3_evidence_batch.py", "status": "clean", "hash": "f4167cdf92aa8dba", "ts": "2026-04-04T23:51:23.550372+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_test.py", "status": "clean", "hash": "f6569bbfc10bf272", "ts": "2026-04-04T23:51:23.551578+00:00"}
+{"event": "scout", "file": "ocr_scanner.py", "status": "clean", "hash": "b58e97955619db9e", "ts": "2026-04-04T23:51:23.551923+00:00"}
+{"event": "scout", "file": "extract_master_batch_FINAL_V2.py", "status": "clean", "hash": "8cbf476143c9c371", "ts": "2026-04-04T23:51:23.553092+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_02.py", "status": "clean", "hash": "18ebf70d5a704136", "ts": "2026-04-04T23:51:23.553916+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_03.py", "status": "clean", "hash": "b3be8d371e57143f", "ts": "2026-04-04T23:51:23.555048+00:00"}
+{"event": "scout", "file": "extract_bari_bean_batch.py", "status": "clean", "hash": "2217acf25b48e89f", "ts": "2026-04-04T23:51:23.556797+00:00"}
+{"event": "scout", "file": "repair_master_subtitles.py", "status": "clean", "hash": "62bb8e9056292c0e", "ts": "2026-04-04T23:51:23.557347+00:00"}
+{"event": "scout", "file": "extract_v2_pilot_04.py", "status": "clean", "hash": "692d5c7d101f1fae", "ts": "2026-04-04T23:51:23.558677+00:00"}
+{"event": "scout", "file": "extract_water_documentary.py", "status": "clean", "hash": "043d08d31947608b", "ts": "2026-04-04T23:51:23.559738+00:00"}
+{"event": "scout", "file": "extract_ceqa_documentary.py", "status": "clean", "hash": "a9ec04c4ccf9ebb2", "ts": "2026-04-04T23:51:23.560852+00:00"}
+{"event": "scout", "file": "extract_water_cinemascope.py", "status": "clean", "hash": "34e4e881f90b8f07", "ts": "2026-04-04T23:51:23.562092+00:00"}
+{"event": "scout", "file": "extract_v4_master_documentary.py", "status": "clean", "hash": "06bf5ce0dece1226", "ts": "2026-04-04T23:51:23.563655+00:00"}
+{"event": "scout", "file": "extract_v5_water_wars.py", "status": "clean", "hash": "3508712b302b6e32", "ts": "2026-04-04T23:51:23.565355+00:00"}
+{"event": "scout", "file": "extract_v6_water_wars_final.py", "status": "clean", "hash": "087c82d91ff578bc", "ts": "2026-04-04T23:51:23.566793+00:00"}
+{"event": "scout", "file": "extract_v6_imax_engine.py", "status": "clean", "hash": "696fcca6e1c153a6", "ts": "2026-04-04T23:51:23.568380+00:00"}
+{"event": "scout", "file": "hollywood_dictionaries.py", "status": "clean", "hash": "087c1049f61981bf", "ts": "2026-04-04T23:51:23.568724+00:00"}
+{"event": "scout", "file": "extract_doc01_zoning.py", "status": "clean", "hash": "9cf892e6c2d349db", "ts": "2026-04-04T23:51:23.570185+00:00"}
+{"event": "scout", "file": "extract_doc02_ceqa.py", "status": "clean", "hash": "2e4a3c1e7c7bd197", "ts": "2026-04-04T23:51:23.571692+00:00"}
+{"event": "scout", "file": "extract_doc03_150m.py", "status": "clean", "hash": "e1d73c1a98a5fbf1", "ts": "2026-04-04T23:51:23.573061+00:00"}
+{"event": "scout", "file": "deploy_5_silos.py", "status": "clean", "hash": "d0e062d13cbcb1d4", "ts": "2026-04-04T23:51:23.573305+00:00"}
+{"event": "fail", "file": "extract_doc05_permissions.py", "reason": "llm_empty", "ts": "2026-04-04T23:52:23.601578+00:00"}
+{"event": "fail", "file": "extract_doc06_air_quality.py", "reason": "llm_empty", "ts": "2026-04-04T23:53:23.667308+00:00"}
+{"event": "fail", "file": "extract_doc07_dust_control.py", "reason": "llm_empty", "ts": "2026-04-04T23:54:23.975391+00:00"}
+{"event": "fail", "file": "extract_doc08_master_plan.py", "reason": "llm_empty", "ts": "2026-04-04T23:55:24.023044+00:00"}
+{"event": "fail", "file": "extract_doc09_traffic_truth.py", "reason": "llm_empty", "ts": "2026-04-04T23:56:24.054889+00:00"}
+{"event": "swim_complete", "fixed": 0, "skipped": 0, "errors": 5, "ts": "2026-04-04T23:56:24.059793+00:00"}
