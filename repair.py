@@ -100,7 +100,7 @@ def call_ollama(chunk: str, model: str = REPAIR_MODEL) -> str | None:
     req  = urllib.request.Request(OLLAMA_URL, data=data,
                                    headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:   # 30s is plenty for 30 lines
+        with urllib.request.urlopen(req, timeout=120) as resp:   # 30s is plenty for 30 lines
             result = json.loads(resp.read())
             return result.get("response", "").strip()
     except Exception as e:

@@ -22,7 +22,7 @@ if os.path.exists(CONFIG_FILE):
         config = json.load(f)
         NODES = config.get("nodes", {})
 else:
-    NODES = {"m1ther_public": "https://googlemapscoin.com/api/articles"}
+    NODES = {"m1ther_public": "https://gateway.sifta-network.com/api/articles"}
 
 API_KEY = os.environ.get("SIFTA_API_KEY", "")
 
