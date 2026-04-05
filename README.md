@@ -64,7 +64,7 @@ pip install -r requirements.txt
 ./PowertotheSwarm.command
 ```
 
-*Navigate to `http://localhost:5000` to monitor the Swarm's real-time LEDGER stream, observe Quorum consensus logs, and manually initiate agent deployment cycles.*
+*Navigate to `http://localhost:7433` to monitor the Swarm's real-time LEDGER stream, observe Quorum consensus logs, and manually initiate agent deployment cycles.*
 
 -----
 
