@@ -10,6 +10,16 @@ It abandons the "AI agent as a chatbot" paradigm. Instead, SIFTA agents are func
 2. **The Wild-Type Genome (TTL Reaper):** Agents do not possess persistent API tokens or static network bounds. They carry a Unix timestamp representing their "Time-To-Live." Destination nodes automatically execute the Reaper function if a degraded body arrives. There are no zombie agents. 
 3. **Superbot Clustering (Quorum):** A single agent acts as a courier. A cluster of agents acts as an execution engine. Destination nodes employ a Multi-Sig ledger (`quorum.py`), waiting for a defined threshold of biologically distinct agents to arrive carrying identical cryptographic payloads before executing critical actions.
 
+## Quickstart
+
+```bash
+git clone https://github.com/antonpictures/ANTON-SIFTA
+cd ANTON-SIFTA
+cp config.json.example config.json
+export SIFTA_API_KEY=your_key
+python3 run_demo.py
+```
+
 ## The Code Structure
 
 - `body_state.py` - The DNA. Handles body string generation, cryptographic mass chaining, pattern extraction, and TTL encoding. 
