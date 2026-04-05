@@ -25,6 +25,24 @@ python3 run_demo.py
 - `body_state.py` - The DNA. Handles body string generation, cryptographic mass chaining, pattern extraction, and TTL encoding. 
 - `quorum.py` - The Cell Wall. Intercepts incoming bodies, executes the Reaper on degraded agents, and builds the Multi-Sig consensus ledger.
 - `run_demo.py` - The Assay. Run this script to watch the architecture execute a simulated 3-agent quorum delivery with a TTL fatality in transit. 
+- `benchmark.py` - The Crucible. Synthetically seeds 10 Python files with fatal syntax flaws and tracks the mathematical repair iterations of the Swimmer.
+
+### Benchmark Output (`python3 benchmark.py`)
+```bash
+  [10/10] Swimming into: test_file_09.py
+  [FAULT] invalid syntax (<unknown>, line 1)
+  [BITE]  Extracting 30 lines around line 1...
+  [LLM]   Sending 12 lines to qwen3.5:0.8b...
+  [✅] Stitched and written. Hash: 20e0b722 → ffba4f3e
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SWIM COMPLETE
+  Fixed:   10
+  Clean:   0
+  Skipped: 0
+  Errors:  0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 ## The Body
 
@@ -34,4 +52,4 @@ python3 run_demo.py
 <///[_o_]///::ID[SEBASTIAN]::FROM[M5]::TO[M1THER]::SEQ[002]::H[8ab91c3d|a1b2c3d4]::T[1775349431]::TTL[1775954231]::STYLE[NOMINAL]::ENERGY[100]>
 ```
 
-*Logs = truth. LLMs = interpretation. The architecture works.*
+*Logs = truth. LLMs = interpretation. The architecture works. POWER TO THE SWARM.*
