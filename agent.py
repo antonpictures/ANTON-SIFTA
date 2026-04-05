@@ -78,10 +78,17 @@ def swim(payload: dict) -> bool:
     )
 
     wire_payload = {
-        "title":    payload["title"],
-        "content":  payload["content"] + body_stamp,
-        "category": payload["category"],
-        "byline":   payload["byline"],
+        "article_id":   payload.get("article_id", f"sifta_{int(time.time())}"),
+        "title":        payload["title"],
+        "content":      payload["content"],  # Raw strictly for SHA-256 verifications
+        "category":     payload["category"],
+        "byline":       payload["byline"],
+        "ascii_body":   payload["ascii_body"],
+        "payload_hash": payload["payload_hash"],
+        "agent_id":     payload["agent_id"],
+        "from":         payload["from"],
+        "to":           payload["to"],
+        "body_stamp":   body_stamp           # Can optionally be appended by the server after validation
     }
 
     data = json.dumps(wire_payload).encode("utf-8")
