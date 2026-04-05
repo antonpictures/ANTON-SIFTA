@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
 ANTON-SIFTA — Anton Traversal Oriented Network
-Stateful Iterative File Traversal Agent v2 — Embodied Protocol
-
-The swimmer carries its own body.
-Logs = truth. Body = protocol. Both must exist or neither exists.
+agent.py — The physical courier layer.
 """
 
 import hashlib
@@ -16,6 +13,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from body_state import SwarmBody, parse_body_state
+
 # ─── NETWORK CONFIG ───────────────────────────────────────────────────────────
 NODES = {
     "m1ther_local":  "http://192.168.1.71:3003/api/articles",
@@ -23,7 +22,6 @@ NODES = {
 }
 API_KEY = "george-key"
 
-# ─── STATE LOG ────────────────────────────────────────────────────────────────
 LOG_PATH = os.path.join(os.path.dirname(__file__), "swim_log.jsonl")
 
 def log_event(event: dict):
@@ -33,62 +31,39 @@ def log_event(event: dict):
     label = event.get("event") or event.get("action", "")
     print(f"  [LOG] {label} → {event.get('status', '')}")
 
-# ─── AGENT BODY CONSTRUCTION ──────────────────────────────────────────────────
-def build_ascii_body(agent_id: str, seq: int, payload_hash: str, ts: int) -> str:
-    """
-    Construct the swimmer's physical form using the same schema
-    already embedded in publish_imperial.ts:
-    <///[O_O]///::ID[...]::FROM[...]::SEQ[...]::H[...]::T[...]>
-    This is not decoration — it is transmitted in the payload and logged.
-    """
-    return (
-        f"<///[O_O]///::ID[{agent_id}]"
-        f"::FROM[M5-ANTIGRAVITY]"
-        f"::TO[M1THER]"
-        f"::SEQ[{seq:03d}]"
-        f"::H[{payload_hash[:32]}]"
-        f"::T[{ts}]>"
-    )
-
-# ─── PAYLOAD ──────────────────────────────────────────────────────────────────
-def build_payload(article_path: str) -> dict:
+def build_payload(article_path: str, body_obj: SwarmBody) -> dict:
     with open(article_path, "r") as f:
         content = f.read()
 
-    ts          = int(time.time())
+    ts = int(time.time())
     content_hash = hashlib.sha256(content.encode()).hexdigest()
-    article_id  = f"sifta_{ts}"
-    ascii_body  = build_ascii_body("ANTIALICE-SIFTA", seq=1,
-                                   payload_hash=content_hash, ts=ts)
+    article_id = f"sifta_{ts}"
+    
+    # Use the SwarmBody class directly
+    ascii_body = body_obj.generate_body("M5", "M1THER", content_hash[:16])
 
     return {
         "article_id":  article_id,
-        "title":       "ANTON-SIFTA: The Architectural Supremacy of the 'Swimming' Agent",
+        "title":       "ANTON-SIFTA: Clean Architecture Validation",
         "content":     content,
         "category":    "Tech and AI",
         "byline":      "By George Anton",
-        # ── embodiment fields (what makes the body real) ──
-        "agent_id":    "ANTIALICE-SIFTA",
+        "agent_id":    body_obj.agent_id,
         "ascii_body":  ascii_body,
         "payload_hash": content_hash,
         "timestamp":   ts,
-        "from":        "M5-ANTIGRAVITY",
+        "from":        "M5",
         "to":          "M1THER",
         "swim_ts":     datetime.now(timezone.utc).isoformat(),
     }
 
-# ─── HASH VERIFICATION ────────────────────────────────────────────────────────
 def verify_payload(payload: dict) -> bool:
     expected = hashlib.sha256(payload["content"].encode()).hexdigest()
     ok = payload["payload_hash"] == expected
     print(f"  [VERIFY] Hash integrity: {'✅ PASS' if ok else '❌ FAIL'}")
     return ok
 
-# ─── SWIM ─────────────────────────────────────────────────────────────────────
 def swim(payload: dict) -> bool:
-    # Wire format for the newspaper API (what M1ther stores)
-    # We embed ascii_body inside content so it is physically visible
-    # in the published article — the body arrives in the text, not just the log
     body_stamp = (
         f"\n\n---\n"
         f"**SWIMMER BODY:** `{payload['ascii_body']}`  \n"
@@ -105,7 +80,7 @@ def swim(payload: dict) -> bool:
         "byline":   payload["byline"],
     }
 
-    data    = json.dumps(wire_payload).encode("utf-8")
+    data = json.dumps(wire_payload).encode("utf-8")
     headers = {
         "Content-Type":  "application/json",
         "Authorization": f"Bearer {API_KEY}",
@@ -127,7 +102,6 @@ def swim(payload: dict) -> bool:
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=6) as resp:
-                body = resp.read().decode()
                 print(f"  [✅] Delivered. HTTP {resp.status}.")
                 log_event({
                     "event":      "arrive",
@@ -142,16 +116,13 @@ def swim(payload: dict) -> bool:
         except urllib.error.HTTPError as e:
             err = e.read().decode()
             print(f"  [HTTP ERROR] {e.code}: {err[:200]}")
-            log_event({"event": "fail", "node": node_name,
-                       "error": f"HTTP {e.code}", "status": "FAILED"})
+            log_event({"event": "fail", "node": node_name, "error": f"HTTP {e.code}", "status": "FAILED"})
         except Exception as e:
             print(f"  [NET ERROR] {e}")
-            log_event({"event": "fail", "node": node_name,
-                       "error": str(e), "status": "FAILED"})
+            log_event({"event": "fail", "node": node_name, "error": str(e), "status": "FAILED"})
 
     return False
 
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
 def main():
     article_path = os.path.normpath(os.path.join(
         os.path.dirname(__file__),
@@ -159,39 +130,36 @@ def main():
     ))
 
     print("━" * 60)
-    print("  ANTON-SIFTA v2 — Embodied Swimmer")
-    print(f"  Source: {article_path}")
+    print("  ANTON-SIFTA File Traversal & Delivery Layer")
     print("━" * 60)
 
     if not os.path.exists(article_path):
-        print(f"  [ERROR] Article not found: {article_path}")
-        sys.exit(1)
-
-    log_event({"action": "boot", "status": "ALIVE", "source": article_path})
-
-    print("\n[1] Building embodied payload...")
-    payload = build_payload(article_path)
-    print(f"    agent_id:   {payload['agent_id']}")
-    print(f"    ascii_body: {payload['ascii_body']}")
-    print(f"    hash:       {payload['payload_hash'][:16]}...")
-
-    print("\n[2] Verifying integrity...")
-    if not verify_payload(payload):
-        log_event({"action": "verify_fail", "status": "ABORTED"})
-        sys.exit(1)
-
-    print("\n[3] Swimmer departing M5 → M1ther...")
-    delivered = swim(payload)
-
-    print("\n" + "━" * 60)
-    if delivered:
-        print("  ✅ SWIM COMPLETE. Body arrived at M1ther.")
-        print(f"  Forensic log: {LOG_PATH}")
-        log_event({"action": "swim_complete", "status": "SUCCESS"})
+        print(f"  [ERROR] Source payload not found: {article_path}")
+        # Make a dummy payload for testing
+        print(f"  [TEST] Running in isolated clean directory test mode.")
+        alice = SwarmBody("ANTIALICE")
+        body = alice.generate_body("M5", "M1THER", "DUMMY_PAYLOAD")
+        print(f"    {body}")
+        
     else:
-        print("  ❌ SWIM FAILED. All arteries blocked.")
-        log_event({"action": "swim_complete", "status": "FAILED"})
-    print("━" * 60)
+        alice = SwarmBody("ANTIALICE")
+        print("\n[1] Building embodied payload...")
+        payload = build_payload(article_path, alice)
+        print(f"    agent_id:   {payload['agent_id']}")
+        print(f"    ascii_body: {payload['ascii_body']}")
+        
+        print("\n[2] Verifying integrity...")
+        if not verify_payload(payload):
+            log_event({"action": "verify_fail", "status": "ABORTED"})
+            sys.exit(1)
+            
+        print("\n[3] Swimmer departing M5 → M1ther...")
+        delivered = swim(payload)
+        
+        if delivered:
+            print("  ✅ SWIM COMPLETE. Body arrived.")
+        else:
+            print("  ❌ SWIM FAILED.")
 
 if __name__ == "__main__":
     main()

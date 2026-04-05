@@ -23,6 +23,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from body_state import SwarmBody, parse_body_state, apply_damage, bury
+
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 OLLAMA_URL    = "http://localhost:11434/api/generate"
 REPAIR_MODEL  = "qwen3.5:0.8b"   # laser scalpel — 1GB, fast
@@ -112,21 +114,28 @@ def hash_str(s: str) -> str:
 
 
 # ─── SWIMMER LOOP ─────────────────────────────────────────────────────────────
-def swim_and_repair(target_dir: str, dry_run: bool = True):
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True):
     root = Path(target_dir)
     files = sorted(
         [f for f in root.rglob("*.py") if ".git" not in str(f)],
         key=lambda f: f.stat().st_ctime  # ordered by creation time — linear swim
     )
 
-    print(f"\n  ANTON-SIFTA — Repair Mode")
+    print(f"\n  ANTON-SIFTA — Repair & Survival Mode")
     print(f"  Target:  {root}")
     print(f"  Files:   {len(files)}")
+    print(f"  Agent:   {state['id']} | Energy: {state['energy']} | Style: {state['style']}")
+    
+    # Aggressive mutation check
+    if state["style"] == "AGGRESSIVE":
+        print(f"  [MUTATION] AGGRESSIVE style detected. Disabling dry run and fallbacks.")
+        dry_run = False
+
     print(f"  Dry run: {dry_run}")
     print("─" * 60)
 
     log({"event": "swim_start", "target": str(root),
-         "file_count": len(files), "dry_run": dry_run})
+         "file_count": len(files), "dry_run": dry_run, "agent_id": state["id"]})
 
     fixed = 0
     skipped = 0
@@ -168,14 +177,19 @@ def swim_and_repair(target_dir: str, dry_run: bool = True):
         fixed_chunk = call_ollama(chunk, REPAIR_MODEL)
 
         # ── fallback to 4b if 0.8b fails ──────────────────────────────────
-        if not fixed_chunk:
+        if not fixed_chunk and state["style"] != "AGGRESSIVE":
             print(f"  [FALLBACK] 0.8b returned nothing. Trying {FALLBACK_MODEL}...")
             fixed_chunk = call_ollama(chunk, FALLBACK_MODEL)
 
         if not fixed_chunk:
-            print(f"  [FAIL] All models returned nothing.")
+            print(f"  [FAIL] All models returned nothing. Taking damage.")
+            state = apply_damage(state, "llm_empty")
             log({"event": "fail", "file": str(rel), "reason": "llm_empty"})
             errors += 1
+            if state["energy"] <= 0:
+                print("  [FATAL] Agent energy depleted during repair simulation.")
+                bury(state, cause="llm_empty")
+                return
             continue
 
         # ── stitch back and validate the whole file ───────────────────────
@@ -194,10 +208,15 @@ def swim_and_repair(target_dir: str, dry_run: bool = True):
         os.unlink(tmp_path)
 
         if not repaired_ok:
-            print(f"  [REJECT] Stitched file still broken: {repair_err}")
+            print(f"  [REJECT] Stitched file still broken: {repair_err}. Taking damage.")
+            state = apply_damage(state, "validation_fail")
             log({"event": "reject", "file": str(rel),
                  "before_hash": before_hash, "reason": repair_err})
             errors += 1
+            if state["energy"] <= 0:
+                print("  [FATAL] Agent energy depleted from validation failures.")
+                bury(state, cause="validation_fail")
+                return
             continue
 
         after_lines = all_lines[:]
@@ -240,6 +259,17 @@ if __name__ == "__main__":
     parser.add_argument("target", help="Directory to swim through and repair")
     parser.add_argument("--write", action="store_true",
                         help="Actually write fixes (default: dry run)")
+    parser.add_argument("--body", type=str, default="",
+                        help="Raw ASCII body string to initialize state from")
     args = parser.parse_args()
 
-    swim_and_repair(args.target, dry_run=not args.write)
+    if args.body:
+        agent_state = parse_body_state(args.body)
+    else:
+        # Default initialization for the clean test environment
+        alice = SwarmBody("ANTIALICE")
+        # Give her a few scars immediately to simulate a rough transit
+        body_string = alice.generate_body("M5", "M1THER", "REPAIR_SWIM", style="NOMINAL", energy=100)
+        agent_state = parse_body_state(body_string)
+
+    swim_and_repair(args.target, agent_state, dry_run=not args.write)
