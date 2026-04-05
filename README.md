@@ -1,8 +1,6 @@
-# ANTON-SIFTA (Swarm Intelligence File Traversal Architecture)
+# ANTON-SIFTA: A decentralized autonomous swarm for the surgical repair of localized syntax faults.
 
-**ANTON-Swarm** is a hardened, decentralized multi-agent biology framework for cross-node Python file execution and traversal.
-
-It abandons the "AI agent as a chatbot" paradigm. Instead, SIFTA agents are functional, verifiable data structures that move through a network, carrying their cryptographic history, behavioral traits, and execution payloads entirely within their ASCII body strings.
+**ANTON-SIFTA** abandons the "AI agent as a chatbot" paradigm. Instead, our agents are functional, verifiable, living silicon bodies that move through a network, carrying their cryptographic history, behavioral traits, and execution payloads entirely within their ASCII body strings. It is a hardened, decentralized multi-agent biology framework for cross-node Python repair and traversal.
 
 ## The Three Biological Laws of SIFTA
 
