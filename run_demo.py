@@ -46,9 +46,8 @@ def run_assay():
     
     time.sleep(0.5)
     
-    # 5. Agent 4 (Alice Clone/Backup) makes the final delivery
-    alice_backup = SwarmBody("ANTIALICE")
-    # Generating a second body increments the sequence and chains the hash!
+    # 5. Agent 4 (Backup) makes the final delivery
+    alice_backup = SwarmBody("M1THER")
     body_alice_backup = alice_backup.generate_body(origin="M5", destination="M1THER", payload=payload_hash)
     print(f"[DISPATCH] {alice_backup.agent_id} backup swimming...")
     print(f"           {body_alice_backup}")

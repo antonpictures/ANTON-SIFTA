@@ -16,11 +16,15 @@ from datetime import datetime, timezone
 from body_state import SwarmBody, parse_body_state
 
 # ─── NETWORK CONFIG ───────────────────────────────────────────────────────────
-NODES = {
-    "m1ther_local":  "http://192.168.1.71:3003/api/articles",
-    "m1ther_public": "https://googlemapscoin.com/api/articles",
-}
-API_KEY = "george-key"
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+if os.path.exists(CONFIG_FILE):
+    with open(CONFIG_FILE, "r") as f:
+        config = json.load(f)
+        NODES = config.get("nodes", {})
+else:
+    NODES = {"m1ther_public": "https://googlemapscoin.com/api/articles"}
+
+API_KEY = os.environ.get("SIFTA_API_KEY", "")
 
 LOG_PATH = os.path.join(os.path.dirname(__file__), "swim_log.jsonl")
 
@@ -124,27 +128,26 @@ def swim(payload: dict) -> bool:
     return False
 
 def main():
-    article_path = os.path.normpath(os.path.join(
-        os.path.dirname(__file__),
-        "../newspaper/ARTICLES/M1ther_—_Mac_Mini_M1/04-04-26_George_Anton_Antons_SIFTA.txt"
-    ))
+    import argparse
+    parser = argparse.ArgumentParser(description="ANTON-SIFTA File Traversal & Delivery Layer")
+    parser.add_argument("--payload", type=str, required=False, help="Payload file to transmit")
+    args = parser.parse_args()
 
     print("━" * 60)
     print("  ANTON-SIFTA File Traversal & Delivery Layer")
     print("━" * 60)
 
-    if not os.path.exists(article_path):
-        print(f"  [ERROR] Source payload not found: {article_path}")
+    if not args.payload or not os.path.exists(args.payload):
+        print(f"  [ERROR] Source payload not found or not provided.")
         # Make a dummy payload for testing
         print(f"  [TEST] Running in isolated clean directory test mode.")
         alice = SwarmBody("ANTIALICE")
         body = alice.generate_body("M5", "M1THER", "DUMMY_PAYLOAD")
         print(f"    {body}")
-        
     else:
         alice = SwarmBody("ANTIALICE")
         print("\n[1] Building embodied payload...")
-        payload = build_payload(article_path, alice)
+        payload = build_payload(args.payload, alice)
         print(f"    agent_id:   {payload['agent_id']}")
         print(f"    ascii_body: {payload['ascii_body']}")
         
