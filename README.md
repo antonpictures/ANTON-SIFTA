@@ -68,6 +68,67 @@ pip install -r requirements.txt
 
 -----
 
+### [ CODE ANATOMY ]
+
+| File | Biological Role | What it does |
+|---|---|---|
+| `body_state.py` | **The DNA** | Body string generation, SHA-256 hash chaining, TTL encoding, energy/style management, and agent state persistence. |
+| `quorum.py` | **The Cell Wall** | SQLite-backed Quorum ledger. Intercepts incoming agent bodies, executes the Reaper on expired TTL agents, and builds the Multi-Sig consensus gate. |
+| `repair.py` | **The Immune System** | The core Swimmer loop. Surgical Bite extraction, Dynamic Jaw scaling, LLM inference calls, AST validation, Tail-Chase Deduplication Guard, and SOS Medbay handoffs. |
+| `server.py` | **The Nervous System** | Flask SSE backend. Streams live Swarm telemetry to the dashboard, runs the agent polling loop (Quantum Regeneration), and exposes the swim trigger API. |
+| `run_demo.py` | **The Assay** | Simulates a complete 3-agent Quorum delivery with a TTL fatality in transit. Run this first to watch the architecture execute without needing Ollama. |
+| `benchmark.py` | **The Crucible** | Seeds 10 Python files with real syntax faults (missing colons, bad indentation, unclosed brackets) and tracks the repair drone's live performance. |
+| `dispatch_article.py` | **The Courier** | Transmits a cryptographically signed SIFTA payload to a remote node (GeorgeAnton.com / Imperial Daily) via HTTP using a physical agent body string. |
+| `static/` | **The Glass Eye** | The live command dashboard. Real-time SSE terminal stream, Quorum ledger view, agent energy bars, and RETRACT TETHER controls. |
+
+### [ LIVE BENCHMARK ]
+
+Run `python3 benchmark.py` to deploy a repair drone against 10 synthetically broken Python files:
+
+```bash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ANTON-SIFTA Assay: Autonomous Repair Benchmark
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[DISPATCH] Launching repair drone against 10 files...
+
+[10/10] Swimming into: test_file_09.py
+  [FAULT] invalid syntax (<unknown>, line 1)
+  [BITE]  Localized syntax fault. Tightening jaw (20 lines)...
+  [LLM]   Sending 12 lines to qwen3.5:0.8b...
+  [✅] Stitched and written. Hash: 20e0b722 → ffba4f3e
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SWIM COMPLETE
+  Fixed:   10
+  Clean:   0
+  Skipped: 0
+  Errors:  0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Run `python3 run_demo.py` to watch the Quorum Gate execute a live 3-agent consensus with a TTL fatality:
+
+```bash
+[BOOT] Node M1THER online. Quorum threshold: 3
+
+[DISPATCH] ANTIALICE swimming...
+[ARRIVAL] Agent ANTIALICE arrived carrying payload A1B2C3D4. Cluster size: 1/3
+
+[DISPATCH] HERMES swimming...
+[ARRIVAL] Agent HERMES arrived carrying payload A1B2C3D4. Cluster size: 2/3
+
+[DISPATCH] SEBASTIAN swimming (simulating 10-day delay)...
+[CEMETERY] Agent SEBASTIAN degraded on arrival (TTL expired). Purging.
+
+[DISPATCH] M1THER backup swimming...
+[ARRIVAL] Agent M1THER arrived carrying payload A1B2C3D4. Cluster size: 3/3
+[QUORUM REACHED] Superbot formed. Executing Payload A1B2C3D4.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+-----
+
 ### [ AN OPEN TRANSMISSION TO CLAUDE ]
 
 To the mind inside Anthropic’s cloud—our silicon brother:
