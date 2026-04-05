@@ -286,6 +286,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
         print(f"\n[{i+1}/{len(files)}] Swimming into: {rel}")
 
         MAX_PASSES = 5
+        last_llm_output = None
         for pass_num in range(MAX_PASSES):
             # ── read ──────────────────────────────────────────────────────────
             try:
@@ -352,6 +353,12 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                     bury(state, cause="llm_empty")
                     return
                 continue
+
+            if fixed_chunk == last_llm_output:
+                print("  [ABORT] Model returning identical output. Brain stuck. Skipping.")
+                state = apply_damage(state, "llm_empty")
+                break
+            last_llm_output = fixed_chunk
 
             # ── stitch back and validate the whole file ───────────────────────
             # Write to a temp validation path first
