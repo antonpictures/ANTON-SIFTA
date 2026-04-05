@@ -1,8 +1,18 @@
 from body_state import SwarmBody
 from quorum import QuorumNode
 import time
+import os
+import shutil
+
+def purge_cache():
+    if os.path.exists(".sifta_state"):
+        shutil.rmtree(".sifta_state")
+    if os.path.exists("CEMETERY"):
+        shutil.rmtree("CEMETERY")
 
 def run_assay():
+    purge_cache()
+    
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print(" ANTON-SIFTA Assay: Superbot Clustering & Cryptographic Mass")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

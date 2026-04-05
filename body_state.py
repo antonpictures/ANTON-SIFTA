@@ -1,4 +1,5 @@
 import hashlib
+import json
 import time
 import re
 from pathlib import Path
@@ -6,16 +7,55 @@ from pathlib import Path
 CEMETERY_DIR = Path(__file__).parent / "CEMETERY"
 CEMETERY_DIR.mkdir(exist_ok=True)
 
+STATE_DIR = Path(__file__).parent / ".sifta_state"
+STATE_DIR.mkdir(exist_ok=True)
+
+def load_agent_state(agent_id: str) -> dict:
+    STATE_DIR.mkdir(exist_ok=True)
+    state_file = STATE_DIR / f"{agent_id}.json"
+    if state_file.exists():
+        try:
+            with open(state_file, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+def save_agent_state(state: dict):
+    agent_id = state.get("id")
+    if not agent_id:
+        return
+    STATE_DIR.mkdir(exist_ok=True)
+    state_file = STATE_DIR / f"{agent_id}.json"
+    with open(state_file, "w") as f:
+        json.dump(state, f, indent=2)
+
 class SwarmBody:
     FACES = {"M1THER": "[O_O]", "ANTIALICE": "[o|o]", "SEBASTIAN": "[_o_]", "HERMES": "[_v_]"}
     
     def __init__(self, agent_id):
         self.agent_id = agent_id.upper()
         self.face = self.FACES.get(self.agent_id, "[O_O]")
-        self.sequence = 0
-        self.hash_chain = []
         
-    def generate_body(self, origin, destination, payload, style="NOMINAL", energy=100):
+        # Rehydrate persistent state if it exists
+        saved_state = load_agent_state(self.agent_id)
+        if saved_state:
+            self.sequence = saved_state.get("seq", 0)
+            self.hash_chain = saved_state.get("hash_chain", [])
+            self.energy = saved_state.get("energy", 100)
+            self.style = saved_state.get("style", "NOMINAL")
+        else:
+            self.sequence = 0
+            self.hash_chain = []
+            self.energy = 100
+            self.style = "NOMINAL"
+        
+    def generate_body(self, origin, destination, payload, style=None, energy=None):
+        if style is not None:
+            self.style = style
+        if energy is not None:
+            self.energy = energy
+            
         self.sequence += 1
         timestamp = int(time.time())
         ttl = timestamp + 604800 # 7-day Wild-Type Genome
@@ -27,9 +67,22 @@ class SwarmBody:
         new_hash = hashlib.sha256(raw_data.encode()).hexdigest()
         self.hash_chain.append(new_hash)
         
-        return (f"<///{self.face}///::ID[{self.agent_id}]::FROM[{origin}]::TO[{destination}]"
+        body_string = (f"<///{self.face}///::ID[{self.agent_id}]::FROM[{origin}]::TO[{destination}]"
                 f"::SEQ[{self.sequence:03d}]::H[{new_hash}]::T[{timestamp}]::TTL[{ttl}]"
-                f"::STYLE[{style}]::ENERGY[{energy}]>")
+                f"::STYLE[{self.style}]::ENERGY[{self.energy}]>")
+                
+        # Persist the current snapshot
+        save_agent_state({
+            "id": self.agent_id,
+            "seq": self.sequence,
+            "hash_chain": self.hash_chain,
+            "energy": self.energy,
+            "style": self.style,
+            "raw": body_string,
+            "ttl": ttl
+        })
+        
+        return body_string
 
 def parse_body_state(ascii_body):
     """The agent reads its own scars."""
@@ -75,6 +128,7 @@ def apply_damage(state: dict, strike_type: str) -> dict:
     elif state["energy"] < 40:
         state["style"] = "CORRUPTED"
 
+    save_agent_state(state)
     return state
 
 def bury(state: dict, cause: str = "unknown"):

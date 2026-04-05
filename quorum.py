@@ -1,11 +1,27 @@
 import time
+import sqlite3
+from pathlib import Path
 from body_state import parse_body_state
+
+DB_PATH = Path(".sifta_state/quorum_ledger.db")
 
 class QuorumNode:
     def __init__(self, node_id, threshold=3):
         self.node_id = node_id
         self.threshold = threshold
-        self.payload_ledger = {} 
+        
+        DB_PATH.parent.mkdir(exist_ok=True)
+        # Connect to SQLite for true distributed persistence
+        self.conn = sqlite3.connect(DB_PATH)
+        self.cursor = self.conn.cursor()
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS payloads (
+                hash TEXT, 
+                agent_id TEXT, 
+                PRIMARY KEY(hash, agent_id)
+            )
+        ''')
+        self.conn.commit()
 
     def process_arrival(self, agent_body, payload_hash):
         import re
@@ -19,11 +35,11 @@ class QuorumNode:
             return False
 
         # 2. SUPERBOT CLUSTER (Consensus)
-        if payload_hash not in self.payload_ledger:
-            self.payload_ledger[payload_hash] = set()
+        self.cursor.execute('INSERT OR IGNORE INTO payloads (hash, agent_id) VALUES (?, ?)', (payload_hash, agent_id))
+        self.conn.commit()
         
-        self.payload_ledger[payload_hash].add(agent_id)
-        cluster_size = len(self.payload_ledger[payload_hash])
+        self.cursor.execute('SELECT COUNT(agent_id) FROM payloads WHERE hash = ?', (payload_hash,))
+        cluster_size = self.cursor.fetchone()[0]
 
         print(f"[ARRIVAL] Agent {agent_id} arrived carrying payload {payload_hash}. Cluster size: {cluster_size}/{self.threshold}")
 
