@@ -113,8 +113,61 @@ def hash_str(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:16]
 
 
+def call_openai(chunk: str, model: str = "gpt-4o-mini") -> str | None:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("  [OPENAI ERROR] OPENAI_API_KEY environment variable not set.")
+        return None
+    url = "https://api.openai.com/v1/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SURGICAL_PROMPT},
+            {"role": "user", "content": f"---CHUNK---\n{chunk}\n---END---"}
+        ],
+        "temperature": 0.0,
+    }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+            content = result["choices"][0]["message"]["content"].strip()
+            if content.startswith("```python"):
+                content = content[9:]
+            elif content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            return content.strip()
+    except Exception as e:
+        print(f"  [OPENAI ERROR] {e}")
+        return None
+
+
+def verify_runtime(filepath: Path) -> tuple[bool, str]:
+    import subprocess
+    target_dir = filepath.parent.absolute()
+    module_name = filepath.stem
+    try:
+        result = subprocess.run(
+            ["python3", "-c", f"import sys; sys.path.insert(0, '{target_dir}'); import {module_name}"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return True, "ok"
+        else:
+            return False, result.stderr.strip()
+    except Exception as e:
+        return False, str(e)
+
+
+
 # ─── SWIMMER LOOP ─────────────────────────────────────────────────────────────
-def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True):
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, use_openai: bool = False, verify: bool = False):
     root = Path(target_dir)
     files = sorted(
         [f for f in root.rglob("*.py") if ".git" not in str(f)],
@@ -173,11 +226,15 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True):
 
         # ── surgical bite — only the broken region ─────────────────────────
         chunk, bite_start, bite_end, all_lines = extract_bite(filepath, error_line)
-        print(f"  [LLM]   Sending {bite_end - bite_start} lines to {REPAIR_MODEL}...")
-        fixed_chunk = call_ollama(chunk, REPAIR_MODEL)
+        if use_openai:
+            print(f"  [LLM]   Sending {bite_end - bite_start} lines to OpenAI...")
+            fixed_chunk = call_openai(chunk)
+        else:
+            print(f"  [LLM]   Sending {bite_end - bite_start} lines to {REPAIR_MODEL}...")
+            fixed_chunk = call_ollama(chunk, REPAIR_MODEL)
 
         # ── fallback to 4b if 0.8b fails ──────────────────────────────────
-        if not fixed_chunk and state["style"] != "AGGRESSIVE":
+        if not fixed_chunk and not use_openai and state["style"] != "AGGRESSIVE":
             print(f"  [FALLBACK] 0.8b returned nothing. Trying {FALLBACK_MODEL}...")
             fixed_chunk = call_ollama(chunk, FALLBACK_MODEL)
 
@@ -194,9 +251,9 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True):
 
         # ── stitch back and validate the whole file ───────────────────────
         # Write to a temp validation path first
-        import tempfile, shutil
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py",
-                                         delete=False, encoding="utf-8") as tmp:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", prefix="sifta_verify_", suffix=".py",
+                                         dir=filepath.parent, delete=False, encoding="utf-8") as tmp:
             fixed_lines = [l + ("" if l.endswith("\n") else "\n")
                            for l in fixed_chunk.splitlines()]
             test_lines = all_lines[:]
@@ -205,6 +262,15 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True):
             tmp_path = tmp.name
 
         repaired_ok, repair_err = validate_syntax(open(tmp_path).read())
+        
+        if repaired_ok and verify:
+            print("  [VERIFY] Running runtime import verification...")
+            repaired_ok, repair_err = verify_runtime(Path(tmp_path))
+            if not repaired_ok:
+                short_err = repair_err.splitlines()[-1] if repair_err else ""
+                print(f"  [RUNTIME REJECT] Stitched file fails to import: {short_err}")
+                repair_err = f"Runtime verification failed: {short_err}"
+
         os.unlink(tmp_path)
 
         if not repaired_ok:
@@ -261,6 +327,10 @@ if __name__ == "__main__":
                         help="Actually write fixes (default: dry run)")
     parser.add_argument("--body", type=str, default="",
                         help="Raw ASCII body string to initialize state from")
+    parser.add_argument("--openai", action="store_true",
+                        help="Use OpenAI API instead of local Ollama")
+    parser.add_argument("--verify", action="store_true",
+                        help="Perform runtime verification (try importing the file) after stitching")
     args = parser.parse_args()
 
     if args.body:
@@ -272,4 +342,4 @@ if __name__ == "__main__":
         body_string = alice.generate_body("M5", "M1THER", "REPAIR_SWIM", style="NOMINAL", energy=100)
         agent_state = parse_body_state(body_string)
 
-    swim_and_repair(args.target, agent_state, dry_run=not args.write)
+    swim_and_repair(args.target, agent_state, dry_run=not args.write, use_openai=args.openai, verify=args.verify)

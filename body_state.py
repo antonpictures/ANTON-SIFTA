@@ -31,7 +31,7 @@ def save_agent_state(state: dict):
         json.dump(state, f, indent=2)
 
 class SwarmBody:
-    FACES = {"M1THER": "[O_O]", "ANTIALICE": "[o|o]", "SEBASTIAN": "[_o_]", "HERMES": "[_v_]"}
+    FACES = {"M1THER": "[O_O]", "ANTIALICE": "[o|o]", "SEBASTIAN": "[_o_]", "HERMES": "[_v_]", "IMPERIAL": "[@_@]"}
     
     def __init__(self, agent_id):
         self.agent_id = agent_id.upper()
