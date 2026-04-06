@@ -43,7 +43,7 @@ Furthermore, through frontend SSE infrastructure, we instituted *Quantum Regener
 
 Observe the Swarm's biological framework and command dashboard in real-time.
 
-[**[ 📽️ DECRYPT VIDEO: SIFTA Biological Framework Documentary ]**](https://www.youtube.com/watch?v=QIEoSjusJZw&t=129s)
+[**[ 📽️ DECRYPT VIDEO: SIFTA Biological Framework Documentary ]**](https://www.youtube.com/watch?v=rizKATd3MVo)
 
 *(Drop Dashboard UI GIF / SSE Terminal Stream Here)*
 
