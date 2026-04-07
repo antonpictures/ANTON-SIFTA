@@ -555,6 +555,12 @@ async def wallet_wormhole(req: WormholeRequest):
     import urllib.error
 
     agent_id = req.agent_id.upper()
+    
+    # HARDWARE TIE SECURITY: Terminal nodes are physically bound to bare metal hardware.
+    # They cannot travel through the wormhole.
+    if agent_id in ("ALICE_M5", "M1THER"):
+        return {"ok": False, "error": f"SECURITY BLOCK: {agent_id} is a primary node cryptographically bound to physical hardware. It cannot travel through the wormhole."}
+
     soul_file = STATE_DIR / f"{agent_id}.json"
 
     if not soul_file.exists():
