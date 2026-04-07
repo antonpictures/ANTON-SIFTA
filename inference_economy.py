@@ -1,0 +1,142 @@
+"""
+inference_economy.py — ANTON-SIFTA Proof of Compute
+─────────────────────────────────────────────────────
+When a weak node borrows LLM inference from a powerful node over LAN,
+it pays a STGM fee. Both the debit and the event are recorded in the
+Quorum Ledger (repair_log.jsonl) as a signed INFERENCE_BORROW entry.
+
+Fee Formula:
+    STGM_FEE = round(tokens / 100 + 1, 2)
+"""
+
+import json
+import hashlib
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT_DIR  = Path(__file__).parent
+LOG_PATH  = ROOT_DIR / "repair_log.jsonl"
+STATE_DIR = ROOT_DIR / ".sifta_state"
+
+
+# ─── Fee Calculator ────────────────────────────────────────────────────────────
+def calculate_fee(tokens: int) -> float:
+    """
+    Proof of Compute fee in STGM.
+    Minimum cost is 1.0 STGM regardless of token count.
+    """
+    return round(max(1.0, tokens / 100 + 1), 2)
+
+
+# ─── Ledger Writer ─────────────────────────────────────────────────────────────
+def record_inference_fee(
+    borrower_id: str,
+    lender_node_ip: str,
+    fee_stgm: float,
+    model: str,
+    tokens_used: int,
+    file_repaired: str,
+) -> dict:
+    """
+    Deducts STGM from the borrower agent's energy, writes a signed
+    INFERENCE_BORROW event to repair_log.jsonl, and returns the receipt.
+    """
+    # ── Load borrower state ──────────────────────────────────────────────────
+    state_path = STATE_DIR / f"{borrower_id.upper()}.json"
+    state = {}
+    if state_path.exists():
+        try:
+            with open(state_path, "r") as f:
+                state = json.load(f)
+        except Exception:
+            pass
+
+    current_stgm = float(state.get("stgm_balance", 0.0))
+    new_stgm     = max(0.0, round(current_stgm - fee_stgm, 2))
+
+    # ── Update state ─────────────────────────────────────────────────────────
+    state["stgm_balance"] = new_stgm
+    if state:
+        try:
+            with open(state_path, "w") as f:
+                json.dump(state, f, indent=2)
+        except Exception:
+            pass
+
+    # ── Build signed receipt ─────────────────────────────────────────────────
+    ts = datetime.now(timezone.utc).isoformat()
+    receipt_body = (
+        f"INFERENCE_BORROW::{borrower_id}::FROM[{lender_node_ip}]::"
+        f"MODEL[{model}]::TOKENS[{tokens_used}]::FEE[{fee_stgm}]::TS[{ts}]"
+    )
+    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()
+
+    event = {
+        "event":         "INFERENCE_BORROW",
+        "ts":            ts,
+        "borrower_id":   borrower_id,
+        "lender_ip":     lender_node_ip,
+        "model":         model,
+        "tokens_used":   tokens_used,
+        "fee_stgm":      fee_stgm,
+        "prev_balance":  current_stgm,
+        "new_balance":   new_stgm,
+        "file_repaired": file_repaired,
+        "receipt_hash":  receipt_hash,
+    }
+
+    # ── Append to repair_log.jsonl ───────────────────────────────────────────
+    try:
+        with open(LOG_PATH, "a") as f:
+            f.write(json.dumps(event) + "\n")
+    except Exception as e:
+        print(f"  [ECONOMY] Ledger write failed: {e}")
+
+    print(
+        f"  [STGM] Fee: {fee_stgm} STGM deducted for borrowed inference "
+        f"from {lender_node_ip} | Balance: {current_stgm} → {new_stgm}"
+    )
+
+    return event
+
+
+# ─── STGM Balance Getter ───────────────────────────────────────────────────────
+def get_stgm_balance(agent_id: str) -> float:
+    """Return the current STGM balance for an agent (0.0 if not set yet)."""
+    state_path = STATE_DIR / f"{agent_id.upper()}.json"
+    if not state_path.exists():
+        return 0.0
+    try:
+        with open(state_path, "r") as f:
+            state = json.load(f)
+            return float(state.get("stgm_balance", 0.0))
+    except Exception:
+        return 0.0
+
+
+# ─── Borrow History Reader ─────────────────────────────────────────────────────
+def get_borrow_history(agent_id: str | None = None, tail: int = 100) -> list:
+    """
+    Read all INFERENCE_BORROW events from the ledger.
+    Optionally filter by borrower_id.
+    """
+    if not LOG_PATH.exists():
+        return []
+    events = []
+    try:
+        with open(LOG_PATH, "r") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("event") != "INFERENCE_BORROW":
+                        continue
+                    if agent_id and entry.get("borrower_id", "").upper() != agent_id.upper():
+                        continue
+                    events.append(entry)
+                except json.JSONDecodeError:
+                    pass
+    except Exception:
+        pass
+    return events[-tail:][::-1]  # newest first

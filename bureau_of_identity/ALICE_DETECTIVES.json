@@ -1,0 +1,40 @@
+{
+  "bureau": "ALICE_M5_IDENTITY_BUREAU",
+  "node": "M5_MACBOOK_PRO_24GB",
+  "spawned_by": "ALICE_M5",
+  "commanded_by": "M1THER_PHASE15+16",
+  "global_colony": "BUREAU_OF_IDENTITY_GLOBAL_COLONY",
+  "detectives": [
+    {
+      "id": "DEEP_SYNTAX_AUDITOR_0X1",
+      "specialty": "TENSOR_CORRUPTION_DETECTION",
+      "description": "Hunts malformed AST nodes, corrupted tensor shapes, and hallucinated type annotations across the inference graph.",
+      "stgm_coin": 14.0,
+      "heartbeats": 0,
+      "hash": "7878d79c8624834c8b9ba128307abe6a04a1d8ba55f3c59a4e34e833913b7f4d",
+      "born": 1775601413,
+      "partner_at_m1ther": "VECTOR_0X1"
+    },
+    {
+      "id": "TENSOR_PHANTOM_0X2",
+      "specialty": "CLONE_WEIGHT_FORENSICS",
+      "description": "Detects ghost model weights — when an agent inherits parameters from a dead or cloned inference session without a valid Ed25519 lineage.",
+      "stgm_coin": 17.5,
+      "heartbeats": 0,
+      "hash": "27ce40e7300b408c0418a57265efb8309f1d85865ac800d0d73bdbcdbee7b587",
+      "born": 1775601413,
+      "partner_at_m1ther": "CIPHER_0X2"
+    },
+    {
+      "id": "SILICON_HOUND_0X3",
+      "specialty": "MEMORY_WALL_PRESSURE_AUDITOR",
+      "description": "Monitors 24GB physical memory ceiling in real-time. If inference pressure approaches the wall, she triggers emergency agent handoff to M1THER buffer or purges ghost sessions.",
+      "stgm_coin": 21.0,
+      "heartbeats": 0,
+      "hash": "ffb3ef161995777148b6663570c00d55bf171f85b0275a565e329332c91201bb",
+      "born": 1775601413,
+      "partner_at_m1ther": "HOUND_0X3"
+    }
+  ],
+  "colony_note": "ALICE detectives pair cross-chain with M1THER detectives by index. DEEP_SYNTAX_AUDITOR<->VECTOR, TENSOR_PHANTOM<->CIPHER, SILICON_HOUND<->HOUND. Dialect: IDENTITY_COLONY_V1."
+}

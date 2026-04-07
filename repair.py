@@ -32,6 +32,7 @@ OLLAMA_URL    = "http://localhost:11434/api/generate"
 REPAIR_MODEL = "qwen3.5:0.8b"
 FALLBACK_MODEL = "qwen3.5:4b"
 LOG_PATH     = Path(__file__).parent / "repair_log.jsonl"
+LOCAL_SERVER_URL = "http://localhost:7433"  # For fee reporting
 MODEL_TIMEOUTS = {"qwen3.5:0.8b": 30, "qwen3.5:4b": 90, "deepseek-coder:6.7b": 120, "gemma4:latest": 120}
 
 SURGICAL_PROMPT = """\
@@ -103,11 +104,12 @@ def stitch_bite(filepath: Path, fixed_text: str, start: int, end: int, original_
 
 
 # ─── LLM CALL (Streaming — tokens print live into SSE pipeline) ──────────────
-def call_ollama(prompt: str, model: str = "qwen3.5:0.8b") -> str | None:
+def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "") -> str | None:
     import json
     import urllib.request
 
-    url = "http://localhost:11434/api/generate"
+    base = ollama_base.rstrip("/") if ollama_base else "http://localhost:11434"
+    url = f"{base}/api/generate"
     data = {
         "model": model,
         "prompt": (
@@ -188,14 +190,14 @@ def call_ollama(prompt: str, model: str = "qwen3.5:0.8b") -> str | None:
         return result.strip() or None
 
     except Exception as e:
-        print(f"  [OLLAMA ERROR] {e}")
+        print(f"  [OLLAMA ERROR] {e} (endpoint: {base})")
         return None
 
 
-def ollama_healthy() -> bool:
+def ollama_healthy(base: str = "http://localhost:11434") -> bool:
     """Passive health check — is the daemon responding right now?"""
     try:
-        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3)
+        urllib.request.urlopen(f"{base}/api/tags", timeout=3)
         return True
     except Exception:
         return False
@@ -494,7 +496,7 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     return True
 
 
-def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "qwen3.5:0.8b", base_url: str = "", api_key: str = "", verify: bool = False):
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "qwen3.5:0.8b", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = ""):
     root = Path(target_dir)
     # ─── File routing: ITT subtitle files get exorcism protocol ──────────────────
     if root.is_file() and root.suffix == ".itt":
@@ -648,13 +650,39 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
 
             if not fixed_chunk:
                 print(f"  [LLM] Sending {bite_end - bite_start} lines to {provider.upper()} ({model})...")
-                if provider == "ollama":
-                    if ensure_ollama() and ensure_model_pulled(model):
-                        fixed_chunk = call_ollama(chunk, model=model)
+                # ── Remote Ollama (borrowed inference) ──────────────────────────
+                if remote_ollama_url and provider == "ollama":
+                    print(f"  [WORMHOLE] Routing inference to remote node: {remote_ollama_url}")
+                    remote_base = remote_ollama_url.rstrip("/")
+                    if ollama_healthy(remote_base):
+                        fixed_chunk = call_ollama(chunk, model=model, ollama_base=remote_base)
+                        if fixed_chunk:
+                            # ── Auto-record STGM fee on the local ledger ─────────
+                            try:
+                                from inference_economy import calculate_fee, record_inference_fee
+                                _tokens = len(chunk.split()) * 2  # rough token estimate
+                                _fee = calculate_fee(_tokens)
+                                record_inference_fee(
+                                    borrower_id    = state.get("id", "UNKNOWN"),
+                                    lender_node_ip = remote_ollama_url,
+                                    fee_stgm       = _fee,
+                                    model          = model,
+                                    tokens_used    = _tokens,
+                                    file_repaired  = str(filepath),
+                                )
+                            except Exception as _fe:
+                                print(f"  [ECONOMY] Fee recording error: {_fe}")
                     else:
-                        print(f"  [OLLAMA] Model not available. Skipping LLM layer.")
-                else:
-                    fixed_chunk = call_openai_api(chunk, model=model, base_url=base_url, api_key=api_key)
+                        print(f"  [WORMHOLE] Remote node {remote_ollama_url} unreachable. Falling back to local.")
+                # ── Local Ollama ─────────────────────────────────────────────────
+                if not fixed_chunk:
+                    if provider == "ollama":
+                        if ensure_ollama() and ensure_model_pulled(model):
+                            fixed_chunk = call_ollama(chunk, model=model)
+                        else:
+                            print(f"  [OLLAMA] Model not available. Skipping LLM layer.")
+                    else:
+                        fixed_chunk = call_openai_api(chunk, model=model, base_url=base_url, api_key=api_key)
 
             # ── fallback to 4b if 0.8b fails ──────────────────────────────────
             if not fixed_chunk and provider == "ollama" and state["style"] != "AGGRESSIVE":
@@ -876,6 +904,8 @@ if __name__ == "__main__":
     parser.add_argument("--api-key", default="")
     parser.add_argument("--verify", action="store_true",
                         help="Perform runtime verification (try importing the file) after stitching")
+    parser.add_argument("--remote-ollama", default="",
+                        help="Remote Ollama base URL for borrowed inference (e.g. http://192.168.1.10:11434). Automatically charges STGM fee.")
     args = parser.parse_args()
 
     if args.body:
@@ -898,5 +928,6 @@ if __name__ == "__main__":
         model=args.model,
         base_url=args.base_url,
         api_key=args.api_key,
-        verify=args.verify
+        verify=args.verify,
+        remote_ollama_url=args.remote_ollama,
     )

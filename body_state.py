@@ -55,7 +55,23 @@ def find_healthy_agent(exclude_id: str) -> dict | None:
     return None
 
 class SwarmBody:
-    FACES = {"M1THER": "[O_O]", "ANTIALICE": "[o|o]", "SEBASTIAN": "[_o_]", "HERMES": "[_v_]", "IMPERIAL": "[@_@]"}
+    FACES = {
+        # — Primary Nodes —
+        "ALICE_M5":  "[_o_]",   # Queen — 24GB MacBook Pro — Heavy Inference Engine
+        "M1THER":    "[O_O]",   # Mac Mini 8GB — Nervous System / PM2 Anchor
+        # — Repair Swimmers —
+        "ANTIALICE": "[o|o]",
+        "SEBASTIAN": "[_o_]",
+        "HERMES":    "[_v_]",
+        "IMPERIAL":  "[@_@]",
+        "STEVEJOBS": "[_]",
+        # — Bureau Detectives (HIDDEN — rest on couch when no cases) —
+        "DEEP_SYNTAX_AUDITOR_0X1": "[^_&]",  # Tensor corruption hunter
+        "TENSOR_PHANTOM_0X2":      "[^_&]",  # Clone weight forensics
+        "SILICON_HOUND_0X3":       "[^_&]",  # 24GB memory wall monitor
+    }
+    # Detectives are hidden from main panel when RESTING — only shown when ACTIVE
+    DETECTIVE_IDS = {"DEEP_SYNTAX_AUDITOR_0X1", "TENSOR_PHANTOM_0X2", "SILICON_HOUND_0X3"}
     
     def __init__(self, agent_id):
         self.agent_id = agent_id.upper()

@@ -1,0 +1,10 @@
+[GENRE]
+Cinematic Synthwave / Lo-Fi Narrative Hip Hop
+
+[THEME & LYRICS PROMPT]
+Write a reflective, driving song about the ghosts of Hollywood and the power of the written word. Weave together three distinct stories into one narrative:
+1. The collision of generations in comedy - a veteran boomer diva and a hungry millennial writer finding common ground on stage before taking their final bow (inspired by the final season of Hacks).
+2. The modern strike and victory of the scribes - writers standing together on the picket lines, fighting the rise of machines, securing a four-year pact to protect their human art from AI training arrays.
+3. A somber tribute to a television legend passing away at 74 (inspired by Eric Overmyer). A playwright who walked the gritty streets of Baltimore (The Wire, Homicide) and Los Angeles (Bosch), leaving his indelible script behind as the screen fades to black.
+
+The song should feel like a late-night drive down Sunset Boulevard, transitioning from the sparkling lights of a comedy club to the picket lines, and finally ending on a moving, bittersweet tribute to a departed television master.

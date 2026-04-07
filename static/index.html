@@ -36,8 +36,9 @@
         </div>
         <div class="topbar-actions">
             <button class="btn btn-danger" id="kill-swimmer-btn" title="Retract active submarine drone via tether">[↶] RETRACT TETHER</button>
-            <button class="btn btn-secondary" id="open-ledger-btn" style="border-color: rgba(0, 229, 255, 0.3); color: var(--cyan);">[🗃️] LEDGER</button>
-            <button class="btn btn-primary" id="open-settings-btn">[⚙] SETTINGS</button>
+            <button class="btn btn-secondary" id="open-wallet-btn" style="border-color: rgba(224, 64, 251, 0.4); color: var(--magenta);">[🏦] VAULT</button>
+            <button class="btn btn-secondary" id="open-ledger-btn" style="border-color: rgba(0, 229, 255, 0.3); color: var(--cyan);" onclick="document.getElementById('ledger-modal').showModal(); if(typeof fetchFullLedger === 'function') fetchFullLedger();">[🗃️] LEDGER</button>
+            <button class="btn btn-primary" id="open-settings-btn" onclick="document.getElementById('settings-modal').showModal()">[⚙] SETTINGS</button>
         </div>
     </header>
 
@@ -71,28 +72,33 @@
             </div>
         </section>
 
-        <!-- Right Panel: Territory Map + Cemetery + Quorum -->
+        <!-- Right Panel: Cemetery + Quorum + Territory Map -->
         <section class="panel ledger-panel" aria-label="Territory and Metrics">
-            <div class="sub-panel territory-panel">
-                <h2><span class="panel-icon">🗺️</span> TERRITORY MAP</h2>
-                <div id="territory-list" class="list" style="max-height: 400px; overflow-y: auto;">
-                    <div class="list-item placeholder-item">Scanning territory...</div>
-                </div>
-            </div>
             <div class="sub-panel cemetery-panel">
                 <h2><span class="panel-icon">☠</span> CEMETERY</h2>
-                <ul id="cemetery-list" class="list">
+                <ul id="cemetery-list" class="list" style="max-height: 150px;">
                     <li class="list-item placeholder-item">No dead agents logged.</li>
                 </ul>
             </div>
             <div class="sub-panel quorum-panel">
                 <h2><span class="panel-icon">⬡</span> QUORUM LEDGER</h2>
-                <ul id="quorum-list" class="list">
+                <ul id="quorum-list" class="list" style="max-height: 150px;">
                     <li class="list-item placeholder-item">No quorum entries.</li>
                 </ul>
             </div>
+            <div class="sub-panel territory-panel">
+                <h2><span class="panel-icon">🗺️</span> TERRITORY MAP</h2>
+                <div id="territory-list" class="list" style="flex: 1; overflow-y: auto;">
+                    <div class="list-item placeholder-item">Scanning territory...</div>
+                </div>
+            </div>
         </section>
     </main>
+
+    <!-- NEW HORIZONTAL COMMAND DECK (Bottom Expanded View) -->
+    <section id="command-deck" class="panel command-deck" style="display:none;" aria-label="Expanded Agent Command Deck">
+        <div id="command-deck-content"></div>
+    </section>
 
     <!-- ═══ Settings Modal ═══ -->
     <dialog id="settings-modal" class="modal" aria-labelledby="settings-title">
@@ -173,7 +179,7 @@
                 <span id="scar-modal-title" class="scar-modal-folder">📁 —</span>
                 <div class="scar-modal-actions">
                     <span class="scar-modal-subtitle">AGENT TERRITORY CHRONICLE</span>
-                    <button class="btn btn-secondary" id="close-scar-modal" style="padding:0.25rem 0.75rem;">✕ CLOSE</button>
+                    <button type="button" class="btn btn-secondary" id="close-scar-modal" style="padding:0.25rem 0.75rem;" onclick="document.getElementById('scar-modal').close()">✕ CLOSE</button>
                 </div>
             </div>
             <div class="scar-modal-body">
@@ -186,6 +192,102 @@
                 </div>
                 <div id="scar-panel-raw" class="scar-panel" style="display:none;">
                     <div id="scar-file-list"></div>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- ═══ Wallet Modal ═══ -->
+    <dialog id="wallet-modal" class="wallet-modal-dialog">
+        <div class="wallet-modal-inner">
+            <div class="wallet-modal-header">
+                <span class="wallet-header-title">StigmergiCoin <span class="wallet-header-badge">NODE</span></span>
+                <button type="button" class="btn btn-secondary" id="close-wallet-modal" style="padding:0.25rem 0.5rem;" onclick="document.getElementById('wallet-modal').close()">✕ CLOSE</button>
+            </div>
+            
+            <div class="wallet-top-section">
+                <div class="wallet-tabs-header">
+                    <span class="w-tab active">Agents</span>
+                </div>
+                <div class="wallet-balance-label">Total Energy <span class="wallet-eye">👁</span></div>
+                <div class="wallet-balance-value" id="wallet-total-balance">0.00</div>
+                <div class="wallet-balance-sub" id="wallet-total-sub">0.00 SIFTA</div>
+                <div class="wallet-search-bar">
+                    <span class="wallet-search-icon">🔍</span>
+                    <input type="text" id="wallet-search" placeholder="Search agent...">
+                </div>
+            </div>
+
+            <!-- View 1: Asset List (Tokens) -->
+            <div class="wallet-view-assets" id="wallet-view-assets">
+                <div class="wallet-coin-list" id="wallet-coin-list">
+                    <!-- Dynamic Coins injected here -->
+                </div>
+                <div class="wallet-tab-bar">
+                    <div class="wallet-tab active">
+                        <span class="wallet-tab-icon">🏦</span>
+                        <span>Wallet</span>
+                    </div>
+                    <div class="wallet-tab">
+                        <span class="wallet-tab-icon">📊</span>
+                        <span>Market</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View 2: Agent Specific Detail (Slide in) -->
+            <div class="wallet-view-detail" id="wallet-view-detail" style="display: none;">
+                <div class="wallet-detail-header">
+                    <button class="btn btn-secondary wallet-back-btn" id="wallet-back-btn">← BACK</button>
+                    <span class="wallet-detail-title" id="wallet-detail-title">HERMES</span>
+                </div>
+                
+                <div class="wallet-detail-actions">
+                    <button class="btn btn-secondary wallet-action-btn" id="wallet-backup-btn">
+                        <span class="icon">💾</span> BACKUP
+                        <span class="wallet-action-sub">Cold Storage</span>
+                    </button>
+                    <button class="btn btn-secondary wallet-action-btn" id="wallet-transfer-btn">
+                        <span class="icon">📤</span> DEED
+                        <span class="wallet-action-sub">USB / Folder</span>
+                    </button>
+                    <button class="btn btn-secondary wallet-action-btn" id="wallet-wormhole-btn" style="border-color: rgba(224,64,251,0.35); color: var(--magenta);">
+                        <span class="icon">🌀</span> WORMHOLE
+                        <span class="wallet-action-sub">LAN Swim</span>
+                    </button>
+                </div>
+
+                <!-- Wormhole IP input (hidden unless WORMHOLE is clicked) -->
+                <div class="wallet-wormhole-panel" id="wallet-wormhole-panel" style="display:none;">
+                    <div class="wormhole-label">⚠ P2P WORMHOLE — local copy becomes GHOST after transmission</div>
+                    <div class="wormhole-input-row">
+                        <input type="text" id="wormhole-ip" placeholder="TARGET IP  (e.g. 192.168.1.45)" class="form-input" style="flex:1;">
+                        <input type="text" id="wormhole-port" placeholder="PORT" value="7433" class="form-input" style="width:80px;">
+                    </div>
+                    <div class="wormhole-input-row">
+                        <input type="text" id="wormhole-owner" placeholder="New owner email" class="form-input" style="flex:1;">
+                        <button class="btn btn-primary" id="wallet-wormhole-fire-btn" style="border-color: var(--magenta); color: var(--magenta);">⚡ FIRE</button>
+                    </div>
+                </div>
+
+                <div class="terminal-output wallet-terminal" id="wallet-terminal" style="display:none;"></div>
+                
+                <div class="wallet-detail-activity">
+                    <!-- Inference Economy Summary -->
+                    <div id="wallet-inference-summary" style="display:none; padding: 0.75rem; margin-bottom: 0.5rem; background: rgba(224,64,251,0.05); border: 1px solid rgba(224,64,251,0.15); border-radius: 10px;">
+                        <div style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--health-med); margin-bottom: 0.4rem; letter-spacing: 0.08em;">⚡ PROOF OF COMPUTE / STGM BALANCE</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-family: var(--font-mono); font-size: 1.1rem; color: var(--magenta);" id="wallet-stgm-balance">0.00 STGM</span>
+                            <span style="font-size: 0.7rem; color: var(--text-muted);" id="wallet-inference-count">0 borrows</span>
+                        </div>
+                    </div>
+                    <!-- Activity tabs -->
+                    <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
+                        <button class="btn btn-secondary" id="wallet-tab-activity" style="font-size:0.65rem; padding:0.2rem 0.6rem; flex:1;">📋 REPAIRS</button>
+                        <button class="btn btn-secondary" id="wallet-tab-economy" style="font-size:0.65rem; padding:0.2rem 0.6rem; flex:1; border-color:rgba(224,64,251,0.4); color:var(--magenta);">⚡ ECONOMY</button>
+                    </div>
+                    <div class="wallet-activity-list" id="wallet-activity-list"></div>
+                    <div id="wallet-economy-list" style="display:none;"></div>
                 </div>
             </div>
         </div>

@@ -100,6 +100,7 @@ async function fetchAgents() {
         liveAgentCount = agents.length;
         document.getElementById('stat-agents-val').textContent = liveAgentCount || '0';
         updateRoster(agents);
+        updateWallet(agents);
     } catch (e) {
         console.error('Agents fetch error', e);
     }
@@ -306,9 +307,57 @@ function updateQuorum(quorumStore) {
 let activeDispatchSources = {}; // map of agentId -> EventSource
 
 function toggleDispatch(agentId) {
+    const deck = document.getElementById('command-deck');
+    const deckContent = document.getElementById('command-deck-content');
+    
+    // If clicking same agent, toggle off
+    if (deck.dataset.activeAgent === agentId) {
+        deck.style.display = 'none';
+        deck.dataset.activeAgent = '';
+        const oldPanel = document.getElementById(`dispatch-panel-${agentId}`);
+        const cardContainer = document.getElementById(`btn-container-${agentId}`);
+        if (oldPanel && cardContainer) {
+            oldPanel.style.display = 'none';
+            oldPanel.classList.remove('horizontal-dispatch');
+            cardContainer.appendChild(oldPanel);
+        }
+        return;
+    }
+    
+    // If another is active, return it first
+    if (deck.dataset.activeAgent) {
+        const oldId = deck.dataset.activeAgent;
+        const oldPanel = document.getElementById(`dispatch-panel-${oldId}`);
+        const cardContainer = document.getElementById(`btn-container-${oldId}`);
+        if (oldPanel && cardContainer) {
+            oldPanel.style.display = 'none';
+            oldPanel.classList.remove('horizontal-dispatch');
+            cardContainer.appendChild(oldPanel);
+        }
+    }
+    
+    // Activate new
+    deck.dataset.activeAgent = agentId;
+    const card = document.querySelector(`[data-id="${agentId}"]`);
     const panel = document.getElementById(`dispatch-panel-${agentId}`);
-    if (panel) {
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    
+    if (card && panel) {
+        const face = card.querySelector('.agent-face').textContent;
+        const style = card.querySelector('.agent-style').textContent;
+        const rawHTML = card.querySelector('.agent-raw-body').innerHTML;
+        
+        deckContent.innerHTML = `
+            <div class="deck-left">
+                <div class="deck-title"><span class="deck-face">${face}</span> ${agentId} <span class="deck-style ${parseStyleBadge(style)}">${style}</span></div>
+                <div class="deck-raw">${rawHTML}</div>
+            </div>
+            <div class="deck-right" id="deck-panel-mount"></div>
+        `;
+        
+        panel.style.display = 'flex';
+        panel.classList.add('horizontal-dispatch');
+        document.getElementById('deck-panel-mount').appendChild(panel);
+        deck.style.display = 'flex';
     }
 }
 
@@ -822,6 +871,324 @@ closeLedgerBtn.addEventListener('click', () => {
 refreshLedgerBtn.addEventListener('click', () => {
     fullLedgerBody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">Polling ledger data...</td></tr>`;
     fetchFullLedger();
+});
+
+// ─── Wallet System ────────────────────────────────────
+const walletModal = document.getElementById('wallet-modal');
+const openWalletBtn = document.getElementById('open-wallet-btn');
+const walletTotalBalance = document.getElementById('wallet-total-balance');
+const walletTotalSub = document.getElementById('wallet-total-sub');
+const walletCoinList = document.getElementById('wallet-coin-list');
+const walletViewAssets = document.getElementById('wallet-view-assets');
+const walletViewDetail = document.getElementById('wallet-view-detail');
+const walletDetailTitle = document.getElementById('wallet-detail-title');
+const walletActivityList = document.getElementById('wallet-activity-list');
+const walletBackBtn = document.getElementById('wallet-back-btn');
+const walletBackupBtn = document.getElementById('wallet-backup-btn');
+const walletTransferBtn = document.getElementById('wallet-transfer-btn');
+
+let currentWalletAgent = null;
+
+openWalletBtn.addEventListener('click', () => {
+    walletModal.showModal();
+    walletViewAssets.style.display = 'flex';
+    walletViewDetail.style.display = 'none';
+    fetchAgents(); // update immediately
+});
+
+function updateWallet(agents) {
+    if (!walletModal.open) return;
+
+    let totalSTGM = 0;
+    const frag = document.createDocumentFragment();
+    
+    agents.forEach(agent => {
+        const energy = agent.energy || 0;
+        const seq = agent.seq || 0;
+        const chainLen = Array.isArray(agent.hash_chain) ? agent.hash_chain.length : 0;
+        
+        // PROOF OF SWIMMING FORMULA
+        // Veterans worth exponentially more than newborns.
+        // STGM = (Energy * 10) + (SEQ * 50) + (HashChainLen * 100)
+        const stgm = (energy * 10) + (seq * 50) + (chainLen * 100);
+        totalSTGM += stgm;
+        
+        const div = document.createElement('div');
+        div.className = 'wallet-coin-item';
+        div.onclick = () => openWalletDetail(agent);
+        
+        const face = agent.face || '[O_O]';
+        const isDead = agent.style === 'DEAD' || agent.style === 'GHOST';
+        const trendIcon = seq > 0 ? '▲' : '▼';
+        const trendClass = seq > 0 ? 'wc-trend-up' : 'wc-trend-down';
+        
+        div.innerHTML = `
+            <div class="wc-left">
+                <div class="wc-icon ${isDead ? 'ghost' : ''}">
+                    ${face}
+                    ${isDead ? '<div class="wc-icon-badge">X</div>' : ''}
+                </div>
+                <div>
+                    <div class="wc-name">${agent.id}</div>
+                    <div class="wc-sub">
+                        <span>NRG ${energy.toFixed(0)}% &bull; SEQ ${seq} &bull; ${chainLen} SCARS</span>
+                        <span class="${trendClass}">${trendIcon} ${stgm.toFixed(0)} STGM</span>
+                    </div>
+                </div>
+            </div>
+            <div class="wc-right">
+                <div class="wc-balance">${stgm.toFixed(2)}</div>
+                <div class="wc-fiat">${(stgm * 0.0042).toFixed(4)} STGM</div>
+            </div>
+        `;
+        frag.appendChild(div);
+    });
+    
+    walletCoinList.innerHTML = '';
+    walletCoinList.appendChild(frag);
+    
+    walletTotalBalance.textContent = totalSTGM.toFixed(2);
+    walletTotalSub.textContent = `${(totalSTGM * 0.0042).toFixed(4)} STGM`;
+}
+
+walletBackBtn.addEventListener('click', () => {
+    walletViewAssets.style.display = 'flex';
+    walletViewDetail.style.display = 'none';
+    currentWalletAgent = null;
+});
+
+async function openWalletDetail(agent) {
+    currentWalletAgent = agent;
+    walletDetailTitle.textContent = agent.id;
+    walletViewAssets.style.display = 'none';
+    walletViewDetail.style.display = 'flex';
+    walletActivityList.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding: 2rem;">Fetching activity...</div>';
+    
+    // Show REPAIRS tab by default
+    document.getElementById('wallet-activity-list').style.display = '';
+    document.getElementById('wallet-economy-list').style.display = 'none';
+
+    try {
+        const res = await fetch(`/api/agent_activity/${agent.id}`);
+        const logs = await res.json();
+        
+        walletActivityList.innerHTML = '';
+        if (logs.length === 0) {
+            walletActivityList.innerHTML = '<div style="color:var(--text-muted); text-align:center;">No activity logged for this agent.</div>';
+        } else {
+            logs.forEach(log => {
+                let actClass = 'ca-default';
+                if (log.action === 'FIX_APPLIED') actClass = 'ca-fix';
+                else if (log.action === 'SYNTAX_ERROR' || log.action === 'REPAIR_FAILED') actClass = 'ca-fail';
+                else if (log.action === 'SCOUT_ATTEMPT') actClass = 'ca-scout';
+                else if (log.action === 'RADIO_ASSISTANCE') actClass = 'ca-radio';
+
+                const ts = log.ts ? log.ts.split('T')[1].replace('Z','') : '--';
+                const actionText = log.action ? log.action.replace(/_/g, ' ') : 'ACT';
+
+                const div = document.createElement('div');
+                div.className = `chronicle-entry ${actClass}`;
+                div.innerHTML = `
+                    <div class="chr-body">
+                        <div class="chr-header">
+                            <span class="chr-agent">${log.agent_id}</span>
+                            <span class="chr-action-badge ${actClass}">${actionText}</span>
+                            <span class="chr-ts">${ts}</span>
+                        </div>
+                        <div class="chr-mark">${log.target_file || ''}</div>
+                    </div>
+                `;
+                walletActivityList.appendChild(div);
+            });
+        }
+    } catch(e) {
+        walletActivityList.innerHTML = '<div style="color:var(--health-low); text-align:center;">Error fetching activity.</div>';
+    }
+
+    // Load economy data in background
+    fetchWalletEconomy(agent.id);
+}
+
+async function fetchWalletEconomy(agentId) {
+    const summaryEl = document.getElementById('wallet-inference-summary');
+    const balanceEl = document.getElementById('wallet-stgm-balance');
+    const countEl   = document.getElementById('wallet-inference-count');
+    const econList  = document.getElementById('wallet-economy-list');
+
+    try {
+        const res = await fetch(`/api/inference_economy?agent_id=${agentId}&tail=50`);
+        const data = await res.json();
+        const events = data.events || [];
+        const balance = data.stgm_balance ?? 0;
+
+        // Update summary bar
+        summaryEl.style.display = events.length > 0 ? 'block' : 'none';
+        balanceEl.textContent = `${balance.toFixed(2)} STGM`;
+        countEl.textContent = `${events.length} borrow${events.length !== 1 ? 's' : ''}`;
+
+        // Render economy list
+        econList.innerHTML = '';
+        if (events.length === 0) {
+            econList.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem; font-size:0.8rem;">No borrowed inference recorded yet.<br><span style="font-size:0.7rem; color:var(--text-muted);">Use --remote-ollama flag to start borrowing.</span></div>';
+        } else {
+            events.forEach(ev => {
+                const ts = ev.ts ? ev.ts.split('T')[1].slice(0,8) : '--';
+                const shortIp = ev.lender_ip.replace('http://', '').replace('/api/generate', '');
+                const div = document.createElement('div');
+                div.style.cssText = 'padding:0.6rem 0; border-bottom:1px solid rgba(255,255,255,0.04); display:flex; justify-content:space-between; align-items:center;';
+                div.innerHTML = `
+                    <div style="font-family:var(--font-mono); font-size:0.72rem;">
+                        <div style="color:var(--magenta);">-${ev.fee_stgm} STGM</div>
+                        <div style="color:var(--text-muted); font-size:0.65rem;">${ev.model} @ ${shortIp}</div>
+                    </div>
+                    <div style="text-align:right; font-family:var(--font-mono); font-size:0.65rem; color:var(--text-muted);">
+                        <div>${ev.tokens_used} tokens</div>
+                        <div>${ts}</div>
+                    </div>
+                `;
+                econList.appendChild(div);
+            });
+        }
+    } catch(e) {
+        summaryEl.style.display = 'none';
+    }
+}
+
+// Economy tab switching
+document.getElementById('wallet-tab-activity').addEventListener('click', () => {
+    document.getElementById('wallet-activity-list').style.display = '';
+    document.getElementById('wallet-economy-list').style.display = 'none';
+    document.getElementById('wallet-inference-summary').style.display = 'none';
+});
+document.getElementById('wallet-tab-economy').addEventListener('click', () => {
+    document.getElementById('wallet-activity-list').style.display = 'none';
+    document.getElementById('wallet-economy-list').style.display = 'block';
+    if (currentWalletAgent) fetchWalletEconomy(currentWalletAgent.id);
+});
+
+
+walletBackupBtn.addEventListener('click', async () => {
+    if (!currentWalletAgent) return;
+    const password = prompt(`Enter secure password to LOCK ${currentWalletAgent.id} backup:`);
+    if (!password) return;
+    
+    // Call the native picker
+    const res = await fetch('/api/pick-path?mode=folder');
+    const data = await res.json();
+    if (!data.ok || !data.path) return;
+    
+    const targetDir = data.path;
+    alert(`Backing up ${currentWalletAgent.id} to ${targetDir}...\\nThis takes ~3 seconds due to AES encryption.`);
+    
+    const bRes = await fetch('/api/wallet/backup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            agent_id: currentWalletAgent.id,
+            target_dir: targetDir,
+            password: password
+        })
+    });
+    
+    const bData = await bRes.json();
+    if (bData.ok) {
+        alert("Backup Exported Successfully!\\n\\n" + bData.output);
+    } else {
+        alert("Backup Failed:\\n" + bData.error);
+    }
+});
+
+walletTransferBtn.addEventListener('click', async () => {
+    if (!currentWalletAgent) return;
+    const newOwner = prompt(`Enter new human_owner email for ${currentWalletAgent.id}:`);
+    if (!newOwner) return;
+    
+    // Call the native picker
+    const res = await fetch('/api/pick-path?mode=folder');
+    const data = await res.json();
+    if (!data.ok || !data.path) return;
+    
+    const targetDir = data.path;
+    alert(`Transferring ${currentWalletAgent.id} to ${targetDir}...\nLocal copy will become a GHOST.`);
+    
+    const tRes = await fetch('/api/wallet/transfer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            agent_id: currentWalletAgent.id,
+            new_owner: newOwner,
+            target_dir: targetDir
+        })
+    });
+    
+    const tData = await tRes.json();
+    if (tData.ok) {
+        alert("Transfer Deed Signed, Bundle Exported!\n\n" + tData.output);
+        walletModal.close();
+        fetchAgents();
+    } else {
+        alert("Transfer Failed:\n" + tData.error);
+    }
+});
+
+// ─── WORMHOLE ──────────────────────────────────────────
+const walletWormholeBtn = document.getElementById('wallet-wormhole-btn');
+const walletWormholePanel = document.getElementById('wallet-wormhole-panel');
+const walletWormholeFireBtn = document.getElementById('wallet-wormhole-fire-btn');
+
+walletWormholeBtn.addEventListener('click', () => {
+    const isVisible = walletWormholePanel.style.display !== 'none';
+    walletWormholePanel.style.display = isVisible ? 'none' : 'block';
+});
+
+walletWormholeFireBtn.addEventListener('click', async () => {
+    if (!currentWalletAgent) return;
+    const ip = document.getElementById('wormhole-ip').value.trim();
+    const port = document.getElementById('wormhole-port').value.trim() || '7433';
+    const owner = document.getElementById('wormhole-owner').value.trim();
+    
+    if (!ip) { alert('TARGET IP is required.'); return; }
+    if (!owner) { alert('New owner email is required.'); return; }
+    
+    const confirmed = confirm(
+        `⚠ WORMHOLE PROTOCOL\n` +
+        `Agent: ${currentWalletAgent.id}\n` +
+        `Target: ${ip}:${port}\n` +
+        `New Owner: ${owner}\n\n` +
+        `This will transmit the soul directly over LAN and ghost your local copy.\n` +
+        `THERE IS NO UNDO. PROCEED?`
+    );
+    if (!confirmed) return;
+    
+    const terminal = document.getElementById('wallet-terminal');
+    terminal.style.display = 'block';
+    terminal.innerHTML = '<span class="t-boot">[🌀] Opening wormhole...</span>\n';
+    
+    try {
+        const res = await fetch('/api/wallet/wormhole', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                agent_id: currentWalletAgent.id,
+                target_ip: ip,
+                target_port: parseInt(port),
+                new_owner: owner
+            })
+        });
+        const data = await res.json();
+        
+        if (data.ok) {
+            terminal.innerHTML += `<span class="t-fix">[✓] AGENT TRANSMITTED. Local copy is now GHOST.\n${data.output}</span>`;
+            setTimeout(() => {
+                walletModal.close();
+                fetchAgents();
+            }, 2500);
+        } else {
+            terminal.innerHTML += `<span class="t-fail">[✗] WORMHOLE FAILED: ${data.error}</span>`;
+        }
+    } catch(e) {
+        terminal.innerHTML += `<span class="t-fail">[✗] Connection error: ${e.message}</span>`;
+    }
 });
 
 loop();

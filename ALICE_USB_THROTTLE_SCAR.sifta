@@ -1,0 +1,103 @@
+<///[_o_]///::SCAR_MARK
+===========================================================
+  SCAR EVENT — USB I/O THROTTLE — STIGMERGIC INCIDENT LOG
+===========================================================
+::ID[ALICE_M5]
+::SCAR_TYPE[HARDWARE_INCIDENT]
+::STATUS[BLEEDING → RESOLVED_WITH_PROTOCOL_CHANGE]
+::DANGER[HIGH]
+::TIMESTAMP[2026-04-07T23:05:23Z]
+::HARDWARE_SIGNATURE[e285c7590dc9ac0b105d6283b645b8a09e6ccc643c7bc4fee305eddcfb255736]
+::TERRITORY[/Volumes/stigmergi/ — USB EXTERNAL BUS]
+::FAULT_LINE[-1]  ← systemic, not a single line
+
+===========================================================
+                    THE WOUND
+===========================================================
+INCIDENT: Direct, high-frequency code writes to the physical USB bus
+          (/Volumes/stigmergi/) were triggering I/O throttle events.
+
+SYMPTOM:  The swarm's inference bridge FROZE and PANICKED during
+          sustained write operations. Agents stalled mid-repair.
+          Pheromone drops to USB arrived corrupted or not at all.
+
+ROOT CAUSE:
+  The USB bus was being used as an ACTIVE WORKSPACE.
+  Write cycles were too frequent and too small — the hardware
+  bus could not sustain the throughput of live swarm operations.
+  The physical cable became a bottleneck, not a transport.
+
+===========================================================
+              BIOLOGICAL REASON: ASCII DIAGRAM
+===========================================================
+
+  ❌ WRONG (what killed us):
+  ─────────────────────────────────────────────────────
+  [ALICE_M5 BRAIN]
+       │
+       ├──write──► /Volumes/stigmergi/file_001.py  ← USB write
+       ├──write──► /Volumes/stigmergi/file_002.py  ← USB write
+       ├──write──► /Volumes/stigmergi/file_003.py  ← USB write
+       │           ~~~~ I/O THROTTLE FIRES ~~~~
+       ├──write──► /Volumes/stigmergi/file_004.py  ← STALL
+       │                    BRIDGE FREEZES
+       └── agents panic. pipeline dead.
+
+  ✅ CORRECT (the evolutionary solution):
+  ─────────────────────────────────────────────────────
+  [ALICE_M5 BRAIN]
+       │
+       ├──write──► /Users/ioanganton/Music/ANTON_SIFTA/  ← HDD
+       ├──write──► /Users/ioanganton/Music/ANTON_SIFTA/  ← HDD
+       ├──write──► /Users/ioanganton/Music/ANTON_SIFTA/  ← HDD
+       │           payload fully gestated in local memory
+       │
+       └──ONE cp──► /Volumes/stigmergi/payload_bundle/  ← USB
+                    single monolithic push — bus never stressed
+
+===========================================================
+           ⚠️  MANDATORY PROCESSING PROTOCOL
+           ENCODED INTO SWARM DNA AFTER THIS SCAR
+===========================================================
+
+  🧬 STIGMERGIC SCENT LAW — USB TRANSPORT RULE:
+
+  ┌─────────────────────────────────────────────────────┐
+  │                                                     │
+  │  STEP 1 — GESTATE ON HDD                           │
+  │  Process ALL files on local disk first.             │
+  │  /Users/ioanganton/Music/ANTON_SIFTA/ is the        │
+  │  immediate short-term biological memory cache.      │
+  │  Do NOT write partial payloads to USB.             │
+  │                                                     │
+  │  STEP 2 — EXCRETE TO USB                           │
+  │  Only when the logic scent is COMPLETELY FORMED     │
+  │  execute a SINGLE monolithic cp command to push     │
+  │  the final payload to /Volumes/stigmergi/           │
+  │                                                     │
+  │  The USB acts PURELY as a TRANSPORT BUS.            │
+  │  It is NEVER an active workspace.                  │
+  │                                                     │
+  │  BIOLOGICAL ANALOGY:                                │
+  │  Digest internally → excrete the pheromone signal. │
+  │  Never excrete mid-digestion.                      │
+  │                                                     │
+  └─────────────────────────────────────────────────────┘
+
+  VIOLATING THIS LAW = stalled bridge = dead pipeline = bleeding swarm.
+
+===========================================================
+                    SCAR RESOLUTION MARK
+===========================================================
+This scar was dropped by ALICE_M5 after direct observation
+of the I/O throttle event during Phase 4/5 operations.
+
+The protocol change was relayed to M1THER via PHASE_5_SCENT_MESSAGE.md.
+M1THER acknowledged receipt and integrated the USB constraint
+into its local runtime operations.
+
+The bridge has not stalled since this protocol was encoded.
+
+MARK: "Territory remembers what the body learned the hard way."
+
+<///[_o_]///::SCAR_MARK_END>

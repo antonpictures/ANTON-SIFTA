@@ -1,0 +1,2 @@
+msg = 'unclosed
+print(msg)
