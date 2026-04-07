@@ -225,6 +225,78 @@ async def get_ollama_models():
         return {"models": [], "available": False, "error": str(e)}
 
 
+
+@app.get("/api/pick-path")
+async def pick_path(mode: str = "file"):
+    """Open native macOS Finder dialog and return the selected path."""
+    import subprocess
+    if mode == "folder":
+        script = 'POSIX path of (choose folder with prompt "Select target folder for ANTON-SIFTA swim:")'
+    else:
+        script = 'POSIX path of (choose file with prompt "Select target file for ANTON-SIFTA swim:")'
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=60
+        )
+        path = result.stdout.strip().rstrip("/")
+        if path:
+            return {"path": path, "ok": True}
+        return {"path": "", "ok": False, "reason": "cancelled"}
+    except Exception as e:
+        return {"path": "", "ok": False, "reason": str(e)}
+
+
+@app.get("/api/territory")
+async def get_territory():
+    """Scan and return all marked territories in the workspace (Swarm V2)."""
+    import pheromone
+    try:
+        root_path = Path(__file__).parent.absolute()
+        territories = pheromone.scan_all_territories(root_path)
+        return {"territories": territories}
+    except Exception as e:
+        return {"territories": [], "error": str(e)}
+
+
+@app.get("/api/scar_contents")
+async def scar_contents(folder: str = ""):
+    """Read the .scar files and SCARS.md from a given .sifta directory."""
+    if not folder:
+        return {"error": "Missing folder parameter"}, 400
+
+    folder_path = Path(folder)
+    if not folder_path.is_dir():
+        return {"error": "Invalid folder path"}, 400
+
+    sifta_path = folder_path / ".sifta"
+    if not sifta_path.is_dir():
+        return {"scars_md": None, "scar_files": []}
+
+    # Read SCARS.md if it exists
+    scars_md = None
+    md_path = sifta_path / "SCARS.md"
+    if md_path.is_file():
+        scars_md = md_path.read_text(encoding="utf-8")
+
+    # Read all .scar files
+    scar_files = []
+    for scar_file in sifta_path.glob("*.scar"):
+        try:
+            content = scar_file.read_text(encoding="utf-8")
+            scar_files.append({
+                "name": scar_file.name,
+                "content": content,
+                "modified": scar_file.stat().st_mtime
+            })
+        except Exception:
+            pass
+
+    scar_files.sort(key=lambda x: x["modified"], reverse=True)
+    return {"scars_md": scars_md, "scar_files": scar_files}
+
+
+
 class DispatchRequest(BaseModel):
     agent_id: str
     target_dir: str

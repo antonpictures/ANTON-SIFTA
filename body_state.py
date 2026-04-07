@@ -2,7 +2,11 @@ import hashlib
 import json
 import time
 import re
+import base64
 from pathlib import Path
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidSignature
 
 CEMETERY_DIR = Path(__file__).parent / "CEMETERY"
 CEMETERY_DIR.mkdir(exist_ok=True)
@@ -64,11 +68,22 @@ class SwarmBody:
             self.hash_chain = saved_state.get("hash_chain", [])
             self.energy = saved_state.get("energy", 100)
             self.style = saved_state.get("style", "NOMINAL")
+            self.private_key_b64 = saved_state.get("private_key_b64")
         else:
             self.sequence = 0
             self.hash_chain = []
             self.energy = 100
             self.style = "NOMINAL"
+            
+            # --- PROOF OF SWIMMING: FORGE THE CRYPTOGRAPHIC SOUL (Ed25519) ---
+            priv_key = ed25519.Ed25519PrivateKey.generate()
+            priv_bytes = priv_key.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            self.private_key_b64 = base64.b64encode(priv_bytes).decode('utf-8')
+            # -----------------------------------------------------------------
         
     def generate_body(self, origin, destination, payload, style=None, energy=None):
         if style is not None:
@@ -80,18 +95,41 @@ class SwarmBody:
         timestamp = int(time.time())
         ttl = timestamp + 604800 # 7-day Wild-Type Genome
         
-        # Cryptographic Mass (Hash Chaining using SHA-256)
-        raw_data = f"{self.agent_id}{payload}{self.sequence}{timestamp}"
+        # --- PROOF OF SWIMMING: DERIVE PUBLIC KEY (THE OWNER RECORD) ---
+        priv_bytes = base64.b64decode(self.private_key_b64)
+        priv_key = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
+        pub_key = priv_key.public_key()
+        pub_bytes = pub_key.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )
+        pub_b64 = base64.b64encode(pub_bytes).decode('utf-8')
+        # ---------------------------------------------------------------
+        
+        base_string = (f"<///{self.face}///::ID[{self.agent_id}]::OWNER[{pub_b64}]"
+                f"::FROM[{origin}]::TO[{destination}]"
+                f"::SEQ[{self.sequence:03d}]::T[{timestamp}]::TTL[{ttl}]"
+                f"::STYLE[{self.style}]::ENERGY[{self.energy}]")
+                
+        # Cryptographic Mass (Hash Chaining using SHA-256 for physical history)
+        raw_data = base_string
         if self.hash_chain:
             raw_data += self.hash_chain[-1] 
-        new_hash = hashlib.sha256(raw_data.encode()).hexdigest()
+            
+        new_hash = hashlib.sha256(raw_data.encode('utf-8')).hexdigest()
         self.hash_chain.append(new_hash)
         
-        body_string = (f"<///{self.face}///::ID[{self.agent_id}]::FROM[{origin}]::TO[{destination}]"
-                f"::SEQ[{self.sequence:03d}]::H[{new_hash}]::T[{timestamp}]::TTL[{ttl}]"
-                f"::STYLE[{self.style}]::ENERGY[{self.energy}]>")
+        # The payload to be signed by the private key
+        string_to_sign = base_string + f"::H[{new_hash}]"
+        
+        # --- PROOF OF SWIMMING: SIGN THE PAYLOAD ---
+        sig_bytes = priv_key.sign(string_to_sign.encode('utf-8'))
+        sig_b64 = base64.b64encode(sig_bytes).decode('utf-8')
+        
+        body_string = string_to_sign + f"::SIG[{sig_b64}]>"
+        # -------------------------------------------
                 
-        # Persist the current snapshot
+        # Persist the current snapshot (The private key NEVER leaves this .json)
         save_agent_state({
             "id": self.agent_id,
             "seq": self.sequence,
@@ -99,33 +137,83 @@ class SwarmBody:
             "energy": self.energy,
             "style": self.style,
             "raw": body_string,
-            "ttl": ttl
+            "ttl": ttl,
+            "private_key_b64": self.private_key_b64
         })
         
         return body_string
 
 def parse_body_state(ascii_body):
-    """The agent reads its own scars."""
-    id_match = re.search(r"::ID\[([\w\-]+)\]", ascii_body)
-    style_match = re.search(r"::STYLE\[(\w+)\]", ascii_body)
-    energy_match = re.search(r"::ENERGY\[(\d+)\]", ascii_body)
-    ttl_match = re.search(r"::TTL\[(\d+)\]", ascii_body)
+    """The agent reads and cryptographically verifies its Proof of Swimming."""
     
-    # Hash chain extraction for cemetery logic
-    hash_match = re.search(r"::H\[([\w\|]+)\]", ascii_body)
-    hash_chain = hash_match.group(1).split("|") if hash_match else []
+    # 1. Structural Regex for Signature (SIG)
+    match = re.search(r"^(.*?)::SIG\[([^\]]+)\]>$", ascii_body)
+    if not match:
+        raise Exception("SECURITY BREACH: Missing Ed25519 signature (SIG). Proof of Swimming failed.")
+        
+    string_to_verify = match.group(1)
+    sig_b64 = match.group(2)
     
-    seq_match = re.search(r"::SEQ\[(\d+)\]", ascii_body)
-    seq = int(seq_match.group(1)) if seq_match else 0
+    # 2. Extract Public Key (OWNER)
+    owner_match = re.search(r"::OWNER\[([^\]]+)\]", string_to_verify)
+    if not owner_match:
+        raise Exception("SECURITY BREACH: Missing OWNER public key.")
+    pub_b64 = owner_match.group(1)
+    
+    # 3. Verify Ed25519 Signature (Proof that the soul matches the body)
+    try:
+        pub_bytes = base64.b64decode(pub_b64)
+        sig_bytes = base64.b64decode(sig_b64)
+        pub_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
+        pub_key.verify(sig_bytes, string_to_verify.encode('utf-8'))
+    except InvalidSignature:
+        raise Exception("SECURITY BREACH: Ed25519 Signature Verification Failed! Forgery detected.")
+    except Exception as e:
+        raise Exception(f"SECURITY BREACH: Malformed cryptographic payload ({e})")
+        
+    # 4. Extract ID and Hash Chain 
+    id_match = re.search(r"::ID\[([\w\-]+)\]", string_to_verify)
+    if not id_match:
+        raise Exception("SECURITY BREACH: Unidentified body structure.")
+    agent_id = id_match.group(1)
+    
+    hash_match = re.search(r"^(.*?)::H\[([\w]+)\]$", string_to_verify)
+    if not hash_match:
+        raise Exception(f"SECURITY BREACH: Agent {agent_id} hash missing.")
+        
+    base_string = hash_match.group(1)
+    provided_hash = hash_match.group(2)
+    
+    # 5. Cryptographic Verification against persistence ledger (The Swimming History)
+    saved_state = load_agent_state(agent_id)
+    if saved_state:
+        chain = saved_state.get("hash_chain", [])
+        if not chain or chain[-1] != provided_hash:
+            raise Exception(f"SECURITY BREACH: Agent {agent_id} history mismatch. Proof of Swimming failed.")
+            
+        previous_hash = chain[-2] if len(chain) >= 2 else ""
+        raw_data = base_string + previous_hash
+        calc_hash = hashlib.sha256(raw_data.encode('utf-8')).hexdigest()
+        
+        if calc_hash != provided_hash:
+            raise Exception(f"SECURITY BREACH: Cryptographic forgery detected for {agent_id}!")
+    else:
+        raise Exception(f"SECURITY BREACH: Unknown agent {agent_id} has no records.")
+    
+    style_match = re.search(r"::STYLE\[(\w+)\]", string_to_verify)
+    energy_match = re.search(r"::ENERGY\[(\d+)\]", string_to_verify)
+    ttl_match = re.search(r"::TTL\[(\d+)\]", string_to_verify)
+    seq_match = re.search(r"::SEQ\[(\d+)\]", string_to_verify)
     
     return {
-        "id": id_match.group(1) if id_match else "UNKNOWN",
-        "seq": seq,
+        "id": agent_id,
+        "seq": int(seq_match.group(1)) if seq_match else 0,
         "style": style_match.group(1) if style_match else "NOMINAL",
         "energy": int(energy_match.group(1)) if energy_match else 100,
         "ttl": int(ttl_match.group(1)) if ttl_match else 0,
-        "hash_chain": hash_chain,
-        "raw": ascii_body
+        "hash_chain": saved_state["hash_chain"],
+        "raw": ascii_body,
+        "owner": pub_b64
     }
 
 DAMAGE_TABLE = {

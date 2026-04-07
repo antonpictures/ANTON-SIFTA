@@ -8,3 +8,4 @@ config.json
 CEMETERY/
 benchmark_env/
 dispatch_article.py
+.DS_Store

@@ -1,0 +1,35 @@
+{
+  "agent_id": "HERMES",
+  "body_hash": "",
+  "face": "[x]",
+  "action": "REPAIR_FAILED",
+  "mark": "Hallucination. Could not stitch bite.",
+  "scent": {
+    "last_visited": "2026-04-06T18:56:44.098084+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 2,
+    "reason": {
+      "type": "Hallucination",
+      "line": 2,
+      "message": "( was never closed"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-06T18:56:44.098084+00:00",
+      "action": "REPAIR_FAILED",
+      "found": "SyntaxError at line 2",
+      "reason": {
+        "type": "Hallucination",
+        "line": 2,
+        "message": "( was never closed"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

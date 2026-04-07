@@ -133,26 +133,78 @@ function updateRoster(agents) {
             card = document.createElement('div');
             card.dataset.id = agent.id;
             grid.appendChild(card);
+
+            // Scaffold the DOM for this specific agent
+            card.innerHTML = `
+                <div class="agent-header">
+                    <span class="agent-face" id="face-${agent.id}"></span>
+                    <span class="agent-id">${agent.id}</span>
+                    <span class="agent-style" id="style-${agent.id}"></span>
+                </div>
+                <div class="agent-stats">
+                    <span id="seq-${agent.id}"></span>
+                    <span id="ttl-${agent.id}"></span>
+                </div>
+                <div class="agent-raw-body" id="raw-${agent.id}"></div>
+                <div class="energy-bar-bg">
+                    <div class="energy-fill" id="energy-${agent.id}"></div>
+                </div>
+                <div id="btn-container-${agent.id}">
+                    <button class="btn btn-dispatch-toggle" onclick="toggleDispatch('${agent.id}')">▶ COMMAND DISPATCH</button>
+                    <div class="agent-dispatch-panel" id="dispatch-panel-${agent.id}" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-dim);">
+                        <div class="form-group">
+                            <label>Target Path</label>
+                            <input type="text" id="target-${agent.id}" class="form-input" placeholder="Path to file or folder" value="test_environment">
+                            <div class="browse-row" style="margin-top: 5px;">
+                                <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', '${agent.id}')">📄 File</button>
+                                <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', '${agent.id}')">📁 Folder</button>
+                            </div>
+                        </div>
+                        <div class="form-group toggle-group" style="margin-top: 10px;">
+                            <label>Write Mode <span class="danger-label">(DANGER)</span></label>
+                            <label class="switch">
+                                <input type="checkbox" id="write-${agent.id}">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <button class="btn btn-primary btn-full" id="send-${agent.id}" style="margin-top: 10px;" onclick="sendSwimmerInline('${agent.id}')">
+                            <span class="btn-icon">▶</span> SEND SWIMMER
+                        </button>
+                        <div class="terminal-output" id="terminal-${agent.id}" style="display:none; height: 160px; margin-top: 10px; overflow-y: auto;">
+                            <div class="placeholder">&gt; Waiting for command...</div>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
-        const energyPct = Math.min(100, Math.max(0, agent.energy));
+        // Apply dynamically changing attributes natively
         card.className = `agent-card${isDead ? ' dead' : ''}`;
+        
+        card.querySelector(`#face-${agent.id}`).textContent = agent.face;
 
-        card.innerHTML = `
-            <div class="agent-header">
-                <span class="agent-face">${agent.face}</span>
-                <span class="agent-id">${agent.id}</span>
-                <span class="agent-style ${parseStyleBadge(agent.style)}">${agent.style}</span>
-            </div>
-            <div class="agent-stats">
-                <span>SEQ: ${agent.seq}</span>
-                <span>TTL: ${formatTime(agent.ttl_remaining)}</span>
-            </div>
-            <div class="energy-bar-bg">
-                <div class="energy-fill" style="width:${energyPct}%; background: linear-gradient(90deg, ${getEnergyColor(energyPct)}, ${getEnergyColor(Math.max(0, energyPct - 20))});"></div>
-            </div>
-            ${!isDead ? `<button class="btn" onclick="openDispatchModal('${agent.id}')">▶ DISPATCH</button>` : ''}
-        `;
+        const styleBadge = card.querySelector(`#style-${agent.id}`);
+        styleBadge.className = `agent-style ${parseStyleBadge(agent.style)}`;
+        styleBadge.textContent = agent.style;
+
+        card.querySelector(`#seq-${agent.id}`).textContent = `SEQ: ${agent.seq}`;
+        card.querySelector(`#ttl-${agent.id}`).textContent = `TTL: ${formatTime(agent.ttl_remaining)}`;
+
+        const energyPct = Math.min(100, Math.max(0, agent.energy));
+        const eFill = card.querySelector(`#energy-${agent.id}`);
+        eFill.style.width = `${energyPct}%`;
+        eFill.style.background = `linear-gradient(90deg, ${getEnergyColor(energyPct)}, ${getEnergyColor(Math.max(0, energyPct - 20))})`;
+
+        const rawEl = card.querySelector(`#raw-${agent.id}`);
+        if (rawEl) {
+            const body = agent.raw || '— awaiting rehydration —';
+            rawEl.textContent = body.replace(/::/g, '\n::').replace(/^(\n)/, '');
+        }
+
+        const btnC = card.querySelector(`#btn-container-${agent.id}`);
+        if (btnC) {
+            btnC.style.display = isDead ? 'none' : 'block';
+        }
     });
 }
 
@@ -250,26 +302,31 @@ function updateQuorum(quorumStore) {
 }
 
 
-// ─── Modal & Dispatch ─────────────────────────────────
-const modal     = document.getElementById('dispatch-modal');
-const closeBtn  = document.getElementById('close-modal-btn');
-const form      = document.getElementById('dispatch-form');
-const terminal  = document.getElementById('terminal-output');
+// ─── Inline Dispatch & Pickle Logic ──────────────────────
+let activeDispatchSources = {}; // map of agentId -> EventSource
 
-function openDispatchModal(agentId) {
-    document.getElementById('modal-title').textContent = `DISPATCH AGENT [${agentId}]`;
-    document.getElementById('dispatch-agent-id').value = agentId;
-    terminal.innerHTML = '<div class="placeholder">&gt; Waiting for dispatch command...</div>';
-    document.getElementById('target-dir').disabled     = false;
-    document.getElementById('write-mode').disabled     = false;
-    document.getElementById('send-swimmer-btn').disabled = false;
-    modal.showModal();
+function toggleDispatch(agentId) {
+    const panel = document.getElementById(`dispatch-panel-${agentId}`);
+    if (panel) {
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
 }
 
-closeBtn.onclick = () => {
-    if (dispatchSource) { dispatchSource.close(); dispatchSource = null; }
-    modal.close();
-};
+async function openInlinePicker(mode, agentId) {
+    try {
+        const res = await fetch(`/api/pick-path?mode=${mode}`);
+        const data = await res.json();
+        if (data.ok && data.path) {
+            const input = document.getElementById(`target-${agentId}`);
+            if (input) {
+                const clean = data.path.trim().replace(/^['"]|['"]$/g, '');
+                input.value = clean;
+            }
+        }
+    } catch (e) {
+        console.error('Picker error', e);
+    }
+}
 
 
 // ─── Kill Swimmer ─────────────────────────────────────
@@ -379,20 +436,17 @@ settingsForm.addEventListener('submit', e => {
 });
 
 
-// ─── Dispatch Form ────────────────────────────────────
-form.addEventListener('submit', async e => {
-    e.preventDefault();
-
-    const agentId  = document.getElementById('dispatch-agent-id').value;
-    const targetDir = document.getElementById('target-dir').value;
-    const isWrite  = document.getElementById('write-mode').checked;
-
-    document.getElementById('target-dir').disabled      = true;
-    document.getElementById('write-mode').disabled      = true;
-    document.getElementById('send-swimmer-btn').disabled = true;
+// ─── Inline Dispatch Submission ────────────────────────
+async function sendSwimmerInline(agentId) {
+    const targetDir = document.getElementById(`target-${agentId}`).value;
+    const isWrite   = document.getElementById(`write-${agentId}`).checked;
+    const terminal  = document.getElementById(`terminal-${agentId}`);
+    
+    document.getElementById(`target-${agentId}`).disabled      = true;
+    document.getElementById(`write-${agentId}`).disabled       = true;
+    document.getElementById(`send-${agentId}`).disabled        = true;
+    terminal.style.display = 'block';
     terminal.innerHTML = '';
-
-    if (dispatchSource) dispatchSource.close();
 
     try {
         const payload = {
@@ -466,10 +520,9 @@ form.addEventListener('submit', async e => {
             terminal.appendChild(div);
             terminal.scrollTop = terminal.scrollHeight;
 
-            // Re-enable form
-            document.getElementById('target-dir').disabled      = false;
-            document.getElementById('write-mode').disabled      = false;
-            document.getElementById('send-swimmer-btn').disabled = false;
+            document.getElementById(`target-${agentId}`).disabled      = false;
+            document.getElementById(`write-${agentId}`).disabled       = false;
+            document.getElementById(`send-${agentId}`).disabled        = false;
         }
 
         readStream();
@@ -480,11 +533,11 @@ form.addEventListener('submit', async e => {
         div.textContent = `Error initiating dispatch: ${err}`;
         terminal.appendChild(div);
 
-        document.getElementById('target-dir').disabled      = false;
-        document.getElementById('write-mode').disabled      = false;
-        document.getElementById('send-swimmer-btn').disabled = false;
+        document.getElementById(`target-${agentId}`).disabled      = false;
+        document.getElementById(`write-${agentId}`).disabled       = false;
+        document.getElementById(`send-${agentId}`).disabled        = false;
     }
-});
+}
 
 
 // ─── Main polling loop ────────────────────────────────
@@ -492,6 +545,7 @@ async function loop() {
     fetchAgents();
     fetchDashData();
     fetchLogs();
+    updateTerritory();
 
     try {
         const r = await fetch('/api/dispatch/status');
@@ -519,6 +573,184 @@ async function loop() {
 // Boot
 setInterval(loop, 2000);
 loop();
+
+async function updateTerritory() {
+    try {
+        const res = await fetch('/api/territory');
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = document.getElementById('territory-list');
+        if (!list) return;
+        
+        if (!data.territories || data.territories.length === 0) {
+            list.innerHTML = '<div class="list-item placeholder-item">Territory is unmarked.</div>';
+            return;
+        }
+
+        list.innerHTML = '';
+        data.territories.forEach(terr => {
+            const el = document.createElement('div');
+            el.className = `territory-item status-${terr.status}`;
+            
+            const opacity = Math.max(0.3, terr.max_potency);
+            el.style.opacity = opacity;
+            
+            const badges = terr.agents.map(a => `<span class="t-badge">${a}</span>`).join('');
+            const statusBadge = terr.status === 'BLEEDING' 
+                ? `<span class="t-badge bleeding">🩸 BLEEDING x${terr.bleeding_count}</span>` 
+                : `<span class="t-badge">✅ CLEAN</span>`;
+
+            const dangerStr = terr.danger_score > 0 
+                ? `<span class="t-badge bleeding">⚡ ${terr.danger_score}</span>` 
+                : '';
+
+            let timeStr = 'Unknown';
+            if (terr.last_visited) {
+                const date = new Date(terr.last_visited);
+                timeStr = date.toLocaleTimeString([], { hour12: false });
+            }
+
+            el.innerHTML = `
+                <div class="territory-path" title="${terr.path}">
+                    <span>📁 ${terr.path.length > 25 ? '...' + terr.path.slice(-25) : terr.path}</span>
+                    <span class="territory-time">${timeStr}</span>
+                </div>
+                <div class="territory-badges">
+                    ${statusBadge}
+                    ${dangerStr}
+                    ${badges}
+                </div>
+            `;
+            // Click to read the graffiti
+            el.addEventListener('click', () => showScarModal(terr.full_path || terr.path));
+            list.appendChild(el);
+        });
+    } catch (err) {
+        // ignore verbose polling errors
+    }
+}
+
+// ─── Scar Reader Modal ───────────────────────────────
+const scarModal   = document.getElementById('scar-modal');
+const scarTitle   = document.getElementById('scar-modal-title');
+const scarMdEl    = document.getElementById('scar-md-content');
+const scarListEl  = document.getElementById('scar-file-list');
+const closeScarBtn = document.getElementById('close-scar-modal');
+
+closeScarBtn.addEventListener('click', () => scarModal.close());
+scarModal.addEventListener('click', e => { if (e.target === scarModal) scarModal.close(); });
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function switchScarTab(tab) {
+    const chronicle = document.getElementById('scar-panel-chronicle');
+    const raw       = document.getElementById('scar-panel-raw');
+    const tabC      = document.getElementById('tab-chronicle');
+    const tabR      = document.getElementById('tab-raw');
+    if (tab === 'chronicle') {
+        chronicle.style.display = 'block';
+        raw.style.display = 'none';
+        tabC.classList.add('active');
+        tabR.classList.remove('active');
+    } else {
+        chronicle.style.display = 'none';
+        raw.style.display = 'block';
+        tabC.classList.remove('active');
+        tabR.classList.add('active');
+    }
+}
+
+function buildChronicleTimeline(scarFiles) {
+    if (!scarFiles || scarFiles.length === 0) {
+        return '<div class="chronicle-empty">⬡ Territory is unmarked. No agents have swum here yet.</div>';
+    }
+
+    // Parse + sort newest first
+    const parsed = scarFiles.map(sf => {
+        try { return { ...JSON.parse(sf.content), _raw_name: sf.name, _mtime: sf.modified }; }
+        catch { return null; }
+    }).filter(Boolean).sort((a, b) => b._mtime - a._mtime);
+
+    const ACTION_META = {
+        REPAIR_SUCCESS:  { icon: '✅', cls: 'ca-fix',    label: 'REPAIR' },
+        SCOUT:           { icon: '👁', cls: 'ca-scout',  label: 'SCOUT' },
+        BLEEDING:        { icon: '🩸', cls: 'ca-fail',   label: 'BLEEDING' },
+        UNRESOLVED:      { icon: '🩸', cls: 'ca-fail',   label: 'UNRESOLVED' },
+        RESOLVED:        { icon: '✅', cls: 'ca-fix',    label: 'RESOLVED' },
+        HANDOFF:         { icon: '📡', cls: 'ca-radio',  label: 'HANDOFF' },
+    };
+
+    return parsed.map(s => {
+        const action   = s.action || s.stigmergy?.status || 'VISIT';
+        const meta     = ACTION_META[action] || { icon: '💨', cls: 'ca-default', label: action };
+        const ts       = s.scent?.last_visited
+            ? new Date(s.scent.last_visited).toLocaleTimeString([], { hour12: false })
+            : '—';
+        const face     = escapeHtml(s.face     || '[?]');
+        const agentId  = escapeHtml(s.agent_id || '?');
+        const mark     = escapeHtml(s.mark || s.stigmergy?.reason?.message || '');
+        const found    = escapeHtml((s.history?.[0]?.found) || '');
+        const danger   = s.scent?.danger_level || '';
+        const potency  = s.scent?.potency != null ? Math.round(s.scent.potency * 100) : null;
+
+        const dangerBadge = danger && danger !== 'SAFE'
+            ? `<span class="chr-badge chr-danger">⚡ ${danger}</span>` : '';
+        const potencyBar  = potency != null
+            ? `<div class="chr-potency-bg"><div class="chr-potency-fill" style="width:${potency}%"></div></div>` : '';
+
+        return `
+        <div class="chronicle-entry ${meta.cls}">
+            <div class="chr-spine"></div>
+            <div class="chr-body">
+                <div class="chr-header">
+                    <span class="chr-face">${face}</span>
+                    <span class="chr-agent">${agentId}</span>
+                    <span class="chr-action-badge ${meta.cls}">${meta.icon} ${meta.label}</span>
+                    ${dangerBadge}
+                    <span class="chr-ts">${ts}</span>
+                </div>
+                ${mark ? `<div class="chr-mark">${mark}</div>` : ''}
+                ${found ? `<div class="chr-found">FOUND: ${found}</div>` : ''}
+                ${potencyBar}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function showScarModal(folderPath) {
+    scarTitle.textContent = `📁 ${folderPath}`;
+    scarMdEl.innerHTML    = '<div class="chronicle-empty">⬡ Loading swarm records...</div>';
+    scarListEl.innerHTML  = '';
+    switchScarTab('chronicle');
+    scarModal.showModal();
+
+    try {
+        const res  = await fetch(`/api/scar_contents?folder=${encodeURIComponent(folderPath)}`);
+        const data = await res.json();
+
+        // Chronicle tab — render structured timeline from scar JSON data
+        scarMdEl.innerHTML = buildChronicleTimeline(data.scar_files);
+
+        // Raw scars tab
+        if (data.scar_files && data.scar_files.length) {
+            scarListEl.innerHTML = data.scar_files.map(sf => `
+                <div class="scar-file-item">
+                    <div class="scar-file-name">🧬 ${escapeHtml(sf.name)}</div>
+                    <pre class="scar-file-body">${escapeHtml(sf.content)}</pre>
+                </div>
+            `).join('');
+        } else {
+            scarListEl.innerHTML = '<div class="scar-empty">No .scar files found.</div>';
+        }
+    } catch (err) {
+        scarMdEl.innerHTML = `<div class="chronicle-empty" style="color:var(--health-low)">Error loading scars: ${escapeHtml(String(err))}</div>`;
+    }
+}
 
 // ─── Ledger Modal Logic ───────────────────────────────
 const openLedgerBtn = document.getElementById('open-ledger-btn');

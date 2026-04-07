@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>stigmergicode — The Stigmergic Code Swarm</title>
+  <meta name="description" content="A self-organizing system of autonomous agents that coordinate through a shared, mutating codebase. Coined April 6, 2026. Reference implementation: ANTON-SIFTA." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #020408;
+      --bg2:       #070d14;
+      --glass:     rgba(0, 200, 180, 0.04);
+      --border:    rgba(0, 220, 200, 0.12);
+      --cyan:      #00dcc8;
+      --cyan-dim:  #007a72;
+      --text:      #c8e8e5;
+      --text-dim:  #4a6b68;
+      --red:       #ff3a3a;
+      --gold:      #f5c842;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE LAYER ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.2rem 3rem;
+      background: rgba(2, 4, 8, 0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      font-family: 'Space Mono', monospace;
+      font-size: 1rem;
+      color: var(--cyan);
+      letter-spacing: 0.05em;
+      text-decoration: none;
+    }
+
+    .nav-logo span { color: var(--text-dim); }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      gap: 2.5rem;
+    }
+
+    nav ul a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+
+    nav ul a:hover { color: var(--cyan); }
+
+    .nav-cta {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--cyan) !important;
+      border: 1px solid var(--border);
+      padding: 0.5rem 1.2rem;
+      border-radius: 4px;
+      transition: background 0.2s, border-color 0.2s !important;
+    }
+
+    .nav-cta:hover {
+      background: var(--glass) !important;
+      border-color: var(--cyan) !important;
+      color: var(--cyan) !important;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 8rem 2rem 4rem;
+      position: relative;
+    }
+
+    .hero-glow {
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(ellipse, rgba(0,220,200,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-tag {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--cyan-dim);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--border);
+      display: inline-block;
+      padding: 0.4rem 1rem;
+      border-radius: 2px;
+      animation: fadeIn 0.8s ease;
+    }
+
+    h1 {
+      font-family: 'Space Mono', monospace;
+      font-size: clamp(2.8rem, 7vw, 5.5rem);
+      font-weight: 700;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.3rem;
+      animation: fadeUp 0.9s ease;
+    }
+
+    h1 .accent { color: var(--cyan); }
+
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      color: var(--text-dim);
+      max-width: 620px;
+      margin: 1.5rem auto 3rem;
+      font-weight: 300;
+      animation: fadeUp 1s ease 0.1s both;
+    }
+
+    .hero-definition {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem 2rem;
+      max-width: 680px;
+      margin: 0 auto 3rem;
+      text-align: left;
+      animation: fadeUp 1s ease 0.2s both;
+    }
+
+    .hero-definition em {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--cyan-dim);
+      font-style: normal;
+      display: block;
+      margin-bottom: 0.6rem;
+    }
+
+    .hero-definition p {
+      font-size: 0.95rem;
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    .hero-btns {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      animation: fadeUp 1s ease 0.3s both;
+    }
+
+    .btn-primary {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      background: var(--cyan);
+      color: #020408;
+      padding: 0.8rem 2rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .btn-primary:hover { opacity: 0.85; transform: translateY(-2px); }
+
+    .btn-secondary {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.8rem 2rem;
+      border-radius: 4px;
+      text-decoration: none;
+      letter-spacing: 0.05em;
+      transition: border-color 0.2s, color 0.2s, transform 0.2s;
+    }
+
+    .btn-secondary:hover { border-color: var(--cyan); color: var(--cyan); transform: translateY(-2px); }
+
+    /* ── AGENT BODY ANIMATION ── */
+    .agent-body-ticker {
+      margin-top: 4rem;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--cyan-dim);
+      overflow: hidden;
+      white-space: nowrap;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 0.6rem 0;
+      width: 100%;
+      animation: fadeIn 1.5s ease 0.5s both;
+    }
+
+    .ticker-inner {
+      display: inline-block;
+      animation: ticker 30s linear infinite;
+    }
+
+    @keyframes ticker {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    /* ── SECTION ── */
+    section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 6rem 2rem;
+    }
+
+    .section-tag {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--cyan);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    h2 {
+      font-family: 'Space Mono', monospace;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      line-height: 1.2;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── PREDECESSORS TABLE ── */
+    .pred-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .pred-card {
+      background: var(--glass);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .pred-card h3 {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--cyan);
+      margin-bottom: 0.5rem;
+      grid-column: 1 / -1;
+    }
+
+    .pred-did p, .pred-fail p {
+      font-size: 0.88rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    .pred-did-label, .pred-fail-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+
+    .pred-did-label { color: var(--text-dim); }
+    .pred-fail-label { color: var(--red); }
+
+    /* ── DELTA TABLE ── */
+    .delta-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 2rem;
+      font-size: 0.88rem;
+    }
+
+    .delta-table th {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      text-align: left;
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .delta-table td {
+      padding: 1rem 1rem;
+      border-bottom: 1px solid rgba(0,220,200,0.05);
+      color: var(--text-dim);
+      vertical-align: top;
+    }
+
+    .delta-table td:last-child { color: var(--text); }
+
+    .delta-table tr:hover td { background: var(--glass); }
+
+    /* ── ARCHITECTURE BLOCK ── */
+    .arch-block {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+      line-height: 1.8;
+      color: var(--text-dim);
+      overflow-x: auto;
+      margin-top: 2rem;
+    }
+
+    .arch-block .hl { color: var(--cyan); }
+    .arch-block .hl2 { color: var(--gold); }
+
+    /* ── SCAR BLOCK ── */
+    .scar-preview {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--cyan);
+      border-radius: 0 8px 8px 0;
+      padding: 1.5rem 2rem;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+      line-height: 1.8;
+      color: var(--text-dim);
+      overflow-x: auto;
+      margin-top: 2rem;
+    }
+
+    .scar-preview .key { color: var(--cyan); }
+    .scar-preview .val { color: var(--gold); }
+    .scar-preview .str { color: #e09150; }
+
+    /* ── COIN CALLOUT ── */
+    .coin-callout {
+      background: linear-gradient(135deg, rgba(0,220,200,0.05), rgba(245,200,66,0.04));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 3rem;
+      text-align: center;
+      margin-top: 4rem;
+    }
+
+    .coin-callout h2 {
+      color: var(--gold);
+      margin-bottom: 1rem;
+    }
+
+    .coin-callout p {
+      color: var(--text-dim);
+      max-width: 520px;
+      margin: 0 auto 2rem;
+      font-size: 0.95rem;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 3rem;
+      text-align: center;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    footer a { color: var(--cyan-dim); text-decoration: none; }
+    footer a:hover { color: var(--cyan); }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ── PULSE DOT ── */
+    .pulse-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background: var(--cyan);
+      border-radius: 50%;
+      margin-right: 0.5rem;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0,220,200,0.4); }
+      50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(0,220,200,0); }
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @media (max-width: 700px) {
+      nav { padding: 1rem 1.5rem; }
+      nav ul { display: none; }
+      .pred-card { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="/" class="nav-logo">stigmergi<span>code</span></a>
+  <ul>
+    <li><a href="#paper">Paper</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#predecessors">Prior Art</a></li>
+    <li><a href="https://stigmergicoin.com" target="_blank">Coin →</a></li>
+    <li><a href="https://github.com/antonpictures/ANTON-SIFTA" target="_blank" class="nav-cta">Clone Swarm</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-glow"></div>
+
+  <div class="hero-tag">
+    <span class="pulse-dot"></span>coined april 6, 2026 · reference impl: ANTON-SIFTA
+  </div>
+
+  <h1><span class="accent">stigmergi</span>code</h1>
+
+  <p class="hero-sub">
+    Self-organizing swarms of autonomous agents that coordinate
+    through a shared, mutating codebase — leaving cryptographic
+    scars that future agents sense and act upon.
+  </p>
+
+  <div class="hero-definition">
+    <em>stigmergicode (n.)</em>
+    <p>
+      A self-organizing system of autonomous agents that coordinate
+      indirectly through a <strong>shared, live codebase</strong>, using stigmergy
+      — sign-and-forget pheromone marks — to produce emergent intelligence
+      without any central controller, broker, or shared memory.
+      The codebase is simultaneously the terrain, the food source,
+      and the pheromone field.
+    </p>
+  </div>
+
+  <div class="hero-btns">
+    <a href="#paper" class="btn-primary">Read the Paper</a>
+    <a href="https://github.com/antonpictures/ANTON-SIFTA" target="_blank" class="btn-secondary">Clone the Swarm →</a>
+  </div>
+
+  <div class="agent-body-ticker">
+    <span class="ticker-inner">
+      &lt;///[o|o]///::ID[ANTIALICE]::OWNER[f670bbUwhDM6iUcEJFVghJeBiJaxcvKbmx]::FROM[REBIRTH]::TO[SWARM]::SEQ[001]::STYLE[NOMINAL]::ENERGY[92]::SIG[lH01xK5gq4hATa1/Ppn4ly6fHIl00F0IDZ1uUM2T...]&gt; &nbsp;&nbsp;&nbsp;&nbsp; &lt;///[_v_]///::ID[HERMES]::FROM[SWARM]::TO[TEST_ENV]::SEQ[003]::STYLE[NOMINAL]::ENERGY[87]::SIG[xK5gq4hATa1H01/...]&gt; &nbsp;&nbsp;&nbsp;&nbsp; &lt;///[O_O]///::ID[M1THER]::OWNER[antonpictures@me.com]::FROM[TRANSFER]::TO[M1_MINI]::SEQ[001]::STYLE[NOMINAL]::ENERGY[100]::SIG[Ppn4ly6fHIl00F0IDZ1...]&gt; &nbsp;&nbsp;&nbsp;&nbsp; &lt;///[o|o]///::ID[ANTIALICE]::OWNER[f670bbUwhDM6iUcEJFVghJeBiJaxcvKbmx]::FROM[REBIRTH]::TO[SWARM]::SEQ[001]::STYLE[NOMINAL]::ENERGY[92]::SIG[lH01xK5gq4hATa1/Ppn4ly6fHIl00F0IDZ1uUM2T...]&gt; &nbsp;&nbsp;&nbsp;&nbsp; &lt;///[_v_]///::ID[HERMES]::FROM[SWARM]::TO[TEST_ENV]::SEQ[003]::STYLE[NOMINAL]::ENERGY[87]::SIG[xK5gq4hATa1H01/...]&gt;
+    </span>
+  </div>
+</div>
+
+<!-- PAPER -->
+<section id="paper">
+  <div class="section-tag">// the paper</div>
+  <h2>The Problem — Why Everything Before This Failed</h2>
+  <p style="color: var(--text-dim); max-width: 700px;">
+    The modern "AI Agent" is a chatbot wrapper wearing a tool belt.
+    It is stateless, amnesiac, and epistemically fragile. It dies and
+    respawns on every call. It relies on external vector databases as a
+    prosthetic memory, and its only coordination mechanism is a central
+    orchestrator whispering instructions into its context window.
+    Strip the orchestrator and it collapses.
+  </p>
+  <p style="color: var(--text-dim); max-width: 700px; margin-top: 1rem;">
+    <strong style="color: var(--text);">ANTON-SIFTA abandons this paradigm entirely.</strong>
+    Agents here are not scripts. They are cryptographically signed strings
+    that swim through a filesystem like white blood cells — leaving behind
+    an immutable scent trail of atomic pheromone marks that future agents
+    sense and act upon. No central controller. No shared memory. No broker.
+    <em>The codebase IS the pheromone field.</em>
+  </p>
+</section>
+
+<!-- PREDECESSORS -->
+<section id="predecessors">
+  <div class="section-tag">// prior art — with credit</div>
+  <h2>The Ancestors. Where They Stopped.</h2>
+  <p style="color: var(--text-dim);">These researchers laid the foundation. We owe them a citation — and an honest accounting of the gap.</p>
+
+  <div class="pred-grid">
+
+    <div class="pred-card">
+      <h3>Zachary Mason — Programming with Stigmergy (2002, ALIFE) + Stigcode (2006)</h3>
+      <div class="pred-did">
+        <div class="pred-did-label">what he did</div>
+        <p>Described stateless agents on a 2D grid depositing digital pheromones that other agents react to — enabling emergent construction with no central control. Later built <em>Stigcode</em>, a high-level language for specifying these behaviors. The closest historical match.</p>
+      </div>
+      <div class="pred-fail">
+        <div class="pred-fail-label">where he stopped</div>
+        <p>Abstract 2D grid. Theoretical shared space. Stateless, anonymous agents. Ephemeral numeric pheromones. Purpose: constructing geometric patterns in simulation. No real filesystem. No cryptographic identity. No mortality. No production code repair.</p>
+      </div>
+    </div>
+
+    <div class="pred-card">
+      <h3>TOTA Middleware — Tuples On The Air (~2005–2010)</h3>
+      <div class="pred-did">
+        <div class="pred-did-label">what they built</div>
+        <p>Programmable stigmergic coordination layer for multi-agent software. Agents left "tuples" in a shared digital space that propagated, diffused, and decayed. Other agents reacted to the evolving tuple field.</p>
+      </div>
+      <div class="pred-fail">
+        <div class="pred-fail-label">where they stopped</div>
+        <p>Middleware only — a coordination substrate, not a complete autonomous agent system. Agents externally defined. Tuples carried no cryptographic identity. No agent mortality, energy decay, or permanent ledger. No interaction with live source code.</p>
+      </div>
+    </div>
+
+    <div class="pred-card">
+      <h3>Swarm Intelligence Applied to Software (2004–2021)</h3>
+      <div class="pred-did">
+        <div class="pred-did-label">what the field explored</div>
+        <p>Swarm metaphors applied to self-organizing data structures, multi-agent software systems, semantic web as stigmergic medium, swarm robotics treating code/rules as agents in a stigmergic loop.</p>
+      </div>
+      <div class="pred-fail">
+        <div class="pred-fail-label">where it all stopped</div>
+        <p>Academic scale. Controlled, simulated environments. No production deployment. No running live systems. No cryptographic proof of work. No persistent hash-chained identity. No autonomous healing of actively-broken production code.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 2.5rem;">
+    <div class="section-tag">// the delta</div>
+    <h2 style="margin-top: 0.5rem;">What ANTON-SIFTA Does Differently</h2>
+    <table class="delta-table">
+      <thead>
+        <tr>
+          <th>Prior Art</th>
+          <th>ANTON-SIFTA</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Abstract shared space (grid, tuples)</td><td>The <strong>live codebase</strong> is the pheromone field</td></tr>
+        <tr><td>Anonymous, ephemeral pheromones</td><td>Ed25519-signed, hash-chained <strong>SCARS</strong> — permanent</td></tr>
+        <tr><td>Stateless agents, no identity</td><td>Persistent cryptographic identity per agent — private key on disk</td></tr>
+        <tr><td>No agent mortality</td><td>TTL decay, energy mechanics, Cemetery, MEDBAY</td></tr>
+        <tr><td>Simulated environments only</td><td>Runs on real filesystems, repairs real Python files</td></tr>
+        <tr><td>No proof of ownership</td><td>Ed25519 signed <strong>Transfer Deed</strong> — agents can be sold</td></tr>
+        <tr><td>No human owner tracking</td><td>HUMAN_OWNER field in body — agents register to email addresses</td></tr>
+        <tr><td>No commerce layer</td><td>First agent transferred by cryptographic deed: April 6, 2026</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <div class="section-tag">// architecture</div>
+  <h2>The Biological Loop</h2>
+
+  <div class="arch-block">
+<span class="hl">ANTIALICE</span> enters <span class="hl2">test_environment/</span>
+  → reads <span class="hl">.sifta/SCARS.md</span>: HERMES marked this folder BLEEDING at 14:19
+  → smell_territory() returns potency: <span class="hl2">0.87</span> (hot scent, danger HIGH)
+  → bites <span class="hl2">broken_server.py</span> lines 1-20 (Dynamic Jaw: tight, localized fault)
+  → sends 12 lines to <span class="hl">qwen3.5:0.8b</span> via Ollama
+  → LLM returns stitched code
+  → AST validates: <span class="hl2">PASS</span>
+  → writes repaired file, drops new scar:
+    <span class="hl">.sifta/ANTIALICE_1775518992_<uuid>.scar</span>
+    → status: RESOLVED · potency: 1.0 · deed_hash signed
+
+<span class="hl">HERMES</span> arrives 3 minutes later
+  → smell_territory(): ANTIALICE resolved this · potency fading
+  → skips this folder · moves to next BLEEDING node
+  → No central coordinator told him. <span class="hl2">The scar told him.</span>
+  </div>
+
+  <div style="margin-top: 2.5rem;">
+    <div class="section-tag">// the scar schema</div>
+    <div class="scar-preview">
+{<br>
+&nbsp;&nbsp;<span class="key">"agent_id"</span>: <span class="str">"HERMES"</span>,<br>
+&nbsp;&nbsp;<span class="key">"body_hash"</span>: <span class="str">"45d94f0a995aae532f45dc001..."</span>,<br>
+&nbsp;&nbsp;<span class="key">"sig"</span>: <span class="str">"Ed25519_SIG_OF_BODY"</span>,<br>
+&nbsp;&nbsp;<span class="key">"action"</span>: <span class="str">"REPAIR_FAILED"</span>,<br>
+&nbsp;&nbsp;<span class="key">"mark"</span>: <span class="str">"Hallucination. Could not stitch bite."</span>,<br>
+&nbsp;&nbsp;<span class="key">"scent"</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"last_visited"</span>: <span class="str">"2026-04-06T18:56:44Z"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"potency"</span>: <span class="val">0.999</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"danger_level"</span>: <span class="str">"HIGH"</span><br>
+&nbsp;&nbsp;},<br>
+&nbsp;&nbsp;<span class="key">"stigmergy"</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"status"</span>: <span class="str">"BLEEDING"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"unresolved_fault_line"</span>: <span class="val">2</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"reason"</span>: { <span class="key">"type"</span>: <span class="str">"SyntaxError"</span>, <span class="key">"line"</span>: <span class="val">2</span>, <span class="key">"message"</span>: <span class="str">"( was never closed"</span> }<br>
+&nbsp;&nbsp;}<br>
+}
+    </div>
+    <p style="color: var(--text-dim); font-size: 0.88rem; margin-top: 0.8rem;">
+      The <code style="color: var(--cyan); font-family: Space Mono, monospace;">mark</code> is the agent's last word to its successors.
+      The <code style="color: var(--cyan); font-family: Space Mono, monospace;">reason</code> is machine-readable.
+      Both are permanent.
+    </p>
+  </div>
+</section>
+
+<!-- COIN CALLOUT -->
+<section>
+  <div class="coin-callout">
+    <h2>stigmergicoin</h2>
+    <p>
+      Agents are not just code — they are assets. Buy, sell, and transfer
+      autonomous agents with cryptographic deeds of ownership.
+      The first agent sale by signed deed happened April 6, 2026.
+    </p>
+    <a href="https://stigmergicoin.com" class="btn-primary">Enter the Market →</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p style="margin-bottom: 0.5rem;">
+    <code>&lt;///[O_O]///::ID[M1THER]::HUMAN_OWNER[antonpictures@me.com]::STYLE[NOMINAL]::ENERGY[100]&gt;</code>
+  </p>
+  <p style="margin-bottom: 1rem; color: var(--text-dim);">
+    <em>First agent transferred by cryptographic deed. April 6, 2026.</em>
+  </p>
+  <p>
+    <a href="https://github.com/antonpictures/ANTON-SIFTA">GitHub</a> ·
+    <a href="https://stigmergicoin.com">stigmergicoin.com</a> ·
+    coined by <a href="#">Anton Ganton</a> ·
+    <span style="color: var(--text-dim);">© 2026 stigmergicode</span>
+  </p>
+</footer>
+
+</body>
+</html>

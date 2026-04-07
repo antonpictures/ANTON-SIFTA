@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -31,15 +32,21 @@ OLLAMA_URL    = "http://localhost:11434/api/generate"
 REPAIR_MODEL = "qwen3.5:0.8b"
 FALLBACK_MODEL = "qwen3.5:4b"
 LOG_PATH     = Path(__file__).parent / "repair_log.jsonl"
-MODEL_TIMEOUTS = {"qwen3.5:0.8b": 15, "qwen3.5:4b": 60, "gemma4:latest": 120}
+MODEL_TIMEOUTS = {"qwen3.5:0.8b": 30, "qwen3.5:4b": 90, "deepseek-coder:6.7b": 120, "gemma4:latest": 120}
 
 SURGICAL_PROMPT = """\
-Fix the Python syntax error. 
-RESPOND WITH ONLY THE FIXED CODE.
-NO line numbers. NO brackets. NO markdown. NO explanation.
-PRESERVE THE EXACT ORIGINAL INDENTATION OF EVERY LINE.
-Just raw Python lines, nothing else.
-If a line contains only random non-Python words with no operators or structure, DELETE THAT LINE ENTIRELY.
+Fix the Python syntax error.
+RESPOND WITH ONLY THE FIXED CODE INSIDE A ```python ... ``` BLOCK.
+YOU MUST RETURN ALL OF THE LINES I GAVE YOU EXACTLY AS THEY ARE, EXCEPT THE FIX. NEVER OMIT OR TRUNCATE LINES.
+THIS IS A SNIPPET FROM THE MIDDLE OF A FILE. DO NOT INVENT MISSING FUNCTIONS, LOOPS, OR IF STATEMENTS.
+CRITICAL: DO NOT UN-INDENT THE CODE. You must keep the EXACT leading spaces for every single line. If the first line starts with 8 spaces, your output's first line MUST start with 8 spaces.
+
+Example input:
+```python
+        return "DEGRADED"
+    else:
+        return "CRITICAL"
+```
 
 Example correct response:
     def foo():
@@ -153,17 +160,31 @@ def call_ollama(prompt: str, model: str = "qwen3.5:0.8b") -> str | None:
                 if chunk.get("done"):
                     break
 
+
         result = "".join(full_response).strip()
-        
-        # Strip markdown fences if model wraps output anyway
-        if result.startswith("```"):
-            result = result.split("\n", 1)[-1]
-        if result.endswith("```"):
-            result = result.rsplit("```", 1)[0]
-            
-        # Strip bracketed line numbers if model hallucinates them anyway
-        result = re.sub(r'^\[\d+\]\s?', '', result, flags=re.MULTILINE)
-        
+
+        # Robust markdown code block extraction
+        import re as _rex
+        code_blocks = _rex.findall(r"```(?:python)?\n?(.*?)```", result, flags=_rex.DOTALL | _rex.IGNORECASE)
+        if code_blocks:
+            result = max(code_blocks, key=len).strip()
+
+        # Strip hallucinated bracketed line numbers
+        import re as _rex
+        result = _rex.sub(r"^\[\d+\]\s?", "", result, flags=_rex.MULTILINE)
+
+        # Chemical filter: strip demonic tokens (including deepseek full-width bars)
+        result = _rex.sub(r"<[\|｜].*?[\|｜]>", "", result, flags=_rex.DOTALL)
+        for _tok in ['<|EOT|>', '<|endoftext|>', '<|im_start|>', '<|im_end|>', '234075186', '<｜begin▁of▁sentence｜>', '<｜end▁of▁sentence｜>']:
+            result = result.replace(_tok, "")
+
+        # Size-based hallucination guard
+        _prompt_lines = len(prompt.splitlines())
+        _result_lines = len(result.splitlines())
+        if _result_lines > _prompt_lines * 3 + 20:
+            print(f"  [SPELL] Hallucination: {_result_lines} lines returned for {_prompt_lines}-line input. Rejecting.")
+            return None
+
         return result.strip() or None
 
     except Exception as e:
@@ -172,10 +193,116 @@ def call_ollama(prompt: str, model: str = "qwen3.5:0.8b") -> str | None:
 
 
 def ollama_healthy() -> bool:
+    """Passive health check — is the daemon responding right now?"""
     try:
         urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3)
         return True
     except Exception:
+        return False
+
+
+_ollama_boot_proc = None  # module-level handle so we don't double-spawn
+
+def ensure_ollama() -> bool:
+    """
+    Active resurrection protocol.
+    1. Already awake? Return True immediately.
+    2. Installed but sleeping? Wake it up with `ollama serve`, wait up to 12s.
+    3. Not installed? Return False cleanly — don't block.
+    """
+    global _ollama_boot_proc
+
+    if ollama_healthy():
+        return True
+
+    ollama_bin = shutil.which("ollama")
+    if not ollama_bin:
+        print("  [OLLAMA] Binary not found on PATH. Skipping LLM layer.")
+        return False
+
+    print("  [OLLAMA] Daemon offline. Attempting resurrection...")
+    try:
+        _ollama_boot_proc = subprocess.Popen(
+            [ollama_bin, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,   # detach — don't die when swimmer exits
+        )
+    except Exception as e:
+        print(f"  [OLLAMA] Failed to spawn daemon: {e}")
+        return False
+
+    # Wait up to 12 seconds for it to wake up
+    for attempt in range(12):
+        time.sleep(1)
+        if ollama_healthy():
+            print(f"  [OLLAMA] Daemon alive after {attempt + 1}s. Scalpel ready.")
+            return True
+        print(f"  [OLLAMA] Waiting for daemon... ({attempt + 1}/12)")
+
+    print("  [OLLAMA] Daemon did not respond in time. Falling back to offline repair.")
+    return False
+
+
+def ollama_installed_models() -> list[str]:
+    """Return list of model names currently pulled in Ollama."""
+    try:
+        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as resp:
+            data = json.loads(resp.read())
+            return [m["name"] for m in data.get("models", [])]
+    except Exception:
+        return []
+
+
+def ensure_model_pulled(model: str) -> bool:
+    """
+    If `model` is not in the local registry, pull it via `ollama pull`.
+    Streams pull progress to stdout so the SSE terminal shows it live.
+    Returns True when the model is ready, False if pull failed.
+    """
+    installed = ollama_installed_models()
+    # Normalize: Ollama sometimes appends :latest implicitly
+    installed_bases = {m.split(":")[0] for m in installed}
+    model_base = model.split(":")[0]
+
+    if model in installed or model_base in installed_bases:
+        return True
+
+    ollama_bin = shutil.which("ollama")
+    if not ollama_bin:
+        return False
+
+    print(f"  [OLLAMA] Model '{model}' not found locally. Pulling... (this may take a while)")
+    try:
+        import re as _re2
+        _ansi_strip = _re2.compile(
+            r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]'   # CSI sequences
+            r'|\x1B[@-_]'                           # 2-char ESC
+            r'|\[\?[0-9]+[hl]'                      # private mode sets (?2026h etc.)
+            r'|\x1b\[[0-9]*[A-G]'                   # cursor movement
+            r'|\r'                                   # carriage returns
+        )
+        proc = subprocess.Popen(
+            [ollama_bin, "pull", model],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env={**os.environ, "TERM": "dumb", "NO_COLOR": "1"},
+        )
+        seen: set = set()
+        for raw in proc.stdout:
+            line = _ansi_strip.sub('', raw.decode('utf-8', errors='replace')).strip()
+            if line and line not in seen:
+                print(f"  [PULL] {line}", flush=True)
+                seen.add(line)
+        proc.wait(timeout=600)
+        if proc.returncode == 0:
+            print(f"  [OLLAMA] Model '{model}' pulled successfully.")
+            return True
+        else:
+            print(f"  [OLLAMA] Pull failed for '{model}' (exit {proc.returncode}).")
+            return False
+    except Exception as e:
+        print(f"  [OLLAMA] Pull error: {e}")
         return False
 
 
@@ -203,9 +330,10 @@ def call_openai_api(chunk: str, model: str = "gpt-4o-mini", base_url: str = "", 
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read())
             content = result["choices"][0]["message"]["content"].strip()
-            if content.startswith("```python"): content = content[9:]
-            elif content.startswith("```"): content = content[3:]
-            if content.endswith("```"): content = content[:-3]
+            import re as _rex
+            code_blocks = _rex.findall(r"```(?:python)?\n?(.*?)```", content, flags=_rex.DOTALL | _rex.IGNORECASE)
+            if code_blocks:
+                content = max(code_blocks, key=len).strip()
             return content.strip()
     except Exception as e:
         print(f"  [API ERROR] {e}")
@@ -241,16 +369,16 @@ def verify_runtime(filepath: Path) -> tuple[bool, str]:
         return False, str(e)
 
 
-def overseer_validate(filepath: Path, agent1_id: str, agent2_id: str, overseer_id: str) -> bool:
+def exorcist_validate(filepath: Path, agent1_id: str, agent2_id: str, exorcist_id: str) -> bool:
     """Third agent reads the full file after both repairs commit."""
     syntax_ok, err = validate_syntax(filepath.read_text(encoding="utf-8"))
     if syntax_ok:
-        print(f"  [OVERSEER {overseer_id}] Full file validated. Quorum of fixes achieved.")
-        log({"event": "overseer_pass", "file": str(filepath),
+        print(f"  [EXORCIST {exorcist_id}] Full file validated. Unholy spirits cast out.")
+        log({"event": "exorcist_pass", "file": str(filepath),
              "repaired_by": [agent1_id, agent2_id],
-             "witness": overseer_id})
+             "witness": exorcist_id})
         return True
-    print(f"  [OVERSEER {overseer_id}] Residual fault detected: {err}")
+    print(f"  [EXORCIST {exorcist_id}] Residual demonic presence detected: {err}")
     return False
 # ─── SWIMMER LOOP ─────────────────────────────────────────────────────────────
 def check_sos_and_handoff(state, rel):
@@ -258,7 +386,9 @@ def check_sos_and_handoff(state, rel):
     if state["energy"] <= 20 and state.get("style", "") != "MEDBAY":
         savior = find_healthy_agent(exclude_id=state.get("id"))
         if savior:
-            print(f"  [SOS] {state.get('id')} is critical! {savior.get('id')} intercepts mission -> MEDBAY.")
+            print(f"  [SOS] {state.get('id')} succumbed to the demonic hallucination! Mind state critical.")
+            print(f"  [MEDBAY] {savior.get('id')} deploys! Dragging {state.get('id')} to MedBay for cognitive purge.")
+            print(f"  [RADIO] {savior.get('id')} → 'I have the line. Exorcising the spell. Resuming.'")
             log({"event": "sos", "file": str(rel), "agent_id": state.get("id"), "model": savior.get("id")})
             state["style"] = "MEDBAY"
             save_agent_state(state)
@@ -273,8 +403,110 @@ def check_sos_and_handoff(state, rel):
                 
             os.execv(sys.executable, [sys.executable] + new_args)
 
+# ─── ITT SUBTITLE EXORCISM ───────────────────────────────────────────────────
+def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
+    """
+    Surgical exorcism for Apple ITT (TTML) subtitle files.
+    Detects and removes:
+      1. Invalid frame numbers (>=30 on a 30fps timeline)
+      2. AI-injected contamination lines (AI: ... patterns)
+    Returns True if the file was clean or successfully purged.
+    """
+    import xml.etree.ElementTree as ET
+
+    print(f"  [ITT] Exorcism protocol initiated on {filepath.name}")
+    content = filepath.read_text(encoding="utf-8")
+    # Detect frame rate from file
+    fps_match = re.search(r'ttp:frameRate="(\d+)"', content)
+    fps = int(fps_match.group(1)) if fps_match else 30
+    print(f"  [ITT] Timeline frame rate: {fps}fps")
+
+    # Scan for demonic timestamps (frame count >= fps)
+    time_pattern = re.compile(r'(begin|end)="(\d+:\d+:\d+:(\d+))"')
+    bad_frames = []
+    for m in time_pattern.finditer(content):
+        frame = int(m.group(3))
+        if frame >= fps:
+            bad_frames.append((m.group(2), frame))
+
+    # Scan for AI-injected contamination
+    ai_pattern = re.compile(r'<p [^>]+>\(AI:.*?\)</p>', re.DOTALL)
+    ai_hits = ai_pattern.findall(content)
+
+    if not bad_frames and not ai_hits:
+        print(f"  [ITT] File is angelic. No demonic presence detected.")
+        log({"event": "itt_clean", "file": str(filepath)})
+        return True
+
+    print(f"  [SPELL] {len(bad_frames)} demonic timestamp(s) detected: {[t for t,_ in bad_frames]}")
+    print(f"  [SPELL] {len(ai_hits)} AI-injected contamination line(s) detected.")
+
+    if dry_run:
+        print(f"  [SCOUTING] Would purge {len(bad_frames)} timestamps and {len(ai_hits)} AI injections.")
+        # Leave a scout scar comment in the file
+        scar = f"<!-- [SCOUTING_SCAR] {state['id']}: {len(bad_frames)} invalid timestamps, {len(ai_hits)} AI injections detected. Run with --write to exorcise. -->\n"
+        if "[SCOUTING_SCAR]" not in content:
+            with open(filepath, "r+", encoding="utf-8") as f:
+                original = f.read()
+                f.seek(0)
+                f.write(original.replace("<?xml", scar + "<?xml", 1))
+        return True
+
+    # REPAIR MODE — perform the exorcism
+    # Step 1: Remove AI-injected lines entirely
+    purged = ai_pattern.sub('', content)
+    removed_ai = len(ai_hits)
+
+    # Step 2: Clamp invalid frame numbers to fps-1
+    def clamp_frame(m):
+        attr = m.group(1)
+        full_time = m.group(2)
+        frame = int(m.group(3))
+        if frame >= fps:
+            fixed_frame = fps - 1
+            fixed_time = re.sub(r':\d+$', f':{fixed_frame:02d}', full_time)
+            return f'{attr}="{fixed_time}"'
+        return m.group(0)
+
+    purged = time_pattern.sub(clamp_frame, purged)
+
+    # Step 3: Clean up empty lines left by removed paragraphs
+    purged = re.sub(r'\n\s*\n\s*\n', '\n\n', purged)
+
+    filepath.write_text(purged, encoding="utf-8")
+
+    print(f"  [✅] ITT Exorcism complete. Purged {removed_ai} AI injection(s), clamped {len(bad_frames)} frame(s).")
+    log({"event": "itt_exorcised", "file": str(filepath),
+         "ai_removed": removed_ai, "frames_clamped": len(bad_frames), "agent": state.get("id")})
+         
+    if not dry_run:
+        import pheromone
+        mark_cwd = filepath.parent if filepath.is_file() else filepath
+        pheromone.drop_scar(
+            directory=mark_cwd,
+            agent_state=state,
+            action="EXORCISE",
+            found=f"{len(bad_frames)} frames, {removed_ai} AI injections",
+            status="RESOLVED",
+            mark_text=f"Purged {removed_ai} AI injections and clamped {len(bad_frames)} timestamps. File is pure.",
+            reason={"type": "Exorcism", "message": "Cleared all AI impurities."}
+        )
+    return True
+
+
 def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "qwen3.5:0.8b", base_url: str = "", api_key: str = "", verify: bool = False):
     root = Path(target_dir)
+    # ─── File routing: ITT subtitle files get exorcism protocol ──────────────────
+    if root.is_file() and root.suffix == ".itt":
+        print(f"\n  ANTON-SIFTA — ITT Subtitle Exorcism")
+        print(f"  Target:  {root}")
+        print(f"  Agent:   {state['id']} | Energy: {state['energy']} | Style: {state['style']}")
+        mode_str = "SCOUTING" if dry_run else "REPAIR"
+        print(f"  Mode:    {mode_str}")
+        print("─" * 60)
+        itt_exorcism(root, state, dry_run=dry_run)
+        return
+    
     if root.is_file() and root.suffix == ".py":
         files = [root]
     else:
@@ -290,18 +522,41 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
     
     # Aggressive mutation check
     if state["style"] == "AGGRESSIVE":
-        print(f"  [MUTATION] AGGRESSIVE style detected. Disabling dry run and fallbacks.")
+        print(f"  [MUTATION] AGGRESSIVE style detected. Disabling scouting mode and fallbacks.")
         dry_run = False
 
-    print(f"  Dry run: {dry_run}")
+    mode_str = "SCOUTING" if dry_run else "REPAIR"
+    print(f"  Mode:    {mode_str}")
     print("─" * 60)
 
     log({"event": "swim_start", "target": str(root),
-         "file_count": len(files), "dry_run": dry_run, "agent_id": state["id"]})
+         "file_count": len(files), "scouting_mode": dry_run, "agent_id": state["id"]})
 
     fixed = 0
     skipped = 0
     errors = 0
+    
+    import pheromone
+    # ── SMP PROTOCOL (Smell Territory) ──────────────────────────────────────────
+    mark_cwd = root.parent if root.is_file() else root
+    scents = pheromone.smell_territory(mark_cwd)
+    if scents:
+        print(f"\n  [SCENT] Detected {len(scents)} previous scent trails.")
+        for s in scents:
+            is_bleeding = s.get("stigmergy", {}).get("status") == "BLEEDING"
+            marker = "🩸" if is_bleeding else "💨"
+            potency = s.get('scent', {}).get('potency', 0.0)
+            msg = f"    {marker} {s.get('face')} {s.get('agent_id')} (Potency: {potency})"
+            if is_bleeding:
+                err_line = s.get('stigmergy', {}).get('unresolved_fault_line', '?')
+                msg += f" -> BLEEDING at line {err_line}"
+                print(msg)
+                print(f"    [STIGMERGY] High priority — picking up {s.get('agent_id')}'s thread.")
+            else:
+                print(msg)
+    else:
+        print(f"\n  [SCENT] Territory is unmarked.")
+
 
     for i, filepath in enumerate(files):
         rel = filepath.relative_to(root)
@@ -326,6 +581,16 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             if syntax_ok:
                 if pass_num == 0:
                     print(f"  [OK] Syntax clean — scout mark left, moving on.")
+                    if not dry_run:
+                        pheromone.drop_scar(
+                            directory=mark_cwd,
+                            agent_state=state,
+                            action="SCOUT",
+                            found="clean file",
+                            status="CLEAN",
+                            mark_text=f"Territory {rel} is clean.",
+                            reason={"type": "Scout", "message": "File passed syntax validation natively."}
+                        )
                 else:
                     print(f"  [CLEAN] File successfully repaired after {pass_num} sweeps.")
                 log({"event": "scout", "file": str(rel),
@@ -350,19 +615,55 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             # ── surgical bite — only the broken region ─────────────────────────
             chunk, bite_start, bite_end, all_lines = extract_bite(filepath, error_line, buffer=buffer)
         
-            print(f"  [LLM] Sending {bite_end - bite_start} lines to {provider.upper()} ({model})...")
-            if provider == "ollama":
-                fixed_chunk = call_ollama(chunk, model=model)
-            else:
-                fixed_chunk = call_openai_api(chunk, model=model, base_url=base_url, api_key=api_key)
+            fixed_chunk = None
+
+            # ── quick regex intercept ──────────────────────────────────────────
+            if "unterminated string literal" in error_msg:
+                lines = chunk.splitlines(keepends=True)
+                # error_line is 1-based; bite_start is 0-based list index → subtract 1
+                rel_idx = error_line - bite_start - 1
+                if 0 <= rel_idx < len(lines):
+                    line = lines[rel_idx]
+                    if line.count('"') % 2 == 1:
+                        lines[rel_idx] = line.rstrip() + '"' + ('\n' if line.endswith('\n') else '')
+                        fixed_chunk = "".join(lines)
+                        print("  [FAST REPAIR] Neural regex healed unterminated double quote.")
+                    elif line.count("'") % 2 == 1:
+                        lines[rel_idx] = line.rstrip() + "'" + ('\n' if line.endswith('\n') else '')
+                        fixed_chunk = "".join(lines)
+                        print("  [FAST REPAIR] Neural regex healed unterminated single quote.")
+                else:
+                    # Safety net: scan whole chunk for any line with an odd quote count
+                    for idx, line in enumerate(lines):
+                        if line.count('"') % 2 == 1:
+                            lines[idx] = line.rstrip() + '"' + ('\n' if line.endswith('\n') else '')
+                            fixed_chunk = "".join(lines)
+                            print(f"  [FAST REPAIR] Neural regex detected stray double quote at chunk line {idx}.")
+                            break
+                        elif line.count("'") % 2 == 1:
+                            lines[idx] = line.rstrip() + "'" + ('\n' if line.endswith('\n') else '')
+                            fixed_chunk = "".join(lines)
+                            print(f"  [FAST REPAIR] Neural regex detected stray single quote at chunk line {idx}.")
+                            break
+
+            if not fixed_chunk:
+                print(f"  [LLM] Sending {bite_end - bite_start} lines to {provider.upper()} ({model})...")
+                if provider == "ollama":
+                    if ensure_ollama() and ensure_model_pulled(model):
+                        fixed_chunk = call_ollama(chunk, model=model)
+                    else:
+                        print(f"  [OLLAMA] Model not available. Skipping LLM layer.")
+                else:
+                    fixed_chunk = call_openai_api(chunk, model=model, base_url=base_url, api_key=api_key)
 
             # ── fallback to 4b if 0.8b fails ──────────────────────────────────
             if not fixed_chunk and provider == "ollama" and state["style"] != "AGGRESSIVE":
-                if not ollama_healthy():
-                    print(f"  [SKIP FALLBACK] Ollama daemon unresponsive. Aborting to save energy.")
-                else:
+                if ollama_healthy():
                     print(f"  [FALLBACK] Model returned nothing. Trying {FALLBACK_MODEL}...")
-                    fixed_chunk = call_ollama(chunk, FALLBACK_MODEL)
+                    if ensure_model_pulled(FALLBACK_MODEL):
+                        fixed_chunk = call_ollama(chunk, FALLBACK_MODEL)
+                else:
+                    print(f"  [FALLBACK SKIPPED] Daemon went offline mid-swim.")
 
             if not fixed_chunk:
                 print(f"  [FAIL] All models returned nothing. Taking damage.")
@@ -423,46 +724,77 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                             stitch_bite(filepath, fixed_chunk, bite_start, bite_end, all_lines)
                         print(f"  [✅] My zone clean. New fault detected at line {new_error_line}.")
                         
-                        partner = find_healthy_agent(exclude_id=state.get("id"))
-                        if partner:
-                            print(f"  [RADIO] Signaling {partner.get('id')} to intercept line {new_error_line}...")
-                            log({"event": "coop_handoff", "file": str(rel), "agent_id": state.get("id"), "partner": partner.get("id"), "new_line": new_error_line})
-                            
-                            new_args = sys.argv[:]
-                            if "--body" in new_args:
-                                idx = new_args.index("--body")
-                                new_args[idx+1] = partner["raw"]
-                            else:
-                                new_args.extend(["--body", partner["raw"]])
+                        if not dry_run:
+                            partner = find_healthy_agent(exclude_id=state.get("id"))
+                            if partner:
+                                print(f"  [RADIO] Signaling {partner.get('id')} to intercept line {new_error_line}...")
+                                log({"event": "coop_handoff", "file": str(rel), "agent_id": state.get("id"), "partner": partner.get("id"), "new_line": new_error_line})
                                 
-                            subprocess.run([sys.executable] + new_args)
-                            
-                            overseer = find_healthy_agent(exclude_id=partner.get("id"))
-                            overseer_id = overseer.get("id") if overseer else "SYSTEM"
-                            print(f"  [RADIO] Summoning Overseer {overseer_id} for final walkthrough...")
-                            overseer_validate(filepath, state.get("id"), partner.get("id"), overseer_id)
+                                new_args = sys.argv[:]
+                                if "--body" in new_args:
+                                    idx = new_args.index("--body")
+                                    new_args[idx+1] = partner["raw"]
+                                else:
+                                    new_args.extend(["--body", partner["raw"]])
+                                    
+                                subprocess.run([sys.executable] + new_args)
+                                
+                                exorcist = find_healthy_agent(exclude_id=partner.get("id"))
+                                exorcist_id = exorcist.get("id") if exorcist else "SYSTEM"
+                                print(f"  [RADIO] Summoning Exorcist {exorcist_id} for final purging rites...")
+                                exorcist_validate(filepath, state.get("id"), partner.get("id"), exorcist_id)
+                            else:
+                                print(f"  [RADIO] No healthy agents available for handoff.")
                         else:
-                            print(f"  [RADIO] No healthy agents available for handoff.")
+                            print(f"  [SCOUTING] Handoff suppressed in scouting mode to prevent temporal loops.")
                         
                         # My swim is done for this file, but since I fixed my part, count it as fixed.
                         fixed += 1
                         break
 
                     else:
+                        print(f"  [SPELL] Demonic hallucination cast! {state['id']}'s mind was corrupted.")
                         print(f"  [ABORT] Pass introduced a different error ({repair_err_str}). Reverting.")
                         state = apply_damage(state, "validation_fail")
                         state["energy"] -= 5 # Extra penalty for corruption
                         log({"event": "abort", "file": str(rel),
                              "before_hash": before_hash, "reason": repair_err})
                         errors += 1
+                        
+                        if not dry_run:
+                            pheromone.drop_scar(
+                                directory=mark_cwd,
+                                agent_state=state,
+                                action="ABORT",
+                                found=str(syntax_err),
+                                status="BLEEDING",
+                                mark_text=f"Agent corrupted mind state resolving {rel}. Dropping thread.",
+                                unresolved_line=error_line,
+                                reason={"type": "ValidationFail", "line": error_line, "message": repair_err_str}
+                            )
+                            
                         check_sos_and_handoff(state, rel)
                         break
                 else:
+                    print(f"  [SPELL] Demonic spell detected! The bite is corrupted.")
                     print(f"  [REJECT] Stitched file still broken: {repair_err}. Taking damage.")
                     state = apply_damage(state, "validation_fail")
                     log({"event": "reject", "file": str(rel),
                          "before_hash": before_hash, "reason": repair_err})
                     errors += 1
+                    
+                    if not dry_run:
+                        pheromone.drop_scar(
+                            directory=mark_cwd,
+                            agent_state=state,
+                            action="REPAIR_FAILED",
+                            found=str(syntax_err),
+                            status="BLEEDING",
+                            mark_text=f"Failed to stitch bite for {rel}. Hallucination detected.",
+                            unresolved_line=error_line,
+                            reason={"type": "Hallucination", "line": error_line, "message": repair_err_str}
+                        )
+                        
                     check_sos_and_handoff(state, rel)
                     if state["energy"] <= 0:
                         print("  [FATAL] Agent energy depleted from validation failures.")
@@ -478,8 +810,34 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             if not dry_run:
                 stitch_bite(filepath, fixed_chunk, bite_start, bite_end, all_lines)
                 print(f"  [✅] Stitched and written.")
+                
+                pheromone.drop_scar(
+                    directory=mark_cwd,
+                    agent_state=state,
+                    action="REPAIR_SUCCESS",
+                    found=str(syntax_err),
+                    status="RESOLVED",
+                    mark_text=f"Stitched and resolved syntax fault at line {error_line}.",
+                    reason={"type": "Resolution", "line": error_line, "message": "Syntax clear."}
+                )
             else:
-                print(f"  [DRY] Fix validated. Would stitch lines {bite_start+1}–{bite_end}. Hash: {before_hash[:8]} → {after_hash[:8]}")
+                scout_note = f"    # [SCOUTING_SCAR] {state['id']} found demonic syntax here: {syntax_err}. Proposed fix in logs.\n"
+                safe_insert = max(0, error_line - 1)
+                all_lines.insert(safe_insert, scout_note)
+                filepath.write_text("".join(all_lines), encoding="utf-8")
+                print(f"  [SCOUTING] Left a physical scar in the file at line {error_line}.")
+                print(f"  [SCOUTING] Fix validated in memory. Would stitch lines {bite_start+1}–{bite_end}. Hash: {before_hash[:8]} → {after_hash[:8]}")
+                
+                pheromone.drop_scar(
+                    directory=mark_cwd,
+                    agent_state=state,
+                    action="SCOUT",
+                    found=str(syntax_err),
+                    status="BLEEDING",
+                    mark_text=f"Scouted syntax fault at line {error_line}. Left comment scar in code.",
+                    unresolved_line=error_line,
+                    reason={"type": "SyntaxError", "line": error_line, "message": str(syntax_err)}
+                )
 
             log({
                 "event":       "fix",
@@ -509,7 +867,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ANTON-SIFTA Code Repair Agent")
     parser.add_argument("target", help="Directory to swim through and repair")
     parser.add_argument("--write", action="store_true",
-                        help="Actually write fixes (default: dry run)")
+                        help="Actually write fixes (default: SCOUTING mode, leaves comment scars only)")
     parser.add_argument("--body", type=str, default="",
                         help="Raw ASCII body string to initialize state from")
     parser.add_argument("--provider", default="ollama", choices=["ollama", "openai", "openrouter", "google", "custom"])
@@ -529,8 +887,11 @@ if __name__ == "__main__":
         body_string = alice.generate_body("M5", "M1THER", "REPAIR_SWIM", style="NOMINAL", energy=100)
         agent_state = parse_body_state(body_string)
 
+    # Strip surrounding quotes the UI sometimes injects (e.g. '/path/to/file' → /path/to/file)
+    target = args.target.strip("'\"")
+
     swim_and_repair(
-        args.target, 
+        target, 
         agent_state, 
         dry_run=not args.write, 
         provider=args.provider,

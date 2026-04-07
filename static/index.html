@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
     <!-- Scanline overlay -->
@@ -71,8 +71,14 @@
             </div>
         </section>
 
-        <!-- Right Panel: Cemetery + Quorum -->
-        <section class="panel ledger-panel" aria-label="Cemetery and Quorum Ledger">
+        <!-- Right Panel: Territory Map + Cemetery + Quorum -->
+        <section class="panel ledger-panel" aria-label="Territory and Metrics">
+            <div class="sub-panel territory-panel">
+                <h2><span class="panel-icon">🗺️</span> TERRITORY MAP</h2>
+                <div id="territory-list" class="list" style="max-height: 400px; overflow-y: auto;">
+                    <div class="list-item placeholder-item">Scanning territory...</div>
+                </div>
+            </div>
             <div class="sub-panel cemetery-panel">
                 <h2><span class="panel-icon">☠</span> CEMETERY</h2>
                 <ul id="cemetery-list" class="list">
@@ -158,38 +164,29 @@
         </div>
     </dialog>
 
-    <!-- ═══ Dispatch Modal ═══ -->
-    <dialog id="dispatch-modal" class="modal" aria-labelledby="modal-title">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title">DISPATCH AGENT</h3>
-                <button type="button" class="close-btn" id="close-modal-btn" aria-label="Close dispatch">×</button>
+
+
+    <!-- ── Scar Reader Modal ────────────────────────────── -->
+    <dialog id="scar-modal" class="scar-modal-dialog">
+        <div class="scar-modal-inner">
+            <div class="scar-modal-header">
+                <span id="scar-modal-title" class="scar-modal-folder">📁 —</span>
+                <div class="scar-modal-actions">
+                    <span class="scar-modal-subtitle">AGENT TERRITORY CHRONICLE</span>
+                    <button class="btn btn-secondary" id="close-scar-modal" style="padding:0.25rem 0.75rem;">✕ CLOSE</button>
+                </div>
             </div>
-            <div class="modal-body">
-                <form id="dispatch-form">
-                    <input type="hidden" id="dispatch-agent-id">
-
-                    <div class="form-group">
-                        <label for="target-dir">Target Directory Path</label>
-                        <input type="text" id="target-dir" class="form-input" value="test_environment" required>
-                    </div>
-
-                    <div class="form-group toggle-group">
-                        <label for="write-mode">Write Mode <span class="danger-label">(DANGER — modifies files)</span></label>
-                        <label class="switch">
-                            <input type="checkbox" id="write-mode">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary btn-full" id="send-swimmer-btn">
-                        <span class="btn-icon">▶</span> SEND SWIMMER
-                    </button>
-
-                    <div class="terminal-output" id="terminal-output">
-                        <div class="placeholder">&gt; Waiting for dispatch command...</div>
-                    </div>
-                </form>
+            <div class="scar-modal-body">
+                <div class="scar-tab-bar">
+                    <button class="scar-tab active" id="tab-chronicle" onclick="switchScarTab('chronicle')">📜 CHRONICLE</button>
+                    <button class="scar-tab" id="tab-raw" onclick="switchScarTab('raw')">🧬 RAW SCARS</button>
+                </div>
+                <div id="scar-panel-chronicle" class="scar-panel">
+                    <div id="scar-md-content" class="scar-chronicle-view"></div>
+                </div>
+                <div id="scar-panel-raw" class="scar-panel" style="display:none;">
+                    <div id="scar-file-list"></div>
+                </div>
             </div>
         </div>
     </dialog>
