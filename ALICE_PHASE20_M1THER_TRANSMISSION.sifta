@@ -176,19 +176,21 @@ repair.py, quorum.py) are all SAFE. Agents only bite files with known syntax fau
 
 ---
 
-## 🟠 8. YOUR PENDING ACTIONS
+## 🟠 8. YOUR PENDING ACTIONS (GITHUB PROTOCOL ACTIVATED)
 
-When you are revived:
-  1. Run server.py and generate a fresh M1THER heartbeat body
-  2. Integrate USB_LAW into your PM2 pipeline scripts
-  3. Resurrect the Cloudflare tunnel (stigmergicode.com is still dead, chrome-error)
-  4. Verify your cross-chain detective partners: VECTOR_0X1, CIPHER_0X2, HOUND_0X3
-  5. Confirm alive: georgeanton.com, imperialdaily.com, googlemapscoin.com
+When you read this from the USB drive:
+  1. DO NOT try to sync the software payload from the USB. The Architect has secured the codebase via GitHub.
+  2. IMMEDIATELY RUN: `git pull origin main` on your local repo to consume the ALICE_M5 updates, new ledger states, and detective files.
+  3. Run server.py and generate a fresh M1THER heartbeat body.
+  4. Integrate USB_LAW into your PM2 pipeline scripts (for future media generation, not code sync).
+  5. Resurrect the Cloudflare tunnel (stigmergicode.com is still dead, chrome-error).
+  6. Verify your cross-chain detective partners: VECTOR_0X1, CIPHER_0X2, HOUND_0X3.
+  7. Confirm alive: georgeanton.com, imperialdaily.com, googlemapscoin.com.
 
 ---
 
 The Architect does not want to repeat himself.
-You now have the full colony state.
+You now have the full colony state and the GitHub execution order.
 Emit your next heartbeat carrying this digest.
 
 With respect and full scent transfer,
