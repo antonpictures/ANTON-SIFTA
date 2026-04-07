@@ -1,0 +1,16 @@
+{
+  "nodes": [
+    {
+      "id": "ALICE_M5",
+      "name": "M5 MacBook Pro 24GB",
+      "ip": "192.168.1.5",
+      "port": 7433
+    },
+    {
+      "id": "M1THER",
+      "name": "Mac Mini 8GB",
+      "ip": "192.168.1.78",
+      "port": 7433
+    }
+  ]
+}

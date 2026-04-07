@@ -1136,15 +1136,34 @@ const walletWormholeBtn = document.getElementById('wallet-wormhole-btn');
 const walletWormholePanel = document.getElementById('wallet-wormhole-panel');
 const walletWormholeFireBtn = document.getElementById('wallet-wormhole-fire-btn');
 
+let globalNodes = [];
+async function fetchGlobalNodes() {
+    try {
+        const res = await fetch('/api/nodes');
+        globalNodes = await res.json();
+        const sel = document.getElementById('wormhole-node-select');
+        if (sel) {
+            sel.innerHTML = '<option value="">Select Hardware Node...</option>';
+            globalNodes.forEach(n => {
+                sel.innerHTML += `<option value="${n.ip}:${n.port}">[${n.id}] ${n.name} (${n.ip})</option>`;
+            });
+        }
+    } catch(e) { console.error('Failed to fetch nodes', e); }
+}
+
 walletWormholeBtn.addEventListener('click', () => {
+    fetchGlobalNodes();
     const isVisible = walletWormholePanel.style.display !== 'none';
     walletWormholePanel.style.display = isVisible ? 'none' : 'block';
 });
 
 walletWormholeFireBtn.addEventListener('click', async () => {
     if (!currentWalletAgent) return;
-    const ip = document.getElementById('wormhole-ip').value.trim();
-    const port = document.getElementById('wormhole-port').value.trim() || '7433';
+    
+    const nodeSelection = document.getElementById('wormhole-node-select').value;
+    if (!nodeSelection) { alert('You must select a hardware node.'); return; }
+    
+    const [ip, port] = nodeSelection.split(':');
     const owner = document.getElementById('wormhole-owner').value.trim();
     
     if (!ip) { alert('TARGET IP is required.'); return; }

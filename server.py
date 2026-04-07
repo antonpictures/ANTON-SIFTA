@@ -243,6 +243,18 @@ async def get_ollama_models():
 
 
 
+@app.get("/api/nodes")
+async def get_nodes():
+    """Returns the globally synced node IP registry."""
+    nodes_file = ROOT_DIR / "node_registry.json"
+    if nodes_file.exists():
+        try:
+            with open(nodes_file, "r") as f:
+                return json.load(f).get("nodes", [])
+        except Exception:
+            pass
+    return []
+
 @app.get("/api/pick-path")
 async def pick_path(mode: str = "file"):
     """Open native macOS Finder dialog and return the selected path."""

@@ -261,8 +261,10 @@
                 <div class="wallet-wormhole-panel" id="wallet-wormhole-panel" style="display:none;">
                     <div class="wormhole-label">⚠ P2P WORMHOLE — local copy becomes GHOST after transmission</div>
                     <div class="wormhole-input-row">
-                        <input type="text" id="wormhole-ip" placeholder="TARGET IP  (e.g. 192.168.1.45)" class="form-input" style="flex:1;">
-                        <input type="text" id="wormhole-port" placeholder="PORT" value="7433" class="form-input" style="width:80px;">
+                        <select id="wormhole-node-select" class="form-select" style="flex:1;">
+                            <option value="">Fetching global hardware nodes...</option>
+                        </select>
+                        <input type="text" id="wormhole-port" placeholder="PORT" value="7433" class="form-input" style="width:80px; display:none;">
                     </div>
                     <div class="wormhole-input-row">
                         <input type="text" id="wormhole-owner" placeholder="New owner email" class="form-input" style="flex:1;">
