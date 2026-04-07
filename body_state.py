@@ -55,6 +55,12 @@ def find_healthy_agent(exclude_id: str) -> dict | None:
     return None
 
 class SwarmBody:
+    # --- Physical Hardware Binding ---
+    BARE_METAL_SERIALS = {
+        "ALICE_M5": "GTH4921YP3",   # Explicit hardware lock
+        "M1THER": "MAC_MINI_BOARD"  # To be serialized later
+    }
+    
     FACES = {
         # — Primary Nodes —
         "ALICE_M5":  "[_o_]",   # Queen — 24GB MacBook Pro — Heavy Inference Engine
@@ -73,10 +79,13 @@ class SwarmBody:
     # Detectives are hidden from main panel when RESTING — only shown when ACTIVE
     DETECTIVE_IDS = {"DEEP_SYNTAX_AUDITOR_0X1", "TENSOR_PHANTOM_0X2", "SILICON_HOUND_0X3"}
     
-    def __init__(self, agent_id):
+    def __init__(self, agent_id, birth_certificate=None):
         self.agent_id = agent_id.upper()
-        self.face = self.FACES.get(self.agent_id, "[O_O]")
-        
+        if self.agent_id in self.FACES:
+            self.face = self.FACES[self.agent_id]
+        else:
+            self.face = "[?]" # Wild-Type Drone
+            
         # Rehydrate persistent state if it exists
         saved_state = load_agent_state(self.agent_id)
         if saved_state:
@@ -86,6 +95,16 @@ class SwarmBody:
             self.style = saved_state.get("style", "NOMINAL")
             self.private_key_b64 = saved_state.get("private_key_b64")
         else:
+            # --- SECURITY BLOCK: UNAUTHORIZED BAPTISM ---
+            # Remote queens cannot tell this system to create an agent.
+            # Must be baptized by the physical architect.
+            if birth_certificate != f"ARCHITECT_SEAL_{self.agent_id}":
+                raise PermissionError(
+                    f"SECURITY BREACH: Agents cannot be created without Architect's birth certificate.\n"
+                    f"Queens may EXHANGE, BUY, or SELL agents over the wormhole, but creation requires bare-metal approval.\n"
+                    f"Failed baptism for: {self.agent_id}"
+                )
+                
             self.sequence = 0
             self.hash_chain = []
             self.energy = 100
@@ -129,6 +148,10 @@ class SwarmBody:
                 
         # Cryptographic Mass (Hash Chaining using SHA-256 for physical history)
         raw_data = base_string
+        if self.agent_id in self.BARE_METAL_SERIALS:
+            # Tie the primary terminals directly to their physical serial numbers
+            raw_data += f"::SERIAL[{self.BARE_METAL_SERIALS[self.agent_id]}]"
+            
         if self.hash_chain:
             raw_data += self.hash_chain[-1] 
             
