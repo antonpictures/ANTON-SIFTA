@@ -2,6 +2,64 @@
 //  ANTON-SIFTA // COMMAND INTERFACE — app.js
 // ═══════════════════════════════════════════════════
 
+// ─── Panel Toggle Functions (topbar) ─────────────────
+// All drawers start closed — Fleet Overview is the default view.
+function toggleDrawer(drawerId, btnId) {
+    const drawer = document.getElementById(drawerId);
+    const btn    = document.getElementById(btnId);
+    if (!drawer) return;
+
+    const isOpen = drawer.hasAttribute('open');
+
+    if (isOpen) {
+        drawer.removeAttribute('open');
+        if (btn) { btn.classList.remove('active'); }
+    } else {
+        drawer.setAttribute('open', '');
+        if (btn) { btn.classList.add('active'); }
+        // Scroll drawer into view smoothly
+        setTimeout(() => drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+    }
+    // Fleet button goes inactive when any drawer opens, back to active if all closed
+    _syncFleetBtn();
+}
+
+function activateFleetPanel() {
+    // Close all drawers, scroll fleet list to top
+    ['drawer-territory', 'drawer-cemetery', 'drawer-quorum'].forEach(id => {
+        const d = document.getElementById(id);
+        if (d) d.removeAttribute('open');
+    });
+    ['panel-btn-territory', 'panel-btn-cemetery', 'panel-btn-quorum'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.classList.remove('active');
+    });
+    const fleetBtn = document.getElementById('panel-btn-fleet');
+    if (fleetBtn) fleetBtn.classList.add('active');
+    const fleetList = document.getElementById('fleet-list');
+    if (fleetList) fleetList.scrollTop = 0;
+}
+
+function _syncFleetBtn() {
+    const anyOpen = ['drawer-territory', 'drawer-cemetery', 'drawer-quorum']
+        .some(id => document.getElementById(id)?.hasAttribute('open'));
+    const fleetBtn = document.getElementById('panel-btn-fleet');
+    if (fleetBtn) fleetBtn.classList.toggle('active', !anyOpen);
+}
+
+// ─── Agent Card Drawer Toggle ─────────────────────────
+function toggleAgentDrawer(agentId) {
+    const drawer  = document.getElementById(`ac-drawer-${agentId}`);
+    const chevron = document.getElementById(`ac-chevron-icon-${agentId}`);
+    const card    = document.querySelector(`[data-id="${agentId}"]`);
+    if (!drawer) return;
+    const isOpen = drawer.style.display !== 'none';
+    drawer.style.display = isOpen ? 'none' : 'block';
+    if (chevron) chevron.textContent = isOpen ? '▾' : '▴';
+    if (card)    card.classList.toggle('ac-expanded', !isOpen);
+}
+
+
 // ─── Background particle canvas ──────────────────────
 (function initBgCanvas() {
     const canvas = document.getElementById('bg-canvas');
@@ -43,8 +101,30 @@
     drawFrame();
 })();
 
-
 // ─── Utility ──────────────────────────────────────────
+window.copyAgentBody = function(agentId) {
+    const rawEl   = document.getElementById(`raw-${agentId}`);
+    const labelEl = document.getElementById(`copy-label-${agentId}`);
+    const text = rawEl ? rawEl.textContent.trim() : '';
+    if (!text) return;
+    const doCopy = (str) => {
+        if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(str);
+        const ta = document.createElement('textarea');
+        ta.value = str; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        return Promise.resolve();
+    };
+    doCopy(text).then(() => {
+        if (labelEl) {
+            const old = labelEl.textContent;
+            labelEl.textContent = '\u2713'; labelEl.style.color = 'var(--health-high)';
+            setTimeout(() => { labelEl.textContent = old; labelEl.style.color = ''; }, 1500);
+        }
+    }).catch(err => console.error('Failed to copy:', err));
+};
+
+
 function formatTime(secs) {
     if (secs <= 0) return 'EXPIRED';
     const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
@@ -102,6 +182,7 @@ async function fetchAgents() {
         liveAgentCount = agents.length;
         document.getElementById('stat-agents-val').textContent = liveAgentCount || '0';
         updateRoster(agents);
+        updateFleet(agents);
         updateWallet(agents);
     } catch (e) {
         console.error('Agents fetch error', e);
@@ -115,6 +196,10 @@ function updateRoster(agents) {
         grid.innerHTML = '<div class="placeholder-card"><span class="blink">▋</span> No agents in state dir.</div>';
         return;
     }
+
+    // Clear bootstrap placeholder once real data arrives
+    const placeholder = grid.querySelector('.placeholder-card');
+    if (placeholder) placeholder.remove();
 
     // Preserve existing cards to avoid full redraw flicker
     const existingIds = new Set([...grid.querySelectorAll('.agent-card')].map(c => c.dataset.id));
@@ -137,46 +222,73 @@ function updateRoster(agents) {
             card.dataset.id = agent.id;
             grid.appendChild(card);
 
-            // Scaffold the DOM for this specific agent
             card.innerHTML = `
-                <div class="agent-header">
-                    <span class="agent-face" id="face-${agent.id}"></span>
-                    <span class="agent-id">${agent.id}</span>
+                <div class="ac-top" onclick="toggleAgentDrawer('${agent.id}')">
+                    <div class="ac-face-wrap">
+                        <span class="ac-face" id="face-${agent.id}"></span>
+                    </div>
+                    <div class="ac-identity">
+                        <div class="ac-name">${agent.id}</div>
+                        <div class="ac-meta">
+                            <span id="seq-${agent.id}"></span>
+                            <span id="ttl-${agent.id}"></span>
+                        </div>
+                    </div>
                     <span class="agent-style" id="style-${agent.id}"></span>
                 </div>
-                <div class="agent-stats">
-                    <span id="seq-${agent.id}"></span>
-                    <span id="ttl-${agent.id}"></span>
+
+                <div class="ac-middle">
+                    <div class="ac-hash-pill">
+                        <span class="ac-hash-icon">#</span>
+                        <span class="ac-hash-text" id="hash-${agent.id}">—</span>
+                        <button class="ac-copy-btn" onclick="copyAgentBody('${agent.id}')" title="Copy full body">
+                            <span id="copy-label-${agent.id}">⎘</span>
+                        </button>
+                    </div>
+                    <div class="ac-energy-right">
+                        <span class="ac-energy-zap">⚡</span>
+                        <span class="ac-energy-num" id="energy-num-${agent.id}"></span>
+                    </div>
                 </div>
-                <div class="agent-raw-body" id="raw-${agent.id}"></div>
                 <div class="energy-bar-bg">
                     <div class="energy-fill" id="energy-${agent.id}"></div>
                 </div>
-                <div id="btn-container-${agent.id}">
-                    <button class="btn btn-dispatch-toggle" onclick="toggleDispatch('${agent.id}')">▶ COMMAND DISPATCH</button>
-                    <div class="agent-dispatch-panel" id="dispatch-panel-${agent.id}" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-dim);">
-                        <div class="form-group">
-                            <label>Target Path</label>
-                            <input type="text" id="target-${agent.id}" class="form-input" placeholder="Path to file or folder" value="test_environment">
-                            <div class="browse-row" style="margin-top: 5px;">
-                                <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', '${agent.id}')">📄 File</button>
-                                <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', '${agent.id}')">📁 Folder</button>
+
+                <!-- Expandable Drawer -->
+                <div class="ac-drawer" id="ac-drawer-${agent.id}" style="display:none;">
+                    <div class="ac-drawer-label">⬛ RAW TELEMETRY</div>
+                    <div class="agent-raw-body" id="raw-${agent.id}"></div>
+                    <div id="btn-container-${agent.id}">
+                        <div class="agent-dispatch-panel" id="dispatch-panel-${agent.id}" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-dim);">
+                            <div class="form-group">
+                                <label>Target Path</label>
+                                <input type="text" id="target-${agent.id}" class="form-input" placeholder="Path to file or folder" value="test_environment">
+                                <div class="browse-row" style="margin-top: 5px;">
+                                    <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', '${agent.id}')">📄 File</button>
+                                    <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', '${agent.id}')">📁 Folder</button>
+                                </div>
+                            </div>
+                            <div class="form-group toggle-group" style="margin-top: 10px;">
+                                <label>Write Mode <span class="danger-label">(DANGER)</span></label>
+                                <label class="switch">
+                                    <input type="checkbox" id="write-${agent.id}">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <button class="btn btn-primary btn-full" id="send-${agent.id}" style="margin-top: 10px;" onclick="sendSwimmerInline('${agent.id}')">
+                                <span class="btn-icon">▶</span> SEND SWIMMER
+                            </button>
+                            <div class="terminal-output" id="terminal-${agent.id}" style="display:none; height: 160px; margin-top: 10px; overflow-y: auto;">
+                                <div class="placeholder">&gt; Waiting for command...</div>
                             </div>
                         </div>
-                        <div class="form-group toggle-group" style="margin-top: 10px;">
-                            <label>Write Mode <span class="danger-label">(DANGER)</span></label>
-                            <label class="switch">
-                                <input type="checkbox" id="write-${agent.id}">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <button class="btn btn-primary btn-full" id="send-${agent.id}" style="margin-top: 10px;" onclick="sendSwimmerInline('${agent.id}')">
-                            <span class="btn-icon">▶</span> SEND SWIMMER
-                        </button>
-                        <div class="terminal-output" id="terminal-${agent.id}" style="display:none; height: 160px; margin-top: 10px; overflow-y: auto;">
-                            <div class="placeholder">&gt; Waiting for command...</div>
-                        </div>
+                        <button class="btn btn-dispatch-toggle" onclick="toggleDispatch('${agent.id}')">▶ COMMAND DISPATCH</button>
                     </div>
+                </div>
+
+                <!-- Chevron footer -->
+                <div class="ac-chevron" id="ac-chevron-${agent.id}" onclick="toggleAgentDrawer('${agent.id}')">
+                    <span id="ac-chevron-icon-${agent.id}">▾</span>
                 </div>
             `;
         }
@@ -204,9 +316,146 @@ function updateRoster(agents) {
             rawEl.textContent = body.replace(/::/g, '\n::').replace(/^(\n)/, '');
         }
 
+        // Hash pill: first6•••last4
+        const hashEl = card.querySelector(`#hash-${agent.id}`);
+        if (hashEl) {
+            const h = agent.hash_chain && agent.hash_chain.length
+                ? agent.hash_chain[agent.hash_chain.length - 1]
+                : (agent.raw || '').match(/::H\[([a-f0-9]+)/)?.[1] || '';
+            hashEl.textContent = h.length > 10
+                ? `${h.substring(0, 6)}•••${h.substring(h.length - 4)}`
+                : (h || '——');
+        }
+
+        // Energy number text
+        const enNumEl = card.querySelector(`#energy-num-${agent.id}`);
+        if (enNumEl) enNumEl.textContent = `${energyPct}%`;
+
         const btnC = card.querySelector(`#btn-container-${agent.id}`);
-        if (btnC) {
-            btnC.style.display = isDead ? 'none' : 'block';
+        if (btnC) btnC.style.display = isDead ? 'none' : 'block';
+    });
+}
+
+
+// ─── 1b. Fleet Overview (Right Panel — Steve Jobs Edition) ───────
+function getFleetStyleColor(style) {
+    const s = (style || 'NOMINAL').toUpperCase();
+    if (s === 'NOMINAL')   return { color: 'var(--health-high)',   border: 'rgba(0,230,118,0.4)' };
+    if (s === 'PATROL')    return { color: '#40c4ff',              border: 'rgba(64,196,255,0.4)' };
+    if (s === 'DORMANT')   return { color: 'var(--text-muted)',    border: 'rgba(255,255,255,0.15)' };
+    if (s === 'MEDBAY')    return { color: '#b388ff',              border: 'rgba(179,136,255,0.4)' };
+    if (s === 'CORRUPTED') return { color: 'var(--health-med)',    border: 'rgba(255,202,40,0.4)' };
+    if (s === 'CRITICAL')  return { color: 'var(--health-low)',    border: 'rgba(255,23,68,0.4)' };
+    if (s === 'GHOST')     return { color: 'var(--text-muted)',    border: 'rgba(255,255,255,0.08)' };
+    if (s === 'VISIONARY') return { color: '#ffab40',              border: 'rgba(255,171,64,0.4)' };
+    if (s === 'DEAD')      return { color: 'var(--text-muted)',    border: 'rgba(255,255,255,0.06)' };
+    return                         { color: 'var(--cyan)',          border: 'rgba(0,229,255,0.3)' };
+}
+
+function updateFleet(agents) {
+    const container = document.getElementById('fleet-list');
+    const countEl   = document.getElementById('fleet-total-count');
+    if (!container) return;
+
+    if (agents.length === 0) {
+        container.innerHTML = '<div class="placeholder-card">No agents in state dir.</div>';
+        if (countEl) countEl.textContent = '0';
+        return;
+    }
+
+    if (countEl) countEl.textContent = agents.length + ' ACTIVE';
+
+    // Build rows, preserving existing DOM to avoid flicker
+    const existingRows = new Map(
+        [...container.querySelectorAll('.fleet-agent-row')].map(r => [r.dataset.id, r])
+    );
+    const incoming = new Set(agents.map(a => a.id));
+
+    // Remove stale
+    existingRows.forEach((el, id) => { if (!incoming.has(id)) el.remove(); });
+    // Remove bootstrap placeholder
+    const ph = container.querySelector('.placeholder-card');
+    if (ph) ph.remove();
+
+    agents.forEach((agent, idx) => {
+        let row = existingRows.get(agent.id);
+        const isGhost = agent.style === 'GHOST' || agent.style === 'DEAD';
+        const energy  = Math.min(100, Math.max(0, agent.energy || 0));
+        const styleInfo = getFleetStyleColor(agent.style);
+        const energyColor = getEnergyColor(energy);
+        const face = agent.face || '[?]';
+        const rawBody = agent.raw || '';
+
+        if (!row) {
+            row = document.createElement('div');
+            row.className = 'fleet-agent-row';
+            row.dataset.id = agent.id;
+            row.title = 'Click to copy body to clipboard';
+            row.addEventListener('click', () => {
+                const body = row.dataset.raw || '';
+                if (!body) return;
+                // HTTP-safe clipboard: navigator.clipboard only works on HTTPS/localhost with permissions.
+                // Fallback: textarea trick works everywhere.
+                const copyText = (text) => {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        return navigator.clipboard.writeText(text);
+                    }
+                    // Fallback for http://
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;';
+                    document.body.appendChild(ta);
+                    ta.focus(); ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    return Promise.resolve();
+                };
+                copyText(body).then(() => {
+                    row.classList.remove('copied');
+                    void row.offsetWidth;
+                    row.classList.add('copied');
+                    const hint = row.querySelector('.fleet-copy-hint');
+                    if (hint) {
+                        const oldText = hint.textContent;
+                        hint.textContent = 'COPIED ✓';
+                        hint.style.color = 'var(--health-high)';
+                        setTimeout(() => {
+                            hint.textContent = oldText;
+                            hint.style.color = '';
+                        }, 1400);
+                    }
+                }).catch(() => {});
+            });
+            container.appendChild(row);
+        }
+        // Always update the live raw body on the element
+        row.dataset.raw = rawBody;
+
+        row.style.opacity = isGhost ? '0.35' : '1';
+        row.innerHTML = `
+            <span class="fleet-face" style="${isGhost ? 'filter:grayscale(1);' : ''}">${face}</span>
+            <div class="fleet-info">
+                <div class="fleet-name">${agent.id}</div>
+                <div class="fleet-meta">
+                    <div class="fleet-energy-track">
+                        <div class="fleet-energy-fill" style="width:${energy}%; background:${energyColor};"></div>
+                    </div>
+                    <span class="fleet-energy-label">${energy}%</span>
+                    <span class="fleet-style-badge" style="color:${styleInfo.color}; border-color:${styleInfo.border};">${agent.style || 'NOMINAL'}</span>
+                </div>
+            </div>
+            <span class="fleet-copy-hint">⎘ BODY</span>
+        `;
+
+        // Re-attach click (since innerHTML replaced the handler's element children but not the row itself)
+        // The click handler on row itself survives — innerHTML only replaces children, not the element.
+    });
+
+    // Ensure order matches agents array
+    agents.forEach((agent, idx) => {
+        const row = container.querySelector(`[data-id="${agent.id}"]`);
+        if (row && container.children[idx] !== row) {
+            container.insertBefore(row, container.children[idx] || null);
         }
     });
 }
@@ -226,6 +475,13 @@ async function fetchLogs() {
 function updateLogs(logs) {
     const tbody = document.getElementById('logs-body');
     tbody.innerHTML = '';
+
+    if (logs.length === 0) {
+        const emptyRow = document.createElement('tr');
+        emptyRow.innerHTML = `<td colspan="4" style="color:var(--text-muted); text-align:center; padding: 2rem; font-family:var(--font-mono); font-size:0.8rem; letter-spacing:0.06em;">⬡ No swim events logged. Deploy a swimmer to generate telemetry.</td>`;
+        tbody.appendChild(emptyRow);
+        return;
+    }
 
     logs.forEach(log => {
         const ev = log.event || 'msg';
@@ -266,7 +522,9 @@ async function fetchDashData() {
 
 function updateCemetery(graves) {
     const list = document.getElementById('cemetery-list');
+    const badge = document.getElementById('cemetery-badge');
     list.innerHTML = '';
+    if (badge) badge.textContent = graves.length || '';
     if (!graves.length) {
         list.innerHTML = '<li class="list-item placeholder-item">No dead agents logged.</li>';
         return;
@@ -285,7 +543,9 @@ function updateCemetery(graves) {
 
 function updateQuorum(quorumStore) {
     const list = document.getElementById('quorum-list');
+    const badge = document.getElementById('quorum-badge');
     list.innerHTML = '';
+    if (badge) badge.textContent = quorumStore.length || '';
     if (!quorumStore.length) {
         list.innerHTML = '<li class="list-item placeholder-item">No quorum entries.</li>';
         return;
@@ -1212,4 +1472,211 @@ walletWormholeFireBtn.addEventListener('click', async () => {
     }
 });
 
-loop();
+// loop() — already called on line 642, removed duplicate to prevent double-polling
+
+// =========================================================================
+// SWARM VISUALIZATION LAYER (D3.js)
+// =========================================================================
+
+let swarmMapVisible = false;
+let swarmSimulation = null;
+let svg = null, linkGroup = null, nodeGroup = null;
+let swarmNodes = [];
+let swarmLinks = [];
+let swarmMapInterval = null;
+
+function toggleSwarmMap() {
+    swarmMapVisible = !swarmMapVisible;
+    const panel = document.getElementById('swarm-map-panel');
+    const btn = document.getElementById('open-swarm-map-btn');
+    
+    if (swarmMapVisible) {
+        panel.style.display = 'flex';
+        btn.style.background = 'rgba(0, 255, 136, 0.15)';
+        btn.style.boxShadow = '0 0 14px rgba(0,255,136,0.3)';
+        initSwarmGraph();
+        pollSwarmState();
+        swarmMapInterval = setInterval(pollSwarmState, 3000);
+        panel.scrollIntoView({ behavior: 'smooth' });
+    } else {
+        panel.style.display = 'none';
+        btn.style.background = '';
+        btn.style.boxShadow = '';
+        if (swarmMapInterval) clearInterval(swarmMapInterval);
+        if (swarmSimulation) swarmSimulation.stop();
+    }
+}
+
+function initSwarmGraph() {
+    if (swarmSimulation) return; 
+    
+    const container = document.getElementById('swarm-svg');
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 500;
+    
+    container.innerHTML = '';
+    
+    svg = d3.select('#swarm-svg')
+        .attr('width', '100%')
+        .attr('height', '100%')
+        .attr('viewBox', `0 0 ${width} ${height}`);
+        
+    svg.append('defs').append('marker')
+        .attr('id', 'arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 22)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('fill', '#e040fb')
+        .attr('d', 'M0,-5L10,0L0,5');
+        
+    linkGroup = svg.append('g').attr('class', 'links');
+    nodeGroup = svg.append('g').attr('class', 'nodes');
+    
+    swarmSimulation = d3.forceSimulation()
+        .force('link', d3.forceLink().id(d => d.id).distance(200))
+        .force('charge', d3.forceManyBody().strength(-400))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collide', d3.forceCollide().radius(45));
+}
+
+async function pollSwarmState() {
+    if (!swarmMapVisible) return;
+    try {
+        const res = await fetch('/api/swarm_state');
+        if (!res.ok) return;
+        const data = await res.json();
+        updateSwarmData(data);
+    } catch (err) {
+        console.error('Swarm state error:', err);
+    }
+}
+
+function updateSwarmData(data) {
+    document.getElementById('swarm-map-node-count').textContent = data.nodes.length + ' NODES';
+    document.getElementById('swarm-map-tx-count').textContent = data.transactions.length + ' TX SETTLED';
+    
+    const txList = document.getElementById('swarm-tx-list');
+    txList.innerHTML = '';
+    data.transactions.slice(0, 50).forEach(tx => {
+        const el = document.createElement('div');
+        el.className = 'swarm-tx-item';
+        el.innerHTML = `
+            <div><span class="amt">${tx.amount.toFixed(2)} STGM</span></div>
+            <div style="margin-top:0.2rem;">${tx.from} &rarr; ${tx.to}</div>
+            <div class="time">${new Date(tx.ts * 1000).toLocaleTimeString()} | ${tx.memo}</div>
+        `;
+        txList.appendChild(el);
+    });
+    
+    const activeLinksMap = new Map();
+    data.transactions.forEach(tx => {
+        const key = `${tx.from}->${tx.to}`;
+        if(!activeLinksMap.has(key)) {
+            activeLinksMap.set(key, { source: tx.from, target: tx.to, value: tx.amount });
+        } else {
+            activeLinksMap.get(key).value += tx.amount;
+        }
+    });
+    
+    const oldNodes = new Map(swarmNodes.map(n => [n.id, n]));
+    swarmNodes = data.nodes.map(n => {
+        const old = oldNodes.get(n.id);
+        if (old) return { ...old, ...n };
+        return n;
+    });
+    
+    const nodeIds = new Set(swarmNodes.map(n => n.id));
+    swarmLinks = Array.from(activeLinksMap.values()).filter(l => 
+        nodeIds.has(l.source) && nodeIds.has(l.target)
+    );
+    
+    renderD3Graph();
+}
+
+function renderD3Graph() {
+    // LINKS
+    const link = linkGroup.selectAll('.link')
+        .data(swarmLinks, d => d.source.id ? `${d.source.id}->${d.target.id}` : `${d.source}->${d.target}`);
+        
+    link.exit().remove();
+    const linkEnter = link.enter().append('line')
+        .attr('class', 'link')
+        .attr('stroke', '#e040fb')
+        .attr('stroke-width', d => Math.min(6, Math.max(1.5, Math.sqrt(d.value))))
+        .attr('marker-end', 'url(#arrow)');
+    const linkMerged = linkEnter.merge(link);
+    
+    // NODES
+    const node = nodeGroup.selectAll('.node-group')
+        .data(swarmNodes, d => d.id);
+        
+    node.exit().remove();
+    const nodeEnter = node.enter()
+        .append('g')
+        .attr('class', 'node-group')
+        .call(d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended));
+            
+    nodeEnter.append('circle')
+        .attr('class', 'node-circle')
+        .attr('r', d => Math.max(15, Math.min(35, 12 + Math.sqrt(d.stgm_balance || 0))));
+        
+    nodeEnter.append('text')
+        .attr('class', 'node-label')
+        .attr('dy', -25)
+        .attr('text-anchor', 'middle')
+        .text(d => d.id);
+        
+    nodeEnter.append('text')
+        .attr('class', 'node-balance')
+        .attr('dy', 4)
+        .text(d => parseFloat(d.stgm_balance || 0).toFixed(1));
+        
+    const nodeMerged = nodeEnter.merge(node);
+    
+    nodeMerged.select('.node-circle')
+        .attr('r', d => Math.max(15, Math.min(35, 12 + Math.sqrt(d.stgm_balance || 0))))
+        .attr('fill', d => {
+            if (d.style === 'GHOST') return '#1a1a25';
+            if (d.style === 'BLEEDING' || d.style === 'CRITICAL') return '#ff1744';
+            return '#0A1A2F';
+        })
+        .attr('stroke', d => {
+            if (d.style === 'GHOST') return '#3d5068';
+            if (d.style === 'BLEEDING' || d.style === 'CRITICAL') return '#ff1744';
+            return d.active ? '#00ff88' : '#00e5ff';
+        })
+        .style('filter', d => d.active ? 'drop-shadow(0 0 10px rgba(0,255,136,0.5))' : 'none');
+        
+    nodeMerged.select('.node-balance')
+        .text(d => parseFloat(d.stgm_balance || 0).toFixed(1));
+        
+    swarmSimulation.nodes(swarmNodes).on('tick', () => {
+        linkMerged
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+            
+        nodeMerged.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+    
+    swarmSimulation.force('link').links(swarmLinks);
+    swarmSimulation.alpha(0.3).restart();
+}
+
+function dragstarted(event, d) {
+  if (!event.active) swarmSimulation.alphaTarget(0.3).restart();
+  d.fx = d.x; d.fy = d.y;
+}
+function dragged(event, d) {
+  d.fx = event.x; d.fy = event.y;
+}
+function dragended(event, d) {
+  if (!event.active) swarmSimulation.alphaTarget(0);
+  d.fx = null; d.fy = null;
+}
+

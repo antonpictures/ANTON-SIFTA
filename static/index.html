@@ -8,7 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=2">
+    <link rel="stylesheet" href="/static/style.css?v=6">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,5 93,27.5 93,72.5 50,95 7,72.5 7,27.5' fill='%23050508' stroke='%2300e5ff' stroke-width='4'/%3E%3Ctext x='50' y='62' font-size='36' text-anchor='middle' fill='%2300e5ff' font-family='monospace'%3E⬡%3C/text%3E%3C/svg%3E">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
     <!-- Scanline overlay -->
@@ -34,19 +36,26 @@
                 <span class="stat-value sys-status" id="sys-status-text">NOMINAL</span>
             </div>
         </div>
+        <div class="topbar-panels">
+            <button class="btn btn-panel active" id="panel-btn-fleet" onclick="activateFleetPanel()">⬡ FLEET</button>
+            <button class="btn btn-panel" id="panel-btn-territory" onclick="toggleDrawer('drawer-territory', 'panel-btn-territory')">🗺 TERRITORY</button>
+            <button class="btn btn-panel" id="panel-btn-cemetery" onclick="toggleDrawer('drawer-cemetery', 'panel-btn-cemetery')">☠ CEMETERY</button>
+            <button class="btn btn-panel" id="panel-btn-quorum" onclick="toggleDrawer('drawer-quorum', 'panel-btn-quorum')">⬡ QUORUM</button>
+        </div>
         <div class="topbar-actions">
             <button class="btn btn-danger" id="kill-swimmer-btn" title="Retract active submarine drone via tether">[↶] RETRACT TETHER</button>
             <button class="btn btn-secondary" id="open-wallet-btn" style="border-color: rgba(224, 64, 251, 0.4); color: var(--magenta);">[🏦] VAULT</button>
             <button class="btn btn-secondary" id="open-ledger-btn" style="border-color: rgba(0, 229, 255, 0.3); color: var(--cyan);" onclick="document.getElementById('ledger-modal').showModal(); if(typeof fetchFullLedger === 'function') fetchFullLedger();">[🗃️] LEDGER</button>
+            <button class="btn btn-secondary" id="open-swarm-map-btn" style="border-color: rgba(0,255,136,0.4); color: #00ff88;" onclick="toggleSwarmMap()">[🕸] SWARM MAP</button>
             <button class="btn btn-primary" id="open-settings-btn" onclick="document.getElementById('settings-modal').showModal()">[⚙] SETTINGS</button>
         </div>
     </header>
 
     <main class="dashboard">
-        <!-- Left Panel: Agent Roster -->
+        <!-- Left Panel: Unified Agent Roster (progressive disclosure) -->
         <section class="panel roster-panel" aria-label="Agent Roster">
             <h2 style="display: flex; justify-content: space-between; align-items: center;">
-                <span><span class="panel-icon">◈</span> AGENT ROSTER</span>
+                <span><span class="panel-icon">◈</span> UNIFIED ROSTER</span>
                 <label style="font-size: 0.6em; font-weight: normal; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; gap: 5px; text-transform: uppercase;">
                     <input type="checkbox" id="show-hidden-agents" onchange="if(typeof fetchAgents === 'function') fetchAgents()"> Show Dormant
                 </label>
@@ -77,25 +86,25 @@
             </div>
         </section>
 
-        <!-- Right Panel: Cemetery + Quorum + Territory Map -->
-        <section class="panel ledger-panel" aria-label="Territory and Metrics">
-            <div class="sub-panel cemetery-panel">
-                <h2><span class="panel-icon">☠</span> CEMETERY</h2>
-                <ul id="cemetery-list" class="list" style="max-height: 150px;">
-                    <li class="list-item placeholder-item">No dead agents logged.</li>
-                </ul>
-            </div>
-            <div class="sub-panel quorum-panel">
-                <h2><span class="panel-icon">⬡</span> QUORUM LEDGER</h2>
-                <ul id="quorum-list" class="list" style="max-height: 150px;">
-                    <li class="list-item placeholder-item">No quorum entries.</li>
-                </ul>
-            </div>
-            <div class="sub-panel territory-panel">
-                <h2><span class="panel-icon">🗺️</span> TERRITORY MAP</h2>
-                <div id="territory-list" class="list" style="flex: 1; overflow-y: auto;">
-                    <div class="list-item placeholder-item">Scanning territory...</div>
-                </div>
+        <!-- Right Panel: Intel (Territory + Cemetery + Quorum) -->
+        <section class="panel ledger-panel intel-panel" aria-label="Intel">
+            <h2 style="display: flex; justify-content: space-between; align-items: center;">
+                <span><span class="panel-icon">🗺️</span> INTEL</span>
+                <span id="fleet-total-count" style="font-size:0.65em; color:var(--cyan); font-weight:700;">—</span>
+            </h2>
+            <div class="intel-body">
+                <details class="fleet-drawer" id="drawer-territory" open>
+                    <summary class="fleet-drawer-summary">🗺️ TERRITORY MAP <span id="territory-badge" class="fleet-drawer-badge"></span></summary>
+                    <div id="territory-list" class="fleet-drawer-body"></div>
+                </details>
+                <details class="fleet-drawer" id="drawer-cemetery">
+                    <summary class="fleet-drawer-summary">☠ CEMETERY <span id="cemetery-badge" class="fleet-drawer-badge"></span></summary>
+                    <ul id="cemetery-list" class="list fleet-drawer-body" style="max-height: 220px;"></ul>
+                </details>
+                <details class="fleet-drawer" id="drawer-quorum">
+                    <summary class="fleet-drawer-summary">⬡ QUORUM <span id="quorum-badge" class="fleet-drawer-badge"></span></summary>
+                    <ul id="quorum-list" class="list fleet-drawer-body" style="max-height: 180px;"></ul>
+                </details>
             </div>
         </section>
     </main>
@@ -103,6 +112,23 @@
     <!-- NEW HORIZONTAL COMMAND DECK (Bottom Expanded View) -->
     <section id="command-deck" class="panel command-deck" style="display:none;" aria-label="Expanded Agent Command Deck">
         <div id="command-deck-content"></div>
+    </section>
+
+    <!-- ═══ SWARM MAP PANEL ═══ -->
+    <section id="swarm-map-panel" style="display:none;" aria-label="Live Swarm Topology">
+        <div class="swarm-map-header">
+            <span class="panel-icon">🕸</span> LIVE SWARM TOPOLOGY
+            <span id="swarm-map-node-count" style="font-size:0.7em; color:#00ff88; margin-left:1rem;"></span>
+            <span id="swarm-map-tx-count" style="font-size:0.7em; color:#e040fb; margin-left:1rem;"></span>
+            <span style="font-size:0.6em; color:var(--text-dim); margin-left:auto;">AUTO-REFRESHING EVERY 3s</span>
+        </div>
+        <div class="swarm-map-body">
+            <svg id="swarm-svg"></svg>
+            <div id="swarm-tx-feed">
+                <div class="tx-feed-title">⚡ TX FEED</div>
+                <div id="swarm-tx-list"></div>
+            </div>
+        </div>
     </section>
 
     <!-- ═══ Settings Modal ═══ -->
@@ -160,7 +186,7 @@
                 <table id="full-ledger-table" style="width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.72em;">
                     <thead style="background: var(--bg-panel); position: sticky; top: 0; z-index: 5;">
                         <tr>
-                            <th style="text-align:left; padding: 0.6rem; color: var(--text-muted); border-bottom: 1px solid var(--border-dim);">TIMESTEMP</th>
+                            <th style="text-align:left; padding: 0.6rem; color: var(--text-muted); border-bottom: 1px solid var(--border-dim);">TIMESTAMP</th>
                             <th style="text-align:left; padding: 0.6rem; color: var(--text-muted); border-bottom: 1px solid var(--border-dim);">EVENT</th>
                             <th style="text-align:left; padding: 0.6rem; color: var(--text-muted); border-bottom: 1px solid var(--border-dim);">AGENT / MODEL</th>
                             <th style="text-align:left; padding: 0.6rem; color: var(--text-muted); border-bottom: 1px solid var(--border-dim);">FILE</th>
