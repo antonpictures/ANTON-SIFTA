@@ -12,3 +12,19 @@ dispatch_article.py
 # Runtime-generated territory scars (not source code)
 **/.sifta/
 logs/
+# Dev noise — not needed by coders
+test_environment/benchmark_100/
+pheromone_archive/
+docs/imperial_daily/
+docs/ALICE_PHASE*
+docs/M1THER_*
+docs/MAC_MINI_*
+docs/PHASE_5_*
+docs/TOMORROW_*
+docs/WALLET_*
+docs/LIVE_DIRECTOR_*
+docs/00_ALICE_*
+docs/selling_*
+docs/veo3_*
+docs/wormhole_*
+benchmark_results.py
