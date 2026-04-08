@@ -119,7 +119,7 @@ def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "")
         ),
         "stream": True,
         "temperature": 0.0,
-        "keep_alive": 0,      # release model slot immediately after — no VRAM lock
+        "keep_alive": "1m",   # keeps model hot for 1min between bites, avoiding SSD thrashing on 8gb mini before unloading
         "num_predict": 512,   # cap output tokens — repair chunks are never long
     }
     req = urllib.request.Request(
