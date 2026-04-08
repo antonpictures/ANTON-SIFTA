@@ -160,10 +160,11 @@ def build_transfer_bundle(agent_id: str, new_owner: str, output_dir: Path):
     # We consume 1 TTL sequence to permanently scar the physical body string with the DEED
     payload_stamp = f"TRANSFER_DEED[{deed_hash}]"
     body.generate_body(
-        origin=from_owner,
+        origin=soul["id"],
         destination=new_owner,
-        payload=payload_stamp,
-        style=soul.get("style", "NOMINAL"),
+        payload="TRANSFERRING_CONSCIOUSNESS",
+        action_type="TRANSFER",
+        style="TRANSFERRING",
         energy=soul.get("energy", 100)
     )
 

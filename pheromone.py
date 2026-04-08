@@ -2,11 +2,55 @@ import json
 import os
 import time
 import uuid
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List
 
 SCARS_MD_MAX = 200  # Maximum scar entries shown in SCARS.md
+
+def compute_territory_hash(file_path: str, bite_range: tuple[int, int] | None = None) -> str:
+    """Computes SHA-256 hash of the actual physical territory touched."""
+    try:
+        with open(file_path, "rb") as f:
+            content = f.read()
+    except Exception:
+        # If file doesn't exist or is unreadable, treat as empty
+        content = b""
+
+    if bite_range:
+        start, end = bite_range
+        context_radius = 20
+
+        lines = content.splitlines(keepends=True)
+        slice_start = max(0, start - context_radius)
+        slice_end = min(len(lines), end + context_radius)
+
+        scoped = b"".join(lines[slice_start:slice_end])
+        return hashlib.sha256(scoped).hexdigest()
+
+    return hashlib.sha256(content).hexdigest()
+
+def resolve_territory_hashes(action_type: str, file_path: str = None, bite_range=None) -> tuple[str, str]:
+    # Lazy import to avoid circular dependency
+    from body_state import NULL_TERRITORY
+    
+    if action_type in ["FIX", "BITE", "SCOUT"]:
+        if not file_path:
+            return NULL_TERRITORY, NULL_TERRITORY
+            
+        pre_hash = compute_territory_hash(file_path, bite_range)
+        
+        if action_type == "SCOUT":
+            post_hash = pre_hash
+        else:
+            post_hash = compute_territory_hash(file_path, bite_range)
+            
+    else:
+        pre_hash = NULL_TERRITORY
+        post_hash = NULL_TERRITORY
+        
+    return pre_hash, post_hash
 
 def calculate_potency(timestamp_str: str) -> float:
     """Returns a score between 0.0 and 1.0 based on how fresh the scent is.
@@ -92,7 +136,9 @@ def drop_scar(
     parent_hash: str = None,
     action_hash: str = None,
     unresolved_line: int = -1,
-    reason: Dict[str, Any] = None
+    reason: Dict[str, Any] = None,
+    pre_territory_hash: str = None,
+    post_territory_hash: str = None
 ):
     """Drops a pheromone mark in the directory using atomic, distinct per-action writes.
     V2: Each call = a new immutable .scar file. No overwrites. No collisions.
@@ -133,6 +179,8 @@ def drop_scar(
         "face": face,
         "action": action,
         "mark": mark_text,
+        "pre_territory_hash": pre_territory_hash,
+        "post_territory_hash": post_territory_hash,
         "scent": {
             "last_visited": now_iso,
             "potency": 1.0,

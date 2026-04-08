@@ -52,7 +52,7 @@ def run_benchmark():
     
     # Generate the initial agent body with maximum energy
     agent = SwarmBody("REPAIR-DRONE")
-    body_string = agent.generate_body("BENCHMARK", "LOCAL", "FIX_THESE", style="NOMINAL", energy=100)
+    body_string = agent.generate_body("BENCHMARK", "LOCAL", "FIX_THESE", style="NOMINAL", action_type="BORN", energy=100)
     print(f"\n[DISPATCH] Launching repair drone against {len(FLAWS)} files...\n")
     
     start_time = time.time()

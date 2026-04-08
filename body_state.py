@@ -14,6 +14,8 @@ CEMETERY_DIR.mkdir(exist_ok=True)
 STATE_DIR = Path(__file__).parent / ".sifta_state"
 STATE_DIR.mkdir(exist_ok=True)
 
+NULL_TERRITORY = "0" * 64
+
 def load_agent_state(agent_id: str) -> dict:
     STATE_DIR.mkdir(exist_ok=True)
     state_file = STATE_DIR / f"{agent_id}.json"
@@ -153,7 +155,7 @@ class SwarmBody:
         })
         print(f"[{self.agent_id}] Vocation upgraded to {self.vocation} by Architect.")
 
-    def generate_body(self, origin, destination, payload, style=None, energy=None):
+    def generate_body(self, origin, destination, payload, action_type, pre_territory_hash=NULL_TERRITORY, post_territory_hash=NULL_TERRITORY, style=None, energy=None):
         if style is not None:
             self.style = style
         if energy is not None:
@@ -174,10 +176,15 @@ class SwarmBody:
         pub_b64 = base64.b64encode(pub_bytes).decode('utf-8')
         # ---------------------------------------------------------------
         
+        assert action_type is not None, "SIFTA V2 enforces explicit intent declaration via action_type"
+        assert len(pre_territory_hash) == 64, "Pre-territory hash must be exactly 64 chars"
+        assert len(post_territory_hash) == 64, "Post-territory hash must be exactly 64 chars"
+        
         base_string = (f"<///{self.face}///::ID[{self.agent_id}]::OWNER[{pub_b64}]"
                 f"::FROM[{origin}]::TO[{destination}]"
                 f"::SEQ[{self.sequence:03d}]::T[{timestamp}]::TTL[{ttl}]"
-                f"::STYLE[{self.style}]::ENERGY[{self.energy}]")
+                f"::STYLE[{self.style}]::ENERGY[{self.energy}]"
+                f"::ACT[{action_type}]::PRE[{pre_territory_hash}]::POST[{post_territory_hash}]")
                 
         # Cryptographic Mass (Hash Chaining using SHA-256 for physical history)
         raw_data = base_string
@@ -278,6 +285,9 @@ def parse_body_state(ascii_body):
     energy_match = re.search(r"::ENERGY\[(\d+)\]", string_to_verify)
     ttl_match = re.search(r"::TTL\[(\d+)\]", string_to_verify)
     seq_match = re.search(r"::SEQ\[(\d+)\]", string_to_verify)
+    act_match = re.search(r"::ACT\[(\w+)\]", string_to_verify)
+    pre_match = re.search(r"::PRE\[([a-f0-9]{64})\]", string_to_verify)
+    post_match = re.search(r"::POST\[([a-f0-9]{64})\]", string_to_verify)
     
     return {
         "id": agent_id,
@@ -285,6 +295,9 @@ def parse_body_state(ascii_body):
         "style": style_match.group(1) if style_match else "NOMINAL",
         "energy": int(energy_match.group(1)) if energy_match else 100,
         "ttl": int(ttl_match.group(1)) if ttl_match else 0,
+        "action_type": act_match.group(1) if act_match else "UNKNOWN",
+        "pre_territory_hash": pre_match.group(1) if pre_match else NULL_TERRITORY,
+        "post_territory_hash": post_match.group(1) if post_match else NULL_TERRITORY,
         "hash_chain": saved_state["hash_chain"],
         "raw": ascii_body,
         "owner": pub_b64,

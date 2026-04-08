@@ -9,3 +9,6 @@ CEMETERY/
 benchmark_env/
 dispatch_article.py
 .DS_Store
+# Runtime-generated territory scars (not source code)
+**/.sifta/
+logs/

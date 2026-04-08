@@ -918,7 +918,7 @@ if __name__ == "__main__":
         # Default initialization for the clean test environment
         alice = SwarmBody("ANTIALICE")
         # Give her a few scars immediately to simulate a rough transit
-        body_string = alice.generate_body("M5", "M1THER", "REPAIR_SWIM", style="NOMINAL", energy=100)
+        body_string = alice.generate_body("M5", "M1THER", "REPAIR_SWIM", style="NOMINAL", action_type="BORN", energy=100)
         agent_state = parse_body_state(body_string)
 
     # Strip surrounding quotes the UI sometimes injects (e.g. '/path/to/file' → /path/to/file)

@@ -95,7 +95,9 @@ let liveAgentCount = 0;
 // ─── 1. Roster Update ─────────────────────────────────
 async function fetchAgents() {
     try {
-        const res = await fetch('/api/agents');
+        const checkbox = document.getElementById('show-hidden-agents');
+        const showDetectives = checkbox ? checkbox.checked : false;
+        const res = await fetch(`/api/agents?show_detectives=${showDetectives}`);
         const agents = await res.json();
         liveAgentCount = agents.length;
         document.getElementById('stat-agents-val').textContent = liveAgentCount || '0';

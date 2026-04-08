@@ -43,8 +43,8 @@ def build_payload(article_path: str, body_obj: SwarmBody) -> dict:
     content_hash = hashlib.sha256(content.encode()).hexdigest()
     article_id = f"sifta_{ts}"
     
-    # Use the SwarmBody class directly
-    ascii_body = body_obj.generate_body("M5", "M1THER", content_hash[:16])
+    print(f"Creating body state for {body_obj.agent_id}...")
+    ascii_body = body_obj.generate_body("M5", "M1THER", content_hash[:16], action_type="BORN")
 
     return {
         "article_id":  article_id,
@@ -142,7 +142,8 @@ def main():
         # Make a dummy payload for testing
         print(f"  [TEST] Running in isolated clean directory test mode.")
         alice = SwarmBody("ANTIALICE")
-        body = alice.generate_body("M5", "M1THER", "DUMMY_PAYLOAD")
+        body = alice.generate_body("M5", "M1THER", "DUMMY_PAYLOAD", action_type="BORN")
+        agent_state = parse_body_state(body)
         print(f"    {body}")
     else:
         alice = SwarmBody("ANTIALICE")

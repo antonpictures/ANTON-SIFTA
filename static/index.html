@@ -45,7 +45,12 @@
     <main class="dashboard">
         <!-- Left Panel: Agent Roster -->
         <section class="panel roster-panel" aria-label="Agent Roster">
-            <h2><span class="panel-icon">◈</span> AGENT ROSTER</h2>
+            <h2 style="display: flex; justify-content: space-between; align-items: center;">
+                <span><span class="panel-icon">◈</span> AGENT ROSTER</span>
+                <label style="font-size: 0.6em; font-weight: normal; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; gap: 5px; text-transform: uppercase;">
+                    <input type="checkbox" id="show-hidden-agents" onchange="if(typeof fetchAgents === 'function') fetchAgents()"> Show Dormant
+                </label>
+            </h2>
             <div id="roster-grid" class="grid">
                 <div class="placeholder-card">
                     <span class="blink">▋</span> Polling roster...

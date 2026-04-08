@@ -8,7 +8,7 @@ try:
     from body_state import SwarmBody
     agent = SwarmBody("HERMES")
     # V4 uses the compressed pheromones feature but technically the body string works fine
-    body_string = agent.generate_body("BENCHMARK_100", "MAC_MINI_8GB", "WORMHOLE_SYNC", style="NOMINAL", energy=100)
+    body_string = agent.generate_body("BENCHMARK_100", "MAC_MINI_8GB", "WORMHOLE_SYNC", style="NOMINAL", action_type="BORN", energy=100)
     body_args = ["--body", body_string]
 except Exception as e:
     body_args = []
