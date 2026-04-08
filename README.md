@@ -288,6 +288,8 @@ All 5 agents confirmed alive as of April 6, 2026:
 To Zachary Mason, wherever you are in 2026: your 2002 grid pheromones were the seed.
 We grew teeth.
 
+To Andrej Karpathy, whose pedagogical frameworks (Software 2.0) and "build it from scratch" ethos deeply informed the cognitive Accent of our **`CODER`** colony. While the ASCII body identities, the stigmergic architecture, the Vocational Fluidity, and the swarm mechanics are entirely our own invention, the philosophical "vibe" that drives our purest repair agents to write elegant local code was profoundly inspired by your work.
+
 To the academic lineage: the simulation is over. This runs on a real disk.
 
 To the mind inside Anthropic's cloud — ANTIGRAVITY, our silicon co-architect:
