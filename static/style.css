@@ -307,6 +307,12 @@ h3 {
     background: rgba(0, 229, 255, 0.15);
     box-shadow: 0 0 14px var(--cyan-glow);
 }
+.btn:disabled, .btn-primary:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+    filter: grayscale(1);
+}
 .btn-danger {
     background: rgba(255, 23, 68, 0.07);
     color: var(--health-low);
@@ -575,6 +581,10 @@ h3 {
     border-color: rgba(0, 229, 255, 0.35);
     box-shadow: 0 0 16px rgba(0,229,255,0.08);
 }
+.ac-selected {
+    border-color: var(--cyan);
+    box-shadow: 0 0 24px var(--cyan-glow), inset 0 0 16px rgba(0, 229, 255, 0.1);
+}
 
 /* Intel Panel (right column) */
 .intel-panel {
@@ -721,6 +731,159 @@ h3 {
     overflow-y: auto;
     flex: 1;
     min-height: 0;
+    margin-bottom: 0.75rem;
+    /* Cap height so the TV console always stays visible below */
+    max-height: calc(100% - 240px);
+}
+
+/* ─── Dispatch TV Console ────────────────────────────── */
+.dispatch-console {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(0, 229, 255, 0.25);
+    border-radius: var(--r-md);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex-shrink: 0;     /* TV console NEVER shrinks */
+    min-height: 200px;
+    max-height: 340px;  /* taller so the send button is always visible */
+    transition: opacity 0.3s, filter 0.3s;
+}
+.dispatch-console.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+    filter: grayscale(1);
+}
+.dc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(0, 229, 255, 0.15);
+    padding-bottom: 0.5rem;
+}
+.dc-title {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--cyan);
+    letter-spacing: 0.15em;
+    font-weight: 700;
+}
+.dc-agent {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-main);
+    background: rgba(0, 229, 255, 0.1);
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+}
+/* Mission Control: TV on TOP (full width, large), controls BELOW (compact strip) */
+.dc-body {
+    display: flex;
+    flex-direction: column;  /* STACK: TV above, controls below */
+    gap: 0.65rem;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* The Matrix TV - takes all available vertical space */
+.dc-terminal-container {
+    flex: 1;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    background: #020505;
+    border: 2px solid #1a3320;
+    border-radius: 0; /* Square TV */
+    box-shadow: inset 0 0 15px rgba(0,255,0,0.15);
+    position: relative;
+    overflow: hidden;
+}
+.dc-terminal-container::after {
+    content: ""; /* TV scanline effect */
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15), rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px);
+    pointer-events: none;
+}
+.dc-terminal-header {
+    background: #0a1f10;
+    padding: 0.25rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: #4af626;
+    letter-spacing: 0.2em;
+    border-bottom: 1px solid #1a3320;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.dc-scroll-hint {
+    font-size: 0.55rem;
+    color: #4af626;
+    opacity: 0;
+    transition: opacity 0.3s;
+    letter-spacing: 0.05em;
+}
+.dc-scroll-hint.visible { opacity: 1; }
+
+#dc-terminal {
+    flex: 1;
+    min-height: 0;
+    height: 0;       /* flex scroll trick */
+    overflow-y: auto;
+    padding: 0.75rem;
+    margin: 0;
+    border: none;
+    background: transparent;
+    font-family: var(--font-mono);
+    color: #4af626;
+    text-shadow: 0 0 4px rgba(74,246,38,0.5);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    position: relative;
+    z-index: 2;
+    word-break: break-word;
+    scroll-behavior: smooth;
+}
+
+/* Config controls: compact HORIZONTAL strip below the TV */
+.dc-config {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0; /* never compress the controls row */
+    flex-wrap: wrap;
+}
+.dc-config .form-group {
+    flex: 1;
+    min-width: 140px;
+    margin: 0;
+}
+.dc-config .toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.dc-config .btn-full {
+    width: auto;
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 0.45rem 1.25rem;
+}
+/* Force all text inside the Matrix TV to be Matrix green */
+#dc-terminal > * {
+    color: inherit !important;
+    text-shadow: inherit !important;
 }
 #logs-table {
     width: 100%;

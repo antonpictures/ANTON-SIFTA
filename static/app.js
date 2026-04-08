@@ -1,6 +1,8 @@
 // ═══════════════════════════════════════════════════
 //  ANTON-SIFTA // COMMAND INTERFACE — app.js
 // ═══════════════════════════════════════════════════
+let activeDispatchAgent = null;
+
 
 // ─── Panel Toggle Functions (topbar) ─────────────────
 // All drawers start closed — Fleet Overview is the default view.
@@ -48,15 +50,47 @@ function _syncFleetBtn() {
 }
 
 // ─── Agent Card Drawer Toggle ─────────────────────────
-function toggleAgentDrawer(agentId) {
+function selectAgentForDispatch(agentId) {
+    // Reveal raw telemetry drawer
     const drawer  = document.getElementById(`ac-drawer-${agentId}`);
     const chevron = document.getElementById(`ac-chevron-icon-${agentId}`);
     const card    = document.querySelector(`[data-id="${agentId}"]`);
-    if (!drawer) return;
-    const isOpen = drawer.style.display !== 'none';
-    drawer.style.display = isOpen ? 'none' : 'block';
-    if (chevron) chevron.textContent = isOpen ? '▾' : '▴';
-    if (card)    card.classList.toggle('ac-expanded', !isOpen);
+    if (drawer) {
+        const isOpen = drawer.style.display !== 'none';
+        
+        // Always ensure the drawer opens if we are selecting a new agent
+        // If it's the exact same agent, let it toggle
+        const shouldBeOpen = (activeDispatchAgent !== agentId) ? true : !isOpen;
+        
+        drawer.style.display = shouldBeOpen ? 'block' : 'none';
+        if (chevron) chevron.textContent = shouldBeOpen ? '▴' : '▾';
+        if (card)    card.classList.toggle('ac-expanded', shouldBeOpen);
+    }
+    
+    // Update Central Dispatch Selection
+    activeDispatchAgent = agentId;
+    
+    // Refresh card highlighting
+    document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('ac-selected'));
+    if (card) card.classList.add('ac-selected');
+    
+    // Populate Mission Control TV
+    const dcConsole = document.getElementById('central-dispatch-console');
+    const dcAgent   = document.getElementById('dc-active-agent');
+    if (dcConsole && dcAgent) {
+        dcConsole.classList.remove('disabled');
+        const styleText = document.getElementById(`style-${agentId}`)?.textContent || 'UNKNOWN';
+        dcAgent.textContent = `${agentId} [${styleText}]`;
+        
+        // Reset terminal output in console
+        const terminal = document.getElementById('dc-terminal');
+        if (terminal) {
+            terminal.innerHTML = `<div class="placeholder t-boot">&gt; Agent ${agentId} selected.<br>&gt; WAITING FOR MISSION PARAMETERS... <span class="blink">▋</span></div>`;
+        }
+        
+        const sendBtn = document.getElementById('dc-send-btn');
+        if (sendBtn) sendBtn.disabled = false;
+    }
 }
 
 
@@ -183,6 +217,13 @@ async function fetchAgents() {
         document.getElementById('stat-agents-val').textContent = liveAgentCount || '0';
         updateRoster(agents);
         updateFleet(agents);
+        
+        if (activeDispatchAgent === null && agents.length > 0) {
+            // Find lowest energy agent to be the default worker
+            const defaultAgent = agents.reduce((prev, curr) => (prev.energy < curr.energy) ? prev : curr);
+            selectAgentForDispatch(defaultAgent.id);
+        }
+        
         updateWallet(agents);
     } catch (e) {
         console.error('Agents fetch error', e);
@@ -223,7 +264,7 @@ function updateRoster(agents) {
             grid.appendChild(card);
 
             card.innerHTML = `
-                <div class="ac-top" onclick="toggleAgentDrawer('${agent.id}')">
+                <div class="ac-top" onclick="selectAgentForDispatch('${agent.id}')">
                     <div class="ac-face-wrap">
                         <span class="ac-face" id="face-${agent.id}"></span>
                     </div>
@@ -258,43 +299,17 @@ function updateRoster(agents) {
                 <div class="ac-drawer" id="ac-drawer-${agent.id}" style="display:none;">
                     <div class="ac-drawer-label">⬛ RAW TELEMETRY</div>
                     <div class="agent-raw-body" id="raw-${agent.id}"></div>
-                    <div id="btn-container-${agent.id}">
-                        <div class="agent-dispatch-panel" id="dispatch-panel-${agent.id}" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-dim);">
-                            <div class="form-group">
-                                <label>Target Path</label>
-                                <input type="text" id="target-${agent.id}" class="form-input" placeholder="Path to file or folder" value="test_environment">
-                                <div class="browse-row" style="margin-top: 5px;">
-                                    <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', '${agent.id}')">📄 File</button>
-                                    <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', '${agent.id}')">📁 Folder</button>
-                                </div>
-                            </div>
-                            <div class="form-group toggle-group" style="margin-top: 10px;">
-                                <label>Write Mode <span class="danger-label">(DANGER)</span></label>
-                                <label class="switch">
-                                    <input type="checkbox" id="write-${agent.id}">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                            <button class="btn btn-primary btn-full" id="send-${agent.id}" style="margin-top: 10px;" onclick="sendSwimmerInline('${agent.id}')">
-                                <span class="btn-icon">▶</span> SEND SWIMMER
-                            </button>
-                            <div class="terminal-output" id="terminal-${agent.id}" style="display:none; height: 160px; margin-top: 10px; overflow-y: auto;">
-                                <div class="placeholder">&gt; Waiting for command...</div>
-                            </div>
-                        </div>
-                        <button class="btn btn-dispatch-toggle" onclick="toggleDispatch('${agent.id}')">▶ COMMAND DISPATCH</button>
-                    </div>
                 </div>
 
                 <!-- Chevron footer -->
-                <div class="ac-chevron" id="ac-chevron-${agent.id}" onclick="toggleAgentDrawer('${agent.id}')">
+                <div class="ac-chevron" id="ac-chevron-${agent.id}" onclick="selectAgentForDispatch('${agent.id}')">
                     <span id="ac-chevron-icon-${agent.id}">▾</span>
                 </div>
             `;
         }
 
         // Apply dynamically changing attributes natively
-        card.className = `agent-card${isDead ? ' dead' : ''}`;
+        card.className = `agent-card${isDead ? ' dead' : ''}${agent.id === activeDispatchAgent ? ' ac-selected' : ''}`;
         
         card.querySelector(`#face-${agent.id}`).textContent = agent.face;
 
@@ -747,21 +762,41 @@ settingsForm.addEventListener('submit', e => {
 });
 
 
-// ─── Inline Dispatch Submission ────────────────────────
-async function sendSwimmerInline(agentId) {
-    const targetDir = document.getElementById(`target-${agentId}`).value;
-    const isWrite   = document.getElementById(`write-${agentId}`).checked;
-    const terminal  = document.getElementById(`terminal-${agentId}`);
+// ─── Central Dispatch Submission ────────────────────────
+async function sendSwimmerCentral() {
+    if (!activeDispatchAgent) return;
     
-    document.getElementById(`target-${agentId}`).disabled      = true;
-    document.getElementById(`write-${agentId}`).disabled       = true;
-    document.getElementById(`send-${agentId}`).disabled        = true;
-    terminal.style.display = 'block';
+    const targetDir  = document.getElementById('dc-target').value;
+    const isWrite    = document.getElementById('dc-write').checked;
+    const terminal   = document.getElementById('dc-terminal');
+    const sendBtn    = document.getElementById('dc-send-btn');
+    const abortBtn   = document.getElementById('dc-abort-btn');
+    const scrollHint = document.getElementById('dc-scroll-hint');
+    
+    document.getElementById('dc-target').disabled = true;
+    document.getElementById('dc-write').disabled  = true;
+    sendBtn.disabled  = true;
+    abortBtn.disabled = false; // ARM the abort button
+    
     terminal.innerHTML = '';
+
+    // ── Smart scroll: only chase stream when user is AT the bottom ─────
+    let userScrolledUp = false;
+    const SCROLL_THRESHOLD = 60; // px from bottom
+
+    function smartScroll() {
+        if (!userScrolledUp) terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    terminal.addEventListener('scroll', () => {
+        const dist = terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight;
+        userScrolledUp = dist > SCROLL_THRESHOLD;
+        if (scrollHint) scrollHint.classList.toggle('visible', userScrolledUp);
+    }, { passive: true });
 
     try {
         const payload = {
-            agent_id:   agentId,
+            agent_id:   activeDispatchAgent,
             target_dir: targetDir,
             write:      isWrite,
             provider:   providerSettings.provider,
@@ -794,7 +829,7 @@ async function sendSwimmerInline(agentId) {
                             terminal.appendChild(currentStreamLine);
                         }
                         currentStreamLine.textContent += txt.substring(8);
-                        terminal.scrollTop = terminal.scrollHeight;
+                        smartScroll();
                         continue;
                     }
                     if (txt.startsWith('[THINK] ')) {
@@ -804,7 +839,7 @@ async function sendSwimmerInline(agentId) {
                             terminal.appendChild(currentStreamLine);
                         }
                         currentStreamLine.textContent += txt.substring(8);
-                        terminal.scrollTop = terminal.scrollHeight;
+                        smartScroll();
                         continue;
                     }
 
@@ -813,7 +848,7 @@ async function sendSwimmerInline(agentId) {
                     const el  = colorizeTerminalLine(txt);
                     if (el) {
                         terminal.appendChild(el);
-                        terminal.scrollTop = terminal.scrollHeight;
+                        smartScroll();
                     }
                 }
             }
@@ -829,11 +864,12 @@ async function sendSwimmerInline(agentId) {
             div.className = 't-exit';
             div.textContent = '— CONNECTION CLOSED —';
             terminal.appendChild(div);
-            terminal.scrollTop = terminal.scrollHeight;
+            smartScroll();
 
-            document.getElementById(`target-${agentId}`).disabled      = false;
-            document.getElementById(`write-${agentId}`).disabled       = false;
-            document.getElementById(`send-${agentId}`).disabled        = false;
+            document.getElementById('dc-target').disabled = false;
+            document.getElementById('dc-write').disabled  = false;
+            sendBtn.disabled  = false;
+            abortBtn.disabled = true; // DISARM abort after completion
         }
 
         readStream();
@@ -844,10 +880,42 @@ async function sendSwimmerInline(agentId) {
         div.textContent = `Error initiating dispatch: ${err}`;
         terminal.appendChild(div);
 
-        document.getElementById(`target-${agentId}`).disabled      = false;
-        document.getElementById(`write-${agentId}`).disabled       = false;
-        document.getElementById(`send-${agentId}`).disabled        = false;
+        document.getElementById('dc-target').disabled = false;
+        document.getElementById('dc-write').disabled  = false;
+        sendBtn.disabled  = false;
+        abortBtn.disabled = true;
     }
+}
+
+
+// ─── Abort Active Swimmer ────────────────────────
+async function abortSwimmer() {
+    const terminal  = document.getElementById('dc-terminal');
+    const sendBtn   = document.getElementById('dc-send-btn');
+    const abortBtn  = document.getElementById('dc-abort-btn');
+
+    abortBtn.disabled = true;
+    abortBtn.textContent = '■ ABORTING...';
+
+    try {
+        const res  = await fetch('/api/dispatch/kill', { method: 'POST' });
+        const data = await res.json();
+
+        const div = document.createElement('div');
+        div.className = 't-warn';
+        div.textContent = data.killed
+            ? '■ SWIMMER TERMINATED BY OPERATOR'
+            : `■ ${data.message || 'No active swimmer'}`;
+        if (terminal) terminal.appendChild(div);
+        if (terminal) terminal.scrollTop = terminal.scrollHeight;
+    } catch (e) {
+        console.error('Abort failed', e);
+    }
+
+    if (abortBtn) abortBtn.textContent = '■ ABORT';
+    document.getElementById('dc-target').disabled = false;
+    document.getElementById('dc-write').disabled  = false;
+    if (sendBtn) sendBtn.disabled = !activeDispatchAgent;
 }
 
 

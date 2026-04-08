@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=6">
+    <link rel="stylesheet" href="/static/style.css?v=7">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,5 93,27.5 93,72.5 50,95 7,72.5 7,27.5' fill='%23050508' stroke='%2300e5ff' stroke-width='4'/%3E%3Ctext x='50' y='62' font-size='36' text-anchor='middle' fill='%2300e5ff' font-family='monospace'%3E⬡%3C/text%3E%3C/svg%3E">
     <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
@@ -67,7 +67,7 @@
             </div>
         </section>
 
-        <!-- Center Panel: Live Log Stream -->
+        <!-- Center Panel: Live Log Stream + Dispatch TV -->
         <section class="panel logs-panel" aria-label="Live Log Stream">
             <h2><span class="panel-icon">◉</span> LIVE LOG STREAM</h2>
             <div class="log-container">
@@ -83,6 +83,51 @@
                     <tbody id="logs-body">
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Central Dispatch TV Console -->
+            <div class="dispatch-console" id="central-dispatch-console">
+                <div class="dc-header">
+                    <span class="dc-title">⬡ MISSION CONTROL</span>
+                    <span class="dc-agent" id="dc-active-agent">NO AGENT SELECTED</span>
+                </div>
+
+                <div class="dc-body">
+                    <!-- TOP: Matrix TV — full width, dominant -->
+                    <div class="dc-terminal-container">
+                        <div class="dc-terminal-header">
+                            <span>LIVE TELEMETRY</span>
+                            <span class="dc-scroll-hint" id="dc-scroll-hint">▲ SCROLL LOCKED — READING HISTORY</span>
+                        </div>
+                        <div id="dc-terminal">
+                            <div class="placeholder t-boot">&gt; NEURAL UPLINK SECURE<br>&gt; WAITING FOR SIFTA NODE SELECTION... <span class="blink">▋</span></div>
+                        </div>
+                    </div>
+
+                    <!-- BOTTOM: Compact controls strip -->
+                    <div class="dc-config">
+                        <div class="form-group">
+                            <input type="text" id="dc-target" class="form-input" placeholder="Target path…" value="test_environment">
+                        </div>
+                        <div class="browse-row" style="display:flex; gap:4px; flex-shrink:0;">
+                            <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', 'dc')">📄</button>
+                            <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', 'dc')">📁</button>
+                        </div>
+                        <div class="toggle-group" style="display:flex; align-items:center; gap:0.4rem; flex-shrink:0;">
+                            <span style="font-size:0.6rem; color:var(--health-low); font-family:var(--font-mono); letter-spacing:0.08em;">WRITE</span>
+                            <label class="switch">
+                                <input type="checkbox" id="dc-write">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <button class="btn btn-primary" id="dc-send-btn" disabled onclick="sendSwimmerCentral()" style="flex-shrink:0; white-space:nowrap; padding: 0.45rem 1rem;">
+                            <span class="btn-icon">▶</span> SEND SWIMMER
+                        </button>
+                        <button class="btn btn-danger" id="dc-abort-btn" disabled onclick="abortSwimmer()" style="flex-shrink:0; white-space:nowrap; padding: 0.45rem 1rem;" title="Kill active swimmer">
+                            ■ ABORT
+                        </button>
+                    </div>
+                </div>
             </div>
         </section>
 

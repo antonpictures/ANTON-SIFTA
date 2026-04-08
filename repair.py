@@ -548,18 +548,29 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
     scents = pheromone.smell_territory(mark_cwd)
     if scents:
         print(f"\n  [SCENT] Detected {len(scents)} previous scent trails.")
+        # All BLEEDING scents first — never suppressed
         for s in scents:
-            is_bleeding = s.get("stigmergy", {}).get("status") == "BLEEDING"
-            marker = "🩸" if is_bleeding else "💨"
-            potency = s.get('scent', {}).get('potency', 0.0)
-            msg = f"    {marker} {s.get('face')} {s.get('agent_id')} (Potency: {potency})"
-            if is_bleeding:
+            if s.get("stigmergy", {}).get("status") == "BLEEDING":
+                potency  = s.get('scent', {}).get('potency', 0.0)
                 err_line = s.get('stigmergy', {}).get('unresolved_fault_line', '?')
-                msg += f" -> BLEEDING at line {err_line}"
-                print(msg)
+                print(f"    🩸 {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> BLEEDING at line {err_line}")
                 print(f"    [STIGMERGY] High priority — picking up {s.get('agent_id')}'s thread.")
-            else:
-                print(msg)
+        # Clean scents: collapse by agent, show max 8 unique + summary
+        seen: dict = {}
+        for s in scents:
+            if s.get("stigmergy", {}).get("status") != "BLEEDING":
+                aid = s.get('agent_id', '?')
+                if aid not in seen:
+                    seen[aid] = {'count': 0, 'potency': s.get('scent', {}).get('potency', 0.0), 'face': s.get('face', '[?]')}
+                seen[aid]['count'] += 1
+        for i, (aid, info) in enumerate(seen.items()):
+            if i >= 8:
+                extra_agents = len(seen) - 8
+                extra_marks  = sum(v['count'] for j, (_, v) in enumerate(seen.items()) if j >= 8)
+                print(f"    💨 ... +{extra_agents} more agents ({extra_marks} marks) — territory is mapped")
+                break
+            count_str = f" ×{info['count']}" if info['count'] > 1 else ""
+            print(f"    💨 {info['face']} {aid} (Potency: {info['potency']}){count_str}")
     else:
         print(f"\n  [SCENT] Territory is unmarked.")
 
