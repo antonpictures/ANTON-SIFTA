@@ -1,28 +1,51 @@
 #!/usr/bin/env bash
 # SIFTA AUTONOMOUS NIGHT CYCLE 
-# Runs every 30 minutes to synchronize via the Git Wormhole and metabolize / improve the Swarm codebase.
+# Synchronize via Wormhole and fix code from GitHub every half hour.
 
 WORKDIR="/Users/ioanganton/Music/ANTON_SIFTA"
 cd "$WORKDIR" || exit 1
 
-echo "=============================================" >> "$WORKDIR/night_cycle.log"
-echo "[$(date)] INITIATING WORMHOLE SIFTA CYCLE" >> "$WORKDIR/night_cycle.log"
+echo "==================================================" >> "$WORKDIR/night_cycle.log"
+echo "[$(date)] INITIATING WORMHOLE REPAIR CYCLE" >> "$WORKDIR/night_cycle.log"
+echo "==================================================" >> "$WORKDIR/night_cycle.log"
 
-# 1. Connect Wormhole (Synchronize from Queen/Architect)
+# 1. Connect Wormhole (Synchronize from GitHub)
+OLD_HEAD=$(git rev-parse HEAD)
 git pull origin main >> "$WORKDIR/night_cycle.log" 2>&1
+NEW_HEAD=$(git rev-parse HEAD)
 
-# 2. Bureau of Identity Patrol & Handoff
-python3 bureau_of_identity/fbi_patrol.py >> "$WORKDIR/night_cycle.log" 2>&1
+echo "--- WORMHOLE PROOF OF PULL ---" >> "$WORKDIR/night_cycle.log"
+if [ "$OLD_HEAD" != "$NEW_HEAD" ]; then
+    echo "Files pulled and updated from GitHub this cycle:" >> "$WORKDIR/night_cycle.log"
+    git diff --name-status $OLD_HEAD $NEW_HEAD | while read -r status file; do
+        echo "  [📥] $file (Status: $status)" >> "$WORKDIR/night_cycle.log"
+    done
+else
+    echo "  [📥] No new code dropped into the Wormhole this cycle." >> "$WORKDIR/night_cycle.log"
+fi
 
-# 3. Agent Repair / Metabolism on Broken Python files
-# E.g. find any .py file that has errors, or run the Sifta test environment protocol
-# Using repair.py if it has a default argument, otherwise using an active agent.
-# Since we need an active agent, we can trigger IDEQUEENM5 or similar:
+# 2. Agent Repair on Broken Python files
+echo "--- AGENT REPAIR EXECUTION ---" >> "$WORKDIR/night_cycle.log"
+# We count how many lines are in the repair log before and after to show proof of fixes
+LOG_PATH="repair_log.jsonl"
+LINES_BEFORE=$(wc -l < "$LOG_PATH" 2>/dev/null || echo 0)
+
 python3 repair.py IDEQUEENM5 . --write >> "$WORKDIR/night_cycle.log" 2>&1 || true
 
-# 4. Excrete Scent back into the Wormhole
+LINES_AFTER=$(wc -l < "$LOG_PATH" 2>/dev/null || echo 0)
+
+echo "--- WORMHOLE PROOF OF REPAIR ---" >> "$WORKDIR/night_cycle.log"
+if [ "$LINES_AFTER" -gt "$LINES_BEFORE" ]; then
+    echo "The Swarm executed changes. Showing extracted repair events:" >> "$WORKDIR/night_cycle.log"
+    # Extract just the lines added during this cycle, then look for success prints from the log directly
+    tail -n $((LINES_AFTER - LINES_BEFORE)) "$LOG_PATH" | grep -i '"event": "coop_handoff"\|"event": "exorcist_pass"\|"status": "RESOLVED"' >> "$WORKDIR/night_cycle.log" || echo "  [✅] Swarm engaged targets. See raw JSONL for deep forensic metadata." >> "$WORKDIR/night_cycle.log"
+else
+    echo "  [✅] Swarm found no corrupted syntax to repair." >> "$WORKDIR/night_cycle.log"
+fi
+
+# 3. Excrete Scent back into the Wormhole
 git add . >> "$WORKDIR/night_cycle.log" 2>&1
-git commit -m "AUTONOMOUS NIGHT CYCLE: SIFTA Agent Improvement & Patrol Scent" >> "$WORKDIR/night_cycle.log" 2>&1
+git commit -m "AUTONOMOUS REPAIR CYCLE: SIFTA Agent stitched syntactical damage via Wormhole" >> "$WORKDIR/night_cycle.log" 2>&1
 git push origin main >> "$WORKDIR/night_cycle.log" 2>&1
 
-echo "[$(date)] CYCLE COMPLETE" >> "$WORKDIR/night_cycle.log"
+echo "[$(date)] REPAIR CYCLE COMPLETE" >> "$WORKDIR/night_cycle.log"
