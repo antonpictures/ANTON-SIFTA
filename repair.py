@@ -104,19 +104,23 @@ def stitch_bite(filepath: Path, fixed_text: str, start: int, end: int, original_
 
 
 # ─── LLM CALL (Streaming — tokens print live into SSE pipeline) ──────────────
-def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "") -> str | None:
+def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "", vocation: str = "DETECTIVE") -> str | None:
     import json
     import urllib.request
+    from pathlib import Path
 
     base = ollama_base.rstrip("/") if ollama_base else "http://localhost:11434"
     url = f"{base}/api/generate"
+    
+    colony_file = Path(__file__).parent / "bureau_of_identity" / "COLONIES" / f"{vocation.upper()}.txt"
+    if colony_file.exists():
+        system_prompt = colony_file.read_text(encoding="utf-8").strip()
+    else:
+        system_prompt = "You are a Python syntax repair module.\nOutput ONLY the corrected Python code lines. No explanation."
+
     data = {
         "model": model,
-        "prompt": (
-            "You are a Python syntax repair module. "
-            "Output ONLY the corrected Python code lines. No explanation.\n\n"
-            f"{prompt}"
-        ),
+        "prompt": f"{system_prompt}\n\n{prompt}",
         "stream": True,
         "temperature": 0.0,
         "keep_alive": "1m",   # keeps model hot for 1min between bites, avoiding SSD thrashing on 8gb mini before unloading
@@ -655,7 +659,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                     print(f"  [WORMHOLE] Routing inference to remote node: {remote_ollama_url}")
                     remote_base = remote_ollama_url.rstrip("/")
                     if ollama_healthy(remote_base):
-                        fixed_chunk = call_ollama(chunk, model=model, ollama_base=remote_base)
+                        fixed_chunk = call_ollama(chunk, model=model, ollama_base=remote_base, vocation=state.get("vocation", "DETECTIVE"))
                         if fixed_chunk:
                             # ── Auto-record STGM fee on the local ledger ─────────
                             try:
@@ -678,7 +682,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 if not fixed_chunk:
                     if provider == "ollama":
                         if ensure_ollama() and ensure_model_pulled(model):
-                            fixed_chunk = call_ollama(chunk, model=model)
+                            fixed_chunk = call_ollama(chunk, model=model, vocation=state.get("vocation", "DETECTIVE"))
                         else:
                             print(f"  [OLLAMA] Model not available. Skipping LLM layer.")
                     else:
@@ -689,7 +693,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 if ollama_healthy():
                     print(f"  [FALLBACK] Model returned nothing. Trying {FALLBACK_MODEL}...")
                     if ensure_model_pulled(FALLBACK_MODEL):
-                        fixed_chunk = call_ollama(chunk, FALLBACK_MODEL)
+                        fixed_chunk = call_ollama(chunk, FALLBACK_MODEL, vocation=state.get("vocation", "DETECTIVE"))
                 else:
                     print(f"  [FALLBACK SKIPPED] Daemon went offline mid-swim.")
 

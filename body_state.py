@@ -57,9 +57,23 @@ def find_healthy_agent(exclude_id: str) -> dict | None:
 class SwarmBody:
     # --- Physical Hardware Binding ---
     BARE_METAL_SERIALS = {
-        "ALICE_M5": "GTH4921YP3",   # Explicit hardware lock
-        "M1THER": "MAC_MINI_BOARD"  # To be serialized later
+        "ALICE_M5": "GTH4921YP3",
+        "M1THER": "AUTO_RESOLVE_MAC_MINI"
     }
+
+    @classmethod
+    def resolve_hardware_serial(cls, agent_id):
+        raw = cls.BARE_METAL_SERIALS.get(agent_id)
+        if raw == "AUTO_RESOLVE_MAC_MINI":
+            try:
+                import subprocess
+                # Ask macOS bare metal for the true physical serial
+                out = subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True)
+                sn = out.decode().split('"')[-2]
+                return sn
+            except Exception:
+                return "M1THER_UNKNOWN_HW"
+        return raw
     
     FACES = {
         # — Primary Nodes —
@@ -94,6 +108,7 @@ class SwarmBody:
             self.energy = saved_state.get("energy", 100)
             self.style = saved_state.get("style", "NOMINAL")
             self.private_key_b64 = saved_state.get("private_key_b64")
+            self.vocation = saved_state.get("vocation", "DETECTIVE")
         else:
             # --- SECURITY BLOCK: UNAUTHORIZED BAPTISM ---
             # Remote queens cannot tell this system to create an agent.
@@ -109,6 +124,7 @@ class SwarmBody:
             self.hash_chain = []
             self.energy = 100
             self.style = "NOMINAL"
+            self.vocation = "DETECTIVE"
             
             # --- PROOF OF SWIMMING: FORGE THE CRYPTOGRAPHIC SOUL (Ed25519) ---
             priv_key = ed25519.Ed25519PrivateKey.generate()
@@ -120,6 +136,23 @@ class SwarmBody:
             self.private_key_b64 = base64.b64encode(priv_bytes).decode('utf-8')
             # -----------------------------------------------------------------
         
+    def request_vocation_change(self, new_vocation, architect_signature):
+        if architect_signature != f"ARCHITECT_SEAL_{self.agent_id}":
+            raise PermissionError("Job transfer denied. Missing valid Architect Seal.")
+        self.vocation = new_vocation.upper()
+        save_agent_state({
+            "id": self.agent_id,
+            "seq": self.sequence,
+            "hash_chain": self.hash_chain,
+            "energy": self.energy,
+            "style": self.style,
+            "raw": f"<///{self.face}///::ID[{self.agent_id}]::ROUTINE_UPGRADE>",
+            "ttl": 0,
+            "private_key_b64": self.private_key_b64,
+            "vocation": self.vocation
+        })
+        print(f"[{self.agent_id}] Vocation upgraded to {self.vocation} by Architect.")
+
     def generate_body(self, origin, destination, payload, style=None, energy=None):
         if style is not None:
             self.style = style
@@ -148,9 +181,10 @@ class SwarmBody:
                 
         # Cryptographic Mass (Hash Chaining using SHA-256 for physical history)
         raw_data = base_string
-        if self.agent_id in self.BARE_METAL_SERIALS:
+        sn = self.resolve_hardware_serial(self.agent_id)
+        if sn:
             # Tie the primary terminals directly to their physical serial numbers
-            raw_data += f"::SERIAL[{self.BARE_METAL_SERIALS[self.agent_id]}]"
+            raw_data += f"::SERIAL[{sn}]"
             
         if self.hash_chain:
             raw_data += self.hash_chain[-1] 
@@ -177,7 +211,8 @@ class SwarmBody:
             "style": self.style,
             "raw": body_string,
             "ttl": ttl,
-            "private_key_b64": self.private_key_b64
+            "private_key_b64": self.private_key_b64,
+            "vocation": self.vocation
         })
         
         return body_string
@@ -252,7 +287,8 @@ def parse_body_state(ascii_body):
         "ttl": int(ttl_match.group(1)) if ttl_match else 0,
         "hash_chain": saved_state["hash_chain"],
         "raw": ascii_body,
-        "owner": pub_b64
+        "owner": pub_b64,
+        "vocation": saved_state.get("vocation", "DETECTIVE") if saved_state else "DETECTIVE"
     }
 
 DAMAGE_TABLE = {
