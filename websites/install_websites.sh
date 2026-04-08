@@ -40,7 +40,7 @@ else
 fi
 
 # ── Create web root directories
-WEBROOT="/usr/local/var/www"
+WEBROOT="/opt/homebrew/var/www"
 echo -e "${CYAN}  [DIR] Creating web roots...${NC}"
 mkdir -p "$WEBROOT/stigmergicode.com"
 mkdir -p "$WEBROOT/stigmergicoin.com"
@@ -63,7 +63,7 @@ else
 fi
 
 # ── Write nginx config
-NGINX_CONF_DIR="/usr/local/etc/nginx/servers"
+NGINX_CONF_DIR="/opt/homebrew/etc/nginx/servers"
 mkdir -p "$NGINX_CONF_DIR"
 
 cat > "$NGINX_CONF_DIR/stigmergicode.conf" << 'EOF'
@@ -71,7 +71,7 @@ server {
     listen 80;
     server_name stigmergicode.com www.stigmergicode.com;
 
-    root /usr/local/var/www/stigmergicode.com;
+    root /opt/homebrew/var/www/stigmergicode.com;
     index index.html;
 
     location / {
@@ -92,7 +92,7 @@ server {
     listen 80;
     server_name stigmergicoin.com www.stigmergicoin.com;
 
-    root /usr/local/var/www/stigmergicoin.com;
+    root /opt/homebrew/var/www/stigmergicoin.com;
     index index.html;
 
     location / {
