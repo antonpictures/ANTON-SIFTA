@@ -729,5 +729,66 @@ async def receive_soul(payload: dict):
         return {"ok": False, "error": str(e)}
 
 
+@app.get("/api/swarm_state")
+async def get_swarm_state():
+    """Aggregated snapshot for the D3 swarm visualization."""
+    nodes = []
+    now = int(time.time())
+    for p in STATE_DIR.glob("*.json"):
+        try:
+            state = json.loads(p.read_text(encoding="utf-8"))
+            if "id" not in state or "energy" not in state:
+                continue
+            nodes.append({
+                "id": state["id"],
+                "energy": state.get("energy", 0),
+                "style": state.get("style", "NOMINAL"),
+                "seq": state.get("seq", 0),
+                "stgm_balance": state.get("stgm_balance", 0.0),
+                "active": now - state.get("updated_at", 0) < 300 if "updated_at" in state else True,
+            })
+        except Exception:
+            pass
+
+    # Read recent STGM transactions
+    tx_log = ROOT_DIR / "STGM_TX_LOG.jsonl"
+    transactions = []
+    if tx_log.exists():
+        try:
+            lines = tx_log.read_text(encoding="utf-8").splitlines()
+            for line in lines[-50:]:
+                if line.strip():
+                    try:
+                        transactions.append(json.loads(line))
+                    except Exception:
+                        pass
+            transactions.reverse()
+        except Exception:
+            pass
+
+    # Read recent watcher events
+    watcher_log = ROOT_DIR / "watcher_metrics.jsonl"
+    watcher_events = []
+    if watcher_log.exists():
+        try:
+            lines = watcher_log.read_text(encoding="utf-8").splitlines()
+            for line in lines[-20:]:
+                if line.strip():
+                    try:
+                        watcher_events.append(json.loads(line))
+                    except Exception:
+                        pass
+            watcher_events.reverse()
+        except Exception:
+            pass
+
+    return {
+        "nodes": nodes,
+        "transactions": transactions,
+        "watcher_events": watcher_events,
+        "ts": now,
+    }
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=7433)

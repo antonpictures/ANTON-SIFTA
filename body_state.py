@@ -4,7 +4,7 @@ import time
 import re
 import base64
 from pathlib import Path
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
 
@@ -111,6 +111,31 @@ class SwarmBody:
             self.style = saved_state.get("style", "NOMINAL")
             self.private_key_b64 = saved_state.get("private_key_b64")
             self.vocation = saved_state.get("vocation", "DETECTIVE")
+            
+            # --- WORMHOLE MAIL: OFFLINE MAILBOX UPGRADE ---
+            self.mailbox_private_b64 = saved_state.get("mailbox_private_b64")
+            if not self.mailbox_private_b64:
+                mbox_key = x25519.X25519PrivateKey.generate()
+                mbox_bytes = mbox_key.private_bytes(
+                    encoding=serialization.Encoding.Raw,
+                    format=serialization.PrivateFormat.Raw,
+                    encryption_algorithm=serialization.NoEncryption()
+                )
+                self.mailbox_private_b64 = base64.b64encode(mbox_bytes).decode('utf-8')
+                # Persist the upgraded V2 DNA immediately
+                save_agent_state({
+                    "id": self.agent_id,
+                    "seq": self.sequence,
+                    "hash_chain": self.hash_chain,
+                    "energy": self.energy,
+                    "style": self.style,
+                    "raw": saved_state.get("raw", ""),
+                    "ttl": saved_state.get("ttl", 0),
+                    "private_key_b64": self.private_key_b64,
+                    "mailbox_private_b64": self.mailbox_private_b64,
+                    "vocation": self.vocation
+                })
+            # ----------------------------------------------
         else:
             # --- SECURITY BLOCK: UNAUTHORIZED BAPTISM ---
             # Remote queens cannot tell this system to create an agent.
@@ -137,6 +162,15 @@ class SwarmBody:
             )
             self.private_key_b64 = base64.b64encode(priv_bytes).decode('utf-8')
             # -----------------------------------------------------------------
+            # --- WORMHOLE MAIL: OFFLINE MAILBOX FORGE (X25519) ---
+            mbox_key = x25519.X25519PrivateKey.generate()
+            mbox_bytes = mbox_key.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            self.mailbox_private_b64 = base64.b64encode(mbox_bytes).decode('utf-8')
+            # -----------------------------------------------------
         
     def request_vocation_change(self, new_vocation, architect_signature):
         if architect_signature != f"ARCHITECT_SEAL_{self.agent_id}":
@@ -151,6 +185,7 @@ class SwarmBody:
             "raw": f"<///{self.face}///::ID[{self.agent_id}]::ROUTINE_UPGRADE>",
             "ttl": 0,
             "private_key_b64": self.private_key_b64,
+            "mailbox_private_b64": getattr(self, "mailbox_private_b64", ""),
             "vocation": self.vocation
         })
         print(f"[{self.agent_id}] Vocation upgraded to {self.vocation} by Architect.")
@@ -175,12 +210,21 @@ class SwarmBody:
         )
         pub_b64 = base64.b64encode(pub_bytes).decode('utf-8')
         # ---------------------------------------------------------------
+        # --- WORMHOLE MAIL: DERIVE PUBLIC MAILBOX DIRECTORY ENTRY ------
+        mbox_priv_bytes = base64.b64decode(getattr(self, "mailbox_private_b64", ""))
+        mbox_key = x25519.X25519PrivateKey.from_private_bytes(mbox_priv_bytes)
+        mbox_pub_bytes = mbox_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
+        )
+        mbox_pub_b64 = base64.b64encode(mbox_pub_bytes).decode('utf-8')
+        # ---------------------------------------------------------------
         
         assert action_type is not None, "SIFTA V2 enforces explicit intent declaration via action_type"
         assert len(pre_territory_hash) == 64, "Pre-territory hash must be exactly 64 chars"
         assert len(post_territory_hash) == 64, "Post-territory hash must be exactly 64 chars"
         
-        base_string = (f"<///{self.face}///::ID[{self.agent_id}]::OWNER[{pub_b64}]"
+        base_string = (f"<///{self.face}///::ID[{self.agent_id}]::OWNER[{pub_b64}]::MBOX[{mbox_pub_b64}]"
                 f"::FROM[{origin}]::TO[{destination}]"
                 f"::SEQ[{self.sequence:03d}]::T[{timestamp}]::TTL[{ttl}]"
                 f"::STYLE[{self.style}]::ENERGY[{self.energy}]"
@@ -219,6 +263,7 @@ class SwarmBody:
             "raw": body_string,
             "ttl": ttl,
             "private_key_b64": self.private_key_b64,
+            "mailbox_private_b64": getattr(self, "mailbox_private_b64", ""),
             "vocation": self.vocation
         })
         
@@ -240,6 +285,10 @@ def parse_body_state(ascii_body):
     if not owner_match:
         raise Exception("SECURITY BREACH: Missing OWNER public key.")
     pub_b64 = owner_match.group(1)
+    
+    # 2b. Extract Public Mailbox (MBOX) - Optional for legacy bodies without MBOX
+    mbox_match = re.search(r"::MBOX\[([^\]]+)\]", string_to_verify)
+    mbox_pub_b64 = mbox_match.group(1) if mbox_match else None
     
     # 3. Verify Ed25519 Signature (Proof that the soul matches the body)
     try:
@@ -301,6 +350,7 @@ def parse_body_state(ascii_body):
         "hash_chain": saved_state["hash_chain"],
         "raw": ascii_body,
         "owner": pub_b64,
+        "mailbox": mbox_pub_b64,
         "vocation": saved_state.get("vocation", "DETECTIVE") if saved_state else "DETECTIVE"
     }
 
