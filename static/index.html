@@ -107,7 +107,7 @@
                     <!-- BOTTOM: Compact controls strip -->
                     <div class="dc-config">
                         <div class="form-group">
-                            <input type="text" id="dc-target" class="form-input" placeholder="Target path…" value="test_environment">
+                            <input type="text" id="dc-target" class="form-input" placeholder="Select target territory for deployment...">
                         </div>
                         <div class="browse-row" style="display:flex; gap:4px; flex-shrink:0;">
                             <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', 'dc')">📄</button>
@@ -120,7 +120,7 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
-                        <button class="btn btn-primary" id="dc-send-btn" disabled onclick="sendSwimmerCentral()" style="flex-shrink:0; white-space:nowrap; padding: 0.45rem 1rem;">
+                        <button type="button" class="btn btn-primary" id="dc-send-btn" disabled onclick="sendSwimmerCentral()" style="flex-shrink:0; white-space:nowrap; padding: 0.45rem 1rem;">
                             <span class="btn-icon">▶</span> SEND SWIMMER
                         </button>
                         <button class="btn btn-danger" id="dc-abort-btn" disabled onclick="abortSwimmer()" style="flex-shrink:0; white-space:nowrap; padding: 0.45rem 1rem;" title="Kill active swimmer">
@@ -143,7 +143,10 @@
                     <div id="territory-list" class="fleet-drawer-body"></div>
                 </details>
                 <details class="fleet-drawer" id="drawer-cemetery">
-                    <summary class="fleet-drawer-summary">☠ CEMETERY <span id="cemetery-badge" class="fleet-drawer-badge"></span></summary>
+                    <summary class="fleet-drawer-summary" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>☠ CEMETERY <span id="cemetery-badge" class="fleet-drawer-badge"></span></span>
+                        <button class="btn btn-secondary" style="font-size:0.65em; padding:2px 8px; opacity:0.8;" onclick="event.preventDefault(); event.stopPropagation(); window.emptyTrash()" title="Permanently delete all abandoned footprints in the recycle bin.">🗑️ EMPTY TRASH</button>
+                    </summary>
                     <ul id="cemetery-list" class="list fleet-drawer-body" style="max-height: 220px;"></ul>
                 </details>
                 <details class="fleet-drawer" id="drawer-quorum">
@@ -344,7 +347,7 @@
                     </div>
                     <div class="wormhole-input-row">
                         <input type="text" id="wormhole-owner" placeholder="New owner email" class="form-input" style="flex:1;">
-                        <button class="btn btn-primary" id="wallet-wormhole-fire-btn" style="border-color: var(--magenta); color: var(--magenta);">⚡ FIRE</button>
+                        <button type="button" class="btn btn-primary" id="wallet-wormhole-fire-btn" style="border-color: var(--magenta); color: var(--magenta);">⚡ FIRE</button>
                     </div>
                 </div>
 
@@ -371,6 +374,6 @@
         </div>
     </dialog>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=2.1"></script>
 </body>
 </html>

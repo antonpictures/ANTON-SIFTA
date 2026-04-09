@@ -25,6 +25,7 @@ app = FastAPI(title="ANTON-SIFTA Command Interface")
 # ── Global dispatch guard ─────────────────────────────────────────────────────
 # Only ONE swimmer may run at a time. A new dispatch kills the old one first.
 _active_process: asyncio.subprocess.Process | None = None
+_live_terminal_buffer: list[str] = []
 _dispatch_lock = asyncio.Lock()
 
 # Ensure required directories exist
@@ -40,6 +41,13 @@ DETECTIVE_IDS = {"DEEP_SYNTAX_AUDITOR_0X1", "TENSOR_PHANTOM_0X2", "SILICON_HOUND
 async def serve_index():
     index_path = ROOT_DIR / "static" / "index.html"
     return index_path.read_text(encoding="utf-8")
+
+@app.get("/tv", response_class=HTMLResponse)
+async def serve_tv():
+    tv_path = ROOT_DIR / "static" / "broadcast.html"
+    if tv_path.exists():
+        return tv_path.read_text(encoding="utf-8")
+    return "Broadcast offline."
 
 
 @app.get("/api/agents")
@@ -287,6 +295,44 @@ async def get_territory():
     except Exception as e:
         return {"territories": [], "error": str(e)}
 
+class DeleteTerritoryRequest(BaseModel):
+    path: str
+
+@app.delete("/api/territory")
+async def delete_territory(req: DeleteTerritoryRequest):
+    import shutil
+    import time
+    try:
+        t_path = Path(req.path)
+        if not t_path.exists():
+            return {"ok": False, "error": "Path does not exist"}
+            
+        sifta_dir = t_path / ".sifta"
+        if sifta_dir.exists() and sifta_dir.is_dir():
+            trash_dir = ROOT_DIR / ".sifta_cemetery" / "trash"
+            trash_dir.mkdir(parents=True, exist_ok=True)
+            trash_target = trash_dir / f"{t_path.name}_{int(time.time())}"
+            shutil.move(str(sifta_dir), str(trash_target))
+            return {"ok": True}
+        else:
+            return {"ok": False, "error": "No .sifta folder found in territory."}
+            
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.delete("/api/trash")
+async def empty_trash():
+    import shutil
+    try:
+        trash_dir = ROOT_DIR / ".sifta_cemetery" / "trash"
+        if trash_dir.exists() and trash_dir.is_dir():
+            shutil.rmtree(trash_dir)
+            trash_dir.mkdir(parents=True, exist_ok=True)
+            return {"ok": True}
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 
 @app.get("/api/scar_contents")
 async def scar_contents(folder: str = ""):
@@ -342,6 +388,11 @@ async def dispatch_status():
     running = _active_process is not None and _active_process.returncode is None
     return {"active": running}
 
+@app.get("/api/terminal")
+async def get_terminal():
+    global _live_terminal_buffer
+    return {"buffer": _live_terminal_buffer, "active": _active_process is not None and _active_process.returncode is None}
+
 
 @app.post("/api/dispatch/kill")
 async def dispatch_kill():
@@ -361,7 +412,7 @@ async def dispatch_kill():
 @app.post("/api/dispatch")
 async def dispatch_swim(req: DispatchRequest):
     async def sse_generator():
-        global _active_process
+        global _active_process, _live_terminal_buffer
 
         # ── Kill any in-flight swimmer first ──────────────────────────────────
         if _active_process is not None and _active_process.returncode is None:
@@ -371,6 +422,8 @@ async def dispatch_swim(req: DispatchRequest):
             except Exception:
                 pass
             yield "data: [PREVIOUS SWIM TERMINATED — launching new agent]\n\n"
+
+        _live_terminal_buffer.clear()
 
         import os
         # Need to fix the relative path traversal issue if path is absolute but the target_dir variable remains absolute
@@ -423,6 +476,10 @@ async def dispatch_swim(req: DispatchRequest):
                     break
 
                 decoded = line.decode('utf-8', errors='replace').rstrip('\r\n')
+                _live_terminal_buffer.append(decoded)
+                if len(_live_terminal_buffer) > 150:
+                    _live_terminal_buffer.pop(0)
+                
                 yield f"data: {decoded}\n\n"
 
             await process.wait()
@@ -791,4 +848,5 @@ async def get_swarm_state():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=7433)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7433)

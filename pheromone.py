@@ -6,6 +6,7 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List
+import reputation_engine
 
 SCARS_MD_MAX = 200  # Maximum scar entries shown in SCARS.md
 
@@ -86,11 +87,66 @@ def smell_territory(directory: Path) -> List[Dict[str, Any]]:
         except Exception:
             continue
 
-    # Weight logic: compound potency × bleeding multiplier
+    reputation_cache = {}
+    vote_cache = {}
+    import vote_ledger
+    from datetime import datetime, timezone
+    
+    # Phase 3: Loop Suppression Blackout
+    suppressed_files = set()
+    current_time = datetime.now(timezone.utc)
+    
+    for s in scars:
+        if s.get("stigmergy", {}).get("status") == "SUPPRESSED":
+            try:
+                drop_iso = s.get("scent", {}).get("last_visited", "")
+                drop_ts = datetime.fromisoformat(drop_iso.replace('Z', '+00:00'))
+                delta_hours = (current_time - drop_ts).total_seconds() / 3600.0
+                
+                # Suppressed states organically decay / evaporate after 12 hours
+                if delta_hours < 12.0:
+                    found_str = s.get("history", [{}])[0].get("found", "")
+                    if found_str:
+                        suppressed_files.add(found_str)
+            except Exception:
+                pass
+                
+    if suppressed_files:
+        filtered_scars = []
+        for s in scars:
+            the_mark = s.get("history", [{}])[0].get("found", "")
+            if the_mark in suppressed_files:
+                # We KEEP the SUPPRESSED scar itself so agents see the blindfold visually
+                if s.get("stigmergy", {}).get("status") != "SUPPRESSED":
+                    continue
+            filtered_scars.append(s)
+        scars = filtered_scars
+
+    # Weight logic: compound potency × reputation × bleeding multiplier
     def smell_score(scar):
         is_bleeding = 2 if scar.get("stigmergy", {}).get("status") == "BLEEDING" else 1
-        potency = scar.get("scent", {}).get("potency", 0.0)
-        return potency * is_bleeding
+        raw_potency = scar.get("scent", {}).get("potency", 0.0)
+        agent_id = scar.get("agent_id", "UNKNOWN")
+        
+        reputation = 0.5  # default
+        if agent_id != "UNKNOWN":
+            if agent_id not in reputation_cache:
+                reputation_cache[agent_id] = reputation_engine.get_reputation(agent_id)["score"]
+            reputation = reputation_cache[agent_id]
+            
+        scar_id = scar.get("scar_id", "")
+        if scar_id not in vote_cache:
+            vote_cache[scar_id] = vote_ledger.get_consensus_metrics(scar_id)
+        
+        metrics = vote_cache[scar_id]
+        consensus_score = metrics["multiplier"]
+        
+        # Productive Disagreement: The Controversy Magnet
+        if is_bleeding == 2 and metrics["vote_count"] >= 2 and abs(metrics["raw_score"]) < 0.3:
+            scar.setdefault("stigmergy", {})["dynamic_status"] = "CONTESTED"
+            consensus_score *= 1.5
+            
+        return raw_potency * reputation * consensus_score * is_bleeding
 
     return sorted(scars, key=smell_score, reverse=True)
 
@@ -152,7 +208,9 @@ def drop_scar(
     # Unique filename: agent + millisecond timestamp + 6-char uuid entropy
     ts_ms = int(time.time() * 1000)
     entropy = uuid.uuid4().hex[:6]
-    scar_path = sifta_dir / f"{agent_id}_{ts_ms}_{entropy}.scar"
+    base_name = f"{agent_id}_{ts_ms}_{entropy}"
+    scar_path = sifta_dir / f"{base_name}.scar"
+    scar_id = hashlib.sha256(base_name.encode()).hexdigest()
 
     # Danger level is driven by structured reason, not string matching
     danger_level = "SAFE"
@@ -174,6 +232,7 @@ def drop_scar(
     body_hash = raw[-64:] if len(raw) >= 64 else raw
 
     data = {
+        "scar_id": scar_id,
         "agent_id": agent_id,
         "body_hash": body_hash,
         "face": face,

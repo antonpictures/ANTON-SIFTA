@@ -6,12 +6,19 @@ __pycache__/
 config.json
 .sifta_state/
 CEMETERY/
+WORMHOLE/
 benchmark_env/
 dispatch_article.py
 .DS_Store
 # Runtime-generated territory scars (not source code)
 **/.sifta/
 logs/
+server_stdout.log
+.sifta_cemetery/
+.sifta_reputation/
+.sifta_votes/
+bureau_of_identity/
+scripts/legacy/
 # Dev noise — not needed by coders
 test_environment/benchmark_100/
 pheromone_archive/

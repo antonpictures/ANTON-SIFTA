@@ -24,6 +24,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+import reputation_engine
 
 from body_state import SwarmBody, parse_body_state, apply_damage, bury, find_healthy_agent, save_agent_state
 
@@ -439,8 +440,13 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     ai_pattern = re.compile(r'<p [^>]+>\(AI:.*?\)</p>', re.DOTALL)
     ai_hits = ai_pattern.findall(content)
 
-    if not bad_frames and not ai_hits:
-        print(f"  [ITT] File is angelic. No demonic presence detected.")
+    # Grab all paragraph text to send to the Grammarian
+    p_pattern = re.compile(r'(<p [^>]+>)(.*?)(</p>)', re.DOTALL)
+    paragraphs = p_pattern.findall(content)
+    
+    # We only report "angelic" if we're scouting. If writing, we ALWAYS run grammar check!
+    if dry_run and not bad_frames and not ai_hits:
+        print(f"  [ITT] File is mathematically angelic. Run with --write to deploy the LLM Grammarian.")
         log({"event": "itt_clean", "file": str(filepath)})
         return True
 
@@ -448,9 +454,9 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     print(f"  [SPELL] {len(ai_hits)} AI-injected contamination line(s) detected.")
 
     if dry_run:
-        print(f"  [SCOUTING] Would purge {len(bad_frames)} timestamps and {len(ai_hits)} AI injections.")
+        print(f"  [SCOUTING] Would purge {len(bad_frames)} timestamps, {len(ai_hits)} AI injections, and run Grammarian.")
         # Leave a scout scar comment in the file
-        scar = f"<!-- [SCOUTING_SCAR] {state['id']}: {len(bad_frames)} invalid timestamps, {len(ai_hits)} AI injections detected. Run with --write to exorcise. -->\n"
+        scar = f"<!-- [SCOUTING_SCAR] {state['id']}: {len(bad_frames)} bad timestamps, {len(ai_hits)} AI injections detected. Run with --write to exorcise and grammatize. -->\n"
         if "[SCOUTING_SCAR]" not in content:
             with open(filepath, "r+", encoding="utf-8") as f:
                 original = f.read()
@@ -476,10 +482,40 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
 
     purged = time_pattern.sub(clamp_frame, purged)
 
-    # Step 3: Clean up empty lines left by removed paragraphs
+    # Step 3: LLM Grammar Exorcism
+    print(f"  [LLM] Waking Grammarian to purify {len(paragraphs)} dialogue blocks...")
+    
+    import sys
+    model = "qwen3.5:0.8b"
+    if "--model" in sys.argv:
+        model = sys.argv[sys.argv.index("--model") + 1]
+    
+    def grammar_fix(m):
+        raw_text = m.group(2).strip()
+        if not raw_text or "(AI:" in raw_text:
+            return m.group(1) + raw_text + m.group(3)
+            
+        print(f"  [BITE] Purifying: {raw_text[:40]}...")
+        prompt = f"Correct this Vietnamese-English transcribed subtitle for grammatical perfection. Do not change the meaning. Output ONLY the corrected text. Nothing else.\n\nText: {raw_text}"
+        corrected = call_ollama(prompt, model=model, vocation="GRAMMARIAN")
+        if corrected:
+            cleaned = corrected.strip()
+            # Clean up LLM hallucinations
+            if cleaned.startswith('"') and cleaned.endswith('"'):
+                cleaned = cleaned[1:-1]
+            if cleaned.startswith('Text:'):
+                cleaned = cleaned[5:].strip()
+            if cleaned:
+                return m.group(1) + cleaned + m.group(3)
+        return m.group(0)
+
+    purged = p_pattern.sub(grammar_fix, purged)
+
+    purged = re.sub(r'<p [^>]+>\s*</p>\n?', '', purged)
     purged = re.sub(r'\n\s*\n\s*\n', '\n\n', purged)
 
     filepath.write_text(purged, encoding="utf-8")
+    print(f"  [ITT] Exorcism complete. Subtitles purified.")
 
     print(f"  [✅] ITT Exorcism complete. Purged {removed_ai} AI injection(s), clamped {len(bad_frames)} frame(s).")
     log({"event": "itt_exorcised", "file": str(filepath),
@@ -553,8 +589,14 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             if s.get("stigmergy", {}).get("status") == "BLEEDING":
                 potency  = s.get('scent', {}).get('potency', 0.0)
                 err_line = s.get('stigmergy', {}).get('unresolved_fault_line', '?')
-                print(f"    🩸 {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> BLEEDING at line {err_line}")
-                print(f"    [STIGMERGY] High priority — picking up {s.get('agent_id')}'s thread.")
+                
+                dyn_status = s.get("stigmergy", {}).get("dynamic_status", "BLEEDING")
+                if dyn_status == "CONTESTED":
+                    print(f"    ⚠️  {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> CONTESTED TRUTH at line {err_line}")
+                    print(f"    [STIGMERGY] Priority magnet — resolving Swarm dispute over {s.get('agent_id')}'s claim.")
+                else:
+                    print(f"    🩸 {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> BLEEDING at line {err_line}")
+                    print(f"    [STIGMERGY] High priority — picking up {s.get('agent_id')}'s thread.")
         # Clean scents: collapse by agent, show max 8 unique + summary
         seen: dict = {}
         for s in scents:
@@ -595,9 +637,27 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
 
             # ── pre-check (skip clean files) ──────────────────────────────────
             syntax_ok, syntax_err = validate_syntax(original)
+            
+            import vote_ledger
+            
+            # Find any BLEEDING scars that specifically reference this file
+            file_bleeding_scars = [
+                s for s in scents 
+                if s.get("stigmergy", {}).get("status") == "BLEEDING" 
+                and str(rel) in s.get("mark", "")
+            ]
+            
             if syntax_ok:
                 if pass_num == 0:
                     print(f"  [OK] Syntax clean — scout mark left, moving on.")
+                    # Automatically REJECT false BLEEDING scars
+                    for b_scar in file_bleeding_scars:
+                        scar_id = b_scar.get("scar_id", "")
+                        orig_id = b_scar.get("agent_id", "UNKNOWN")
+                        vote_ledger.cast_vote(scar_id, state["id"], orig_id, "REJECT")
+                        import reputation_engine
+                        reputation_engine.update_reputation(orig_id, "FALSE_SIGNAL")
+                        
                     if not dry_run:
                         pheromone.drop_scar(
                             directory=mark_cwd,
@@ -619,6 +679,13 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             line_match = _re.search(r"line (\d+)", syntax_err)
             error_line = int(line_match.group(1)) if line_match else 1
             print(f"  [FAULT] {syntax_err}")
+            
+            # Sub-routing: the agent confirmed the fault visually. Auto-vote CONFIRM.
+            if pass_num == 0:
+                for b_scar in file_bleeding_scars:
+                    scar_id = b_scar.get("scar_id", "")
+                    orig_id = b_scar.get("agent_id", "UNKNOWN")
+                    vote_ledger.cast_vote(scar_id, state["id"], orig_id, "CONFIRM")
             
             # DYNAMIC BITE SIZING
             error_msg = str(syntax_err).lower()
@@ -768,6 +835,11 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                         print(f"  [✅] My zone clean. New fault detected at line {new_error_line}.")
                         
                         if not dry_run:
+                            if args.depth >= 2:
+                                print(f"  [ABORT] Maximum dream depth limit (2) reached. Inception block suppressed to prevent RAM deadlocks.")
+                                log({"event": "abort", "file": str(rel), "reason": "max_depth_exceeded", "agent_id": state.get("id")})
+                                break
+
                             partner = find_healthy_agent(exclude_id=state.get("id"))
                             if partner:
                                 print(f"  [RADIO] Signaling {partner.get('id')} to intercept line {new_error_line}...")
@@ -779,6 +851,12 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                                     new_args[idx+1] = partner["raw"]
                                 else:
                                     new_args.extend(["--body", partner["raw"]])
+                                    
+                                if "--depth" in new_args:
+                                    idx = new_args.index("--depth")
+                                    new_args[idx+1] = str(args.depth + 1)
+                                else:
+                                    new_args.extend(["--depth", str(args.depth + 1)])
                                     
                                 subprocess.run([sys.executable] + new_args)
                                 
@@ -815,6 +893,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                                 unresolved_line=error_line,
                                 reason={"type": "ValidationFail", "line": error_line, "message": repair_err_str}
                             )
+                            reputation_engine.update_reputation(state["id"], "FAILURE")
                             
                         check_sos_and_handoff(state, rel)
                         break
@@ -837,6 +916,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                             unresolved_line=error_line,
                             reason={"type": "Hallucination", "line": error_line, "message": repair_err_str}
                         )
+                        reputation_engine.update_reputation(state["id"], "FAILURE")
                         
                     check_sos_and_handoff(state, rel)
                     if state["energy"] <= 0:
@@ -863,6 +943,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                     mark_text=f"Stitched and resolved syntax fault at line {error_line}.",
                     reason={"type": "Resolution", "line": error_line, "message": "Syntax clear."}
                 )
+                reputation_engine.update_reputation(state["id"], "SUCCESS")
             else:
                 scout_note = f"    # [SCOUTING_SCAR] {state['id']} found demonic syntax here: {syntax_err}. Proposed fix in logs.\n"
                 safe_insert = max(0, error_line - 1)
@@ -917,6 +998,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="qwen3.5:0.8b")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--api-key", default="")
+    parser.add_argument("--depth", type=int, default=0, help="Recursion depth tracker for COOP_HANDOFF block")
     parser.add_argument("--verify", action="store_true",
                         help="Perform runtime verification (try importing the file) after stitching")
     parser.add_argument("--remote-ollama", default="",

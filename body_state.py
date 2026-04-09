@@ -4,6 +4,7 @@ import time
 import re
 import base64
 from pathlib import Path
+import reputation_engine
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
@@ -374,6 +375,29 @@ def apply_damage(state: dict, strike_type: str) -> dict:
     elif state["energy"] < 40:
         state["style"] = "CORRUPTED"
 
+    save_agent_state(state)
+    return state
+
+def regenerate_energy(state: dict, base_rate: int = 10) -> dict:
+    """
+    Regenerates agent energy modulated by their reputation score.
+    energy_regen = base_rate * (0.5 + 0.5 * reputation_score)
+    """
+    if state["style"] == "DEAD" or state["energy"] <= 0:
+        return state # Dead agents cannot regen
+        
+    rep = reputation_engine.get_reputation(state["id"])
+    score = rep.get("score", 0.5)
+    
+    # Soft coupling formula
+    actual_regen = int(base_rate * (0.5 + 0.5 * score))
+    
+    state["energy"] = min(100, state["energy"] + actual_regen)
+    
+    # Check if style recovers
+    if state["energy"] > 50 and state["style"] in ["CORRUPTED", "CRITICAL"]:
+        state["style"] = "NOMINAL"
+        
     save_agent_state(state)
     return state
 

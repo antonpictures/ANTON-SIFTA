@@ -217,6 +217,19 @@ State persistence   Territory smelling     AST validation
 | `benchmark.py` | **The Crucible** | Seeds 10 Python files with real syntax faults, tracks live repair performance. |
 | `static/` | **The Glass Eye** | Live dashboard: Territory Map, SSE terminal, Ledger, agent ASCII bodies, energy bars, RETRACT TETHER, inline COMMAND DISPATCH per agent card. |
 
+### The Benchmark Roster
+
+Missions designed to test Swarm agent capabilities beyond syntax repair:
+
+**1. ANTON-SIFTA / game.py**
+- **Type**: Terminal survival puzzle
+- **Mode**: Grid exploration with hidden hazards (fog-of-war)
+- **Objective**: Reach `G` from `P` before HP (3) or turns (12) run out
+- **Difficulty**: Moderate-Hard
+- **Agent Value**: Tests pathfinding, uncertainty handling, risk management, and reasoning under partial observability.
+
+*Navigate the fog-of-war grid, infer safe routes, avoid hidden traps, and reach the goal within 12 turns. Success requires balancing exploration and survival.*
+
 ---
 
 ## V. The Territory Map

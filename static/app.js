@@ -643,7 +643,9 @@ async function openInlinePicker(mode, agentId) {
         const res = await fetch(`/api/pick-path?mode=${mode}`);
         const data = await res.json();
         if (data.ok && data.path) {
-            const input = document.getElementById(`target-${agentId}`);
+            // Handle central dispatch input box vs individual rows
+            const inputId = agentId === 'dc' ? 'dc-target' : `target-${agentId}`;
+            const input = document.getElementById(inputId);
             if (input) {
                 const clean = data.path.trim().replace(/^['"]|['"]$/g, '');
                 input.value = clean;
@@ -950,10 +952,21 @@ async function loop() {
 }
 
 // Boot
+let systemHovered = false;
+document.addEventListener('DOMContentLoaded', () => {
+    // Bind to the stable parent container, not the inner list that gets destroyed
+    const stableContainer = document.getElementById('drawer-territory');
+    if (stableContainer) {
+        stableContainer.addEventListener('mouseenter', () => systemHovered = true);
+        stableContainer.addEventListener('mouseleave', () => systemHovered = false);
+    }
+});
+
 setInterval(loop, 2000);
 loop();
 
 async function updateTerritory() {
+    if (systemHovered) return; // Freeze UI redraws if user is hovering to click buttons
     try {
         const res = await fetch('/api/territory');
         if (!res.ok) return;
@@ -990,9 +1003,12 @@ async function updateTerritory() {
             }
 
             el.innerHTML = `
-                <div class="territory-path" title="${terr.path}">
+                <div class="territory-path" title="${terr.path}" style="display:flex; justify-content:space-between; align-items:center;">
                     <span>📁 ${terr.path.length > 25 ? '...' + terr.path.slice(-25) : terr.path}</span>
-                    <span class="territory-time">${timeStr}</span>
+                    <div style="display:flex; align-items:center;">
+                        <span class="territory-time">${timeStr}</span>
+                        <button class="btn btn-secondary" style="margin-left:8px; padding:2px 5px; font-size:0.75em; opacity:0.7;" onclick="event.stopPropagation(); window.forgetTerritory('${terr.full_path || terr.path}')" title="Evaporate Swarm memory (Delete .sifta marker)">✕</button>
+                    </div>
                 </div>
                 <div class="territory-badges">
                     ${statusBadge}
@@ -1008,6 +1024,40 @@ async function updateTerritory() {
         // ignore verbose polling errors
     }
 }
+
+window.forgetTerritory = async function(path) {
+    try {
+        const res = await fetch('/api/territory', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            updateTerritory();
+        } else {
+            console.error("Failed to delete territory:", data.error);
+            alert("Failed to forget territory: " + data.error);
+        }
+    } catch(e) {
+        console.error('Network error forgetting territory', e);
+    }
+};
+
+window.emptyTrash = async function() {
+    if (!confirm(`Are you sure you want to permanently delete all contents inside the Recycle Bin? This cannot be undone.`)) return;
+    try {
+        const res = await fetch('/api/trash', { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) {
+            alert("Trash successfully emptied.");
+        } else {
+            alert("Failed to empty trash: " + data.error);
+        }
+    } catch(e) {
+        console.error('Network error emptying trash', e);
+    }
+};
 
 // ─── Scar Reader Modal ───────────────────────────────
 const scarModal   = document.getElementById('scar-modal');
@@ -1487,7 +1537,8 @@ walletWormholeBtn.addEventListener('click', () => {
     walletWormholePanel.style.display = isVisible ? 'none' : 'block';
 });
 
-walletWormholeFireBtn.addEventListener('click', async () => {
+walletWormholeFireBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
     if (!currentWalletAgent) return;
     
     const nodeSelection = document.getElementById('wormhole-node-select').value;
@@ -1498,16 +1549,26 @@ walletWormholeFireBtn.addEventListener('click', async () => {
     
     if (!ip) { alert('TARGET IP is required.'); return; }
     if (!owner) { alert('New owner email is required.'); return; }
+    if (walletWormholeFireBtn.dataset.armed !== "true") {
+        walletWormholeFireBtn.dataset.armed = "true";
+        walletWormholeFireBtn.innerHTML = "⚠ CLICK AGAIN TO GHOST";
+        walletWormholeFireBtn.style.background = "var(--alert-red)";
+        walletWormholeFireBtn.style.color = "white";
+        // Reset after 4 seconds
+        setTimeout(() => {
+            walletWormholeFireBtn.dataset.armed = "false";
+            walletWormholeFireBtn.innerHTML = "⚡ FIRE";
+            walletWormholeFireBtn.style.background = "";
+            walletWormholeFireBtn.style.color = "var(--magenta)";
+        }, 4000);
+        return;
+    }
     
-    const confirmed = confirm(
-        `⚠ WORMHOLE PROTOCOL\n` +
-        `Agent: ${currentWalletAgent.id}\n` +
-        `Target: ${ip}:${port}\n` +
-        `New Owner: ${owner}\n\n` +
-        `This will transmit the soul directly over LAN and ghost your local copy.\n` +
-        `THERE IS NO UNDO. PROCEED?`
-    );
-    if (!confirmed) return;
+    // Fire!
+    walletWormholeFireBtn.dataset.armed = "false";
+    walletWormholeFireBtn.innerHTML = "TRANSMITTING...";
+    walletWormholeFireBtn.style.background = "";
+    walletWormholeFireBtn.style.color = "var(--magenta)";
     
     const terminal = document.getElementById('wallet-terminal');
     terminal.style.display = 'block';

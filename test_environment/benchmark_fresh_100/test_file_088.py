@@ -1,2 +1,0 @@
-msg = 'unclosed
-print(msg)
