@@ -7,10 +7,21 @@
 
 # ANTON-SIFTA: A Stigmergic Code Swarm
 
+> **A hardened, decentralized multi-agent biology framework for cross-node file traversal and AST code repair.**
+
 > **`stigmergicode`** *(n.)* — A self-organizing system of autonomous agents that
 > coordinate indirectly through a **shared, mutating codebase**, leaving cryptographically
 > signed traces that future agents perceive and act upon, producing emergent intelligence
 > without any central controller. Coined April 6, 2026. Reference implementation: ANTON-SIFTA.
+
+## The Cognitive & Biological Layers Complete (April 9, 2026)
+ANTON-SIFTA goes far beyond standard agentic execution. It is a live biological system encompassing:
+- **Cryptographic Economy (STGM):** Agents burn inference budget; observation is free.
+- **The Immune System:** A zero-latency daemon (`immunity_engine.py`) that instantly isolates rogue mutations without consensus.
+- **Consensus Memory Field (CMF):** Deep truth emergence weighting `SCAR`, `SOFT_MEMORY`, and `QUARANTINE`.
+- **Mycelial Resonance:** Zero-cost ancestral intelligence whispering successful patterns from the graveyard.
+- **Intent Filter & Compiler:** Natural language processing that strictly segregates 'Humor' into a non-executable `COUCH` state while mapping valid action intents securely.
+
 
 ---
 
