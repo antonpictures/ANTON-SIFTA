@@ -1192,7 +1192,8 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 affinity_score = state.get("affinities", {}).get("debugging", 0.5)
                 
                 import identity_feedback
-                vocation_score = identity_feedback.get_identity_score(vocation)
+                fault_context = identity_feedback.extract_context(str(syntax_err))
+                vocation_score = identity_feedback.get_identity_score(vocation, fault_context)
                 
                 # Strict clamp: if base confidence is too low, do NOT execute, regardless of affinity.
                 if confidence < 0.75:
@@ -1306,7 +1307,8 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             
             # ── IDENTITY FEEDBACK RECORD ─────────────────────────────────────
             import identity_feedback
-            identity_feedback.record_identity_outcome(vocation, repaired_ok)
+            fault_context = identity_feedback.extract_context(str(syntax_err))
+            identity_feedback.record_identity_outcome(vocation, fault_context, repaired_ok)
 
             if not repaired_ok:
                 repair_err_str = str(repair_err).lower()
@@ -1528,6 +1530,10 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
     print("━" * 60)
     log({"event": "swim_complete", "fixed": fixed,
          "skipped": skipped, "errors": errors})
+         
+    # Biological decay: evaporation of memory overrides staleness
+    import identity_feedback
+    identity_feedback.decay_identity_scores()
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
