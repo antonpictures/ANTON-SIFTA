@@ -1308,7 +1308,8 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             # ── IDENTITY FEEDBACK RECORD ─────────────────────────────────────
             import identity_feedback
             fault_context = identity_feedback.extract_context(str(syntax_err))
-            identity_feedback.record_identity_outcome(vocation, fault_context, repaired_ok)
+            event_id = identity_feedback.generate_event_id(str(filepath), error_line, str(syntax_err))
+            identity_feedback.record_identity_outcome(vocation, fault_context, repaired_ok, event_id, state["id"])
 
             if not repaired_ok:
                 repair_err_str = str(repair_err).lower()

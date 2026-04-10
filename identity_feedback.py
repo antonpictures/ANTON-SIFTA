@@ -1,29 +1,32 @@
 """
 identity_feedback.py
 ──────────────────────────────────────────────────────────────────────────────
-IDENTITY PERFORMANCE FEEDBACK LOOP (CONTEXT AWARE)
-Tracks identity success relative to specific fault contexts (e.g. "SYNTAX", "NAME").
-Enables emergent domain specialization and biological memory decay.
+IDENTITY PERFORMANCE FEEDBACK LOOP (CONTEXT & CAL AWARE)
+Tracks identity success relative to specific fault contexts (e.g. "SYNTAX").
+Implements Causal Attribution Lock (CAL) to prevent multiple agents from claiming
+cognitive reward for identical reality events, enforcing extreme evolutionary fairness.
 ──────────────────────────────────────────────────────────────────────────────
 """
 
 import json
+import hashlib
 from pathlib import Path
 
 STATS_FILE = Path(".sifta_state/identity_stats.json")
+EVENT_REGISTRY_FILE = Path(".sifta_state/event_registry.json")
 
-def _load_stats() -> dict:
-    if not STATS_FILE.exists():
+def _load_json(path: Path) -> dict:
+    if not path.exists():
         return {}
     try:
-        with open(STATS_FILE, "r") as f:
+        with open(path, "r") as f:
             return json.load(f)
     except Exception:
         return {}
 
-def _save_stats(data: dict):
-    STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATS_FILE, "w") as f:
+def _save_json(path: Path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
 def extract_context(error_message: str) -> str:
@@ -38,25 +41,50 @@ def extract_context(error_message: str) -> str:
         return "INDENT"
     return "UNKNOWN"
 
-def record_identity_outcome(identity: str, context: str, success: bool):
-    """Logs the outcome of an identity's repair attempt within a specific context."""
+def generate_event_id(filepath: str, line: int, error: str) -> str:
+    """Hashes the unique physical footprint of a fault event."""
+    raw = f"{filepath}:{line}:{error}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+def register_event_resolution(event_id: str, agent_id: str) -> bool:
+    """
+    Checks if an event has already been successfully solved.
+    Returns True if this agent is the first to claim it.
+    """
+    registry = _load_json(EVENT_REGISTRY_FILE)
+    if event_id in registry:
+        return False  # Already claimed by another agent
+        
+    registry[event_id] = agent_id
+    _save_json(EVENT_REGISTRY_FILE, registry)
+    return True
+
+def record_identity_outcome(identity: str, context: str, success: bool, event_id: str = None, agent_id: str = None):
+    """Logs the outcome. Prevents cognitive double-spending on successes."""
     if not identity:
          return
          
+    # Causal Attribution Lock (CAL) check
+    if success and event_id and agent_id:
+        is_primary = register_event_resolution(event_id, agent_id)
+        if not is_primary:
+            # Another clone already solved this. Do not inflate success stats again.
+            return
+         
     identity = identity.upper().strip()
     key = f"{identity}:{context}"
-    data = _load_stats()
+    data = _load_json(STATS_FILE)
     
     if key not in data:
-        # Fallback migration check or new entry
         data[key] = {"success": 0, "fail": 0}
         
     if success:
         data[key]["success"] += 1
     else:
+        # Failure is always punished contextually to rapidly prune weak behaviors
         data[key]["fail"] += 1
         
-    _save_stats(data)
+    _save_json(STATS_FILE, data)
 
 def get_identity_score(identity: str, context: str) -> float:
     """Returns the contextual effectiveness of an identity [0.0 - 1.0]."""
@@ -65,7 +93,7 @@ def get_identity_score(identity: str, context: str) -> float:
         
     identity = identity.upper().strip()
     key = f"{identity}:{context}"
-    data = _load_stats()
+    data = _load_json(STATS_FILE)
     
     stats = data.get(key, None)
     if not stats:
@@ -80,11 +108,10 @@ def get_identity_score(identity: str, context: str) -> float:
 def decay_identity_scores():
     """
     Biological memory evaporation: decays all scores horizontally by 1%.
-    Ensures old success does not equal current truth, forcing adaptability.
     """
-    data = _load_stats()
+    data = _load_json(STATS_FILE)
     for key in data:
         data[key]["success"] = data[key]["success"] * 0.99
         data[key]["fail"] = data[key]["fail"] * 0.99
     
-    _save_stats(data)
+    _save_json(STATS_FILE, data)
