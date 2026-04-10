@@ -29,39 +29,16 @@ json
 {
   "analysis_type": "STATIC_CODE_ANALYSIS",
   "severity": "Error/Warning",
-  "results": [
-    {
-      "line": "37",
-      "function": "is_alive",
-      "rule": "Typo/NameError (Attribute access)",
-      "message": "Typo detected: The function attempts to access 'seelf.energy'. This variable name does not exist and should likely be 'self.energy'.",
-      "recommendation": "Change `return seelf.energy > 0` to `return self.energy > 0`."
-    },
-    {
-      "line": "47",
-      "function": "to_dict",
-      "rule": "Typo/AttributeError (Attribute usage)",
-      "message": "Typo detected: The dictionary construction uses `self.traats`. If the intended attribute name is 'traits', this key must be corrected.",
-      "recommendation": "Change `"traits": self.traats` to `"traits": self.traits`."
-    },
-    {
-      "line": "54",
-      "function": "SwarmTopology.__init__",
-      "rule": "Style/Best Practice (Initialization)",
-      "message": "Instance attributes (`self.agents`, `self.connections`) are defined at the class level but should generally be initialized within the `__init__` method for guaranteed setup and clarity.",
-      "recommendation": "Move the attribute initialization into `__init__`:",
-      "example": "def __init__(self):\n    self.agents: Dict[str, AgentState] = {}\n    self.connections: List[tuple] = []"
-    }
-  ],
-  "summary": "Detected 2 high-confidence typos/errors that will cause runtime failures (NameError/AttributeError). One low-confidence style warning regarding attribute initialization best practices."
-}
-
-    def get_neighbors(self, agent_id: str) -> List[str]:
+def get_neighbors(self, agent_id: str) -> List[str]:
         neighbors = []
         for a, b in self.connections:
             if a == agent_id:
                 neighbors.append(b)
             elif b == agent_id:
+                # FIX: Must append 'a' when 'b' matches agent_id
+                neighbors.append(a)
+        # Optional Optimization: Use return statement instead of list mutation at end
+        return neighbors
                 neighbors.append(a)
         return neighbors
 

@@ -39,6 +39,7 @@
         <div class="topbar-panels">
             <button class="btn btn-panel active" id="panel-btn-fleet" onclick="activateFleetPanel()">⬡ FLEET</button>
             <button class="btn btn-panel" id="panel-btn-territory" onclick="toggleDrawer('drawer-territory', 'panel-btn-territory')">🗺 TERRITORY</button>
+            <button class="btn btn-panel" id="panel-btn-proposals" onclick="toggleDrawer('drawer-proposals', 'panel-btn-proposals')">📋 PROPOSALS <span id="proposals-badge" class="panel-badge" style="display:none;"></span></button>
             <button class="btn btn-panel" id="panel-btn-cemetery" onclick="toggleDrawer('drawer-cemetery', 'panel-btn-cemetery')">☠ CEMETERY</button>
             <button class="btn btn-panel" id="panel-btn-quorum" onclick="toggleDrawer('drawer-quorum', 'panel-btn-quorum')">⬡ QUORUM</button>
         </div>
@@ -148,6 +149,10 @@
                         <button class="btn btn-secondary" style="font-size:0.65em; padding:2px 8px; opacity:0.8;" onclick="event.preventDefault(); event.stopPropagation(); window.emptyTrash()" title="Permanently delete all abandoned footprints in the recycle bin.">🗑️ EMPTY TRASH</button>
                     </summary>
                     <ul id="cemetery-list" class="list fleet-drawer-body" style="max-height: 220px;"></ul>
+                </details>
+                <details class="fleet-drawer" id="drawer-proposals">
+                    <summary class="fleet-drawer-summary" style="color: var(--cyan); border-bottom-color: rgba(0,229,255,0.15);">📋 PROPOSALS <span id="proposals-badge-drawer" class="fleet-drawer-badge"></span></summary>
+                    <div id="proposals-list" class="fleet-drawer-body" style="max-height: 500px; overflow-y: auto;"></div>
                 </details>
                 <details class="fleet-drawer" id="drawer-quorum">
                     <summary class="fleet-drawer-summary">⬡ QUORUM <span id="quorum-badge" class="fleet-drawer-badge"></span></summary>
@@ -401,6 +406,6 @@
         </div>
     </dialog>
 
-    <script src="/static/app.js?v=2.1"></script>
+    <script src="/static/app.js?v=3.0"></script>
 </body>
 </html>

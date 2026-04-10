@@ -3,6 +3,23 @@
 // ═══════════════════════════════════════════════════
 let activeDispatchAgent = null;
 
+// Cinematic Odometer Helper
+function animateValue(obj, start, end, duration, fractionDigits = 2) {
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+        const current = start + easeOutQuart * (end - start);
+        obj.textContent = current.toFixed(fractionDigits);
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        } else {
+            obj.textContent = end.toFixed(fractionDigits);
+        }
+    };
+    window.requestAnimationFrame(step);
+}
 
 // ─── Panel Toggle Functions (topbar) ─────────────────
 // All drawers start closed — Fleet Overview is the default view.
@@ -28,11 +45,11 @@ function toggleDrawer(drawerId, btnId) {
 
 function activateFleetPanel() {
     // Close all drawers, scroll fleet list to top
-    ['drawer-territory', 'drawer-cemetery', 'drawer-quorum'].forEach(id => {
+    ['drawer-territory', 'drawer-proposals', 'drawer-cemetery', 'drawer-quorum'].forEach(id => {
         const d = document.getElementById(id);
         if (d) d.removeAttribute('open');
     });
-    ['panel-btn-territory', 'panel-btn-cemetery', 'panel-btn-quorum'].forEach(id => {
+    ['panel-btn-territory', 'panel-btn-proposals', 'panel-btn-cemetery', 'panel-btn-quorum'].forEach(id => {
         const b = document.getElementById(id);
         if (b) b.classList.remove('active');
     });
@@ -43,7 +60,7 @@ function activateFleetPanel() {
 }
 
 function _syncFleetBtn() {
-    const anyOpen = ['drawer-territory', 'drawer-cemetery', 'drawer-quorum']
+    const anyOpen = ['drawer-territory', 'drawer-proposals', 'drawer-cemetery', 'drawer-quorum']
         .some(id => document.getElementById(id)?.hasAttribute('open'));
     const fleetBtn = document.getElementById('panel-btn-fleet');
     if (fleetBtn) fleetBtn.classList.toggle('active', !anyOpen);
@@ -196,6 +213,8 @@ function colorizeTerminalLine(txt) {
         div.className = 't-exit';
     else if (/Initializing swim|Swimming into/i.test(txt))
         div.className = 't-boot';
+    else if (/\[PROPOSAL\]|\[📋\]|Proposal staged/i.test(txt))
+        div.className = 't-proposal';
 
     return div;
 }
@@ -948,6 +967,188 @@ async function abortSwimmer() {
 }
 
 
+// ─── PROPOSALS PANEL ─────────────────────────────────────────────────────────
+let proposalCache = [];
+
+async function fetchProposals() {
+    try {
+        const [pendingRes, statsRes] = await Promise.all([
+            fetch('/api/proposals?status=PENDING'),
+            fetch('/api/proposals/stats'),
+        ]);
+        const pending = await pendingRes.json();
+        const stats = await statsRes.json();
+
+        proposalCache = pending;
+        renderProposals(pending, stats);
+    } catch (e) {
+        console.error('Proposals fetch error', e);
+    }
+}
+
+function renderProposals(proposals, stats) {
+    // Update badge
+    const badge = document.getElementById('proposals-badge');
+    if (badge) {
+        badge.textContent = stats.pending || '';
+        badge.style.display = stats.pending > 0 ? 'inline-flex' : 'none';
+    }
+
+    const container = document.getElementById('proposals-list');
+    if (!container) return;
+
+    if (proposals.length === 0) {
+        container.innerHTML = `
+            <div class="proposals-empty">
+                <span class="proposals-empty-icon">📋</span>
+                <span>No pending proposals. Agents will stage repairs here when swimming with <code>--proposals</code>.</span>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = '';
+
+    proposals.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'proposal-card';
+        card.id = `proposal-${p.proposal_id}`;
+
+        const ts = new Date(p.created_at * 1000).toLocaleString('en-US', {
+            hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
+            month: 'short', day: 'numeric'
+        });
+        const confColor = p.confidence >= 0.9 ? 'var(--health-high)'
+                        : p.confidence >= 0.75 ? 'var(--health-med)'
+                        : 'var(--health-low)';
+
+        // Format the diff with syntax highlighting
+        const diffLines = (p.diff || '').split('\n').map(line => {
+            if (line.startsWith('+') && !line.startsWith('+++')) {
+                return `<span class="diff-add">${escapeHtml(line)}</span>`;
+            } else if (line.startsWith('-') && !line.startsWith('---')) {
+                return `<span class="diff-del">${escapeHtml(line)}</span>`;
+            } else if (line.startsWith('@@')) {
+                return `<span class="diff-hunk">${escapeHtml(line)}</span>`;
+            }
+            return escapeHtml(line);
+        }).join('\n');
+
+        card.innerHTML = `
+            <div class="proposal-header">
+                <div class="proposal-meta">
+                    <span class="proposal-filename">${p.filename}</span>
+                    <span class="proposal-agent" title="Agent">${p.agent_id}</span>
+                    ${p.vocation ? `<span class="proposal-vocation">${p.vocation}</span>` : ''}
+                </div>
+                <div class="proposal-stats">
+                    <span class="proposal-conf" style="color:${confColor}" title="Confidence">
+                        ◉ ${(p.confidence * 100).toFixed(0)}%
+                    </span>
+                    <span class="proposal-time">${ts}</span>
+                </div>
+            </div>
+            <div class="proposal-error">
+                <code>${escapeHtml(p.error_description || '—')}</code>
+            </div>
+            <div class="proposal-diff-wrap">
+                <pre class="proposal-diff">${diffLines || 'No diff available.'}</pre>
+            </div>
+            <div class="proposal-actions">
+                <button class="proposal-btn approve" onclick="approveProposal('${p.proposal_id}')">
+                    ✓ APPROVE
+                </button>
+                <button class="proposal-btn reject" onclick="rejectProposal('${p.proposal_id}')">
+                    ✕ REJECT
+                </button>
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function approveProposal(proposalId) {
+    const card = document.getElementById(`proposal-${proposalId}`);
+    if (card) card.style.opacity = '0.5';
+
+    try {
+        const res = await fetch(`/api/proposals/${proposalId}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+            if (card) {
+                card.classList.add('proposal-approved');
+                card.querySelector('.proposal-actions').innerHTML = `
+                    <span class="proposal-result approved">✓ APPROVED — Applied to ${data.proposal.filename}</span>
+                `;
+            }
+            // Flash the terminal if visible
+            const terminal = document.getElementById('dc-terminal');
+            if (terminal) {
+                const div = document.createElement('div');
+                div.className = 't-fix';
+                div.textContent = `[✅ APPROVED] Proposal ${proposalId.substring(0, 8)}... applied to ${data.proposal.filename}`;
+                terminal.appendChild(div);
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+        } else {
+            alert(`Approval failed: ${data.error}`);
+            if (card) card.style.opacity = '1';
+        }
+    } catch (e) {
+        console.error('Approve failed', e);
+        if (card) card.style.opacity = '1';
+    }
+
+    // Refresh proposals after action
+    setTimeout(fetchProposals, 500);
+}
+
+async function rejectProposal(proposalId) {
+    const reason = prompt('Rejection reason (optional):') || 'Rejected by operator';
+
+    const card = document.getElementById(`proposal-${proposalId}`);
+    if (card) card.style.opacity = '0.5';
+
+    try {
+        const res = await fetch(`/api/proposals/${proposalId}/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason }),
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+            if (card) {
+                card.classList.add('proposal-rejected');
+                card.querySelector('.proposal-actions').innerHTML = `
+                    <span class="proposal-result rejected">✕ REJECTED — ${reason}</span>
+                `;
+            }
+        } else {
+            alert(`Rejection failed: ${data.error}`);
+            if (card) card.style.opacity = '1';
+        }
+    } catch (e) {
+        console.error('Reject failed', e);
+        if (card) card.style.opacity = '1';
+    }
+
+    // Refresh proposals after action
+    setTimeout(fetchProposals, 500);
+}
+
+
 // ─── Main polling loop ────────────────────────────────
 async function loop() {
     fetchAgents();
@@ -966,8 +1167,14 @@ async function loop() {
             statusEl.classList.add('active');
             killBtn.disabled = false;
             document.querySelectorAll('.agent-card:not(.dead) .btn').forEach(b => b.disabled = true);
-            // Pulse active cards
-            document.querySelectorAll('.agent-card:not(.dead)').forEach(c => c.classList.add('active-swim'));
+            // Pulse active cards (specifically the working agent if provided)
+            document.querySelectorAll('.agent-card:not(.dead)').forEach(c => {
+                if (s.agent_id && c.dataset.id !== s.agent_id) {
+                    c.classList.remove('active-swim');
+                } else {
+                    c.classList.add('active-swim');
+                }
+            });
         } else {
             statusEl.textContent = 'NOMINAL';
             statusEl.classList.remove('active');
@@ -991,6 +1198,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Start polling after all UI components and consts are initialized
     loop();
     setInterval(loop, 2000);
+
+    // Proposals polling (slower cadence)
+    fetchProposals();
+    setInterval(fetchProposals, 4000);
 });
 
 async function updateTerritory() {
@@ -1010,15 +1221,24 @@ async function updateTerritory() {
         list.innerHTML = '';
         data.territories.forEach(terr => {
             const el = document.createElement('div');
-            el.className = `territory-item status-${terr.status}`;
+            let displayStatus = terr.status;
+            if (terr.status === 'CLEAN' && terr.agents && terr.agents.length > 0) {
+                displayStatus = 'HEALED';
+            }
+            el.className = `territory-item status-${displayStatus}`;
             
             const opacity = Math.max(0.3, terr.max_potency);
             el.style.opacity = opacity;
             
             const badges = terr.agents.map(a => `<span class="t-badge">${a}</span>`).join('');
-            const statusBadge = terr.status === 'BLEEDING' 
-                ? `<span class="t-badge bleeding">🩸 BLEEDING x${terr.bleeding_count}</span>` 
-                : `<span class="t-badge">✅ CLEAN</span>`;
+            let statusBadge = '';
+            if (terr.status === 'BLEEDING') {
+                statusBadge = `<span class="t-badge bleeding">🩸 BLEEDING x${terr.bleeding_count}</span>`;
+            } else if (displayStatus === 'HEALED') {
+                statusBadge = `<span class="t-badge" style="color:var(--cyan); border-color:var(--cyan);">🧬 HEALED</span>`;
+            } else {
+                statusBadge = `<span class="t-badge">✅ CLEAN</span>`;
+            }
 
             const dangerStr = terr.danger_score > 0 
                 ? `<span class="t-badge bleeding">⚡ ${terr.danger_score}</span>` 
@@ -1250,10 +1470,16 @@ async function fetchFullLedger() {
             const metaTbody = document.createElement('td');
             let metaTxt = '';
             if (item.hash) metaTxt += `HASH: ${item.hash} `;
-            if (item.after_hash) metaTxt += `${item.before_hash.substring(0,8)} → ${item.after_hash.substring(0,8)}`;
-            if (item.reason) metaTxt += `ERR: ${item.reason}`;
+            
+            const bHash = item.before_hash || '';
+            const aHash = item.after_hash || '';
+            if (bHash && aHash) metaTxt += `${bHash.substring(0,8)} → ${aHash.substring(0,8)} `;
+            else if (aHash) metaTxt += `HASH: ${aHash.substring(0,8)} `;
+            else if (bHash) metaTxt += `HASH: ${bHash.substring(0,8)} `;
+            
+            if (item.reason) metaTxt += `ERR: ${item.reason} `;
             if (item.status) metaTxt += `STATUS: ${item.status}`;
-            metaTbody.textContent = metaTxt;
+            metaTbody.textContent = metaTxt.trim();
             
             tr.appendChild(tsDiv);
             tr.appendChild(evtTbody);
@@ -1355,8 +1581,33 @@ function updateWallet(agents) {
     walletCoinList.innerHTML = '';
     walletCoinList.appendChild(frag);
     
-    walletTotalBalance.textContent = totalSTGM.toFixed(2);
-    walletTotalSub.textContent = `${(totalSTGM * 0.0042).toFixed(4)} STGM`;
+    // Odometer animation logic
+    if (typeof window.lastWalletSTGM === 'undefined') {
+        window.lastWalletSTGM = totalSTGM;
+        walletTotalBalance.textContent = totalSTGM.toFixed(2);
+        walletTotalSub.textContent = `${(totalSTGM * 0.0042).toFixed(4)} STGM/fiat`;
+    } else if (Math.abs(window.lastWalletSTGM - totalSTGM) > 0.01) {
+        animateValue(walletTotalBalance, window.lastWalletSTGM, totalSTGM, 1200, 2);
+        
+        // Custom animation block for the fiat subtext since animateValue modifies textContent raw
+        let startFiat = window.lastWalletSTGM * 0.0042;
+        let endFiat = totalSTGM * 0.0042;
+        let startTimestamp = null;
+        const step = (timestamp) => {
+            if (!startTimestamp) startTimestamp = timestamp;
+            const progress = Math.min((timestamp - startTimestamp) / 1200, 1);
+            const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+            const current = startFiat + easeOutQuart * (endFiat - startFiat);
+            walletTotalSub.textContent = `${current.toFixed(4)} STGM`;
+            if (progress < 1) window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
+        
+        window.lastWalletSTGM = totalSTGM;
+    } else {
+        walletTotalBalance.textContent = totalSTGM.toFixed(2);
+        walletTotalSub.textContent = `${(totalSTGM * 0.0042).toFixed(4)} STGM`;
+    }
 }
 
 walletBackBtn.addEventListener('click', () => {

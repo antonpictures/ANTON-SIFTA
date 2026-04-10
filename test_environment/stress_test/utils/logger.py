@@ -1,44 +1,48 @@
-# 1. Construct the log entry dictionary
-    entry = {
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "level": level.upper(),
-        "message": message,
-        "context": context or {}
-    }
-    
-    # --- Rotation Check ---
-    if self.entry_count >= self.max_entries:
-        print(f"Warning: Log limit of {self.max_entries} entries reached. Flushing and resetting.")
-        
-        # 1. Define the name for the rotation file (e.g., app.log.10)
-        rotated_path = self.log_path.with_suffix(f".{self.entry_count}")
-        
-        # 2. Rename the current log file to the rotation name (Source -> Rotated)
-        try:
-            self.log_path.rename(rotated_path)
-            
-            # Reset the internal path handler to the base name for new logs
-            self.log_path = self.log_path.with_suffix("") 
-            
-            # 3. Archive the previously rotated file (Optional retention policy)
-            archive_path = rotated_path.with_suffix(".old")
-            if archive_path.exists(): 
-                # Handle old file cleanup logic here if needed
-                pass 
+import os
+from datetime import datetime, timedelta
 
-            # 4. Reset state counters
-            self.entry_count = 0
-            # (File handler must be re-initialized/reopened here in a real system)
+class LoggingSystem:
+    def __init__(self, log_path="logfile.txt", max_size=1024):  # default size is 1MB
+        self.log_path = log_path
+        self.max_size = max_size * 1024  # convert MB to bytes
+        self._entry_count = 0
+    
+    def _should_rotate(self):
+        if not os.path.exists(self.log_path):   # file does not exist
+            return True
+        
+        if os.stat(self.log_path).st_size > self.max_size:  # file size exceeds limit
+            return True
+
+        return False
+    
+    def rotate(self, backup=True):
+        if not self._should_rotate():   # no need to rotate
+            return
+        
+        if backup:    # create a backup of the existing log file
+            today = datetime.now()
+            date_str = today.strftime("%Y-%m-%d_%H-%M-%S") 
+            backup_path = f"{self.log_path}_{date_str}_backup.txt"
             
-        except FileNotFoundError:
-            print("Error: Log file not found during rotation.")
-            # If rotation fails, we attempt to proceed, but state might be inconsistent.
-            pass
+            try:
+                os.rename(self.log_path, backup_path)   # rename the current log file to a backup path
+            except FileNotFoundError as e: 
+                print("Could not find existing logfile for rotation.")
+                return False
+        
+        self._entry_count = 0    # reset counter after successful rotation
             
-    # --- Writing the Entry ---
-    try:
-        # Open/Write entry regardless of whether rotation occurred or not
-        with open(self.log_path, "a") as f:
+        open(self.log_path, 'w').close()   # create a new empty file
+    
+    def write(self, entry):
+        if self._should_rotate():  # check if we need to rotate before writing anything
+            self.rotate()
+        
+        with open(self.log_path, "a") as f:   # append the new log entry
+            f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {entry}\n")
+        
+        self._entry_count += 1  # increment counter
             f.write(json.dumps(entry) + "\n")
         
         self.buffer.append(entry)

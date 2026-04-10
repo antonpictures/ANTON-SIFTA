@@ -115,37 +115,17 @@ class Router:
 
 class RateLimiter:
     """Simple in-memory rate limiter."""
-
-    def __init__(self, max_requests: int = 100, window_seconds: int = 60):
-        self.max_requests = max_requests
-        self.window = window_seconds
-        self.requests: Dict[str, List[float]] = {}
-    
-    def is_allowed(self, client_id: str) -> bool:
-        now = time.time()
 def allow_request(self, client_id: str) -> bool:
-        now = time.time()
-        if client_id not in self.requests:
-            self.requests[client_id] = []
+    now = time.time()
+    if client_id not in self.requests:
+        self.requests[client_id] = []
+    
+    self.requests[client_id] = [
+        t for t in self.requests[client_id] if now - t < self.window
+    ]
+    
+    if len(self.requests[client_id]) >= self.max_requests:
+        return False
         
-        # Filter out timestamps outside the current window
-        self.requests[client_id] = [
-            t for t in self.requests[client_id]
-            if now - t < self.window
-        ]
-        
-        if len(self.requests[client_id]) >= self.max_requests:
-            return False
-        
-        self.requests[client_id].append(now)
-        return True
-
-    def get_remaining(self, client_id: str) -> int:
-        now = time.time()
-        recent = [
-            t for t in self.requests.get(client_id, [])
-            if now - t < self.window
-        ]
-        return len(recent)
-        ]
-        return max(0, self.max_requests - len(recent))
+    self.requests[client_id].append(now)
+    return True

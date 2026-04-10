@@ -276,6 +276,27 @@ h3 {
     box-shadow: 0 0 10px rgba(0,229,255,0.15);
 }
 
+/* Panel badge (notification counter) */
+.panel-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 0.55rem;
+    font-weight: 700;
+    border-radius: 8px;
+    background: var(--health-low);
+    color: #fff;
+    margin-left: 4px;
+    animation: badge-pulse 2s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
 /* ─── Buttons ─────────────────────────────────────────── */
 .btn {
     background: rgba(255,255,255,0.04);
@@ -1257,8 +1278,9 @@ form {
     font-family: var(--font-mono);
     font-size: 0.75rem;
     line-height: 1.55;
-    color: #8899aa;
+    color: #40c4ff;
     position: relative;
+    text-shadow: 0 0 5px rgba(64, 196, 255, 0.3);
 }
 .terminal-output::before {
     content: 'SWIM OUTPUT';
@@ -1272,16 +1294,18 @@ form {
     border-bottom: 1px solid var(--border-dim);
     border-radius: 0 0 0 var(--r-sm);
 }
-.terminal-output .placeholder { color: #2a3a4a; }
+.terminal-output .placeholder { color: #2a3a4a; text-shadow: none; }
 
-/* Terminal colorized lines */
-.t-fix    { color: var(--log-fix); }
-.t-fail   { color: var(--log-fail); }
-.t-bite   { color: var(--log-bite); }
-.t-llm    { color: var(--log-llm); }
+/* Terminal colorized lines with Matrix Glow */
+.t-fix    { color: #0f0; text-shadow: 0 0 10px rgba(0,255,0,0.8); font-weight: bolder; }
+.t-fail   { color: #ff003c; text-shadow: 0 0 10px rgba(255,0,60,0.8); font-weight: bolder; }
+.t-bite   { color: #e040fb; text-shadow: 0 0 8px rgba(224,64,251,0.6); }
+.t-llm    { color: #ffeb3b; text-shadow: 0 0 8px rgba(255,235,59,0.5); }
 .t-warn   { color: var(--health-med); }
 .t-exit   { color: var(--text-muted); font-style: italic; }
-.t-boot   { color: var(--cyan); }
+.t-boot   { color: #00e5ff; text-shadow: 0 0 8px rgba(0,229,255,0.7); font-weight: bolder; }
+.t-proposal { color: #40c4ff; text-shadow: 0 0 8px rgba(64,196,255,0.6); }
+.t-scout  { color: #78909c; font-style: italic; }
 
 /* ─── Territory Map ──────────────────────────────────── */
 .territory-item {
@@ -1323,6 +1347,22 @@ form {
 @keyframes bleed-pulse {
     0%   { border-left-color: rgba(255, 23, 68, 0.4); box-shadow: 0 0 0px transparent; }
     100% { border-left-color: var(--health-low); box-shadow: -4px 0 12px rgba(255,23,68,0.3); }
+}
+
+.territory-item.status-HEALED {
+    border-left: 3px solid var(--cyan);
+    animation: heal-pulse 2s infinite alternate;
+}
+.territory-item.status-HEALED::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: radial-gradient(circle at left, rgba(0,229,255,0.2), transparent 75%);
+    pointer-events: none;
+}
+@keyframes heal-pulse {
+    0%   { border-left-color: rgba(0, 229, 255, 0.5); box-shadow: 0 0 0px transparent; }
+    100% { border-left-color: var(--cyan); box-shadow: -4px 0 16px rgba(0, 229, 255, 0.6); }
 }
 
 .territory-path {
@@ -2242,4 +2282,215 @@ dialog[open].scar-modal-dialog {
 
 @keyframes dash-flow {
     to { stroke-dashoffset: -8; }
+}
+
+/* ─── PROPOSALS PANEL ────────────────────────────────── */
+.proposals-empty {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: center;
+    justify-content: center;
+}
+.proposals-empty-icon {
+    font-size: 1.5rem;
+    opacity: 0.4;
+}
+.proposals-empty code {
+    background: rgba(0,229,255,0.08);
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    color: var(--cyan);
+    font-size: 0.65rem;
+}
+
+.proposal-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 229, 255, 0.15);
+    border-radius: var(--r-md);
+    padding: 0.85rem;
+    margin-bottom: 0.6rem;
+    transition: all 0.25s ease;
+    animation: fadeSlideDown 0.3s ease;
+}
+.proposal-card:hover {
+    border-color: rgba(0, 229, 255, 0.35);
+    box-shadow: 0 0 12px rgba(0, 229, 255, 0.08);
+}
+.proposal-card.proposal-approved {
+    border-color: rgba(0, 230, 118, 0.4);
+    background: rgba(0, 230, 118, 0.04);
+}
+.proposal-card.proposal-rejected {
+    border-color: rgba(255, 23, 68, 0.3);
+    background: rgba(255, 23, 68, 0.03);
+    opacity: 0.6;
+}
+
+.proposal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.proposal-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.proposal-filename {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--cyan);
+    letter-spacing: 0.04em;
+}
+.proposal-agent {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--text-sub);
+    background: rgba(255,255,255,0.05);
+    padding: 0.1rem 0.45rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.proposal-vocation {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    color: #b388ff;
+    background: rgba(179,136,255,0.08);
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    border: 1px solid rgba(179,136,255,0.2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.proposal-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.proposal-conf {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+.proposal-time {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-muted);
+}
+
+.proposal-error {
+    margin-bottom: 0.5rem;
+}
+.proposal-error code {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--health-low);
+    background: rgba(255, 23, 68, 0.06);
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--r-sm);
+    display: block;
+    border: 1px solid rgba(255, 23, 68, 0.12);
+    word-break: break-all;
+}
+
+.proposal-diff-wrap {
+    margin-bottom: 0.6rem;
+    max-height: 200px;
+    overflow-y: auto;
+    border-radius: var(--r-sm);
+    border: 1px solid rgba(255,255,255,0.06);
+}
+.proposal-diff {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    line-height: 1.6;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 0.6rem;
+    margin: 0;
+    color: var(--text-sub);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.diff-add {
+    color: #00e676;
+    background: rgba(0, 230, 118, 0.06);
+    display: block;
+}
+.diff-del {
+    color: #ff5252;
+    background: rgba(255, 82, 82, 0.06);
+    display: block;
+}
+.diff-hunk {
+    color: #40c4ff;
+    font-weight: 600;
+    display: block;
+    border-top: 1px solid rgba(64, 196, 255, 0.1);
+    border-bottom: 1px solid rgba(64, 196, 255, 0.1);
+    padding: 0.15rem 0;
+    margin: 0.2rem 0;
+}
+
+.proposal-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+.proposal-btn {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.4rem 1.2rem;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border: 1px solid;
+}
+.proposal-btn.approve {
+    color: var(--health-high);
+    background: rgba(0, 230, 118, 0.06);
+    border-color: rgba(0, 230, 118, 0.35);
+}
+.proposal-btn.approve:hover {
+    background: rgba(0, 230, 118, 0.15);
+    box-shadow: 0 0 16px rgba(0, 230, 118, 0.3);
+    transform: translateY(-1px);
+}
+.proposal-btn.reject {
+    color: var(--health-low);
+    background: rgba(255, 23, 68, 0.06);
+    border-color: rgba(255, 23, 68, 0.3);
+}
+.proposal-btn.reject:hover {
+    background: rgba(255, 23, 68, 0.15);
+    box-shadow: 0 0 16px rgba(255, 23, 68, 0.25);
+    transform: translateY(-1px);
+}
+.proposal-btn:active {
+    transform: scale(0.96);
+}
+
+.proposal-result {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+    padding: 0.35rem 0;
+}
+.proposal-result.approved {
+    color: var(--health-high);
+}
+.proposal-result.rejected {
+    color: var(--health-low);
 }

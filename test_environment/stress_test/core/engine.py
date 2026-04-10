@@ -71,32 +71,27 @@ class TaskProcessor:
         return processed_count
 
 if __name__ == '__main__':
-    # Example Usage
-    
-    # 1. ComputeEngine Example
-    engine = ComputeEngine(node_id="ComputeNode-A")
-    print("--- ComputeEngine Test ---")
-    print(f"Submitting Task 1: {engine.submit_task('T1', {'data': 'test1'})}")
-    print(f"Submitting Task 2: {engine.submit_task('T2', {'data': 'test2'})}")
-    
-    # 2. TaskProcessor Example
-    processor = TaskProcessor(node_id="Processor-X", max_workers=2)
-    print("\n--- TaskProcessor Test ---")
-    
-    # Add tasks
-    processor.add_task("P1", {"op": "add", "a": 1})
-    processor.add_task("P2", {"op": "multiply", "a": 2})
-    processor.add_task("P3", {"op": "subtract", "a": 3})
-    
-    print(f"Initial queue size: {len(processor.task_queue)}")
-    
-    # Process tasks
-    processed = processor.process_next_batch()
-    print(f"Processed {processed} tasks. Results updated.")
-    
-    processed = processor.process_next_batch()
-    print(f"Processed {processed} tasks. Queue empty: {not processor.task_queue}")
+from typing import Optional
+import time
+
+class TaskProcessor:
+    """
+    Manages and processes a queue of asynchronous computational tasks.
+    """
+    def __init__(self, node_id: str, max_workers: int):
+        self.node_id = node_id
+        self.max_workers = max_workers
+        self.task_queue = []
+        self.results = {}
+
+    def add_task(self, task_id: str, task_data: dict) -> bool:
+        """
+        Adds a new task to the processing queue.
+        """
+        task = {
+            "id": task_id,
             "submitted_at": time.time(),
+            "data": task_data,
             "status": "pending"
         }
         self.task_queue.append(task)
@@ -107,8 +102,7 @@ if __name__ == '__main__':
         Processes a task synchronously if it's pending.
         Returns the result dictionary upon completion.
         """
-        # Use tuple unpacking or list comprehension if filtering is needed, 
-        # but the next() structure is fine for finding the first match.
+        # Search for the task by ID
         task = next((t for t in self.task_queue if t["id"] == task_id), None)
         
         if not task or task["status"] != "pending":
@@ -122,6 +116,76 @@ if __name__ == '__main__':
     def _execute(self, task: dict) -> dict:
         """
         Simulates the core computation and returns the results.
+        
+        In a real-world scenario, this method would contain the actual 
+        logic (e.g., calling external APIs, running computations).
+        """
+        # Simulate processing time
+        time.sleep(0.01) 
+        
+        # Simple calculation simulation based on task data
+        data = task['data']
+        result_value = None
+        
+        if 'op' in data:
+            op = data['op']
+            a = data.get('a', 0)
+            b = data.get('b', 0)
+            
+            if op == "add":
+                result_value = a + b
+            elif op == "multiply":
+                result_value = a * b
+            elif op == "subtract":
+                result_value = a - b
+        else:
+            result_value = f"Processed successfully for task {task['id']}"
+            
+        return {
+            "task_id": task['id'],
+            "status": "completed",
+            "result": result_value
+        }
+
+    def process_next_batch(self) -> int:
+        """
+        Attempts to process all currently pending tasks up to max_workers.
+        Returns the number of tasks processed.
+        """
+        processed_count = 0
+        for task in self.task_queue:
+            if task["status"] == "pending" and processed_count < self.max_workers:
+                self.process_task(task["id"])
+                processed_count += 1
+        return processed_count
+
+# Example Usage
+if __name__ == '__main__':
+    # 2. TaskProcessor Example
+    processor = TaskProcessor(node_id="Processor-X", max_workers=2)
+    print("\n--- TaskProcessor Test ---")
+    
+    # Add tasks
+    processor.add_task("P1", {"op": "add", "a": 1, "b": 5})
+    processor.add_task("P2", {"op": "multiply", "a": 2, "b": 3})
+    processor.add_task("P3", {"op": "subtract", "a": 10, "b": 4})
+    processor.add_task("P4", {"op": "add", "a": 1, "b": 1})
+    
+    print(f"Initial queue size: {len(processor.task_queue)}")
+    
+    # Process tasks (Batch 1: Max 2)
+    processed = processor.process_next_batch()
+    print(f"Processed {processed} tasks in batch 1. Results updated.")
+    
+    # Process tasks (Batch 2: Remaining 2)
+    processed = processor.process_next_batch()
+    print(f"Processed {processed} tasks in batch 2. Queue empty: {not processor.task_queue}")
+
+    # Check results
+    print("\n--- Final Results ---")
+    print(f"P1 Status: {processor.results.get('P1', {}).get('status')}, Result: {processor.results.get('P1', {}).get('result')}")
+    print(f"P3 Status: {processor.results.get('P3', {}).get('status')}, Result: {processor.results.get('P3', {}).get('result')}")
+    print(f"P4 Status: {processor.results.get('P4', {}).get('status')}, Result: {processor.results.get('P4', {}).get('result')}")
         """
         # Placeholder implementation for simulation
         digest = "dummy_hash"
@@ -169,11 +233,7 @@ class TaskScheduler:
         results = []
         for engine in self.engines:
             # Assuming each engine has a run/process mechanism
-            result = engine.process_task("dummy_task") 
-            if result:
-                results.append(result)
-        return results
-        results = []
+results = []
         for engine in self.engines:
             while engine.task_queue:
                 result = engine.process_next()

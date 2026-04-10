@@ -25,6 +25,7 @@ app = FastAPI(title="ANTON-SIFTA Command Interface")
 # ── Global dispatch guard ─────────────────────────────────────────────────────
 # Only ONE swimmer may run at a time. A new dispatch kills the old one first.
 _active_process: asyncio.subprocess.Process | None = None
+_active_agent_id: str | None = None
 _live_terminal_buffer: list[str] = []
 _dispatch_lock = asyncio.Lock()
 
@@ -387,7 +388,7 @@ class DispatchRequest(BaseModel):
 async def dispatch_status():
     """Returns whether a swimmer is currently active."""
     running = _active_process is not None and _active_process.returncode is None
-    return {"active": running}
+    return {"active": running, "agent_id": _active_agent_id if running else None}
 
 @app.get("/api/terminal")
 async def get_terminal():
@@ -404,6 +405,7 @@ async def dispatch_kill():
             _active_process.kill()
             await _active_process.wait()
             _active_process = None
+            _active_agent_id = None
             return {"killed": True, "message": "Swimmer terminated."}
         except Exception as e:
             return {"killed": False, "error": str(e)}
@@ -413,7 +415,7 @@ async def dispatch_kill():
 @app.post("/api/dispatch")
 async def dispatch_swim(req: DispatchRequest):
     async def sse_generator():
-        global _active_process, _live_terminal_buffer
+        global _active_process, _live_terminal_buffer, _active_agent_id
 
         # ── Kill any in-flight swimmer first ──────────────────────────────────
         if _active_process is not None and _active_process.returncode is None:
@@ -423,6 +425,7 @@ async def dispatch_swim(req: DispatchRequest):
             except Exception:
                 pass
             yield "data: [PREVIOUS SWIM TERMINATED — launching new agent]\n\n"
+            _active_agent_id = None
 
         _live_terminal_buffer.clear()
 
@@ -447,6 +450,7 @@ async def dispatch_swim(req: DispatchRequest):
             cmd.extend(["--base-url", req.base_url])
             
         cmd.append("--verify")
+        cmd.append("--proposals")  # All UI dispatches go through the Human Gate
         
         # Inject API key natively if provider demands it
         env = os.environ.copy()
@@ -473,6 +477,7 @@ async def dispatch_swim(req: DispatchRequest):
                 env=env
             )
             _active_process = process
+            _active_agent_id = req.agent_id
 
             while True:
                 line = await process.stdout.readline()
@@ -506,7 +511,7 @@ class BackupRequest(BaseModel):
 async def wallet_backup(req: BackupRequest):
     try:
         pw_input = f"{req.password}\n{req.password}\n"
-        cmd = ["python3", "backup_agent.py", req.agent_id, req.target_dir]
+        cmd = ["python3", "backup_agent.py", req.agent, req.target_dir]
         
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -532,7 +537,7 @@ class TransferRequest(BaseModel):
 @app.post("/api/wallet/transfer")
 async def wallet_transfer(req: TransferRequest):
     try:
-        cmd = ["python3", "transfer_agent.py", req.agent_id, req.new_owner, req.target_dir]
+        cmd = ["python3", "transfer_agent.py", req.agent, req.new_owner, req.target_dir]
         
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -630,7 +635,7 @@ class RelayPickupRequest(BaseModel):
 @app.post("/api/wallet/relay_drop")
 async def wallet_relay_drop(req: RelayDropRequest):
     """Pushes agent to public Stigmergic Dead-Drop Relay"""
-    agent_id = req.agent_id.upper()
+    agent_id = req.agent.upper()
     if agent_id in ("ALICE_M5", "M1THER"):
         return {"ok": False, "error": f"SECURITY BLOCK: Primary node."}
         
@@ -655,7 +660,7 @@ async def wallet_wormhole(req: WormholeRequest):
     import urllib.request
     import urllib.error
 
-    agent_id = req.agent_id.upper()
+    agent_id = req.agent.upper()
     
     # HARDWARE TIE SECURITY: Terminal nodes are physically bound to bare metal hardware.
     # They cannot travel through the wormhole.
@@ -896,9 +901,9 @@ async def memory_pool_broadcast(req: BroadcastMemoryRequest):
     """
     from memory_pool import broadcast_memory
 
-    soul_file = STATE_DIR / f"{req.agent_id.upper()}.json"
+    soul_file = STATE_DIR / f"{req.agent.upper()}.json"
     if not soul_file.exists():
-        return {"ok": False, "error": f"Unknown agent: {req.agent_id}"}
+        return {"ok": False, "error": f"Unknown agent: {req.agent}"}
 
     state = json.loads(soul_file.read_text())
     chash = broadcast_memory(state, req.memory, req.memory_type)
@@ -985,9 +990,9 @@ async def signal_ingest(req: IngestRequest):
     """
     from signal_ingestion import run_ingestion_cycle
 
-    soul_file = STATE_DIR / f"{req.agent_id.upper()}.json"
+    soul_file = STATE_DIR / f"{req.agent.upper()}.json"
     if not soul_file.exists():
-        return {"ok": False, "error": f"Unknown agent: {req.agent_id}"}
+        return {"ok": False, "error": f"Unknown agent: {req.agent}"}
 
     state   = json.loads(soul_file.read_text())
     signals = run_ingestion_cycle(
@@ -1003,6 +1008,142 @@ async def signal_ingest(req: IngestRequest):
         "agent_style"   : state.get("style"),
     }
 
+
+
+# ─── PROPOSAL BRANCH SYSTEM ───────────────────────────────────────────────────
+
+@app.get("/api/proposals")
+async def get_proposals(status: str = "PENDING"):
+    """List proposals filtered by status: PENDING, APPROVED, REJECTED."""
+    import proposal_engine
+    proposals = proposal_engine.list_proposals(status)
+    # Strip large content fields for the listing — return diff only
+    slim = []
+    for p in proposals:
+        slim.append({
+            "proposal_id": p["proposal_id"],
+            "status": p["status"],
+            "created_at": p["created_at"],
+            "filepath": p["filepath"],
+            "filename": p["filename"],
+            "agent_id": p["agent_id"],
+            "model": p.get("model", ""),
+            "vocation": p.get("vocation", ""),
+            "confidence": p["confidence"],
+            "error_description": p["error_description"],
+            "bite_region": p["bite_region"],
+            "pre_hash": p["pre_hash"][:16],
+            "post_hash": p["post_hash"][:16],
+            "diff": p["diff"],
+            "approved_at": p.get("approved_at"),
+            "rejected_at": p.get("rejected_at"),
+            "rejection_reason": p.get("rejection_reason"),
+        })
+    return slim
+
+
+@app.get("/api/proposals/stats")
+async def get_proposal_stats():
+    """Summary counts for pending/approved/rejected proposals."""
+    import proposal_engine
+    return proposal_engine.proposal_stats()
+
+
+class ProposalActionRequest(BaseModel):
+    reason: str = ""
+
+
+@app.post("/api/proposals/{proposal_id}/approve")
+async def approve_proposal_route(proposal_id: str):
+    """Approve a pending proposal — applies the fix to live disk."""
+    import proposal_engine
+    try:
+        result = proposal_engine.approve_proposal(proposal_id)
+        return {"ok": True, "proposal": {
+            "proposal_id": result["proposal_id"],
+            "filename": result["filename"],
+            "agent_id": result["agent_id"],
+            "status": result["status"],
+        }}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/proposals/{proposal_id}/reject")
+async def reject_proposal_route(proposal_id: str, req: ProposalActionRequest):
+    """Reject a pending proposal — file is NOT modified."""
+    import proposal_engine
+    try:
+        reason = req.reason or "Rejected by operator"
+        result = proposal_engine.reject_proposal(proposal_id, reason)
+        return {"ok": True, "proposal": {
+            "proposal_id": result["proposal_id"],
+            "filename": result["filename"],
+            "agent_id": result["agent_id"],
+            "status": result["status"],
+            "rejection_reason": result.get("rejection_reason"),
+        }}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+
+# ─── CONSIGLIERE (LLM ADVISORY LAYER) ────────────────────────────────────────
+
+@app.get("/api/consigliere/digest")
+async def consigliere_digest():
+    """Colony state digest — no LLM involved, pure data."""
+    from sifta_consigliere import read_colony_state
+    return read_colony_state()
+
+
+@app.post("/api/consigliere/advise")
+async def consigliere_advise():
+    """Request a full LLM advisory sweep. Uses the configured model."""
+    from sifta_consigliere import request_advisory
+    model = providerSettings.get("model", "gemma4:latest") if "providerSettings" in dir() else "gemma4:latest"
+    # Use a sensible default model
+    advisory = request_advisory(model="gemma4:latest")
+    return advisory
+
+
+@app.get("/api/consigliere/history")
+async def consigliere_history():
+    """Read the advisory log."""
+    log_path = STATE_DIR / "consigliere_log.jsonl"
+    entries = []
+    if log_path.exists():
+        try:
+            lines = log_path.read_text(encoding="utf-8").splitlines()
+            for line in lines[-20:]:
+                if line.strip():
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        pass
+            entries.reverse()
+        except Exception:
+            pass
+    return entries
+
+
+from pydantic import BaseModel
+class NatLangCommand(BaseModel):
+    agent: str
+    signal_type: str = "NAT_LANG"
+    payload: str
+
+@app.post("/api/network_signal")
+async def handle_network_signal(req: NatLangCommand):
+    from body_state import load_agent_state
+    from language_action_compiler import execute_natural_command
+    
+    state = load_agent_state(req.agent)
+    if not state:
+        return {"error": f"Agent {req.agent} not found or dead."}
+        
+    result = execute_natural_command(state, req.payload)
+    return {"status": "success", "execution_result": result}
 
 if __name__ == "__main__":
     import uvicorn

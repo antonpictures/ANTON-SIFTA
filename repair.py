@@ -16,6 +16,33 @@ import ast
 import hashlib
 import json
 import os
+import sys
+
+# THE OBSERVABLE EXECUTION BOUNDARY
+is_cardio = (os.environ.get("SIFTA_CARDIO") == "1")
+
+auth_token = None
+for arg in sys.argv:
+    if arg.startswith("--auth-token="):
+        auth_token = arg.split("=", 1)[1]
+
+if not is_cardio and not auth_token:
+    print("\n[SECURITY] SIFTA CONTROL PLANE BOUNDARY")
+    print("Direct execution of repair.py requires Cryptographic Signed Intent.")
+    print("Generate an override token: python sifta_relay.py --sign-override repair.py")
+    sys.exit(1)
+
+if auth_token:
+    import sifta_audit
+    try:
+        sifta_audit.init_audit()
+        sifta_audit.verify_cryptographic_override(auth_token, "repair.py")
+        print("[+] Signature Verified by Audit Layer. Proceeding.")
+    except Exception as e:
+        print(f"\n[SECURITY] CRYPTOGRAPHIC REJECTION")
+        print(f"Override signature invalid: {e}")
+        sys.exit(1)
+
 import re
 import shutil
 import subprocess
@@ -703,26 +730,39 @@ def verify_runtime(filepath: Path) -> tuple[bool, str]:
     target_dir = filepath.parent.absolute()
     module_name = filepath.stem
     try:
+        # Phase 1: Pure Syntax Import Validation
         result = subprocess.run(
             ["python3", "-c", f"import sys; sys.path.insert(0, '{target_dir}'); import {module_name}"],
             capture_output=True, text=True, timeout=10
         )
-        if result.returncode == 0:
-            return True, "ok"
-        stderr = result.stderr.strip()
-        # ModuleNotFoundError for third-party packages is NOT a syntax failure.
-        # The swimmer fixed the code — the test env just doesn't have it installed.
-        # Only hard-fail on SyntaxError or missing LOCAL modules (same directory).
-        if "ModuleNotFoundError" in stderr or "ImportError" in stderr:
-            last_line = stderr.splitlines()[-1] if stderr else ""
-            mod_match = re.search(r"No module named '([^']+)'", last_line)
-            if mod_match:
-                missing = mod_match.group(1).split(".")[0]
-                local_candidates = [f.stem for f in filepath.parent.glob("*.py")]
-                if missing not in local_candidates:
-                    # Third-party dependency — not our problem to fix. Pass.
-                    return True, f"ok (third-party dep '{missing}' not installed — skipped)"
-        return False, stderr
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            if "ModuleNotFoundError" in stderr or "ImportError" in stderr:
+                last_line = stderr.splitlines()[-1] if stderr else ""
+                mod_match = re.search(r"No module named '([^']+)'", last_line)
+                if mod_match:
+                    missing = mod_match.group(1).split(".")[0]
+                    local_candidates = [f.stem for f in filepath.parent.glob("*.py")]
+                    if missing not in local_candidates:
+                        pass # Third party dep missing, skip syntax fail
+                    else:
+                        return False, stderr
+            else:
+                return False, stderr
+                
+        # Phase 2: Adversarial Logic Control (Pytest Unit Tests)
+        test_file = target_dir / f"test_{module_name}.py"
+        if test_file.exists():
+            test_res = subprocess.run(
+                ["python3", "-m", "pytest", str(test_file), "-q", "--tb=short"],
+                capture_output=True, text=True, timeout=15
+            )
+            if test_res.returncode != 0:
+                # Failed the Logic Gate! Provide the assertion error block back to the agent
+                fail_log = test_res.stdout.strip()
+                return False, f"SYNTAX OK, BUT LOGIC FAILED VALIDATION (PYTEST):\n{fail_log}"
+
+        return True, "ok"
     except Exception as e:
         return False, str(e)
 
@@ -917,7 +957,9 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     return True
 
 
-def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = ""):
+from existence_guard import validate_existence, register_death, release_identity, identity_fingerprint
+
+def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False):
     from inference_economy import can_spend_inference
     if not can_spend_inference(state, cost=2.0):
         return
@@ -1330,7 +1372,20 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
 
                     if my_region_clean:
                         if not dry_run:
-                            stitch_bite(filepath, fixed_chunk, bite_start, bite_end, all_lines)
+                            if use_proposals:
+                                import proposal_engine
+                                proposal_engine.write_proposal(
+                                    filepath=filepath,
+                                    original_content=original,
+                                    fixed_content="".join(test_lines),
+                                    agent_id=state.get("id", "UNKNOWN"),
+                                    bite_start=bite_start, bite_end=bite_end,
+                                    error_description=str(syntax_err),
+                                    confidence=identity.get("confidence", 1.0) if "identity" in dir() else 1.0,
+                                    model=model, vocation=vocation if "vocation" in dir() else "",
+                                )
+                            else:
+                                stitch_bite(filepath, fixed_chunk, bite_start, bite_end, all_lines)
                         print(f"  [✅] My zone clean. New fault detected at line {new_error_line}.")
                         
                         if not dry_run:
@@ -1433,8 +1488,23 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
 
             # ── write (if not dry run) ─────────────────────────────────────────
             if not dry_run:
-                stitch_bite(filepath, fixed_chunk, bite_start, bite_end, all_lines)
-                print(f"  [✅] Stitched and written.")
+                if use_proposals:
+                    import proposal_engine
+                    full_fixed_content = "".join(after_lines)
+                    proposal_engine.write_proposal(
+                        filepath=filepath,
+                        original_content=original,
+                        fixed_content=full_fixed_content,
+                        agent_id=state.get("id", "UNKNOWN"),
+                        bite_start=bite_start, bite_end=bite_end,
+                        error_description=str(syntax_err),
+                        confidence=identity.get("confidence", 1.0) if "identity" in dir() else 1.0,
+                        model=model, vocation=vocation if "vocation" in dir() else "",
+                    )
+                    print(f"  [📋] Proposal staged for human review.")
+                else:
+                    stitch_bite(filepath, fixed_chunk, bite_start, bite_end, all_lines)
+                    print(f"  [✅] Stitched and written.")
                 
                 pheromone.drop_scar(
                     directory=mark_cwd,
@@ -1543,6 +1613,31 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False):
+    try:
+        # 🚫 NOTHING runs before this
+        validate_existence(state)
+
+        # Call the actual implementation
+        return _swim_and_repair_impl(
+            target_dir=target_dir, state=state, dry_run=dry_run, 
+            provider=provider, model=model, fast_model=fast_model, 
+            base_url=base_url, api_key=api_key, verify=verify, 
+            remote_ollama_url=remote_ollama_url,
+            use_proposals=use_proposals,
+        )
+
+    except Exception as e:
+        print(f"[☠️ TERMINATED] {e}")
+        # Identify fingerprint on death
+        from existence_guard import identity_fingerprint
+        fp = identity_fingerprint(state)
+        register_death(state["id"], fp)
+        raise
+
+    finally:
+        release_identity(state["id"])
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="ANTON-SIFTA Code Repair Agent")
@@ -1561,6 +1656,8 @@ if __name__ == "__main__":
                         help="Perform runtime verification (try importing the file) after stitching")
     parser.add_argument("--remote-ollama", default="",
                         help="Remote Ollama base URL for borrowed inference (e.g. http://192.168.1.10:11434). Automatically charges STGM fee.")
+    parser.add_argument("--proposals", action="store_true",
+                        help="Stage repairs as proposals instead of direct disk writes. Requires human approval via dashboard.")
     args = parser.parse_args()
 
     if args.body:
@@ -1586,4 +1683,5 @@ if __name__ == "__main__":
         api_key=args.api_key,
         verify=args.verify,
         remote_ollama_url=args.remote_ollama,
+        use_proposals=args.proposals,
     )

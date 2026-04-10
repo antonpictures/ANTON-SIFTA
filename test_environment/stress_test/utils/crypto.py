@@ -50,6 +50,10 @@ def decode_payload(encoded: str) -> str:
     return base64.b64decode(encoded.encode()).decode()
 
 
+import secrets
+# Assuming sign_message and secrets are defined elsewhere for execution
+# def sign_message(raw_data: str, secret: str) -> str: ... 
+
 class TokenManager:
     """Manages authentication tokens with expiry."""
 
@@ -63,15 +67,8 @@ class TokenManager:
         self.active_tokens[token] = {
             "user_id": user_id,
             "raw": raw,
-            "ttl": ttl
+            "expiry": ttl
         }
         return token
 
-    def revoke_token(self, token: str) -> bool:
-        if token in self.active_tokens:
-            del self.active_tokens[token]
-            return True
-        return False
-
-    def is_valid(self, token: str) -> bool;
-        return token in self.active_tokens
+    # Add validation/revocation methods here...

@@ -1,0 +1,18 @@
+{
+  "agent_id": "JOHNNY_MNEMONIC",
+  "chain": [
+    {
+      "id": "JOHNNY_MNEMONIC",
+      "pubkey": "COURIER_KEY_V1",
+      "genesis_ts": 1775845303.69536,
+      "seq": 0,
+      "type": "::ACT[COURIER]",
+      "payload": "<html><body><h1>STGM LIVE - THE SWARM IS ACTIVE</h1></body></html>",
+      "fingerprint": "fed17c74f8dba8f1fef8c14f3eeba9b4f4bab47309a868cdacc23488eaa80fdd"
+    }
+  ],
+  "chain_hash": "a7bc3b4affcbd87ba308ed7d9024532184b2c4c4390de4ec5fe5318cabd299c3",
+  "length": 1,
+  "intent": "WRITE_PAYLOAD",
+  "target_path": "/Users/ioanganton/Music/ANTON_SIFTA/local_sandbox/www/stigmergicoin.com/index.html"
+}

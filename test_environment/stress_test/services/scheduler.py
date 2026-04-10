@@ -73,47 +73,4 @@ class JobScheduler:
             if success:
                 self.completed.append(job)
                 finished.append(job)
-            elif job.status == "retry":
-                heapq.heappush(self.queue, job)
-            else:
-                self.failed.append(job)
-                finished.append(job)
-        return finished
-
-    def run_until_empty(self) -> dict:
-        while self.queue or self.running:
-            self.tick()
-        return self.get_stats()
-
-    def get_stats(self) -> dict:
-        return {
-            "queued": len(self.queue),
-            "running": len(self.running),
-            "completed": len(self.completed),
-            "failed": len(self.failed),
-            "total_processed": len(self.completed) + len(self.failed)
-        }
-
-
-class CronScheduler:
-    """Simple interval-based cron-like scheduler."""
-
-    def __init__(self):
-except Exception as e:
-                    # Handle failure gracefully: log the error but allow other tasks to continue.
-                    # Crucially, do NOT update last_run or count the run if it fails.
-                    print(f"Warning: Task '{name}' failed to run: {e}")
-                    pass # Simply catch and ignore the exception for the purpose of continuing the loop.
-        return executed
-                    pass
-        return executed
-
-    def get_status(self) -> dict:
-        return {
-            name: {
-                "interval": t["interval"],
-                "run_count": t["run_count"],
-                "last_run": t["last_run"]
-            }
-            for name, t in self.tasks.items()
-        }
+It seems like you've posted a Python code snippet with an explanation of the logic behind it. However, your message got cut off and I can't see what exactly you need help with. Could you please clarify or provide more context? Are you looking for help understanding this code better, or do you have a specific issue that you're experiencing with it?
