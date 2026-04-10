@@ -1190,11 +1190,15 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 
                 # ── DNA SELECTION (Phase 3.4) ─────────
                 affinity_score = state.get("affinities", {}).get("debugging", 0.5)
+                
+                import identity_feedback
+                vocation_score = identity_feedback.get_identity_score(vocation)
+                
                 # Strict clamp: if base confidence is too low, do NOT execute, regardless of affinity.
                 if confidence < 0.75:
                     final_score = 0.0
                 else:
-                    final_score = (confidence * 0.8) + (affinity_score * 0.2)
+                    final_score = (confidence * 0.6) + (affinity_score * 0.2) + (vocation_score * 0.2)
                     
                 log({
                     "event": "mind_trace",
@@ -1299,6 +1303,10 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                     repair_err = f"Runtime verification failed: {short_err}"
 
             os.unlink(tmp_path)
+            
+            # ── IDENTITY FEEDBACK RECORD ─────────────────────────────────────
+            import identity_feedback
+            identity_feedback.record_identity_outcome(vocation, repaired_ok)
 
             if not repaired_ok:
                 repair_err_str = str(repair_err).lower()
