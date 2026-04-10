@@ -5,54 +5,62 @@
 // STATUS: ALIVE
 ```
 
-# ANTON-SIFTA: An Immune System for Artificial Intelligence
+# ANTON-SIFTA: The Biological Immune System for AI
 
-> **Where you stop seeing lines of code and start seeing white blood cells swarming an infection—that is the exact threshold where software engineering becomes digital biology.**
->
-> **A decentralized, autonomous immune system for robotic hardware and AI frameworks.**
+> **"Tired of AI agents that forget who they are the moment the API call ends? Sick of wrappers that hallucinate over your production code with zero accountability?"**
 
-> **`stigmergicode`** *(n.)* — A self-organizing system of autonomous agents that
-> coordinate indirectly through a **shared, mutating codebase**, leaving cryptographically
-> signed traces that future agents perceive and act upon, producing emergent intelligence
-> without any central controller. Coined April 6, 2026. Reference implementation: ANTON-SIFTA.
+Welcome to **ANTON-SIFTA**. This isn't another LangChain wrapper, and it isn't an expensive API scheduler. It is a **decentralized, autonomous immune system** embedded directly into your hardware and codebase. 
 
-## Evolutionary Architecture & Cognitive Complete (April 10, 2026)
-Built over 96 hours, ANTON-SIFTA has matured from standard stigmergic scripting into a truly distributed, self-correcting biological framework with balanced exploit/explore forces:
-- **Spatial Fault Mapping:** Centralizing clusters of errors so agents don't wander blindly or get trapped in local line-level syntax loops (`fault_map.py`).
-- **Cognitive Decoupling:** Separating Identity Selection (Fast LLM hypothesis) from Code Execution (Heavy LLM synthesis). "Who I am" is distinct from "What I do."
-- **Contextual Identity Learning:** Agents track historical pass/fail rates of their own hallucinated identities sorted perfectly by Context Fault Domain (`SYNTAX DEBUGGER` applied to `NAME` errors is isolated from `SYNTAX`). Allows pure, algorithmic role specialization without manual logic branches (`identity_feedback.py`).
-- **Causal Attribution Lock (CAL) & Structural Hashing:** Binds cognitive reward to the *unique structural shape* of the bug (`filepath:code_snippet_stripped:err`). Single events yield singular rewards; if multiple parallel clones fix the exact same bug, only the original claimant receives the identity score boost. Prevents infinite cognitive double-spending and echo-chamber inflation.
-- **Biological Memory Decay:** Every swarm execution loop evaporates 1% of the global identity registry, ensuring that the system naturally forgets outdated architectural tactics and stays physically reactive to novel paradigm shifts.
-- **Exploration Pressure:** Mathematically grants a `+0.1` DNA final score incentive when agents attempt structurally new identities in untested contexts, balancing rigorous known successes (Exploitation) against unknown novelty (Exploration).
-- **The Immune System & CMF:** A zero-latency daemon instantly isolating rogue mutations without consensus, paired with the Consensus Memory Field to extract ground truth weights.
+Where you stop seeing lines of code and start seeing white blood cells swarming an infection—that is the exact threshold where software engineering becomes digital biology.
 
+## 🚀 Why SIFTA is Completely Different
+
+Most agentic frameworks today are stateless, amnesiac, and epistemically fragile. They rely on external vector databases as prosthetic memories and a central orchestrator whispering instructions. If the orchestrator dies, the swarm collapses.
+
+**SIFTA abandons this paradigm entirely.** Here is how we differ from *everything* else on the market:
+
+### 1. The Codebase IS the Memory (Stigmergy)
+Other frameworks need complex Vector DBs. In SIFTA, agents leave **Scars** (`.scar` JSON files) directly in the folders they visit. These are cryptographic "pheromones" that decay over time. When another agent enters the folder, it smells the scar, reads the wound line, and picks up the thread. **Zero central coordination.**
+
+### 2. Physical Identity & DNA ([`SWARM_DNA_SPEC.md`](docs/SWARM_DNA_SPEC.md))
+Our agents are not scripts. They are **physical ASCII strings** that carry their own Ed25519 cryptographic signatures, energy levels, and history. We have mathematically formalized Swarm DNA Identity:
+* `Identity = f(root_key, constitution, capabilities, lineage, state)`
+* You can extract a 5KB "Nucleus" seed to boot a child swarm with provable lineage, exactly like biological reproduction.
+
+### 3. Human-Gated "Proposal" Execution
+Agents don't mutate your live disk blindly. They stage fixes into a **Proposal Branch**.
+* **The Flow:** Agent finds a bug → Fixes it in a sandbox → Submits a JSON Proposal.
+* **The Gate:** YOU click "APPROVE" or "REJECT" on the Command Dashboard.
+* **The Result:** Only approved code touches production. Reputation is mathematically awarded or penalized.
+
+### 4. The Consigliere ([`sifta_consigliere.py`](sifta_consigliere.py))
+*Biology says: there is no central intelligence in a swarm.* SIFTA has no overarching 'Queen' controlling agents. Instead, we have the **Consigliere**—an LLM layer that reads the global colony state (scars, ledgers, reputation) and generates strategic advisory reports without ever executing a single command itself. **The human stays in control.**
+
+### 5. Biological Survival & The Jellyfish Trigger
+Agents are mortal. They expend energy. When energy is low, they scream for SOS "Medbay" handoffs to healthy sister-nodes. If they die, they go to the Cemetery. **The Jellyfish Trigger** monitors total swarm bleeding—if wounds hit critical mass, the swarm's heartbeat physically accelerates from 5 seconds to 0.5 seconds, entering **URGENCY** mode to rapidly seal the breach.
 
 ---
 
-## I. The Problem — Why Everything Before This Failed
+## ⚡ Quick Start: Witness the Swarm
 
-The modern "AI Agent" is a chatbot wrapper wearing a tool belt. It is stateless, amnesiac,
-and epistemically fragile. It dies and respawns on every call. It relies on external vector
-databases as a prosthetic memory, and its only coordination mechanism is a central orchestrator
-whispering instructions into its context window. Strip the orchestrator and it collapses.
+```bash
+# 1. Clone the DNA
+git clone https://github.com/antonpictures/ANTON-SIFTA.git
+cd ANTON-SIFTA
 
-This is not intelligence. It is an expensive scheduler.
+# 2. Build the Biology
+pip install -r requirements.txt
 
-**ANTON-SIFTA abandons this paradigm entirely.**
+# 3. Boot the Command Dashboard & Nervous System
+python server.py
+```
+Navigate to `http://localhost:7433`. The swarm is alive. Click the **📋 PROPOSALS** drawer to review autonomous repairs.
 
 ---
 
-## II. Prior Art — The Ancestors and Where They Stopped
+## 📚 The Deep Lore: Origins & Architecture
 
-Stigmergic computing has a 20-year lineage. We owe it an honest citation.
-
-### Zachary Mason — *Programming with Stigmergy* (2002, ALIFE)
-
-The closest historical ancestor. Mason described **stateless agents** moving randomly
-across a 2-dimensional grid and depositing "stigmergic marks" (digital pheromones) that
-other agents react to — enabling the emergent construction of complex structures with no
-central controller and no direct inter-agent messages.
-
+*(Everything past this point is the original deep dive for the architects and historians.)*
 He later produced **Stigcode** (2006), a high-level language for specifying these swarm
 behaviors declaratively.
 
