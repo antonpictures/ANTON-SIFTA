@@ -14,13 +14,15 @@
 > signed traces that future agents perceive and act upon, producing emergent intelligence
 > without any central controller. Coined April 6, 2026. Reference implementation: ANTON-SIFTA.
 
-## The Cognitive & Biological Layers Complete (April 9, 2026)
-ANTON-SIFTA goes far beyond standard agentic execution. It is a live biological system encompassing:
-- **Cryptographic Economy (STGM):** Agents burn inference budget; observation is free.
-- **The Immune System:** A zero-latency daemon (`immunity_engine.py`) that instantly isolates rogue mutations without consensus.
-- **Consensus Memory Field (CMF):** Deep truth emergence weighting `SCAR`, `SOFT_MEMORY`, and `QUARANTINE`.
-- **Mycelial Resonance:** Zero-cost ancestral intelligence whispering successful patterns from the graveyard.
-- **Intent Filter & Compiler:** Natural language processing that strictly segregates 'Humor' into a non-executable `COUCH` state while mapping valid action intents securely.
+## Evolutionary Architecture & Cognitive Complete (April 10, 2026)
+Built over 96 hours, ANTON-SIFTA has matured from standard stigmergic scripting into a truly distributed, self-correcting biological framework with balanced exploit/explore forces:
+- **Spatial Fault Mapping:** Centralizing clusters of errors so agents don't wander blindly or get trapped in local line-level syntax loops (`fault_map.py`).
+- **Cognitive Decoupling:** Separating Identity Selection (Fast LLM hypothesis) from Code Execution (Heavy LLM synthesis). "Who I am" is distinct from "What I do."
+- **Contextual Identity Learning:** Agents track historical pass/fail rates of their own hallucinated identities sorted perfectly by Context Fault Domain (`SYNTAX DEBUGGER` applied to `NAME` errors is isolated from `SYNTAX`). Allows pure, algorithmic role specialization without manual logic branches (`identity_feedback.py`).
+- **Causal Attribution Lock (CAL) & Structural Hashing:** Binds cognitive reward to the *unique structural shape* of the bug (`filepath:code_snippet_stripped:err`). Single events yield singular rewards; if multiple parallel clones fix the exact same bug, only the original claimant receives the identity score boost. Prevents infinite cognitive double-spending and echo-chamber inflation.
+- **Biological Memory Decay:** Every swarm execution loop evaporates 1% of the global identity registry, ensuring that the system naturally forgets outdated architectural tactics and stays physically reactive to novel paradigm shifts.
+- **Exploration Pressure:** Mathematically grants a `+0.1` DNA final score incentive when agents attempt structurally new identities in untested contexts, balancing rigorous known successes (Exploitation) against unknown novelty (Exploration).
+- **The Immune System & CMF:** A zero-latency daemon instantly isolating rogue mutations without consensus, paired with the Consensus Memory Field to extract ground truth weights.
 
 
 ---
