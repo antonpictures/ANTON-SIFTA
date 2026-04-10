@@ -7,7 +7,7 @@
 
 # ANTON-SIFTA: A Stigmergic Code Swarm
 
-> **A hardened, decentralized multi-agent biology framework for cross-node file traversal and AST code repair.**
+> **A hardened, decentralized multi-agent biology framework.**
 
 > **`stigmergicode`** *(n.)* — A self-organizing system of autonomous agents that
 > coordinate indirectly through a **shared, mutating codebase**, leaving cryptographically
