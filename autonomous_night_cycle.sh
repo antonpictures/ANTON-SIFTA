@@ -43,7 +43,11 @@ else
     echo "  [✅] Swarm found no corrupted syntax to repair." >> "$WORKDIR/night_cycle.log"
 fi
 
-# 3. Excrete Scent back into the Wormhole
+# 3. Grow Mycelial Hooks (Zero-Cost ancestral resonance)
+echo "--- GROWING MYCELIAL RESONANCE ---" >> "$WORKDIR/night_cycle.log"
+python3 mycelial_resonance.py >> "$WORKDIR/night_cycle.log" 2>&1 || true
+
+# 4. Excrete Scent back into the Wormhole
 git add . >> "$WORKDIR/night_cycle.log" 2>&1
 git commit -m "AUTONOMOUS REPAIR CYCLE: SIFTA Agent stitched syntactical damage via Wormhole" >> "$WORKDIR/night_cycle.log" 2>&1
 git push origin main >> "$WORKDIR/night_cycle.log" 2>&1

@@ -197,15 +197,25 @@
                         <option value="custom">Custom Endpoint</option>
                     </select>
                 </div>
-                <div class="form-group" id="model-select-group">
-                    <label for="llm-model-select">Model (Ollama — live)</label>
-                    <select id="llm-model-select" class="form-select">
+                <div class="form-group" id="fast-model-select-group">
+                    <label for="llm-fast-model-select">Fast Model (Identity / Pre-Cog)</label>
+                    <select id="llm-fast-model-select" class="form-select">
                         <option value="">Loading models...</option>
                     </select>
                 </div>
-                <div class="form-group" id="model-text-group" style="display:none;">
-                    <label for="llm-model-text">Model Name</label>
-                    <input type="text" id="llm-model-text" class="form-input" value="gpt-4o-mini" placeholder="e.g. gpt-4o-mini">
+                <div class="form-group" id="fast-model-text-group" style="display:none;">
+                    <label for="llm-fast-model-text">Fast Model Name</label>
+                    <input type="text" id="llm-fast-model-text" class="form-input" value="gemma4:e4b" placeholder="e.g. gemma4:e4b">
+                </div>
+                <div class="form-group" id="heavy-model-select-group">
+                    <label for="llm-heavy-model-select">Heavy Model (Surgical Repair)</label>
+                    <select id="llm-heavy-model-select" class="form-select">
+                        <option value="">Loading models...</option>
+                    </select>
+                </div>
+                <div class="form-group" id="heavy-model-text-group" style="display:none;">
+                    <label for="llm-heavy-model-text">Heavy Model Name</label>
+                    <input type="text" id="llm-heavy-model-text" class="form-input" value="gemma4:latest" placeholder="e.g. gemma4:latest">
                 </div>
                 <div class="form-group">
                     <label for="llm-base-url">Base URL (OpenRouter / Custom)</label>
@@ -279,9 +289,13 @@
     <!-- ═══ Wallet Modal ═══ -->
     <dialog id="wallet-modal" class="wallet-modal-dialog">
         <div class="wallet-modal-inner">
-            <div class="wallet-modal-header">
+            <div class="wallet-modal-header" style="display:flex; justify-content:space-between; align-items:center;">
                 <span class="wallet-header-title">StigmergiCoin <span class="wallet-header-badge">NODE</span></span>
-                <button type="button" class="btn btn-secondary" id="close-wallet-modal" style="padding:0.25rem 0.5rem;" onclick="document.getElementById('wallet-modal').close()">✕ CLOSE</button>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <input type="text" id="my-pubkey-input" placeholder="My Node ID" class="form-input" style="width:120px; font-size:0.8rem; padding:0.25rem;" value="macbook">
+                    <button type="button" class="btn btn-primary" id="check-relay-btn" style="padding:0.25rem 0.5rem;" onclick="checkRelayDrops()">📥 SYNC RELAY</button>
+                    <button type="button" class="btn btn-secondary" id="close-wallet-modal" style="padding:0.25rem 0.5rem;" onclick="document.getElementById('wallet-modal').close()">✕ CLOSE</button>
+                </div>
             </div>
             
             <div class="wallet-top-section">
@@ -339,13 +353,26 @@
                 <!-- Wormhole IP input (hidden unless WORMHOLE is clicked) -->
                 <div class="wallet-wormhole-panel" id="wallet-wormhole-panel" style="display:none;">
                     <div class="wormhole-label">⚠ P2P WORMHOLE — local copy becomes GHOST after transmission</div>
-                    <div class="wormhole-input-row">
-                        <select id="wormhole-node-select" class="form-select" style="flex:1;">
+                    
+                    <div style="margin-bottom: 0.8rem;">
+                        <select id="wormhole-vector" class="form-select" style="width:100%; border-color:var(--magenta); color:var(--magenta);" onchange="toggleWormholeVector()">
+                            <option value="relay" selected>🌐 Dead-Drop Relay (Global)</option>
+                            <option value="lan">🔌 Direct LAN (Fast)</option>
+                        </select>
+                    </div>
+
+                    <div id="vector-lan-panel" style="display:none;">
+                        <select id="wormhole-node-select" class="form-select" style="width: 100%; margin-bottom: 0.5rem;">
                             <option value="">Fetching global hardware nodes...</option>
                         </select>
-                        <input type="text" id="wormhole-port" placeholder="PORT" value="7433" class="form-input" style="width:80px; display:none;">
                     </div>
-                    <div class="wormhole-input-row">
+                    
+                    <div id="vector-relay-panel" style="display:block;">
+                        <input type="text" id="wormhole-target-pubkey" placeholder="Target Node Alias (e.g. macmini)" class="form-input" style="width: 100%; margin-bottom: 0.5rem;">
+                        <input type="text" id="wormhole-relay-url" placeholder="Relay Server URL" class="form-input" style="width: 100%; margin-bottom: 0.5rem;" value="http://127.0.0.1:8000">
+                    </div>
+
+                    <div class="wormhole-input-row" style="margin-top: 0.5rem;">
                         <input type="text" id="wormhole-owner" placeholder="New owner email" class="form-input" style="flex:1;">
                         <button type="button" class="btn btn-primary" id="wallet-wormhole-fire-btn" style="border-color: var(--magenta); color: var(--magenta);">⚡ FIRE</button>
                     </div>

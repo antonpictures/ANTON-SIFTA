@@ -339,6 +339,10 @@ def scan_all_territories(root_path: Path) -> List[Dict[str, Any]]:
         rel_path = str(sifta_dir.parent.relative_to(root_path))
         if rel_path == ".":
             rel_path = "Root"
+            
+        # Protect internal system folders from rendering as battleground territories
+        if "CEMETERY" in rel_path or rel_path.startswith(".sifta_cemetery"):
+            continue
 
         scars = smell_territory(sifta_dir.parent)
         if not scars:

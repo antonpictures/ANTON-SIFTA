@@ -263,7 +263,13 @@
                     status.style.color = "var(--alert-red)";
                     status.classList.add('blink');
                 } else {
-                    overlay.style.opacity = "1";
+                    if (!data.buffer || data.buffer.length === 0) {
+                        overlay.style.opacity = "1";
+                        overlay.style.pointerEvents = "auto";
+                    } else {
+                        overlay.style.opacity = "0";
+                        overlay.style.pointerEvents = "none";
+                    }
                     status.innerText = "STANDBY";
                     status.style.color = "var(--health-nominal)";
                     status.classList.remove('blink');

@@ -42,6 +42,32 @@ def get_current_halving_multiplier() -> float:
     return multiplier
 
 
+# ─── Couch Protocol / Inference Gate ───────────────────────────────────────────
+def can_spend_inference(state: dict, cost: float = 1.0) -> bool:
+    """
+    COUCH PROTOCOL ENFORCEMENT
+    Hallucination / inference spend is ONLY allowed when NOT in protected states.
+    Returns True only if the agent may burn real inference energy.
+    """
+    agent_id = state.get('id', 'unknown')
+    
+    # 1. Protected states — zero spend, zero mutation, zero drift
+    if state.get("style") in {"COUCH", "OBSERVE", "HYPOTHESIS", "LATENT"}:
+        print(f"[🛡️ COUCH PROTOCOL] {agent_id} in {state['style']} — inference spend DENIED.")
+        return False
+
+    # 2. Check actual energy balance (weed inference limit)
+    # Using 'stgm_balance' as the inference energy pool based on inference_economy logic
+    current_energy = float(state.get("stgm_balance", 100.0))
+    if current_energy < cost:
+        print(f"[⚡ LOW WEED] {agent_id} only has {current_energy:.2f} left — spend DENIED.")
+        return False
+
+    # 3. All clear — safe to spend
+    print(f"[✅ INFERENCE OK] {agent_id} may spend {cost} inference. Remaining: {current_energy - cost:.2f}")
+    return True
+
+
 # ─── Fee Calculator ────────────────────────────────────────────────────────────
 def calculate_fee(tokens: int) -> float:
     """

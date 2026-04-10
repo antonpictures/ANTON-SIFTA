@@ -686,6 +686,7 @@ const settingsForm          = document.getElementById('settings-form');
 const providerSettings = {
     provider: localStorage.getItem('llm_provider') || 'ollama',
     model:    localStorage.getItem('llm_model')    || 'qwen3.5:0.8b',
+    fastModel:localStorage.getItem('llm_fast_model')|| 'qwen3.5:0.8b',
     baseUrl:  localStorage.getItem('llm_base_url') || '',
     apiKey:   localStorage.getItem('llm_api_key')  || '',
 };
@@ -697,17 +698,26 @@ async function fetchOllamaModels() {
         const res  = await fetch('/api/ollama-models');
         const data = await res.json();
         ollamaModels = data.models || [];
-        const sel = document.getElementById('llm-model-select');
-        sel.innerHTML = '';
+        const selHeavy = document.getElementById('llm-heavy-model-select');
+        const selFast  = document.getElementById('llm-fast-model-select');
+        if (selHeavy) selHeavy.innerHTML = '';
+        if (selFast) selFast.innerHTML = '';
         if (ollamaModels.length === 0) {
-            sel.innerHTML = '<option value="">No local models found</option>';
+            if (selHeavy) selHeavy.innerHTML = '<option value="">No local models found</option>';
+            if (selFast) selFast.innerHTML = '<option value="">No local models found</option>';
         } else {
             ollamaModels.forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m;
-                opt.textContent = m;
-                if (m === providerSettings.model) opt.selected = true;
-                sel.appendChild(opt);
+                const optHeavy = document.createElement('option');
+                optHeavy.value = m;
+                optHeavy.textContent = m;
+                if (m === providerSettings.model) optHeavy.selected = true;
+                if (selHeavy) selHeavy.appendChild(optHeavy);
+                
+                const optFast = document.createElement('option');
+                optFast.value = m;
+                optFast.textContent = m;
+                if (m === providerSettings.fastModel) optFast.selected = true;
+                if (selFast) selFast.appendChild(optFast);
             });
         }
     } catch (e) {
@@ -716,18 +726,30 @@ async function fetchOllamaModels() {
 }
 
 function updateModelUI(provider) {
-    const selectGroup = document.getElementById('model-select-group');
-    const textGroup   = document.getElementById('model-text-group');
+    const fastSelectGroup  = document.getElementById('fast-model-select-group');
+    const fastTextGroup    = document.getElementById('fast-model-text-group');
+    const heavySelectGroup = document.getElementById('heavy-model-select-group');
+    const heavyTextGroup   = document.getElementById('heavy-model-text-group');
+    
     if (provider === 'ollama') {
-        selectGroup.style.display = '';
-        textGroup.style.display   = 'none';
+        if (fastSelectGroup) fastSelectGroup.style.display = '';
+        if (fastTextGroup) fastTextGroup.style.display   = 'none';
+        if (heavySelectGroup) heavySelectGroup.style.display = '';
+        if (heavyTextGroup) heavyTextGroup.style.display   = 'none';
         fetchOllamaModels();
     } else {
-        selectGroup.style.display = 'none';
-        textGroup.style.display   = '';
-        const textInput = document.getElementById('llm-model-text');
-        if (!ollamaModels.includes(providerSettings.model)) {
-            textInput.value = providerSettings.model;
+        if (fastSelectGroup) fastSelectGroup.style.display = 'none';
+        if (fastTextGroup) fastTextGroup.style.display   = '';
+        if (heavySelectGroup) heavySelectGroup.style.display = 'none';
+        if (heavyTextGroup) heavyTextGroup.style.display   = '';
+        
+        const fastTextInput = document.getElementById('llm-fast-model-text');
+        if (fastTextInput && !ollamaModels.includes(providerSettings.fastModel)) {
+            fastTextInput.value = providerSettings.fastModel;
+        }
+        const heavyTextInput = document.getElementById('llm-heavy-model-text');
+        if (heavyTextInput && !ollamaModels.includes(providerSettings.model)) {
+            heavyTextInput.value = providerSettings.model;
         }
     }
 }
@@ -752,11 +774,15 @@ settingsForm.addEventListener('submit', e => {
     providerSettings.baseUrl  = document.getElementById('llm-base-url').value;
     providerSettings.apiKey   = document.getElementById('llm-api-key').value;
     providerSettings.model    = providerSettings.provider === 'ollama'
-        ? document.getElementById('llm-model-select').value
-        : document.getElementById('llm-model-text').value;
+        ? document.getElementById('llm-heavy-model-select').value
+        : document.getElementById('llm-heavy-model-text').value;
+    providerSettings.fastModel = providerSettings.provider === 'ollama'
+        ? document.getElementById('llm-fast-model-select').value
+        : document.getElementById('llm-fast-model-text').value;
 
     localStorage.setItem('llm_provider', providerSettings.provider);
     localStorage.setItem('llm_model',    providerSettings.model);
+    localStorage.setItem('llm_fast_model', providerSettings.fastModel);
     localStorage.setItem('llm_base_url', providerSettings.baseUrl);
     localStorage.setItem('llm_api_key',  providerSettings.apiKey);
 
@@ -803,6 +829,7 @@ async function sendSwimmerCentral() {
             write:      isWrite,
             provider:   providerSettings.provider,
             model_name: providerSettings.model,
+            fast_model: providerSettings.fastModel,
             base_url:   providerSettings.baseUrl,
             api_key:    providerSettings.apiKey,
         };
@@ -960,10 +987,11 @@ document.addEventListener('DOMContentLoaded', () => {
         stableContainer.addEventListener('mouseenter', () => systemHovered = true);
         stableContainer.addEventListener('mouseleave', () => systemHovered = false);
     }
+    
+    // Start polling after all UI components and consts are initialized
+    loop();
+    setInterval(loop, 2000);
 });
-
-setInterval(loop, 2000);
-loop();
 
 async function updateTerritory() {
     if (systemHovered) return; // Freeze UI redraws if user is hovering to click buttons
@@ -1516,6 +1544,43 @@ const walletWormholeBtn = document.getElementById('wallet-wormhole-btn');
 const walletWormholePanel = document.getElementById('wallet-wormhole-panel');
 const walletWormholeFireBtn = document.getElementById('wallet-wormhole-fire-btn');
 
+function toggleWormholeVector() {
+    const vector = document.getElementById('wormhole-vector').value;
+    document.getElementById('vector-lan-panel').style.display = vector === 'lan' ? 'block' : 'none';
+    document.getElementById('vector-relay-panel').style.display = vector === 'relay' ? 'block' : 'none';
+}
+
+async function checkRelayDrops() {
+    const pubkey = document.getElementById('my-pubkey-input').value.trim();
+    if (!pubkey) { alert('Please enter your Node ID / PubKey first.'); return; }
+    
+    // Default relay URL
+    const relayUrl = "http://127.0.0.1:8000";
+    
+    try {
+        document.getElementById('check-relay-btn').innerText = "⏳ PULLING...";
+        const res = await fetch('/api/wallet/relay_pickup', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                my_pubkey: pubkey,
+                relay_url: relayUrl
+            })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            alert(`Relay Sync Complete.\n${data.output}`);
+            fetchAgents(); // Refresh the list
+        } else {
+            alert(`Relay Sync failed:\n${data.error}`);
+        }
+    } catch(e) {
+        alert("Network error: " + e.message);
+    } finally {
+        document.getElementById('check-relay-btn').innerText = "📥 SYNC RELAY";
+    }
+}
+
 let globalNodes = [];
 async function fetchGlobalNodes() {
     try {
@@ -1541,14 +1606,23 @@ walletWormholeFireBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     if (!currentWalletAgent) return;
     
-    const nodeSelection = document.getElementById('wormhole-node-select').value;
-    if (!nodeSelection) { alert('You must select a hardware node.'); return; }
-    
-    const [ip, port] = nodeSelection.split(':');
     const owner = document.getElementById('wormhole-owner').value.trim();
-    
-    if (!ip) { alert('TARGET IP is required.'); return; }
     if (!owner) { alert('New owner email is required.'); return; }
+    
+    const vector = document.getElementById('wormhole-vector').value;
+    let ip, port, targetPubkey, relayUrl;
+    
+    if (vector === 'lan') {
+        const nodeSelection = document.getElementById('wormhole-node-select').value;
+        if (!nodeSelection) { alert('You must select a hardware node.'); return; }
+        [ip, port] = nodeSelection.split(':');
+        if (!ip) { alert('TARGET IP is required.'); return; }
+    } else {
+        targetPubkey = document.getElementById('wormhole-target-pubkey').value.trim();
+        relayUrl = document.getElementById('wormhole-relay-url').value.trim();
+        if (!targetPubkey || !relayUrl) { alert('Target Node Alias and Relay URL are required.'); return; }
+    }
+    
     if (walletWormholeFireBtn.dataset.armed !== "true") {
         walletWormholeFireBtn.dataset.armed = "true";
         walletWormholeFireBtn.innerHTML = "⚠ CLICK AGAIN TO GHOST";
@@ -1572,29 +1646,44 @@ walletWormholeFireBtn.addEventListener('click', async (e) => {
     
     const terminal = document.getElementById('wallet-terminal');
     terminal.style.display = 'block';
-    terminal.innerHTML = '<span class="t-boot">[🌀] Opening wormhole...</span>\n';
+    terminal.innerHTML = vector === 'lan' ? '<span class="t-boot">[🌀] Opening LAN wormhole...</span>\n' : '<span class="t-boot">[🌐] Pushing to Dead-Drop Relay...</span>\n';
     
     try {
-        const res = await fetch('/api/wallet/wormhole', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
+        let endpoint = '';
+        let payload = {};
+        if (vector === 'lan') {
+            endpoint = '/api/wallet/wormhole';
+            payload = {
                 agent_id: currentWalletAgent.id,
                 target_ip: ip,
                 target_port: parseInt(port),
                 new_owner: owner
-            })
+            };
+        } else {
+            endpoint = '/api/wallet/relay_drop';
+            payload = {
+                agent_id: currentWalletAgent.id,
+                target_pubkey: targetPubkey,
+                new_owner: owner,
+                relay_url: relayUrl
+            };
+        }
+        
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
         });
         const data = await res.json();
         
         if (data.ok) {
-            terminal.innerHTML += `<span class="t-fix">[✓] AGENT TRANSMITTED. Local copy is now GHOST.\n${data.output}</span>`;
+            terminal.innerHTML += `<span class="t-fix">[✓] AGENT TRANSMITTED. Local copy is now GHOST.\n${data.output || ''}</span>`;
             setTimeout(() => {
                 walletModal.close();
                 fetchAgents();
             }, 2500);
         } else {
-            terminal.innerHTML += `<span class="t-fail">[✗] WORMHOLE FAILED: ${data.error}</span>`;
+            terminal.innerHTML += `<span class="t-fail">[✗] TRANSMISSION FAILED: ${data.error}</span>`;
         }
     } catch(e) {
         terminal.innerHTML += `<span class="t-fail">[✗] Connection error: ${e.message}</span>`;

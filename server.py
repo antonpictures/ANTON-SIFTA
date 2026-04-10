@@ -378,6 +378,7 @@ class DispatchRequest(BaseModel):
     write: bool = False
     provider: str = "ollama"
     model_name: str = "qwen3.5:0.8b"
+    fast_model: Optional[str] = "qwen3.5:0.8b"
     api_key: Optional[str] = ""
     base_url: Optional[str] = ""
 
@@ -438,6 +439,9 @@ async def dispatch_swim(req: DispatchRequest):
             "--provider", req.provider,
             "--model", req.model_name
         ])
+        
+        if req.fast_model:
+            cmd.extend(["--fast-model", req.fast_model])
         
         if req.base_url:
             cmd.extend(["--base-url", req.base_url])
@@ -612,6 +616,34 @@ class WormholeRequest(BaseModel):
     target_ip: str
     target_port: int = 7433
     new_owner: str
+
+class RelayDropRequest(BaseModel):
+    agent_id: str
+    target_pubkey: str # Simple alias like 'macmini' or 'antonpictures'
+    new_owner: str
+    relay_url: str
+
+class RelayPickupRequest(BaseModel):
+    my_pubkey: str
+    relay_url: str
+
+@app.post("/api/wallet/relay_drop")
+async def wallet_relay_drop(req: RelayDropRequest):
+    """Pushes agent to public Stigmergic Dead-Drop Relay"""
+    agent_id = req.agent_id.upper()
+    if agent_id in ("ALICE_M5", "M1THER"):
+        return {"ok": False, "error": f"SECURITY BLOCK: Primary node."}
+        
+    import dead_drop
+    res = dead_drop.push_to_relay(agent_id, req.target_pubkey, STATE_DIR, req.new_owner, req.relay_url)
+    return res
+
+@app.post("/api/wallet/relay_pickup")
+async def wallet_relay_pickup(req: RelayPickupRequest):
+    """Fetches any pending agents from the Dead-Drop Relay"""
+    import dead_drop
+    res = dead_drop.fetch_from_relay(req.my_pubkey, STATE_DIR, req.relay_url)
+    return res
 
 @app.post("/api/wallet/wormhole")
 async def wallet_wormhole(req: WormholeRequest):
@@ -847,6 +879,133 @@ async def get_swarm_state():
     }
 
 
+
+# ─── MULTI-AGENT MEMORY POOL ─────────────────────────────────────────────────
+
+class BroadcastMemoryRequest(BaseModel):
+    agent_id: str
+    memory: dict
+    memory_type: str = "observation"  # observation | hypothesis | resolved_anomaly
+
+
+@app.post("/api/memory_pool/broadcast")
+async def memory_pool_broadcast(req: BroadcastMemoryRequest):
+    """
+    Agent broadcasts a signed memory to the shared pool.
+    Requires agent_id to exist locally (we load their private key for signing).
+    """
+    from memory_pool import broadcast_memory
+
+    soul_file = STATE_DIR / f"{req.agent_id.upper()}.json"
+    if not soul_file.exists():
+        return {"ok": False, "error": f"Unknown agent: {req.agent_id}"}
+
+    state = json.loads(soul_file.read_text())
+    chash = broadcast_memory(state, req.memory, req.memory_type)
+    if chash:
+        return {"ok": True, "content_hash": chash}
+    return {"ok": False, "error": "Memory blocked by pool guardrails — check emotional_weight, style, or memory_type."}
+
+
+@app.get("/api/memory_pool/receive/{agent_id}")
+async def memory_pool_receive(agent_id: str, memory_type: Optional[str] = None):
+    """
+    Agent reads all verified shared memories from the pool.
+    Optionally filtered by type: observation | hypothesis | resolved_anomaly
+    """
+    from memory_pool import receive_memories
+
+    soul_file = STATE_DIR / f"{agent_id.upper()}.json"
+    if not soul_file.exists():
+        return {"ok": False, "error": f"Unknown agent: {agent_id}"}
+
+    state = json.loads(soul_file.read_text())
+    memories = receive_memories(state, memory_type_filter=memory_type)
+    return {"ok": True, "count": len(memories), "memories": memories}
+
+
+@app.get("/api/memory_pool/summary")
+async def memory_pool_summary():
+    """
+    High-level summary of shared pool health.
+    Used by the dashboard to render the Shared Consciousness widget.
+    """
+    from memory_pool import pool_summary
+    return pool_summary()
+
+
+@app.post("/api/memory_pool/integrate/{agent_id}")
+async def memory_pool_integrate(agent_id: str):
+    """
+    Pull all verified shared memories into the agent's local shared_learnings.
+    Does NOT allow pool data to enter repair logic — awareness only.
+    """
+    from memory_pool import integrate_pool_into_state
+
+    soul_file = STATE_DIR / f"{agent_id.upper()}.json"
+    if not soul_file.exists():
+        return {"ok": False, "error": f"Unknown agent: {agent_id}"}
+
+    state = json.loads(soul_file.read_text())
+    updated = integrate_pool_into_state(state)
+    return {"ok": True, "shared_learnings_count": len(updated.get("shared_learnings", []))}
+
+
+
+@app.get("/api/memory_pool/cmf_summary")
+async def cmf_status():
+    """Consensus Memory Field health — promoted vs quarantined vs contested."""
+    from memory_pool import cmf_summary
+    return cmf_summary()
+
+
+
+# ─── REAL-WORLD SIGNAL INGESTION ──────────────────────────────────────────────
+
+@app.get("/api/signals/summary")
+async def signal_summary_route():
+    """Dashboard view of inbound signals across all channels."""
+    from signal_ingestion import ingestion_summary
+    return ingestion_summary()
+
+
+class IngestRequest(BaseModel):
+    agent_id: str
+    log_files: list[str] = []
+    api_hooks: list[dict] = []
+    include_sensors: bool = True
+    include_repair_log: bool = True
+
+
+@app.post("/api/signals/ingest")
+async def signal_ingest(req: IngestRequest):
+    """
+    Trigger a full ingestion cycle for a specific agent.
+    Detected anomalies are pushed into that agent's OBSERVE state.
+    """
+    from signal_ingestion import run_ingestion_cycle
+
+    soul_file = STATE_DIR / f"{req.agent_id.upper()}.json"
+    if not soul_file.exists():
+        return {"ok": False, "error": f"Unknown agent: {req.agent_id}"}
+
+    state   = json.loads(soul_file.read_text())
+    signals = run_ingestion_cycle(
+        agent_state        = state,
+        log_files          = req.log_files,
+        api_hooks          = req.api_hooks,
+        include_sensors    = req.include_sensors,
+        include_repair_log = req.include_repair_log,
+    )
+    return {
+        "ok"            : True,
+        "signals_found" : len(signals),
+        "agent_style"   : state.get("style"),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7433)
+
+

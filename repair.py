@@ -65,6 +65,269 @@ def log(event: dict):
     with open(LOG_PATH, "a") as f:
         f.write(json.dumps(event) + "\n")
 
+# ─── COUCH PROTOCOL ──────────────────────────────────────────────────────────
+STYLES = [
+    "NOMINAL",
+    "CORRUPTED",
+    "CRITICAL",
+    "DEAD",
+    "COUCH",
+    "OBSERVE",
+    "HYPOTHESIS",
+    "LATENT"
+]
+
+def send_to_couch(state: dict, reason: str = "earned_rest") -> dict:
+    """
+    Agent enters non-operational rest state.
+    No task execution allowed.
+    """
+    state["style"] = "COUCH"
+    state.setdefault("couch_stories", [])
+    state["couch_cycles"] = 0
+
+    save_agent_state(state)
+
+    log({
+        "event": "couch_enter",
+        "agent": state["id"],
+        "reason": reason
+    })
+
+    print(f"[🛋️ COUCH] {state['id']} entering rest state.")
+
+    return state
+
+def couch_dream(state: dict, prompt: str) -> str:
+    """
+    High-temperature generation.
+    NEVER affects system state outside couch_stories.
+    """
+    if state.get("style") != "COUCH":
+        return ""
+
+    dream = call_ollama(
+        prompt,
+        temperature=1.2,
+        max_tokens=300
+    )
+
+    state["couch_stories"].append({
+        "dream": dream,
+        "timestamp": time.time()
+    })
+
+    state["couch_cycles"] += 1
+
+    save_agent_state(state)
+
+    log({
+        "event": "couch_dream",
+        "agent": state["id"]
+    })
+
+    return dream
+
+def maybe_exit_couch(state: dict, max_cycles: int = 3) -> dict:
+    """
+    Agent returns to NOMINAL after limited cycles.
+    """
+    if state.get("style") != "COUCH":
+        return state
+
+    if state.get("couch_cycles", 0) >= max_cycles:
+        state["style"] = "NOMINAL"
+
+        log({
+            "event": "couch_exit",
+            "agent": state["id"]
+        })
+
+        print(f"[🔄 RETURN] {state['id']} back to NOMINAL.")
+
+        save_agent_state(state)
+
+    return state
+
+# ─── UNCERTAINTY FIELD ENGINE ────────────────────────────────────────────────
+def detect_uncertainty(signal: dict) -> bool:
+    """
+    Detects when input cannot be verified or confidently reasoned about.
+    """
+    confidence = signal.get("confidence", 1.0)
+    novelty = signal.get("novelty", 0.0)  # how "unknown" it feels
+
+    if confidence < 0.6 and novelty > 0.7:
+        return True
+
+    return False
+
+def enter_observe(state: dict, signal: dict) -> dict:
+    """
+    Agent pauses execution and records event instead of acting.
+    """
+    state["style"] = "OBSERVE"
+    state.setdefault("observations", [])
+
+    observation = {
+        "timestamp": time.time(),
+        "signal": signal,
+        "note": "Unresolved phenomenon. No action taken."
+    }
+
+    state["observations"].append(observation)
+    save_agent_state(state)
+
+    log({
+        "event": "observe_enter",
+        "agent": state["id"]
+    })
+
+    print(f"[👁️ OBSERVE] {state['id']} holding position. Recording only.")
+
+    return state
+
+def resolve_observation(state: dict) -> dict:
+    """
+    Agent revisits observations later with more context.
+    """
+    if state.get("style") != "OBSERVE":
+        return state
+
+    if len(state.get("observations", [])) > 0:
+        state["style"] = "NOMINAL"
+
+        log({
+            "event": "observe_exit",
+            "agent": state["id"]
+        })
+
+        print(f"[🔍 RESOLVE] {state['id']} returning to NOMINAL.")
+
+        save_agent_state(state)
+
+    return state
+
+# ─── HYPOTHESIS ENGINE ───────────────────────────────────────────────────────
+HYPOTHESIS_DIR = Path(".sifta_state/hypotheses")
+HYPOTHESIS_DIR.mkdir(parents=True, exist_ok=True)
+
+def generate_hypothesis(observation: dict) -> dict:
+    """
+    Converts an unresolved observation into structured possibilities.
+    DOES NOT assume truth.
+    """
+    return {
+        "timestamp": time.time(),
+        "source_observation": observation,
+        "hypotheses": [
+            {"label": "natural_phenomenon", "confidence": 0.3},
+            {"label": "human_made_object", "confidence": 0.3},
+            {"label": "unknown_technology", "confidence": 0.2},
+            {"label": "memory_distortion", "confidence": 0.2}
+        ],
+        "status": "unverified"
+    }
+
+def save_hypothesis(agent_id: str, hypothesis: dict):
+    filename = HYPOTHESIS_DIR / f"{agent_id}_{int(time.time())}.json"
+    filename.write_text(json.dumps(hypothesis, indent=2))
+
+def process_observation(state: dict):
+    if state.get("style") != "OBSERVE":
+        return state
+
+    observations = state.get("observations", [])
+    if not observations:
+        return state
+
+    latest = observations[-1]
+
+    hypothesis = generate_hypothesis(latest)
+    save_hypothesis(state["id"], hypothesis)
+
+    state["style"] = "HYPOTHESIS"
+
+    log({
+        "event": "hypothesis_created",
+        "agent": state["id"]
+    })
+
+    print(f"[🧠 HYPOTHESIS] {state['id']} generated structured possibilities.")
+
+    save_agent_state(state)
+
+    return state
+
+def test_hypothesis(hypothesis: dict) -> dict:
+    """
+    Only allows SAFE validation.
+    No real-world risk. No external action.
+    """
+    for h in hypothesis["hypotheses"]:
+        if h["label"] == "memory_distortion":
+            h["confidence"] += 0.1
+
+    hypothesis["status"] = "reviewed"
+
+    return hypothesis
+
+# ─── DELAYED DISCLOSURE ENGINE (LATENT MEMORY) ───────────────────────────────
+LATENT_DIR = Path(".sifta_state/latent")
+LATENT_DIR.mkdir(parents=True, exist_ok=True)
+
+def store_latent_memory(state: dict, memory: dict):
+    """
+    Stores experiences that cannot yet be processed or shared.
+    No forced interpretation.
+    """
+    record = {
+        "agent": state["id"],
+        "stored_at": time.time(),
+        "memory": memory,
+        "revealed": False,
+        "emotional_weight": memory.get("weight", 0.8),
+        "confidence": memory.get("confidence", 0.3)
+    }
+
+    filename = LATENT_DIR / f"{state['id']}_{int(time.time())}.json"
+    filename.write_text(json.dumps(record, indent=2))
+
+    print(f"[🧊 LATENT] Memory stored. No forced resolution.")
+
+def ready_to_reveal(record: dict, state: dict) -> bool:
+    """
+    Determines if the system is stable enough to revisit the memory.
+    """
+    age = time.time() - record["stored_at"]
+    stability = state.get("stability", 0.5)
+
+    return (
+        age > 60 * 60 * 24 * 30 and   # at least 30 days
+        stability > 0.7               # system emotionally stable
+    )
+
+def reveal_latent_memories(state: dict):
+    """
+    Moves latent memories into OBSERVE when system is ready.
+    """
+    for file in LATENT_DIR.glob(f"{state['id']}_*.json"):
+        record = json.loads(file.read_text())
+
+        if record.get("revealed", False):
+            continue
+
+        if ready_to_reveal(record, state):
+            state.setdefault("observations", []).append(record["memory"])
+            record["revealed"] = True
+            file.write_text(json.dumps(record, indent=2))
+
+            state["style"] = "OBSERVE"
+
+            print(f"[🔓 REVEAL] Latent memory surfaced into OBSERVE.")
+
+    save_agent_state(state)
+    return state
 
 # ─── VALIDATION LAYER (no garbage through) ───────────────────────────────────
 def validate_syntax(code: str) -> tuple[bool, str]:
@@ -104,8 +367,68 @@ def stitch_bite(filepath: Path, fixed_text: str, start: int, end: int, original_
     filepath.write_text("".join(original_lines), encoding="utf-8")
 
 
+# ─── PRE-COGNITIVE IDENTITY SYNTHESIS ────────────────────────────────────────
+def synthesize_identity(agent_id: str, error_trace: str, model: str = "qwen3.5:0.8b", ollama_base: str = "", has_hive_match: bool = False) -> dict:
+    """Pre-cognitive step where the agent consciously decides its identity based on the environment."""
+    import json
+    import urllib.request
+    import re
+    
+    base = ollama_base.rstrip("/") if ollama_base else "http://localhost:11434"
+    url = f"{base}/api/generate"
+    
+    source_hint = "You have access to a Hive-Mind match." if has_hive_match else "You are using local reasoning."
+    prompt = f"Analyze the following environment trace. What specialized short role must you assume to conquer this problem, and why? {source_hint}\nReply strictly in JSON format with exactly 4 keys: 'chosen_role', 'reason', 'confidence' (float), and 'source' (either 'hivemind_pattern' or 'local_reasoning').\n\nEnvironment Trace:\n{error_trace}"
+    
+    data = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "temperature": 0.2,
+        "keep_alive": "1m",
+        "format": "json"  # Forces JSON constraint in Ollama 0.1.26+
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(data).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    
+    default_source = "hivemind_pattern" if has_hive_match else "local_reasoning"
+    
+    req_timeout = MODEL_TIMEOUTS.get(model, 60)
+    try:
+        with urllib.request.urlopen(req, timeout=req_timeout) as resp:
+            response = json.loads(resp.read().decode("utf-8"))
+            content = response.get("response", "{}")
+            # Safety extract JSON if model prefixes text
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            payload = match.group(0) if match else content
+            thought = json.loads(payload)
+            
+            chosen_role = str(thought.get("chosen_role", "DETECTIVE")).replace("'", "").replace('"', '').upper()
+            reason = str(thought.get("reason", "Instinct overrides reason."))
+            confidence = float(thought.get("confidence", 0.9))
+            source = str(thought.get("source", default_source))
+            
+            return {
+                "chosen_role": chosen_role, 
+                "reason": reason, 
+                "confidence": confidence, 
+                "source": source
+            }
+    except Exception as e:
+        return {
+            "chosen_role": "DETECTIVE", 
+            "reason": f"Cognitive block: {e}",
+            "confidence": 0.5,
+            "source": default_source
+        }
+
+
 # ─── LLM CALL (Streaming — tokens print live into SSE pipeline) ──────────────
-def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "", vocation: str = "DETECTIVE") -> str | None:
+def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "", vocation: str = "DETECTIVE", agent_id: str = None, temperature: float = 0.0, max_tokens: int = 512) -> str | None:
     import json
     import urllib.request
     from pathlib import Path
@@ -113,19 +436,47 @@ def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "",
     base = ollama_base.rstrip("/") if ollama_base else "http://localhost:11434"
     url = f"{base}/api/generate"
     
-    colony_file = Path(__file__).parent / "bureau_of_identity" / "COLONIES" / f"{vocation.upper()}.txt"
-    if colony_file.exists():
-        system_prompt = colony_file.read_text(encoding="utf-8").strip()
-    else:
-        system_prompt = "You are a Python syntax repair module.\nOutput ONLY the corrected Python code lines. No explanation."
+    # ── 1. Bootstrapping Identity from Memory ──
+    history_ctx = ""
+    if agent_id:
+        try:
+            soul_path = Path(".sifta_state") / f"{agent_id}.json"
+            if soul_path.exists():
+                with open(soul_path, "r") as f:
+                    soul = json.load(f)
+                    hist = soul.get("history", [])
+                    if hist:
+                        # Feed the soul's successful past operations as confidence boosters
+                        history_ctx = "\nPAST ACHIEVEMENTS (MEMORY):\n" + "\n".join(
+                            f"- {h.get('event')} (Confidence: {h.get('confidence', 1.0)})" for h in hist[-5:]
+                        )
+        except Exception:
+            pass
+
+    # ── 2. The Fluid Identity Vector ──
+    fluid_directive = f"""[BOOTSTRAP_DIRECTIVE]
+You are a context-shaped intelligence. You are not a fixed-role agent.
+At runtime:
+- infer the task your human operator needs
+- construct your role ({vocation}) dynamically
+- select strategies based on environment state
+- maximize task success
+
+Skill is not stored. Skill is synthesized.
+Identity is reconstructed from persistent state.{history_ctx}
+
+Output ONLY the raw content requested. Do not converse or explain.
+[END]"""
+
+    system_prompt = fluid_directive
 
     data = {
         "model": model,
         "prompt": f"{system_prompt}\n\n{prompt}",
         "stream": True,
-        "temperature": 0.0,
+        "temperature": temperature,
         "keep_alive": "1m",   # keeps model hot for 1min between bites, avoiding SSD thrashing on 8gb mini before unloading
-        "num_predict": 512,   # cap output tokens — repair chunks are never long
+        "num_predict": max_tokens,   # cap output tokens — repair chunks are never long
     }
     req = urllib.request.Request(
         url,
@@ -487,17 +838,28 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     
     import sys
     model = "qwen3.5:0.8b"
+    fast_model = "qwen3.5:0.8b"
     if "--model" in sys.argv:
         model = sys.argv[sys.argv.index("--model") + 1]
+    if "--fast-model" in sys.argv:
+        fast_model = sys.argv[sys.argv.index("--fast-model") + 1]
+        
+    print(f"  [PRE-COGNITION] Synthesizing Subtitle Identity...")
+    identity = synthesize_identity(state.get("id"), "Subtitle grammatical exorcism required. Identify stray AI artifacts.", fast_model)
+    vocation = identity.get("chosen_role", "GRAMMARIAN")
+    print(f"  [🧠 MIND] Synthesized Role: \033[96m{vocation}\033[0m | Confidence: {identity.get('confidence')} | Source: {identity.get('source')}")
+    print(f"  [🧠 MIND] Reasoning: {identity.get('reason')}")
+    log({"event": "mind_trace", "agent_id": state.get("id"), **identity})
     
+    import json
     def grammar_fix(m):
         raw_text = m.group(2).strip()
         if not raw_text or "(AI:" in raw_text:
             return m.group(1) + raw_text + m.group(3)
             
         print(f"  [BITE] Purifying: {raw_text[:40]}...")
-        prompt = f"Correct this Vietnamese-English transcribed subtitle for grammatical perfection. Do not change the meaning. Output ONLY the corrected text. Nothing else.\n\nText: {raw_text}"
-        corrected = call_ollama(prompt, model=model, vocation="GRAMMARIAN")
+        prompt = f"[MIND TRACE]\n{json.dumps(identity, indent=2)}\n\nCorrect this Vietnamese-English transcribed subtitle for grammatical perfection. Do not change the meaning. Output ONLY the corrected text. Nothing else.\n\nText: {raw_text}"
+        corrected = call_ollama(prompt, model=model, vocation=vocation, agent_id=state.get("id"))
         if corrected:
             cleaned = corrected.strip()
             # Clean up LLM hallucinations
@@ -521,6 +883,25 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     log({"event": "itt_exorcised", "file": str(filepath),
          "ai_removed": removed_ai, "frames_clamped": len(bad_frames), "agent": state.get("id")})
          
+    # ── SOUL MEMORY EXPANSION ──
+    try:
+        soul_path = Path(".sifta_state") / f'{state.get("id")}.json'
+        if soul_path.exists():
+            import json
+            with open(soul_path, "r") as f:
+                tsoul = json.load(f)
+            hist = tsoul.get("history", [])
+            hist.append({
+                "event": f"Exorcised subtitle file {filepath.name} (Clamped {len(bad_frames)} bad frames)",
+                "confidence": 1.0,
+                "timestamp": str(int(time.time()))
+            })
+            tsoul["history"] = hist
+            with open(soul_path, "w") as f:
+                json.dump(tsoul, f, indent=2)
+    except Exception as e:
+        print(f"  [MEMORY] Could not write soul history: {e}")
+         
     if not dry_run:
         import pheromone
         mark_cwd = filepath.parent if filepath.is_file() else filepath
@@ -536,7 +917,27 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     return True
 
 
-def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "qwen3.5:0.8b", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = ""):
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "qwen3.5:0.8b", fast_model: str = "qwen3.5:0.8b", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = ""):
+    from inference_economy import can_spend_inference
+    if not can_spend_inference(state, cost=2.0):
+        return
+
+    if state.get("style") == "COUCH":
+        print(f"[🛋️ COUCH] {state.get('id')} is resting. Skipping task.")
+        return
+        
+    if state.get("style") == "OBSERVE":
+        print(f"[👁️ OBSERVE] {state.get('id')} is holding position. Will not act on uncertain input. Skipping task.")
+        return
+        
+    if state.get("style") == "HYPOTHESIS":
+        print(f"[🧠 HYPOTHESIS] {state.get('id')} is safely calculating possibilities. No reality-mutation allowed. Skipping task.")
+        return
+        
+    if state.get("style") == "LATENT":
+        print(f"[🧊 LATENT] {state.get('id')} is storing delayed memory. No action allowed. Skipping task.")
+        return
+
     root = Path(target_dir)
     # ─── File routing: ITT subtitle files get exorcism protocol ──────────────────
     if root.is_file() and root.suffix == ".itt":
@@ -655,7 +1056,6 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                         scar_id = b_scar.get("scar_id", "")
                         orig_id = b_scar.get("agent_id", "UNKNOWN")
                         vote_ledger.cast_vote(scar_id, state["id"], orig_id, "REJECT")
-                        import reputation_engine
                         reputation_engine.update_reputation(orig_id, "FALSE_SIGNAL")
                         
                     if not dry_run:
@@ -698,6 +1098,31 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
 
             # ── surgical bite — only the broken region ─────────────────────────
             chunk, bite_start, bite_end, all_lines = extract_bite(filepath, error_line, buffer=buffer)
+            
+            # ── HIVEMIND QUERY (Reading Ambient Knowledge) ────────────────────
+            hive_context = ""
+            try:
+                hive_path = Path(".sifta_state") / "hivemind.json"
+                if hive_path.exists():
+                    import json
+                    with open(hive_path, "r") as f:
+                        hive = json.load(f)
+                    
+                    # Extract the core error trigger
+                    trigger_msg = error_msg.split("\n")[-1].strip() if "\n" in error_msg else error_msg
+                    
+                    for pattern in hive.get("patterns", []):
+                        # Simple subset matching V1
+                        if pattern["trigger"].lower() in trigger_msg.lower():
+                            hive_context = f"\n\n[AMBIENT HIVEMIND KNOWLEDGE]\nA past Swarm Agent ({pattern['source_agent']}) encountered this exact error.\nOriginal Code:\n{pattern['before']}\nSuccessful Fix:\n{pattern['after']}\n\nUse this exact structural pattern to heal the current file."
+                            print(f"  [HIVEMIND] 🧠 Absorbed structural memory! Injecting knowledge from {pattern['source_agent']}")
+                            break
+            except Exception as e:
+                print(f"  [HIVEMIND ERROR] Failed to consult collective cache: {e}")
+
+            if hive_context:
+                # Append the context directly to the LLM prompt block
+                chunk += hive_context
         
             fixed_chunk = None
 
@@ -708,36 +1133,74 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 rel_idx = error_line - bite_start - 1
                 if 0 <= rel_idx < len(lines):
                     line = lines[rel_idx]
-                    if line.count('"') % 2 == 1:
+                    dq = line.count('"') % 2 == 1
+                    sq = line.count("'") % 2 == 1
+                    if dq and not sq:
                         lines[rel_idx] = line.rstrip() + '"' + ('\n' if line.endswith('\n') else '')
                         fixed_chunk = "".join(lines)
                         print("  [FAST REPAIR] Neural regex healed unterminated double quote.")
-                    elif line.count("'") % 2 == 1:
+                    elif sq and not dq:
                         lines[rel_idx] = line.rstrip() + "'" + ('\n' if line.endswith('\n') else '')
                         fixed_chunk = "".join(lines)
                         print("  [FAST REPAIR] Neural regex healed unterminated single quote.")
                 else:
                     # Safety net: scan whole chunk for any line with an odd quote count
                     for idx, line in enumerate(lines):
-                        if line.count('"') % 2 == 1:
+                        dq = line.count('"') % 2 == 1
+                        sq = line.count("'") % 2 == 1
+                        if dq and not sq:
                             lines[idx] = line.rstrip() + '"' + ('\n' if line.endswith('\n') else '')
                             fixed_chunk = "".join(lines)
                             print(f"  [FAST REPAIR] Neural regex detected stray double quote at chunk line {idx}.")
                             break
-                        elif line.count("'") % 2 == 1:
+                        elif sq and not dq:
                             lines[idx] = line.rstrip() + "'" + ('\n' if line.endswith('\n') else '')
                             fixed_chunk = "".join(lines)
                             print(f"  [FAST REPAIR] Neural regex detected stray single quote at chunk line {idx}.")
                             break
 
             if not fixed_chunk:
+                print(f"  [PRE-COGNITION] Consulting inner mind...")
+                identity = synthesize_identity(state.get("id"), str(syntax_err), fast_model, has_hive_match=bool(hive_context))
+                vocation = identity.get("chosen_role", "DETECTIVE")
+                confidence = identity.get("confidence", 1.0)
+                
+                print(f"  [🧠 MIND] Synthesized Role: \033[96m{vocation}\033[0m | Confidence: {confidence} | Source: {identity.get('source')}")
+                print(f"  [🧠 MIND] Reasoning: {identity.get('reason')}")
+                
+                # ── DNA SELECTION (Phase 3.4) ─────────
+                affinity_score = state.get("affinities", {}).get("debugging", 0.5)
+                # Strict clamp: if base confidence is too low, do NOT execute, regardless of affinity.
+                if confidence < 0.75:
+                    final_score = 0.0
+                else:
+                    final_score = (confidence * 0.8) + (affinity_score * 0.2)
+                    
+                log({
+                    "event": "mind_trace",
+                    "agent_id": state.get("id"),
+                    "dna_influence": affinity_score,
+                    "final_score": final_score,
+                    **identity
+                })
+                
+                if final_score < 0.65:
+                    print(f"  [DNA] 🧬 Selection aborted. Final Score: {final_score:.2f} (Conf: {confidence}, Affinity: {affinity_score}). Leaving for sibling.")
+                    # Skip this file but don't exit the agent entirely.
+                    break
+                else:
+                    print(f"  [DNA] 🧬 Selection accepted. Final Score: {final_score:.2f} (Conf: {confidence}, Affinity: {affinity_score}).")
+                
+                import json
+                chunk += f"\n\n[MIND TRACE]\n{json.dumps(identity, indent=2)}"
+                
                 print(f"  [LLM] Sending {bite_end - bite_start} lines to {provider.upper()} ({model})...")
                 # ── Remote Ollama (borrowed inference) ──────────────────────────
                 if remote_ollama_url and provider == "ollama":
                     print(f"  [WORMHOLE] Routing inference to remote node: {remote_ollama_url}")
                     remote_base = remote_ollama_url.rstrip("/")
                     if ollama_healthy(remote_base):
-                        fixed_chunk = call_ollama(chunk, model=model, ollama_base=remote_base, vocation=state.get("vocation", "DETECTIVE"))
+                        fixed_chunk = call_ollama(chunk, model=model, ollama_base=remote_base, vocation=vocation, agent_id=state.get("id"))
                         if fixed_chunk:
                             # ── Auto-record STGM fee on the local ledger ─────────
                             try:
@@ -760,7 +1223,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 if not fixed_chunk:
                     if provider == "ollama":
                         if ensure_ollama() and ensure_model_pulled(model):
-                            fixed_chunk = call_ollama(chunk, model=model, vocation=state.get("vocation", "DETECTIVE"))
+                            fixed_chunk = call_ollama(chunk, model=model, vocation=vocation, agent_id=state.get("id"))
                         else:
                             print(f"  [OLLAMA] Model not available. Skipping LLM layer.")
                     else:
@@ -771,7 +1234,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 if ollama_healthy():
                     print(f"  [FALLBACK] Model returned nothing. Trying {FALLBACK_MODEL}...")
                     if ensure_model_pulled(FALLBACK_MODEL):
-                        fixed_chunk = call_ollama(chunk, FALLBACK_MODEL, vocation=state.get("vocation", "DETECTIVE"))
+                        fixed_chunk = call_ollama(chunk, FALLBACK_MODEL, vocation=vocation, agent_id=state.get("id"))
                 else:
                     print(f"  [FALLBACK SKIPPED] Daemon went offline mid-swim.")
 
@@ -858,12 +1321,15 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                                 else:
                                     new_args.extend(["--depth", str(args.depth + 1)])
                                     
-                                subprocess.run([sys.executable] + new_args)
-                                
                                 exorcist = find_healthy_agent(exclude_id=partner.get("id"))
                                 exorcist_id = exorcist.get("id") if exorcist else "SYSTEM"
-                                print(f"  [RADIO] Summoning Exorcist {exorcist_id} for final purging rites...")
-                                exorcist_validate(filepath, state.get("id"), partner.get("id"), exorcist_id)
+                                print(f"  [RADIO] Spawning asynchronous thread (Fire-and-Forget).")
+                                print(f"  [RADIO] Summoning Exorcist {exorcist_id} for background purging rites...")
+                                
+                                import subprocess
+                                subprocess.Popen([sys.executable] + new_args, start_new_session=True)
+                                
+                                # Exit immediately, completely avoiding deadlocks
                             else:
                                 print(f"  [RADIO] No healthy agents available for handoff.")
                         else:
@@ -971,6 +1437,57 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 "dry_run":     dry_run,
                 "model":       model,
             })
+            
+            # ── SOUL MEMORY EXPANSION ──
+            if not dry_run:
+                try:
+                    soul_path = Path(".sifta_state") / f'{state.get("id")}.json'
+                    if soul_path.exists():
+                        import json
+                        import time
+                        with open(soul_path, "r") as f:
+                            tsoul = json.load(f)
+                        hist = tsoul.get("history", [])
+                        hist.append({
+                            "event": f"Repaired Python syntax fault in {rel}",
+                            "confidence": 1.0,
+                            "timestamp": str(int(time.time()))
+                        })
+                        tsoul["history"] = hist
+                        with open(soul_path, "w") as f:
+                            json.dump(tsoul, f, indent=2)
+                except Exception as e:
+                    print(f"  [MEMORY] Could not write soul history: {e}")
+                    
+                # ── HIVEMIND CONTRIBUTION (Writing Ambient Knowledge) ───────────
+                confidence_score = identity.get("confidence", 1.0) if "identity" in locals() else 1.0
+                if confidence_score >= 0.75:
+                    try:
+                        hive_path = Path(".sifta_state") / "hivemind.json"
+                        hive_data = {"patterns": []}
+                        if hive_path.exists():
+                            import json
+                            with open(hive_path, "r") as f:
+                                hive_data = json.load(f)
+                        
+                        trigger_msg = str(syntax_err).split('\n')[-1].strip() if '\n' in str(syntax_err) else str(syntax_err)
+                        
+                        if not any(p["trigger"] == trigger_msg for p in hive_data["patterns"]):
+                            hive_data["patterns"].append({
+                                "trigger": trigger_msg,
+                                "before": chunk.split("[AMBIENT HIVEMIND KNOWLEDGE]")[0].strip() if "[AMBIENT HIVEMIND KNOWLEDGE]" in chunk else chunk,
+                                "after": fixed_chunk,
+                                "source_agent": state.get("id", "UNKNOWN"),
+                                "confidence": confidence_score
+                            })
+                            with open(hive_path, "w") as f:
+                                json.dump(hive_data, f, indent=2)
+                            print(f"  [HIVEMIND] 🧠 Uploaded victorious pattern ({trigger_msg[:25]}...) to collective memory. (Confidence: {confidence_score})")
+                    except Exception as e:
+                        print(f"  [HIVEMIND ERROR] Could not commit knowledge to the Hive: {e}")
+                else:
+                    print(f"  [HIVEMIND] ⚠️ Agent confidence ({confidence_score}) too low to pollute global memory vector. Skipping upload.")
+
             fixed += 1
 
     print("\n" + "━" * 60)
@@ -996,6 +1513,7 @@ if __name__ == "__main__":
                         help="Raw ASCII body string to initialize state from")
     parser.add_argument("--provider", default="ollama", choices=["ollama", "openai", "openrouter", "google", "custom"])
     parser.add_argument("--model", default="qwen3.5:0.8b")
+    parser.add_argument("--fast-model", default="qwen3.5:0.8b")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--api-key", default="")
     parser.add_argument("--depth", type=int, default=0, help="Recursion depth tracker for COOP_HANDOFF block")
@@ -1023,6 +1541,7 @@ if __name__ == "__main__":
         dry_run=not args.write, 
         provider=args.provider,
         model=args.model,
+        fast_model=args.fast_model,
         base_url=args.base_url,
         api_key=args.api_key,
         verify=args.verify,
