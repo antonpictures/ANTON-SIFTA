@@ -41,9 +41,10 @@ def extract_context(error_message: str) -> str:
         return "INDENT"
     return "UNKNOWN"
 
-def generate_event_id(filepath: str, line: int, error: str) -> str:
-    """Hashes the unique physical footprint of a fault event."""
-    raw = f"{filepath}:{line}:{error}"
+def generate_event_id(filepath: str, code_snippet: str, error: str) -> str:
+    """Hashes the unique physical structural footprint of a fault event."""
+    normalized = code_snippet.strip()
+    raw = f"{filepath}:{normalized}:{error}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 def register_event_resolution(event_id: str, agent_id: str) -> bool:
@@ -104,6 +105,21 @@ def get_identity_score(identity: str, context: str) -> float:
         return 0.5
 
     return float(stats["success"] / total)
+
+def is_novel_context(identity: str, context: str) -> bool:
+    """Returns True if the identity has never been attempted in this context before."""
+    if not identity:
+        return False
+        
+    identity = identity.upper().strip()
+    key = f"{identity}:{context}"
+    data = _load_json(STATS_FILE)
+    
+    stats = data.get(key, None)
+    if not stats:
+        return True
+        
+    return (stats["success"] + stats["fail"]) == 0
 
 def decay_identity_scores():
     """

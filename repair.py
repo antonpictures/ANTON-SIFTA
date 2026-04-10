@@ -1194,12 +1194,16 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                 import identity_feedback
                 fault_context = identity_feedback.extract_context(str(syntax_err))
                 vocation_score = identity_feedback.get_identity_score(vocation, fault_context)
+                is_novel = identity_feedback.is_novel_context(vocation, fault_context)
+                exploration_bonus = 0.1 if is_novel else 0.0
                 
                 # Strict clamp: if base confidence is too low, do NOT execute, regardless of affinity.
                 if confidence < 0.75:
                     final_score = 0.0
                 else:
-                    final_score = (confidence * 0.6) + (affinity_score * 0.2) + (vocation_score * 0.2)
+                    final_score = (confidence * 0.5) + (affinity_score * 0.2) + (vocation_score * 0.2) + exploration_bonus
+                    if is_novel:
+                        print(f"  [⚡ EXPLORATION BONUS] +0.1 DNA applied to uncharted identity: {vocation}")
                     
                 log({
                     "event": "mind_trace",
@@ -1308,7 +1312,8 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             # ── IDENTITY FEEDBACK RECORD ─────────────────────────────────────
             import identity_feedback
             fault_context = identity_feedback.extract_context(str(syntax_err))
-            event_id = identity_feedback.generate_event_id(str(filepath), error_line, str(syntax_err))
+            code_snippet = "".join(all_lines[bite_start:bite_end])
+            event_id = identity_feedback.generate_event_id(str(filepath), code_snippet, str(syntax_err))
             identity_feedback.record_identity_outcome(vocation, fault_context, repaired_ok, event_id, state["id"])
 
             if not repaired_ok:
