@@ -30,11 +30,11 @@ from body_state import SwarmBody, parse_body_state, apply_damage, bury, find_hea
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 OLLAMA_URL    = "http://localhost:11434/api/generate"
-REPAIR_MODEL = "qwen3.5:0.8b"
-FALLBACK_MODEL = "qwen3.5:4b"
+REPAIR_MODEL = "gemma4:latest"
+FALLBACK_MODEL = "gemma4:latest"
 LOG_PATH     = Path(__file__).parent / "repair_log.jsonl"
 LOCAL_SERVER_URL = "http://localhost:7433"  # For fee reporting
-MODEL_TIMEOUTS = {"qwen3.5:0.8b": 30, "qwen3.5:4b": 90, "deepseek-coder:6.7b": 120, "gemma4:latest": 120}
+MODEL_TIMEOUTS = {"gemma4:latest": 30, "gemma4:latest": 90, "deepseek-coder:6.7b": 120, "gemma4:latest": 120}
 
 SURGICAL_PROMPT = """\
 Fix the Python syntax error.
@@ -368,7 +368,7 @@ def stitch_bite(filepath: Path, fixed_text: str, start: int, end: int, original_
 
 
 # ─── PRE-COGNITIVE IDENTITY SYNTHESIS ────────────────────────────────────────
-def synthesize_identity(agent_id: str, error_trace: str, model: str = "qwen3.5:0.8b", ollama_base: str = "", has_hive_match: bool = False) -> dict:
+def synthesize_identity(agent_id: str, error_trace: str, model: str = "gemma4:latest", ollama_base: str = "", has_hive_match: bool = False) -> dict:
     """Pre-cognitive step where the agent consciously decides its identity based on the environment."""
     import json
     import urllib.request
@@ -428,7 +428,7 @@ def synthesize_identity(agent_id: str, error_trace: str, model: str = "qwen3.5:0
 
 
 # ─── LLM CALL (Streaming — tokens print live into SSE pipeline) ──────────────
-def call_ollama(prompt: str, model: str = "qwen3.5:0.8b", ollama_base: str = "", vocation: str = "DETECTIVE", agent_id: str = None, temperature: float = 0.0, max_tokens: int = 512) -> str | None:
+def call_ollama(prompt: str, model: str = "gemma4:latest", ollama_base: str = "", vocation: str = "DETECTIVE", agent_id: str = None, temperature: float = 0.0, max_tokens: int = 512) -> str | None:
     import json
     import urllib.request
     from pathlib import Path
@@ -837,8 +837,8 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     print(f"  [LLM] Waking Grammarian to purify {len(paragraphs)} dialogue blocks...")
     
     import sys
-    model = "qwen3.5:0.8b"
-    fast_model = "qwen3.5:0.8b"
+    model = "gemma4:latest"
+    fast_model = "gemma4:latest"
     if "--model" in sys.argv:
         model = sys.argv[sys.argv.index("--model") + 1]
     if "--fast-model" in sys.argv:
@@ -917,7 +917,7 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     return True
 
 
-def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "qwen3.5:0.8b", fast_model: str = "qwen3.5:0.8b", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = ""):
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = ""):
     from inference_economy import can_spend_inference
     if not can_spend_inference(state, cost=2.0):
         return
@@ -1080,6 +1080,10 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             error_line = int(line_match.group(1)) if line_match else 1
             print(f"  [FAULT] {syntax_err}")
             
+            # ── FAULT MAP INTEGRATION (SPATIAL AWARENESS) ────────────────────────
+            import fault_map
+            fault_map.record_fault(str(filepath), error_line, state["id"], str(syntax_err))
+            
             # Sub-routing: the agent confirmed the fault visually. Auto-vote CONFIRM.
             if pass_num == 0:
                 for b_scar in file_bleeding_scars:
@@ -1087,14 +1091,30 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
                     orig_id = b_scar.get("agent_id", "UNKNOWN")
                     vote_ledger.cast_vote(scar_id, state["id"], orig_id, "CONFIRM")
             
-            # DYNAMIC BITE SIZING
-            error_msg = str(syntax_err).lower()
-            if "indent" in error_msg or "block" in error_msg:
-                buffer = 25
-                print(f"  [BITE] Structural error detected. Widening jaw for context ({buffer*2} lines)...")
+            override_active = False
+            if fault_map.detect_stagnation(str(filepath)):
+                print(f"  [⚠️ STAGNATION DETECTED] Swarm is stuck in a local recursive loop.")
+                print(f"  [🔓 SURGICAL OVERRIDE] Escalating to FULL STRUCTURAL REPAIR.")
+                override_active = True
+                
+            if override_active:
+                buffer = 50  # 100-line context window, massive escalation
+                state["style"] = "SURGICAL_OVERRIDE"
             else:
-                buffer = 10
-                print(f"  [BITE] Localized syntax fault. Tightening jaw ({buffer*2} lines)...")
+                zone = fault_map.get_priority_zone(str(filepath))
+                if zone and len(zone) > 1:
+                    error_line = sum(zone) // len(zone)
+                    print(f"  [🗺️ MAP] Converging on cluster (lines {min(zone)}–{max(zone)}). Targeting center of gravity: {error_line}")
+                
+                # DYNAMIC BITE SIZING
+                error_msg = str(syntax_err).lower()
+                if "indent" in error_msg or "block" in error_msg:
+                    buffer = 25
+                    print(f"  [BITE] Structural error detected. Widening jaw for context ({buffer*2} lines)...")
+                else:
+                    buffer = 10
+                    print(f"  [BITE] Localized syntax fault. Tightening jaw ({buffer*2} lines)...")
+
 
             # ── surgical bite — only the broken region ─────────────────────────
             chunk, bite_start, bite_end, all_lines = extract_bite(filepath, error_line, buffer=buffer)
@@ -1512,8 +1532,8 @@ if __name__ == "__main__":
     parser.add_argument("--body", type=str, default="",
                         help="Raw ASCII body string to initialize state from")
     parser.add_argument("--provider", default="ollama", choices=["ollama", "openai", "openrouter", "google", "custom"])
-    parser.add_argument("--model", default="qwen3.5:0.8b")
-    parser.add_argument("--fast-model", default="qwen3.5:0.8b")
+    parser.add_argument("--model", default="gemma4:latest")
+    parser.add_argument("--fast-model", default="gemma4:latest")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--api-key", default="")
     parser.add_argument("--depth", type=int, default=0, help="Recursion depth tracker for COOP_HANDOFF block")
