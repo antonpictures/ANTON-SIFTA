@@ -20,6 +20,8 @@ def init_quorum_db():
             proposal_id TEXT,
             agent_id TEXT,
             vote_type TEXT,
+            signature TEXT,
+            payload_json TEXT,
             timestamp REAL,
             UNIQUE(proposal_id, agent_id)
         )
@@ -35,14 +37,24 @@ def cast_vote(proposal_id: str, agent_id: str, vote_type: str):
     if vote_type not in ("APPROVE", "REJECT"):
         raise ValueError("Vote type must be APPROVE or REJECT.")
 
+    import sifta_quorum_crypto
+    import json
+    
+    # Generate cryptographic signature wrapper
+    signed_vote = sifta_quorum_crypto.sign_vote(agent_id, proposal_id, vote_type)
+    signature = signed_vote["signature"]
+    payload_json = json.dumps(signed_vote["payload"])
+
     with _conn() as conn:
         conn.execute("""
-        INSERT INTO quorum_votes (proposal_id, agent_id, vote_type, timestamp)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO quorum_votes (proposal_id, agent_id, vote_type, signature, payload_json, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(proposal_id, agent_id) DO UPDATE SET 
             vote_type=excluded.vote_type,
+            signature=excluded.signature,
+            payload_json=excluded.payload_json,
             timestamp=excluded.timestamp
-        """, (proposal_id, agent_id, vote_type, time.time()))
+        """, (proposal_id, agent_id, vote_type, signature, payload_json, time.time()))
         conn.commit()
 
 
@@ -55,12 +67,26 @@ def get_quorum_score(proposal_id: str) -> dict:
     approvers = 0
     rejecters = 0
 
+    from sifta_quorum_crypto import verify_vote, get_pubkey
+    import json
+
     with _conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT agent_id, vote_type FROM quorum_votes WHERE proposal_id=?", (proposal_id,))
+        cur.execute("SELECT agent_id, vote_type, signature, payload_json FROM quorum_votes WHERE proposal_id=?", (proposal_id,))
         rows = cur.fetchall()
 
-    for agent_id, vote_type in rows:
+    for agent_id, vote_type, signature, payload_json in rows:
+        # Cryptographic Re-verification
+        signed_vote_obj = {
+            "signature": signature,
+            "payload": json.loads(payload_json)
+        }
+        
+        # Immediate hard rejection of spoofed votes
+        if not verify_vote(signed_vote_obj, get_pubkey(agent_id)):
+            print(f"  [🚨 CRYPTO-BREACH] Rejected mathematically invalid signature from {agent_id} on proposal {proposal_id[:8]}!")
+            continue
+
         trust = get_trust_score(agent_id)
         if vote_type == "APPROVE":
             total_trust += trust
