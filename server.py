@@ -46,11 +46,14 @@ class MessengerRequest(BaseModel):
 app = FastAPI(title="ANTON-SIFTA Command Interface")
 
 import sifta_swarm_identity
+import sifta_trust_graph
 try:
     sifta_swarm_identity.start_identity_watchdog(interval=5.0)
     print("[*] SIFTA Continuous Integrity Watchdog booted.")
+    sifta_trust_graph.init_trust_graph()
+    print("[*] SIFTA Relational Trust Graph initialized.")
 except Exception as e:
-    print(f"[!] Warning: Could not boot watchdog: {e}")
+    print(f"[!] Warning: Could not boot kernel daemon: {e}")
 
 @app.get("/messenger/thread")
 async def get_messenger_thread(limit: int = 100):

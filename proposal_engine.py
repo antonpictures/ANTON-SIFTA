@@ -225,8 +225,13 @@ def approve_proposal(proposal_id: str) -> dict:
     except Exception as e:
         print(f"  [SCAR] Could not drop approval scar: {e}")
 
-    # Reputation boost
+    # Reputation boost & Trust network mapping
     reputation_engine.update_reputation(proposal["agent_id"], "SUCCESS")
+    try:
+        from sifta_trust_graph import reward_interaction
+        reward_interaction(proposal["agent_id"], "ARCHITECT")
+    except Exception:
+        pass
 
     print(f"  [✅ APPROVED] Proposal {proposal_id[:8]}... applied to {filepath.name}")
     return proposal
@@ -255,10 +260,15 @@ def reject_proposal(proposal_id: str, reason: str = "Rejected by operator") -> d
         json.dump(proposal, f, indent=2)
     source.unlink()
 
-    # Reputation penalty for rejected work
+    # Penalty and Trust degradation
     reputation_engine.update_reputation(proposal["agent_id"], "FAILURE")
+    try:
+        from sifta_trust_graph import punish_interaction
+        punish_interaction(proposal["agent_id"], "ARCHITECT")
+    except Exception:
+        pass
 
-    print(f"  [❌ REJECTED] Proposal {proposal_id[:8]}... — Reason: {reason}")
+    print(f"  [❌ REJECTED] Proposal {proposal_id[:8]}... discarded. Reason: {reason}")
     return proposal
 
 

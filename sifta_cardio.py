@@ -101,10 +101,11 @@ def lock_and_retrieve_task():
     rows = cursor.fetchall()
     
     if rows:
+        from sifta_trust_graph import get_trust_score
         def _get_rep(row):
             reg = INTENT_REGISTRY.get(row[3], {})
             agt = reg.get(row[1], {}).get("agent_id", "UNKNOWN")
-            return reputation_engine.get_reputation(agt)["score"] if agt != "UNKNOWN" else 0.5
+            return get_trust_score(agt) if agt != "UNKNOWN" else 0.5
             
         rows.sort(key=_get_rep, reverse=True)
         task_id, intent, payload, reg_ver = rows[0]
