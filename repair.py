@@ -65,7 +65,32 @@ REPAIR_MODEL = "gemma4:latest"
 FALLBACK_MODEL = "gemma4:latest"
 LOG_PATH     = Path(__file__).parent / "repair_log.jsonl"
 LOCAL_SERVER_URL = "http://localhost:7433"  # For fee reporting
-MODEL_TIMEOUTS = {"gemma4:latest": 30, "gemma4:latest": 90, "deepseek-coder:6.7b": 120, "gemma4:latest": 120}
+
+def _build_model_timeouts() -> dict:
+    """Dynamically compute timeouts based on model size from Ollama.
+    Reasoning models (phi, deepseek-r, qwq, rnj) get extra headroom.
+    Falls back gracefully if Ollama is unreachable."""
+    import urllib.request, json as _json
+    base = __import__('os').environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    timeouts = {}
+    try:
+        with urllib.request.urlopen(f"{base}/api/tags", timeout=3) as r:
+            data = _json.loads(r.read())
+            for m in data.get("models", []):
+                name = m["name"]
+                size_gb = m.get("size", 0) / 1e9
+                # Base: 30s per GB, min 60s, max 600s
+                t = max(60, min(600, int(size_gb * 30)))
+                # Reasoning models need more headroom for chain-of-thought
+                reasoning_tags = ("phi", "deepseek-r", "qwq", "rnj", "reasoning", "think")
+                if any(tag in name.lower() for tag in reasoning_tags):
+                    t = min(600, t * 2)
+                timeouts[name] = t
+    except Exception:
+        pass  # Use defaults if Ollama unreachable
+    return timeouts
+
+MODEL_TIMEOUTS = _build_model_timeouts()
 
 SURGICAL_PROMPT = """\
 Fix the Python syntax error.
