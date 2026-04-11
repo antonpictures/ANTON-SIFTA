@@ -84,6 +84,17 @@ def punish_interaction(proposer: str, rejector: str):
     update_trust(rejector, proposer, -0.08)
 
 
+def handshake(agent_a: str, agent_b: str) -> dict:
+    """Explicitly logs a cooperative greeting and relational score."""
+    return {
+        "type": "HANDSHAKE",
+        "from": agent_a,
+        "to": agent_b,
+        "timestamp": time.time(),
+        "trust": get_trust_score(agent_b)
+    }
+
+
 # --- DEBUG ---
 
 if __name__ == "__main__":

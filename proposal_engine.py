@@ -29,12 +29,13 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
 PROPOSALS_DIR = ROOT_DIR / "proposals"
+QUORUM_DRAFT_DIR = PROPOSALS_DIR / "drafts"
 PENDING_DIR = PROPOSALS_DIR / "pending"
 APPROVED_DIR = PROPOSALS_DIR / "approved"
 REJECTED_DIR = PROPOSALS_DIR / "rejected"
 
 # Ensure directory structure exists
-for d in (PENDING_DIR, APPROVED_DIR, REJECTED_DIR):
+for d in (QUORUM_DRAFT_DIR, PENDING_DIR, APPROVED_DIR, REJECTED_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -96,7 +97,7 @@ def write_proposal(
 
     proposal = {
         "proposal_id": proposal_id,
-        "status": "PENDING",
+        "status": "DRAFT",  # GEN6 modification: goes to draft until BFT Quorum
         "created_at": time.time(),
         "filepath": str(filepath.absolute()),
         "filename": filepath.name,
@@ -119,7 +120,7 @@ def write_proposal(
     except:
         pass
         
-    proposal_path = PENDING_DIR / f"{proposal_id}.proposal.json"
+    proposal_path = QUORUM_DRAFT_DIR / f"{proposal_id}.proposal.json"
     tmp_path = proposal_path.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(proposal, f, indent=2)
@@ -135,6 +136,7 @@ def list_proposals(status: str = "PENDING") -> list[dict]:
     """List all proposals with a given status."""
     status = status.upper()
     dir_map = {
+        "DRAFT": QUORUM_DRAFT_DIR,
         "PENDING": PENDING_DIR,
         "APPROVED": APPROVED_DIR,
         "REJECTED": REJECTED_DIR,
@@ -156,12 +158,40 @@ def list_proposals(status: str = "PENDING") -> list[dict]:
 
 def get_proposal(proposal_id: str) -> "dict | None":
     """Find a proposal by ID across all status directories."""
-    for d in (PENDING_DIR, APPROVED_DIR, REJECTED_DIR):
+    for d in (QUORUM_DRAFT_DIR, PENDING_DIR, APPROVED_DIR, REJECTED_DIR):
         path = d / f"{proposal_id}.proposal.json"
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
     return None
+
+
+def promote_to_pending(proposal_id: str) -> bool:
+    """
+    Evaluates Trust Quorum. If consensus met, promotes DRAFT to PENDING.
+    """
+    import sifta_quorum
+    if not sifta_quorum.check_consensus(proposal_id):
+        return False
+        
+    source = QUORUM_DRAFT_DIR / f"{proposal_id}.proposal.json"
+    if not source.exists():
+        return False
+        
+    with open(source, "r", encoding="utf-8") as f:
+        proposal = json.load(f)
+        
+    proposal["status"] = "PENDING"
+    
+    dest = PENDING_DIR / f"{proposal_id}.proposal.json"
+    tmp_path = dest.with_suffix(".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(proposal, f, indent=2)
+    os.replace(tmp_path, dest)
+    source.unlink()
+    
+    print(f"  [🔓 QUORUM MET] Proposal {proposal_id[:8]}... promoted to PENDING for human review.")
+    return True
 
 
 def approve_proposal(proposal_id: str) -> dict:
