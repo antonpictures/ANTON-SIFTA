@@ -59,6 +59,12 @@ def drop_scar(filepath: Path, line_number: int, error_msg: str):
         "status": "OPEN_WOUND"
     }
     
+    import sifta_identity_context
+    try:
+        scar_payload = sifta_identity_context.inject_identity(scar_payload)
+    except:
+        pass
+        
     scar_path = LEDGER_DIR / f"{scar_id}.scar"
     if not scar_path.exists():
         with open(scar_path, "w") as f:

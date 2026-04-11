@@ -31,6 +31,16 @@ def record_event(event_type: str, component: str, details: str):
     Records an event into the audit ledger. 
     Examples: POLICY_BYPASS, STATE_RECOVERY, FATAL_CRASH
     """
+    import json
+    payload = {"raw_details": details}
+    try:
+        payload = json.loads(details) if details.startswith("{") else payload
+        import sifta_identity_context
+        payload = sifta_identity_context.inject_identity(payload)
+        details = json.dumps(payload)
+    except Exception:
+        pass
+
     try:
         conn = sqlite3.connect(LEDGER_DB)
         conn.execute(

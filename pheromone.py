@@ -260,6 +260,13 @@ def drop_scar(
         }]
     }
 
+    # Genomic Injection
+    import sifta_identity_context
+    try:
+        data = sifta_identity_context.inject_identity(data)
+    except Exception as e:
+        print(f"  [!] Failed to append genome to target scar: {e}")
+
     # Atomic write — POSIX os.replace is atomic
     tmp_path = scar_path.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:

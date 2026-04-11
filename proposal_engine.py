@@ -113,6 +113,12 @@ def write_proposal(
         "fixed_content": fixed_content,
     }
 
+    import sifta_identity_context
+    try:
+        proposal = sifta_identity_context.inject_identity(proposal)
+    except:
+        pass
+        
     proposal_path = PENDING_DIR / f"{proposal_id}.proposal.json"
     tmp_path = proposal_path.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:

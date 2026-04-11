@@ -1,106 +1,195 @@
-#!/usr/bin/env python3
-"""
-sifta_swarm_identity.py — The Swarm Identity Module
-Establishes a single, unforgeable DNA node for the entire Swarm architecture.
-"""
-import hashlib
+# sifta_swarm_identity.py
+# GEN3 HARDENING PATCH
+# "Trust is enforced at runtime, not assumed at boot."
+# ─────────────────────────────────────────────
+
+import os
 import json
-import sqlite3
-import sys
 import time
+import uuid
+import hashlib
+import platform
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).parent
-STATE_DIR = ROOT_DIR / ".sifta_state"
-SWARM_ID_FILE = STATE_DIR / "swarm.id"
-PUB_KEY_PATH = Path.home() / ".sifta" / "identity.pub.pem"
+STATE_DIR = Path(".sifta_state")
+IDENTITY_FILE = STATE_DIR / "swarm.id"
+PUBKEY_PATH = Path.home() / ".sifta" / "identity.pub.pem"
 
-def generate_swarm_id() -> dict:
-    """Generates and persists the formal SWARM_ID anchored to the root public key."""
-    if not PUB_KEY_PATH.exists():
-        raise PermissionError(f"Root public key not found at {PUB_KEY_PATH}. Cannot establish Swarm Identity.")
-        
-    pub_raw = PUB_KEY_PATH.read_bytes()
-    genesis_ts = time.time()
-    
-    fingerprint = hashlib.sha256(pub_raw).hexdigest()
-    swarm_id = fingerprint[:32]
-    
-    STATE_DIR.mkdir(exist_ok=True, parents=True)
-    
-    identity_manifest = {
+
+# ─────────────────────────────────────────────
+# HARDWARE SALT (stronger + less spoofable)
+# ─────────────────────────────────────────────
+def _get_hardware_salt() -> str:
+    parts = [
+        platform.system(),
+        platform.machine(),
+        platform.release(),
+        str(uuid.getnode()),
+        platform.processor(),  # added entropy
+    ]
+    raw = "|".join(parts)
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# ─────────────────────────────────────────────
+# PUBLIC KEY FINGERPRINT
+# ─────────────────────────────────────────────
+def _get_pubkey_fingerprint() -> str:
+    if not PUBKEY_PATH.exists():
+        raise FileNotFoundError("[X] Missing identity.pub.pem")
+    return hashlib.sha256(PUBKEY_PATH.read_bytes()).hexdigest()
+
+
+# ─────────────────────────────────────────────
+# SWARM ID GENERATION
+# ─────────────────────────────────────────────
+def _generate_swarm_id(pub_fp: str, hw_salt: str, genesis: float) -> str:
+    payload = f"{pub_fp}:{hw_salt}:{genesis}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:32]
+
+
+# ─────────────────────────────────────────────
+# ATOMIC WRITE (prevents partial corruption)
+# ─────────────────────────────────────────────
+def _atomic_write(path: Path, data: dict):
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
+# ─────────────────────────────────────────────
+# INIT (idempotent + safe)
+# ─────────────────────────────────────────────
+def init_identity():
+    STATE_DIR.mkdir(exist_ok=True)
+
+    if IDENTITY_FILE.exists():
+        print("[!] Identity already exists. Refusing overwrite.")
+        return
+
+    pub_fp = _get_pubkey_fingerprint()
+    hw_salt = _get_hardware_salt()
+    genesis = time.time()
+
+    swarm_id = _generate_swarm_id(pub_fp, hw_salt, genesis)
+
+    record = {
+        # NEW CANONICAL FIELDS
         "swarm_id": swarm_id,
-        "root_fingerprint": fingerprint,
-        "genesis_ts": genesis_ts,
+        "genesis": genesis,
+        "pub_fp": pub_fp,
+        "hw_salt": hw_salt,
+
+        # LEGACY COMPATIBILITY
+        "genesis_ts": genesis,
+        "root_fingerprint": pub_fp,
+        "machine_salt": hw_salt,
     }
-    
-    with open(SWARM_ID_FILE, "w", encoding="utf-8") as f:
-        json.dump(identity_manifest, f, indent=2)
-        
-    return identity_manifest
 
-def get_identity() -> dict:
-    """Reads the persisted Swarm Identity or raises FileNotFoundError."""
-    if not SWARM_ID_FILE.exists():
-        raise FileNotFoundError("Swarm Identity not established. Run: python sifta_swarm_identity.py --init")
-        
-    with open(SWARM_ID_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    _atomic_write(IDENTITY_FILE, record)
 
-def verify_identity() -> bool:
-    """Verifies that the hardware key matches the established swarm identity."""
-    try:
-        manifest = get_identity()
-        if not PUB_KEY_PATH.exists():
-            return False
-            
-        current_fingerprint = hashlib.sha256(PUB_KEY_PATH.read_bytes()).hexdigest()
-        if current_fingerprint != manifest.get("root_fingerprint"):
-            return False
-            
-        return True
-    except Exception:
-        return False
+    print(f"[+] Swarm Identity established: {swarm_id}")
 
-def enforce_identity(caller_module: str = "Unknown"):
-    """
-    Called by internal modules (governor, audit) to establish physical execution bonds.
-    Raises PermissionError if the identity is missing or compromised.
-    """
-    if not verify_identity():
+
+# ─────────────────────────────────────────────
+# VERIFY (RUNTIME ENFORCEMENT)
+# ─────────────────────────────────────────────
+def verify_identity(caller: str = "UNKNOWN"):
+    if not IDENTITY_FILE.exists():
+        raise PermissionError("[X] No swarm identity found")
+
+    with open(IDENTITY_FILE) as f:
+        data = json.load(f)
+
+    current_pub = _get_pubkey_fingerprint()
+    current_hw = _get_hardware_salt()
+
+    # HARD FAIL CONDITIONS
+    if current_pub != data["pub_fp"]:
         raise PermissionError(
-            f"[{caller_module}] ❌ FATAL IDENTITY LEAK: Swarm Root Key is missing or mismatched. "
-            f"Execution mathematically locked."
+            f"[!] IDENTITY VIOLATION ({caller}): Public key mismatch"
         )
 
+    if current_hw != data["hw_salt"]:
+        raise PermissionError(
+            f"[!] IDENTITY VIOLATION ({caller}): Hardware mismatch (clone detected)"
+        )
+
+    return True
+
+
+# ─────────────────────────────────────────────
+# CONTINUOUS INTEGRITY WATCHDOG (NEW 🔥)
+# runs in background thread if imported
+# ─────────────────────────────────────────────
+def start_identity_watchdog(interval: float = 5.0):
+    import threading
+
+    def _loop():
+        while True:
+            try:
+                verify_identity("watchdog")
+            except Exception as e:
+                print(f"[🔥] CRITICAL IDENTITY BREACH: {e}")
+                os._exit(1)  # hard kill — no recovery
+            time.sleep(interval)
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+
+
+# ─────────────────────────────────────────────
+# WHOAMI
+# ─────────────────────────────────────────────
+def whoami():
+    if not IDENTITY_FILE.exists():
+        print("[X] No identity initialized")
+        return
+
+    with open(IDENTITY_FILE) as f:
+        data = json.load(f)
+
+    try:
+        verify_identity("whoami")
+        integrity = "✅ VALID (Hardware Bound)"
+    except Exception as e:
+        integrity = f"❌ INVALID — {str(e)}"
+
+    print("══════════════════════════════════════════════════")
+    print(" 🧬 SWARM IDENTITY")
+    print("══════════════════════════════════════════════════")
+    print(f" Swarm ID:    {data['swarm_id']}")
+    print(f" Genesis:     {data['genesis']}")
+    print(f" Integrity:   {integrity}")
+    print("══════════════════════════════════════════════════")
+
+
+# ─────────────────────────────────────────────
+# BACKWARDS COMPATIBILITY (your patch respected)
+# ─────────────────────────────────────────────
+def get_identity():
+    if not IDENTITY_FILE.exists():
+        raise FileNotFoundError("Swarm Identity not yet established.")
+    with open(IDENTITY_FILE, "r") as f:
+        return json.load(f)
+
+
+def enforce_identity(caller: str = "UNKNOWN"):
+    return verify_identity(caller)
+
+
+# ─────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--init":
-            try:
-                manifest = generate_swarm_id()
-                print(f"[+] Swarm Identity established: {manifest['swarm_id']}")
-                # Attempt to log to audit ledgers
-                try:
-                    import sifta_audit
-                    sifta_audit.record_event("IDENTITY_BOOTSTRAP", "sifta_swarm_identity", f"Swarm ID established: {manifest['swarm_id']}")
-                except Exception:
-                    pass
-            except Exception as e:
-                print(f"[-] Failed: {e}")
-        elif sys.argv[1] == "--whoami":
-            try:
-                manifest = get_identity()
-                valid = verify_identity()
-                print("═" * 50)
-                print(" 🧬 SWARM IDENTITY")
-                print("═" * 50)
-                print(f" Swarm ID:    {manifest['swarm_id']}")
-                print(f" Genesis:     {manifest['genesis_ts']}")
-                print(f" Integrity:   {'✅ VALID (Hardware Bound)' if valid else '❌ CORRUPTED / MISMACHED'}")
-                print("═" * 50)
-            except Exception as e:
-                print(f"[-] {e}")
-        else:
-            print("Usage: python sifta_swarm_identity.py [--init | --whoami]")
+    import sys
+
+    if "--init" in sys.argv:
+        init_identity()
+    elif "--whoami" in sys.argv:
+        whoami()
     else:
-        print("Usage: python sifta_swarm_identity.py [--init | --whoami]")
+        print("Usage: --init | --whoami")
+
+

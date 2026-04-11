@@ -45,6 +45,13 @@ class MessengerRequest(BaseModel):
 
 app = FastAPI(title="ANTON-SIFTA Command Interface")
 
+import sifta_swarm_identity
+try:
+    sifta_swarm_identity.start_identity_watchdog(interval=5.0)
+    print("[*] SIFTA Continuous Integrity Watchdog booted.")
+except Exception as e:
+    print(f"[!] Warning: Could not boot watchdog: {e}")
+
 @app.get("/messenger/thread")
 async def get_messenger_thread(limit: int = 100):
     conn = sqlite3.connect(LEDGER_DB)

@@ -1,6 +1,6 @@
 {
   "proposal_id": "30e402ca-214a-4488-8650-4dd6097b3275",
-  "status": "PENDING",
+  "status": "REJECTED",
   "created_at": 1775860583.626483,
   "filepath": "/Users/ioanganton/Music/ANTON_SIFTA/proposals/test_sandbox/test_target.py",
   "filename": "test_target.py",
@@ -17,5 +17,7 @@
   "post_hash": "89203b766108387ceb507005de87b085d970f4e38888aeeac7c03eacfe9ae65a",
   "diff": "--- a/test_target.py\n+++ b/test_target.py\n@@ -1,3 +1,3 @@\n def hello():\n\n-    name = \"world\n\n+    name = \"world\"\n\n     print(name)\n",
   "original_content": "def hello():\n    name = \"world\n    print(name)\n",
-  "fixed_content": "def hello():\n    name = \"world\"\n    print(name)\n"
+  "fixed_content": "def hello():\n    name = \"world\"\n    print(name)\n",
+  "rejected_at": 1775879675.067534,
+  "rejection_reason": "the file does not exist. we are in testing mode still solving  gui issues. The Architect."
 }
