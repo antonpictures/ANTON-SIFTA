@@ -20,6 +20,16 @@ def analyze_and_govern():
     history = {}
     current_target = None
 
+    # Layer 5: Swarm Identity Enforcement (Trust Boundary)
+    import sifta_swarm_identity
+    try:
+        sifta_swarm_identity.enforce_identity("GOVERNOR")
+        manifest = sifta_swarm_identity.get_identity()
+    except Exception as e:
+        print(str(e))
+        return
+        
+    print(f"  [🧬 IDENTITY] Swarm DNA Root Verified: {manifest['swarm_id']}")
     print("[GOVERNOR] Initiating anomaly sweep on Swarm execution ledger...")
     
     with open(REPAIR_LOG, "r", encoding="utf-8") as f:

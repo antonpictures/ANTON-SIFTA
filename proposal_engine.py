@@ -62,6 +62,27 @@ def write_proposal(
     pre_hash = _sha256(original_content)
     post_hash = _sha256(fixed_content)
 
+    # Layer 4: Conflict Resolution Protocol / Oscillation Defense
+    import reputation_engine
+    rep = reputation_engine.get_reputation(agent_id).get("score", 0.0)
+    recent_fixes = 0
+    now = time.time()
+    for approved_path in APPROVED_DIR.glob("*.proposal.json"):
+        try:
+            with open(approved_path, "r", encoding="utf-8") as af:
+                ap = json.load(af)
+                if ap.get("filepath") == str(filepath.absolute()) and (now - ap.get("approved_at", 0)) < 3600:
+                    recent_fixes += 1
+        except Exception:
+            continue
+            
+    if recent_fixes >= 2 and rep < 0.9 and agent_id != "CONSIGLIERE":
+        raise RuntimeError(
+            f"[CONTAMINATED_LOCK] {filepath.name} is oscillating too rapidly "
+            f"({recent_fixes} fixes in 1h). Agent reputation {rep:.2f} < 0.90 required to override."
+        )
+
+
     # Generate unified diff
     original_lines = original_content.splitlines(keepends=True)
     fixed_lines = fixed_content.splitlines(keepends=True)
@@ -153,7 +174,9 @@ def approve_proposal(proposal_id: str) -> dict:
 
     filepath = Path(proposal["filepath"])
     if not filepath.exists():
-        raise FileNotFoundError(f"Target file {filepath} no longer exists.")
+        # Ghost proposal: the file no longer exists physically. Auto-reject to clear the UI.
+        reject_proposal(proposal_id, reason="Auto-rejected: Target physical file no longer exists.")
+        raise FileNotFoundError(f"Target file {filepath.name} no longer exists. SIFTA auto-purged the pending proposal.")
 
     # Verify pre-hash still matches (no external modification since proposal)
     current_content = filepath.read_text(encoding="utf-8")

@@ -267,6 +267,48 @@ def drop_scar(
     os.replace(tmp_path, scar_path)
 
     _rebuild_scars_md(sifta_dir)
+    compact_territory(sifta_dir)
+
+
+def compact_territory(sifta_dir: Path):
+    """
+    Immuno-Compaction Layer: Identifies ancient, clean scars.
+    Aggregates them into COMPACTED_MEMORY.jsonl to halt IO explosion,
+    then deletes the physical files. Organochemically recycles memory.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        all_scars = list(sifta_dir.glob("*.scar"))
+        if len(all_scars) < 50:
+            return  # No need to burn CPU if density is low
+            
+        archive_path = sifta_dir / "COMPACTED_MEMORY.jsonl"
+        
+        with open(archive_path, "a", encoding="utf-8") as archive:
+            for p in all_scars:
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    
+                    status = data.get("stigmergy", {}).get("status", "")
+                    if status == "BLEEDING" or status == "SUPPRESSED":
+                        continue # DO NOT compact active wounds
+                        
+                    last_v = data.get("scent", {}).get("last_visited", "")
+                    if not last_v:
+                        continue
+                        
+                    ts = datetime.fromisoformat(last_v.replace('Z', '+00:00'))
+                    delta_hours = (now - ts).total_seconds() / 3600.0
+                    
+                    if delta_hours > 12.0:
+                        archive.write(json.dumps(data) + "\n")
+                        os.remove(p)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
 
 
 def _rebuild_scars_md(sifta_dir: Path):

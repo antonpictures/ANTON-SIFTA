@@ -48,6 +48,7 @@
             <button class="btn btn-secondary" id="open-wallet-btn" style="border-color: rgba(224, 64, 251, 0.4); color: var(--magenta);">[🏦] VAULT</button>
             <button class="btn btn-secondary" id="open-ledger-btn" style="border-color: rgba(0, 229, 255, 0.3); color: var(--cyan);" onclick="document.getElementById('ledger-modal').showModal(); if(typeof fetchFullLedger === 'function') fetchFullLedger();">[🗃️] LEDGER</button>
             <button class="btn btn-secondary" id="open-swarm-map-btn" style="border-color: rgba(0,255,136,0.4); color: #00ff88;" onclick="toggleSwarmMap()">[🕸] SWARM MAP</button>
+            <button class="btn btn-secondary" id="open-auth-btn" style="border-color: rgba(255,200,0,0.5); color: #ffc800;" onclick="document.getElementById('auth-modal').showModal()">[🔐] AUTH GENERATOR</button>
             <button class="btn btn-primary" id="open-settings-btn" onclick="document.getElementById('settings-modal').showModal()">[⚙] SETTINGS</button>
         </div>
     </header>
@@ -225,13 +226,40 @@
                 <div class="form-group">
                     <label for="llm-base-url">Base URL (OpenRouter / Custom)</label>
                     <input type="text" id="llm-base-url" class="form-input" placeholder="https://...">
-                </div>
-                <div class="form-group">
+            <div class="form-group">
                     <label for="llm-api-key">API Key</label>
                     <input type="password" id="llm-api-key" class="form-input" placeholder="sk-..." autocomplete="off">
                 </div>
-                <button type="submit" class="btn btn-primary btn-full">SAVE CONFIG</button>
+                <button class="btn btn-primary" type="button" onclick="document.getElementById('settings-modal').close()">CLOSE</button>
             </form>
+        </div>
+    </dialog>
+
+    <!-- Cryptographic Override Modal -->
+    <dialog id="auth-modal" class="modal" aria-labelledby="auth-title" style="width: 500px; max-width: 90vw;">
+        <div class="modal-header">
+            <h2 id="auth-title">🔐 CRYPTOGRAPHIC OVERRIDE AUTHORITY</h2>
+            <button class="close-btn" onclick="document.getElementById('auth-modal').close()" aria-label="Close modal">×</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 15px;">
+            <p style="color: var(--text-dim); font-size: 0.9em;">
+                Generates a mathematically verifiable bypassed token for the local MAC hardware <code>identity.pem</code> key. This overrides the strict Biological Validation Layer for 60 seconds.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+                <label for="auth-target-binary" style="color: var(--accent); font-weight: bold; font-family: 'JetBrains Mono', monospace; font-size: 0.85em;">TARGET BINARY</label>
+                <select id="auth-target-binary" class="config-input">
+                    <option value="repair.py">repair.py (Swarm Execution API)</option>
+                    <option value="sifta_cardio.py">sifta_cardio.py (Heartbeat API)</option>
+                    <option value="governor.py">governor.py (Trust Overseer API)</option>
+                </select>
+            </div>
+            
+            <button class="btn btn-danger" onclick="generateOverrideToken()" style="padding: 12px; font-weight: bold;">[!] SIGN & DISPENSE</button>
+            
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+                <label style="color: var(--text-dim); font-size: 0.8em; font-family: 'JetBrains Mono', monospace;">OVERRIDE TOKEN (60s TTL)</label>
+                <textarea id="auth-token-output" class="config-input" rows="4" readonly style="font-family: 'JetBrains Mono', monospace; resize: none; background: rgba(0,0,0,0.5); word-break: break-all;" onclick="this.select();"></textarea>
+            </div>
         </div>
     </dialog>
 
@@ -406,6 +434,32 @@
         </div>
     </dialog>
 
-    <script src="/static/app.js?v=3.0"></script>
+    <script>
+        async function generateOverrideToken() {
+            const btn = document.querySelector('#auth-modal .btn-danger');
+            const target = document.getElementById('auth-target-binary').value;
+            const output = document.getElementById('auth-token-output');
+            
+            btn.textContent = "[*] SIGNING...";
+            output.value = "";
+            try {
+                const res = await fetch('/api/generate_override', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target_binary: target})
+                });
+                const data = await res.json();
+                if(data.error) {
+                    output.value = "ERROR: " + data.error;
+                } else {
+                    output.value = "--auth-token=" + data.token;
+                }
+            } catch(e) {
+                output.value = "CONNECTION FAILED.";
+            }
+            btn.textContent = "[!] SIGN & DISPENSE";
+        }
+    </script>
+    <script src="/static/app.js?v=7"></script>
 </body>
 </html>

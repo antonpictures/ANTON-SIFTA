@@ -47,6 +47,9 @@ def verify_cryptographic_override(auth_token_b64: str, target_binary: str):
     Verifies that a manual override token was cryptographically signed by an
     Authorized Architect, meant for this specific binary, and has not expired.
     """
+    import sifta_swarm_identity
+    sifta_swarm_identity.enforce_identity("SIFTA_AUDIT")
+
     import base64
     import json
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey

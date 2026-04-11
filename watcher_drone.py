@@ -72,7 +72,7 @@ def scan_target_zone():
         return
         
     # Territorial Bounding: Do not bleed for dependencies or caches.
-    EXCLUDE_DIRS = {".venv", "node_modules", ".git", "__pycache__", "vendor", "env", "build"}
+    EXCLUDE_DIRS = {".venv", "node_modules", ".git", "__pycache__", "vendor", "env", "build", ".sifta_state", ".sifta_reputation"}
         
     for p in TARGET_DIR.rglob("*.py"):
         # Explicit Territorial Guard

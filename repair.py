@@ -995,8 +995,15 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
     if root.is_file() and root.suffix == ".py":
         files = [root]
     else:
+        # Prevent the Swarm from cannibalizing its own system files or virtualenvs
+        exclude_dirs = {".git", ".venv", "proposals", ".sifta_state", ".sifta_reputation", "__pycache__"}
+        files = []
+        for f in root.rglob("*.py"):
+            if not any(ex in f.parts for ex in exclude_dirs):
+                files.append(f)
+                
         files = sorted(
-            [f for f in root.rglob("*.py") if ".git" not in str(f)],
+            files,
             key=lambda f: f.stat().st_ctime  # ordered by creation time — linear swim
         )
 

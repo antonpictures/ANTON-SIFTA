@@ -19,8 +19,102 @@ CEMETERY_DIR = ROOT_DIR / "CEMETERY"
 REPAIR_LOG = ROOT_DIR / "repair_log.jsonl"
 SWIM_LOG = ROOT_DIR / "swim_log.jsonl"
 QUORUM_DB = STATE_DIR / "quorum_ledger.db"
+LEDGER_DB = STATE_DIR / "task_ledger.db"
+
+def init_messenger():
+    conn = sqlite3.connect(LEDGER_DB)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS messenger_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL,
+            sender TEXT,
+            receiver TEXT,
+            body TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_messenger()
+
+class MessengerRequest(BaseModel):
+    from_id: str
+    to_id: str
+    body: str
 
 app = FastAPI(title="ANTON-SIFTA Command Interface")
+
+@app.get("/messenger/thread")
+async def get_messenger_thread(limit: int = 100):
+    conn = sqlite3.connect(LEDGER_DB)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, timestamp, sender, receiver, body 
+        FROM messenger_log ORDER BY timestamp ASC LIMIT ?
+    ''', (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    msgs = []
+    for r in rows:
+        msgs.append({
+            "id": r[0],
+            "ts": r[1],
+            "from": r[2],
+            "to": r[3],
+            "body": r[4]
+        })
+    return {"messages": msgs}
+
+@app.post("/messenger/send")
+async def post_messenger_send(req: MessengerRequest):
+    conn = sqlite3.connect(LEDGER_DB)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO messenger_log (timestamp, sender, receiver, body)
+        VALUES (?, ?, ?, ?)
+    ''', (time.time(), req.from_id, req.to_id, req.body))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+class OverrideRequest(BaseModel):
+    target_binary: str
+
+@app.post("/api/generate_override")
+async def generate_override(req: OverrideRequest):
+    """
+    Generates a cryptographic override token bypassing the Trust Boundary
+    for a specific python binary (e.g. repair.py).
+    """
+    import base64
+    import json
+    import time
+    from cryptography.hazmat.primitives import serialization
+    
+    KEY_DIR = Path.home() / ".sifta"
+    PRIV_KEY = KEY_DIR / "identity.pem"
+    
+    if not PRIV_KEY.exists():
+        return {"error": "No identity keypair found. Run: python sifta_relay.py --keygen"}
+        
+    private_key = serialization.load_pem_private_key(PRIV_KEY.read_bytes(), password=None)
+    
+    canonical_payload = {
+        "action": "POLICY_BYPASS",
+        "target_binary": req.target_binary,
+        "timestamp": time.time(),
+        "ttl_seconds": 60
+    }
+    canonical_str = json.dumps(canonical_payload, sort_keys=True, separators=(",", ":"))
+    signature = private_key.sign(canonical_str.encode("utf-8"))
+    
+    envelope = canonical_payload.copy()
+    envelope["signature"] = base64.b64encode(signature).decode()
+    
+    token = base64.b64encode(json.dumps(envelope).encode()).decode()
+    return {"token": token, "ttl_seconds": 60}
 
 # ── Global dispatch guard ─────────────────────────────────────────────────────
 # Only ONE swimmer may run at a time. A new dispatch kills the old one first.
@@ -1065,6 +1159,10 @@ async def approve_proposal_route(proposal_id: str):
             "agent_id": result["agent_id"],
             "status": result["status"],
         }}
+    except FileNotFoundError as e:
+        if "auto-purged" in str(e):
+            return {"ok": True, "auto_purged": True, "message": str(e)}
+        return {"ok": False, "error": str(e)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

@@ -22,10 +22,11 @@ Most agentic frameworks today are stateless, amnesiac, and epistemically fragile
 ### 1. The Codebase IS the Memory (Stigmergy)
 Other frameworks need complex Vector DBs. In SIFTA, agents leave **Scars** (`.scar` JSON files) directly in the folders they visit. These are cryptographic "pheromones" that decay over time. When another agent enters the folder, it smells the scar, reads the wound line, and picks up the thread. **Zero central coordination.**
 
-### 2. Physical Identity & DNA ([`SWARM_DNA_SPEC.md`](docs/SWARM_DNA_SPEC.md))
-Our agents are not scripts. They are **physical ASCII strings** that carry their own Ed25519 cryptographic signatures, energy levels, and history. We have mathematically formalized Swarm DNA Identity:
-* `Identity = f(root_key, constitution, capabilities, lineage, state)`
-* You can extract a 5KB "Nucleus" seed to boot a child swarm with provable lineage, exactly like biological reproduction.
+### 2. The 3-Layer Operating System Architecture
+Most "AI agent frameworks" don't even get 20% of this right. SIFTA maps directly to a hardened distributed system architecture carrying:
+1. **Identity (`sifta_swarm_identity.py`)**: A deterministic, hardware-bound Canonical Identity. `Identity = f(root_key, genesis)`. It physically checks `identity.pub.pem` — if identity is missing or corrupted, the system halts. Clones ≠ the same swarm.
+2. **Authority (`sifta_relay.py`)**: The system operates natively via cryptographically signed overrides. Authority requires explicit Ed25519 token signatures bridging boundaries from human to swarm.
+3. **Execution (`sifta_cardio.py` + drones)**: Reputation-weighted execution and biological bounds. Agents autonomously spin down, handle faults, and prioritize repairs based on mathematical trust.
 
 ### 3. Human-Gated "Proposal" Execution
 Agents don't mutate your live disk blindly. They stage fixes into a **Proposal Branch**.

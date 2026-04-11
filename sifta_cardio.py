@@ -90,13 +90,25 @@ def recover_stale_leases():
         print(f"[💓 CARDIO] Recovered {recovered} stale lease(s) from crash.")
 
 def lock_and_retrieve_task():
+    import reputation_engine
+
     conn = sqlite3.connect(LEDGER_DB)
     cursor = conn.cursor()
     cursor.execute("BEGIN EXCLUSIVE")
-    cursor.execute("SELECT id, intent, payload, registry_version FROM tasks WHERE status = 'validated' LIMIT 1")
-    row = cursor.fetchone()
-    if row:
-        task_id, intent, payload, reg_ver = row
+    
+    # Priority Layer: Fetch all validated tasks to organically sort them
+    cursor.execute("SELECT id, intent, payload, registry_version FROM tasks WHERE status = 'validated'")
+    rows = cursor.fetchall()
+    
+    if rows:
+        def _get_rep(row):
+            reg = INTENT_REGISTRY.get(row[3], {})
+            agt = reg.get(row[1], {}).get("agent_id", "UNKNOWN")
+            return reputation_engine.get_reputation(agt)["score"] if agt != "UNKNOWN" else 0.5
+            
+        rows.sort(key=_get_rep, reverse=True)
+        task_id, intent, payload, reg_ver = rows[0]
+        
         # Resolve lease from registry
         registry = INTENT_REGISTRY.get(reg_ver, {})
         lease_s = registry.get(intent, {}).get("execution_lease_seconds", 60)
