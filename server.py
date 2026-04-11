@@ -493,6 +493,40 @@ async def scar_contents(folder: str = ""):
 
 
 
+@app.get("/api/arena/stream")
+async def dispatch_arena(red_model: str, blue_model: str, level: str):
+    async def arena_generator():
+        cmd = [
+            "python3", "-u", "sifta_arena.py",
+            "--red", red_model,
+            "--blue", blue_model,
+            "--level", level
+        ]
+        
+        env = os.environ.copy()
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(ROOT_DIR),
+                env=env
+            )
+
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                decoded = line.decode('utf-8', errors='replace').rstrip('\r\n')
+                yield f"data: {decoded}\n\n"
+
+            await process.wait()
+            yield f"data: {{\"team\": \"system\", \"type\": \"exit\", \"code\": {process.returncode}}}\n\n"
+        except Exception as e:
+            yield f"data: {{\"team\": \"system\", \"type\": \"error\", \"content\": \"{str(e)}\"}}\n\n"
+
+    return StreamingResponse(arena_generator(), media_type="text/event-stream")
+
 class DispatchRequest(BaseModel):
     agent_id: str
     target_dir: str

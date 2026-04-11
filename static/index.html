@@ -44,6 +44,7 @@
             <button class="btn btn-panel" id="panel-btn-quorum" onclick="toggleDrawer('drawer-quorum', 'panel-btn-quorum')">⬡ QUORUM</button>
         </div>
         <div class="topbar-actions">
+            <button class="btn btn-secondary" id="play-code-swimmers-btn" style="border-color: rgba(33, 150, 243, 0.6); color: #2196F3; font-weight: bold;" onclick="document.getElementById('arena-overlay').classList.add('active'); fetchOllamaModelsForArena();">[🎮] PLAY CODE SWIMMERS</button>
             <button class="btn btn-danger" id="kill-swimmer-btn" title="Retract active submarine drone via tether">[↶] RETRACT TETHER</button>
             <button class="btn btn-secondary" id="open-wallet-btn" style="border-color: rgba(224, 64, 251, 0.4); color: var(--magenta);">[🏦] VAULT</button>
             <button class="btn btn-secondary" id="open-ledger-btn" style="border-color: rgba(0, 229, 255, 0.3); color: var(--cyan);" onclick="document.getElementById('ledger-modal').showModal(); if(typeof fetchFullLedger === 'function') fetchFullLedger();">[🗃️] LEDGER</button>
@@ -460,6 +461,55 @@
             btn.textContent = "[!] SIGN & DISPENSE";
         }
     </script>
+    <!-- ARENA OVERLAY (Code Swimmers Mode) -->
+    <div id="arena-overlay" class="arena-overlay hidden">
+        <div class="arena-header">
+            <div class="arena-title">CODE SWIMMERS <span class="arena-subtitle">DEEP SEA METAPHOR</span></div>
+            <div class="arena-scoreboard">
+                <span class="score red-score">RED SHARKS: <span id="arena-red-score">0</span></span>
+                <span class="score-vs">VS</span>
+                <span class="score blue-score">BLUE DOLPHINS: <span id="arena-blue-score">0</span></span>
+            </div>
+            <button class="btn btn-danger" onclick="document.getElementById('arena-overlay').classList.remove('active')">[X] EXIT ARENA</button>
+        </div>
+        
+        <div class="arena-controls">
+            <div class="arena-team red-team-controls">
+                <label>Red Model:</label>
+                <select id="arena-red-model"></select>
+            </div>
+            <div class="arena-level">
+                <label>Target Bug:</label>
+                <select id="arena-level-select">
+                    <option value="1">Level 1: Divide by Zero</option>
+                    <option value="2">Level 2: Race Condition</option>
+                    <option value="3">Level 3: Boundary Value</option>
+                    <option value="4">Level 4: Exception Swallowing</option>
+                </select>
+                <button class="btn" id="arena-start-btn" onclick="startArenaMatch()">[ DIVE! ]</button>
+            </div>
+            <div class="arena-team blue-team-controls">
+                <label>Blue Model:</label>
+                <select id="arena-blue-model"></select>
+            </div>
+        </div>
+
+        <div class="arena-split-screen">
+            <div class="arena-pane red-pane">
+                <div class="pane-header">RED SHARKS <span id="red-status" class="status-indicator">STANDBY</span></div>
+                <div class="pane-content" id="red-console"></div>
+            </div>
+            <div class="arena-pane blue-pane">
+                <div class="pane-header">BLUE DOLPHINS <span id="blue-status" class="status-indicator">STANDBY</span></div>
+                <div class="pane-content" id="blue-console"></div>
+            </div>
+        </div>
+
+        <div class="arena-footer">
+            <div class="arena-log" id="arena-system-log">System holding for match start...</div>
+        </div>
+    </div>
+
     <script src="/static/app.js?v=7"></script>
 </body>
 </html>

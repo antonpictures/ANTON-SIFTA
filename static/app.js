@@ -2149,3 +2149,135 @@ function dragended(event, d) {
   d.fx = null; d.fy = null;
 }
 
+// ==================================================
+// ARENA (Code Swimmers)
+// ==================================================
+let arenaEventSource = null;
+
+function closeArena() {
+    document.getElementById('arena-overlay').classList.remove('active');
+    if (arenaEventSource) {
+        arenaEventSource.close();
+        arenaEventSource = null;
+    }
+}
+
+async function fetchOllamaModelsForArena() {
+    try {
+        const res = await fetch('/api/ollama-models');
+        const data = await res.json();
+        const models = data.models || [];
+        const redSel = document.getElementById('arena-red-model');
+        const blueSel = document.getElementById('arena-blue-model');
+        
+        redSel.innerHTML = '';
+        blueSel.innerHTML = '';
+        
+        models.forEach(m => {
+            redSel.add(new Option(m, m));
+            blueSel.add(new Option(m, m));
+        });
+        
+        if (models.length > 1) {
+            blueSel.selectedIndex = 1; // Pick second model for blue by default
+        }
+    } catch (e) {
+        console.error("Could not fetch arena models", e);
+    }
+}
+
+function appendArenaLog(team, content, isSystem=false) {
+    const rConsole = document.getElementById('red-console');
+    const bConsole = document.getElementById('blue-console');
+    const sysLog = document.getElementById('arena-system-log');
+    
+    if (isSystem) {
+        sysLog.innerHTML += `<div>${content}</div>`;
+        sysLog.scrollTop = sysLog.scrollHeight;
+    } else {
+        const target = team === 'red' ? rConsole : bConsole;
+        
+        // Escape HTML
+        let safeContent = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        
+        // Let's implement a nice typing effect or direct append
+        // direct append is faster for streaming
+        target.innerHTML += safeContent;
+        target.scrollTop = target.scrollHeight;
+    }
+}
+
+async function startArenaMatch() {
+    if (arenaEventSource) {
+        arenaEventSource.close();
+    }
+    
+    document.getElementById('red-console').innerHTML = '';
+    document.getElementById('blue-console').innerHTML = '';
+    document.getElementById('arena-system-log').innerHTML = '';
+    
+    const rModel = document.getElementById('arena-red-model').value;
+    const bModel = document.getElementById('arena-blue-model').value;
+    const lvl = document.getElementById('arena-level-select').value;
+    
+    // Reset statuses and dim
+    const rStatus = document.getElementById('red-status');
+    const bStatus = document.getElementById('blue-status');
+    rStatus.textContent = 'SWIMMING';
+    bStatus.textContent = 'SWIMMING';
+    rStatus.style.background = 'rgba(255,255,255,0.1)';
+    bStatus.style.background = 'rgba(255,255,255,0.1)';
+    
+    const params = new URLSearchParams({
+        red_model: rModel,
+        blue_model: bModel,
+        level: lvl
+    });
+    
+    arenaEventSource = new EventSource(`/api/arena/stream?${params.toString()}`);
+    
+    arenaEventSource.onmessage = function(e) {
+        try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'system') {
+                appendArenaLog(data.team, data.content, true);
+            } else if (data.type === 'stream') {
+                appendArenaLog(data.team, data.content);
+            } else if (data.type === 'error') {
+                appendArenaLog(data.team, `\n\n[ERROR] ${data.content}\n`);
+            } else if (data.type === 'result') {
+                appendArenaLog(data.team, `\n\n=====================\n${data.content}\n=====================\n`);
+                
+                const statEl = data.team === 'red' ? rStatus : bStatus;
+                if (data.passed) {
+                    statEl.textContent = 'VICTORY';
+                    statEl.style.background = 'rgba(0, 255, 136, 0.4)';
+                    
+                    // Update score
+                    const scoreId = data.team === 'red' ? 'arena-red-score' : 'arena-blue-score';
+                    const scoreEl = document.getElementById(scoreId);
+                    scoreEl.textContent = parseInt(scoreEl.textContent) + 100;
+                    
+                    // Stop stream if someone wins
+                    if (arenaEventSource) {
+                        appendArenaLog('system', `Match over. Team ${data.team.toUpperCase()} is the winner!`, true);
+                        arenaEventSource.close();
+                    }
+                } else {
+                    statEl.textContent = 'FAILED';
+                    statEl.style.background = 'rgba(255, 23, 68, 0.4)';
+                }
+            } else if (data.type === 'exit') {
+                appendArenaLog('system', `Engine offline (Code ${data.code})`, true);
+                arenaEventSource.close();
+            }
+        } catch (err) {
+            console.error("SSE Parse Error", err, e.data);
+        }
+    };
+    
+    arenaEventSource.onerror = function() {
+        appendArenaLog('system', "Connection lost or match complete.", true);
+        arenaEventSource.close();
+    };
+}
