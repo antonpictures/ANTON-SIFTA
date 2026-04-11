@@ -191,6 +191,14 @@ def promote_to_pending(proposal_id: str) -> bool:
     source.unlink()
     
     print(f"  [🔓 QUORUM MET] Proposal {proposal_id[:8]}... promoted to PENDING for human review.")
+    try:
+        from sifta_postcard import write_postcard
+        write_postcard(
+            f"Quorum consensus unlocked proposal {proposal_id[:8]}... for Architect review.",
+            {"proposal_id": proposal_id}
+        )
+    except Exception:
+        pass
     return True
 
 
@@ -260,6 +268,14 @@ def approve_proposal(proposal_id: str) -> dict:
     try:
         from sifta_trust_graph import reward_interaction
         reward_interaction(proposal["agent_id"], "ARCHITECT")
+    except Exception:
+        pass
+    try:
+        from sifta_postcard import write_postcard
+        write_postcard(
+            f"Approved repair of {filepath.name} after quorum validation.",
+            {"proposal_id": proposal_id, "agent": proposal["agent_id"], "file": filepath.name}
+        )
     except Exception:
         pass
 
