@@ -1,3 +1,4 @@
+from typing import Optional
 """
 inference_economy.py — ANTON-SIFTA Proof of Compute
 ─────────────────────────────────────────────────────
@@ -228,7 +229,7 @@ def get_stgm_balance(agent_id: str) -> float:
 
 
 # ─── Borrow History Reader ─────────────────────────────────────────────────────
-def get_borrow_history(agent_id: str | None = None, tail: int = 100) -> list:
+def get_borrow_history(agent_id: Optional[str] = None, tail: int = 100) -> list:
     """
     Read all INFERENCE_BORROW events from the ledger.
     Optionally filter by borrower_id.

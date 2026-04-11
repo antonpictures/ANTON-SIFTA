@@ -1,3 +1,4 @@
+from typing import Optional
 #!/usr/bin/env python3
 """
 proposal_engine.py — The SIFTA Proposal Branch System
@@ -156,7 +157,7 @@ def list_proposals(status: str = "PENDING") -> list[dict]:
     return proposals
 
 
-def get_proposal(proposal_id: str) -> "dict | None":
+def get_proposal(proposal_id: str) -> "Optional[dict]":
     """Find a proposal by ID across all status directories."""
     for d in (QUORUM_DRAFT_DIR, PENDING_DIR, APPROVED_DIR, REJECTED_DIR):
         path = d / f"{proposal_id}.proposal.json"

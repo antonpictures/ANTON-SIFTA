@@ -593,6 +593,13 @@ async def dispatch_swim(req: DispatchRequest):
                 if len(_live_terminal_buffer) > 150:
                     _live_terminal_buffer.pop(0)
                 
+                # Persist to 7-day rolling session log
+                try:
+                    from sifta_session_log import _write_log_line, _rotate_old_logs
+                    _write_log_line(req.agent_id, decoded)
+                except Exception:
+                    pass
+                
                 yield f"data: {decoded}\n\n"
 
             await process.wait()

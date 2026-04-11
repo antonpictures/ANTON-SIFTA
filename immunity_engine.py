@@ -1,3 +1,4 @@
+from typing import Optional
 """
 immunity_engine.py
 ──────────────────────────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ def _save_checkpoint(agent_id: str, state: dict):
     with open(checkpoint_file, "w") as f:
         json.dump(checkpoint, f, indent=2)
 
-def _load_checkpoint(agent_id: str) -> dict | None:
+def _load_checkpoint(agent_id: str) -> Optional[dict]:
     checkpoint_file = CHECKPOINT_DIR / f"{agent_id}.checkpoint.json"
     if checkpoint_file.exists():
         try:

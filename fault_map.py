@@ -1,3 +1,4 @@
+from typing import Optional
 """
 fault_map.py
 ──────────────────────────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ def detect_clusters(filepath: str) -> list:
 
     return clusters
 
-def get_priority_zone(filepath: str) -> list | None:
+def get_priority_zone(filepath: str) -> Optional[list]:
     """Returns the hottest/densest structural corruption zone."""
     clusters = detect_clusters(filepath)
     if not clusters:

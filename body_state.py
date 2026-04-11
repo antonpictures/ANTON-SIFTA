@@ -4,6 +4,7 @@ import time
 import re
 import base64
 from pathlib import Path
+from typing import Optional
 import reputation_engine
 from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives import serialization
@@ -37,7 +38,7 @@ def save_agent_state(state: dict):
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
 
-def find_healthy_agent(exclude_id: str) -> dict | None:
+def find_healthy_agent(exclude_id: str) -> Optional[dict]:
     """Find a Swarm member with > 50 energy and NOMINAL style who is not the excluded agent."""
     STATE_DIR.mkdir(exist_ok=True)
     for p in STATE_DIR.glob("*.json"):

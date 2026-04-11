@@ -1,3 +1,4 @@
+from typing import Optional
 """
 intent_engine.py
 ──────────────────────────────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ def split_mixed_message(message: str) -> dict:
 # MAIN PROCESS_INPUT GATE
 # ══════════════════════════════════════════════════════════════════════════
 
-def process_input(state: dict, message: str) -> str | None:
+def process_input(state: dict, message: str) -> Optional[str]:
     """
     The entry gate for any architect message before it reaches execution.
 

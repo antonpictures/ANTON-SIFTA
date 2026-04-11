@@ -26,6 +26,9 @@ for arg in sys.argv:
     if arg.startswith("--auth-token="):
         auth_token = arg.split("=", 1)[1]
 
+# Strip from sys.argv so argparse doesn't choke on it
+sys.argv = [a for a in sys.argv if not a.startswith("--auth-token=")]
+
 if not is_cardio and not auth_token:
     print("\n[SECURITY] SIFTA CONTROL PLANE BOUNDARY")
     print("Direct execution of repair.py requires Cryptographic Signed Intent.")
@@ -51,6 +54,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 import reputation_engine
 
 from body_state import SwarmBody, parse_body_state, apply_damage, bury, find_healthy_agent, save_agent_state
@@ -455,7 +459,7 @@ def synthesize_identity(agent_id: str, error_trace: str, model: str = "gemma4:la
 
 
 # ─── LLM CALL (Streaming — tokens print live into SSE pipeline) ──────────────
-def call_ollama(prompt: str, model: str = "gemma4:latest", ollama_base: str = "", vocation: str = "DETECTIVE", agent_id: str = None, temperature: float = 0.0, max_tokens: int = 512) -> str | None:
+def call_ollama(prompt: str, model: str = "gemma4:latest", ollama_base: str = "", vocation: str = "DETECTIVE", agent_id: str = None, temperature: float = 0.0, max_tokens: int = 512) -> Optional[str]:
     import json
     import urllib.request
     from pathlib import Path
@@ -696,7 +700,7 @@ def hash_str(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:16]
 
 
-def call_openai_api(chunk: str, model: str = "gpt-4o-mini", base_url: str = "", api_key: str = "") -> str | None:
+def call_openai_api(chunk: str, model: str = "gpt-4o-mini", base_url: str = "", api_key: str = "") -> Optional[str]:
     url = base_url or "https://api.openai.com/v1/chat/completions"
     payload = {
         "model": model,
