@@ -234,6 +234,10 @@ async function fetchAgents() {
         const agents = await res.json();
         liveAgentCount = agents.length;
         document.getElementById('stat-agents-val').textContent = liveAgentCount || '0';
+        
+        const stActive = document.getElementById('status-agents-active');
+        if (stActive) stActive.textContent = liveAgentCount || '0';
+        
         updateRoster(agents);
         updateFleet(agents);
         
@@ -328,9 +332,16 @@ function updateRoster(agents) {
         }
 
         // Apply dynamically changing attributes natively
-        card.className = `agent-card${isDead ? ' dead' : ''}${agent.id === activeDispatchAgent ? ' ac-selected' : ''}`;
+        const energyPct = Math.min(100, Math.max(0, agent.energy));
+        const isCritical = energyPct <= 25 && !isDead;
         
-        card.querySelector(`#face-${agent.id}`).textContent = agent.face;
+        card.className = `agent-card fade-in ${isDead ? ' dead' : ''} ${isCritical ? ' pulse-red' : ''} ${agent.id === activeDispatchAgent ? ' ac-selected' : ''}`;
+        
+        let displayFace = agent.face;
+        if (isDead) displayFace = '💀';
+        else if (isCritical) displayFace = '🥵';
+        
+        card.querySelector(`#face-${agent.id}`).textContent = displayFace;
 
         const styleBadge = card.querySelector(`#style-${agent.id}`);
         styleBadge.className = `agent-style ${parseStyleBadge(agent.style)}`;
@@ -339,7 +350,6 @@ function updateRoster(agents) {
         card.querySelector(`#seq-${agent.id}`).textContent = `SEQ: ${agent.seq}`;
         card.querySelector(`#ttl-${agent.id}`).textContent = `TTL: ${formatTime(agent.ttl_remaining)}`;
 
-        const energyPct = Math.min(100, Math.max(0, agent.energy));
         const eFill = card.querySelector(`#energy-${agent.id}`);
         eFill.style.width = `${energyPct}%`;
         eFill.style.background = `linear-gradient(90deg, ${getEnergyColor(energyPct)}, ${getEnergyColor(Math.max(0, energyPct - 20))})`;
@@ -506,39 +516,142 @@ async function fetchLogs() {
     }
 }
 
+let _lastLogCount = 0;
+
+const microPersonality = {
+    SCOUT: [
+        "Something feels off here...",
+        "Quiet... too quiet.",
+        "I've seen patterns like this before."
+    ],
+    REPAIR: [
+        "I think I can fix this.",
+        "Hold on, stitching the logic...",
+        "This one's tricky... but solvable."
+    ],
+    QUEEN: [
+        "The structure bends to my will.",
+        "Correcting the lesser agents' oversights.",
+        "My zone must be pristine."
+    ],
+    DETECTIVE: [
+        "Following the scent of a syntactic tear.",
+        "A logical inconsistency. Fascinating.",
+        "The evidence points to a recent mutation."
+    ],
+    DEFAULT: [
+        "My zone is clear.",
+        "Traversing the sectors...",
+        "Awaiting further directives."
+    ]
+};
+
+function getFlavor(agentName, ev) {
+    let role = 'DEFAULT';
+    if (ev === 'scout') role = 'SCOUT';
+    else if (ev === 'fail') role = 'DETECTIVE';
+    else if (ev === 'fix') role = 'REPAIR';
+    
+    if (agentName.includes('QUEEN')) role = 'QUEEN';
+    
+    const flavorArr = microPersonality[role] || microPersonality['DEFAULT'];
+    return flavorArr[Math.floor(Math.random() * flavorArr.length)];
+}
+
 function updateLogs(logs) {
-    const tbody = document.getElementById('logs-body');
-    tbody.innerHTML = '';
+    const container = document.getElementById('postcards-feed');
+    if (!container) return;
+
+    if (logs.length === _lastLogCount && container.children.length > 1) return;
+    _lastLogCount = logs.length;
+
+    container.innerHTML = '';
 
     if (logs.length === 0) {
-        const emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = `<td colspan="4" style="color:var(--text-muted); text-align:center; padding: 2rem; font-family:var(--font-mono); font-size:0.8rem; letter-spacing:0.06em;">⬡ No swim events logged. Deploy a swimmer to generate telemetry.</td>`;
-        tbody.appendChild(emptyRow);
+        container.innerHTML = `<div class="postcard system-postcard" style="border: 1px solid var(--border-color); background: var(--bg-dark); padding: 10px; border-radius: var(--r-sm);">
+            <div class="postcard-body" style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-sub);">Neural uplink secure. Awaiting transmission from the swarm...</div>
+        </div>`;
         return;
     }
 
-    logs.forEach(log => {
+    // Seed Randomizer for flavor so it doesn't change on every poll redraw
+    // Simple hash of log.ts + log.hash
+    const hashStringToInt = (s) => [...s].reduce((hash, c) => Math.imul(31, hash) + c.charCodeAt(0) | 0, 0);
+
+    logs.slice().reverse().forEach(log => {
         const ev = log.event || 'msg';
-        let rowClass = 'log-row-default';
-        if (ev === 'fix')                     rowClass = 'log-row-fix';
-        else if (ev === 'fail' || ev === 'reject') rowClass = 'log-row-fail';
-        else if (ev === 'scout')              rowClass = 'log-row-scout';
-
-        const row = document.createElement('tr');
-        row.className = rowClass;
-
         const ts = new Date(log.ts).toLocaleTimeString('en-US', { hour12: false });
-        const hash = log.after_hash || log.hash || log.before_hash || '—';
-        const file = log.file || log.target || '—';
+        let file = log.file || log.target || '—';
+        const agentName = log.agent_id ? log.agent_id.split('-')[0] : 'SIFTA CORE';
 
-        row.innerHTML = `
-            <td>${ts}</td>
-            <td>[${ev.toUpperCase()}]</td>
-            <td><span class="log-file" title="${file}">${file}</span></td>
-            <td>${hash.substring(0, 8)}</td>
+        if (file && file.includes('/')) file = file.split('/').pop();
+
+        let narrative = '';
+        let cardColor = 'var(--border-color)';
+        let icon = '📝';
+        
+        let seed = Math.abs(hashStringToInt((log.ts || 0).toString() + (log.hash || '')));
+        let role = 'DEFAULT';
+        
+        if (ev === 'scout') {
+            narrative = `I walked through <strong>${file}</strong>. Looks clean to me. Leaving a scent trail.`;
+            cardColor = 'rgba(120, 144, 156, 0.4)';
+            icon = '💨';
+            role = 'SCOUT';
+        } else if (ev === 'fail' || ev === 'reject') {
+            narrative = `I found a tear in the fabric at <strong>${file}</strong>. Tightening my jaws...`;
+            cardColor = 'rgba(255, 82, 82, 0.4)';
+            icon = '🦷';
+            role = 'DETECTIVE';
+        } else if (ev === 'fix') {
+            narrative = `I have successfully synthesized a repair for <strong>${file}</strong>. It took some energy, but the structure holds.`;
+            cardColor = 'rgba(0, 230, 118, 0.4)';
+            icon = '🧬';
+            role = 'REPAIR';
+        } else if (ev === 'mind_trace') {
+            const confStr = log.final_score !== undefined ? log.final_score.toFixed(2) : 'N/A';
+            const wasAccepted = log.final_score !== undefined && log.final_score > 0.65;
+            
+            if (wasAccepted) {
+                narrative = `Internal monologue: "<span style="color:var(--amber)">${log.reason || log.role || 'Analyzing structures'}</span>" <br><br><span style="color:var(--cyan)">🧬 DNA ACCEPTED (Conf: ${confStr})</span>`;
+            } else {
+                narrative = `Internal monologue: "<span style="color:var(--amber)">${log.reason || log.role || 'Analyzing structures'}</span>" <br><br><span style="color:var(--health-low)">🚫 Rejected by Quorum (Conf: ${confStr})</span>`;
+            }
+            cardColor = 'rgba(255, 204, 2, 0.4)';
+            icon = '🧠';
+        } else {
+            narrative = `Detected anomaly on <strong>${file}</strong>. Action: ${ev}`;
+        }
+
+        if (agentName.includes('QUEEN')) role = 'QUEEN';
+        
+        // Pick flavor safely
+        let flavorArr = microPersonality[role] || microPersonality['DEFAULT'];
+        if (ev === 'mind_trace') flavorArr = []; // No extra flavor for mind trace
+        const extraFlavor = flavorArr.length > 0 ? `<div style="margin-top: 8px; font-style: italic; color: var(--text-dim); font-size: 0.75rem;">"${flavorArr[seed % flavorArr.length]}"</div>` : '';
+
+        const card = document.createElement('div');
+        card.className = 'postcard fade-in';
+        card.style.border = `1px solid ${cardColor}`;
+        card.style.background = `rgba(8, 11, 16, 0.6)`;
+        card.style.padding = `12px`;
+        card.style.borderRadius = `var(--r-sm)`;
+        card.style.marginBottom = `0.5rem`;
+
+        card.innerHTML = `
+            <div class="postcard-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; font-size: 0.75rem; color:var(--text-sub); font-family:var(--font-mono);">
+                <span><span style="color:var(--cyan)">${icon} ${agentName}</span></span>
+                <span>${ts}</span>
+            </div>
+            <div class="postcard-body" style="font-size: 0.85rem; color: var(--text-main); line-height: 1.4;">
+                ${narrative}
+                ${extraFlavor}
+            </div>
         `;
-        tbody.appendChild(row);
+        container.appendChild(card);
     });
+
+    container.scrollTop = container.scrollHeight;
 }
 
 
@@ -993,6 +1106,8 @@ function renderProposals(proposals, stats) {
         badge.textContent = stats.pending || '';
         badge.style.display = stats.pending > 0 ? 'inline-flex' : 'none';
     }
+    const statusVotes = document.getElementById('status-votes');
+    if (statusVotes) statusVotes.textContent = stats.pending || '0';
 
     const container = document.getElementById('proposals-list');
     if (!container) return;
@@ -1210,64 +1325,83 @@ async function updateTerritory() {
         const res = await fetch('/api/territory');
         if (!res.ok) return;
         const data = await res.json();
-        const list = document.getElementById('territory-list');
-        if (!list) return;
+        const grid = document.getElementById('territory-grid');
+        if (!grid) return;
         
         if (!data.territories || data.territories.length === 0) {
-            list.innerHTML = '<div class="list-item placeholder-item">Territory is unmarked.</div>';
+            grid.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; width: 100%; text-align: center; margin-top: 2rem;">Territory is unexplored. Select a target and deploy.</div>';
             return;
         }
 
-        list.innerHTML = '';
+        grid.innerHTML = '';
+        let faultsCount = 0;
+        let criticalCount = 0;
+
         data.territories.forEach(terr => {
             const el = document.createElement('div');
             let displayStatus = terr.status;
             if (terr.status === 'CLEAN' && terr.agents && terr.agents.length > 0) {
                 displayStatus = 'HEALED';
             }
-            el.className = `territory-item status-${displayStatus}`;
             
-            const opacity = Math.max(0.3, terr.max_potency);
-            el.style.opacity = opacity;
+            let bgColor = 'rgba(64, 196, 255, 0.05)';
+            let borderColor = 'rgba(64, 196, 255, 0.2)';
+            let textColor = 'var(--text-main)';
             
-            const badges = terr.agents.map(a => `<span class="t-badge">${a}</span>`).join('');
-            let statusBadge = '';
-            if (terr.status === 'BLEEDING') {
-                statusBadge = `<span class="t-badge bleeding">🩸 BLEEDING x${terr.bleeding_count}</span>`;
+            if (displayStatus === 'BLEEDING') {
+                bgColor = 'rgba(255, 82, 82, 0.1)';
+                borderColor = 'rgba(255, 82, 82, 0.5)';
+                el.classList.add('pulse-red');
+                criticalCount++;
+                faultsCount++;
             } else if (displayStatus === 'HEALED') {
-                statusBadge = `<span class="t-badge" style="color:var(--cyan); border-color:var(--cyan);">🧬 HEALED</span>`;
-            } else {
-                statusBadge = `<span class="t-badge">✅ CLEAN</span>`;
+                bgColor = 'rgba(0, 230, 118, 0.05)';
+                borderColor = 'rgba(0, 230, 118, 0.3)';
             }
 
-            const dangerStr = terr.danger_score > 0 
-                ? `<span class="t-badge bleeding">⚡ ${terr.danger_score}</span>` 
-                : '';
+            const opacity = Math.max(0.4, terr.max_potency);
+            const basename = terr.path.split('/').pop();
+            
+            el.className = 'territory-node fade-in';
+            el.style.width = '120px';
+            el.style.height = '80px';
+            el.style.padding = '8px';
+            el.style.display = 'flex';
+            el.style.flexDirection = 'column';
+            el.style.justifyContent = 'center';
+            el.style.alignItems = 'center';
+            el.style.background = bgColor;
+            el.style.border = `1px solid ${borderColor}`;
+            el.style.borderRadius = 'var(--r-sm)';
+            el.style.cursor = 'pointer';
+            el.style.opacity = opacity;
+            el.style.textAlign = 'center';
+            el.style.position = 'relative';
 
-            let timeStr = 'Unknown';
-            if (terr.last_visited) {
-                const date = new Date(terr.last_visited);
-                timeStr = date.toLocaleTimeString([], { hour12: false });
-            }
+            let icon = '📁';
+            if (basename.includes('.')) icon = '📄';
+
+            let dangerStr = terr.danger_score > 0 ? `<div style="position:absolute; top:-5px; right:-5px; background:var(--health-low); color:#fff; border-radius:50%; width:16px; height:16px; font-size:10px; font-weight:bold; display:flex; justify-content:center; align-items:center;">!</div>` : '';
 
             el.innerHTML = `
-                <div class="territory-path" title="${terr.path}" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span>📁 ${terr.path.length > 25 ? '...' + terr.path.slice(-25) : terr.path}</span>
-                    <div style="display:flex; align-items:center;">
-                        <span class="territory-time">${timeStr}</span>
-                        <button class="btn btn-secondary" style="margin-left:8px; padding:2px 5px; font-size:0.75em; opacity:0.7;" onclick="event.stopPropagation(); window.forgetTerritory('${terr.full_path || terr.path}')" title="Evaporate Swarm memory (Delete .sifta marker)">✕</button>
-                    </div>
-                </div>
-                <div class="territory-badges">
-                    ${statusBadge}
-                    ${dangerStr}
-                    ${badges}
-                </div>
+                <div style="font-size: 1.2rem; margin-bottom: 4px;">${icon}</div>
+                <div style="font-size: 0.7rem; color: ${textColor}; word-break: break-all; font-family: var(--font-mono); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; width: 100%;">${basename}</div>
+                ${dangerStr}
             `;
+            
             // Click to read the graffiti
             el.addEventListener('click', () => showScarModal(terr.full_path || terr.path));
-            list.appendChild(el);
+            grid.appendChild(el);
+            
+            if (terr.danger_score > 0 && displayStatus !== 'BLEEDING') {
+                faultsCount++;
+            }
         });
+        
+        const sf = document.getElementById('status-faults');
+        if (sf) sf.textContent = faultsCount;
+        const sc = document.getElementById('status-critical');
+        if (sc) sc.textContent = criticalCount;
     } catch (err) {
         // ignore verbose polling errors
     }
@@ -1948,10 +2082,8 @@ walletWormholeFireBtn.addEventListener('click', async (e) => {
 // =========================================================================
 
 let swarmMapVisible = false;
-let swarmSimulation = null;
-let svg = null, linkGroup = null, nodeGroup = null;
-let swarmNodes = [];
-let swarmLinks = [];
+let svg = null;
+let sunburstGroup = null;
 let swarmMapInterval = null;
 
 function toggleSwarmMap() {
@@ -1964,20 +2096,19 @@ function toggleSwarmMap() {
         btn.style.background = 'rgba(0, 255, 136, 0.15)';
         btn.style.boxShadow = '0 0 14px rgba(0,255,136,0.3)';
         initSwarmGraph();
-        pollSwarmState();
-        swarmMapInterval = setInterval(pollSwarmState, 3000);
+        pollTopologyState();
+        swarmMapInterval = setInterval(pollTopologyState, 5000); // 5 seconds so it doesn't slam the IO on a 6000 file repo
         panel.scrollIntoView({ behavior: 'smooth' });
     } else {
         panel.style.display = 'none';
         btn.style.background = '';
         btn.style.boxShadow = '';
         if (swarmMapInterval) clearInterval(swarmMapInterval);
-        if (swarmSimulation) swarmSimulation.stop();
     }
 }
 
 function initSwarmGraph() {
-    if (swarmSimulation) return; 
+    if (svg) return; 
     
     const container = document.getElementById('swarm-svg');
     const width = container.clientWidth || 800;
@@ -1990,47 +2121,36 @@ function initSwarmGraph() {
         .attr('height', '100%')
         .attr('viewBox', `0 0 ${width} ${height}`);
         
-    svg.append('defs').append('marker')
-        .attr('id', 'arrow')
-        .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 22)
-        .attr('refY', 0)
-        .attr('markerWidth', 6)
-        .attr('markerHeight', 6)
-        .attr('orient', 'auto')
-        .append('path')
-        .attr('fill', '#e040fb')
-        .attr('d', 'M0,-5L10,0L0,5');
-        
-    linkGroup = svg.append('g').attr('class', 'links');
-    nodeGroup = svg.append('g').attr('class', 'nodes');
-    
-    swarmSimulation = d3.forceSimulation()
-        .force('link', d3.forceLink().id(d => d.id).distance(200))
-        .force('charge', d3.forceManyBody().strength(-400))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collide', d3.forceCollide().radius(45));
+    sunburstGroup = svg.append('g')
+        .attr('transform', `translate(${width / 2},${height / 2})`);
 }
 
-async function pollSwarmState() {
+async function pollTopologyState() {
     if (!swarmMapVisible) return;
     try {
-        const res = await fetch('/api/swarm_state');
+        const res = await fetch('/api/topology');
         if (!res.ok) return;
         const data = await res.json();
-        updateSwarmData(data);
+        
+        // Also poll basic metrics for the header
+        const resStats = await fetch('/api/swarm_state');
+        if (resStats.ok) {
+            const stats = await resStats.json();
+            document.getElementById('swarm-map-node-count').textContent = stats.nodes.length + ' ACTIVE CHRONICLES';
+            document.getElementById('swarm-map-tx-count').textContent = stats.transactions.length + ' TX RECORDED';
+            updateTxFeed(stats.transactions);
+        }
+        
+        renderSunburst(data);
     } catch (err) {
-        console.error('Swarm state error:', err);
+        console.error('Topology state error:', err);
     }
 }
 
-function updateSwarmData(data) {
-    document.getElementById('swarm-map-node-count').textContent = data.nodes.length + ' NODES';
-    document.getElementById('swarm-map-tx-count').textContent = data.transactions.length + ' TX SETTLED';
-    
+function updateTxFeed(txLogs) {
     const txList = document.getElementById('swarm-tx-list');
     txList.innerHTML = '';
-    data.transactions.slice(0, 50).forEach(tx => {
+    txLogs.slice(0, 50).forEach(tx => {
         const el = document.createElement('div');
         el.className = 'swarm-tx-item';
         el.innerHTML = `
@@ -2040,113 +2160,146 @@ function updateSwarmData(data) {
         `;
         txList.appendChild(el);
     });
-    
-    const activeLinksMap = new Map();
-    data.transactions.forEach(tx => {
-        const key = `${tx.from}->${tx.to}`;
-        if(!activeLinksMap.has(key)) {
-            activeLinksMap.set(key, { source: tx.from, target: tx.to, value: tx.amount });
-        } else {
-            activeLinksMap.get(key).value += tx.amount;
+}
+
+function formatBytes(bytes, decimals = 2) {
+    if (!+bytes) return '0 Bytes';
+    const k = 1024, dm = decimals < 0 ? 0 : decimals, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+function renderSunburst(data) {
+    const container = document.getElementById('swarm-svg');
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 500;
+    const radius = Math.min(width, height) / 2 - 20;
+
+    const root = d3.hierarchy(data)
+        .sum(d => d.value ? Math.max(d.value, 1024) : 0) // Minimum slice size for directories lacking large files
+        .sort((a, b) => b.value - a.value);
+
+    // Limit depth to avoid DOM lag
+    root.each(d => {
+        if (d.depth > 4 && d.children) {
+            d._children = d.children;
+            d.children = null;
         }
     });
-    
-    const oldNodes = new Map(swarmNodes.map(n => [n.id, n]));
-    swarmNodes = data.nodes.map(n => {
-        const old = oldNodes.get(n.id);
-        if (old) return { ...old, ...n };
-        return n;
-    });
-    
-    const nodeIds = new Set(swarmNodes.map(n => n.id));
-    swarmLinks = Array.from(activeLinksMap.values()).filter(l => 
-        nodeIds.has(l.source) && nodeIds.has(l.target)
-    );
-    
-    renderD3Graph();
+
+    const partition = d3.partition()
+        .size([2 * Math.PI, radius]);
+        
+    partition(root);
+
+    const arc = d3.arc()
+        .startAngle(d => d.x0)
+        .endAngle(d => d.x1)
+        .innerRadius(d => Math.max(0, d.y0))
+        .outerRadius(d => Math.max(0, d.y1));
+
+    // Color scaler for depth (Cyan -> Purple mapping)
+    const colorDepth = d3.scaleLinear()
+        .domain([0, 4])
+        .range(["#00e5ff", "#e040fb"]);
+
+    const path = sunburstGroup.selectAll("path")
+        .data(root.descendants().filter(d => (d.x1 - d.x0) > 0.005));
+
+    path.exit().remove();
+
+    const pathEnter = path.enter().append("path")
+        .attr("class", "sunburst-arc")
+        .on("mouseenter", handleHover)
+        .on("mouseleave", handleHoverOut);
+
+    const merged = pathEnter.merge(path);
+
+    merged
+        .attr("d", arc)
+        .style("fill", d => {
+            if (d.data.status === "BLEEDING" || d.data.danger_score > 0) return "rgba(255, 0, 64, 0.7)";
+            return colorDepth(d.depth);
+        })
+        .attr("class", d => {
+            if (d.data.status === "BLEEDING" || d.data.danger_score > 0) return "sunburst-arc sunburst-danger";
+            return "sunburst-arc";
+        });
 }
 
-function renderD3Graph() {
-    // LINKS
-    const link = linkGroup.selectAll('.link')
-        .data(swarmLinks, d => d.source.id ? `${d.source.id}->${d.target.id}` : `${d.source}->${d.target}`);
-        
-    link.exit().remove();
-    const linkEnter = link.enter().append('line')
-        .attr('class', 'link')
-        .attr('stroke', '#e040fb')
-        .attr('stroke-width', d => Math.min(6, Math.max(1.5, Math.sqrt(d.value))))
-        .attr('marker-end', 'url(#arrow)');
-    const linkMerged = linkEnter.merge(link);
+function handleHover(event, d) {
+    const hud = document.getElementById('swarm-sunburst-hud');
+    hud.classList.remove('hidden');
     
-    // NODES
-    const node = nodeGroup.selectAll('.node-group')
-        .data(swarmNodes, d => d.id);
-        
-    node.exit().remove();
-    const nodeEnter = node.enter()
-        .append('g')
-        .attr('class', 'node-group')
-        .call(d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended));
-            
-    nodeEnter.append('circle')
-        .attr('class', 'node-circle')
-        .attr('r', d => Math.max(15, Math.min(35, 12 + Math.sqrt(d.stgm_balance || 0))));
-        
-    nodeEnter.append('text')
-        .attr('class', 'node-label')
-        .attr('dy', -25)
-        .attr('text-anchor', 'middle')
-        .text(d => d.id);
-        
-    nodeEnter.append('text')
-        .attr('class', 'node-balance')
-        .attr('dy', 4)
-        .text(d => parseFloat(d.stgm_balance || 0).toFixed(1));
-        
-    const nodeMerged = nodeEnter.merge(node);
+    document.getElementById('hud-name').textContent = d.data.name;
+    document.getElementById('hud-size').textContent = formatBytes(d.value);
     
-    nodeMerged.select('.node-circle')
-        .attr('r', d => Math.max(15, Math.min(35, 12 + Math.sqrt(d.stgm_balance || 0))))
-        .attr('fill', d => {
-            if (d.style === 'GHOST') return '#1a1a25';
-            if (d.style === 'BLEEDING' || d.style === 'CRITICAL') return '#ff1744';
-            return '#0A1A2F';
-        })
-        .attr('stroke', d => {
-            if (d.style === 'GHOST') return '#3d5068';
-            if (d.style === 'BLEEDING' || d.style === 'CRITICAL') return '#ff1744';
-            return d.active ? '#00ff88' : '#00e5ff';
-        })
-        .style('filter', d => d.active ? 'drop-shadow(0 0 10px rgba(0,255,136,0.5))' : 'none');
-        
-    nodeMerged.select('.node-balance')
-        .text(d => parseFloat(d.stgm_balance || 0).toFixed(1));
-        
-    swarmSimulation.nodes(swarmNodes).on('tick', () => {
-        linkMerged
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
-            
-        nodeMerged.attr('transform', d => `translate(${d.x},${d.y})`);
+    const dangerEl = document.getElementById('hud-danger');
+    if (d.data.danger_score > 0 || d.data.status === "BLEEDING") {
+        dangerEl.textContent = `[!] ${d.data.status} | SCENT: ${d.data.danger_score.toFixed(1)}`;
+        dangerEl.className = 'hud-danger-bleeding';
+    } else {
+        dangerEl.textContent = 'CLEAN';
+        dangerEl.className = 'hud-danger-clean';
+    }
+    
+    const agentsEl = document.getElementById('hud-agents');
+    agentsEl.innerHTML = '';
+    (d.data.agents || []).forEach(ag => {
+        const tag = document.createElement('span');
+        tag.className = 'hud-agent-tag';
+        tag.textContent = ag;
+        agentsEl.appendChild(tag);
     });
-    
-    swarmSimulation.force('link').links(swarmLinks);
-    swarmSimulation.alpha(0.3).restart();
+
+    sunburstGroup.selectAll("path")
+        .style("opacity", node => (node === d || d.ancestors().includes(node)) ? 1 : 0.25);
 }
 
-function dragstarted(event, d) {
-  if (!event.active) swarmSimulation.alphaTarget(0.3).restart();
-  d.fx = d.x; d.fy = d.y;
+function handleHoverOut() {
+    document.getElementById('swarm-sunburst-hud').classList.add('hidden');
+    sunburstGroup.selectAll("path").style("opacity", 1);
 }
-function dragged(event, d) {
-  d.fx = event.x; d.fy = event.y;
+
+
+// ==================================================
+// ARCHITECT ARCHIVE (Session Log Viewer)
+// ==================================================
+async function openArchiveModal() {
+    document.getElementById('archive-modal').showModal();
+    // Populate the date picker
+    try {
+        const res = await fetch('/api/archive/dates');
+        const data = await res.json();
+        const sel = document.getElementById('archive-date-select');
+        sel.innerHTML = '';
+        (data.dates || []).forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.textContent = d;
+            sel.appendChild(opt);
+        });
+        if (data.dates && data.dates.length > 0) {
+            loadArchiveLog();
+        }
+    } catch(e) {
+        document.getElementById('archive-log-content').textContent = 'Error fetching archive dates: ' + e;
+    }
 }
-function dragended(event, d) {
-  if (!event.active) swarmSimulation.alphaTarget(0);
-  d.fx = null; d.fy = null;
+
+async function loadArchiveLog() {
+    const date = document.getElementById('archive-date-select').value;
+    const content = document.getElementById('archive-log-content');
+    content.textContent = 'Loading…';
+    try {
+        const res = await fetch(`/api/archive/log?date=${date}`);
+        const data = await res.json();
+        content.textContent = data.content || '[Empty log]';
+        // Scroll to bottom (newest entries)
+        content.parentElement.scrollTop = content.parentElement.scrollHeight;
+    } catch(e) {
+        content.textContent = 'Error loading log: ' + e;
+    }
 }
 
 // ==================================================
@@ -2173,13 +2326,18 @@ async function fetchOllamaModelsForArena() {
         redSel.innerHTML = '';
         blueSel.innerHTML = '';
         
-        models.forEach(m => {
-            redSel.add(new Option(m, m));
-            blueSel.add(new Option(m, m));
-        });
-        
-        if (models.length > 1) {
-            blueSel.selectedIndex = 1; // Pick second model for blue by default
+        if (models.length === 0) {
+            redSel.add(new Option("⚠️ OLLAMA OFFLINE OR NO MODELS", ""));
+            blueSel.add(new Option("⚠️ OLLAMA OFFLINE OR NO MODELS", ""));
+        } else {
+            models.forEach(m => {
+                redSel.add(new Option(m, m));
+                blueSel.add(new Option(m, m));
+            });
+            
+            if (models.length > 1) {
+                blueSel.selectedIndex = 1; // Pick second model for blue by default
+            }
         }
     } catch (e) {
         console.error("Could not fetch arena models", e);
@@ -2219,6 +2377,11 @@ async function startArenaMatch() {
     const rModel = document.getElementById('arena-red-model').value;
     const bModel = document.getElementById('arena-blue-model').value;
     const lvl = document.getElementById('arena-level-select').value;
+    
+    if (!rModel || !bModel) {
+        alert("Cannot start arena: missing Ollama models. Is Ollama running?");
+        return;
+    }
     
     // Reset statuses and dim
     const rStatus = document.getElementById('red-status');

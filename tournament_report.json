@@ -1,0 +1,31 @@
+{
+    "red_model": "gemma4:latest",
+    "blue_model": "deepseek-coder:6.7b",
+    "levels": {
+        "level_1": {
+            "red_wins": 0,
+            "blue_wins": 0,
+            "draws": 100
+        },
+        "level_2": {
+            "red_wins": 0,
+            "blue_wins": 0,
+            "draws": 100
+        },
+        "level_3": {
+            "red_wins": 0,
+            "blue_wins": 100,
+            "draws": 0
+        },
+        "level_4": {
+            "red_wins": 0,
+            "blue_wins": 0,
+            "draws": 100
+        }
+    },
+    "totals": {
+        "red_wins": 0,
+        "blue_wins": 100,
+        "draws": 300
+    }
+}

@@ -271,6 +271,15 @@ def approve_proposal(proposal_id: str) -> dict:
         reward_interaction(proposal["agent_id"], "ARCHITECT")
     except Exception:
         pass
+
+    # Adaptive Memory: agent learns from approval
+    try:
+        import adaptive_memory
+        strategy = proposal.get("vocation", "syntax_fix") or "syntax_fix"
+        adaptive_memory.increase_confidence(proposal["agent_id"], strategy)
+    except Exception as e:
+        print(f"  [MEMORY] Could not update adaptive bias: {e}")
+
     try:
         from sifta_postcard import write_postcard
         write_postcard(
@@ -314,6 +323,14 @@ def reject_proposal(proposal_id: str, reason: str = "Rejected by operator") -> d
         punish_interaction(proposal["agent_id"], "ARCHITECT")
     except Exception:
         pass
+
+    # Adaptive Memory: agent gets cautious in this strategy
+    try:
+        import adaptive_memory
+        strategy = proposal.get("vocation", "syntax_fix") or "syntax_fix"
+        adaptive_memory.penalize_pattern(proposal["agent_id"], strategy)
+    except Exception as e:
+        print(f"  [MEMORY] Could not update adaptive bias: {e}")
 
     print(f"  [❌ REJECTED] Proposal {proposal_id[:8]}... discarded. Reason: {reason}")
     return proposal

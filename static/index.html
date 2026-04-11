@@ -36,130 +36,79 @@
                 <span class="stat-value sys-status" id="sys-status-text">NOMINAL</span>
             </div>
         </div>
-        <div class="topbar-panels">
+        <div class="topbar-panels" id="architect-topbar-panels" style="display: none;">
             <button class="btn btn-panel active" id="panel-btn-fleet" onclick="activateFleetPanel()">⬡ FLEET</button>
             <button class="btn btn-panel" id="panel-btn-territory" onclick="toggleDrawer('drawer-territory', 'panel-btn-territory')">🗺 TERRITORY</button>
             <button class="btn btn-panel" id="panel-btn-proposals" onclick="toggleDrawer('drawer-proposals', 'panel-btn-proposals')">📋 PROPOSALS <span id="proposals-badge" class="panel-badge" style="display:none;"></span></button>
             <button class="btn btn-panel" id="panel-btn-cemetery" onclick="toggleDrawer('drawer-cemetery', 'panel-btn-cemetery')">☠ CEMETERY</button>
             <button class="btn btn-panel" id="panel-btn-quorum" onclick="toggleDrawer('drawer-quorum', 'panel-btn-quorum')">⬡ QUORUM</button>
         </div>
-        <div class="topbar-actions">
+        <div class="topbar-actions" id="architect-topbar-actions" style="display: none;">
             <button class="btn btn-secondary" id="play-code-swimmers-btn" style="border-color: rgba(33, 150, 243, 0.6); color: #2196F3; font-weight: bold;" onclick="document.getElementById('arena-overlay').classList.add('active'); fetchOllamaModelsForArena();">[🎮] PLAY CODE SWIMMERS</button>
             <button class="btn btn-danger" id="kill-swimmer-btn" title="Retract active submarine drone via tether">[↶] RETRACT TETHER</button>
             <button class="btn btn-secondary" id="open-wallet-btn" style="border-color: rgba(224, 64, 251, 0.4); color: var(--magenta);">[🏦] VAULT</button>
             <button class="btn btn-secondary" id="open-ledger-btn" style="border-color: rgba(0, 229, 255, 0.3); color: var(--cyan);" onclick="document.getElementById('ledger-modal').showModal(); if(typeof fetchFullLedger === 'function') fetchFullLedger();">[🗃️] LEDGER</button>
+            <button class="btn btn-secondary" id="open-archive-btn" style="border-color: rgba(0,255,136,0.4); color: #00ff88;" onclick="openArchiveModal()">[📜] ARCHIVE</button>
             <button class="btn btn-secondary" id="open-swarm-map-btn" style="border-color: rgba(0,255,136,0.4); color: #00ff88;" onclick="toggleSwarmMap()">[🕸] SWARM MAP</button>
             <button class="btn btn-secondary" id="open-auth-btn" style="border-color: rgba(255,200,0,0.5); color: #ffc800;" onclick="document.getElementById('auth-modal').showModal()">[🔐] AUTH GENERATOR</button>
             <button class="btn btn-primary" id="open-settings-btn" onclick="document.getElementById('settings-modal').showModal()">[⚙] SETTINGS</button>
         </div>
+        <div class="topbar-core-actions" style="display: flex; gap: 15px; align-items: center; padding-right: 15px;">
+            <button class="btn btn-primary" style="font-size: 1.1em; padding: 0.6em 1.5em; letter-spacing: 0.05em; background-color: var(--cyan); color: #000;" onclick="document.getElementById('deploy-modal').showModal()">🚀 DEPLOY SWARM</button>
+            <div style="display: flex; align-items: center; gap: 8px;" title="Enable Deep Architect Controls">
+                <span style="font-size: 0.7em; color: var(--text-dim); white-space: nowrap; font-family: var(--font-mono); letter-spacing: 0.1em;">⚙️ ARCHITECT</span>
+                <label class="switch">
+                    <input type="checkbox" id="architect-mode-toggle" onchange="document.getElementById('architect-topbar-panels').style.display = this.checked ? 'flex' : 'none'; document.getElementById('architect-topbar-actions').style.display = this.checked ? 'flex' : 'none'; document.getElementById('drawers-container').style.display = this.checked ? 'flex' : 'none';">
+                    <span class="slider" style="background-color: var(--bg-hover);"></span>
+                </label>
+            </div>
+        </div>
     </header>
 
+    <div class="swarm-status-bar" id="swarm-status-bar">
+        <div class="status-item"><span class="status-icon">🧬</span> Agents Active: <strong id="status-agents-active">0</strong></div>
+        <div class="status-item"><span class="status-icon">🔥</span> Faults Detected: <strong id="status-faults">0</strong></div>
+        <div class="status-item"><span class="status-icon">🩸</span> Critical Nodes: <strong id="status-critical">0</strong></div>
+        <div class="status-item"><span class="status-icon">🗳️</span> Pending Votes: <strong id="status-votes">0</strong></div>
+    </div>
+
     <main class="dashboard">
-        <!-- Left Panel: Unified Agent Roster (progressive disclosure) -->
+        <!-- Center Panel: The Territory -->
+        <section class="panel territory-panel" aria-label="The Territory">
+            <h2><span class="panel-icon">📍</span> THE TERRITORY</h2>
+            <div class="territory-container" id="territory-grid" style="flex: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; align-content: flex-start;">
+                <!-- CSS grid of files will be injected here -->
+                <div style="color: var(--text-muted); font-size: 0.8rem; width: 100%; text-align: center; margin-top: 2rem;">No active sector. Select a target and deploy a swimmer...</div>
+            </div>
+
+        </section>
+
+        <!-- Right Panel: Live Feed (Postcards) -->
+        <section class="panel postcards-panel" aria-label="Live Feed">
+            <h2 style="display: flex; justify-content: space-between; align-items: center;">
+                <span><span class="panel-icon">📬</span> LIVE FEED</span>
+                <span id="feed-status" class="blink" style="font-size:0.65em; color:var(--cyan); font-weight:700;">LISTENING...</span>
+            </h2>
+            <div class="postcards-feed" id="postcards-feed" style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px;">
+                <!-- Javascript will inject postcard divs here -->
+                <div class="postcard system-postcard" style="border: 1px solid var(--border-color); background: var(--bg-dark); padding: 10px; border-radius: var(--r-sm);">
+                    <div class="postcard-body" style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-sub);">Neural uplink secure. Awaiting transmission from the swarm...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Far Right Panel: Unified Agent Roster -->
         <section class="panel roster-panel" aria-label="Agent Roster">
             <h2 style="display: flex; justify-content: space-between; align-items: center;">
-                <span><span class="panel-icon">◈</span> UNIFIED ROSTER</span>
+                <span><span class="panel-icon">◈</span> THE CREW</span>
                 <label style="font-size: 0.6em; font-weight: normal; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; gap: 5px; text-transform: uppercase;">
                     <input type="checkbox" id="show-hidden-agents" onchange="if(typeof fetchAgents === 'function') fetchAgents()"> Show Dormant
                 </label>
             </h2>
-            <div id="roster-grid" class="grid">
+            <div id="roster-grid" class="grid" style="overflow-y: auto; flex: 1;">
                 <div class="placeholder-card">
                     <span class="blink">▋</span> Polling roster...
                 </div>
-            </div>
-        </section>
-
-        <!-- Center Panel: Live Log Stream + Dispatch TV -->
-        <section class="panel logs-panel" aria-label="Live Log Stream">
-            <h2><span class="panel-icon">◉</span> LIVE LOG STREAM</h2>
-            <div class="log-container">
-                <table id="logs-table">
-                    <thead>
-                        <tr>
-                            <th>TIME</th>
-                            <th>EVENT</th>
-                            <th>FILE</th>
-                            <th>HASH</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logs-body">
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Central Dispatch TV Console -->
-            <div class="dispatch-console" id="central-dispatch-console">
-                <div class="dc-header">
-                    <span class="dc-title">⬡ MISSION CONTROL</span>
-                    <span class="dc-agent" id="dc-active-agent">NO AGENT SELECTED</span>
-                </div>
-
-                <div class="dc-body">
-                    <!-- TOP: Matrix TV — full width, dominant -->
-                    <div class="dc-terminal-container">
-                        <div class="dc-terminal-header">
-                            <span>LIVE TELEMETRY</span>
-                            <span class="dc-scroll-hint" id="dc-scroll-hint">▲ SCROLL LOCKED — READING HISTORY</span>
-                        </div>
-                        <div id="dc-terminal">
-                            <div class="placeholder t-boot">&gt; NEURAL UPLINK SECURE<br>&gt; WAITING FOR SIFTA NODE SELECTION... <span class="blink">▋</span></div>
-                        </div>
-                    </div>
-
-                    <!-- BOTTOM: Compact controls strip -->
-                    <div class="dc-config">
-                        <div class="form-group">
-                            <input type="text" id="dc-target" class="form-input" placeholder="Select target territory for deployment...">
-                        </div>
-                        <div class="browse-row" style="display:flex; gap:4px; flex-shrink:0;">
-                            <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', 'dc')">📄</button>
-                            <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', 'dc')">📁</button>
-                        </div>
-                        <div class="toggle-group" style="display:flex; align-items:center; gap:0.4rem; flex-shrink:0;">
-                            <span style="font-size:0.6rem; color:var(--health-low); font-family:var(--font-mono); letter-spacing:0.08em;">WRITE</span>
-                            <label class="switch">
-                                <input type="checkbox" id="dc-write">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <button type="button" class="btn btn-primary" id="dc-send-btn" disabled onclick="sendSwimmerCentral()" style="flex-shrink:0; white-space:nowrap; padding: 0.45rem 1rem;">
-                            <span class="btn-icon">▶</span> SEND SWIMMER
-                        </button>
-                        <button class="btn btn-danger" id="dc-abort-btn" disabled onclick="abortSwimmer()" style="flex-shrink:0; white-space:nowrap; padding: 0.45rem 1rem;" title="Kill active swimmer">
-                            ■ ABORT
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Right Panel: Intel (Territory + Cemetery + Quorum) -->
-        <section class="panel ledger-panel intel-panel" aria-label="Intel">
-            <h2 style="display: flex; justify-content: space-between; align-items: center;">
-                <span><span class="panel-icon">🗺️</span> INTEL</span>
-                <span id="fleet-total-count" style="font-size:0.65em; color:var(--cyan); font-weight:700;">—</span>
-            </h2>
-            <div class="intel-body">
-                <details class="fleet-drawer" id="drawer-territory" open>
-                    <summary class="fleet-drawer-summary">🗺️ TERRITORY MAP <span id="territory-badge" class="fleet-drawer-badge"></span></summary>
-                    <div id="territory-list" class="fleet-drawer-body"></div>
-                </details>
-                <details class="fleet-drawer" id="drawer-cemetery">
-                    <summary class="fleet-drawer-summary" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span>☠ CEMETERY <span id="cemetery-badge" class="fleet-drawer-badge"></span></span>
-                        <button class="btn btn-secondary" style="font-size:0.65em; padding:2px 8px; opacity:0.8;" onclick="event.preventDefault(); event.stopPropagation(); window.emptyTrash()" title="Permanently delete all abandoned footprints in the recycle bin.">🗑️ EMPTY TRASH</button>
-                    </summary>
-                    <ul id="cemetery-list" class="list fleet-drawer-body" style="max-height: 220px;"></ul>
-                </details>
-                <details class="fleet-drawer" id="drawer-proposals">
-                    <summary class="fleet-drawer-summary" style="color: var(--cyan); border-bottom-color: rgba(0,229,255,0.15);">📋 PROPOSALS <span id="proposals-badge-drawer" class="fleet-drawer-badge"></span></summary>
-                    <div id="proposals-list" class="fleet-drawer-body" style="max-height: 500px; overflow-y: auto;"></div>
-                </details>
-                <details class="fleet-drawer" id="drawer-quorum">
-                    <summary class="fleet-drawer-summary">⬡ QUORUM <span id="quorum-badge" class="fleet-drawer-badge"></span></summary>
-                    <ul id="quorum-list" class="list fleet-drawer-body" style="max-height: 180px;"></ul>
-                </details>
             </div>
         </section>
     </main>
@@ -177,8 +126,15 @@
             <span id="swarm-map-tx-count" style="font-size:0.7em; color:#e040fb; margin-left:1rem;"></span>
             <span style="font-size:0.6em; color:var(--text-dim); margin-left:auto;">AUTO-REFRESHING EVERY 3s</span>
         </div>
-        <div class="swarm-map-body">
+        <div class="swarm-map-body" style="position: relative;">
             <svg id="swarm-svg"></svg>
+            <div id="swarm-sunburst-hud" class="hidden">
+                <div id="hud-name">TARGET</div>
+                <div class="hud-stats">
+                    <span id="hud-size">0 KB</span> • <span id="hud-danger" class="hud-danger-clean">0 FAULTS</span>
+                </div>
+                <div id="hud-agents"></div>
+            </div>
             <div id="swarm-tx-feed">
                 <div class="tx-feed-title">⚡ TX FEED</div>
                 <div id="swarm-tx-list"></div>
@@ -231,7 +187,7 @@
                     <label for="llm-api-key">API Key</label>
                     <input type="password" id="llm-api-key" class="form-input" placeholder="sk-..." autocomplete="off">
                 </div>
-                <button class="btn btn-primary" type="button" onclick="document.getElementById('settings-modal').close()">CLOSE</button>
+                <button class="btn btn-primary" type="submit">SAVE SETTINGS</button>
             </form>
         </div>
     </dialog>
@@ -260,6 +216,23 @@
             <div style="display: flex; flex-direction: column; gap: 5px;">
                 <label style="color: var(--text-dim); font-size: 0.8em; font-family: 'JetBrains Mono', monospace;">OVERRIDE TOKEN (60s TTL)</label>
                 <textarea id="auth-token-output" class="config-input" rows="4" readonly style="font-family: 'JetBrains Mono', monospace; resize: none; background: rgba(0,0,0,0.5); word-break: break-all;" onclick="this.select();"></textarea>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- ═══ Archive Modal (Architect Session Logs) ═══ -->
+    <dialog id="archive-modal" class="modal" aria-labelledby="archive-title" style="width: 960px; max-width: 95vw; height: 88vh;">
+        <div class="modal-content" style="height:100%; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <h3 id="archive-title" style="color:#00ff88;">[📜] ARCHITECT SESSION ARCHIVE // SWIM LOGS</h3>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <select id="archive-date-select" style="background:#0a1628; border:1px solid rgba(0,255,136,0.3); color:#00ff88; padding:0.3rem 0.5rem; border-radius:4px; font-family:var(--font-mono); font-size:0.75rem;"></select>
+                    <button class="btn btn-secondary" id="refresh-archive-btn" style="font-size:0.6rem; padding:0.2rem 0.6rem;" onclick="loadArchiveLog()">↻ LOAD</button>
+                    <button class="close-btn" onclick="document.getElementById('archive-modal').close()">×</button>
+                </div>
+            </div>
+            <div style="flex:1; overflow-y:auto; background:#02060A; border-radius:4px; padding:1rem; margin-top:0.5rem;">
+                <pre id="archive-log-content" style="font-family:var(--font-mono); font-size:0.78rem; color:#4ade80; white-space:pre-wrap; line-height:1.5; margin:0;">Select a date and click LOAD to view swim session logs...</pre>
             </div>
         </div>
     </dialog>
@@ -509,6 +482,68 @@
             <div class="arena-log" id="arena-system-log">System holding for match start...</div>
         </div>
     </div>
+
+    <!-- DEPLOY MODAL -->
+    <dialog id="deploy-modal" class="modal" style="max-width: 600px; padding: 0; background: transparent; border: none;">
+        <div class="dispatch-console" id="central-dispatch-console" style="margin: 0; box-shadow: 0 10px 30px rgba(0,0,0,0.8); border: 1px solid var(--cyan);">
+            <div class="dc-header" style="justify-content: space-between;">
+                <div>
+                    <span class="dc-title">🚀 DEPLOY TO TERRITORY</span>
+                </div>
+                <button onclick="document.getElementById('deploy-modal').close()" style="background:none; border:none; color:var(--text-dim); cursor:pointer;">[X]</button>
+            </div>
+            
+            <div class="dc-body" style="padding: 20px;">
+                <!-- Target Input -->
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="font-size: 0.8em; color: var(--text-dim); margin-bottom: 5px; display: block;">TARGET PATH (FILE OR DIRECTORY)</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="dc-target" class="form-input" placeholder="Select target territory for deployment..." style="flex: 1;">
+                        <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', 'dc')">📄 FILE</button>
+                        <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', 'dc')">📁 DIR</button>
+                    </div>
+                </div>
+
+                <!-- Live Agent Selector -->
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="font-size: 0.8em; color: var(--text-dim); margin-bottom: 5px; display: block;">ASSIGNED AGENT (SELECTED ON RIGHT VISUAL PANEL)</label>
+                    <div style="padding: 10px; border: 1px solid var(--border-color); border-radius: var(--r-sm); background: rgba(0,0,0,0.3); font-family: var(--font-mono); color: var(--text-main);" id="dc-active-agent">NO AGENT SELECTED</div>
+                </div>
+
+                <!-- Execution Mode -->
+                <div class="form-group" style="margin-bottom: 25px;">
+                    <label style="font-size: 0.8em; color: var(--text-dim); margin-bottom: 5px; display: block;">SWARM MODE</label>
+                    <div class="toggle-group" style="display:flex; align-items:center; gap:1rem; flex-shrink:0; padding: 10px; background: rgba(0,255,136,0.05); border: 1px solid rgba(0,255,136,0.2); border-radius: var(--r-sm);">
+                        <span style="font-size:0.8rem; color:var(--health-low); font-family:var(--font-mono); letter-spacing:0.08em; font-weight: bold;">[🔥] PERMIT FILE WRITE (MUTATION)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="dc-write">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Matrix TV (Live Status snippet inside modal) -->
+                <div class="dc-terminal-container" style="margin-bottom: 15px; max-height: 120px;">
+                    <div class="dc-terminal-header">
+                        <span>LIVE INJECT TELEMETRY</span>
+                    </div>
+                    <div id="dc-terminal" style="font-size: 0.8em; padding: 10px;">
+                        <div class="placeholder t-boot">&gt; STANDING BY FOR LAUNCH SEQUENCE...</div>
+                    </div>
+                </div>
+
+                <!-- Launch Strip -->
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                    <button class="btn btn-danger" id="dc-abort-btn" disabled onclick="abortSwimmer()" style="padding: 0.6rem 1.5rem;">
+                        ■ ABORT
+                    </button>
+                    <button type="button" class="btn btn-primary" id="dc-send-btn" disabled onclick="sendSwimmerCentral(); document.getElementById('deploy-modal').close();" style="padding: 0.6rem 2rem; background: var(--cyan); color: #000; font-weight: bold;">
+                        <span class="btn-icon">🚀</span> DEPLOY
+                    </button>
+                </div>
+            </div>
+        </div>
+    </dialog>
 
     <script src="/static/app.js?v=7"></script>
 </body>

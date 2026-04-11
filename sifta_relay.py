@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--target", default="localhost", choices=list(TARGETS.keys()), help="Target node")
     parser.add_argument("--intent", help="Intent to dispatch (e.g. system.ping, swarm.medic)")
     parser.add_argument("--payload", default="{}", help="JSON payload string")
-    parser.add_argument("--ttl", type=int, default=60, help="Packet TTL in seconds")
+    parser.add_argument("--ttl", type=int, default=3600, help="Packet TTL in seconds")
     args = parser.parse_args()
     
     if args.keygen_mnemonic:

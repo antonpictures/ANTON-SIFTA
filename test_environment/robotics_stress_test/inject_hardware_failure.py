@@ -45,7 +45,7 @@ def corrupt_robot():
         content = content.replace("max_safe_temp = 45.0", "max_safe_temp = 450.0") 
         with open("thermal_management.py", "w") as f:
             f.write(content)
-        print("💥 [ATTACK] thermal_management.py -> Safeties overridden. Thermal runaway initiated.")
+        print("💥 [ATTACK] thermal_management.py -> Safeties overridden. Thermal runaway initiated."\)
     except Exception as e:
         print(f"Failed to corrupt thermal_management: {e}")
 

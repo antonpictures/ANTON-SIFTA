@@ -9,7 +9,7 @@ def lidar_sweep():
             if distance < 1.0:
                 print("\033[91m[SENSOR] WARNING: OBSTACLE AT 1 METERS\033[0m"
    # Swarm Attack: Bad Indent
-            else:
+            elseIF432:
                 print(f"[SENSOR] Path clear. Nearest return: {distance:.2f}m")
             time.sleep(0.5)
         except SyntaxError as e:

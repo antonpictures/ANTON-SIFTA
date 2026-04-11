@@ -20,11 +20,26 @@ PUBKEY_PATH = Path.home() / ".sifta" / "identity.pub.pem"
 # HARDWARE SALT (stronger + less spoofable)
 # ─────────────────────────────────────────────
 def _get_hardware_salt() -> str:
+    machine_uuid = str(uuid.getnode())
+    try:
+        if platform.system() == "Darwin":
+            import subprocess
+            out = subprocess.check_output(
+                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"], 
+                stderr=subprocess.DEVNULL
+            ).decode("utf-8")
+            for line in out.splitlines():
+                if "IOPlatformUUID" in line:
+                    machine_uuid = line.split("=")[-1].strip().strip('"')
+                    break
+    except Exception:
+        pass
+
     parts = [
         platform.system(),
         platform.machine(),
         platform.release(),
-        str(uuid.getnode()),
+        machine_uuid,
         platform.processor(),  # added entropy
     ]
     raw = "|".join(parts)

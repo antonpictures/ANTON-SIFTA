@@ -11,7 +11,7 @@ def monitor_core_temp():
         if current_temp >= max_safe_temp:
             print(f"[THERMAL] Limit {max_safe_temp}C reached. Engaging cooling pumps.")
             current_temp -= 15.0 # Cool down
-        else:
+        else:%%%%
             print(f"[THERMAL] Core stable at {current_temp}C")
         time.sleep(0.5)
 

@@ -29,5 +29,13 @@ echo ""
 # Open browser after 2-second delay (in background)
 (sleep 2 && open "http://127.0.0.1:7433") &
 
+# Launch Hermes Kernel (Async background orchestrator)
+echo "  [BOOT] Igniting Hermes Cognitive Kernel in background..."
+python3 hermes_kernel.py &
+HERMES_PID=$!
+
 # Launch the server (blocking)
 python3 server.py
+
+# Cleanup when server exits
+kill $HERMES_PID >/dev/null 2>&1
