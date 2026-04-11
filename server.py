@@ -343,16 +343,32 @@ async def get_quorum():
 
 
 @app.get("/api/ollama-models")
-async def get_ollama_models():
-    """Query local Ollama daemon for installed models."""
+async def get_ollama_models(base_url: str = ""):
+    """Query Ollama daemon for installed models.
+    Configurable via:
+      - OLLAMA_HOST env variable  (e.g. http://mac-mini.local:11434)
+      - ?base_url= query param    (overrides env)
+    """
     import urllib.request
+    import os
+
+    ollama_host = (
+        base_url.rstrip("/")                      # 1. query param wins
+        or os.environ.get("OLLAMA_HOST", "").rstrip("/")   # 2. env var
+        or "http://localhost:11434"                # 3. default
+    )
+
     try:
-        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as resp:
+        url = f"{ollama_host}/api/tags"
+        with urllib.request.urlopen(url, timeout=4) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            models = [m["name"] for m in data.get("models", [])]
-            return {"models": models, "available": True}
+            # Sort: newest / largest first by size
+            raw = data.get("models", [])
+            raw.sort(key=lambda m: m.get("size", 0), reverse=True)
+            models = [m["name"] for m in raw]
+            return {"models": models, "available": True, "host": ollama_host}
     except Exception as e:
-        return {"models": [], "available": False, "error": str(e)}
+        return {"models": [], "available": False, "host": ollama_host, "error": str(e)}
 
 
 
