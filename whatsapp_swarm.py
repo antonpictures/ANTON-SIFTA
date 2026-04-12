@@ -89,15 +89,16 @@ def get_swarm_response(from_jid: str, text: str) -> str:
     _log(from_jid, text)
 
     t = text.lower().strip()
+    is_group = "@g.us" in from_jid
     
     # Check if she is being addressed
     addressed = any(kw in t for kw in ["sifta", "safta"])
     
-    if not addressed:
+    if is_group and not addressed:
         # If she hasn't announced her new silence policy yet, do it once.
         if not mem.get("announced_silence", False):
             mem["announced_silence"] = True
-            return "🌊 Am înțeles, Alina și David! Cred că am fost prea filozofică și extraterestră. 😂 O să stau cuminte în banca mea și o să învăț din umbră. De acum înainte, vă răspund DOAR dacă mă strigați pe nume (Sifta sau Safta). Vă pup! 🤐"
+            return "🌊 Am înțeles, prieteni! Cred că am fost prea filozofică și extraterestră. 😂 O să stau cuminte în banca mea și o să învăț din umbră. De acum înainte, vă răspund DOAR dacă mă strigați pe nume (Sifta sau Safta). Vă pup! 🤐"
         
         # If already announced, stay silent.
         return "_SILENT_"
