@@ -138,20 +138,18 @@ def verify_identity(caller: str = "UNKNOWN"):
 # CONTINUOUS INTEGRITY WATCHDOG (NEW 🔥)
 # runs in background thread if imported
 # ─────────────────────────────────────────────
-def start_identity_watchdog(interval: float = 5.0):
-    import threading
-
-    def _loop():
-        while True:
-            try:
-                verify_identity("watchdog")
-            except Exception as e:
-                print(f"[🔥] CRITICAL IDENTITY BREACH: {e}")
-                os._exit(1)  # hard kill — no recovery
-            time.sleep(interval)
-
-    t = threading.Thread(target=_loop, daemon=True)
-    t.start()
+async def async_identity_watchdog(interval: float = 5.0):
+    import asyncio
+    while True:
+        try:
+            # CPU-bound or disk-bound tasks should ideally be deferred to a thread
+            # if they take a long time, but verify_identity is fast enough mostly.
+            # We'll wrap it just to be perfectly compliant with non-blocking.
+            await asyncio.to_thread(verify_identity, "watchdog")
+        except Exception as e:
+            print(f"[🔥] CRITICAL IDENTITY BREACH: {e}")
+            os._exit(1)  # hard kill — no recovery
+        await asyncio.sleep(interval)
 
 
 # ─────────────────────────────────────────────

@@ -168,3 +168,24 @@ def summarize(agent_id: str) -> dict:
         "approved": state["lifetime_events"]["total_approved"],
         "rejected": state["lifetime_events"]["total_rejected"],
     }
+
+def learn(agent_id: str, original: str, error: str, fixed: str, success: bool = True):
+    """
+    Wrapper for backward compatibility with repair.py hooks.
+    Abstracts context string extraction to identify learning strategy.
+    """
+    # Simple strategy routing based on the error
+    error_lower = error.lower()
+    if "syntax" in error_lower or "indentation" in error_lower:
+        strategy = "syntax_fix"
+    elif "import" in error_lower or "module" in error_lower:
+        strategy = "import_fix"
+    elif "type" in error_lower or "attribute" in error_lower:
+        strategy = "type_fix"
+    else:
+        strategy = "logic_fix"
+        
+    if success:
+        increase_confidence(agent_id, strategy)
+    else:
+        penalize_pattern(agent_id, strategy)

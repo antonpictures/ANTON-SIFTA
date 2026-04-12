@@ -72,6 +72,12 @@ function selectAgentForDispatch(agentId) {
     const drawer  = document.getElementById(`ac-drawer-${agentId}`);
     const chevron = document.getElementById(`ac-chevron-icon-${agentId}`);
     const card    = document.querySelector(`[data-id="${agentId}"]`);
+    
+    // Prevent selection of dead agents (GHOST protocol block)
+    if (card && card.classList.contains('dead')) {
+        console.warn(`[GHOST] Blocked selection of terminated agent: ${agentId}`);
+        return;
+    }
     if (drawer) {
         const isOpen = drawer.style.display !== 'none';
         
@@ -91,22 +97,110 @@ function selectAgentForDispatch(agentId) {
     document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('ac-selected'));
     if (card) card.classList.add('ac-selected');
     
-    // Populate Mission Control TV
-    const dcConsole = document.getElementById('central-dispatch-console');
-    const dcAgent   = document.getElementById('dc-active-agent');
-    if (dcConsole && dcAgent) {
-        dcConsole.classList.remove('disabled');
-        const styleText = document.getElementById(`style-${agentId}`)?.textContent || 'UNKNOWN';
+    // Always update the agent label in the inline deploy panel
+    const dcAgent = document.getElementById('dc-active-agent');
+    if (dcAgent) {
+        const styleText = document.getElementById(`style-${agentId}`)?.textContent || 'NOMINAL';
         dcAgent.textContent = `${agentId} [${styleText}]`;
-        
-        // Reset terminal output in console
+    }
+
+    // Determine if a scan is actively running (abort is armed ONLY during active scan)
+    const sendBtn  = document.getElementById('dc-send-btn');
+    const abortBtn = document.getElementById('dc-abort-btn');
+    const isScanning = abortBtn && !abortBtn.disabled;
+
+    // Always enable deploy button when an agent is selected (unless mid-scan)
+    if (sendBtn) sendBtn.disabled = false;
+
+    if (!isScanning) {
         const terminal = document.getElementById('dc-terminal');
         if (terminal) {
             terminal.innerHTML = `<div class="placeholder t-boot">&gt; Agent ${agentId} selected.<br>&gt; WAITING FOR MISSION PARAMETERS... <span class="blink">▋</span></div>`;
         }
-        
-        const sendBtn = document.getElementById('dc-send-btn');
-        if (sendBtn) sendBtn.disabled = false;
+    }
+
+    // Always open the deploy panel
+    openDeployInline();
+}
+
+
+// ─── Inline Deploy Panel (replaces territory tiles in-place) ─────────────────
+function openDeployInline() {
+    const tv = document.getElementById('territory-view');
+    const dv = document.getElementById('deploy-view');
+    if (tv) tv.style.display = 'none';
+    if (dv) dv.style.display = 'flex';
+
+    // Sync agent label and enable DEPLOY button if an agent is already selected
+    const dcAgent = document.getElementById('dc-active-agent');
+    const sendBtn = document.getElementById('dc-send-btn');
+    const abortBtn = document.getElementById('dc-abort-btn');
+    if (activeDispatchAgent) {
+        if (dcAgent) {
+            const styleText = document.getElementById(`style-${activeDispatchAgent}`)?.textContent || 'NOMINAL';
+            dcAgent.textContent = `${activeDispatchAgent} [${styleText}]`;
+        }
+        // Enable the bottom DEPLOY button — it only stays disabled if no agent is selected or a scan is actively running
+        const isScanning = abortBtn && !abortBtn.disabled;
+        if (sendBtn && !isScanning) sendBtn.disabled = false;
+    }
+}
+
+
+function closeDeployInline() {
+    const tv = document.getElementById('territory-view');
+    const dv = document.getElementById('deploy-view');
+    if (dv) dv.style.display = 'none';
+    if (tv) tv.style.display = '';
+}
+
+function onWriteToggle(checkbox) {
+    const bar   = document.getElementById('arch-auth-bar');
+    const label = document.getElementById('arch-auth-label');
+    if (!bar || !label) return;
+    if (checkbox.checked) {
+        bar.style.background    = 'rgba(255,23,68,0.10)';
+        bar.style.borderColor   = 'rgba(255,23,68,0.6)';
+        label.style.color       = 'var(--health-low)';
+        label.textContent       = '🔥 MUTATION AUTHORIZED — Agent MAY write, patch, and modify files';
+    } else {
+        bar.style.background    = 'rgba(255,23,68,0.04)';
+        bar.style.borderColor   = 'rgba(255,23,68,0.25)';
+        label.style.color       = 'var(--text-muted)';
+        label.textContent       = 'DRY-RUN MODE — Agent will scan but NOT write files';
+    }
+}
+
+
+async function copyTerminalOutput() {
+    const terminal = document.getElementById('dc-terminal');
+    const btn      = document.getElementById('dc-copy-btn');
+    if (!terminal) return;
+    const text = terminal.innerText;
+    try {
+        await navigator.clipboard.writeText(text);
+        if (btn) {
+            btn.textContent = '✅ COPIED';
+            btn.style.borderColor = 'var(--health-high)';
+            btn.style.color = 'var(--health-high)';
+            setTimeout(() => {
+                btn.textContent = '📋 COPY';
+                btn.style.borderColor = 'rgba(0,229,255,0.2)';
+                btn.style.color = 'var(--text-muted)';
+            }, 1500);
+        }
+    } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;left:-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (btn) {
+            btn.textContent = '✅ COPIED';
+            setTimeout(() => { btn.textContent = '📋 COPY'; }, 1500);
+        }
     }
 }
 
@@ -242,9 +336,12 @@ async function fetchAgents() {
         updateFleet(agents);
         
         if (activeDispatchAgent === null && agents.length > 0) {
-            // Find lowest energy agent to be the default worker
-            const defaultAgent = agents.reduce((prev, curr) => (prev.energy < curr.energy) ? prev : curr);
-            selectAgentForDispatch(defaultAgent.id);
+            // Find lowest energy agent to be the default worker (excluding dead ones)
+            const aliveAgents = agents.filter(a => a.style !== 'DEAD' && a.ttl_remaining > 0);
+            if (aliveAgents.length > 0) {
+                const defaultAgent = aliveAgents.reduce((prev, curr) => (prev.energy < curr.energy) ? prev : curr);
+                selectAgentForDispatch(defaultAgent.id);
+            }
         }
         
         updateWallet(agents);
@@ -832,6 +929,9 @@ async function fetchOllamaModels() {
         ollamaModels = data.models || [];
         const selHeavy = document.getElementById('llm-heavy-model-select');
         const selFast  = document.getElementById('llm-fast-model-select');
+        const currentHeavy = selHeavy ? selHeavy.value : null;
+        const currentFast  = selFast ? selFast.value : null;
+
         if (selHeavy) selHeavy.innerHTML = '';
         if (selFast) selFast.innerHTML = '';
         if (ollamaModels.length === 0) {
@@ -842,13 +942,13 @@ async function fetchOllamaModels() {
                 const optHeavy = document.createElement('option');
                 optHeavy.value = m;
                 optHeavy.textContent = m;
-                if (m === providerSettings.model) optHeavy.selected = true;
+                if (currentHeavy ? m === currentHeavy : m === providerSettings.model) optHeavy.selected = true;
                 if (selHeavy) selHeavy.appendChild(optHeavy);
                 
                 const optFast = document.createElement('option');
                 optFast.value = m;
                 optFast.textContent = m;
-                if (m === providerSettings.fastModel) optFast.selected = true;
+                if (currentFast ? m === currentFast : m === providerSettings.fastModel) optFast.selected = true;
                 if (selFast) selFast.appendChild(optFast);
             });
         }
@@ -923,19 +1023,41 @@ settingsForm.addEventListener('submit', e => {
 
 
 // ─── Central Dispatch Submission ────────────────────────
-async function sendSwimmerCentral() {
+async function sendSwimmerCentral(actionType) {
     if (!activeDispatchAgent) return;
     
+    // Ghost protocol secondary check (in case agent died while already selected)
+    const card = document.querySelector(`[data-id="${activeDispatchAgent}"]`);
+    if (card && card.classList.contains('dead')) {
+        const terminal = document.getElementById('dc-terminal');
+        if (terminal) terminal.innerHTML = `<div class="t-warn">[GHOST PROTOCOL] Agent ${activeDispatchAgent} has been terminated. Selection cleared.</div>`;
+        activeDispatchAgent = null;
+        document.getElementById('dc-scan-btn').disabled = true;
+        document.getElementById('dc-repair-btn').disabled = true;
+        document.getElementById('dc-messenger-btn').disabled = true;
+        return;
+    }
+
     const targetDir  = document.getElementById('dc-target').value;
-    const isWrite    = document.getElementById('dc-write').checked;
+    
+    // Action Type mapping
+    let isWrite = false;
+    if (actionType === 'repair') {
+        isWrite = true;
+    }
+
+    const isInvestor = document.getElementById('dc-investor-mode') ? document.getElementById('dc-investor-mode').checked : false;
     const terminal   = document.getElementById('dc-terminal');
-    const sendBtn    = document.getElementById('dc-send-btn');
+    const scanBtn    = document.getElementById('dc-scan-btn');
+    const repairBtn  = document.getElementById('dc-repair-btn');
+    const msgrBtn    = document.getElementById('dc-messenger-btn');
     const abortBtn   = document.getElementById('dc-abort-btn');
     const scrollHint = document.getElementById('dc-scroll-hint');
     
     document.getElementById('dc-target').disabled = true;
-    document.getElementById('dc-write').disabled  = true;
-    sendBtn.disabled  = true;
+    scanBtn.disabled  = true;
+    repairBtn.disabled = true;
+    msgrBtn.disabled = true;
     abortBtn.disabled = false; // ARM the abort button
     
     terminal.innerHTML = '';
@@ -964,6 +1086,7 @@ async function sendSwimmerCentral() {
             fast_model: providerSettings.fastModel,
             base_url:   providerSettings.baseUrl,
             api_key:    providerSettings.apiKey,
+            investor_mode: isInvestor,
         };
 
         const res = await fetch('/api/dispatch', {
@@ -1023,8 +1146,14 @@ async function sendSwimmerCentral() {
             }
             const div = document.createElement('div');
             div.className = 't-exit';
-            div.textContent = '— CONNECTION CLOSED —';
+            div.textContent = '— SCAN COMPLETE —';
             terminal.appendChild(div);
+
+            // Give the operator time to read — show a close button instead of auto-closing
+            const closeDiv = document.createElement('div');
+            closeDiv.style.cssText = 'text-align:center; margin-top: 12px;';
+            closeDiv.innerHTML = `<button onclick="closeDeployInline()" style="background: rgba(0,229,255,0.15); border: 1px solid var(--cyan); color: var(--cyan); font-family: var(--font-mono); font-size: 0.75rem; padding: 0.4rem 1.5rem; border-radius: 4px; cursor: pointer; letter-spacing: 0.1em;">[ ← BACK TO MAP ]</button>`;
+            terminal.appendChild(closeDiv);
             smartScroll();
 
             document.getElementById('dc-target').disabled = false;
@@ -1042,9 +1171,14 @@ async function sendSwimmerCentral() {
         terminal.appendChild(div);
 
         document.getElementById('dc-target').disabled = false;
-        document.getElementById('dc-write').disabled  = false;
-        sendBtn.disabled  = false;
-        abortBtn.disabled = true;
+        
+        const cardAgain = document.querySelector(`[data-id="${activeDispatchAgent}"]`);
+        if (!cardAgain || !cardAgain.classList.contains('dead')) {
+            document.getElementById('dc-scan-btn').disabled = false;
+            document.getElementById('dc-repair-btn').disabled = false;
+            document.getElementById('dc-messenger-btn').disabled = false;
+        }
+        document.getElementById('dc-abort-btn').disabled = true;
     }
 }
 
@@ -1075,8 +1209,15 @@ async function abortSwimmer() {
 
     if (abortBtn) abortBtn.textContent = '■ ABORT';
     document.getElementById('dc-target').disabled = false;
-    document.getElementById('dc-write').disabled  = false;
-    if (sendBtn) sendBtn.disabled = !activeDispatchAgent;
+    
+    if (activeDispatchAgent) {
+        const cardAgain = document.querySelector(`[data-id="${activeDispatchAgent}"]`);
+        if (!cardAgain || !cardAgain.classList.contains('dead')) {
+            document.getElementById('dc-scan-btn').disabled = false;
+            document.getElementById('dc-repair-btn').disabled = false;
+            document.getElementById('dc-messenger-btn').disabled = false;
+        }
+    }
 }
 
 
@@ -2443,4 +2584,83 @@ async function startArenaMatch() {
         appendArenaLog('system', "Connection lost or match complete.", true);
         arenaEventSource.close();
     };
+}
+
+// ─── GUI Dead-Drop Messenger State ──────────────────────
+function toggleMessengerPanel() {
+    const p = document.getElementById('dc-messenger-panel');
+    if (!p) return;
+    if (p.style.display === 'none') {
+        p.style.display = 'block';
+        document.getElementById('dc-messenger-input').focus();
+    } else {
+        p.style.display = 'none';
+        document.getElementById('dc-messenger-input').value = '';
+    }
+}
+
+async function submitDeadDropMessage() {
+    if (!activeDispatchAgent) {
+        alert("Select a Swimmer first to relay the message.");
+        return;
+    }
+    
+    const inputField = document.getElementById('dc-messenger-input');
+    const msg = inputField.value.trim();
+    if (!msg) return;
+
+    toggleMessengerPanel(); // Hide UI
+    
+    const terminal = document.getElementById('dc-terminal');
+    terminal.innerHTML = '';
+    
+    // Draw the ASCII Swimmer Dispatch sequence
+    terminal.innerHTML += `<div class="t-scout">[NAT_LANG] Compiling message intent for Dead Drop Relay...</div>`;
+    terminal.innerHTML += `<div class="t-ok">>>> "${msg}"</div>`;
+    
+    let animLine = document.createElement('div');
+    animLine.className = 't-sys';
+    animLine.style.color = '#00ffcc';
+    terminal.appendChild(animLine);
+    
+    let frames = 0;
+    const asciiFrames = [
+        "   ~~~o()()o~~~   ",
+        "  ~~~~o()()o~~~~  ",
+        " ~~~~~o()()o~~~~~ ",
+        "~~~~~~o()()o~~~~~~"
+    ];
+
+    const animInterval = setInterval(() => {
+        let padding = " ".repeat(frames % 40);
+        animLine.innerText = `[RELAY] ${padding}${asciiFrames[frames % 4]}`;
+        frames++;
+        terminal.scrollTop = terminal.scrollHeight;
+    }, 100);
+
+    try {
+        const res = await fetch('/api/dead_drop_message', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                agent_id: activeDispatchAgent,
+                payload: msg
+            })
+        });
+        
+        clearInterval(animInterval);
+        
+        const data = await res.json();
+        if (data.ok) {
+            animLine.innerText = `[RELAY] 🚀 Swimmer reached outer network bridge. Packet Dispatched.`;
+            terminal.innerHTML += `<div class="t-ok">${data.output || 'Message Delivered'}</div>`;
+        } else {
+            animLine.innerText = `[RELAY] 💥 Swimmer intercepted.`;
+            terminal.innerHTML += `<div class="t-warn">Encryption / Network Error: ${data.error}</div>`;
+        }
+    } catch (e) {
+        clearInterval(animInterval);
+        animLine.innerText = `[RELAY] 💥 Fatal relay crash.`;
+        terminal.innerHTML += `<div class="t-warn">${e.message}</div>`;
+    }
 }

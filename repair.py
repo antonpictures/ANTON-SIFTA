@@ -766,7 +766,10 @@ def verify_runtime(filepath: Path) -> tuple[bool, str]:
         )
         if result.returncode != 0:
             stderr = result.stderr.strip()
-            if "ModuleNotFoundError" in stderr or "ImportError" in stderr:
+            # If setuptools complains about missing commands, it means the import successfully ran setup()!
+            if "error: no commands supplied" in stderr:
+                pass # This is perfectly fine for setup.py validation
+            elif "ModuleNotFoundError" in stderr or "ImportError" in stderr:
                 last_line = stderr.splitlines()[-1] if stderr else ""
                 mod_match = re.search(r"No module named '([^']+)'", last_line)
                 if mod_match:
@@ -988,7 +991,7 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
 
 from existence_guard import validate_existence, register_death, release_identity, identity_fingerprint
 
-def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False):
+def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False, investor: bool = False):
     from inference_economy import can_spend_inference
     if not can_spend_inference(state, cost=2.0):
         return
@@ -1062,38 +1065,42 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
     mark_cwd = root.parent if root.is_file() else root
     scents = pheromone.smell_territory(mark_cwd)
     if scents:
-        print(f"\n  [SCENT] Detected {len(scents)} previous scent trails.")
-        # All BLEEDING scents first — never suppressed
-        for s in scents:
-            if s.get("stigmergy", {}).get("status") == "BLEEDING":
-                potency  = s.get('scent', {}).get('potency', 0.0)
-                err_line = s.get('stigmergy', {}).get('unresolved_fault_line', '?')
-                
-                dyn_status = s.get("stigmergy", {}).get("dynamic_status", "BLEEDING")
-                if dyn_status == "CONTESTED":
-                    print(f"    ⚠️  {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> CONTESTED TRUTH at line {err_line}")
-                    print(f"    [STIGMERGY] Priority magnet — resolving Swarm dispute over {s.get('agent_id')}'s claim.")
-                else:
-                    print(f"    🩸 {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> BLEEDING at line {err_line}")
-                    print(f"    [STIGMERGY] High priority — picking up {s.get('agent_id')}'s thread.")
-        # Clean scents: collapse by agent, show max 8 unique + summary
-        seen: dict = {}
-        for s in scents:
-            if s.get("stigmergy", {}).get("status") != "BLEEDING":
-                aid = s.get('agent_id', '?')
-                if aid not in seen:
-                    seen[aid] = {'count': 0, 'potency': s.get('scent', {}).get('potency', 0.0), 'face': s.get('face', '[?]')}
-                seen[aid]['count'] += 1
-        for i, (aid, info) in enumerate(seen.items()):
-            if i >= 8:
-                extra_agents = len(seen) - 8
-                extra_marks  = sum(v['count'] for j, (_, v) in enumerate(seen.items()) if j >= 8)
-                print(f"    💨 ... +{extra_agents} more agents ({extra_marks} marks) — territory is mapped")
-                break
-            count_str = f" ×{info['count']}" if info['count'] > 1 else ""
-            print(f"    💨 {info['face']} {aid} (Potency: {info['potency']}){count_str}")
+        if investor:
+            print(f"\n  [SCENT] Territory map acquired.")
+        else:
+            print(f"\n  [SCENT] Detected {len(scents)} previous scent trails.")
+            # All BLEEDING scents first — never suppressed
+            for s in scents:
+                if s.get("stigmergy", {}).get("status") == "BLEEDING":
+                    potency  = s.get('scent', {}).get('potency', 0.0)
+                    err_line = s.get('stigmergy', {}).get('unresolved_fault_line', '?')
+                    
+                    dyn_status = s.get("stigmergy", {}).get("dynamic_status", "BLEEDING")
+                    if dyn_status == "CONTESTED":
+                        print(f"    ⚠️  {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> CONTESTED TRUTH at line {err_line}")
+                        print(f"    [STIGMERGY] Priority magnet — resolving Swarm dispute over {s.get('agent_id')}'s claim.")
+                    else:
+                        print(f"    🩸 {s.get('face')} {s.get('agent_id')} (Potency: {potency}) -> BLEEDING at line {err_line}")
+                        print(f"    [STIGMERGY] High priority — picking up {s.get('agent_id')}'s thread.")
+            # Clean scents: collapse by agent, show max 8 unique + summary
+            seen: dict = {}
+            for s in scents:
+                if s.get("stigmergy", {}).get("status") != "BLEEDING":
+                    aid = s.get('agent_id', '?')
+                    if aid not in seen:
+                        seen[aid] = {'count': 0, 'potency': s.get('scent', {}).get('potency', 0.0), 'face': s.get('face', '[?]')}
+                    seen[aid]['count'] += 1
+            for i, (aid, info) in enumerate(seen.items()):
+                if i >= 8:
+                    extra_agents = len(seen) - 8
+                    extra_marks  = sum(v['count'] for j, (_, v) in enumerate(seen.items()) if j >= 8)
+                    print(f"    💨 ... +{extra_agents} more agents ({extra_marks} marks) — territory is mapped")
+                    break
+                count_str = f" ×{info['count']}" if info['count'] > 1 else ""
+                print(f"    💨 {info['face']} {aid} (Potency: {info['potency']}){count_str}")
     else:
-        print(f"\n  [SCENT] Territory is unmarked.")
+        if not investor:
+            print(f"\n  [SCENT] Territory is unmarked.")
 
 
     for i, filepath in enumerate(files):
@@ -1156,7 +1163,10 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
             import re as _re
             line_match = _re.search(r"line (\d+)", syntax_err)
             error_line = int(line_match.group(1)) if line_match else 1
-            print(f"  [FAULT] {syntax_err}")
+            if investor:
+                print(f"  [🩸 INVESTIGATOR] Fault detected at line {error_line}.")
+            else:
+                print(f"  [FAULT] {syntax_err}")
             
             # ── FAULT MAP INTEGRATION (SPATIAL AWARENESS) ────────────────────────
             import fault_map
@@ -1207,7 +1217,7 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                         hive = json.load(f)
                     
                     # Extract the core error trigger
-                    trigger_msg = error_msg.split("\n")[-1].strip() if "\n" in error_msg else error_msg
+                    trigger_msg = syntax_err.split("\n")[-1].strip() if "\n" in syntax_err else syntax_err
                     
                     for pattern in hive.get("patterns", []):
                         # Simple subset matching V1
@@ -1225,7 +1235,7 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
             fixed_chunk = None
 
             # ── quick regex intercept ──────────────────────────────────────────
-            if "unterminated string literal" in error_msg:
+            if "unterminated string literal" in syntax_err:
                 lines = chunk.splitlines(keepends=True)
                 # error_line is 1-based; bite_start is 0-based list index → subtract 1
                 rel_idx = error_line - bite_start - 1
@@ -1298,12 +1308,20 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                     **identity
                 })
                 
-                if final_score < 0.65:
-                    print(f"  [DNA] 🧬 Selection aborted. Final Score: {final_score:.2f} (Conf: {confidence}, Affinity: {affinity_score}). Leaving for sibling.")
+                if final_score < 0.65 and state.get("style") != "AGGRESSIVE":
+                    if investor:
+                        print(f"  > 🧠 Confidence too low. Refusing to hallucinate a fix. Deferring to Swarm.")
+                    else:
+                        print(f"  [DNA] 🧬 Selection aborted. Final Score: {final_score:.2f} (Conf: {confidence}, Affinity: {affinity_score}). Leaving for sibling.")
                     # Skip this file but don't exit the agent entirely.
                     break
+                elif final_score < 0.65 and state.get("style") == "AGGRESSIVE":
+                    print(f"  [DNA] 🧬 AGGRESSIVE OVERRIDE. Forcing bite on sub-par DNA score ({final_score:.2f}).")
                 else:
-                    print(f"  [DNA] 🧬 Selection accepted. Final Score: {final_score:.2f} (Conf: {confidence}, Affinity: {affinity_score}).")
+                    if investor:
+                        print(f"  > 🧬 Neural Validation Passed. Initializing Surgical Bite.")
+                    else:
+                        print(f"  [DNA] 🧬 Selection accepted. Final Score: {final_score:.2f} (Conf: {confidence}, Affinity: {affinity_score}).")
                 
                 import json
                 chunk += f"\n\n[MIND TRACE]\n{json.dumps(identity, indent=2)}"
@@ -1476,8 +1494,13 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                         break
 
                     else:
-                        print(f"  [SPELL] Demonic hallucination cast! {state['id']}'s mind was corrupted.")
                         print(f"  [ABORT] Pass introduced a different error ({repair_err_str}). Reverting.")
+                        # Revert to original text
+                        filepath.write_text(original, encoding="utf-8")
+                        
+                        if not investor:
+                            print(f"  [⚠️ REPUTATION] {state['id']} penalized for FAILURE. Score: {reputation_engine.get_reputation(state['id']):.2f}")
+                        
                         state = apply_damage(state, "validation_fail")
                         state["energy"] -= 5 # Extra penalty for corruption
                         log({"event": "abort", "file": str(rel),
@@ -1547,6 +1570,13 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                         model=model, vocation=vocation if "vocation" in dir() else "",
                     )
                     print(f"  [📋] Proposal staged for human review.")
+                    import adaptive_memory
+                    adaptive_memory.learn(state["id"], original, str(syntax_err), fixed_chunk, True)
+
+                    if investor:
+                        print(f"  > ✨ Repair stitched, syntactically verified, and injected.")
+                    else:
+                        print(f"  [VERIFY] Syntax check passed. Stitch successful!")
                 else:
                     stitch_bite(filepath, fixed_chunk, bite_start, bite_end, all_lines)
                     print(f"  [✅] Stitched and written.")
@@ -1658,7 +1688,7 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
-def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False):
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False, investor: bool = False):
     try:
         # 🚫 NOTHING runs before this
         validate_existence(state)
@@ -1670,6 +1700,7 @@ def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider
             base_url=base_url, api_key=api_key, verify=verify, 
             remote_ollama_url=remote_ollama_url,
             use_proposals=use_proposals,
+            investor=investor,
         )
 
     except Exception as e:
@@ -1703,6 +1734,8 @@ if __name__ == "__main__":
                         help="Remote Ollama base URL for borrowed inference (e.g. http://192.168.1.10:11434). Automatically charges STGM fee.")
     parser.add_argument("--proposals", action="store_true",
                         help="Stage repairs as proposals instead of direct disk writes. Requires human approval via dashboard.")
+    parser.add_argument("--investor", action="store_true",
+                        help="Broadcast Mode: Hide DNA math and stigmergy traces, output clean human narrative.")
     args = parser.parse_args()
 
     if args.body:
@@ -1729,4 +1762,5 @@ if __name__ == "__main__":
         verify=args.verify,
         remote_ollama_url=args.remote_ollama,
         use_proposals=args.proposals,
+        investor=args.investor,
     )

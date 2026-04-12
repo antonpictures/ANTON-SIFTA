@@ -54,7 +54,7 @@
             <button class="btn btn-primary" id="open-settings-btn" onclick="document.getElementById('settings-modal').showModal()">[⚙] SETTINGS</button>
         </div>
         <div class="topbar-core-actions" style="display: flex; gap: 15px; align-items: center; padding-right: 15px;">
-            <button class="btn btn-primary" style="font-size: 1.1em; padding: 0.6em 1.5em; letter-spacing: 0.05em; background-color: var(--cyan); color: #000;" onclick="document.getElementById('deploy-modal').showModal()">🚀 DEPLOY SWARM</button>
+            <button class="btn btn-primary" style="font-size: 1.1em; padding: 0.6em 1.5em; letter-spacing: 0.05em; background-color: var(--cyan); color: #000;" onclick="openDeployInline()">🗺️ LAUNCH PAD</button>
             <div style="display: flex; align-items: center; gap: 8px;" title="Enable Deep Architect Controls">
                 <span style="font-size: 0.7em; color: var(--text-dim); white-space: nowrap; font-family: var(--font-mono); letter-spacing: 0.1em;">⚙️ ARCHITECT</span>
                 <label class="switch">
@@ -73,12 +73,85 @@
     </div>
 
     <main class="dashboard">
-        <!-- Center Panel: The Territory -->
-        <section class="panel territory-panel" aria-label="The Territory">
-            <h2><span class="panel-icon">📍</span> THE TERRITORY</h2>
-            <div class="territory-container" id="territory-grid" style="flex: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; align-content: flex-start;">
-                <!-- CSS grid of files will be injected here -->
-                <div style="color: var(--text-muted); font-size: 0.8rem; width: 100%; text-align: center; margin-top: 2rem;">No active sector. Select a target and deploy a swimmer...</div>
+        <!-- Territory Panel: dual-mode (territory tiles ↔ inline deploy console) -->
+        <section class="panel territory-panel" aria-label="The Territory" id="territory-panel">
+
+            <!-- MODE A: Territory tile grid -->
+            <div id="territory-view">
+                <h2><span class="panel-icon">📍</span> THE TERRITORY</h2>
+                <div class="territory-container" id="territory-grid" style="flex: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; align-content: flex-start; align-items: flex-start;">
+                    <div style="color: var(--text-muted); font-size: 0.8rem; width: 100%; text-align: center; margin-top: 2rem;">No active sector. Select a target and deploy a swimmer...</div>
+                </div>
+            </div>
+
+            <!-- MODE B: Inline Deploy Console (replaces territory tiles in-place) -->
+            <div id="deploy-view" style="display:none; flex-direction:column; flex:1; height:100%; overflow:hidden;">
+                <h2 style="display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                    <span><span class="panel-icon">🚀</span> DEPLOY TO TERRITORY</span>
+                    <button onclick="closeDeployInline()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;font-family:var(--font-mono);letter-spacing:0.08em;">← BACK TO MAP</button>
+                </h2>
+
+                <!-- Top strip: path + agent on one row -->
+                <div style="display:flex; gap:10px; align-items:center; flex-shrink:0; margin-bottom:10px; flex-wrap:wrap;">
+                    <input type="text" id="dc-target" class="form-input" placeholder="Select target..." style="flex:1; min-width:120px;">
+                    <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', 'dc')">📄 FILE</button>
+                    <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', 'dc')">📁 DIR</button>
+                    <div style="padding: 6px 12px; border: 1px solid var(--border-color); border-radius: var(--r-sm); background: rgba(0,0,0,0.3); font-family: var(--font-mono); font-size:0.8rem; color: var(--text-main); white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis;" id="dc-active-agent">NO AGENT</div>
+                </div>
+
+                <!-- Architect Auth Gate Removed -- 3-Button Deploy handles this now -->
+
+                <!-- Investor Demo Mode Toggle -->
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-shrink:0; margin-bottom:10px; padding: 6px 14px; background: rgba(0, 229, 255, 0.04); border: 1px solid rgba(0, 229, 255, 0.25); border-radius: var(--r-sm);">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:0.9rem;">📹</span>
+                        <div>
+                            <div style="font-family:var(--font-mono); font-size:0.7rem; font-weight:700; letter-spacing:0.1em; color:var(--cyan);">BROADCAST / INVESTOR DEMO MODE</div>
+                        </div>
+                    </div>
+                    <label class="switch" title="Clean and simplify terminal output narrative for non-technical demonstrations">
+                        <input type="checkbox" id="dc-investor-mode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <!-- Green Matrix Terminal — takes all remaining space -->
+                <div class="dc-terminal-container" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+                    <div class="dc-terminal-header" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>LIVE INJECT TELEMETRY</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button onclick="copyTerminalOutput()" title="Copy terminal output to clipboard" style="background:none; border:1px solid rgba(0,229,255,0.2); color:var(--text-muted); cursor:pointer; font-family:var(--font-mono); font-size:0.55rem; padding:2px 8px; border-radius:3px; letter-spacing:0.08em; transition: all 0.2s;" onmouseenter="this.style.borderColor='var(--cyan)';this.style.color='var(--cyan)'" onmouseleave="this.style.borderColor='rgba(0,229,255,0.2)';this.style.color='var(--text-muted)'" id="dc-copy-btn">📋 COPY</button>
+                            <span id="dc-terminal-status" style="font-size:0.65rem;color:var(--text-muted);">STANDING BY</span>
+                        </div>
+                    </div>
+                    <div id="dc-terminal" style="flex:1; overflow-y:auto; font-size:0.8em; padding:10px; min-height:0;">
+                        <div class="placeholder t-boot">&gt; STANDING BY FOR LAUNCH SEQUENCE...</div>
+                    </div>
+                </div>
+
+                </div>
+
+                <!-- Launch strip (3-Button Command Deck) -->
+                <div style="display:flex; flex-direction:column; gap:10px; flex-shrink:0; margin-top:10px;">
+                    <!-- Dead-Drop Messenger Panel (Hidden by default) -->
+                    <div id="dc-messenger-panel" style="display:none; padding:12px; background:rgba(0, 0, 0, 0.4); border:1px solid rgba(0, 229, 255, 0.2); border-radius:var(--r-sm);">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                            <span style="font-family:var(--font-mono); font-size:0.75rem; color:var(--cyan); font-weight:bold;">🚀 CRYPTO MESSENGER (NAT_LANG DROP)</span>
+                            <button onclick="toggleMessengerPanel()" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">✖</button>
+                        </div>
+                        <textarea id="dc-messenger-input" rows="2" placeholder="Type natural language command here... (e.g. Redirect demo back to local)" style="width:100%; border:1px solid var(--border); background:rgba(0,0,0,0.5); color:white; font-family:var(--font-mono); font-size:0.8rem; padding:8px; border-radius:3px; resize:none;"></textarea>
+                        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+                            <button class="btn btn-primary" onclick="submitDeadDropMessage()" style="padding:0.4rem 1.2rem; font-size:0.8rem; background:white; color:black; font-weight:bold;">SEND SECURE DROP</button>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn btn-danger" id="dc-abort-btn" disabled onclick="abortSwimmer()" style="padding:0.7rem; flex-shrink:0;">■ ABORT</button>
+                        <button type="button" class="btn" id="dc-scan-btn" onclick="sendSwimmerCentral('scan')" style="flex:1; padding:0.7rem; background:rgba(255, 255, 255, 0.05); color:white; border:1px solid rgba(255,255,255,0.2); font-weight:bold; letter-spacing:0.05em;">📡 SCAN TERRITORY</button>
+                        <button type="button" class="btn" id="dc-repair-btn" onclick="sendSwimmerCentral('repair')" style="flex:1; padding:0.7rem; background:rgba(255, 23, 68, 0.15); color:#ff1744; border:1px solid rgba(255, 23, 68, 0.4); font-weight:bold; letter-spacing:0.05em;">🩸 SURGICAL REPAIR</button>
+                        <button type="button" class="btn btn-primary" id="dc-messenger-btn" onclick="toggleMessengerPanel()" style="flex:1; padding:0.7rem; background:var(--cyan); color:#000; font-weight:bold; letter-spacing:0.05em;">🚀 DEAD-DROP MSG</button>
+                    </div>
+                </div>
             </div>
 
         </section>
@@ -483,68 +556,8 @@
         </div>
     </div>
 
-    <!-- DEPLOY MODAL -->
-    <dialog id="deploy-modal" class="modal" style="max-width: 600px; padding: 0; background: transparent; border: none;">
-        <div class="dispatch-console" id="central-dispatch-console" style="margin: 0; box-shadow: 0 10px 30px rgba(0,0,0,0.8); border: 1px solid var(--cyan);">
-            <div class="dc-header" style="justify-content: space-between;">
-                <div>
-                    <span class="dc-title">🚀 DEPLOY TO TERRITORY</span>
-                </div>
-                <button onclick="document.getElementById('deploy-modal').close()" style="background:none; border:none; color:var(--text-dim); cursor:pointer;">[X]</button>
-            </div>
-            
-            <div class="dc-body" style="padding: 20px;">
-                <!-- Target Input -->
-                <div class="form-group" style="margin-bottom: 15px;">
-                    <label style="font-size: 0.8em; color: var(--text-dim); margin-bottom: 5px; display: block;">TARGET PATH (FILE OR DIRECTORY)</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="dc-target" class="form-input" placeholder="Select target territory for deployment..." style="flex: 1;">
-                        <button type="button" class="btn btn-browse" onclick="openInlinePicker('file', 'dc')">📄 FILE</button>
-                        <button type="button" class="btn btn-browse" onclick="openInlinePicker('folder', 'dc')">📁 DIR</button>
-                    </div>
-                </div>
 
-                <!-- Live Agent Selector -->
-                <div class="form-group" style="margin-bottom: 15px;">
-                    <label style="font-size: 0.8em; color: var(--text-dim); margin-bottom: 5px; display: block;">ASSIGNED AGENT (SELECTED ON RIGHT VISUAL PANEL)</label>
-                    <div style="padding: 10px; border: 1px solid var(--border-color); border-radius: var(--r-sm); background: rgba(0,0,0,0.3); font-family: var(--font-mono); color: var(--text-main);" id="dc-active-agent">NO AGENT SELECTED</div>
-                </div>
+    <script src="/static/app.js?v=19"></script>
 
-                <!-- Execution Mode -->
-                <div class="form-group" style="margin-bottom: 25px;">
-                    <label style="font-size: 0.8em; color: var(--text-dim); margin-bottom: 5px; display: block;">SWARM MODE</label>
-                    <div class="toggle-group" style="display:flex; align-items:center; gap:1rem; flex-shrink:0; padding: 10px; background: rgba(0,255,136,0.05); border: 1px solid rgba(0,255,136,0.2); border-radius: var(--r-sm);">
-                        <span style="font-size:0.8rem; color:var(--health-low); font-family:var(--font-mono); letter-spacing:0.08em; font-weight: bold;">[🔥] PERMIT FILE WRITE (MUTATION)</span>
-                        <label class="switch">
-                            <input type="checkbox" id="dc-write">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Matrix TV (Live Status snippet inside modal) -->
-                <div class="dc-terminal-container" style="margin-bottom: 15px; max-height: 120px;">
-                    <div class="dc-terminal-header">
-                        <span>LIVE INJECT TELEMETRY</span>
-                    </div>
-                    <div id="dc-terminal" style="font-size: 0.8em; padding: 10px;">
-                        <div class="placeholder t-boot">&gt; STANDING BY FOR LAUNCH SEQUENCE...</div>
-                    </div>
-                </div>
-
-                <!-- Launch Strip -->
-                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
-                    <button class="btn btn-danger" id="dc-abort-btn" disabled onclick="abortSwimmer()" style="padding: 0.6rem 1.5rem;">
-                        ■ ABORT
-                    </button>
-                    <button type="button" class="btn btn-primary" id="dc-send-btn" disabled onclick="sendSwimmerCentral(); document.getElementById('deploy-modal').close();" style="padding: 0.6rem 2rem; background: var(--cyan); color: #000; font-weight: bold;">
-                        <span class="btn-icon">🚀</span> DEPLOY
-                    </button>
-                </div>
-            </div>
-        </div>
-    </dialog>
-
-    <script src="/static/app.js?v=7"></script>
 </body>
 </html>

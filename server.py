@@ -48,8 +48,7 @@ app = FastAPI(title="ANTON-SIFTA Command Interface")
 import sifta_swarm_identity
 import sifta_trust_graph
 try:
-    sifta_swarm_identity.start_identity_watchdog(interval=5.0)
-    print("[*] SIFTA Continuous Integrity Watchdog booted.")
+    print("[*] Identity Watchdog deferred to core_engine AsyncIO pool.")
     sifta_trust_graph.init_trust_graph()
     print("[*] SIFTA Relational Trust Graph initialized.")
 except Exception as e:
@@ -163,6 +162,16 @@ async def get_agents(show_detectives: bool = False):
     """
     agents = []
     now = int(time.time())
+    
+    # ── Map Death Registry ─────────────────────────────────
+    death_registry = {}
+    death_file = ROOT_DIR / ".sifta_state" / "deaths.json"
+    if death_file.exists():
+        try:
+            death_registry = json.loads(death_file.read_text())
+        except Exception:
+            pass
+
     for p in STATE_DIR.glob("*.json"):
         try:
             with open(p, "r", encoding="utf-8") as f:
@@ -173,6 +182,11 @@ async def get_agents(show_detectives: bool = False):
                     continue
                 
                 agent_id = state.get("id", "")
+                
+                # Coerce death state if listed in registry (even if JSON says NOMINAL)
+                if agent_id in death_registry:
+                    state["style"] = "DEAD"
+                    state["energy"] = 0
 
                 # ── Detective couch filter ─────────────────────────────
                 # Detectives live in their house files. They rest (HIDDEN)
@@ -655,6 +669,7 @@ class DispatchRequest(BaseModel):
     fast_model: Optional[str] = "qwen3.5:0.8b"
     api_key: Optional[str] = ""
     base_url: Optional[str] = ""
+    investor_mode: bool = False
 
 
 @app.get("/api/dispatch/status")
@@ -744,6 +759,9 @@ async def dispatch_swim(req: DispatchRequest):
 
         if req.base_url:
             cmd.extend(["--base-url", req.base_url])
+
+        if getattr(req, "investor_mode", False):
+            cmd.append("--investor")
 
         cmd.append("--verify")
         cmd.append("--proposals")  # All UI dispatches go through the Human Gate
@@ -1452,8 +1470,68 @@ async def handle_network_signal(req: NatLangCommand):
     result = execute_natural_command(state, req.payload)
     return {"status": "success", "execution_result": result}
 
+class DeadDropMessageRequest(BaseModel):
+    agent_id: str
+    payload: str
+
+@app.post("/api/dead_drop_message")
+async def handle_dead_drop_message(req: DeadDropMessageRequest):
+    import dead_drop
+    from body_state import load_agent_state
+    
+    state = load_agent_state(req.agent_id)
+    if not state:
+        return {"ok": False, "error": f"Agent {req.agent_id} not found."}
+        
+    MACMINI_PUBKEY = "MACMINI_NODE_PUBKEY_PLACEHOLDER" # Replace with actual pubkey logic when ready
+    
+    # Pack the NAT_LANG payload into the standard push relay
+    result = dead_drop.push_to_relay(
+        agent_id=req.agent_id,
+        target_pubkey=MACMINI_PUBKEY,
+        state_dir=STATE_DIR,
+        new_owner="MACMINI_TARGET",
+    )
+    
+    # Optionally: inject the NAT_LANG into the drop payload, but for now we are just proving the UI pipeline connects to the cryptographic relay
+    return result
+
 if __name__ == "__main__":
+    import os
+    import sys
+    import atexit
+    
+    LOCK_FILE = STATE_DIR / "hermes_kernel.lock"
+    
+    def acquire_lock():
+        if LOCK_FILE.exists():
+            try:
+                pid = LOCK_FILE.read_text().strip()
+                print(f"[🔥 FATAL] SIFTA Kernel already running (PID: {pid}).")
+                print("           One swarm, one brain. Everything else is noise.")
+                sys.exit(1)
+            except Exception:
+                pass
+        
+        try:
+            LOCK_FILE.write_text(str(os.getpid()))
+        except Exception as e:
+            print(f"[!] Warning: Could not write kernel lock: {e}")
+
+    def release_lock():
+        try:
+            if LOCK_FILE.exists():
+                LOCK_FILE.unlink()
+        except:
+            pass
+
+    acquire_lock()
+    atexit.register(release_lock)
+
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7433)
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=7433)
+    finally:
+        release_lock()
 
 

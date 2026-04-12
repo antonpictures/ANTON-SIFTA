@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIFTA Setup</title>
+    <!-- Use Apple-like font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f121b 0%, #1a1f33 100%);
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #f5f5f7;
+            --text-dim: #86868b;
+            --accent: #2997ff;
+            --accent-hover: #147ce5;
+            --success: #32d74b;
+            --error: #ff453a;
+        }
+
+        /* Setup System Colors based on prefers-color-scheme */
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-gradient: linear-gradient(135deg, #f5f5f7 0%, #e5e5ea 100%);
+                --glass-bg: rgba(255, 255, 255, 0.6);
+                --glass-border: rgba(0, 0, 0, 0.1);
+                --text-main: #1d1d1f;
+                --text-dim: #86868b;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 600px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.12);
+            position: relative;
+            z-index: 10;
+        }
+
+        .slides-container {
+            display: flex;
+            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            width: 100%;
+        }
+
+        .slide {
+            min-width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 20px 0;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+        }
+
+        .slide.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .slide-wrapper {
+            overflow: hidden;
+            border-radius: 12px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+        }
+
+        p {
+            font-size: 16px;
+            color: var(--text-dim);
+            line-height: 1.5;
+            margin-bottom: 30px;
+            max-width: 400px;
+        }
+
+        .icon {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, var(--accent), #70b3ff);
+            border-radius: 18px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            color: white;
+            box-shadow: 0 10px 20px rgba(41, 151, 255, 0.3);
+        }
+
+        button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 12px 32px;
+            font-size: 16px;
+            font-weight: 500;
+            border-radius: 100px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(41, 151, 255, 0.2);
+            outline: none;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+            transform: scale(1.02);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+        
+        button:disabled {
+            background: #4a4a4f;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+            opacity: 0.5;
+        }
+
+        .terminal-output {
+            width: 100%;
+            background: #000;
+            color: #fff;
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 11px;
+            text-align: left;
+            padding: 16px;
+            border-radius: 12px;
+            height: 160px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+        }
+
+        .loading-spinner {
+            display: none;
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .input-field {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        @media (prefers-color-scheme: light) {
+            .input-field {
+                background: rgba(255, 255, 255, 0.8);
+                color: #000;
+                border: 1px solid rgba(0, 0, 0, 0.2);
+            }
+        }
+        
+        .input-field:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(41, 151, 255, 0.2);
+        }
+
+        .channel-card {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            text-align: left;
+            width: 100%;
+        }
+
+        .channel-card h3 {
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        .channel-card p {
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+        
+        @media (prefers-color-scheme: light) {
+            .channel-card {
+                background: rgba(0,0,0,0.02);
+                border: 1px solid rgba(0,0,0,0.1);
+            }
+        }
+
+        .bg-blobs {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .blob {
+            position: absolute;
+            filter: blur(100px);
+            opacity: 0.5;
+            border-radius: 50%;
+            animation: float 20s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .blob-1 { top: -10%; left: -10%; width: 500px; height: 500px; background: rgba(41, 151, 255, 0.3); }
+        .blob-2 { bottom: -20%; right: -10%; width: 600px; height: 600px; background: rgba(162, 59, 219, 0.2); animation-delay: -5s; }
+
+        @keyframes float {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(100px, 50px); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container">
+        <div class="slide-wrapper">
+            <div class="slides-container" id="slides-container">
+                
+                <!-- Slide 1: Welcome -->
+                <div class="slide active">
+                    <div class="icon">✨</div>
+                    <h1>Welcome to SIFTA</h1>
+                    <p>Let's set up your autonomous node securely. This will only take a moment.</p>
+                    <button onclick="nextSlide()">Get Started</button>
+                </div>
+
+                <!-- Slide 2: Keygen -->
+                <div class="slide">
+                    <div class="icon">🔑</div>
+                    <h1>Architect Keys</h1>
+                    <p>Generate your Ed25519 identity envelope to sign execution commands securely.</p>
+                    <div class="terminal-output" id="out-keygen"></div>
+                    <button id="btn-keygen" onclick="runCommand('keygen', 'btn-keygen', 'out-keygen')">Generate Keys</button>
+                </div>
+
+                <!-- Slide 3: Provision -->
+                <div class="slide">
+                    <div class="icon">🛡️</div>
+                    <h1>Provision Node</h1>
+                    <p>Establish cryptographic trust and bind capabilities to the physical hardware environment.</p>
+                    <div class="terminal-output" id="out-provision"></div>
+                    <button id="btn-provision" onclick="runCommand('provision', 'btn-provision', 'out-provision')">Provision Node</button>
+                </div>
+
+                <!-- Slide 4: Activate -->
+                <div class="slide">
+                    <div class="icon">⚡</div>
+                    <h1>Activate Swarm</h1>
+                    <p>Verify the boot lock and transition the node into an active state ready for execution.</p>
+                    <div class="terminal-output" id="out-activate"></div>
+                    <button id="btn-activate" onclick="runCommand('activate', 'btn-activate', 'out-activate')">Activate Node</button>
+                </div>
+
+                <!-- Slide 5: Channels -->
+                <div class="slide">
+                    <div class="icon">📡</div>
+                    <h1>Communication Channels</h1>
+                    <p>Connect SIFTA to the outside world.</p>
+
+                    <div class="channel-card">
+                        <h3>WhatsApp</h3>
+                        <p>Launch the Baileys bridge and scan the QR code that appears in the terminal below.</p>
+                        <div class="terminal-output" id="out-whatsapp"></div>
+                        <button id="btn-whatsapp" onclick="launchWhatsApp()">Link WhatsApp</button>
+                    </div>
+
+                    <div class="channel-card">
+                        <h3>Telegram</h3>
+                        <p>Enter your Telegram Bot API token.</p>
+                        <input type="password" id="telegram-token" class="input-field" placeholder="123456789:ABCDEF...">
+                    </div>
+
+                    <div class="channel-card">
+                        <h3>Discord</h3>
+                        <p>Enter your Discord Bot token.</p>
+                        <input type="password" id="discord-token" class="input-field" placeholder="MTAx...">
+                    </div>
+
+                    <button id="btn-channels" onclick="saveChannels()" style="margin-top: 10px;">Save Channels & Finish</button>
+                </div>
+
+                <!-- Slide 6: Complete -->
+                <div class="slide">
+                    <div class="icon" style="background: linear-gradient(135deg, var(--success), #71f586);">✓</div>
+                    <h1>Setup Complete!</h1>
+                    <p>Your SIFTA node has been fully provisioned and activated successfully.</p>
+                    <button onclick="window.close()">Close Setup</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const container = document.getElementById('slides-container');
+
+        function updateSlider() {
+            container.style.transform = `translateX(-${currentSlide * 100}%)`;
+            slides.forEach((s, idx) => {
+                if (idx === currentSlide) {
+                    s.classList.add('active');
+                } else {
+                    s.classList.remove('active');
+                }
+            });
+        }
+
+        function nextSlide() {
+            if (currentSlide < slides.length - 1) {
+                currentSlide++;
+                updateSlider();
+            }
+        }
+
+        async function runCommand(action, btnId, outId) {
+            const btn = document.getElementById(btnId);
+            const outBox = document.getElementById(outId);
+            
+            btn.disabled = true;
+            btn.innerHTML = `<div class="loading-spinner" style="display:inline-block; vertical-align:middle; width:16px; height:16px; margin-right:8px;"></div> Running...`;
+            
+            outBox.style.display = 'block';
+            outBox.innerHTML = `> Initializing ${action} phase...\n`;
+
+            try {
+                const response = await fetch(`/api/setup/${action}`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    outBox.innerHTML += `\n[ SUCCESS ]\n\n${data.output}`;
+                    if(data.error) outBox.innerHTML += `\n${data.error}`;
+                    btn.innerHTML = "Continue";
+                    btn.disabled = false;
+                    btn.onclick = nextSlide;
+                } else {
+                    outBox.innerHTML += `\n[ ERROR ]\n\n${data.detail.error || data.detail.output}`;
+                    outBox.style.color = "var(--error)";
+                    btn.innerHTML = "Retry";
+                    btn.disabled = false;
+                }
+                
+            } catch (err) {
+                outBox.innerHTML += `\n[ NETWORK ERROR ]\n\n${err.message}`;
+                outBox.style.color = "var(--error)";
+                btn.innerHTML = "Retry";
+                btn.disabled = false;
+            }
+
+            // Scroll to bottom
+            outBox.scrollTop = outBox.scrollHeight;
+        }
+        
+        async function launchWhatsApp() {
+            const btn = document.getElementById('btn-whatsapp');
+            const outBox = document.getElementById('out-whatsapp');
+            
+            btn.disabled = true;
+            btn.innerHTML = `<div class="loading-spinner" style="display:inline-block; vertical-align:middle; width:16px; height:16px; margin-right:8px;"></div> Running...`;
+            
+            outBox.style.display = 'block';
+            outBox.innerHTML = `> Initializing WhatsApp Bridge...\n`;
+
+            try {
+                const response = await fetch('/api/setup/whatsapp', { method: 'POST' });
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    outBox.innerHTML += decoder.decode(value, {stream:true});
+                    outBox.scrollTop = outBox.scrollHeight;
+                }
+                
+                btn.innerHTML = "Linked!";
+            } catch(e) {
+                outBox.innerHTML += `\n[ ERROR: ${e.message} ]`;
+                btn.innerHTML = "Retry";
+                btn.disabled = false;
+            }
+        }
+        
+        async function saveChannels() {
+            const btn = document.getElementById('btn-channels');
+            btn.innerHTML = "Saving...";
+            
+            const payload = {
+                telegram: document.getElementById('telegram-token').value,
+                discord: document.getElementById('discord-token').value
+            };
+            
+            try {
+                await fetch('/api/setup/channels/save', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+            } catch(e) {}
+            
+            nextSlide();
+        }
+    </script>
+</body>
+</html>

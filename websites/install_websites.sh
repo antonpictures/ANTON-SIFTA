@@ -78,6 +78,14 @@ server {
         try_files $uri $uri/ =404;
     }
 
+    # Wormhole Chat API Proxy
+    location /api/ {
+        proxy_pass http://127.0.0.1:8090/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_addrs;
+    }
+
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN";
     add_header X-Content-Type-Options "nosniff";

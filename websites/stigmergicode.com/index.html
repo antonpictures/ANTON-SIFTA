@@ -445,6 +445,178 @@
       nav ul { display: none; }
       .pred-card { grid-template-columns: 1fr; }
     }
+    /* ── STIGMERGI CHAT WIDGET ── */
+    #chat-widget {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      z-index: 1000;
+      font-family: 'Space Mono', monospace;
+    }
+
+    .chat-toggle {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--cyan), #00ffaa);
+      box-shadow: 0 10px 20px rgba(0, 220, 200, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: none;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    
+    .chat-toggle:hover {
+      transform: scale(1.1);
+    }
+
+    .chat-toggle svg {
+      width: 28px;
+      height: 28px;
+      fill: #020408;
+    }
+
+    .chat-window {
+      position: absolute;
+      bottom: 80px;
+      right: 0;
+      width: 380px;
+      max-height: 500px;
+      height: calc(100vh - 120px);
+      background: rgba(10, 15, 25, 0.85);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transform-origin: bottom right;
+      transform: scale(0);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      pointer-events: none;
+    }
+
+    .chat-window.open {
+      transform: scale(1);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .chat-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+    }
+    
+    .chat-header .pulse-dot {
+      margin-right: 10px;
+      width: 10px;
+      height: 10px;
+      margin-bottom: 0px;
+    }
+
+    .chat-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+      color: var(--cyan);
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 18px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      animation: messagePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      word-wrap: break-word;
+    }
+
+    @keyframes messagePop {
+      0% { opacity: 0; transform: translateY(10px) scale(0.95); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .message.human {
+      align-self: flex-end;
+      background: var(--cyan);
+      color: #020408;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.sifta {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      border-bottom-left-radius: 4px;
+      align-self: flex-start;
+      width: max-content;
+      display: none;
+    }
+
+    .typing-indicator span {
+      width: 6px;
+      height: 6px;
+      background: var(--cyan-dim);
+      border-radius: 50%;
+      animation: bounce 1.4s infinite ease-in-out both;
+    }
+
+    .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+    .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
+    .chat-input-area {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      background: rgba(0,0,0,0.2);
+      display: flex;
+    }
+
+    #chat-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    #chat-input::placeholder {
+      color: var(--text-dim);
+    }
   </style>
 </head>
 <body>
@@ -673,6 +845,81 @@
     <span style="color: var(--text-dim);">© 2026 stigmergicode</span>
   </p>
 </footer>
+
+<!-- STIGMERGI WEB CHAT WORMHOLE -->
+<div id="chat-widget">
+  <div class="chat-window" id="chat-window">
+    <div class="chat-header">
+      <div class="pulse-dot"></div>
+      <div class="chat-title">SIFTA WORMHOLE</div>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      <div class="message sifta">Signal acquired. The swarm is listening.</div>
+      <div class="typing-indicator" id="typing">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <input type="text" id="chat-input" placeholder="Initiate transfer..." autocomplete="off" onkeydown="if(event.key === 'Enter') sendChatMessage()" />
+    </div>
+  </div>
+  <button class="chat-toggle" onclick="toggleChat()">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+  </button>
+</div>
+
+<script>
+  let sessionId = 'usr_' + Math.random().toString(36).substr(2, 9);
+  
+  function toggleChat() {
+    document.getElementById('chat-window').classList.toggle('open');
+  }
+
+  async function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    input.value = '';
+    
+    // Append Human
+    const messagesEl = document.getElementById('chat-messages');
+    const typingEl = document.getElementById('typing');
+    
+    const humanDiv = document.createElement('div');
+    humanDiv.className = 'message human';
+    humanDiv.innerText = msg;
+    messagesEl.insertBefore(humanDiv, typingEl);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    // Show Typing
+    typingEl.style.display = 'flex';
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, message: msg })
+      });
+      const data = await resp.json();
+      
+      const siftaDiv = document.createElement('div');
+      siftaDiv.className = 'message sifta';
+      siftaDiv.innerText = data.reply;
+      messagesEl.insertBefore(siftaDiv, typingEl);
+    } catch (e) {
+      const errDiv = document.createElement('div');
+      errDiv.className = 'message sifta';
+      errDiv.style.color = 'var(--red)';
+      errDiv.innerText = '[ERROR] Wormhole collapsed. Bridge unreachable.';
+      messagesEl.insertBefore(errDiv, typingEl);
+    }
+
+    typingEl.style.display = 'none';
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+</script>
 
 </body>
 </html>

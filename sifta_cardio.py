@@ -227,7 +227,8 @@ def _compute_heartbeat_interval(density: dict) -> float:
         return 2.0   # NORMAL — baseline
 
 
-if __name__ == "__main__":
+async def async_jellyfish_loop():
+    import asyncio
     init_ledger()
     print("[*] SIFTA Cardio Daemon initialized. Registry:", REGISTRY_VERSION)
     print("[*] Jellyfish Urgency Trigger: ACTIVE")
@@ -237,11 +238,11 @@ if __name__ == "__main__":
 
     while True:
         try:
-            recover_stale_leases()
-            work_found = pump_blood()
+            await asyncio.to_thread(recover_stale_leases)
+            work_found = await asyncio.to_thread(pump_blood)
 
             # Jellyfish scar density sensing (every heartbeat)
-            density = _sense_scar_density()
+            density = await asyncio.to_thread(_sense_scar_density)
             new_interval = _compute_heartbeat_interval(density)
 
             # Detect and log mode transitions
@@ -260,8 +261,16 @@ if __name__ == "__main__":
             current_interval = new_interval
 
             if not work_found:
-                time.sleep(current_interval)
-        except KeyboardInterrupt:
+                await asyncio.sleep(current_interval)
+            else:
+                await asyncio.sleep(0.1) # yield briefly if work was found
+        except asyncio.CancelledError:
             print("\n[*] SIFTA Cardio Daemon shutting down.")
             break
+        except Exception as e:
+            print(f"[💓 CARDIO] Error in loop: {e}")
+            await asyncio.sleep(2.0)
 
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(async_jellyfish_loop())
