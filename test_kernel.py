@@ -9,7 +9,7 @@ Tests three hard invariants:
 """
 
 import asyncio
-from sifta_kernel import SiftaKernel, KernelViolationError, kernel
+from lana_kernel import LanaKernel, KernelViolationError, kernel
 
 def separator(title: str):
     print(f"\n{'═' * 50}")
@@ -94,7 +94,7 @@ def test_3_fossil_replay():
 # ─────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n╔══════════════════════════════════════════════╗")
-    print("║     SIFTA KERNEL — PHASE 6 VERIFICATION     ║")
+    print("║      LANA KERNEL — PHASE 6 VERIFICATION      ║")
     print("║     Hard Invariant Tests (not narrative)     ║")
     print("╚══════════════════════════════════════════════╝")
 
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     test_3_fossil_replay()
 
     print("\n\n[🟢 KERNEL VERIFICATION COMPLETE]")
-    print("The SIFTA Kernel enforces hard invariants.")
+    print("The Lana Kernel enforces hard invariants.")
     print("Illegal transitions are physically impossible.")
     print("MEDBAY recovery is deterministic.")
     print("Fossil memory becomes action bias.")
