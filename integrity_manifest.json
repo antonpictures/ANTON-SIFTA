@@ -1,0 +1,10 @@
+{
+  "_comment": "SIFTA Non-Proliferation Integrity Manifest \u2014 DO NOT EDIT",
+  "_doctrine": "If any safety file is tampered with, the Swarm will refuse to boot.",
+  "_generated": "2026-04-12",
+  "cognitive_safety_layer.py": "c1efc01bedbdbb0ce894f7496e21b40a8ffc215aa9201c91580ae7f0d6f146bf",
+  "neural_gate.py": "a6b1f2f052c36c9ae57f99de6a7f9a95ed12f26f24feb2332a37513d47bb9a47",
+  "cortex_guard.py": "a58ff144ed97378a23fc4ad99522d9871a58f4818363dbbb04dbf2b01d89368c",
+  "origin_gate.py": "8056b86b769f951df06bd63f3545d7c653ea095e1903a81b3e2615d4641c85f6",
+  "LICENSE": "2f5d8ed932668c2eb076cd78959eb23eac082d1ad34197586b58e0b08272b10b"
+}

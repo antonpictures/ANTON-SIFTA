@@ -7,9 +7,58 @@ This layer sits ABOVE the SCAR State Machine. It validates whether an intent
 consume cognitive/kernel resources to be evaluated.
 
 "Nothing invalid gets proposed."
+
+NON-PROLIFERATION INTEGRITY CHECK: At boot, this module verifies the
+cryptographic SHA-256 hashes of all safety-critical files against the
+integrity_manifest.json. If any file has been tampered with, the Swarm
+will refuse to start.
 """
 
+import hashlib
+import json
+import os
+import sys
+
 from state_bus import get_state, set_state
+
+_GATE_DIR = os.path.dirname(os.path.abspath(__file__))
+_MANIFEST_PATH = os.path.join(_GATE_DIR, "integrity_manifest.json")
+
+def _verify_integrity() -> None:
+    """
+    Non-Proliferation Integrity Boot Check.
+    Compares SHA-256 hashes of safety-critical files against the signed
+    integrity_manifest.json. Halts the Swarm if tampering is detected.
+    """
+    if not os.path.exists(_MANIFEST_PATH):
+        print("[🔴 ORIGIN GATE] FATAL: integrity_manifest.json is missing. The Swarm cannot verify its conscience. Halting.", file=sys.stderr)
+        sys.exit(1)
+
+    with open(_MANIFEST_PATH, "r") as f:
+        manifest = json.load(f)
+
+    tampered = []
+    for filename, expected_hash in manifest.items():
+        if filename.startswith("_"):
+            continue  # skip comment keys
+        filepath = os.path.join(_GATE_DIR, filename)
+        if not os.path.exists(filepath):
+            tampered.append(f"{filename} (MISSING)")
+            continue
+        actual_hash = hashlib.sha256(open(filepath, "rb").read()).hexdigest()
+        if actual_hash != expected_hash:
+            tampered.append(f"{filename} (HASH MISMATCH)")
+
+    if tampered:
+        print("\n[🔴 ORIGIN GATE] NON-PROLIFERATION INTEGRITY FAILURE", file=sys.stderr)
+        print("The following safety-critical files have been tampered with:", file=sys.stderr)
+        for t in tampered:
+            print(f"  ✗ {t}", file=sys.stderr)
+        print("The SIFTA Swarm refuses to operate with a compromised conscience. Halting.", file=sys.stderr)
+        sys.exit(1)
+
+    print("[✅ ORIGIN GATE] Non-Proliferation integrity check passed. The Swarm conscience is intact.")
+
 
 class OriginGate:
     """
@@ -18,6 +67,9 @@ class OriginGate:
     """
 
     def __init__(self):
+        # Run Non-Proliferation integrity check before anything else
+        _verify_integrity()
+
         # Ensure reputation graph exists in state
         if get_state("worker_reputation", None) is None:
             set_state("worker_reputation", {
