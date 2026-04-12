@@ -83,6 +83,8 @@ async function connectToWhatsApp() {
         "";
 
       if (!text) continue;
+      // Infinite loop prevention for offline kernel errors
+      if (text.includes("🔴 SIFTA kernel is offline")) continue;
 
       console.log(`\n[📲 INCOMING] type=${type} fromMe=${msg.key.fromMe} from=${from}`);
       console.log(`  Message: "${text}"`);
@@ -101,7 +103,12 @@ async function connectToWhatsApp() {
         res.on("end", async () => {
           try {
             const response = JSON.parse(data);
-            const reply = response.swarm_voice || response.reply || "🌊";
+            const rawVoice = response.swarm_voice || response.reply;
+            if (rawVoice === "_SILENT_") {
+              console.log("  [SWARM IS SILENT]");
+              return;
+            }
+            const reply = rawVoice || "🌊";
             // Show "typing..." like a real conversation
             await sock.sendPresenceUpdate("composing", from);
             await new Promise(r => setTimeout(r, 1200));

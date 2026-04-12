@@ -83,10 +83,24 @@ def query_ollama(prompt: str, history: list) -> str:
 
 def get_swarm_response(from_jid: str, text: str) -> str:
     mem = _mem(from_jid)
-    count = mem["count"]
-    mem["count"] += 1
+    count = mem.get("count", 0)
+    mem["count"] = count + 1
     
     _log(from_jid, text)
+
+    t = text.lower().strip()
+    
+    # Check if she is being addressed
+    addressed = any(kw in t for kw in ["sifta", "safta"])
+    
+    if not addressed:
+        # If she hasn't announced her new silence policy yet, do it once.
+        if not mem.get("announced_silence", False):
+            mem["announced_silence"] = True
+            return "🌊 Am înțeles, Alina și David! Cred că am fost prea filozofică și extraterestră. 😂 O să stau cuminte în banca mea și o să învăț din umbră. De acum înainte, vă răspund DOAR dacă mă strigați pe nume (Sifta sau Safta). Vă pup! 🤐"
+        
+        # If already announced, stay silent.
+        return "_SILENT_"
     
     # Get response from LLM
     reply = query_ollama(text, mem["history"])
