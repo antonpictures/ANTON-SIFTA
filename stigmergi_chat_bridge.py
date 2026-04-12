@@ -43,7 +43,7 @@ def query_ollama(prompt: str, history: list) -> str:
     context += f"Human: {prompt}\nSIFTA:"
     
     data = {
-        "model": "gemma4", # Default swarm web model
+        "model": "llama3.2", # 3B parameter model — safe for M1THER 8GB RAM
         "prompt": context,
         "stream": False
     }
