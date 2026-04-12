@@ -43,7 +43,7 @@ def query_ollama(prompt: str, history: list) -> str:
     context += f"Human: {prompt}\nSIFTA:"
     
     data = {
-        "model": "qwen3.5:2b", # Swarm Voice — stable 2.7GB, safe on M1THER 8GB RAM
+        "model": "qwen3.5:2b", # M1THER explicitly loaded this model in RAM
         "prompt": context,
         "stream": False
     }
