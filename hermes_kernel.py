@@ -1,140 +1,80 @@
-#!/usr/bin/env python3
+# hermes_kernel.py
 """
-hermes_kernel.py
-The SIFTA Cognitive Orchestration Kernel (Async execution fabric).
-Sits above the Python Runtime to breathe life into the Swarm concurrently.
+HERMES KERNEL — The SIFTA Execution Body
+
+This is the main asynchronous execution loop. 
+It spins up simulated Swarm activity, but forces every single mutation 
+through the `NeuralGate`. Nothing bypasses the Choke Point.
+
+It simultaneously runs the `introspection_loop` to provide Real-Time 
+Self-Awareness to the Architect.
 """
+
 import asyncio
-import os
 import time
-import json
-import platform
-import sifta_cardio
-from pathlib import Path
+import random
+from execution_router import ExecutionRouter
+from introspection_loop import introspection_loop
+from learning_loop import learning_loop
 
-STATE_DIR = Path(".sifta_state")
+router = ExecutionRouter()
 
-# Shared state between routines
-kernel_state_lock = asyncio.Lock()
-kernel_state = {
-    "interval": 2.0,
-    "hal_mode": "UNKNOWN"
-}
+async def swarm_worker(worker_id: str, action: dict, start_delay: float):
+    """
+    Represents an independent Swimmer agent waking up in the environment.
+    """
+    # Simulate slight biological delay differences
+    await asyncio.sleep(start_delay)
 
-async def run_scheduler():
-    """
-    Asynchronous executor bridging to the Ledger heartbeat.
-    """
-    while True:
-        # Prevent blocking the async loop by shipping synchronous DB I/O and exec to a thread
-        try:
-            await asyncio.to_thread(sifta_cardio.recover_stale_leases)
-            work_found = await asyncio.to_thread(sifta_cardio.pump_blood)
-        except Exception as e:
-            print(f"[HERMES][SCHEDULER] {e}")
-            work_found = False
-            
-        async with kernel_state_lock:
-            current_interval = kernel_state["interval"]
-        await asyncio.sleep(current_interval if not work_found else 0.5)
+    print(f"\n[⚡ {worker_id}] Attempting to execute: {action['name']} on {action['target']}")
 
-async def monitor_state():
-    """
-    Biological Rhythm & Density Sensing (Jellyfish Trigger).
-    """
-    last_mode = "NORMAL"
-    while True:
-        try:
-            density = await asyncio.to_thread(sifta_cardio._sense_scar_density)
-            new_interval = sifta_cardio._compute_heartbeat_interval(density)
-            async with kernel_state_lock:
-                kernel_state["interval"] = new_interval
-            
-            # Mode transitions
-            if new_interval == 0.5:
-                new_mode = "URGENCY"
-            elif new_interval == 5.0:
-                new_mode = "REST"
-            else:
-                new_mode = "NORMAL"
+    # 🛑 THE NEW EXECUTION ROUTER (MUTEX CHOKE POINT) 🛑
+    is_authorized, reason = await router.request_lock(
+        worker_id=worker_id,
+        action_name=action["name"],
+        file_path=action["target"],
+        proposed_content=action["content"],
+        confidence=action["conf"],
+        is_client_deliverable=action["client"]
+    )
 
-            if new_mode != last_mode:
-                print(f"[🌊 HERMES] Jellyfish shift: {last_mode} → {new_mode} "
-                      f"(bleeding={density.get('bleeding_count', 0)}, potency={density.get('total_potency', 0)})")
-                last_mode = new_mode
-                
-        except Exception as e:
-            print(f"[HERMES][MONITOR] {e}")
-            
-        # Sense environmental shift every X seconds
-        async with kernel_state_lock:
-            current_interval = kernel_state["interval"]
-        await asyncio.sleep(current_interval)
+    if is_authorized:
+        print(f"[✅ {worker_id} PROCEED] {action['name']} out → {action['target']} (Status: {reason})")
+        # Simulating operation time (LLM generation / IO writes)
+        await asyncio.sleep(3.0)
+        # Release biological hold
+        router.release_lock(action["target"])
+        print(f"[🔓 {worker_id} COMPLETED] SCAR Lock released on {action['target']}")
+    else:
+        print(f"[❌ {worker_id} BLOCKED] {action['name']} — REASON: {reason}")
 
-async def handle_agents():
-    """
-    The HAL Environment Awareness loop. 
-    Continuously maps the raw hardware footprint and publishes node class.
-    """
-    STATE_DIR.mkdir(exist_ok=True)
-    hal_file = STATE_DIR / "kernel_hal.json"
+
+async def main():
+    # Define a high-value overlap target
+    collision_action = {
+        "name": "surgical_ast_repair",
+        "target": "src/core_logic.py",
+        "content": "def fix(): pass",
+        "conf": 0.95,
+        "client": False
+    }
+
+    # Worker A jumps in immediately
+    task_a = asyncio.create_task(swarm_worker("WORKER_A", collision_action, start_delay=0.5))
     
-    while True:
-        machine = platform.machine().lower()
-        if "arm" in machine or "aarch64" in machine:
-            # We can refine this to explicitly detect M1/M2/M3 vs mobile
-            node_class = "LIGHT_NODE" 
-        else:
-            node_class = "HEAVY_NODE"
-            
-        async with kernel_state_lock:
-            kernel_state["hal_mode"] = node_class
-            current_interval = kernel_state["interval"]
-        
-        hal_data = {
-            "node_class": node_class,
-            "architecture": machine,
-            "processor": platform.processor(),
-            "kernel_rhythm": current_interval,
-            "timestamp": time.time()
-        }
-        
-        try:
-            with open(hal_file, "w") as f:
-                json.dump(hal_data, f, indent=2)
-        except Exception as e:
-            print(f"[HERMES][HAL] {e}")
-            
-        # Update every 10 seconds. Static hardware doesn't change, but interval does
-        await asyncio.sleep(10)
+    # Worker B jumps in 0.1s later (Race Condition)
+    task_b = asyncio.create_task(swarm_worker("WORKER_B", collision_action, start_delay=0.6))
 
-async def process_votes():
-    """
-    Asynchronously parses the `.sifta_votes` directory and emits updates or handles consensus.
-    """
-    while True:
-        # In a real heavy implementation we would walk the votes dir,
-        # but for now this is the async stub running in parallel.
-        await asyncio.sleep(15)
-
-async def swarm_kernel():
-    print("══════════════════════════════════════════════════")
-    print(" 👁 HERMES (COGNITIVE ORCHESTRATION KERNEL) ONLINE")
-    print("══════════════════════════════════════════════════")
-    print("[*] Initiating parallel swarm fabric...")
-    
-    # Needs sifta_cardio db initialized
-    sifta_cardio.init_ledger()
-    
+    # Run the brain awareness simultaneously with the execution fabric
     await asyncio.gather(
-        run_scheduler(),
-        process_votes(),
-        handle_agents(),
-        monitor_state()
+        task_a,
+        task_b,
+        introspection_loop(),
+        learning_loop()
     )
 
 if __name__ == "__main__":
     try:
-        asyncio.run(swarm_kernel())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n[*] Hermes Kernel suspending cognition... offline.")
+        print("\n[📴] SIFTA Kernel Terminated by Architect.")

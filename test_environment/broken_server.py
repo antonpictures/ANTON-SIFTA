@@ -42,6 +42,12 @@ def check_temperature_limit(temp):
         return "Safe"
 import json
 
+@app.route("/api/v1/status")
+def status():
+    # Intentionally broken: unterminated string literal
+    status_msg = "All systems online. The swarm architecture is active."
+    return {"status": status_msg}
+
 def parse_sensor_config(config_string):
     try:
         config = json.loads(config_string)

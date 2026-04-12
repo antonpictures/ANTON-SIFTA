@@ -1,4 +1,9 @@
-from typing import Optional
+# Copyright (c) 2026 Ioan George Anton (Anton Pictures)
+# SIFTA Swarm Autonomic OS — All Rights Reserved
+# Licensed under the SIFTA Non-Proliferation Public License v1.0
+# See LICENSE file for full terms. Unauthorized military or weapons use
+# is a violation of this license and subject to prosecution under US copyright law.
+#
 """
 immunity_engine.py
 ──────────────────────────────────────────────────────────────────────────────
@@ -47,7 +52,7 @@ def _save_checkpoint(agent_id: str, state: dict):
     with open(checkpoint_file, "w") as f:
         json.dump(checkpoint, f, indent=2)
 
-def _load_checkpoint(agent_id: str) -> Optional[dict]:
+def _load_checkpoint(agent_id: str) -> dict | None:
     checkpoint_file = CHECKPOINT_DIR / f"{agent_id}.checkpoint.json"
     if checkpoint_file.exists():
         try:
