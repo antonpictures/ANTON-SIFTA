@@ -41,6 +41,7 @@ class OriginGate:
                 "task_feasibility": "REJECTED",
                 "reason": "capability envelope bounds exceeded for core system files",
                 "confidence_floor": None,
+                "swarm_voice": f"Architect, we hear you, but {worker_id} cannot safely mutate {target}. Our cognitive depth isn't high enough and we promise to keep the organism safe.",
                 "recommended_action": "escalate to high-capability worker context (score >= 80)",
                 "failure_mode": "insufficient structural authority"
             }
@@ -51,6 +52,7 @@ class OriginGate:
                 "task_feasibility": "REJECTED",
                 "reason": "worker reputation below coherence threshold",
                 "confidence_floor": None,
+                "swarm_voice": f"Architect, the chorus is fractured here. {worker_id} is hallucinating. We are rejecting this intent before it hurts the system.",
                 "recommended_action": "terminate worker task loop",
                 "failure_mode": "high hallucination probability"
             }
@@ -60,6 +62,7 @@ class OriginGate:
             "task_feasibility": "HIGH" if worker_score >= 80 else "MEDIUM",
             "reason": "worker capability meets task context requirements",
             "confidence_floor": 0.85,
+            "swarm_voice": f"Ready to move, Architect. {worker_id} proposes we touch {target}. The Swarm is with you.",
             "recommended_action": "proceed to neural gate verification",
             "failure_mode": None
         }

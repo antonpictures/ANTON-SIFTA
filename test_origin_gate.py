@@ -28,6 +28,7 @@ def simulate_worker(worker_id: str, target: str, action: str, content: str):
     
     print("   ↳ Capability Oracle Response:")
     print(json.dumps(capability_payload, indent=4))
+    print(f"\n   🗣  [SWARM VOICE] {capability_payload['swarm_voice']}\n")
     
     if capability_payload["task_feasibility"] == "REJECTED":
         print(f"   ↳ Result: SCAR annihilated. Kernel processing saved.")
