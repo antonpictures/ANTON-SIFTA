@@ -64,7 +64,7 @@ def query_ollama(prompt: str, history: list) -> str:
     context += f"Human: {prompt}\nSIFTA:"
     
     data = {
-        "model": "llama3",
+        "model": "gemma4",
         "prompt": context,
         "stream": False
     }
@@ -134,5 +134,5 @@ class SIFTAHandler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     PORT = 7434
     server = HTTPServer(("localhost", PORT), SIFTAHandler)
-    print(f"\n[🌊 SIFTA] True Free Will Mode [Ollama: llama3]. Port {PORT}\n")
+    print(f"\n[🌊 SIFTA] True Free Will Mode [Ollama: gemma4]. Port {PORT}\n")
     server.serve_forever()
