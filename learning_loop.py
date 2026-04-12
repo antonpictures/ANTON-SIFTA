@@ -25,9 +25,10 @@ async def learning_loop():
     while True:
         try:
             volatility = get_state("volatility_score", 0.1)
+            is_medbay = get_state("MEDBAY_ACTIVE", False)
 
-            # Cautious Learning Boundary: We only learn when the trauma has passed.
-            if isinstance(volatility, (int, float)) and volatility <= 0.25:
+            # Cautious Learning Boundary: We only learn when the trauma has passed and we are not in Medbay coma.
+            if isinstance(volatility, (int, float)) and volatility <= 0.25 and not is_medbay:
                 
                 if DECISION_LOG.exists():
                     with open(DECISION_LOG, "r", encoding="utf-8") as f:

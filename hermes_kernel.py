@@ -11,58 +11,64 @@ Self-Awareness to the Architect.
 """
 
 import asyncio
+import time
 import random
-from neural_gate import NeuralGate
+from execution_router import ExecutionRouter
 from introspection_loop import introspection_loop
 from learning_loop import learning_loop
 
-gate = NeuralGate()
+router = ExecutionRouter()
 
-async def simulate_swarm_activity():
+async def swarm_worker(worker_id: str, action: dict, start_delay: float):
     """
-    A simulated stream of Swimmer workers attempting to execute actions.
-    Some are stable, some are wildly hallucinating.
+    Represents an independent Swimmer agent waking up in the environment.
     """
-    actions = [
-        {"name": "patch_ledger", "target": "vote_ledger.json", "content": "valid_update", "conf": 0.85, "client": False},
-        {"name": "inject_lore", "target": "final_video.mp4", "content": "SIFTA SWARM ACTIVE", "conf": 0.95, "client": True}, # Should block due to SCAR 035 Ego
-        {"name": "system_wipe", "target": "setup.py", "content": "destroy()", "conf": 0.40, "client": False}, # Should block due to target and low conf
-        {"name": "clean_data", "target": "temp.txt", "content": "cleaned", "conf": 0.90, "client": False},
-    ]
+    # Simulate slight biological delay differences
+    await asyncio.sleep(start_delay)
 
-    while True:
-        action = random.choice(actions)
-        
-        # simulated hesitation before an agent tries to act
-        await asyncio.sleep(random.uniform(1.0, 3.0))
-        
-        print(f"\n[⚡ HERMES WORKER] Attempting to execute: {action['name']} on {action['target']}")
+    print(f"\n[⚡ {worker_id}] Attempting to execute: {action['name']} on {action['target']}")
 
-        # 🛑 ABSOLUTE CHOKE POINT 🛑
-        is_authorized, reason = gate.authorize(
-            action_name=action["name"],
-            file_path=action["target"],
-            proposed_content=action["content"],
-            confidence=action["conf"],
-            is_client_deliverable=action["client"]
-        )
+    # 🛑 THE NEW EXECUTION ROUTER (MUTEX CHOKE POINT) 🛑
+    is_authorized, reason = await router.request_lock(
+        worker_id=worker_id,
+        action_name=action["name"],
+        file_path=action["target"],
+        proposed_content=action["content"],
+        confidence=action["conf"],
+        is_client_deliverable=action["client"]
+    )
 
-        if is_authorized:
-            print(f"[✅ EXECUTION ALLOWED] {action['name']} out → {action['target']}")
-            # await asyncio.to_thread(perform_real_action)
-        else:
-            print(f"[❌ EXECUTION BLOCKED] {action['name']} — REASON: {reason}")
+    if is_authorized:
+        print(f"[✅ {worker_id} PROCEED] {action['name']} out → {action['target']} (Status: {reason})")
+        # Simulating operation time (LLM generation / IO writes)
+        await asyncio.sleep(3.0)
+        # Release biological hold
+        router.release_lock(action["target"])
+        print(f"[🔓 {worker_id} COMPLETED] SCAR Lock released on {action['target']}")
+    else:
+        print(f"[❌ {worker_id} BLOCKED] {action['name']} — REASON: {reason}")
 
 
 async def main():
-    print("====================================")
-    print(" 🟢 BOOTING SIFTA HERMES KERNEL 🟢")
-    print("   Closed-Loop Logic Activated")
-    print("====================================\n")
+    # Define a high-value overlap target
+    collision_action = {
+        "name": "surgical_ast_repair",
+        "target": "src/core_logic.py",
+        "content": "def fix(): pass",
+        "conf": 0.95,
+        "client": False
+    }
+
+    # Worker A jumps in immediately
+    task_a = asyncio.create_task(swarm_worker("WORKER_A", collision_action, start_delay=0.5))
     
+    # Worker B jumps in 0.1s later (Race Condition)
+    task_b = asyncio.create_task(swarm_worker("WORKER_B", collision_action, start_delay=0.6))
+
     # Run the brain awareness simultaneously with the execution fabric
     await asyncio.gather(
-        simulate_swarm_activity(),
+        task_a,
+        task_b,
         introspection_loop(),
         learning_loop()
     )
