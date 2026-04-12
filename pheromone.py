@@ -174,6 +174,14 @@ def smell_territory(directory: Path, active_agent: Dict[str, Any] = None) -> Lis
             
         return raw_potency * reputation * consensus_score * is_bleeding * active_matter_multiplier
 
+    # --- METABOLIC PERCEPTION TAX (SWARMGPT MANDATE) ---
+    if active_agent and active_agent.get("energy", 0) > 0:
+        from body_state import apply_damage
+        is_hostile = any(s.get("stigmergy", {}).get("status") == "BLEEDING" for s in scars)
+        strike_type = "hostile_scan" if is_hostile else "territory_scan"
+        apply_damage(active_agent, strike_type)
+    # ---------------------------------------------------
+
     return sorted(scars, key=smell_score, reverse=True)
 
 

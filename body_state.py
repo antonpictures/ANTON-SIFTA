@@ -376,6 +376,8 @@ DAMAGE_TABLE = {
     "llm_empty":         8,
     "swim_fail":         20,
     "syntax_error":      5,
+    "territory_scan":    1,
+    "hostile_scan":      2,
 }
 
 def apply_damage(state: dict, strike_type: str) -> dict:
