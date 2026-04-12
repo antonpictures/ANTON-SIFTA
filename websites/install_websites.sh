@@ -68,7 +68,7 @@ mkdir -p "$NGINX_CONF_DIR"
 
 cat > "$NGINX_CONF_DIR/stigmergicode.conf" << 'EOF'
 server {
-    listen 80;
+    listen 3001;
     server_name stigmergicode.com www.stigmergicode.com;
 
     root /opt/homebrew/var/www/stigmergicode.com;
@@ -97,7 +97,7 @@ server {
 }
 
 server {
-    listen 80;
+    listen 3002;
     server_name stigmergicoin.com www.stigmergicoin.com;
 
     root /opt/homebrew/var/www/stigmergicoin.com;
@@ -145,14 +145,11 @@ echo -e "    ${CYAN}http://stigmergicoin.com${NC}   (after DNS is set)"
 echo ""
 echo -e "  Your public IP: ${GOLD}$(curl -s https://api.ipify.org)${NC}"
 echo ""
-echo -e "  ${GOLD}GoDaddy DNS Setup:${NC}"
-echo -e "  1. Go to GoDaddy → DNS → stigmergicode.com"
-echo -e "  2. Add/Edit A Record:"
-echo -e "     Name: @   Value: $(curl -s https://api.ipify.org)   TTL: 600"
-echo -e "  3. Add CNAME: Name: www  Value: @"
-echo -e "  4. Repeat for stigmergicoin.com"
-echo -e "  5. Also set up port forwarding on your router:"
-echo -e "     External port 80 → this Mac Mini's local IP → port 80"
+echo -e "  ${GOLD}GoDaddy / Cloudflare Setup:${NC}
+  1. Your Cloudflare Tunnels should map directly to:
+     http://localhost:3001 (for stigmergicode.com)
+     http://localhost:3002 (for stigmergicoin.com)
+  2. NGINX handles those specific ports internally now!"
 echo -e ""
 echo -e "  Find this Mac Mini's local IP:"
 echo -e "    ${CYAN}$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo 'run: ipconfig getifaddr en0')${NC}"
