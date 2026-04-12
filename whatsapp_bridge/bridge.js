@@ -66,7 +66,10 @@ async function connectToWhatsApp() {
     if (type !== "notify") return;
 
     for (const msg of messages) {
-      if (msg.key.fromMe) continue;
+      // Allow self-chat (message yourself) — skip only bot's own replies
+      const isSelfChat = msg.key.remoteJid === sock.user?.id?.replace(/:.*@/, "@");
+      if (msg.key.fromMe && !isSelfChat) continue;
+      if (msg.key.fromMe && isSelfChat && msg.key.id?.startsWith("SWARM_")) continue;
 
       const from = msg.key.remoteJid;
       const text =

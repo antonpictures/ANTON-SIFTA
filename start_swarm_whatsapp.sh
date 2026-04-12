@@ -28,6 +28,11 @@ if [ ! -d "whatsapp_bridge/node_modules" ]; then
   echo "[SETUP] Done."
 fi
 
+# ─── Kill any ghost processes on port 7434 ───────────────────────────────
+echo "[SETUP] Clearing port 7434..."
+lsof -ti:7434 | xargs kill -9 2>/dev/null || true
+sleep 1
+
 # ─── 2. Start SIFTA Python Swarm Voice server in background ───────────────
 echo "[1/2] Starting SIFTA Swarm Voice server (port 7434)..."
 python3 whatsapp_swarm.py &
