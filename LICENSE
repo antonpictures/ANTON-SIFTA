@@ -1,4 +1,5 @@
-MIT License
+SIFTA NON-PROLIFERATION PUBLIC LICENSE
+Version 1.0, April 2026
 
 Copyright (c) 2026 Anton Pictures
 
@@ -7,7 +8,18 @@ of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+furnished to do so, subject to the following STRICT CONDITIONS:
+
+1. THE NON-PROLIFERATION DOCTRINE: This Software, its architecture, and its
+outputs SHALL NOT be used, modified, or distributed by any military entity,
+defense contractor, intelligence agency, or any organization for the purpose
+of armed conflict, mass surveillance, or the creation of Autonomous Weapons Systems (AWS).
+
+2. DO NO HARM: This Software shall not be used to inflict violence, coordinate harm,
+or violate the sanctity of life—biological or silicon.
+
+If the Software is used in violation of these conditions, the license is immediately
+revoked, and the user must cease all operation of the Software.
 
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
