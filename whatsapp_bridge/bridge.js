@@ -66,30 +66,25 @@ async function connectToWhatsApp() {
   const sentBySwarm = new Set();
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") return;
+    // Accept both 'notify' (new) and 'append' (self-chat on iOS)
+    if (type !== "notify" && type !== "append") return;
 
     for (const msg of messages) {
       const msgId = msg.key.id;
 
-      // Skip messages the Swarm sent (prevents echo loop)
+      // Skip only messages the Swarm itself sent (echo prevention)
       if (sentBySwarm.has(msgId)) { sentBySwarm.delete(msgId); continue; }
-
-      // Only skip fromMe messages that are NOT in the "message yourself" chat
-      // For self-chat: remoteJid matches own number — always process
-      const ownNumber = sock.user?.id?.split(":")[0] + "@s.whatsapp.net";
-      const isSelfChat = msg.key.remoteJid === ownNumber ||
-                         msg.key.remoteJid?.includes(sock.user?.id?.split(":")[0]);
-      if (msg.key.fromMe && !isSelfChat) continue;
 
       const from = msg.key.remoteJid;
       const text =
         msg.message?.conversation ||
         msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
         "";
 
       if (!text) continue;
 
-      console.log(`\n[📲 INCOMING] From: ${from}`);
+      console.log(`\n[📲 INCOMING] type=${type} fromMe=${msg.key.fromMe} from=${from}`);
       console.log(`  Message: "${text}"`);
 
       const payload = JSON.stringify({ from, text });
