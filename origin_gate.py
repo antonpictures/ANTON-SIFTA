@@ -13,8 +13,8 @@ from state_bus import get_state, set_state
 
 class OriginGate:
     """
-    Admission control for SIFTA Swarm Intents.
-    Blocks known erratic workers and syntactically malformed proposals.
+    Admission control Capability Oracle for SIFTA Swarm Intents.
+    Blocks known erratic workers and syntactically malformed proposals via strict JSON output.
     """
 
     def __init__(self):
@@ -25,27 +25,44 @@ class OriginGate:
                 "WORKER_INSECT": 10   # Erratic, small LLM
             })
 
-    def admit_intent(self, worker_id: str, target: str, action: str) -> tuple[bool, str]:
+    def admit_intent(self, worker_id: str, target: str, action: str) -> dict:
         """
-        Evaluates the origin of the intent.
-        Returns (is_admitted, reason).
+        Evaluates the capability envelope of the worker.
+        Returns strict JSON dictionary, NOT narrative strings.
         """
         rep_graph = get_state("worker_reputation", {})
-        worker_score = rep_graph.get(worker_id, 50) # default new worker score
+        worker_score = rep_graph.get(worker_id, 50)
 
-        # 1. Reputation Hard Gate
-        # Core system files require a high trust score to even propose a change.
         core_files = ["lana_kernel.py", "origin_gate.py", "neural_gate.py"]
         
+        # 1. Capability Out of Bounds (Core File)
         if target in core_files and worker_score < 80:
-            return False, f"[🔰 ORIGIN REJECTED] Worker {worker_id} (Rep: {worker_score}) lacks authority to mutate core files."
+            return {
+                "task_feasibility": "REJECTED",
+                "reason": "capability envelope bounds exceeded for core system files",
+                "confidence_floor": None,
+                "recommended_action": "escalate to high-capability worker context (score >= 80)",
+                "failure_mode": "insufficient structural authority"
+            }
 
-        # 2. Minimum Coherence Floor
-        # Insect LLMs get blocked from any structural execution if they drop below a threshold
+        # 2. Minimum Coherence Floor (Insect LLM block)
         if worker_score < 25:
-            return False, f"[🔰 ORIGIN REJECTED] Worker {worker_id} (Rep: {worker_score}) is below minimum coherence threshold. Intent annihilated."
+            return {
+                "task_feasibility": "REJECTED",
+                "reason": "worker reputation below coherence threshold",
+                "confidence_floor": None,
+                "recommended_action": "terminate worker task loop",
+                "failure_mode": "high hallucination probability"
+            }
 
-        return True, "[🔰 ORIGIN ADMITTED] Worker trusted. Intent proceeding to SCAR queue."
+        # 3. Admitted
+        return {
+            "task_feasibility": "HIGH" if worker_score >= 80 else "MEDIUM",
+            "reason": "worker capability meets task context requirements",
+            "confidence_floor": 0.85,
+            "recommended_action": "proceed to neural gate verification",
+            "failure_mode": None
+        }
 
     def decay_reputation(self, worker_id: str, penalty: int):
         """Reduces worker score on bad actions (e.g., if Neural Gate rejects them later)."""

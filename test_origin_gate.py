@@ -18,18 +18,21 @@ def separator(title: str):
     print('═' * 50)
 
 
+import json
+
 def simulate_worker(worker_id: str, target: str, action: str, content: str):
     print(f"\n[⚡ INTENT GENERATED] {worker_id} proposes '{action}' on '{target}'")
     
-    # 1. ORIGIN GATE: The Phase 7 Boundary
-    admitted, reason = gate.admit_intent(worker_id, target, action)
+    # 1. ORIGIN GATE: The Phase 7.5 Capability Oracle
+    capability_payload = gate.admit_intent(worker_id, target, action)
     
-    if not admitted:
-        print(reason)
+    print("   ↳ Capability Oracle Response:")
+    print(json.dumps(capability_payload, indent=4))
+    
+    if capability_payload["task_feasibility"] == "REJECTED":
         print(f"   ↳ Result: SCAR annihilated. Kernel processing saved.")
         return
         
-    print(reason)
     print(f"   ↳ Result: Intent passing to Lana Kernel for PROPOSED creation.")
     
     # 2. INTENT ENTERS KERNEL if admitted
@@ -69,9 +72,9 @@ def test_admission_control():
 
 if __name__ == "__main__":
     print("\n╔══════════════════════════════════════════════╗")
-    print("║    SIFTA ORIGIN GATE — PHASE 7 VERIFICATION  ║")
+    print("║ SIFTA ORIGIN GATE — PHASE 7.5 CAPABILITY ORACLE║")
     print("║     Adverse Intent Annihilation Test         ║")
     print("╚══════════════════════════════════════════════╝")
     
     test_admission_control()
-    print("\n[🟢 PHASE 7 COMPLETE] Nothing invalid gets proposed.\n")
+    print("\n[🟢 PHASE 7.5 COMPLETE] Capability Oracle is active. No narrative mythology.\n")
