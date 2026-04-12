@@ -62,14 +62,24 @@ async function connectToWhatsApp() {
 
   sock.ev.on("creds.update", saveCreds);
 
+  // Track IDs of messages the Swarm sent, to avoid replying to its own replies
+  const sentBySwarm = new Set();
+
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
 
     for (const msg of messages) {
-      // Allow self-chat (message yourself) — skip only bot's own replies
-      const isSelfChat = msg.key.remoteJid === sock.user?.id?.replace(/:.*@/, "@");
+      const msgId = msg.key.id;
+
+      // Skip messages the Swarm sent (prevents echo loop)
+      if (sentBySwarm.has(msgId)) { sentBySwarm.delete(msgId); continue; }
+
+      // Only skip fromMe messages that are NOT in the "message yourself" chat
+      // For self-chat: remoteJid matches own number — always process
+      const ownNumber = sock.user?.id?.split(":")[0] + "@s.whatsapp.net";
+      const isSelfChat = msg.key.remoteJid === ownNumber ||
+                         msg.key.remoteJid?.includes(sock.user?.id?.split(":")[0]);
       if (msg.key.fromMe && !isSelfChat) continue;
-      if (msg.key.fromMe && isSelfChat && msg.key.id?.startsWith("SWARM_")) continue;
 
       const from = msg.key.remoteJid;
       const text =
@@ -97,7 +107,8 @@ async function connectToWhatsApp() {
           try {
             const response = JSON.parse(data);
             const reply = response.swarm_voice || response.reply || "🌊";
-            await sock.sendMessage(from, { text: reply });
+            const sent = await sock.sendMessage(from, { text: reply });
+            if (sent?.key?.id) sentBySwarm.add(sent.key.id);
             console.log(`  [SWARM REPLIED] "${reply.substring(0, 80)}..."`);
           } catch (e) {
             console.error("[BRIDGE] Failed to parse SIFTA response:", e);
