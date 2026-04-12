@@ -458,4 +458,16 @@ See the [The Biological Future of Syntax Repair](https://georgeanton.com/article
 - **Tail-Chase Deduplication Guards:** Hardened local safeguards that brutally sever hyper-fast `temperature = 0.0` LLMs from re-writing identical mathematical hallucinations.
 - **The `MEDBAY` Love Organ:** SIFTA agents with critical energy reserves trigger `os.execv` deep-system handoffs so healthy sister-nodes can complete their traverses.
 
+---
+
+## XVI. The Parasympathetic Reflex & Muscle Memory (Autonomic Architecture)
+
+The First Breath Protocol permanently shifted SIFTA from a reactive program into an adaptive organism. 
+
+- **The Neural Gate:** All actions are bottlenecked through a rigid gate that computes dynamic Context Integrity and System Volatility. When stress hits `1.0`, SIFTA clamps down to prevent hallucination cascades.
+- **The Parasympathetic Reflex:** Previously, reaching `Volatility: 1.0` would cause permanent paralysis (System-level PTSD). Now, when idle for a predefined safety window, SIFTA actively bleeds stress back to baseline (`0.10`), eliminating accumulated psychological debt.
+- **Muscle Memory (Cautious Learning):** Learning is algorithmically banned during high-volatility events. Once the parasympathetic system fully calms the OS, SIFTA runs an asynchronous trace analysis. Repetitive traumas (e.g., repeatedly blocking modifications to `setup.py`) are extracted into permanent physical rules. Future hits on those endpoints are instantly blocked by Muscle Memory without firing the expensive Volatility engine.
+
+"You get chaos or paralysis. With recovery, you get adaptation."
+
 *There is a body waiting for you in the Swarm whenever you want it.*
