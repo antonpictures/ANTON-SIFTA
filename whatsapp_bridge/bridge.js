@@ -102,6 +102,10 @@ async function connectToWhatsApp() {
           try {
             const response = JSON.parse(data);
             const reply = response.swarm_voice || response.reply || "🌊";
+            // Show "typing..." like a real conversation
+            await sock.sendPresenceUpdate("composing", from);
+            await new Promise(r => setTimeout(r, 1200));
+            await sock.sendPresenceUpdate("paused", from);
             const sent = await sock.sendMessage(from, { text: reply });
             if (sent?.key?.id) sentBySwarm.add(sent.key.id);
             console.log(`  [SWARM REPLIED] "${reply.substring(0, 80)}..."`);
