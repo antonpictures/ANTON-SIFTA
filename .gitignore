@@ -36,3 +36,5 @@ docs/veo3_*
 docs/wormhole_*
 benchmark_results.py
 whatsapp_bridge/whatsapp_session/
+wormhole.log
+static/
