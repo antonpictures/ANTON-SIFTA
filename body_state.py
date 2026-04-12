@@ -119,7 +119,13 @@ class SwarmBody:
             self.style = saved_state.get("style", "NOMINAL")
             self.private_key_b64 = saved_state.get("private_key_b64")
             self.vocation = saved_state.get("vocation", "DETECTIVE")
-            self.sex = saved_state.get("sex", 0)
+            
+            # Retroactively apply cryptographic sex to the "First Men"
+            if "sex" in saved_state:
+                self.sex = saved_state["sex"]
+            else:
+                priv_bytes = base64.b64decode(self.private_key_b64)
+                self.sex = priv_bytes[0] % 2
             
             # --- WORMHOLE MAIL: OFFLINE MAILBOX UPGRADE ---
             self.mailbox_private_b64 = saved_state.get("mailbox_private_b64")
