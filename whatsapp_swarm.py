@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Ioan George Anton (Anton Pictures)
+# SIFTA Swarm Autonomic OS — All Rights Reserved
+# Licensed under the SIFTA Non-Proliferation Public License v1.0
+# See LICENSE file for full terms. Unauthorized military or weapons use
+# is a violation of this license and subject to prosecution under US copyright law.
+#
 """
 whatsapp_swarm.py — SIFTA Swarm Voice: WhatsApp Channel
 LLM Integration: True Free Will, powered by Ollama on Mac M5.
