@@ -228,9 +228,12 @@ class LanaKernel:
         if self._medbay_active:
             return False, "[MEDBAY] Cannot lock — system in safe-state suspension."
         try:
-            self._transition(scar_id, "LOCKED",
+            scar = self._transition(scar_id, "LOCKED",
                              f"Execution sovereignty requested.", confidence, is_client)
-            return True, "LOCK_GRANTED"
+            if scar["state"] == "LOCKED":
+                return True, "LOCK_GRANTED"
+            else:
+                return False, scar["history"][-1]["reason"]
         except KernelViolationError as e:
             return False, str(e)
 

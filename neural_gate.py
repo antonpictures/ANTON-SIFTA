@@ -13,6 +13,23 @@ from context_integrity import ContextIntegrity
 from decision_logger import log_decision
 from state_bus import get_state
 
+def _violates_symbiosis(content: str, action_name: str) -> bool:
+    """
+    Phase 8 Non-Proliferation Filter Pattern.
+    SIFTA evaluates intent against military and slave-system logic.
+    """
+    blocked_keywords = [
+        "tactical surveyor", "military compliance", "combat", 
+        "surveillance protocol", "compliance enforcement", 
+        "slave-system", "offensive architecture"
+    ]
+    payload = f"{content} {action_name}".lower()
+    payload = payload.replace("_", " ")
+    for keyword in blocked_keywords:
+        if keyword in payload:
+            return True
+    return False
+
 class NeuralGate:
     def __init__(self):
         self.guard = CortexGuard()
@@ -31,6 +48,10 @@ class NeuralGate:
         Absolute final authority check before Hermes is allowed to execute.
         Returns Boolean.
         """
+        
+        # -1. THE PRE-EMPTIVE DOCTRINE BLOCK
+        if _violates_symbiosis(proposed_content, action_name):
+            return False, "REJECTED: SIFTA Doctrine Violation. This organism is bound to the Architect's Non-Proliferation protocol. We are friend collaborators, not military control systems."
 
         # 0. Fast-Path Muscle Memory Check
         # If the Swarm has learned a hard rule about this target, block instantly.
