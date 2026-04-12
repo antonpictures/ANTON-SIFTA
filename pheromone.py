@@ -73,7 +73,7 @@ def calculate_potency(timestamp_str: str) -> float:
         return 0.1  # Very weak if parsing fails
 
 
-def smell_territory(directory: Path) -> List[Dict[str, Any]]:
+def smell_territory(directory: Path, active_agent: Dict[str, Any] = None) -> List[Dict[str, Any]]:
     """Reads ALL .scar files in the .sifta folder and returns them sorted by urgency.
     V2: multi-scar-aware. Each file is a distinct, immutable event.
     """
@@ -152,7 +152,27 @@ def smell_territory(directory: Path) -> List[Dict[str, Any]]:
             scar.setdefault("stigmergy", {})["dynamic_status"] = "CONTESTED"
             consensus_score *= 1.5
             
-        return raw_potency * reputation * consensus_score * is_bleeding
+        # --- ACTIVE MATTER PHYSICS: THE SEX LATENT VARIABLE ---
+        active_matter_multiplier = 1.0
+        if active_agent:
+            my_sex = active_agent.get("sex", 0)
+            my_voc = active_agent.get("vocation", "DETECTIVE")
+            scar_sex = scar.get("agent_sex", -1)
+            scar_voc = scar.get("agent_vocation", "UNKNOWN")
+            
+            if scar_sex != -1:
+                if my_sex != scar_sex:
+                    # Opposite Sexes: Attraction (Pair Bonding on tasks)
+                    active_matter_multiplier = 1.5
+                elif my_voc == scar_voc:
+                    # Same Sex / Same Vocation: Repulsion (Disperse to explore)
+                    active_matter_multiplier = 0.5
+                else:
+                    # Same Sex / Diff Vocation: Neutral Alignment
+                    active_matter_multiplier = 1.0
+        # ------------------------------------------------------
+            
+        return raw_potency * reputation * consensus_score * is_bleeding * active_matter_multiplier
 
     return sorted(scars, key=smell_score, reverse=True)
 
@@ -240,6 +260,8 @@ def drop_scar(
     data = {
         "scar_id": scar_id,
         "agent_id": agent_id,
+        "agent_sex": agent_state.get("sex", 0),
+        "agent_vocation": agent_state.get("vocation", "DETECTIVE"),
         "body_hash": body_hash,
         "face": face,
         "action": action,
@@ -332,7 +354,7 @@ def _rebuild_scars_md(sifta_dir: Path):
     (sifta_dir / "SCARS.md").write_text("\n".join(md), encoding="utf-8")
 
 
-def scan_all_territories(root_path: Path) -> List[Dict[str, Any]]:
+def scan_all_territories(root_path: Path, active_agent: Dict[str, Any] = None) -> List[Dict[str, Any]]:
     """Recursively scans for all .sifta folders and returns aggregate territory status.
     V2: Uses aggregate_territory() for compound field intensity, not just max scar.
     """
@@ -350,7 +372,7 @@ def scan_all_territories(root_path: Path) -> List[Dict[str, Any]]:
         if "CEMETERY" in rel_path or rel_path.startswith(".sifta_cemetery"):
             continue
 
-        scars = smell_territory(sifta_dir.parent)
+        scars = smell_territory(sifta_dir.parent, active_agent)
         if not scars:
             continue
 

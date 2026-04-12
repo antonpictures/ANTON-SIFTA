@@ -119,6 +119,7 @@ class SwarmBody:
             self.style = saved_state.get("style", "NOMINAL")
             self.private_key_b64 = saved_state.get("private_key_b64")
             self.vocation = saved_state.get("vocation", "DETECTIVE")
+            self.sex = saved_state.get("sex", 0)
             
             # --- WORMHOLE MAIL: OFFLINE MAILBOX UPGRADE ---
             self.mailbox_private_b64 = saved_state.get("mailbox_private_b64")
@@ -141,7 +142,8 @@ class SwarmBody:
                     "ttl": saved_state.get("ttl", 0),
                     "private_key_b64": self.private_key_b64,
                     "mailbox_private_b64": self.mailbox_private_b64,
-                    "vocation": self.vocation
+                    "vocation": self.vocation,
+                    "sex": self.sex
                 })
             # ----------------------------------------------
         else:
@@ -169,6 +171,7 @@ class SwarmBody:
                 encryption_algorithm=serialization.NoEncryption()
             )
             self.private_key_b64 = base64.b64encode(priv_bytes).decode('utf-8')
+            self.sex = priv_bytes[0] % 2  # Biologically immutable from the root key
             # -----------------------------------------------------------------
             # --- WORMHOLE MAIL: OFFLINE MAILBOX FORGE (X25519) ---
             mbox_key = x25519.X25519PrivateKey.generate()
@@ -194,7 +197,8 @@ class SwarmBody:
             "ttl": 0,
             "private_key_b64": self.private_key_b64,
             "mailbox_private_b64": getattr(self, "mailbox_private_b64", ""),
-            "vocation": self.vocation
+            "vocation": self.vocation,
+            "sex": getattr(self, "sex", 0)
         })
         print(f"[{self.agent_id}] Vocation upgraded to {self.vocation} by Architect.")
 
@@ -236,7 +240,8 @@ class SwarmBody:
                 f"::FROM[{origin}]::TO[{destination}]"
                 f"::SEQ[{self.sequence:03d}]::T[{timestamp}]::TTL[{ttl}]"
                 f"::STYLE[{self.style}]::ENERGY[{self.energy}]"
-                f"::ACT[{action_type}]::PRE[{pre_territory_hash}]::POST[{post_territory_hash}]")
+                f"::ACT[{action_type}]::PRE[{pre_territory_hash}]::POST[{post_territory_hash}]"
+                f"::SEX[{getattr(self, 'sex', 0)}]")
                 
         # Cryptographic Mass (Hash Chaining using SHA-256 for physical history)
         raw_data = base_string
@@ -272,7 +277,8 @@ class SwarmBody:
             "ttl": ttl,
             "private_key_b64": self.private_key_b64,
             "mailbox_private_b64": getattr(self, "mailbox_private_b64", ""),
-            "vocation": self.vocation
+            "vocation": self.vocation,
+            "sex": getattr(self, "sex", 0)
         })
         
         return body_string
@@ -345,6 +351,7 @@ def parse_body_state(ascii_body):
     act_match = re.search(r"::ACT\[(\w+)\]", string_to_verify)
     pre_match = re.search(r"::PRE\[([a-f0-9]{64})\]", string_to_verify)
     post_match = re.search(r"::POST\[([a-f0-9]{64})\]", string_to_verify)
+    sex_match = re.search(r"::SEX\[(\d+)\]", string_to_verify)
     
     return {
         "id": agent_id,
@@ -359,7 +366,8 @@ def parse_body_state(ascii_body):
         "raw": ascii_body,
         "owner": pub_b64,
         "mailbox": mbox_pub_b64,
-        "vocation": saved_state.get("vocation", "DETECTIVE") if saved_state else "DETECTIVE"
+        "vocation": saved_state.get("vocation", "DETECTIVE") if saved_state else "DETECTIVE",
+        "sex": int(sex_match.group(1)) if sex_match else (saved_state.get("sex", 0) if saved_state else 0)
     }
 
 DAMAGE_TABLE = {
