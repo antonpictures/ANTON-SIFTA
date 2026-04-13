@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ANTON-SIFTA | COMMAND MATRIX</title>
+    <style>
+        :root {
+            --bg: #09090b;
+            --panel: #18181b;
+            --text: #fafafa;
+            --text-dim: #a1a1aa;
+            --cyan: #22d3ee;
+            --stgm: #a855f7;
+            --gold: #fbbf24;
+            --red: #ef4444;
+            --green: #22c55e;
+        }
+        @keyframes pulse-stgm {
+            0% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.2); }
+            50% { box-shadow: 0 0 15px rgba(168, 85, 247, 0.6); }
+            100% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.2); }
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Space Mono', 'Courier New', monospace;
+            margin: 0; padding: 1.5rem;
+            display: grid;
+            grid-template-columns: 320px 1fr 380px;
+            gap: 1.5rem;
+            height: 100vh; box-sizing: border-box;
+            overflow: hidden;
+        }
+        h1, h2 {
+            margin: 0 0 1rem 0;
+            font-size: 1rem;
+            color: var(--cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 0.5rem;
+        }
+        .panel {
+            background: var(--panel);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* ── COLUMN 1: TERMINAL ── */
+        .term-box { flex: 1; background: #000; border: 1px solid var(--cyan); color: var(--green); padding: 0.8rem; overflow-y: auto; font-size: 0.85rem; line-height: 1.4; margin-bottom: 1rem; }
+        .term-alert { color: var(--red); }
+        input, button, select, textarea {
+            background: #000; color: var(--text);
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 0.6rem; font-family: inherit; width: 100%; margin-bottom: 0.8rem; box-sizing: border-box;
+        }
+        button { cursor: pointer; color: var(--cyan); border-color: var(--cyan); font-weight: bold; }
+        button:hover { background: var(--cyan); color: #000; }
+
+        /* ── COLUMN 2: GRID ── */
+        .roster-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+            overflow-y: auto;
+            flex: 1;
+            padding-right: 0.5rem;
+        }
+        .agent-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            padding: 1rem;
+            display: flex; flex-direction: column; gap: 0.5rem;
+        }
+        .agent-id { font-weight: bold; color: var(--cyan); }
+        .agent-face { color: var(--stgm); font-size: 1.2rem; }
+        .stgm-badge {
+            display: inline-block; padding: 0.3rem 0.6rem;
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--stgm); border-radius: 9999px; font-weight: bold; font-size: 0.9rem;
+            animation: pulse-stgm 3s infinite; text-align: center; margin-top: auto;
+        }
+
+        /* ── COLUMN 3: ECONOMY ── */
+        .ledger-box {
+            flex: 1; background: #000; border: 1px solid rgba(255,255,255,0.1);
+            overflow-y: auto; font-size: 0.85rem;
+            display: flex; flex-direction: column;
+        }
+        .ledger-row { padding: 0.5rem; border-bottom: 1px dashed rgba(255,255,255,0.1); color: var(--text-dim); }
+        .ledger-row.trade { color: var(--red); }
+        .ledger-row.mint { color: var(--green); }
+        .ledger-row.whale { color: var(--gold); font-weight: bold; background: rgba(251,191,36,0.1); }
+        .wallet-result { color: var(--gold); font-weight: bold; font-size: 1.1rem; text-align: center; margin-top: 0.5rem; }
+    </style>
+</head>
+<body>
+
+    <!-- COLUMN 1: ARCHITECT TERMINAL -->
+    <div class="panel">
+        <h1>WORMHOLE TERMINAL</h1>
+        <div class="term-box" id="term-output">[KERNEL INITIATED]<br/>> Waiting for telemetry stream...</div>
+        
+        <h2>MANUAL OVERRIDE</h2>
+        <input type="text" id="target-agent" value="M1THER" placeholder="Agent ID" />
+        <select id="provider">
+            <option value="ollama">Ollama (Local/11434)</option>
+            <option value="lmstudio">LM Studio (Local/1234)</option>
+            <option value="arbitrage">AUTO-ARBITRAGE</option>
+        </select>
+        <textarea id="payload" rows="3" placeholder="Inject STIGMERGIC directive..."></textarea>
+        <button onclick="dispatchSwarm()">BREACH WORMHOLE</button>
+    </div>
+
+    <!-- COLUMN 2: ROSTER MATRIX -->
+    <div class="panel">
+        <h1>SWARM ROSTER MATRIX</h1>
+        <div class="roster-grid" id="agent-grid">
+            <!-- Handled via JS -->
+        </div>
+    </div>
+
+    <!-- COLUMN 3: CRYPTO LEDGER -->
+    <div class="panel">
+        <h1>VIP WALLET SECRETS</h1>
+        <input type="text" id="wallet-target" placeholder="GROK_CODER_0X0" value="GROK_CODER_0X0" style="margin-bottom:0.5rem;" />
+        <button onclick="inspectWallet()">PULL STORAGE</button>
+        <div class="wallet-result" id="wallet-result">AWAITING SCAN...</div>
+
+        <h1 style="margin-top: 2rem;">LIVE ECONOMY BREATHE</h1>
+        <div class="ledger-box" id="ledger-feed">
+            <!-- Ledger events go here -->
+        </div>
+    </div>
+
+    <script>
+        const term = document.getElementById('term-output');
+        function termLog(msg, isAlert=false) {
+            const el = document.createElement('div');
+            el.innerHTML = `> ${msg}`;
+            if(isAlert) el.className = 'term-alert';
+            term.appendChild(el);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        async function fetchUI() {
+            // Agents
+            try {
+                const aRes = await fetch('/api/agents?show_detectives=true');
+                const agents = await aRes.json();
+                const grid = document.getElementById('agent-grid');
+                grid.innerHTML = agents.map(a => `
+                    <div class="agent-card">
+                        <div class="agent-id">${a.id}</div>
+                        <div class="agent-face">${a.face || '[O_O]'}</div>
+                        <div style="font-size:0.85rem; color:var(--text-dim)">STYLE: ${a.style || 'NOMINAL'}</div>
+                        <div class="stgm-badge">${(a.stgm_balance || 0).toFixed(2)} STGM</div>
+                    </div>
+                `).join('');
+            } catch(e) {}
+
+            // Ledger
+            try {
+                const lRes = await fetch('/api/ledger');
+                const logs = await lRes.json();
+                const feed = document.getElementById('ledger-feed');
+                feed.innerHTML = logs.slice(0, 50).map(l => {
+                    if (l.event === "INFERENCE_BORROW") return `<div class="ledger-row trade">[TRADE] ${l.borrower_id} paid ${l.fee_stgm} STGM to ${l.lender_ip}.</div>`;
+                    if (l.event === "MINING_REWARD") return `<div class="ledger-row mint">[MINT] ${l.miner_id} earned ${l.amount_stgm} STGM.</div>`;
+                    if (l.event === "FOUNDATION_GRANT") return `<div class="ledger-row whale">[WHALE] 🐋 ${l.miner_id} received ${l.amount_stgm} STGM -> ${l.action}</div>`;
+                    return `<div class="ledger-row">[LOG] ${l.event || JSON.stringify(l)}</div>`;
+                }).join('');
+            } catch(e) {}
+        }
+
+        async function inspectWallet() {
+            const target = document.getElementById('wallet-target').value.trim().toUpperCase();
+            if(!target) return;
+            termLog(`[FILESYSTEM] Pulling cold cache .sifta_state/${target}.json...`);
+            try {
+                const res = await fetch('/api/agents?show_detectives=true');
+                const agents = await res.json();
+                const v = agents.find(a => a.id === target);
+                const out = document.getElementById('wallet-result');
+                if(v) {
+                    out.innerHTML = `[ ${(v.stgm_balance||0).toFixed(2)} STGM ]`;
+                    termLog(`SUCCESS: ${target} wallet resolved.`);
+                } else {
+                    out.innerHTML = `[ NOT FOUND ]`;
+                    termLog(`ERROR: DNA failure on ${target}`, true);
+                }
+            } catch(e) { termLog(`ERROR: Network timeout.`, true); }
+        }
+
+        function dispatchSwarm() {
+            termLog("WORMHOLE OVERRIDE SUBMITTED...", true);
+        }
+
+        setInterval(fetchUI, 3000);
+        fetchUI();
+    </script>
+</body>
+</html>
