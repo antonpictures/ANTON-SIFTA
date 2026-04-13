@@ -90,8 +90,10 @@ async function connectToWhatsApp() {
           lastKnownHuman = from;
       }
       
-      // Infinite loop prevention for offline kernel errors
+      // Infinite loop prevention for offline kernel errors and multi-node echoing
       if (text.includes("🔴 SIFTA kernel is offline")) continue;
+      if (text.startsWith("[M1THER]") || text.startsWith("[M5QUEEN]") || text.startsWith("[SIFTA]")) continue;
+      if (text.startsWith("🌊") || text.startsWith("🧠📡")) continue;
 
       console.log(`\n[📲 INCOMING] type=${type} fromMe=${msg.key.fromMe} from=${from}`);
       console.log(`  Message: "${text}"`);

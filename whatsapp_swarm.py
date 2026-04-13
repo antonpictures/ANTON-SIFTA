@@ -82,19 +82,19 @@ def query_ollama(prompt: str, history: list, persona: str = "SIFTA") -> str:
     context += f"Human: {prompt}\nSIFTA:"
     
     data = {
-        "model": "gemma4",
+        "model": "qwen3.5:0.8b",
         "prompt": context,
         "stream": False
     }
     
     try:
         req = urllib.request.Request(OLLAMA_URL, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=45) as response:
+        with urllib.request.urlopen(req, timeout=240) as response:
             result = json.loads(response.read().decode('utf-8'))
             return result.get("response", "🌊 (Gândesc...)").strip()
     except Exception as e:
         print(f"[OLLAMA ERROR] {e}")
-        return "🌊 (Conexiunea mea neurală Ollama se reîncarcă. Mai încearcă într-o clipă.)"
+        return "🧠📡 (NPU blocat: Prea puțin RAM pe M1THER. Trageți aer în piept și încercați din nou.)"
 
 
 def get_swarm_response(from_jid: str, text: str) -> str:
@@ -107,6 +107,12 @@ def get_swarm_response(from_jid: str, text: str) -> str:
     t = text.lower().strip()
     is_group = "@g.us" in from_jid
     
+    # ── M1/M5 INFINITE LOOP ECHO PREVENTION ──
+    # Since both machines share the same WhatsApp account, they receive each other's sent messages.
+    # We must explicitly mute any incoming message that looks like a Swarm Agent is speaking.
+    if text.startswith("[M1THER]") or text.startswith("[M5QUEEN]") or text.startswith("[SIFTA]") or text.startswith("🌊") or text.startswith("🧠📡"):
+        return "_SILENT_"
+        
     # Check if she is being addressed
     addressed = any(kw in t for kw in ["sifta", "safta"])
     
