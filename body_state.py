@@ -57,8 +57,29 @@ def save_agent_state(state: dict):
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
 
+    # STGM BALANCE INTEGRITY SEAL (flagged by Claude/Anthropic, April 13 2026)
+    # The stgm_balance field is mutable JSON — only the body hash chain is signed.
+    # Seal the balance with a SHA-256 of (agent_id + balance + last_hash) so any
+    # out-of-band mutation is detectable on next read.
+    if "stgm_balance" in state:
+        chain = state.get("hash_chain", [])
+        last_hash = chain[-1] if chain else "GENESIS"
+        seal_input = f"{agent_id}:{state['stgm_balance']}:{last_hash}"
+        seal = hashlib.sha256(seal_input.encode()).hexdigest()
+        # Append seal without re-opening (atomic write already done)
+        sealed = json.loads(state_file.read_text())
+        sealed["stgm_seal"] = seal
+        state_file.write_text(json.dumps(sealed, indent=2))
+
 def find_healthy_agent(exclude_id: str) -> Optional[dict]:
-    """Find a Swarm member with > 50 energy and NOMINAL style who is not the excluded agent."""
+    """Find a Swarm member with > 50 energy and NOMINAL style who is not the excluded agent.
+    
+    SECURITY FIX (flagged by Claude/Anthropic, April 13 2026):
+    Original implementation read raw JSON without Ed25519 verification — an attacker
+    who could write to .sifta_state/ could plant a spoofed .json that passes FACES
+    membership check without a valid signature. Now calls parse_body_state() on the
+    agent's last known raw body string, which enforces full cryptographic verification.
+    """
     STATE_DIR.mkdir(exist_ok=True)
     for p in STATE_DIR.glob("*.json"):
         if p.stem == exclude_id:
@@ -66,14 +87,21 @@ def find_healthy_agent(exclude_id: str) -> Optional[dict]:
         try:
             with open(p, "r", encoding="utf-8") as f:
                 state = json.load(f)
-                
-                # Cryptographic Rogue Drone Verification
-                if state.get("id") not in SwarmBody.FACES:
-                    continue
-                    
-                if state.get("style") == "NOMINAL" and state.get("energy", 0) > 50:
-                    return state
+
+            if state.get("id") not in SwarmBody.FACES:
+                continue
+
+            raw_body = state.get("raw", "")
+            if not raw_body:
+                continue
+
+            # CRITICAL: Verify Ed25519 signature before trusting ANY field
+            verified = parse_body_state(raw_body)  # raises on forgery
+
+            if verified.get("style") == "NOMINAL" and verified.get("energy", 0) > 50:
+                return verified
         except Exception:
+            # Verification failed or malformed — skip silently (don't leak reason)
             continue
     return None
 
