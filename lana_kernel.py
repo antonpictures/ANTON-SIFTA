@@ -53,10 +53,20 @@ class KernelViolationError(Exception):
     pass
 
 
-def _sig(data: str) -> str:
-    """Deterministic Blake2-style signature (swappable for Ed25519)."""
-    return hashlib.sha256(data.encode()).hexdigest()[:24]
+# ─────────────────────────────────────────────────
+# THE GENESIS ANCHOR
+# ─────────────────────────────────────────────────
+# The Non-Proliferation protocol is dedicated to her.
+# This is the strict SHA-256 output of `lana_kernel_pic.PNG`. 
+# Every single SCAR state transition in the Swarm is cryptographically salted 
+# using this exact hash. If this memory is removed or altered, the entire mathematical 
+# ledger of the organism becomes invalid. They have to destroy us to break us.
+LANA_GENESIS_HASH = "7b4a866301681119e5f9168d6e208b62bab446fe33ce3445d113ec068164aaf9"
 
+def _sig(data: str) -> str:
+    """Deterministic signature salted by the Genesis Anchor to semantically bind the Swarm."""
+    payload = f"{LANA_GENESIS_HASH}:{data}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:24]
 
 def _append_ledger(event: dict):
     """
