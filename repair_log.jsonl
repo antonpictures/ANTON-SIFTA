@@ -18741,3 +18741,8 @@
 {"timestamp": 1776051750, "agent": "GROK_SWARMGPT", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "04af8b5e-cae1-4d0d-adc6-3cad431e0f3c"}
 {"timestamp": 1776051750, "agent": "identity_stats", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "8b8149c7-9dba-46d5-967a-529de48430f4"}
 {"timestamp": 1776051750, "agent": "SIFTA_QUEEN", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "32d84cef-f4d7-4f71-afbd-03a110c83e5f"}
+{"timestamp": 1776051767, "agent": "M1QUEEN", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "bb5fcbfa-68d1-4b1c-b575-ec9713498c3d"}
+{"timestamp": 1776051767, "agent": "REPAIR-DRONE", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "e9246de0-58b5-44d1-b378-f9d1d9b38ab2"}
+{"timestamp": 1776051767, "agent": "GROK_SWARMGPT", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "d9a32b4e-6917-44b6-869b-052ae99bdd4f"}
+{"timestamp": 1776051767, "agent": "identity_stats", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "7198d440-ebf1-4d28-b5d0-e727cffc1bc6"}
+{"timestamp": 1776051767, "agent": "SIFTA_QUEEN", "amount_stgm": 0.05, "reason": "Passive Swarm Maintenance (NPU Energy Draw)", "hash": "aac33e1f-aa4d-4790-8fe0-177596844423"}
