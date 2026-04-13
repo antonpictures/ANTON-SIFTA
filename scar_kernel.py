@@ -38,7 +38,7 @@ class Scar:
 class Kernel:
     def __init__(self):
         self.scars: Dict[str, Scar] = {}
-        self.fossils: Dict[str, str] = {}  # target → scar_id
+        self.fossils: Dict[str, tuple[str, str]] = {}  # target → (scar_id, content_hash)
         self.ledger: List[dict] = []
 
     # ── Deterministic Conflict Domain ────────────────────────
@@ -49,7 +49,10 @@ class Kernel:
     def propose(self, target: str, content: str) -> str:
         # Fossil fast-path
         if target in self.fossils:
-            sid = self.fossils[target]
+            sid, expected_hash = self.fossils[target]
+            actual_hash = hashlib.sha256(self.scars[sid].content.encode()).hexdigest()
+            if actual_hash != expected_hash:
+                raise Exception("FOSSIL CORRUPTION DETECTED: Content does not match locked hash.")
             self._log("FOSSIL_REPLAY", sid, target)
             return sid
 
@@ -94,7 +97,8 @@ class Kernel:
         self._transition(scar, "EXECUTED")
         self._transition(scar, "FOSSILIZED")
 
-        self.fossils[scar.target] = sid
+        content_hash = hashlib.sha256(scar.content.encode()).hexdigest()
+        self.fossils[scar.target] = (sid, content_hash)
 
     # ── Transition + Ledger ─────────────────────────────────
     def _transition(self, scar: Scar, to_state: str):
