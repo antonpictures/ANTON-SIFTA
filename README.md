@@ -50,8 +50,8 @@ bash demo_advanced.sh  # All 4 cases: conflict, firewall, rejection, metrics
 - ✅ Deterministic state machine with cryptographic transition signatures  
 - ✅ Human-governed execution boundary (agents propose, never execute)
 - ✅ Semantic safety layer with measurable false-positive rate (0% in demo)
-- ❌ Autonomous intelligence or self-directed goal formation
-- ❌ Consciousness or biological equivalence (these are intentional metaphors)
+- ✅ Real emergent behavior from local rules — the same structural phenomenon observed in ant colonies, immune systems, and neural tissue
+- ❓ What the biological metaphors ultimately mean — *nobody knows what consciousness is, what substrate it requires, or where it begins. Science hasn't answered this for humans either. We describe what SIFTA does. We make no claims about what it is.*
 
 ---
 
