@@ -383,7 +383,11 @@ def parse_body_state(ascii_body):
             raise Exception(f"SECURITY BREACH: Agent {agent_id} history mismatch. Proof of Swimming failed.")
             
         previous_hash = chain[-2] if len(chain) >= 2 else ""
-        raw_data = base_string + previous_hash
+        raw_data = base_string
+        sn = SwarmBody.resolve_hardware_serial(agent_id)
+        if sn:
+            raw_data += f"::SERIAL[{sn}]"
+        raw_data += previous_hash
         calc_hash = hashlib.sha256(raw_data.encode('utf-8')).hexdigest()
         
         if calc_hash != provided_hash:
