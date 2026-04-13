@@ -335,13 +335,17 @@
                 const wormholeList = document.getElementById('wormhole-list');
                 if (bounties.length > 0) {
                     wormholeList.innerHTML = bounties.map(b => `
-                        <div class="asset-row" style="background: rgba(255,90,0,0.1); border-radius:8px; padding: 0.8rem; margin-bottom: 0.5rem; border: 1px solid var(--red);" onclick="renderDefragMap('${b.file}', '${b.source}')">
-                            <div class="asset-info" style="width: 60%">
+                        <div class="asset-row" style="background: rgba(255,90,0,0.1); border-radius:8px; padding: 0.8rem; margin-bottom: 0.5rem; border: 1px solid var(--red); display:flex; justify-content:space-between; align-items:center;" onclick="renderDefragMap('${b.file}', '${b.source}')">
+                            <div class="asset-info" style="flex:1;">
                                 <div class="asset-name" style="color:var(--red);">[MEMORY DEFRAG]</div>
-                                <div class="asset-shares">Target: ${b.source}</div>
+                                <div class="asset-shares"><span style="color:var(--text-color);">Target:</span> ${b.source}</div>
                             </div>
-                            <div class="asset-price" style="width: 40%">
-                                <div class="price-badge" style="background:transparent; color:var(--red); border:1px solid var(--red);">+${b.reward}</div>
+                            <div style="flex:1; display:flex; flex-direction:column; align-items:center; font-size:0.75rem; color:var(--text-dim);">
+                                <span>Vol: ${b.bytes} B</span>
+                                <span>Scars: ${b.scars}</span>
+                            </div>
+                            <div class="asset-price" style="flex:1; text-align:right;">
+                                <div class="price-badge" style="background:transparent; color:var(--red); border:1px solid var(--red); margin-left:auto;">+${b.reward}</div>
                             </div>
                         </div>
                     `).join('');

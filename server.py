@@ -711,10 +711,14 @@ async def wormhole_market():
             b_id = re.search(r"BOUNTY_ID:\s*(.+)", content)
             reward = re.search(r"ESTIMATED_REWARD:\s*(.+)", content)
             source = re.search(r"SOURCE_NODE:\s*(.+)", content)
+            bytes_len = re.search(r"Raw Fragment Length:\s*(\d+)", content)
+            scars_len = re.search(r"Scars Accumulated:\s*(\d+)", content)
             bounties.append({
                 "bounty_id": b_id.group(1).strip() if b_id else file.name,
                 "reward": reward.group(1).strip() if reward else "10.00 STGM",
                 "source": source.group(1).strip() if source else "UNKNOWN",
+                "bytes": bytes_len.group(1).strip() if bytes_len else "0",
+                "scars": scars_len.group(1).strip() if scars_len else "0",
                 "file": file.name
             })
         except Exception:
