@@ -167,6 +167,7 @@ class SIFTAColloidSimulation:
         self.frame = 0
         self.synced = False
         self.sync_frame = None
+        self.processed_proposals = set()
 
         self._seed_kernel()
         self._spawn_colloids()
@@ -216,6 +217,19 @@ class SIFTAColloidSimulation:
     def tick(self):
         """One simulation step: refresh field, compute attractor, step colloids."""
         self.frame += 1
+
+        # Real-time IPC: Poll for new inference outputs
+        proposals_dir = Path("bureau_of_identity/proposals")
+        if proposals_dir.exists():
+            for p in proposals_dir.glob("*.scar"):
+                if p.name not in self.processed_proposals:
+                    try:
+                        content = p.read_text().strip()
+                        if content:
+                            self.kernel.propose(self.target, content)
+                            self.processed_proposals.add(p.name)
+                    except Exception:
+                        pass
 
         scars = [
             s for s in self.kernel.scars.values()
