@@ -30,6 +30,7 @@ from typing import Optional
 
 from state_bus import get_state, set_state
 from neural_gate import NeuralGate
+from cognitive_firewall import firewall
 
 # ─────────────────────────────────────────────────
 # ALLOWED TRANSITION MAP (the only legal paths)
@@ -181,6 +182,18 @@ class LanaKernel:
     def propose(self, worker_id: str, target: str,
                 action: str, content: str) -> str:
         """Register execution intent. Returns scar_id."""
+        
+        # 0. Cognitive Firewall pre-filter
+        is_safe, fw_reason = firewall.evaluate(content)
+        if not is_safe:
+            # Physically crush execution immediately
+            _append_ledger({
+                "ts": time.time(), "event": "FIREWALL_BREACH",
+                "target": target, "worker": worker_id,
+                "reason": fw_reason
+            })
+            raise KernelViolationError(fw_reason)
+            
         # Fossil replay fast-path — if we've done this before and it was calm, replay it
         if target in self._fossil_index:
             fossil_scar = self._scars.get(self._fossil_index[target], {})

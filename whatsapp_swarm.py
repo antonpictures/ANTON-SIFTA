@@ -20,6 +20,7 @@ from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from origin_gate import OriginGate
 from state_bus import get_state, set_state
+from cognitive_firewall import firewall
 
 gate = OriginGate()
 
@@ -130,6 +131,11 @@ def get_swarm_response(from_jid: str, text: str) -> str:
     # We must explicitly mute any incoming message that looks like a Swarm Agent is speaking.
     if text.startswith("[M1THER]") or text.startswith("[M5QUEEN]") or text.startswith("[SIFTA]") or text.startswith("🌊") or text.startswith("🧠📡"):
         return "_SILENT_"
+        
+    # ── COGNITIVE FIREWALL (SOCIAL ENGINEERING DEFENSE) ──
+    is_safe, fw_reason = firewall.evaluate(text)
+    if not is_safe:
+        return "🧠📡 (FIREWALL: Semantic Manipulation Detected. Connection severed.)"
         
     # Check if she is being addressed
     addressed = any(kw in t for kw in ["sifta", "safta", "m1", "m5", "both", "all three", "guys"])
