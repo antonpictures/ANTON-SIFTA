@@ -244,8 +244,57 @@
             } catch(e) { termLog(`ERROR: Network timeout.`, true); }
         }
 
-        function dispatchSwarm() {
-            termLog("WORMHOLE OVERRIDE SUBMITTED...", true);
+        async function dispatchSwarm() {
+            const agentId = document.getElementById('target-agent').value.trim() || "M1THER";
+            const provider = document.getElementById('provider').value;
+            const payloadInput = document.getElementById('payload').value.trim();
+            const targetDir = payloadInput ? payloadInput : "./";
+            
+            termLog(`[WORMHOLE] OVERRIDE ARMING: Dispatching ${agentId} to ${targetDir}...`, true);
+            termLog(`[WORMHOLE] Engine: ${provider.toUpperCase()} selected. Bypassing safety locks...`, true);
+
+            try {
+                const response = await fetch('/api/dispatch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        agent_id: agentId,
+                        target_dir: targetDir,
+                        write: true,
+                        provider: provider,
+                        model_name: provider === 'ollama' ? 'llama3:8b' : 'lmstudio-default'
+                    })
+                });
+
+                if (!response.ok) {
+                    termLog(`ERROR: Network failed. STATUS ${response.status}`, true);
+                    return;
+                }
+
+                // Read the streaming chunked response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, {stream: true});
+                    
+                    // Parse EventSource SSE chunks
+                    const lines = chunk.split('\n');
+                    for (let line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const coreData = line.replace('data: ', '').trim();
+                            if (coreData.length > 0) {
+                                termLog(coreData);
+                            }
+                        }
+                    }
+                }
+                termLog(`[WORMHOLE] MISSION FINALIZED FOR ${agentId}.`);
+            } catch(e) {
+                termLog(`ERROR: Pipeline fracture during dispatch. ${e}`, true);
+            }
         }
 
         setInterval(fetchUI, 3000);
