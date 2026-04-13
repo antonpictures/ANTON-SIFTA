@@ -110,6 +110,25 @@
         }
         .btn-trade:active { transform: scale(0.98); }
         .term-out { font-family: monospace; font-size: 0.75rem; color: var(--text-dim); max-height: 40px; overflow:hidden;}
+        
+        /* AUSLOGICS DEFRAG GRID */
+        .defrag-container {
+            display: none; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem;
+            border: 1px solid var(--border); padding: 0.8rem; border-radius: 8px; background: #000;
+        }
+        .defrag-title { font-size: 0.85rem; color: var(--text-dim); font-weight: 600; display:flex; justify-content:space-between;}
+        .defrag-grid {
+            display: grid; grid-template-columns: repeat(30, 1fr); gap: 1px;
+            width: 100%; height: auto;
+        }
+        .block { aspect-ratio: 1; border-radius: 1px;}
+        .block.red { background: #FF0000; }
+        .block.blue { background: #0000FF; }
+        .block.green { background: #00C805; }
+        .block.grey { background: #2c2c2e; }
+        .legend { display: flex; gap: 1rem; font-size: 0.7rem; color: var(--text-dim); justify-content:center;}
+        .legend span { display:flex; align-items:center; gap: 4px; }
+        .l-box { width: 8px; height: 8px; border-radius:1px;}
     </style>
 </head>
 <body>
@@ -168,6 +187,19 @@
 
     <!-- FIXED TRADE ACTION BAR -->
     <div class="trade-bar">
+        
+        <!-- DEFRAG VISUALIZER -->
+        <div class="defrag-container" id="defrag-container">
+            <div class="defrag-title"><span id="defrag-target">Target: None</span> <span>Auslogics Payload Mapper</span></div>
+            <div class="defrag-grid" id="defrag-grid"></div>
+            <div class="legend">
+                <span><div class="l-box" style="background:#FF0000"></div> Fragmented</span>
+                <span><div class="l-box" style="background:#0000FF"></div> Defragmented</span>
+                <span><div class="l-box" style="background:#00C805"></div> Allocated</span>
+                <span><div class="l-box" style="background:#2c2c2e"></div> Free Space</span>
+            </div>
+        </div>
+
         <div class="input-row">
             <select id="trade-target">
                 <option value="M1THER">M1THER</option>
@@ -303,7 +335,7 @@
                 const wormholeList = document.getElementById('wormhole-list');
                 if (bounties.length > 0) {
                     wormholeList.innerHTML = bounties.map(b => `
-                        <div class="asset-row" style="background: rgba(255,90,0,0.1); border-radius:8px; padding: 0.8rem; margin-bottom: 0.5rem; border: 1px solid var(--red);" onclick="document.getElementById('trade-payload').value='Execute Defrag on ${b.file}'">
+                        <div class="asset-row" style="background: rgba(255,90,0,0.1); border-radius:8px; padding: 0.8rem; margin-bottom: 0.5rem; border: 1px solid var(--red);" onclick="renderDefragMap('${b.file}', '${b.source}')">
                             <div class="asset-info" style="width: 60%">
                                 <div class="asset-name" style="color:var(--red);">[MEMORY DEFRAG]</div>
                                 <div class="asset-shares">Target: ${b.source}</div>
@@ -319,6 +351,26 @@
                 
             } catch(e) {
                 console.error(e);
+            }
+        }
+
+        async function renderDefragMap(fileName, targetName) {
+            document.getElementById('trade-payload').value = `Execute Defrag on ${fileName}`;
+            const dc = document.getElementById('defrag-container');
+            const grid = document.getElementById('defrag-grid');
+            document.getElementById('defrag-target').innerText = `Target: ${targetName}`;
+            
+            dc.style.display = 'flex';
+            grid.innerHTML = '<div style="color:white; font-size:0.8rem; grid-column:span 30; text-align:center;">Calculating physics...</div>';
+            
+            try {
+                const res = await fetch(`/api/memory_map/${fileName}`);
+                const data = await res.json();
+                if(data.blocks) {
+                    grid.innerHTML = data.blocks.map(c => `<div class="block ${c}"></div>`).join('');
+                }
+            } catch(e) {
+                grid.innerHTML = '';
             }
         }
 
