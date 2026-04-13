@@ -129,13 +129,8 @@ class CouncilRobinhoodApp(tk.Tk):
                 btn.config(bg=red_bg)
                 btn.pack(pady=5)
             else:
-                # GREEN BUTTON (Idle)
-                green_bg = "#00C805"
-                idle_txt = "+$0.00"
-                btn = tk.Button(btn_frame, text=idle_txt, fg="black", highlightbackground=green_bg, font=("Helvetica", 12, "bold"), width=10,
-                                command=lambda a_id=agent_id: self.dispatch_custom(a_id))
-                btn.config(bg=green_bg)
-                btn.pack(pady=5)
+                # PASSIVE IDLE STATE (No button)
+                tk.Label(btn_frame, text="IDLE", font=("Helvetica", 12, "bold"), fg="#8e8e93", bg="#000000").pack(pady=5)
                 
             tk.Frame(self.list_frame, bg="#111111", height=1).pack(fill="x", pady=2)
                 
