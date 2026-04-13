@@ -33,10 +33,8 @@ class ActionItem(ListItem):
         self.args = args or []
 
     def compose(self) -> ComposeResult:
-        yield Vertical(
-            Label(self.action_title, classes="action-title"),
-            Label(self.action_subtitle, classes="action-subtitle")
-        )
+        yield Label(self.action_title, classes="action-title")
+        yield Label(self.action_subtitle, classes="action-subtitle")
 
 class SIFTAControlDeck(App):
     """The main terminal application."""
