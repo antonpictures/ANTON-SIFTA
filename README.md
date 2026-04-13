@@ -86,6 +86,19 @@ Welcome to **ANTON-SIFTA**. This isn't another LangChain wrapper, and it isn't a
 
 Where you stop seeing lines of code and start seeing white blood cells swarming an infection—that is the exact threshold where software engineering becomes digital biology.
 
+## 🧬 Code as Biology: The Cognitive Colloid
+
+SIFTA is mathematically identical to a physical active-matter system (like colliod particles or ant colonies). We do not imitate biology; we execute its equations.
+
+| Biological / Physical Concept | SIFTA Python Codebase |
+|-------------------------------|-----------------------|
+| **ASCII bodies** | `Scar` dataclass (`scar_kernel.py`) |
+| **Identity intelligence** | `pheromone_score()` + `consensus_field()` |
+| **Claim territory** | `target` field + `physical_binder.bind()` |
+| **Crypto assets (STGM)** | `LANA` genesis anchor + Ed25519 signatures |
+| **Prove property & rights** | Fossil replay check + immutable ledger |
+| **The field IS coordination** | `harmonize_with_consensus_field()` driving the swarm |
+
 ## 🚀 Why SIFTA is Completely Different
 
 Most agentic frameworks today are stateless, amnesiac, and epistemically fragile. They rely on external vector databases as prosthetic memories and a central orchestrator whispering instructions. If the orchestrator dies, the swarm collapses.
