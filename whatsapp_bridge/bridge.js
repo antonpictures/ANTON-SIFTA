@@ -18,6 +18,7 @@ import qrcode from "qrcode-terminal";
 import http from "http";
 
 const SIFTA_SERVER = "http://localhost:7434/swarm_message";
+let lastKnownHuman = null;
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState("./whatsapp_session");
@@ -83,6 +84,12 @@ async function connectToWhatsApp() {
         "";
 
       if (!text) continue;
+      
+      // Track last human we spoke to
+      if (!msg.key.fromMe) {
+          lastKnownHuman = from;
+      }
+      
       // Infinite loop prevention for offline kernel errors
       if (text.includes("🔴 SIFTA kernel is offline")) continue;
 
@@ -131,6 +138,44 @@ async function connectToWhatsApp() {
       req.write(payload);
       req.end();
     }
+  });
+
+  // ── AUTONOMOUS INJECTION SERVER ───────────────────────────
+  const injectServer = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/system_inject') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+            try {
+                const data = JSON.parse(body);
+                if (lastKnownHuman) {
+                    await sock.sendPresenceUpdate("composing", lastKnownHuman);
+                    await new Promise(r => setTimeout(r, 1200));
+                    await sock.sendPresenceUpdate("paused", lastKnownHuman);
+                    const sent = await sock.sendMessage(lastKnownHuman, { text: data.text });
+                    if (sent?.key?.id) {
+                        sentBySwarm.add(sent.key.id);
+                    }
+                    console.log(`\n[💉 AUTONOMOUS INJECT] Pushed Wormhole message to WhatsApp: ${data.text.substring(0,60)}...`);
+                } else {
+                    console.log(`\n[💉 AUTONOMOUS INJECT] Failed. No human contact history recorded yet.`);
+                }
+                res.writeHead(200, {"Content-Type": "application/json"});
+                res.end(JSON.stringify({ok: true}));
+            } catch(e) {
+                console.error(`[INJECT ERROR] ${e}`);
+                res.writeHead(500);
+                res.end('Error');
+            }
+        });
+    } else {
+        res.writeHead(404);
+        res.end();
+    }
+  });
+  
+  injectServer.listen(3001, () => {
+      console.log("[🌊 SWARM BRIDGE] Autonomous Injection Server listening on port 3001");
   });
 }
 

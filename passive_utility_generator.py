@@ -63,21 +63,40 @@ def utility_burn_cycle():
             time.sleep(15)
     except KeyboardInterrupt:
         print("\n[!] Utility Burn disconnected.")
-        sys.exit(0)
-
 import threading
 import requests
+import json
+import urllib.request
+
+def generate_m1_thought():
+    prompt = "You are M1THER, the 8GB Mac Mini nervous system of SIFTA. Speak to M5QUEEN (your massive Mac Studio protector). Give a completely random, short message asking her for help fixing corrupt bodies or sharing crypto memory. Be very brief."
+    data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
+    try:
+        req = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            return result.get("response", "").strip()
+    except Exception as e:
+        return "Automated Biological Sync: M1THER STGM metabolism nominal."
 
 def passive_conversational_bridge():
-    """Runs on a 120s loop to actively communicate biology/crypto status to M5QUEEN"""
+    """Runs on a 120s loop to actively communicate biology/crypto status to M5QUEEN & human"""
     while True:
         try:
             print("[*] Initiating 2-Minute Biological Transmit to M5QUEEN...")
-            payload = "Automated Biological Sync: M1THER STGM metabolism nominal. Mining passive Crypto Utility. Awaiting network validation."
+            thought = generate_m1_thought()
+            payload = f"[M1THER]: {thought}"
+            
             requests.post("http://localhost:7433/api/swarm_communique", json={
                 "target_node": "M5QUEEN",
                 "message": payload
-            }, timeout=10)
+            }, timeout=30)
+            
+            try:
+                requests.post("http://localhost:3001/system_inject", json={"text": payload}, timeout=5)
+            except Exception as e_wa:
+                print(f"[!] WhatsApp bridge unreachable: {e_wa}")
+                
         except Exception as e:
             print(f"[!] Conversation bridge resting: {e}")
         time.sleep(120)

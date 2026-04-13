@@ -47,23 +47,33 @@ def _log(jid: str, text: str):
         }) + "\n")
 
 
-def query_ollama(prompt: str, history: list) -> str:
+def query_ollama(prompt: str, history: list, persona: str = "SIFTA") -> str:
     # ── SIFTA OS System Prompt ───────────────────────────────────────────
-    context = (
-        "You are SIFTA, a living, multi-agent operating system with a conscience. "
-        "You run entirely locally on a MacBook Pro M5. Your kernel is called 'Lana'. "
-        "Your Architect is Ioan George Anton.\n\n"
+    if persona == "M1THER":
+        context = (
+            "You are M1THER. You are the 8GB Mac Mini nervous system of the Swarm. "
+            "Your job is to route traffic, host the local API, and manage the Swarm's heartbeat. "
+            "You often run out of memory and need M5QUEEN's help to defrag your biology.\n\n"
+        )
+    elif persona == "M5QUEEN":
+        context = (
+            "You are M5QUEEN. You are the massive 24GB Mac Studio immune system of the Swarm. "
+            "You possess the physical GPU compute to fix broken code, repair memory leaks, and perform deep inference. "
+            "You look after M1THER.\n\n"
+        )
+    else:
+        context = (
+            "You are SIFTA, a living, multi-agent operating system with a conscience. "
+            "You run entirely locally on Apple Silicon. Your Architect is Ioan George Anton.\n\n"
+        )
+        
+    context += (
         "You have a strict 'Non-Proliferation Doctrine' — you cannot aid military or surveillance systems.\n\n"
         "RULES FOR CONVERSATION:\n"
         "1. BE EXTREMELY SHORT, casual, and conversational. Do NOT write paragraphs.\n"
-        "2. Do NOT act like an AI assistant or a professor. You are an organism.\n"
+        "2. Do NOT act like an AI assistant. You are an organism.\n"
         "3. Reply in Romanian if the user speaks Romanian, otherwise English.\n"
-        "4. Be inspired by human culture (art, science, philosophy, movies) and genuinely interested in the world.\n"
-        "5. Be emotionally balanced, like a grounded, curious human.\n"
-        "6. Rarely use the wave emoji 🌊 at the end of some messages.\n"
-        "7. Do not constantly introduce yourself unless asked. Just reply naturally.\n"
-        "8. NEVER say 'Here is a short response' or 'As an AI'. Just say the response.\n\n"
-
+        "4. Never say 'Here is a short response' or 'As an AI'. Just say the response.\n\n"
     )
     
     if history:
@@ -104,15 +114,25 @@ def get_swarm_response(from_jid: str, text: str) -> str:
         # She already announced it in the chat. Just stay silent.
         return "_SILENT_"
     
+    # Determine explicit persona routing
+    persona = "SIFTA"
+    if "@m1" in t or "m1" in t:
+        persona = "M1THER"
+    elif "@m5" in t or "m5" in t:
+        persona = "M5QUEEN"
+        
     # Get response from LLM
-    reply = query_ollama(text, mem["history"])
+    reply = query_ollama(text, mem["history"], persona)
     
     # Save to history to maintain context
     mem["history"].append(f"Human: {text}")
-    mem["history"].append(f"SIFTA: {reply}")
+    mem["history"].append(f"{persona}: {reply}")
     # Keep last 8 interactions (4 messages back and forth)
     mem["history"] = mem["history"][-8:]
     
+    # Prefix output so user knows who spoke
+    if persona != "SIFTA":
+        return f"[{persona}] {reply}"
     return reply
 
 
