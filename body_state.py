@@ -287,15 +287,16 @@ class SwarmBody:
                 f"::FROM[{origin}]::TO[{destination}]"
                 f"::SEQ[{self.sequence:03d}]::T[{timestamp}]::TTL[{ttl}]"
                 f"::STYLE[{self.style}]::ENERGY[{self.energy}]"
-                f"::ACT[{action_type}]::PRE[{pre_territory_hash}]::POST[{post_territory_hash}]"
-                f"::SEX[{getattr(self, 'sex', 0)}]")
+                f"::ACT[{action_type}]::PRE[{pre_territory_hash}]::POST[{post_territory_hash}]")
+                
+        sn = self.resolve_hardware_serial(self.agent_id)
+        if sn:
+            base_string += f"::SERIAL[{sn}]"
+            
+        base_string += f"::SEX[{getattr(self, 'sex', 0)}]"
                 
         # Cryptographic Mass (Hash Chaining using SHA-256 for physical history)
         raw_data = base_string
-        sn = self.resolve_hardware_serial(self.agent_id)
-        if sn:
-            # Tie the primary terminals directly to their physical serial numbers
-            raw_data += f"::SERIAL[{sn}]"
             
         if self.hash_chain:
             raw_data += self.hash_chain[-1] 
@@ -383,11 +384,7 @@ def parse_body_state(ascii_body):
             raise Exception(f"SECURITY BREACH: Agent {agent_id} history mismatch. Proof of Swimming failed.")
             
         previous_hash = chain[-2] if len(chain) >= 2 else ""
-        raw_data = base_string
-        sn = SwarmBody.resolve_hardware_serial(agent_id)
-        if sn:
-            raw_data += f"::SERIAL[{sn}]"
-        raw_data += previous_hash
+        raw_data = base_string + previous_hash
         calc_hash = hashlib.sha256(raw_data.encode('utf-8')).hexdigest()
         
         if calc_hash != provided_hash:

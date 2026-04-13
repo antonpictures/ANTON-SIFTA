@@ -280,10 +280,14 @@ def gossip_round(node_a_scars: list, node_b_scars: list) -> "Scar":
 
 def byzantine_filter(claimed_ids: set, known_scars: dict) -> set:
     """
-    Filter gossip from potentially Byzantine nodes.
-    Accepts only scar_ids whose content-address can be locally verified.
+    Filter gossip from potentially Byzantine nodes using Local Witnessing.
+    
+    Matches actual behavior: strictly accepts only scar_ids that we have 
+    independently witnessed and hashed in our local `known_scars`.
+    We do NOT request content for unknown IDs — we silently drop them.
+    This guarantees zero network injection attacks at the cost of slower propagation.
 
-    known_scars: {scar_id: Scar} \u2014 locally witnessed, trusted SCARs
+    known_scars: {scar_id: Scar} — locally witnessed, trusted SCARs
     claimed_ids: set of scar_ids received from a peer (may be lying)
 
     Returns: verified subset the local node can vouch for.
@@ -291,11 +295,10 @@ def byzantine_filter(claimed_ids: set, known_scars: dict) -> set:
     verified = set()
     for sid in claimed_ids:
         if sid in known_scars:
-            # We witnessed this scar \u2014 trust it
+            # We independently witnessed this exact hash — trust it
             verified.add(sid)
         else:
-            # Reject unknown; in production, request content and
-            # verify sha256(target:content)==sid before admitting.
+            # Strict mode: Silent drop. No network payload requests.
             pass
     return verified
 
