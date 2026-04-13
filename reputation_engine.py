@@ -69,6 +69,16 @@ def update_reputation(agent_id: str, event: str) -> dict:
             state["events"]["success_streak"] = 0
             print(f"  [✨ REDEMPTION] {agent_id} proved reliability over a streak. Major reputation boost recovered!")
             
+        # STGM ECONOMY: Proof-of-Work Metabolic Recharge
+        try:
+            from body_state import load_agent_state, regenerate_energy
+            agent_body = load_agent_state(agent_id)
+            if agent_body:
+                regenerate_energy(agent_body)
+                print(f"  [🔋 STGM-CALORIE RECHARGE] {agent_id} consumed their bug bounty for metabolic energy.")
+        except Exception as e:
+            pass
+            
     elif event == "FAILURE":
         state["score"] -= 0.03
         state["events"]["failed_repairs"] += 1
