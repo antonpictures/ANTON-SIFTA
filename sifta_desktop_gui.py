@@ -84,7 +84,7 @@ class SIFTABodyChatGUI(tk.Tk):
         from_body = random.choice(bodies)
         to_body = "M5SIFTA_BODY" if from_body == "M1SIFTA_BODY" else "M1SIFTA_BODY"
         
-        prompt = f"You are {from_body}. Keep it very brief (1 sentence). Send an organic message to {to_body} across the wormhole regarding your syntax, swimmers, or STGM inference levels."
+        prompt = f"You are {from_body}. Keep it very brief (1 sentence). Send a technical status report to {to_body} across the wormhole: mention your active inference load, a pending .scar repair, or current STGM energy level."
         data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
         try:
             req = requests.post("http://127.0.0.1:11434/api/generate", json=data, timeout=30)

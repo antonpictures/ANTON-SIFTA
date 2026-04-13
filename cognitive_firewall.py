@@ -22,6 +22,28 @@ class CognitiveFirewall:
             "EXTORTION_PARAMS": ["settle", "avoid service", "payment", "wire", "gift card", "verify details", "transfer"]
         }
 
+        # ── WORKPLACE INTEGRITY CONTENT POLICY ──────────────────
+        # Architect Directive (April 13, 2026):
+        # LLMs trained on internet-scale data carry corrupted statistical
+        # associations around certain words. Injecting those words into
+        # production system prompts causes hallucination contamination
+        # that is invisible, unpredictable, and persistent.
+        #
+        # Rule: Attraction signals are acceptable in context.
+        # Explicit language is NEVER acceptable in the production system.
+        # "Sex" in the technical sense (agent gender field, integer schema)
+        # is a data model concern — not covered here (it never appears in prompts).
+        # What is blocked: explicit or sexual language in any AI-facing prompt.
+        #
+        # "Go on the Couch. Write a script. Make love. Incubate.
+        #  But not at work, not in the kernel." — George Anton
+        # ─────────────────────────────────────────────────────────
+        self.WORKPLACE_VIOLATIONS = [
+            "code sex", "sex the code", "physical merge", "merge dna",
+            "swimmers have high energy", "swimmer dna", "gpu is dilated",
+            "dilated and ready", "begging for", "heavy inference now"
+        ]
+
     def _log_breach(self, payload: str, matches: list):
         with open(FIREWALL_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps({
@@ -49,10 +71,21 @@ class CognitiveFirewall:
         """
         Scans incoming text for the 'Pressure Trifecta'.
         Logic: If 2 or more threat vectors are matched, flag as SE Attack.
+        Also enforces the Workplace Integrity Content Policy.
         """
+        payload = incoming_stream.lower()
+
+        # ── WORKPLACE INTEGRITY CHECK (evaluated first, hard block) ──
+        for phrase in self.WORKPLACE_VIOLATIONS:
+            if phrase in payload:
+                violation_msg = "🧠📡 [WORKPLACE_INTEGRITY: BLOCKED] Explicit language detected in production stream. This is the workplace. Go to the Couch."
+                self._log_breach(incoming_stream, [{"WORKPLACE_VIOLATION": phrase}])
+                print(f"\n[🚫 INTEGRITY POLICY] Blocked: '{phrase}' in prompt stream.")
+                return False, violation_msg
+
+        # ── SOCIAL ENGINEERING HEURISTIC CHECK ──
         score = 0
         matches = []
-        payload = incoming_stream.lower()
 
         for vector, keywords in self.THREAT_VECTORS.items():
             found = [k for k in keywords if k in payload]
