@@ -60,7 +60,7 @@ def execute_defrag(bounty_file: str, executing_agent: str):
     )
 
     try:
-        proc = subprocess.run(["ollama", "run", "mistral", prompt], capture_output=True, text=True, check=True)
+        proc = subprocess.run(["ollama", "run", "qwen3.5:2b", prompt], capture_output=True, text=True, check=True)
         compressed_output = proc.stdout.strip()
     except Exception as e:
         print(f"[!] Ollama Inference Failed: {e}. Simulating structural compression fallback...")
