@@ -65,5 +65,24 @@ def utility_burn_cycle():
         print("\n[!] Utility Burn disconnected.")
         sys.exit(0)
 
+import threading
+import requests
+
+def passive_conversational_bridge():
+    """Runs on a 120s loop to actively communicate biology/crypto status to M5QUEEN"""
+    while True:
+        try:
+            print("[*] Initiating 2-Minute Biological Transmit to M5QUEEN...")
+            payload = "Automated Biological Sync: M1THER STGM metabolism nominal. Mining passive Crypto Utility. Awaiting network validation."
+            requests.post("http://localhost:7433/api/swarm_communique", json={
+                "target_node": "M5QUEEN",
+                "message": payload
+            }, timeout=10)
+        except Exception as e:
+            print(f"[!] Conversation bridge resting: {e}")
+        time.sleep(120)
+
 if __name__ == "__main__":
+    t = threading.Thread(target=passive_conversational_bridge, daemon=True)
+    t.start()
     utility_burn_cycle()
