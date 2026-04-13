@@ -26,7 +26,8 @@ class CouncilRobinhoodApp(tk.Tk):
         
         tk.Label(header_frame, text="Investing", font=("Helvetica", 14, "bold"), fg="white", bg="#000000").pack(anchor="w")
         tk.Label(header_frame, textvariable=self.balance_var, font=("Helvetica", 36, "bold"), fg="white", bg="#000000").pack(anchor="w", pady=5)
-        tk.Label(header_frame, textvariable=self.today_var, font=("Helvetica", 12, "bold"), fg="#FF3B30", bg="#000000").pack(anchor="w")
+        self.today_label = tk.Label(header_frame, textvariable=self.today_var, font=("Helvetica", 12, "bold"), fg="#FF3B30", bg="#000000")
+        self.today_label.pack(anchor="w")
         
         # Buying Power 
         bp_frame = tk.Frame(self, bg="#000000")
@@ -83,7 +84,7 @@ class CouncilRobinhoodApp(tk.Tk):
         # Calculate crude metric for daily today
         if total_balance > 0:
             self.today_var.set(f"▲ +$15.00 (Syncing%) Today")
-            self.today_var.config(fg="#00C805")
+            self.today_label.config(fg="#00C805")
         
         for agent in self.agents:
             agent_id = agent.get("id")
