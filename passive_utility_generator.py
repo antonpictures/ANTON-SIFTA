@@ -59,8 +59,8 @@ def utility_burn_cycle():
             auto_git_heartbeat()
             
             print(f"[*] Cycle complete. Minted utility for {len(agents)} active Swimmers.")
-            print("[*] Recharging Thermal Limiters... Sleeping for 300s.")
-            time.sleep(300)
+            print("[*] Recharging Thermal Limiters... Sleeping for 15s.")
+            time.sleep(15)
     except KeyboardInterrupt:
         print("\n[!] Utility Burn disconnected.")
         sys.exit(0)
