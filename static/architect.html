@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SIFTA Architect | Terminal Matrix</title>
+    <style>
+        :root {
+            --bg: #000000;
+            --term-bg: #0a0a0a;
+            --text: #00ff00;
+            --alert: #ff003c;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 2rem;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        h1 {
+            font-size: 1.2rem;
+            margin-top: 0;
+            border-bottom: 1px solid var(--text);
+            padding-bottom: 0.5rem;
+        }
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .control-panel {
+            background: var(--term-bg);
+            border: 1px solid var(--text);
+            padding: 1rem;
+        }
+        .terminal {
+            background: var(--term-bg);
+            border: 1px solid var(--text);
+            padding: 1rem;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+            line-height: +1.2;
+        }
+        input, button, select {
+            background: #000;
+            color: var(--text);
+            border: 1px solid var(--text);
+            padding: 0.5rem;
+            font-family: inherit;
+            width: 100%;
+            margin-top: 0.5rem;
+            box-sizing: border-box;
+        }
+        button {
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        button:hover {
+            background: var(--text);
+            color: #000;
+        }
+        .alert { color: var(--alert); }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="control-panel">
+            <h1>SWARM ARCHITECT</h1>
+            <div>Target Swimmer ID:</div>
+            <input type="text" id="target-agent" value="M1THER" />
+            
+            <div style="margin-top: 1rem;">Provider / Economy:</div>
+            <select id="provider">
+                <option value="ollama">Ollama (11434)</option>
+                <option value="lmstudio">LM Studio (1234)</option>
+                <option value="arbitrage">AUTO-ARBITRAGE</option>
+            </select>
+            
+            <div style="margin-top: 1rem;">Payload Override:</div>
+            <textarea id="payload" rows="5" style="width: 100%; background: #000; color: var(--text); border: 1px solid var(--text); margin-top: 0.5rem;">[Inject Stigmergic Directive]</textarea>
+            
+            <button onclick="dispatchSwarm()" style="margin-top: 1rem;">INITIATE COMPUTE WORMHOLE</button>
+        </div>
+        
+        <div class="control-panel">
+            <h1>DNA METRICS</h1>
+            <div id="dna-stats">Scanning...</div>
+        </div>
+
+        <div class="control-panel">
+            <h1>VIP WALLET INSPECTOR</h1>
+            <input type="text" id="wallet-agent" value="GROK_CODER_0X0" placeholder="Agent ID..." />
+            <button onclick="inspectWallet()" style="margin-top: 0.5rem; background: var(--text); color: black;">PULL LEDGER</button>
+            <div id="wallet-result" style="margin-top: 1rem; color: var(--gold, #fbbf24); font-weight: bold;"></div>
+        </div>
+    </div>
+
+    <div class="terminal" id="term-output">
+[ARCHITECT NODE INITIALIZED] 
+> Establishing connection to SIFTA Engine...
+> Waiting for telemetry stream...
+    </div>
+
+    <script>
+        const term = document.getElementById('term-output');
+
+        function log(msg, alert=false) {
+            const el = document.createElement('div');
+            el.innerHTML = `> ${msg}`;
+            if (alert) el.className = 'alert';
+            term.appendChild(el);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        async function loadDNA() {
+            try {
+                const res = await fetch('/api/agents?show_detectives=true');
+                const agents = await res.json();
+                document.getElementById('dna-stats').innerHTML = agents.map(a => `
+                    <div style="margin-top: 0.5rem;">
+                        [${a.id}]<br/>
+                        STYLE: ${a.style}<br/>
+                        STGM: ${(a.stgm_balance || 0).toFixed(2)}
+                    </div>
+                `).join('');
+            } catch (e) {
+                log('DNA Scrape Failed', true);
+            }
+        }
+
+        setInterval(loadDNA, 3000);
+        loadDNA();
+
+        async function inspectWallet() {
+            const target = document.getElementById('wallet-agent').value.trim().toUpperCase();
+            if(!target) return;
+            log(`[WALLET INSPECTOR] Pulling cold-storage for ${target}...`, true);
+            
+            try {
+                const res = await fetch('/api/agents?show_detectives=true');
+                const agents = await res.json();
+                const v = agents.find(a => a.id === target);
+                const out = document.getElementById('wallet-result');
+                if(v) {
+                    out.innerHTML = `BALANCE: ${(v.stgm_balance||0).toFixed(2)} STGM<br/>STYLE: <span style="color:var(--text)">${v.style}</span>`;
+                    log(`[SUCCESS] ${target} is holding ${(v.stgm_balance||0).toFixed(2)} STGM.`);
+                } else {
+                    out.innerHTML = `WALLET NOT FOUND`;
+                    log(`[ERROR] ${target} not registered in DNA.`, true);
+                }
+            } catch(e) {
+                log(`[ERROR] Wallet lookup failed.`, true);
+            }
+        }
+
+        function dispatchSwarm() {
+            log('WORMHOLE BREACH INITIATED...', true);
+            log(`Target: ${document.getElementById('target-agent').value}`);
+            log(`Provider: ${document.getElementById('provider').value}`);
+            // Actual API hook would go here for SIFTA
+        }
+
+        // Connect to SIFTA event stream
+        const eventSource = new EventSource('/api/arena/stream?red_model=mock&blue_model=mock&level=1');
+        eventSource.onmessage = function(event) {
+            let data = event.data;
+            try {
+                const packet = JSON.parse(data);
+                log(`[STREAM] ${JSON.stringify(packet)}`);
+            } catch(e) {
+                log(data);
+            }
+        };
+    </script>
+</body>
+</html>

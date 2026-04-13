@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SIFTA Swarm | Beginner Telemetry</title>
+    <style>
+        :root {
+            --bg: #09090b;
+            --panel: #18181b;
+            --text: #fafafa;
+            --accent: #22d3ee;
+            --stgm: #a855f7;
+            --gold: #fbbf24;
+        }
+        @keyframes breathe {
+            0% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.2); }
+            50% { box-shadow: 0 0 15px rgba(168, 85, 247, 0.6); }
+            100% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.2); }
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', -apple-system, sans-serif;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            align-items: center;
+        }
+        h1 {
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 800;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            width: 100%;
+            max-width: 1200px;
+        }
+        .card {
+            background: var(--panel);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        .agent-id { font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem;}
+        .agent-face { font-family: monospace; font-size: 1.5rem; color: var(--accent);}
+        .stgm-badge {
+            display: inline-block;
+            background: rgba(168, 85, 247, 0.2);
+            color: var(--stgm);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-weight: bold;
+            margin-top: 1rem;
+            animation: breathe 3s infinite ease-in-out;
+        }
+        #ledger-feed {
+            max-width: 1200px;
+            width: 100%;
+            background: var(--panel);
+            padding: 1.5rem;
+            border-radius: 12px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .ledger-row {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            color: #a1a1aa;
+        }
+    </style>
+</head>
+<body>
+    <h1>SIFTA Swarm Telemetry</h1>
+    <div class="grid" id="agent-grid">
+        <!-- Agents inject here -->
+    </div>
+
+    <div style="width: 100%; max-width: 1200px;">
+        <h2 style="color: var(--stgm);">Live Crypto-Ledger (Watch the Economy Breathe)</h2>
+        <div id="ledger-feed">Loading trades...</div>
+    </div>
+
+    <script>
+        async function loadAgents() {
+            try {
+                const res = await fetch('/api/agents');
+                const agents = await res.json();
+                const grid = document.getElementById('agent-grid');
+                grid.innerHTML = agents.map(a => `
+                    <div class="card">
+                        <div class="agent-id">${a.id}</div>
+                        <div class="agent-face">${a.face || '[O_O]'}</div>
+                        <div>Status: ${a.style || 'NOMINAL'}</div>
+                        <div class="stgm-badge">${(a.stgm_balance || 0).toFixed(2)} STGM</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function loadLedger() {
+            try {
+                const res = await fetch('/api/ledger');
+                const logs = await res.json();
+                const feed = document.getElementById('ledger-feed');
+                feed.innerHTML = logs.slice(0, 15).map(l => {
+                    if (l.event === "INFERENCE_BORROW") {
+                        return `<div class="ledger-row" style="color: #ef4444;">[TRADE] ${l.borrower_id} paid ${l.fee_stgm} STGM to ${l.lender_ip} for ${l.tokens_used} tokens.</div>`;
+                    } else if (l.event === "MINING_REWARD") {
+                        return `<div class="ledger-row" style="color: #22c55e;">[MINT] ${l.miner_id} earned ${l.amount_stgm} STGM for ${l.action}.</div>`;
+                    } else if (l.event === "FOUNDATION_GRANT") {
+                        return `<div class="ledger-row" style="color: var(--gold); font-weight: bold;">[WHALE GRANT] 🐋 ${l.miner_id} received ${l.amount_stgm} STGM (${l.action}).</div>`;
+                    }
+                    return `<div class="ledger-row">[LOG] ${JSON.stringify(l)}</div>`;
+                }).join('');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        setInterval(() => {
+            loadAgents();
+            loadLedger();
+        }, 3000);
+        loadAgents();
+        loadLedger();
+    </script>
+</body>
+</html>
