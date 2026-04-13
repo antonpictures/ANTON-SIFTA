@@ -41,6 +41,19 @@ def save_agent_state(state: dict):
         return
     STATE_DIR.mkdir(exist_ok=True)
     state_file = STATE_DIR / f"{agent_id}.json"
+    
+    # Preserve crypto elements
+    if state_file.exists():
+        try:
+            with open(state_file, "r") as f:
+                old = json.load(f)
+                if "stgm_balance" not in state and "stgm_balance" in old:
+                    state["stgm_balance"] = old["stgm_balance"]
+                if "style" not in state and "style" in old:
+                    state["style"] = old["style"]
+        except Exception:
+            pass
+
     with open(state_file, "w") as f:
         json.dump(state, f, indent=2)
 
