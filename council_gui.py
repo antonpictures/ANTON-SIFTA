@@ -16,12 +16,16 @@ class CouncilRobinhoodApp(tk.Tk):
         self.geometry("450x800")
         self.configure(bg="#000000") # Pure black
         
+        # MacOS Dark Mode Grey Bug Fix
+        self.master_frame = tk.Frame(self, bg="#000000")
+        self.master_frame.pack(fill="both", expand=True)
+        
         # UI Setup
         self.balance_var = tk.StringVar(value="$0.00")
         self.today_var = tk.StringVar(value="▼ $0.00 (0.00%) Today")
         
         # Header Area
-        header_frame = tk.Frame(self, bg="#000000")
+        header_frame = tk.Frame(self.master_frame, bg="#000000")
         header_frame.pack(fill="x", padx=20, pady=20)
         
         tk.Label(header_frame, text="Investing", font=("Helvetica", 14, "bold"), fg="white", bg="#000000").pack(anchor="w")
@@ -30,20 +34,20 @@ class CouncilRobinhoodApp(tk.Tk):
         self.today_label.pack(anchor="w")
         
         # Buying Power 
-        bp_frame = tk.Frame(self, bg="#000000")
+        bp_frame = tk.Frame(self.master_frame, bg="#000000")
         bp_frame.pack(fill="x", padx=20, pady=(10, 0))
         tk.Label(bp_frame, text="Buying power", font=("Helvetica", 12), fg="white", bg="#000000").pack(side="left")
         tk.Label(bp_frame, text="Unlimited STGM >", font=("Helvetica", 12), fg="#8e8e93", bg="#000000").pack(side="right")
         
         # Divider
-        tk.Frame(self, bg="#222222", height=1).pack(fill="x", padx=20, pady=10)
+        tk.Frame(self.master_frame, bg="#222222", height=1).pack(fill="x", padx=20, pady=10)
         
         # Swimmer Fleet Label (Crypto section equivalent)
-        tk.Label(self, text="Swimmers Fleet >", font=("Helvetica", 20, "bold"), fg="white", bg="#000000").pack(anchor="w", padx=20, pady=(10, 10))
-        tk.Label(self, text="Offered by SIFTA Neural Network ⓘ", font=("Helvetica", 10), fg="#8e8e93", bg="#000000").pack(anchor="w", padx=20, pady=(0, 10))
+        tk.Label(self.master_frame, text="Swimmers Fleet >", font=("Helvetica", 20, "bold"), fg="white", bg="#000000").pack(anchor="w", padx=20, pady=(10, 10))
+        tk.Label(self.master_frame, text="Offered by SIFTA Neural Network ⓘ", font=("Helvetica", 10), fg="#8e8e93", bg="#000000").pack(anchor="w", padx=20, pady=(0, 10))
         
         # List Frame (Scrollable theoretically, using frame for simplicity in desktop view)
-        self.list_frame = tk.Frame(self, bg="#000000")
+        self.list_frame = tk.Frame(self.master_frame, bg="#000000")
         self.list_frame.pack(fill="both", expand=True, padx=20)
         
         self.bounties = []
