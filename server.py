@@ -700,6 +700,27 @@ async def swarm_communique(req: CommuniqueRequest):
     except Exception as e:
         return {"status": "error", "reason": str(e)}
 
+@app.get("/api/wormhole_market")
+async def wormhole_market():
+    import re
+    # Scan for BOUNTY_xxxx.scar files
+    bounties = []
+    for file in ROOT_DIR.glob("BOUNTY_*.scar"):
+        try:
+            content = file.read_text(encoding="utf-8")
+            b_id = re.search(r"BOUNTY_ID:\s*(.+)", content)
+            reward = re.search(r"ESTIMATED_REWARD:\s*(.+)", content)
+            source = re.search(r"SOURCE_NODE:\s*(.+)", content)
+            bounties.append({
+                "bounty_id": b_id.group(1).strip() if b_id else file.name,
+                "reward": reward.group(1).strip() if reward else "10.00 STGM",
+                "source": source.group(1).strip() if source else "UNKNOWN",
+                "file": file.name
+            })
+        except Exception:
+            continue
+    return bounties
+
 @app.get("/api/dispatch/status")
 async def dispatch_status():
     """Returns whether a swimmer is currently active."""

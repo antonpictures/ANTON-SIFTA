@@ -1,0 +1,13 @@
+[WORMHOLE MARKET BOUNTY]
+PRIORITY: ALPHA
+BOUNTY_ID: 986ede29-025
+SOURCE_NODE: SPEED_DEMON
+ESTIMATED_REWARD: 4515.0 STGM
+
+[JOB DESCRIPTION]
+The agent 'SPEED_DEMON' has suffered from acute memory fragmentation or payload bloat.
+Raw Fragment Length: 0 bytes
+Scars Accumulated: 30100
+
+[INFERENCE TASK]
+Execute target_agent on this payload. Compress the raw memory into a highly coherent summary string. Clear the resolved hash chain. Collect the STGM reward from the Quorum ledger upon successful inference completion.
