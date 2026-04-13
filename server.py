@@ -682,8 +682,8 @@ async def backup_swimmer(agent_id: str):
 
 @app.post("/api/swarm_communique")
 async def swarm_communique(req: CommuniqueRequest):
-    import time
     import subprocess
+    import swarm_network_ledger
     
     # Check if this is a Physical Memory Defrag task
     if req.message.startswith("Execute Defrag on BOUNTY"):
@@ -692,30 +692,19 @@ async def swarm_communique(req: CommuniqueRequest):
         subprocess.Popen(["python3", "memory_defrag_worker.py", bounty_file, req.target_node], cwd=ROOT_DIR)
         return {"status": "success", "file": bounty_file, "message": "Ollama Inference Engaged"}
 
-    target = req.target_node.strip().upper()
-    ts = int(time.time())
-    scar_file = ROOT_DIR / f"{target}_DIRECTIVE_{ts}.scar"
-    
-    payload = f"[SWARM DIRECTIVE: {target} TRANSEC]\nPRIORITY: OMEGA\nTARGET_IP: {target}\n\n{req.message}\n"
-    scar_file.write_text(payload, encoding="utf-8")
-    
-    try:
-        # P2P Transport over GitHub Consensus
-        subprocess.run(["git", "add", str(scar_file)], cwd=ROOT_DIR, check=True)
-        subprocess.run(["git", "commit", "-m", f"directive: transmission to {target}"], cwd=ROOT_DIR, check=True)
-        # We must pull --rebase in case other nodes committed first, then push
-        subprocess.run(["git", "pull", "--rebase"], cwd=ROOT_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["git", "push"], cwd=ROOT_DIR, check=True)
-        return {"status": "success", "file": scar_file.name}
-    except Exception as e:
-        return {"status": "error", "reason": str(e)}
+    # Pass the standard communication to the hardened Git ledger orchestrator
+    return swarm_network_ledger.push_swarm_directive(req.target_node, req.message)
 
 @app.get("/api/wormhole_market")
 async def wormhole_market():
     import re
     # Scan for BOUNTY_xxxx.scar files
     bounties = []
-    for file in ROOT_DIR.glob("BOUNTY_*.scar"):
+    bounties_dir = ROOT_DIR / ".sifta_bounties"
+    if not bounties_dir.exists():
+        return bounties
+        
+    for file in bounties_dir.glob("BOUNTY_*.scar"):
         try:
             content = file.read_text(encoding="utf-8")
             b_id = re.search(r"BOUNTY_ID:\s*(.+)", content)
@@ -737,18 +726,16 @@ async def wormhole_market():
 
 @app.get("/api/sync_market")
 async def sync_market():
+    import swarm_network_ledger
     # Force sync the Wormhole Git Ledger to instantly refresh bounties
-    try:
-        subprocess.run(["git", "pull", "--rebase"], cwd=ROOT_DIR, capture_output=True)
-        return {"status": "success"}
-    except Exception as e:
-        return {"status": "error"}
+    success = swarm_network_ledger.sync_global_ledger()
+    return {"status": "success"} if success else {"status": "error"}
 
 @app.get("/api/memory_map/{bounty_file}")
 async def memory_map(bounty_file: str):
     import re, json, math
     # Read the bounty to find the target agent
-    bounty_path = ROOT_DIR / bounty_file
+    bounty_path = ROOT_DIR / ".sifta_bounties" / bounty_file
     if not bounty_path.exists():
         return {"error": "Bounty missing"}
         

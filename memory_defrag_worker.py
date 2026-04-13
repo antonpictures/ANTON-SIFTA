@@ -24,7 +24,7 @@ def append_ledger(node, amount, reason):
 
 def execute_defrag(bounty_file: str, executing_agent: str):
     print(f"=== SIFTA PHYSICAL LLM DEFRAG WORKER ===")
-    bounty_path = ROOT_DIR / bounty_file
+    bounty_path = ROOT_DIR / ".sifta_bounties" / bounty_file
     if not bounty_path.exists():
         print(f"[X] Bounty {bounty_file} missing. Aborting.")
         return

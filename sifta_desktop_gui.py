@@ -5,6 +5,7 @@ import time
 import threading
 import json
 import random
+import queue
 from datetime import datetime
 
 API_BASE = "http://localhost:7433/api"
@@ -24,8 +25,11 @@ class SIFTABodyChatGUI(tk.Tk):
         
         self.create_chat_tab()
         
+        self.data_queue = queue.Queue()
         self.running = True
         threading.Thread(target=self.live_loop, daemon=True).start()
+        
+        self.process_queue()
 
     def create_chat_tab(self):
         # Header
@@ -45,7 +49,7 @@ class SIFTABodyChatGUI(tk.Tk):
             try:
                 # Pull real messages from wormhole gateway
                 resp = requests.get(f"{API_BASE}/messenger/thread?limit=50", timeout=5).json()
-                self.update_chat(resp.get("messages", []))
+                self.data_queue.put(resp.get("messages", []))
                 
                 # Auto Q&A every 2 minutes
                 if int(time.time()) % 120 == 0:
@@ -54,6 +58,16 @@ class SIFTABodyChatGUI(tk.Tk):
             except:
                 pass
             time.sleep(3)
+
+    def process_queue(self):
+        try:
+            while True:
+                msgs = self.data_queue.get_nowait()
+                self.update_chat(msgs)
+        except queue.Empty:
+            pass
+        if self.running:
+            self.after(500, self.process_queue)
 
     def update_chat(self, messages):
         self.chat_text.delete(1.0, tk.END)
