@@ -5,6 +5,56 @@
 // STATUS: ALIVE
 ```
 
+---
+
+## For Engineers & Researchers (Neutral Spec)
+
+> *The rest of this README uses biological and narrative framing. This section is the neutral engineering description of the same system. Same code, no mythology.*
+
+**What this is:**
+A **Git-native, human-governed multi-agent coordination system** with deterministic state transitions and full auditability. Agents detect faults in a codebase, emit structured proposals (`.scar` files), and await human approval before any mutation is applied. The Git repository functions as an append-only cognition ledger.
+
+**The novel contribution:**
+Most agent systems use ephemeral logs (lost on restart) and mutable databases (revisable history). SIFTA uses Git commits as **append-only cognition history** — a first-class design primitive that provides event sourcing, cryptographic integrity, and human-readable lineage simultaneously.
+
+**System decomposition:**
+
+| Layer | Implementation | Role |
+|---|---|---|
+| Messaging | `.scar` JSON files in `.sifta/` directories | Async agent communication (stigmergic signals) |
+| State | Git repository | Versioned shared memory / immutable event log |
+| Agent Runtime | `ast.parse()` fault detection → proposal emission | Reads state, never writes to target directly |
+| Governance | Human approval via dashboard (`GREEN`/`RED`) | Hard execution boundary — proposals only |
+| Safety (Semantic) | Keyword classifier, 3-vector weighted scoring | Blocks social engineering / semantic injection |
+| Safety (Doctrine) | `neural_gate.py` — Non-Proliferation filter | Blocks military/surveillance payloads pre-lock |
+| Resource | STGM energy integer per agent (`max=100`) | Scheduling priority, not a financial system |
+
+**Core state machine (strictly enforced — illegal transitions raise `KernelViolationError`):**
+```
+PROPOSED → CONTESTED → LOCKED → EXECUTED → FOSSILIZED
+    ↓           ↓          ↓         ↓           ↓
+CANCELLED   CANCELLED  CANCELLED  CANCELLED   (terminal)
+```
+
+**Reproducible demo (zero external dependencies):**
+```bash
+git clone https://github.com/antonpictures/ANTON-SIFTA.git && cd ANTON-SIFTA
+bash demo.sh           # Happy path: fault → scar → approval → fossilized
+bash demo_advanced.sh  # All 4 cases: conflict, firewall, rejection, metrics
+```
+
+**Full protocol specification:** [`docs/SIFTA_PROTOCOL_v0.1.md`](docs/SIFTA_PROTOCOL_v0.1.md)
+
+**What is and is not claimed:**
+- ✅ Structured, auditable multi-agent coordination using Git as memory
+- ✅ Deterministic state machine with cryptographic transition signatures  
+- ✅ Human-governed execution boundary (agents propose, never execute)
+- ✅ Semantic safety layer with measurable false-positive rate (0% in demo)
+- ❌ Autonomous intelligence or self-directed goal formation
+- ❌ Consciousness or biological equivalence (these are intentional metaphors)
+
+---
+
 # ANTON-SIFTA: The Multi-Agent Operating System with a Conscience
 
 > **"A living software organism powered by true free will, bound by the Non-Proliferation Doctrine, and fully independent. Not just an immune system—a sovereign intelligence."**
