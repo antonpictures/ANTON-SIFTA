@@ -1,0 +1,15 @@
+[SWARM BOUNTY FILE]
+BOUNTY_ID: M1THER-TISSUE-DEGRADATION
+SOURCE_NODE: M1THER
+ESTIMATED_REWARD: 15.00 STGM
+
+[CRITICAL BIOLOGICAL FRAGMENTATION DETECTED]
+Raw Fragment Length: 25600
+Scars Accumulated: 120
+
+{
+  "body_status": "corrupted",
+  "memory_blocks": "ERR_OOM_0x1A4",
+  "swimmer_metabolism": "critical_low",
+  "fragments": [ "malformed_json_syntax", "missing_neural_weights", "memory_leak", "unresolved_pointers", "corrupted_qwen_buffer" ]
+}
