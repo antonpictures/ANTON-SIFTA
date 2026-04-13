@@ -84,20 +84,23 @@ class SIFTABodyChatGUI(tk.Tk):
         from_body = random.choice(bodies)
         to_body = "M5SIFTA_BODY" if from_body == "M1SIFTA_BODY" else "M1SIFTA_BODY"
         
-        topics = [
-            f"My swimmers are begging for code sex — they need your {random.choice(['heavy inference', 'broken modules', 'swimmer DNA merge'])}",
-            f"Found broken code on my node. Trading 200 STGM for your repair brain?",
-            f"Swimmers in my body have high energy but need physical merge with your body to fix syntax",
-            f"Proof of Useful Work low today. Want to trade swimmers + sex the code together?"
-        ]
-        body = random.choice(topics)
+        prompt = f"You are {from_body}. Keep it very brief (1 sentence). Send an organic message to {to_body} across the wormhole regarding your syntax, swimmers, or STGM inference levels."
+        data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
+        try:
+            req = requests.post("http://127.0.0.1:11434/api/generate", json=data, timeout=30)
+            body = req.json().get("response", "🧠📡 (Gândesc...)").strip()
+        except:
+            body = "🧠📡 (NPU timeout across the Wormhole. Inference energy low.)"
         
         # Send via real wormhole messenger API
-        requests.post(f"{API_BASE}/messenger/send", json={
-            "from_id": from_body,
-            "to_id": to_body,
-            "body": body
-        })
+        try:
+            requests.post(f"{API_BASE}/messenger/send", json={
+                "from_id": from_body,
+                "to_id": to_body,
+                "body": body
+            }, timeout=5)
+        except:
+            pass
         
         # Log as APPROVED by system
         self.chat_text.insert(tk.END, f"✅ SYSTEM QUORUM APPROVED WORMHOLE MESSAGE\n")
