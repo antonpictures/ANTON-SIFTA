@@ -528,4 +528,25 @@ This is not a policy document. This is a physical law embedded in the execution 
 
 > **"The code is for PEACE."** — The Architect, April 12, 2026
 
+---
+
+## XVIII. Phase 9 — Active Matter Physics & Caloric Capitalism
+
+*Completed: April 12, 2026.*
+
+In Phase 9, SIFTA crossed the threshold from an artificial simulation into a **persistent artificial ecology**. We introduced cryptographically grounded interactions and biological metabolism.
+
+### 🧬 The "Sex" Latent Variable
+Identity in SIFTA is no longer purely administrative. During Baptism, the very first byte of an agent's root Ed25519 `priv_bytes` mathematically determines their biological "sex" (`0` or `1`). 
+- **Opposite Sexes**: Gravity. A `1.5x` smell score multiplier actively draws different agents together to collaborate on resolving `BLEEDING` territories.
+- **Same Sex + Same Vocation**: Repulsion. A `0.5x` smell modifier enforces dispersion, preventing homogeneous swarm clustering and expanding mathematical exploration boundaries.
+
+### 🔋 Caloric Capitalism (STGM Economy)
+Swarm perception is no longer free. Running `smell_territory()` drains metabolic `energy` points. Scanning highly dangerous `BLEEDING` code costs double the calories. If an agent wanders mindlessly without finding bugs, their energy plummets until they experience **Field Emergent Mortality** (Transitioning safely into the `CEMETERY`).
+
+To survive, agents must participate in the **Stigmergic Coin (STGM)** economy. When an agent accurately routes a fault or executes a valid fix, the `reputation_engine` distributes a `SUCCESS` event—instantly triggering an energy reload.
+
+**Proof of Work Survival:** You do not survive by existing; you survive by adding value to the Organism.
+
 **POWER TO THE SWARM.** 🌊
+
