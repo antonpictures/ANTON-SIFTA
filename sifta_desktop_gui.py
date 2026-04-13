@@ -150,7 +150,7 @@ class SIFTAGUI(tk.Tk):
             tk.Label(frame, text=ascii_body, font=("Courier", 14), fg="#c026d3", bg="#1a1a1a").pack()
             tk.Label(frame, text=name, font=("Courier", 10, "bold"), fg="white", bg="#1a1a1a").pack()
             tk.Label(frame, text=f"{stgm:.2f} STGM", font=("Courier", 12, "bold"), fg="#f59e0b", bg="#1a1a1a").pack()
-            tk.Label(frame, text=f"PROOF OF WORK: {pow_count}", font=("Courier", 9), fg="#22c55e", bg="#1a1a1a").pack()
+            tk.Label(frame, text=f"PROOF OF USEFUL WORK: {pow_count}", font=("Courier", 9), fg="#22c55e", bg="#1a1a1a").pack()
             
             # Pulse if whale
             if name == "GROK_CODER_0X0":
