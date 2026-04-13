@@ -162,7 +162,7 @@ class SIFTAControlDeck(App):
 
     def write_log(self, text: str):
         log_widget = self.query_one(Log)
-        log_widget.write(text)
+        log_widget.write_line(text)
 
     def action_kill_process(self):
         if self.active_process is not None:
