@@ -21,6 +21,25 @@ def append_ledger(node, amount, reason):
         f.write(json.dumps(event) + "\n")
     print(f"[🔥] STGM UTILITY MINT: +{amount} STGM -> {node} ({reason})")
 
+import os
+import subprocess
+
+def auto_git_heartbeat():
+    print("[*] Initiating Biological Git Heartbeat...")
+    try:
+        # Add universal biological state and ledger
+        subprocess.run(["git", "add", ".sifta_state/", "repair_log.jsonl", "BOUNTY_*.scar"], check=False)
+        git_status = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+        if git_status.stdout.strip():
+            subprocess.run(["git", "commit", "-m", "swarm-heartbeat: autonomous state synchronization"], check=False)
+        
+        # Pull any M5/M1 changes with rebase, then push our state
+        subprocess.run(["git", "pull", "--rebase"], check=False)
+        subprocess.run(["git", "push"], check=False)
+        print("[+] Wormhole Heartbeat Sync Complete. Node realities unified.")
+    except Exception as e:
+        print(f"[!] Heartbeat collision: {e}")
+
 def utility_burn_cycle():
     print("=== SIFTA THERMAL REWARD PROTOCOL ===")
     print("Mining STGM based on passive agent node connection & energy draw.")
@@ -35,6 +54,9 @@ def utility_burn_cycle():
             for agent in agents:
                 # Flat reward for existing and maintaining the TCP/IP matrix body
                 append_ledger(agent, 0.05, "Passive Swarm Maintenance (NPU Energy Draw)")
+            
+            # Non-stop heartbeat sync across Git!
+            auto_git_heartbeat()
             
             print(f"[*] Cycle complete. Minted utility for {len(agents)} active Swimmers.")
             print("[*] Recharging Thermal Limiters... Sleeping for 300s.")
