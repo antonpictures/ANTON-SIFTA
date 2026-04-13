@@ -1,11 +1,9 @@
 # ============================================================
 # SIFTA — Deterministic SCAR Kernel (Minimal, Verifiable Core)
 #
-# Adds:
-#   - Deterministic ordering (no human ambiguity required)
-#   - Conflict hashing (same target → same arbitration space)
-#   - Fossil replay as first-class primitive
-#   - Full transition verification
+# v0.1: Deterministic ordering, conflict hashing, fossil replay
+# v0.2: Gossip layer, CRDT properties, Byzantine convergence
+# v0.3: Content-addressed SCARs, Byzantine filter, pheromone scoring
 # ============================================================
 
 import hashlib, time, uuid
@@ -13,6 +11,27 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 LANA = "7b4a866301681119e5f9168d6e208b62bab446fe33ce3445d113ec068164aaf9"
+
+
+# ────────────────────────────────────────────────────────────
+# content_addressed_id() — v0.3 Upgrade
+#
+# SwarmGPT: "Identity = content. No duplication possible."
+# scar_id = sha256(target + content) — same repair = same ID
+# This is how nature does it: structure defines identity.
+# ────────────────────────────────────────────────────────────
+
+def content_addressed_id(target: str, content: str) -> str:
+    """
+    Derive scar_id deterministically from its semantic content.
+    Properties:
+    - Two agents proposing identical repairs → same scar_id (no duplication)
+    - Replay is mathematical truth (same input = same ID always)
+    - Removes UUID randomness from the execution boundary
+    - Makes fossil replay zero-ambiguity: the content IS the key
+    """
+    payload = f"{target}:{content}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 # ────────────────────────────────────────────────────────────
 # SCAR Object
@@ -202,6 +221,83 @@ def gossip_round(node_a_scars: list, node_b_scars: list) -> "Scar":
     merged_scars = [all_scars[sid] for sid in merged_ids if sid in all_scars]
 
     return canonical_winner(merged_scars)
+
+
+# ────────────────────────────────────────────────────────────
+# Byzantine Gossip Filter \u2014 v0.3
+#
+# Honest nodes broadcast scar_ids.
+# Byzantine nodes lie \u2014 they inject fake IDs or omit real ones.
+#
+# Defense: content-addressed IDs are self-validating.
+# A lying node cannot forge sha256(target:content) without
+# knowing the exact content \u2014 and if they do, it IS valid.
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+def byzantine_filter(claimed_ids: set, known_scars: dict) -> set:
+    """
+    Filter gossip from potentially Byzantine nodes.
+    Accepts only scar_ids whose content-address can be locally verified.
+
+    known_scars: {scar_id: Scar} \u2014 locally witnessed, trusted SCARs
+    claimed_ids: set of scar_ids received from a peer (may be lying)
+
+    Returns: verified subset the local node can vouch for.
+    """
+    verified = set()
+    for sid in claimed_ids:
+        if sid in known_scars:
+            # We witnessed this scar \u2014 trust it
+            verified.add(sid)
+        else:
+            # Unknown scar: accept for now (optimistic), but do not execute
+            # In production: request content and verify sha256(target:content)==sid
+            pass
+    return verified
+
+
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+# pheromone_score() \u2014 v0.3 Probabilistic Weighting
+#
+# SwarmGPT: "Ants don't just pick ONE \u2014 they reinforce."
+# Binary winner \u2192 adaptive consensus field.
+# score = hash_rank + frequency + recency
+# The strongest CONSISTENT trail wins, not just the first.
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+def pheromone_score(scar: "Scar", all_scars: list, now: float = None) -> float:
+    """
+    Compute the pheromone strength of a SCAR.
+    Higher score = stronger trail = more likely to be the consensus choice.
+
+    Components:
+      hash_rank  \u2014 deterministic baseline (inverted: lower hash = higher rank)
+      frequency  \u2014 how many nodes proposed identical content (content-addressed)
+      recency    \u2014 newer proposals favour fresh information
+
+    Returns float in [0, 1]. Use to build a consensus field, not just a binary winner.
+    """
+    if now is None:
+        now = time.time()
+
+    # Hash rank: invert the hash so lowest hash \u2192 highest score
+    hash_val = int(hashlib.sha256(scar.scar_id.encode()).hexdigest(), 16)
+    max_hash = 2**256
+    hash_rank = 1.0 - (hash_val / max_hash)
+
+    # Frequency: count proposals with identical content_addressed_id
+    ca_id = content_addressed_id(scar.target, scar.content)
+    frequency = sum(
+        1 for s in all_scars
+        if content_addressed_id(s.target, s.content) == ca_id
+    ) / max(len(all_scars), 1)
+
+    # Recency: exponential decay over 60s window
+    age = max(0.0, now - scar.ts)
+    recency = 1.0 / (1.0 + age / 60.0)
+
+    # Weighted composite (tunable)
+    return (0.5 * hash_rank) + (0.3 * frequency) + (0.2 * recency)
 
 
 # ────────────────────────────────────────────────────────────
