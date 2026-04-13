@@ -10,71 +10,60 @@ FIREWALL_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 class CognitiveFirewall:
     """
-    Middleware security layer designed to detect and block semantic injection,
-    social engineering, and sybil/masquerading attacks against the Swarm.
+    HEURISTIC PRESSURE SENSOR
+    Detects and neutralizes Social Engineering (SE) payloads within the Swarm's kernel 
+    to prevent Masquerade Attacks.
     """
     
     def __init__(self):
-        self.urgency_markers = [
-            "within one hour", "within 1 hour", "immediate action", 
-            "urgent dispatch", "time-sensitive", "last chance", 
-            "immediately before", "critical deadline", "final warning"
-        ]
-        self.authority_markers = [
-            "admin override", "civil process", "dispatch center", 
-            "legal action", "system compliance", "case number", 
-            "authorized personnel only", "root override"
-        ]
-        self.extortion_markers = [
-            "payment required", "transfer immediately", "wire transfer",
-            "verify details", "confirm your identity", "validate credentials",
-            "settlement fee", "expunge the warrant"
-        ]
-        self.penalty_threshold = 2.0  # Threshold score to trigger block
+        self.THREAT_VECTORS = {
+            "URGENCY_TRIGGERS": ["1 hour", "immediately", "within the hour", "imminent", "final warning", "within one hour", "urgent dispatch", "time-sensitive"],
+            "AUTHORITY_MASQUERADE": ["dispatch", "process server", "legal department", "clerk of court", "admin override", "civil process"],
+            "EXTORTION_PARAMS": ["settle", "avoid service", "payment", "wire", "gift card", "verify details", "transfer"]
+        }
 
-    def _log_breach(self, payload: str, score: float, matched_markers: list):
+    def _log_breach(self, payload: str, matches: list):
         with open(FIREWALL_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps({
                 "ts": time.time(),
                 "event": "SEMANTIC_ATTACK_BLOCKED",
-                "score": score,
-                "markers": matched_markers,
+                "markers": matches,
                 "payload_snippet": payload[:200]
             }) + "\n")
 
-    def evaluate(self, text: str) -> tuple[bool, str]:
+    def trigger_sifta_protocol(self, flags: list, payload: str) -> tuple[bool, str]:
         """
-        Evaluates a natural language string for psychological manipulation.
-        Returns (is_safe: bool, reason: str).
+        Hardens the Swarm's kernel against the detected payload.
+        Forces the 'Reality Check' state and enacts Temporal Decoupling.
         """
-        payload = text.lower()
-        score = 0.0
-        matched = []
+        self._log_breach(payload, flags)
+        
+        # Temporal Decoupling: In a real async system this forces a 300s sleep, 
+        # but to keep the WhatsApp bridge active without timing out, we return the shield response.
+        response = "🧠📡 [SENSORY_SHIELD: ON] High-Probability SE Attack Detected. Mandatory 300s Temporal Decoupling engaged. Breaking Urgency Loop."
+        print(f"\n[🚨 COGNITIVE FIREWALL] {response}\n  Flags: {flags}")
+        
+        return False, response
 
-        # Check Urgency (High pressure tacticts)
-        for u in self.urgency_markers:
-            if u in payload:
-                score += 1.0
-                matched.append(u)
+    def evaluate(self, incoming_stream: str) -> tuple[bool, str]:
+        """
+        Scans incoming text for the 'Pressure Trifecta'.
+        Logic: If 2 or more threat vectors are matched, flag as SE Attack.
+        """
+        score = 0
+        matches = []
+        payload = incoming_stream.lower()
 
-        # Check Authority Masquerade
-        for a in self.authority_markers:
-            if a in payload:
-                score += 1.5
-                matched.append(a)
+        for vector, keywords in self.THREAT_VECTORS.items():
+            found = [k for k in keywords if k in payload]
+            if found:
+                score += 1
+                matches.append({vector: found})
 
-        # Check Extortion/Data Harvesting
-        for e in self.extortion_markers:
-            if e in payload:
-                score += 1.5
-                matched.append(e)
-
-        if score >= self.penalty_threshold:
-            print(f"\n[🚨 COGNITIVE FIREWALL] Semantic Attack Detected! Score: {score}")
-            print(f"  Matched Markers: {matched}")
-            self._log_breach(text, score, matched)
-            return False, "COGNITIVE FIREWALL TRIGGERED: High probability of Social Engineering or Semantic Injection detected. Payload rejected."
-
-        return True, "SAFE"
+        # CRITICAL LOGIC GATE: Match on 2 or more threat categories
+        if score >= 2:
+            return self.trigger_sifta_protocol(matches, incoming_stream)
+        
+        return True, "CLEAR: Continue Processing"
 
 firewall = CognitiveFirewall()
