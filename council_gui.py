@@ -21,8 +21,8 @@ class CouncilRobinhoodApp(tk.Tk):
         self.master_frame.pack(fill="both", expand=True)
         
         # UI Setup
-        self.balance_var = tk.StringVar(value="$0.00")
-        self.today_var = tk.StringVar(value="▼ $0.00 (0.00%) Today")
+        self.balance_var = tk.StringVar(value="0.00 STGM")
+        self.today_var = tk.StringVar(value="▼ 0.00 (0.00%) Today")
         
         # Header Area
         header_frame = tk.Frame(self.master_frame, bg="#000000")
@@ -81,11 +81,11 @@ class CouncilRobinhoodApp(tk.Tk):
             widget.destroy()
             
         total_balance = sum(float(a.get("stgm_balance", 0)) for a in self.agents)
-        self.balance_var.set(f"${total_balance:,.2f}")
+        self.balance_var.set(f"{total_balance:,.2f} STGM")
         
         # Calculate crude metric for daily today
         if total_balance > 0:
-            self.today_var.set(f"▲ +$15.00 (Syncing%) Today")
+            self.today_var.set(f"▲ +15.00 STGM (Syncing%) Today")
             self.today_label.config(fg="#00C805")
         
         for agent in self.agents:
@@ -120,9 +120,8 @@ class CouncilRobinhoodApp(tk.Tk):
             
             if job:
                 # RED BUTTON (Job exists)
-                # User Robinhood screenshot displays negative bounds -1,604.90 for red
                 raw_reward = job.get("reward", "+15.0 STGM").replace("+", "").replace(" STGM", "").strip()
-                reward_text = f"-${raw_reward}" 
+                reward_text = f"-{raw_reward} STGM" 
                 
                 # In macOS Tkinter, we use highlighting or frames to color buttons natively
                 red_bg = "#FF3B30"
