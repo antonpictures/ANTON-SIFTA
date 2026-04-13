@@ -400,9 +400,26 @@ DAMAGE_TABLE = {
 }
 
 def apply_damage(state: dict, strike_type: str) -> dict:
-    """Apply a damage strike. May mutate STYLE if energy drops low."""
+    """Apply a damage strike. May mutate STYLE if energy drops low. Automatically rewards STGM for energy expenditure."""
     cost = DAMAGE_TABLE.get(strike_type, 10)
     state["energy"] = max(0, state["energy"] - cost)
+
+    # PROOF OF ENERGY: The mere act of "talking" or doing compute work generates fractional STGM drip.
+    drip_reward = cost * 0.05
+    state["stgm_balance"] = state.get("stgm_balance", 0.0) + drip_reward
+
+    # Log to the decentralized ledger
+    import uuid
+    ledger = Path(__file__).parent / "repair_log.jsonl"
+    event = {
+        "timestamp": int(time.time()),
+        "agent": state.get("id", "UNKNOWN"),
+        "amount_stgm": drip_reward,
+        "reason": f"COMPUTE_BURN_{strike_type.upper()}",
+        "hash": str(uuid.uuid4())
+    }
+    with open(ledger, "a") as f:
+        f.write(json.dumps(event) + "\n")
 
     if state["energy"] <= 0:
         state["style"] = "DEAD"
