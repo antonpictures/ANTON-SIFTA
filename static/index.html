@@ -168,8 +168,12 @@
     </div>
 
     <!-- WORMHOLE MARKET -->
-    <div class="section-title" style="color:var(--text-dim); font-size:1.1rem; margin-top:0.5rem;">
-        Wormhole Bounties <i style="color:var(--green)">Live</i>
+    <div class="section-title" style="color:var(--text-dim); font-size:1.1rem; margin-top:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            Wormhole Bounties <i style="color:var(--green)">Live</i>
+            <div style="font-size:0.75rem; color:var(--text-dim); margin-top:2px;">(Global Ledger of broken JSON files needing compressed via Ollama AI)</div>
+        </div>
+        <button onclick="syncWormhole()" style="background:var(--green); color:#000; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">Pull Market (Git Sync)</button>
     </div>
     <div class="asset-list" id="wormhole-list" style="padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 2px solid #2c2c2e;">
         <!-- Bounties Load Here -->
@@ -376,6 +380,19 @@
             } catch(e) {
                 grid.innerHTML = '';
             }
+        }
+
+        async function syncWormhole() {
+            try {
+                // Instantly sync the global GitHub Blockchain manually
+                const btn = event.target;
+                btn.innerText = "Syncing...";
+                btn.style.opacity = 0.5;
+                await fetch('/api/sync_market');
+                btn.innerText = "Pull Market (Git Sync)";
+                btn.style.opacity = 1;
+                fetchState(); // Refresh bounties!
+            } catch(e) { }
         }
 
         async function executeTrade() {

@@ -682,6 +682,13 @@ async def swarm_communique(req: CommuniqueRequest):
     import time
     import subprocess
     
+    # Check if this is a Physical Memory Defrag task
+    if req.message.startswith("Execute Defrag on BOUNTY"):
+        bounty_file = req.message.replace("Execute Defrag on ", "").strip()
+        # Spawn the physical Ollama worker in the background
+        subprocess.Popen(["python3", "memory_defrag_worker.py", bounty_file, req.target_node], cwd=ROOT_DIR)
+        return {"status": "success", "file": bounty_file, "message": "Ollama Inference Engaged"}
+
     target = req.target_node.strip().upper()
     ts = int(time.time())
     scar_file = ROOT_DIR / f"{target}_DIRECTIVE_{ts}.scar"
@@ -724,6 +731,15 @@ async def wormhole_market():
         except Exception:
             continue
     return bounties
+
+@app.get("/api/sync_market")
+async def sync_market():
+    # Force sync the Wormhole Git Ledger to instantly refresh bounties
+    try:
+        subprocess.run(["git", "pull", "--rebase"], cwd=ROOT_DIR, capture_output=True)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error"}
 
 @app.get("/api/memory_map/{bounty_file}")
 async def memory_map(bounty_file: str):
