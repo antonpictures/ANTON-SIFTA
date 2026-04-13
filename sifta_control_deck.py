@@ -158,8 +158,9 @@ class SIFTAControlDeck(QMainWindow):
             QPushButton {{
                 background-color: #11111a;
                 border: 1px solid #1e1e30;
-                border-radius: 4px;
-                padding: 8px;
+                border-radius: 6px;
+                padding: 16px 12px;
+                min-height: 50px;
                 text-align: left;
             }}
             QPushButton:hover {{
