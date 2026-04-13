@@ -782,6 +782,42 @@ async def memory_map(bounty_file: str):
         
     return {"agent": agent_id, "blocks": blocks}
 
+@app.get("/api/economy_chart")
+async def economy_chart():
+    """Generates a REAL graph based on the repair_log.jsonl ledger."""
+    ledger = ROOT_DIR / "repair_log.jsonl"
+    labels = []
+    dataPoints = []
+    
+    cumulative_stgm = 0
+    if ledger.exists():
+        lines = ledger.read_text().strip().split("\n")
+        # Take up to last 20 events
+        for line in lines[-20:]:
+            if not line: continue
+            try:
+                import json
+                event = json.loads(line)
+                import datetime
+                
+                # Check for negative cost or positive reward
+                amt = float(event.get("amount_stgm", 0))
+                if "DEFRAG_COST" in event.get("reason", "") or "INFERENCE_BORROWED" in event.get("reason", ""):
+                    cumulative_stgm -= amt
+                else:
+                    cumulative_stgm += amt
+                    
+                time_str = datetime.datetime.fromtimestamp(event["timestamp"]).strftime('%H:%M')
+                labels.append(time_str)
+                dataPoints.append(cumulative_stgm)
+            except Exception:
+                continue
+
+    if not labels:
+        return {"labels": ["Genesis"], "data": [0]}
+        
+    return {"labels": labels, "data": dataPoints}
+
 @app.get("/api/dispatch/status")
 async def dispatch_status():
     """Returns whether a swimmer is currently active."""

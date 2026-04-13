@@ -293,9 +293,8 @@
                                 <div class="asset-shares">${nrg} Energy (${a.style || 'NOMINAL'})</div>
                             </div>
                             <div class="asset-spark">
-                                <svg width="40" height="25" viewBox="0 0 40 25" fill="none" stroke="${sparkColor}" stroke-width="2">
-                                    <path d="${sparkPath}" />
-                                </svg>
+                                <!-- REMOVED FAKE SVG -->
+                                <span style="font-family:monospace; font-size:10px; color:var(--text-dim);">NO FAKE UI</span>
                             </div>
                             <div class="asset-price">
                                 <div class="${badgeClass}">+${stgm.toFixed(4)}</div>
@@ -319,8 +318,7 @@
                 const logs = await lRes.json();
                 
                 let chartData = [];
-                let runningTotal = totalValue * 0.8;
-                chartData.push(runningTotal);
+                let runningTotal = 0;
                 
                 logs.slice().reverse().forEach(log => {
                     if (log.amount_stgm) {
@@ -328,8 +326,11 @@
                         chartData.push(runningTotal);
                     }
                 });
-                if(chartData.length < 10) {
-                    for(let i=0; i<30; i++) chartData.push(runningTotal + (Math.random()*10 - 5));
+                
+                // If ledger is tiny, just plot the literal flat total. No random noise.
+                if(chartData.length < 2) {
+                    chartData.push(totalValue);
+                    chartData.push(totalValue);
                 }
                 initChart(chartData);
 
