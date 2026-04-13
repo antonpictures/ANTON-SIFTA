@@ -677,6 +677,22 @@ class CommuniqueRequest(BaseModel):
     target_node: str
     message: str
 
+@app.get("/api/backup_swimmer/{agent_id}")
+async def backup_swimmer(agent_id: str):
+    """Provides physical backup functionality for Swimmers requested by GUI."""
+    agent_path = ROOT_DIR / f".sifta_state/{agent_id}.json"
+    backup_dir = ROOT_DIR / "COLD_STORAGE"
+    backup_dir.mkdir(exist_ok=True)
+    
+    if agent_path.exists():
+        import shutil
+        import time
+        ts = int(time.time())
+        backup_file = backup_dir / f"{agent_id}_BACKUP_{ts}.json"
+        shutil.copy2(agent_path, backup_file)
+        return {"status": "success", "file": backup_file.name}
+    return {"status": "failed", "reason": "Swimmer not found."}
+
 @app.post("/api/swarm_communique")
 async def swarm_communique(req: CommuniqueRequest):
     import time

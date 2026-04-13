@@ -216,6 +216,9 @@
             </div>
         </div>
 
+        <div style="font-size:0.8rem; color:var(--text-dim); margin-bottom:0.5rem; text-align:center; font-weight:bold;">
+            Global Command Center: Transmit Market Trades OR Send Direct Message Directives
+        </div>
         <div class="input-row">
             <select id="trade-target">
                 <option value="M1THER">M1THER</option>
@@ -223,9 +226,9 @@
                 <option value="ALICE_M5">ALICE_M5</option>
                 <option value="IPHONE15">IPHONE15</option>
             </select>
-            <input type="text" id="trade-payload" placeholder="Order Directive (e.g. Defragment Memory)" />
+            <input type="text" id="trade-payload" placeholder="Order Directive or Custom Swarm Message (e.g. Audit Syntax)" />
         </div>
-        <button class="btn-trade" onclick="executeTrade()" id="btn-trade">Transmit Order via P2P</button>
+        <button class="btn-trade" onclick="executeTrade()" id="btn-trade">Transmit Order / Message via P2P</button>
         <div class="term-out" id="term-out">Awaiting execution parameters...</div>
     </div>
 
@@ -305,11 +308,11 @@
                                 <div class="asset-shares">${nrg} Energy (${a.style || 'NOMINAL'})</div>
                             </div>
                             <div class="asset-spark">
-                                <!-- REMOVED FAKE SVG -->
-                                <span style="font-family:monospace; font-size:10px; color:var(--text-dim);">NO FAKE UI</span>
-                            </div>
-                            <div class="asset-price">
                                 <div class="${badgeClass}">+${stgm.toFixed(4)}</div>
+                            </div>
+                            <div class="asset-price" style="display:flex; gap:0.5rem;">
+                                <button onclick="backupSwimmer('${a.id}')" style="background:transparent; border:1px solid #444; color:var(--text-dim); border-radius:4px; padding:4px 8px; cursor:pointer; font-size:10px;">💾 Backup</button>
+                                <button onclick="document.getElementById('trade-target').value='${a.id}'" style="background:#2c2c2e; border:none; color:#fff; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:10px;">Select Target</button>
                             </div>
                         </div>
                     `;
@@ -403,6 +406,20 @@
             } catch(e) {
                 grid.innerHTML = '';
             }
+        }
+
+        async function backupSwimmer(id) {
+            try {
+                event.stopPropagation();
+                termLog(`Initiating COLD_STORAGE structural backup for ${id}...`);
+                const res = await fetch(`/api/backup_swimmer/${id}`);
+                const data = await res.json();
+                if(data.status === "success") {
+                    termLog(`Backup sealed: ${data.file}`);
+                } else {
+                    termLog(`Backup failed: ${data.reason}`);
+                }
+            } catch(e) { }
         }
 
         async function syncWormhole() {
