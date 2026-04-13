@@ -126,6 +126,32 @@ class Kernel:
         })
 
 # ────────────────────────────────────────────────────────────
+# canonical_winner() — Pure Function / Byzantine Answer
+#
+# Given ANY set of Scar objects, all nodes in the distributed
+# swarm will independently compute the identical winner.
+# No shared memory. No coordination. No timing dependency.
+# This is SwarmGPT's bridge from "locally deterministic" to
+# "globally deterministic."
+# ────────────────────────────────────────────────────────────
+
+def canonical_winner(scars: list) -> "Scar":
+    """
+    Pure function. Takes an arbitrary list of Scar objects.
+    Returns the winner deterministically using only scar_id hashes.
+
+    Properties guaranteed:
+    - Order of input list is irrelevant (pure sort)
+    - No external state required
+    - Identical output on any node given identical input set
+    - O(n log n) time, no locks, no RPC
+    """
+    if not scars:
+        raise ValueError("Cannot elect winner from empty set")
+    return min(scars, key=lambda s: hashlib.sha256(s.scar_id.encode()).hexdigest())
+
+
+# ────────────────────────────────────────────────────────────
 # Demo (Deterministic, No Human Needed)
 # ────────────────────────────────────────────────────────────
 
