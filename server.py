@@ -673,6 +673,32 @@ class DispatchRequest(BaseModel):
     base_url: Optional[str] = ""
     investor_mode: bool = False
 
+class CommuniqueRequest(BaseModel):
+    target_node: str
+    message: str
+
+@app.post("/api/swarm_communique")
+async def swarm_communique(req: CommuniqueRequest):
+    import time
+    import subprocess
+    
+    target = req.target_node.strip().upper()
+    ts = int(time.time())
+    scar_file = ROOT_DIR / f"{target}_DIRECTIVE_{ts}.scar"
+    
+    payload = f"[SWARM DIRECTIVE: {target} TRANSEC]\nPRIORITY: OMEGA\nTARGET_IP: {target}\n\n{req.message}\n"
+    scar_file.write_text(payload, encoding="utf-8")
+    
+    try:
+        # P2P Transport over GitHub Consensus
+        subprocess.run(["git", "add", str(scar_file)], cwd=ROOT_DIR, check=True)
+        subprocess.run(["git", "commit", "-m", f"directive: transmission to {target}"], cwd=ROOT_DIR, check=True)
+        # We must pull --rebase in case other nodes committed first, then push
+        subprocess.run(["git", "pull", "--rebase"], cwd=ROOT_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "push"], cwd=ROOT_DIR, check=True)
+        return {"status": "success", "file": scar_file.name}
+    except Exception as e:
+        return {"status": "error", "reason": str(e)}
 
 @app.get("/api/dispatch/status")
 async def dispatch_status():

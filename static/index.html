@@ -175,6 +175,17 @@
             <input type="text" id="wallet-target" placeholder="GROK_CODER_0X0" value="GROK_CODER_0X0" style="margin-bottom:0.5rem;" />
             <button class="action-btn" onclick="inspectWallet()">PULL STORAGE</button>
             <div class="wallet-result" id="wallet-result">AWAITING SCAN...</div>
+
+            <h1 style="margin-top: 2rem;">SWARM COMMUNICATOR</h1>
+            <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.5rem;">P2P Transport via Git Consensus</p>
+            <select id="comm-target">
+                <option value="M1THER">M1THER (Mac Mini)</option>
+                <option value="ALICE_M5">ALICE_M5 (MacBook)</option>
+                <option value="IPHONE15">IPHONE15 (Mobile Node)</option>
+                <option value="GLOBAL">GLOBAL BROADCAST</option>
+            </select>
+            <textarea id="comm-payload" rows="3" placeholder="Type transmission payload here..."></textarea>
+            <button class="action-btn" onclick="sendCommunique()" id="btn-transmit">TRANSMIT DIRECTIVE</button>
         </div>
         
     </div>
@@ -242,6 +253,42 @@
                     termLog(`ERROR: DNA failure on ${target}`, true);
                 }
             } catch(e) { termLog(`ERROR: Network timeout.`, true); }
+        }
+
+        async function sendCommunique() {
+            const targetNode = document.getElementById('comm-target').value;
+            const message = document.getElementById('comm-payload').value.trim();
+            const btn = document.getElementById('btn-transmit');
+
+            if (!message) {
+                termLog(`[TRANSEC] Denied: Payload empty.`, true);
+                return;
+            }
+
+            btn.innerText = "UPLOADING TO ORBIT...";
+            btn.style.color = "var(--gold)";
+            termLog(`[TRANSEC] Encrypting P2P Directive for [${targetNode}]...`);
+
+            try {
+                const response = await fetch('/api/swarm_communique', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target_node: targetNode, message: message })
+                });
+
+                const data = await response.json();
+                if (response.ok && data.status === "success") {
+                    termLog(`[TRANSEC] SUCCESS! Directive ${data.file} locked into Git Consensus!`);
+                    document.getElementById('comm-payload').value = "";
+                } else {
+                    termLog(`[TRANSEC] Git push rejected: ${data.reason}`, true);
+                }
+            } catch(e) {
+                termLog(`[TRANSEC] Network failure: ${e}`, true);
+            }
+            
+            btn.innerText = "TRANSMIT DIRECTIVE";
+            btn.style.color = "var(--cyan)";
         }
 
         async function dispatchSwarm() {
