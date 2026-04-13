@@ -70,9 +70,16 @@ class SIFTAControlDeck(QMainWindow):
 
         # Buttons
         self.btn_colloid = self.create_button("1. 'Without a Thought'", "Colloid Physics Simulation")
+        left_layout.addWidget(self.btn_colloid)
+        
         self.btn_lattice = self.create_button("2. Cryptographic Lattice", "SwarmRL Consensus Merge")
+        left_layout.addWidget(self.btn_lattice)
+        
         self.btn_swimming = self.create_button("3. Proof of Swimming", "Portable Hardware Identity")
+        left_layout.addWidget(self.btn_swimming)
+        
         self.btn_jellyfish = self.create_button("4. Jellyfish Trigger", "Autonomic Panic Mode")
+        left_layout.addWidget(self.btn_jellyfish)
 
         # Kill Process Button
         left_layout.addStretch()
@@ -165,9 +172,7 @@ class SIFTAControlDeck(QMainWindow):
             }}
         """)
         
-        # We need to manually add it to the layout where we call this method
-        parent = self.centralWidget().layout().itemAt(0).widget().layout()
-        parent.addWidget(btn)
+        # Return the button to be added manually
         return btn
 
     def set_buttons_enabled(self, enabled):
