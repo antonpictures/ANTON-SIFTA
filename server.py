@@ -136,24 +136,11 @@ _dispatch_lock = asyncio.Lock()
 STATE_DIR.mkdir(exist_ok=True)
 CEMETERY_DIR.mkdir(exist_ok=True)
 
-# Mount static files folder
-app.mount("/static", StaticFiles(directory=ROOT_DIR / "static"), name="static")
-
 DETECTIVE_IDS = {"DEEP_SYNTAX_AUDITOR_0X1", "TENSOR_PHANTOM_0X2", "SILICON_HOUND_0X3"}
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def serve_index():
-    index_path = ROOT_DIR / "static" / "index.html"
-    if index_path.exists():
-        return index_path.read_text(encoding="utf-8")
-    return "Index offline."
-
-@app.get("/tv", response_class=HTMLResponse)
-async def serve_tv():
-    tv_path = ROOT_DIR / "static" / "broadcast.html"
-    if tv_path.exists():
-        return tv_path.read_text(encoding="utf-8")
-    return "Broadcast offline."
+    return {"status": "SWARM ACTIVE", "message": "HTML DEPRECATED. Execute python3 council_gui.py for physical interface."}
 
 
 @app.get("/api/agents")
