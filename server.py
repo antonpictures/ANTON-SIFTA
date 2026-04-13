@@ -1698,6 +1698,7 @@ import random
 
 async def autonomic_heartbeat():
     """The Biological Daemon of the SIFTA OS. Runs forever after FastAPI startup."""
+    import swarm_network_ledger
     print("\n[🫀 BIOS] Autonomic Heartbeat Engaged. True Swarm Autonomy Active.")
     while True:
         # 120s biological sleep phase
@@ -1706,15 +1707,17 @@ async def autonomic_heartbeat():
         try:
             # 1. PULL MARKET / SYNC GIT
             print("\n[🫀 HEARTBEAT] 120s cycle hit. Initiating Global Market Sync...")
-            subprocess.run(["git", "pull", "--rebase"], cwd=str(ROOT_DIR), capture_output=True)
+            swarm_network_ledger.sync_global_ledger()
 
             # 2. HUNT BOUNTY (Defrag)
-            bounties = list(ROOT_DIR.glob("*.scar"))
+            bounties_dir = ROOT_DIR / ".sifta_bounties"
+            bounties = list(bounties_dir.glob("BOUNTY_*.scar")) if bounties_dir.exists() else []
+            
             if bounties:
                 target = random.choice(bounties)
                 surgeon = random.choice(["M1THER", "M5QUEEN", "GROK_CODER_0X0", "ALICE_M5"])
                 print(f"[🫀 HEARTBEAT] Hunger Detected. {surgeon} engaging DEFRAG on {target.name}...")
-                subprocess.Popen(["python3", "memory_defrag_worker.py", str(target), surgeon], cwd=str(ROOT_DIR))
+                subprocess.Popen(["python3", "memory_defrag_worker.py", str(target.name), surgeon], cwd=str(ROOT_DIR))
             else:
                 # 3. NO BOUNTIES -> COMMUNIQUÉ
                 print("[🫀 HEARTBEAT] Local biological state optimal. Generating ambient Swarm chatter...")
@@ -1728,26 +1731,10 @@ async def autonomic_heartbeat():
                     "Ollama inference pool is idle. Waiting for Wormhole drops.",
                     "This is the Swarm Body talking. Node latency is optimal."
                 ]
-                msg = random.choice(topics)
+                msg = f"[{speaker} AMBIENT] {random.choice(topics)}"
                 
-                ts = int(time.time())
-                convo_file = ROOT_DIR / f"{speaker}_CHATTER_{ts}.scar"
-                
-                # We format this exactly like a swarm communique
-                payload = {
-                    "source_node": speaker,
-                    "target_node": "GLOBAL_BROADCAST",
-                    "timestamp": ts,
-                    "message": msg,
-                    "hash": "HEARTBEAT"
-                }
-                import json
-                convo_file.write_text(json.dumps(payload, indent=2))
-                
-                # PUSH to market
-                subprocess.run(["git", "add", convo_file.name], cwd=str(ROOT_DIR), capture_output=True)
-                subprocess.run(["git", "commit", "-m", f"feat(swarm): {speaker} autonomic ambient chatter"], cwd=str(ROOT_DIR), capture_output=True)
-                subprocess.run(["git", "push"], cwd=str(ROOT_DIR), capture_output=True)
+                # Use the new ledger to push chatter directly
+                swarm_network_ledger.push_swarm_directive("GLOBAL_BROADCAST", msg)
         except Exception as e:
             print(f"[🫀 BIOS ERROR] Heartbeat stutter: {e}")
 

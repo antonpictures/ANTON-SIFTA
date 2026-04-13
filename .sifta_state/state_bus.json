@@ -1,0 +1,16 @@
+{
+    "worker_reputation": {
+        "WORKER_PRIME": 100,
+        "WORKER_INSECT": 10
+    },
+    "active_scars": {},
+    "volatility_history": [
+        {
+            "timestamp": 1776053234.326255,
+            "success": true
+        }
+    ],
+    "guard_actions": [
+        1776053234.326081
+    ]
+}
