@@ -11,6 +11,9 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 import random
+import time
+import urllib.request
+import urllib.error
 
 ROOT_DIR = Path(__file__).parent
 STATE_DIR = ROOT_DIR / ".sifta_state"
@@ -38,6 +41,19 @@ def get_node_biological_state(node_id: str) -> dict:
             }
     except Exception:
         return {"id": node_id, "stgm_balance": 0.0, "hunger_level": "CRITICAL"}
+
+def benchmark_engine(name: str, url: str, payload: bytes) -> float:
+    """Send a tiny test payload to calculate Time to First Token latency."""
+    print(f"   [ARBITRAGE] Pinging {name} at {url}...")
+    start_time = time.time()
+    try:
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=1.0) as response:
+            _ = response.read()
+            return time.time() - start_time
+    except Exception as e:
+        print(f"      -> {name} failed: {e}")
+        return float('inf')
 
 def route_inference_job(job_metadata: dict, available_nodes: list[str]) -> str:
     """
@@ -69,11 +85,27 @@ def route_inference_job(job_metadata: dict, available_nodes: list[str]) -> str:
         return poorest['id']
         
     # ── Capitalist Directive: All quotas met ──
-    print(f"   [CAPITALIST DIRECTIVE] All node human survival quotas met. Routing for raw efficiency.")
-    # Fallback to random assignment or latency optimization
-    # For now, pick a node at random
-    elected = random.choice(satisfied_nodes)
-    return elected['id']
+    print(f"   [CAPITALIST DIRECTIVE] All node human survival quotas met. Engaging Local Hardware Arbitrage.")
+    
+    # Payload for benchmark
+    ollama_payload = json.dumps({"model": "llama4-maverick:17b", "prompt": "hi", "stream": False}).encode("utf-8")
+    lmstudio_payload = json.dumps({"model": "local-model", "messages": [{"role": "user", "content": "hi"}], "stream": False}).encode("utf-8")
+
+    ollama_latency = benchmark_engine("Ollama", "http://localhost:11434/api/generate", ollama_payload)
+    lmstudio_latency = benchmark_engine("LM Studio", "http://localhost:1234/v1/chat/completions", lmstudio_payload)
+
+    if ollama_latency == float('inf') and lmstudio_latency == float('inf'):
+        print("   [ARBITRAGE] Both API engines offline. Falling back to default node selection.")
+        elected = random.choice(satisfied_nodes)
+        return elected['id']
+
+    if ollama_latency <= lmstudio_latency:
+        print(f"   [WINNER] Ollama secured the contract! ({ollama_latency:.4f}s)")
+        # In reality, this would return the fastest API endpoint + Node ID
+        return satisfied_nodes[0]['id']
+    else:
+        print(f"   [WINNER] LM Studio secured the contract! ({lmstudio_latency:.4f}s)")
+        return satisfied_nodes[0]['id']
 
 if __name__ == "__main__":
     print("==================================================")
