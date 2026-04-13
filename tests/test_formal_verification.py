@@ -136,15 +136,20 @@ class TestFossilIntegrity(unittest.TestCase):
     and raises a hard error — it does not silently leak.
     """
 
-    def test_fossil_fast_path_returns_original(self):
-        """Second proposal for same target returns existing fossil scar_id."""
+    def test_fossil_fast_path_rejects_conflicting_content(self):
+        """After fossilization, any proposal with DIFFERENT content is rejected.
+        
+        This is the Frontier 4 security hardening: the fossil fast-path now
+        cryptographically validates the incoming content hash against the
+        locked fossil, rejecting any Byzantine delayed proposals.
+        """
         k = Kernel()
         sid = k.propose("file.py", "SAFE")
         k.resolve(sid)
         k.execute(sid, True)
 
-        replay_sid = k.propose("file.py", "any content")
-        self.assertEqual(sid, replay_sid)
+        with self.assertRaisesRegex(Exception, "FOSSIL CORRUPTION DETECTED"):
+            k.propose("file.py", "different content — Byzantine delayed gossip")
 
     def test_content_mutation_raises(self):
         """Mutating fossil content after fossilization triggers CORRUPTION DETECTED."""
@@ -158,17 +163,22 @@ class TestFossilIntegrity(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "FOSSIL CORRUPTION DETECTED"):
             k.propose("file.py", "trigger replay")
 
-    def test_untampered_content_replays_cleanly(self):
-        """Fossil replay succeeds without modification."""
+    def test_same_content_replays_cleanly(self):
+        """Fossil replay succeeds when the SAME content is re-proposed.
+        
+        This proves that an honest node replaying a known-good proposal
+        (e.g. after reconnecting) is accepted by the kernel without error.
+        """
         k = Kernel()
-        sid = k.propose("file.py", "SAFE")
+        original_content = "SAFE"
+        sid = k.propose("file.py", original_content)
         k.resolve(sid)
         k.execute(sid, True)
 
-        # No tampering — replay should be clean
-        replay_sid = k.propose("file.py", "ignored")
+        # Exact same content — replay should be clean and return original sid
+        replay_sid = k.propose("file.py", original_content)
         self.assertEqual(replay_sid, sid)
-        self.assertEqual(k.scars[sid].content, "SAFE")
+        self.assertEqual(k.scars[sid].content, original_content)
 
 
 class TestLedgerIntegrity(unittest.TestCase):

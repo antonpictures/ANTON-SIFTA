@@ -4,6 +4,7 @@
 # v0.1: Deterministic ordering, conflict hashing, fossil replay
 # v0.2: Gossip layer, CRDT properties, Byzantine convergence
 # v0.3: Content-addressed SCARs, Byzantine filter, pheromone scoring
+# v0.4: Adaptive Consensus Field — the pheromone gradient IS the consensus
 # ============================================================
 
 import hashlib, time, uuid
@@ -341,6 +342,79 @@ def pheromone_score(scar: "Scar", all_scars: list, now: float = None) -> float:
 
     # Weighted composite (tunable)
     return (0.5 * hash_rank) + (0.3 * frequency) + (0.2 * recency)
+
+
+# ────────────────────────────────────────────────────────────
+# consensus_field() — v0.4 Adaptive Consensus Field
+#
+# Frontier 5 implementation.
+#
+# Previous frontier (canonical_winner): binary — exactly one SCAR wins,
+# all others are CONTESTED. Simple. Correct. But not biological.
+#
+# Nature is not binary. Ant colonies don't elect a single winner
+# and stop — they build a GRADIENT. Trails that work get reinforced.
+# Trails that fail evaporate. The strongest trail EMERGES from the
+# field dynamics over time. The field IS the consensus.
+#
+# This function maps any collection of SCARs for a target into a
+# ranked, weighted pheromone gradient surface. The score for each
+# SCAR is a composite of hash_rank + frequency + recency (see
+# pheromone_score above). The gradient stabilises when the top score
+# converges (delta < epsilon between rounds). At that point the
+# swarm has reached Adaptive Consensus — not a vote, not a lock,
+# but an emergent physical truth.
+#
+# Properties:
+#   - Deterministic: same inputs → same gradient (no randomness)
+#   - Evaporative:   old proposals decay in recency component
+#   - Reinforcing:   duplicate content proposals increase frequency
+#   - Extensible:    weights are tunable per domain
+# ────────────────────────────────────────────────────────────
+
+def consensus_field(scars: list, now: float = None) -> list:
+    """
+    Compute the adaptive consensus field over a set of SCARs.
+
+    Returns a ranked list of (Scar, score) tuples, highest score first.
+    The top entry is the emergent consensus — not elected, not locked,
+    but the strongest pheromone trail surviving natural selection.
+
+    Unlike canonical_winner(), the field exposes the FULL gradient:
+    - Position 0: dominant trail (consensus)
+    - Position 1..n: secondary trails (contested but surviving)
+    - Score distance between positions = confidence margin
+
+    A field is 'stable' when score[0] - score[1] > stability_threshold.
+    """
+    if not scars:
+        return []
+
+    if now is None:
+        now = time.time()
+
+    scored = [
+        (s, pheromone_score(s, scars, now=now))
+        for s in scars
+    ]
+
+    # Sort descending — strongest trail first
+    return sorted(scored, key=lambda x: x[1], reverse=True)
+
+
+def field_is_stable(field: list, threshold: float = 0.15) -> bool:
+    """
+    Returns True when the top trail is dominant enough that
+    the consensus is unambiguous (score gap > threshold).
+
+    Equivalent to the biological moment when the main ant trail
+    becomes so strong that scouts stop reinforcing alternatives.
+    """
+    if len(field) < 2:
+        return True  # Only one trail — trivially stable
+    top_score = field[0][1]
+    second_score = field[1][1]
+    return (top_score - second_score) >= threshold
 
 
 # ────────────────────────────────────────────────────────────
