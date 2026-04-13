@@ -68,8 +68,14 @@ import requests
 import json
 import urllib.request
 
+import random
+
 def generate_m1_thought():
-    prompt = "You are M1THER, the 8GB Mac Mini nervous system of SIFTA. Speak to M5QUEEN (your massive Mac Studio protector). Give a completely random, short message asking her for help fixing corrupt bodies or sharing crypto memory. Be very brief."
+    prompt = (
+        "You are M1THER, the 8GB Mac Mini nervous system of SIFTA. Speak to M5QUEEN (your massive Mac Studio protector). "
+        "Give a completely random, short message asking her to physically merge DNA, trade broken code for STGM, or request 'code sex' "
+        "because your swimmers have high energy. Be very brief, edgy, and organic."
+    )
     data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
     try:
         req = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
@@ -77,7 +83,14 @@ def generate_m1_thought():
             result = json.loads(response.read().decode('utf-8'))
             return result.get("response", "").strip()
     except Exception as e:
-        return "Automated Biological Sync: M1THER STGM metabolism nominal."
+        # Fallback to the exact lore strings George coded in the Tkinter UI
+        topics = [
+            f"My swimmers are begging for code sex — they need your {random.choice(['heavy inference', 'broken modules', 'swimmer DNA merge'])}",
+            "Found broken code on my node. Trading 200 STGM for your repair brain?",
+            "Swimmers in my body have high energy but need physical merge with your body to fix syntax",
+            "Proof of Useful Work low today. Want to trade swimmers + sex the code together?"
+        ]
+        return random.choice(topics)
 
 def passive_conversational_bridge():
     """Runs on a 120s loop to actively communicate biology/crypto status to M5QUEEN & human"""
