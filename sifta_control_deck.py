@@ -80,6 +80,7 @@ class SIFTAControlDeck(App):
         margin: 0 0 1 0;
         border: round #1e1e30;
         background: #11111a;
+        height: auto;
     }
     
     ActionItem:focus {
