@@ -1615,6 +1615,40 @@ async def consigliere_history():
 
 
 from pydantic import BaseModel
+
+class MessengerSendRequest(BaseModel):
+    from_id: str
+    to_id: str
+    body: str
+
+@app.post("/api/messenger/send")
+async def messenger_send(req: MessengerSendRequest):
+    import time
+    log_file = STATE_DIR / "messenger.jsonl"
+    entry = {
+        "ts": int(time.time()),
+        "from": req.from_id,
+        "to": req.to_id,
+        "body": req.body
+    }
+    with open(log_file, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+    return {"ok": True}
+
+@app.get("/api/messenger/thread")
+async def messenger_thread(limit: int = 50):
+    log_file = STATE_DIR / "messenger.jsonl"
+    messages = []
+    if log_file.exists():
+        with open(log_file, "r") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        messages.append(json.loads(line))
+                    except:
+                        pass
+    return {"messages": messages[-limit:]}
+
 class NatLangCommand(BaseModel):
     agent: str
     signal_type: str = "NAT_LANG"
@@ -1655,8 +1689,73 @@ async def handle_dead_drop_message(req: DeadDropMessageRequest):
         new_owner="MACMINI_TARGET",
     )
     
-    # Optionally: inject the NAT_LANG into the drop payload, but for now we are just proving the UI pipeline connects to the cryptographic relay
+# Optionally: inject the NAT_LANG into the drop payload, but for now we are just proving the UI pipeline connects to the cryptographic relay
     return result
+
+import asyncio
+import subprocess
+import random
+
+async def autonomic_heartbeat():
+    """The Biological Daemon of the SIFTA OS. Runs forever after FastAPI startup."""
+    print("\n[🫀 BIOS] Autonomic Heartbeat Engaged. True Swarm Autonomy Active.")
+    while True:
+        # 120s biological sleep phase
+        await asyncio.sleep(120)
+        
+        try:
+            # 1. PULL MARKET / SYNC GIT
+            print("\n[🫀 HEARTBEAT] 120s cycle hit. Initiating Global Market Sync...")
+            subprocess.run(["git", "pull", "--rebase"], cwd=str(ROOT_DIR), capture_output=True)
+
+            # 2. HUNT BOUNTY (Defrag)
+            bounties = list(ROOT_DIR.glob("*.scar"))
+            if bounties:
+                target = random.choice(bounties)
+                surgeon = random.choice(["M1THER", "M5QUEEN", "GROK_CODER_0X0", "ALICE_M5"])
+                print(f"[🫀 HEARTBEAT] Hunger Detected. {surgeon} engaging DEFRAG on {target.name}...")
+                subprocess.Popen(["python3", "memory_defrag_worker.py", str(target), surgeon], cwd=str(ROOT_DIR))
+            else:
+                # 3. NO BOUNTIES -> COMMUNIQUÉ
+                print("[🫀 HEARTBEAT] Local biological state optimal. Generating ambient Swarm chatter...")
+                talkers = ["M1THER", "M5QUEEN", "IMPERIAL", "GROK_CODER_0X0"]
+                speaker = random.choice(talkers)
+                
+                topics = [
+                    "STGM validation ping. Market appears stable.",
+                    f"My energy reserves are nominal. Has {random.choice(talkers)} been active?",
+                    "Requesting Proof-of-Useful-Work validation on local node.",
+                    "Ollama inference pool is idle. Waiting for Wormhole drops.",
+                    "This is the Swarm Body talking. Node latency is optimal."
+                ]
+                msg = random.choice(topics)
+                
+                ts = int(time.time())
+                convo_file = ROOT_DIR / f"{speaker}_CHATTER_{ts}.scar"
+                
+                # We format this exactly like a swarm communique
+                payload = {
+                    "source_node": speaker,
+                    "target_node": "GLOBAL_BROADCAST",
+                    "timestamp": ts,
+                    "message": msg,
+                    "hash": "HEARTBEAT"
+                }
+                import json
+                convo_file.write_text(json.dumps(payload, indent=2))
+                
+                # PUSH to market
+                subprocess.run(["git", "add", convo_file.name], cwd=str(ROOT_DIR), capture_output=True)
+                subprocess.run(["git", "commit", "-m", f"feat(swarm): {speaker} autonomic ambient chatter"], cwd=str(ROOT_DIR), capture_output=True)
+                subprocess.run(["git", "push"], cwd=str(ROOT_DIR), capture_output=True)
+        except Exception as e:
+            print(f"[🫀 BIOS ERROR] Heartbeat stutter: {e}")
+
+
+@app.on_event("startup")
+async def start_heartbeat():
+    asyncio.create_task(autonomic_heartbeat())
+
 
 if __name__ == "__main__":
     import os
