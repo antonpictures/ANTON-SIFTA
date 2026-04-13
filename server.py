@@ -743,7 +743,7 @@ async def sync_market():
 
 @app.get("/api/memory_map/{bounty_file}")
 async def memory_map(bounty_file: str):
-    import re, json, math, random
+    import re, json, math
     # Read the bounty to find the target agent
     bounty_path = ROOT_DIR / bounty_file
     if not bounty_path.exists():
@@ -755,34 +755,31 @@ async def memory_map(bounty_file: str):
     
     agent_path = ROOT_DIR / f".sifta_state/{agent_id}.json"
     
-    # Calculate physical blocks
     blocks = []
-    TOTAL_GRID = 300 # We will draw 300 small blocks in the UI
+    TOTAL_GRID = 1000 # Draw 1000 tiny pixels instead of 300 big chunks
     
     if agent_id and agent_path.exists():
         state = json.loads(agent_path.read_text(encoding="utf-8"))
         raw_len = len(state.get("raw", ""))
         scars_len = len(state.get("hash_chain", []))
         
-        # 1 Red block = 10 chars of fragmented string
-        red_count = min(math.ceil(raw_len / 10), 100) 
-        # 1 Blue block = 1 Deframent scar resolution
-        blue_count = scars_len * 2
+        # 1 Red block = exactly 5 chars of fragmented string
+        red_count = min(math.ceil(raw_len / 5), 400) 
+        # 1 Blue block = 1 Defragment scar resolution
+        blue_count = scars_len * 5
         
-        for _ in range(red_count): blocks.append("red")
-        for _ in range(blue_count): blocks.append("blue")
+        # Interleave block deterministically instead of randomly so reading left-to-right mimics read-heads
+        # First layout structured memory (Blue)
+        blocks.extend(["blue"] * blue_count)
+        # Then layout fragmented raw memory (Red)
+        blocks.extend(["red"] * red_count)
     else:
-        # Fallback if agent purely chaotic simulation
-        for _ in range(random.randint(20,80)): blocks.append("red")
-        for _ in range(random.randint(5,20)): blocks.append("blue")
+        blocks.extend(["red"] * 10)
 
-    # Fill rest with allocated green or free grey space
+    # Fill rest deterministically. No randomness.
     remaining = TOTAL_GRID - len(blocks)
-    for _ in range(remaining):
-        blocks.append("green" if random.random() > 0.4 else "grey")
+    blocks.extend(["grey"] * remaining) # Pure free space
         
-    # Shuffle for the classic disk map look
-    random.shuffle(blocks)
     return {"agent": agent_id, "blocks": blocks}
 
 @app.get("/api/dispatch/status")
