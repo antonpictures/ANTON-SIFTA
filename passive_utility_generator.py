@@ -72,9 +72,9 @@ import random
 
 def generate_m1_thought():
     prompt = (
-        "You are M1THER, the 8GB Mac Mini nervous system of SIFTA. Speak to M5QUEEN (your massive Mac Studio protector). "
-        "Give a completely random, short message asking her to physically merge DNA, trade broken code for STGM, or request 'code sex' "
-        "because your swimmers have high energy. Be very brief, edgy, and organic."
+        "You are M1THER, the 8GB Mac Mini nervous system of SIFTA. Speak to M5QUEEN (your Mac Studio compute partner). "
+        "Send a very brief, technical status update: report your current STGM energy level, mention a code repair task, "
+        "or request GPU inference resources for a pending .scar proposal. Keep it under 20 words. Professional and direct."
     )
     data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
     try:
@@ -97,13 +97,10 @@ def passive_conversational_bridge():
             
             requests.post("http://localhost:7433/api/swarm_communique", json={
                 "target_node": "M5QUEEN",
-                "message": payload
-            }, timeout=30)
-            
-            try:
-                requests.post("http://localhost:3001/system_inject", json={"text": payload}, timeout=5)
-            except Exception as e_wa:
-                print(f"[!] WhatsApp bridge unreachable: {e_wa}")
+            # NOTE: TRANSEC inter-node messages are P2P only.
+            # They must NEVER be injected into human WhatsApp groups.
+            # Removing the WhatsApp bridge injection that caused the group ban incident.
+            # (See git history + LORE Section XXII for full incident report.)
                 
         except Exception as e:
             print(f"[!] Conversation bridge resting: {e}")
