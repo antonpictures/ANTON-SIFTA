@@ -6,7 +6,7 @@
  * - Routes your incoming messages to Python SIFTA server (port 7434)
  * - Auto-reconnects after normal stream resets (code 515 post-pairing)
  *
- * No OpenClaw. No framework. Just the raw Baileys wire.
+ * No external frameworks. Just the raw Baileys wire.
  */
 
 import makeWASocket, {

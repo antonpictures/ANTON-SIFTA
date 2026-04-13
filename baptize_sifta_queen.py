@@ -3,8 +3,8 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from body_state import SwarmBody, save_agent_state
 
-print("Starting baptism protocol for OPENCLAW QUEEN...")
-agent_id = "OPENCLAW_QUEEN" 
+print("Starting baptism protocol for SIFTA QUEEN...")
+agent_id = "SIFTA_QUEEN" 
 
 try:
     # Require Architect Seal
