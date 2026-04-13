@@ -478,7 +478,7 @@ def main():
     print(f"  Physics: Pure numpy (no EspressoMD, no JAX)")
     print()
 
-    sim = SIFTAColloidSimulation(demo_mode=args.demo or True, target=args.target)
+    sim = SIFTAColloidSimulation(demo_mode=args.demo, target=args.target)
 
     print(f"[🌊] Spawned {len(sim.colloids)} colloids:")
     for c in sim.colloids:
