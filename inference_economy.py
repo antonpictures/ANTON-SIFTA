@@ -168,12 +168,33 @@ def record_inference_fee(
     current_stgm = float(state.get("stgm_balance", 0.0))
     new_stgm     = max(0.0, round(current_stgm - fee_stgm, 2))
 
-    # ── Update state ─────────────────────────────────────────────────────────
+    # ── Update Borrower state ────────────────────────────────────────────────
     state["stgm_balance"] = new_stgm
     if state:
         try:
             with open(state_path, "w") as f:
                 json.dump(state, f, indent=2)
+        except Exception:
+            pass
+            
+    # ── Credit Lender state ──────────────────────────────────────────────────
+    lender_path = STATE_DIR / f"{lender_node_ip.upper()}.json"
+    lender_state = {}
+    if lender_path.exists():
+        try:
+            with open(lender_path, "r") as f:
+                lender_state = json.load(f)
+        except Exception:
+            pass
+            
+    lender_current = float(lender_state.get("stgm_balance", 0.0))
+    lender_new = round(lender_current + fee_stgm, 2)
+    lender_state["stgm_balance"] = lender_new
+    
+    if lender_state:
+        try:
+            with open(lender_path, "w") as f:
+                json.dump(lender_state, f, indent=2)
         except Exception:
             pass
 
@@ -207,8 +228,8 @@ def record_inference_fee(
         print(f"  [ECONOMY] Ledger write failed: {e}")
 
     print(
-        f"  [STGM] Fee: {fee_stgm} STGM deducted for borrowed inference "
-        f"from {lender_node_ip} | Balance: {current_stgm} → {new_stgm}"
+        f"  [STGM] Transfer: {fee_stgm} STGM moved from {borrower_id} (Bal: {new_stgm}) "
+        f"to {lender_node_ip} (Bal: {lender_new})"
     )
 
     return event

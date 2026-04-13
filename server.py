@@ -144,7 +144,23 @@ DETECTIVE_IDS = {"DEEP_SYNTAX_AUDITOR_0X1", "TENSOR_PHANTOM_0X2", "SILICON_HOUND
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     index_path = ROOT_DIR / "static" / "index.html"
-    return index_path.read_text(encoding="utf-8")
+    if index_path.exists():
+        return index_path.read_text(encoding="utf-8")
+    return "Index offline. Use /beginner or /architect"
+
+@app.get("/beginner", response_class=HTMLResponse)
+async def serve_beginner():
+    path = ROOT_DIR / "static" / "beginner.html"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return "Beginner GUI offline."
+
+@app.get("/architect", response_class=HTMLResponse)
+async def serve_architect():
+    path = ROOT_DIR / "static" / "architect.html"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return "Architect GUI offline."
 
 @app.get("/tv", response_class=HTMLResponse)
 async def serve_tv():
