@@ -69,9 +69,12 @@ class Kernel:
         # Fossil fast-path
         if target in self.fossils:
             sid, expected_hash = self.fossils[target]
-            actual_hash = hashlib.sha256(self.scars[sid].content.encode()).hexdigest()
-            if actual_hash != expected_hash:
-                raise Exception("FOSSIL CORRUPTION DETECTED: Content does not match locked hash.")
+            
+            # Check if this proposal matches the fossil
+            new_hash = hashlib.sha256(content.encode()).hexdigest()
+            if new_hash != expected_hash:
+                raise Exception("FOSSIL CORRUPTION DETECTED: Incoming proposal conflicts with fossilized target.")
+                
             self._log("FOSSIL_REPLAY", sid, target)
             return sid
 
