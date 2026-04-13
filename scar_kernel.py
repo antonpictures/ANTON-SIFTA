@@ -108,6 +108,40 @@ class Kernel:
             else:
                 self._transition(s, "CONTESTED")
 
+    # ── Resolve Pareto-Stable Set (Frontier 3) ───────────────────
+    def resolve_stable_set(self, sid: str, conflict_evaluator=None):
+        """
+        Instead of electing a single binary winner for a target,
+        this elects a Pareto-stable set of multiple non-conflicting
+        proposals.
+        """
+        scar = self.scars[sid]
+
+        competing = [
+            s for s in self.scars.values()
+            if s.target == scar.target and s.state in ("PROPOSED", "LOCKED")
+        ]
+
+        # Use default crude semantic overlap check if none provided
+        if conflict_evaluator is None:
+            def conflict_evaluator(a: Scar, b: Scar) -> bool:
+                # Mock: if one tries to completely overwrite the other's exact string
+                return a.content in b.content or b.content in a.content
+
+        # Deterministic ordering before set insertion
+        sorted_competing = sorted(competing, key=lambda s: hashlib.sha256(s.scar_id.encode()).hexdigest())
+        
+        stable_set = []
+        for s in sorted_competing:
+            # Check if this scar conflicts with ANY already admitted into the stable set
+            is_conflicting = any(conflict_evaluator(s, admitted) for admitted in stable_set)
+            
+            if not is_conflicting:
+                stable_set.append(s)
+                self._transition(s, "LOCKED")
+            else:
+                self._transition(s, "CONTESTED")
+
     # ── Execute (Human Gate Simulated) ───────────────────────
     def execute(self, sid: str, approve: bool):
         scar = self.scars[sid]
