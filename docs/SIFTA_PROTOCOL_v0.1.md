@@ -1,7 +1,7 @@
 # SIFTA Protocol v0.1
 ## Git-Native Stigmergic Multi-Agent Coordination
 
-**Status:** Draft  
+**Status:** Draft — v0.1.1  
 **Authors:** Ioan George Anton (Anton Pictures), SIFTA Swarm Collective  
 **Date:** April 13, 2026  
 **Repository:** https://github.com/antonpictures/ANTON-SIFTA
@@ -144,6 +144,97 @@ When a SCAR reaches `FOSSILIZED`:
 3. Future proposals for the same target path **replay** the fossilized behavior instead of re-running the full repair pipeline
 
 This is **behavioral caching via append-only ledger** — the system learns which repair patterns were validated by humans and applies them faster on recurrence.
+
+**Fossilization Trigger (exact):**
+- SCAR must be in `EXECUTED` state
+- `volatility_score` in `state_bus.json` must be `≤ 0.25` at time of call
+- Target path must not already exist in `_fossil_index`
+
+**Replay Mechanism (exact):**
+- On `kernel.propose(target=T)`, if `T` exists in `_fossil_index`, the kernel returns the existing fossilized `scar_id` immediately
+- The FOSSIL_REPLAY event is appended to the ledger
+- No new SCAR is created; no new neural gate check is required
+- The fossilized content (the human-approved patch) is re-applied directly
+
+**Invalidation Rule:**
+- Fossilized SCARs are never invalidated automatically
+- A human MEDBAY trigger followed by explicit CANCEL is the only path to invalidation
+- This is intentional: human-approved behaviors should require human revocation
+
+---
+
+## 2.8 Conflict Resolution Model
+
+When two agents propose mutations to the same target file simultaneously:
+
+**Detection:**
+```python
+contested = any(
+    s["target"] == target and s["state"] in ("PROPOSED", "LOCKED")
+    for sid, s in self._scars.items() if sid != scar_id
+)
+```
+
+**Resolution Rules (in priority order):**
+
+1. **LOCKED wins over PROPOSED** — A SCAR that has already passed the Neural Gate and holds execution sovereignty cannot be displaced by a new proposal. The new SCAR enters `CONTESTED` and waits.
+2. **MEDBAY clears the queue** — A MEDBAY trigger freezes all non-terminal SCARs. On `lift_medbay()`, contested SCARs are re-evaluated: if the collision is cleared, they re-enter `PROPOSED`. 
+3. **Fossil replay bypasses contention** — If the target has a fossilized SCAR, the replay fast-path fires before collision detection. No new SCAR enters the competition.
+4. **No automatic winner between two PROPOSED SCARs** — Both remain `CONTESTED` until one is cancelled by the human operator or the MEDBAY cycle resolves the queue.
+
+**Ordering guarantee:** The system does not guarantee temporal ordering of PROPOSED SCARs. The human approval step is the ordering mechanism — whichever proposal a human approves first achieves LOCKED state.
+
+---
+
+## 2.9 Energy Model
+
+The STGM (Stigma Token) energy system is a **scheduling and prioritization mechanism**. All values are derived from `server.py`.
+
+**Agent energy field:** `integer`, stored in `.sifta_state/<agent_id>.json`
+
+| Event | Energy Delta |
+|---|---|
+| Heartbeat passive reload | `+2` per cycle (capped at `100`) |
+| Successful repair (human-approved) | `+variable` (proposal-specific bounty) |
+| Inference fee (borrowing M5QUEEN GPU) | `-fee_stgm` (deducted from borrower) |
+| Agent death threshold | `energy = 0` → `style = "DEAD"` |
+
+**Bounds:**
+- Minimum: `0` (dead, cannot be dispatched)
+- Maximum: `100` (full energy, passive reload ceases)
+- Passive reload rate: `+2/cycle` via heartbeat daemon in `server.py`
+
+**STGM vs Energy distinction:**
+- `energy` (int): task budget per agent, controls dispatch eligibility
+- `stgm_balance` (float): economic unit tracked in `STGM_TX_LOG.jsonl`, used for inter-node repair trades and inference fees
+
+An agent can be `DEAD` (energy=0) while holding a positive `stgm_balance`. Death is a scheduling state, not a permanent condition.
+
+---
+
+## 2.10 Signature Verification Pipeline
+
+Every SCAR state transition produces a cryptographic event record:
+
+```python
+transition_sig = SHA256(f"{LANA_GENESIS_HASH}:{scar_id}:{from_state}:{to_state}:{timestamp}")
+```
+
+**Verification flow:**
+1. Reader re-computes `_sig(f"{scar_id}:{from_state}:{to_state}:{ts}")` from the ledger event
+2. Compares against stored `sig` field
+3. Mismatch → ledger has been tampered with or run against a different Genesis Anchor
+
+**Agent identity validation:**
+- Each agent JSON file contains `owner`: a base64-encoded public key
+- The `origin_gate.py` checks that the proposing agent's `owner` key matches an authorized key in the trust registry before granting PROPOSED status
+- Unauthorized agents cannot register SCARs — their proposals are rejected at `origin_gate.authorize()`
+
+**Malicious `.scar` injection prevention:**
+- `.scar` files in the filesystem are advisory signals only
+- The Lana Kernel registry (`self._scars`) is the authoritative state
+- A `.scar` file written directly to the filesystem without going through `kernel.propose()` will not exist in the kernel registry and cannot reach LOCKED state
+- The kernel's in-memory registry is the single source of execution truth
 
 ---
 
