@@ -75,7 +75,13 @@ class Kernel:
             self._log("FOSSIL_REPLAY", sid, target)
             return sid
 
-        sid = str(uuid.uuid4())
+        # Make sure scar identity corresponds strictly to its semantics (content)
+        sid = content_addressed_id(target, content)
+        
+        # If the exact same repair was already proposed (still active), return existing sid
+        if sid in self.scars:
+            return sid
+            
         scar = Scar(sid, target, content)
 
         self.scars[sid] = scar
@@ -250,8 +256,8 @@ def byzantine_filter(claimed_ids: set, known_scars: dict) -> set:
             # We witnessed this scar \u2014 trust it
             verified.add(sid)
         else:
-            # Unknown scar: accept for now (optimistic), but do not execute
-            # In production: request content and verify sha256(target:content)==sid
+            # Reject unknown; in production, request content and
+            # verify sha256(target:content)==sid before admitting.
             pass
     return verified
 
