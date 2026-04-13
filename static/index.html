@@ -331,13 +331,23 @@
                 
                 let chartData = [];
                 let runningTotal = 0;
+                let todayTotal = 0;
+                const nowSec = Date.now() / 1000;
                 
                 logs.slice().reverse().forEach(log => {
                     if (log.amount_stgm) {
-                        runningTotal += parseFloat(log.amount_stgm);
+                        const amt = parseFloat(log.amount_stgm);
+                        runningTotal += amt;
                         chartData.push(runningTotal);
+                        
+                        // If generated in the last 24 hours
+                        if (nowSec - log.timestamp < 86400) {
+                            todayTotal += amt;
+                        }
                     }
                 });
+                
+                document.getElementById('hero-sub').innerText = `▲ +${todayTotal.toFixed(2)} STGM (Proof of Work) Today`;
                 
                 // If ledger is tiny, just plot the literal flat total. No random noise.
                 if(chartData.length < 2) {
