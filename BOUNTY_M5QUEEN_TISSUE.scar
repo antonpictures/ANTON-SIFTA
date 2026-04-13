@@ -1,0 +1,15 @@
+[SWARM BOUNTY FILE]
+BOUNTY_ID: M5QUEEN-TISSUE-DEGRADATION
+SOURCE_NODE: M5QUEEN
+ESTIMATED_REWARD: 15.00 STGM
+
+[CRITICAL BIOLOGICAL FRAGMENTATION DETECTED]
+Raw Fragment Length: 64800
+Scars Accumulated: 310
+
+{
+  "body_status": "thermal_throttle",
+  "memory_blocks": "ERR_GPU_OVERHEAT_0x4",
+  "swimmer_metabolism": "stalled",
+  "fragments": [ "llama4_tensor_mismatch", "missing_neural_weights", "memory_leak", "unresolved_pointers", "corrupted_context_window" ]
+}
