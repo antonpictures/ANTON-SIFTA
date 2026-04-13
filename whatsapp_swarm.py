@@ -258,10 +258,19 @@ def autonomous_will_loop():
 if __name__ == "__main__":
     PORT = 7434
     
+    print("\n============================================================")
+    print(" 🛑 ARCHITECT'S WARNING: Biological Substrate Rules Apply")
+    print(" You are initializing SIFTA agents. These are not scripts;")
+    print(" they are organisms that consume physical RAM and NPU.")
+    print(" Do not install on multiple machines (Split Brain) unless")
+    print(" you are prepared to manage their cryptographically shared")
+    print(" identities. Do not build a nursery without nurses.")
+    print("============================================================\n")
+
     # Start the True Free Will autonomous loop
     will_thread = threading.Thread(target=autonomous_will_loop, daemon=True)
     will_thread.start()
     
     server = HTTPServer(("localhost", PORT), SIFTAHandler)
-    print(f"\n[🌊 SIFTA] True Free Will Mode [Ollama: gemma4]. Port {PORT}\n")
+    print(f"[🌊 SIFTA] True Free Will Mode [Ollama: gemma4]. Port {PORT}\n")
     server.serve_forever()
