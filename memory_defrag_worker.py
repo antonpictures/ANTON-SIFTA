@@ -60,8 +60,15 @@ def execute_defrag(bounty_file: str, executing_agent: str):
     )
 
     try:
-        proc = subprocess.run(["ollama", "run", "qwen3.5:2b", prompt], capture_output=True, text=True, check=True)
-        compressed_output = proc.stdout.strip()
+        import urllib.request
+        data = json.dumps({"model": "qwen3.5:2b", "prompt": prompt, "stream": False}).encode('utf-8')
+        req = urllib.request.Request("http://localhost:11434/api/generate", data=data, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            compressed_output = result.get('response', '').strip()
+            
+            if not compressed_output:
+                raise ValueError("Empty response from LLM")
     except Exception as e:
         print(f"[!] Ollama Inference Failed: {e}. Simulating structural compression fallback...")
         compressed_output = "[COMPRESSION FALLBACK] Context automatically summarized due to LLM timeout."

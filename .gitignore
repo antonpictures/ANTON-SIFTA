@@ -1,14 +1,7 @@
 *.pyc
 __pycache__/
 *.dead
-*.jsonl
-.env
-config.json
-.sifta_state/
-CEMETERY/
-WORMHOLE/
-benchmark_env/
-dispatch_article.py
+# Unblocking core state sync for cross-machine parity
 .DS_Store
 # Runtime-generated territory scars (not source code)
 **/.sifta/

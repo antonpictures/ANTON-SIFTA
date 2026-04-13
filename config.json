@@ -1,0 +1,6 @@
+{
+  "nodes": {
+    "m1ther_local": "http://192.168.1.71:3003/api/articles",
+    "m1ther_public": "https://your-node.example.com/api/articles"
+  }
+}
