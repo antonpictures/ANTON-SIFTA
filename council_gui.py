@@ -53,29 +53,27 @@ class CouncilRobinhoodApp(tk.Tk):
         self.bounties = []
         self.agents = []
         
+        # Force graphical flush so macOS draws the window instantly before polling
+        self.update()
+        
+        # Start pure Tkinter autonomous poll
         self.refresh_data()
-        
-        # Auto refresh
-        self.running = True
-        threading.Thread(target=self.poll_loop, daemon=True).start()
-        
-    def poll_loop(self):
-        while self.running:
-            time.sleep(3)
-            self.refresh_data()
             
     def refresh_data(self):
         try:
-            agent_res = requests.get(f"{API_BASE}/agents?show_detectives=true", timeout=5).json()
-            market_res = requests.get(f"{API_BASE}/wormhole_market", timeout=5).json()
+            # Tiny timeout (it's localhost) so we don't block the UI thread if server is off
+            agent_res = requests.get(f"{API_BASE}/agents?show_detectives=true", timeout=1).json()
+            market_res = requests.get(f"{API_BASE}/wormhole_market", timeout=1).json()
             
             self.agents = agent_res
             self.bounties = market_res
             
-            self.after(0, self.render_fleet)
+            self.render_fleet()
         except Exception as e:
-            # Silently ignore connection drops to avoid spamming the UI
             pass
+            
+        # Recursively loop cleanly through Tkinter's event dispatcher
+        self.after(3000, self.refresh_data)
             
     def render_fleet(self):
         # Clear existing
