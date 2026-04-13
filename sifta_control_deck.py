@@ -261,9 +261,10 @@ class SIFTAControlDeck(QMainWindow):
         self.print_to_console("=== Spawning Colloid Simulation Window ===", ACCENT_COLOR)
         self.print_to_console("The renderer will open in a new window. Firing Stigmergic Trigger here...\n", "#475569")
         
-        # Spawn detached renderer so it doesn't block the trigger script
+        # Spawn detached renderer safely using python's standard library to avoid MacOSX window server segfaults
         python_path = os.path.join(os.getcwd(), ".venv", "bin", "python")
-        QProcess.startDetached(python_path, ["sifta_colloid_sim.py", "--target", "bureau_of_identity/test_target.py"])
+        import subprocess
+        subprocess.Popen([python_path, "sifta_colloid_sim.py", "--target", "bureau_of_identity/test_target.py"])
         
         # Run the trigger script in our attached console
         self.start_script("trigger_inference.py")
