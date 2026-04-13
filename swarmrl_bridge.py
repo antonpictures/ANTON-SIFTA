@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from body_state import SwarmBody, parse_body_state, NULL_TERRITORY
-from scar_kernel import Kernel, Scar, content_addressed_id, canonical_winner
+from scar_kernel import (Kernel, Scar, content_addressed_id, canonical_winner,
+                         consensus_field, field_is_stable)
 
 # ────────────────────────────────────────────────────────────
 # ScarFieldObservable
@@ -225,8 +226,79 @@ def run_consensus_round(bridges: list["SIFTAAgentBridge"],
 
 
 # ────────────────────────────────────────────────────────────
-# Demo: Two SwarmRL agents competing on the same target
+# harmonize_with_consensus_field() — The Final Wire
+#
+# Closes the last open circuit: feeds the v0.4 Adaptive Consensus
+# Field (Frontier 5) back into the multi-agent physics loop.
+#
+# DeepSeek (April 13 2026) correctly described the ARCHITECTURE
+# of this function but hallucinated file paths (swarmrl/bridge.py),
+# function names (mask_gift()), and dependencies (JAX) that do not
+# exist. This is the real implementation, verified against actual APIs.
+#
+# Design:
+#   - If the field is still evolving → agents explore (high variance)
+#   - If the field is stable → agents converge on the dominant trail
+#   - Each agent's internal state stays private (no extraction)
+#   - Only the public gradient (pheromone field) drives coordination
+#
+# "You must learn to conceal your special gift and harmonize your power"
+#   → Agent internals are opaque. The field IS the coordination. 🌊
 # ────────────────────────────────────────────────────────────
+
+def harmonize_with_consensus_field(kernel: "Kernel",
+                                   target: str,
+                                   bridges: list = None,
+                                   stability_threshold: float = 0.15) -> dict:
+    """
+    Feed the adaptive consensus field into the active-matter physics loop.
+
+    Returns a directive dict consumed by each SIFTAAgentBridge:
+        {
+          "mode": "EXPLORE" | "CONVERGE",
+          "dominant_trail": str | None,     # scar content of top proposal
+          "dominant_score": float,
+          "field": [(Scar, score), ...]     # full gradient
+        }
+
+    Integration loop example:
+        while not swarm_converged:
+            directive = harmonize_with_consensus_field(kernel, "body_state.py")
+            if directive["mode"] == "CONVERGE":
+                execute the dominant trail through human gate
+            else:
+                let agents propose new SCARs freely
+    """
+    scars = [s for s in kernel.scars.values()
+             if s.target == target and s.state in ("PROPOSED", "LOCKED")]
+
+    if not scars:
+        return {"mode": "EXPLORE", "dominant_trail": None,
+                "dominant_score": 0.0, "field": []}
+
+    field = consensus_field(scars)
+    stable = field_is_stable(field, threshold=stability_threshold)
+
+    if not stable:
+        # Field still evolving — agents should keep exploring
+        return {
+            "mode": "EXPLORE",
+            "dominant_trail": field[0][0].content if field else None,
+            "dominant_score": field[0][1] if field else 0.0,
+            "field": field
+        }
+
+    # Field stable — the strongest pheromone trail has emerged
+    top_scar, top_score = field[0]
+    return {
+        "mode": "CONVERGE",
+        "dominant_trail": top_scar.content,
+        "dominant_score": top_score,
+        "field": field
+    }
+
+
+
 
 if __name__ == "__main__":
     from scar_kernel import Kernel
