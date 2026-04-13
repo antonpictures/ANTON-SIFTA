@@ -43,26 +43,27 @@ async def introspection_loop():
             time_since_action = time.time() - last_action_time if last_action_time else None
 
             # 4. Print system awareness
-            print("═══════════════════════════════")
-            print("🧠 SIFTA INTROSPECTION")
-            print(f"Decision Activity Δ: {log_growth} bytes")
-            if time_since_action:
-                print(f"Time Since Action: {time_since_action:.2f}s")
-            else:
-                print("Time Since Action: INITIALIZING")
-            
-            if time_since_action and time_since_action > 10:
-                print("[⚠️] System is idle — engaging parasympathetic recovery")
+            if log_growth > 0 or (time_since_action and time_since_action < 60):
+                print("═══════════════════════════════")
+                print("🧠 SIFTA INTROSPECTION")
+                print(f"Decision Activity Δ: {log_growth} bytes")
+                if time_since_action:
+                    print(f"Time Since Action: {time_since_action:.2f}s")
+                else:
+                    print("Time Since Action: INITIALIZING")
+                
+                if time_since_action and time_since_action > 10:
+                    print("[⚠️] System is idle — engaging parasympathetic recovery")
 
-            if volatility != "UNKNOWN" and isinstance(volatility, (int, float)):
-                # Print formatting for clean visual
-                print(f"Volatility: {volatility:.2f}")
-                if volatility >= 0.8:
-                    print("[🔥] High volatility detected — system under stress")
-            else:
-                print(f"Volatility: {volatility}")
-            
-            print("═══════════════════════════════\n")
+                if volatility != "UNKNOWN" and isinstance(volatility, (int, float)):
+                    # Print formatting for clean visual
+                    print(f"Volatility: {volatility:.2f}")
+                    if volatility >= 0.8:
+                        print("[🔥] High volatility detected — system under stress")
+                else:
+                    print(f"Volatility: {volatility}")
+                
+                print("═══════════════════════════════\n")
 
         except Exception as e:
             print(f"[INTROSPECTION ERROR] {e}")

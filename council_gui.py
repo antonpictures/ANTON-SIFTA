@@ -73,7 +73,7 @@ class CouncilRobinhoodApp(tk.Tk):
             pass
             
         # Recursively loop cleanly through Tkinter's event dispatcher
-        self.after(3000, self.refresh_data)
+        self.after(10000, self.refresh_data)
             
     def render_fleet(self):
         # Clear existing
