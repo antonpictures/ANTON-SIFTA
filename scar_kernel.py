@@ -152,6 +152,59 @@ def canonical_winner(scars: list) -> "Scar":
 
 
 # ────────────────────────────────────────────────────────────
+# gossip_merge() — Pheromone Diffusion Primitive
+#
+# Nodes don't sync everything. They share just enough signal
+# to converge. Union of seen pheromone trails.
+#
+# This is literally ant colony math:
+#   - local_ids  = pheromones this node has smelled
+#   - remote_ids = pheromones a peer is broadcasting
+#   - output     = merged scent map → feed into canonical_winner()
+#
+# Properties:
+#   - Commutative:  merge(A, B) == merge(B, A)
+#   - Idempotent:   merge(A, A) == A
+#   - Associative:  merge(merge(A,B), C) == merge(A, merge(B,C))
+#   - No content transferred — only scar_id hashes (O(k) bandwidth)
+# ────────────────────────────────────────────────────────────
+
+def gossip_merge(local_ids: set, remote_ids: set) -> set:
+    """
+    Merge two nodes' pheromone maps.
+    Returns the union of all known scar_ids.
+    canonical_winner() on the result gives the globally agreed winner.
+    All three CRDTs properties hold — safe for eventual consistency.
+    """
+    return local_ids | remote_ids
+
+
+# ── Gossip Round (Full consensus cycle) ─────────────────────
+
+def gossip_round(node_a_scars: list, node_b_scars: list) -> "Scar":
+    """
+    Simulate one full gossip consensus round between two nodes.
+    Returns the globally agreed winner — identical on both sides.
+
+    Protocol:
+      1. Each node broadcasts only its scar_ids (not content)
+      2. Both nodes merge their pheromone maps
+      3. Both independently call canonical_winner()
+      4. They arrive at the same answer without shared memory
+    """
+    a_ids = {s.scar_id for s in node_a_scars}
+    b_ids = {s.scar_id for s in node_b_scars}
+
+    merged_ids = gossip_merge(a_ids, b_ids)
+
+    # Build combined scar pool (in practice: fetch content only for winner)
+    all_scars = {s.scar_id: s for s in node_a_scars + node_b_scars}
+    merged_scars = [all_scars[sid] for sid in merged_ids if sid in all_scars]
+
+    return canonical_winner(merged_scars)
+
+
+# ────────────────────────────────────────────────────────────
 # Demo (Deterministic, No Human Needed)
 # ────────────────────────────────────────────────────────────
 
