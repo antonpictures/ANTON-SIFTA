@@ -44,6 +44,11 @@
     "entry_point": "Applications/circadian_rhythm.py",
     "signature": "UNVERIFIED"
   },
+  "Intelligence Settings": {
+    "category": "System",
+    "entry_point": "Applications/sifta_settings.py",
+    "signature": "UNVERIFIED"
+  },
   "Cardio Metrics": {
     "category": "System",
     "entry_point": "Applications/sifta_cardio.py",
