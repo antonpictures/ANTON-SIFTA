@@ -1,2 +1,3 @@
 qt.qpa.fonts: Populating font family aliases took 75 ms. Replace uses of missing font family "Inter" with one that exists to avoid this cost. 
 qt.qpa.fonts: Populating font family aliases took 73 ms. Replace uses of missing font family "Inter" with one that exists to avoid this cost. 
+qt.qpa.fonts: Populating font family aliases took 97 ms. Replace uses of missing font family "Inter" with one that exists to avoid this cost. 
