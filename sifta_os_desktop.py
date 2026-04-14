@@ -334,6 +334,11 @@ class SwarmChatWindow(QWidget):
                         elif sender == "ANTIGRAVITY" or sender.startswith("[A_G::"): color = "#bb9af7"
                         elif sender.startswith("[C_C::"): color = "#f7768e" # Claude Red
                         
+                        # Skip local echo of our own messages
+                        architect_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
+                        if sender == architect_id:
+                            continue
+                            
                         msg = f"{time_str}<b style='color:{color};'>{sender} ▶</b>  {t}"
                         self.display.append(msg)
                         self.display.append("")
