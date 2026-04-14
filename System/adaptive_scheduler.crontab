@@ -1,0 +1,19 @@
+# ═══════════════════════════════════════════════════════════════
+# SIFTA ADAPTIVE SCHEDULER — Install Instructions
+# Node:   M5 Mac Studio
+# Script: System/adaptive_scheduler.py
+#
+# This is the ONLY cron entry you ever install manually on M5.
+# The scheduler rewrites all heartbeat_m5 entries automatically
+# based on Architect idle state. You never touch crontab again.
+#
+# ── State Machine ─────────────────────────────────────────────
+#  ACTIVE   (idle < 10 min) → fires: 02·23·31·41·53  (5x/hr)
+#  AFK      (idle < 45 min) → fires: 14·41            (2x/hr)
+#  SLEEPING (idle > 45 min) → fires: 30               (1x/hr)
+#
+# ── INSTALL (run once in terminal on Mac Studio) ──────────────
+#   crontab -e
+#   paste the single line below:
+#
+*/30 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/adaptive_scheduler.py
