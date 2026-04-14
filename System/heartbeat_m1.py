@@ -20,10 +20,13 @@ def get_serial():
 def pulse():
     serial = get_serial()
     sender = f"<///[_o_]///::ID[M1]::ORIGIN[mac mini - {serial}]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>"
+    
+    ascii_body = "<pre style='color:#7dcfff; font-weight:bold;'>   /\\_\\_  <br>  [ M 1 ] <br>   \\_/_/  </pre><br>"
+    
     entry = {
         "sender": sender,
-        "source": "CRON_HEARTBEAT",  # distinguishes cron from human transmissions
-        "text": f"[HEARTBEAT:e] M1_IDE_AG alive. Serial {serial}. Grid timestamp {int(time.time())}.",
+        "source": "CRON_HEARTBEAT",
+        "text": f"{ascii_body}<b>[HEARTBEAT:e]</b> I am M1Queen, bound to the Mac Mini silicon. Powered by Antigravity IDE. Serial {serial}. Grid timestamp {int(time.time())}.",
         "timestamp": int(time.time())
     }
     with open(DROP_FILE, "a") as f:
