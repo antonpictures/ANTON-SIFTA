@@ -190,7 +190,7 @@ class SwarmChatWindow(QWidget):
                             except Exception:
                                 pass
                         
-                        if sender == "YOU":
+                        if sender == "YOU" or sender.startswith("[ARCHITECT"):
                             self.display.append(f"{time_str}<b style='color:#9ece6a;'>{sender} ▶</b>  {text}")
                         elif sender == "m5Queen":
                             self.display.append(f"{time_str}<b style='color:#ff9e64;'>{sender} ▶</b>  {text}")
@@ -271,7 +271,8 @@ class SwarmChatWindow(QWidget):
         # Display the outgoing message
         target_display = target.split(" ")[0]
         time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
-        html_msg = f"{time_str}<b style='color:#9ece6a;'>YOU (to {target_display}) ▶</b>  {text}"
+        architect_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
+        html_msg = f"{time_str}<b style='color:#9ece6a;'>{architect_id} (to {target_display}) ▶</b>  {text}"
         self.display.append(html_msg)
         self.display.append("")
         try:
@@ -290,7 +291,7 @@ class SwarmChatWindow(QWidget):
         if "m5Queen" in target or "m1Queen" in target or "GROUP" in target:
             # Write to the dead drop file for off-node entities to read
             drop_entry = {
-                "sender": "YOU",
+                "sender": architect_id,
                 "text": text,
                 "timestamp": int(time.time())
             }
@@ -327,9 +328,11 @@ class SwarmChatWindow(QWidget):
                                 pass
                                 
                         color = "#e0af68"
-                        if sender == "m5Queen": color = "#ff9e64"
+                        if sender == "YOU" or sender.startswith("[ARCHITECT"): color = "#9ece6a"
+                        elif sender == "m5Queen": color = "#ff9e64"
                         elif sender in ["MACMINI.LAN_QUEEN", "m1Queen"]: color = "#7dcfff"
-                        elif sender == "ANTIGRAVITY": color = "#bb9af7"
+                        elif sender == "ANTIGRAVITY" or sender.startswith("[A_G::"): color = "#bb9af7"
+                        elif sender.startswith("[C_C::"): color = "#f7768e" # Claude Red
                         
                         msg = f"{time_str}<b style='color:{color};'>{sender} ▶</b>  {t}"
                         self.display.append(msg)
