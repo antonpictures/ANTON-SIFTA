@@ -1,0 +1,17 @@
+{
+  "territory": "MACMINI.LAN",
+  "fingerprint": "31c823ebf8ab84dc",
+  "serial": "C07FL0JAQ6NV",
+  "processor": "arm",
+  "born": 1776143006,
+  "agents": [
+    "MACMINI.LAN_QUEEN_31c823",
+    "MACMINI.LAN_SCOUT_31c823",
+    "MACMINI.LAN_MEDIC_31c823",
+    "MACMINI.LAN_WATCHER_31c823",
+    "MACMINI.LAN_REPAIR_DRONE_31c823"
+  ],
+  "queen": "MACMINI.LAN_QUEEN_31c823",
+  "status": "ACTIVE",
+  "swarm_role": "QUEEN_NODE"
+}

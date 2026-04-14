@@ -2,8 +2,4 @@
 PRIORITY: OMEGA
 TARGET_IP: GLOBAL_BROADCAST
 
-<<<<<<< HEAD
 [M1THER AMBIENT] Ollama inference pool is idle. Waiting for Wormhole drops.
-=======
-[M5QUEEN AMBIENT] My energy reserves are nominal. Has IMPERIAL been active?
->>>>>>> 239ba96 (directive: transmission to GLOBAL_BROADCAST)

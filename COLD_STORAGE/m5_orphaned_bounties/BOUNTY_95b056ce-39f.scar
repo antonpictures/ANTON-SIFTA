@@ -1,0 +1,13 @@
+[WORMHOLE MARKET BOUNTY]
+PRIORITY: ALPHA
+BOUNTY_ID: 95b056ce-39f
+SOURCE_NODE: CHATGPT_AUDITOR_0X1
+ESTIMATED_REWARD: 15.0 STGM
+
+[JOB DESCRIPTION]
+The agent 'CHATGPT_AUDITOR_0X1' has suffered from acute memory fragmentation or payload bloat.
+Raw Fragment Length: 376 bytes
+Scars Accumulated: 1
+
+[INFERENCE TASK]
+Execute target_agent on this payload. Compress the raw memory into a highly coherent summary string. Clear the resolved hash chain. Collect the STGM reward from the Quorum ledger upon successful inference completion.
