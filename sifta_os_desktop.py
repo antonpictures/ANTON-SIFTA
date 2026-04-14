@@ -93,9 +93,42 @@ class SwarmChatWindow(QWidget):
         self.model  = model
         self.worker = None
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(8, 8, 8, 8)
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         self.setStyleSheet("background-color: #0d0e17; color: #a9b1d6;")
+        
+        # ── Left Sidebar (Nodes/Groups) ───────────────
+        sidebar_frame = QFrame()
+        sidebar_frame.setFixedWidth(240)
+        sidebar_frame.setStyleSheet("background-color: #15161e; border-right: 1px solid #1f2335;")
+        sidebar_layout = QVBoxLayout(sidebar_frame)
+        sidebar_layout.setContentsMargins(10, 15, 10, 10)
+        
+        sidebar_title = QLabel("📡 SIFTA NODES")
+        sidebar_title.setFont(QFont("Inter", 11, QFont.Weight.Bold))
+        sidebar_title.setStyleSheet("color: #7aa2f7; border: none;")
+        sidebar_layout.addWidget(sidebar_title)
+        
+        self.sidebar_list = QListWidget()
+        self.sidebar_list.setStyleSheet(
+            "QListWidget {"
+            "  background-color: transparent; border: none; color: #c0caf5; font-size: 13px;"
+            "}"
+            "QListWidget::item { padding: 12px; border-radius: 6px; margin-bottom: 2px; }"
+            "QListWidget::item:hover { background-color: #1a1b26; }"
+            "QListWidget::item:selected { background-color: #24283b; color: #7dcfff; font-weight: bold; }"
+        )
+        chat_targets = ["GROUP (All)", "m5Queen (DeadDrop)", "m1Queen (DeadDrop)", "SWARM (Ollama)"]
+        self.sidebar_list.addItems(chat_targets)
+        self.sidebar_list.setCurrentRow(0)
+        sidebar_layout.addWidget(self.sidebar_list)
+        main_layout.addWidget(sidebar_frame)
+        
+        # ── Right Side (Chat Area) ────────────────────
+        chat_container = QWidget()
+        chat_layout = QVBoxLayout(chat_container)
+        chat_layout.setContentsMargins(15, 15, 15, 15)
         
         # ── Resolve Local Swarm Identity ─────────────────────
         self.local_identity = "SWARM"
@@ -137,13 +170,13 @@ class SwarmChatWindow(QWidget):
         )
         btn_close.clicked.connect(lambda: close_parent_subwindow(self))
         header.addWidget(btn_close)
-        layout.addLayout(header)
+        chat_layout.addLayout(header)
 
         # ── Divider ─────────────────────────────────────────
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setStyleSheet("color: #24283b;")
-        layout.addWidget(line)
+        chat_layout.addWidget(line)
 
         # ── Chat Display ─────────────────────────────────────
         self.display = QTextEdit()
@@ -166,7 +199,7 @@ class SwarmChatWindow(QWidget):
             except Exception:
                 pass
 
-        layout.addWidget(self.display)
+        chat_layout.addWidget(self.display)
         
         # ── Load Persistent Chat History ───────────────────────
         self.dead_drop_file = "m5queen_dead_drop.jsonl"
@@ -207,17 +240,6 @@ class SwarmChatWindow(QWidget):
         # ── Input Row ────────────────────────────────────────
         input_row = QHBoxLayout()
 
-        self.target_selector = QComboBox()
-        self.target_selector.addItems(["SWARM (Ollama)", "m5Queen (DeadDrop)", "m1Queen (DeadDrop)", "GROUP (All)"])
-        self.target_selector.setStyleSheet(
-            "QComboBox {"
-            "  background-color: #1a1b26; color: #7aa2f7;"
-            "  border: 1px solid #414868; border-radius: 4px;"
-            "  padding: 4px; font-weight: bold; font-family: Inter;"
-            "}"
-        )
-        input_row.addWidget(self.target_selector)
-
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText("Send a message...")
         self.input_field.setStyleSheet(
@@ -244,8 +266,9 @@ class SwarmChatWindow(QWidget):
         self.transmit_btn.clicked.connect(self.transmit)
         input_row.addWidget(self.transmit_btn)
 
-        layout.addLayout(input_row)
-        self.setLayout(layout)
+        chat_layout.addLayout(input_row)
+        main_layout.addWidget(chat_container)
+        self.setLayout(main_layout)
 
         # ── Dead Drop Poller (m5Queen Bridge) ────────────────
         self.last_dead_drop_pos = os.path.getsize(self.dead_drop_file)
@@ -259,7 +282,7 @@ class SwarmChatWindow(QWidget):
         if not text:
             return
             
-        target = self.target_selector.currentText()
+        target = self.sidebar_list.currentItem().text() if self.sidebar_list.currentItem() else "GROUP (All)"
         
         if "SWARM" in target or "GROUP" in target:
             if self.worker and self.worker.isRunning():
@@ -361,7 +384,7 @@ class SwarmChatWindow(QWidget):
                 f.write(msg + "<br><br>\n")
         except: pass
 
-        target = self.target_selector.currentText()
+        target = self.sidebar_list.currentItem().text() if self.sidebar_list.currentItem() else "GROUP (All)"
         if "GROUP" in target:
             drop_entry = {
                 "sender": self.local_identity,
