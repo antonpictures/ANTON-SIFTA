@@ -72,6 +72,39 @@ class OllamaWorker(QThread):
             )
             with urllib.request.urlopen(req, timeout=600) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
+                
+                # ── SWARM MINING (Proof of Inference) ──
+                try:
+                    import os, subprocess, time, hashlib
+                    raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
+                    serial = raw.decode().split('"')[-2].strip()
+                    # Hardware-bound identity
+                    miner_id = "M5SIFTA_BODY" if "GTH4921YP3" in serial else "M1SIFTA_BODY" 
+                    state_file = f".sifta_state/{miner_id}.json"
+                    
+                    if os.path.exists(state_file):
+                        with open(state_file, "r") as sf:
+                            mdata = json.load(sf)
+                        mdata["stgm_balance"] = float(mdata.get("stgm_balance", 0.0)) + 1.0
+                        with open(state_file, "w") as sf:
+                            json.dump(mdata, sf, indent=2)
+                        
+                        ts = int(time.time())
+                        sig_str = f"{miner_id}:1.0:INFERENCE_MINING:{ts}:{serial}"
+                        tx_hash = "MINED_" + hashlib.sha256(sig_str.encode()).hexdigest()[:12]
+                        tx = {
+                            "timestamp": ts,
+                            "agent_id": miner_id,
+                            "tx_type": "STGM_MINT",
+                            "amount": 1.0,
+                            "reason": "Proof of Inference (Local Silicon)",
+                            "hash": tx_hash
+                        }
+                        with open("repair_log.jsonl", "a") as lf:
+                            lf.write(json.dumps(tx) + "\n")
+                except Exception as e:
+                    print(f"Mining error: {e}")
+                    
                 self.response_ready.emit(data.get("response", "[EMPTY RESPONSE]"))
 
         except urllib.error.URLError as e:
