@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox, QListWidget
 )
-from PyQt6.QtCore import Qt, QProcess, QTimer, QDateTime, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
 
@@ -436,6 +436,9 @@ class TerminalSubWindow(QWidget):
         self.setLayout(layout)
 
         self.process = QProcess()
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONPATH", os.getcwd())
+        self.process.setProcessEnvironment(env)
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
         self.process.readyReadStandardError.connect(self.handle_stderr)
         self.process.start(cmd, args)
