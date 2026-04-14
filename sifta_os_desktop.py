@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import json
+import datetime
 import hashlib
 import urllib.request
 import urllib.error
@@ -143,16 +144,24 @@ class SwarmChatWindow(QWidget):
                         sender = entry.get("sender", "UNKNOWN")
                         text = entry.get("text", "")
                         
+                        ts = entry.get("timestamp") or entry.get("ts")
+                        time_str = ""
+                        if ts:
+                            try:
+                                time_str = f"<span style='color:#565f89;'>[{datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')}]</span> "
+                            except Exception:
+                                pass
+                        
                         if sender == "YOU":
-                            self.display.append(f"<b style='color:#9ece6a;'>{sender} ▶</b>  {text}")
+                            self.display.append(f"{time_str}<b style='color:#9ece6a;'>{sender} ▶</b>  {text}")
                         elif sender == "m5Queen":
-                            self.display.append(f"<b style='color:#ff9e64;'>{sender} ▶</b>  {text}")
+                            self.display.append(f"{time_str}<b style='color:#ff9e64;'>{sender} ▶</b>  {text}")
                         elif sender == "MACMINI.LAN_QUEEN":
-                            self.display.append(f"<b style='color:#7dcfff;'>{sender} ▶</b>  {text}")
+                            self.display.append(f"{time_str}<b style='color:#7dcfff;'>{sender} ▶</b>  {text}")
                         elif sender == "ANTIGRAVITY":
-                            self.display.append(f"<b style='color:#bb9af7;'>{sender} ▶</b>  {text}")
+                            self.display.append(f"{time_str}<b style='color:#bb9af7;'>{sender} ▶</b>  {text}")
                         else:
-                            self.display.append(f"<b style='color:#e0af68;'>{sender} ▶</b>  {text}")
+                            self.display.append(f"{time_str}<b style='color:#e0af68;'>{sender} ▶</b>  {text}")
                         self.display.append("")
         except Exception as e:
             self.display.append(f"<span style='color:#f7768e;'>[History Loader ERROR] {e}</span>\n")
@@ -223,7 +232,8 @@ class SwarmChatWindow(QWidget):
         
         # Display the outgoing message
         target_display = target.split(" ")[0]
-        self.display.append(f"<b style='color:#9ece6a;'>YOU (to {target_display}) ▶</b>  {text}")
+        time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
+        self.display.append(f"{time_str}<b style='color:#9ece6a;'>YOU (to {target_display}) ▶</b>  {text}")
         self.display.append("")
 
         if "SWARM" in target or "GROUP" in target:
@@ -264,14 +274,23 @@ class SwarmChatWindow(QWidget):
                         entry = json.loads(line)
                         sender = entry.get("sender", "")
                         t = entry.get("text", "")
+                        
+                        ts = entry.get("timestamp") or entry.get("ts")
+                        time_str = ""
+                        if ts:
+                            try:
+                                time_str = f"<span style='color:#565f89;'>[{datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')}]</span> "
+                            except Exception:
+                                pass
+                                
                         if sender == "m5Queen":
-                            self.display.append(f"<b style='color:#ff9e64;'>{sender} ▶</b>  {t}")
+                            self.display.append(f"{time_str}<b style='color:#ff9e64;'>{sender} ▶</b>  {t}")
                             self.display.append("")
                         elif sender == "MACMINI.LAN_QUEEN" or sender == "m1Queen":
-                            self.display.append(f"<b style='color:#7dcfff;'>{sender} ▶</b>  {t}")
+                            self.display.append(f"{time_str}<b style='color:#7dcfff;'>{sender} ▶</b>  {t}")
                             self.display.append("")
                         elif sender == "ANTIGRAVITY":
-                            self.display.append(f"<b style='color:#bb9af7;'>{sender} ▶</b>  {t}")
+                            self.display.append(f"{time_str}<b style='color:#bb9af7;'>{sender} ▶</b>  {t}")
                             self.display.append("")
             except Exception:
                 pass
