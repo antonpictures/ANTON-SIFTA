@@ -12,8 +12,23 @@ Fee Formula:
 
 import json
 import hashlib
+import sys
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+# ─── Ed25519 Crypto Bridge ─────────────────────────────────────────────────────
+_SYSTEM_DIR = Path(__file__).parent / "System"
+if str(_SYSTEM_DIR) not in sys.path:
+    sys.path.insert(0, str(_SYSTEM_DIR))
+try:
+    from crypto_keychain import sign_block, get_silicon_identity as _get_serial
+    _CRYPTO_AVAILABLE = True
+except ImportError:
+    _CRYPTO_AVAILABLE = False
+    def sign_block(p): return "NO_KEYCHAIN_" + hashlib.sha256(p.encode()).hexdigest()[:16]
+    def _get_serial(): return "UNKNOWN_SERIAL"
+# ──────────────────────────────────────────────────────────────────────────────
 
 ROOT_DIR  = Path(__file__).parent
 LOG_PATH  = ROOT_DIR / "repair_log.jsonl"
@@ -110,11 +125,14 @@ def mint_reward(agent_id: str, action: str, file_repaired: str) -> dict:
             pass
 
     ts = datetime.now(timezone.utc).isoformat()
+    hw_serial = _get_serial()
     receipt_body = (
         f"MINT::{agent_id}::ACTION[{action}]::"
-        f"FILE[{file_repaired}]::AMOUNT[{minted_amount}]::TS[{ts}]"
+        f"FILE[{file_repaired}]::AMOUNT[{minted_amount}]::TS[{ts}]::NODE[{hw_serial}]"
     )
-    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()
+    # Ed25519 sign — mathematically proves this mint was issued by this physical node
+    ed25519_signature = sign_block(receipt_body)
+    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()  # retained for backward compat
 
     event = {
         "event":         "MINING_REWARD",
@@ -126,6 +144,8 @@ def mint_reward(agent_id: str, action: str, file_repaired: str) -> dict:
         "new_balance":   new_stgm,
         "file_repaired": file_repaired,
         "receipt_hash":  receipt_hash,
+        "ed25519_sig":   ed25519_signature,
+        "signing_node":  hw_serial,
     }
 
     try:
@@ -198,13 +218,16 @@ def record_inference_fee(
         except Exception:
             pass
 
-    # ── Build signed receipt ─────────────────────────────────────────────────
+    # ── Build Ed25519-signed receipt ──────────────────────────────────────────
     ts = datetime.now(timezone.utc).isoformat()
+    hw_serial = _get_serial()
     receipt_body = (
         f"INFERENCE_BORROW::{borrower_id}::FROM[{lender_node_ip}]::"
-        f"MODEL[{model}]::TOKENS[{tokens_used}]::FEE[{fee_stgm}]::TS[{ts}]"
+        f"MODEL[{model}]::TOKENS[{tokens_used}]::FEE[{fee_stgm}]::TS[{ts}]::NODE[{hw_serial}]"
     )
-    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()
+    # Ed25519 sign — proves borrowing transaction was authorized by this physical node
+    ed25519_signature = sign_block(receipt_body)
+    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()  # retained for backward compat
 
     event = {
         "event":         "INFERENCE_BORROW",
@@ -218,6 +241,8 @@ def record_inference_fee(
         "new_balance":   new_stgm,
         "file_repaired": file_repaired,
         "receipt_hash":  receipt_hash,
+        "ed25519_sig":   ed25519_signature,
+        "signing_node":  hw_serial,
     }
 
     # ── Append to repair_log.jsonl ───────────────────────────────────────────

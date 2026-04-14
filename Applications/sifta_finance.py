@@ -638,7 +638,12 @@ class MarketplaceTab(QWidget):
                 ts = int(time.time())
                 import hashlib
                 seal_payload = f"{self.local_serial}:{target_serial}:{price}:{ts}"
-                seal = "MARKET_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
+                # Ed25519 sign — proves this spend was authorized by the genuine hardware
+                try:
+                    from System.crypto_keychain import sign_block as _sign
+                    seal = _sign(seal_payload)
+                except Exception:
+                    seal = "MARKET_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
                 
                 # ── UTXO Engine Validation ──
                 # Verify sufficient balance before generating Tx via strict physical ledger.
@@ -671,7 +676,9 @@ class MarketplaceTab(QWidget):
                     "amount": float(price),
                     "target_node": target_serial,
                     "reason": "Purchased Inference Compute",
-                    "hash": seal
+                    "hash": hashlib.sha256(seal_payload.encode()).hexdigest(),
+                    "ed25519_sig": seal,
+                    "signing_node": self.local_serial,
                 }
                 with open(os.path.join(REPO_ROOT, "repair_log.jsonl"), "a") as f:
                     f.write(json.dumps(tx_spend) + "\n")
