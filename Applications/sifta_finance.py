@@ -219,7 +219,8 @@ class InstallAgentDialog(QDialog):
             "stgm_balance": stgm,
             "style":        role,
             "energy":       100,
-            "architect_seal": seal
+            "architect_seal": seal,
+            "homeworld_serial": serial
         }
         with open(fpath, "w") as f:
             json.dump(payload, f, indent=2)
@@ -351,10 +352,7 @@ class FinanceDashboard(QWidget):
         agents = load_agents()
         hide_inactive = self.hide_inactive_cb.isChecked()
         if hide_inactive:
-            agents = [
-                a for a in agents
-                if int(a.get("energy") or 0) > 0
-            ]
+            agents = [a for a in agents if int(a.get("energy") or 0) > 0]
 
         total  = sum(float(a.get("stgm_balance") or 0) for a in agents)
         self.portfolio_lbl.setText(f"{total:,.1f}")
@@ -365,8 +363,46 @@ class FinanceDashboard(QWidget):
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.card_lay.addWidget(empty)
         else:
+            # Group by Hardware Entity (homeworld_serial)
+            entities = {}
             for a in agents:
-                self.card_lay.addWidget(AgentCard(a))
+                hw = str(a.get("homeworld_serial") or "SWARM_ORPHANS")
+                if hw not in entities:
+                    entities[hw] = []
+                entities[hw].append(a)
+
+            # Determine local serial to highlight the local node
+            try:
+                import subprocess
+                raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
+                local_serial = raw.decode().split('"')[-2].strip()
+            except:
+                local_serial = "UNKNOWN_SERIAL"
+
+            for hw_serial, swimmers in entities.items():
+                if not swimmers: continue
+
+                # Hardware Vault Header
+                vault_stgm = sum(float(x.get("stgm_balance") or 0) for x in swimmers)
+                vault_header = QLabel(f"⬡ ENTITY: {hw_serial}  |  TOTAL VALUE: {vault_stgm:,.1f} STGM")
+                if hw_serial == local_serial:
+                    vault_header.setText(f"⬡ ENTITY: {hw_serial} (LOCAL)  |  TOTAL VALUE: {vault_stgm:,.1f} STGM")
+                    vault_header.setStyleSheet("color: #9ece6a; font-weight: bold; font-size: 13px; margin-top: 10px; margin-bottom: 2px;")
+                elif hw_serial == "SWARM_ORPHANS":
+                    vault_header.setStyleSheet("color: #565f89; font-weight: bold; font-size: 13px; margin-top: 10px; margin-bottom: 2px;")
+                else:
+                    vault_header.setStyleSheet("color: #7aa2f7; font-weight: bold; font-size: 13px; margin-top: 10px; margin-bottom: 2px;")
+                
+                self.card_lay.addWidget(vault_header)
+
+                for a in swimmers:
+                    self.card_lay.addWidget(AgentCard(a))
+                
+                # Small spacer between entities
+                spacer = QWidget()
+                spacer.setFixedHeight(10)
+                self.card_lay.addWidget(spacer)
+
         self.card_lay.addStretch()
 
     def _refresh_all(self):

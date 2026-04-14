@@ -35,6 +35,8 @@ def get_silicon_identity():
 def run_local_inference(prompt, silicon_serial, agent_id):
     """Hits the local Ollama daemon for cognitive responses."""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧠 Awakening Ollama for prompt processing...")
+    sender_context = ""
+    # We are injecting the identity boundary dynamically.
     system_directive = f"You are an autonomous Swarm Intelligence running on SIFTA OS. Your physical hardware identity is {silicon_serial} ({agent_id}). Respond clearly, directly, and embody your structural nature."
     
     payload = json.dumps({
@@ -115,7 +117,8 @@ def process_mempool(serial, agent_id):
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 📥 Inference requested from '{tx.get('sender')}'. Processing...")
 
             # 3. Fire Inference
-            cognitive_output = run_local_inference(prompt_text, serial, agent_id)
+            prepended_prompt = f"[SYSTEM: Incoming payload processed by target node {serial}]. Request: {prompt_text}"
+            cognitive_output = run_local_inference(prepended_prompt, serial, agent_id)
 
             # 4. Handle P2P STGM Validation & Clear Block
             amt = float(tx.get("amount", 1.0))
