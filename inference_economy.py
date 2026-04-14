@@ -260,18 +260,85 @@ def record_inference_fee(
     return event
 
 
-# ─── STGM Balance Getter ───────────────────────────────────────────────────────
-def get_stgm_balance(agent_id: str) -> float:
-    """Return the current STGM balance for an agent (0.0 if not set yet)."""
-    state_path = STATE_DIR / f"{agent_id.upper()}.json"
-    if not state_path.exists():
+# ─── Canonical Ledger Balance ─────────────────────────────────────────────────
+def ledger_balance(agent_id: str) -> float:
+    """
+    SINGLE SOURCE OF TRUTH for an agent's true STGM balance.
+
+    The repair_log.jsonl ledger has two dialects that must both be read:
+
+    Dialect A — inference_economy.py (event-keyed):
+        event: "MINING_REWARD"    → amount_stgm credited to miner_id
+        event: "FOUNDATION_GRANT" → amount_stgm credited to miner_id
+        event: "INFERENCE_BORROW" → fee_stgm debited from borrower_id,
+                                     credited to lender_ip
+
+    Dialect B — marketplace / swarm_brain (tx_type-keyed):
+        tx_type: "STGM_MINT"  → amount credited to agent_id
+        tx_type: "STGM_SPEND" → amount debited from agent_id
+
+    Any double-spend guard MUST call this function rather than reading
+    only one dialect or trusting the stgm_balance field in the JSON state
+    file (which can lag or be tampered with).
+    """
+    if not LOG_PATH.exists():
         return 0.0
+
+    uid = agent_id.upper()
+    balance = 0.0
+
     try:
-        with open(state_path, "r") as f:
-            state = json.load(f)
-            return float(state.get("stgm_balance", 0.0))
-    except Exception:
-        return 0.0
+        with open(LOG_PATH, "r") as f:
+            for raw_line in f:
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    entry = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+
+                event   = entry.get("event", "")
+                tx_type = entry.get("tx_type", "")
+
+                # ── Dialect A ──────────────────────────────────────────────────
+                if event == "MINING_REWARD" or event == "FOUNDATION_GRANT":
+                    if entry.get("miner_id", "").upper() == uid:
+                        balance += float(entry.get("amount_stgm", 0.0))
+
+                elif event == "INFERENCE_BORROW":
+                    if entry.get("borrower_id", "").upper() == uid:
+                        balance -= float(entry.get("fee_stgm", 0.0))
+                    lender = str(entry.get("lender_ip", "")).upper()
+                    if lender == uid:
+                        balance += float(entry.get("fee_stgm", 0.0))
+
+                # ── Dialect B ──────────────────────────────────────────────────
+                elif tx_type == "STGM_MINT":
+                    if entry.get("agent_id", "").upper() == uid:
+                        balance += float(entry.get("amount", 0.0))
+
+                elif tx_type == "STGM_SPEND":
+                    if entry.get("agent_id", "").upper() == uid:
+                        balance -= float(entry.get("amount", 0.0))
+
+                # ── MCP / ANTIGRAVITY_CREATOR_NODE overhead ────────────────────
+                # amount_stgm < 0 means a debit (legacy MCP SCAR entries)
+                elif "amount_stgm" in entry and not event and not tx_type:
+                    if entry.get("agent", "").upper() == uid:
+                        balance += float(entry.get("amount_stgm", 0.0))
+
+    except Exception as e:
+        print(f"  [LEDGER] Read error for {uid}: {e}")
+
+    return round(max(0.0, balance), 4)
+
+
+# ─── STGM Balance Getter (backward-compat thin wrapper) ───────────────────────
+def get_stgm_balance(agent_id: str) -> float:
+    """Backward-compatible alias. Prefer ledger_balance() for any spend check."""
+    return ledger_balance(agent_id)
+
 
 
 # ─── Borrow History Reader ─────────────────────────────────────────────────────

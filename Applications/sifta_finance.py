@@ -6,6 +6,8 @@
 # ─────────────────────────────────────────────────────────────
 
 import sys, json, os, time
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from inference_economy import ledger_balance
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QDialog, QLineEdit,
@@ -276,8 +278,15 @@ class InstallAgentDialog(QDialog):
         # Claude Audit Fix 1: Baptism Gate / ARCHITECT_SEAL
         try:
             import subprocess
-            raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-            serial = raw.decode().split('"')[-2].strip()
+            ioreg = subprocess.run(
+                ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                capture_output=True, text=True, timeout=5
+            )
+            serial = "UNKNOWN_SERIAL"
+            for line in ioreg.stdout.splitlines():
+                if "IOPlatformSerialNumber" in line:
+                    serial = line.split('"')[-2].strip()
+                    break
         except:
             serial = "UNKNOWN_SERIAL"
 
@@ -456,8 +465,15 @@ class FinanceDashboard(QWidget):
             # Determine local serial to highlight the local node
             try:
                 import subprocess
-                raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-                local_serial = raw.decode().split('"')[-2].strip()
+                ioreg = subprocess.run(
+                    ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                    capture_output=True, text=True, timeout=5
+                )
+                local_serial = "UNKNOWN_SERIAL"
+                for line in ioreg.stdout.splitlines():
+                    if "IOPlatformSerialNumber" in line:
+                        local_serial = line.split('"')[-2].strip()
+                        break
             except:
                 local_serial = "UNKNOWN_SERIAL"
 
@@ -504,8 +520,15 @@ class MarketplaceTab(QWidget):
         self.market_file = os.path.join(STATE_DIR, "marketplace_listings.json")
         try:
             import subprocess
-            raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-            self.local_serial = raw.decode().split('"')[-2].strip()
+            ioreg = subprocess.run(
+                ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                capture_output=True, text=True, timeout=5
+            )
+            self.local_serial = "UNKNOWN_SERIAL"
+            for line in ioreg.stdout.splitlines():
+                if "IOPlatformSerialNumber" in line:
+                    self.local_serial = line.split('"')[-2].strip()
+                    break
         except:
             self.local_serial = "UNKNOWN_SERIAL"
 
@@ -645,27 +668,15 @@ class MarketplaceTab(QWidget):
                 except Exception:
                     seal = "MARKET_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
                 
-                # ── UTXO Engine Validation ──
-                # Verify sufficient balance before generating Tx via strict physical ledger.
+                # ── UTXO Engine — canonical dual-dialect ledger check ──────────
                 local_agent = "M5SIFTA_BODY" if "GTH4921YP3" in self.local_serial else "M1SIFTA_BODY"
-                
-                true_balance = 0.0
-                repair_log = os.path.join(REPO_ROOT, "repair_log.jsonl")
-                if os.path.exists(repair_log):
-                    with open(repair_log, "r") as rlog:
-                        for line in rlog:
-                            if not line.strip(): continue
-                            try:
-                                entry = json.loads(line)
-                                if entry.get("agent_id") == local_agent:
-                                    if entry.get("tx_type") == "STGM_MINT":
-                                        true_balance += float(entry.get("amount", 0.0))
-                                    elif entry.get("tx_type") == "STGM_SPEND":
-                                        true_balance -= float(entry.get("amount", 0.0))
-                            except: pass
+                true_balance = ledger_balance(local_agent)
 
                 if true_balance < price:
-                    QMessageBox.critical(self, "Insufficient STGM", f"Double-Spend Blocked.\nTrue UTXO Balance: {true_balance}\nRequired: {price}")
+                    QMessageBox.critical(self, "Insufficient STGM",
+                        f"Double-Spend Blocked.\n"
+                        f"True UTXO Balance (both dialects): {true_balance}\n"
+                        f"Required: {price}")
                     return
 
                 # Debit localhost wallet

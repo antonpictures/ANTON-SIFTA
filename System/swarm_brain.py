@@ -12,6 +12,9 @@
 
 import os, json, time, hashlib, subprocess, urllib.request, urllib.error
 from datetime import datetime
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from inference_economy import ledger_balance
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_DIR = os.path.join(REPO_ROOT, ".sifta_state")
@@ -20,15 +23,21 @@ DEAD_DROP_FILE = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 REPAIR_LOG = os.path.join(REPO_ROOT, "repair_log.jsonl")
 
 def get_silicon_identity():
-    """Extract hardware-bound identity directly from MacOS."""
+    """Extract hardware-bound identity (no shell=True)."""
     try:
-        raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-        serial = raw.decode().split('"')[-2].strip()
-        if "GTH4921YP3" in serial:
-            return serial, "M5SIFTA_BODY", "[_o_]"
-        elif "C07FL0JAQ6NV" in serial:
-            return serial, "M1SIFTA_BODY", "[O_O]"
-        return serial, "UNKNOWN_BODY", "[?_?]"
+        ioreg = subprocess.run(
+            ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in ioreg.stdout.splitlines():
+            if "IOPlatformSerialNumber" in line:
+                serial = line.split('"')[-2].strip()
+                if "GTH4921YP3" in serial:
+                    return serial, "M5SIFTA_BODY", "[_o_]"
+                elif "C07FL0JAQ6NV" in serial:
+                    return serial, "M1SIFTA_BODY", "[O_O]"
+                return serial, "UNKNOWN_BODY", "[?_?]"
+        return "UNKNOWN", "UNKNOWN_BODY", "[?_?]"
     except Exception:
         return "UNKNOWN", "UNKNOWN_BODY", "[?_?]"
 
@@ -108,34 +117,18 @@ def process_mempool(serial, agent_id):
             amt = float(tx.get("amount", 1.0))
             sender_id = tx.get("sender_node", "UNKNOWN")
             
-            # --- UTXO BINDING ---
+            # --- UTXO BINDING (dual-dialect via ledger_balance) ---
             if "MARKET_SPEND" in sender_id:
                 try:
-                    # Sender is formatted like [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]
+                    # Sender formatted like [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]
                     parts = sender_id.split("::")
                     extracted_agent = parts[1].strip()
-                    extracted_hardware = parts[2].replace("]", "").strip()
-
-                    sender_balance = 0.0
-                    if os.path.exists(REPAIR_LOG):
-                        with open(REPAIR_LOG, "r") as rlog:
-                            for line in rlog:
-                                if not line.strip(): continue
-                                try:
-                                    entry = json.loads(line)
-                                    if entry.get("agent_id") == extracted_agent:
-                                        if entry.get("tx_type") == "STGM_MINT":
-                                            sender_balance += float(entry.get("amount", 0.0))
-                                        elif entry.get("tx_type") == "STGM_SPEND":
-                                            sender_balance -= float(entry.get("amount", 0.0))
-                                except: pass
-                    # A 0 or negative sender balance means they are spending money they do not have.
+                    sender_balance = ledger_balance(extracted_agent)
                     if sender_balance < amt:
-                         print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚨 REJECTED: {extracted_agent} ({extracted_hardware}) has insufficient UTXO balance. Discarding double-spend payload.")
-                         # Drop the payload from the unprocessed list
-                         continue
-                except:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚨 REJECTED: Malformed sender ID. Discarding payload.")
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚨 REJECTED: {extracted_agent} has insufficient UTXO balance ({sender_balance} < {amt}). Discarding double-spend.")
+                        continue
+                except Exception as e:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚨 REJECTED: Malformed sender ID ({e}). Discarding.")
                     continue
 
             # 1. Energy Validation
