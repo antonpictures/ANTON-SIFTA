@@ -130,25 +130,31 @@ class SwarmChatWindow(QWidget):
         chat_layout = QVBoxLayout(chat_container)
         chat_layout.setContentsMargins(15, 15, 15, 15)
         
-        # ── Resolve Local Swarm Identity ─────────────────────
-        self.local_identity = "SWARM"
-        self.local_color    = "#bb9af7"
-        
-        manifest_path = os.path.join(".sifta_state", "territory_manifest.json")
-        if os.path.exists(manifest_path):
-            try:
-                with open(manifest_path, "r") as f:
-                    manifest = json.load(f)
-                    self.local_identity = manifest.get("queen", "MACMINI.LAN_QUEEN")
-                    self.local_color    = "#7dcfff"
-            except Exception:
-                pass
+        # ── Resolve Local Swarm Identity from bare-metal serial ──────
+        # Same registry used by circadian_rhythm.py + body_state.py.
+        # No hostname guessing. No hardcoded strings. Silicon is truth.
+        NODE_SERIAL_REGISTRY = {
+            "GTH4921YP3":   ("ALICE_M5",  "[_o_]", "#ff9e64"),   # M5 Mac Studio
+            "C07FL0JAQ6NV": ("M1THER",    "[O_O]", "#7dcfff"),   # M1 Mac Mini
+        }
+        try:
+            import subprocess as _sp
+            _raw = _sp.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
+            _serial = _raw.decode().split('"')[-2].strip()
+        except Exception:
+            _serial = "UNKNOWN"
+
+        _node = NODE_SERIAL_REGISTRY.get(_serial)
+        if _node:
+            self.local_identity = _node[0]   # e.g. "ALICE_M5" or "M1THER"
+            self.local_face     = _node[1]   # e.g. "[_o_]"
+            self.local_color    = _node[2]
+            self.local_serial   = _serial
         else:
-            import platform
-            node = platform.node().lower()
-            if "mac.lan" in node or "m5" in node or "studio" in node:
-                self.local_identity = "m5Queen"
-                self.local_color    = "#ff9e64"
+            self.local_identity = f"SWARM_VOICE_{_serial[:6]}"
+            self.local_face     = "[?_?]"
+            self.local_color    = "#bb9af7"
+            self.local_serial   = _serial
 
         # ── Header ──────────────────────────────────────────
         header = QHBoxLayout()

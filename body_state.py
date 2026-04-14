@@ -107,24 +107,34 @@ def find_healthy_agent(exclude_id: str) -> Optional[dict]:
 
 class SwarmBody:
     # --- Physical Hardware Binding ---
+    # Serial registry — source of truth for all node identity resolution
     BARE_METAL_SERIALS = {
-        "ALICE_M5": "GTH4921YP3",
-        "M1THER": "AUTO_RESOLVE_MAC_MINI"
+        "ALICE_M5": "GTH4921YP3",      # M5 Mac Studio
+        "M1THER":   "C07FL0JAQ6NV",    # M1 Mac Mini (resolved via ioreg)
     }
 
     @classmethod
     def resolve_hardware_serial(cls, agent_id):
-        raw = cls.BARE_METAL_SERIALS.get(agent_id)
-        if raw == "AUTO_RESOLVE_MAC_MINI":
-            try:
-                import subprocess
-                # Ask macOS bare metal for the true physical serial
-                out = subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True)
-                sn = out.decode().split('"')[-2]
-                return sn
-            except Exception:
-                return "M1THER_UNKNOWN_HW"
-        return raw
+        return cls.BARE_METAL_SERIALS.get(agent_id, "UNKNOWN_HW")
+
+    @classmethod
+    def resolve_agent_from_serial(cls, serial):
+        """Reverse lookup: given a bare-metal serial, return the agent ID."""
+        for agent_id, sn in cls.BARE_METAL_SERIALS.items():
+            if sn == serial:
+                return agent_id
+        return None
+
+    @classmethod
+    def get_local_serial(cls):
+        """Read this machine's serial from bare metal."""
+        try:
+            import subprocess
+            out = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
+            return out.decode().split('"')[-2].strip()
+        except Exception:
+            return "UNKNOWN_HW"
+
     
     FACES = {
         # — Primary Nodes —
