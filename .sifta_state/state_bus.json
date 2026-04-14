@@ -1,31 +1,12 @@
 {
-    "worker_reputation": {
-        "WORKER_PRIME": 100,
-        "WORKER_INSECT": 10
-    },
     "active_scars": {},
     "volatility_history": [
         {
-<<<<<<< Updated upstream
-            "timestamp": 1776195631.7231739,
-=======
-            "timestamp": 1776195739.9999309,
->>>>>>> Stashed changes
+            "timestamp": 1776195839.44584,
             "success": true
         }
     ],
     "guard_actions": [
-<<<<<<< Updated upstream
-        1776195631.722843
-=======
-        1776195739.9998121
->>>>>>> Stashed changes
-    ],
-    "whatsapp_contact_memory": {
-        "c00153992c381a66": {
-            "count": 5,
-            "history": []
-        }
-    },
-    "volatility_score": 0.1
+        1776195839.445675
+    ]
 }
