@@ -219,11 +219,27 @@ class SIFTAControlDeck(App):
         height: 3;
         width: auto;
     }
+    
+    #custom-footer {
+        height: 1;
+        dock: bottom;
+        background: black;
+        color: #94a3b8;
+    }
+    .footer-left {
+        width: 1fr;
+        content-align: left middle;
+    }
+    .footer-right {
+        width: 1fr;
+        content-align: right middle;
+    }
     """
     
     BINDINGS = [
-        ("q", "quit", "Quit System"),
-        ("k", "kill_process", "Halt Execution")
+        ("q", "quit", ""),
+        ("k", "kill_process", ""),
+        ("ctrl+p", "command_palette", "")
     ]
     
     def __init__(self):
@@ -231,7 +247,8 @@ class SIFTAControlDeck(App):
         self.active_process = None
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        # Top right clock!
+        yield Header(show_clock=True)
         
         with Horizontal():
             with Vertical(id="left-panel"):
@@ -269,7 +286,9 @@ class SIFTAControlDeck(App):
                 yield Label("TERMINAL OUTPUT STREAM", id="console-header")
                 yield Log(id="console", highlight=True)
                 
-        yield Footer()
+        with Horizontal(id="custom-footer"):
+            yield Label(" ^p palette", classes="footer-left")
+            yield Label("q Quit System   k Halt Execution ", classes="footer-right")
 
     def on_list_view_selected(self, event: ListView.Selected):
         item = event.item

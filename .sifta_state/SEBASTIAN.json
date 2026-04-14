@@ -1,0 +1,18 @@
+{
+  "id": "SEBASTIAN",
+  "seq": 0,
+  "hash_chain": [],
+  "energy": 100,
+  "style": "NOMINAL",
+  "raw": "",
+  "ttl": 0,
+  "private_key_b64": "nSlrzPbTNDwb2eAgTYeU/JC0mg3Kds8RJ/qU7+vCwvM=",
+  "mailbox_private_b64": "EC4HCAUyHj0gD7t7c0iENTgQmUP2TI6npNRldaJKBXU=",
+  "vocation": "VIDEO_EDITOR",
+  "sex": 1,
+  "context": [
+    "[DEFRAG BY M1THER] [COMPRESSION FALLBACK] Context automatically summarized due to LLM timeout."
+  ],
+  "stgm_balance": 7.0,
+  "stgm_seal": "1292d3bad98861d565ae17bc8b4c12e44cbdba5c94290d1df168d201adc1b846"
+}

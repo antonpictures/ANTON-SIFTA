@@ -16,7 +16,9 @@ import reputation_engine
 
 SCARS_MD_MAX = 200  # Maximum scar entries shown in SCARS.md
 
-def compute_territory_hash(file_path: str, bite_range: tuple[int, int] | None = None) -> str:
+from typing import Optional, Tuple
+
+def compute_territory_hash(file_path: str, bite_range: Optional[Tuple[int, int]] = None) -> str:
     """Computes SHA-256 hash of the actual physical territory touched."""
     try:
         with open(file_path, "rb") as f:

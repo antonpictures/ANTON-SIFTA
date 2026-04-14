@@ -45,6 +45,18 @@ class MessengerRequest(BaseModel):
 
 app = FastAPI(title="ANTON-SIFTA Command Interface")
 
+import os
+if os.path.exists("editor_static"):
+    app.mount("/editor_static", StaticFiles(directory="editor_static"), name="editor_static")
+
+@app.get("/editor", response_class=HTMLResponse)
+async def serve_video_editor():
+    try:
+        with open("editor_static/index.html", "r") as f:
+            return f.read()
+    except Exception as e:
+        return f"Error loading editor: {e}"
+
 import sifta_swarm_identity
 import sifta_trust_graph
 try:

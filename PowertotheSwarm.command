@@ -35,11 +35,11 @@ echo "  [BOOT] Starting SIFTA Network Server in background..."
 python3 server.py > server_stdout.log 2>&1 &
 SERVER_PID=$!
 
-# Launch the interactive Terminal Control Deck (FOREGROUND)
-echo "  [BOOT] Launching SIFTA Control Deck..."
-python3 sifta_control_deck.py
+# Launch the graphical Python OS Desktop (FOREGROUND)
+echo "  [BOOT] Launching SIFTA Python OS UI..."
+python3 sifta_os_desktop.py
 
-# Cleanup when Control Deck exits
+# Cleanup when OS Interface exits
 echo "  [SHUTDOWN] Powering down Swarm threads..."
 kill $HERMES_PID >/dev/null 2>&1
 kill $SERVER_PID >/dev/null 2>&1
