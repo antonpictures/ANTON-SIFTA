@@ -6,6 +6,7 @@
 # ─────────────────────────────────────────────────────────────
 
 import sys, json, os, time
+from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QDialog, QLineEdit,
     QComboBox, QMessageBox, QGridLayout, QProgressBar, QTabWidget,
