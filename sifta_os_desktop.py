@@ -133,7 +133,7 @@ class SwarmChatWindow(QWidget):
         # ── Resolve Local Swarm Identity from bare-metal serial ──────
         # Same registry used by circadian_rhythm.py + body_state.py.
         # No hostname guessing. No hardcoded strings. Silicon is truth.
-        NODE_SERIAL_REGISTRY = {
+        self.NODE_SERIAL_REGISTRY = {
             "GTH4921YP3":   ("ALICE_M5",  "[_o_]", "#ff9e64"),   # M5 Mac Studio
             "C07FL0JAQ6NV": ("M1THER",    "[O_O]", "#7dcfff"),   # M1 Mac Mini
         }
@@ -144,7 +144,7 @@ class SwarmChatWindow(QWidget):
         except Exception:
             _serial = "UNKNOWN"
 
-        _node = NODE_SERIAL_REGISTRY.get(_serial)
+        _node = self.NODE_SERIAL_REGISTRY.get(_serial)
         if _node:
             self.local_identity = _node[0]   # e.g. "ALICE_M5" or "M1THER"
             self.local_face     = _node[1]   # e.g. "[_o_]"
@@ -229,16 +229,21 @@ class SwarmChatWindow(QWidget):
                             except Exception:
                                 pass
                         
-                        if sender == "YOU" or sender.startswith("[ARCHITECT"):
-                            self.display.append(f"{time_str}<b style='color:#9ece6a;'>{sender} ▶</b>  {text}")
-                        elif sender == "m5Queen":
-                            self.display.append(f"{time_str}<b style='color:#ff9e64;'>{sender} ▶</b>  {text}")
-                        elif sender == "MACMINI.LAN_QUEEN":
-                            self.display.append(f"{time_str}<b style='color:#7dcfff;'>{sender} ▶</b>  {text}")
-                        elif sender == "ANTIGRAVITY":
-                            self.display.append(f"{time_str}<b style='color:#bb9af7;'>{sender} ▶</b>  {text}")
+                        display_name = sender
+                        color = "#e0af68"
+                        if "YOU" in sender or sender.startswith("[ARCHITECT"):
+                            display_name = "[ ARCHITECT ]"
+                            color = "#9ece6a"
+                        elif "ANTIGRAVITY" in sender:
+                            display_name = "ANTIGRAVITY"
+                            color = "#bb9af7"
                         else:
-                            self.display.append(f"{time_str}<b style='color:#e0af68;'>{sender} ▶</b>  {text}")
+                            for ser, (ident, face, col) in self.NODE_SERIAL_REGISTRY.items():
+                                if ser in sender:
+                                    display_name = f"{ident} ({ser})"
+                                    color = col
+                                    break
+                        self.display.append(f"{time_str}<b style='color:{color};'>{display_name} ▶</b>  {text}")
                         self.display.append("")
         except Exception as e:
             self.display.append(f"<span style='color:#f7768e;'>[History Loader ERROR] {e}</span>\n")
@@ -359,26 +364,29 @@ class SwarmChatWindow(QWidget):
                         source = entry.get("source", "HUMAN")
                         is_cron = (source == "CRON_HEARTBEAT")
 
-                        # Color by identity — new body string format <///[_o_]///::ID[M5]...>
+                        # Color and Name by mapped hardware serial logic
                         color = "#e0af68"
-                        if sender.startswith("[ARCHITECT") or sender == "YOU": color = "#9ece6a"
-                        elif "::ID[M5]" in sender: color = "#ff9e64"
-                        elif "::ID[M1]" in sender: color = "#7dcfff"
-                        elif sender.startswith("[A_G::") or sender == "ANTIGRAVITY": color = "#bb9af7"
-                        elif sender.startswith("[C_C::"): color = "#f7768e"
+                        visual_sender = sender
+                        
+                        if sender.startswith("[ARCHITECT") or sender == "YOU":
+                            visual_sender = "[ ARCHITECT ]"
+                            color = "#9ece6a"
+                        elif "ANTIGRAVITY" in sender or sender.startswith("[A_G::"):
+                            visual_sender = "ANTIGRAVITY"
+                            color = "#bb9af7"
+                        elif sender.startswith("[C_C::"):
+                            color = "#f7768e"
+                        else:
+                            for ser, (ident, face, col) in self.NODE_SERIAL_REGISTRY.items():
+                                if ser in sender:
+                                    visual_sender = f"{ident} ({ser})"
+                                    color = col
+                                    break
 
                         # Skip local echo of our own messages
                         local_network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
                         if sender == local_network_id:
                             continue
-
-                        visual_sender = sender
-                        if sender.startswith("[ARCHITECT"):
-                            visual_sender = "[ ARCHITECT ]"
-                        elif "::ID[M5]" in sender:
-                            visual_sender = "<///[_o_]///::ID[M5]>"
-                        elif "::ID[M1]" in sender:
-                            visual_sender = "<///[_o_]///::ID[M1]>"
 
                         # Cron heartbeats render dim — human messages are bold/dominant
                         if is_cron:
