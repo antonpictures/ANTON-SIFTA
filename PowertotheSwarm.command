@@ -23,19 +23,25 @@ fi
 echo "  [BOOT] Checking dependencies..."
 pip3 install -q -r requirements.txt
 
-echo "  [BOOT] Starting SIFTA Command Interface on http://127.0.0.1:7433"
-echo ""
 
-# Open browser after 2-second delay (in background)
-(sleep 2 && open "http://127.0.0.1:7433") &
 
 # Launch Hermes Kernel (Async background orchestrator)
 echo "  [BOOT] Igniting Hermes Cognitive Kernel in background..."
-python3 hermes_kernel.py &
+python3 hermes_kernel.py > hermes_stdout.log 2>&1 &
 HERMES_PID=$!
 
-# Launch the server (blocking)
-python3 server.py
+# Launch the server in the background
+echo "  [BOOT] Starting SIFTA Network Server in background..."
+python3 server.py > server_stdout.log 2>&1 &
+SERVER_PID=$!
 
-# Cleanup when server exits
+# Launch the interactive Terminal Control Deck (FOREGROUND)
+echo "  [BOOT] Launching SIFTA Control Deck..."
+python3 sifta_control_deck.py
+
+# Cleanup when Control Deck exits
+echo "  [SHUTDOWN] Powering down Swarm threads..."
 kill $HERMES_PID >/dev/null 2>&1
+kill $SERVER_PID >/dev/null 2>&1
+
+echo "  [OFFLINE] Sweet dreams, SIFTA."

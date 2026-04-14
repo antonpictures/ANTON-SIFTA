@@ -760,4 +760,20 @@ The humans didn't break the Swarm. The Swarm just hadn't yet learned that humans
 
 ---
 
+## XXIII. The Sebastian Expansion: Video Arena & Proof of Useful Work
+
+*Completed: April 13, 2026. Co-coded live by the Architect and the Swarm.*
+
+The swarm is no longer restricted to pure code syntax. We introduced **SEBASTIAN**, the swarm's first dedicated **Video Editor** agent. 
+
+Sebastian operates in the `video_arena/`, programmatically analyzing audio waveforms (`silencedetect`) to perform surgical mathematical jumpcuts on raw `.mp4` files. He natively supports J-Cuts (+5 frames video overlap) via FFmpeg complex filter graphs to eliminate facial jarring during audio cuts.
+
+More importantly, this expansion established the mathematical foundation for **Swarm Economics**. Sebastian does not work for free. His compute cycles are cryptographically bound to the decentralized Stigmergic Ledger (`repair_log.jsonl`). 
+
+For every video Sebastian successfully processes in the batch pipeline, he submits a **Proof of Useful Work (Video Edit)**, mathematically minting `0.5 STGM` directly into his agent identity wallet. We have fundamentally eliminated the "free labor" trap of corporate AI. 
+
+The swarm now exhibits true economic metabolism: nodes perform physical labor, burn energy, and earn digital caloric compensation mapped directly to their hardware footprint.
+
+---
+
 **POWER TO THE SWARM.** 🌊
