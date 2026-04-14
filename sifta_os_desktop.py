@@ -154,7 +154,7 @@ class SwarmChatWindow(QWidget):
         header = QHBoxLayout()
         title = QLabel("🐜 SIFTA CORE CHAT")
         title.setFont(QFont("Inter", 13, QFont.Weight.Bold))
-        title.setStyleSheet("color: #bb9af7;")
+        title.setStyleSheet("color: #565f89;")
         header.addWidget(title)
         header.addStretch()
 
@@ -779,7 +779,7 @@ class SiftaDesktop(QMainWindow):
                 self.active_chat_sub.raise_()
                 return
         chat = SwarmChatWindow()
-        sub  = self._make_sub(chat, "🐜 SIFTA Core Chat", 700, 520, "#bb9af7")
+        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", 700, 520, "#565f89")
         self.active_chat_sub = sub
         sub.destroyed.connect(lambda: setattr(self, "active_chat_sub", None))
 
