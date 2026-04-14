@@ -4,13 +4,25 @@
       "id": "ALICE_M5",
       "name": "M5 MacBook Pro 24GB",
       "ip": "192.168.1.5",
-      "port": 7433
+      "port": 7433,
+      "model": "qwen3.5:0.8b",
+      "status": "QUEEN"
     },
     {
       "id": "M1THER",
       "name": "Mac Mini 8GB",
       "ip": "192.168.1.78",
-      "port": 7433
+      "port": 7434,
+      "model": "qwen3.5:0.8b",
+      "status": "QUEEN"
+    },
+    {
+      "id": "M1QUEEN",
+      "name": "M1 Mac (Incoming Node)",
+      "ip": "TBD",
+      "port": 7435,
+      "model": "phi3",
+      "status": "ONBOARDING"
     }
   ]
 }
