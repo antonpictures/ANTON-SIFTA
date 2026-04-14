@@ -1,7 +1,7 @@
 ═══════════════════════════════
 🧠 SIFTA INTROSPECTION
-Decision Activity Δ: 7710 bytes
-Time Since Action: 55.28s
+Decision Activity Δ: 7924 bytes
+Time Since Action: 2658.76s
 [⚠️] System is idle — engaging parasympathetic recovery
 Volatility: 0.10
 ═══════════════════════════════
@@ -14,9 +14,9 @@ Volatility: 0.10
 [❌ WORKER_B BLOCKED] surgical_ast_repair — REASON: [DEFER] Reality currently locked by WORKER_A. SCAR collision prevented.
 ═══════════════════════════════
 🧠 SIFTA INTROSPECTION
-Decision Activity Δ: 214 bytes
+Decision Activity Δ: 215 bytes
 Time Since Action: 1.50s
-Volatility: 0.16
+Volatility: 0.10
 ═══════════════════════════════
 
 [🔓 WORKER_A COMPLETED] SCAR Lock released on src/core_logic.py
@@ -44,7 +44,7 @@ Volatility: 0.10
 ═══════════════════════════════
 🧠 SIFTA INTROSPECTION
 Decision Activity Δ: 0 bytes
-Time Since Action: 9.50s
+Time Since Action: 9.51s
 Volatility: 0.10
 ═══════════════════════════════
 
@@ -99,7 +99,7 @@ Volatility: 0.10
 ═══════════════════════════════
 🧠 SIFTA INTROSPECTION
 Decision Activity Δ: 0 bytes
-Time Since Action: 23.51s
+Time Since Action: 23.52s
 [⚠️] System is idle — engaging parasympathetic recovery
 Volatility: 0.10
 ═══════════════════════════════
@@ -139,7 +139,7 @@ Volatility: 0.10
 ═══════════════════════════════
 🧠 SIFTA INTROSPECTION
 Decision Activity Δ: 0 bytes
-Time Since Action: 33.52s
+Time Since Action: 33.53s
 [⚠️] System is idle — engaging parasympathetic recovery
 Volatility: 0.10
 ═══════════════════════════════
@@ -147,7 +147,7 @@ Volatility: 0.10
 ═══════════════════════════════
 🧠 SIFTA INTROSPECTION
 Decision Activity Δ: 0 bytes
-Time Since Action: 35.52s
+Time Since Action: 35.53s
 [⚠️] System is idle — engaging parasympathetic recovery
 Volatility: 0.10
 ═══════════════════════════════
@@ -155,7 +155,7 @@ Volatility: 0.10
 ═══════════════════════════════
 🧠 SIFTA INTROSPECTION
 Decision Activity Δ: 0 bytes
-Time Since Action: 37.52s
+Time Since Action: 37.53s
 [⚠️] System is idle — engaging parasympathetic recovery
 Volatility: 0.10
 ═══════════════════════════════

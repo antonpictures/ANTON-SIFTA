@@ -517,8 +517,13 @@ class MarketplaceTab(QWidget):
             c_ser = QTableWidgetItem(serial + (" (YOU)" if serial == self.local_serial else ""))
             if serial == self.local_serial: c_ser.setForeground(QColor("#9ece6a"))
             
-            e_val = data.get("energy", 0)
-            c_eng = QTableWidgetItem(f"{e_val}%")
+            e_raw = data.get("energy", 100)
+            try:
+                e_val = int(e_raw)
+            except:
+                e_val = 100  # Default if string like "M1 Neural Engine..."
+
+            c_eng = QTableWidgetItem(str(e_raw) + ("%" if isinstance(e_raw, (int, float)) else ""))
             if e_val < 30: c_eng.setForeground(QColor("#f7768e"))
             else: c_eng.setForeground(QColor("#7dcfff"))
 
