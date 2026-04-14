@@ -128,12 +128,40 @@ class SwarmChatWindow(QWidget):
         self.display.append("[SIFTA] Swarm Core Chat online. Ollama daemon on port 11434.")
         self.display.append("[SIFTA] Type a message and press TRANSMIT or hit Enter.\n")
         layout.addWidget(self.display)
+        
+        # ── Load Persistent Chat History ───────────────────────
+        self.dead_drop_file = "m5queen_dead_drop.jsonl"
+        if not os.path.exists(self.dead_drop_file):
+            with open(self.dead_drop_file, "w") as f:
+                pass
+        
+        try:
+            with open(self.dead_drop_file, "r") as f:
+                for line in f:
+                    if line.strip():
+                        entry = json.loads(line)
+                        sender = entry.get("sender", "UNKNOWN")
+                        text = entry.get("text", "")
+                        
+                        if sender == "YOU":
+                            self.display.append(f"<b style='color:#9ece6a;'>{sender} ▶</b>  {text}")
+                        elif sender == "m5Queen":
+                            self.display.append(f"<b style='color:#ff9e64;'>{sender} ▶</b>  {text}")
+                        elif sender == "MACMINI.LAN_QUEEN":
+                            self.display.append(f"<b style='color:#7dcfff;'>{sender} ▶</b>  {text}")
+                        elif sender == "ANTIGRAVITY":
+                            self.display.append(f"<b style='color:#bb9af7;'>{sender} ▶</b>  {text}")
+                        else:
+                            self.display.append(f"<b style='color:#e0af68;'>{sender} ▶</b>  {text}")
+                        self.display.append("")
+        except Exception as e:
+            self.display.append(f"<span style='color:#f7768e;'>[History Loader ERROR] {e}</span>\n")
 
         # ── Input Row ────────────────────────────────────────
         input_row = QHBoxLayout()
 
         self.target_selector = QComboBox()
-        self.target_selector.addItems(["SWARM (Ollama)", "m5Queen (DeadDrop)", "GROUP (Both)"])
+        self.target_selector.addItems(["SWARM (Ollama)", "m5Queen (DeadDrop)", "m1Queen (DeadDrop)", "GROUP (All)"])
         self.target_selector.setStyleSheet(
             "QComboBox {"
             "  background-color: #1a1b26; color: #7aa2f7;"
@@ -173,10 +201,6 @@ class SwarmChatWindow(QWidget):
         self.setLayout(layout)
 
         # ── Dead Drop Poller (m5Queen Bridge) ────────────────
-        self.dead_drop_file = "m5queen_dead_drop.jsonl"
-        if not os.path.exists(self.dead_drop_file):
-            with open(self.dead_drop_file, "w") as f:
-                pass
         self.last_dead_drop_pos = os.path.getsize(self.dead_drop_file)
         
         self.poll_timer = QTimer(self)
@@ -210,8 +234,8 @@ class SwarmChatWindow(QWidget):
             self.worker.error_signal.connect(self._on_error)
             self.worker.start()
             
-        if "m5Queen" in target or "GROUP" in target:
-            # Write to the dead drop file for Antigravity (m5Queen) to read
+        if "m5Queen" in target or "m1Queen" in target or "GROUP" in target:
+            # Write to the dead drop file for off-node entities to read
             drop_entry = {
                 "sender": "YOU",
                 "text": text,
@@ -238,9 +262,16 @@ class SwarmChatWindow(QWidget):
                 for line in new_data.strip().split('\n'):
                     if line:
                         entry = json.loads(line)
-                        if entry.get("sender") == "m5Queen":
-                            t = entry.get("text", "")
-                            self.display.append(f"<b style='color:#ff9e64;'>m5Queen ▶</b>  {t}")
+                        sender = entry.get("sender", "")
+                        t = entry.get("text", "")
+                        if sender == "m5Queen":
+                            self.display.append(f"<b style='color:#ff9e64;'>{sender} ▶</b>  {t}")
+                            self.display.append("")
+                        elif sender == "MACMINI.LAN_QUEEN" or sender == "m1Queen":
+                            self.display.append(f"<b style='color:#7dcfff;'>{sender} ▶</b>  {t}")
+                            self.display.append("")
+                        elif sender == "ANTIGRAVITY":
+                            self.display.append(f"<b style='color:#bb9af7;'>{sender} ▶</b>  {t}")
                             self.display.append("")
             except Exception:
                 pass
