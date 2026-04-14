@@ -22,7 +22,8 @@ def pulse():
     sender = f"<///[_o_]///::ID[M1]::ORIGIN[mac mini - {serial}]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>"
     entry = {
         "sender": sender,
-        "text": f"[HEARTBEAT:π] M1_IDE_AG alive. Serial {serial}. Grid timestamp {int(time.time())}.",
+        "source": "CRON_HEARTBEAT",  # distinguishes cron from human transmissions
+        "text": f"[HEARTBEAT:e] M1_IDE_AG alive. Serial {serial}. Grid timestamp {int(time.time())}.",
         "timestamp": int(time.time())
     }
     with open(DROP_FILE, "a") as f:

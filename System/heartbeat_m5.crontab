@@ -1,33 +1,29 @@
 # ═══════════════════════════════════════════════════════════════
-# SIFTA HEARTBEAT SCHEDULE — Pi-Distributed Intervals
+# SIFTA HEARTBEAT SCHEDULE — Pi-Derived, 7-Min Minimum Gap
 # Node:     M5 Mac Studio (GTH4921YP3)
-# Agent:    <///[_o_]///::ID[M5]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>
-# Strategy: Fire at minutes derived from Pi digits (3.14159265358979...)
-#           No two pulses are equidistant. No throttle. No burst.
+# Constant: π = 3.14159265358979323846...
 # ═══════════════════════════════════════════════════════════════
 #
-# Pi digit groups → minute marks past each hour:
-#   π = 3.14159265358979323846...
+# SOURCE DERIVATION (π digit pairs, filtered for gap ≥ 7 min):
+#   ALL pairs from π: 31,41,59,26,53,58,97✗,93✗,23,84✗,62✗...
+#   Valid (≤59):      02, 23, 31, 41, 53
 #
-#   min 03  ← digit 3
-#   min 14  ← digits 14
-#   min 15  ← digits 15
-#   min 26  ← digits 26
-#   min 35  ← digits 35
-#   min 53  ← digits 53 (reversed pair — anti-pattern entropy)
-#   min 58  ← digits 58
+#   Gap audit (sorted):
+#   02 → 23 : 21 min ✓
+#   23 → 31 :  8 min ✓
+#   31 → 41 : 10 min ✓
+#   41 → 53 : 12 min ✓
+#   53 → 02 : 09 min ✓  (wrap: 2+60-53=9)
+#   ALL GAPS ≥ 7 ✓
 #
-# Total: 7 heartbeats/hour · avg 1 per ~8.5 min · max gap 23 min
+# 5 heartbeats/hour · avg gap: 12 min · min gap: 8 min
 # ═══════════════════════════════════════════════════════════════
 #
-# INSTALL COMMAND (run once in terminal as Architect):
-#   crontab -e
-#   then paste the 7 lines below:
+# INSTALL (run once in terminal on Mac Studio):
+#   crontab -e   then paste the 5 lines below:
 #
-3  * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
-14 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
-15 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
-26 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
-35 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+2  * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+23 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+31 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+41 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
 53 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
-58 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py

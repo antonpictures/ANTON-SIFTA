@@ -22,6 +22,7 @@ def pulse():
     sender = f"<///[_o_]///::ID[M5]::ORIGIN[mac studio - {serial}]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>"
     entry = {
         "sender": sender,
+        "source": "CRON_HEARTBEAT",  # distinguishes cron from human transmissions
         "text": f"[HEARTBEAT:π] M5_IDE_AG alive. Serial {serial}. Grid timestamp {int(time.time())}.",
         "timestamp": int(time.time())
     }

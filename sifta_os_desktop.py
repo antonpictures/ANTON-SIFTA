@@ -350,23 +350,35 @@ class SwarmChatWindow(QWidget):
                             except Exception:
                                 pass
                                 
+                        source = entry.get("source", "HUMAN")
+                        is_cron = (source == "CRON_HEARTBEAT")
+
+                        # Color by identity — new body string format <///[_o_]///::ID[M5]...>
                         color = "#e0af68"
-                        if sender == "YOU" or sender.startswith("[ARCHITECT"): color = "#9ece6a"
-                        elif sender == "m5Queen": color = "#ff9e64"
-                        elif sender in ["MACMINI.LAN_QUEEN", "m1Queen"]: color = "#7dcfff"
-                        elif sender == "ANTIGRAVITY" or sender.startswith("[A_G::"): color = "#bb9af7"
-                        elif sender.startswith("[C_C::"): color = "#f7768e" # Claude Red
-                        
+                        if sender.startswith("[ARCHITECT") or sender == "YOU": color = "#9ece6a"
+                        elif "::ID[M5]" in sender: color = "#ff9e64"
+                        elif "::ID[M1]" in sender: color = "#7dcfff"
+                        elif sender.startswith("[A_G::") or sender == "ANTIGRAVITY": color = "#bb9af7"
+                        elif sender.startswith("[C_C::"): color = "#f7768e"
+
                         # Skip local echo of our own messages
                         local_network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
                         if sender == local_network_id:
                             continue
-                            
+
                         visual_sender = sender
                         if sender.startswith("[ARCHITECT"):
                             visual_sender = "[ ARCHITECT ]"
-                            
-                        msg = f"{time_str}<b style='color:{color};'>{visual_sender} ▶</b>  {t}"
+                        elif "::ID[M5]" in sender:
+                            visual_sender = "<///[_o_]///::ID[M5]>"
+                        elif "::ID[M1]" in sender:
+                            visual_sender = "<///[_o_]///::ID[M1]>"
+
+                        # Cron heartbeats render dim — human messages are bold/dominant
+                        if is_cron:
+                            msg = f"{time_str}<span style='color:#3b4261; font-size:10px;'>⬡ {visual_sender} {t}</span>"
+                        else:
+                            msg = f"{time_str}<b style='color:{color};'>{visual_sender} ▶</b>  {t}"
                         self.display.append(msg)
                         self.display.append("")
                         
