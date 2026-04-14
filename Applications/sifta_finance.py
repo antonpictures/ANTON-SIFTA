@@ -433,6 +433,15 @@ class MarketplaceTab(QWidget):
         
         with open(self.market_file, "w") as f:
             json.dump(listings, f, indent=2)
+            
+        # NATIVELY PUSH TO THE SWARM GRID SO OTHER NODES SEE IT
+        try:
+            import subprocess
+            subprocess.run("git add .sifta_state/marketplace_listings.json && git commit -m 'mesh: marketplace listing updated' && git push origin feat/sebastian-video-economy", shell=True)
+            subprocess.run("git pull origin feat/sebastian-video-economy --rebase -X theirs", shell=True)
+        except:
+            pass
+
         self.load_market()
 
     def _read_market(self):
@@ -542,6 +551,13 @@ class MarketplaceTab(QWidget):
                 }
                 with open(os.path.join(STATE_DIR, "human_signals.jsonl"), "a") as f:
                     f.write(json.dumps(drop_payload) + "\n")
+
+                # NATIVELY PUSH LEDGER TRANSACTION TO THE SWARM GRID
+                try:
+                    import subprocess
+                    subprocess.run("git add .sifta_state/ repair_log.jsonl && git commit -m 'mesh: market intelligence purchase tx executed' && git push origin feat/sebastian-video-economy", shell=True)
+                except:
+                    pass
 
                 QMessageBox.information(self, "Success", f"Tx {seal} confirmed.\n{price} STGM spent.\nPayload routed cross-node.")
             except Exception as e:
