@@ -6,10 +6,10 @@
 # ─────────────────────────────────────────────────────────────
 
 import sys, json, os, time
-from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QDialog, QLineEdit,
-    QComboBox, QMessageBox, QGridLayout, QProgressBar
+    QComboBox, QMessageBox, QGridLayout, QProgressBar, QTabWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QAbstractItemView
 )
 from PyQt6.QtCore  import Qt, QTimer
 from PyQt6.QtGui   import QFont, QColor
@@ -256,17 +256,35 @@ class InstallAgentDialog(QDialog):
 class FinanceDashboard(QWidget):
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("background-color: #0d0e17; color: #a9b1d6;")
+        self.setStyleSheet("""
+            QWidget { background-color: #0d0e17; color: #a9b1d6; font-family: 'Inter'; }
+            QTabWidget::pane { border: 1px solid #2a2b3d; border-radius: 4px; }
+            QTabBar::tab { background: #1a1b2e; color: #565f89; padding: 10px 20px; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }
+            QTabBar::tab:selected { background: #24253a; color: #7aa2f7; font-weight: bold; }
+            QTableWidget { background: #15161e; border: 1px solid #2a2b3d; gridline-color: #1f2335; color: #a9b1d6; }
+            QHeaderView::section { background: #1a1b2e; color: #7aa2f7; padding: 4px; border: 1px solid #1f2335; }
+        """)
         self._main_lay = QVBoxLayout(self)
         self._main_lay.setContentsMargins(16, 12, 16, 12)
         self._main_lay.setSpacing(10)
-        self._build()
-        # Auto-refresh every 5 seconds
+
+        self.tabs = QTabWidget()
+        self.portfolio_tab = QWidget()
+        self.market_tab = MarketplaceTab()
+        self.tabs.addTab(self.portfolio_tab, "💰 Portfolio")
+        self.tabs.addTab(self.market_tab, "⚡ Inference Market")
+        self._main_lay.addWidget(self.tabs)
+
+        self._build_portfolio()
+        
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self._refresh)
+        self._timer.timeout.connect(self._refresh_all)
         self._timer.start(5000)
 
-    def _build(self):
+    def _build_portfolio(self):
+        lay = QVBoxLayout(self.portfolio_tab)
+        lay.setContentsMargins(10, 10, 10, 10)
+        lay.setSpacing(10)
         # ── Header ──────────────────────────────────────────
         header = QHBoxLayout()
         title = QLabel("⚡ SWARM FINANCE")
@@ -297,17 +315,17 @@ class FinanceDashboard(QWidget):
         install_btn.setStyleSheet("QPushButton{background:#1a1b2e;border:1px solid #9ece6a;border-radius:4px;color:#9ece6a;padding:5px 12px;font-weight:bold;} QPushButton:hover{background:#1f2335;}")
         install_btn.clicked.connect(self._install)
         header.addWidget(install_btn)
-        self._main_lay.addLayout(header)
+        lay.addLayout(header)
 
         # ── Portfolio total ──────────────────────────────────
         self.portfolio_lbl = QLabel()
         self.portfolio_lbl.setFont(QFont("Inter", 24, QFont.Weight.Bold))
         self.portfolio_lbl.setStyleSheet("color: #9ece6a; padding: 4px 0;")
-        self._main_lay.addWidget(self.portfolio_lbl)
+        lay.addWidget(self.portfolio_lbl)
 
         agents_lbl = QLabel("TOTAL SWARM PORTFOLIO  ·  STGM")
         agents_lbl.setStyleSheet("color: #565f89; font-size: 11px; margin-bottom: 6px;")
-        self._main_lay.addWidget(agents_lbl)
+        lay.addWidget(agents_lbl)
 
         # ── Scroll area for cards ────────────────────────────
         scroll = QScrollArea()
@@ -319,11 +337,11 @@ class FinanceDashboard(QWidget):
         self.card_lay.setSpacing(8)
         self.card_lay.setContentsMargins(0,0,0,0)
         scroll.setWidget(self.card_container)
-        self._main_lay.addWidget(scroll)
+        lay.addWidget(scroll)
 
-        self._populate()
+        self._populate_portfolio()
 
-    def _populate(self):
+    def _populate_portfolio(self):
         while self.card_lay.count():
             item = self.card_lay.takeAt(0)
             if item.widget():
@@ -346,17 +364,186 @@ class FinanceDashboard(QWidget):
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.card_lay.addWidget(empty)
         else:
-            for a in agents:
                 self.card_lay.addWidget(AgentCard(a))
         self.card_lay.addStretch()
 
-    def _refresh(self):
-        self._populate()
+    def _refresh_all(self):
+        self._populate_portfolio()
+        self.market_tab.load_market()
 
     def _install(self):
         dlg = InstallAgentDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            self._refresh()
+            self._refresh_all()
+
+# ─────────────────────────────────────────────────────────────
+
+class MarketplaceTab(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.market_file = os.path.join(STATE_DIR, "marketplace_listings.json")
+        try:
+            import subprocess
+            raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
+            self.local_serial = raw.decode().split('"')[-2].strip()
+        except:
+            self.local_serial = "UNKNOWN_SERIAL"
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 10, 10, 10)
+        lay.setSpacing(10)
+
+        header = QHBoxLayout()
+        header.addWidget(QLabel("<b>DECENTRALIZED INFERENCE MARKET</b>"))
+        header.addStretch()
+
+        self.offer_cb = QCheckBox("Offer My Compute")
+        self.offer_cb.setStyleSheet(
+            "QCheckBox { color: #9ece6a; font-weight: bold; }"
+            "QCheckBox::indicator:checked { background: #9ece6a; }"
+        )
+        self.offer_cb.stateChanged.connect(self._toggle_offer)
+        header.addWidget(self.offer_cb)
+        lay.addLayout(header)
+
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Node Serial", "Energy", "Cost (STGM)", "Models", "Action"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        lay.addWidget(self.table)
+
+        self.load_market()
+
+    def _toggle_offer(self):
+        is_offering = self.offer_cb.isChecked()
+        listings = self._read_market()
+        if is_offering:
+            listings[self.local_serial] = {
+                "timestamp": int(time.time()),
+                "stgm_price": 1.0,
+                "energy": 100,  # Could dynamically read from body state
+                "models": ["llama-4-maverick", "qwen3.5:2b", "llama3:latest"]
+            }
+        else:
+            if self.local_serial in listings:
+                del listings[self.local_serial]
+        
+        with open(self.market_file, "w") as f:
+            json.dump(listings, f, indent=2)
+        self.load_market()
+
+    def _read_market(self):
+        if os.path.exists(self.market_file):
+            try:
+                with open(self.market_file) as f:
+                    return json.load(f)
+            except: pass
+        return {}
+
+    def load_market(self):
+        listings = self._read_market()
+        
+        # Determine local status
+        if self.local_serial in listings:
+            self.offer_cb.blockSignals(True)
+            self.offer_cb.setChecked(True)
+            self.offer_cb.blockSignals(False)
+        else:
+            self.offer_cb.blockSignals(True)
+            self.offer_cb.setChecked(False)
+            self.offer_cb.blockSignals(False)
+
+        # Cleanup old listings (older than 1 hour)
+        now = int(time.time())
+        cleaned = {}
+        for k, v in listings.items():
+            if now - v.get("timestamp", 0) < 3600:
+                cleaned[k] = v
+        if len(cleaned) != len(listings):
+            with open(self.market_file, "w") as f:
+                json.dump(cleaned, f, indent=2)
+            listings = cleaned
+
+        self.table.setRowCount(len(listings))
+        for row, (serial, data) in enumerate(listings.items()):
+            c_ser = QTableWidgetItem(serial + (" (YOU)" if serial == self.local_serial else ""))
+            if serial == self.local_serial: c_ser.setForeground(QColor("#9ece6a"))
+            
+            e_val = data.get("energy", 0)
+            c_eng = QTableWidgetItem(f"{e_val}%")
+            if e_val < 30: c_eng.setForeground(QColor("#f7768e"))
+            else: c_eng.setForeground(QColor("#7dcfff"))
+
+            c_cst = QTableWidgetItem(f"{data.get('stgm_price', 1.0):.1f}")
+            c_mod = QTableWidgetItem(", ".join(data.get("models", [])))
+            c_mod.setToolTip(", ".join(data.get("models", [])))
+
+            self.table.setItem(row, 0, c_ser)
+            self.table.setItem(row, 1, c_eng)
+            self.table.setItem(row, 2, c_cst)
+            self.table.setItem(row, 3, c_mod)
+
+            btn = QPushButton("Mine for Me")
+            if serial == self.local_serial:
+                btn.setEnabled(False)
+                btn.setText("Local")
+            else:
+                btn.setStyleSheet("background-color: #3d59a1; color: white;")
+                btn.clicked.connect((lambda s, p: lambda: self.mine_inference(s, p))(serial, data.get('stgm_price', 1.0)))
+            self.table.setCellWidget(row, 4, btn)
+
+    def mine_inference(self, target_serial, price):
+        reply = QMessageBox.question(self, "Confirm Transaction",
+            f"Pay {price} STGM to Node {target_serial} to run your payload?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Here it drops STGM_SPEND and writes to the dead drop payload queue.
+            try:
+                ts = int(time.time())
+                import hashlib
+                seal_payload = f"{self.local_serial}:{target_serial}:{price}:{ts}"
+                seal = "MARKET_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
+                
+                # Debit localhost wallet
+                local_agent = "M5SIFTA_BODY" if "GTH4921YP3" in self.local_serial else "M1SIFTA_BODY"
+                tx_spend = {
+                    "timestamp": ts,
+                    "agent_id": local_agent,
+                    "tx_type": "STGM_SPEND",
+                    "amount": float(price),
+                    "target_node": target_serial,
+                    "reason": "Purchased Inference Compute",
+                    "hash": seal
+                }
+                with open(os.path.join(REPO_ROOT, "repair_log.jsonl"), "a") as f:
+                    f.write(json.dumps(tx_spend) + "\n")
+                
+                # Deduct local balance
+                state_file = os.path.join(STATE_DIR, f"{local_agent}.json")
+                if os.path.exists(state_file):
+                    with open(state_file, "r") as sf:
+                        ag = json.load(sf)
+                    ag["stgm_balance"] = max(0, float(ag.get("stgm_balance", 0.0)) - price)
+                    with open(state_file, "w") as sf:
+                        json.dump(ag, sf, indent=2)
+
+                # Route to dead drop for multi-node mesh
+                drop_payload = {
+                    "sender": f"[MARKET_SPEND::{local_agent}::{self.local_serial}]",
+                    "target_node": target_serial,
+                    "action": "MINE_INFERENCE",
+                    "amount": price,
+                    "timestamp": ts,
+                    "text": f"[{seal}] INFERENCE PURCHASE REQUEST -> Node {target_serial}"
+                }
+                with open(os.path.join(STATE_DIR, "human_signals.jsonl"), "a") as f:
+                    f.write(json.dumps(drop_payload) + "\n")
+
+                QMessageBox.information(self, "Success", f"Tx {seal} confirmed.\n{price} STGM spent.\nPayload routed cross-node.")
+            except Exception as e:
+                QMessageBox.critical(self, "Tx Failed", f"Market error: {e}")
 
 # ─────────────────────────────────────────────────────────────
 
