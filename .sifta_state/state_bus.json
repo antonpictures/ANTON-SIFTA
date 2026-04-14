@@ -2,11 +2,22 @@
     "active_scars": {},
     "volatility_history": [
         {
-            "timestamp": 1776195839.44584,
+            "timestamp": 1776195631.7231739,
+            "success": true
+        },
+        {
+            "timestamp": 1776195687.5106938,
             "success": true
         }
     ],
     "guard_actions": [
-        1776195839.445675
-    ]
+        1776195687.510526
+    ],
+    "whatsapp_contact_memory": {
+        "c00153992c381a66": {
+            "count": 5,
+            "history": []
+        }
+    },
+    "volatility_score": 0.1
 }
