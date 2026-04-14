@@ -12,7 +12,7 @@ DROP_FILE = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 
 def get_serial():
     try:
-        out = subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True)
+        out = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
         return out.decode().split('"')[-2]
     except Exception:
         return "UNKNOWN_HW"

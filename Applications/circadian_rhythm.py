@@ -38,7 +38,7 @@ SCHEDULES = {
 
 def get_serial():
     try:
-        out = subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True)
+        out = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
         return out.decode().split('"')[-2]
     except Exception:
         return "UNKNOWN_HW"
@@ -47,7 +47,7 @@ def get_idle_seconds():
     """Read HIDIdleTime from macOS IOHIDSystem. Returns seconds since last human input."""
     try:
         out = subprocess.check_output(
-            "ioreg -c IOHIDSystem | grep HIDIdleTime", shell=True
+            "/usr/sbin/ioreg -c IOHIDSystem | grep HIDIdleTime", shell=True
         ).decode()
         ns = int(re.search(r"HIDIdleTime\s*=\s*(\d+)", out).group(1))
         return ns / 1_000_000_000
