@@ -119,7 +119,7 @@ class SwarmChatWindow(QWidget):
             "QListWidget::item:hover { background-color: #1a1b26; }"
             "QListWidget::item:selected { background-color: #24283b; color: #7dcfff; font-weight: bold; }"
         )
-        chat_targets = ["GROUP (All)", "m5Queen (Mesh)", "m1Queen (Mesh)", "SWARM (Ollama)"]
+        chat_targets = ["GROUP (All)", "m5Queen (Mesh)", "m1Queen (Mesh)", "SWARM (Ollama)", "ANTIGRAVITY (IDE)"]
         self.sidebar_list.addItems(chat_targets)
         self.sidebar_list.setCurrentRow(0)
         sidebar_layout.addWidget(self.sidebar_list)
@@ -311,7 +311,7 @@ class SwarmChatWindow(QWidget):
             self.worker.error_signal.connect(self._on_error)
             self.worker.start()
             
-        if "m5Queen" in target or "m1Queen" in target or "GROUP" in target:
+        if "m5Queen" in target or "m1Queen" in target or "GROUP" in target or "ANTIGRAVITY" in target:
             # Write to the dead drop file for off-node entities to read
             drop_entry = {
                 "sender": network_id,
