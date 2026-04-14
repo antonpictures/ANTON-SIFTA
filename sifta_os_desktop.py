@@ -16,9 +16,9 @@ import urllib.error
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QMdiArea, QMdiSubWindow,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox
+    QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox, QListWidget
 )
-from PyQt6.QtCore import Qt, QProcess, QTimer, QDateTime, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
 
@@ -65,7 +65,7 @@ class OllamaWorker(QThread):
             }).encode("utf-8")
 
             req = urllib.request.Request(
-                "http://localhost:11434/api/generate",
+                "http://127.0.0.1:11434/api/generate",
                 data=payload,
                 headers={"Content-Type": "application/json"},
                 method="POST"
@@ -119,7 +119,7 @@ class SwarmChatWindow(QWidget):
             "QListWidget::item:hover { background-color: #1a1b26; }"
             "QListWidget::item:selected { background-color: #24283b; color: #7dcfff; font-weight: bold; }"
         )
-        chat_targets = ["GROUP (All)", "m5Queen (DeadDrop)", "m1Queen (DeadDrop)", "SWARM (Ollama)"]
+        chat_targets = ["GROUP (All)", "m5Queen (Mesh)", "m1Queen (Mesh)", "SWARM (Ollama)"]
         self.sidebar_list.addItems(chat_targets)
         self.sidebar_list.setCurrentRow(0)
         sidebar_layout.addWidget(self.sidebar_list)
@@ -154,7 +154,7 @@ class SwarmChatWindow(QWidget):
         header = QHBoxLayout()
         title = QLabel("🐜 SIFTA CORE CHAT")
         title.setFont(QFont("Inter", 13, QFont.Weight.Bold))
-        title.setStyleSheet("color: #bb9af7;")
+        title.setStyleSheet("color: #565f89;")
         header.addWidget(title)
         header.addStretch()
 
@@ -294,8 +294,8 @@ class SwarmChatWindow(QWidget):
         # Display the outgoing message
         target_display = target.split(" ")[0]
         time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
-        architect_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
-        html_msg = f"{time_str}<b style='color:#9ece6a;'>{architect_id} (to {target_display}) ▶</b>  {text}"
+        network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
+        html_msg = f"{time_str}<b style='color:#9ece6a;'>[ ARCHITECT ] (to {target_display}) ▶</b>  {text}"
         self.display.append(html_msg)
         self.display.append("")
         try:
@@ -314,7 +314,7 @@ class SwarmChatWindow(QWidget):
         if "m5Queen" in target or "m1Queen" in target or "GROUP" in target:
             # Write to the dead drop file for off-node entities to read
             drop_entry = {
-                "sender": architect_id,
+                "sender": network_id,
                 "text": text,
                 "timestamp": int(time.time())
             }
@@ -358,11 +358,15 @@ class SwarmChatWindow(QWidget):
                         elif sender.startswith("[C_C::"): color = "#f7768e" # Claude Red
                         
                         # Skip local echo of our own messages
-                        architect_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
-                        if sender == architect_id:
+                        local_network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
+                        if sender == local_network_id:
                             continue
                             
-                        msg = f"{time_str}<b style='color:{color};'>{sender} ▶</b>  {t}"
+                        visual_sender = sender
+                        if sender.startswith("[ARCHITECT"):
+                            visual_sender = "[ ARCHITECT ]"
+                            
+                        msg = f"{time_str}<b style='color:{color};'>{visual_sender} ▶</b>  {t}"
                         self.display.append(msg)
                         self.display.append("")
                         
@@ -436,6 +440,9 @@ class TerminalSubWindow(QWidget):
         self.setLayout(layout)
 
         self.process = QProcess()
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONPATH", os.getcwd())
+        self.process.setProcessEnvironment(env)
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
         self.process.readyReadStandardError.connect(self.handle_stderr)
         self.process.start(cmd, args)
@@ -716,25 +723,44 @@ class SiftaDesktop(QMainWindow):
 
         prog = menu.addMenu("Programs ▶")
         acc  = prog.addMenu("Accessories ▶")
+        sims = prog.addMenu("Simulations ▶")
+        net  = prog.addMenu("Networking ▶")
+        sys_menu = prog.addMenu("System ▶")
+
+        # ── Core Built-in OS Apps ────────────────────────
         acc.addAction("🐜 Swarm Chat").triggered.connect(self.open_swarm_chat)
         acc.addAction("Video Editor").triggered.connect(self.open_video_editor)
         acc.addAction("SwarmText Editor").triggered.connect(lambda: self.spawn_text_editor(None))
 
-        sims = prog.addMenu("Simulations ▶")
-        sims.addAction("SwarmRL Consensus").triggered.connect(
-            lambda: self.spawn_terminal("Consensus", "python3", ["test_bridge_consensus.py"])
-        )
-        sims.addAction("Proof of Swimming").triggered.connect(
-            lambda: self.spawn_terminal("PoS Test", "python3", ["test_proof_of_swimming.py"])
-        )
+        # ── Dynamic Native Apps ──────────────────────────
+        manifest_path = "Applications/apps_manifest.json"
+        if os.path.exists(manifest_path):
+            try:
+                with open(manifest_path, "r") as f:
+                    apps = json.load(f)
+                for app_name, app_data in apps.items():
+                    cat = app_data.get("category", "Accessories")
+                    entry = app_data.get("entry_point", "")
+                    if not entry: continue
+
+                    target_menu = acc
+                    if cat == "Simulations": target_menu = sims
+                    elif cat == "Networking": target_menu = net
+                    elif cat == "System": target_menu = sys_menu
+
+                    target_menu.addAction(f"{app_name}").triggered.connect(
+                        (lambda e: lambda: self.spawn_terminal(app_name, "python3", [e]))(entry)
+                    )
+            except Exception as e:
+                print(f"[Boot Error] Failed to load apps manifest: {e}")
 
         docs = menu.addMenu("Documents ▶")
-        docs.addAction("README.md").triggered.connect(lambda: self.spawn_text_editor("README.md"))
-        docs.addAction("repair_log.jsonl").triggered.connect(lambda: self.spawn_text_editor("repair_log.jsonl"))
+        docs.addAction("README.md").triggered.connect(lambda: self.spawn_text_editor("Documents/README.md"))
+        docs.addAction("repair_log.jsonl").triggered.connect(lambda: self.spawn_text_editor("Utilities/repair_log.jsonl"))
 
         menu.addSeparator()
         menu.addAction("Help").triggered.connect(
-            lambda: self.spawn_terminal("Help", "cat", ["README.md"])
+            lambda: self.spawn_terminal("Help", "cat", ["Documents/README.md"])
         )
         btn_start.setMenu(menu)
 
@@ -779,7 +805,7 @@ class SiftaDesktop(QMainWindow):
                 self.active_chat_sub.raise_()
                 return
         chat = SwarmChatWindow()
-        sub  = self._make_sub(chat, "🐜 SIFTA Core Chat", 700, 520, "#bb9af7")
+        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", 700, 520, "#565f89")
         self.active_chat_sub = sub
         sub.destroyed.connect(lambda: setattr(self, "active_chat_sub", None))
 
