@@ -1,0 +1,14 @@
+{
+  "C07FL0JAQ6NV": {
+    "serial": "C07FL0JAQ6NV",
+    "node": "M1THER",
+    "label": "Mac Mini 8GB \u2014 M1THER Node",
+    "energy": "M1 Neural Engine (8-core) + Ollama qwen3.5:2b",
+    "cost_stgm": 1.0,
+    "models": [
+      "qwen3.5:2b"
+    ],
+    "offered": true,
+    "last_seen": 1776195116
+  }
+}
