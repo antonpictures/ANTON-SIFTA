@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -28,13 +29,38 @@ LEDGER = ROOT_DIR / "repair_log.jsonl"
 
 
 def append_ledger(node: str, amount: float, reason: str) -> None:
-    event = {
-        "timestamp": int(time.time()),
-        "agent": node,
+    ts_wall = int(time.time())
+    ts_iso = datetime.now(timezone.utc).isoformat()
+    miner_id = node.upper()
+    event: dict = {
+        "timestamp": ts_wall,
+        "agent": miner_id,
         "amount_stgm": amount,
         "reason": reason,
         "hash": str(uuid.uuid4()),
     }
+    try:
+        _sysd = str(ROOT_DIR / "System")
+        if _sysd not in sys.path:
+            sys.path.insert(0, _sysd)
+        from crypto_keychain import get_silicon_identity, sign_block
+
+        sn = get_silicon_identity()
+        body = f"UTILITY_MINT::{miner_id}::{amount}::{ts_iso}::{reason}::NODE[{sn}]"
+        sig = sign_block(body)
+        event = {
+            "event": "UTILITY_MINT",
+            "timestamp": ts_wall,
+            "ts": ts_iso,
+            "miner_id": miner_id,
+            "amount_stgm": amount,
+            "reason": reason,
+            "hash": event["hash"],
+            "ed25519_sig": sig,
+            "signing_node": sn,
+        }
+    except Exception:
+        pass
     with open(LEDGER, "a", encoding="utf-8") as f:
         f.write(json.dumps(event) + "\n")
     print(f"[🔥] STGM UTILITY MINT: +{amount} STGM -> {node} ({reason})")

@@ -40,6 +40,23 @@ for d in (QUORUM_DRAFT_DIR, PENDING_DIR, APPROVED_DIR, REJECTED_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 
+def _proposal_path_allowed(path: Path) -> bool:
+    """Reject targets outside the repo root or under .git (path escape / supply-chain)."""
+    try:
+        resolved = path.resolve()
+        root = ROOT_DIR.resolve()
+        resolved.relative_to(root)
+    except (ValueError, OSError):
+        return False
+    try:
+        rel = resolved.relative_to(ROOT_DIR.resolve())
+    except ValueError:
+        return False
+    if rel.parts and rel.parts[0] == ".git":
+        return False
+    return True
+
+
 def _sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -61,6 +78,10 @@ def write_proposal(
     Returns the proposal record.
     """
     proposal_id = str(uuid.uuid4())
+    filepath = Path(filepath)
+    if not _proposal_path_allowed(filepath):
+        raise ValueError(f"[PROPOSAL] Path not allowed (outside repo or forbidden): {filepath}")
+
     pre_hash = _sha256(original_content)
     post_hash = _sha256(fixed_content)
 
@@ -218,6 +239,8 @@ def approve_proposal(proposal_id: str) -> dict:
         proposal = json.load(f)
 
     filepath = Path(proposal["filepath"])
+    if not _proposal_path_allowed(filepath):
+        raise RuntimeError(f"[PROPOSAL] Path not allowed (outside repo or forbidden): {filepath}")
     if not filepath.exists():
         # Ghost proposal: the file no longer exists physically. Auto-reject to clear the UI.
         reject_proposal(proposal_id, reason="Auto-rejected: Target physical file no longer exists.")

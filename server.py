@@ -83,10 +83,12 @@ app.add_middleware(SiftaMutatingAuthMiddleware)
 if os.path.exists("editor_static"):
     app.mount("/editor_static", StaticFiles(directory="editor_static"), name="editor_static")
 
-if not os.environ.get("SIFTA_API_KEY", "").strip():
+_api_key = os.environ.get("SIFTA_API_KEY", "").strip()
+if not _api_key:
     print(
         "[!] SIFTA_API_KEY is unset — POST/DELETE on /api/* and /messenger/send are open. "
-        "Set SIFTA_API_KEY and send X-SIFTA-Key (or Authorization: Bearer) from clients."
+        "Set SIFTA_API_KEY and send X-SIFTA-Key (or Authorization: Bearer) from clients. "
+        "Export SIFTA_REQUIRE_AUTH=1 to refuse startup without a key."
     )
 
 @app.get("/editor", response_class=HTMLResponse)
@@ -1231,7 +1233,9 @@ async def wallet_wormhole(req: WormholeRequest):
         }
     }
 
-    target_url = f"http://{req.target_ip}:{req.target_port}/api/receive_soul"
+    _tls = os.environ.get("SIFTA_WORMHOLE_USE_TLS", "").strip().lower() in ("1", "true", "yes", "on")
+    _scheme = "https" if _tls else "http"
+    target_url = f"{_scheme}://{req.target_ip}:{req.target_port}/api/receive_soul"
     payload_bytes = json.dumps(payload).encode("utf-8")
 
     # ── SIFTA_MESH_HMAC: optional LAN hop authentication ──────────────────────
@@ -1251,7 +1255,21 @@ async def wallet_wormhole(req: WormholeRequest):
             headers=_outbound_headers,
             method="POST"
         )
-        with urllib.request.urlopen(http_req, timeout=15) as resp:
+        _ssl_ctx = None
+        if _tls:
+            import ssl
+
+            if os.environ.get("SIFTA_WORMHOLE_TLS_INSECURE", "").strip().lower() in ("1", "true", "yes", "on"):
+                _ssl_ctx = ssl._create_unverified_context()
+            else:
+                _ssl_ctx = ssl.create_default_context()
+                _ca = os.environ.get("SIFTA_WORMHOLE_CAFILE", "").strip()
+                if _ca:
+                    _ssl_ctx.load_verify_locations(cafile=_ca)
+        _open_kw = {"timeout": 15}
+        if _ssl_ctx is not None:
+            _open_kw["context"] = _ssl_ctx
+        with urllib.request.urlopen(http_req, **_open_kw) as resp:
             remote_resp = json.loads(resp.read().decode())
 
         if not remote_resp.get("ok"):
@@ -1358,6 +1376,22 @@ async def receive_soul(request: Request):
                     }
             except Exception as e:
                 return {"ok": False, "error": f"Soul key material invalid: {e}"}
+
+        # Optional: homeworld must be a known PKI node (stops random keypair souls on locked meshes)
+        if os.environ.get("SIFTA_RECEIVE_SOUL_REQUIRE_PKI", "").strip().lower() in ("1", "true", "yes", "on"):
+            reg_path = STATE_DIR / "node_pki_registry.json"
+            if reg_path.exists():
+                try:
+                    reg = json.loads(reg_path.read_text(encoding="utf-8"))
+                except Exception:
+                    reg = {}
+                if isinstance(reg, dict) and len(reg) > 0:
+                    hw = str(soul.get("homeworld_serial", "") or "").strip()
+                    if not hw or hw not in reg:
+                        return {
+                            "ok": False,
+                            "error": "homeworld_serial not in node_pki_registry — soul rejected (SIFTA_RECEIVE_SOUL_REQUIRE_PKI).",
+                        }
 
         # Write soul to local state dir
         dest = STATE_DIR / f"{agent_id}.json"
@@ -1801,6 +1835,15 @@ async def autonomic_heartbeat():
                 swarm_network_ledger.push_swarm_directive("GLOBAL_BROADCAST", msg)
         except Exception as e:
             print(f"[🫀 BIOS ERROR] Heartbeat stutter: {e}")
+
+
+@app.on_event("startup")
+async def sifta_security_bootstrap():
+    if os.environ.get("SIFTA_REQUIRE_AUTH", "").strip().lower() in ("1", "true", "yes", "on"):
+        if not os.environ.get("SIFTA_API_KEY", "").strip():
+            raise RuntimeError(
+                "SIFTA_REQUIRE_AUTH is set but SIFTA_API_KEY is empty — refusing to boot with an open mutating API."
+            )
 
 
 @app.on_event("startup")

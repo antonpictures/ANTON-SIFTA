@@ -305,6 +305,13 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
         )
         return bool(verify_block(node, body, sig))
 
+    if event == "UTILITY_MINT":
+        body = (
+            f"UTILITY_MINT::{entry.get('miner_id', '')}::{entry.get('amount_stgm', 0)}::"
+            f"{entry.get('ts', '')}::{entry.get('reason', '')}::NODE[{node}]"
+        )
+        return bool(verify_block(node, body, sig))
+
     if tx_type == "STGM_SPEND":
         ts = entry.get("timestamp")
         amt = entry.get("amount")
@@ -336,6 +343,7 @@ def ledger_balance(agent_id: str) -> float:
     Dialect A — inference_economy.py (event-keyed):
         event: "MINING_REWARD"    → amount_stgm credited to miner_id
         event: "FOUNDATION_GRANT" → amount_stgm credited to miner_id
+        event: "UTILITY_MINT"     → signed passive mint (miner_id)
         event: "INFERENCE_BORROW" → fee_stgm debited from borrower_id,
                                      credited to lender_ip
 
@@ -372,6 +380,10 @@ def ledger_balance(agent_id: str) -> float:
 
                 # ── Dialect A ──────────────────────────────────────────────────
                 if event == "MINING_REWARD" or event == "FOUNDATION_GRANT":
+                    if entry.get("miner_id", "").upper() == uid:
+                        balance += float(entry.get("amount_stgm", 0.0))
+
+                elif event == "UTILITY_MINT":
                     if entry.get("miner_id", "").upper() == uid:
                         balance += float(entry.get("amount_stgm", 0.0))
 

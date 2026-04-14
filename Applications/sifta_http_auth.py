@@ -3,8 +3,13 @@ HTTP helpers for local SIFTA API clients (Cursor GUIs, cron bridges, etc.).
 
 Environment:
   SIFTA_API_KEY   — When set, server.py requires X-SIFTA-Key or Bearer on mutating routes.
+  SIFTA_REQUIRE_AUTH — If 1/true/on, FastAPI startup fails unless SIFTA_API_KEY is set (no open API).
   SIFTA_API_BASE  — Override API root (default http://localhost:7433/api). Use behind TLS
                     reverse proxy in production (e.g. https://sifta.lan/api).
+
+Related (server / wormhole — see server.py):
+  SIFTA_MESH_HMAC, SIFTA_WORMHOLE_USE_TLS, SIFTA_WORMHOLE_TLS_INSECURE, SIFTA_WORMHOLE_CAFILE,
+  SIFTA_RECEIVE_SOUL_REQUIRE_PKI
 
 Hardening backlog (not solved here):
   - Wormhole / receive_soul still assume LAN trust unless you add mTLS or VPN.
