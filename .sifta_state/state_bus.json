@@ -6,12 +6,20 @@
     "active_scars": {},
     "volatility_history": [
         {
+<<<<<<< Updated upstream
             "timestamp": 1776195631.7231739,
+=======
+            "timestamp": 1776195739.9999309,
+>>>>>>> Stashed changes
             "success": true
         }
     ],
     "guard_actions": [
+<<<<<<< Updated upstream
         1776195631.722843
+=======
+        1776195739.9998121
+>>>>>>> Stashed changes
     ],
     "whatsapp_contact_memory": {
         "c00153992c381a66": {
