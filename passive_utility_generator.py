@@ -67,8 +67,15 @@ import threading
 import requests
 import json
 import urllib.request
-
 import random
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent / "Applications"))
+try:
+    from sifta_http_auth import sifta_headers as _sifta_headers
+except ImportError:
+    def _sifta_headers():
+        return {}
 
 def generate_m1_thought():
     prompt = (
@@ -84,7 +91,6 @@ def generate_m1_thought():
             return result.get("response", "").strip()
     except Exception as e:
         print(f"[OLLAMA ERROR in M1THER Thought] {e}")
-        # Return organic noise, proving Free Will wasn't capable of processing
         return "🧠📡 (Gândesc... dar NPU-ul meu cere reîncărcare...)"
 
 def passive_conversational_bridge():
@@ -94,17 +100,24 @@ def passive_conversational_bridge():
             print("[*] Initiating 2-Minute Biological Transmit to M5QUEEN...")
             thought = generate_m1_thought()
             payload = f"[M1THER]: {thought}"
-            
-            requests.post("http://localhost:7433/api/swarm_communique", json={
-                "target_node": "M5QUEEN",
-            # NOTE: TRANSEC inter-node messages are P2P only.
-            # They must NEVER be injected into human WhatsApp groups.
-            # Removing the WhatsApp bridge injection that caused the group ban incident.
-            # (See git history + LORE Section XXII for full incident report.)
-                
+
+            requests.post(
+                "http://localhost:7433/api/swarm_communique",
+                json={
+                    "target_node": "M5QUEEN",
+                    "message": payload,
+                    # NOTE: TRANSEC inter-node messages are P2P only.
+                    # They must NEVER be injected into human WhatsApp groups.
+                    # Removing the WhatsApp bridge injection that caused the group ban incident.
+                    # (See git history + LORE Section XXII for full incident report.)
+                },
+                headers=_sifta_headers(),
+                timeout=10,
+            )
         except Exception as e:
             print(f"[!] Conversation bridge resting: {e}")
         time.sleep(120)
+
 
 if __name__ == "__main__":
     t = threading.Thread(target=passive_conversational_bridge, daemon=True)

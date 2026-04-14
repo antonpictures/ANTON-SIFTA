@@ -30,6 +30,25 @@ import uuid
 from pathlib import Path
 from enum import Enum, auto
 
+# Safe serial reader — no shell=True
+_SIFTA_ROOT = Path(__file__).parent
+sys.path.insert(0, str(_SIFTA_ROOT / "System"))
+try:
+    from silicon_serial import read_apple_serial as _read_serial
+except ImportError:
+    def _read_serial() -> str:
+        try:
+            r = subprocess.run(
+                ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in r.stdout.splitlines():
+                if "IOPlatformSerialNumber" in line:
+                    return line.split('"')[-2].strip()
+        except Exception:
+            pass
+        return "UNKNOWN_HW_SERIAL"
+
 # ─── Cryptographic Imports ─────────────────────────────────────────────────────
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -84,15 +103,8 @@ def read_current_state() -> BootState:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _resolve_hardware_serial() -> str:
-    """Ask macOS bare metal for the true physical serial number."""
-    try:
-        out = subprocess.check_output(
-            "ioreg -l | grep IOPlatformSerialNumber",
-            shell=True, stderr=subprocess.DEVNULL
-        )
-        return out.decode().split('"')[-2]
-    except Exception:
-        return "UNKNOWN_HW_SERIAL"
+    """Ask macOS bare metal for the true physical serial number (no shell=True)."""
+    return _read_serial()
 
 
 def _hash_filesystem_baseline() -> str:
