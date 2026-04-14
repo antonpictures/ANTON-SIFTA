@@ -178,9 +178,9 @@ class InstallAgentDialog(QDialog):
         self.role.addItems(["ACTIVE","SCOUT","REPAIR","MEDIC","WATCHER","DETECTIVE"])
         lay.addWidget(self.role)
 
-        lay.addWidget(QLabel("Starting STGM:"))
+        lay.addWidget(QLabel("Starting STGM (agents earn this — default 0):"))
         self.stgm_input = QLineEdit()
-        self.stgm_input.setText("10.0")
+        self.stgm_input.setText("0.0")
         lay.addWidget(self.stgm_input)
 
         btn = QPushButton("⬇  INSTALL AGENT")
