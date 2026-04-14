@@ -28,6 +28,26 @@ We have passed all distributed consensus tests from the **SwarmRL research group
 
 **We are a Bank and an Operating System. They don't work without each other.**
 
+---
+
+### The Mission
+
+**One SIFTA node in every country on Earth.**
+
+195 sovereign compute nodes. Each owned by a local Architect. Each running their own AI swarm. Each connected to a global peer-to-peer inference grid where compute, data, and applications are shared fairly — without a single central server, without a single corporation controlling the pipe.
+
+This is not a cloud play. The cloud is the thing we are replacing.
+
+### Use of Funds
+
+| Allocation | Purpose |
+|---|---|
+| **Hardware seeding** | Deploy genesis nodes in 50 priority countries — vetted local Architects, Mac hardware, full SIFTA OS stack |
+| **Inference grid** | Build and ship the Distributed Inference Scheduler as production infrastructure (STGM token, load balancing, peer routing) |
+| **Security audit** | Third-party formal verification of the Ed25519 identity layer and consensus protocol |
+| **Team** | First 3 engineers — distributed systems, cryptography, and local LLM optimization |
+
+**We are raising a Seed round.** The technology is running. The architecture is proven. We need the capital to put a node in the hands of an Architect in Lagos, São Paulo, Jakarta, and Kyiv — and let the Swarm do the rest.
+
 — George Anton, Architect  
 ANTON-SIFTA · github.com/antonpictures/ANTON-SIFTA
-Tell what is novel in this architecture that others dont have so we don't bullshit anyone -- o 
