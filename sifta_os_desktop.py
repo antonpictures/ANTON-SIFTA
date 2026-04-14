@@ -793,6 +793,12 @@ class SiftaDesktop(QMainWindow):
         docs.addAction("repair_log.jsonl").triggered.connect(lambda: self.spawn_text_editor("Utilities/repair_log.jsonl"))
 
         menu.addSeparator()
+        finance_menu = menu.addMenu("Finance ▶")
+        finance_menu.addAction("⚡ Swarm Finance").triggered.connect(
+            lambda: self.spawn_native_widget("Swarm Finance", "Applications/sifta_finance.py", "FinanceDashboard")
+        )
+
+        menu.addSeparator()
         menu.addAction("Help").triggered.connect(
             lambda: self.spawn_terminal("Help", "cat", ["Documents/README.md"])
         )

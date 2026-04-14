@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+# ─────────────────────────────────────────────────────────────
+# SIFTA OS — Finance Dashboard
+# Robinhood-style view of all Swarm agents: STGM balances,
+# energy levels, status. Plus an Install Agent button.
+# ─────────────────────────────────────────────────────────────
+
+import sys, json, os, time
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QScrollArea, QFrame, QDialog, QLineEdit,
+    QComboBox, QMessageBox, QGridLayout, QProgressBar
+)
+from PyQt6.QtCore  import Qt, QTimer
+from PyQt6.QtGui   import QFont, QColor
+
+REPO_ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATE_DIR   = os.path.join(REPO_ROOT, ".sifta_state")
+
+AGENT_FACES = {
+    "ALICE_M5":   "[_o_]", "M1THER":   "[O_O]", "ANTIALICE": "[o|o]",
+    "SEBASTIAN":  "[_o_]", "HERMES":   "[_v_]",  "IMPERIAL":  "[@_@]",
+    "REPAIR-DRONE":"[X_X]","M1SIFTA_BODY":"[M1]","M5SIFTA_BODY":"[M5]",
+    "GROK_SWARMGPT":"[G_G]","OPENCLAW_QUEEN":"[Q_Q]","M1QUEEN":"[q_q]",
+}
+AGENT_COLORS = {
+    "ALICE_M5":"#ff9e64","M1THER":"#7dcfff","ANTIALICE":"#bb9af7",
+    "SEBASTIAN":"#9ece6a","HERMES":"#e0af68","M5SIFTA_BODY":"#ff9e64",
+    "M1SIFTA_BODY":"#7dcfff","GROK_SWARMGPT":"#73daca","M1QUEEN":"#7dcfff",
+}
+DEFAULT_COLOR = "#565f89"
+
+# ─────────────────────────────────────────────────────────────
+
+def load_agents():
+    agents = []
+    skip = {"circadian_m1","circadian_m5","identity_stats","intelligence_settings",
+            "m1queen_identity_anchor","physical_registry","scheduler_m5",
+            "state_bus","territory_manifest","m1queen_memory"}
+    for fname in sorted(os.listdir(STATE_DIR)):
+        if not fname.endswith(".json"): continue
+        key = fname.replace(".json","")
+        if key in skip: continue
+        try:
+            with open(os.path.join(STATE_DIR, fname)) as f:
+                data = json.load(f)
+            if "energy" not in data and "stgm_balance" not in data: continue
+            data["_file"] = fname
+            data["_key"]  = key
+            if "id" not in data or not data["id"]:
+                data["id"] = key
+            agents.append(data)
+        except Exception:
+            continue
+    agents.sort(key=lambda a: float(a.get("stgm_balance") or 0), reverse=True)
+    return agents
+
+# ─────────────────────────────────────────────────────────────
+
+class AgentCard(QFrame):
+    def __init__(self, agent: dict):
+        super().__init__()
+        self.agent = agent
+        self._build(agent)
+
+    def _build(self, a):
+        agent_id = str(a.get("id") or a.get("_key","?")).upper()
+        stgm     = float(a.get("stgm_balance") or 0)
+        energy   = int(a.get("energy") or 0)
+        style    = str(a.get("style") or "UNKNOWN")
+        face     = AGENT_FACES.get(agent_id, "[~_~]")
+        color    = AGENT_COLORS.get(agent_id, DEFAULT_COLOR)
+
+        self.setFixedHeight(130)
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: #13141f;
+                border: 1px solid {color}44;
+                border-left: 3px solid {color};
+                border-radius: 8px;
+            }}
+            QFrame:hover {{ background: #1a1b2e; border-color: {color}88; }}
+        """)
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(16)
+
+        # Face
+        face_lbl = QLabel(face)
+        face_lbl.setFont(QFont("Courier", 16, QFont.Weight.Bold))
+        face_lbl.setStyleSheet(f"color: {color}; min-width: 54px;")
+        face_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(face_lbl)
+
+        # Info block
+        info = QVBoxLayout()
+        info.setSpacing(3)
+
+        name_lbl = QLabel(agent_id)
+        name_lbl.setFont(QFont("Inter", 12, QFont.Weight.Bold))
+        name_lbl.setStyleSheet(f"color: {color};")
+        info.addWidget(name_lbl)
+
+        style_lbl = QLabel(style)
+        style_lbl.setFont(QFont("Inter", 10))
+        style_lbl.setStyleSheet("color: #565f89;")
+        info.addWidget(style_lbl)
+
+        # Energy bar
+        energy_row = QHBoxLayout()
+        energy_bar = QProgressBar()
+        energy_bar.setRange(0, 100)
+        energy_bar.setValue(energy)
+        energy_bar.setFixedHeight(6)
+        energy_bar.setTextVisible(False)
+        bar_color = "#9ece6a" if energy > 60 else "#e0af68" if energy > 25 else "#f7768e"
+        energy_bar.setStyleSheet(f"""
+            QProgressBar {{ background: #1f2335; border-radius: 3px; border: none; }}
+            QProgressBar::chunk {{ background: {bar_color}; border-radius: 3px; }}
+        """)
+        energy_row.addWidget(energy_bar)
+        e_lbl = QLabel(f"{energy}%")
+        e_lbl.setFont(QFont("Inter", 9))
+        e_lbl.setStyleSheet("color: #565f89; min-width:30px;")
+        energy_row.addWidget(e_lbl)
+        info.addLayout(energy_row)
+        lay.addLayout(info)
+
+        lay.addStretch()
+
+        # STGM block
+        stgm_block = QVBoxLayout()
+        stgm_block.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        stgm_val = QLabel(f"{stgm:,.1f}")
+        stgm_val.setFont(QFont("Inter", 18, QFont.Weight.Bold))
+        stgm_val.setStyleSheet(f"color: {'#9ece6a' if stgm > 0 else '#f7768e'};")
+        stgm_val.setAlignment(Qt.AlignmentFlag.AlignRight)
+        stgm_block.addWidget(stgm_val)
+
+        stgm_lbl = QLabel("STGM")
+        stgm_lbl.setFont(QFont("Inter", 9))
+        stgm_lbl.setStyleSheet("color: #565f89;")
+        stgm_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        stgm_block.addWidget(stgm_lbl)
+        lay.addLayout(stgm_block)
+
+# ─────────────────────────────────────────────────────────────
+
+class InstallAgentDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Install New Agent")
+        self.setMinimumWidth(360)
+        self.setStyleSheet("""
+            QDialog   { background: #0d0e17; color: #a9b1d6; }
+            QLabel    { color: #a9b1d6; font-size: 12px; }
+            QLineEdit { background: #1a1b2e; border: 1px solid #2a2b3d;
+                        border-radius:4px; padding:6px; color:#a9b1d6; }
+            QComboBox { background: #1a1b2e; border: 1px solid #2a2b3d;
+                        border-radius:4px; padding:6px; color:#a9b1d6; }
+            QPushButton { background:#3d59a1; color:#fff; border:none;
+                          border-radius:4px; padding:8px 16px; font-weight:bold; }
+            QPushButton:hover { background:#4a6cbf; }
+        """)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(20,20,20,20)
+        lay.setSpacing(10)
+
+        lay.addWidget(QLabel("Agent ID (e.g. SCOUT_M5):"))
+        self.id_input = QLineEdit()
+        self.id_input.setPlaceholderText("AGENT_NAME")
+        lay.addWidget(self.id_input)
+
+        lay.addWidget(QLabel("Role:"))
+        self.role = QComboBox()
+        self.role.addItems(["ACTIVE","SCOUT","REPAIR","MEDIC","WATCHER","DETECTIVE"])
+        lay.addWidget(self.role)
+
+        lay.addWidget(QLabel("Starting STGM:"))
+        self.stgm_input = QLineEdit()
+        self.stgm_input.setText("10.0")
+        lay.addWidget(self.stgm_input)
+
+        btn = QPushButton("⬇  INSTALL AGENT")
+        btn.clicked.connect(self._install)
+        lay.addWidget(btn)
+
+    def _install(self):
+        agent_id  = self.id_input.text().strip().upper().replace(" ","_")
+        role      = self.role.currentText()
+        stgm      = float(self.stgm_input.text().strip() or "10")
+        if not agent_id:
+            QMessageBox.warning(self, "Error", "Agent ID required.")
+            return
+        fpath = os.path.join(STATE_DIR, f"{agent_id}.json")
+        if os.path.exists(fpath):
+            QMessageBox.warning(self, "Exists", f"{agent_id} already installed.")
+            return
+        payload = {
+            "id":           agent_id,
+            "ascii":        f"<///[~_~]///::ID[{agent_id}]::INSTALLED[{int(time.time())}]>",
+            "stgm_balance": stgm,
+            "style":        role,
+            "energy":       100,
+        }
+        with open(fpath, "w") as f:
+            json.dump(payload, f, indent=2)
+        QMessageBox.information(self,"Installed", f"Agent {agent_id} installed.\nSTGM: {stgm} | Role: {role}")
+        self.accept()
+
+# ─────────────────────────────────────────────────────────────
+
+class FinanceDashboard(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #0d0e17; color: #a9b1d6;")
+        self._main_lay = QVBoxLayout(self)
+        self._main_lay.setContentsMargins(16, 12, 16, 12)
+        self._main_lay.setSpacing(10)
+        self._build()
+        # Auto-refresh every 5 seconds
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._refresh)
+        self._timer.start(5000)
+
+    def _build(self):
+        # ── Header ──────────────────────────────────────────
+        header = QHBoxLayout()
+        title = QLabel("⚡ SWARM FINANCE")
+        title.setFont(QFont("Inter", 14, QFont.Weight.Bold))
+        title.setStyleSheet("color: #7aa2f7;")
+        header.addWidget(title)
+        header.addStretch()
+
+        self.refresh_btn = QPushButton("↻")
+        self.refresh_btn.setFixedSize(30, 30)
+        self.refresh_btn.setStyleSheet("QPushButton{background:#1a1b2e;border:1px solid #2a2b3d;border-radius:15px;color:#7aa2f7;font-weight:bold;} QPushButton:hover{background:#2a2b3d;}")
+        self.refresh_btn.clicked.connect(self._refresh)
+        header.addWidget(self.refresh_btn)
+
+        install_btn = QPushButton("⬇  Install Agent")
+        install_btn.setStyleSheet("QPushButton{background:#1a1b2e;border:1px solid #9ece6a;border-radius:4px;color:#9ece6a;padding:5px 12px;font-weight:bold;} QPushButton:hover{background:#1f2335;}")
+        install_btn.clicked.connect(self._install)
+        header.addWidget(install_btn)
+        self._main_lay.addLayout(header)
+
+        # ── Portfolio total ──────────────────────────────────
+        self.portfolio_lbl = QLabel()
+        self.portfolio_lbl.setFont(QFont("Inter", 24, QFont.Weight.Bold))
+        self.portfolio_lbl.setStyleSheet("color: #9ece6a; padding: 4px 0;")
+        self._main_lay.addWidget(self.portfolio_lbl)
+
+        agents_lbl = QLabel("TOTAL SWARM PORTFOLIO  ·  STGM")
+        agents_lbl.setStyleSheet("color: #565f89; font-size: 11px; margin-bottom: 6px;")
+        self._main_lay.addWidget(agents_lbl)
+
+        # ── Scroll area for cards ────────────────────────────
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;} QScrollBar:vertical{width:6px;background:#1a1b2e;} QScrollBar::handle:vertical{background:#414868;border-radius:3px;}")
+        self.card_container = QWidget()
+        self.card_container.setStyleSheet("background:transparent;")
+        self.card_lay = QVBoxLayout(self.card_container)
+        self.card_lay.setSpacing(8)
+        self.card_lay.setContentsMargins(0,0,0,0)
+        scroll.setWidget(self.card_container)
+        self._main_lay.addWidget(scroll)
+
+        self._populate()
+
+    def _populate(self):
+        # Clear existing cards
+        while self.card_lay.count():
+            item = self.card_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        agents = load_agents()
+        total  = sum(float(a.get("stgm_balance") or 0) for a in agents)
+        self.portfolio_lbl.setText(f"{total:,.1f}")
+
+        for a in agents:
+            self.card_lay.addWidget(AgentCard(a))
+        self.card_lay.addStretch()
+
+    def _refresh(self):
+        self._populate()
+
+    def _install(self):
+        dlg = InstallAgentDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._refresh()
+
+# ─────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setApplicationName("SIFTA Finance")
+    w = FinanceDashboard()
+    w.resize(700, 600)
+    w.show()
+    sys.exit(app.exec())
