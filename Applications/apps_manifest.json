@@ -1,0 +1,57 @@
+{
+  "Swarm Discord Engine": {
+    "category": "Networking",
+    "entry_point": "Applications/discord_swarm.py",
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Telegram Engine": {
+    "category": "Networking",
+    "entry_point": "Applications/telegram_swarm.py",
+    "signature": "UNVERIFIED"
+  },
+  "Swarm WhatsApp Bridge": {
+    "category": "Networking",
+    "entry_point": "Applications/whatsapp_swarm.py",
+    "signature": "UNVERIFIED"
+  },
+  "Colloid Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_colloid_sim.py",
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Arena": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_arena.py",
+    "signature": "UNVERIFIED"
+  },
+  "Biological Dashboard": {
+    "category": "Accessories",
+    "entry_point": "Applications/sifta_biological_gui.py",
+    "signature": "UNVERIFIED"
+  },
+  "Human Council GUI": {
+    "category": "Accessories",
+    "entry_point": "Applications/council_gui.py",
+    "signature": "UNVERIFIED"
+  },
+  "First Boot Provisioning": {
+    "category": "System",
+    "entry_point": "Applications/sifta_setup_gui.py",
+    "signature": "UNVERIFIED"
+  },
+  "Cardio Metrics": {
+    "category": "System",
+    "entry_point": "Applications/sifta_cardio.py",
+    "signature": "UNVERIFIED"
+  },
+  "Sebastian Batch Editor": {
+    "category": "Accessories",
+    "entry_point": "Applications/sifta_sebastian_editor.py",
+    "signature": "UNVERIFIED"
+  },
+  "Desktop GUI (Legacy)": {
+    "category": "Accessories",
+    "entry_point": "Applications/sifta_desktop_gui.py",
+    "signature": "UNVERIFIED"
+  }
+}

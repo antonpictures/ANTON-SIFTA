@@ -716,25 +716,44 @@ class SiftaDesktop(QMainWindow):
 
         prog = menu.addMenu("Programs ▶")
         acc  = prog.addMenu("Accessories ▶")
+        sims = prog.addMenu("Simulations ▶")
+        net  = prog.addMenu("Networking ▶")
+        sys_menu = prog.addMenu("System ▶")
+
+        # ── Core Built-in OS Apps ────────────────────────
         acc.addAction("🐜 Swarm Chat").triggered.connect(self.open_swarm_chat)
         acc.addAction("Video Editor").triggered.connect(self.open_video_editor)
         acc.addAction("SwarmText Editor").triggered.connect(lambda: self.spawn_text_editor(None))
 
-        sims = prog.addMenu("Simulations ▶")
-        sims.addAction("SwarmRL Consensus").triggered.connect(
-            lambda: self.spawn_terminal("Consensus", "python3", ["test_bridge_consensus.py"])
-        )
-        sims.addAction("Proof of Swimming").triggered.connect(
-            lambda: self.spawn_terminal("PoS Test", "python3", ["test_proof_of_swimming.py"])
-        )
+        # ── Dynamic Native Apps ──────────────────────────
+        manifest_path = "Applications/apps_manifest.json"
+        if os.path.exists(manifest_path):
+            try:
+                with open(manifest_path, "r") as f:
+                    apps = json.load(f)
+                for app_name, app_data in apps.items():
+                    cat = app_data.get("category", "Accessories")
+                    entry = app_data.get("entry_point", "")
+                    if not entry: continue
+
+                    target_menu = acc
+                    if cat == "Simulations": target_menu = sims
+                    elif cat == "Networking": target_menu = net
+                    elif cat == "System": target_menu = sys_menu
+
+                    target_menu.addAction(f"{app_name}").triggered.connect(
+                        (lambda e: lambda: self.spawn_terminal(app_name, "python3", [e]))(entry)
+                    )
+            except Exception as e:
+                print(f"[Boot Error] Failed to load apps manifest: {e}")
 
         docs = menu.addMenu("Documents ▶")
-        docs.addAction("README.md").triggered.connect(lambda: self.spawn_text_editor("README.md"))
-        docs.addAction("repair_log.jsonl").triggered.connect(lambda: self.spawn_text_editor("repair_log.jsonl"))
+        docs.addAction("README.md").triggered.connect(lambda: self.spawn_text_editor("Documents/README.md"))
+        docs.addAction("repair_log.jsonl").triggered.connect(lambda: self.spawn_text_editor("Utilities/repair_log.jsonl"))
 
         menu.addSeparator()
         menu.addAction("Help").triggered.connect(
-            lambda: self.spawn_terminal("Help", "cat", ["README.md"])
+            lambda: self.spawn_terminal("Help", "cat", ["Documents/README.md"])
         )
         btn_start.setMenu(menu)
 
