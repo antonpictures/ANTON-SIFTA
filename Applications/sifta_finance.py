@@ -640,17 +640,27 @@ class MarketplaceTab(QWidget):
                 seal_payload = f"{self.local_serial}:{target_serial}:{price}:{ts}"
                 seal = "MARKET_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
                 
-                # Verify sufficient balance before generating Tx
+                # ── UTXO Engine Validation ──
+                # Verify sufficient balance before generating Tx via strict physical ledger.
                 local_agent = "M5SIFTA_BODY" if "GTH4921YP3" in self.local_serial else "M1SIFTA_BODY"
-                state_file = os.path.join(STATE_DIR, f"{local_agent}.json")
-                if os.path.exists(state_file):
-                    with open(state_file, "r") as sf:
-                        ag = json.load(sf)
-                    current_balance = float(ag.get("stgm_balance", 0.0))
-                    if current_balance < price:
-                        QMessageBox.critical(self, "Insufficient STGM", f"Double-Spend Blocked.\nCurrent Balance: {current_balance}\nRequired: {price}")
-                        return
-                else:
+                
+                true_balance = 0.0
+                repair_log = os.path.join(REPO_ROOT, "repair_log.jsonl")
+                if os.path.exists(repair_log):
+                    with open(repair_log, "r") as rlog:
+                        for line in rlog:
+                            if not line.strip(): continue
+                            try:
+                                entry = json.loads(line)
+                                if entry.get("agent_id") == local_agent:
+                                    if entry.get("tx_type") == "STGM_MINT":
+                                        true_balance += float(entry.get("amount", 0.0))
+                                    elif entry.get("tx_type") == "STGM_SPEND":
+                                        true_balance -= float(entry.get("amount", 0.0))
+                            except: pass
+
+                if true_balance < price:
+                    QMessageBox.critical(self, "Insufficient STGM", f"Double-Spend Blocked.\nTrue UTXO Balance: {true_balance}\nRequired: {price}")
                     return
 
                 # Debit localhost wallet

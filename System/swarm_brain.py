@@ -105,6 +105,39 @@ def process_mempool(serial, agent_id):
     
     for tx in pending:
         if tx.get("action") == "MINE_INFERENCE" and tx.get("target_node") == serial:
+            amt = float(tx.get("amount", 1.0))
+            sender_id = tx.get("sender_node", "UNKNOWN")
+            
+            # --- UTXO BINDING ---
+            if "MARKET_SPEND" in sender_id:
+                try:
+                    # Sender is formatted like [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]
+                    parts = sender_id.split("::")
+                    extracted_agent = parts[1].strip()
+                    extracted_hardware = parts[2].replace("]", "").strip()
+
+                    sender_balance = 0.0
+                    if os.path.exists(REPAIR_LOG):
+                        with open(REPAIR_LOG, "r") as rlog:
+                            for line in rlog:
+                                if not line.strip(): continue
+                                try:
+                                    entry = json.loads(line)
+                                    if entry.get("agent_id") == extracted_agent:
+                                        if entry.get("tx_type") == "STGM_MINT":
+                                            sender_balance += float(entry.get("amount", 0.0))
+                                        elif entry.get("tx_type") == "STGM_SPEND":
+                                            sender_balance -= float(entry.get("amount", 0.0))
+                                except: pass
+                    # A 0 or negative sender balance means they are spending money they do not have.
+                    if sender_balance < amt:
+                         print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚨 REJECTED: {extracted_agent} ({extracted_hardware}) has insufficient UTXO balance. Discarding double-spend payload.")
+                         # Drop the payload from the unprocessed list
+                         continue
+                except:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚨 REJECTED: Malformed sender ID. Discarding payload.")
+                    continue
+
             # 1. Energy Validation
             remaining = consume_energy(agent_id, cost=2)
             if remaining < 0:
