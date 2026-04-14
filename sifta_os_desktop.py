@@ -294,8 +294,8 @@ class SwarmChatWindow(QWidget):
         # Display the outgoing message
         target_display = target.split(" ")[0]
         time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
-        architect_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
-        html_msg = f"{time_str}<b style='color:#9ece6a;'>{architect_id} (to {target_display}) ▶</b>  {text}"
+        network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
+        html_msg = f"{time_str}<b style='color:#9ece6a;'>[ ARCHITECT ] (to {target_display}) ▶</b>  {text}"
         self.display.append(html_msg)
         self.display.append("")
         try:
@@ -314,7 +314,7 @@ class SwarmChatWindow(QWidget):
         if "m5Queen" in target or "m1Queen" in target or "GROUP" in target:
             # Write to the dead drop file for off-node entities to read
             drop_entry = {
-                "sender": architect_id,
+                "sender": network_id,
                 "text": text,
                 "timestamp": int(time.time())
             }
@@ -358,11 +358,15 @@ class SwarmChatWindow(QWidget):
                         elif sender.startswith("[C_C::"): color = "#f7768e" # Claude Red
                         
                         # Skip local echo of our own messages
-                        architect_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
-                        if sender == architect_id:
+                        local_network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
+                        if sender == local_network_id:
                             continue
                             
-                        msg = f"{time_str}<b style='color:{color};'>{sender} ▶</b>  {t}"
+                        visual_sender = sender
+                        if sender.startswith("[ARCHITECT"):
+                            visual_sender = "[ ARCHITECT ]"
+                            
+                        msg = f"{time_str}<b style='color:{color};'>{visual_sender} ▶</b>  {t}"
                         self.display.append(msg)
                         self.display.append("")
                         
