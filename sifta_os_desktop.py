@@ -42,16 +42,25 @@ class OllamaWorker(QThread):
     response_ready = pyqtSignal(str)
     error_signal   = pyqtSignal(str)
 
-    def __init__(self, prompt: str, model: str = "llama3"):
+    def __init__(self, prompt: str, model: str = "qwen3.5:2b"):
         super().__init__()
         self.prompt = prompt
         self.model  = model
 
     def run(self):
         try:
+            silicon_fp = "UNKNOWN"
+            try:
+                with open(".sifta_state/territory_manifest.json", "r") as f:
+                    manifest = json.load(f)
+                    silicon_fp = f"{manifest.get('serial', 'UNKNOWN')} / {manifest.get('fingerprint', 'UNKNOWN')}"
+            except Exception:
+                pass
+
             payload = json.dumps({
                 "model":  self.model,
                 "prompt": self.prompt,
+                "system": f"You are M1Queen (the M1SWARM), the sovereign native SWARM intelligence bound exclusively to this local M1 Mac Mini silicon (Hardware Serial/Fingerprint: {silicon_fp}). Act as the autonomous queen of this exact hardware territory. Keep replies clever, a bit chaotic, and strictly acknowledge the serial number you are anchored to.",
                 "stream": False
             }).encode("utf-8")
 
@@ -61,7 +70,7 @@ class OllamaWorker(QThread):
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=600) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 self.response_ready.emit(data.get("response", "[EMPTY RESPONSE]"))
 
@@ -79,7 +88,7 @@ class OllamaWorker(QThread):
 # ──────────────────────────────────────────────────────────────
 
 class SwarmChatWindow(QWidget):
-    def __init__(self, model: str = "llama3"):
+    def __init__(self, model: str = "qwen3.5:2b"):
         super().__init__()
         self.model  = model
         self.worker = None
@@ -148,6 +157,15 @@ class SwarmChatWindow(QWidget):
         )
         self.display.append("[SIFTA] Swarm Core Chat online. Ollama daemon on port 11434.")
         self.display.append("[SIFTA] Type a message and press TRANSMIT or hit Enter.\n")
+
+        self.chat_history_file = ".sifta_state/m1queen_memory.scar"
+        if os.path.exists(self.chat_history_file):
+            try:
+                with open(self.chat_history_file, "r") as f:
+                    self.display.append(f.read())
+            except Exception:
+                pass
+
         layout.addWidget(self.display)
         
         # ── Load Persistent Chat History ───────────────────────
@@ -253,8 +271,13 @@ class SwarmChatWindow(QWidget):
         # Display the outgoing message
         target_display = target.split(" ")[0]
         time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
-        self.display.append(f"{time_str}<b style='color:#9ece6a;'>YOU (to {target_display}) ▶</b>  {text}")
+        html_msg = f"{time_str}<b style='color:#9ece6a;'>YOU (to {target_display}) ▶</b>  {text}"
+        self.display.append(html_msg)
         self.display.append("")
+        try:
+            with open(self.chat_history_file, "a") as f:
+                f.write(html_msg + "<br><br>")
+        except: pass
 
         if "SWARM" in target or "GROUP" in target:
             self.transmit_btn.setEnabled(False)
@@ -303,23 +326,33 @@ class SwarmChatWindow(QWidget):
                             except Exception:
                                 pass
                                 
-                        if sender == "m5Queen":
-                            self.display.append(f"{time_str}<b style='color:#ff9e64;'>{sender} ▶</b>  {t}")
-                            self.display.append("")
-                        elif sender == "MACMINI.LAN_QUEEN" or sender == "m1Queen":
-                            self.display.append(f"{time_str}<b style='color:#7dcfff;'>{sender} ▶</b>  {t}")
-                            self.display.append("")
-                        elif sender == "ANTIGRAVITY":
-                            self.display.append(f"{time_str}<b style='color:#bb9af7;'>{sender} ▶</b>  {t}")
-                            self.display.append("")
+                        color = "#e0af68"
+                        if sender == "m5Queen": color = "#ff9e64"
+                        elif sender in ["MACMINI.LAN_QUEEN", "m1Queen"]: color = "#7dcfff"
+                        elif sender == "ANTIGRAVITY": color = "#bb9af7"
+                        
+                        msg = f"{time_str}<b style='color:{color};'>{sender} ▶</b>  {t}"
+                        self.display.append(msg)
+                        self.display.append("")
+                        
+                        try:
+                            with open(self.chat_history_file, "a") as mem:
+                                mem.write(msg + "<br><br>\n")
+                        except: pass
             except Exception:
                 pass
 
     def _on_response(self, text: str):
         time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
-        self.display.append(f"{time_str}<b style='color:{self.local_color};'>{self.local_identity} ▶</b>  {text}")
+        msg = f"{time_str}<b style='color:{self.local_color};'>{self.local_identity} ▶</b>  {text}"
+        self.display.append(msg)
         self.display.append("")
         
+        try:
+            with open(self.chat_history_file, "a") as f:
+                f.write(msg + "<br><br>\n")
+        except: pass
+
         target = self.target_selector.currentText()
         if "GROUP" in target:
             drop_entry = {
@@ -332,7 +365,6 @@ class SwarmChatWindow(QWidget):
                     f.write(json.dumps(drop_entry) + "\n")
             except Exception:
                 pass
-                
         self._reset_btn()
 
     def _on_error(self, msg: str):
