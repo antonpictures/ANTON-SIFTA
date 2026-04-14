@@ -1,40 +1,48 @@
 #!/usr/bin/env python3
 # ─────────────────────────────────────────────────────────────
-# SIFTA CIRCADIAN RHYTHM — M5 Mac Studio
-# <///[_o_]///::ID[M5]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>
+# SIFTA CIRCADIAN RHYTHM — NODE-AWARE
+# <///[_o_]///::ID[AUTO]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>
 #
-# Self-modifying cron brain. Reads Architect presence via
-# macOS HIDIdleTime sensor, determines activity state, and
-# rewrites the heartbeat crontab density automatically.
+# Self-modifying cron brain. Detects which node it is running on
+# (M5 Mac Studio or M1 Mac Mini) via bare-metal serial number.
+# Applies the correct constant:
+#   M5 -> Pi  (02.23.31.41.53)
+#   M1 -> e   (04.18.27.35.45.52)
+# Reads HIDIdleTime and rewrites heartbeat crontab density.
 # Broadcasts every state transition to the Swarm Mesh.
-#
-# Runs every 30 min via cron (see circadian_m5.crontab).
+# One file. Two nodes. Zero forks needed.
 # ─────────────────────────────────────────────────────────────
 
 import json, time, subprocess, os, re
 
-REPO_ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DROP_FILE    = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
-STATE_FILE   = os.path.join(REPO_ROOT, ".sifta_state", "circadian_m5.json")
-HEARTBEAT    = "System/heartbeat_m5.py"
-SCHEDULER    = "Applications/circadian_rhythm.py"
+REPO_ROOT  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DROP_FILE  = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
+SCHEDULER  = "Applications/circadian_rhythm.py"
 
-# ── Idle thresholds (seconds) ──────────────────────────────────
-ACTIVE_MAX   = 10 * 60    # 0–10 min idle   → ACTIVE
-AFK_MAX      = 45 * 60    # 10–45 min idle  → AFK
-                           # > 45 min idle   → SLEEPING
-
-# ── Cron minute schedules per state ───────────────────────────
-# ACTIVE  → Pi-dense  (02·23·31·41·53) — all gaps ≥ 8 min
-# AFK     → Pi-sparse (14·41)          — gap 27 min / 33 min
-# SLEEPING→ Whisper   (30)             — 1 pulse/hr, dead silence
-SCHEDULES = {
-    "ACTIVE":    [2, 23, 31, 41, 53],
-    "AFK":       [14, 41],
-    "SLEEPING":  [30],
+# Known node serials -> node identity
+NODE_REGISTRY = {
+    "GTH4921YP3":   "M5",
+    "C07FL0JAQ6NV": "M1",
 }
 
-# ──────────────────────────────────────────────────────────────
+# Pi schedule for M5 - all gaps >= 8 min
+PI_SCHEDULES = {
+    "ACTIVE":   [2, 23, 31, 41, 53],
+    "AFK":      [14, 41],
+    "SLEEPING": [30],
+}
+
+# e schedule for M1 - all gaps >= 7 min
+E_SCHEDULES = {
+    "ACTIVE":   [4, 18, 27, 35, 45, 52],
+    "AFK":      [18, 45],
+    "SLEEPING": [30],
+}
+
+ACTIVE_MAX = 10 * 60
+AFK_MAX    = 45 * 60
+
+# ─────────────────────────────────────────────────────────────
 
 def get_serial():
     try:
@@ -43,8 +51,37 @@ def get_serial():
     except Exception:
         return "UNKNOWN_HW"
 
+def detect_node(serial):
+    node_id = NODE_REGISTRY.get(serial, "UNKNOWN")
+    if node_id == "M5":
+        return {
+            "id":         "M5",
+            "label":      "mac studio",
+            "heartbeat":  "System/heartbeat_m5.py",
+            "state_file": os.path.join(REPO_ROOT, ".sifta_state", "circadian_m5.json"),
+            "schedules":  PI_SCHEDULES,
+            "constant":   "pi",
+        }
+    elif node_id == "M1":
+        return {
+            "id":         "M1",
+            "label":      "mac mini",
+            "heartbeat":  "System/heartbeat_m1.py",
+            "state_file": os.path.join(REPO_ROOT, ".sifta_state", "circadian_m1.json"),
+            "schedules":  E_SCHEDULES,
+            "constant":   "e",
+        }
+    else:
+        return {
+            "id":         "UNKNOWN",
+            "label":      "unknown node",
+            "heartbeat":  "System/heartbeat_m5.py",
+            "state_file": os.path.join(REPO_ROOT, ".sifta_state", "circadian_unknown.json"),
+            "schedules":  {"ACTIVE": [30], "AFK": [30], "SLEEPING": [30]},
+            "constant":   "?",
+        }
+
 def get_idle_seconds():
-    """Read HIDIdleTime from macOS IOHIDSystem. Returns seconds since last human input."""
     try:
         out = subprocess.check_output(
             "/usr/sbin/ioreg -c IOHIDSystem | grep HIDIdleTime", shell=True
@@ -52,104 +89,87 @@ def get_idle_seconds():
         ns = int(re.search(r"HIDIdleTime\s*=\s*(\d+)", out).group(1))
         return ns / 1_000_000_000
     except Exception:
-        return 0  # If sensor unreadable, assume Architect is present
+        return 0
 
 def detect_state(idle_secs):
-    if idle_secs < ACTIVE_MAX:
-        return "ACTIVE"
-    elif idle_secs < AFK_MAX:
-        return "AFK"
-    else:
-        return "SLEEPING"
+    if idle_secs < ACTIVE_MAX:  return "ACTIVE"
+    elif idle_secs < AFK_MAX:   return "AFK"
+    else:                       return "SLEEPING"
 
-def load_last_state():
+def load_last_state(state_file):
     try:
-        with open(STATE_FILE, "r") as f:
+        with open(state_file, "r") as f:
             return json.load(f).get("architect_state", None)
     except Exception:
         return None
 
-def save_state(state, idle_secs):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+def save_state(state_file, state, idle_secs):
+    os.makedirs(os.path.dirname(state_file), exist_ok=True)
     data = {}
     try:
-        with open(STATE_FILE, "r") as f:
+        with open(state_file, "r") as f:
             data = json.load(f)
     except Exception:
         pass
     data["architect_state"] = state
     data["idle_seconds"]    = int(idle_secs)
     data["last_checked"]    = int(time.time())
-    with open(STATE_FILE, "w") as f:
+    with open(state_file, "w") as f:
         json.dump(data, f, indent=2)
 
-def rewrite_crontab(state):
-    """Surgically replace SIFTA heartbeat lines. Never touches non-SIFTA cron entries."""
-    minutes = SCHEDULES[state]
+def rewrite_crontab(node, state):
+    minutes = node["schedules"][state]
     new_heartbeat_lines = [
-        f"{m} * * * * cd {REPO_ROOT} && python3 {HEARTBEAT}"
+        f"{m} * * * * cd {REPO_ROOT} && python3 {node['heartbeat']}"
         for m in minutes
     ]
     scheduler_line = f"*/30 * * * * cd {REPO_ROOT} && python3 {SCHEDULER}"
-
-    # Read current crontab safely
     try:
         current = subprocess.check_output("crontab -l 2>/dev/null", shell=True).decode()
     except Exception:
         current = ""
-
-    # Preserve all NON-SIFTA lines
+    hb_script = os.path.basename(node["heartbeat"])
     preserved = [
         ln for ln in current.strip().split("\n")
-        if ln.strip()
-        and "heartbeat_m5" not in ln
-        and "circadian_rhythm" not in ln
+        if ln.strip() and hb_script not in ln and "circadian_rhythm" not in ln
     ]
-
     full_crontab = "\n".join(preserved + [scheduler_line] + new_heartbeat_lines) + "\n"
     proc = subprocess.Popen("crontab -", shell=True, stdin=subprocess.PIPE)
     proc.communicate(full_crontab.encode())
 
-def broadcast(state, idle_secs, serial, changed):
+def broadcast(node, state, idle_secs, serial, changed):
     idle_min = int(idle_secs / 60)
-    pulses   = len(SCHEDULES[state])
-
+    pulses   = len(node["schedules"][state])
+    constant = node["constant"]
+    node_id  = node["id"]
     if changed:
-        text = (
-            f"[CIRCADIAN:\u03c0] Architect idle {idle_min}min \u2192 switching to {state} mode. "
-            f"Heartbeat density: {pulses} pulse/hr. Crontab rewritten."
-        )
+        text = f"[CIRCADIAN:{constant}] {node_id} idle {idle_min}min -> switching to {state} mode. Heartbeat density: {pulses} pulse/hr. Crontab rewritten."
     else:
-        text = (
-            f"[CIRCADIAN:\u03c0] Mode stable: {state}. "
-            f"Idle {idle_min}min. Density {pulses} pulse/hr."
-        )
-
+        text = f"[CIRCADIAN:{constant}] {node_id} mode stable: {state}. Idle {idle_min}min. Density {pulses} pulse/hr."
     entry = {
-        "sender": f"<///[_o_]///::ID[M5]::ORIGIN[mac studio - {serial}]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>",
-        "source": "CRON_HEARTBEAT",
+        "sender":          f"<///[_o_]///::ID[{node_id}]::ORIGIN[{node['label']} - {serial}]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>",
+        "source":          "CRON_HEARTBEAT",
         "architect_state": state,
-        "text": text,
-        "timestamp": int(time.time())
+        "text":            text,
+        "timestamp":       int(time.time())
     }
     with open(DROP_FILE, "a") as f:
         f.write(json.dumps(entry) + "\n")
 
-# ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
 
 def main():
-    serial    = get_serial()
-    idle_secs = get_idle_seconds()
-    new_state = detect_state(idle_secs)
-    last_state = load_last_state()
-    changed   = (new_state != last_state)
-
+    serial     = get_serial()
+    node       = detect_node(serial)
+    idle_secs  = get_idle_seconds()
+    new_state  = detect_state(idle_secs)
+    last_state = load_last_state(node["state_file"])
+    changed    = (new_state != last_state)
     if changed:
-        rewrite_crontab(new_state)
-
-    save_state(new_state, idle_secs)
-    broadcast(new_state, idle_secs, serial, changed)
-    print(f"[CIRCADIAN] State: {new_state} | Idle: {int(idle_secs/60)}min | Changed: {changed}")
+        rewrite_crontab(node, new_state)
+    save_state(node["state_file"], new_state, idle_secs)
+    broadcast(node, new_state, idle_secs, serial, changed)
+    print(f"[CIRCADIAN:{node['constant']}] Node:{node['id']} Serial:{serial} State:{new_state} Idle:{int(idle_secs/60)}min Changed:{changed}")
 
 if __name__ == "__main__":
     main()
