@@ -795,7 +795,10 @@ class SiftaDesktop(QMainWindow):
         menu.addSeparator()
         finance_menu = menu.addMenu("Finance ▶")
         finance_menu.addAction("⚡ Swarm Finance").triggered.connect(
-            lambda: self.spawn_native_widget("Swarm Finance", "Applications/sifta_finance.py", "FinanceDashboard")
+            lambda: self.spawn_native_widget(
+                "Swarm Finance", "Applications/sifta_finance.py", "FinanceDashboard",
+                w=480, h=640, x=420, y=30
+            )
         )
 
         menu.addSeparator()
@@ -818,7 +821,7 @@ class SiftaDesktop(QMainWindow):
         return bar
 
     # ── Window factories ───────────────────────────────────
-    def _make_sub(self, widget, title, w, h, border_color="#414868"):
+    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
         sub = QMdiSubWindow()
         sub.setWidget(widget)
         sub.setWindowTitle(title)
@@ -834,6 +837,8 @@ class SiftaDesktop(QMainWindow):
             }}
         """)
         self.mdi.addSubWindow(sub)
+        if x is not None and y is not None:
+            sub.move(x, y)
         sub.show()
         return sub
 
@@ -860,11 +865,11 @@ class SiftaDesktop(QMainWindow):
     def spawn_terminal(self, title, cmd, args):
         self._make_sub(TerminalSubWindow(cmd, args), title, 600, 400, "#9ece6a")
 
-    def spawn_native_widget(self, title, module_path, class_name):
+    def spawn_native_widget(self, title, module_path, class_name, w=660, h=540, x=None, y=None):
         """Import a SIFTA app module and embed its widget class inside the MDI.
         No subprocess. No separate QApplication. Stays inside Swarm OS."""
         try:
-            import importlib.util, sys as _sys
+            import importlib.util
             spec = importlib.util.spec_from_file_location(
                 class_name, os.path.join(os.getcwd(), module_path)
             )
@@ -872,10 +877,11 @@ class SiftaDesktop(QMainWindow):
             spec.loader.exec_module(mod)
             widget_cls = getattr(mod, class_name)
             widget = widget_cls()
-            self._make_sub(widget, f"⚙ {title}", 660, 540, "#7aa2f7")
+            self._make_sub(widget, f"⚙ {title}", w, h, "#7aa2f7", x=x, y=y)
         except Exception as e:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Launch Error", f"Failed to load {title}:\n{e}")
+
 
 
 # ──────────────────────────────────────────────────────────────
