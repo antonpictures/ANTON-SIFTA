@@ -65,7 +65,7 @@ class OllamaWorker(QThread):
             }).encode("utf-8")
 
             req = urllib.request.Request(
-                "http://localhost:11434/api/generate",
+                "http://127.0.0.1:11434/api/generate",
                 data=payload,
                 headers={"Content-Type": "application/json"},
                 method="POST"
