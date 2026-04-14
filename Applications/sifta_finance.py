@@ -517,8 +517,20 @@ class MarketplaceTab(QWidget):
                 seal_payload = f"{self.local_serial}:{target_serial}:{price}:{ts}"
                 seal = "MARKET_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
                 
-                # Debit localhost wallet
+                # Verify sufficient balance before generating Tx
                 local_agent = "M5SIFTA_BODY" if "GTH4921YP3" in self.local_serial else "M1SIFTA_BODY"
+                state_file = os.path.join(STATE_DIR, f"{local_agent}.json")
+                if os.path.exists(state_file):
+                    with open(state_file, "r") as sf:
+                        ag = json.load(sf)
+                    current_balance = float(ag.get("stgm_balance", 0.0))
+                    if current_balance < price:
+                        QMessageBox.critical(self, "Insufficient STGM", f"Double-Spend Blocked.\nCurrent Balance: {current_balance}\nRequired: {price}")
+                        return
+                else:
+                    return
+
+                # Debit localhost wallet
                 tx_spend = {
                     "timestamp": ts,
                     "agent_id": local_agent,
