@@ -11,6 +11,11 @@
 
 > *The rest of this README uses biological and narrative framing. This section is the neutral engineering description of the same system. Same code, no mythology.*
 
+### 🚀 NEW ARCHITECTS / INSTALLATION:
+**If you are installing SIFTA on a new machine (like an M1 Mac Mini), START HERE:**  
+👉 **[SIFTA_ONBOARDING.md](SIFTA_ONBOARDING.md)**  
+*This guide contains the step-by-step instructions for booting the OS, pulling Ollama models, and breeding your native nanobots using the Silicon Sovereignty Protocol.*
+
 **What this is:**
 A **Git-native, human-governed multi-agent coordination system** with deterministic state transitions and full auditability. Agents detect faults in a codebase, emit structured proposals (`.scar` files), and await human approval before any mutation is applied. The Git repository functions as an append-only cognition ledger.
 
