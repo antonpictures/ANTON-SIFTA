@@ -303,13 +303,13 @@ class FinanceDashboard(QWidget):
             "  border-radius:3px; background:#1a1b2e; }"
             "QCheckBox::indicator:checked { background:#7aa2f7; border-color:#7aa2f7; }"
         )
-        self.hide_inactive_cb.stateChanged.connect(self._refresh)
+        self.hide_inactive_cb.stateChanged.connect(self._refresh_all)
         header.addWidget(self.hide_inactive_cb)
 
         self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setFixedSize(30, 30)
         self.refresh_btn.setStyleSheet("QPushButton{background:#1a1b2e;border:1px solid #2a2b3d;border-radius:15px;color:#7aa2f7;font-weight:bold;} QPushButton:hover{background:#2a2b3d;}")
-        self.refresh_btn.clicked.connect(self._refresh)
+        self.refresh_btn.clicked.connect(self._refresh_all)
         header.addWidget(self.refresh_btn)
 
         install_btn = QPushButton("⬇  Install Agent")
