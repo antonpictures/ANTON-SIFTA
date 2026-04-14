@@ -365,6 +365,7 @@ class FinanceDashboard(QWidget):
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.card_lay.addWidget(empty)
         else:
+            for a in agents:
                 self.card_lay.addWidget(AgentCard(a))
         self.card_lay.addStretch()
 
