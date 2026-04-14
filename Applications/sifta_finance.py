@@ -234,6 +234,18 @@ class FinanceDashboard(QWidget):
         header.addWidget(title)
         header.addStretch()
 
+        from PyQt6.QtWidgets import QCheckBox
+        self.hide_inactive_cb = QCheckBox("Hide inactive")
+        self.hide_inactive_cb.setChecked(True)
+        self.hide_inactive_cb.setStyleSheet(
+            "QCheckBox { color: #565f89; font-size: 11px; spacing: 5px; }"
+            "QCheckBox::indicator { width:13px; height:13px; border:1px solid #414868;"
+            "  border-radius:3px; background:#1a1b2e; }"
+            "QCheckBox::indicator:checked { background:#7aa2f7; border-color:#7aa2f7; }"
+        )
+        self.hide_inactive_cb.stateChanged.connect(self._refresh)
+        header.addWidget(self.hide_inactive_cb)
+
         self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setFixedSize(30, 30)
         self.refresh_btn.setStyleSheet("QPushButton{background:#1a1b2e;border:1px solid #2a2b3d;border-radius:15px;color:#7aa2f7;font-weight:bold;} QPushButton:hover{background:#2a2b3d;}")
@@ -271,18 +283,31 @@ class FinanceDashboard(QWidget):
         self._populate()
 
     def _populate(self):
-        # Clear existing cards
         while self.card_lay.count():
             item = self.card_lay.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
         agents = load_agents()
+        hide_inactive = self.hide_inactive_cb.isChecked()
+        if hide_inactive:
+            agents = [
+                a for a in agents
+                if float(a.get("stgm_balance") or 0) > 0
+                or int(a.get("energy") or 0) > 0
+            ]
+
         total  = sum(float(a.get("stgm_balance") or 0) for a in agents)
         self.portfolio_lbl.setText(f"{total:,.1f}")
 
-        for a in agents:
-            self.card_lay.addWidget(AgentCard(a))
+        if not agents:
+            empty = QLabel("All agents inactive. Uncheck \"Hide inactive\" to see full history.")
+            empty.setStyleSheet("color: #565f89; font-size: 12px; padding: 20px;")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.card_lay.addWidget(empty)
+        else:
+            for a in agents:
+                self.card_lay.addWidget(AgentCard(a))
         self.card_lay.addStretch()
 
     def _refresh(self):
