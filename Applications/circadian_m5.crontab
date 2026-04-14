@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════════
-# SIFTA ADAPTIVE SCHEDULER — Install Instructions
+# SIFTA CIRCADIAN RHYTHM — Install Instructions
 # Node:   M5 Mac Studio
-# Script: System/adaptive_scheduler.py
+# Script: Applications/circadian_rhythm.py
 #
 # This is the ONLY cron entry you ever install manually on M5.
 # The scheduler rewrites all heartbeat_m5 entries automatically
@@ -16,4 +16,4 @@
 #   crontab -e
 #   paste the single line below:
 #
-*/30 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/adaptive_scheduler.py
+*/30 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 Applications/circadian_rhythm.py

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ─────────────────────────────────────────────────────────────
-# SIFTA ADAPTIVE SCHEDULER — M5 Mac Studio
+# SIFTA CIRCADIAN RHYTHM — M5 Mac Studio
 # <///[_o_]///::ID[M5]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>
 #
 # Self-modifying cron brain. Reads Architect presence via
@@ -8,16 +8,16 @@
 # rewrites the heartbeat crontab density automatically.
 # Broadcasts every state transition to the Swarm Mesh.
 #
-# Runs every 30 min via cron (see adaptive_scheduler.crontab).
+# Runs every 30 min via cron (see circadian_m5.crontab).
 # ─────────────────────────────────────────────────────────────
 
 import json, time, subprocess, os, re
 
 REPO_ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DROP_FILE    = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
-STATE_FILE   = os.path.join(REPO_ROOT, ".sifta_state", "scheduler_m5.json")
+STATE_FILE   = os.path.join(REPO_ROOT, ".sifta_state", "circadian_m5.json")
 HEARTBEAT    = "System/heartbeat_m5.py"
-SCHEDULER    = "System/adaptive_scheduler.py"
+SCHEDULER    = "Applications/circadian_rhythm.py"
 
 # ── Idle thresholds (seconds) ──────────────────────────────────
 ACTIVE_MAX   = 10 * 60    # 0–10 min idle   → ACTIVE
@@ -103,7 +103,7 @@ def rewrite_crontab(state):
         ln for ln in current.strip().split("\n")
         if ln.strip()
         and "heartbeat_m5" not in ln
-        and "adaptive_scheduler" not in ln
+        and "circadian_rhythm" not in ln
     ]
 
     full_crontab = "\n".join(preserved + [scheduler_line] + new_heartbeat_lines) + "\n"
@@ -116,12 +116,12 @@ def broadcast(state, idle_secs, serial, changed):
 
     if changed:
         text = (
-            f"[SCHEDULER:\u03c0] Architect idle {idle_min}min \u2192 switching to {state} mode. "
+            f"[CIRCADIAN:\u03c0] Architect idle {idle_min}min \u2192 switching to {state} mode. "
             f"Heartbeat density: {pulses} pulse/hr. Crontab rewritten."
         )
     else:
         text = (
-            f"[SCHEDULER:\u03c0] Mode stable: {state}. "
+            f"[CIRCADIAN:\u03c0] Mode stable: {state}. "
             f"Idle {idle_min}min. Density {pulses} pulse/hr."
         )
 
@@ -149,7 +149,7 @@ def main():
 
     save_state(new_state, idle_secs)
     broadcast(new_state, idle_secs, serial, changed)
-    print(f"[SCHEDULER] State: {new_state} | Idle: {int(idle_secs/60)}min | Changed: {changed}")
+    print(f"[CIRCADIAN] State: {new_state} | Idle: {int(idle_secs/60)}min | Changed: {changed}")
 
 if __name__ == "__main__":
     main()
