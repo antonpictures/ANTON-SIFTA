@@ -52,6 +52,11 @@ def save_settings(data: dict):
 class OllamaFetcher(QThread):
     models_ready = pyqtSignal(list)
     error        = pyqtSignal(str)
+    status_ready = pyqtSignal(str)
+
+    def __init__(self, mode="models"):
+        super().__init__()
+        self.mode = mode
 
     def run(self):
         try:
@@ -59,9 +64,16 @@ class OllamaFetcher(QThread):
             with urllib.request.urlopen(req, timeout=5) as r:
                 data = json.loads(r.read().decode())
                 names = [m["name"] for m in data.get("models", [])]
-                self.models_ready.emit(names)
+                if self.mode == "models":
+                    self.models_ready.emit(names)
+                else:
+                    status = "OK:\n" + "\n".join(f"  {n}" for n in names)
+                    self.status_ready.emit(status)
         except Exception as e:
-            self.error.emit(str(e))
+            if self.mode == "models":
+                self.error.emit(str(e))
+            else:
+                self.status_ready.emit(f"OFFLINE: {e}")
 
 # ─────────────────────────────────────────────────────────────
 
@@ -175,7 +187,7 @@ class SettingsWindow(QWidget):
     def _refresh_ollama(self):
         self.refresh_btn.setText("Fetching...")
         self.refresh_btn.setEnabled(False)
-        self._fetcher = OllamaFetcher()
+        self._fetcher = OllamaFetcher(mode="models")   # strong ref
         self._fetcher.models_ready.connect(self._on_ollama_models)
         self._fetcher.error.connect(self._on_ollama_error)
         self._fetcher.start()
@@ -292,14 +304,18 @@ class SettingsWindow(QWidget):
         return w
 
     def _check_active_status(self):
-        try:
-            req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
-            with urllib.request.urlopen(req, timeout=3) as r:
-                data = json.loads(r.read().decode())
-                names = [m["name"] for m in data.get("models", [])]
-                self.active_status.setText("✅ Ollama ONLINE\n" + "\n".join(f"  • {n}" for n in names))
-        except Exception:
-            self.active_status.setText("❌ Ollama OFFLINE\nRun: ollama serve")
+        """Non-blocking — runs in QThread. Prevents SIGABRT from blocking Qt main thread."""
+        self.active_status.setText("Checking Ollama...")
+        self._status_fetcher = OllamaFetcher(mode="status")   # strong ref prevents GC
+        self._status_fetcher.status_ready.connect(self._on_status_ready)
+        self._status_fetcher.start()
+
+    def _on_status_ready(self, status):
+        if "OFFLINE" in status:
+            self.active_status.setText(f"Ollama OFFLINE\nRun: ollama serve\n{status}")
+        else:
+            self.active_status.setText(f"Ollama ONLINE\n{status}")
+
 
     # ── Save ──────────────────────────────────────────────────
     def _save(self):
