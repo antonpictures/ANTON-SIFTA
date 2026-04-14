@@ -21,7 +21,7 @@ fi
 
 # Install/upgrade dependencies
 echo "  [BOOT] Checking dependencies..."
-pip3 install -q -r requirements.txt
+python3 -m pip install -q -r requirements.txt
 
 
 
