@@ -119,7 +119,7 @@ class SwarmChatWindow(QWidget):
             "QListWidget::item:hover { background-color: #1a1b26; }"
             "QListWidget::item:selected { background-color: #24283b; color: #7dcfff; font-weight: bold; }"
         )
-        chat_targets = ["GROUP (All)", "m5Queen (DeadDrop)", "m1Queen (DeadDrop)", "SWARM (Ollama)"]
+        chat_targets = ["GROUP (All)", "m5Queen (Mesh)", "m1Queen (Mesh)", "SWARM (Ollama)"]
         self.sidebar_list.addItems(chat_targets)
         self.sidebar_list.setCurrentRow(0)
         sidebar_layout.addWidget(self.sidebar_list)
