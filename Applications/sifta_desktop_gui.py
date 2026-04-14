@@ -50,7 +50,11 @@ class SIFTABodyChatGUI(tk.Tk):
         while self.running:
             try:
                 # Pull real messages from wormhole gateway
-                resp = requests.get(f"{API_BASE}/messenger/thread?limit=50", timeout=5).json()
+                resp = requests.get(
+                    f"{API_BASE}/messenger/thread?limit=50",
+                    headers=sifta_headers(),
+                    timeout=5,
+                ).json()
                 self.data_queue.put(resp.get("messages", []))
                 
                 # Auto Q&A every 2 minutes

@@ -25,7 +25,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-STATE_DIR = Path(__file__).parent / ".sifta_state"
+# Repo root (parent of scripts/) — not scripts/.sifta_state
+ROOT_DIR = Path(__file__).resolve().parent.parent
+STATE_DIR = ROOT_DIR / ".sifta_state"
 
 def get_password(prompt="Enter backup password: "):
     if sys.stdin.isatty():

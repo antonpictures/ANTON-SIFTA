@@ -9,7 +9,9 @@ Environment:
 
 Related (server / wormhole — see server.py):
   SIFTA_MESH_HMAC, SIFTA_WORMHOLE_USE_TLS, SIFTA_WORMHOLE_TLS_INSECURE, SIFTA_WORMHOLE_CAFILE,
-  SIFTA_RECEIVE_SOUL_REQUIRE_PKI
+  SIFTA_RECEIVE_SOUL_REQUIRE_PKI,
+  SIFTA_RATE_LIMIT_PER_MIN — max mutating requests per client IP per minute (0 = off).
+  SIFTA_PROTECT_GET — require API key on GET /api/* except SIFTA_GET_PROTECT_ALLOW (comma paths).
 
 Hardening backlog (not solved here):
   - Wormhole / receive_soul still assume LAN trust unless you add mTLS or VPN.

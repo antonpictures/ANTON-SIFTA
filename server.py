@@ -3,7 +3,9 @@ import json
 import os
 import sqlite3
 import subprocess
+import threading
 import time
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import List, Optional
 
@@ -23,6 +25,41 @@ REPAIR_LOG = ROOT_DIR / "repair_log.jsonl"
 SWIM_LOG = ROOT_DIR / "swim_log.jsonl"
 QUORUM_DB = STATE_DIR / "quorum_ledger.db"
 LEDGER_DB = STATE_DIR / "task_ledger.db"
+
+
+def _safe_workspace_path(raw: str) -> Optional[Path]:
+    """
+    Resolve user-supplied paths for dispatch / wallet / subprocess helpers.
+    Returns None if empty or if the path escapes the repository root.
+    (Target files/dirs need not exist yet — repair may create them.)
+    """
+    if raw is None or not str(raw).strip():
+        return None
+    p = Path(str(raw).strip()).expanduser()
+    if not p.is_absolute():
+        p = (ROOT_DIR / p).resolve()
+    else:
+        p = p.resolve()
+    try:
+        p.relative_to(ROOT_DIR.resolve())
+    except (ValueError, OSError):
+        return None
+    return p
+
+
+def _safe_bounty_filename(name: str) -> Optional[Path]:
+    """Bounty .scar must live under .sifta_bounties and match basename only (no path escape)."""
+    if not name or not str(name).strip():
+        return None
+    base = Path(str(name).strip()).name
+    if not base.startswith("BOUNTY_") or not base.endswith(".scar"):
+        return None
+    p = (ROOT_DIR / ".sifta_bounties" / base).resolve()
+    try:
+        p.relative_to((ROOT_DIR / ".sifta_bounties").resolve())
+    except (ValueError, OSError):
+        return None
+    return p if p.exists() else None
 
 def init_messenger():
     conn = sqlite3.connect(LEDGER_DB)
@@ -77,8 +114,70 @@ class SiftaMutatingAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+_RL_BUCKETS: dict[str, deque] = defaultdict(deque)
+_RL_LOCK = threading.Lock()
+
+
+class SiftaRateLimitMiddleware(BaseHTTPMiddleware):
+    """Optional per-IP rate limit on mutating API routes (SIFTA_RATE_LIMIT_PER_MIN, default 0 = off)."""
+
+    async def dispatch(self, request: Request, call_next):
+        lim = int(os.environ.get("SIFTA_RATE_LIMIT_PER_MIN", "0") or "0")
+        if lim <= 0 or request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return await call_next(request)
+        path = request.url.path
+        if not path.startswith("/api/") and path != "/messenger/send":
+            return await call_next(request)
+        now = time.time()
+        window = 60.0
+        ip = (request.client.host if request.client else None) or "unknown"
+        with _RL_LOCK:
+            dq = _RL_BUCKETS[ip]
+            while dq and now - dq[0] > window:
+                dq.popleft()
+            if len(dq) >= lim:
+                return JSONResponse({"detail": "Too Many Requests"}, status_code=429)
+            dq.append(now)
+        return await call_next(request)
+
+
+def _get_protect_get_allowlist() -> set[str]:
+    raw = os.environ.get(
+        "SIFTA_GET_PROTECT_ALLOW",
+        "/api/dispatch/status,/api/terminal,/api/ollama-models",
+    )
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
+class SiftaGetProtectMiddleware(BaseHTTPMiddleware):
+    """When SIFTA_PROTECT_GET=1 and SIFTA_API_KEY is set, require the key for GET /api/* (except allowlist)."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method != "GET":
+            return await call_next(request)
+        if os.environ.get("SIFTA_PROTECT_GET", "").strip().lower() not in ("1", "true", "yes", "on"):
+            return await call_next(request)
+        path = request.url.path
+        if not path.startswith("/api/"):
+            return await call_next(request)
+        if path in _get_protect_get_allowlist():
+            return await call_next(request)
+        key = os.environ.get("SIFTA_API_KEY", "").strip()
+        if not key:
+            return await call_next(request)
+        got = request.headers.get("x-sifta-key", "").strip()
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            got = auth[7:].strip()
+        if got != key:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
 app = FastAPI(title="ANTON-SIFTA Command Interface")
 app.add_middleware(SiftaMutatingAuthMiddleware)
+app.add_middleware(SiftaRateLimitMiddleware)
+app.add_middleware(SiftaGetProtectMiddleware)
 
 if os.path.exists("editor_static"):
     app.mount("/editor_static", StaticFiles(directory="editor_static"), name="editor_static")
@@ -740,9 +839,15 @@ async def swarm_communique(req: CommuniqueRequest):
     
     # Check if this is a Physical Memory Defrag task
     if req.message.startswith("Execute Defrag on BOUNTY"):
-        bounty_file = req.message.replace("Execute Defrag on ", "").strip()
-        # Spawn the physical Ollama worker in the background
-        subprocess.Popen(["python3", "memory_defrag_worker.py", bounty_file, req.target_node], cwd=ROOT_DIR)
+        raw_bf = req.message.replace("Execute Defrag on ", "").strip()
+        bp = _safe_bounty_filename(raw_bf)
+        if bp is None:
+            return {"status": "error", "message": "Invalid or missing bounty file (must be under .sifta_bounties/)."}
+        bounty_file = bp.name
+        subprocess.Popen(
+            ["python3", "memory_defrag_worker.py", bounty_file, req.target_node],
+            cwd=str(ROOT_DIR),
+        )
         return {"status": "success", "file": bounty_file, "message": "Ollama Inference Engaged"}
 
     # Pass the standard communication to the hardened Git ledger orchestrator
@@ -907,8 +1012,14 @@ async def dispatch_swim(req: DispatchRequest):
         _live_terminal_buffer.clear()
 
         import os
-        # Need to fix the relative path traversal issue if path is absolute but the target_dir variable remains absolute
-        target_path = req.target_dir
+        safe_target = _safe_workspace_path(req.target_dir)
+        if safe_target is None:
+            yield (
+                f"data: [SECURITY] target_dir must resolve inside the SIFTA repository root "
+                f"({ROOT_DIR}).\\n\\n"
+            )
+            return
+        target_path = str(safe_target)
         yield f"data: Initializing swim for {req.agent_id} in {target_path}...\n\n"
 
         # ── Auto-sign the override token so GUI swimmers pass the security boundary ──
@@ -1017,8 +1128,14 @@ class BackupRequest(BaseModel):
 @app.post("/api/wallet/backup")
 async def wallet_backup(req: BackupRequest):
     try:
+        safe_out = _safe_workspace_path(req.target_dir)
+        if safe_out is None:
+            return {"ok": False, "error": "target_dir must resolve inside the SIFTA repository root."}
+        script = ROOT_DIR / "scripts" / "backup_agent.py"
+        if not script.exists():
+            return {"ok": False, "error": "scripts/backup_agent.py not found in repository."}
         pw_input = f"{req.password}\n{req.password}\n"
-        cmd = ["python3", "backup_agent.py", req.agent, req.target_dir]
+        cmd = ["python3", str(script), req.agent_id, str(safe_out)]
         
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -1044,7 +1161,15 @@ class TransferRequest(BaseModel):
 @app.post("/api/wallet/transfer")
 async def wallet_transfer(req: TransferRequest):
     try:
-        cmd = ["python3", "transfer_agent.py", req.agent, req.new_owner, req.target_dir]
+        safe_out = _safe_workspace_path(req.target_dir)
+        if safe_out is None:
+            return {"ok": False, "error": "target_dir must resolve inside the SIFTA repository root."}
+        xfer = ROOT_DIR / "scripts" / "transfer_agent.py"
+        if not xfer.exists():
+            xfer = ROOT_DIR / "transfer_agent.py"
+        if not xfer.exists():
+            return {"ok": False, "error": "transfer_agent.py not found (expected scripts/transfer_agent.py)."}
+        cmd = ["python3", str(xfer), req.agent_id, req.new_owner, str(safe_out)]
         
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -1261,6 +1386,9 @@ async def wallet_wormhole(req: WormholeRequest):
 
             if os.environ.get("SIFTA_WORMHOLE_TLS_INSECURE", "").strip().lower() in ("1", "true", "yes", "on"):
                 _ssl_ctx = ssl._create_unverified_context()
+                print(
+                    "[!] SIFTA_WORMHOLE_TLS_INSECURE: wormhole TLS verification disabled — MITM risk on the LAN."
+                )
             else:
                 _ssl_ctx = ssl.create_default_context()
                 _ca = os.environ.get("SIFTA_WORMHOLE_CAFILE", "").strip()

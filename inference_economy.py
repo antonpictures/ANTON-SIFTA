@@ -354,6 +354,9 @@ def ledger_balance(agent_id: str) -> float:
     Any double-spend guard MUST call this function rather than reading
     only one dialect or trusting the stgm_balance field in the JSON state
     file (which can lag or be tampered with).
+
+    Note: STGM_TX_LOG.jsonl (if used elsewhere) is not this quorum; keep
+    one canonical path for economics or reconcile explicitly.
     """
     if not LOG_PATH.exists():
         return 0.0

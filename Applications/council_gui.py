@@ -64,8 +64,16 @@ class CouncilRobinhoodApp(tk.Tk):
     def refresh_data(self):
         try:
             # Tiny timeout (it's localhost) so we don't block the UI thread if server is off
-            agent_res = requests.get(f"{API_BASE}/agents?show_detectives=true", timeout=1).json()
-            market_res = requests.get(f"{API_BASE}/wormhole_market", timeout=1).json()
+            agent_res = requests.get(
+                f"{API_BASE}/agents?show_detectives=true",
+                headers=sifta_headers(),
+                timeout=1,
+            ).json()
+            market_res = requests.get(
+                f"{API_BASE}/wormhole_market",
+                headers=sifta_headers(),
+                timeout=1,
+            ).json()
             
             self.agents = agent_res
             self.bounties = market_res
