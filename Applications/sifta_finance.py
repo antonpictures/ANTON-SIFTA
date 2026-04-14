@@ -45,7 +45,12 @@ def load_agents():
                     try:
                         entry = json.loads(line)
                         if entry.get("event") == "GENESIS":
-                            genesis_registry[entry.get("agent_id")] = entry.get("architect_seal")
+                            genesis_registry[entry.get("agent_id")] = {
+                                "seal": entry.get("architect_seal"),
+                                "timestamp": entry.get("timestamp"),
+                                "starting_stgm": float(entry.get("starting_stgm", 0.0)),
+                                "serial": entry.get("hardware_serial")
+                            }
                     except: pass
         except Exception as e:
             print(f"Genesis verification error: {e}")
@@ -67,12 +72,35 @@ def load_agents():
             if "id" not in data or not data["id"]:
                 data["id"] = key
 
-            # SYBIL DEFENSE FLAG
+            # SYBIL DEFENSE FLAG (Ed25519 Validation)
             agent_id = data["id"]
             claimed_seal = data.get("architect_seal", "UNSEALED")
+            hw_serial = data.get("homeworld_serial", "UNKNOWN")
             
-            # If the agent is missing from genesis or seal doesn't match
-            if agent_id not in genesis_registry or genesis_registry[agent_id] != claimed_seal:
+            # 1. Must exist in genesis
+            # 2. Extract payload to verify
+            # The genesis payload that was signed was: "agent_id:stgm:serial:timestamp"
+            is_valid = False
+            if agent_id in genesis_registry:
+                gen_data = genesis_registry[agent_id]
+                seal_signature = gen_data["seal"]
+                gen_ts = gen_data["timestamp"]
+                gen_stgm = gen_data["starting_stgm"]
+                
+                # Check that state payload matches genesis payload
+                if claimed_seal == seal_signature and data.get("homeworld_serial") == gen_data["serial"]:
+                    # Reconstruct exact string that was signed
+                    verify_str = f"{agent_id}:{gen_stgm}:{hw_serial}:{gen_ts}"
+                    import sys
+                    sys.path.append(REPO_ROOT)
+                    try:
+                        from System.crypto_keychain import verify_block
+                        if verify_block(hw_serial, verify_str, seal_signature):
+                            is_valid = True
+                    except Exception as e:
+                        print(f"Verify failed: {e}")
+            
+            if not is_valid:
                 data["sybil_quarantined"] = True
                 data["stgm_balance"] = 0.0  # Forcefully evaporate STGM for UI aggregate sum
             else:
@@ -254,9 +282,18 @@ class InstallAgentDialog(QDialog):
             serial = "UNKNOWN_SERIAL"
 
         import hashlib
+        import sys
+        sys.path.append(REPO_ROOT)
+        
         ts = int(time.time())
         seal_payload = f"{agent_id}:{stgm}:{serial}:{ts}"
-        seal = "SEAL_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
+        
+        try:
+            from System.crypto_keychain import sign_block
+            seal = sign_block(seal_payload)
+        except Exception as e:
+            print(f"Ed25519 sign error, falling back to SHA256: {e}")
+            seal = "SEAL_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
 
         payload = {
             "id":           agent_id,
