@@ -293,8 +293,7 @@ class FinanceDashboard(QWidget):
         if hide_inactive:
             agents = [
                 a for a in agents
-                if float(a.get("stgm_balance") or 0) > 0
-                or int(a.get("energy") or 0) > 0
+                if int(a.get("energy") or 0) > 0
             ]
 
         total  = sum(float(a.get("stgm_balance") or 0) for a in agents)
