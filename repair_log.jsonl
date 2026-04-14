@@ -9,3 +9,4 @@
 {"timestamp": 1776196519, "agent_id": "M1SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Compute clearance generated from [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]", "hash": "MINT_8fb9e2ef95d4"}
 {"timestamp": 1776196519, "agent_id": "M1SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Compute clearance generated from [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]", "hash": "MINT_faa186354593"}
 {"timestamp": 1776196519, "agent_id": "M1SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Compute clearance generated from [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]", "hash": "MINT_f4661c3a22c6"}
+{"timestamp": 1776198224, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 100000.0, "hash": "SEAL_49c8cc2abd97"}
