@@ -6,26 +6,28 @@
 
 In 1959, biologist Pierre-Paul Grassé described **Stigmergy** — the phenomenon where ants build cathedrals without a blueprint, each agent modifying the environment as a signal for the next. No central command. No direct communication. Just emergent, collective intelligence.
 
-We wrote that in Python and brought it back from the 90's.
+We implemented that in Python. We are bringing it to consumer hardware.
 
-**SIFTA is a Sovereign Operating System powered by your own local AI.** Each node runs a cryptographically anchored intelligence — not in the cloud, not on a rented server — bound to the physical silicon of your hardware via Apple's bare-metal serial registry. You cannot spoof a SIFTA node from a virtual machine. Identity is physics.
+**SIFTA is a Sovereign Operating System powered by your own local AI.** Each node runs a cryptographically anchored intelligence — not in the cloud, not on a rented server — bound to the physical silicon of your hardware via Apple's bare-metal serial registry. You cannot spoof a SIFTA node from a virtual machine. **Identity is physics.**
 
-We benchmarked against the field. The closest competitor is **Stellar Core**, whose Federated Byzantine Agreement (SCP) is the only protocol with formal mathematical proof of distributed consensus. Stellar is a bank. It solves one problem: how anonymous strangers agree on money without trusting each other.
+The closest prior art is **Stellar Core** (SCP) — the only protocol with a formally proven distributed consensus model. Stellar is a bank. It removes humans from consensus by design.
 
-SIFTA solves a different problem entirely: **how a sovereign human architect and their AI swarm govern their own computing infrastructure — together.**
+SIFTA solves an entirely different problem: **how a sovereign human architect and their AI swarm govern their own computing infrastructure — together.**
 
-| | Stellar | SIFTA |
-|---|---|---|
-| Identity | Public key only | Hardware-bound (ioreg + Ed25519) |
-| Human role | Removed from consensus | Mandatory sovereign authority |
-| Agent model | Anonymous nodes | Living organisms with energy, vocation, memory |
-| AI integration | None | Local LLM first-class swarm members |
+### Four things nobody else has built as one system:
 
-We have passed all distributed consensus tests provided by the **SwarmRL research group at TU Berlin** (github.com/SwarmRL). We beat their benchmarks.
+**1. Hardware-Bound Identity** — Ed25519 keys anchored to Apple Silicon's physical serial (`ioreg`). A SIFTA node cannot be spoofed from a VM. Most distributed systems identify nodes by public key alone.
 
-Right now it looks a little like Windows 95. That is intentional. We are building the OS layer first — the interface for 100 architects, each governing their own AI swarm, collaborating across nodes, sharing cryptographically verified applications peer-to-peer with zero central infrastructure.
+**2. Human Sovereignty as a Protocol Primitive** — No agent is born, no app installs, no code executes without a cryptographically signed Architect authorization in the chain. The human is not an admin. The human is a consensus requirement.
+
+**3. Local LLM as a First-Class Swarm Citizen** — In every other system, AI is a tool you call via API. In SIFTA, the local Ollama inference engine is a node — with cryptographic identity, energy, vocation, and memory — participating in governance alongside the human Architect.
+
+**4. Distributed Inference Scheduler** — When your Mac Mini is idle, its compute becomes available to the Swarm. When your Mac Studio is overloaded, it offloads inference to the nearest available node. STGM tokens track contribution vs. consumption — fairly, peer-to-peer, with no OpenAI in the middle. SETI@home for LLM inference, governed by stigmergy.
+
+We have passed all distributed consensus tests from the **SwarmRL research group** (github.com/SwarmRL). We beat their benchmarks.
 
 **We are a Bank and an Operating System. They don't work without each other.**
 
 — George Anton, Architect  
 ANTON-SIFTA · github.com/antonpictures/ANTON-SIFTA
+Tell what is novel in this architecture that others dont have so we don't bullshit anyone -- o 
