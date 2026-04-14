@@ -87,6 +87,26 @@ class SwarmChatWindow(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(8, 8, 8, 8)
         self.setStyleSheet("background-color: #0d0e17; color: #a9b1d6;")
+        
+        # ── Resolve Local Swarm Identity ─────────────────────
+        self.local_identity = "SWARM"
+        self.local_color    = "#bb9af7"
+        
+        manifest_path = os.path.join(".sifta_state", "territory_manifest.json")
+        if os.path.exists(manifest_path):
+            try:
+                with open(manifest_path, "r") as f:
+                    manifest = json.load(f)
+                    self.local_identity = manifest.get("queen", "MACMINI.LAN_QUEEN")
+                    self.local_color    = "#7dcfff"
+            except Exception:
+                pass
+        else:
+            import platform
+            node = platform.node().lower()
+            if "mac.lan" in node or "m5" in node or "studio" in node:
+                self.local_identity = "m5Queen"
+                self.local_color    = "#ff9e64"
 
         # ── Header ──────────────────────────────────────────
         header = QHBoxLayout()
@@ -296,8 +316,23 @@ class SwarmChatWindow(QWidget):
                 pass
 
     def _on_response(self, text: str):
-        self.display.append(f"<b style='color:#bb9af7;'>SWARM ▶</b>  {text}")
+        time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
+        self.display.append(f"{time_str}<b style='color:{self.local_color};'>{self.local_identity} ▶</b>  {text}")
         self.display.append("")
+        
+        target = self.target_selector.currentText()
+        if "GROUP" in target:
+            drop_entry = {
+                "sender": self.local_identity,
+                "text": text,
+                "timestamp": int(time.time())
+            }
+            try:
+                with open(self.dead_drop_file, "a") as f:
+                    f.write(json.dumps(drop_entry) + "\n")
+            except Exception:
+                pass
+                
         self._reset_btn()
 
     def _on_error(self, msg: str):
