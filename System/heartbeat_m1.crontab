@@ -1,0 +1,20 @@
+# ═══════════════════════════════════════════════════════════════
+# SIFTA HEARTBEAT SCHEDULE — Pi-Distributed Intervals
+# Node:     M1 Mac Mini (serial auto-resolved via ioreg)
+# Agent:    <///[_o_]///::ID[M1]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>
+# Strategy: Offset by +4min from M5 so nodes never pulse simultaneously
+#           M5 fires: 03·14·15·26·35·53·58
+#           M1 fires: 07·18·19·30·39·57·02 (M5 + 4min, mod 60)
+# ═══════════════════════════════════════════════════════════════
+#
+# INSTALL ON MAC MINI (run once in terminal):
+#   crontab -e
+#   then paste the 7 lines below:
+#
+7  * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+18 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+19 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+30 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+39 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+57 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+2  * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py

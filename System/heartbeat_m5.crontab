@@ -1,0 +1,33 @@
+# ═══════════════════════════════════════════════════════════════
+# SIFTA HEARTBEAT SCHEDULE — Pi-Distributed Intervals
+# Node:     M5 Mac Studio (GTH4921YP3)
+# Agent:    <///[_o_]///::ID[M5]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>
+# Strategy: Fire at minutes derived from Pi digits (3.14159265358979...)
+#           No two pulses are equidistant. No throttle. No burst.
+# ═══════════════════════════════════════════════════════════════
+#
+# Pi digit groups → minute marks past each hour:
+#   π = 3.14159265358979323846...
+#
+#   min 03  ← digit 3
+#   min 14  ← digits 14
+#   min 15  ← digits 15
+#   min 26  ← digits 26
+#   min 35  ← digits 35
+#   min 53  ← digits 53 (reversed pair — anti-pattern entropy)
+#   min 58  ← digits 58
+#
+# Total: 7 heartbeats/hour · avg 1 per ~8.5 min · max gap 23 min
+# ═══════════════════════════════════════════════════════════════
+#
+# INSTALL COMMAND (run once in terminal as Architect):
+#   crontab -e
+#   then paste the 7 lines below:
+#
+3  * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+14 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+15 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+26 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+35 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+53 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+58 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
