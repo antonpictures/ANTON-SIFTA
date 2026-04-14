@@ -1,14 +1,28 @@
 import os
-import io
 import json
 import uuid
 import time
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+
 import uvicorn
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+
+class RelayAuthMiddleware(BaseHTTPMiddleware):
+    """When SIFTA_RELAY_API_KEY is set, require matching X-SIFTA-Relay-Key on every request."""
+
+    async def dispatch(self, request: Request, call_next):
+        k = os.environ.get("SIFTA_RELAY_API_KEY", "").strip()
+        if k and request.headers.get("x-sifta-relay-key", "").strip() != k:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
 
 app = FastAPI(title="SIFTA Dead-Drop Relay")
+app.add_middleware(RelayAuthMiddleware)
 
 # This is where the dumb post office stores things
 RELAY_DIR = Path("relay_drops")

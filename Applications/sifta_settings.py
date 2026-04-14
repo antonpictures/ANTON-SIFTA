@@ -136,9 +136,11 @@ class SettingsWindow(QWidget):
 
     def _get_node_identity(self):
         try:
-            import subprocess
-            raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-            serial = raw.decode().split('"')[-2].strip()
+            sys_dir = os.path.join(REPO_ROOT, "System")
+            if sys_dir not in sys.path:
+                sys.path.insert(0, sys_dir)
+            from silicon_serial import read_apple_serial
+            serial = read_apple_serial()
             registry = {"GTH4921YP3": "ALICE_M5 — Mac Studio", "C07FL0JAQ6NV": "M1THER — Mac Mini"}
             return f"{registry.get(serial, 'UNKNOWN')} ({serial})"
         except Exception:

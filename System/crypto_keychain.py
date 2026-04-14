@@ -9,7 +9,8 @@
 
 import os
 import json
-import subprocess
+
+from silicon_serial import read_apple_serial
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
@@ -22,20 +23,9 @@ KEY_DIR = os.path.expanduser("~/.sifta_keys")
 PRIV_KEY_FILE = os.path.join(KEY_DIR, "private.pem")
 
 def get_silicon_identity():
-    """Extract hardware-bound identity directly from MacOS.
-    Uses a fixed argv list (no shell=True) to avoid shell injection risk.
-    """
-    try:
-        ioreg = subprocess.run(
-            ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-            capture_output=True, text=True, timeout=5
-        )
-        for line in ioreg.stdout.splitlines():
-            if "IOPlatformSerialNumber" in line:
-                return line.split('"')[-2].strip()
-        return "UNKNOWN_SERIAL"
-    except Exception:
-        return "UNKNOWN_SERIAL"
+    """Extract hardware-bound identity directly from macOS (delegates to silicon_serial)."""
+    s = read_apple_serial()
+    return s if s else "UNKNOWN_SERIAL"
 
 def _ensure_keychain():
     """Generates the off-mesh Private Key if the biological node natively lacks one."""

@@ -75,9 +75,12 @@ class OllamaWorker(QThread):
                 
                 # ── SWARM MINING (Proof of Inference) ──
                 try:
-                    import os, subprocess, time, hashlib
-                    raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-                    serial = raw.decode().split('"')[-2].strip()
+                    import os, sys, time, hashlib
+                    _sysd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "System")
+                    if _sysd not in sys.path:
+                        sys.path.insert(0, _sysd)
+                    from silicon_serial import read_apple_serial
+                    serial = read_apple_serial()
                     # Hardware-bound identity
                     miner_id = "M5SIFTA_BODY" if "GTH4921YP3" in serial else "M1SIFTA_BODY" 
                     state_file = f".sifta_state/{miner_id}.json"
@@ -171,9 +174,12 @@ class SwarmChatWindow(QWidget):
             "C07FL0JAQ6NV": ("M1THER",    "[O_O]", "#7dcfff"),   # M1 Mac Mini
         }
         try:
-            import subprocess as _sp
-            _raw = _sp.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-            _serial = _raw.decode().split('"')[-2].strip()
+            import sys as _sys
+            _sysd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "System")
+            if _sysd not in _sys.path:
+                _sys.path.insert(0, _sysd)
+            from silicon_serial import read_apple_serial
+            _serial = read_apple_serial()
         except Exception:
             _serial = "UNKNOWN"
 

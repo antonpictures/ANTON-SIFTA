@@ -19,6 +19,32 @@ from PyQt6.QtGui   import QFont, QColor
 
 REPO_ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_DIR   = os.path.join(REPO_ROOT, ".sifta_state")
+_GIT_BRANCH = os.environ.get("SIFTA_GIT_BRANCH", "feat/sebastian-video-economy")
+
+
+def _git_mesh_commit_push(rel_paths, message):
+    """Stage paths, commit, pull --rebase, push — argv only (no shell)."""
+    import subprocess
+    for p in rel_paths:
+        subprocess.run(["git", "-C", REPO_ROOT, "add", p], capture_output=True, timeout=60)
+    r = subprocess.run(
+        ["git", "-C", REPO_ROOT, "commit", "-m", message],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if r.returncode != 0:
+        return
+    subprocess.run(
+        ["git", "-C", REPO_ROOT, "pull", "origin", _GIT_BRANCH, "--rebase", "-X", "theirs"],
+        capture_output=True,
+        timeout=120,
+    )
+    subprocess.run(
+        ["git", "-C", REPO_ROOT, "push", "origin", _GIT_BRANCH],
+        capture_output=True,
+        timeout=120,
+    )
 
 AGENT_FACES = {
     "ALICE_M5":   "[_o_]", "M1THER":   "[O_O]", "ANTIALICE": "[o|o]",
@@ -275,19 +301,14 @@ class InstallAgentDialog(QDialog):
             QMessageBox.warning(self, "Exists", f"{agent_id} already installed.")
             return
 
-        # Claude Audit Fix 1: Baptism Gate / ARCHITECT_SEAL
+        # Claude Audit Fix 1: Baptism Gate / ARCHITECT_SEAL (safe serial read)
         try:
-            import subprocess
-            ioreg = subprocess.run(
-                ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                capture_output=True, text=True, timeout=5
-            )
-            serial = "UNKNOWN_SERIAL"
-            for line in ioreg.stdout.splitlines():
-                if "IOPlatformSerialNumber" in line:
-                    serial = line.split('"')[-2].strip()
-                    break
-        except:
+            _sysd = os.path.join(REPO_ROOT, "System")
+            if _sysd not in sys.path:
+                sys.path.insert(0, _sysd)
+            from silicon_serial import read_apple_serial
+            serial = read_apple_serial()
+        except Exception:
             serial = "UNKNOWN_SERIAL"
 
         import hashlib
@@ -519,17 +540,12 @@ class MarketplaceTab(QWidget):
         super().__init__()
         self.market_file = os.path.join(STATE_DIR, "marketplace_listings.json")
         try:
-            import subprocess
-            ioreg = subprocess.run(
-                ["/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                capture_output=True, text=True, timeout=5
-            )
-            self.local_serial = "UNKNOWN_SERIAL"
-            for line in ioreg.stdout.splitlines():
-                if "IOPlatformSerialNumber" in line:
-                    self.local_serial = line.split('"')[-2].strip()
-                    break
-        except:
+            _sysd = os.path.join(REPO_ROOT, "System")
+            if _sysd not in sys.path:
+                sys.path.insert(0, _sysd)
+            from silicon_serial import read_apple_serial
+            self.local_serial = read_apple_serial()
+        except Exception:
             self.local_serial = "UNKNOWN_SERIAL"
 
         lay = QVBoxLayout(self)
@@ -577,10 +593,11 @@ class MarketplaceTab(QWidget):
             
         # NATIVELY PUSH TO THE SWARM GRID SO OTHER NODES SEE IT
         try:
-            import subprocess
-            subprocess.run("git add .sifta_state/marketplace_listings.json && git commit -m 'mesh: marketplace listing updated' && git push origin feat/sebastian-video-economy", shell=True)
-            subprocess.run("git pull origin feat/sebastian-video-economy --rebase -X theirs", shell=True)
-        except:
+            _git_mesh_commit_push(
+                [".sifta_state/marketplace_listings.json"],
+                "mesh: marketplace listing updated",
+            )
+        except Exception:
             pass
 
         self.load_market()
@@ -699,7 +716,7 @@ class MarketplaceTab(QWidget):
                 if os.path.exists(state_file):
                     with open(state_file, "r") as sf:
                         ag = json.load(sf)
-                    ag["stgm_balance"] = max(0, float(ag.get("stgm_balance", 0.0)) - price)
+                    ag["stgm_balance"] = float(ledger_balance(local_agent))
                     with open(state_file, "w") as sf:
                         json.dump(ag, sf, indent=2)
 
@@ -717,9 +734,11 @@ class MarketplaceTab(QWidget):
 
                 # NATIVELY PUSH LEDGER TRANSACTION TO THE SWARM GRID
                 try:
-                    import subprocess
-                    subprocess.run("git add .sifta_state/ repair_log.jsonl && git commit -m 'mesh: market intelligence purchase tx executed' && git push origin feat/sebastian-video-economy", shell=True)
-                except:
+                    _git_mesh_commit_push(
+                        [".sifta_state/", "repair_log.jsonl"],
+                        "mesh: market intelligence purchase tx executed",
+                    )
+                except Exception:
                     pass
 
                 QMessageBox.information(self, "Success", f"Tx {seal} confirmed.\n{price} STGM spent.\nPayload routed cross-node.")

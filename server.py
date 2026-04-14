@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import sqlite3
 import subprocess
 import time
@@ -7,10 +8,12 @@ from pathlib import Path
 from typing import List, Optional
 
 import uvicorn
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 # Directories and paths
 ROOT_DIR = Path(__file__).parent
@@ -43,11 +46,48 @@ class MessengerRequest(BaseModel):
     to_id: str
     body: str
 
-app = FastAPI(title="ANTON-SIFTA Command Interface")
 
-import os
+def _load_policy_bypass_signing_private_key():
+    """Prefer mesh Ed25519 (~/.sifta_keys), fall back to legacy ~/.sifta/identity.pem."""
+    from cryptography.hazmat.primitives import serialization
+
+    for p in (Path.home() / ".sifta_keys" / "private.pem", Path.home() / ".sifta" / "identity.pem"):
+        if p.exists():
+            try:
+                return serialization.load_pem_private_key(p.read_bytes(), password=None)
+            except Exception:
+                continue
+    return None
+
+
+class SiftaMutatingAuthMiddleware(BaseHTTPMiddleware):
+    """When SIFTA_API_KEY is set, require X-SIFTA-Key or Authorization: Bearer on mutating routes."""
+
+    async def dispatch(self, request: Request, call_next):
+        key = os.environ.get("SIFTA_API_KEY", "").strip()
+        if key and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            path = request.url.path
+            if path.startswith("/api/") or path == "/messenger/send":
+                got = request.headers.get("x-sifta-key", "").strip()
+                auth = request.headers.get("authorization", "")
+                if auth.lower().startswith("bearer "):
+                    got = auth[7:].strip()
+                if got != key:
+                    return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
+app = FastAPI(title="ANTON-SIFTA Command Interface")
+app.add_middleware(SiftaMutatingAuthMiddleware)
+
 if os.path.exists("editor_static"):
     app.mount("/editor_static", StaticFiles(directory="editor_static"), name="editor_static")
+
+if not os.environ.get("SIFTA_API_KEY", "").strip():
+    print(
+        "[!] SIFTA_API_KEY is unset — POST/DELETE on /api/* and /messenger/send are open. "
+        "Set SIFTA_API_KEY and send X-SIFTA-Key (or Authorization: Bearer) from clients."
+    )
 
 @app.get("/editor", response_class=HTMLResponse)
 async def serve_video_editor():
@@ -113,14 +153,13 @@ async def generate_override(req: OverrideRequest):
     import json
     import time
     from cryptography.hazmat.primitives import serialization
-    
-    KEY_DIR = Path.home() / ".sifta"
-    PRIV_KEY = KEY_DIR / "identity.pem"
-    
-    if not PRIV_KEY.exists():
-        return {"error": "No identity keypair found. Run: python sifta_relay.py --keygen"}
-        
-    private_key = serialization.load_pem_private_key(PRIV_KEY.read_bytes(), password=None)
+
+    private_key = _load_policy_bypass_signing_private_key()
+    if private_key is None:
+        return {
+            "error": "No signing key found. Run: python3 System/bootstrap_pki.py "
+            "or create ~/.sifta/identity.pem (legacy)."
+        }
     
     canonical_payload = {
         "action": "POLICY_BYPASS",
@@ -874,11 +913,8 @@ async def dispatch_swim(req: DispatchRequest):
         import base64, time as _time
         auth_token_arg = None
         try:
-            from cryptography.hazmat.primitives import serialization as _ser
-            _KEY_DIR = Path.home() / ".sifta"
-            _PRIV_KEY = _KEY_DIR / "identity.pem"
-            if _PRIV_KEY.exists():
-                _private_key = _ser.load_pem_private_key(_PRIV_KEY.read_bytes(), password=None)
+            _private_key = _load_policy_bypass_signing_private_key()
+            if _private_key is not None:
                 _payload = {"action": "POLICY_BYPASS", "target_binary": "repair.py",
                             "timestamp": _time.time(), "ttl_seconds": 3600}
                 _canonical = json.dumps(_payload, sort_keys=True, separators=(",", ":"))
@@ -1198,11 +1234,21 @@ async def wallet_wormhole(req: WormholeRequest):
     target_url = f"http://{req.target_ip}:{req.target_port}/api/receive_soul"
     payload_bytes = json.dumps(payload).encode("utf-8")
 
+    # ── SIFTA_MESH_HMAC: optional LAN hop authentication ──────────────────────
+    # Set SIFTA_MESH_HMAC to a shared secret on both nodes to authenticate
+    # wormhole POSTs without requiring full mTLS.  If unset, behaves as before.
+    _outbound_headers: dict = {"Content-Type": "application/json"}
+    _mesh_secret = os.environ.get("SIFTA_MESH_HMAC", "").strip()
+    if _mesh_secret:
+        import hmac as _hmac
+        _mac = _hmac.new(_mesh_secret.encode(), payload_bytes, "sha256").hexdigest()
+        _outbound_headers["X-SIFTA-Mesh-HMAC"] = _mac
+
     try:
         http_req = urllib.request.Request(
             target_url,
             data=payload_bytes,
-            headers={"Content-Type": "application/json"},
+            headers=_outbound_headers,
             method="POST"
         )
         with urllib.request.urlopen(http_req, timeout=15) as resp:
@@ -1247,16 +1293,29 @@ async def wallet_wormhole(req: WormholeRequest):
 
 
 @app.post("/api/receive_soul")
-async def receive_soul(payload: dict):
+async def receive_soul(request: Request):
     """
-    Receive end of the Wormhole. Accepts a signed soul + deed bundle, 
-    verifies the Ed25519 signature, and writes the agent to the local state dir.
+    Receive end of the Wormhole. Accepts a signed soul + deed bundle,
+    verifies the Ed25519 signature, optionally verifies SIFTA_MESH_HMAC,
+    and writes the agent to the local state dir.
     """
     import base64
+    import hmac as _hmac
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.exceptions import InvalidSignature
 
+    raw_body = await request.body()
+
+    # ── SIFTA_MESH_HMAC verification (optional) ────────────────────────────────
+    _mesh_secret = os.environ.get("SIFTA_MESH_HMAC", "").strip()
+    if _mesh_secret:
+        incoming_mac = request.headers.get("X-SIFTA-Mesh-HMAC", "")
+        expected_mac = _hmac.new(_mesh_secret.encode(), raw_body, "sha256").hexdigest()
+        if not _hmac.compare_digest(incoming_mac, expected_mac):
+            return {"ok": False, "error": "MESH_HMAC verification failed — transmission rejected."}
+
     try:
+        payload = json.loads(raw_body)
         soul = payload.get("soul", {})
         deed = payload.get("deed", {})
 
@@ -1280,6 +1339,25 @@ async def receive_soul(payload: dict):
             pub_key.verify(sig_bytes, deed_payload_str.encode())
         except InvalidSignature:
             return {"ok": False, "error": "INVALID SIGNATURE — deed verification failed. Transmission rejected."}
+
+        # Bind deed public key to embedded soul private material (mitigates mismatched bundles)
+        from cryptography.hazmat.primitives import serialization as _ser
+        pk_b64_soul = soul.get("private_key_b64")
+        if pk_b64_soul:
+            try:
+                priv_bytes = base64.b64decode(pk_b64_soul)
+                sk = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
+                derived = sk.public_key().public_bytes(
+                    encoding=_ser.Encoding.Raw,
+                    format=_ser.PublicFormat.Raw,
+                )
+                if derived != pub_bytes:
+                    return {
+                        "ok": False,
+                        "error": "Deed public key does not match soul private_key_b64 material.",
+                    }
+            except Exception as e:
+                return {"ok": False, "error": f"Soul key material invalid: {e}"}
 
         # Write soul to local state dir
         dest = STATE_DIR / f"{agent_id}.json"
@@ -1731,7 +1809,6 @@ async def start_heartbeat():
 
 
 if __name__ == "__main__":
-    import os
     import sys
     import atexit
     

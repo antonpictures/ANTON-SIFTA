@@ -8,7 +8,9 @@ import random
 import queue
 from datetime import datetime
 
-API_BASE = "http://localhost:7433/api"
+from sifta_http_auth import get_sifta_api_base, sifta_headers
+
+API_BASE = get_sifta_api_base()
 
 class SIFTABodyChatGUI(tk.Tk):
     def __init__(self):
@@ -94,11 +96,12 @@ class SIFTABodyChatGUI(tk.Tk):
         
         # Send via real wormhole messenger API
         try:
-            requests.post(f"{API_BASE}/messenger/send", json={
-                "from_id": from_body,
-                "to_id": to_body,
-                "body": body
-            }, timeout=5)
+            requests.post(
+                f"{API_BASE}/messenger/send",
+                json={"from_id": from_body, "to_id": to_body, "body": body},
+                headers=sifta_headers(),
+                timeout=5,
+            )
         except:
             pass
         

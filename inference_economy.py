@@ -260,6 +260,72 @@ def record_inference_fee(
     return event
 
 
+# ─── Ledger row integrity (verify-on-read for Ed25519-signed rows) ───────────
+def _ledger_row_cryptographically_valid(entry: dict) -> bool:
+    """
+    When SIFTA_LEDGER_VERIFY is truthy (default), rows carrying a full Ed25519
+    hex signature must verify against signing_node in node_pki_registry.
+    Legacy / fallback rows (no sig, NO_KEYCHAIN_, SEAL_, etc.) are accepted.
+    Set SIFTA_LEDGER_VERIFY=0 to skip (e.g. while migrating old ledgers).
+    """
+    flag = os.environ.get("SIFTA_LEDGER_VERIFY", "1").strip().lower()
+    if flag in ("0", "false", "no", "off"):
+        return True
+    sig = entry.get("ed25519_sig")
+    if not sig or not isinstance(sig, str):
+        return True
+    if sig.startswith(("NO_KEYCHAIN_", "SEAL_", "MARKET_", "MINED_")):
+        return True
+    if len(sig) != 128 or any(c not in "0123456789abcdefABCDEF" for c in sig):
+        return True
+    node = entry.get("signing_node")
+    if not node or node == "UNKNOWN_SERIAL":
+        return False
+    try:
+        from crypto_keychain import verify_block
+    except ImportError:
+        return True
+
+    event = entry.get("event", "") or ""
+    tx_type = entry.get("tx_type", "") or ""
+
+    if event in ("MINING_REWARD", "FOUNDATION_GRANT"):
+        body = (
+            f"MINT::{entry.get('miner_id', '')}::ACTION[{entry.get('action', '')}]::"
+            f"FILE[{entry.get('file_repaired', '')}]::AMOUNT[{entry.get('amount_stgm', 0)}]::"
+            f"TS[{entry.get('ts', '')}]::NODE[{node}]"
+        )
+        return bool(verify_block(node, body, sig))
+
+    if event == "INFERENCE_BORROW":
+        body = (
+            f"INFERENCE_BORROW::{entry.get('borrower_id', '')}::FROM[{entry.get('lender_ip', '')}]::"
+            f"MODEL[{entry.get('model', '')}]::TOKENS[{entry.get('tokens_used', 0)}]::FEE[{entry.get('fee_stgm', 0)}]::"
+            f"TS[{entry.get('ts', '')}]::NODE[{node}]"
+        )
+        return bool(verify_block(node, body, sig))
+
+    if tx_type == "STGM_SPEND":
+        ts = entry.get("timestamp")
+        amt = entry.get("amount")
+        tgt = entry.get("target_node", "")
+        candidates = []
+        if amt is not None and ts is not None:
+            candidates.append(f"{node}:{tgt}:{amt}:{ts}")
+            try:
+                fa = float(amt)
+                candidates.append(f"{node}:{tgt}:{fa}:{ts}")
+                candidates.append(f"{node}:{tgt}:{round(fa, 4)}:{ts}")
+            except (TypeError, ValueError):
+                pass
+        for body in candidates:
+            if body and verify_block(node, body, sig):
+                return True
+        return False
+
+    return True
+
+
 # ─── Canonical Ledger Balance ─────────────────────────────────────────────────
 def ledger_balance(agent_id: str) -> float:
     """
@@ -296,6 +362,9 @@ def ledger_balance(agent_id: str) -> float:
                 try:
                     entry = json.loads(raw_line)
                 except json.JSONDecodeError:
+                    continue
+
+                if not _ledger_row_cryptographically_valid(entry):
                     continue
 
                 event   = entry.get("event", "")
@@ -336,7 +405,7 @@ def ledger_balance(agent_id: str) -> float:
 
 # ─── STGM Balance Getter (backward-compat thin wrapper) ───────────────────────
 def get_stgm_balance(agent_id: str) -> float:
-    """Backward-compatible alias. Prefer ledger_balance() for any spend check."""
+    """Always derived from repair_log.jsonl quorum (never stale JSON wallet alone)."""
     return ledger_balance(agent_id)
 
 

@@ -52,6 +52,30 @@ def record_event(event_type: str, component: str, details: str):
     except Exception as e:
         print(f"[!] Audit write failed: {e}")
 
+def _load_override_verifying_public_keys():
+    """Architect keys: legacy ~/.sifta/authorized_keys + Ed25519 from ~/.sifta_keys/private.pem."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    keys = []
+    legacy_pub = Path.home() / ".sifta" / "authorized_keys" / "macbook.pub.pem"
+    if legacy_pub.exists():
+        try:
+            keys.append(serialization.load_pem_public_key(legacy_pub.read_bytes()))
+        except Exception:
+            pass
+    sk_path = Path.home() / ".sifta_keys" / "private.pem"
+    if sk_path.exists():
+        try:
+            sk = serialization.load_pem_private_key(sk_path.read_bytes(), password=None)
+            pk = sk.public_key()
+            if isinstance(pk, ed25519.Ed25519PublicKey):
+                keys.append(pk)
+        except Exception:
+            pass
+    return keys
+
+
 def verify_cryptographic_override(auth_token_b64: str, target_binary: str):
     """
     Verifies that a manual override token was cryptographically signed by an
@@ -62,27 +86,27 @@ def verify_cryptographic_override(auth_token_b64: str, target_binary: str):
 
     import base64
     import json
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
 
-    PUB_KEY_PATH = Path.home() / ".sifta" / "authorized_keys" / "macbook.pub.pem"
-    if not PUB_KEY_PATH.exists():
+    keys = _load_override_verifying_public_keys()
+    if not keys:
         raise PermissionError("No authorized public keys found on this node.")
-        
+
     try:
         envelope_json = base64.b64decode(auth_token_b64).decode("utf-8")
         envelope = json.loads(envelope_json)
     except Exception:
         raise ValueError("Auth token is not a valid base64 JSON envelope.")
-        
+
     # Check TTL and target constraint
     if time.time() > envelope.get("timestamp", 0) + envelope.get("ttl_seconds", 0):
         raise ValueError("Override token expired (TTL exceeded).")
-        
+
     if envelope.get("target_binary") != target_binary:
         raise ValueError(f"Token bounded to [{envelope.get('target_binary')}], not [{target_binary}].")
-        
-    # Verify Signature
+
     signature = base64.b64decode(envelope["signature"])
     canonical_payload = {
         "action": envelope["action"],
@@ -91,18 +115,24 @@ def verify_cryptographic_override(auth_token_b64: str, target_binary: str):
         "ttl_seconds": envelope["ttl_seconds"]
     }
     canonical_str = json.dumps(canonical_payload, sort_keys=True, separators=(",", ":"))
-    
-    pub_key_bytes = PUB_KEY_PATH.read_bytes()
-    public_key = serialization.load_pem_public_key(pub_key_bytes)
-    
-    try:
-        public_key.verify(signature, canonical_str.encode("utf-8"))
-    except Exception:
-        raise PermissionError("Invalid Cryptographic Signature. Override Denied.")
-        
-    # If we made it here, the math holds.
-    record_event("MATH_OVERRIDE", target_binary, f"Valid signature verified for {target_binary}")
-    return True
+    msg = canonical_str.encode("utf-8")
+
+    last_err = None
+    for public_key in keys:
+        try:
+            if isinstance(public_key, ed25519.Ed25519PublicKey):
+                public_key.verify(signature, msg)
+            elif isinstance(public_key, rsa.RSAPublicKey):
+                public_key.verify(signature, msg, padding.PKCS1v15(), hashes.SHA256())
+            else:
+                continue
+            record_event("MATH_OVERRIDE", target_binary, f"Valid signature verified for {target_binary}")
+            return True
+        except Exception as e:
+            last_err = e
+            continue
+
+    raise PermissionError(f"Invalid Cryptographic Signature. Override Denied. ({last_err})")
 
 if __name__ == "__main__":
     init_audit()

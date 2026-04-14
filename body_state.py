@@ -129,9 +129,15 @@ class SwarmBody:
     def get_local_serial(cls):
         """Read this machine's serial from bare metal."""
         try:
-            import subprocess
-            out = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-            return out.decode().split('"')[-2].strip()
+            import os as _os
+            import sys as _sys
+            _root = _os.path.dirname(_os.path.abspath(__file__))
+            _sysd = _os.path.join(_root, "System")
+            if _sysd not in _sys.path:
+                _sys.path.insert(0, _sysd)
+            from silicon_serial import read_apple_serial
+            s = read_apple_serial()
+            return s if s != "UNKNOWN_SERIAL" else "UNKNOWN_HW"
         except Exception:
             return "UNKNOWN_HW"
 

@@ -1,4 +1,5 @@
 import json
+import os
 import base64
 import hashlib
 import time as tmod
@@ -10,6 +11,14 @@ from cryptography.hazmat.primitives import serialization
 
 # In production this would be read from config.json
 DEFAULT_RELAY = "http://127.0.0.1:8000"
+
+
+def _relay_headers(base=None):
+    h = dict(base or {})
+    k = os.environ.get("SIFTA_RELAY_API_KEY", "").strip()
+    if k:
+        h["X-SIFTA-Relay-Key"] = k
+    return h
 
 def push_to_relay(agent_id: str, target_pubkey: str, state_dir: Path, new_owner: str, relay_url: str = DEFAULT_RELAY) -> dict:
     soul_file = state_dir / f"{agent_id}.json"
@@ -71,7 +80,12 @@ def push_to_relay(agent_id: str, target_pubkey: str, state_dir: Path, new_owner:
     
     try:
         url = f"{relay_url.rstrip('/')}/drop"
-        req = urllib.request.Request(url, data=json.dumps(drop_req).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(drop_req).encode("utf-8"),
+            headers=_relay_headers({"Content-Type": "application/json"}),
+            method="POST",
+        )
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
             if not data.get("ok"):
@@ -104,7 +118,7 @@ def fetch_from_relay(my_pubkey: str, state_dir: Path, relay_url: str = DEFAULT_R
     safe_pub = urllib.parse.quote_plus(my_pubkey)
     try:
         url = f"{relay_url.rstrip('/')}/pickup/{safe_pub}"
-        req = urllib.request.Request(url, method="GET")
+        req = urllib.request.Request(url, headers=_relay_headers(), method="GET")
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
             if not data.get("ok"):
@@ -137,7 +151,7 @@ def fetch_from_relay(my_pubkey: str, state_dir: Path, relay_url: str = DEFAULT_R
             
             # Send ACK to delete from relay
             ack_url = f"{relay_url.rstrip('/')}/pickup/{safe_pub}/{drop_id}"
-            ack_req = urllib.request.Request(ack_url, method="DELETE")
+            ack_req = urllib.request.Request(ack_url, headers=_relay_headers(), method="DELETE")
             try:
                 urllib.request.urlopen(ack_req, timeout=10)
             except Exception as e:

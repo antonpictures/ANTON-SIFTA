@@ -6,7 +6,9 @@ import threading
 import time
 import os
 
-API_BASE = "http://localhost:7433/api"
+from sifta_http_auth import get_sifta_api_base, sifta_headers
+
+API_BASE = get_sifta_api_base()
 
 class CouncilRobinhoodApp(tk.Tk):
     def __init__(self):
@@ -150,7 +152,12 @@ class CouncilRobinhoodApp(tk.Tk):
             
     def transmit(self, target, payload, success_msg=""):
         try:
-            resp = requests.post(f"{API_BASE}/swarm_communique", json={"target_node": target, "message": payload}, timeout=5)
+            resp = requests.post(
+                f"{API_BASE}/swarm_communique",
+                json={"target_node": target, "message": payload},
+                headers=sifta_headers(),
+                timeout=5,
+            )
             data = resp.json()
             if resp.status_code == 200 and data.get("status") == "success":
                 messagebox.showinfo("Order Executed", success_msg)

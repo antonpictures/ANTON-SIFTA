@@ -64,7 +64,9 @@ OLLAMA_URL    = "http://localhost:11434/api/generate"
 REPAIR_MODEL = "gemma4:latest"
 FALLBACK_MODEL = "gemma4:latest"
 LOG_PATH     = Path(__file__).parent / "repair_log.jsonl"
-LOCAL_SERVER_URL = "http://localhost:7433"  # For fee reporting
+# Inference fees are recorded in-process via inference_economy (repair_log.jsonl).
+# This URL is reserved if a future build POSTs fees to a remote quorum daemon.
+LOCAL_SERVER_URL = "http://localhost:7433"
 
 def _build_model_timeouts() -> dict:
     """Dynamically compute timeouts based on model size from Ollama.

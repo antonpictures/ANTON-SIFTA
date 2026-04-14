@@ -5,17 +5,18 @@
 # Fires autonomous mesh pulses at Pi-scheduled intervals.
 # NEVER bursts synchronously — randomized by Pi digit offsets.
 # ─────────────────────────────────────────────────────────────
-import json, time, subprocess, os, sys
+import json, time, os, sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DROP_FILE = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 
 def get_serial():
-    try:
-        out = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-        return out.decode().split('"')[-2]
-    except Exception:
-        return "UNKNOWN_HW"
+    _here = os.path.dirname(os.path.abspath(__file__))
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
+    from silicon_serial import read_apple_serial
+    s = read_apple_serial()
+    return s if s != "UNKNOWN_SERIAL" else "UNKNOWN_HW"
 
 def pulse():
     serial = get_serial()

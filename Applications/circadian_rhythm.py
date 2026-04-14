@@ -13,7 +13,7 @@
 # One file. Two nodes. Zero forks needed.
 # ─────────────────────────────────────────────────────────────
 
-import json, time, subprocess, os, re
+import json, time, subprocess, os, re, sys
 
 REPO_ROOT  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DROP_FILE  = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
@@ -45,11 +45,11 @@ AFK_MAX    = 45 * 60
 # ─────────────────────────────────────────────────────────────
 
 def get_serial():
-    try:
-        out = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
-        return out.decode().split('"')[-2]
-    except Exception:
-        return "UNKNOWN_HW"
+    sys_dir = os.path.join(REPO_ROOT, "System")
+    if sys_dir not in sys.path:
+        sys.path.insert(0, sys_dir)
+    from silicon_serial import read_apple_serial
+    return read_apple_serial()
 
 def detect_node(serial):
     node_id = NODE_REGISTRY.get(serial, "UNKNOWN")
@@ -83,10 +83,16 @@ def detect_node(serial):
 
 def get_idle_seconds():
     try:
-        out = subprocess.check_output(
-            "/usr/sbin/ioreg -c IOHIDSystem | grep HIDIdleTime", shell=True
-        ).decode()
-        ns = int(re.search(r"HIDIdleTime\s*=\s*(\d+)", out).group(1))
+        r = subprocess.run(
+            ["/usr/sbin/ioreg", "-c", "IOHIDSystem", "-rd1"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        m = re.search(r"HIDIdleTime\s*=\s*(\d+)", r.stdout)
+        if not m:
+            return 0
+        ns = int(m.group(1))
         return ns / 1_000_000_000
     except Exception:
         return 0
@@ -124,18 +130,21 @@ def rewrite_crontab(node, state):
         for m in minutes
     ]
     scheduler_line = f"*/30 * * * * cd {REPO_ROOT} && python3 {SCHEDULER}"
-    try:
-        current = subprocess.check_output("crontab -l 2>/dev/null", shell=True).decode()
-    except Exception:
-        current = ""
+    r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    current = r.stdout if r.returncode == 0 else ""
     hb_script = os.path.basename(node["heartbeat"])
     preserved = [
         ln for ln in current.strip().split("\n")
         if ln.strip() and hb_script not in ln and "circadian_rhythm" not in ln
     ]
     full_crontab = "\n".join(preserved + [scheduler_line] + new_heartbeat_lines) + "\n"
-    proc = subprocess.Popen("crontab -", shell=True, stdin=subprocess.PIPE)
-    proc.communicate(full_crontab.encode())
+    subprocess.run(
+        ["crontab", "-"],
+        input=full_crontab,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
 
 def broadcast(node, state, idle_secs, serial, changed):
     idle_min = int(idle_secs / 60)

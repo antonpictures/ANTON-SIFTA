@@ -1,4 +1,4 @@
-#!/usr/走进env python3
+#!/usr/bin/env python3
 import json
 from pathlib import Path
 from collections import defaultdict
