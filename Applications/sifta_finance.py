@@ -190,7 +190,7 @@ class InstallAgentDialog(QDialog):
     def _install(self):
         agent_id  = self.id_input.text().strip().upper().replace(" ","_")
         role      = self.role.currentText()
-        stgm      = float(self.stgm_input.text().strip() or "10")
+        stgm      = float(self.stgm_input.text().strip() or "0")
         if not agent_id:
             QMessageBox.warning(self, "Error", "Agent ID required.")
             return
@@ -198,16 +198,57 @@ class InstallAgentDialog(QDialog):
         if os.path.exists(fpath):
             QMessageBox.warning(self, "Exists", f"{agent_id} already installed.")
             return
+
+        # Claude Audit Fix 1: Baptism Gate / ARCHITECT_SEAL
+        try:
+            import subprocess
+            raw = subprocess.check_output("/usr/sbin/ioreg -l | grep IOPlatformSerialNumber", shell=True)
+            serial = raw.decode().split('"')[-2].strip()
+        except:
+            serial = "UNKNOWN_SERIAL"
+
+        import hashlib
+        ts = int(time.time())
+        seal_payload = f"{agent_id}:{stgm}:{serial}:{ts}"
+        seal = "SEAL_" + hashlib.sha256(seal_payload.encode()).hexdigest()[:12]
+
         payload = {
             "id":           agent_id,
-            "ascii":        f"<///[~_~]///::ID[{agent_id}]::INSTALLED[{int(time.time())}]>",
+            "ascii":        f"<///[~_~]///::ID[{agent_id}]::INSTALLED[{ts}]>",
             "stgm_balance": stgm,
             "style":        role,
             "energy":       100,
+            "architect_seal": seal
         }
         with open(fpath, "w") as f:
             json.dump(payload, f, indent=2)
-        QMessageBox.information(self,"Installed", f"Agent {agent_id} installed.\nSTGM: {stgm} | Role: {role}")
+
+        # Claude Audit Fix 2: Write true immutable logs
+        genesis_entry = {
+            "timestamp": ts,
+            "agent_id": agent_id,
+            "event": "GENESIS",
+            "starting_stgm": stgm,
+            "architect_seal": seal,
+            "hardware_serial": serial
+        }
+        try:
+            with open(os.path.join(REPO_ROOT, ".sifta_state", "genesis_log.jsonl"), "a") as f:
+                f.write(json.dumps(genesis_entry) + "\n")
+            if stgm > 0:
+                mint_entry = {
+                    "timestamp": ts,
+                    "agent_id": agent_id,
+                    "tx_type": "STGM_MINT",
+                    "amount": stgm,
+                    "hash": seal
+                }
+                with open(os.path.join(REPO_ROOT, "repair_log.jsonl"), "a") as f:
+                    f.write(json.dumps(mint_entry) + "\n")
+        except Exception as e:
+            print(f"Log write error: {e}")
+
+        QMessageBox.information(self,"Installed", f"Agent {agent_id} installed.\nSTGM: {stgm} | Role: {role}\nSeal: {seal}")
         self.accept()
 
 # ─────────────────────────────────────────────────────────────
