@@ -47,6 +47,7 @@
   "Intelligence Settings": {
     "category": "System",
     "entry_point": "Applications/sifta_settings.py",
+    "widget_class": "SettingsWindow",
     "signature": "UNVERIFIED"
   },
   "Cardio Metrics": {

@@ -767,6 +767,7 @@ class SiftaDesktop(QMainWindow):
                 for app_name, app_data in apps.items():
                     cat = app_data.get("category", "Accessories")
                     entry = app_data.get("entry_point", "")
+                    widget_class = app_data.get("widget_class", "")
                     if not entry: continue
 
                     target_menu = acc
@@ -774,9 +775,16 @@ class SiftaDesktop(QMainWindow):
                     elif cat == "Networking": target_menu = net
                     elif cat == "System": target_menu = sys_menu
 
-                    target_menu.addAction(f"{app_name}").triggered.connect(
-                        (lambda e: lambda: self.spawn_terminal(app_name, "python3", [e]))(entry)
-                    )
+                    if widget_class:
+                        # Native embed: import the module and open as MDI sub-window
+                        target_menu.addAction(f"{app_name}").triggered.connect(
+                            (lambda e, wc: lambda: self.spawn_native_widget(app_name, e, wc))(entry, widget_class)
+                        )
+                    else:
+                        # Subprocess terminal launcher
+                        target_menu.addAction(f"{app_name}").triggered.connect(
+                            (lambda e: lambda: self.spawn_terminal(app_name, "python3", [e]))(entry)
+                        )
             except Exception as e:
                 print(f"[Boot Error] Failed to load apps manifest: {e}")
 
@@ -845,6 +853,23 @@ class SiftaDesktop(QMainWindow):
 
     def spawn_terminal(self, title, cmd, args):
         self._make_sub(TerminalSubWindow(cmd, args), title, 600, 400, "#9ece6a")
+
+    def spawn_native_widget(self, title, module_path, class_name):
+        """Import a SIFTA app module and embed its widget class inside the MDI.
+        No subprocess. No separate QApplication. Stays inside Swarm OS."""
+        try:
+            import importlib.util, sys as _sys
+            spec = importlib.util.spec_from_file_location(
+                class_name, os.path.join(os.getcwd(), module_path)
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            widget_cls = getattr(mod, class_name)
+            widget = widget_cls()
+            self._make_sub(widget, f"⚙ {title}", 660, 540, "#7aa2f7")
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Launch Error", f"Failed to load {title}:\n{e}")
 
 
 # ──────────────────────────────────────────────────────────────
