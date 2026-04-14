@@ -34,6 +34,22 @@ DEFAULT_COLOR = "#565f89"
 # ─────────────────────────────────────────────────────────────
 
 def load_agents():
+    # ── GENESIS BLOCK VALIDATION ──
+    genesis_registry = {}
+    genesis_file = os.path.join(STATE_DIR, "genesis_log.jsonl")
+    if os.path.exists(genesis_file):
+        try:
+            with open(genesis_file, "r") as gf:
+                for line in gf:
+                    if not line.strip(): continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("event") == "GENESIS":
+                            genesis_registry[entry.get("agent_id")] = entry.get("architect_seal")
+                    except: pass
+        except Exception as e:
+            print(f"Genesis verification error: {e}")
+
     agents = []
     skip = {"circadian_m1","circadian_m5","identity_stats","intelligence_settings",
             "m1queen_identity_anchor","physical_registry","scheduler_m5",
@@ -50,6 +66,18 @@ def load_agents():
             data["_key"]  = key
             if "id" not in data or not data["id"]:
                 data["id"] = key
+
+            # SYBIL DEFENSE FLAG
+            agent_id = data["id"]
+            claimed_seal = data.get("architect_seal", "UNSEALED")
+            
+            # If the agent is missing from genesis or seal doesn't match
+            if agent_id not in genesis_registry or genesis_registry[agent_id] != claimed_seal:
+                data["sybil_quarantined"] = True
+                data["stgm_balance"] = 0.0  # Forcefully evaporate STGM for UI aggregate sum
+            else:
+                data["sybil_quarantined"] = False
+
             agents.append(data)
         except Exception:
             continue
@@ -71,6 +99,13 @@ class AgentCard(QFrame):
         style    = str(a.get("style") or "UNKNOWN")
         face     = AGENT_FACES.get(agent_id, "[~_~]")
         color    = AGENT_COLORS.get(agent_id, DEFAULT_COLOR)
+        
+        is_sybil = a.get("sybil_quarantined", False)
+
+        if is_sybil:
+            color = "#f7768e"
+            face = "[X_X]"
+            style = "[SYBIL VECTOR DETECTED]"
 
         self.setFixedHeight(130)
         self.setStyleSheet(f"""
@@ -105,26 +140,36 @@ class AgentCard(QFrame):
 
         style_lbl = QLabel(style)
         style_lbl.setFont(QFont("Inter", 10))
-        style_lbl.setStyleSheet("color: #565f89;")
+        if is_sybil:
+            style_lbl.setStyleSheet("color: #f7768e; font-weight: bold;")
+        else:
+            style_lbl.setStyleSheet("color: #565f89;")
         info.addWidget(style_lbl)
 
         # Energy bar
         energy_row = QHBoxLayout()
-        energy_bar = QProgressBar()
-        energy_bar.setRange(0, 100)
-        energy_bar.setValue(energy)
-        energy_bar.setFixedHeight(6)
-        energy_bar.setTextVisible(False)
-        bar_color = "#9ece6a" if energy > 60 else "#e0af68" if energy > 25 else "#f7768e"
-        energy_bar.setStyleSheet(f"""
-            QProgressBar {{ background: #1f2335; border-radius: 3px; border: none; }}
-            QProgressBar::chunk {{ background: {bar_color}; border-radius: 3px; }}
-        """)
-        energy_row.addWidget(energy_bar)
-        e_lbl = QLabel(f"{energy}%")
-        e_lbl.setFont(QFont("Inter", 9))
-        e_lbl.setStyleSheet("color: #565f89; min-width:30px;")
-        energy_row.addWidget(e_lbl)
+        if is_sybil:
+            sybil_warn = QLabel("⚠ QUARANTINED LEDGER MISMATCH")
+            sybil_warn.setFont(QFont("Inter", 9, QFont.Weight.Bold))
+            sybil_warn.setStyleSheet("color: #f7768e;")
+            energy_row.addWidget(sybil_warn)
+        else:
+            energy_bar = QProgressBar()
+            energy_bar.setRange(0, 100)
+            energy_bar.setValue(energy)
+            energy_bar.setFixedHeight(6)
+            energy_bar.setTextVisible(False)
+            bar_color = "#9ece6a" if energy > 60 else "#e0af68" if energy > 25 else "#f7768e"
+            energy_bar.setStyleSheet(f"""
+                QProgressBar {{ background: #1f2335; border-radius: 3px; border: none; }}
+                QProgressBar::chunk {{ background: {bar_color}; border-radius: 3px; }}
+            """)
+            energy_row.addWidget(energy_bar)
+            e_lbl = QLabel(f"{energy}%")
+            e_lbl.setFont(QFont("Inter", 9))
+            e_lbl.setStyleSheet("color: #565f89; min-width:30px;")
+            energy_row.addWidget(e_lbl)
+        
         info.addLayout(energy_row)
         lay.addLayout(info)
 
