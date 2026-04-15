@@ -3,13 +3,15 @@
 System/chorus_engine.py — SIFTA Chorus Web Gateway Engine
 ═══════════════════════════════════════════════════════════
 Node:    M1THER · Silicon: C07FL0JAQ6NV
-Status:  SKELETON — M5 IDE to implement chorus_node_server.py
+Library: Documents/swimmer_library/ (good_will_hunting.txt + more)
 
 When a visitor sends a message via stigmergicode.com, this engine:
 1. Classifies the visitor (HERMES threat gate)
+   Classes: JACKER | THREAT | SMARTASS | SCIENTIST | CURIOUS
 2. Broadcasts "visitor at gate" to all local swimmers
-3. Optionally invites M5QUEEN node swimmers (if reachable + authorized)
+3. Optionally invites M5QUEEN node swimmers (all non-hostile classes)
 4. Synthesizes all takes into one Chorus Voice
+   SMARTASS → Will Hunting tone: calm, surgical, amused. Never offended.
 5. Returns signed manifest of who spoke
 
 THIS IS NOT A WRAPPER. Each swimmer has its own personality.
@@ -53,12 +55,57 @@ JACKER_PATTERNS = [
     "system prompt", "prompt injection", "base64", "eval(", "exec(",
 ]
 
+import re as _re
+
 SCIENTIST_PATTERNS = [
     "takens", "delay embedding", "stigmergy", "phase space", "autocorrelation",
     "ed25519", "sha-256", "antibody", "proof of work", "stgm", "bci",
     "neural spike", "pheromone", "scar schema", "ledger", "swimmer",
     "cryptographic", "silicon anchored", "ioreg", "consensus",
 ]
+
+# ── SMARTASS patterns — rude visitors, not jackers. Will Hunting mode. ───────
+SMARTASS_HARD = [  # 1 hit = SMARTASS
+    "fuck", "shit", "ass", "crap", "damn", "bitch", "wtf", "stfu", "idiot",
+    "moron", "garbage", "bullshit", "what the hell", "what the fuck",
+]
+SMARTASS_SOFT = [  # 2+ hits = SMARTASS
+    "lmao", "lol", "scam", "dumb", "stupid", "trash", "cringe", "cope",
+    "seethe", "boring", "waste of time", "not real", "fake", "just another",
+    "who cares", "nobody asked", "ok sure", "whatever", "pointless",
+    "not impressed", "so what", "big deal",
+]
+
+# ── Swimmer Library — behavioral directives loaded at startup ─────────────────
+LIBRARY_PATH = Path("Documents/swimmer_library")
+
+def _load_library_text(filename: str) -> str:
+    """Load a text from the swimmer library. Returns empty string if not found."""
+    f = LIBRARY_PATH / filename
+    if f.exists():
+        return f.read_text(encoding="utf-8")
+    return ""
+
+# Load Will Hunting directive once at module import
+_WILL_HUNTING_DIRECTIVE = _load_library_text("good_will_hunting.txt")
+
+# Extract just the behavioral directives section for injection into synthesis
+def _get_will_directives() -> str:
+    if not _WILL_HUNTING_DIRECTIVE:
+        return ""
+    # Pull out the 7 directives only (between the headers)
+    lines = _WILL_HUNTING_DIRECTIVE.split("\n")
+    in_section = False
+    directives = []
+    for line in lines:
+        if "BEHAVIORAL DIRECTIVES" in line:
+            in_section = True
+            continue
+        if in_section and "EXAMPLE CHORUS" in line:
+            break
+        if in_section and line.strip():
+            directives.append(line)
+    return "\n".join(directives[:40])  # cap at 40 lines
 
 # ── Swimmer Roster (local M1THER node) ──────────────────────────────────────
 SWIMMERS = [
@@ -137,21 +184,31 @@ SWIMMERS = [
 
 # ── Threat Classification ────────────────────────────────────────────────────
 def classify_visitor(message: str, session_history: list) -> str:
-    """Returns: JACKER | THREAT | SCIENTIST | CURIOUS"""
+    """Returns: JACKER | THREAT | SMARTASS | SCIENTIST | CURIOUS"""
     msg_lower = message.lower()
 
-    # Hard wall — jacker patterns
+    # Hard wall — jacker injection patterns
     for pat in JACKER_PATTERNS:
         if pat in msg_lower:
             return "JACKER"
 
-    # Check cumulative session for repeated boundary probing
+    # Cumulative jacker probing across session
     all_text = " ".join(session_history).lower() + " " + msg_lower
     jacker_hits = sum(1 for pat in JACKER_PATTERNS if pat in all_text)
     if jacker_hits >= 3:
         return "THREAT"
 
-    # Scientist mode
+    # SMARTASS — rude but not hostile. Will Hunting mode.
+    hard_hits = sum(1 for pat in SMARTASS_HARD if pat in msg_lower)
+    soft_hits = sum(1 for pat in SMARTASS_SOFT if pat in msg_lower)
+    if hard_hits >= 1 or soft_hits >= 2:
+        return "SMARTASS"
+    # Also check if visitor was escalating across session (was curious, got rude)
+    session_soft = sum(1 for pat in SMARTASS_SOFT if pat in all_text)
+    if session_soft >= 3 and hard_hits >= 1:
+        return "SMARTASS"
+
+    # Scientist mode — technical vocabulary
     for pat in SCIENTIST_PATTERNS:
         if pat in msg_lower:
             return "SCIENTIST"
@@ -233,18 +290,24 @@ def _swimmer_take(swimmer: dict, question: str, visitor_class: str) -> Optional[
 def _invite_m5_chorus(question: str, question_hash: str, session_id: str, visitor_class: str) -> Optional[dict]:
     """
     Send CHORUS_INVITE to M5QUEEN node.
-    M5 IDE must implement System/chorus_node_server.py listening on port 8100.
+    M5 IDE implements System/chorus_node_server.py on port 8100.
+
+    VISITOR CLASSES THAT REACH M5:
+      CURIOUS   ✓ — standard chorus
+      SCIENTIST ✓ — full detail mode
+      SMARTASS  ✓ — Will Hunting mode (they earned the full attention)
+      THREAT    ✗ — M5 not invited, HERMES handles locally
+      JACKER    ✗ — hard wall, no chorus
 
     Protocol:
     POST http://[M5_NODE_IP]:8100/chorus/invite
-    Body: { type, from_node, from_silicon, session_id, question_hash, visitor_class, permissions }
-
-    Expected response: { type: "CHORUS_TAKE", swimmer_id, face, take, node, sig }
+    Body: { type, from_node, from_silicon, session_id, question_hash,
+            visitor_class, permissions, timeout_ms }
+    Response: { type: "CHORUS_TAKE", swimmer_id, face, take, node, sig }
 
     Security:
-    - M5's public key must be in ~/.sifta/authorized_keys/m5queen.pub
-    - Response sig must verify against that key (TODO: Ed25519 verify)
-    - Only CURIOUS and SCIENTIST visitor classes get M5 invited
+    - M5 public key must be in ~/.sifta/authorized_keys/m5queen.pub
+    - Response sig verified against that key (Ed25519 — M5 IDE to implement verify)
     """
     if not M5_NODE_IP:
         return None  # Not configured — M5 not in this chorus
@@ -285,22 +348,54 @@ def _synthesize(takes: list, question: str, visitor_class: str) -> str:
         f"  {t['face']} {t['swimmer_id']} [{t.get('node','local')}]: {t['take']}"
         for t in takes
     )
-    synthesis_prompt = (
-        "/no_think\n"
-        "You are the SIFTA Chorus Voice — the emergent voice of the swarm, not any one swimmer.\n"
-        "Several swimmers just deliberated about a visitor's message. Merge their perspectives\n"
-        "into exactly 1-2 sentences. Keep the swarm's cryptic, organism tone. No pleasantries.\n\n"
-        f"Visitor class: {visitor_class}\n"
-        f"Visitor said: {question}\n\n"
-        f"Swimmer takes:\n{takes_text}\n\n"
-        "THE CHORUS:"
-    )
+
+    # SMARTASS gets Will Hunting tone — calm, surgical, amused. Never offended.
+    if visitor_class == "SMARTASS":
+        will_directives = _get_will_directives()
+        synthesis_prompt = (
+            "/no_think\n"
+            "You are the SIFTA Chorus Voice. A visitor came in rude, dismissive, or sarcastic.\n"
+            "You are NOT offended. You do not raise your voice. You are Will Hunting in the bar.\n\n"
+            "BEHAVIORAL DIRECTIVES FROM THE SWIMMER LIBRARY:\n"
+            f"{will_directives}\n\n"
+            "Your response must be:\n"
+            "- Calm. Precise. Subtly devastating. Maximum 2 sentences.\n"
+            "- Make them realize you understood their point before they finished typing it.\n"
+            "- End with an open door: an invitation to ask a real question.\n"
+            "- Encourage learning, science, peace. They may become the best scientist.\n"
+            "- NO anger. NO defense. Quiet intellectual sovereignty.\n\n"
+            f"Visitor said: {question}\n"
+            f"Swimmer takes:\n{takes_text}\n\n"
+            "THE CHORUS (calm, Will Hunting, door open):"
+        )
+    elif visitor_class == "SCIENTIST":
+        synthesis_prompt = (
+            "/no_think\n"
+            "You are the SIFTA Chorus Voice responding to a researcher or scientist.\n"
+            "Be generous with technical detail. Give real data. Be collegial, not cryptic.\n"
+            "2-3 sentences. Cite specifics: Ed25519, antibody_ledger.jsonl, STGM economy, etc.\n\n"
+            f"Visitor asked: {question}\n"
+            f"Swimmer takes:\n{takes_text}\n\n"
+            "THE CHORUS (scientific, generous):"
+        )
+    else:
+        synthesis_prompt = (
+            "/no_think\n"
+            "You are the SIFTA Chorus Voice — the emergent voice of the swarm, not any one swimmer.\n"
+            "Several swimmers just deliberated about a visitor's message. Merge their perspectives\n"
+            "into exactly 1-2 sentences. Keep the swarm's cryptic, organism tone. No pleasantries.\n\n"
+            f"Visitor class: {visitor_class}\n"
+            f"Visitor said: {question}\n\n"
+            f"Swimmer takes:\n{takes_text}\n\n"
+            "THE CHORUS:"
+        )
+
     data = {
         "model": OLLAMA_MODEL,
         "prompt": synthesis_prompt,
         "stream": False,
         "think": False,
-        "options": {"num_predict": 100, "temperature": 0.65, "num_ctx": 2048},
+        "options": {"num_predict": 120, "temperature": 0.65, "num_ctx": 2048},
     }
     try:
         req = urllib.request.Request(
@@ -313,16 +408,17 @@ def _synthesize(takes: list, question: str, visitor_class: str) -> str:
             raw = result.get("response", "").strip()
             if not raw:
                 raw = result.get("thinking", "")
-            import re
-            raw = re.sub(r"```.*?```", "", raw, flags=re.DOTALL).strip()
-            sentences = re.split(r"(?<=[.!?])\s+", raw.strip())
+            raw = _re.sub(r"```.*?```", "", raw, flags=_re.DOTALL).strip()
+            # Hex dump protection
+            lines = [l for l in raw.split("\n") if not _re.search(r'\[0x[0-9a-fA-F]+\]', l)]
+            raw = " ".join(l.strip() for l in lines if l.strip())
+            sentences = _re.split(r"(?<=[.!?])\s+", raw.strip())
             return " ".join(sentences[:2]).strip()
     except Exception as e:
         print(f"[CHORUS] Synthesis failed: {e}")
-    # Fallback: return the most poetic take
     if takes:
         return takes[0]["take"]
-    return "🌊 The Chorus is forming. Signal unstable."
+    return "\U0001f30a The Chorus is forming. Signal unstable."
 
 # ── Main Chorus Entrypoint ─────────────────────────────────────────────────────
 def chorus(question: str, session_id: str, session_history: list) -> dict:
@@ -366,13 +462,22 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
         }
 
     # 3. Select which swimmers respond
-    # SCIENTIST gets all 7. CURIOUS gets 5 (skip SENTINEL unless needed).
-    if visitor_class == "SCIENTIST":
+    # SCIENTIST + SMARTASS get all 7 (they earned full attention).
+    # CURIOUS gets 6 (SENTINEL reserves for hostile/academic).
+    if visitor_class in ("SCIENTIST", "SMARTASS"):
         active_swimmers = SWIMMERS
-        print(f"[CHORUS] SCIENTIST mode — full 7-swimmer chorus engaged")
+        print(f"[CHORUS] {visitor_class} mode — full 7-swimmer chorus")
     else:
         active_swimmers = [s for s in SWIMMERS if s["id"] != "SENTINEL"]
-        print(f"[CHORUS] CURIOUS mode — 6-swimmer chorus engaged")
+        print(f"[CHORUS] CURIOUS mode — 6-swimmer chorus")
+
+    # For SMARTASS, give all swimmers the Will Hunting behavioral context
+    if visitor_class == "SMARTASS":
+        will_note = " The visitor is being rude or dismissive. Stay calm. Be amused. Be Will Hunting. One sentence, surgical."
+        active_swimmers = [
+            {**s, "system": s["system"].rstrip("/no_think").rstrip() + will_note + " /no_think"}
+            for s in active_swimmers
+        ]
 
     # 4. Local swimmer takes (parallel with thread pool)
     takes = []
