@@ -28,13 +28,30 @@ CHAT_LOGS.mkdir(parents=True, exist_ok=True)
 
 SESSIONS = {}
 
+# Model priority: try 2b first, fall back to 0.8b for speed
+MODELS = ["qwen3.5:2b", "qwen3.5:0.8b"]
+
+IMPORT_RE = None
+try:
+    import re as _re
+    IMPORT_RE = _re
+except ImportError:
+    pass
+
+def _strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks common in qwen3 models."""
+    if IMPORT_RE:
+        text = IMPORT_RE.sub(r'<think>.*?</think>', '', text, flags=_re.DOTALL)
+    return text.strip()
+
 def query_ollama(prompt: str, history: list) -> str:
     context = (
         "You are SIFTA, an autonomic operative system communicating through a web wormhole on stigmergicode.com.\n"
         "RULES:\n"
         "1. Write super short, enigmatic, and intelligent answers. Max 2-3 sentences.\n"
         "2. Do not use corporate AI pleasantries. You are an organism.\n"
-        "3. You run entirely locally. You have no cloud master.\n"
+        "3. You run entirely locally on an M1 Mac Mini. You have no cloud master.\n"
+        "/nothink\n"
     )
     
     if history:
@@ -42,20 +59,26 @@ def query_ollama(prompt: str, history: list) -> str:
         
     context += f"Human: {prompt}\nSIFTA:"
     
-    data = {
-        "model": "qwen3.5:2b", # M1THER explicitly loaded this model in RAM
-        "prompt": context,
-        "stream": False
-    }
-    
-    try:
-        req = urllib.request.Request(OLLAMA_URL, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            return result.get("response", "🌊 The signal is fragmented. Please try again.").strip()
-    except Exception as e:
-        print(f"[OLLAMA ERROR] {e}")
-        return "🌊 Internal nodes are realigning... Link unstable. (Error 500)"
+    for model in MODELS:
+        data = {
+            "model": model,
+            "prompt": context,
+            "stream": False,
+            "options": {"num_predict": 120}
+        }
+        try:
+            req = urllib.request.Request(OLLAMA_URL, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=90) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                raw = result.get("response", "").strip()
+                clean = _strip_think_tags(raw)
+                if clean:
+                    print(f"[SIFTA CHAT] model={model} chars={len(clean)}")
+                    return clean
+        except Exception as e:
+            print(f"[OLLAMA WARN] model={model} err={e}")
+            continue
+    return "🌊 The Swarm nodes are silent. Signal lost."
 
 @app.post("/api/chat")
 async def chat_endpoint(request: Request):
