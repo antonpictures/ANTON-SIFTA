@@ -225,6 +225,45 @@ Use this flow for any app:
 - **What to watch:** Pulse cadence, anomaly spikes, systemic instability clues.
 - **Key principle:** Early warning before visible failure.
 
+### Regenerative Factory
+- **Purpose:** Prove the Swarm can coordinate physical reality.  A decentralized
+  3D-printing farm producing Open Dynamic Robot Initiative (ODRI) components.
+  Swimmers move filament, power, and assembly intent — not capital.
+  STGM is minted ONLY when raw material is converted into a functional kinetic part.
+- **Validated by:** Michel Bauwens (P2P Foundation), April 15, 2026.
+  "Crypto for real... coordination software for regenerative production,
+   not just moving labor and capital, but actual things."
+- **Factory layout:** 20x30 grid (600 cells)
+  - **Sources (S)** — filament spools and power stations.
+  - **Printers (P)** — 8 printers, each producing a specific ODRI component.
+  - **QC Stations (Q)** — quality control inspection.
+  - **Assembly (A)** — where components combine into ODRI Joint Modules.
+- **Swimmer species:**
+  - **ResourceForager (blue ●)** — carries filament from sources to hungry printers.
+  - **AssemblySwimmer (orange ◆)** — picks up printed parts, delivers to assembly.
+  - **QualitySentinel (purple ▲)** — inspects printers, reduces defect rates.
+  - **PowerCourier (yellow ■)** — keeps printers energized from power stations.
+- **STGM economy (Proof of Useful Physical Work):**
+  - `COMPONENT_PRINTED` — 0.10 STGM when a printer completes a part.
+  - `QC_PASSED` — 0.05 STGM when quality inspection passes.
+  - `UNIT_ASSEMBLED` — 0.50 STGM when parts combine into an ODRI Joint Module.
+  - `DEFECT_CAUGHT` — 0.02 STGM when a sentinel catches a defective part.
+- **ODRI Joint Module recipe:** actuator_housing + motor_bracket + 2x bearing_sleeve
+  + encoder_cap + linkage_arm.
+- **What to watch:**
+  - **Floor map** — green printers glow as they print, yellow assembly stations
+    accumulate inventory, blue pheromone trails show supply routes.
+  - **Inventory bar chart** — components in stock at assembly stations.
+  - **STGM curve** — Proof of Useful Physical Work: rises only when real
+    production milestones are hit.
+  - **Production log** — PRINTED, DEFECT, QC, ASSEMBLED events with STGM amounts.
+- **Key principle:** Most crypto is a casino — moving imaginary capital.
+  This is coordination software for regenerative production.
+  The Swarm doesn't mint tokens by solving hash puzzles; it mints them
+  by converting raw material into functional robot parts.
+- **Data files:**
+  - `.sifta_state/factory_ledger.jsonl` — STGM mint events tied to physical output.
+
 ### Fluid Firmware
 - **Purpose:** Replace frozen monolithic firmware with a living fluid membrane.
   A 40x60 silicon grid (2400 nodes) where signal swimmers carry binary payloads

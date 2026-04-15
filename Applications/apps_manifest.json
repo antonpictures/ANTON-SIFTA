@@ -206,5 +206,13 @@
     "window_width": 1440,
     "window_height": 860,
     "signature": "UNVERIFIED"
+  },
+  "Regenerative Factory": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_factory_widget.py",
+    "widget_class": "FactoryWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
   }
 }

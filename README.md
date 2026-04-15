@@ -101,7 +101,7 @@ To prevent UI fragmentation as the app count grows, iSwarm OS enforces global UX
 - **Single Source of Styling**: new apps can inherit `System/sifta_base_widget.py` to get consistent SIFTA chrome (`?` help button, status bar, dark palette, control styling) without re-implementing boilerplate.
 - **Manifest-Driven Governance**: app discovery and launch behavior come from `Applications/apps_manifest.json`, allowing one-place auditing of category, entry point, and widget embedding behavior.
 
-Audit status (April 15, 2026): **30/30 manifest apps have Help coverage and launch under the global window-control policy**.
+Audit status (April 15, 2026): **31/31 manifest apps have Help coverage and launch under the global window-control policy**.
 
 ### Core Modules
 
@@ -126,6 +126,7 @@ Audit status (April 15, 2026): **30/30 manifest apps have Help coverage and laun
 | **Territory Guardian** | `System/territory_guardian.py` | Geospatial pheromone perimeter — routine learning, deviation detection, safe routing |
 | **Fluid Firmware** | `System/fluid_firmware.py` | Swarm-routed hardware membrane — self-healing silicon, liquid updates, thermal foraging |
 | **Diagnostic Swarm** | `System/diagnostic_swarm.py` | Medical terrain engine — tissue/genomic/blood anomaly detection via swimmer chemotaxis |
+| **Regenerative Factory** | `System/regenerative_factory.py` | Stigmergic manufacturing — ODRI 3D-print coordination, STGM for physical production |
 
 ---
 
@@ -233,6 +234,25 @@ The timeline is dead. Welcome to the **Pheromone Matrix.** Four swimmer species 
 | **NarrativeWeaver** | Reads transcript, syncs subtitles, triggers intent-driven cuts |
 
 Cut decisions emerge from pheromone consensus. Export as CMX 3600 EDL (Premiere/DaVinci/FCP) or FFmpeg filter script. Sebastian's original silence-detection jumpcut algo is preserved intact.
+
+### Regenerative Factory — Stigmergic Decentralized Manufacturing
+
+```bash
+python3 Applications/sifta_factory_widget.py        # visual sim (inside iSwarm OS)
+```
+
+*"Crypto for real... coordination software for regenerative production, not just moving labor and capital, but actual things."* — **Michel Bauwens**, P2P Foundation, April 15, 2026
+
+The Swarm coordinates physical reality. A 20x30 factory grid with 8 printers producing Open Dynamic Robot Initiative (ODRI) components. Four swimmer species move filament, power, printed parts, and quality inspections. STGM is minted **only** when raw material is converted into a functional kinetic part.
+
+| Event | STGM | Trigger |
+|---|---|---|
+| `COMPONENT_PRINTED` | 0.10 | Printer completes an actuator/bracket/sleeve/cap/linkage |
+| `QC_PASSED` | 0.05 | Quality inspection passes |
+| `UNIT_ASSEMBLED` | 0.50 | Parts combine into an ODRI Joint Module |
+| `DEFECT_CAUGHT` | 0.02 | Sentinel catches a defective part |
+
+This is not a casino. This is Proof of Useful Physical Work.
 
 ### Fluid Firmware — Swarm-Routed Hardware Membrane
 
