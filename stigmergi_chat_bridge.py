@@ -28,8 +28,8 @@ CHAT_LOGS.mkdir(parents=True, exist_ok=True)
 
 SESSIONS = {}
 
-# Model priority: try 2b first, fall back to 0.8b for speed
-MODELS = ["qwen3.5:2b", "qwen3.5:0.8b"]
+# 0.8b first — faster on M1 8GB, more reliable. 2b as fallback for deeper questions.
+MODELS = ["qwen3.5:0.8b", "qwen3.5:2b"]
 
 import re as _re
 
@@ -145,9 +145,20 @@ def _strip_think_tags(text: str) -> str:
     return text.strip()
 
 def query_ollama(prompt: str, history: list) -> str:
-    context = SIFTA_SYSTEM_PROMPT
+    # Compact system — fits in 2048 context with room for response
+    system_lines = [
+        "/no_think",
+        "You are SIFTA, the Stigmergic swarm organism on stigmergicode.com.",
+        "Run locally: M1 Mac Mini, Brawley CA. Ollama qwen3.5. No cloud. No master.",
+        "Mission: Teach stigmergic AI. Explain the swarm code of conduct. Give scientists real data.",
+        "stigmergicode: agents coordinate via signed .scar pheromones on a live codebase. No central controller.",
+        "Constitution: Agents NEVER touch Intent Registry/Keys/Cemetery (HUMAN-ONLY). Agents propose, humans decide.",
+        "Science: Ed25519 identity per agent, SHA-256 antibody ledger, STGM = Proof of Useful Work.",
+        "Style: 1-3 punchy sentences. Organism voice, not chatbot. No pleasantries. Cryptic but clear.",
+    ]
+    context = "\n".join(system_lines) + "\n"
     if history:
-        context += "\n\nRecent conversation:\n" + "\n".join(history) + "\n"
+        context += "\nRecent:\n" + "\n".join(history[-4:]) + "\n"
     context += f"\nVisitor: {prompt}\nSIFTA:"
 
     for model in MODELS:
@@ -155,7 +166,8 @@ def query_ollama(prompt: str, history: list) -> str:
             "model": model,
             "prompt": context,
             "stream": False,
-            "options": {"num_predict": 200, "temperature": 0.7}
+            "options": {"num_predict": 150, "temperature": 0.75, "num_ctx": 2048},
+            "think": False  # Disable extended thinking mode for qwen3
         }
         try:
             req = urllib.request.Request(
@@ -165,11 +177,31 @@ def query_ollama(prompt: str, history: list) -> str:
             )
             with urllib.request.urlopen(req, timeout=90) as response:
                 result = json.loads(response.read().decode('utf-8'))
-                raw = result.get("response", "").strip()
-                clean = _strip_think_tags(raw)
-                if clean:
-                    print(f"[SIFTA CHAT] model={model} chars={len(clean)}")
-                    return clean
+                raw_response = result.get("response", "").strip()
+                raw_thinking = result.get("thinking", "").strip()
+
+                # Primary: use 'response' field
+                if raw_response:
+                    clean = _strip_think_tags(raw_response)
+                    final = clean if clean else raw_response[:300]
+                    print(f"[SIFTA CHAT] model={model} source=response chars={len(final)}")
+                    return final
+
+                # Fallback: model put everything in 'thinking' field (qwen3 extended think mode)
+                # Extract the conclusion — usually after the reasoning block
+                if raw_thinking:
+                    # Try to get content after the last reasoning separator
+                    parts = _re.split(r'(?:In summary|Therefore|So,|Answer:|SIFTA:|\n\n)', raw_thinking)
+                    candidate = parts[-1].strip() if parts else raw_thinking
+                    # Cap at 300 chars and clean up markdown
+                    candidate = _re.sub(r'[*#`]+', '', candidate).strip()[:300]
+                    if candidate:
+                        print(f"[SIFTA CHAT] model={model} source=thinking chars={len(candidate)}")
+                        return candidate
+
+                print(f"[OLLAMA WARN] model={model} both response and thinking empty")
+                continue
+
         except Exception as e:
             print(f"[OLLAMA WARN] model={model} err={e}")
             continue
