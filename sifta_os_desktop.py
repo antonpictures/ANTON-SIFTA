@@ -418,13 +418,32 @@ class SiftaDesktop(QMainWindow):
         )
         self.clock_label.setAlignment(Qt.AlignmentFlag.AlignRight)
 
-        # Wallet overlay
+        # ── Swarm Economy HUD ──────────────────────────────────────
+        # Global swarm liquidity (top line)
         self.wallet_label = QLabel(central)
         self.wallet_label.setStyleSheet(
             "color: #9ece6a; font-family: 'Courier New', monospace; font-size: 15px;"
             "font-weight: 900; background: transparent; letter-spacing: 0px;"
         )
         self.wallet_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Local node slice (second line, dimmer)
+        self.wallet_local_label = QLabel(central)
+        self.wallet_local_label.setStyleSheet(
+            "color: #565f89; font-family: 'Courier New', monospace; font-size: 11px;"
+            "font-weight: bold; background: transparent;"
+        )
+        self.wallet_local_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Economy pulse indicator (delta arrow)
+        self.economy_pulse = QLabel(central)
+        self.economy_pulse.setStyleSheet(
+            "color: #414868; font-family: monospace; font-size: 11px;"
+            "background: transparent;"
+        )
+        self.economy_pulse.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._prev_swarm_balance = 0.0
+        self._pulse_flash_counter = 0
 
         # Cache local serial exactly once for the HUD to avoid `ioreg` spam
         self._local_hw_serial = "UNKNOWN"
@@ -478,23 +497,73 @@ class SiftaDesktop(QMainWindow):
             self.clock_label.setGeometry(self.width() - 280, 8, 270, 28)
             self.clock_label.raise_()
 
-        # Update Architect Wallet Stash
+        # ── Update Swarm Economy HUD ──────────────────────────────
         if hasattr(self, "wallet_label"):
             try:
-                from System.warren_buffett import _architect_local_stgm
-                amt = _architect_local_stgm(self._local_hw_serial)
-                self.wallet_label.setText(f"💰 {amt:,.4f} STGM")
+                from System.warren_buffett import _architect_local_stgm, scan_repair_log
+                # Global swarm liquidity — every STGM minted across all nodes
+                scan = scan_repair_log()
+                global_amt = scan.net_minted_into_swarm()
+                # Local node slice — only what this silicon physically owns
+                local_amt = _architect_local_stgm(self._local_hw_serial)
+
+                # Delta detection — did the economy move since last tick?
+                delta = global_amt - self._prev_swarm_balance
+                if abs(delta) > 0.0001 and self._prev_swarm_balance > 0:
+                    if delta > 0:
+                        self.economy_pulse.setStyleSheet(
+                            "color: #9ece6a; font-family: monospace; font-size: 11px;"
+                            "background: transparent; font-weight: bold;"
+                        )
+                        self.economy_pulse.setText(f"▲ +{delta:,.4f}")
+                    else:
+                        self.economy_pulse.setStyleSheet(
+                            "color: #f7768e; font-family: monospace; font-size: 11px;"
+                            "background: transparent; font-weight: bold;"
+                        )
+                        self.economy_pulse.setText(f"▼ {delta:,.4f}")
+                    self._pulse_flash_counter = 5  # flash for 5 ticks
+                elif self._pulse_flash_counter > 0:
+                    self._pulse_flash_counter -= 1
+                else:
+                    self.economy_pulse.setStyleSheet(
+                        "color: #414868; font-family: monospace; font-size: 11px;"
+                        "background: transparent;"
+                    )
+                    self.economy_pulse.setText("● swarm economy live")
+                self._prev_swarm_balance = global_amt
+
+                # Main wallet: global swarm liquidity
+                self.wallet_label.setText(f"💰 {global_amt:,.4f} STGM")
+                # Sub-label: local node slice
+                self.wallet_local_label.setText(
+                    f"⬡ {self._local_hw_serial[:10]}… {local_amt:,.2f} STGM"
+                )
             except Exception:
                 self.wallet_label.setText("💰 0.0000 STGM")
-            self.wallet_label.setGeometry(self.width() - 520, 8, 220, 28)
+                self.wallet_local_label.setText("⬡ local node offline")
+                self.economy_pulse.setText("○ economy idle")
+
+            # Position the HUD elements
+            w = self.width()
+            self.wallet_label.setGeometry(w - 540, 4, 240, 22)
             self.wallet_label.raise_()
+            self.wallet_local_label.setGeometry(w - 540, 24, 240, 16)
+            self.wallet_local_label.raise_()
+            self.economy_pulse.setGeometry(w - 540, 40, 240, 16)
+            self.economy_pulse.raise_()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        w = self.width()
         if hasattr(self, "clock_label"):
-            self.clock_label.setGeometry(self.width() - 280, 8, 270, 28)
+            self.clock_label.setGeometry(w - 280, 8, 270, 28)
         if hasattr(self, "wallet_label"):
-            self.wallet_label.setGeometry(self.width() - 520, 8, 220, 28)
+            self.wallet_label.setGeometry(w - 540, 4, 240, 22)
+        if hasattr(self, "wallet_local_label"):
+            self.wallet_local_label.setGeometry(w - 540, 24, 240, 16)
+        if hasattr(self, "economy_pulse"):
+            self.economy_pulse.setGeometry(w - 540, 40, 240, 16)
 
     # ── Taskbar ────────────────────────────────────────────
     def _build_taskbar(self):
