@@ -235,6 +235,19 @@ python3 Applications/sifta_urban_resilience_sim.py --headless --stress --ticks 8
 
 Telemetry: `.sifta/urban/metrics.jsonl`; simulation mints at high coverage only (`.sifta/urban/sim_ledger.jsonl`).
 
+### Mad lab theme + stress harness
+
+Shared matplotlib styling for simulations lives in `System/sim_lab_theme.py` (dark panels, neon traces, monospace telemetry).
+
+Repeat headless runs (default **50× per simulation**, 7 suites = 350 runs):
+
+```bash
+python3 scripts/stress_all_simulations.py
+python3 scripts/stress_all_simulations.py --iterations 10
+```
+
+Skips `sifta_arena.py` (Ollama tournament). Logistics supports explicit `--headless`; colloid supports `--max-frames` batch mode without importing the GUI stack until you open the filmmaker window.
+
 ---
 
 ## Security Posture

@@ -257,37 +257,90 @@ def run(
 
     print(f"[LOGISTICS] {GOODFELLAS_LORE}")
     ui = None
+    peak_history: List[float] = []
+    completed_history: List[float] = []
     if visual:
         try:
-            import matplotlib.pyplot as plt  # type: ignore
+            import sys
 
+            if str(SYS_DIR) not in sys.path:
+                sys.path.insert(0, str(SYS_DIR))
+            import matplotlib.pyplot as plt  # type: ignore
+            from sim_lab_theme import (  # type: ignore
+                LAB_BAD,
+                LAB_CYAN,
+                LAB_OK,
+                apply_matplotlib_lab_style,
+                cmap_pheromone,
+                legend_lab,
+                neon_suptitle,
+                sparkline_update,
+                style_axis_lab,
+            )
+
+            apply_matplotlib_lab_style()
             plt.ion()
-            fig, axp = plt.subplots(figsize=(8, 8))
-            img = axp.imshow(pher, cmap="magma", vmin=0.0, vmax=2.0, interpolation="nearest")
-            # Obstacles as cyan dots (sparse overlay)
+            fig = plt.figure(figsize=(11, 9))
+            gs = fig.add_gridspec(2, 2, height_ratios=[5, 1.1], width_ratios=[3, 1])
+            axp = fig.add_subplot(gs[0, :])
+            ax_peak = fig.add_subplot(gs[1, 0])
+            ax_done = fig.add_subplot(gs[1, 1])
+            style_axis_lab(axp, "")
+            style_axis_lab(ax_peak, "")
+            style_axis_lab(ax_done, "")
+            neon_suptitle(
+                fig,
+                "SIFTA LOGISTICS — STIGMERGIC LAB",
+                "pheromone field + waybill verification + live traces",
+            )
+            ph_cmap = cmap_pheromone()
+            img = axp.imshow(pher, cmap=ph_cmap, vmin=0.0, vmax=2.5, interpolation="nearest")
             obs_xy = np.argwhere(blocked)
             if len(obs_xy) > 0:
-                obs_sc = axp.scatter(obs_xy[:, 1], obs_xy[:, 0], s=1, c="#66d9ef", alpha=0.15)
+                obs_sc = axp.scatter(obs_xy[:, 1], obs_xy[:, 0], s=1, c=LAB_CYAN, alpha=0.2)
             else:
                 obs_sc = None
-            del_sc = axp.scatter([d[1] for d in deliveries], [d[0] for d in deliveries], s=60, c="#9ece6a", marker="s", label="Deliveries")
-            dep_sc = axp.scatter([depot[1]], [depot[0]], s=80, c="#f7768e", marker="*", label="Depot")
-            ag_sc = axp.scatter(ay, ax, s=8, c="#7aa2f7", alpha=0.7, label="Swimmers")
-            title = axp.set_title("SIFTA Logistics Swarm")
-            axp.legend(loc="upper right", fontsize=8)
+            del_sc = axp.scatter(
+                [d[1] for d in deliveries],
+                [d[0] for d in deliveries],
+                s=72,
+                c=LAB_OK,
+                marker="s",
+                label="Deliveries",
+                edgecolors="#b4f28a",
+                linewidths=0.4,
+            )
+            dep_sc = axp.scatter(
+                [depot[1]],
+                [depot[0]],
+                s=100,
+                c=LAB_BAD,
+                marker="*",
+                label="Depot",
+                edgecolors="#ff9494",
+                linewidths=0.5,
+            )
+            ag_sc = axp.scatter(ay, ax, s=9, c="#7aa2f7", alpha=0.85, label="Swimmers", linewidths=0)
+            title = axp.set_title("field + agents", color="#c0caf5", fontsize=10)
+            legend_lab(axp, loc="upper right", fontsize=7)
             axp.set_xticks([])
             axp.set_yticks([])
-            fig.tight_layout()
+            plt.colorbar(img, ax=axp, fraction=0.035, pad=0.02, label="τ trace")
+            fig.tight_layout(rect=[0, 0, 1, 0.93])
             ui = {
                 "plt": plt,
                 "fig": fig,
                 "ax": axp,
+                "ax_peak": ax_peak,
+                "ax_done": ax_done,
                 "img": img,
                 "ag_sc": ag_sc,
                 "title": title,
                 "obs_sc": obs_sc,
                 "del_sc": del_sc,
                 "dep_sc": dep_sc,
+                "peak_hist": peak_history,
+                "done_hist": completed_history,
             }
         except Exception as e:
             print(f"[LOGISTICS] visual mode unavailable, continuing headless: {e}")
@@ -393,10 +446,19 @@ def run(
 
         if ui and (t % max(1, int(render_every)) == 0 or t == 1 or t == ticks):
             ui["img"].set_data(pher)
+            ui["img"].set_clim(0.0, max(0.5, float(np.percentile(pher, 99.5))))
             ui["ag_sc"].set_offsets(np.c_[ay, ax])
             ui["title"].set_text(
-                f"SIFTA Logistics  t={t}/{ticks}  done={completed}  hijack={hijack_blocked}/{hijack_attempts}"
+                f"t={t}/{ticks}  roundtrips={completed}  hijack_block={hijack_blocked}/{hijack_attempts}  peak_τ={float(np.max(pher)):.2f}"
             )
+            ph = float(np.max(pher))
+            ui["peak_hist"].append(ph)
+            ui["done_hist"].append(float(completed))
+            if len(ui["peak_hist"]) > 320:
+                ui["peak_hist"].pop(0)
+                ui["done_hist"].pop(0)
+            sparkline_update(ui["ax_peak"], ui["peak_hist"], color=LAB_CYAN, ylabel="peak τ")
+            sparkline_update(ui["ax_done"], ui["done_hist"], color=LAB_OK, ylabel="Σ trips")
             ui["fig"].canvas.draw_idle()
             ui["plt"].pause(0.001)
 
@@ -429,6 +491,7 @@ def main() -> int:
     ap.add_argument("--metrics-every", type=int, default=200)
     ap.add_argument("--hijack-rate", type=float, default=0.002, help="Probability per tick of a forged completion attempt.")
     ap.add_argument("--visual", action="store_true", help="Enable live matplotlib visualization.")
+    ap.add_argument("--headless", action="store_true", help="Force no GUI (default if --visual not set).")
     ap.add_argument("--render-every", type=int, default=200, help="UI refresh cadence in ticks.")
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--out", type=str, default=str(REPO_ROOT / ".sifta" / "logistics"))
@@ -449,12 +512,13 @@ def main() -> int:
     )
 
     out_dir = Path(args.out).expanduser()
+    visual = bool(args.visual) and not bool(args.headless)
     return run(
         cfg,
         int(args.ticks),
         out_dir,
         demo=bool(args.demo),
-        visual=bool(args.visual),
+        visual=visual,
         render_every=int(args.render_every),
     )
 

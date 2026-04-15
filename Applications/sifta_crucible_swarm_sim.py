@@ -35,6 +35,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_SYS = REPO_ROOT / "System"
 
 
 @dataclass
@@ -276,6 +277,10 @@ def run_headless(cfg: CrucibleConfig, ticks: int) -> int:
 
 
 def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
+    import sys
+
+    if str(_SYS) not in sys.path:
+        sys.path.insert(0, str(_SYS))
     import matplotlib
 
     try:
@@ -286,18 +291,22 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
     import matplotlib.patches as mpatches
     from matplotlib.collections import LineCollection
     from matplotlib.widgets import Button, Slider
+    from sim_lab_theme import LAB_BG, LAB_PANEL, apply_matplotlib_lab_style, neon_suptitle
+
+    apply_matplotlib_lab_style()
 
     sim = CrucibleSim(cfg)
 
     fig = plt.figure(figsize=(13, 9))
-    fig.patch.set_facecolor("#080c18")
+    fig.patch.set_facecolor(LAB_BG)
+    neon_suptitle(fig, "CRUCIBLE — NETWORK DEFENSE LAB", "load · rate-limit · quarantine drag · swimmer patrol")
     fig.canvas.manager.set_window_title("SIFTA Crucible — Cyber-Defense Simulation")
     gs = fig.add_gridspec(8, 12, hspace=0.35, wspace=0.3)
 
     # Telemetry HUD panel (top)
     ax_hud = fig.add_subplot(gs[0:2, :])
     ax_hud.axis("off")
-    ax_hud.set_facecolor("#080c18")
+    ax_hud.set_facecolor(LAB_BG)
 
     # Main arena
     ax = fig.add_subplot(gs[2:, :])
@@ -305,9 +314,9 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
     ax.set_ylim(-0.05, 1.05)
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_facecolor("#0b1020")
+    ax.set_facecolor(LAB_PANEL)
     for spine in ax.spines.values():
-        spine.set_color("#1a1b36")
+        spine.set_color("#2a3150")
         spine.set_linewidth(1.5)
 
     # Network paths: lines from every client to every server (dim background grid)

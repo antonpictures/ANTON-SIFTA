@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_SYS = REPO_ROOT / "System"
 SYS_DIR = REPO_ROOT / "System"
 if str(SYS_DIR) not in sys.path:
     sys.path.insert(0, str(SYS_DIR))
@@ -370,6 +371,10 @@ def run_headless(cfg: UrbanConfig, ticks: int, out_dir: Path, metrics_every: int
 
 
 def run_visual(cfg: UrbanConfig, ticks: int, out_dir: Path, metrics_every: int, render_every: int) -> int:
+    import sys
+
+    if str(_SYS) not in sys.path:
+        sys.path.insert(0, str(_SYS))
     import matplotlib
 
     try:
@@ -377,6 +382,9 @@ def run_visual(cfg: UrbanConfig, ticks: int, out_dir: Path, metrics_every: int, 
     except Exception:
         pass
     import matplotlib.pyplot as plt
+    from sim_lab_theme import apply_matplotlib_lab_style, neon_suptitle
+
+    apply_matplotlib_lab_style()
 
     sim = UrbanResilienceSim(cfg)
     metrics = JsonlOut(out_dir / "metrics.jsonl")
@@ -385,10 +393,14 @@ def run_visual(cfg: UrbanConfig, ticks: int, out_dir: Path, metrics_every: int, 
     milestone_sent = False
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 10))
-    fig.patch.set_facecolor("#080c18")
     fig.canvas.manager.set_window_title("SIFTA — Urban Resilience Simulator")
+    neon_suptitle(
+        fig,
+        "URBAN RESILIENCE LAB",
+        "traffic τ · congestion · disaster coverage · drone breadcrumbs",
+    )
     for ax in axes.flat:
-        ax.set_facecolor("#0b1020")
+        ax.set_facecolor("#121620")
 
     # RGB base map
     rgb = np.zeros((sim.h, sim.w, 3), dtype=np.float32)
@@ -434,7 +446,7 @@ def run_visual(cfg: UrbanConfig, ticks: int, out_dir: Path, metrics_every: int, 
     axes[1, 1].axis("off")
 
     hud = fig.suptitle("", color="#bb9af7", fontsize=11, fontfamily="monospace")
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.93])
 
     plt.ion()
     for t in range(1, ticks + 1):

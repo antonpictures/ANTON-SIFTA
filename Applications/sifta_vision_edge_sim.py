@@ -24,6 +24,7 @@ from typing import Any, Dict
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_SYS = REPO_ROOT / "System"
 SYS_DIR = REPO_ROOT / "System"
 if str(SYS_DIR) not in sys.path:
     sys.path.insert(0, str(SYS_DIR))
@@ -113,6 +114,10 @@ def run_visual(
     mint_every_edges: int,
     render_every: int,
 ) -> int:
+    import sys
+
+    if str(_SYS) not in sys.path:
+        sys.path.insert(0, str(_SYS))
     import matplotlib
 
     try:
@@ -120,6 +125,9 @@ def run_visual(
     except Exception:
         pass
     import matplotlib.pyplot as plt
+    from sim_lab_theme import apply_matplotlib_lab_style, cmap_terrain_lab, neon_suptitle, style_axis_lab
+
+    apply_matplotlib_lab_style()
 
     worker = VisionProcessorWorker(img, cfg)
     metrics = JsonlOut(out_dir / "metrics.jsonl")
@@ -127,20 +135,27 @@ def run_visual(
     owners = ["ARCHITECT_M5", "M1THER", "HERMES", "ANTIALICE"]
     mint_accum = 0
 
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-    fig.patch.set_facecolor("#080c18")
-    fig.canvas.manager.set_window_title("SIFTA — Stigmergic Edge Vision")
-    for ax in axes:
-        ax.set_facecolor("#0b1020")
+    gx = np.abs(np.diff(worker.img, axis=1, prepend=worker.img[:, :1]))
+    gy = np.abs(np.diff(worker.img, axis=0, prepend=worker.img[:1, :]))
+    grad_mag = np.sqrt(gx * gx + gy * gy)
 
-    im0 = axes[0].imshow(worker.img, cmap="terrain", vmin=0, vmax=1, interpolation="nearest")
-    axes[0].set_title("Drop zone (noisy topography)", color="#c0caf5", fontsize=10)
-    axes[0].axis("off")
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.canvas.manager.set_window_title("SIFTA — Stigmergic Edge Vision")
+    neon_suptitle(
+        fig,
+        "DISTRIBUTED VISION LAB",
+        "topography | τ edges | RGB fusion | |∇I| oracle (ground-truth contrast)",
+    )
+
+    tmap = cmap_terrain_lab()
+    im0 = axes[0, 0].imshow(worker.img, cmap=tmap, vmin=0, vmax=1, interpolation="nearest")
+    style_axis_lab(axes[0, 0], "Drop zone (noisy topo)")
+    axes[0, 0].axis("off")
 
     ph_max = 2.5
-    im1 = axes[1].imshow(worker.pher, cmap="magma", vmin=0, vmax=ph_max, interpolation="nearest")
-    axes[1].set_title("Pheromone / edge skeleton", color="#c0caf5", fontsize=10)
-    axes[1].axis("off")
+    im1 = axes[0, 1].imshow(worker.pher, cmap="magma", vmin=0, vmax=ph_max, interpolation="nearest")
+    style_axis_lab(axes[0, 1], "Emergent τ skeleton (swarm-found)")
+    axes[0, 1].axis("off")
 
     blend = np.stack(
         [
@@ -150,15 +165,20 @@ def run_visual(
         ],
         axis=-1,
     )
-    im2 = axes[2].imshow(blend, interpolation="nearest")
-    sc = axes[2].scatter(worker.sx, worker.sy, s=1, c="#73daca", alpha=0.35, linewidths=0)
-    axes[2].set_title("Swimmers + structure (RGB blend)", color="#c0caf5", fontsize=10)
-    axes[2].axis("off")
+    im2 = axes[1, 0].imshow(blend, interpolation="nearest")
+    sc = axes[1, 0].scatter(worker.sx, worker.sy, s=1, c="#73daca", alpha=0.4, linewidths=0)
+    style_axis_lab(axes[1, 0], "Swimmers × structure (RGB)")
+    axes[1, 0].axis("off")
 
-    hud = fig.suptitle("", color="#bb9af7", fontsize=11, fontfamily="monospace")
-    plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
-    plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
-    fig.tight_layout()
+    im3 = axes[1, 1].imshow(grad_mag, cmap="inferno", interpolation="nearest")
+    style_axis_lab(axes[1, 1], "|∇I| reference (contrast)")
+    axes[1, 1].axis("off")
+
+    hud = fig.text(0.5, 0.02, "", ha="center", color="#bb9af7", fontsize=10, family="monospace")
+    plt.colorbar(im0, ax=axes[0, 0], fraction=0.046, pad=0.04)
+    plt.colorbar(im1, ax=axes[0, 1], fraction=0.046, pad=0.04)
+    plt.colorbar(im3, ax=axes[1, 1], fraction=0.046, pad=0.04)
+    fig.tight_layout(rect=[0, 0.04, 1, 0.92])
 
     plt.ion()
     for t in range(1, ticks + 1):
@@ -197,8 +217,8 @@ def run_visual(
             im2.set_data(blend)
             sc.set_offsets(np.c_[worker.sx, worker.sy])
             hud.set_text(
-                f"SIFTA EDGE VISION  tick {t}/{ticks}  edges/step {m['edge_hits_now']}  "
-                f"pher_peak {m['pher_peak']:.3f}  total_edges {m['edge_hits_total']}"
+                f"tick {t}/{ticks}  edges/step {m['edge_hits_now']}  "
+                f"τ_peak {m['pher_peak']:.3f}  Σ_edges {m['edge_hits_total']}"
             )
             fig.canvas.draw_idle()
             plt.pause(0.001)

@@ -31,20 +31,25 @@ import time
 from pathlib import Path
 
 import numpy as np
-import matplotlib
-# MacOSX backend is native on macOS — no _tkinter dependency
-try:
-    matplotlib.use("MacOSX")
-except Exception:
-    matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.patches import Circle
-from matplotlib.colors import LinearSegmentedColormap
+
+# Matplotlib is imported inside build_renderer() so --max-frames batch mode can run
+# without a GUI stack (stress harness / CI).
 
 # SIFTA kernel
+_REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(_REPO))
+if str(_REPO / "System") not in sys.path:
+    sys.path.insert(0, str(_REPO / "System"))
 from scar_kernel import Kernel, consensus_field, field_is_stable, content_addressed_id
+
+try:
+    from sim_lab_theme import LAB_ACCENT, LAB_BG, LAB_TEXT, apply_matplotlib_lab_style
+except ImportError:
+    apply_matplotlib_lab_style = None  # type: ignore
+    LAB_BG = "#050508"
+    LAB_TEXT = "#c0caf5"
+    LAB_ACCENT = "#c084fc"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Color Palette (Filmmaker's Edit)
@@ -266,6 +271,19 @@ class SIFTAColloidSimulation:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_renderer(sim: SIFTAColloidSimulation):
+    import matplotlib
+
+    try:
+        matplotlib.use("MacOSX")
+    except Exception:
+        matplotlib.use("Agg")
+    import matplotlib.animation as animation
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.patches import Circle
+
+    if apply_matplotlib_lab_style:
+        apply_matplotlib_lab_style()
     fig = plt.figure(figsize=(14, 9), facecolor=BG_COLOR)
     fig.canvas.manager.set_window_title("SIFTA × SwarmRL — Cognitive Colloid Simulation")
 
@@ -294,11 +312,11 @@ def build_renderer(sim: SIFTAColloidSimulation):
     ax_status.set_yticks([])
 
     # Static title
-    ax.text(0.5, 1.03, "SIFTA COGNITIVE COLLOID SIMULATION",
-            transform=ax.transAxes, color="#c084fc",
+    ax.text(0.5, 1.03, "COGNITIVE COLLOID — SWARMRL LAB",
+            transform=ax.transAxes, color=LAB_ACCENT,
             fontfamily="monospace", fontsize=13, fontweight="bold", ha="center")
     ax.text(0.5, 0.99, f"Target: {sim.target}",
-            transform=ax.transAxes, color="#60a5fa",
+            transform=ax.transAxes, color=LAB_TEXT,
             fontfamily="monospace", fontsize=9, ha="center")
 
     # Build pheromone heatmap background
@@ -484,6 +502,12 @@ def main():
                         help="SIFTA target to visualize (default: body_state.py)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Verify imports and exit without rendering")
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=0,
+        help="Stress mode: no window — advance physics N ticks (Agg) and exit",
+    )
     args = parser.parse_args()
 
     print("\n[🌊 SIFTA COLLOID SIM] Initializing...")
@@ -506,7 +530,15 @@ def main():
         print("[✅ DRY RUN] All components verified. Exiting.")
         return
 
+    if args.max_frames > 0:
+        for _ in range(int(args.max_frames)):
+            sim.tick()
+        print(f"[🌊 BATCH] frames={args.max_frames} field_stable={sim.is_stable} synced={sim.synced}")
+        return
+
     print("[🌊] Opening filmmaker's window...")
+    import matplotlib.pyplot as plt
+
     fig, ani = build_renderer(sim)
     plt.show()
 

@@ -253,7 +253,34 @@ def mint_swimmer_token(
     )
 
 
-def run_demo(ticks: int, out_path: Path) -> int:
+def show_cyborg_lab(cy: Cyborg, ok: int, rej: int) -> None:
+    import sys
+
+    if str(SYS_DIR) not in sys.path:
+        sys.path.insert(0, str(SYS_DIR))
+    import matplotlib.pyplot as plt
+    from sim_lab_theme import LAB_BAD, LAB_CYAN, LAB_OK, apply_matplotlib_lab_style, neon_suptitle, style_axis_lab
+
+    apply_matplotlib_lab_style()
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.5))
+    neon_suptitle(fig, "CYBORG ORGAN LAB", f"accepted={ok}  rejected={rej}  (immune + Ed25519)")
+    pm = cy.organs["pacemaker"].settings
+    co = cy.organs["cochlear"].settings
+    nf = cy.organs["nfc"].settings
+    axes[0].barh(["bpm"], [float(pm.get("bpm_target", 0))], color=LAB_BAD, height=0.45)
+    style_axis_lab(axes[0], "Pacemaker")
+    axes[1].barh(["gain_dB"], [float(co.get("gain_db", 0))], color=LAB_CYAN, height=0.45)
+    style_axis_lab(axes[1], "Cochlear")
+    axes[2].barh(["access"], [1.0 if str(nf.get("access_level", "")).upper() == "HIGH" else 0.3], color=LAB_OK, height=0.45)
+    style_axis_lab(axes[2], "NFC gate")
+    axes[0].set_xlim(40, 130)
+    axes[1].set_xlim(0, 24)
+    axes[2].set_xlim(0, 1.2)
+    fig.tight_layout(rect=[0, 0, 1, 0.90])
+    plt.show()
+
+
+def run_demo(ticks: int, out_path: Path) -> tuple[int, int, int, Cyborg]:
     ledger = SimulationLedger(out_path)
     cy = Cyborg(ledger)
     keyring = OwnerKeyring()
@@ -298,7 +325,7 @@ def run_demo(ticks: int, out_path: Path) -> int:
     print(f"[CYBORG] pacemaker={cy.organs['pacemaker'].settings}")
     print(f"[CYBORG] cochlear={cy.organs['cochlear'].settings}")
     print(f"[CYBORG] nfc={cy.organs['nfc'].settings}")
-    return 0
+    return 0, ok, rej, cy
 
 
 def main() -> int:
@@ -306,12 +333,14 @@ def main() -> int:
     ap.add_argument("--demo", action="store_true", help="Run a deterministic demo workload.")
     ap.add_argument("--ticks", type=int, default=50, help="Number of control ticks.")
     ap.add_argument("--out", type=str, default=str(REPO_ROOT / ".sifta" / "cyborg" / "cyborg_ledger.jsonl"))
+    ap.add_argument("--visual", action="store_true", help="Open matplotlib organ dashboard after demo.")
     args = ap.parse_args()
 
     out = Path(args.out).expanduser()
-    if args.demo:
-        return run_demo(args.ticks, out)
-    return run_demo(args.ticks, out)
+    rc, ok, rej, cy = run_demo(args.ticks, out)
+    if args.visual:
+        show_cyborg_lab(cy, ok, rej)
+    return rc
 
 
 if __name__ == "__main__":
