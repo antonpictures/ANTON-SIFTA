@@ -38,9 +38,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SYS_DIR = REPO_ROOT / "System"
+
+GOODFELLAS_LORE = (
+    "GOODFELLAS CHECK: \"Hey, did you see that? Two ... just stole my truck. "
+    "Can you f believe that?\" — in this sim, the immune membrane rejects forged waybills. "
+    "The territory is the law. The ledger remembers."
+)
 
 
 def _now() -> int:
@@ -76,6 +84,7 @@ class Config:
     congestion_every: int = 4000
     metrics_every: int = 200
     seed: int = 1337
+    hijack_rate: float = 0.002  # per-tick probability of a forged completion attempt (simulated)
 
 
 def _rand_free_cell(blocked: np.ndarray, rng: np.random.Generator) -> Tuple[int, int]:
@@ -168,6 +177,32 @@ def _mint_sim_reward(ledger: JsonlOut, owner_id: str, amount: float, reason: str
     )
 
 
+class WaybillKeys:
+    """Simulation-only keys for delivery waybills (anti 'stolen truck' completion forging)."""
+
+    def __init__(self, owners: List[str], seed: int) -> None:
+        rng = np.random.default_rng(seed + 777)
+        self._priv: Dict[str, ed25519.Ed25519PrivateKey] = {}
+        for o in owners:
+            # deterministic-ish: derive key from rng bytes to keep demos repeatable
+            sk = ed25519.Ed25519PrivateKey.generate()
+            self._priv[o] = sk
+
+    def sign(self, owner: str, payload: str) -> bytes:
+        return self._priv[owner].sign(payload.encode("utf-8"))
+
+    def verify(self, owner: str, payload: str, sig: bytes) -> bool:
+        try:
+            self._priv[owner].public_key().verify(sig, payload.encode("utf-8"))
+            return True
+        except InvalidSignature:
+            return False
+
+
+def _waybill_payload(owner: str, agent_idx: int, delivery: Tuple[int, int], depot: Tuple[int, int], issued_at: int) -> str:
+    return f"WAYBILL::OWNER[{owner}]::AGENT[{agent_idx}]::DELIV[{delivery[0]},{delivery[1]}]::DEPOT[{depot[0]},{depot[1]}]::TS[{issued_at}]"
+
+
 def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
     rng = np.random.default_rng(cfg.seed)
     random.seed(cfg.seed)
@@ -201,9 +236,19 @@ def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
     # "owners" for demo bookkeeping
     owners = ["ARCHITECT_M1", "ARCHITECT_M5", "M1THER", "HERMES"]
     agent_owner = np.array([owners[i % len(owners)] for i in range(cfg.agents)], dtype=object)
+    waybill_keys = WaybillKeys(owners, cfg.seed)
+
+    # per-agent waybill state (issued at delivery, verified at depot)
+    wb_sig: List[bytes | None] = [None for _ in range(cfg.agents)]
+    wb_issued: np.ndarray = np.zeros((cfg.agents,), dtype=np.int64)
+
+    hijack_attempts = 0
+    hijack_blocked = 0
 
     completed = 0
     start_ts = _now()
+
+    print(f"[LOGISTICS] {GOODFELLAS_LORE}")
 
     for t in range(1, ticks + 1):
         # evaporation
@@ -233,19 +278,46 @@ def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
             # reached checkpoint?
             if phase[i] == 0 and (nx, ny) == (tx, ty):
                 phase[i] = 1
-            elif phase[i] == 1 and (nx, ny) == depot:
-                # completed roundtrip: deposit pheromone proportional to efficiency
-                eff = 1.0 / max(1.0, float(cost[i]))
-                pher[nx, ny] += float(cfg.deposit) * eff * 50.0
-                completed += 1
+                # issue a signed waybill at delivery pickup
                 owner = str(agent_owner[i])
-                _mint_sim_reward(econ, owner, 0.05, "LOGISTICS_ROUNDTRIP")
+                issued_at = _now()
+                wb_issued[i] = issued_at
+                payload = _waybill_payload(owner, i, (tx, ty), depot, issued_at)
+                wb_sig[i] = waybill_keys.sign(owner, payload)
+            elif phase[i] == 1 and (nx, ny) == depot:
+                # verify waybill at depot — prevents "stolen truck" forged completions
+                owner = str(agent_owner[i])
+                sig = wb_sig[i]
+                issued_at = int(wb_issued[i])
+                payload = _waybill_payload(owner, i, (tx, ty), depot, issued_at)
+                ok_waybill = bool(sig) and waybill_keys.verify(owner, payload, sig) and (abs(_now() - issued_at) < 6 * 3600)
+                if ok_waybill:
+                    # completed roundtrip: deposit pheromone proportional to efficiency
+                    eff = 1.0 / max(1.0, float(cost[i]))
+                    pher[nx, ny] += float(cfg.deposit) * eff * 50.0
+                    completed += 1
+                    _mint_sim_reward(econ, owner, 0.05, "LOGISTICS_ROUNDTRIP")
+                else:
+                    hijack_blocked += 1
 
                 # reset for next job
                 phase[i] = 0
                 target_idx[i] = int(rng.integers(0, len(deliveries)))
                 steps[i] = 0
                 cost[i] = 0.0
+                wb_sig[i] = None
+                wb_issued[i] = 0
+
+        # simulated hijack attempts: forged completion claims (should be rejected)
+        if cfg.hijack_rate > 0 and rng.random() < float(cfg.hijack_rate):
+            hijack_attempts += 1
+            victim = int(rng.integers(0, cfg.agents))
+            # attacker tries to claim victim completion with wrong owner or invalid signature
+            wrong_owner = str(owners[(victim + 1) % len(owners)])
+            payload = _waybill_payload(wrong_owner, victim, deliveries[int(target_idx[victim])], depot, _now())
+            forged_sig = b"\x00" * 64
+            if not waybill_keys.verify(wrong_owner, payload, forged_sig):
+                hijack_blocked += 1
 
         # dynamic congestion injection
         cong = None
@@ -269,6 +341,8 @@ def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
                 "local_friction": local_f,
                 "evap": float(cfg.evap),
                 "explore": float(cfg.explore),
+                "hijack_attempts": int(hijack_attempts),
+                "hijack_blocked": int(hijack_blocked),
             }
             if cong:
                 row["congestion"] = cong
@@ -277,7 +351,7 @@ def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
     dur = max(1, _now() - start_ts)
     print(
         f"[LOGISTICS] ticks={ticks} grid={n} agents={cfg.agents} completed={completed} "
-        f"rate={completed/dur:.2f}/s out={out_dir}"
+        f"rate={completed/dur:.2f}/s hijack_blocked={hijack_blocked} out={out_dir}"
     )
     return 0
 
@@ -295,6 +369,7 @@ def main() -> int:
     ap.add_argument("--explore", type=float, default=0.18)
     ap.add_argument("--congestion-every", type=int, default=4000)
     ap.add_argument("--metrics-every", type=int, default=200)
+    ap.add_argument("--hijack-rate", type=float, default=0.002, help="Probability per tick of a forged completion attempt.")
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--out", type=str, default=str(REPO_ROOT / ".sifta" / "logistics"))
     args = ap.parse_args()
@@ -310,6 +385,7 @@ def main() -> int:
         congestion_every=args.congestion_every,
         metrics_every=args.metrics_every,
         seed=args.seed,
+        hijack_rate=args.hijack_rate,
     )
 
     out_dir = Path(args.out).expanduser()

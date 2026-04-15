@@ -177,6 +177,10 @@ python3 Applications/sifta_logistics_swarm_sim.py \
 - `.sifta/logistics/metrics.jsonl` — telemetry (completed roundtrips, pheromone peak, congestion injections)
 - `.sifta/logistics/sim_ledger.jsonl` — simulation-only `UTILITY_MINT` trail (does not touch `repair_log.jsonl`)
 
+**Transport safety (Goodfellas “stolen truck” check):**
+the logistics sim uses a signed delivery **waybill**; forged completion claims are counted as
+`hijack_attempts` and rejected as `hijack_blocked` in `metrics.jsonl`.
+
 ---
 
 ## Security Posture
