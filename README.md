@@ -155,6 +155,30 @@ print('M5 node :', ledger_balance('192.168.1.100'))
 
 ---
 
+## Simulations — Logistics Swarm (4-minute watch run)
+
+CPU-only stigmergic routing on a 2D grid (pheromone matrix + evaporation + dynamic congestion).
+Designed to run on the M1 Mac mini (8GB) without GPUs.
+
+**Run once (watchable):**
+
+```bash
+cd ~/Music/ANTON_SIFTA   # or ~/media_claw/ANTON-SIFTA on M1
+
+python3 Applications/sifta_logistics_swarm_sim.py \
+  --ticks 120000 \
+  --grid 192 \
+  --agents 50 \
+  --metrics-every 2000 \
+  --congestion-every 8000
+```
+
+**Outputs:**
+- `.sifta/logistics/metrics.jsonl` — telemetry (completed roundtrips, pheromone peak, congestion injections)
+- `.sifta/logistics/sim_ledger.jsonl` — simulation-only `UTILITY_MINT` trail (does not touch `repair_log.jsonl`)
+
+---
+
 ## Security Posture
 
 | Layer | Status |
