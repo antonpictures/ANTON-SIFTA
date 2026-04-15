@@ -29,6 +29,11 @@
     "entry_point": "Applications/sifta_cyborg_sim.py",
     "signature": "UNVERIFIED"
   },
+  "Logistics Swarm (Overnight)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_logistics_swarm_sim.py",
+    "signature": "UNVERIFIED"
+  },
   "Biological Dashboard": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_biological_gui.py",
