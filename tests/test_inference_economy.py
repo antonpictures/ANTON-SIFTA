@@ -190,5 +190,15 @@ class TestFeeFormula(unittest.TestCase):
         self.assertGreater(f, 0.0)
 
 
+class TestNormalizeLender(unittest.TestCase):
+    def test_ollama_url_to_hostname(self):
+        self.assertEqual(
+            ie.normalize_lender_node_id("http://192.168.1.100:11434"),
+            "192.168.1.100",
+        )
+        self.assertEqual(ie.normalize_lender_node_id("192.168.1.5"), "192.168.1.5")
+        self.assertEqual(ie.normalize_lender_node_id(""), "")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

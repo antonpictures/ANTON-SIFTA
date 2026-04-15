@@ -210,6 +210,24 @@ class TestStigmergicEconomy(unittest.TestCase):
         print(f"\n  [OK] M5 earned {fee1+fee2:.4f} STGM from 2 swimmers "
               f"(HERMES {fee1:.4f} + ANTIALICE {fee2:.4f})")
 
+    def test_07_m1ther_mother_borrows_m5_then_mines(self):
+        """
+        M1THER (mother on Mac Mini) borrows inference from M5, then earns mints on M1.
+        Net can be positive when healing volume exceeds borrow fees (stigmergy).
+        """
+        self._seed("M1THER", 800.0)
+        start = self._bal("M1THER")
+        fee = self._borrow("M1THER", tokens=400, file="mother_board.py")
+        for i in range(4):
+            self.ie.mint_reward("M1THER", "HEAL", f"mini_patch_{i}.py")
+        end = self._bal("M1THER")
+        self.assertGreater(end, 0.0)
+        self.assertAlmostEqual(self._bal(M5_IP), fee, places=3)
+        print(
+            f"\n  [OK] M1THER: start {start:.2f} → end {end:.2f} "
+            f"(paid M5 fee {fee:.4f}; mints on top)"
+        )
+
 
 # ── M1 BATTLE PLAN (printed when run directly) ────────────────────────────────
 
@@ -248,16 +266,18 @@ M1_BATTLE_PLAN = """
 │                                                                     │
 │  STEP 5 — Verify STGM moved (on M1)                               │
 │  ─────────────────────────────────────────────────────────────────  │
+│  lender_ip in the ledger is the Ollama *hostname* (not full URL).   │
 │  python3 -c "                                                       │
 │  from inference_economy import ledger_balance                       │
-│  print('HERMES  :', ledger_balance('HERMES'))                       │
-│  print('M5 node :', ledger_balance('192.168.1.100'))               │
+│  print('HERMES :', ledger_balance('HERMES'))                        │
+│  print('M1THER:', ledger_balance('M1THER'))                         │
+│  print('M5 host:', ledger_balance('192.168.1.100'))                  │
 │  "                                                                  │
 │                                                                     │
-│  STEP 6 — Run isolated economy tests (safe, no real ledger)        │
+│  STEP 6 — Run isolated stigmergic economy tests (safe sandbox)     │
 │  ─────────────────────────────────────────────────────────────────  │
 │  SIFTA_LEDGER_VERIFY=0 python3 -m unittest                         │
-│      tests.test_stigmergic_economy -v                              │
+│      tests.test_stigmergic_economy -v   # 7 tests                  │
 │                                                                     │
 │  M5_LENDER_IP = 192.168.1.100  |  MODEL = gemma4:latest            │
 │  HERMES ✅ has Ed25519 key — cleared for wormhole                  │

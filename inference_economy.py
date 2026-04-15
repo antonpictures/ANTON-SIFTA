@@ -168,6 +168,26 @@ def mint_reward(agent_id: str, action: str, file_repaired: str) -> dict:
     return event
 
 
+def normalize_lender_node_id(lender_ref: str) -> str:
+    """
+    Collapse http(s)://host:port/... to *host* for INFERENCE_BORROW lender_ip keys.
+
+    repair.py passes an Ollama base URL; ledger_balance() matches on the string
+    stored in lender_ip. Using the hostname aligns credits with e.g.
+    ledger_balance('192.168.1.100') on the LAN.
+    """
+    ref = (lender_ref or "").strip()
+    if not ref or "://" not in ref:
+        return ref
+    try:
+        from urllib.parse import urlparse
+
+        host = urlparse(ref).hostname
+        return (host or ref).strip()
+    except Exception:
+        return ref
+
+
 # ─── Ledger Writer ─────────────────────────────────────────────────────────────
 def record_inference_fee(
     borrower_id: str,
@@ -181,6 +201,8 @@ def record_inference_fee(
     Deducts STGM from the borrower agent's energy, writes a signed
     INFERENCE_BORROW event to repair_log.jsonl, and returns the receipt.
     """
+    lender_node_ip = normalize_lender_node_id(lender_node_ip)
+
     # ── Load borrower state ──────────────────────────────────────────────────
     state_path = STATE_DIR / f"{borrower_id.upper()}.json"
     state = {}
