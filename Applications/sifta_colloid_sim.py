@@ -270,25 +270,37 @@ class SIFTAColloidSimulation:
 # Renderer
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_renderer(sim: SIFTAColloidSimulation):
+def build_renderer(sim: SIFTAColloidSimulation, ext_figure=None):
+    """
+    If ext_figure is a matplotlib.figure.Figure, render into it (QtAgg canvas inside Swarm OS).
+    If None, create a standalone window (MacOSX/Agg).
+    """
     from sim_lab_theme import ensure_matplotlib
 
     ensure_matplotlib("Colloid filmmaker window")
     import matplotlib
-
-    try:
-        matplotlib.use("MacOSX")
-    except Exception:
-        matplotlib.use("Agg")
     import matplotlib.animation as animation
-    import matplotlib.pyplot as plt
     from matplotlib.colors import LinearSegmentedColormap
     from matplotlib.patches import Circle
 
-    if apply_matplotlib_lab_style:
-        apply_matplotlib_lab_style()
-    fig = plt.figure(figsize=(14, 9), facecolor=BG_COLOR)
-    fig.canvas.manager.set_window_title("SIFTA × SwarmRL — Cognitive Colloid Simulation")
+    if ext_figure is None:
+        try:
+            matplotlib.use("MacOSX")
+        except Exception:
+            matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        if apply_matplotlib_lab_style:
+            apply_matplotlib_lab_style()
+        fig = plt.figure(figsize=(14, 9), facecolor=BG_COLOR)
+        fig.canvas.manager.set_window_title("SIFTA × SwarmRL — Cognitive Colloid Simulation")
+    else:
+        # Caller (e.g. ColloidSimWidget) must already have set matplotlib.use("QtAgg")
+        if apply_matplotlib_lab_style:
+            apply_matplotlib_lab_style()
+        fig = ext_figure
+        fig.set_size_inches(12, 7.2, forward=True)
+        fig.patch.set_facecolor(BG_COLOR)
 
     # Main physics canvas
     ax = fig.add_axes([0.02, 0.18, 0.68, 0.78])

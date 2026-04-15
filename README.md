@@ -17,6 +17,8 @@ pip install -r requirements.txt
 
 Use **`--headless`** on sims that support it to run without a GUI (no matplotlib required for those code paths).
 
+**Colloid Simulator** from the Swarm OS **Programs → Simulations** menu opens **inside** the desktop (embedded `FigureCanvas`, no second OS window). For a standalone filmmaker window: `python3 Applications/sifta_colloid_sim.py --demo`.
+
 ## What is SIFTA?
 
 SIFTA is a **Sovereign Operating System** powered by your own local AI.

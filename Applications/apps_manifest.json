@@ -16,7 +16,8 @@
   },
   "Colloid Simulator": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_colloid_sim.py",
+    "entry_point": "Applications/sifta_colloid_widget.py",
+    "widget_class": "ColloidSimWidget",
     "signature": "UNVERIFIED"
   },
   "Swarm Arena": {
