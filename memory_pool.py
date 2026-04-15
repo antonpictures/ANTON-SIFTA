@@ -141,19 +141,39 @@ def _sign_hmac(payload_bytes: bytes, agent_id: str) -> tuple[str, str]:
     return sig, pub
 
 
-def _verify(payload_bytes: bytes, sig_b64: str, public_key_b64: str) -> bool:
-    # Ed25519 path — 64-byte signatures, 32-byte public keys (base64 encoded)
+def _verify_ed25519(payload_bytes: bytes, sig_b64: str, public_key_b64: str) -> bool:
     try:
         raw_pub = base64.b64decode(public_key_b64)
         raw_sig = base64.b64decode(sig_b64)
-        if len(raw_pub) == 32 and len(raw_sig) == 64:
-            pub = ed25519.Ed25519PublicKey.from_public_bytes(raw_pub)
-            pub.verify(raw_sig, payload_bytes)
-            return True
-    except (InvalidSignature, Exception):
-        pass
-    # HMAC fallback — accept if content hash is intact (integrity-only mode)
-    return True  # HMAC records are marked HMAC_TRUST in the record itself
+        if len(raw_pub) != 32 or len(raw_sig) != 64:
+            return False
+        pub = ed25519.Ed25519PublicKey.from_public_bytes(raw_pub)
+        pub.verify(raw_sig, payload_bytes)
+        return True
+    except (InvalidSignature, ValueError, Exception):
+        return False
+
+
+def _verify_hmac_trust(payload_bytes: bytes, sig_hex: str, agent_id: str) -> bool:
+    """Must match _sign_hmac() — hex digest, agent-bound key."""
+    import hmac as hmaclib
+
+    try:
+        key = (agent_id + "_SIFTA_LOCAL").encode()
+        expect = hmaclib.new(key, payload_bytes, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expect, sig_hex)
+    except Exception:
+        return False
+
+
+def _verify_record(record: dict, payload_bytes: bytes) -> bool:
+    trust = record.get("trust_level", "")
+    agent_id = record.get("content", {}).get("agent_id", "")
+    sig = record.get("signature", "")
+    pub_b64 = record.get("public_key", "")
+    if trust == "HMAC_TRUST":
+        return _verify_hmac_trust(payload_bytes, sig, agent_id)
+    return _verify_ed25519(payload_bytes, sig, pub_b64)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -278,11 +298,9 @@ def receive_memories(state: dict, memory_type_filter: Optional[str] = None) -> l
                 continue
 
         # ── Signature verification ────────────────────────────────────────
-        pub_b64       = record.get("public_key", "")
-        sig_b64       = record.get("signature", "")
         payload_bytes = json.dumps(record["content"], sort_keys=True).encode()
 
-        if not _verify(payload_bytes, sig_b64, pub_b64):
+        if not _verify_record(record, payload_bytes):
             print(f"[⚠️ POOL] Signature verification FAILED for record from {sender_id}. Quarantining.")
             _quarantine(record, reason="InvalidSignature")
             continue

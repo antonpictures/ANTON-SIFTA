@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import uuid
 import time
@@ -10,6 +11,12 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+_RELAY_MAX_BODY = int(os.environ.get("SIFTA_RELAY_MAX_BODY_BYTES", str(6 * 1024 * 1024)) or str(6 * 1024 * 1024))
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
 
 class RelayAuthMiddleware(BaseHTTPMiddleware):
     """When SIFTA_RELAY_API_KEY is set, require matching X-SIFTA-Relay-Key on every request."""
@@ -18,6 +25,13 @@ class RelayAuthMiddleware(BaseHTTPMiddleware):
         k = os.environ.get("SIFTA_RELAY_API_KEY", "").strip()
         if k and request.headers.get("x-sifta-relay-key", "").strip() != k:
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        cl = request.headers.get("content-length")
+        if cl and request.method in ("POST", "PUT", "PATCH"):
+            try:
+                if int(cl) > _RELAY_MAX_BODY:
+                    return JSONResponse({"detail": "Payload too large"}, status_code=413)
+            except ValueError:
+                pass
         return await call_next(request)
 
 
@@ -91,5 +105,13 @@ async def ack_drop(pubkey: str, drop_id: str):
     return {"ok": False, "error": "Not found"}
 
 if __name__ == "__main__":
+    if not os.environ.get("SIFTA_RELAY_API_KEY", "").strip():
+        print(
+            "[!] SIFTA_RELAY_API_KEY is unset — relay accepts unauthenticated requests on the LAN. "
+            "Set the key and pass X-SIFTA-Relay-Key from dead_drop.py clients."
+        )
+    if _env_truthy("SIFTA_RELAY_REQUIRE_AUTH") and not os.environ.get("SIFTA_RELAY_API_KEY", "").strip():
+        print("[RELAY] FATAL: SIFTA_RELAY_REQUIRE_AUTH=1 but SIFTA_RELAY_API_KEY is empty.")
+        sys.exit(1)
     print("[RELAY] Starting Stigmergic Post Office on port 8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

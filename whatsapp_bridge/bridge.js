@@ -18,6 +18,9 @@ import qrcode from "qrcode-terminal";
 import http from "http";
 
 const SIFTA_SERVER = "http://localhost:7434/swarm_message";
+const MAX_WA_TEXT_TO_SIFTA = 8192;
+const MAX_INJECT_BODY = 16384;
+const INJECT_KEY = process.env.SIFTA_BRIDGE_INJECT_KEY || "";
 let lastKnownHuman = null;
 
 async function connectToWhatsApp() {
@@ -84,7 +87,9 @@ async function connectToWhatsApp() {
         "";
 
       if (!text) continue;
-      
+      const safeText =
+        text.length > MAX_WA_TEXT_TO_SIFTA ? text.slice(0, MAX_WA_TEXT_TO_SIFTA) : text;
+
       // Track last human we spoke to
       if (!msg.key.fromMe) {
           lastKnownHuman = from;
@@ -98,7 +103,7 @@ async function connectToWhatsApp() {
       console.log(`\n[📲 INCOMING] type=${type} fromMe=${msg.key.fromMe} from=${from}`);
       console.log(`  Message: "${text}"`);
 
-      const payload = JSON.stringify({ from, text });
+      const payload = JSON.stringify({ from, text: safeText });
 
       const req = http.request(SIFTA_SERVER, {
         method: "POST",
@@ -145,8 +150,15 @@ async function connectToWhatsApp() {
   // ── AUTONOMOUS INJECTION SERVER ───────────────────────────
   const injectServer = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/system_inject') {
+        if (INJECT_KEY && req.headers["x-sifta-inject-key"] !== INJECT_KEY) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
         let body = '';
-        req.on('data', chunk => body += chunk);
+        req.on('data', (chunk) => {
+          if (body.length < MAX_INJECT_BODY) body += chunk.toString();
+        });
         req.on('end', async () => {
             try {
                 const data = JSON.parse(body);
@@ -176,8 +188,11 @@ async function connectToWhatsApp() {
     }
   });
   
-  injectServer.listen(3001, () => {
-      console.log("[🌊 SWARM BRIDGE] Autonomous Injection Server listening on port 3001");
+  injectServer.listen(3001, "127.0.0.1", () => {
+      console.log("[🌊 SWARM BRIDGE] Autonomous Injection Server on 127.0.0.1:3001 (LAN-safe bind)");
+      if (!INJECT_KEY) {
+        console.log("[!] Set SIFTA_BRIDGE_INJECT_KEY to require X-Sifta-Inject-Key on /system_inject");
+      }
   });
 }
 

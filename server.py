@@ -71,6 +71,42 @@ def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+_SWIMMER_ENV_BLOCKLIST = frozenset(
+    {
+        "SIFTA_API_KEY",
+        "SIFTA_MESH_HMAC",
+        "SIFTA_MESSENGER_INTEGRITY_SECRET",
+        "SIFTA_RELAY_API_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GITHUB_TOKEN",
+        "GH_TOKEN",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+    }
+)
+
+
+def swimmer_subprocess_env() -> dict:
+    """
+    Child swimmers (repair.py, arena, etc.) should not inherit mesh/API secrets from the server process.
+    They still receive PATH, HOME, LANG, OLLAMA_HOST, etc.
+    """
+    out: dict[str, str] = {}
+    for k, v in os.environ.items():
+        if k in _SWIMMER_ENV_BLOCKLIST:
+            continue
+        ku = k.upper()
+        if any(x in ku for x in ("SECRET", "PASSWORD", "TOKEN", "API_KEY", "_KEY")) and k not in (
+            "SSH_AUTH_SOCK",
+        ):
+            continue
+        out[k] = v
+    return out
+
+
 def wormhole_target_ip_error(target_ip: str) -> Optional[str]:
     """
     Reject wormhole targets that enable SSRF (e.g. cloud metadata) or unintended WAN egress.
@@ -262,27 +298,42 @@ class SiftaGetProtectMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class SiftaTerminalAuthMiddleware(BaseHTTPMiddleware):
+# GET paths that can leak session/history/UI — require API key when SIFTA_API_KEY is set.
+_SENSITIVE_GET_PATHS: dict[str, str] = {
+    "/api/terminal": "SIFTA_TERMINAL_OPEN",
+    "/messenger/thread": "SIFTA_MESSENGER_THREAD_OPEN",
+    "/api/messenger/thread": "SIFTA_MESSENGER_THREAD_OPEN",
+    "/editor": "SIFTA_EDITOR_OPEN",
+}
+
+
+class SiftaSensitiveGetAuthMiddleware(BaseHTTPMiddleware):
     """
-    When SIFTA_API_KEY is set, GET /api/terminal requires the same key (live buffer leak).
-    Set SIFTA_TERMINAL_OPEN=1 to allow unauthenticated reads (local dev only).
+    When SIFTA_API_KEY is set, selected GET routes require the key unless their *_OPEN env is truthy.
+    Covers terminal buffer, messenger history, and bundled editor HTML.
     """
 
     async def dispatch(self, request: Request, call_next):
-        if request.method == "GET" and request.url.path == "/api/terminal":
-            key = os.environ.get("SIFTA_API_KEY", "").strip()
-            if key and not _env_truthy("SIFTA_TERMINAL_OPEN"):
-                got = request.headers.get("x-sifta-key", "").strip()
-                auth = request.headers.get("authorization", "")
-                if auth.lower().startswith("bearer "):
-                    got = auth[7:].strip()
-                if got != key:
-                    return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        if request.method != "GET":
+            return await call_next(request)
+        path = request.url.path
+        open_flag = _SENSITIVE_GET_PATHS.get(path)
+        if not open_flag:
+            return await call_next(request)
+        key = os.environ.get("SIFTA_API_KEY", "").strip()
+        if not key or _env_truthy(open_flag):
+            return await call_next(request)
+        got = request.headers.get("x-sifta-key", "").strip()
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            got = auth[7:].strip()
+        if got != key:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
 
 app = FastAPI(title="ANTON-SIFTA Command Interface")
-app.add_middleware(SiftaTerminalAuthMiddleware)
+app.add_middleware(SiftaSensitiveGetAuthMiddleware)
 app.add_middleware(SiftaMutatingAuthMiddleware)
 app.add_middleware(SiftaRateLimitMiddleware)
 app.add_middleware(SiftaGetProtectMiddleware)
@@ -890,7 +941,7 @@ async def dispatch_arena(red_model: str, blue_model: str, level: str):
         ]
         
         try:
-            env = os.environ.copy()
+            env = swimmer_subprocess_env()
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -1178,7 +1229,7 @@ async def dispatch_swim(req: DispatchRequest):
         cmd.append("--proposals")  # All UI dispatches go through the Human Gate
         
         # Inject API key natively if provider demands it
-        env = os.environ.copy()
+        env = swimmer_subprocess_env()
         if req.api_key:
             env["OPENAI_API_KEY"] = req.api_key
             env["GOOGLE_API_KEY"] = req.api_key

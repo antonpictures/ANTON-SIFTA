@@ -13,14 +13,19 @@
 import os, json, time, hashlib, subprocess, urllib.request, urllib.error
 from datetime import datetime
 import sys as _sys
-_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from inference_economy import ledger_balance
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_sys.path.insert(0, REPO_ROOT)
+_sys.path.insert(0, os.path.join(REPO_ROOT, "System"))
+from inference_economy import ledger_balance
+from ledger_append import append_ledger_line
+
 STATE_DIR = os.path.join(REPO_ROOT, ".sifta_state")
 MEMPOOL_FILE = os.path.join(STATE_DIR, "human_signals.jsonl")
 DEAD_DROP_FILE = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 REPAIR_LOG = os.path.join(REPO_ROOT, "repair_log.jsonl")
+
+_MEMPOOL_MAX_LINE = int(os.environ.get("SIFTA_MEMPOOL_MAX_LINE_BYTES", str(256 * 1024)) or str(256 * 1024))
 
 def get_silicon_identity():
     """Extract hardware-bound identity (no shell=True)."""
@@ -104,7 +109,17 @@ def process_mempool(serial, agent_id):
     pending = []
     try:
         with open(MEMPOOL_FILE, "r") as f:
-            pending = [json.loads(line) for line in f if line.strip()]
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if len(line) > _MEMPOOL_MAX_LINE:
+                    print(f"[MEMPOOL] Skipping oversize line ({len(line)} B > {_MEMPOOL_MAX_LINE}).")
+                    continue
+                try:
+                    pending.append(json.loads(line))
+                except json.JSONDecodeError:
+                    print("[MEMPOOL] Skipping invalid JSON line.")
     except Exception as e:
         print(f"Mempool read locked: {e}")
         return
@@ -138,8 +153,9 @@ def process_mempool(serial, agent_id):
                 unprocessed.append(tx)
                 continue
 
-            # 2. Extract Cognitive Prompt
-            prompt_text = tx.get("text", "Identify yourself.")
+            # 2. Extract Cognitive Prompt (cap — mempool text must not own the LLM context window)
+            _pmax = int(os.environ.get("SIFTA_SWARM_BRAIN_MAX_PROMPT_CHARS", "16000") or "16000")
+            prompt_text = (tx.get("text") or "Identify yourself.")[:_pmax]
             print(f"[{datetime.now().strftime('%H:%M:%S')}] 📥 Inference requested from '{tx.get('sender')}'. Processing...")
 
             # 3. Fire Inference
@@ -161,8 +177,7 @@ def process_mempool(serial, agent_id):
                 "reason": f"Compute clearance generated for {tx.get('sender')}",
                 "hash": receipt_seal
             }
-            with open(REPAIR_LOG, "a") as f:
-                f.write(json.dumps(mint_record) + "\n")
+            append_ledger_line(REPAIR_LOG, mint_record)
 
             # Credit Wallet
             state_file = os.path.join(STATE_DIR, f"{agent_id}.json")

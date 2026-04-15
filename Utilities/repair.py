@@ -60,10 +60,12 @@ import reputation_engine
 from body_state import SwarmBody, parse_body_state, apply_damage, bury, find_healthy_agent, save_agent_state
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
+REPO_ROOT = Path(__file__).resolve().parent.parent
 OLLAMA_URL    = "http://localhost:11434/api/generate"
 REPAIR_MODEL = "gemma4:latest"
 FALLBACK_MODEL = "gemma4:latest"
-LOG_PATH     = Path(__file__).parent / "repair_log.jsonl"
+# Canonical economy ledger at repo root (same file as inference_economy / locked append).
+LOG_PATH     = REPO_ROOT / "repair_log.jsonl"
 # Inference fees are recorded in-process via inference_economy (repair_log.jsonl).
 # This URL is reserved if a future build POSTs fees to a remote quorum daemon.
 LOCAL_SERVER_URL = "http://localhost:7433"
@@ -133,8 +135,16 @@ Example WRONG response:
 # ─── LOGGING ─────────────────────────────────────────────────────────────────
 def log(event: dict):
     event["ts"] = datetime.now(timezone.utc).isoformat()
-    with open(LOG_PATH, "a") as f:
-        f.write(json.dumps(event) + "\n")
+    _sd = str(REPO_ROOT / "System")
+    if _sd not in sys.path:
+        sys.path.insert(0, _sd)
+    try:
+        from ledger_append import append_ledger_line
+
+        append_ledger_line(LOG_PATH, event)
+    except Exception:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event) + "\n")
 
 # ─── COUCH PROTOCOL ──────────────────────────────────────────────────────────
 STYLES = [

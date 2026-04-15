@@ -13,7 +13,9 @@ Related (server / wormhole — see server.py):
   SIFTA_WORMHOLE_DEED_MAX_SKEW_SEC (deed timestamp anti-replay, default 900),
   SIFTA_WORMHOLE_ALLOW_LOOPBACK, SIFTA_WORMHOLE_ALLOW_PUBLIC_IP (wormhole egress policy),
   SIFTA_STRICT_PKI_REGISTRY — refuse boot if node_pki_registry.json fails validation,
-  SIFTA_TERMINAL_OPEN — if unset and SIFTA_API_KEY is set, GET /api/terminal requires the key.
+  SIFTA_TERMINAL_OPEN — bypass API key for GET /api/terminal (dev only).
+  SIFTA_MESSENGER_THREAD_OPEN — bypass API key for GET /messenger/thread and GET /api/messenger/thread.
+  SIFTA_EDITOR_OPEN — bypass API key for GET /editor (bundled HTML).
   SIFTA_QUIET_BOOT_WARNINGS — suppress optional startup hardening hints.
   SIFTA_MESSENGER_INTEGRITY_SECRET — HMAC rows in sqlite messenger_log (tamper-evident).
   SIFTA_RELAY_ALLOWLIST — comma-separated relay origins for dead_drop.py (defaults to 127.0.0.1:8000).
@@ -28,6 +30,18 @@ Hardening backlog (not solved here):
   - Wormhole / receive_soul still assume LAN trust unless you add mTLS or VPN.
   - Autonomous git writers (this repo, swarm_network_ledger) need branch locks + review hooks.
   - repair_log integrity assumes OS file permissions; root on box bypasses crypto.
+  - .gitattributes merge=union on repair_log.jsonl can duplicate/reorder lines under concurrent merges;
+    verify rows cryptographically; prefer single-writer epochs for economy truth.
+
+Relay (relay_server.py):
+  SIFTA_RELAY_API_KEY, SIFTA_RELAY_REQUIRE_AUTH (refuse boot without key),
+  SIFTA_RELAY_MAX_BODY_BYTES (default 6MiB) — drop payload bound.
+
+Swarm brain:
+  SIFTA_MEMPOOL_MAX_LINE_BYTES, SIFTA_SWARM_BRAIN_MAX_PROMPT_CHARS — human_signals.jsonl safety.
+
+whatsapp_bridge:
+  SIFTA_BRIDGE_INJECT_KEY — required header X-Sifta-Inject-Key for POST /system_inject (inject server binds 127.0.0.1 only).
 """
 from __future__ import annotations
 
