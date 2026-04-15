@@ -19,6 +19,15 @@ import sys
 if sys_path not in sys.path:
     sys.path.append(sys_path)
 
+try:
+    from ledger_append import append_jsonl_line as _append_jsonl
+except ImportError:
+    # Fallback: bare append if ledger_append unavailable (should not happen in production)
+    def _append_jsonl(path, row):  # type: ignore[misc]
+        with open(path, "a", encoding="utf-8") as _f:
+            import json as _json
+            _f.write(_json.dumps(row) + "\n")
+
 from crypto_keychain import sign_block, verify_block, get_silicon_identity
 
 def initiate_migration(agent_id: str, target_serial: str):
@@ -58,9 +67,8 @@ def initiate_migration(agent_id: str, target_serial: str):
     signature = sign_block(sig_payload)
     migration_bundle["signature"] = signature
 
-    # Drop into network
-    with open(MIGRATION_LOG, "a") as f:
-        f.write(json.dumps(migration_bundle) + "\n")
+    # Drop into network — locked append (same flock as repair_log / dead_drop)
+    _append_jsonl(MIGRATION_LOG, migration_bundle)
 
     # Purge Biological Host
     # To prevent cloning, we rename it to a graveyard file and remove it from UI sight.
