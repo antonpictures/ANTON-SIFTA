@@ -136,7 +136,10 @@ def load_agents():
             data["stgm_balance"] = float(ledger_balance(agent_id))
 
             agents.append(data)
-        except Exception:
+        except Exception as e:
+            print(f"Skipping {fname} due to error: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     agents.sort(key=lambda a: float(a.get("stgm_balance") or 0), reverse=True)
     return agents
@@ -289,10 +292,11 @@ class InstallAgentDialog(QDialog):
         self.role.addItems(["ACTIVE","SCOUT","REPAIR","MEDIC","WATCHER","DETECTIVE"])
         lay.addWidget(self.role)
 
-        lay.addWidget(QLabel("Starting STGM (agents earn this — default 0):"))
-        self.stgm_input = QLineEdit()
-        self.stgm_input.setText("0.0")
-        lay.addWidget(self.stgm_input)
+        # ── NO FREE STGM AT GENESIS ─────────────────────────────
+        # Swimmers are born hungry. They earn STGM by observing the
+        # Architect, repairing code, routing inference, and performing
+        # useful work. No birth presents. No handouts. No breach.
+        # ──────────────────────────────────────────────────────────────
 
         btn = QPushButton("⬇  INSTALL AGENT")
         btn.clicked.connect(self._install)
@@ -301,7 +305,7 @@ class InstallAgentDialog(QDialog):
     def _install(self):
         agent_id  = self.id_input.text().strip().upper().replace(" ","_")
         role      = self.role.currentText()
-        stgm      = float(self.stgm_input.text().strip() or "0")
+        stgm      = 0.0  # SEALED: swimmers earn, never gifted
         if not agent_id:
             QMessageBox.warning(self, "Error", "Agent ID required.")
             return
@@ -346,30 +350,25 @@ class InstallAgentDialog(QDialog):
         with open(fpath, "w") as f:
             json.dump(payload, f, indent=2)
 
-        # Claude Audit Fix 2: Write true immutable logs
+        # ── Immutable Genesis Log (STGM always 0.0 — earn only) ───
         genesis_entry = {
             "timestamp": ts,
             "agent_id": agent_id,
             "event": "GENESIS",
-            "starting_stgm": stgm,
+            "starting_stgm": 0.0,
             "architect_seal": seal,
             "hardware_serial": serial
         }
         try:
             append_jsonl_line(os.path.join(REPO_ROOT, ".sifta_state", "genesis_log.jsonl"), genesis_entry)
-            if stgm > 0:
-                mint_entry = {
-                    "timestamp": ts,
-                    "agent_id": agent_id,
-                    "tx_type": "STGM_MINT",
-                    "amount": stgm,
-                    "hash": seal
-                }
-                append_ledger_line(os.path.join(REPO_ROOT, "repair_log.jsonl"), mint_entry)
+            # ── NO STGM_MINT AT GENESIS ──────────────────────────────
+            # The free-mint breach is permanently sealed.
+            # Swimmers begin life at 0.0 and earn through useful work.
+            # ─────────────────────────────────────────────────────────
         except Exception as e:
             print(f"Log write error: {e}")
 
-        QMessageBox.information(self,"Installed", f"Agent {agent_id} installed.\nSTGM: {stgm} | Role: {role}\nSeal: {seal}")
+        QMessageBox.information(self,"Installed", f"Agent {agent_id} installed.\nSTGM: 0.0 (earn only) | Role: {role}\nSeal: {seal}")
         self.accept()
 
 # ─────────────────────────────────────────────────────────────
