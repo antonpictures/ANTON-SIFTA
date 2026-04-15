@@ -225,6 +225,42 @@ Use this flow for any app:
 - **What to watch:** Pulse cadence, anomaly spikes, systemic instability clues.
 - **Key principle:** Early warning before visible failure.
 
+### Stigmergic Medical Scanner
+- **Purpose:** Treat medical data (tissue cross-sections, gene expression heatmaps,
+  blood smear fields) as physical terrain.  Deploy swimmer agents that slow down
+  near statistical anomalies and deposit diagnostic pheromone.  The swarm naturally
+  clusters around hidden disease that linear algorithms miss.
+- **Terrain modes:**
+  - **TISSUE** — synthetic mammography: correlated Gaussian tissue texture with
+    planted masses (large ellipses, spiculated margins) and microcalcification
+    clusters (tiny bright dots).  This mirrors real breast cancer screening data.
+  - **GENOMIC** — gene expression heatmap with banded pathway structure and
+    anomalous regulation clusters (over-expressed gene blocks).
+  - **BLOOD** — cell scatter field: ~220 normal RBCs (torus morphology) with
+    planted abnormal cells (larger, irregular, dense nuclei).
+- **Swimmer species:**
+  - **DiagnosticForager (teal ●)** — general chemotaxis toward anomaly gradient,
+    deposits pheromone proportional to local anomaly score^1.5.
+  - **CalcificationHunter (red ◆)** — specifically targets bright micro-spots;
+    slows dramatically when brightness > 0.65 and anomaly > 0.3.
+  - **MarginMapper (purple ▲)** — moves *perpendicular* to the anomaly gradient,
+    tracing the contour of detected masses (edge-following behavior).
+  - **PatrolSweeper (blue ■)** — systematic raster scan; marks coverage.
+- **Anomaly detection method (real statistics):**
+  - Local-vs-global Z-score (mean deviation)
+  - Local variance ratio (textural anomaly)
+  - Gradient magnitude (Sobel-like first derivative)
+  - Weighted combination → anomaly score [0,1] per pixel
+- **What to watch:**
+  - **Left panel** — raw tissue terrain with planted anomaly markers (red +/○ = undetected, green = detected).
+  - **Center panel** — pheromone diagnostic overlay.  Hot (yellow/orange) = swimmer consensus that something is there.
+  - **Right panel** — statistical anomaly heatmap (inferno).  Detected anomalies circled in green with confidence %.
+  - **Diagnostic log** — real-time detection events.
+- **Key principle:** Swimmers don't "know" what cancer looks like.  They respond to
+  local statistical deviation and amplify it through pheromone.  Consensus = diagnosis.
+  This is swarm intelligence applied to the oldest problem in medicine: finding the
+  needle in the haystack of biological noise.
+
 ### Territory Is The Law
 - **Purpose:** Geospatial Swarm Guardian. Tracks a child, pet, AirTag, or phone
   on a city graph.  Swimmers deposit safe pheromone on routine paths.

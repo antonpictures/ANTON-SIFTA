@@ -101,7 +101,7 @@ To prevent UI fragmentation as the app count grows, iSwarm OS enforces global UX
 - **Single Source of Styling**: new apps can inherit `System/sifta_base_widget.py` to get consistent SIFTA chrome (`?` help button, status bar, dark palette, control styling) without re-implementing boilerplate.
 - **Manifest-Driven Governance**: app discovery and launch behavior come from `Applications/apps_manifest.json`, allowing one-place auditing of category, entry point, and widget embedding behavior.
 
-Audit status (April 15, 2026): **28/28 manifest apps have Help coverage and launch under the global window-control policy**.
+Audit status (April 15, 2026): **29/29 manifest apps have Help coverage and launch under the global window-control policy**.
 
 ### Core Modules
 
@@ -231,6 +231,31 @@ The timeline is dead. Welcome to the **Pheromone Matrix.** Four swimmer species 
 | **NarrativeWeaver** | Reads transcript, syncs subtitles, triggers intent-driven cuts |
 
 Cut decisions emerge from pheromone consensus. Export as CMX 3600 EDL (Premiere/DaVinci/FCP) or FFmpeg filter script. Sebastian's original silence-detection jumpcut algo is preserved intact.
+
+### Stigmergic Medical Scanner — Swarm Anomaly Detection
+
+```bash
+python3 Applications/sifta_medscan_widget.py        # visual sim (inside iSwarm OS)
+```
+
+Treat medical data as physical terrain. Deploy 54 swimmers (4 species). They slow down near anomalies, deposit diagnostic pheromone, and the swarm naturally clusters around hidden disease.
+
+**Three terrain modes** — all synthetic, research-grade distributions:
+
+| Mode | Data | Anomalies |
+|---|---|---|
+| **TISSUE** | Mammography cross-section (correlated Gaussian texture + density gradient) | Masses (spiculated ellipses) + microcalcification clusters |
+| **GENOMIC** | Gene expression heatmap (banded pathway structure) | Anomalous regulation clusters |
+| **BLOOD** | Cell scatter field (~220 normal RBCs + planted abnormals) | Morphologically abnormal cells (oversized, irregular, dense nuclei) |
+
+| Swimmer | Job |
+|---|---|
+| **DiagnosticForager** (teal ●) | General chemotaxis — deposits pheromone proportional to local anomaly score |
+| **CalcificationHunter** (red ◆) | Seeks bright micro-spot clusters — the microcalcification signature |
+| **MarginMapper** (purple ▲) | Moves *perpendicular* to anomaly gradient — traces mass contours |
+| **PatrolSweeper** (blue ■) | Systematic raster scan — marks coverage, light pheromone deposit |
+
+**Anomaly detection uses real statistical methods**: local-vs-global Z-score, variance ratio, gradient magnitude (Sobel-like). Swimmers don't "know" what cancer looks like — they respond to statistical deviation and amplify it through pheromone consensus. *The swarm sees what linear scans miss.*
 
 ### Territory Is The Law — Geospatial Swarm Guardian
 

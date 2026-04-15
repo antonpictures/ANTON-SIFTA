@@ -190,5 +190,13 @@
     "window_width": 1400,
     "window_height": 920,
     "signature": "UNVERIFIED"
+  },
+  "Stigmergic Medical Scanner": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_medscan_widget.py",
+    "widget_class": "MedScanWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
   }
 }
