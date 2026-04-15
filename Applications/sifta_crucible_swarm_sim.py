@@ -283,51 +283,144 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
     except Exception:
         pass
     import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    from matplotlib.collections import LineCollection
     from matplotlib.widgets import Button, Slider
 
     sim = CrucibleSim(cfg)
 
-    fig = plt.figure(figsize=(11.5, 8))
-    gs = fig.add_gridspec(7, 10)
-    ax_ui = fig.add_subplot(gs[0:2, :])
+    fig = plt.figure(figsize=(13, 9))
+    fig.patch.set_facecolor("#080c18")
+    fig.canvas.manager.set_window_title("SIFTA Crucible — Cyber-Defense Simulation")
+    gs = fig.add_gridspec(8, 12, hspace=0.35, wspace=0.3)
+
+    # Telemetry HUD panel (top)
+    ax_hud = fig.add_subplot(gs[0:2, :])
+    ax_hud.axis("off")
+    ax_hud.set_facecolor("#080c18")
+
+    # Main arena
     ax = fig.add_subplot(gs[2:, :])
-    ax_ui.axis("off")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_facecolor("#0b1020")
-    fig.patch.set_facecolor("#0b1020")
+    for spine in ax.spines.values():
+        spine.set_color("#1a1b36")
+        spine.set_linewidth(1.5)
 
-    # static map
-    ax.scatter(sim.clients[:, 0], sim.clients[:, 1], s=20, c="#7aa2f7", alpha=0.7, label="Clients")
-    ax.scatter(sim.servers[:, 0], sim.servers[:, 1], s=200, c="#f7768e", marker="s", label="Servers")
-    ax.scatter([sim.quarantine[0]], [sim.quarantine[1]], s=220, c="#9ece6a", marker="X", label="Quarantine")
+    # Network paths: lines from every client to every server (dim background grid)
+    net_segments = []
+    for c in sim.clients:
+        for s in sim.servers:
+            net_segments.append([(float(c[0]), float(c[1])), (float(s[0]), float(s[1]))])
+    net_lc = LineCollection(net_segments, colors="#1a2040", linewidths=0.4, alpha=0.5)
+    ax.add_collection(net_lc)
 
-    pkt_sc = ax.scatter([], [], s=8, c="#e0af68", alpha=0.6, label="Traffic")
-    anom_sc = ax.scatter([], [], s=20, c="#ff5555", alpha=0.85, label="Anomaly")
-    swim_sc = ax.scatter(sim.swimmers[:, 0], sim.swimmers[:, 1], s=15, c="#73daca", alpha=0.9, label="Swimmers")
-    txt = ax.text(
-        0.01,
-        0.99,
-        "",
-        transform=ax.transAxes,
-        ha="left",
-        va="top",
-        color="#c0caf5",
-        fontsize=10,
-        family="monospace",
+    # Quarantine zone glow ring
+    q_ring = mpatches.Circle(
+        (float(sim.quarantine[0]), float(sim.quarantine[1])),
+        0.06, fill=False, edgecolor="#9ece6a", linewidth=2.0, alpha=0.7, linestyle="--"
     )
-    ax.legend(loc="lower left", fontsize=8)
+    ax.add_patch(q_ring)
+    ax.text(
+        float(sim.quarantine[0]), float(sim.quarantine[1]) - 0.08,
+        "QUARANTINE", ha="center", va="top", fontsize=7, color="#9ece6a", alpha=0.8, family="monospace"
+    )
+
+    # Client nodes
+    ax.scatter(sim.clients[:, 0], sim.clients[:, 1], s=35, c="#7aa2f7", alpha=0.8, zorder=5)
+    for ci, c in enumerate(sim.clients):
+        ax.text(float(c[0]), float(c[1]) + 0.025, f"C{ci}", fontsize=5, ha="center",
+                color="#7aa2f7", alpha=0.5, family="monospace")
+
+    # Server nodes (will pulse via dynamic scatter)
+    srv_sc = ax.scatter(
+        sim.servers[:, 0], sim.servers[:, 1],
+        s=300, c="#f7768e", marker="s", zorder=10, edgecolors="#ff9bb0", linewidths=1.5
+    )
+    srv_glow = ax.scatter(
+        sim.servers[:, 0], sim.servers[:, 1],
+        s=600, c="#f7768e", marker="s", alpha=0.15, zorder=9
+    )
+    for si, s in enumerate(sim.servers):
+        ax.text(float(s[0]), float(s[1]) + 0.035, f"SRV{si}", fontsize=7, ha="center",
+                color="#ff9bb0", weight="bold", family="monospace", zorder=11)
+
+    # Quarantine beacon
+    ax.scatter([sim.quarantine[0]], [sim.quarantine[1]], s=280, c="#9ece6a", marker="X", zorder=10,
+               edgecolors="#b4f28a", linewidths=1.5)
+
+    # Dynamic scatters
+    pkt_sc = ax.scatter([], [], s=6, c="#e0af68", alpha=0.5, zorder=6)
+    anom_sc = ax.scatter([], [], s=28, c="#ff5555", alpha=0.9, zorder=8, marker="D", edgecolors="#ff8888",
+                         linewidths=0.5)
+    anom_glow = ax.scatter([], [], s=70, c="#ff3333", alpha=0.2, zorder=7, marker="D")
+    swim_sc = ax.scatter(
+        sim.swimmers[:, 0], sim.swimmers[:, 1],
+        s=18, c="#73daca", alpha=0.95, zorder=8, edgecolors="#a3f0e0", linewidths=0.4
+    )
+    swim_trail = ax.scatter([], [], s=5, c="#73daca", alpha=0.15, zorder=4)
+
+    # HUD text elements
+    hud_title = ax_hud.text(
+        0.5, 0.95, "SIFTA  CRUCIBLE  —  CYBER-DEFENSE  SIMULATION",
+        transform=ax_hud.transAxes, ha="center", va="top",
+        fontsize=14, color="#c0caf5", weight="bold", family="monospace"
+    )
+    hud_stats = ax_hud.text(
+        0.5, 0.45, "", transform=ax_hud.transAxes, ha="center", va="center",
+        fontsize=11, color="#c0caf5", family="monospace"
+    )
+    hud_lore = ax_hud.text(
+        0.5, 0.05, "Territory is the law.  The ledger remembers.  ASCII body endures.",
+        transform=ax_hud.transAxes, ha="center", va="bottom",
+        fontsize=8, color="#565f89", style="italic", family="monospace"
+    )
+
+    # Status bar in main axis
+    status_txt = ax.text(
+        0.01, 0.01, "", transform=ax.transAxes, ha="left", va="bottom",
+        fontsize=8, color="#565f89", family="monospace"
+    )
+
+    # Legend
+    ax.legend(
+        handles=[
+            mpatches.Patch(color="#7aa2f7", label="Clients"),
+            mpatches.Patch(color="#f7768e", label="Servers"),
+            mpatches.Patch(color="#e0af68", label="Traffic"),
+            mpatches.Patch(color="#ff5555", label="Anomaly"),
+            mpatches.Patch(color="#73daca", label="Swimmers"),
+            mpatches.Patch(color="#9ece6a", label="Quarantine"),
+        ],
+        loc="lower left", fontsize=7, facecolor="#0b1020", edgecolor="#1a2040",
+        labelcolor="#c0caf5", framealpha=0.9,
+    )
 
     # UI widgets
-    on_ax = fig.add_axes([0.11, 0.84, 0.20, 0.07])
-    an_ax = fig.add_axes([0.33, 0.84, 0.20, 0.07])
-    sl_ax = fig.add_axes([0.58, 0.86, 0.30, 0.04])
+    on_ax = fig.add_axes([0.08, 0.78, 0.22, 0.05])
+    an_ax = fig.add_axes([0.32, 0.78, 0.22, 0.05])
+    sl_ax = fig.add_axes([0.58, 0.79, 0.32, 0.03])
+    for w_ax in (on_ax, an_ax, sl_ax):
+        w_ax.set_facecolor("#1a1b36")
 
-    btn_onslaught = Button(on_ax, "Trigger Crucible Onslaught", color="#7aa2f7", hovercolor="#9ab4ff")
-    btn_anomaly = Button(an_ax, "Inject Anomaly", color="#f7768e", hovercolor="#ff9bb0")
-    sl_agents = Slider(sl_ax, "Swarm Agent Count", 10, 400, valinit=cfg.agents, valstep=1)
+    btn_onslaught = Button(on_ax, "TRIGGER CRUCIBLE ONSLAUGHT", color="#1a2a50", hovercolor="#2a3a70")
+    btn_onslaught.label.set_color("#7aa2f7")
+    btn_onslaught.label.set_fontsize(8)
+    btn_onslaught.label.set_family("monospace")
+
+    btn_anomaly = Button(an_ax, "INJECT ANOMALY x6", color="#3a1020", hovercolor="#5a2030")
+    btn_anomaly.label.set_color("#f7768e")
+    btn_anomaly.label.set_fontsize(8)
+    btn_anomaly.label.set_family("monospace")
+
+    sl_agents = Slider(sl_ax, "Swarm", 10, 400, valinit=cfg.agents, valstep=1,
+                       color="#73daca", track_color="#1a2040")
+    sl_agents.label.set_color("#73daca")
+    sl_agents.label.set_fontsize(8)
+    sl_agents.valtext.set_color("#73daca")
 
     def _on_onslaught(_event) -> None:
         sim.trigger_onslaught()
@@ -342,17 +435,17 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
     btn_anomaly.on_clicked(_on_anomaly)
     sl_agents.on_changed(_on_agents)
 
-    # start in onslaught for drama
     sim.trigger_onslaught()
+
+    prev_swimmers = sim.swimmers.copy()
 
     plt.ion()
     for i in range(1, ticks + 1):
         m = sim.step()
         if i % max(1, render_every) != 0 and i != 1 and i != ticks:
             continue
-        # split packet cloud by anomaly/non anomaly
-        pkt_xy = []
-        an_xy = []
+
+        pkt_xy, an_xy = [], []
         for p in sim.packets:
             if p["blocked"] or p["quarantined"]:
                 continue
@@ -361,17 +454,50 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
                 an_xy.append([float(pos[0]), float(pos[1])])
             else:
                 pkt_xy.append([float(pos[0]), float(pos[1])])
-        pkt_sc.set_offsets(np.array(pkt_xy, dtype=np.float32) if pkt_xy else np.zeros((0, 2), dtype=np.float32))
-        anom_sc.set_offsets(np.array(an_xy, dtype=np.float32) if an_xy else np.zeros((0, 2), dtype=np.float32))
-        swim_sc.set_offsets(sim.swimmers)
 
-        txt.set_text(
-            "SIFTA CRUCIBLE\n"
-            f"load={m['load_pct']:.1f}%  blocked={int(m['blocked_total'])}  "
-            f"quarantined={int(m['quarantined_total'])}\n"
-            f"packets_live={int(m['packets_live'])}  onslaught={'ON' if m['onslaught_active'] > 0 else 'OFF'}\n"
-            "Lore: 'Territory is the law. The ledger remembers. ASCII body endures.'"
+        pkt_sc.set_offsets(np.array(pkt_xy, dtype=np.float32) if pkt_xy else np.zeros((0, 2), dtype=np.float32))
+        anom_arr = np.array(an_xy, dtype=np.float32) if an_xy else np.zeros((0, 2), dtype=np.float32)
+        anom_sc.set_offsets(anom_arr)
+        anom_glow.set_offsets(anom_arr)
+        swim_sc.set_offsets(sim.swimmers)
+        swim_trail.set_offsets(prev_swimmers.copy())
+        prev_swimmers = sim.swimmers.copy()
+
+        # Server stress pulsing — larger glow when load is high
+        load_frac = min(1.0, m["load_pct"] / 100.0)
+        glow_size = 400 + 800 * load_frac
+        glow_alpha = 0.08 + 0.25 * load_frac
+        srv_glow.set_sizes(np.full(len(sim.servers), glow_size))
+        srv_glow.set_alpha(float(glow_alpha))
+        stress_colors = [(1.0, 0.47 * (1.0 - load_frac), 0.47 * (1.0 - load_frac))] * len(sim.servers)
+        srv_sc.set_facecolors(stress_colors)
+
+        # Network lines pulse brighter under onslaught
+        net_alpha = 0.3 + 0.5 * load_frac
+        net_lc.set_alpha(float(net_alpha))
+        net_color = (
+            0.1 + 0.2 * load_frac,
+            0.12 + 0.08 * load_frac,
+            0.25 + 0.15 * load_frac,
         )
+        net_lc.set_colors([net_color])
+
+        # Quarantine ring pulses when captures happen
+        q_alpha = 0.5 + 0.5 * min(1.0, m["quarantined_now"] / 3.0)
+        q_ring.set_alpha(float(q_alpha))
+
+        onslaught_tag = "ONSLAUGHT ACTIVE" if m["onslaught_active"] > 0 else "PATROL MODE"
+        hud_stats.set_text(
+            f"LOAD {m['load_pct']:5.1f}%  |  "
+            f"BLOCKED {int(m['blocked_total']):>7,}  |  "
+            f"QUARANTINED {int(m['quarantined_total']):>5,}  |  "
+            f"LIVE {int(m['packets_live']):>5,}  |  "
+            f"{onslaught_tag}"
+        )
+        hud_stats.set_color("#ff5555" if m["onslaught_active"] > 0 else "#9ece6a")
+
+        status_txt.set_text(f"tick {int(m['tick'])}/{ticks}  swimmers={len(sim.swimmers)}")
+
         fig.canvas.draw_idle()
         plt.pause(0.001)
 
