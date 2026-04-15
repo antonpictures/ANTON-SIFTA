@@ -124,6 +124,16 @@ def auto_git_heartbeat() -> None:
 def utility_burn_cycle() -> None:
     print("=== SIFTA THERMAL REWARD PROTOCOL ===")
     print("Mining STGM based on passive agent node connection & energy draw.")
+    # Not genesis: periodic UTILITY_MINT. Disable for strict earn-only policy:
+    #   SIFTA_PASSIVE_UTILITY_MINT=0
+    if os.environ.get("SIFTA_PASSIVE_UTILITY_MINT", "1").strip().lower() in ("0", "false", "no", "off"):
+        print("[!] SIFTA_PASSIVE_UTILITY_MINT disabled — no automatic UTILITY_MINT loops.")
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            print("\n[!] Utility Burn idle exit.")
+        return
     try:
         while True:
             if not STATE_DIR.exists():

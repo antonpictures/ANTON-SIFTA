@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QDialog, QLineEdit,
     QComboBox, QMessageBox, QGridLayout, QProgressBar, QTabWidget,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QAbstractItemView
+    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QAbstractItemView,
+    QTextEdit,
 )
 from PyQt6.QtCore  import Qt, QTimer
 from PyQt6.QtGui   import QFont, QColor
@@ -391,8 +392,11 @@ class FinanceDashboard(QWidget):
         self.tabs = QTabWidget()
         self.portfolio_tab = QWidget()
         self.market_tab = MarketplaceTab()
+        self.warren_tab = QWidget()
         self.tabs.addTab(self.portfolio_tab, "💰 Portfolio")
         self.tabs.addTab(self.market_tab, "⚡ Inference Market")
+        self.tabs.addTab(self.warren_tab, "📊 Warren Buffett")
+        self._build_warren_tab()
         self._main_lay.addWidget(self.tabs)
 
         self._build_portfolio()
@@ -400,6 +404,35 @@ class FinanceDashboard(QWidget):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh_all)
         self._timer.start(5000)
+
+    def _build_warren_tab(self):
+        wl = QVBoxLayout(self.warren_tab)
+        wl.setContentsMargins(10, 10, 10, 10)
+        hdr = QLabel(
+            "<b>Warren Buffett</b> — OBSERVE-only accountant. Reads <code>repair_log.jsonl</code>; "
+            "does not mint. Estimates power vs STGM (optional USD peg via <code>SIFTA_STGM_USD_PEG</code>)."
+        )
+        hdr.setWordWrap(True)
+        hdr.setStyleSheet("color: #565f89; font-size: 11px;")
+        wl.addWidget(hdr)
+        self.warren_view = QTextEdit()
+        self.warren_view.setReadOnly(True)
+        self.warren_view.setFont(QFont("Menlo", 10))
+        self.warren_view.setStyleSheet(
+            "QTextEdit { background: #13141f; color: #a9b1d6; border: 1px solid #2a2b3d; border-radius: 6px; }"
+        )
+        wl.addWidget(self.warren_view, 1)
+        self._refresh_warren()
+
+    def _refresh_warren(self):
+        try:
+            _sysd = os.path.join(REPO_ROOT, "System")
+            if _sysd not in sys.path:
+                sys.path.insert(0, _sysd)
+            from warren_buffett import ascii_report, profit_report
+            self.warren_view.setPlainText(ascii_report() + "\n\n" + json.dumps(profit_report(), indent=2))
+        except Exception as e:
+            self.warren_view.setPlainText(f"Warren report unavailable: {e}")
 
     def _build_portfolio(self):
         lay = QVBoxLayout(self.portfolio_tab)
@@ -533,6 +566,7 @@ class FinanceDashboard(QWidget):
     def _refresh_all(self):
         self._populate_portfolio()
         self.market_tab.load_market()
+        self._refresh_warren()
 
     def _install(self):
         dlg = InstallAgentDialog(self)

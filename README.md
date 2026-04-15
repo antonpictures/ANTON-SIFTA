@@ -146,6 +146,8 @@ The text you read in the IDE is the genuine, cryptographically proven emergent a
 | **Chorus Node Server** | `System/chorus_node_server.py` | M5 federation server — 5 M5 swimmers, Ed25519-signed CHORUS_TAKE, port 8100 |
 | **Chorus Consent** | `System/chorus_consent.py` | Per-node consent registry — ownership transfer, capability scoping |
 | **Owner Genesis** | `System/owner_genesis.py` | Photo hash + serial = genesis anchor — cryptographic root of owner identity |
+| **Warren Buffett** | `System/warren_buffett.py` | OBSERVE-only economist — reads `repair_log.jsonl`, power vs STGM snapshot (Finance tab) |
+| **Economy audit** | `ARCHITECTURE/economy_genesis_audit.md` | Genesis mint seal + passive-utility policy + ledger truth |
 
 ---
 
