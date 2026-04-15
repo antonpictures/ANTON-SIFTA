@@ -225,6 +225,30 @@ Use this flow for any app:
 - **What to watch:** Pulse cadence, anomaly spikes, systemic instability clues.
 - **Key principle:** Early warning before visible failure.
 
+### Territory Is The Law
+- **Purpose:** Geospatial Swarm Guardian. Tracks a child, pet, AirTag, or phone
+  on a city graph.  Swimmers deposit safe pheromone on routine paths.
+  Deviations from the green trail trigger sentinel alerts.
+  Pathfinders calculate the safest route around danger zones.
+- **What to watch:**
+  - **Green trails** — the routine pheromone map.  Thick green = well-known safe path.
+  - **Entity star (★)** — the tracked person/device.  White = safe, red = deviating.
+  - **RoutineMappers (◆ teal)** — follow the entity, reinforce safe trails.
+  - **DeviationSentinels (▲ amber)** — orbit the entity, flash red when off-trail.
+  - **Pathfinders (● magenta)** — explore unmapped territory.
+  - **PerimeterGuards (■ grey)** — patrol the outer boundary.
+  - **Alert log** — real-time deviation/hazard events with timestamps.
+  - **Inject Deviation** — forces entity off-trail to test sentinel response.
+  - **Flag Hazard** — drops danger pheromone; routes avoid the red zone.
+  - **Safest Route** — Dijkstra with pheromone-weighted cost back to Home.
+- **Key principle:** The territory learns routines through pheromone.  Anomalies
+  are detected by absence of safe pheromone, not by rigid geofences.
+  The more the routine repeats, the stronger the trail, the faster
+  the alert when something deviates.  Territory is the Law.
+- **Data files:**
+  - `.sifta_state/territory_routine.json` — persisted pheromone map.
+  - `.sifta_state/territory_alerts.jsonl` — alert history.
+
 ---
 
 ## Reading Order For Scientists

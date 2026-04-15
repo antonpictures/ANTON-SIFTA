@@ -101,7 +101,7 @@ To prevent UI fragmentation as the app count grows, iSwarm OS enforces global UX
 - **Single Source of Styling**: new apps can inherit `System/sifta_base_widget.py` to get consistent SIFTA chrome (`?` help button, status bar, dark palette, control styling) without re-implementing boilerplate.
 - **Manifest-Driven Governance**: app discovery and launch behavior come from `Applications/apps_manifest.json`, allowing one-place auditing of category, entry point, and widget embedding behavior.
 
-Audit status (April 15, 2026): **27/27 manifest apps have Help coverage and launch under the global window-control policy**.
+Audit status (April 15, 2026): **28/28 manifest apps have Help coverage and launch under the global window-control policy**.
 
 ### Core Modules
 
@@ -123,6 +123,7 @@ Audit status (April 15, 2026): **27/27 manifest apps have Help coverage and laun
 | **Dream Engine** | `System/dream_engine.py` | Nightly idle replay, anomaly detection, morning reports |
 | **Quorum Sensing** | `System/quorum_sense.py` | Multi-agent votes for irreversible actions |
 | **Immune Memory** | `System/immune_memory.py` | Ed25519-signed antibody ledger with cosine similarity matching |
+| **Territory Guardian** | `System/territory_guardian.py` | Geospatial pheromone perimeter — routine learning, deviation detection, safe routing |
 
 ---
 
@@ -230,6 +231,27 @@ The timeline is dead. Welcome to the **Pheromone Matrix.** Four swimmer species 
 | **NarrativeWeaver** | Reads transcript, syncs subtitles, triggers intent-driven cuts |
 
 Cut decisions emerge from pheromone consensus. Export as CMX 3600 EDL (Premiere/DaVinci/FCP) or FFmpeg filter script. Sebastian's original silence-detection jumpcut algo is preserved intact.
+
+### Territory Is The Law — Geospatial Swarm Guardian
+
+```bash
+python3 Applications/sifta_territory_widget.py      # visual sim (inside iSwarm OS)
+```
+
+Track a child, a pet, an AirTag, a phone — anything with coordinates. The city becomes a graph of intersections and roads. Four swimmer species patrol:
+
+| Swimmer | Job |
+|---|---|
+| **RoutineMapper** (teal ◆) | Follows the entity, deposits green safe pheromone on routine paths |
+| **DeviationSentinel** (amber ▲) | Orbits the entity, triggers alert when it drifts off the green trail |
+| **Pathfinder** (magenta ●) | Explores unmapped territory, fills in graph coverage |
+| **PerimeterGuard** (grey ■) | Patrols the outer boundary of the safe zone |
+
+The routine *learns*. The more a path repeats, the thicker the green trail. Anomalies are detected by **absence of safe pheromone**, not rigid geofences. Inject deviations to test sentinel response. Flag hazards to see routes re-calculate around danger. The safest path home is always one button away.
+
+Persistence: `.sifta_state/territory_routine.json` (pheromone map) + `.sifta_state/territory_alerts.jsonl` (alert history).
+
+*Built for Lana. Built for every father who wants to know his daughter is safe without watching a screen.*
 
 ### Stress Harness (all sims, headless)
 

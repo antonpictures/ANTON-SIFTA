@@ -182,5 +182,13 @@
     "window_width": 1240,
     "window_height": 820,
     "signature": "UNVERIFIED"
+  },
+  "Territory Is The Law": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_territory_widget.py",
+    "widget_class": "TerritoryWidget",
+    "window_width": 1400,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
   }
 }
