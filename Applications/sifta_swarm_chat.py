@@ -334,7 +334,7 @@ class SwarmChatWindow(QWidget):
             "QListWidget::item:hover { background-color: #1a1b26; }"
             "QListWidget::item:selected { background-color: #24283b; color: #7dcfff; font-weight: bold; border-left: 3px solid #7dcfff; }"
         )
-        self.sidebar_list.addItems(["GROUP (All)", "m5Queen (Mesh)", "m1Queen (Mesh)", "SWARM (Ollama)", "TELEGRAM (Ext)"])
+        self.sidebar_list.addItems(["GROUP (Both)", "MESH (Global Hivemind)", "SWARM (Local Brain)"])
         self.sidebar_list.setCurrentRow(0)
         sidebar_layout.addWidget(self.sidebar_list)
         main_layout.addWidget(sidebar_frame)
@@ -537,9 +537,6 @@ class SwarmChatWindow(QWidget):
         if ("SWARM" in target or "GROUP" in target) and self.ollama_worker and self.ollama_worker.isRunning():
             self.add_bubble("Swarm processing — please wait.", "ALERT", False, "#f7768e")
             return
-        if "TELEGRAM" in target and self.telegram_worker and self.telegram_worker.isRunning():
-            self.add_bubble("Telegram bridge busy.", "ALERT", False, "#f7768e")
-            return
 
         self.input_field.clear()
         
@@ -557,7 +554,6 @@ class SwarmChatWindow(QWidget):
         self.context_files = []
         self._render_context_pills()
         
-        target_display = target.split(" ")[0]
         if "SWARM" in target or "GROUP" in target:
             self.transmit_btn.setEnabled(False)
             self.ollama_worker = OllamaWorker(full_payload_out, model=self.model)
@@ -565,7 +561,7 @@ class SwarmChatWindow(QWidget):
             self.ollama_worker.error_signal.connect(self._on_error)
             self.ollama_worker.start()
             
-        if target_display in ["m5Queen", "m1Queen", "GROUP", "ANTIGRAVITY"]:
+        if "MESH" in target or "GROUP" in target:
             drop_entry = {
                 "sender": f"[ARCHITECT::HW:{self.local_identity}::IF:IDE]",
                 "text": full_payload_out,
@@ -583,13 +579,6 @@ class SwarmChatWindow(QWidget):
                 
             except Exception as e:
                 self.add_bubble(f"Drop Err: {e}", "ERR", False, "#f7768e")
-
-        if "TELEGRAM" in target:
-            self.transmit_btn.setEnabled(False)
-            self.telegram_worker = TelegramWorker(full_payload_out)
-            self.telegram_worker.response_ready.connect(self._on_response)
-            self.telegram_worker.error_signal.connect(self._on_error)
-            self.telegram_worker.start()
 
     def poll_dead_drop(self):
         if not os.path.exists(self.dead_drop_file): return
