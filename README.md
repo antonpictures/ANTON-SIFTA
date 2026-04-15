@@ -126,7 +126,7 @@ Audit status (April 15, 2026): **31/31 manifest apps have Help coverage and laun
 | **Territory Guardian** | `System/territory_guardian.py` | Geospatial pheromone perimeter — routine learning, deviation detection, safe routing |
 | **Fluid Firmware** | `System/fluid_firmware.py` | Swarm-routed hardware membrane — self-healing silicon, liquid updates, thermal foraging |
 | **Diagnostic Swarm** | `System/diagnostic_swarm.py` | Medical terrain engine — tissue/genomic/blood anomaly detection via swimmer chemotaxis |
-| **Regenerative Factory** | `System/regenerative_factory.py` | Stigmergic manufacturing — ODRI 3D-print coordination, STGM for physical production |
+| **Bauwens Regenerative Factory** | `System/regenerative_factory.py` | Stigmergic manufacturing — ODRI 3D-print coordination, STGM for physical production |
 
 ---
 
@@ -235,13 +235,13 @@ The timeline is dead. Welcome to the **Pheromone Matrix.** Four swimmer species 
 
 Cut decisions emerge from pheromone consensus. Export as CMX 3600 EDL (Premiere/DaVinci/FCP) or FFmpeg filter script. Sebastian's original silence-detection jumpcut algo is preserved intact.
 
-### Regenerative Factory — Stigmergic Decentralized Manufacturing
+### Bauwens Regenerative Factory — Stigmergic Decentralized Manufacturing
 
 ```bash
 python3 Applications/sifta_factory_widget.py        # visual sim (inside iSwarm OS)
 ```
 
-*"Crypto for real... coordination software for regenerative production, not just moving labor and capital, but actual things."* — **Michel Bauwens**, P2P Foundation, April 15, 2026
+*"Crypto for real... coordination software for regenerative production, not just moving labor and capital, but actual things."* — **[Michel Bauwens](https://x.com/mbauwens/status/2044232851307278498)**, P2P Foundation, April 15, 2026
 
 The Swarm coordinates physical reality. A 20x30 factory grid with 8 printers producing Open Dynamic Robot Initiative (ODRI) components. Four swimmer species move filament, power, printed parts, and quality inspections. STGM is minted **only** when raw material is converted into a functional kinetic part.
 

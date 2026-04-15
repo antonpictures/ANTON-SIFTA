@@ -207,7 +207,7 @@
     "window_height": 860,
     "signature": "UNVERIFIED"
   },
-  "Regenerative Factory": {
+  "Bauwens Regenerative Factory": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_factory_widget.py",
     "widget_class": "FactoryWidget",

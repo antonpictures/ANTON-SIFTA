@@ -186,7 +186,7 @@ class FactoryCanvas(FigureCanvas):
 
         # HUD
         hud = [
-            "REGENERATIVE FACTORY — STIGMERGIC MANUFACTURING",
+            "BAUWENS REGENERATIVE FACTORY — STIGMERGIC MANUFACTURING",
             f"Printers: {telem['active_printers']}/{telem['printer_count']} active  |  "
             f"Swimmers: {telem['active_swimmers']}  |  Deliveries: {telem['total_deliveries']}",
             f"Printed: {telem['total_printed']}  |  Assembled: {telem['total_assembled']}  |  "
@@ -273,8 +273,8 @@ class FactoryCanvas(FigureCanvas):
 # ── Main Widget ─────────────────────────────────────────────────
 
 class FactoryWidget(SiftaBaseWidget):
-    """Regenerative Factory — Stigmergic Decentralized Manufacturing."""
-    APP_NAME = "Regenerative Factory"
+    """Bauwens Regenerative Factory — Stigmergic Decentralized Manufacturing."""
+    APP_NAME = "Bauwens Regenerative Factory"
 
     def build_ui(self, layout: QVBoxLayout) -> None:
         ctrl = QHBoxLayout()
@@ -289,8 +289,13 @@ class FactoryWidget(SiftaBaseWidget):
 
         ctrl.addStretch()
 
-        lbl = QLabel("Bauwens validated: STGM minted only for physical production")
-        lbl.setStyleSheet("color: #8090b0; font-size: 9px; font-style: italic;")
+        lbl = QLabel(
+            '<a href="https://x.com/mbauwens/status/2044232851307278498" '
+            'style="color: #00ffc8; font-size: 9px;">'
+            'Michel Bauwens (P2P Foundation): "crypto for real… actual things"</a>'
+        )
+        lbl.setOpenExternalLinks(True)
+        lbl.setStyleSheet("font-size: 9px; font-style: italic;")
         ctrl.addWidget(lbl)
 
         layout.addLayout(ctrl)
@@ -379,7 +384,7 @@ class FactoryWidget(SiftaBaseWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = FactoryWidget()
-    w.setWindowTitle("Regenerative Factory — Stigmergic Manufacturing")
+    w.setWindowTitle("Bauwens Regenerative Factory — Stigmergic Manufacturing")
     w.resize(1440, 900)
     w.show()
     sys.exit(app.exec())

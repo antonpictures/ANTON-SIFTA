@@ -225,14 +225,15 @@ Use this flow for any app:
 - **What to watch:** Pulse cadence, anomaly spikes, systemic instability clues.
 - **Key principle:** Early warning before visible failure.
 
-### Regenerative Factory
+### Bauwens Regenerative Factory
 - **Purpose:** Prove the Swarm can coordinate physical reality.  A decentralized
   3D-printing farm producing Open Dynamic Robot Initiative (ODRI) components.
   Swimmers move filament, power, and assembly intent — not capital.
   STGM is minted ONLY when raw material is converted into a functional kinetic part.
-- **Validated by:** Michel Bauwens (P2P Foundation), April 15, 2026.
-  "Crypto for real... coordination software for regenerative production,
-   not just moving labor and capital, but actual things."
+- **Named for:** Michel Bauwens (P2P Foundation), who validated the architecture
+  on April 15, 2026: "Crypto for real... coordination software for regenerative
+  production, not just moving labor and capital, but actual things."
+  Tweet: https://x.com/mbauwens/status/2044232851307278498
 - **Factory layout:** 20x30 grid (600 cells)
   - **Sources (S)** — filament spools and power stations.
   - **Printers (P)** — 8 printers, each producing a specific ODRI component.
