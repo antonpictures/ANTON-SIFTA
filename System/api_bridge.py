@@ -8,6 +8,7 @@
 # ─────────────────────────────────────────────────────────────
 
 import json
+import sys
 import time
 import os
 import uuid
@@ -15,6 +16,10 @@ import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SYS = os.path.join(REPO_ROOT, "System")
+if _SYS not in sys.path:
+    sys.path.insert(0, _SYS)
+from ledger_append import append_jsonl_line
 STATE_DIR = os.path.join(REPO_ROOT, ".sifta_state")
 MEMPOOL_FILE = os.path.join(STATE_DIR, "human_signals.jsonl")
 DEAD_DROP_FILE = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
@@ -41,8 +46,7 @@ def ingest_to_mempool(tx_hash, from_jid, text):
         "timestamp": int(time.time()),
         "text": text
     }
-    with open(MEMPOOL_FILE, "a") as f:
-        f.write(json.dumps(drop_payload) + "\n")
+    append_jsonl_line(MEMPOOL_FILE, drop_payload)
     return target_serial
 
 def block_on_dead_drop(tx_hash, timeout=60):

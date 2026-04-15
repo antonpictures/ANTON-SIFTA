@@ -29,8 +29,9 @@ Related (server / wormhole — see server.py):
     If unset (default with a key), GET /api/* requires the key except SIFTA_GET_PROTECT_ALLOW.
     SIFTA_PROTECT_GET=1 with SIFTA_OPEN_GET_API=1 still requires the key on non-allowlisted GET routes.
 
-  /api/swarm_state: per-node stgm_balance is derived from repair_log (ledger_balance); stgm_balance_state_file
+  /api/swarm_state and /api/agents: stgm_balance is derived from repair_log (ledger_balance); stgm_balance_state_file
   is the on-disk agent JSON for comparison. Transaction tail uses repair_log only, not STGM_TX_LOG.jsonl.
+  Finance GUI uses the same quorum for STGM; genesis mismatch flags swimmers without zeroing ledger truth.
 
 Hardening backlog (not solved here):
   - Wormhole / receive_soul still assume LAN trust unless you add mTLS or VPN.

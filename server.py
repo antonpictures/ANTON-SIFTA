@@ -483,6 +483,8 @@ async def get_agents(show_detectives: bool = False):
     Detectives (Bureau) are HIDDEN when RESTING on the couch — only surface when ACTIVE.
     Pass ?show_detectives=true to see them regardless.
     """
+    from inference_economy import ledger_balance
+
     agents = []
     now = int(time.time())
     
@@ -505,7 +507,9 @@ async def get_agents(show_detectives: bool = False):
                     continue
                 
                 agent_id = state.get("id", "")
-                
+                state["stgm_balance_state_file"] = float(state.get("stgm_balance", 0) or 0)
+                state["stgm_balance"] = float(ledger_balance(agent_id))
+
                 # Coerce death state if listed in registry (even if JSON says NOMINAL)
                 if agent_id in death_registry:
                     state["style"] = "DEAD"

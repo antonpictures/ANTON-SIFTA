@@ -6,6 +6,7 @@
 #
 import hashlib
 import json
+import sys
 import time
 import re
 import base64
@@ -453,18 +454,22 @@ def apply_damage(state: dict, strike_type: str) -> dict:
     drip_reward = cost * 0.05
     state["stgm_balance"] = state.get("stgm_balance", 0.0) + drip_reward
 
-    # Log to the decentralized ledger
     import uuid
+
     ledger = Path(__file__).parent / "repair_log.jsonl"
     event = {
         "timestamp": int(time.time()),
         "agent": state.get("id", "UNKNOWN"),
         "amount_stgm": drip_reward,
         "reason": f"COMPUTE_BURN_{strike_type.upper()}",
-        "hash": str(uuid.uuid4())
+        "hash": str(uuid.uuid4()),
     }
-    with open(ledger, "a") as f:
-        f.write(json.dumps(event) + "\n")
+    _sys = Path(__file__).parent / "System"
+    if str(_sys) not in sys.path:
+        sys.path.insert(0, str(_sys))
+    from ledger_append import append_ledger_line
+
+    append_ledger_line(ledger, event)
 
     if state["energy"] <= 0:
         state["style"] = "DEAD"

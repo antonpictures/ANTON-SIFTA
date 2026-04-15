@@ -11,7 +11,7 @@ sys.path.insert(0, REPO_ROOT)
 _sys = os.path.join(REPO_ROOT, "System")
 if _sys not in sys.path:
     sys.path.insert(0, _sys)
-from ledger_append import append_ledger_line
+from ledger_append import append_ledger_line, append_jsonl_line
 from inference_economy import ledger_balance
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -55,11 +55,13 @@ AGENT_FACES = {
     "SEBASTIAN":  "[_o_]", "HERMES":   "[_v_]",  "IMPERIAL":  "[@_@]",
     "REPAIR-DRONE":"[X_X]","M1SIFTA_BODY":"[M1]","M5SIFTA_BODY":"[M5]",
     "GROK_SWARMGPT":"[G_G]","OPENCLAW_QUEEN":"[Q_Q]","M1QUEEN":"[q_q]",
+    "CURSOR_IDE": "[C>]", "ANTIGRAVITY_IDE": "[A>]",
 }
 AGENT_COLORS = {
     "ALICE_M5":"#ff9e64","M1THER":"#7dcfff","ANTIALICE":"#bb9af7",
     "SEBASTIAN":"#9ece6a","HERMES":"#e0af68","M5SIFTA_BODY":"#ff9e64",
     "M1SIFTA_BODY":"#7dcfff","GROK_SWARMGPT":"#73daca","M1QUEEN":"#7dcfff",
+    "CURSOR_IDE":"#7aa2f7","ANTIGRAVITY_IDE":"#bb9af7",
 }
 DEFAULT_COLOR = "#565f89"
 
@@ -104,13 +106,13 @@ def load_agents():
             if "id" not in data or not data["id"]:
                 data["id"] = key
 
-            # SYBIL DEFENSE FLAG (Ed25519 Validation)
+            # SYBIL DEFENSE FLAG (Ed25519 Validation) — does NOT zero quorum STGM.
             agent_id = data["id"]
+            file_bal = float(data.get("stgm_balance", 0) or 0)
+            data["stgm_balance_file"] = file_bal
             claimed_seal = data.get("architect_seal", "UNSEALED")
             hw_serial = data.get("homeworld_serial", "UNKNOWN")
-            
-            # 1. Must exist in genesis
-            # 2. Extract payload to verify
+
             # The genesis payload that was signed was: "agent_id:stgm:serial:timestamp"
             is_valid = False
             if agent_id in genesis_registry:
@@ -118,12 +120,9 @@ def load_agents():
                 seal_signature = gen_data["seal"]
                 gen_ts = gen_data["timestamp"]
                 gen_stgm = gen_data["starting_stgm"]
-                
-                # Check that state payload matches genesis payload
+
                 if claimed_seal == seal_signature and data.get("homeworld_serial") == gen_data["serial"]:
-                    # Reconstruct exact string that was signed
                     verify_str = f"{agent_id}:{gen_stgm}:{hw_serial}:{gen_ts}"
-                    import sys
                     sys.path.append(REPO_ROOT)
                     try:
                         from System.crypto_keychain import verify_block
@@ -131,12 +130,10 @@ def load_agents():
                             is_valid = True
                     except Exception as e:
                         print(f"Verify failed: {e}")
-            
-            if not is_valid:
-                data["sybil_quarantined"] = True
-                data["stgm_balance"] = 0.0  # Forcefully evaporate STGM for UI aggregate sum
-            else:
-                data["sybil_quarantined"] = False
+
+            data["sybil_quarantined"] = not is_valid
+            # Canonical display: repair_log quorum (same as server / spend guards).
+            data["stgm_balance"] = float(ledger_balance(agent_id))
 
             agents.append(data)
         except Exception:
@@ -155,17 +152,21 @@ class AgentCard(QFrame):
     def _build(self, a):
         agent_id = str(a.get("id") or a.get("_key","?")).upper()
         stgm     = float(a.get("stgm_balance") or 0)
+        file_claim = float(a.get("stgm_balance_file") or 0)
         energy   = int(a.get("energy") or 0)
         style    = str(a.get("style") or "UNKNOWN")
         face     = AGENT_FACES.get(agent_id, "[~_~]")
         color    = AGENT_COLORS.get(agent_id, DEFAULT_COLOR)
-        
+
         is_sybil = a.get("sybil_quarantined", False)
 
         if is_sybil:
-            color = "#f7768e"
-            face = "[X_X]"
-            style = "[SYBIL VECTOR DETECTED]"
+            color = "#e0af68"
+            face = "[!_!]"
+            if stgm > 0:
+                style = "[GENESIS SEAL MISMATCH · QUORUM STGM OK]"
+            else:
+                style = "[GENESIS SEAL MISMATCH — NO LEDGER CREDITS FOR THIS ID]"
 
         self.setFixedHeight(130)
         self.setStyleSheet(f"""
@@ -209,9 +210,13 @@ class AgentCard(QFrame):
         # Energy bar
         energy_row = QHBoxLayout()
         if is_sybil:
-            sybil_warn = QLabel("⚠ QUARANTINED LEDGER MISMATCH")
-            sybil_warn.setFont(QFont("Inter", 9, QFont.Weight.Bold))
-            sybil_warn.setStyleSheet("color: #f7768e;")
+            warn_txt = "⚠ Genesis / seal check failed — UI shows quorum STGM from repair_log."
+            if abs(file_claim - stgm) > 0.0001 and file_claim > 0:
+                warn_txt += f" (JSON file claims {file_claim:,.1f})"
+            sybil_warn = QLabel(warn_txt)
+            sybil_warn.setFont(QFont("Inter", 8, QFont.Weight.Bold))
+            sybil_warn.setStyleSheet("color: #e0af68;")
+            sybil_warn.setWordWrap(True)
             energy_row.addWidget(sybil_warn)
         else:
             energy_bar = QProgressBar()
@@ -276,7 +281,7 @@ class InstallAgentDialog(QDialog):
 
         lay.addWidget(QLabel("Agent ID (e.g. SCOUT_M5):"))
         self.id_input = QLineEdit()
-        self.id_input.setPlaceholderText("AGENT_NAME")
+        self.id_input.setPlaceholderText("AGENT_NAME · try CURSOR_IDE for IDE-bound guest")
         lay.addWidget(self.id_input)
 
         lay.addWidget(QLabel("Role:"))
@@ -351,8 +356,7 @@ class InstallAgentDialog(QDialog):
             "hardware_serial": serial
         }
         try:
-            with open(os.path.join(REPO_ROOT, ".sifta_state", "genesis_log.jsonl"), "a") as f:
-                f.write(json.dumps(genesis_entry) + "\n")
+            append_jsonl_line(os.path.join(REPO_ROOT, ".sifta_state", "genesis_log.jsonl"), genesis_entry)
             if stgm > 0:
                 mint_entry = {
                     "timestamp": ts,
@@ -731,8 +735,7 @@ class MarketplaceTab(QWidget):
                     "timestamp": ts,
                     "text": f"[{seal}] INFERENCE PURCHASE REQUEST -> Node {target_serial}"
                 }
-                with open(os.path.join(STATE_DIR, "human_signals.jsonl"), "a") as f:
-                    f.write(json.dumps(drop_payload) + "\n")
+                append_jsonl_line(os.path.join(STATE_DIR, "human_signals.jsonl"), drop_payload)
 
                 # NATIVELY PUSH LEDGER TRANSACTION TO THE SWARM GRID
                 try:
