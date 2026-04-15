@@ -233,7 +233,7 @@ class ChatBubble(QWidget):
         
         # Bubble Frame
         self.bubble = QFrame()
-        self.bubble.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.MinimumExpanding)
+        self.bubble.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Preferred)
         bubble_layout = QVBoxLayout(self.bubble)
         bubble_layout.setContentsMargins(16, 12, 16, 12)
         
@@ -295,7 +295,7 @@ class SwarmChatWindow(QWidget):
         self.model  = model
         self.context_files = [] # Stores paths of attached files
         self.ollama_worker = None
-        self.telegram_worker = None
+        self.factory_worker = None  # Swimmer App Factory
 
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -404,7 +404,7 @@ class SwarmChatWindow(QWidget):
         self.bubble_container.setStyleSheet("background-color: transparent;")
         self.bubble_layout = QVBoxLayout(self.bubble_container)
         self.bubble_layout.setContentsMargins(20, 20, 20, 20)
-        self.bubble_layout.addStretch() # Pushes all bubbles downward to rest near the input field
+        self.bubble_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll_area.setWidget(self.bubble_container)
         
         # Apple-like subtle gradient background for the chat area instead of flat grey
@@ -554,6 +554,22 @@ class SwarmChatWindow(QWidget):
         self.context_files = []
         self._render_context_pills()
         
+        # ── BUILD COMMAND: Swimmer App Factory ──────────────────────────
+        build_match = re.match(r'^build:\s*(.+)', text, re.IGNORECASE)
+        if build_match and ("SWARM" in target or "GROUP" in target):
+            build_spec = build_match.group(1).strip()
+            if self.factory_worker and self.factory_worker.isRunning():
+                self.add_bubble("🏗️ Factory already building — please wait.", "ALERT", False, "#f7768e")
+                return
+            self.transmit_btn.setEnabled(False)
+            from System.swimmer_app_factory import AppFactoryWorker
+            self.factory_worker = AppFactoryWorker(build_spec, model=self.model)
+            self.factory_worker.progress.connect(self._on_factory_progress)
+            self.factory_worker.build_complete.connect(self._on_factory_success)
+            self.factory_worker.build_failed.connect(self._on_factory_failure)
+            self.factory_worker.start()
+            return
+
         if "SWARM" in target or "GROUP" in target:
             self.transmit_btn.setEnabled(False)
             self.ollama_worker = OllamaWorker(full_payload_out, model=self.model)
@@ -614,6 +630,18 @@ class SwarmChatWindow(QWidget):
 
     def _on_error(self, msg: str):
         self.add_bubble(msg, "SYSTEM ERR", False, "#f7768e")
+        self.transmit_btn.setEnabled(True)
+
+    # ── App Factory Callbacks ─────────────────────────────────────
+    def _on_factory_progress(self, msg: str):
+        self.add_bubble(msg, "🏗️ FACTORY", False, "#e0af68")
+
+    def _on_factory_success(self, msg: str):
+        self.add_bubble(msg, "🏗️ FACTORY", False, "#9ece6a")
+        self.transmit_btn.setEnabled(True)
+
+    def _on_factory_failure(self, msg: str):
+        self.add_bubble(msg, "🏗️ FACTORY", False, "#f7768e")
         self.transmit_btn.setEnabled(True)
 
     def _fetch_ollama_models(self):
