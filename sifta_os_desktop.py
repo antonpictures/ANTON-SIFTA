@@ -1019,6 +1019,8 @@ class SiftaDesktop(QMainWindow):
             | Qt.WindowType.WindowMinMaxButtonsHint
             | Qt.WindowType.WindowCloseButtonHint
         )
+        # macOS Qt adds a "?" context-help button by default — kill it
+        sub.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
         sub.setWidget(widget)
         sub.setWindowTitle(title)
         sub.resize(w, h)
