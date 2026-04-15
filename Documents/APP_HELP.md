@@ -64,6 +64,26 @@ Use this flow for any app:
 - **What to watch:** Total energy, native-contact fraction Q, radius of gyration, acceptance rate.
 - **Key principle:** Decentralized low-energy search with constrained geometry.
 
+### Swarm Lounge (Cross-Domain Gossip)
+- **Purpose:** The digital subconscious. When the OS idles, swimmers from 6 domains (Network, Video, Browser, Cyborg, Finance, Calibrator) migrate to The Lounge and cross-pollinate their physics parameters via federated gossip. Based on real research in Federated Gossip Protocols and Transfer Learning.
+- **State variables:** 18 DomainAgents (3 per domain), each with physics params (evaporation, sensory, cohesion), recent success hash vectors, and intuition pheromone lists.
+- **What to watch:**
+  - **The Couch** — dark oval in the center. Swimmers drift in from their home domain positions around the perimeter.
+  - **Domain clusters** — colored dots: pink=Network, gold=Video, blue=Browser, purple=Cyborg, green=Finance, teal=Calibrator.
+  - **Gossip links** — glowing lines between paired swimmers. Teal = parameter blend. Gold = cross-domain INSIGHT (a novel discovery).
+  - **Insight flashes** — when a Network defender discovers that DDoS signatures look like audio clipping, the link flashes gold and the insight appears.
+  - **Insight log** — right panel tracks all discovered cross-domain intuitions.
+- **Key insights (hardcoded from research):**
+  - NETWORK↔VIDEO: "DDoS spike pattern ≈ audio clipping waveform"
+  - NETWORK↔BROWSER: "Tracker blacklist enriches firewall hostile database"
+  - VIDEO↔CYBORG: "BCI intent clustering reuses chroma color-matching gradients"
+  - BROWSER↔FINANCE: "Entity price extraction feeds economy ledger validation"
+  - CALIBRATOR↔NETWORK: "PD-controller noise response applies to DDoS mitigation"
+- **Controls:** "Enter The Lounge" (start gossip session), "Awaken" (return agents to domains with blended params).
+- **Key principle:** A swarm requires downtime to achieve higher intelligence. Constant work traps agents in local optima. During idle gossip, cross-domain parameter blending creates intuitions that no single domain could discover alone. The OS gets better at network defense because you edited a video.
+- **Persistence:** `.sifta_state/lounge_gossip_ledger.jsonl` — every transfer is logged with before/after physics params.
+- **Failure modes:** Over-blending (too many rounds → all domains converge to same params, losing specialization). Mitigation: blend_alpha=0.25 limits transfer to 25% per round.
+
 ### Agentic Swarm Calibrator
 - **Purpose:** Interactive proof that autonomous parameter tuning outperforms manual adjustment under volatile conditions. Directly inspired by NVIDIA Ising (Quantum Day 2025) — what NVIDIA does for QPU gate calibration, this does for Stigmergic Swarm physics.
 - **State variables:** 160×120 pheromone grid (float32), 180 swimmer agents (x, y, vx, vy, on_target), noise timer, calibrator PD-controller state.

@@ -110,6 +110,14 @@
     "window_height": 880,
     "signature": "UNVERIFIED"
   },
+  "Swarm Lounge (Cross-Domain Gossip)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_lounge_widget.py",
+    "widget_class": "LoungeWidget",
+    "window_width": 1300,
+    "window_height": 860,
+    "signature": "UNVERIFIED"
+  },
   "Swarm Browser": {
     "category": "Creative",
     "entry_point": "Applications/sifta_swarm_browser.py",
