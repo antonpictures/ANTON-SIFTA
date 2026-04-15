@@ -132,6 +132,26 @@ Use this flow for any app:
 - **Export:** EDL (CMX 3600) for import into Premiere/DaVinci/FCP, or FFmpeg filter script for direct rendering.
 - **Failure modes:** Over-cutting (threshold too low), dead swimmers (density too low), stale pheromones (all evaporated below threshold).
 
+### Swarm Browser
+- **Purpose:** The web is hostile territory. The Swarm enters it for you. Instead of rendering pretty HTML for human eyes, the browser deploys 70 swimmers into the raw DOM tree to map, harvest, and quarantine.
+- **State variables:** DOM graph (DomNode tree with pheromone_good/pheromone_bad per node), 70 swimmers (4 species), entity list, quarantine list, clean text corpus.
+- **What to watch:**
+  - **DOM graph** — radial tree visualization. Green nodes = content. Red = hostile (ads, trackers, scripts). Blue = links. Gold = media. Gray = structural.
+  - **Pheromone trails** — green glow on edges = useful paths. Red glow = hostile paths. Swimmers follow green, avoid red.
+  - **Swimmers** — colored dots crawling the tree. They physically move between parent/child nodes.
+  - **Quarantine panel** — every tracker, ad iframe, and hostile link the swarm neutralized.
+  - **Entity panel** — extracted names, dates, prices, emails from content nodes.
+  - **Clean Text panel** — article text stripped of noise, ready for consumption.
+  - **STGM counter** — tokens earned for useful extractions and tracker kills.
+- **Swimmer species:**
+  - **SkeletonMapper** (25) — maps div structure, marks content vs noise nodes.
+  - **EntityHarvester** (20) — dives into p/h1-h6, extracts text + named entities via regex NLP.
+  - **LinkSentinel** (15) — follows a[href], checks domains against hostile pattern database.
+  - **MediaExtractor** (10) — finds img/video URLs, flags tracking pixels.
+- **Controls:** URL bar + DEPLOY (fetch live page) or DEMO (synthetic test DOM with embedded ads/trackers).
+- **Key principle:** Browsing is territory mapping. The swarm treats every DOM node as a location to explore, classify, and either harvest or quarantine. STGM is earned for useful work — entity extraction and tracker neutralization. The browser doesn't show you a pretty page; it shows you the nervous system of the page, alive with swimmers.
+- **Failure modes:** Fetch timeout on slow sites, DOM too deep (>10k nodes may slow rendering), hostile JavaScript obfuscation (parser sees static HTML only).
+
 ---
 
 ## Accessories

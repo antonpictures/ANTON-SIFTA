@@ -110,6 +110,14 @@
     "window_height": 880,
     "signature": "UNVERIFIED"
   },
+  "Swarm Browser": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_swarm_browser.py",
+    "widget_class": "SwarmBrowserWidget",
+    "window_width": 1400,
+    "window_height": 900,
+    "signature": "UNVERIFIED"
+  },
   "Biological Dashboard": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_biological_gui.py",
