@@ -169,8 +169,16 @@ python3 Applications/sifta_logistics_swarm_sim.py \
   --ticks 120000 \
   --grid 192 \
   --agents 50 \
+  --visual \
   --metrics-every 2000 \
   --congestion-every 8000
+```
+
+**One-click GUI test from Simulations menu (default visual):**
+
+```bash
+python3 Applications/sifta_warehouse_test.py
+# add --headless for remote/SSH runs
 ```
 
 **Outputs:**

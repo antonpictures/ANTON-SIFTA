@@ -203,7 +203,14 @@ def _waybill_payload(owner: str, agent_idx: int, delivery: Tuple[int, int], depo
     return f"WAYBILL::OWNER[{owner}]::AGENT[{agent_idx}]::DELIV[{delivery[0]},{delivery[1]}]::DEPOT[{depot[0]},{depot[1]}]::TS[{issued_at}]"
 
 
-def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
+def run(
+    cfg: Config,
+    ticks: int,
+    out_dir: Path,
+    demo: bool = False,
+    visual: bool = False,
+    render_every: int = 200,
+) -> int:
     rng = np.random.default_rng(cfg.seed)
     random.seed(cfg.seed)
 
@@ -249,6 +256,42 @@ def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
     start_ts = _now()
 
     print(f"[LOGISTICS] {GOODFELLAS_LORE}")
+    ui = None
+    if visual:
+        try:
+            import matplotlib.pyplot as plt  # type: ignore
+
+            plt.ion()
+            fig, axp = plt.subplots(figsize=(8, 8))
+            img = axp.imshow(pher, cmap="magma", vmin=0.0, vmax=2.0, interpolation="nearest")
+            # Obstacles as cyan dots (sparse overlay)
+            obs_xy = np.argwhere(blocked)
+            if len(obs_xy) > 0:
+                obs_sc = axp.scatter(obs_xy[:, 1], obs_xy[:, 0], s=1, c="#66d9ef", alpha=0.15)
+            else:
+                obs_sc = None
+            del_sc = axp.scatter([d[1] for d in deliveries], [d[0] for d in deliveries], s=60, c="#9ece6a", marker="s", label="Deliveries")
+            dep_sc = axp.scatter([depot[1]], [depot[0]], s=80, c="#f7768e", marker="*", label="Depot")
+            ag_sc = axp.scatter(ay, ax, s=8, c="#7aa2f7", alpha=0.7, label="Swimmers")
+            title = axp.set_title("SIFTA Logistics Swarm")
+            axp.legend(loc="upper right", fontsize=8)
+            axp.set_xticks([])
+            axp.set_yticks([])
+            fig.tight_layout()
+            ui = {
+                "plt": plt,
+                "fig": fig,
+                "ax": axp,
+                "img": img,
+                "ag_sc": ag_sc,
+                "title": title,
+                "obs_sc": obs_sc,
+                "del_sc": del_sc,
+                "dep_sc": dep_sc,
+            }
+        except Exception as e:
+            print(f"[LOGISTICS] visual mode unavailable, continuing headless: {e}")
+            ui = None
 
     for t in range(1, ticks + 1):
         # evaporation
@@ -348,11 +391,26 @@ def run(cfg: Config, ticks: int, out_dir: Path, demo: bool = False) -> int:
                 row["congestion"] = cong
             metrics.append(row)
 
+        if ui and (t % max(1, int(render_every)) == 0 or t == 1 or t == ticks):
+            ui["img"].set_data(pher)
+            ui["ag_sc"].set_offsets(np.c_[ay, ax])
+            ui["title"].set_text(
+                f"SIFTA Logistics  t={t}/{ticks}  done={completed}  hijack={hijack_blocked}/{hijack_attempts}"
+            )
+            ui["fig"].canvas.draw_idle()
+            ui["plt"].pause(0.001)
+
     dur = max(1, _now() - start_ts)
     print(
         f"[LOGISTICS] ticks={ticks} grid={n} agents={cfg.agents} completed={completed} "
         f"rate={completed/dur:.2f}/s hijack_blocked={hijack_blocked} out={out_dir}"
     )
+    if ui:
+        try:
+            ui["plt"].ioff()
+            ui["plt"].show()
+        except Exception:
+            pass
     return 0
 
 
@@ -370,6 +428,8 @@ def main() -> int:
     ap.add_argument("--congestion-every", type=int, default=4000)
     ap.add_argument("--metrics-every", type=int, default=200)
     ap.add_argument("--hijack-rate", type=float, default=0.002, help="Probability per tick of a forged completion attempt.")
+    ap.add_argument("--visual", action="store_true", help="Enable live matplotlib visualization.")
+    ap.add_argument("--render-every", type=int, default=200, help="UI refresh cadence in ticks.")
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--out", type=str, default=str(REPO_ROOT / ".sifta" / "logistics"))
     args = ap.parse_args()
@@ -389,7 +449,14 @@ def main() -> int:
     )
 
     out_dir = Path(args.out).expanduser()
-    return run(cfg, int(args.ticks), out_dir, demo=bool(args.demo))
+    return run(
+        cfg,
+        int(args.ticks),
+        out_dir,
+        demo=bool(args.demo),
+        visual=bool(args.visual),
+        render_every=int(args.render_every),
+    )
 
 
 if __name__ == "__main__":

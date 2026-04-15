@@ -18,6 +18,8 @@ from sifta_logistics_swarm_sim import Config, run
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticks", type=int, default=120000, help="Simulation ticks (default watch run).")
+    ap.add_argument("--headless", action="store_true", help="Disable live matplotlib graphics.")
+    ap.add_argument("--render-every", type=int, default=120, help="Graphics refresh cadence in ticks.")
     ap.add_argument("--out", type=str, default=".sifta/logistics")
     args = ap.parse_args()
 
@@ -35,7 +37,14 @@ def main() -> int:
         seed=1337,
         hijack_rate=0.02,
     )
-    rc = run(cfg, int(args.ticks), out_dir, demo=False)
+    rc = run(
+        cfg,
+        int(args.ticks),
+        out_dir,
+        demo=False,
+        visual=not bool(args.headless),
+        render_every=int(args.render_every),
+    )
 
     metrics_path = out_dir / "metrics.jsonl"
     if metrics_path.exists():
