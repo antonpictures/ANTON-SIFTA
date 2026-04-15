@@ -25,6 +25,19 @@ from PyQt6.QtGui import QFont, QColor
 _REPO = Path(__file__).resolve().parent
 _SYS = _REPO / "System"
 
+# ── Swarm Intelligence Subsystems ────────────────────────────
+if str(_SYS) not in sys.path:
+    sys.path.insert(0, str(_SYS))
+
+from app_fitness import ranked_apps, record_crash, record_launch  # noqa: E402
+from stigmergic_wm import neighbors as wm_neighbors  # noqa: E402
+from stigmergic_wm import record_open as wm_record_open  # noqa: E402
+from stigmergic_wm import reset_session as wm_reset_session  # noqa: E402
+from stigmergic_wm import suggest_position  # noqa: E402
+from pheromone_fs import clusters as fs_clusters  # noqa: E402
+from pheromone_fs import neighbors as fs_neighbors  # noqa: E402
+from pheromone_fs import record_access as fs_record_access  # noqa: E402
+
 
 def _append_repair_log_line(row: dict) -> None:
     if str(_SYS) not in sys.path:
@@ -546,6 +559,81 @@ class TerminalSubWindow(QWidget):
 
 
 # ──────────────────────────────────────────────────────────────
+# EMBEDDED SCRIPT APP WINDOW (forced in-OS launch)
+# ──────────────────────────────────────────────────────────────
+
+class EmbeddedScriptSubWindow(QWidget):
+    """Runs a python app script inside an MDI window.
+    Unlike terminal launching, this forces a non-popout plotting backend
+    so menu apps stay inside iSwarm OS."""
+
+    def __init__(self, app_title: str, script_path: str):
+        super().__init__()
+        self.app_title = app_title
+        self.script_path = script_path
+        layout = QVBoxLayout()
+        self.setStyleSheet("background-color: #0c0c11; color: #9ece6a; font-family: monospace;")
+
+        header = QHBoxLayout()
+        title = QLabel(f"{app_title} — embedded runtime")
+        title.setStyleSheet("color: #7aa2f7; font-weight: bold;")
+        header.addWidget(title)
+        header.addStretch()
+        btn_restart = QPushButton("↻ Restart")
+        btn_restart.setStyleSheet(
+            "QPushButton { background-color: #9ece6a; color: #15161e; font-weight: bold; border-radius: 4px; padding: 3px 8px; }"
+            "QPushButton:hover { background-color: #b9f27c; }"
+        )
+        btn_restart.clicked.connect(self._start)
+        header.addWidget(btn_restart)
+        btn_close = QPushButton("✕  CLOSE")
+        btn_close.setStyleSheet(
+            "background-color: #f7768e; color: #15161e; font-weight: bold;"
+            "border-radius: 4px; padding: 2px 8px;"
+        )
+        btn_close.clicked.connect(lambda: close_parent_subwindow(self))
+        header.addWidget(btn_close)
+        layout.addLayout(header)
+
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setStyleSheet("border: 1px solid #3b4261; padding: 5px;")
+        layout.addWidget(self.log)
+        self.setLayout(layout)
+
+        self.process = QProcess()
+        self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.process.readyReadStandardOutput.connect(self._read_merged)
+        self._start()
+
+    def _start(self):
+        if self.process.state() == QProcess.ProcessState.Running:
+            self.process.kill()
+            self.process.waitForFinished(1000)
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONPATH", os.getcwd())
+        env.insert("PYTHONUNBUFFERED", "1")
+        env.insert("SIFTA_EMBEDDED", "1")
+        env.insert("MPLBACKEND", "Agg")
+        self.process.setProcessEnvironment(env)
+        self.process.start("python3", [self.script_path])
+        self.log.append(f"> python3 {self.script_path}")
+        self.log.append("[iSwarm] Embedded mode forced (MPLBACKEND=Agg)")
+
+    def _read_merged(self):
+        data = self.process.readAllStandardOutput()
+        txt = bytes(data).decode("utf-8", errors="replace").strip()
+        if txt:
+            self.log.append(txt)
+
+    def closeEvent(self, event):
+        if hasattr(self, "process") and self.process.state() == QProcess.ProcessState.Running:
+            self.process.kill()
+            self.process.waitForFinished(1000)
+        super().closeEvent(event)
+
+
+# ──────────────────────────────────────────────────────────────
 # SWARM TEXT EDITOR
 # ──────────────────────────────────────────────────────────────
 
@@ -734,6 +822,7 @@ class SiftaDesktop(QMainWindow):
         self.setWindowTitle("SIFTA Python GUI OS")
         self.showFullScreen()
         self.active_chat_sub = None
+        self._apps_manifest_cache: dict[str, dict] = {}
 
         # Central layout
         central = QWidget()
@@ -761,6 +850,19 @@ class SiftaDesktop(QMainWindow):
         self._clock_timer.timeout.connect(self._update_clock)
         self._clock_timer.start(1000)
         self._update_clock()
+
+        # ── Swarm Intelligence boot ────────────────────────
+        wm_reset_session()
+        self._open_windows: dict[str, tuple[int, int]] = {}
+
+        # Show dream report if one exists for today
+        try:
+            from dream_engine import latest_report
+            dream = latest_report()
+            if dream:
+                self._boot_dream = dream
+        except Exception:
+            self._boot_dream = None
 
         # Boot: open chat by default
         self.open_swarm_chat()
@@ -804,6 +906,7 @@ class SiftaDesktop(QMainWindow):
 
         prog = menu.addMenu("Programs ▶")
         acc  = prog.addMenu("Accessories ▶")
+        creative = prog.addMenu("Creative ▶")
         sims = prog.addMenu("Simulations ▶")
         net  = prog.addMenu("Networking ▶")
         sys_menu = prog.addMenu("System ▶")
@@ -813,38 +916,69 @@ class SiftaDesktop(QMainWindow):
         acc.addAction("Video Editor").triggered.connect(self.open_video_editor)
         acc.addAction("SwarmText Editor").triggered.connect(lambda: self.spawn_text_editor(None))
 
-        # ── Dynamic Native Apps ──────────────────────────
+        # ── Dynamic Native Apps (sorted by fitness) ────────
         manifest_path = "Applications/apps_manifest.json"
         if os.path.exists(manifest_path):
             try:
                 with open(manifest_path, "r") as f:
                     apps = json.load(f)
-                for app_name, app_data in apps.items():
+                self._apps_manifest_cache = dict(apps)
+                app_names_sorted = ranked_apps(list(apps.keys()))
+                for app_name in app_names_sorted:
+                    app_data = apps[app_name]
                     cat = app_data.get("category", "Accessories")
                     entry = app_data.get("entry_point", "")
                     widget_class = app_data.get("widget_class", "")
-                    if not entry: continue
+                    if not entry:
+                        continue
 
                     target_menu = acc
-                    if cat == "Simulations": target_menu = sims
-                    elif cat == "Networking": target_menu = net
-                    elif cat == "System": target_menu = sys_menu
+                    if cat == "Simulations":
+                        target_menu = sims
+                    elif cat == "Creative":
+                        target_menu = creative
+                    elif cat == "Networking":
+                        target_menu = net
+                    elif cat == "System":
+                        target_menu = sys_menu
 
-                    if widget_class:
-                        # Native embed: import the module and open as MDI sub-window
-                        target_menu.addAction(f"{app_name}").triggered.connect(
-                            (lambda e, wc: lambda: self.spawn_native_widget(app_name, e, wc))(entry, widget_class)
+                    app_sub = target_menu.addMenu(f"{app_name} ▶")
+                    app_sub.addAction("Open").triggered.connect(
+                        (
+                            (lambda nm, ep, wc, dat: lambda: self._launch_app(
+                                nm,
+                                ep,
+                                wc,
+                                w=int(dat.get("window_width", 920)),
+                                h=int(dat.get("window_height", 640)),
+                            ))(app_name, entry, widget_class, dict(app_data))
+                            if widget_class
+                            else (lambda nm, e: lambda: self._launch_terminal_app(nm, e))(app_name, entry)
                         )
-                    else:
-                        # Subprocess terminal launcher
-                        target_menu.addAction(f"{app_name}").triggered.connect(
-                            (lambda e: lambda: self.spawn_terminal(app_name, "python3", [e]))(entry)
-                        )
+                    )
+                    app_sub.addAction("Help").triggered.connect(
+                        (lambda nm, data: lambda: self._show_app_help(nm, dict(data)))(app_name, app_data)
+                    )
             except Exception as e:
                 print(f"[Boot Error] Failed to load apps manifest: {e}")
 
+        # ── Swarm Intelligence submenu ─────────────────────
+        intel = menu.addMenu("Swarm Intelligence ▶")
+        intel.setStyleSheet(
+            "QMenu { background-color: #1a1b26; color: #a9b1d6; border: 1px solid #414868; padding: 5px; }"
+            "QMenu::item { padding: 5px 20px; }"
+            "QMenu::item:selected { background-color: #24283b; color: #bb9af7; }"
+        )
+        intel.addAction("🧠 Dream Report").triggered.connect(self._show_dream_report)
+        intel.addAction("🛡 Immune Status").triggered.connect(self._show_immune_status)
+        intel.addAction("🗳 Quorum Proposals").triggered.connect(self._show_quorum_status)
+        intel.addAction("⚡ Nerve Channel").triggered.connect(self._show_nerve_status)
+        intel.addAction("🗺 File Trails").triggered.connect(self._show_file_trails)
+        intel.addAction("📊 App Fitness").triggered.connect(self._show_fitness_scores)
+
         docs = menu.addMenu("Documents ▶")
         docs.addAction("README.md").triggered.connect(lambda: self.spawn_text_editor("Documents/README.md"))
+        docs.addAction("APP_HELP.md").triggered.connect(lambda: self.spawn_text_editor("Documents/APP_HELP.md"))
         docs.addAction("repair_log.jsonl").triggered.connect(lambda: self.spawn_text_editor("Utilities/repair_log.jsonl"))
 
         menu.addSeparator()
@@ -858,7 +992,7 @@ class SiftaDesktop(QMainWindow):
 
         menu.addSeparator()
         menu.addAction("Help").triggered.connect(
-            lambda: self.spawn_terminal("Help", "cat", ["Documents/README.md"])
+            lambda: self.spawn_text_editor("Documents/APP_HELP.md")
         )
         btn_start.setMenu(menu)
 
@@ -878,6 +1012,13 @@ class SiftaDesktop(QMainWindow):
     # ── Window factories ───────────────────────────────────
     def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
         sub = QMdiSubWindow()
+        sub.setWindowFlags(
+            Qt.WindowType.SubWindow
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
         sub.setWidget(widget)
         sub.setWindowTitle(title)
         sub.resize(w, h)
@@ -920,6 +1061,27 @@ class SiftaDesktop(QMainWindow):
     def spawn_terminal(self, title, cmd, args):
         self._make_sub(TerminalSubWindow(cmd, args), title, 600, 400, "#9ece6a")
 
+    def spawn_embedded_script(self, title, script_path):
+        self._make_sub(EmbeddedScriptSubWindow(title, script_path), title, 860, 560, "#9ece6a")
+
+    # ── Swarm-intelligent app launcher ───────────────────
+    def _launch_app(self, title, module_path, class_name, w=660, h=540):
+        """Launch an app: record fitness, WM pheromone, suggest position."""
+        record_launch(title)
+        wm_record_open(title)
+        fs_record_access(module_path)
+
+        pos = suggest_position(title, self._open_windows)
+        x, y = (pos if pos else (None, None))
+        self.spawn_native_widget(title, module_path, class_name, w=w, h=h, x=x, y=y)
+
+    def _launch_terminal_app(self, title, entry):
+        """Launch a script app inside iSwarm OS (no external popout intent)."""
+        record_launch(title)
+        wm_record_open(title)
+        fs_record_access(entry)
+        self.spawn_embedded_script(title, entry)
+
     def spawn_native_widget(self, title, module_path, class_name, w=660, h=540, x=None, y=None):
         """Import a SIFTA app module and embed its widget class inside the MDI.
         No subprocess. No separate QApplication. Stays inside Swarm OS."""
@@ -932,10 +1094,243 @@ class SiftaDesktop(QMainWindow):
             spec.loader.exec_module(mod)
             widget_cls = getattr(mod, class_name)
             widget = widget_cls()
-            self._make_sub(widget, f"⚙ {title}", w, h, "#7aa2f7", x=x, y=y)
+            sub = self._make_sub(widget, f"⚙ {title}", w, h, "#7aa2f7", x=x, y=y)
+            self._open_windows[title] = (sub.x(), sub.y())
+            sub.destroyed.connect(lambda: self._open_windows.pop(title, None))
         except Exception as e:
+            record_crash(title)
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Launch Error", f"Failed to load {title}:\n{e}")
+
+    # ── Swarm Intelligence Panels ──────────────────────────
+    def _show_dream_report(self):
+        from PyQt6.QtWidgets import QPlainTextEdit
+        try:
+            from dream_engine import run_dream_cycle
+            report = run_dream_cycle()
+        except Exception as e:
+            report = f"[Dream engine error] {e}"
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setPlainText(report)
+        w.setStyleSheet(
+            "QPlainTextEdit { background: #0b1020; color: #bb9af7; "
+            "font-family: monospace; font-size: 12px; padding: 12px; }"
+        )
+        self._make_sub(w, "🧠 Dream Report", 700, 480, "#bb9af7")
+
+    def _show_immune_status(self):
+        from PyQt6.QtWidgets import QPlainTextEdit
+        try:
+            from immune_memory import immune_status
+            status = immune_status()
+            lines = [
+                "IMMUNE MEMORY STATUS",
+                "=" * 40,
+                f"Total antibodies:  {status['total_antibodies']}",
+                f"Total matches:     {status['total_matches']}",
+                f"Strongest:         {status['strongest']:.2f}",
+                "",
+                "Pattern types:",
+            ]
+            for t, c in status.get("types", {}).items():
+                lines.append(f"  {t}: {c}")
+            text = "\n".join(lines)
+        except Exception as e:
+            text = f"[Immune system error] {e}"
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setPlainText(text)
+        w.setStyleSheet(
+            "QPlainTextEdit { background: #0b1020; color: #f7768e; "
+            "font-family: monospace; font-size: 12px; padding: 12px; }"
+        )
+        self._make_sub(w, "🛡 Immune Memory", 600, 400, "#f7768e")
+
+    def _show_quorum_status(self):
+        from PyQt6.QtWidgets import QPlainTextEdit
+        try:
+            from quorum_sense import active_proposals
+            props = active_proposals()
+            if not props:
+                text = "No active quorum proposals.\n\nThe Swarm is at peace."
+            else:
+                lines = ["ACTIVE QUORUM PROPOSALS", "=" * 50]
+                for p in props:
+                    lines.append(
+                        f"  [{p['action_id']}] {p['type']}  "
+                        f"votes: {p['votes']}/{p['needed']}  age: {p['age_sec']}s"
+                    )
+                text = "\n".join(lines)
+        except Exception as e:
+            text = f"[Quorum sense error] {e}"
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setPlainText(text)
+        w.setStyleSheet(
+            "QPlainTextEdit { background: #0b1020; color: #e0af68; "
+            "font-family: monospace; font-size: 12px; padding: 12px; }"
+        )
+        self._make_sub(w, "🗳 Quorum Sense", 620, 360, "#e0af68")
+
+    def _show_nerve_status(self):
+        from PyQt6.QtWidgets import QPlainTextEdit
+        try:
+            from nerve_channel import NERVE_PORT, NerveSignal, encode_pulse, decode_pulse
+            test = encode_pulse(NerveSignal.HEARTBEAT, 100, "GTH4921YP3")
+            decoded = decode_pulse(test)
+            lines = [
+                "NERVE CHANNEL STATUS",
+                "=" * 50,
+                f"Protocol:     UDP port {NERVE_PORT}",
+                f"Datagram:     {len(test)} bytes",
+                f"Test decode:  signal={decoded['signal'].name}  intensity={decoded['intensity']}",
+                "",
+                "M5 → M1:  Configure M1 IP in System/nerve_channel.py",
+                "M1 → M5:  HeartbeatDaemon auto-starts on both nodes",
+                "",
+                "Signal types:",
+            ]
+            for sig in NerveSignal:
+                lines.append(f"  0x{sig.value:02X}  {sig.name}")
+            text = "\n".join(lines)
+        except Exception as e:
+            text = f"[Nerve channel error] {e}"
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setPlainText(text)
+        w.setStyleSheet(
+            "QPlainTextEdit { background: #0b1020; color: #73daca; "
+            "font-family: monospace; font-size: 12px; padding: 12px; }"
+        )
+        self._make_sub(w, "⚡ Nerve Channel", 620, 420, "#73daca")
+
+    def _show_file_trails(self):
+        from PyQt6.QtWidgets import QPlainTextEdit
+        try:
+            trail_clusters = fs_clusters(0.5)
+            from pheromone_fs import trail_map
+            tmap = trail_map()
+            lines = ["PHEROMONE FILE TRAILS", "=" * 50]
+            if not tmap:
+                lines.append("No trails yet. Open files from the OS and trails will form.")
+            else:
+                lines.append(f"Active trails: {len(tmap)}")
+                lines.append("")
+                top = sorted(tmap.items(), key=lambda x: -x[1])[:15]
+                for k, v in top:
+                    a, b = k.split("::")
+                    lines.append(f"  {v:.2f}  {a}  ↔  {b}")
+                if trail_clusters:
+                    lines.append("")
+                    lines.append("File clusters (co-accessed):")
+                    for i, c in enumerate(trail_clusters, 1):
+                        lines.append(f"  Cluster {i}: {', '.join(c)}")
+            text = "\n".join(lines)
+        except Exception as e:
+            text = f"[Pheromone FS error] {e}"
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setPlainText(text)
+        w.setStyleSheet(
+            "QPlainTextEdit { background: #0b1020; color: #9ece6a; "
+            "font-family: monospace; font-size: 12px; padding: 12px; }"
+        )
+        self._make_sub(w, "🗺 File Trails", 700, 480, "#9ece6a")
+
+    def _show_fitness_scores(self):
+        from PyQt6.QtWidgets import QPlainTextEdit
+        from app_fitness import get_scores
+        scores = get_scores()
+        lines = ["APP FITNESS RANKINGS", "=" * 50]
+        if not scores:
+            lines.append("No fitness data yet. Launch apps to build history.")
+        else:
+            ranked = sorted(scores.items(), key=lambda x: -x[1])
+            for name, score in ranked:
+                bar_len = max(0, int(score * 2))
+                bar = "█" * min(bar_len, 40)
+                lines.append(f"  {score:+7.2f}  {bar}  {name}")
+        text = "\n".join(lines)
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setPlainText(text)
+        w.setStyleSheet(
+            "QPlainTextEdit { background: #0b1020; color: #7dcfff; "
+            "font-family: monospace; font-size: 12px; padding: 12px; }"
+        )
+        self._make_sub(w, "📊 App Fitness", 620, 400, "#7dcfff")
+
+    def _show_app_help(self, app_name: str, app_data: dict) -> None:
+        from PyQt6.QtWidgets import QPlainTextEdit
+
+        cat = app_data.get("category", "Accessories")
+        entry = app_data.get("entry_point", "")
+        widget = app_data.get("widget_class", "")
+
+        category_principles = {
+            "Simulations": "Interpret dynamics, convergence, and failure modes first. Metrics > vibes.",
+            "Creative": "Stigmergic media tools. Watch emergent decisions, pheromone consensus, and export fidelity.",
+            "Networking": "Treat all external IO as hostile by default. Verify provenance and signatures.",
+            "System": "Watch boundaries: identity, authority, execution. Small config changes can have global effects.",
+            "Accessories": "UI/ops tooling for human bandwidth. These are observability and control surfaces.",
+        }
+        app_blurbs = {
+            "Colloid Simulator": "Active-matter stigmergy. Watch local interactions create global order.",
+            "Swarm Arena": "Model-vs-model debugging tournament with reproducible level fixtures.",
+            "Cyborg Organ Simulator": "Organ regulation + BCI intent clustering + signed control events.",
+            "Logistics Swarm (Overnight)": "Pheromone routing under congestion; evaluate throughput vs stability.",
+            "Warehouse Logistics Test": "Validation harness for logistics constraints and regression checks.",
+            "Crucible Cyber-Defense (10-min)": "DDoS + anomaly gauntlet; assess quarantine and resilience under burst.",
+            "Stigmergic Edge Vision": "Distributed edge extraction from noisy fields using swimmer consensus.",
+            "Urban Resilience Simulator": "Vehicle-drone coordination in disrupted infrastructure scenarios.",
+            "Epistemic Mesh (Anti-Gaslight)": "Truth pheromone emerges from cryptographic provenance verification.",
+            "Stigmergic Fold Swarm (Cα / Go)": "Protein-like folding search with Go contacts, sterics, and obstacle fields.",
+            "Intelligence Settings": "Global model/runtime defaults used by system components.",
+            "Circadian Rhythm": "Autonomous scheduling for low-noise night cycles and maintenance windows.",
+            "Cardio Metrics": "Swarm health telemetry and heartbeat diagnostics.",
+            "Biological Dashboard": "Live organism state projection for operator situational awareness.",
+            "Sebastian Batch Editor": "Batch media workflow and proof-of-useful-work accounting for edits.",
+            "Human Council GUI": "Human governance and decision surface over autonomous proposals.",
+            "Desktop GUI (Legacy)": "Older shell kept for comparison and fallback.",
+            "Swarm Discord Engine": "Bridge layer for Discord ingress/egress in the swarm communication stack.",
+            "Swarm Telegram Engine": "Bridge layer for Telegram ingress/egress in the swarm communication stack.",
+            "Swarm WhatsApp Bridge": "Bridge layer for WhatsApp ingress/egress with strict separation from TRANSEC.",
+            "First Boot Provisioning": "Node bootstrap/provisioning flow for first-run environment setup.",
+        }
+
+        lines = [
+            f"{app_name}",
+            "=" * max(24, len(app_name)),
+            "",
+            f"Category:      {cat}",
+            f"Entry point:   {entry}",
+            f"Widget class:  {widget or 'N/A (terminal app)'}",
+            "",
+            "What you are looking at:",
+            f"  {app_blurbs.get(app_name, 'App-specific operation surface in the SIFTA ecosystem.')}",
+            "",
+            "Scientific reading frame:",
+            f"  {category_principles.get(cat, 'Track state transitions and measurable outputs.')}",
+            "",
+            "Operator checklist:",
+            "  1) Identify primary output metric(s)",
+            "  2) Identify control parameter(s)",
+            "  3) Observe failure mode / saturation behavior",
+            "  4) Verify whether ledger, signatures, or immunity changed",
+            "",
+            "Long-form manual:",
+            "  Open Documents/APP_HELP.md for full per-app sections.",
+        ]
+
+        w = QPlainTextEdit()
+        w.setReadOnly(True)
+        w.setPlainText("\n".join(lines))
+        w.setStyleSheet(
+            "QPlainTextEdit { background: #0b1020; color: #c0caf5; "
+            "font-family: monospace; font-size: 12px; padding: 12px; }"
+        )
+        self._make_sub(w, f"❓ Help — {app_name}", 760, 520, "#565f89")
 
 
 

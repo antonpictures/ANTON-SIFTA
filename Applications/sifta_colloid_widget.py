@@ -32,8 +32,9 @@ class ColloidSimWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._sim = SIFTAColloidSimulation(demo_mode=True)
-        self._figure = Figure(figsize=(12, 7.2), facecolor=BG_COLOR)
+        self._figure = Figure(figsize=(15, 9), facecolor=BG_COLOR)
         self._canvas = FigureCanvas(self._figure)
+        self._canvas.setMinimumSize(960, 560)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self._canvas)

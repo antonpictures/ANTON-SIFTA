@@ -72,4 +72,4 @@ A system is resilient when bypass attempts are **visible**, **contained**, and *
 
 ---
 *Ratified by: IDEQUEENM5 session, 2026-04-10*
-*Human operator: Ioan Anton*
+*Human operator: Ioan George Anton*

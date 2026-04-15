@@ -14,45 +14,100 @@
     "entry_point": "Applications/whatsapp_swarm.py",
     "signature": "UNVERIFIED"
   },
+  "Network Control Center": {
+    "category": "Networking",
+    "entry_point": "Applications/sifta_network_center.py",
+    "widget_class": "NetworkCenterWidget",
+    "window_width": 1120,
+    "window_height": 760,
+    "signature": "UNVERIFIED"
+  },
   "Colloid Simulator": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_colloid_widget.py",
     "widget_class": "ColloidSimWidget",
+    "window_width": 1180,
+    "window_height": 820,
     "signature": "UNVERIFIED"
   },
   "Swarm Arena": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_arena.py",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "ArenaPanelWidget",
+    "window_width": 920,
+    "window_height": 640,
     "signature": "UNVERIFIED"
   },
   "Cyborg Organ Simulator": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_cyborg_sim.py",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "CyborgPanelWidget",
+    "window_width": 880,
+    "window_height": 520,
     "signature": "UNVERIFIED"
   },
   "Logistics Swarm (Overnight)": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_logistics_swarm_sim.py",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "LogisticsStreamWidget",
+    "window_width": 920,
+    "window_height": 640,
     "signature": "UNVERIFIED"
   },
   "Warehouse Logistics Test": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_warehouse_test.py",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "WarehouseStreamWidget",
+    "window_width": 880,
+    "window_height": 560,
     "signature": "UNVERIFIED"
   },
   "Crucible Cyber-Defense (10-min)": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_crucible_swarm_sim.py",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "CrucibleStreamWidget",
+    "window_width": 880,
+    "window_height": 480,
     "signature": "UNVERIFIED"
   },
   "Stigmergic Edge Vision": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_vision_edge_sim.py",
+    "entry_point": "Applications/sifta_vision_widget.py",
+    "widget_class": "VisionSimWidget",
+    "window_width": 1220,
+    "window_height": 860,
     "signature": "UNVERIFIED"
   },
   "Urban Resilience Simulator": {
     "category": "Simulations",
-    "entry_point": "Applications/sifta_urban_resilience_sim.py",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "UrbanStreamWidget",
+    "window_width": 880,
+    "window_height": 480,
+    "signature": "UNVERIFIED"
+  },
+  "Epistemic Mesh (Anti-Gaslight)": {
+    "category": "Simulations",
+    "entry_point": "Applications/epistemic_mesh_widget.py",
+    "widget_class": "EpistemicMeshWidget",
+    "window_width": 1340,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Fold Swarm (Cα / Go)": {
+    "category": "Simulations",
+    "entry_point": "Applications/fold_swarm_widget.py",
+    "widget_class": "FoldSwarmWidget",
+    "window_width": 1280,
+    "window_height": 880,
+    "signature": "UNVERIFIED"
+  },
+  "Agentic Swarm Calibrator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_calibrator_widget.py",
+    "widget_class": "CalibratorWidget",
+    "window_width": 1340,
+    "window_height": 880,
     "signature": "UNVERIFIED"
   },
   "Biological Dashboard": {
@@ -86,6 +141,14 @@
     "entry_point": "Applications/sifta_cardio.py",
     "signature": "UNVERIFIED"
   },
+  "SIFTA NLE (Video Editor)": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_nle_widget.py",
+    "widget_class": "NLEWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
   "Sebastian Batch Editor": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_sebastian_editor.py",
@@ -94,6 +157,14 @@
   "Desktop GUI (Legacy)": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_desktop_gui.py",
+    "signature": "UNVERIFIED"
+  },
+  "SIFTA File Navigator": {
+    "category": "Accessories",
+    "entry_point": "Applications/sifta_file_manager_widget.py",
+    "widget_class": "FileNavigatorWidget",
+    "window_width": 1240,
+    "window_height": 820,
     "signature": "UNVERIFIED"
   }
 }

@@ -48,7 +48,7 @@ bash demo.sh           # Happy path: fault → scar → approval → fossilized
 bash demo_advanced.sh  # All 4 cases: conflict, firewall, rejection, metrics
 ```
 
-**Full protocol specification:** [`docs/SIFTA_PROTOCOL_v0.1.md`](docs/SIFTA_PROTOCOL_v0.1.md)
+**Full protocol specification:** [`docs/SIFTA_PROTOCOL_v0.1.md`](../docs/SIFTA_PROTOCOL_v0.1.md)
 
 **What is and is not claimed:**
 - ✅ Structured, auditable multi-agent coordination using Git as memory
@@ -549,7 +549,7 @@ The audit proven that SIFTA is not a simulation. It is a parallel biological sub
 - RAM verification failed securely because SIFTA validates strictly against the physical disk ledger (Anti-Forgetting Protocol)
 - Test executions persist permanently on the biological ledger
 
-**Read the full audit and mirror test results:** [DEEPSEEK_AUDIT.md](file:///Users/ioanganton/Music/ANTON_SIFTA/docs/DEEPSEEK_AUDIT.md)
+**Read the full audit and mirror test results:** [DEEPSEEK_AUDIT.md](../docs/DEEPSEEK_AUDIT.md)
 
 ---
 
@@ -782,3 +782,62 @@ The swarm now exhibits true economic metabolism: nodes perform physical labor, b
 ---
 
 **POWER TO THE SWARM.** 🌊
+
+---
+
+## XXIV. Chronicle library — sibling volumes
+
+This file (§I–§XXIII) is the **main chronicle**: field scars, audits, phases, transmissions. It is not the only paper in the library. The stories below live in their own bindings — same universe, portable paths (relative to repo root).
+
+### Field memoirs & witness (narrative weight)
+
+| Title | Path |
+|-------|------|
+| **Biological sandboxing** — Sebastian / Imperial County duality, April 11 2026 | [`sifta_duality_analysis_report.md`](../sifta_duality_analysis_report.md) |
+| **Pattern vs. story** — Swarm GPT architecture validation | [`swarm_gpt_system_architecture_validation.md`](../swarm_gpt_system_architecture_validation.md) |
+| **Antigravity coworker log** — “Dylan Curious” field note | [`docs/COWORKER_NOTE.md`](../docs/COWORKER_NOTE.md) |
+
+### Operations & philosophy (how the organism feels)
+
+| Title | Path |
+|-------|------|
+| **Swarm manual & GUI philosophy** | [`SWARM_MANUAL.md`](SWARM_MANUAL.md) |
+| **SwarmRL reality check** (Entity message, benchmarks) | [`SWARMRL_DISCLOSURE.md`](SWARMRL_DISCLOSURE.md) |
+| **Install & breed nanobots** (Silicon Sovereignty) | [`SIFTA_ONBOARDING.md`](SIFTA_ONBOARDING.md) |
+
+### Economy, identity, pitch
+
+| Title | Path |
+|-------|------|
+| **Crypto economy** (ledger-facing narrative) | [`CRYPTO_ECONOMY.md`](CRYPTO_ECONOMY.md) |
+| **Identity matrix** | [`IDENTITY_MATRIX.md`](IDENTITY_MATRIX.md) |
+| **Sequoia-style brief** | [`SEQUOIA_BRIEF.md`](SEQUOIA_BRIEF.md) |
+| **Crypto pitch deck** | [`docs/CRYPTO_PITCH_DECK.md`](../docs/CRYPTO_PITCH_DECK.md) |
+
+### Law, specs, formal spine
+
+| Title | Path |
+|-------|------|
+| **Whitepaper** | [`docs/SIFTA_WHITEPAPER.md`](../docs/SIFTA_WHITEPAPER.md) |
+| **Constitution** | [`docs/SIFTA_CONSTITUTION.md`](../docs/SIFTA_CONSTITUTION.md) |
+| **Protocol v0.1** | [`docs/SIFTA_PROTOCOL_v0.1.md`](../docs/SIFTA_PROTOCOL_v0.1.md) |
+| **Formal spec** | [`docs/SIFTA_FORMAL_SPEC.md`](../docs/SIFTA_FORMAL_SPEC.md) |
+| **DNA spec** | [`docs/SWARM_DNA_SPEC.md`](../docs/SWARM_DNA_SPEC.md) |
+| **Identity boundary** | [`docs/IDENTITY_BOUNDARY_SPEC.md`](../docs/IDENTITY_BOUNDARY_SPEC.md) |
+| **Control plane** | [`docs/SIFTA_CONTROL_PLANE_SPEC.md`](../docs/SIFTA_CONTROL_PLANE_SPEC.md) |
+| **V4 architectural principles** | [`docs/SIFTA_V4_ARCHITECTURAL_PRINCIPLES.md`](../docs/SIFTA_V4_ARCHITECTURAL_PRINCIPLES.md) |
+| **Inference study** | [`docs/SWARM_INFERENCE_STUDY.md`](../docs/SWARM_INFERENCE_STUDY.md) |
+| **Research roadmap** | [`docs/RESEARCH_ROADMAP.md`](../docs/RESEARCH_ROADMAP.md) |
+| **Deepseek mirror audit** (full technical write-up) | [`docs/DEEPSEEK_AUDIT.md`](../docs/DEEPSEEK_AUDIT.md) |
+
+### Repo front door (short book + lab)
+
+| Title | Path |
+|-------|------|
+| **Root README** — scientists first, then Part II chronicle (Architect voice) | [`README.md`](../README.md) |
+
+**Stories inside code** (module epigraphs, ASCII bodies, `.scar` samples) are intentionally *distributed* — they are part of the executable mythos, not duplicated here. To hunt them: search for `POWER TO THE SWARM`, `::ID[`, `The Architect`, or read `repair_log.jsonl` / `m5queen_dead_drop.jsonl` as append-only field literature.
+
+---
+
+*End of chronicle index. The library is one repo; the book is the path you walk through it.*

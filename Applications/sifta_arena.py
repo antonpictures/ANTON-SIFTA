@@ -125,10 +125,25 @@ RESPOND WITH ONLY THE FIXED CODE INSIDE A ```python ... ``` BLOCK. Do NOT provid
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--red", required=True)
-    parser.add_argument("--blue", required=True)
-    parser.add_argument("--level", required=True)
+    parser = argparse.ArgumentParser(
+        description="Swarm Arena: two Ollama-backed teams fix level code. "
+        "Defaults: llama3.2 vs llama3.2, level 1 (override with flags or SIFTA_ARENA_* env)."
+    )
+    parser.add_argument(
+        "--red",
+        default=os.environ.get("SIFTA_ARENA_RED", "llama3.2"),
+        help="Red team model name (default: env SIFTA_ARENA_RED or llama3.2)",
+    )
+    parser.add_argument(
+        "--blue",
+        default=os.environ.get("SIFTA_ARENA_BLUE", "llama3.2"),
+        help="Blue team model name (default: env SIFTA_ARENA_BLUE or llama3.2)",
+    )
+    parser.add_argument(
+        "--level",
+        default=os.environ.get("SIFTA_ARENA_LEVEL", "1"),
+        help="Level id 1–4 (default: env SIFTA_ARENA_LEVEL or 1)",
+    )
     args = parser.parse_args()
     
     level_path = Path("arena_levels") / f"level_0{args.level}_{'div_zero' if args.level=='1' else 'race_condition' if args.level=='2' else 'boundary_value' if args.level=='3' else 'exception_swallow'}.py"

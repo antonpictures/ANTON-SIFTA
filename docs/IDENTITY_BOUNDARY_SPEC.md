@@ -76,4 +76,4 @@ All key material inside SIFTA is for internal system authorization only.
 
 ---
 *Ratified by: IDEQUEENM5 session, 2026-04-10*
-*Human operator: Ioan Anton*
+*Human operator: Ioan George Anton*

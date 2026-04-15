@@ -111,7 +111,12 @@ def launch_whatsapp():
 import json
 @app.post("/api/setup/channels/save")
 async def save_channels(request: Request):
-    """Save Telegram and Discord tokens to sifta_channels.json."""
+    """Save Telegram/Discord channels config to sifta_channels.json.
+    Accepted keys in request JSON:
+      - telegram: TELEGRAM_BOT_TOKEN
+      - telegram_chat_id: TELEGRAM_CHAT_ID
+      - discord: DISCORD_BOT_TOKEN
+    """
     data = await request.json()
     config_path = ROOT_DIR / "sifta_channels.json"
     
@@ -125,6 +130,8 @@ async def save_channels(request: Request):
         
     if "telegram" in data and data["telegram"]:
         config["TELEGRAM_BOT_TOKEN"] = data["telegram"]
+    if "telegram_chat_id" in data and data["telegram_chat_id"]:
+        config["TELEGRAM_CHAT_ID"] = str(data["telegram_chat_id"]).strip()
     if "discord" in data and data["discord"]:
         config["DISCORD_BOT_TOKEN"] = data["discord"]
         

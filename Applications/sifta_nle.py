@@ -387,6 +387,37 @@ def generate_demo_waveform(duration: float = 30.0, sample_rate: int = 8000) -> n
     return combined.astype(np.float32)
 
 
+def generate_demo_subtitles(total_dur: float) -> List[SubtitleEntry]:
+    """Generate synthetic subtitles that span the timeline for demo."""
+    phrases = [
+        "We built this swarm from two machines and a dream.",
+        "The pheromone matrix replaces the timeline.",
+        "Every cut is an emergent consensus, not a human drag.",
+        "Rhythm swimmers detect transients in the audio bed.",
+        "Chroma swimmers converge on the Hero Frame target.",
+        "Audio sentinels protect the vocal band from music collision.",
+        "Silence is signal. Every gap is a potential cut.",
+        "The narrative weaver reads the transcript and triggers intent.",
+        "Export as EDL for Premiere, DaVinci, or Final Cut.",
+        "This is stigmergic filmmaking — the timeline is dead.",
+        "Each clip has provenance: codec, framerate, color signature.",
+        "Cohesion index measures how unified the grade is.",
+        "Lower the threshold: more cuts. Raise it: only consensus.",
+        "The substrate remembers what was seen. Pheromones evaporate slowly.",
+        "STGM tokens are earned for useful edit decisions.",
+    ]
+    subs: List[SubtitleEntry] = []
+    t = 1.0
+    for phrase in phrases:
+        dur_phrase = random.uniform(2.0, 4.5)
+        if t + dur_phrase > total_dur:
+            break
+        subs.append(SubtitleEntry(start=t, end=t + dur_phrase, text=phrase,
+                                  speaker="NARRATOR", confidence=random.uniform(0.85, 1.0)))
+        t += dur_phrase + random.uniform(0.5, 3.0)
+    return subs
+
+
 def generate_demo_clips(count: int = 6) -> List[MediaClip]:
     """Generate demo clips with synthetic waveforms for testing."""
     names = [
@@ -399,7 +430,7 @@ def generate_demo_clips(count: int = 6) -> List[MediaClip]:
     timeline_pos = 0.0
 
     for i in range(count):
-        dur = random.uniform(8, 45)
+        dur = random.uniform(12, 40)
         clip = MediaClip(
             path=Path(f"/demo/{names[i % len(names)]}"),
             filename=names[i % len(names)],
@@ -419,7 +450,6 @@ def generate_demo_clips(count: int = 6) -> List[MediaClip]:
             in_point=0.0,
             out_point=dur,
         )
-        # Run analysis
         clip.silence_ranges = detect_silence_ranges(clip.waveform, 8000)
         clip.transient_peaks = detect_audio_transients(clip.waveform, 8000)
         timeline_pos += dur
@@ -468,6 +498,8 @@ class PheromoneMatrixCanvas(QWidget):
         self.chroma_swimmers: List[List[float]] = []
         self.audio_sentinels: List[List[float]] = []
 
+        self.vocal_energy_map: List[Tuple[float, float]] = []
+
         # ── Sim ───────────────────────────────────────────────────
         self.tick = 0
         self.sim_time = 0.0
@@ -482,12 +514,12 @@ class PheromoneMatrixCanvas(QWidget):
         self.timer.start(33)  # ~30 FPS
 
     def load_demo(self):
-        """Load demo clips for testing."""
+        """Load demo clips with analysis, subtitles, and vocal energy."""
         self.clips = generate_demo_clips(6)
         self.total_duration = sum(c.duration for c in self.clips)
         self._init_swimmers()
         self._log("📂 Loaded 6 demo clips — running stigmergic analysis...")
-        # Generate initial pheromones from transient detection
+
         for ci, clip in enumerate(self.clips):
             for peak_t in clip.transient_peaks:
                 global_t = clip.timeline_start + peak_t
@@ -502,7 +534,25 @@ class PheromoneMatrixCanvas(QWidget):
                     time_pos=global_t, strength=0.6,
                     source="SILENCE", clip_idx=ci
                 ))
-        self._log(f"🐜 {len(self.pheromones)} pheromone traces deposited from audio analysis")
+
+        self.subtitles = generate_demo_subtitles(self.total_duration)
+        for sub in self.subtitles:
+            mid = (sub.start + sub.end) / 2.0
+            self.pheromones.append(CutPheromone(
+                time_pos=sub.end + 0.1, strength=0.45,
+                source="NARRATIVE", clip_idx=-1
+            ))
+
+        self.vocal_energy_map: List[Tuple[float, float]] = []
+        for clip in self.clips:
+            if clip.waveform is not None:
+                ve = compute_vocal_band_energy(clip.waveform, 8000, window_sec=0.2)
+                for t, ratio in ve:
+                    self.vocal_energy_map.append((clip.timeline_start + t, ratio))
+
+        self._log(f"🐜 {len(self.pheromones)} pheromone traces deposited")
+        self._log(f"📝 {len(self.subtitles)} synthetic subtitles generated")
+        self._log(f"🎤 {len(self.vocal_energy_map)} vocal energy samples computed")
 
     def load_clips(self, paths: List[Path]):
         """Load real video/audio files via ffprobe."""
@@ -660,10 +710,26 @@ class PheromoneMatrixCanvas(QWidget):
 
         # ── ChromaSwimmer behavior ────────────────────────────────
         for sw in self.chroma_swimmers:
-            if self.hero_active:
-                # Move toward clips with color deviation from hero
-                target_x = random.uniform(0, w)
-                sw[2] += (target_x - sw[0]) * 0.01
+            if self.hero_active and self.clips:
+                hr, hg, hb = self.hero_color
+                best_dev = 0.0
+                best_x = sw[0]
+                for clip in self.clips:
+                    cr, cg, cb = clip.avg_color
+                    dev = math.sqrt((cr - hr) ** 2 + (cg - hg) ** 2 + (cb - hb) ** 2)
+                    if dev > best_dev:
+                        best_dev = dev
+                        best_x = (clip.timeline_start + clip.duration / 2) / max(self.total_duration, 1) * w
+                sw[2] += (best_x - sw[0]) * 0.02
+                if best_dev > 80 and self.tick % 60 == 0 and random.random() < 0.15:
+                    for clip in self.clips:
+                        cx = (clip.timeline_start / max(self.total_duration, 1)) * w
+                        if abs(sw[0] - cx) < 20:
+                            self.pheromones.append(CutPheromone(
+                                time_pos=clip.timeline_start, strength=0.35,
+                                source="NARRATIVE", clip_idx=-1
+                            ))
+                            break
             sw[2] += random.gauss(0, 0.3)
             sw[3] += random.gauss(0, 0.2)
             sw[2] *= 0.90
@@ -676,6 +742,20 @@ class PheromoneMatrixCanvas(QWidget):
         # ── AudioSentinel patrol ──────────────────────────────────
         self.sentinels_active = 0
         for sw in self.audio_sentinels:
+            # Attract sentinels toward high vocal-energy regions
+            if self.vocal_energy_map:
+                best_pull = 0.0
+                best_vx = sw[0]
+                for vt, vratio in self.vocal_energy_map[::max(1, len(self.vocal_energy_map) // 50)]:
+                    vx = (vt / max(self.total_duration, 1)) * w
+                    d = abs(sw[0] - vx)
+                    if d < 120 and vratio > 0.3 and vratio > best_pull:
+                        best_pull = vratio
+                        best_vx = vx
+                if best_pull > 0.3:
+                    sw[2] += (best_vx - sw[0]) * 0.015 * best_pull
+                    self.sentinels_active += 1
+
             sw[2] += random.gauss(0, 0.4)
             sw[3] += random.gauss(0, 0.2)
             sw[2] *= 0.88
@@ -684,7 +764,6 @@ class PheromoneMatrixCanvas(QWidget):
             sw[1] += sw[3]
             sw[0] = max(5, min(w - 5, sw[0]))
             sw[1] = max(h * 0.4, min(h * 0.75, sw[1]))
-            self.sentinels_active += 1
 
         # ── Cut decisions (NarrativeWeaver logic) ─────────────────
         if self.tick % 30 == 0:
@@ -838,6 +917,14 @@ class PheromoneMatrixCanvas(QWidget):
         p.setBrush(QBrush(QColor(255, 120, 255, 15)))
         p.drawRoundedRect(QRectF(0, sentinel_y, w, sentinel_h), 2, 2)
 
+        if self.vocal_energy_map:
+            for (vt, vratio) in self.vocal_energy_map:
+                vx = (vt / max(self.total_duration, 1)) * w
+                bar_h = vratio * sentinel_h * 0.9
+                alpha = int(min(255, vratio * 400))
+                p.setBrush(QBrush(QColor(255, 120, 255, alpha)))
+                p.drawRect(QRectF(vx, sentinel_y + sentinel_h - bar_h, max(1, w / max(len(self.vocal_energy_map), 1)), bar_h))
+
         # ── Cut pheromone lines (vertical) ────────────────────────
         for ph in self.pheromones:
             px = (ph.time_pos / max(self.total_duration, 1)) * w
@@ -903,6 +990,45 @@ class PheromoneMatrixCanvas(QWidget):
             p.setFont(QFont("Menlo", 8, QFont.Weight.Bold))
             p.drawText(QPointF(ph_x + 4, h - 10),
                        f"{tc_h:02d}:{tc_m:02d}:{tc_s:02d}:{tc_f:02d}")
+
+        # ── Telemetry HUD ────────────────────────────────────────
+        if self.clips:
+            p.setPen(QPen(C_TEXT_DIM))
+            p.setFont(QFont("Menlo", 7))
+            p.drawText(QPointF(10, telemetry_y - 2), "TELEMETRY")
+
+            col_w = max(80, w / max(len(self.clips), 1))
+            for ci, clip in enumerate(self.clips):
+                cx = ci * col_w
+                cy = telemetry_y + 2
+
+                # Color swatch
+                r, g, b = clip.avg_color
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(QColor(r, g, b, 180)))
+                p.drawRoundedRect(QRectF(cx + 2, cy, 10, 10), 2, 2)
+
+                p.setPen(QPen(C_TEXT))
+                p.setFont(QFont("Menlo", 6))
+                p.drawText(QPointF(cx + 15, cy + 9), clip.filename[:12])
+
+                sil_ratio = sum(e - s for s, e in clip.silence_ranges) / max(clip.duration, 0.1)
+                trans_density = len(clip.transient_peaks) / max(clip.duration, 0.1)
+
+                p.setPen(QPen(C_TEXT_DIM))
+                p.drawText(QPointF(cx + 4, cy + 20),
+                           f"sil:{sil_ratio:.0%} trns:{trans_density:.1f}/s")
+                p.drawText(QPointF(cx + 4, cy + 30),
+                           f"{clip.duration:.1f}s {clip.codec} {clip.fps:.0f}fps")
+
+                # Silence ratio bar
+                bar_x = cx + 4
+                bar_y = cy + 34
+                bar_w = col_w - 10
+                p.setBrush(QBrush(QColor(30, 25, 42)))
+                p.drawRect(QRectF(bar_x, bar_y, bar_w, 4))
+                p.setBrush(QBrush(QColor(255, 200, 80, 160)))
+                p.drawRect(QRectF(bar_x, bar_y, bar_w * min(1.0, sil_ratio), 4))
 
         # ── Scan line ─────────────────────────────────────────────
         scan_y_pos = (self.tick * 1.5) % h

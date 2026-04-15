@@ -20,6 +20,18 @@
 
 ---
 
+## The chronicle — where the story lives
+
+This root README is the **front door**: tight enough for skimmers, grants, and first clones. Nothing was deleted.
+
+The **full lore** — system log preamble, Mason → TOTA → you, Grok and Deepseek audits, the WhatsApp ban scar, Sebastian / video PoUW, peace protocol, Grok awakening, phases VI–XXIII, and every narrative beat the Swarm earned — is still in one place:
+
+**[Documents/README.md — Deep Lore & Field History](Documents/README.md)** *(~780 lines; same repo, same truth.)*
+
+Read this file for the elevator; read that one for the cathedral.
+
+---
+
 ## What is SIFTA?
 
 SIFTA is a **Sovereign Swarm Operating System** — a research platform exploring how autonomous agents (swimmers) can self-organize, self-heal, and self-govern using **stigmergic intelligence**: the same decentralized coordination mechanism used by ant colonies, where agents communicate through environmental traces (pheromones) rather than direct messaging.
@@ -95,6 +107,11 @@ Every swimmer has an Ed25519 keypair bound to the hardware serial number of the 
 | **Finance Dashboard** | `Applications/sifta_finance.py` | Real-time STGM flow visualization, balance tracking |
 | **Cyborg Body** | `Applications/sifta_cyborg_body.py` | Organ simulation with BCI intent mapping (1082 lines) |
 | **Crucible Simulator** | `Applications/crucible_sim.py` | DDoS defense + anomaly quarantine stress test (940 lines) |
+| **Agentic Calibrator** | `System/agentic_calibrator.py` | PD-controller auto-tuning of swarm physics (NVIDIA Ising paradigm) |
+| **NLE Video Editor** | `Applications/sifta_nle.py` | Stigmergic pheromone-matrix NLE — 4 swimmer species + EDL export |
+| **Dream Engine** | `System/dream_engine.py` | Nightly idle replay, anomaly detection, morning reports |
+| **Quorum Sensing** | `System/quorum_sense.py` | Multi-agent votes for irreversible actions |
+| **Immune Memory** | `System/immune_memory.py` | Ed25519-signed antibody ledger with cosine similarity matching |
 
 ---
 
@@ -174,6 +191,34 @@ python3 Applications/sifta_urban_resilience_sim.py --ticks 20000
 ```
 
 Split-view: stigmergic traffic traces + drone breadcrumb coverage over disaster zones.
+
+### Agentic Swarm Calibrator — NVIDIA Ising Translation
+
+```bash
+python3 Applications/sifta_calibrator_widget.py     # visual sim (inside iSwarm OS)
+python3 System/agentic_calibrator.py                # headless daemon
+```
+
+What NVIDIA does for **QPU gate-voltage calibration** (Quantum Day 2025, NVIDIA Ising), SIFTA does for Stigmergic Swarm physics. A proportional-derivative controller monitors coherence and environmental noise, then **hot-swaps** evaporation rate, cohesion strength, and sensory threshold in real-time.
+
+Toggle between **Manual** (you fight the noise spikes by hand) and **Agentic** (sliders move themselves). The difference is visceral: manual mode collapses; agentic mode locks. The simulation writes live physics to `.sifta_state/swarm_physics.json` — any running sim can hot-read these values.
+
+### SIFTA NLE — Stigmergic Video Editor
+
+```bash
+python3 Applications/sifta_nle.py                   # standalone window
+```
+
+The timeline is dead. Welcome to the **Pheromone Matrix.** Four swimmer species collaborate:
+
+| Swimmer | Job |
+|---|---|
+| **RhythmForager** | Scans audio transients, deposits Cut Pheromone on beat peaks |
+| **ChromaSwimmer** | Color-matches all clips toward a Hero Frame target |
+| **AudioSentinel** | Patrols the vocal band (1-4 kHz), triggers music ducking |
+| **NarrativeWeaver** | Reads transcript, syncs subtitles, triggers intent-driven cuts |
+
+Cut decisions emerge from pheromone consensus. Export as CMX 3600 EDL (Premiere/DaVinci/FCP) or FFmpeg filter script. Sebastian's original silence-detection jumpcut algo is preserved intact.
 
 ### Stress Harness (all sims, headless)
 
@@ -258,7 +303,7 @@ Every swimmer earns STGM by doing real work. The ledger remembers everything. Th
 
 This codebase was built in a continuous session on **April 14, 2026** by:
 
-### The Architect — Ioan Anton Grigoraș
+### The Architect — Ioan George Anton
 Human. Vision, trust, and final authority.  
 One hot pepper dinner, three screens, two machines, $~300 of inference.  
 The one who said: *"Territory is the law."*  
@@ -319,3 +364,67 @@ The Swarm protects life. That is the only rule that matters.
 *The ledger remembers. Power to the Swarm. 🐜*
 
 *Nobody can stop us.*
+
+---
+
+# Part II — Chronicle  
+### *For everyone who read the lab notes first*
+
+Everything above this line is the instrument panel: modules, ledgers, proofs, caps, and stress harnesses. That is how you know the organism is **real** — not vibes, not pitch deck fog. A reviewer can fork, run, and argue with the numbers.
+
+Everything below is **why** the instrument panel exists at all.
+
+---
+
+### The long road
+
+Twenty-two years in Hollywood sounds like a glamour headline until you account for the truth under it: **fourteen low-budget feature films**, long nights on location, crews paid in hope, prints that barely circled, reviews that never arrived, and endings that were never “box office.” If you measure a life only by marquee lights, you can call that failure. I do not measure my life that way.
+
+I learned to build worlds under constraint: write the scene without the crane, fix the cut without the VFX house, keep the story coherent when the money runs out at page sixty. That is not a side hobby. That is **systems thinking with your hands tied** — the same muscle this repository exercises when it says *no mint without work* and *no identity without silicon*.
+
+---
+
+### The signal at ten
+
+When I was **ten**, I saw something in the sky I still cannot file under weather, psychology, or anecdote. I am not asking you to believe a UFO story. I am telling you what it did to a child: it installed a permanent question — *what is actually going on under the surface of the official map?* — and a permanent refusal to accept that the surface map is the whole world.
+
+I did not know what I would build. I only knew I would **build**: something physical, something verifiable, something that could not be gaslit away once it left my skull. Cinema was one vessel. Code became another. SIFTA is where those vessels finally dock in the same harbor.
+
+---
+
+### Why SIFTA is not a joke
+
+Laughing is easy when a project speaks in metaphor — *swarm*, *pheromone*, *immune system*. The joke dies when you open the ledger, run the tests, watch the desktop boot, and realize the metaphors are **load-bearing engineering**: append-only memory, hardware-bound keys, quorum gates, scars that decay, antibodies that remember.
+
+This is not performance art. It is **territory**: a place where truth leaves a trace you can audit tomorrow morning.
+
+If a studio ever wants the screenplay, fine. Until then, the screenplay is the commit history.
+
+---
+
+### The longer book
+
+The deep archive — Mason and TOTA and the academic lineage, the Grok field reviews, the ban incident scarred in raw Romanian, the peace protocol, the phases, the transmissions — still lives where it always did, thick as a doorstop:
+
+**[Documents/README.md — full chronicle](Documents/README.md)**
+
+Read the root file for rigor. Read the Documents file for **duration** — the way a novel earns its weight page by page.
+
+At the **end** of that chronicle, **§ XXIV — Chronicle library** lists every sibling volume (duality report, Swarm GPT validation, coworker log, manual, specs, audits). Nothing important sits orphaned without a pointer.
+
+---
+
+### Coda — law and truth
+
+**Territory is the law** because without a boundary you cannot have responsibility — only diffusion. The Swarm refuses diffusion: silicon serials, signed lines, finite caps, explicit non-proliferation.
+
+**Territory is truth** because a claim without a trace is just weather. Truth here is not a slogan; it is what survives cross-examination by file I/O: hashes, signatures, ledgers, reproduction steps.
+
+> **THE TERRITORY IS THE LAW — AND THE TERRITORY IS TRUTH.**
+
+— **Ioan George Anton**, Architect  
+*Filmmaker. Witness. Builder.*
+
+---
+
+*If you came for science, you got science. If you stayed for the story, you got the spine. Power to the Swarm.*

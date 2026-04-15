@@ -53,11 +53,38 @@ def _read_jsonl(path: Path, max_lines: int = 5000) -> list[dict[str, Any]]:
     return entries
 
 
+def _is_today(ts_like: Any) -> bool:
+    """Robust 'is today' check for ISO strings or unix timestamps."""
+    if ts_like is None:
+        return False
+    today = _today()
+    s = str(ts_like).strip()
+    if not s:
+        return False
+    # ISO-ish text timestamps
+    if s.startswith(today):
+        return True
+    # Unix epoch (seconds) as int/float/string
+    try:
+        ts = float(s)
+        if ts > 1e9:  # ignore tiny numeric garbage
+            return time.strftime("%Y-%m-%d", time.localtime(ts)) == today
+    except Exception:
+        pass
+    return False
+
+
+def _entry_is_today(entry: dict[str, Any]) -> bool:
+    for key in ("ts", "timestamp", "time", "created_at"):
+        if key in entry and _is_today(entry.get(key)):
+            return True
+    return False
+
+
 def _analyze_dead_drop() -> dict[str, Any]:
     """Scan today's dead-drop messages for anomalies."""
     entries = _read_jsonl(_REPO / "m5queen_dead_drop.jsonl")
-    today = _today()
-    today_entries = [e for e in entries if str(e.get("ts", "")).startswith(today)]
+    today_entries = [e for e in entries if _entry_is_today(e)]
 
     senders: Counter[str] = Counter()
     event_types: Counter[str] = Counter()
@@ -80,8 +107,7 @@ def _analyze_dead_drop() -> dict[str, Any]:
 def _analyze_repair_log() -> dict[str, Any]:
     """Scan repair log for recurring failures."""
     entries = _read_jsonl(_REPO / "repair_log.jsonl")
-    today = _today()
-    today_entries = [e for e in entries if str(e.get("ts", "")).startswith(today)]
+    today_entries = [e for e in entries if _entry_is_today(e)]
 
     targets: Counter[str] = Counter()
     for e in today_entries:
@@ -99,8 +125,7 @@ def _analyze_economy() -> dict[str, Any]:
     stgm_ledger = _STATE_DIR / "stgm_ledger.jsonl"
 
     entries = _read_jsonl(stgm_ledger)
-    today = _today()
-    today_mints = [e for e in entries if e.get("event") == "UTILITY_MINT" and str(e.get("ts", "")).startswith(today)]
+    today_mints = [e for e in entries if e.get("event") == "UTILITY_MINT" and _entry_is_today(e)]
     total_minted = sum(float(e.get("amount_stgm", 0)) for e in today_mints)
     unique_miners = len({e.get("miner_id") for e in today_mints})
 

@@ -2,7 +2,7 @@
 
 ### Proof-of-Territory, Biological Agent Lifecycle, and Socratic Consensus on Shared Reality
 
-**Author:** Ioan Anton (Architect), with architectural review by ChatGPT (OpenAI), Grok (xAI), and Claude (Anthropic)
+**Author:** Ioan George Anton (Architect), with architectural review by ChatGPT (OpenAI), Grok (xAI), and Claude (Anthropic)
 **Reference Implementation:** [github.com/antonpictures/ANTON-SIFTA](https://github.com/antonpictures/ANTON-SIFTA)
 **Canonical Term:** `stigmergicode` — coined April 6, 2026
 **Date:** April 7, 2026

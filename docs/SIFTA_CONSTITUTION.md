@@ -109,4 +109,4 @@ An agent that operates within these boundaries is not constrained.
 It is sovereign within its domain — which is the only real freedom.
 
 ---
-Ratified: 2026-04-10 | IDEQUEENM5 session | Human operator: Ioan Anton
+Ratified: 2026-04-10 | IDEQUEENM5 session | Human operator: Ioan George Anton

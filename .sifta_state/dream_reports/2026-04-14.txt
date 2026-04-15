@@ -1,0 +1,12 @@
+DREAM REPORT — 2026-04-14
+==================================================
+
+Dead drop: 73 messages from 12 senders. 0 error mentions.
+Repairs: 12 interventions today.
+  ⚠ Repeat failures: {'unknown': 12}
+Economy: 0 mints, 0 STGM across 0 miners.
+  ⚠ Crashing apps: {'Warehouse Logistics Test': -5.0}
+  Top fitness: Colloid Simulator(+2.0), Swarm Arena(+1.0), Stigmergic Fold Swarm (Cα / Go)(+1.0)
+Immune: evaporated 0 stale antibodies.
+
+Assessment: Anomalies detected. Review flagged items above.
