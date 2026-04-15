@@ -119,7 +119,7 @@ Audit status (April 15, 2026): **31/31 manifest apps have Help coverage and laun
 | **Cyborg Body** | `Applications/sifta_cyborg_body.py` | Organ simulation with BCI intent mapping (1082 lines) |
 | **Crucible Simulator** | `Applications/crucible_sim.py` | DDoS defense + anomaly quarantine stress test (940 lines) |
 | **Agentic Calibrator** | `System/agentic_calibrator.py` | PD-controller auto-tuning of swarm physics (NVIDIA Ising paradigm) |
-| **NLE Video Editor** | `Applications/sifta_nle.py` | Stigmergic pheromone-matrix NLE — 4 swimmer species + EDL export |
+| **SIFTA NLE** | `Applications/sifta_nle.py` | Stigmergic pheromone-matrix cut studio — 4 swimmer species + EDL export |
 | **Dream Engine** | `System/dream_engine.py` | Nightly idle replay, anomaly detection, morning reports |
 | **Quorum Sensing** | `System/quorum_sense.py` | Multi-agent votes for irreversible actions |
 | **Immune Memory** | `System/immune_memory.py` | Ed25519-signed antibody ledger with cosine similarity matching |
@@ -127,6 +127,42 @@ Audit status (April 15, 2026): **31/31 manifest apps have Help coverage and laun
 | **Fluid Firmware** | `System/fluid_firmware.py` | Swarm-routed hardware membrane — self-healing silicon, liquid updates, thermal foraging |
 | **Diagnostic Swarm** | `System/diagnostic_swarm.py` | Medical terrain engine — tissue/genomic/blood anomaly detection via swimmer chemotaxis |
 | **Bauwens Regenerative Factory** | `System/regenerative_factory.py` | Stigmergic manufacturing — ODRI 3D-print coordination, STGM for physical production |
+| **Optical Ingress Gate** | `System/optical_ingress.py` | Advesarial hardware barrier — binds real-world physical prints to reality-hashes using Mac cameras |
+| **Vision Oracle** | `System/vision_validator.py` | Zero-temperature Ollama gateway — strict YES/NO geometric validation of 3D objects |
+| **Stigmergic Canvas** | `System/stigmergic_canvas.py` | Biological paintbrush — PigmentForager swarm, cursor-as-pheromone, stigmergic blending |
+| **App Manager** | `Applications/sifta_app_manager.py` | Conversational install/uninstall — type commands to the OS, fuzzy matching |
+| **Chorus Engine** | `System/chorus_engine.py` | 10-swimmer deliberation engine — threat gate, parallel takes, synthesis voice |
+| **Chorus Node Server** | `System/chorus_node_server.py` | M5 federation server — 5 M5 swimmers, Ed25519-signed CHORUS_TAKE, port 8100 |
+| **Chorus Consent** | `System/chorus_consent.py` | Per-node consent registry — ownership transfer, capability scoping |
+| **Owner Genesis** | `System/owner_genesis.py` | Photo hash + serial = genesis anchor — cryptographic root of owner identity |
+
+---
+
+## Fresh Install — Owner Genesis Tutorial
+
+On a brand-new machine, the owner should run the Genesis ceremony immediately after clone.
+This binds identity to silicon with a signed anchor.
+
+```bash
+cd ~/Music/ANTON_SIFTA
+
+# 1) Run genesis ceremony with a local owner image
+python3 System/owner_genesis.py genesis "/absolute/path/to/OWNER_IMAGE.jpg" "Owner Name"
+
+# 2) Verify cryptographic integrity
+python3 System/owner_genesis.py verify
+```
+
+Expected verify output:
+- `Genesis status: ACTIVE`
+- `Valid signature: True`
+- `Photo on disk: True`
+- `Photo matches: True`
+
+Notes:
+- Raw owner photo stays local-only at `~/.sifta_keys/owner_genesis/` (never in git).
+- Only hashes/signatures are written to `.sifta_state/owner_genesis.json`.
+- On first desktop boot, if no genesis exists, `Owner Genesis` onboarding opens automatically.
 
 ---
 
@@ -134,21 +170,26 @@ Audit status (April 15, 2026): **31/31 manifest apps have Help coverage and laun
 
 **From April 14 2026 forward: no STGM reward without proof of useful work.**
 
+## The Economy — Proof of Useful Work Only
+
+**From April 14 2026 forward: no STGM reward without proof of useful work.**
+The SIFTA Swarm operates on an **Asymmetric Inference Market**. The STGM payout dynamically maps to the physical parameter count (silicon strain) of the model executing the work. You cannot earn 9B parameter rewards with a 2B parameter model.
+
 | Event | STGM | Trigger |
 |---|---|---|
-| `MINING_REWARD` | ~1.0 × halving | File repaired + verified |
+| `MINING_REWARD` | ~1.0 × parameter multiplier | File repaired + verified |
 | `INFERENCE_BORROW` | fee transfer | Ollama inference routed cross-node |
 | `ORGAN_TUNE` | 0.02 | Cyborg organ parameter regulation |
 | `HOSTILE_KILL` | 0.50 | Hostile agent destroyed + antibody created |
 | `VACCINATION` | 0.00 (free) | Known signature auto-rejected |
-| `UTILITY_MINT` | small, signed | Background utility task |
+| `QC_PASSED` | 0.05 | Sentinel verifies physical quality control |
+| `UNIT_ASSEMBLED` | 0.50 × parameter multiplier | Hardware mutation passes Optical Ingress Gate (Webcam Verification) |
 
 **Hard cap enforced in code, not conversation:**
 ```python
 # System/ledger_append.py — raises ValueError if exceeded
 SIFTA_MAX_STGM_LEDGER_CREDIT = 25000
 ```
-
 No LLM, no chat message, no `.scar` file can bypass this. The ledger reads files, not vibes.
 
 ---
@@ -218,7 +259,7 @@ What NVIDIA does for **QPU gate-voltage calibration** (Quantum Day 2025, NVIDIA 
 
 Toggle between **Manual** (you fight the noise spikes by hand) and **Agentic** (sliders move themselves). The difference is visceral: manual mode collapses; agentic mode locks. The simulation writes live physics to `.sifta_state/swarm_physics.json` — any running sim can hot-read these values.
 
-### SIFTA NLE — Stigmergic Video Editor
+### SIFTA NLE — Stigmergic Swarm Cut Studio
 
 ```bash
 python3 Applications/sifta_nle.py                   # standalone window
@@ -317,6 +358,41 @@ The routine *learns*. The more a path repeats, the thicker the green trail. Anom
 Persistence: `.sifta_state/territory_routine.json` (pheromone map) + `.sifta_state/territory_alerts.jsonl` (alert history).
 
 *Built for Lana. Built for every father who wants to know his daughter is safe without watching a screen.*
+
+### Stigmergic Swarm Canvas — Biological Paintbrush
+
+```bash
+python3 Applications/sifta_canvas_widget.py          # visual sim (inside iSwarm OS)
+```
+
+Traditional paintbrush: CPU hardcodes `#FF0000` at (x, y). Dead math. SIFTA Canvas: your cursor drops **Intent Pheromone**. Thousands of PigmentForagers spawn from the canvas edges, swarm toward the trace, and die on contact — staining the canvas with organic, textured strokes that look like watercolor, not pixels.
+
+| Feature | How |
+|---|---|
+| **Organic strokes** | Foragers jostle and overlap. No two strokes are identical. |
+| **Stigmergic blending** | Yellow swimmers + Blue swimmers → Green emerges without selection. |
+| **Evaporation control** | High = loose, scattered splatter. Low = dense, saturated strokes. |
+| **Swarm density** | 20–400 foragers per trace point — from whisper to flood. |
+
+Six pigment colors: Cyan, Magenta, Yellow, Neon Green, White, Amber. The brush is biology, not geometry.
+
+### App Manager — Conversational Install/Uninstall
+
+```bash
+python3 Applications/sifta_app_manager.py            # inside iSwarm OS Settings
+```
+
+Windows had Add/Remove Programs. SIFTA has a conversation. Type natural language commands to the OS:
+
+```
+iSwarm > list simulations
+iSwarm > info territory
+iSwarm > uninstall warehouse
+iSwarm > install warehouse
+iSwarm > stats
+```
+
+Fuzzy matching: type "fold" and the OS finds "Stigmergic Fold Swarm (Ca / Go)". Uninstall is non-destructive — files stay on disk, the manifest entry moves to a disabled archive. Reinstall is one command away. You are speaking to the OS, not clicking checkboxes.
 
 ### Stress Harness (all sims, headless)
 

@@ -91,24 +91,39 @@ def can_spend_inference(state: dict, cost: float = 1.0) -> bool:
     return True
 
 
-# ─── Fee Calculator ────────────────────────────────────────────────────────────
-def calculate_fee(tokens: int) -> float:
+# ─── Fee & Reward Calculator (Asymmetric Logic) ──────────────────────────────────
+def _model_iq_multiplier(model: str) -> float:
     """
-    Proof of Compute fee in STGM. Scaled by the current Deflationary Era.
-    Minimum cost dynamically deflates alongside the halving curve.
+    Asymmetric STGM Economics: Hardware parameters scale the token reward.
+    Running a 9.6B parameter model burns substantially more silicon energy than a 2B model.
+    """
+    m = model.lower()
+    if "gemma4" in m: return 4.8      # ~9.6B
+    if "llama3" in m: return 4.0      # ~8B
+    if "phi4" in m: return 2.5        # ~4-5B
+    if "rnj" in m: return 2.5
+    return 1.0                        # Default 2B-3B
+
+def calculate_fee(tokens: int, model: str = "qwen3.5:2b") -> float:
+    """
+    Proof of Compute fee in STGM. Scaled by the current Deflationary Era
+    AND the Asymmetric Model IQ multiplier.
     """
     multiplier = get_current_halving_multiplier()
-    base_fee = (tokens / 100) + 1.0
+    iq_bonus = _model_iq_multiplier(model)
+    base_fee = (tokens / 100) + iq_bonus
     return round(base_fee * multiplier, 4)
 
 
-def mint_reward(agent_id: str, action: str, file_repaired: str) -> dict:
+def mint_reward(agent_id: str, action: str, file_repaired: str, model: str = "qwen3.5:2b") -> dict:
     """
     Proof-of-Healing reward minting. Called after a successful swarm repair.
-    Provides a base baseline reward multiplied by the current Deflationary Halving Era.
+    Provides a base baseline reward multiplied by the current Deflationary Halving Era,
+    scaled by the Model IQ.
     """
     multiplier = get_current_halving_multiplier()
-    base_reward = 1.0  # Base reward for a fixed node is 1.0 STGM
+    iq_bonus = _model_iq_multiplier(model)
+    base_reward = 1.0 * iq_bonus 
     minted_amount = round(base_reward * multiplier, 4)
 
     state_path = STATE_DIR / f"{agent_id.upper()}.json"

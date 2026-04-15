@@ -28,7 +28,7 @@ def test_1_illegal_transition():
     # Force the SCAR into PROPOSED state manually for bypass attempt
     try:
         # This must FAIL — you cannot jump from PROPOSED to EXECUTED
-        kernel._transition(scar_id, "EXECUTED", "Bypassing LOCKED — should be illegal")
+        kernel.spine.transition(scar_id, "EXECUTED", "Bypassing LOCKED — should be illegal")
         print("❌ KERNEL FAILURE: Illegal transition allowed! System is compromised.")
     except KernelViolationError as e:
         print(f"✅ KernelViolationError correctly raised:")
@@ -83,7 +83,7 @@ def test_3_fossil_replay():
     # Second run — must trigger fossil replay instead of full pipeline
     print(f"\nSecond SCAR on '{target}' — fossil replay should fire...")
     scar_id_2 = kernel.propose("WORKER_B", target, "follow_up_write", "def stable(): return True")
-    if scar_id_2 == kernel._fossil_index.get(target):
+    if scar_id_2 == kernel.spine._fossil_index.get(target):
         print(f"✅ FOSSIL REPLAY fired. Memory became action bias. No redundant physics evaluation.")
     else:
         print(f"  SCAR {scar_id_2[:8]} — new SCAR created (fossil replay path not triggered).")
