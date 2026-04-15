@@ -24,6 +24,11 @@
     "entry_point": "Applications/sifta_arena.py",
     "signature": "UNVERIFIED"
   },
+  "Cyborg Organ Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_cyborg_sim.py",
+    "signature": "UNVERIFIED"
+  },
   "Biological Dashboard": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_biological_gui.py",
