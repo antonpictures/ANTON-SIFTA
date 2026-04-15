@@ -274,20 +274,28 @@ def _get_protect_get_allowlist() -> set[str]:
 
 
 class SiftaGetProtectMiddleware(BaseHTTPMiddleware):
-    """When SIFTA_PROTECT_GET=1 and SIFTA_API_KEY is set, require the key for GET /api/* (except allowlist)."""
+    """
+    GET /api/* authentication:
+    - If SIFTA_API_KEY is unset: all GET /api/* stay open (local dev).
+    - If SIFTA_API_KEY is set: require the key on GET /api/* except SIFTA_GET_PROTECT_ALLOW,
+      unless SIFTA_OPEN_GET_API=1 (legacy LAN-wide read without key on every route).
+    - SIFTA_PROTECT_GET=1 with SIFTA_OPEN_GET_API=1: allowlist still bypasses auth; other routes require key.
+    """
 
     async def dispatch(self, request: Request, call_next):
         if request.method != "GET":
             return await call_next(request)
-        if os.environ.get("SIFTA_PROTECT_GET", "").strip().lower() not in ("1", "true", "yes", "on"):
-            return await call_next(request)
         path = request.url.path
         if not path.startswith("/api/"):
             return await call_next(request)
-        if path in _get_protect_get_allowlist():
-            return await call_next(request)
         key = os.environ.get("SIFTA_API_KEY", "").strip()
         if not key:
+            return await call_next(request)
+        if path in _get_protect_get_allowlist():
+            return await call_next(request)
+        protect_explicit = _env_truthy("SIFTA_PROTECT_GET")
+        open_reads = _env_truthy("SIFTA_OPEN_GET_API")
+        if open_reads and not protect_explicit:
             return await call_next(request)
         got = request.headers.get("x-sifta-key", "").strip()
         auth = request.headers.get("authorization", "")
@@ -348,6 +356,17 @@ if not _api_key:
         "Set SIFTA_API_KEY and send X-SIFTA-Key (or Authorization: Bearer) from clients. "
         "Export SIFTA_REQUIRE_AUTH=1 to refuse startup without a key."
     )
+else:
+    if _env_truthy("SIFTA_OPEN_GET_API"):
+        print(
+            "[*] SIFTA_API_KEY is set; SIFTA_OPEN_GET_API=1 — GET /api/* is open LAN-wide "
+            "(except SIFTA_PROTECT_GET sensitive routes). Mutations still require the key."
+        )
+    else:
+        print(
+            "[*] SIFTA_API_KEY is set — GET /api/* requires X-SIFTA-Key or Bearer unless the path "
+            "is in SIFTA_GET_PROTECT_ALLOW. Set SIFTA_OPEN_GET_API=1 for legacy open reads."
+        )
 
 @app.get("/editor", response_class=HTMLResponse)
 async def serve_video_editor():
@@ -1727,6 +1746,8 @@ async def receive_soul(request: Request):
 @app.get("/api/swarm_state")
 async def get_swarm_state():
     """Aggregated snapshot for the D3 swarm visualization."""
+    from inference_economy import ledger_balance
+
     nodes = []
     now = int(time.time())
     for p in STATE_DIR.glob("*.json"):
@@ -1734,23 +1755,24 @@ async def get_swarm_state():
             state = json.loads(p.read_text(encoding="utf-8"))
             if "id" not in state or "energy" not in state:
                 continue
+            aid = state["id"]
             nodes.append({
-                "id": state["id"],
+                "id": aid,
                 "energy": state.get("energy", 0),
                 "style": state.get("style", "NOMINAL"),
                 "seq": state.get("seq", 0),
-                "stgm_balance": state.get("stgm_balance", 0.0),
+                "stgm_balance": ledger_balance(aid),
+                "stgm_balance_state_file": state.get("stgm_balance", 0.0),
                 "active": now - state.get("updated_at", 0) < 300 if "updated_at" in state else True,
             })
         except Exception:
             pass
 
-    # Read recent STGM transactions
-    tx_log = ROOT_DIR / "STGM_TX_LOG.jsonl"
+    # Canonical economy tail — repair_log.jsonl only (STGM_TX_LOG is not a second truth source here).
     transactions = []
-    if tx_log.exists():
+    if REPAIR_LOG.exists():
         try:
-            lines = tx_log.read_text(encoding="utf-8").splitlines()
+            lines = REPAIR_LOG.read_text(encoding="utf-8").splitlines()
             for line in lines[-50:]:
                 if line.strip():
                     try:

@@ -8,6 +8,7 @@
 import json, time, os, sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SYS = os.path.join(REPO_ROOT, "System")
 DROP_FILE = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 
 def get_serial():
@@ -27,8 +28,11 @@ def pulse():
         "text": f"[HEARTBEAT:π] M5_IDE_AG alive. Serial {serial}. Grid timestamp {int(time.time())}.",
         "timestamp": int(time.time())
     }
-    with open(DROP_FILE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    if _SYS not in sys.path:
+        sys.path.insert(0, _SYS)
+    from ledger_append import append_jsonl_line
+
+    append_jsonl_line(DROP_FILE, entry)
 
 if __name__ == "__main__":
     pulse()

@@ -16,6 +16,7 @@
 import json, time, subprocess, os, re, sys
 
 REPO_ROOT  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SYS       = os.path.join(REPO_ROOT, "System")
 DROP_FILE  = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 SCHEDULER  = "Applications/circadian_rhythm.py"
 
@@ -162,8 +163,11 @@ def broadcast(node, state, idle_secs, serial, changed):
         "text":            text,
         "timestamp":       int(time.time())
     }
-    with open(DROP_FILE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    if _SYS not in sys.path:
+        sys.path.insert(0, _SYS)
+    from ledger_append import append_jsonl_line
+
+    append_jsonl_line(DROP_FILE, entry)
 
 # ─────────────────────────────────────────────────────────────
 

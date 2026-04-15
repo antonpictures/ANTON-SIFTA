@@ -24,7 +24,13 @@ Related (server / wormhole — see server.py):
   SIFTA_REPAIR_LLM_SNIPPET_MAX / SIFTA_REPAIR_IDENTITY_TRACE_MAX — repair.py LLM prompt bounds.
   SIFTA_RATE_LIMIT_PER_MIN — max mutating requests per client IP per minute (0 = off).
   SIFTA_TRUST_PROXY — if 1/true/on, rate limits use first X-Forwarded-For hop (set only behind your own proxy).
-  SIFTA_PROTECT_GET — require API key on GET /api/* except SIFTA_GET_PROTECT_ALLOW (comma paths).
+  SIFTA_PROTECT_GET — require API key on selected sensitive GET routes (terminal, etc.) unless *_OPEN.
+  SIFTA_OPEN_GET_API — when SIFTA_API_KEY is set, allow unauthenticated GET on all /api/* (legacy LAN reads).
+    If unset (default with a key), GET /api/* requires the key except SIFTA_GET_PROTECT_ALLOW.
+    SIFTA_PROTECT_GET=1 with SIFTA_OPEN_GET_API=1 still requires the key on non-allowlisted GET routes.
+
+  /api/swarm_state: per-node stgm_balance is derived from repair_log (ledger_balance); stgm_balance_state_file
+  is the on-disk agent JSON for comparison. Transaction tail uses repair_log only, not STGM_TX_LOG.jsonl.
 
 Hardening backlog (not solved here):
   - Wormhole / receive_soul still assume LAN trust unless you add mTLS or VPN.

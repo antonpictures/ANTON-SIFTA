@@ -18,7 +18,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _sys.path.insert(0, REPO_ROOT)
 _sys.path.insert(0, os.path.join(REPO_ROOT, "System"))
 from inference_economy import ledger_balance
-from ledger_append import append_ledger_line
+from ledger_append import append_jsonl_line, append_ledger_line
 
 STATE_DIR = os.path.join(REPO_ROOT, ".sifta_state")
 MEMPOOL_FILE = os.path.join(STATE_DIR, "human_signals.jsonl")
@@ -98,8 +98,7 @@ def drop_reply(sender_id, reply_text):
         "timestamp": int(time.time()),
         "source": "SWARM_BRAIN_DAEMON"
     }
-    with open(DEAD_DROP_FILE, "a") as f:
-        f.write(json.dumps(drop_payload) + "\n")
+    append_jsonl_line(DEAD_DROP_FILE, drop_payload)
 
 def process_mempool(serial, agent_id):
     """Scan human_signals.jsonl for targeted inference blocks."""

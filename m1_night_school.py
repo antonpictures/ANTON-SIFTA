@@ -5,6 +5,11 @@ import urllib.request
 import json
 import random
 import os
+import sys
+
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+_SYS = os.path.join(REPO_ROOT, "System")
+_DEAD_DROP = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 
 print("\n" + "═" * 60)
 print("  🐜 SIFTA NIGHT SCHOOL PROTOCOL")
@@ -80,9 +85,12 @@ def archive_memory(realization):
         "timestamp": int(time.time())
     }
     try:
-        with open("m5queen_dead_drop.jsonl", "a") as f:
-            f.write(json.dumps(drop) + "\n")
-    except:
+        if _SYS not in sys.path:
+            sys.path.insert(0, _SYS)
+        from ledger_append import append_jsonl_line
+
+        append_jsonl_line(_DEAD_DROP, drop)
+    except Exception:
         pass
 
 if __name__ == "__main__":

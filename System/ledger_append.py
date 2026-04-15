@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Append one JSON line to repair_log.jsonl under an exclusive POSIX lock (flock).
-Reduces interleaved/corrupt lines when server, passive mint, and GUI write concurrently.
+Locked single-line JSON append (flock) for any append-only log:
+  repair_log.jsonl, m5queen_dead_drop.jsonl, human_signals.jsonl, etc.
 
 On platforms without fcntl, falls back to a plain append (previous behavior).
 """
@@ -38,3 +38,8 @@ def append_ledger_line(path: Union[str, Path], event: JsonDict) -> None:
                 pass
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def append_jsonl_line(path: Union[str, Path], event: JsonDict) -> None:
+    """Alias for append_ledger_line — same flock semantics for non-ledger JSONL files."""
+    append_ledger_line(path, event)

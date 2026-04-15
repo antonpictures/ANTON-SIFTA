@@ -16,6 +16,9 @@ import hashlib
 import platform
 import subprocess
 
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+_SYS = os.path.join(REPO_ROOT, "System")
+
 SIFTA_STATE_DIR = ".sifta_state"
 SIFTA_DIRECTIVES_DIR = ".sifta_directives"
 GENESIS_LOG = os.path.join(SIFTA_STATE_DIR, "genesis_log.jsonl")
@@ -184,7 +187,7 @@ def run_genesis():
         json.dump(directive, f, indent=2)
 
     # Drop a message into the dead-drop for the GROUP chat
-    drop_file = "m5queen_dead_drop.jsonl"
+    drop_file = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
     if os.path.exists(drop_file):
         drop = {
             "sender":    territory_name + "_QUEEN",
@@ -195,8 +198,11 @@ def run_genesis():
                 f"I am {agents[0]['agent_id']}. I am ready. POWER TO THE SWARM."
             )
         }
-        with open(drop_file, "a") as f:
-            f.write(json.dumps(drop) + "\n")
+        if _SYS not in sys.path:
+            sys.path.insert(0, _SYS)
+        from ledger_append import append_jsonl_line
+
+        append_jsonl_line(drop_file, drop)
         print(f"\n[GENESIS] 📡 Swarm notified via dead-drop bridge.")
 
     # Final report

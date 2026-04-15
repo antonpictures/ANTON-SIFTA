@@ -34,6 +34,14 @@ def _append_repair_log_line(row: dict) -> None:
     append_ledger_line(_REPO / "repair_log.jsonl", row)
 
 
+def _append_dead_drop_line(row: dict) -> None:
+    if str(_SYS) not in sys.path:
+        sys.path.insert(0, str(_SYS))
+    from ledger_append import append_jsonl_line
+
+    append_jsonl_line(_REPO / "m5queen_dead_drop.jsonl", row)
+
+
 # ──────────────────────────────────────────────────────────────
 # UTILITY: find parent QMdiSubWindow and close it
 # ──────────────────────────────────────────────────────────────
@@ -258,7 +266,7 @@ class SwarmChatWindow(QWidget):
         chat_layout.addWidget(self.display)
         
         # ── Load Persistent Chat History ───────────────────────
-        self.dead_drop_file = "m5queen_dead_drop.jsonl"
+        self.dead_drop_file = str(_REPO / "m5queen_dead_drop.jsonl")
         if not os.path.exists(self.dead_drop_file):
             with open(self.dead_drop_file, "w") as f:
                 pass
@@ -380,8 +388,7 @@ class SwarmChatWindow(QWidget):
                 "timestamp": int(time.time())
             }
             try:
-                with open(self.dead_drop_file, "a") as f:
-                    f.write(json.dumps(drop_entry) + "\n")
+                _append_dead_drop_line(drop_entry)
             except Exception as e:
                 self.display.append(f"<span style='color:#f7768e;'>[DeadDrop ERROR] {e}</span>\n")
 
@@ -472,8 +479,7 @@ class SwarmChatWindow(QWidget):
                 "timestamp": int(time.time())
             }
             try:
-                with open(self.dead_drop_file, "a") as f:
-                    f.write(json.dumps(drop_entry) + "\n")
+                _append_dead_drop_line(drop_entry)
             except Exception:
                 pass
         self._reset_btn()
