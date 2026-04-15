@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import sys
 import re
 from pathlib import Path
@@ -50,6 +51,17 @@ def execute_defrag(bounty_file: str, executing_agent: str):
     
     agent_id = source.group(1).strip() if source else None
     reward = float(reward_raw.group(1).replace("STGM", "").strip()) if reward_raw else 15.0
+
+    # Hard cap bounty payout (LLM / hand-crafted .scar cannot drain arbitrary STGM)
+    _cap_raw = os.environ.get("SIFTA_MAX_DEFRAG_BOUNTY_STGM", "50").strip().lower()
+    if _cap_raw not in ("", "0", "off", "false", "none", "unlimited"):
+        try:
+            _cap = float(_cap_raw)
+            if reward > _cap > 0:
+                print(f"[!] Bounty reward capped {reward} -> {_cap} (SIFTA_MAX_DEFRAG_BOUNTY_STGM)")
+                reward = _cap
+        except ValueError:
+            pass
 
     if not agent_id:
         print("[X] Invalid bounty format.")
