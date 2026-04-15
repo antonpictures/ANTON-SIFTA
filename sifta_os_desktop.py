@@ -630,9 +630,6 @@ class SiftaDesktop(QMainWindow):
         )
         # macOS Qt adds a "?" context-help button by default — kill it
         sub.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
-        sub.setWidget(widget)
-        sub.setWindowTitle(title)
-        sub.resize(w, h)
 
         # Use a custom dark title bar to avoid white native title strips on macOS.
         title_bar = QWidget()
@@ -681,7 +678,11 @@ class SiftaDesktop(QMainWindow):
         wrapper_layout.setSpacing(0)
         wrapper_layout.addWidget(title_bar)
         wrapper_layout.addWidget(widget)
+        
+        # Set the wrapper and apply dimensions AFTER construction so it doesn't collapse
         sub.setWidget(wrapper)
+        sub.setWindowTitle(title)
+        sub.resize(w, h)
 
         sub.setStyleSheet(f"""
             QMdiSubWindow {{
