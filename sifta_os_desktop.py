@@ -1087,10 +1087,16 @@ class SiftaDesktop(QMainWindow):
         No subprocess. No separate QApplication. Stays inside Swarm OS."""
         try:
             import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                class_name, os.path.join(os.getcwd(), module_path)
-            )
+            import sys
+            abs_path = os.path.join(os.getcwd(), module_path)
+            module_name = os.path.splitext(os.path.basename(abs_path))[0]
+            spec = importlib.util.spec_from_file_location(module_name, abs_path)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"Unable to build import spec for {module_path}")
             mod = importlib.util.module_from_spec(spec)
+            # Python 3.13 dataclasses + postponed annotations need module registered
+            # in sys.modules before exec_module() or dataclass decoration can fail.
+            sys.modules[module_name] = mod
             spec.loader.exec_module(mod)
             widget_cls = getattr(mod, class_name)
             widget = widget_cls()
