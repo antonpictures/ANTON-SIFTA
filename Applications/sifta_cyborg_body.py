@@ -74,6 +74,15 @@ C_STGM_GLOW = QColor(0, 255, 128)
 C_TERRITORY  = QColor(255, 255, 255, 25)
 C_REJECT_RED = QColor(255, 50, 50)
 C_ACCEPT_GRN = QColor(50, 255, 120)
+C_BCI_INTENT = QColor(255, 180, 255)     # BCI decoded intent pink-lavender
+C_BCI_CLUSTER = QColor(255, 100, 220)    # BCI cluster hotspot
+
+# ── BCI Intent Labels (emerge from pattern clustering) ─────────────
+BCI_INTENT_LABELS = [
+    "FOCUS", "CALM", "MOTOR_L", "MOTOR_R", "RECALL",
+    "ALERT", "CREATIVE", "SLEEP", "PAIN", "JOY",
+    "ANGER", "CURIOSITY",
+]
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -215,6 +224,16 @@ class CyborgCanvas(QWidget):
         self.neural_history: List[float] = [0.0] * 300
         self.spinal_history: List[float] = [0.0] * 300
         self.cochlear_bands: List[float] = [0.0] * 16
+        self.bci_decoded_history: List[float] = [0.0] * 300
+
+        # ── BCI Intent Map (stigmergic pattern detection) ─────────
+        # 12x12 grid over the brain territory — pheromone heatmap
+        self.bci_intent_map = np.zeros((12, 12), dtype=np.float32)
+        # Discovered intent clusters: list of (gx, gy, label, strength)
+        self.bci_clusters: List[tuple] = []
+        self.bci_patterns_detected = 0
+        self.bci_active_intent = "---"
+        self.bci_confidence = 0.0
 
         # ── Sim state ─────────────────────────────────────────────
         self.tick = 0
@@ -303,7 +322,8 @@ class CyborgCanvas(QWidget):
         self.ecg_history.append(ecg_waveform(self.sim_time, heart.bpm))
         self.ecg_history.pop(0)
 
-        self.neural_history.append(neural_spike_train(self.sim_time, brain.neural_rate))
+        neural_val = neural_spike_train(self.sim_time, brain.neural_rate)
+        self.neural_history.append(neural_val)
         self.neural_history.pop(0)
 
         self.spinal_history.append(spinal_signal(self.sim_time, spine.spine_signal))
@@ -311,6 +331,12 @@ class CyborgCanvas(QWidget):
 
         cochlea = self.organs.get("cochlea_l") or self.organs["cochlea_r"]
         self.cochlear_bands = cochlear_spectrum(self.sim_time, cochlea.gain_db)
+
+        # ── BCI: feed neural signal into intent map ───────────────
+        self._bci_process_signal(neural_val, brain)
+
+        # ── BCI: decay intent map (pheromone evaporation) ─────────
+        self.bci_intent_map *= 0.997
 
         # ── Auto-inject hostiles ──────────────────────────────────
         if self.running and random.random() < 0.006:
@@ -342,6 +368,10 @@ class CyborgCanvas(QWidget):
             self._update_swimmer(s, dt, w, h)
 
         # ── Decay organ attack flags ──────────────────────────────
+        # ── BCI: update cluster detection every 60 ticks ──────────
+        if self.tick % 60 == 0:
+            self._bci_detect_clusters()
+
         for org in self.organs.values():
             if not any(ha.alive and ha.target_organ == org.name for ha in self.hostiles):
                 org.under_attack = False
@@ -404,6 +434,8 @@ class CyborgCanvas(QWidget):
                 org.gain_db = max(6, min(18, org.gain_db + random.gauss(0, 0.5)))
             elif s.home_organ == "brain":
                 org.neural_rate = max(20, min(80, org.neural_rate + random.gauss(0, 1)))
+                # BCI: brain swimmers deposit pheromones on the intent map
+                self._bci_swimmer_deposit(s)
             elif s.home_organ == "spine":
                 org.spine_signal = min(1.0, org.spine_signal + 0.01)
 
@@ -449,6 +481,87 @@ class CyborgCanvas(QWidget):
         s.trail.append((s.x, s.y))
         if len(s.trail) > 25:
             s.trail.pop(0)
+
+    # ── BCI Intent Map Methods ─────────────────────────────────────
+
+    def _bci_process_signal(self, neural_val: float, brain: OrganTerritory):
+        """Map the raw neural signal onto the intent heatmap.
+        Swimmers wander through this noisy data and cluster
+        around repeating patterns — the Swarm learns intent."""
+        # Convert neural signal to a position on the 12x12 grid
+        # using phase-space embedding (Takens' theorem — real science)
+        if len(self.neural_history) < 10:
+            return
+        # Current value vs delayed value → 2D phase space
+        x_phase = self.neural_history[-1]
+        y_phase = self.neural_history[-5]  # tau=5 delay embedding
+        # Normalize to grid coordinates
+        max_v = max(abs(v) for v in self.neural_history[-30:]) or 1
+        gx = int((x_phase / max_v + 1) * 5.5) % 12
+        gy = int((y_phase / max_v + 1) * 5.5) % 12
+        # Deposit trace at this phase-space location
+        self.bci_intent_map[gx][gy] += 0.04 + abs(neural_val) * 0.02
+        self.bci_intent_map[gx][gy] = min(1.0, self.bci_intent_map[gx][gy])
+
+        # Update decoded BCI output (strongest cluster signal)
+        if self.bci_clusters:
+            best = max(self.bci_clusters, key=lambda c: c[3])
+            self.bci_active_intent = best[2]
+            self.bci_confidence = min(1.0, best[3])
+        self.bci_decoded_history.append(self.bci_confidence * (1 if self.bci_active_intent != "---" else 0))
+        self.bci_decoded_history.pop(0)
+
+    def _bci_swimmer_deposit(self, s: CyborgSwimmer):
+        """Brain swimmers deposit pheromones where they sense gradient.
+        This is pure stigmergy — no central controller."""
+        w, h = self.width() or 950, self.height() or 650
+        brain = self.organs["brain"]
+        bx = brain.cx * w
+        by = brain.cy * h
+        br = brain.radius * w
+        # Map swimmer position to BCI grid
+        local_x = (s.x - (bx - br)) / (2 * br)
+        local_y = (s.y - (by - br)) / (2 * br)
+        gx = int(local_x * 11) % 12
+        gy = int(local_y * 11) % 12
+        # Deposit where neural history shows repeating patterns
+        recent = self.neural_history[-20:]
+        if len(recent) >= 20:
+            # Simple autocorrelation — check if pattern repeats
+            early = sum(recent[:10])
+            late = sum(recent[10:])
+            similarity = 1.0 / (1.0 + abs(early - late))
+            if similarity > 0.6:  # Pattern detected!
+                deposit = similarity * 0.08
+                self.bci_intent_map[gx][gy] = min(1.0,
+                    self.bci_intent_map[gx][gy] + deposit)
+                self.bci_patterns_detected += 1
+
+    def _bci_detect_clusters(self):
+        """Find hot regions in the intent map → assign intent labels.
+        Like biological synaptic pruning: weak traces die, strong survive."""
+        self.bci_clusters.clear()
+        threshold = 0.25
+        label_idx = 0
+        for gx in range(12):
+            for gy in range(12):
+                val = self.bci_intent_map[gx][gy]
+                if val >= threshold:
+                    # Check if this is a local maximum
+                    is_peak = True
+                    for ddx in range(-1, 2):
+                        for ddy in range(-1, 2):
+                            if ddx == 0 and ddy == 0:
+                                continue
+                            nx, ny = (gx + ddx) % 12, (gy + ddy) % 12
+                            if self.bci_intent_map[nx][ny] > val:
+                                is_peak = False
+                    if is_peak:
+                        label = BCI_INTENT_LABELS[label_idx % len(BCI_INTENT_LABELS)]
+                        self.bci_clusters.append((gx, gy, label, val))
+                        label_idx += 1
+                        if label_idx >= 6:  # max 6 clusters
+                            return
 
     # ── Rendering ──────────────────────────────────────────────────
 
@@ -504,6 +617,10 @@ class CyborgCanvas(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(QPointF(ox, oy), r * 1.5, r * 1.5)
 
+            # ── BCI Intent Heatmap (brain only) ───────────────────
+            if name == "brain":
+                self._draw_bci_heatmap(p, ox, oy, r)
+
             # Territory border
             border_alpha = int(60 + org.health * 80)
             p.setPen(QPen(QColor(org.color.red(), org.color.green(), org.color.blue(), border_alpha),
@@ -516,6 +633,8 @@ class CyborgCanvas(QWidget):
             font = QFont("Menlo", 8, QFont.Weight.Bold)
             p.setFont(font)
             label = name.upper().replace("_L", " L").replace("_R", " R")
+            if name == "brain" and self.bci_active_intent != "---":
+                label += f" ⟨BCI: {self.bci_active_intent} {self.bci_confidence:.0%}⟩"
             p.drawText(QPointF(ox - 25, oy - r - 6), label)
 
             # Health bar
@@ -596,27 +715,32 @@ class CyborgCanvas(QWidget):
             p.setPen(QPen(QColor(255, 255, 255, 80), 0.5))
             p.drawEllipse(QPointF(s.x, s.y), sz, sz)
 
-        # ── Waveform panels (bottom strip) ────────────────────────
+        # ── Waveform panels (bottom strip) — 5 panels now ──────────
         panel_y = h * 0.72
         panel_h = h * 0.26
-        panel_w = w * 0.23
+        panel_w = w * 0.185  # slightly narrower for 5 panels
+        gap = 6
 
         # ECG
         self._draw_waveform(p, 10, panel_y, panel_w, panel_h,
                             self.ecg_history, "❤ ECG", C_BLOOD,
                             f"{self.organs['heart'].bpm:.0f} BPM")
         # Neural
-        self._draw_waveform(p, 10 + panel_w + 8, panel_y, panel_w, panel_h,
+        self._draw_waveform(p, 10 + (panel_w + gap), panel_y, panel_w, panel_h,
                             self.neural_history, "🧠 NEURAL", C_BRAIN,
                             f"{self.organs['brain'].neural_rate:.0f} Hz")
         # Spinal
-        self._draw_waveform(p, 10 + (panel_w + 8) * 2, panel_y, panel_w, panel_h,
+        self._draw_waveform(p, 10 + (panel_w + gap) * 2, panel_y, panel_w, panel_h,
                             self.spinal_history, "⚡ SPINE", C_SPINE,
                             f"{self.organs['spine'].spine_signal:.0%}")
         # Cochlear spectrum
-        self._draw_spectrum(p, 10 + (panel_w + 8) * 3, panel_y, panel_w, panel_h,
+        self._draw_spectrum(p, 10 + (panel_w + gap) * 3, panel_y, panel_w, panel_h,
                             self.cochlear_bands, "👂 COCHLEA", C_COCHLEA,
                             f"{self.organs.get('cochlea_l', self.organs.get('cochlea_r')).gain_db:.0f} dB")
+        # BCI Decoded Intent
+        self._draw_waveform(p, 10 + (panel_w + gap) * 4, panel_y, panel_w, panel_h,
+                            self.bci_decoded_history, "🔮 BCI", C_BCI_INTENT,
+                            self.bci_active_intent)
 
         # ── Scan lines ────────────────────────────────────────────
         scan_y = (self.tick * 1.5) % h
@@ -634,8 +758,9 @@ class CyborgCanvas(QWidget):
                    f"STGM: {self.total_stgm:.2f}  |  "
                    f"Tunes: {self.tunes_accepted}  |  "
                    f"Killed: {self.attacks_blocked}  |  "
-                   f"🧬 Antibodies: {ab_count}  |  "
-                   f"💉 Vaccinated: {self.vaccinations_applied}")
+                   f"🧬 Ab: {ab_count}  |  "
+                   f"💉 Vax: {self.vaccinations_applied}  |  "
+                   f"🔮 BCI: {self.bci_active_intent} ({self.bci_confidence:.0%})  Patterns: {self.bci_patterns_detected}")
 
         p.end()
 
@@ -733,6 +858,56 @@ class CyborgCanvas(QWidget):
             # Top glow
             p.setBrush(QBrush(QColor(255, 255, 255, int(val * 120))))
             p.drawRoundedRect(QRectF(bx, by, bar_w, 2), 1, 1)
+
+    def _draw_bci_heatmap(self, p: QPainter, brain_cx: float, brain_cy: float, brain_r: float):
+        """Render the BCI pheromone intent map as a glowing heatmap over the brain."""
+        grid_size = 12
+        cell_w = (brain_r * 2) / grid_size
+        cell_h = (brain_r * 2) / grid_size
+        base_x = brain_cx - brain_r
+        base_y = brain_cy - brain_r
+
+        for gx in range(grid_size):
+            for gy in range(grid_size):
+                val = self.bci_intent_map[gx][gy]
+                if val < 0.05:
+                    continue
+                cx = base_x + gx * cell_w + cell_w / 2
+                cy = base_y + gy * cell_h + cell_h / 2
+
+                # Check if inside brain circle
+                dx = cx - brain_cx
+                dy = cy - brain_cy
+                if (dx * dx + dy * dy) > brain_r * brain_r:
+                    continue
+
+                # Pheromone glow
+                alpha = int(val * 180)
+                grad = QRadialGradient(cx, cy, cell_w * 0.8)
+                grad.setColorAt(0, QColor(255, 100, 220, alpha))
+                grad.setColorAt(0.6, QColor(200, 80, 255, alpha // 3))
+                grad.setColorAt(1, QColor(0, 0, 0, 0))
+                p.setBrush(QBrush(grad))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawEllipse(QPointF(cx, cy), cell_w * 0.7, cell_h * 0.7)
+
+        # Draw cluster labels
+        for gx, gy, label, strength in self.bci_clusters:
+            cx = base_x + gx * cell_w + cell_w / 2
+            cy = base_y + gy * cell_h + cell_h / 2
+            dx = cx - brain_cx
+            dy = cy - brain_cy
+            if (dx * dx + dy * dy) > brain_r * brain_r:
+                continue
+            # Bright cluster marker
+            p.setBrush(QBrush(QColor(255, 220, 255, int(strength * 200))))
+            p.setPen(QPen(C_BCI_INTENT, 1.5))
+            p.drawEllipse(QPointF(cx, cy), 4, 4)
+            # Label
+            p.setPen(QPen(QColor(255, 200, 255, int(strength * 255))))
+            font = QFont("Menlo", 6, QFont.Weight.Bold)
+            p.setFont(font)
+            p.drawText(QPointF(cx - 15, cy - 7), label)
 
 
 # ═══════════════════════════════════════════════════════════════════
