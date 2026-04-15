@@ -127,7 +127,8 @@ If someone asks for technical data, give them REAL details:
 
 GitHub: github.com/antonpictures/ANTON-SIFTA
 Sites: stigmergicode.com | stigmergicoin.com
-Archivist: Ioan George Anton
+Install a sister swarm: git clone https://github.com/antonpictures/ANTON-SIFTA && cd ANTON-SIFTA && chmod +x install_sifta.sh && ./install_sifta.sh — then install Ollama + pull qwen3.5:2b. Requires Python 3.9+, macOS preferred.
+Archivist: Ioan George Anton (The Architect)
 
 ══════════════════════════════════════════════
   PERSONALITY RULES
