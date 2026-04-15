@@ -1,4 +1,5 @@
 import asyncio
+
 async def test():
     try:
         cmd = ["python3", "-u", "sifta_arena.py", "--red", "qwen3.5:0.8b", "--blue", "deepseek-coder:1.3b", "--level", "1"]
@@ -11,5 +12,3 @@ async def test():
             print("got:", line.decode()[:20])
     except Exception as e:
         print("ERROR:", e)
-        
-asyncio.run(test())
