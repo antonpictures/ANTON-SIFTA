@@ -39,6 +39,11 @@
     "entry_point": "Applications/sifta_warehouse_test.py",
     "signature": "UNVERIFIED"
   },
+  "Crucible Cyber-Defense (10-min)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_crucible_swarm_sim.py",
+    "signature": "UNVERIFIED"
+  },
   "Biological Dashboard": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_biological_gui.py",

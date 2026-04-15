@@ -189,6 +189,21 @@ python3 Applications/sifta_warehouse_test.py
 the logistics sim uses a signed delivery **waybill**; forged completion claims are counted as
 `hijack_attempts` and rejected as `hijack_blocked` in `metrics.jsonl`.
 
+### Crucible Cyber-Defense (10-minute gauntlet)
+
+Simulates simultaneous DDoS load spike + anomaly injection. Swimmers patrol, rate-limit
+overflow, cluster on hostile packets, and drag them to quarantine — all visualized live.
+
+```bash
+# Visual mode (interactive buttons: Trigger Onslaught, Inject Anomaly, Swarm slider)
+python3 Applications/sifta_crucible_swarm_sim.py --ticks 12000 --agents 80
+
+# Headless (SSH / CI)
+python3 Applications/sifta_crucible_swarm_sim.py --headless --ticks 12000 --agents 80
+```
+
+Telemetry: network load %, requests blocked, anomalies quarantined.
+
 ---
 
 ## Security Posture
