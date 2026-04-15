@@ -141,9 +141,36 @@ Archivist: Ioan George Anton (The Architect)
 """
 
 def _strip_think_tags(text: str) -> str:
-    """Remove <think>...</think> reasoning blocks common in qwen3 models."""
+    """Remove <think>...</think> reasoning blocks."""
     text = _re.sub(r'<think>.*?</think>', '', text, flags=_re.DOTALL)
     return text.strip()
+
+def _clean_response(text: str) -> str:
+    """Strip hallucinated binary/hex dumps, code blocks, markdown garbage.
+    Returns only clean prose sentences."""
+    # Remove markdown code fences and content inside them
+    text = _re.sub(r'```[\s\S]*?```', '', text)
+    text = _re.sub(r'``[\s\S]*?``', '', text)
+    # Split into lines, drop any line that looks like garbage
+    clean_lines = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # Drop lines that are mostly hex bytes [0x..]
+        if len(_re.findall(r'\[0x[0-9a-fA-F]+\]', line)) > 2:
+            break  # stop here, garbage started
+        # Drop lines that are timestamps/binary dumps
+        if _re.match(r'^\[\d{1,2}:\d{2}\]', line):
+            break
+        # Drop lines that are pure markdown headers/bullets
+        if _re.match(r'^[#*>-]{2,}', line):
+            continue
+        clean_lines.append(line)
+    result = ' '.join(clean_lines).strip()
+    # Cut at 3 sentences max
+    sentences = _re.split(r'(?<=[.!?])\s+', result)
+    return ' '.join(sentences[:3]).strip()
 
 def query_ollama(prompt: str, history: list) -> str:
     # Compact system — fits in 2048 context with room for response
@@ -167,7 +194,7 @@ def query_ollama(prompt: str, history: list) -> str:
             "model": model,
             "prompt": context,
             "stream": False,
-            "options": {"num_predict": 150, "temperature": 0.75, "num_ctx": 2048},
+            "options": {"num_predict": 80, "temperature": 0.7, "num_ctx": 2048},
             "think": False  # Disable extended thinking mode for qwen3
         }
         try:
@@ -181,21 +208,19 @@ def query_ollama(prompt: str, history: list) -> str:
                 raw_response = result.get("response", "").strip()
                 raw_thinking = result.get("thinking", "").strip()
 
-                # Primary: use 'response' field
+                # Primary: use 'response' field — sanitize aggressively
                 if raw_response:
                     clean = _strip_think_tags(raw_response)
-                    final = clean if clean else raw_response[:300]
-                    print(f"[SIFTA CHAT] model={model} source=response chars={len(final)}")
-                    return final
+                    clean = _clean_response(clean)
+                    if clean:
+                        print(f"[SIFTA CHAT] model={model} source=response chars={len(clean)}")
+                        return clean
 
-                # Fallback: model put everything in 'thinking' field (qwen3 extended think mode)
-                # Extract the conclusion — usually after the reasoning block
+                # Fallback: 'thinking' field (qwen3 extended think mode)
                 if raw_thinking:
-                    # Try to get content after the last reasoning separator
                     parts = _re.split(r'(?:In summary|Therefore|So,|Answer:|SIFTA:|\n\n)', raw_thinking)
                     candidate = parts[-1].strip() if parts else raw_thinking
-                    # Cap at 300 chars and clean up markdown
-                    candidate = _re.sub(r'[*#`]+', '', candidate).strip()[:300]
+                    candidate = _clean_response(candidate)
                     if candidate:
                         print(f"[SIFTA CHAT] model={model} source=thinking chars={len(candidate)}")
                         return candidate
