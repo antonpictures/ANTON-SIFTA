@@ -5,7 +5,9 @@
   "main": "bridge.js",
   "type": "module",
   "scripts": {
-    "start": "node bridge.js"
+    "start": "node bridge.js",
+    "audit:security": "npm audit --audit-level=moderate",
+    "audit:fix": "npm audit fix"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",

@@ -13,6 +13,13 @@ Related (server / wormhole — see server.py):
   SIFTA_WORMHOLE_DEED_MAX_SKEW_SEC (deed timestamp anti-replay, default 900),
   SIFTA_WORMHOLE_ALLOW_LOOPBACK, SIFTA_WORMHOLE_ALLOW_PUBLIC_IP (wormhole egress policy),
   SIFTA_STRICT_PKI_REGISTRY — refuse boot if node_pki_registry.json fails validation,
+  SIFTA_TERMINAL_OPEN — if unset and SIFTA_API_KEY is set, GET /api/terminal requires the key.
+  SIFTA_QUIET_BOOT_WARNINGS — suppress optional startup hardening hints.
+  SIFTA_MESSENGER_INTEGRITY_SECRET — HMAC rows in sqlite messenger_log (tamper-evident).
+  SIFTA_RELAY_ALLOWLIST — comma-separated relay origins for dead_drop.py (defaults to 127.0.0.1:8000).
+  SIFTA_DIRECTIVE_REQUIRE_SIGNATURE — refuse unsigned swarm directive .scar commits from this node.
+  SIFTA_MEMORY_POOL_MAX_PAYLOAD_BYTES — max JSON size for one pooled memory (default 64KiB).
+  SIFTA_REPAIR_LLM_SNIPPET_MAX / SIFTA_REPAIR_IDENTITY_TRACE_MAX — repair.py LLM prompt bounds.
   SIFTA_RATE_LIMIT_PER_MIN — max mutating requests per client IP per minute (0 = off).
   SIFTA_TRUST_PROXY — if 1/true/on, rate limits use first X-Forwarded-For hop (set only behind your own proxy).
   SIFTA_PROTECT_GET — require API key on GET /api/* except SIFTA_GET_PROTECT_ALLOW (comma paths).

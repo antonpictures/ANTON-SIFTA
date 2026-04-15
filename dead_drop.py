@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import base64
@@ -6,11 +8,54 @@ import time as tmod
 import urllib.request
 import urllib.error
 from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
 # In production this would be read from config.json
 DEFAULT_RELAY = "http://127.0.0.1:8000"
+
+
+def _normalize_relay_origin(url: str) -> str:
+    """Return scheme://host:port with no path — relay base only."""
+    p = urlparse((url or "").strip())
+    if p.scheme not in ("http", "https"):
+        raise ValueError("relay URL must be http or https")
+    if not p.netloc:
+        raise ValueError("relay URL must include host (and :port if non-default)")
+    return f"{p.scheme}://{p.netloc}".rstrip("/")
+
+
+def _relay_allowlist() -> set[str]:
+    """
+    Comma-separated origins in SIFTA_RELAY_ALLOWLIST, e.g.
+    http://127.0.0.1:8000,https://relay.lan:8443
+    If unset, only DEFAULT_RELAY is permitted.
+    """
+    raw = os.environ.get("SIFTA_RELAY_ALLOWLIST", "").strip()
+    if not raw:
+        return {_normalize_relay_origin(DEFAULT_RELAY)}
+    out: set[str] = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        out.add(_normalize_relay_origin(part))
+    return out
+
+
+def _relay_url_error(relay_url: str) -> Optional[str]:
+    try:
+        norm = _normalize_relay_origin(relay_url)
+    except Exception as e:
+        return f"Invalid relay URL: {e}"
+    if norm not in _relay_allowlist():
+        return (
+            f"Relay origin {norm!r} is not allow-listed. "
+            f"Set SIFTA_RELAY_ALLOWLIST to a comma-separated list of permitted relay bases."
+        )
+    return None
 
 
 def _relay_headers(base=None):
@@ -21,6 +66,9 @@ def _relay_headers(base=None):
     return h
 
 def push_to_relay(agent_id: str, target_pubkey: str, state_dir: Path, new_owner: str, relay_url: str = DEFAULT_RELAY) -> dict:
+    rerr = _relay_url_error(relay_url)
+    if rerr:
+        return {"ok": False, "error": rerr}
     soul_file = state_dir / f"{agent_id}.json"
     if not soul_file.exists():
         return {"ok": False, "error": f"No soul for {agent_id}"}
@@ -114,6 +162,9 @@ def push_to_relay(agent_id: str, target_pubkey: str, state_dir: Path, new_owner:
         return {"ok": False, "error": str(e)}
 
 def fetch_from_relay(my_pubkey: str, state_dir: Path, relay_url: str = DEFAULT_RELAY) -> dict:
+    rerr = _relay_url_error(relay_url)
+    if rerr:
+        return {"ok": False, "error": rerr}
     import urllib.parse
     safe_pub = urllib.parse.quote_plus(my_pubkey)
     try:

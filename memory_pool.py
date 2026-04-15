@@ -41,6 +41,7 @@ HARD RULES (never relax these):
 import base64
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -60,6 +61,9 @@ QUARANTINE_FILE = POOL_DIR / "quarantine.json"
 # ── Tuning ─────────────────────────────────────────────────────────────────
 MIN_EMOTIONAL_WEIGHT   = 0.5   # memories below this stay private
 MAX_POOL_SIZE          = 500   # prevent unbounded growth
+MAX_MEMORY_PAYLOAD_BYTES = int(
+    os.environ.get("SIFTA_MEMORY_POOL_MAX_PAYLOAD_BYTES", str(64 * 1024)) or str(64 * 1024)
+)
 CONSENSUS_THRESHOLD    = 0.75  # fraction needed for promotion to SCAR
 SOFT_THRESHOLD         = 0.40  # above this = soft memory; below = hard quarantine
 IMMUNITY_VARIANCE      = 0.6   # vote spread above this triggers immune response
@@ -189,6 +193,17 @@ def broadcast_memory(state: dict, memory: dict, memory_type: str = "observation"
     weight = memory.get("emotional_weight", memory.get("weight", 0.0))
     if weight < MIN_EMOTIONAL_WEIGHT:
         print(f"[🔒 POOL] {agent_id} memory too low-weight ({weight:.2f}). Stays private.")
+        return None
+
+    try:
+        _mem_bytes = len(json.dumps(memory, ensure_ascii=False).encode("utf-8"))
+    except Exception:
+        _mem_bytes = 0
+    if _mem_bytes > MAX_MEMORY_PAYLOAD_BYTES:
+        print(
+            f"[🔒 POOL] BLOCKED: memory payload ({_mem_bytes} B) exceeds "
+            f"SIFTA_MEMORY_POOL_MAX_PAYLOAD_BYTES ({MAX_MEMORY_PAYLOAD_BYTES})."
+        )
         return None
 
     # ── Build the record ─────────────────────────────────────────────────

@@ -6,6 +6,7 @@ Respects SIFTA_API_KEY / SIFTA_API_BASE via Applications/sifta_http_auth.py.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -70,8 +71,12 @@ def append_ledger(node: str, amount: float, reason: str) -> None:
 def auto_git_heartbeat() -> None:
     """Stage state + ledger + bounties; commit if dirty; pull --rebase; push. All argv-only git."""
     rd = str(ROOT_DIR)
+    _branch = os.environ.get("SIFTA_GIT_BRANCH", "feat/sebastian-video-economy")
     print("[*] Initiating Biological Git Heartbeat...")
     try:
+        if not (ROOT_DIR / ".git").is_dir():
+            print("[!] Heartbeat skipped: not a git checkout (no .git directory).")
+            return
         subprocess.run(
             ["git", "-C", rd, "add", ".sifta_state", "repair_log.jsonl"],
             check=False,
@@ -106,7 +111,7 @@ def auto_git_heartbeat() -> None:
             timeout=120,
         )
         subprocess.run(
-            ["git", "-C", rd, "push"],
+            ["git", "-C", rd, "push", "origin", _branch],
             check=False,
             capture_output=True,
             timeout=120,

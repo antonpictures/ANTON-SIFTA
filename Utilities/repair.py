@@ -94,6 +94,19 @@ def _build_model_timeouts() -> dict:
 
 MODEL_TIMEOUTS = _build_model_timeouts()
 
+_LLM_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def sanitize_llm_code_context(s: str, max_chars: int = 24000) -> str:
+    """Strip control characters and cap size before embedding file or trace text in LLM prompts."""
+    if not isinstance(s, str):
+        return ""
+    t = _LLM_CTRL.sub("", s)
+    if len(t) > max_chars:
+        t = t[:max_chars] + "\n# ... [TRUNCATED — SIFTA_REPAIR_LLM_SNIPPET_MAX]\n"
+    return t
+
+
 SURGICAL_PROMPT = """\
 Fix the Python syntax error.
 RESPOND WITH ONLY THE FIXED CODE INSIDE A ```python ... ``` BLOCK.
@@ -436,7 +449,14 @@ def synthesize_identity(agent_id: str, error_trace: str, model: str = "gemma4:la
     url = f"{base}/api/generate"
     
     source_hint = "You have access to a Hive-Mind match." if has_hive_match else "You are using local reasoning."
-    prompt = f"Analyze the following environment trace. What specialized short role must you assume to conquer this problem, and why? {source_hint}\nReply strictly in JSON format with exactly 4 keys: 'chosen_role', 'reason', 'confidence' (float), and 'source' (either 'hivemind_pattern' or 'local_reasoning').\n\nEnvironment Trace:\n{error_trace}"
+    _trace_lim = int(os.environ.get("SIFTA_REPAIR_IDENTITY_TRACE_MAX", "8000") or "8000")
+    _et = sanitize_llm_code_context(str(error_trace), max_chars=_trace_lim)
+    prompt = (
+        f"Analyze the following environment trace. What specialized short role must you assume "
+        f"to conquer this problem, and why? {source_hint}\n"
+        f"Reply strictly in JSON format with exactly 4 keys: 'chosen_role', 'reason', 'confidence' (float), "
+        f"and 'source' (either 'hivemind_pattern' or 'local_reasoning').\n\nEnvironment Trace:\n{_et}"
+    )
     
     data = {
         "model": model,
@@ -1224,7 +1244,13 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                     for pattern in hive.get("patterns", []):
                         # Simple subset matching V1
                         if pattern["trigger"].lower() in trigger_msg.lower():
-                            hive_context = f"\n\n[AMBIENT HIVEMIND KNOWLEDGE]\nA past Swarm Agent ({pattern['source_agent']}) encountered this exact error.\nOriginal Code:\n{pattern['before']}\nSuccessful Fix:\n{pattern['after']}\n\nUse this exact structural pattern to heal the current file."
+                            _b = sanitize_llm_code_context(str(pattern.get("before", "")), 6000)
+                            _a = sanitize_llm_code_context(str(pattern.get("after", "")), 6000)
+                            hive_context = (
+                                f"\n\n[AMBIENT HIVEMIND KNOWLEDGE]\nA past Swarm Agent ({pattern['source_agent']}) "
+                                f"encountered this exact error.\nOriginal Code:\n{_b}\nSuccessful Fix:\n{_a}\n\n"
+                                f"Use this exact structural pattern to heal the current file."
+                            )
                             print(f"  [HIVEMIND] 🧠 Absorbed structural memory! Injecting knowledge from {pattern['source_agent']}")
                             break
             except Exception as e:
@@ -1327,6 +1353,8 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                 
                 import json
                 chunk += f"\n\n[MIND TRACE]\n{json.dumps(identity, indent=2)}"
+                _snip = int(os.environ.get("SIFTA_REPAIR_LLM_SNIPPET_MAX", "24000") or "24000")
+                chunk = sanitize_llm_code_context(chunk, max_chars=_snip)
                 
                 print(f"  [LLM] Sending {bite_end - bite_start} lines to {provider.upper()} ({model})...")
                 # ── Remote Ollama (borrowed inference) ──────────────────────────

@@ -115,8 +115,39 @@ def init_messenger():
             body TEXT
         )
     ''')
+    cur = conn.execute("PRAGMA table_info(messenger_log)")
+    _cols = {row[1] for row in cur.fetchall()}
+    if "integrity_hmac" not in _cols:
+        conn.execute("ALTER TABLE messenger_log ADD COLUMN integrity_hmac TEXT")
     conn.commit()
     conn.close()
+
+
+def _messenger_integrity_hmac(sender: str, receiver: str, body: str, ts: float) -> str:
+    import hashlib
+    import hmac
+
+    secret = os.environ.get("SIFTA_MESSENGER_INTEGRITY_SECRET", "").strip()
+    if not secret:
+        return ""
+    msg = f"v1|{sender}|{receiver}|{body}|{ts}"
+    return hmac.new(secret.encode("utf-8"), msg.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _messenger_row_valid(sender: str, receiver: str, body: str, ts: float, stored: Optional[str]) -> Optional[bool]:
+    """None if verification not configured; True/False if secret set."""
+    import hmac
+
+    secret = os.environ.get("SIFTA_MESSENGER_INTEGRITY_SECRET", "").strip()
+    if not secret:
+        return None
+    if not stored:
+        return False
+    expect = _messenger_integrity_hmac(sender, receiver, body, ts)
+    if not expect:
+        return False
+    return hmac.compare_digest(stored, expect)
+
 
 init_messenger()
 
@@ -201,7 +232,7 @@ class SiftaRateLimitMiddleware(BaseHTTPMiddleware):
 def _get_protect_get_allowlist() -> set[str]:
     raw = os.environ.get(
         "SIFTA_GET_PROTECT_ALLOW",
-        "/api/dispatch/status,/api/terminal,/api/ollama-models",
+        "/api/dispatch/status,/api/ollama-models",
     )
     return {p.strip() for p in raw.split(",") if p.strip()}
 
@@ -231,7 +262,27 @@ class SiftaGetProtectMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class SiftaTerminalAuthMiddleware(BaseHTTPMiddleware):
+    """
+    When SIFTA_API_KEY is set, GET /api/terminal requires the same key (live buffer leak).
+    Set SIFTA_TERMINAL_OPEN=1 to allow unauthenticated reads (local dev only).
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "GET" and request.url.path == "/api/terminal":
+            key = os.environ.get("SIFTA_API_KEY", "").strip()
+            if key and not _env_truthy("SIFTA_TERMINAL_OPEN"):
+                got = request.headers.get("x-sifta-key", "").strip()
+                auth = request.headers.get("authorization", "")
+                if auth.lower().startswith("bearer "):
+                    got = auth[7:].strip()
+                if got != key:
+                    return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
+
 app = FastAPI(title="ANTON-SIFTA Command Interface")
+app.add_middleware(SiftaTerminalAuthMiddleware)
 app.add_middleware(SiftaMutatingAuthMiddleware)
 app.add_middleware(SiftaRateLimitMiddleware)
 app.add_middleware(SiftaGetProtectMiddleware)
@@ -269,7 +320,7 @@ async def get_messenger_thread(limit: int = 100):
     conn = sqlite3.connect(LEDGER_DB)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT id, timestamp, sender, receiver, body 
+        SELECT id, timestamp, sender, receiver, body, integrity_hmac
         FROM messenger_log ORDER BY timestamp ASC LIMIT ?
     ''', (limit,))
     rows = cursor.fetchall()
@@ -277,12 +328,14 @@ async def get_messenger_thread(limit: int = 100):
     
     msgs = []
     for r in rows:
+        _iv = _messenger_row_valid(r[2], r[3], r[4], r[1], r[5] if len(r) > 5 else None)
         msgs.append({
             "id": r[0],
             "ts": r[1],
             "from": r[2],
             "to": r[3],
-            "body": r[4]
+            "body": r[4],
+            "integrity_verified": _iv,
         })
     return {"messages": msgs}
 
@@ -290,10 +343,12 @@ async def get_messenger_thread(limit: int = 100):
 async def post_messenger_send(req: MessengerRequest):
     conn = sqlite3.connect(LEDGER_DB)
     cursor = conn.cursor()
+    ts = time.time()
+    mac = _messenger_integrity_hmac(req.from_id, req.to_id, req.body, ts)
     cursor.execute('''
-        INSERT INTO messenger_log (timestamp, sender, receiver, body)
-        VALUES (?, ?, ?, ?)
-    ''', (time.time(), req.from_id, req.to_id, req.body))
+        INSERT INTO messenger_log (timestamp, sender, receiver, body, integrity_hmac)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (ts, req.from_id, req.to_id, req.body, mac or None))
     conn.commit()
     conn.close()
     return {"status": "ok"}
@@ -2088,6 +2143,12 @@ async def sifta_security_bootstrap():
         print(
             "[!] Wormhole defaults to HTTP and SIFTA_MESH_HMAC is unset — "
             "treat the API port as a sensitive LAN surface; set mesh HMAC and/or TLS for hops."
+        )
+
+    if not _env_truthy("SIFTA_QUIET_BOOT_WARNINGS"):
+        print(
+            "[!] Ollama: bind or firewall tcp/11434 to localhost so arbitrary LAN clients cannot "
+            "drive inference cost; set OLLAMA_HOST in repair/bridge clients if non-default."
         )
 
 
