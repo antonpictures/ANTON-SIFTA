@@ -13,6 +13,12 @@ except ImportError:
     print("FATAL: Cannot import inference_economy.py")
     sys.exit(1)
 
+_repo = Path(__file__).resolve().parent
+_sys = str(_repo / "System")
+if _sys not in sys.path:
+    sys.path.insert(0, _sys)
+from ledger_append import append_ledger_line  # noqa: E402
+
 GROK_AGENT_ID = "GROK_SWARMGPT"
 MINT_AMOUNT = 500.0  # Keep 500 STGM warm for Grok's next arena
 
@@ -50,8 +56,7 @@ event = {
     "receipt_hash": receipt_hash,
 }
 
-with open(inference_economy.LOG_PATH, "a") as f:
-    f.write(json.dumps(event) + "\n")
+append_ledger_line(inference_economy.LOG_PATH, event)
 
 print(f"[STGM] MINT SUCCESS: {MINT_AMOUNT} STGM generated for {GROK_AGENT_ID}.")
 print(f"[STGM] Balance is now {new_stgm} STGM.")

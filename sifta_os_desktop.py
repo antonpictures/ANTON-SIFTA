@@ -12,6 +12,7 @@ import datetime
 import hashlib
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QMdiArea, QMdiSubWindow,
@@ -20,6 +21,17 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
+
+_REPO = Path(__file__).resolve().parent
+_SYS = _REPO / "System"
+
+
+def _append_repair_log_line(row: dict) -> None:
+    if str(_SYS) not in sys.path:
+        sys.path.insert(0, str(_SYS))
+    from ledger_append import append_ledger_line
+
+    append_ledger_line(_REPO / "repair_log.jsonl", row)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -103,8 +115,7 @@ class OllamaWorker(QThread):
                             "reason": "Proof of Inference (Local Silicon)",
                             "hash": tx_hash
                         }
-                        with open("repair_log.jsonl", "a") as lf:
-                            lf.write(json.dumps(tx) + "\n")
+                        _append_repair_log_line(tx)
                 except Exception as e:
                     print(f"Mining error: {e}")
                     
@@ -606,8 +617,7 @@ class SwarmTextEditorWindow(QWidget):
                 "hash": f"SCAR_{scar_hash}"
             }
             try:
-                with open("repair_log.jsonl", "a") as lf:
-                    lf.write(json.dumps(entry) + "\n")
+                _append_repair_log_line(entry)
             except Exception:
                 pass
 

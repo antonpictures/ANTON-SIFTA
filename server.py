@@ -1,7 +1,9 @@
 import asyncio
+import ipaddress
 import json
 import os
 import sqlite3
+import sys
 import subprocess
 import threading
 import time
@@ -13,7 +15,7 @@ import uvicorn
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -60,6 +62,46 @@ def _safe_bounty_filename(name: str) -> Optional[Path]:
     except (ValueError, OSError):
         return None
     return p if p.exists() else None
+
+
+_METADATA_SSRF = ipaddress.ip_address("169.254.169.254")
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def wormhole_target_ip_error(target_ip: str) -> Optional[str]:
+    """
+    Reject wormhole targets that enable SSRF (e.g. cloud metadata) or unintended WAN egress.
+    Hostnames are not resolved — literal IPv4 only.
+    """
+    s = (target_ip or "").strip()
+    try:
+        ip = ipaddress.ip_address(s)
+    except ValueError:
+        return (
+            "Wormhole target must be a literal IPv4 address; hostnames are disabled "
+            "to reduce SSRF and rebinding risk."
+        )
+    if ip.version != 4:
+        return "Wormhole currently allows IPv4 targets only."
+    if ip == _METADATA_SSRF:
+        return "SECURITY: 169.254.169.254 (cloud metadata) cannot be used as a wormhole target."
+    if ip.is_loopback and not _env_truthy("SIFTA_WORMHOLE_ALLOW_LOOPBACK"):
+        return "Loopback wormhole blocked; set SIFTA_WORMHOLE_ALLOW_LOOPBACK=1 for local tests."
+    if ip.is_multicast or ip.is_unspecified:
+        return "Invalid wormhole target (multicast or unspecified address)."
+    if ip.is_global and not _env_truthy("SIFTA_WORMHOLE_ALLOW_PUBLIC_IP"):
+        return (
+            "Public IPv4 wormhole targets are blocked by default. "
+            "Set SIFTA_WORMHOLE_ALLOW_PUBLIC_IP=1 only for intentional internet paths; "
+            "prefer private LAN + SIFTA_WORMHOLE_USE_TLS=1 and SIFTA_MESH_HMAC."
+        )
+    if ip.is_private or ip.is_link_local:
+        return None
+    return "Wormhole target must be private LAN, link-local, or (with env flags) loopback/public IPv4."
+
 
 def init_messenger():
     conn = sqlite3.connect(LEDGER_DB)
@@ -118,6 +160,21 @@ _RL_BUCKETS: dict[str, deque] = defaultdict(deque)
 _RL_LOCK = threading.Lock()
 
 
+def _rate_limit_client_id(request: Request) -> str:
+    """
+    When SIFTA_TRUST_PROXY=1, use the first X-Forwarded-For hop so limits apply per
+    real client behind nginx/Caddy. Otherwise use the TCP peer (spoofable if proxy
+    is not trusted — leave SIFTA_TRUST_PROXY unset in that case).
+    """
+    if os.environ.get("SIFTA_TRUST_PROXY", "").strip().lower() in ("1", "true", "yes", "on"):
+        xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first[:256]
+    return (request.client.host if request.client else None) or "unknown"
+
+
 class SiftaRateLimitMiddleware(BaseHTTPMiddleware):
     """Optional per-IP rate limit on mutating API routes (SIFTA_RATE_LIMIT_PER_MIN, default 0 = off)."""
 
@@ -130,7 +187,7 @@ class SiftaRateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         now = time.time()
         window = 60.0
-        ip = (request.client.host if request.client else None) or "unknown"
+        ip = _rate_limit_client_id(request)
         with _RL_LOCK:
             dq = _RL_BUCKETS[ip]
             while dq and now - dq[0] > window:
@@ -981,16 +1038,18 @@ async def get_terminal():
 @app.post("/api/dispatch/kill")
 async def dispatch_kill():
     """Terminate the active swimmer process immediately."""
-    global _active_process
+    global _active_process, _live_terminal_buffer, _active_agent_id
     if _active_process is not None and _active_process.returncode is None:
         try:
             _active_process.kill()
             await _active_process.wait()
             _active_process = None
             _active_agent_id = None
+            _live_terminal_buffer.clear()
             return {"killed": True, "message": "Swimmer terminated."}
         except Exception as e:
             return {"killed": False, "error": str(e)}
+    _live_terminal_buffer.clear()
     return {"killed": False, "message": "No active swimmer."}
 
 
@@ -1251,7 +1310,7 @@ async def get_inference_economy(agent_id: Optional[str] = None, tail: int = 100)
 class WormholeRequest(BaseModel):
     agent_id: str
     target_ip: str
-    target_port: int = 7433
+    target_port: int = Field(default=7433, ge=1, le=65535)
     new_owner: str
 
 class RelayDropRequest(BaseModel):
@@ -1267,7 +1326,7 @@ class RelayPickupRequest(BaseModel):
 @app.post("/api/wallet/relay_drop")
 async def wallet_relay_drop(req: RelayDropRequest):
     """Pushes agent to public Stigmergic Dead-Drop Relay"""
-    agent_id = req.agent.upper()
+    agent_id = req.agent_id.upper()
     if agent_id in ("ALICE_M5", "M1THER"):
         return {"ok": False, "error": f"SECURITY BLOCK: Primary node."}
         
@@ -1292,12 +1351,16 @@ async def wallet_wormhole(req: WormholeRequest):
     import urllib.request
     import urllib.error
 
-    agent_id = req.agent.upper()
+    agent_id = req.agent_id.upper()
     
     # HARDWARE TIE SECURITY: Terminal nodes are physically bound to bare metal hardware.
     # They cannot travel through the wormhole.
     if agent_id in ("ALICE_M5", "M1THER"):
         return {"ok": False, "error": f"SECURITY BLOCK: {agent_id} is a primary node cryptographically bound to physical hardware. It cannot travel through the wormhole."}
+
+    _wh_err = wormhole_target_ip_error(req.target_ip)
+    if _wh_err:
+        return {"ok": False, "error": _wh_err}
 
     soul_file = STATE_DIR / f"{agent_id}.json"
 
@@ -1450,7 +1513,13 @@ async def receive_soul(request: Request):
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.exceptions import InvalidSignature
 
+    max_sz = int(os.environ.get("SIFTA_RECEIVE_SOUL_MAX_BYTES", str(10 * 1024 * 1024)) or str(10 * 1024 * 1024))
     raw_body = await request.body()
+    if len(raw_body) > max_sz:
+        return JSONResponse(
+            status_code=413,
+            content={"ok": False, "error": f"Payload exceeds SIFTA_RECEIVE_SOUL_MAX_BYTES ({max_sz})."},
+        )
 
     # ── SIFTA_MESH_HMAC verification (optional) ────────────────────────────────
     _mesh_secret = os.environ.get("SIFTA_MESH_HMAC", "").strip()
@@ -1476,6 +1545,23 @@ async def receive_soul(request: Request):
 
         if not pub_b64 or not sig_b64:
             return {"ok": False, "error": "Missing cryptographic deed in payload"}
+
+        skew = int(os.environ.get("SIFTA_WORMHOLE_DEED_MAX_SKEW_SEC", "900") or "900")
+        ts_raw = deed.get("timestamp")
+        if ts_raw is not None:
+            try:
+                ts_i = int(ts_raw)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "Invalid deed timestamp"}
+            now = int(time.time())
+            if abs(now - ts_i) > skew:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"Deed timestamp outside ±{skew}s (clock skew or replay). "
+                        "Sync NTP or raise SIFTA_WORMHOLE_DEED_MAX_SKEW_SEC if intentional."
+                    ),
+                }
 
         pub_bytes = base64.b64decode(pub_b64)
         sig_bytes = base64.b64decode(sig_b64)
@@ -1610,9 +1696,9 @@ async def memory_pool_broadcast(req: BroadcastMemoryRequest):
     """
     from memory_pool import broadcast_memory
 
-    soul_file = STATE_DIR / f"{req.agent.upper()}.json"
+    soul_file = STATE_DIR / f"{req.agent_id.upper()}.json"
     if not soul_file.exists():
-        return {"ok": False, "error": f"Unknown agent: {req.agent}"}
+        return {"ok": False, "error": f"Unknown agent: {req.agent_id}"}
 
     state = json.loads(soul_file.read_text())
     chash = broadcast_memory(state, req.memory, req.memory_type)
@@ -1699,9 +1785,9 @@ async def signal_ingest(req: IngestRequest):
     """
     from signal_ingestion import run_ingestion_cycle
 
-    soul_file = STATE_DIR / f"{req.agent.upper()}.json"
+    soul_file = STATE_DIR / f"{req.agent_id.upper()}.json"
     if not soul_file.exists():
-        return {"ok": False, "error": f"Unknown agent: {req.agent}"}
+        return {"ok": False, "error": f"Unknown agent: {req.agent_id}"}
 
     state   = json.loads(soul_file.read_text())
     signals = run_ingestion_cycle(
@@ -1943,7 +2029,10 @@ async def autonomic_heartbeat():
                 target = random.choice(bounties)
                 surgeon = random.choice(["M1THER", "M5QUEEN", "GROK_CODER_0X0", "ALICE_M5"])
                 print(f"[🫀 HEARTBEAT] Hunger Detected. {surgeon} engaging DEFRAG on {target.name}...")
-                subprocess.Popen(["python3", "memory_defrag_worker.py", str(target.name), surgeon], cwd=str(ROOT_DIR))
+                subprocess.Popen(
+                    ["python3", str(ROOT_DIR / "Utilities" / "memory_defrag_worker.py"), str(target.name), surgeon],
+                    cwd=str(ROOT_DIR),
+                )
             else:
                 # 3. NO BOUNTIES -> COMMUNIQUÉ
                 print("[🫀 HEARTBEAT] Local biological state optimal. Generating ambient Swarm chatter...")
@@ -1972,6 +2061,34 @@ async def sifta_security_bootstrap():
             raise RuntimeError(
                 "SIFTA_REQUIRE_AUTH is set but SIFTA_API_KEY is empty — refusing to boot with an open mutating API."
             )
+
+    _pki_path = STATE_DIR / "node_pki_registry.json"
+    if _pki_path.exists():
+        try:
+            _reg = json.loads(_pki_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[!] node_pki_registry.json is not valid JSON: {e}")
+            _reg = None
+        if isinstance(_reg, dict):
+            _sd = str(ROOT_DIR / "System")
+            if _sd not in sys.path:
+                sys.path.insert(0, _sd)
+            from pki_registry_validate import validate_node_pki_registry
+
+            for msg in validate_node_pki_registry(_reg):
+                print(f"[!] PKI registry: {msg}")
+            if _env_truthy("SIFTA_STRICT_PKI_REGISTRY"):
+                _errs = validate_node_pki_registry(_reg)
+                if _errs:
+                    raise RuntimeError(
+                        "SIFTA_STRICT_PKI_REGISTRY: node_pki_registry.json invalid — " + "; ".join(_errs)
+                    )
+
+    if not _env_truthy("SIFTA_WORMHOLE_USE_TLS") and not os.environ.get("SIFTA_MESH_HMAC", "").strip():
+        print(
+            "[!] Wormhole defaults to HTTP and SIFTA_MESH_HMAC is unset — "
+            "treat the API port as a sensitive LAN surface; set mesh HMAC and/or TLS for hops."
+        )
 
 
 @app.on_event("startup")

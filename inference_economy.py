@@ -28,6 +28,13 @@ except ImportError:
     _CRYPTO_AVAILABLE = False
     def sign_block(p): return "NO_KEYCHAIN_" + hashlib.sha256(p.encode()).hexdigest()[:16]
     def _get_serial(): return "UNKNOWN_SERIAL"
+
+try:
+    from ledger_append import append_ledger_line
+except ImportError:
+    def append_ledger_line(path, event):  # type: ignore
+        with open(path, "a") as f:
+            f.write(json.dumps(event) + "\n")
 # ──────────────────────────────────────────────────────────────────────────────
 
 ROOT_DIR  = Path(__file__).parent
@@ -149,8 +156,7 @@ def mint_reward(agent_id: str, action: str, file_repaired: str) -> dict:
     }
 
     try:
-        with open(LOG_PATH, "a") as f:
-            f.write(json.dumps(event) + "\n")
+        append_ledger_line(LOG_PATH, event)
     except Exception as e:
         print(f"  [ECONOMY] Minting write failed: {e}")
 
@@ -247,8 +253,7 @@ def record_inference_fee(
 
     # ── Append to repair_log.jsonl ───────────────────────────────────────────
     try:
-        with open(LOG_PATH, "a") as f:
-            f.write(json.dumps(event) + "\n")
+        append_ledger_line(LOG_PATH, event)
     except Exception as e:
         print(f"  [ECONOMY] Ledger write failed: {e}")
 

@@ -39,10 +39,10 @@ def append_ledger(node: str, amount: float, reason: str) -> None:
         "reason": reason,
         "hash": str(uuid.uuid4()),
     }
+    _sysd = str(ROOT_DIR / "System")
+    if _sysd not in sys.path:
+        sys.path.insert(0, _sysd)
     try:
-        _sysd = str(ROOT_DIR / "System")
-        if _sysd not in sys.path:
-            sys.path.insert(0, _sysd)
         from crypto_keychain import get_silicon_identity, sign_block
 
         sn = get_silicon_identity()
@@ -61,8 +61,9 @@ def append_ledger(node: str, amount: float, reason: str) -> None:
         }
     except Exception:
         pass
-    with open(LEDGER, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event) + "\n")
+    from ledger_append import append_ledger_line
+
+    append_ledger_line(LEDGER, event)
     print(f"[🔥] STGM UTILITY MINT: +{amount} STGM -> {node} ({reason})")
 
 

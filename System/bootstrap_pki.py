@@ -48,6 +48,15 @@ def run_bootstrap():
     if os.path.exists(PKI_FILE):
         with open(PKI_FILE, "r") as f:
             registry = json.load(f)
+        from pki_registry_validate import validate_node_pki_registry
+
+        v_errs = validate_node_pki_registry(registry)
+        _empty_note = "Registry is empty — mesh verification will fail until nodes bootstrap."
+        for msg in v_errs:
+            print(f"  [!] {msg}")
+        if set(v_errs) - {_empty_note}:
+            print("  ❌  node_pki_registry.json failed validation — fix entries before bootstrap.")
+            sys.exit(1)
         if serial in registry:
             print(f"  ✅  Public key registered: {registry[serial][:24]}...")
         else:

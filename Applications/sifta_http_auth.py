@@ -9,8 +9,12 @@ Environment:
 
 Related (server / wormhole — see server.py):
   SIFTA_MESH_HMAC, SIFTA_WORMHOLE_USE_TLS, SIFTA_WORMHOLE_TLS_INSECURE, SIFTA_WORMHOLE_CAFILE,
-  SIFTA_RECEIVE_SOUL_REQUIRE_PKI,
+  SIFTA_RECEIVE_SOUL_REQUIRE_PKI, SIFTA_RECEIVE_SOUL_MAX_BYTES (default 10MiB),
+  SIFTA_WORMHOLE_DEED_MAX_SKEW_SEC (deed timestamp anti-replay, default 900),
+  SIFTA_WORMHOLE_ALLOW_LOOPBACK, SIFTA_WORMHOLE_ALLOW_PUBLIC_IP (wormhole egress policy),
+  SIFTA_STRICT_PKI_REGISTRY — refuse boot if node_pki_registry.json fails validation,
   SIFTA_RATE_LIMIT_PER_MIN — max mutating requests per client IP per minute (0 = off).
+  SIFTA_TRUST_PROXY — if 1/true/on, rate limits use first X-Forwarded-For hop (set only behind your own proxy).
   SIFTA_PROTECT_GET — require API key on GET /api/* except SIFTA_GET_PROTECT_ALLOW (comma paths).
 
 Hardening backlog (not solved here):

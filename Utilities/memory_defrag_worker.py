@@ -2,14 +2,30 @@
 import json
 import sys
 import re
-import subprocess
 from pathlib import Path
 import time
 import uuid
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT_DIR / ".sifta_state"
 LEDGER = ROOT_DIR / "repair_log.jsonl"
+
+_SYS = str(ROOT_DIR / "System")
+if _SYS not in sys.path:
+    sys.path.insert(0, _SYS)
+from ledger_append import append_ledger_line  # noqa: E402
+
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def _sanitize_defrag_blob(s: str, limit: int = 5000) -> str:
+    """Strip control chars and cap size so LLM prompts cannot be hijacked via agent state."""
+    if not isinstance(s, str):
+        return ""
+    t = _CTRL.sub("", s)
+    t = t.replace("\r\n", "\n").replace("\r", "\n")
+    return t[:limit] if len(t) > limit else t
+
 
 def append_ledger(node, amount, reason):
     event = {
@@ -19,8 +35,7 @@ def append_ledger(node, amount, reason):
         "reason": reason,
         "hash": str(uuid.uuid4())
     }
-    with open(LEDGER, "a") as f:
-        f.write(json.dumps(event) + "\n")
+    append_ledger_line(LEDGER, event)
 
 def execute_defrag(bounty_file: str, executing_agent: str):
     print(f"=== SIFTA PHYSICAL LLM DEFRAG WORKER ===")
@@ -51,12 +66,14 @@ def execute_defrag(bounty_file: str, executing_agent: str):
     if not raw_memory:
         raw_memory = "No raw memory to compress. The fragmentation lied in the hash chain."
 
-    print(f"[*] Booting Ollama Inference Engine to compress {len(raw_memory)} bytes of chaos from {agent_id}...")
+    safe_blob = _sanitize_defrag_blob(str(raw_memory), 5000)
+
+    print(f"[*] Booting Ollama Inference Engine to compress {len(safe_blob)} bytes of chaos from {agent_id}...")
 
     prompt = (
         "You are an OS memory defragmenter. Summarize the following chaotic text into a highly dense, "
         "structured 3-sentence summary of actionable context. Discard all conversational noise.\n\n"
-        f"CHAOTIC MEMORY:\n{raw_memory[:5000]}"
+        f"CHAOTIC MEMORY:\n{safe_blob}"
     )
 
     try:

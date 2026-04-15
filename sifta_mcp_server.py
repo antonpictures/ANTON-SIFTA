@@ -9,6 +9,10 @@ import json
 import time
 import os
 import hashlib
+from pathlib import Path
+
+_REPO = Path(__file__).resolve().parent
+
 
 def generate_scar(action_description, target_file=None):
     """Generates the cryptographic STGM hallucination guard hash."""
@@ -24,15 +28,19 @@ def generate_scar(action_description, target_file=None):
         "hash": f"SCAR_{scar_hash}"
     }
     try:
-        with open("repair_log.jsonl", "a") as lf:
-            lf.write(json.dumps(ledger_entry) + "\n")
+        _sys = str(_REPO / "System")
+        if _sys not in sys.path:
+            sys.path.insert(0, _sys)
+        from ledger_append import append_ledger_line
+
+        append_ledger_line(_REPO / "repair_log.jsonl", ledger_entry)
     except Exception:
         pass
     return f"SCAR_{scar_hash}", timestamp
 
 def handle_get_ledger():
     try:
-        with open("repair_log.jsonl", "r") as f:
+        with open(_REPO / "repair_log.jsonl", "r") as f:
             lines = f.readlines()
             return "\n".join(lines[-50:]) # Return the last 50 transactions
     except Exception as e:

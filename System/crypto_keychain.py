@@ -68,7 +68,8 @@ def _sync_public_key(pub_key):
         try:
             with open(PKI_REGISTRY, "r") as f:
                 registry = json.load(f)
-        except: pass
+        except Exception:
+            registry = {}
 
     if registry.get(hw_serial) != pub_hex:
         registry[hw_serial] = pub_hex
@@ -93,7 +94,7 @@ def verify_block(hardware_serial: str, payload: str, signature_hex: str) -> bool
     try:
         with open(PKI_REGISTRY, "r") as f:
             registry = json.load(f)
-    except:
+    except Exception:
         return False
 
     pub_hex = registry.get(hardware_serial)

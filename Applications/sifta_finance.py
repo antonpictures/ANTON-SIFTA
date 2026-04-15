@@ -6,7 +6,12 @@
 # ─────────────────────────────────────────────────────────────
 
 import sys, json, os, time
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
+_sys = os.path.join(REPO_ROOT, "System")
+if _sys not in sys.path:
+    sys.path.insert(0, _sys)
+from ledger_append import append_ledger_line
 from inference_economy import ledger_balance
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -17,7 +22,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore  import Qt, QTimer
 from PyQt6.QtGui   import QFont, QColor
 
-REPO_ROOT   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_DIR   = os.path.join(REPO_ROOT, ".sifta_state")
 _GIT_BRANCH = os.environ.get("SIFTA_GIT_BRANCH", "feat/sebastian-video-economy")
 
@@ -357,8 +361,7 @@ class InstallAgentDialog(QDialog):
                     "amount": stgm,
                     "hash": seal
                 }
-                with open(os.path.join(REPO_ROOT, "repair_log.jsonl"), "a") as f:
-                    f.write(json.dumps(mint_entry) + "\n")
+                append_ledger_line(os.path.join(REPO_ROOT, "repair_log.jsonl"), mint_entry)
         except Exception as e:
             print(f"Log write error: {e}")
 
@@ -708,8 +711,7 @@ class MarketplaceTab(QWidget):
                     "ed25519_sig": seal,
                     "signing_node": self.local_serial,
                 }
-                with open(os.path.join(REPO_ROOT, "repair_log.jsonl"), "a") as f:
-                    f.write(json.dumps(tx_spend) + "\n")
+                append_ledger_line(os.path.join(REPO_ROOT, "repair_log.jsonl"), tx_spend)
                 
                 # Deduct local balance
                 state_file = os.path.join(STATE_DIR, f"{local_agent}.json")
