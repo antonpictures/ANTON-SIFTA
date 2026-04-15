@@ -12,3 +12,6 @@ async def test():
             print("got:", line.decode()[:20])
     except Exception as e:
         print("ERROR:", e)
+
+if __name__ == "__main__":
+    asyncio.run(test())
