@@ -31,7 +31,7 @@ from typing import Optional
 
 # ── Config ──────────────────────────────────────────────────────────────────
 OLLAMA_URL      = "http://127.0.0.1:11434/api/generate"
-OLLAMA_MODEL    = "qwen3.5:0.8b"
+OLLAMA_MODEL    = "llama3:latest"
 ANTIBODY_LOG    = Path("antibody_ledger.jsonl")
 WEB_CHAT_LOG    = Path(".sifta_state/wormhole_cache/web_chats")
 
