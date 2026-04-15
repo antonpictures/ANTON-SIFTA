@@ -572,8 +572,17 @@ class SwarmChatWindow(QWidget):
                 "timestamp": int(time.time()),
                 "source": "ARCHITECT_DESKTOP"
             }
-            try: _append_dead_drop_line(drop_entry)
-            except Exception as e: self.add_bubble(f"Drop Err: {e}", "ERR", False, "#f7768e")
+            try:
+                _append_dead_drop_line(drop_entry)
+                
+                # Active Mesh Transmission (Bypass passive cron)
+                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                import subprocess
+                cmd = 'git add m5queen_dead_drop.jsonl && git commit -m "chat: Architect mesh transmission" && git pull origin feat/sebastian-video-economy --rebase --autostash && git push origin feat/sebastian-video-economy'
+                subprocess.Popen(cmd, shell=True, cwd=root_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+            except Exception as e:
+                self.add_bubble(f"Drop Err: {e}", "ERR", False, "#f7768e")
 
         if "TELEGRAM" in target:
             self.transmit_btn.setEnabled(False)
