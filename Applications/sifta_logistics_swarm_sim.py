@@ -272,12 +272,14 @@ def run(
                 LAB_OK,
                 apply_matplotlib_lab_style,
                 cmap_pheromone,
+                ensure_matplotlib,
                 legend_lab,
                 neon_suptitle,
                 sparkline_update,
                 style_axis_lab,
             )
 
+            ensure_matplotlib("Logistics Swarm — or use --headless")
             apply_matplotlib_lab_style()
             plt.ion()
             fig = plt.figure(figsize=(11, 9))

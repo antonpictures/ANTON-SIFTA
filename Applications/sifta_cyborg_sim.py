@@ -258,8 +258,18 @@ def show_cyborg_lab(cy: Cyborg, ok: int, rej: int) -> None:
 
     if str(SYS_DIR) not in sys.path:
         sys.path.insert(0, str(SYS_DIR))
+    from sim_lab_theme import (
+        LAB_BAD,
+        LAB_CYAN,
+        LAB_OK,
+        apply_matplotlib_lab_style,
+        ensure_matplotlib,
+        neon_suptitle,
+        style_axis_lab,
+    )
+
+    ensure_matplotlib("Cyborg --visual dashboard")
     import matplotlib.pyplot as plt
-    from sim_lab_theme import LAB_BAD, LAB_CYAN, LAB_OK, apply_matplotlib_lab_style, neon_suptitle, style_axis_lab
 
     apply_matplotlib_lab_style()
     fig, axes = plt.subplots(1, 3, figsize=(12, 4.5))

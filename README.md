@@ -5,6 +5,18 @@
 
 ---
 
+## Graphics for simulations
+
+Swarm OS **simulation apps** (logistics, crucible, vision, urban, colloid, etc.) use **matplotlib** for the “mad lab” windows. If you see `ModuleNotFoundError: No module named 'matplotlib'`, install the same Python stack the repo expects:
+
+```bash
+pip install matplotlib numpy
+# or
+pip install -r requirements.txt
+```
+
+Use **`--headless`** on sims that support it to run without a GUI (no matplotlib required for those code paths).
+
 ## What is SIFTA?
 
 SIFTA is a **Sovereign Operating System** powered by your own local AI.

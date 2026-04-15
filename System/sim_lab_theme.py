@@ -8,7 +8,26 @@ so demos read as one instrument panel, not random plots.
 """
 from __future__ import annotations
 
+import sys
 from typing import Any, Optional, Sequence, Union
+
+
+def ensure_matplotlib(feature: str = "visual mode") -> None:
+    """
+    Exit with a clear message if matplotlib is not installed (common on minimal venvs).
+    Headless / --batch paths should not call this.
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("matplotlib") is None:
+        print(
+            "\n[SIFTA] Graphics need matplotlib, which is not installed in this Python.\n"
+            "        Fix:  pip install matplotlib\n"
+            "        Or:   pip install -r requirements.txt\n"
+            f"        ({feature})\n",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
 # ── Palette: readable on dark, distinct series ─────────────────────────────
 LAB_BG = "#070a12"

@@ -382,8 +382,9 @@ def run_visual(cfg: UrbanConfig, ticks: int, out_dir: Path, metrics_every: int, 
     except Exception:
         pass
     import matplotlib.pyplot as plt
-    from sim_lab_theme import apply_matplotlib_lab_style, neon_suptitle
+    from sim_lab_theme import apply_matplotlib_lab_style, ensure_matplotlib, neon_suptitle
 
+    ensure_matplotlib("Urban Resilience Simulator")
     apply_matplotlib_lab_style()
 
     sim = UrbanResilienceSim(cfg)

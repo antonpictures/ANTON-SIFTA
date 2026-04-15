@@ -271,6 +271,9 @@ class SIFTAColloidSimulation:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_renderer(sim: SIFTAColloidSimulation):
+    from sim_lab_theme import ensure_matplotlib
+
+    ensure_matplotlib("Colloid filmmaker window")
     import matplotlib
 
     try:

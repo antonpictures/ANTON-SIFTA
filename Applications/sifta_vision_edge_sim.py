@@ -125,8 +125,15 @@ def run_visual(
     except Exception:
         pass
     import matplotlib.pyplot as plt
-    from sim_lab_theme import apply_matplotlib_lab_style, cmap_terrain_lab, neon_suptitle, style_axis_lab
+    from sim_lab_theme import (
+        apply_matplotlib_lab_style,
+        cmap_terrain_lab,
+        ensure_matplotlib,
+        neon_suptitle,
+        style_axis_lab,
+    )
 
+    ensure_matplotlib("Stigmergic Edge Vision")
     apply_matplotlib_lab_style()
 
     worker = VisionProcessorWorker(img, cfg)

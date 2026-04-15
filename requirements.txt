@@ -8,3 +8,5 @@ textual>=0.50.0
 rich>=13.0.0
 cryptography>=41.0.0
 PyQt6>=6.0.0
+matplotlib>=3.8.0
+numpy>=1.26.0

@@ -281,6 +281,15 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
 
     if str(_SYS) not in sys.path:
         sys.path.insert(0, str(_SYS))
+    from sim_lab_theme import (
+        LAB_BG,
+        LAB_PANEL,
+        apply_matplotlib_lab_style,
+        ensure_matplotlib,
+        neon_suptitle,
+    )
+
+    ensure_matplotlib("Crucible swarm sim — use --headless without matplotlib")
     import matplotlib
 
     try:
@@ -291,7 +300,6 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
     import matplotlib.patches as mpatches
     from matplotlib.collections import LineCollection
     from matplotlib.widgets import Button, Slider
-    from sim_lab_theme import LAB_BG, LAB_PANEL, apply_matplotlib_lab_style, neon_suptitle
 
     apply_matplotlib_lab_style()
 
