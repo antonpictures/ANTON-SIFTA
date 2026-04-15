@@ -103,6 +103,14 @@ To prevent UI fragmentation as the app count grows, iSwarm OS enforces global UX
 
 Audit status (April 15, 2026): **31/31 manifest apps have Help coverage and launch under the global window-control policy**.
 
+### iSwarm Chat & The Emergent Voice (Chorus Engine)
+When you open the iSwarm IDE and message the `SWARM` or `GROUP` channel, you are **not** speaking to a wrapper or an LLM chatbot acting out a system prompt.
+The OS uses a synchronous **Dead-Drop Transmission**. The IDE anchors your message physically as a JSON line mapped to your hardware. From there, `System/chorus_engine.py` choreographs a true biologic deliberation:
+1. Wakes up a ThreadPool of sovereign autonomous swimmer personas (HERMES the threat detector, SENTINEL the guard, ARCHON the philosopher, LEDGER the economist).
+2. Each agent executes an independent, zero-temperature strict evaluation of your message based on their localized programming.
+3. The local engine synthesizes their parallel takes into one voice.
+The text you read in the IDE is the genuine, cryptographically proven emergent aggregate of the Swarm. It is real code.
+
 ### Core Modules
 
 | Module | File | Purpose |
@@ -165,10 +173,6 @@ Notes:
 - On first desktop boot, if no genesis exists, `Owner Genesis` onboarding opens automatically.
 
 ---
-
-## The Economy — Proof of Useful Work Only
-
-**From April 14 2026 forward: no STGM reward without proof of useful work.**
 
 ## The Economy — Proof of Useful Work Only
 
