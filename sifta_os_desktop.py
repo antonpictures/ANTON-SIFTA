@@ -411,6 +411,26 @@ class SiftaDesktop(QMainWindow):
         )
         self.clock_label.setAlignment(Qt.AlignmentFlag.AlignRight)
 
+        # Wallet overlay
+        self.wallet_label = QLabel(central)
+        self.wallet_label.setStyleSheet(
+            "color: #9ece6a; font-family: 'Courier New', monospace; font-size: 15px;"
+            "font-weight: 900; background: transparent; letter-spacing: 0px;"
+        )
+        self.wallet_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Cache local serial exactly once for the HUD to avoid `ioreg` spam
+        self._local_hw_serial = "UNKNOWN"
+        try:
+            import sys, os
+            sys_rt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "System")
+            if sys_rt not in sys.path:
+                sys.path.insert(0, sys_rt)
+            from silicon_serial import read_apple_serial
+            self._local_hw_serial = read_apple_serial()
+        except Exception:
+            pass
+
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._update_clock)
         self._clock_timer.start(1000)
@@ -451,10 +471,23 @@ class SiftaDesktop(QMainWindow):
             self.clock_label.setGeometry(self.width() - 280, 8, 270, 28)
             self.clock_label.raise_()
 
+        # Update Architect Wallet Stash
+        if hasattr(self, "wallet_label"):
+            try:
+                from System.warren_buffett import _architect_local_stgm
+                amt = _architect_local_stgm(self._local_hw_serial)
+                self.wallet_label.setText(f"💰 {amt:,.4f} STGM")
+            except Exception:
+                self.wallet_label.setText("💰 0.0000 STGM")
+            self.wallet_label.setGeometry(self.width() - 520, 8, 220, 28)
+            self.wallet_label.raise_()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "clock_label"):
             self.clock_label.setGeometry(self.width() - 280, 8, 270, 28)
+        if hasattr(self, "wallet_label"):
+            self.wallet_label.setGeometry(self.width() - 520, 8, 220, 28)
 
     # ── Taskbar ────────────────────────────────────────────
     def _build_taskbar(self):
