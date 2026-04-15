@@ -223,5 +223,13 @@
     "window_width": 620,
     "window_height": 720,
     "signature": "UNVERIFIED"
+  },
+  "Swarm Broadcaster": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_broadcaster_widget.py",
+    "widget_class": "BroadcasterWidget",
+    "window_width": 1100,
+    "window_height": 800,
+    "signature": "UNVERIFIED"
   }
 }
