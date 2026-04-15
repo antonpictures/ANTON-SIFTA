@@ -221,6 +221,20 @@ python3 Applications/sifta_vision_edge_sim.py --headless --ticks 100000 --width 
 
 Core worker: `System/vision_processor_worker.py`.
 
+### Urban Resilience Simulator (traffic + disaster drones)
+
+Split map: **roads / congestion / stigmergic traffic traces** on the left; **rubble-strewn
+disaster zone** on the right with drone **coverage** and **breadcrumb** pheromones.
+Intersection cells alternate stylised green/red phases (decentralised gating).
+`--stress` bumps vehicles, drones, and rubble for a harder run.
+
+```bash
+python3 Applications/sifta_urban_resilience_sim.py --ticks 20000
+python3 Applications/sifta_urban_resilience_sim.py --headless --stress --ticks 80000
+```
+
+Telemetry: `.sifta/urban/metrics.jsonl`; simulation mints at high coverage only (`.sifta/urban/sim_ledger.jsonl`).
+
 ---
 
 ## Security Posture

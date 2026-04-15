@@ -49,6 +49,11 @@
     "entry_point": "Applications/sifta_vision_edge_sim.py",
     "signature": "UNVERIFIED"
   },
+  "Urban Resilience Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_urban_resilience_sim.py",
+    "signature": "UNVERIFIED"
+  },
   "Biological Dashboard": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_biological_gui.py",
