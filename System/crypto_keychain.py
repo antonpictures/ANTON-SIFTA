@@ -102,20 +102,32 @@ def verify_block(hardware_serial: str, payload: str, signature_hex: str) -> bool
         return False
 
     try:
+        # ── Pre-validate hex format silently ──────────────────────
+        # Legacy signatures (SEAL_, NO_KEYCHAIN_, MARKET_, etc.)
+        # are not valid hex and must never spam the console.
+        if not signature_hex or not isinstance(signature_hex, str):
+            return False
+        hex_chars = set("0123456789abcdefABCDEF")
+        if not all(c in hex_chars for c in signature_hex):
+            return False  # silent reject — not a hex signature
+        if not all(c in hex_chars for c in pub_hex):
+            return False
+
         # Reconstruct public key
         pub_bytes = bytes.fromhex(pub_hex)
         public_key = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
-        
+
         # Reconstruct sig bytes
         sig_bytes = bytes.fromhex(signature_hex)
-        
+
         # Verify
         public_key.verify(sig_bytes, payload.encode('utf-8'))
         return True
     except InvalidSignature:
         return False
     except Exception as e:
-        print(f"Crypto evaluate error: {e}")
+        # Only print truly unexpected errors (not hex noise)
+        print(f"[CRYPTO] Unexpected verify error for {hardware_serial}: {e}")
         return False
 
 if __name__ == "__main__":
