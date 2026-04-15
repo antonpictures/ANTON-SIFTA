@@ -34,6 +34,11 @@
     "entry_point": "Applications/sifta_logistics_swarm_sim.py",
     "signature": "UNVERIFIED"
   },
+  "Warehouse Logistics Test": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_warehouse_test.py",
+    "signature": "UNVERIFIED"
+  },
   "Biological Dashboard": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_biological_gui.py",
