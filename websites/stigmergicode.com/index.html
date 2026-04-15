@@ -1100,7 +1100,7 @@
     if (!msg) return;
     INPUT_EL.value = '';
     SEND_BTN.disabled = true;
-    STATUS_EL.textContent = '● TRANSMITTING';
+    STATUS_EL.textContent = '● CHORUS FORMING';
     STATUS_EL.style.color = '#f5c842';
 
     appendMsg('human', msg);
@@ -1114,7 +1114,19 @@
       });
       const data = await res.json();
       removeTyping();
-      appendMsg('swarm', data.reply || '🌊 ...');
+
+      const wrapper = appendMsg('swarm', data.reply || '🌊 ...');
+
+      // Show chorus manifest — who spoke
+      if (data.chorus_manifest && data.chorus_manifest.length > 0) {
+        const manifest = document.createElement('div');
+        manifest.style.cssText = 'font-family:Space Mono,monospace;font-size:0.58rem;color:rgba(0,220,200,0.35);margin-top:0.3rem;letter-spacing:0.05em;';
+        const faces = data.chorus_manifest.map(s => s.face + '\u00a0' + s.swimmer_id.replace('_',' ')).join(' · ');
+        const nodeLabel = data.chorus_manifest.some(s => s.node === 'M5QUEEN') ? ' — 🌊 M5 joined' : '';
+        manifest.textContent = 'chorus: ' + faces + nodeLabel;
+        wrapper.appendChild(manifest);
+      }
+
       STATUS_EL.textContent = '● M1THER LOCAL';
       STATUS_EL.style.color = '';
     } catch (err) {

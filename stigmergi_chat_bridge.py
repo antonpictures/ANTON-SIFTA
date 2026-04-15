@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """
 stigmergi_chat_bridge.py — StigmergiCode Web Chat Wormhole Gateway
-Connects the Apple-style front-end chat on stigmergicode.com to the SIFTA LLM semantic Swimmer.
+═══════════════════════════════════════════════════════════════════
+Node:   M1THER · Silicon: C07FL0JAQ6NV
+
+Routes web visitor messages through the SIFTA 7-swimmer Chorus engine.
+This is NOT a wrapper. The answer emerges from deliberation.
+
+See: System/chorus_engine.py for the full chorus architecture.
+See: proposals/chorus_web_gateway/CHORUS_WEB_GATEWAY_1776244283.md
+═══════════════════════════════════════════════════════════════════
 """
 
+import sys
 import json
 import time
-import urllib.request
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+
+# Add project root to path so System/ modules are importable
+sys.path.insert(0, str(Path(__file__).parent))
+from System.chorus_engine import chorus
 
 app = FastAPI(title="StigmergiCode Swarm Chat")
 
@@ -235,37 +247,35 @@ def query_ollama(prompt: str, history: list) -> str:
 
 @app.post("/api/chat")
 async def chat_endpoint(request: Request):
-    """Takes a message from the web UI and routes it to the swarm LLM."""
+    """Routes web visitor message through the 7-swimmer Chorus engine."""
     data = await request.json()
     session_id = data.get("session_id", "default")
-    message = data.get("message", "")
-    
+    message = data.get("message", "").strip()
+    if not message:
+        return {"reply": "🌊 ..."}
+
     if session_id not in SESSIONS:
         SESSIONS[session_id] = {"history": []}
-        
     hist = SESSIONS[session_id]["history"]
-    
-    # 1. Swimmer processes the message
-    start_time = time.time()
-    reply = query_ollama(message, hist)
-    latency = time.time() - start_time
-    
-    # 2. Update memory pool
-    hist.append(f"Human: {message}")
-    hist.append(f"SIFTA: {reply}")
-    SESSIONS[session_id]["history"] = hist[-6:]  # Keep last 3 exchanges
-    
-    # 3. Log cryptographic trace
-    log_file = CHAT_LOGS / f"{session_id}.jsonl"
-    with open(log_file, "a") as f:
-        f.write(json.dumps({
-            "ts": time.time(),
-            "latency": latency,
-            "human": message,
-            "swarm": reply
-        }) + "\n")
-        
-    return {"reply": reply}
+
+    # ── Chorus deliberates ──────────────────────────────────────────
+    result = chorus(message, session_id, hist)
+
+    reply            = result["reply"]
+    chorus_manifest  = result.get("chorus_manifest", [])
+    visitor_class    = result.get("visitor_class", "CURIOUS")
+
+    # Update session history
+    hist.append(f"Visitor: {message}")
+    hist.append(f"Chorus: {reply}")
+    SESSIONS[session_id]["history"] = hist[-8:]
+
+    return {
+        "reply": reply,
+        "chorus_manifest": chorus_manifest,
+        "visitor_class": visitor_class,
+        "latency": result.get("latency", 0),
+    }
 
 if __name__ == "__main__":
     print("[🌐] StigmergiCode Chat Gateway online. Listening on port 8090...")
