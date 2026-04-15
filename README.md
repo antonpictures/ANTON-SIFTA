@@ -92,6 +92,17 @@ Every swimmer has an Ed25519 keypair bound to the hardware serial number of the 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Global UX Guarantees (iSwarm OS)
+
+To prevent UI fragmentation as the app count grows, iSwarm OS enforces global UX rules at the desktop layer:
+
+- **Universal Close Control (`X`)**: all apps launched inside iSwarm OS MDI windows include `WindowCloseButtonHint`, so every window has a standard close button and consistent title bar controls.
+- **Universal App Help**: every manifest app exposes a `Help` action from the Programs menu and resolves content from `Documents/APP_HELP.md`.
+- **Single Source of Styling**: new apps can inherit `System/sifta_base_widget.py` to get consistent SIFTA chrome (`?` help button, status bar, dark palette, control styling) without re-implementing boilerplate.
+- **Manifest-Driven Governance**: app discovery and launch behavior come from `Applications/apps_manifest.json`, allowing one-place auditing of category, entry point, and widget embedding behavior.
+
+Audit status (April 15, 2026): **27/27 manifest apps have Help coverage and launch under the global window-control policy**.
+
 ### Core Modules
 
 | Module | File | Purpose |
