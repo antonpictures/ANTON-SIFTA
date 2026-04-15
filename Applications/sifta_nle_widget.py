@@ -109,7 +109,7 @@ class NLEWidget(QWidget):
         main.setSpacing(4)
 
         title_bar = QHBoxLayout()
-        title = QLabel("SIFTA NLE — Stigmergic Video Editor")
+        title = QLabel("SIFTA NLE — Stigmergic Swarm Cut Studio")
         title.setFont(QFont("Menlo", 14, QFont.Weight.Bold))
         title.setStyleSheet("color: rgb(0,255,200); padding: 2px;")
         title_bar.addWidget(title)

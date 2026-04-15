@@ -28,13 +28,36 @@ LAUNCH_REWARD = 1.0
 CRASH_PENALTY = -5.0
 DAILY_DECAY = 0.92
 EPOCH_KEY = "last_decay_epoch"
+LEGACY_NAME_MAP = {
+    "SIFTA NLE (Video Editor)": "SIFTA NLE",
+    "Sebastian Batch Editor": "Silence Remover & Stitcher",
+}
+
+
+def _normalize_app_name(app_name: str) -> str:
+    return LEGACY_NAME_MAP.get(app_name, app_name)
+
+
+def _migrate_legacy_names(state: dict[str, Any]) -> dict[str, Any]:
+    scores = state.setdefault("scores", {})
+    migrated: dict[str, float] = {}
+    changed = False
+    for name, score in scores.items():
+        normalized = _normalize_app_name(name)
+        if normalized != name:
+            changed = True
+        migrated[normalized] = round(migrated.get(normalized, 0.0) + float(score), 4)
+    if changed:
+        state["scores"] = migrated
+    return state
 
 
 def _load() -> dict[str, Any]:
     _STATE_DIR.mkdir(parents=True, exist_ok=True)
     if _FITNESS_FILE.exists():
         try:
-            return json.loads(_FITNESS_FILE.read_text())
+            state = json.loads(_FITNESS_FILE.read_text())
+            return _migrate_legacy_names(state)
         except Exception:
             pass
     return {EPOCH_KEY: _today(), "scores": {}}
@@ -66,6 +89,7 @@ def _apply_decay(state: dict[str, Any]) -> dict[str, Any]:
 def record_launch(app_name: str) -> float:
     """Called when the Architect opens an app. Returns new fitness."""
     state = _apply_decay(_load())
+    app_name = _normalize_app_name(app_name)
     scores = state.setdefault("scores", {})
     scores[app_name] = round(scores.get(app_name, 0.0) + LAUNCH_REWARD, 4)
     _save(state)
@@ -75,6 +99,7 @@ def record_launch(app_name: str) -> float:
 def record_crash(app_name: str) -> float:
     """Called when an app exits with error. Returns new fitness."""
     state = _apply_decay(_load())
+    app_name = _normalize_app_name(app_name)
     scores = state.setdefault("scores", {})
     scores[app_name] = round(scores.get(app_name, 0.0) + CRASH_PENALTY, 4)
     _save(state)
@@ -83,7 +108,7 @@ def record_crash(app_name: str) -> float:
 
 def get_scores() -> dict[str, float]:
     """Return {app_name: fitness} dict, decayed to today."""
-    state = _apply_decay(_load())
+    state = _migrate_legacy_names(_apply_decay(_load()))
     _save(state)
     return dict(state.get("scores", {}))
 

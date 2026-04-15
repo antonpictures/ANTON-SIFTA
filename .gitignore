@@ -48,6 +48,12 @@ sifta_session_log/
 *.key
 !*.pub.pem
 
+# ── Owner Genesis (photo NEVER in git — only hash in ledger) ─────────────────
+# The photo lives at ~/.sifta_keys/owner_genesis/ (covered above)
+# The genesis scar hash is in .sifta_state/owner_genesis.json (tracked)
+!.sifta_state/owner_genesis.json
+!.sifta_state/chorus_consent.json
+
 # ── Dead storage ──────────────────────────────────────────────────────────────
 .sifta/
 .sifta_cemetery/

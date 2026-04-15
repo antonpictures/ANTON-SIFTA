@@ -1,19 +1,4 @@
 {
-  "Swarm Discord Engine": {
-    "category": "Networking",
-    "entry_point": "Applications/discord_swarm.py",
-    "signature": "UNVERIFIED"
-  },
-  "Swarm Telegram Engine": {
-    "category": "Networking",
-    "entry_point": "Applications/telegram_swarm.py",
-    "signature": "UNVERIFIED"
-  },
-  "Swarm WhatsApp Bridge": {
-    "category": "Networking",
-    "entry_point": "Applications/whatsapp_swarm.py",
-    "signature": "UNVERIFIED"
-  },
   "Network Control Center": {
     "category": "Networking",
     "entry_point": "Applications/sifta_network_center.py",
@@ -157,7 +142,7 @@
     "entry_point": "Applications/sifta_cardio.py",
     "signature": "UNVERIFIED"
   },
-  "SIFTA NLE (Video Editor)": {
+  "SIFTA NLE": {
     "category": "Creative",
     "entry_point": "Applications/sifta_nle_widget.py",
     "widget_class": "NLEWidget",
@@ -165,7 +150,7 @@
     "window_height": 920,
     "signature": "UNVERIFIED"
   },
-  "Sebastian Batch Editor": {
+  "Silence Remover & Stitcher": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_sebastian_editor.py",
     "signature": "UNVERIFIED"
@@ -213,6 +198,30 @@
     "widget_class": "FactoryWidget",
     "window_width": 1440,
     "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Swarm Canvas": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_canvas_widget.py",
+    "widget_class": "CanvasWidget",
+    "window_width": 820,
+    "window_height": 660,
+    "signature": "UNVERIFIED"
+  },
+  "App Manager": {
+    "category": "System",
+    "entry_point": "Applications/sifta_app_manager.py",
+    "widget_class": "AppManagerWidget",
+    "window_width": 840,
+    "window_height": 720,
+    "signature": "UNVERIFIED"
+  },
+  "Owner Genesis": {
+    "category": "System",
+    "entry_point": "Applications/sifta_genesis_widget.py",
+    "widget_class": "GenesisWidget",
+    "window_width": 620,
+    "window_height": 720,
     "signature": "UNVERIFIED"
   }
 }

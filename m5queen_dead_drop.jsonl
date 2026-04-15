@@ -116,3 +116,6 @@
 {"sender": "<///[_o_]///::ID[M5]::ORIGIN[mac studio - GTH4921YP3]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>", "source": "CRON_HEARTBEAT", "architect_state": "ACTIVE", "text": "[CIRCADIAN:pi] M5 mode stable: ACTIVE. Idle 0min. Density 5 pulse/hr.", "timestamp": 1776200401}
 {"sender": "<///[_o_]///::ID[M5]::ORIGIN[mac studio - GTH4921YP3]::CHATBOX[<mac_OS_IDE>]::byANTYGRAVITY>", "source": "CRON_HEARTBEAT", "text": "[HEARTBEAT:\u03c0] M5_IDE_AG alive. Serial GTH4921YP3. Grid timestamp 1776200521.", "timestamp": 1776200521}
 {"sender": "[ARCHITECT::HW:ALICE_M5::IF:SWARM_OS]", "text": "lol", "timestamp": 1776213044}
+{"sender": "[ARCHITECT::HW:ALICE_M5::IF:IDE]", "text": "Hello Swarm :)", "timestamp": 1776277364, "source": "ARCHITECT_DESKTOP"}
+{"sender": "[ARCHITECT::HW:ALICE_M5::IF:IDE]", "text": "Hello, whith who am i speaking with? Identify your ascii body or ascii dna multiform.", "timestamp": 1776277761, "source": "ARCHITECT_DESKTOP"}
+{"sender": "[ARCHITECT::HW:ALICE_M5::IF:IDE]", "text": "Hi", "timestamp": 1776282582, "source": "ARCHITECT_DESKTOP"}

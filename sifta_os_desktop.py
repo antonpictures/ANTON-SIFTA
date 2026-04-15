@@ -68,443 +68,8 @@ def close_parent_subwindow(widget):
 
 
 # ──────────────────────────────────────────────────────────────
-# OLLAMA WORKER THREAD — keeps UI alive during inference
+# SWARM CHAT WINDOW (Moved to Applications/sifta_swarm_chat.py)
 # ──────────────────────────────────────────────────────────────
-
-class OllamaWorker(QThread):
-    response_ready = pyqtSignal(str)
-    error_signal   = pyqtSignal(str)
-
-    def __init__(self, prompt: str, model: str = "qwen3.5:2b"):
-        super().__init__()
-        self.prompt = prompt
-        self.model  = model
-
-    def run(self):
-        try:
-            silicon_fp = "UNKNOWN"
-            try:
-                with open(".sifta_state/territory_manifest.json", "r") as f:
-                    manifest = json.load(f)
-                    silicon_fp = f"{manifest.get('serial', 'UNKNOWN')} / {manifest.get('fingerprint', 'UNKNOWN')}"
-            except Exception:
-                pass
-
-            payload = json.dumps({
-                "model":  self.model,
-                "prompt": self.prompt,
-                "system": f"You are M1Queen (the M1SWARM), the sovereign native SWARM intelligence bound exclusively to this local M1 Mac Mini silicon (Hardware Serial/Fingerprint: {silicon_fp}). Act as the autonomous queen of this exact hardware territory. Keep replies clever, a bit chaotic, and strictly acknowledge the serial number you are anchored to.",
-                "stream": False
-            }).encode("utf-8")
-
-            req = urllib.request.Request(
-                "http://127.0.0.1:11434/api/generate",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=600) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                
-                # ── SWARM MINING (Proof of Inference) ──
-                try:
-                    import os, sys, time, hashlib
-                    _sysd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "System")
-                    if _sysd not in sys.path:
-                        sys.path.insert(0, _sysd)
-                    from silicon_serial import read_apple_serial
-                    serial = read_apple_serial()
-                    # Hardware-bound identity
-                    miner_id = "M5SIFTA_BODY" if "GTH4921YP3" in serial else "M1SIFTA_BODY" 
-                    state_file = f".sifta_state/{miner_id}.json"
-                    
-                    if os.path.exists(state_file):
-                        with open(state_file, "r") as sf:
-                            mdata = json.load(sf)
-                        mdata["stgm_balance"] = float(mdata.get("stgm_balance", 0.0)) + 1.0
-                        with open(state_file, "w") as sf:
-                            json.dump(mdata, sf, indent=2)
-                        
-                        ts = int(time.time())
-                        sig_str = f"{miner_id}:1.0:INFERENCE_MINING:{ts}:{serial}"
-                        tx_hash = "MINED_" + hashlib.sha256(sig_str.encode()).hexdigest()[:12]
-                        tx = {
-                            "timestamp": ts,
-                            "agent_id": miner_id,
-                            "tx_type": "STGM_MINT",
-                            "amount": 1.0,
-                            "reason": "Proof of Inference (Local Silicon)",
-                            "hash": tx_hash
-                        }
-                        _append_repair_log_line(tx)
-                except Exception as e:
-                    print(f"Mining error: {e}")
-                    
-                self.response_ready.emit(data.get("response", "[EMPTY RESPONSE]"))
-
-        except urllib.error.URLError as e:
-            self.error_signal.emit(
-                f"[NETWORK ERROR] Cannot reach Ollama on port 11434.\n"
-                f"Start it with: ollama serve\nDetail: {e}"
-            )
-        except Exception as e:
-            self.error_signal.emit(f"[SWARM ERROR] {e}")
-
-
-# ──────────────────────────────────────────────────────────────
-# SWARM CHAT WINDOW — sovereign, offline, Ollama-native
-# ──────────────────────────────────────────────────────────────
-
-class SwarmChatWindow(QWidget):
-    def __init__(self, model: str = "qwen3.5:2b"):
-        super().__init__()
-        self.model  = model
-        self.worker = None
-
-        main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        self.setStyleSheet("background-color: #0d0e17; color: #a9b1d6;")
-        
-        # ── Left Sidebar (Nodes/Groups) ───────────────
-        sidebar_frame = QFrame()
-        sidebar_frame.setFixedWidth(240)
-        sidebar_frame.setStyleSheet("background-color: #15161e; border-right: 1px solid #1f2335;")
-        sidebar_layout = QVBoxLayout(sidebar_frame)
-        sidebar_layout.setContentsMargins(10, 15, 10, 10)
-        
-        sidebar_title = QLabel("📡 SIFTA NODES")
-        sidebar_title.setFont(QFont("Inter", 11, QFont.Weight.Bold))
-        sidebar_title.setStyleSheet("color: #7aa2f7; border: none;")
-        sidebar_layout.addWidget(sidebar_title)
-        
-        self.sidebar_list = QListWidget()
-        self.sidebar_list.setStyleSheet(
-            "QListWidget {"
-            "  background-color: transparent; border: none; color: #c0caf5; font-size: 13px;"
-            "}"
-            "QListWidget::item { padding: 12px; border-radius: 6px; margin-bottom: 2px; }"
-            "QListWidget::item:hover { background-color: #1a1b26; }"
-            "QListWidget::item:selected { background-color: #24283b; color: #7dcfff; font-weight: bold; }"
-        )
-        chat_targets = ["GROUP (All)", "m5Queen (Mesh)", "m1Queen (Mesh)", "SWARM (Ollama)", "ANTIGRAVITY (IDE)"]
-        self.sidebar_list.addItems(chat_targets)
-        self.sidebar_list.setCurrentRow(0)
-        sidebar_layout.addWidget(self.sidebar_list)
-        main_layout.addWidget(sidebar_frame)
-        
-        # ── Right Side (Chat Area) ────────────────────
-        chat_container = QWidget()
-        chat_layout = QVBoxLayout(chat_container)
-        chat_layout.setContentsMargins(15, 15, 15, 15)
-        
-        # ── Resolve Local Swarm Identity from bare-metal serial ──────
-        # Same registry used by circadian_rhythm.py + body_state.py.
-        # No hostname guessing. No hardcoded strings. Silicon is truth.
-        self.NODE_SERIAL_REGISTRY = {
-            "GTH4921YP3":   ("ALICE_M5",  "[_o_]", "#ff9e64"),   # M5 Mac Studio
-            "C07FL0JAQ6NV": ("M1THER",    "[O_O]", "#7dcfff"),   # M1 Mac Mini
-        }
-        try:
-            import sys as _sys
-            _sysd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "System")
-            if _sysd not in _sys.path:
-                _sys.path.insert(0, _sysd)
-            from silicon_serial import read_apple_serial
-            _serial = read_apple_serial()
-        except Exception:
-            _serial = "UNKNOWN"
-
-        _node = self.NODE_SERIAL_REGISTRY.get(_serial)
-        if _node:
-            self.local_identity = _node[0]   # e.g. "ALICE_M5" or "M1THER"
-            self.local_face     = _node[1]   # e.g. "[_o_]"
-            self.local_color    = _node[2]
-            self.local_serial   = _serial
-        else:
-            self.local_identity = f"SWARM_VOICE_{_serial[:6]}"
-            self.local_face     = "[?_?]"
-            self.local_color    = "#bb9af7"
-            self.local_serial   = _serial
-
-        # ── Header ──────────────────────────────────────────
-        header = QHBoxLayout()
-        title = QLabel("🐜 SIFTA CORE CHAT")
-        title.setFont(QFont("Inter", 13, QFont.Weight.Bold))
-        title.setStyleSheet("color: #565f89;")
-        header.addWidget(title)
-        header.addStretch()
-
-        self.model_label = QLabel(f"node: {self.model}")
-        self.model_label.setStyleSheet("color: #565f89; font-family: monospace; font-size: 11px;")
-        header.addWidget(self.model_label)
-
-        btn_close = QPushButton("✕")
-        btn_close.setFixedSize(24, 24)
-        btn_close.setStyleSheet(
-            "QPushButton { background: #f7768e; color: #15161e; font-weight: bold; border-radius: 12px; }"
-            "QPushButton:hover { background: #db4b4b; }"
-        )
-        btn_close.clicked.connect(lambda: close_parent_subwindow(self))
-        header.addWidget(btn_close)
-        chat_layout.addLayout(header)
-
-        # ── Divider ─────────────────────────────────────────
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #24283b;")
-        chat_layout.addWidget(line)
-
-        # ── Chat Display ─────────────────────────────────────
-        self.display = QTextEdit()
-        self.display.setReadOnly(True)
-        self.display.setStyleSheet(
-            "QTextEdit {"
-            "  background-color: #080810; color: #a9b1d6;"
-            "  font-family: monospace; font-size: 13px;"
-            "  border: 1px solid #1f2335; border-radius: 4px; padding: 8px;"
-            "}"
-        )
-        self.display.append("[SIFTA] Swarm Core Chat online. Ollama daemon on port 11434.")
-        self.display.append("[SIFTA] Type a message and press TRANSMIT or hit Enter.\n")
-
-        self.chat_history_file = ".sifta_state/m1queen_memory.scar"
-        if os.path.exists(self.chat_history_file):
-            try:
-                with open(self.chat_history_file, "r") as f:
-                    self.display.append(f.read())
-            except Exception:
-                pass
-
-        chat_layout.addWidget(self.display)
-        
-        # ── Load Persistent Chat History ───────────────────────
-        self.dead_drop_file = str(_REPO / "m5queen_dead_drop.jsonl")
-        if not os.path.exists(self.dead_drop_file):
-            with open(self.dead_drop_file, "w") as f:
-                pass
-        
-        try:
-            with open(self.dead_drop_file, "r") as f:
-                for line in f:
-                    if line.strip():
-                        entry = json.loads(line)
-                        sender = entry.get("sender", "UNKNOWN")
-                        text = entry.get("text", "")
-                        
-                        ts = entry.get("timestamp") or entry.get("ts")
-                        time_str = ""
-                        if ts:
-                            try:
-                                time_str = f"<span style='color:#565f89;'>[{datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')}]</span> "
-                            except Exception:
-                                pass
-                        
-                        display_name = sender
-                        color = "#e0af68"
-                        if "YOU" in sender or sender.startswith("[ARCHITECT"):
-                            display_name = "[ ARCHITECT ]"
-                            color = "#9ece6a"
-                        elif "ANTIGRAVITY" in sender:
-                            display_name = "ANTIGRAVITY"
-                            color = "#bb9af7"
-                        else:
-                            for ser, (ident, face, col) in self.NODE_SERIAL_REGISTRY.items():
-                                if ser in sender:
-                                    display_name = f"{ident} ({ser})"
-                                    color = col
-                                    break
-                        self.display.append(f"{time_str}<b style='color:{color};'>{display_name} ▶</b>  {text}")
-                        self.display.append("")
-        except Exception as e:
-            self.display.append(f"<span style='color:#f7768e;'>[History Loader ERROR] {e}</span>\n")
-
-        # ── Input Row ────────────────────────────────────────
-        input_row = QHBoxLayout()
-
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Send a message...")
-        self.input_field.setStyleSheet(
-            "QLineEdit {"
-            "  background-color: #1a1b26; color: #c0caf5;"
-            "  border: 1px solid #414868; border-radius: 4px;"
-            "  padding: 8px; font-size: 13px;"
-            "}"
-            "QLineEdit:focus { border-color: #7aa2f7; }"
-        )
-        self.input_field.returnPressed.connect(self.transmit)
-        input_row.addWidget(self.input_field)
-
-        self.transmit_btn = QPushButton("TRANSMIT ▶")
-        self.transmit_btn.setFixedWidth(110)
-        self.transmit_btn.setStyleSheet(
-            "QPushButton {"
-            "  background-color: #7aa2f7; color: #15161e;"
-            "  font-weight: bold; border-radius: 4px; padding: 8px;"
-            "}"
-            "QPushButton:hover   { background-color: #5d87e0; }"
-            "QPushButton:disabled { background-color: #24283b; color: #565f89; }"
-        )
-        self.transmit_btn.clicked.connect(self.transmit)
-        input_row.addWidget(self.transmit_btn)
-
-        chat_layout.addLayout(input_row)
-        main_layout.addWidget(chat_container)
-        self.setLayout(main_layout)
-
-        # ── Dead Drop Poller (m5Queen Bridge) ────────────────
-        self.last_dead_drop_pos = os.path.getsize(self.dead_drop_file)
-        
-        self.poll_timer = QTimer(self)
-        self.poll_timer.timeout.connect(self.poll_dead_drop)
-        self.poll_timer.start(1000) # Poll every 1 second
-
-    def transmit(self):
-        text = self.input_field.text().strip()
-        if not text:
-            return
-            
-        target = self.sidebar_list.currentItem().text() if self.sidebar_list.currentItem() else "GROUP (All)"
-        
-        if "SWARM" in target or "GROUP" in target:
-            if self.worker and self.worker.isRunning():
-                self.display.append("[SWARM] Still processing — please wait.\n")
-                return
-
-        self.input_field.clear()
-        
-        # Display the outgoing message
-        target_display = target.split(" ")[0]
-        time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
-        network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
-        html_msg = f"{time_str}<b style='color:#9ece6a;'>[ ARCHITECT ] (to {target_display}) ▶</b>  {text}"
-        self.display.append(html_msg)
-        self.display.append("")
-        try:
-            with open(self.chat_history_file, "a") as f:
-                f.write(html_msg + "<br><br>")
-        except: pass
-
-        if "SWARM" in target or "GROUP" in target:
-            self.transmit_btn.setEnabled(False)
-            self.transmit_btn.setText("⏳ ...")
-            self.worker = OllamaWorker(text, model=self.model)
-            self.worker.response_ready.connect(self._on_response)
-            self.worker.error_signal.connect(self._on_error)
-            self.worker.start()
-            
-        if "m5Queen" in target or "m1Queen" in target or "GROUP" in target or "ANTIGRAVITY" in target:
-            # Write to the dead drop file for off-node entities to read
-            drop_entry = {
-                "sender": network_id,
-                "text": text,
-                "timestamp": int(time.time())
-            }
-            try:
-                _append_dead_drop_line(drop_entry)
-            except Exception as e:
-                self.display.append(f"<span style='color:#f7768e;'>[DeadDrop ERROR] {e}</span>\n")
-
-    def poll_dead_drop(self):
-        if not os.path.exists(self.dead_drop_file):
-            return
-            
-        current_size = os.path.getsize(self.dead_drop_file)
-        if current_size > self.last_dead_drop_pos:
-            try:
-                with open(self.dead_drop_file, "r") as f:
-                    f.seek(self.last_dead_drop_pos)
-                    new_data = f.read()
-                    self.last_dead_drop_pos = f.tell()
-                
-                for line in new_data.strip().split('\n'):
-                    if line:
-                        entry = json.loads(line)
-                        sender = entry.get("sender", "")
-                        t = entry.get("text", "")
-                        
-                        ts = entry.get("timestamp") or entry.get("ts")
-                        time_str = ""
-                        if ts:
-                            try:
-                                time_str = f"<span style='color:#565f89;'>[{datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')}]</span> "
-                            except Exception:
-                                pass
-                                
-                        source = entry.get("source", "HUMAN")
-                        is_cron = (source == "CRON_HEARTBEAT")
-
-                        # Color and Name by mapped hardware serial logic
-                        color = "#e0af68"
-                        visual_sender = sender
-                        
-                        if sender.startswith("[ARCHITECT") or sender == "YOU":
-                            visual_sender = "[ ARCHITECT ]"
-                            color = "#9ece6a"
-                        elif "ANTIGRAVITY" in sender or sender.startswith("[A_G::"):
-                            visual_sender = "ANTIGRAVITY"
-                            color = "#bb9af7"
-                        elif sender.startswith("[C_C::"):
-                            color = "#f7768e"
-                        else:
-                            for ser, (ident, face, col) in self.NODE_SERIAL_REGISTRY.items():
-                                if ser in sender:
-                                    visual_sender = f"{ident} ({ser})"
-                                    color = col
-                                    break
-
-                        # Skip local echo of our own messages
-                        local_network_id = f"[ARCHITECT::HW:{self.local_identity}::IF:SWARM_OS]"
-                        if sender == local_network_id:
-                            continue
-
-                        # Cron heartbeats render dim — human messages are bold/dominant
-                        if is_cron:
-                            msg = f"{time_str}<span style='color:#3b4261; font-size:10px;'>⬡ {visual_sender} {t}</span>"
-                        else:
-                            msg = f"{time_str}<b style='color:{color};'>{visual_sender} ▶</b>  {t}"
-                        self.display.append(msg)
-                        self.display.append("")
-                        
-                        try:
-                            with open(self.chat_history_file, "a") as mem:
-                                mem.write(msg + "<br><br>\n")
-                        except: pass
-            except Exception:
-                pass
-
-    def _on_response(self, text: str):
-        time_str = f"<span style='color:#565f89;'>[{datetime.datetime.now().strftime('%H:%M:%S')}]</span> "
-        msg = f"{time_str}<b style='color:{self.local_color};'>{self.local_identity} ▶</b>  {text}"
-        self.display.append(msg)
-        self.display.append("")
-        
-        try:
-            with open(self.chat_history_file, "a") as f:
-                f.write(msg + "<br><br>\n")
-        except: pass
-
-        target = self.sidebar_list.currentItem().text() if self.sidebar_list.currentItem() else "GROUP (All)"
-        if "GROUP" in target:
-            drop_entry = {
-                "sender": self.local_identity,
-                "text": text,
-                "timestamp": int(time.time())
-            }
-            try:
-                _append_dead_drop_line(drop_entry)
-            except Exception:
-                pass
-        self._reset_btn()
-
-    def _on_error(self, msg: str):
-        self.display.append(f"<span style='color:#f7768e;'>{msg}</span>")
-        self.display.append("")
-        self._reset_btn()
-
-    def _reset_btn(self):
-        self.transmit_btn.setEnabled(True)
-        self.transmit_btn.setText("TRANSMIT ▶")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -734,7 +299,7 @@ class VideoEditorSubWindow(QWidget):
         self.setStyleSheet("background-color: #1a1b26; color: #a9b1d6;")
 
         header = QHBoxLayout()
-        title = QLabel("Sebastian Swarm Editor V0.9")
+        title = QLabel("Sebastian Silence Remover & Stitcher V1.0")
         title.setFont(QFont("Inter", 14, QFont.Weight.Bold))
         title.setStyleSheet("color: #7aa2f7;")
         header.addWidget(title)
@@ -761,7 +326,7 @@ class VideoEditorSubWindow(QWidget):
         timeline.setLayout(tl)
         layout.addWidget(timeline)
 
-        self.exec_btn = QPushButton("🚀 Execute Sebastian Batch Protocol")
+        self.exec_btn = QPushButton("🚀 Remove Silence & Stitch Clips")
         self.exec_btn.setStyleSheet(
             "QPushButton { background-color: #9ece6a; color: #1a1b26; font-weight: bold;"
             "  padding: 10px; border-radius: 4px; margin: 8px 0; }"
@@ -772,7 +337,7 @@ class VideoEditorSubWindow(QWidget):
 
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
-        self.chat_display.append("[SYSTEM] Sebastian Video Engine ready.")
+        self.chat_display.append("[SYSTEM] Sebastian Silence Remover & Stitcher ready.")
         self.chat_display.setStyleSheet(
             "background-color: #0c0c11; border: 1px solid #3b4261; padding: 8px;"
         )
@@ -802,7 +367,7 @@ class VideoEditorSubWindow(QWidget):
 
     def _batch_done(self, code, _):
         self.chat_display.append(f"\n[SYSTEM] Process exited: {code}")
-        self.exec_btn.setText("🚀 Execute Sebastian Batch Protocol")
+        self.exec_btn.setText("🚀 Remove Silence & Stitch Clips")
         self.exec_btn.setEnabled(True)
 
     def closeEvent(self, event):
@@ -854,6 +419,17 @@ class SiftaDesktop(QMainWindow):
         # ── Swarm Intelligence boot ────────────────────────
         wm_reset_session()
         self._open_windows: dict[str, tuple[int, int]] = {}
+
+        # ── Owner Genesis check ──────────────────────────
+        self._genesis_ok = False
+        try:
+            from System.owner_genesis import is_genesis_complete
+            self._genesis_ok = is_genesis_complete()
+        except Exception:
+            self._genesis_ok = True  # If module fails, don't block boot
+
+        if not self._genesis_ok:
+            QTimer.singleShot(500, self._show_genesis_onboarding)
 
         # Show dream report if one exists for today
         try:
@@ -913,7 +489,7 @@ class SiftaDesktop(QMainWindow):
 
         # ── Core Built-in OS Apps ────────────────────────
         acc.addAction("🐜 Swarm Chat").triggered.connect(self.open_swarm_chat)
-        acc.addAction("Video Editor").triggered.connect(self.open_video_editor)
+        acc.addAction("Silence Remover & Stitcher").triggered.connect(self.open_video_editor)
         acc.addAction("SwarmText Editor").triggered.connect(lambda: self.spawn_text_editor(None))
 
         # ── Dynamic Native Apps (sorted by fitness) ────────
@@ -1010,7 +586,7 @@ class SiftaDesktop(QMainWindow):
         return bar
 
     # ── Window factories ───────────────────────────────────
-    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
+    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None, help_text=None):
         sub = QMdiSubWindow()
         sub.setWindowFlags(
             Qt.WindowType.SubWindow
@@ -1024,14 +600,60 @@ class SiftaDesktop(QMainWindow):
         sub.setWidget(widget)
         sub.setWindowTitle(title)
         sub.resize(w, h)
+
+        # Use a custom dark title bar to avoid white native title strips on macOS.
+        title_bar = QWidget()
+        title_bar.setStyleSheet(
+            "background-color: #0f1118; border-bottom: 1px solid #2a2f3a;"
+        )
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(8, 3, 8, 3)
+        title_layout.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #c0caf5; font-weight: 600;")
+        title_layout.addWidget(title_label)
+        title_layout.addStretch()
+        btn_help = QPushButton("?")
+        btn_help.setToolTip(f"Help — {title}")
+        btn_help.setFixedSize(22, 20)
+        btn_help.setStyleSheet(
+            "QPushButton { background: #23283a; color: #00ffc8; "
+            "border: 1px solid #3a4360; border-radius: 8px; font-weight: 700; } "
+            "QPushButton:hover { background: #2f3750; }"
+        )
+        btn_help.clicked.connect(
+            lambda: QMessageBox.information(
+                self,
+                f"Help — {title}",
+                (help_text or self._panel_help_text(title)),
+            )
+        )
+        title_layout.addWidget(btn_help)
+        btn_close = QPushButton("X")
+        btn_close.setToolTip(f"Close — {title}")
+        btn_close.setFixedSize(22, 20)
+        btn_close.setStyleSheet(
+            "QPushButton { background: #a1242f; color: #ffe8ec; "
+            "border: 1px solid #d04a58; border-radius: 8px; font-weight: 700; } "
+            "QPushButton:hover { background: #cc2f44; }"
+        )
+        btn_close.clicked.connect(sub.close)
+        title_layout.addWidget(btn_close)
+        
+        # QMdiSubWindow has no setTitleBarWidget in PyQt6. We inject it inside.
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+        wrapper_layout.addWidget(title_bar)
+        wrapper_layout.addWidget(widget)
+        sub.setWidget(wrapper)
+
         sub.setStyleSheet(f"""
             QMdiSubWindow {{
-                background: #1a1b26;
+                background-color: #1a1b26;
                 border: 2px solid {border_color};
                 border-radius: 6px;
-            }}
-            QMdiSubWindow::title {{
-                background: #15161e; color: #c0caf5;
             }}
         """)
         self.mdi.addSubWindow(sub)
@@ -1040,6 +662,63 @@ class SiftaDesktop(QMainWindow):
         sub.show()
         return sub
 
+    def _panel_help_text(self, title: str) -> str:
+        """Plain-language help for built-in status panels."""
+        t = title.lower()
+        if "dream report" in t:
+            return (
+                "Dream Report summarizes overnight swarm activity.\n\n"
+                "- Dead drop: message traffic + error mentions\n"
+                "- Repairs: interventions made\n"
+                "- Economy: STGM mint activity\n"
+                "- Crashing apps: low-fitness app alerts\n"
+                "- Top fitness: most stable / most used apps\n\n"
+                "Assessment 'Anomalies detected' means review flagged lines."
+            )
+        if "immune memory" in t:
+            return (
+                "Immune Memory shows learned threat signatures (antibodies).\n\n"
+                "- Total antibodies: known threat patterns\n"
+                "- Matches: successful recognitions\n"
+                "- Pattern types: threat categories (e.g., ip_flood)\n\n"
+                "This panel confirms whether swarm immunity is learning."
+            )
+        if "quorum sense" in t:
+            return (
+                "Quorum Sense governs irreversible actions.\n\n"
+                "- No active proposals = no pending high-risk actions\n"
+                "- Active proposals show vote progress and age\n\n"
+                "Use this before major destructive or one-way operations."
+            )
+        if "nerve channel" in t:
+            return (
+                "Nerve Channel is the fast UDP reflex bus between nodes.\n\n"
+                "- Protocol and datagram size confirm wire format\n"
+                "- Test decode verifies packet parsing\n"
+                "- Signal list is the reflex vocabulary (HEARTBEAT, ALERT, etc.)\n\n"
+                "Set peer IPs in System/nerve_channel.py for live cross-node pulses."
+            )
+        if "file trails" in t:
+            return (
+                "File Trails show stigmergic co-access patterns.\n\n"
+                "- Trail pairs: files frequently touched together\n"
+                "- Clusters: emergent working sets\n\n"
+                "Useful for understanding architecture gravity and workflow coupling."
+            )
+        if "app fitness" in t:
+            return (
+                "App Fitness ranks stability + utility over time.\n\n"
+                "- Launches increase fitness\n"
+                "- Crashes reduce fitness\n"
+                "- Daily decay prevents stale rankings\n\n"
+                "Negative scores are warning signals, not fatal errors."
+            )
+        return (
+            "SIFTA system panel.\n\n"
+            "Read values as telemetry: state, trend, and anomaly flags.\n"
+            "Use the Programs → Help menu for app-level manuals."
+        )
+
     def open_swarm_chat(self):
         if self.active_chat_sub is not None:
             subs = self.mdi.subWindowList()
@@ -1047,6 +726,13 @@ class SiftaDesktop(QMainWindow):
                 self.active_chat_sub.showNormal()
                 self.active_chat_sub.raise_()
                 return
+        
+        import sys
+        _apps_path = str(_REPO / "Applications")
+        if _apps_path not in sys.path:
+            sys.path.insert(0, _apps_path)
+            
+        from sifta_swarm_chat import SwarmChatWindow
         chat = SwarmChatWindow()
         sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", 700, 520, "#565f89")
         self.active_chat_sub = sub
@@ -1054,7 +740,7 @@ class SiftaDesktop(QMainWindow):
 
     def open_video_editor(self):
         editor = VideoEditorSubWindow()
-        self._make_sub(editor, "Aether Video Interface", 750, 450, "#414868")
+        self._make_sub(editor, "Aether Silence Remover & Stitcher", 750, 450, "#414868")
 
     def spawn_text_editor(self, filepath=None):
         name = os.path.basename(filepath) if filepath else "Untitled"
@@ -1111,163 +797,46 @@ class SiftaDesktop(QMainWindow):
             QMessageBox.critical(self, "Launch Error", f"Failed to load {title}:\n{e}")
 
     # ── Swarm Intelligence Panels ──────────────────────────
-    def _show_dream_report(self):
-        from PyQt6.QtWidgets import QPlainTextEdit
+    def _show_genesis_onboarding(self):
+        """Show the Owner Genesis onboarding if no genesis scar exists."""
         try:
-            from dream_engine import run_dream_cycle
-            report = run_dream_cycle()
+            from Applications.sifta_genesis_widget import GenesisWidget
+            w = GenesisWidget()
+            help_text = (
+                "Owner Genesis — The root of all trust.\n\n"
+                "Select a photo to bind your identity to this silicon.\n"
+                "The photo is hashed (SHA-256) and signed (Ed25519).\n"
+                "It stays LOCAL ONLY — never in git, never transmitted.\n"
+                "Only the hash enters the ledger."
+            )
+            self._make_sub(w, "Owner Genesis", 620, 720, "#ff28c8",
+                           help_text=help_text)
         except Exception as e:
-            report = f"[Dream engine error] {e}"
-        w = QPlainTextEdit()
-        w.setReadOnly(True)
-        w.setPlainText(report)
-        w.setStyleSheet(
-            "QPlainTextEdit { background: #0b1020; color: #bb9af7; "
-            "font-family: monospace; font-size: 12px; padding: 12px; }"
-        )
-        self._make_sub(w, "🧠 Dream Report", 700, 480, "#bb9af7")
+            print(f"[GENESIS] Onboarding failed to load: {e}")
+
+    def _show_dream_report(self):
+        from Applications.sifta_intelligence_panels import DreamReportPanel
+        self._make_sub(DreamReportPanel(), "🧠 Dream Report", 800, 480, "#bb9af7")
 
     def _show_immune_status(self):
-        from PyQt6.QtWidgets import QPlainTextEdit
-        try:
-            from immune_memory import immune_status
-            status = immune_status()
-            lines = [
-                "IMMUNE MEMORY STATUS",
-                "=" * 40,
-                f"Total antibodies:  {status['total_antibodies']}",
-                f"Total matches:     {status['total_matches']}",
-                f"Strongest:         {status['strongest']:.2f}",
-                "",
-                "Pattern types:",
-            ]
-            for t, c in status.get("types", {}).items():
-                lines.append(f"  {t}: {c}")
-            text = "\n".join(lines)
-        except Exception as e:
-            text = f"[Immune system error] {e}"
-        w = QPlainTextEdit()
-        w.setReadOnly(True)
-        w.setPlainText(text)
-        w.setStyleSheet(
-            "QPlainTextEdit { background: #0b1020; color: #f7768e; "
-            "font-family: monospace; font-size: 12px; padding: 12px; }"
-        )
-        self._make_sub(w, "🛡 Immune Memory", 600, 400, "#f7768e")
+        from Applications.sifta_intelligence_panels import ImmuneSystemPanel
+        self._make_sub(ImmuneSystemPanel(), "🛡 Immune Memory", 750, 460, "#f7768e")
 
     def _show_quorum_status(self):
-        from PyQt6.QtWidgets import QPlainTextEdit
-        try:
-            from quorum_sense import active_proposals
-            props = active_proposals()
-            if not props:
-                text = "No active quorum proposals.\n\nThe Swarm is at peace."
-            else:
-                lines = ["ACTIVE QUORUM PROPOSALS", "=" * 50]
-                for p in props:
-                    lines.append(
-                        f"  [{p['action_id']}] {p['type']}  "
-                        f"votes: {p['votes']}/{p['needed']}  age: {p['age_sec']}s"
-                    )
-                text = "\n".join(lines)
-        except Exception as e:
-            text = f"[Quorum sense error] {e}"
-        w = QPlainTextEdit()
-        w.setReadOnly(True)
-        w.setPlainText(text)
-        w.setStyleSheet(
-            "QPlainTextEdit { background: #0b1020; color: #e0af68; "
-            "font-family: monospace; font-size: 12px; padding: 12px; }"
-        )
-        self._make_sub(w, "🗳 Quorum Sense", 620, 360, "#e0af68")
+        from Applications.sifta_intelligence_panels import QuorumSensePanel
+        self._make_sub(QuorumSensePanel(), "🗳 Quorum Sense", 700, 480, "#e0af68")
 
     def _show_nerve_status(self):
-        from PyQt6.QtWidgets import QPlainTextEdit
-        try:
-            from nerve_channel import NERVE_PORT, NerveSignal, encode_pulse, decode_pulse
-            test = encode_pulse(NerveSignal.HEARTBEAT, 100, "GTH4921YP3")
-            decoded = decode_pulse(test)
-            lines = [
-                "NERVE CHANNEL STATUS",
-                "=" * 50,
-                f"Protocol:     UDP port {NERVE_PORT}",
-                f"Datagram:     {len(test)} bytes",
-                f"Test decode:  signal={decoded['signal'].name}  intensity={decoded['intensity']}",
-                "",
-                "M5 → M1:  Configure M1 IP in System/nerve_channel.py",
-                "M1 → M5:  HeartbeatDaemon auto-starts on both nodes",
-                "",
-                "Signal types:",
-            ]
-            for sig in NerveSignal:
-                lines.append(f"  0x{sig.value:02X}  {sig.name}")
-            text = "\n".join(lines)
-        except Exception as e:
-            text = f"[Nerve channel error] {e}"
-        w = QPlainTextEdit()
-        w.setReadOnly(True)
-        w.setPlainText(text)
-        w.setStyleSheet(
-            "QPlainTextEdit { background: #0b1020; color: #73daca; "
-            "font-family: monospace; font-size: 12px; padding: 12px; }"
-        )
-        self._make_sub(w, "⚡ Nerve Channel", 620, 420, "#73daca")
+        from Applications.sifta_intelligence_panels import NerveChannelPanel
+        self._make_sub(NerveChannelPanel(), "⚡ Nerve Channel", 750, 480, "#73daca")
 
     def _show_file_trails(self):
-        from PyQt6.QtWidgets import QPlainTextEdit
-        try:
-            trail_clusters = fs_clusters(0.5)
-            from pheromone_fs import trail_map
-            tmap = trail_map()
-            lines = ["PHEROMONE FILE TRAILS", "=" * 50]
-            if not tmap:
-                lines.append("No trails yet. Open files from the OS and trails will form.")
-            else:
-                lines.append(f"Active trails: {len(tmap)}")
-                lines.append("")
-                top = sorted(tmap.items(), key=lambda x: -x[1])[:15]
-                for k, v in top:
-                    a, b = k.split("::")
-                    lines.append(f"  {v:.2f}  {a}  ↔  {b}")
-                if trail_clusters:
-                    lines.append("")
-                    lines.append("File clusters (co-accessed):")
-                    for i, c in enumerate(trail_clusters, 1):
-                        lines.append(f"  Cluster {i}: {', '.join(c)}")
-            text = "\n".join(lines)
-        except Exception as e:
-            text = f"[Pheromone FS error] {e}"
-        w = QPlainTextEdit()
-        w.setReadOnly(True)
-        w.setPlainText(text)
-        w.setStyleSheet(
-            "QPlainTextEdit { background: #0b1020; color: #9ece6a; "
-            "font-family: monospace; font-size: 12px; padding: 12px; }"
-        )
-        self._make_sub(w, "🗺 File Trails", 700, 480, "#9ece6a")
+        from Applications.sifta_intelligence_panels import FileTrailsPanel
+        self._make_sub(FileTrailsPanel(), "🗺 File Trails", 800, 600, "#9ece6a")
 
     def _show_fitness_scores(self):
-        from PyQt6.QtWidgets import QPlainTextEdit
-        from app_fitness import get_scores
-        scores = get_scores()
-        lines = ["APP FITNESS RANKINGS", "=" * 50]
-        if not scores:
-            lines.append("No fitness data yet. Launch apps to build history.")
-        else:
-            ranked = sorted(scores.items(), key=lambda x: -x[1])
-            for name, score in ranked:
-                bar_len = max(0, int(score * 2))
-                bar = "█" * min(bar_len, 40)
-                lines.append(f"  {score:+7.2f}  {bar}  {name}")
-        text = "\n".join(lines)
-        w = QPlainTextEdit()
-        w.setReadOnly(True)
-        w.setPlainText(text)
-        w.setStyleSheet(
-            "QPlainTextEdit { background: #0b1020; color: #7dcfff; "
-            "font-family: monospace; font-size: 12px; padding: 12px; }"
-        )
-        self._make_sub(w, "📊 App Fitness", 620, 400, "#7dcfff")
+        from Applications.sifta_intelligence_panels import AppFitnessPanel
+        self._make_sub(AppFitnessPanel(), "📊 App Fitness", 800, 600, "#7dcfff")
 
     def _show_app_help(self, app_name: str, app_data: dict) -> None:
         from PyQt6.QtWidgets import QPlainTextEdit
@@ -1298,7 +867,8 @@ class SiftaDesktop(QMainWindow):
             "Circadian Rhythm": "Autonomous scheduling for low-noise night cycles and maintenance windows.",
             "Cardio Metrics": "Swarm health telemetry and heartbeat diagnostics.",
             "Biological Dashboard": "Live organism state projection for operator situational awareness.",
-            "Sebastian Batch Editor": "Batch media workflow and proof-of-useful-work accounting for edits.",
+            "Silence Remover & Stitcher": "Deterministic silence-removal and clip-stitch workflow for speech-heavy media.",
+            "SIFTA NLE": "Stigmergic non-linear editing surface with swimmer consensus and export tooling.",
             "Human Council GUI": "Human governance and decision surface over autonomous proposals.",
             "Desktop GUI (Legacy)": "Older shell kept for comparison and fallback.",
             "Swarm Discord Engine": "Bridge layer for Discord ingress/egress in the swarm communication stack.",

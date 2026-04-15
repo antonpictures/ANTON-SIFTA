@@ -505,7 +505,7 @@ class SiftaDesktop(QMainWindow):
         prog = menu.addMenu("Programs ▶")
         acc  = prog.addMenu("Accessories ▶")
         acc.addAction("🐜 Swarm Chat").triggered.connect(self.open_swarm_chat)
-        acc.addAction("Video Editor").triggered.connect(self.open_video_editor)
+        acc.addAction("Silence Remover & Stitcher").triggered.connect(self.open_video_editor)
         acc.addAction("SwarmText Editor").triggered.connect(lambda: self.spawn_text_editor(None))
 
         sims = prog.addMenu("Simulations ▶")
@@ -540,19 +540,63 @@ class SiftaDesktop(QMainWindow):
         return bar
 
     # ── Window factories ───────────────────────────────────
-    def _make_sub(self, widget, title, w, h, border_color="#414868"):
+    def _make_sub(self, widget, title, w, h, border_color="#414868", help_text: str | None = None):
         sub = QMdiSubWindow()
+        sub.setWindowFlags(
+            Qt.WindowType.SubWindow
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint
+        )
+        sub.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
         sub.setWidget(widget)
         sub.setWindowTitle(title)
         sub.resize(w, h)
+
+        # Custom dark title bar with help and close.
+        title_bar = QWidget()
+        title_bar.setStyleSheet("background-color: #0f1118; border-bottom: 1px solid #2a2f3a;")
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(8, 3, 8, 3)
+        title_layout.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #c0caf5; font-weight: 600;")
+        title_layout.addWidget(title_label)
+        title_layout.addStretch()
+        btn_help = QPushButton("?")
+        btn_help.setToolTip(f"Help — {title}")
+        btn_help.setFixedSize(22, 20)
+        btn_help.setStyleSheet(
+            "QPushButton { background: #23283a; color: #00ffc8; "
+            "border: 1px solid #3a4360; border-radius: 8px; font-weight: 700; } "
+            "QPushButton:hover { background: #2f3750; }"
+        )
+        btn_help.clicked.connect(
+            lambda: QMessageBox.information(
+                self,
+                f"Help — {title}",
+                help_text or "SIFTA panel window. Use the Programs → Help menu for full docs.",
+            )
+        )
+        title_layout.addWidget(btn_help)
+        btn_close = QPushButton("X")
+        btn_close.setToolTip(f"Close — {title}")
+        btn_close.setFixedSize(22, 20)
+        btn_close.setStyleSheet(
+            "QPushButton { background: #a1242f; color: #ffe8ec; "
+            "border: 1px solid #d04a58; border-radius: 8px; font-weight: 700; } "
+            "QPushButton:hover { background: #cc2f44; }"
+        )
+        btn_close.clicked.connect(sub.close)
+        title_layout.addWidget(btn_close)
+        sub.setTitleBarWidget(title_bar)
+
         sub.setStyleSheet(f"""
             QMdiSubWindow {{
-                background: #1a1b26;
+                background-color: #1a1b26;
                 border: 2px solid {border_color};
                 border-radius: 6px;
-            }}
-            QMdiSubWindow::title {{
-                background: #15161e; color: #c0caf5;
             }}
         """)
         self.mdi.addSubWindow(sub)
@@ -573,7 +617,7 @@ class SiftaDesktop(QMainWindow):
 
     def open_video_editor(self):
         editor = VideoEditorSubWindow()
-        self._make_sub(editor, "Aether Video Interface", 750, 450, "#414868")
+        self._make_sub(editor, "Aether Silence Remover & Stitcher", 750, 450, "#414868")
 
     def spawn_text_editor(self, filepath=None):
         name = os.path.basename(filepath) if filepath else "Untitled"

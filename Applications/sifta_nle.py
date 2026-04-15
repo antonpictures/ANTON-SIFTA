@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SIFTA NLE — Stigmergic Non-Linear Video Editor
+SIFTA NLE — Stigmergic Swarm Cut Studio
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 The timeline is dead. Welcome to the Pheromone Matrix.
 
@@ -46,7 +46,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QSlider, QFrame, QSplitter, QFileDialog,
     QSizePolicy, QGroupBox, QTextEdit, QScrollArea, QProgressBar,
     QComboBox, QSpinBox, QCheckBox, QLineEdit, QToolBar, QStatusBar,
-    QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
+    QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QAbstractItemView, QMenu
 )
 from PyQt6.QtCore import (
@@ -101,6 +101,63 @@ def find_ffprobe() -> Optional[str]:
 
 FFMPEG = find_ffmpeg()
 FFPROBE = find_ffprobe()
+
+# ═══════════════════════════════════════════════════════════════════
+#  ANTON PICTURES STYLE PROFILE — REAL FILMMAKER DNA
+#  Extracted from 515 clips across 3 FCPXML timelines, March 2026
+#  Source: ~/Music/media_claw/FullMoviepy/my_style.txt
+# ═══════════════════════════════════════════════════════════════════
+
+ANTON_STYLE_PROFILE = {
+    # ── Cut Timing (from 515 real FCPXML clips) ──────────────────
+    "avg_cut_sec":      5.305,
+    "median_cut_sec":   4.700,
+    "min_flash_sec":    0.100,   # subliminal impact flashes
+    "max_hold_sec":     58.187,  # establishing / dialogue anchors
+    "std_dev_sec":      4.835,
+    "p10":              1.500,
+    "p25":              2.533,
+    "p50":              4.700,   # the biological pulse
+    "p75":              6.733,
+    "p90":              7.700,
+    "p95":              10.826,
+    # ── Transition Philosophy ────────────────────────────────────
+    "transition_ratio": 0.052,   # 5.2% — hard cuts are king
+    "preferred_transitions": ["Cross Dissolve", "Flow", "Bloom", "Zoom"],
+    # ── Tempo Bands (from system_dna.md) ─────────────────────────
+    "bpm_slow_burn":    95,      # < 95 BPM → 6+ second clips
+    "bpm_balanced":     120,     # 95-120 BPM → 3-6s cinematic
+    # "bpm_aggressive":            # > 120 BPM → 1.5-3s MTV cuts
+    # ── Cinematic Rules (from MASTER_BIBLE) ──────────────────────
+    "letterbox_aspect": 2.35,    # strict 2.35:1 widescreen
+    "mirror_x_prob":    0.65,    # 65% MirrorX on B-Roll
+    "mirror_x_cinema":  0.15,    # 15% MirrorX on cinematic
+    "tail_pad_sec":     3.5,     # dramatic tail pad before cut
+    # ── Subtitle Pacing (from 233 real SRT entries) ──────────────
+    "subtitle_avg_sec": 3.243,
+    "subtitle_med_sec": 3.161,
+    # ── Branding (from system_dna.md) ────────────────────────────
+    "logo_intervals":   [1, 20, 40, 60],  # 4 logo drops per video
+    # ── VFX Emulation ────────────────────────────────────────────
+    "color_correction": "Super 8 Emulation",
+    "punch_in_range":   (1.05, 1.25),  # random resize range
+    # ── Source Attribution ────────────────────────────────────────
+    "source": "Extracted from 515 clips across 3 Anton Pictures FCPXML timelines (Ivan Turbinca, Hollywood Now, Cleopatra), 6 SRT files, and 3 production bibles — March 2026",
+}
+
+# Quick sampling function for style-aware clip durations
+def sample_anton_duration() -> float:
+    """Sample a clip duration from the real Anton Pictures distribution."""
+    # Weighted mix: 70% around median, 20% fast, 10% long holds
+    r = random.random()
+    if r < 0.10:  # 10% flash/fast cuts
+        return random.uniform(ANTON_STYLE_PROFILE["min_flash_sec"], ANTON_STYLE_PROFILE["p25"])
+    elif r < 0.80:  # 70% core range
+        return random.gauss(ANTON_STYLE_PROFILE["median_cut_sec"], ANTON_STYLE_PROFILE["std_dev_sec"] * 0.5)
+    else:  # 20% dramatic holds
+        return random.uniform(ANTON_STYLE_PROFILE["p75"], ANTON_STYLE_PROFILE["p95"])
+
+C_NARRATIVE  = QColor(255, 180, 50)  # NarrativeWeaver amber
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -298,6 +355,101 @@ def parse_srt(srt_path: Path) -> List[SubtitleEntry]:
     return entries
 
 
+def parse_fcpxml(fcpxml_path: Path) -> List[MediaClip]:
+    """Parse FCPXML v1.x timeline into MediaClip list.
+    Extracts clip durations, names, codecs, and effects used.
+    Compatible with Final Cut Pro X exports."""
+    import xml.etree.ElementTree as ET
+
+    clips = []
+    try:
+        tree = ET.parse(str(fcpxml_path))
+        root = tree.getroot()
+    except Exception:
+        return clips
+
+    # Build asset lookup: id -> {name, duration, format}
+    assets = {}
+    for asset in root.iter('asset'):
+        aid = asset.get('id', '')
+        name = asset.get('name', 'untitled')
+        dur_str = asset.get('duration', '0s')
+        m = re.match(r'(\d+)/(\d+)s', dur_str)
+        dur = int(m.group(1)) / int(m.group(2)) if m else 0.0
+        has_video = asset.get('hasVideo', '0') == '1'
+        has_audio = asset.get('hasAudio', '0') == '1'
+        assets[aid] = {'name': name, 'duration': dur, 'has_video': has_video, 'has_audio': has_audio}
+
+    # Scan spine for clip references
+    timeline_pos = 0.0
+    for tag in ['asset-clip', 'clip', 'ref-clip', 'mc-clip', 'sync-clip']:
+        for el in root.iter(tag):
+            dur_str = el.get('duration', '')
+            m = re.match(r'(\d+)/(\d+)s', dur_str)
+            if not m:
+                continue
+            dur = int(m.group(1)) / int(m.group(2))
+            if dur < 0.01 or dur > 600:
+                continue
+
+            name = el.get('name', '') or el.get('ref', 'clip')
+
+            clip = MediaClip(
+                path=Path(f'/fcpxml/{name}'),
+                filename=name[:40],
+                duration=dur,
+                width=1920, height=1080,
+                fps=24.0,
+                codec='fcpxml-ref',
+                timeline_start=timeline_pos,
+                in_point=0.0,
+                out_point=dur,
+            )
+            clips.append(clip)
+            timeline_pos += dur
+
+    return clips
+
+
+def generate_fcpxml(decisions: List[EditDecision], clips: List[MediaClip],
+                    title: str = "SIFTA_NLE") -> str:
+    """Generate FCPXML v1.11 for export to Final Cut Pro X."""
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE fcpxml>',
+        '<fcpxml version="1.11">',
+        '  <resources>',
+        '    <format id="r1" name="FFVideoFormat1080p30" frameDuration="100/3000s"',
+        '            width="1920" height="1080" colorSpace="1-1-1 (Rec. 709)"/>',
+    ]
+    # Asset refs
+    for i, clip in enumerate(clips):
+        dur_frac = f"{int(clip.duration * 3000)}/3000s"
+        lines.append(f'    <asset id="a{i}" name="{clip.filename}" '
+                     f'start="0s" duration="{dur_frac}" hasVideo="1" format="r1"/>')
+    lines.append('  </resources>')
+    lines.append(f'  <library>')
+    lines.append(f'    <event name="{title}">')
+    lines.append(f'      <project name="{title}">')
+    total_dur = sum(d.out_time - d.in_time for d in decisions)
+    lines.append(f'        <sequence duration="{int(total_dur * 3000)}/3000s" format="r1">')
+    lines.append(f'          <spine>')
+    for d in decisions:
+        ci = d.clip_idx
+        dur = d.out_time - d.in_time
+        start_frac = f"{int(d.in_time * 3000)}/3000s"
+        dur_frac = f"{int(dur * 3000)}/3000s"
+        lines.append(f'            <asset-clip ref="a{ci}" name="{clips[ci].filename}" '
+                     f'start="{start_frac}" duration="{dur_frac}"/>')
+    lines.append('          </spine>')
+    lines.append('        </sequence>')
+    lines.append('      </project>')
+    lines.append('    </event>')
+    lines.append('  </library>')
+    lines.append('</fcpxml>')
+    return '\n'.join(lines)
+
+
 def generate_edl(decisions: List[EditDecision], clips: List[MediaClip],
                  title: str = "SIFTA_NLE") -> str:
     """Generate CMX 3600 EDL format for export to Premiere/DaVinci/FCP."""
@@ -388,28 +540,32 @@ def generate_demo_waveform(duration: float = 30.0, sample_rate: int = 8000) -> n
 
 
 def generate_demo_subtitles(total_dur: float) -> List[SubtitleEntry]:
-    """Generate synthetic subtitles that span the timeline for demo."""
+    """Generate demo subtitles using real Anton Pictures narration cadence.
+    Subtitle pacing: avg 3.243s, median 3.161s (from 233 real SRT entries)."""
     phrases = [
-        "We built this swarm from two machines and a dream.",
+        # --- Real production lore (from Swarm Master Bible) ---
+        "Springsteen on the stage, the E Street Band is back.",
+        "Playing Hope and Dreams to try and heal the crack.",
         "The pheromone matrix replaces the timeline.",
         "Every cut is an emergent consensus, not a human drag.",
-        "Rhythm swimmers detect transients in the audio bed.",
-        "Chroma swimmers converge on the Hero Frame target.",
+        "Travolta takes to Cannes, flying high above the rest.",
+        "Directing his own novel about an aviator's quest.",
         "Audio sentinels protect the vocal band from music collision.",
-        "Silence is signal. Every gap is a potential cut.",
         "The narrative weaver reads the transcript and triggers intent.",
-        "Export as EDL for Premiere, DaVinci, or Final Cut.",
+        "Artificial intelligence is running the machine.",
+        "The assistants in the offices are starting to let go.",
+        "Keep the data highly guarded, keep the human element.",
         "This is stigmergic filmmaking — the timeline is dead.",
-        "Each clip has provenance: codec, framerate, color signature.",
-        "Cohesion index measures how unified the grade is.",
-        "Lower the threshold: more cuts. Raise it: only consensus.",
+        "Imperial Global Music — subscribe for the real sound.",
         "The substrate remembers what was seen. Pheromones evaporate slowly.",
         "STGM tokens are earned for useful edit decisions.",
     ]
     subs: List[SubtitleEntry] = []
     t = 1.0
+    avg_sub = ANTON_STYLE_PROFILE["subtitle_avg_sec"]
     for phrase in phrases:
-        dur_phrase = random.uniform(2.0, 4.5)
+        dur_phrase = random.gauss(avg_sub, 0.5)
+        dur_phrase = max(1.5, min(5.5, dur_phrase))
         if t + dur_phrase > total_dur:
             break
         subs.append(SubtitleEntry(start=t, end=t + dur_phrase, text=phrase,
@@ -418,26 +574,38 @@ def generate_demo_subtitles(total_dur: float) -> List[SubtitleEntry]:
     return subs
 
 
-def generate_demo_clips(count: int = 6) -> List[MediaClip]:
-    """Generate demo clips with synthetic waveforms for testing."""
+def generate_demo_clips(count: int = 8) -> List[MediaClip]:
+    """Generate demo clips using REAL Anton Pictures style distribution.
+    Clip durations sampled from the filmmaker's actual FCPXML data."""
+    # Real production names from media_claw/my_style.txt
     names = [
-        "interview_cam_A.mp4", "interview_cam_B.mp4", "b_roll_city.mov",
-        "drone_sunset.mp4", "music_bed_v2.wav", "voiceover_final.mp4",
-        "reaction_shot.mp4", "timelapse_dawn.mov", "podium_speech.mp4",
-        "crowd_ambience.wav",
+        "Ivan_Turbinca_Scene1.mp4",
+        "Hollywood_Now_Tiffany.mp4",
+        "Cleopatra_Sitcom.mp4",
+        "British_Saturday_Night.mp4",
+        "John_Sayles_Feature.mp4",
+        "Virgin_River_News.mp4",
+        "ImperialDaily_LOGO.mp4",
+        "Ivan_Turbinca_Scene7.mp4",
+        "Hope_and_Stranger.mp4",
+        "Hollywood_Machine.mp4",
     ]
     clips = []
     timeline_pos = 0.0
 
     for i in range(count):
-        dur = random.uniform(12, 40)
+        # Sample from the real Anton Pictures style distribution
+        dur = max(2.0, sample_anton_duration())
+        # Scale up for demo visibility (real clips ~5s, demo clips ~12-35s)
+        dur = dur * random.uniform(2.5, 5.0)
+
         clip = MediaClip(
             path=Path(f"/demo/{names[i % len(names)]}"),
             filename=names[i % len(names)],
             duration=dur,
             width=1920, height=1080,
-            fps=random.choice([23.976, 24.0, 29.97, 30.0, 59.94]),
-            codec=random.choice(["h264", "h265", "prores", "braw"]),
+            fps=random.choice([23.976, 24.0, 29.97, 30.0]),
+            codec=random.choice(["h264", "h265", "prores"]),
             audio_channels=2,
             audio_rate=44100,
             waveform=generate_demo_waveform(dur),
@@ -492,11 +660,13 @@ class PheromoneMatrixCanvas(QWidget):
         self.playhead = 0.0
         self.playing = False
         self.total_duration = 0.0
+        self.view_mode = "SWARM"  # NORMAL | SWARM | THERMAL | HUD | QUAD
 
         # ── Swimmers ──────────────────────────────────────────────
         self.rhythm_swimmers: List[List[float]] = []   # [x, y, vx, vy]
         self.chroma_swimmers: List[List[float]] = []
         self.audio_sentinels: List[List[float]] = []
+        self.narrative_weavers: List[List[float]] = []  # NarrativeWeaver swimmers
 
         self.vocal_energy_map: List[Tuple[float, float]] = []
 
@@ -514,12 +684,17 @@ class PheromoneMatrixCanvas(QWidget):
         self.timer.start(33)  # ~30 FPS
 
     def load_demo(self):
-        """Load demo clips with analysis, subtitles, and vocal energy."""
-        self.clips = generate_demo_clips(6)
+        """Load demo clips with analysis, subtitles, and vocal energy.
+        All timing derived from real Anton Pictures FCPXML data."""
+        self.clips = generate_demo_clips(8)
         self.total_duration = sum(c.duration for c in self.clips)
         self._init_swimmers()
-        self._log("📂 Loaded 6 demo clips — running stigmergic analysis...")
+        self._log("📂 Loaded 8 demo clips (Anton Pictures style distribution)")
+        self._log(f"   avg cut={ANTON_STYLE_PROFILE['avg_cut_sec']:.1f}s, "
+                  f"median={ANTON_STYLE_PROFILE['median_cut_sec']:.1f}s, "
+                  f"transitions={ANTON_STYLE_PROFILE['transition_ratio']:.1%}")
 
+        # ── RhythmForager pheromone deposit (style-aware) ─────────
         for ci, clip in enumerate(self.clips):
             for peak_t in clip.transient_peaks:
                 global_t = clip.timeline_start + peak_t
@@ -535,14 +710,24 @@ class PheromoneMatrixCanvas(QWidget):
                     source="SILENCE", clip_idx=ci
                 ))
 
+        # ── NarrativeWeaver subtitle-driven pheromones ────────────
         self.subtitles = generate_demo_subtitles(self.total_duration)
-        for sub in self.subtitles:
-            mid = (sub.start + sub.end) / 2.0
+        for i, sub in enumerate(self.subtitles):
+            # Drop pheromone at speech-silence transitions
             self.pheromones.append(CutPheromone(
                 time_pos=sub.end + 0.1, strength=0.45,
                 source="NARRATIVE", clip_idx=-1
             ))
+            # Also mark speech onset for rhythm alignment
+            if i > 0:
+                gap = sub.start - self.subtitles[i - 1].end
+                if gap > 1.5:  # significant pause = narrative beat
+                    self.pheromones.append(CutPheromone(
+                        time_pos=sub.start - 0.05, strength=0.5,
+                        source="NARRATIVE", clip_idx=-1
+                    ))
 
+        # ── Vocal energy map ─────────────────────────────────────
         self.vocal_energy_map: List[Tuple[float, float]] = []
         for clip in self.clips:
             if clip.waveform is not None:
@@ -551,8 +736,9 @@ class PheromoneMatrixCanvas(QWidget):
                     self.vocal_energy_map.append((clip.timeline_start + t, ratio))
 
         self._log(f"🐜 {len(self.pheromones)} pheromone traces deposited")
-        self._log(f"📝 {len(self.subtitles)} synthetic subtitles generated")
+        self._log(f"📝 {len(self.subtitles)} narrative-cadence subtitles ({ANTON_STYLE_PROFILE['subtitle_avg_sec']:.1f}s avg)")
         self._log(f"🎤 {len(self.vocal_energy_map)} vocal energy samples computed")
+        self._log(f"🧬 Style: {ANTON_STYLE_PROFILE['source'][:80]}...")
 
     def load_clips(self, paths: List[Path]):
         """Load real video/audio files via ffprobe."""
@@ -608,11 +794,12 @@ class PheromoneMatrixCanvas(QWidget):
             return None
 
     def _init_swimmers(self):
-        """Spawn swimmer agents."""
+        """Spawn swimmer agents — includes NarrativeWeaver."""
         w, h = self.width() or 900, self.height() or 500
         self.rhythm_swimmers.clear()
         self.chroma_swimmers.clear()
         self.audio_sentinels.clear()
+        self.narrative_weavers.clear()
 
         for _ in range(self.rhythm_density):
             self.rhythm_swimmers.append([
@@ -629,6 +816,12 @@ class PheromoneMatrixCanvas(QWidget):
                 random.uniform(0, w), random.uniform(h * 0.45, h * 0.7),
                 random.gauss(0, 1.5), random.gauss(0, 0.5)
             ])
+        # NarrativeWeaver — swimmers that track subtitle/transcript pheromones
+        for _ in range(20):
+            self.narrative_weavers.append([
+                random.uniform(0, w), random.uniform(h * 0.15, h * 0.30),
+                random.gauss(0, 1.0), random.gauss(0, 0.3)
+            ])
 
     def set_rhythm_density(self, n):
         self.rhythm_density = n
@@ -643,6 +836,13 @@ class PheromoneMatrixCanvas(QWidget):
 
     def set_hero_active(self, active):
         self.hero_active = active
+
+    def set_view_mode(self, mode: str):
+        mode = (mode or "SWARM").upper()
+        if mode not in {"NORMAL", "SWARM", "THERMAL", "HUD", "QUAD"}:
+            mode = "SWARM"
+        self.view_mode = mode
+        self._log(f"👁 View mode: {mode}")
 
     def _log(self, msg):
         ts = time.strftime("%H:%M:%S")
@@ -765,14 +965,51 @@ class PheromoneMatrixCanvas(QWidget):
             sw[0] = max(5, min(w - 5, sw[0]))
             sw[1] = max(h * 0.4, min(h * 0.75, sw[1]))
 
-        # ── Cut decisions (NarrativeWeaver logic) ─────────────────
+        # ── NarrativeWeaver swimmers ──────────────────────────────
+        for sw in self.narrative_weavers:
+            # Attract toward NARRATIVE pheromones
+            nearest_ph = None
+            nearest_d = 999999
+            for ph in self.pheromones:
+                if ph.source != "NARRATIVE":
+                    continue
+                px = (ph.time_pos / max(self.total_duration, 1)) * w
+                d = abs(sw[0] - px)
+                if d < nearest_d:
+                    nearest_d = d
+                    nearest_ph = ph
+
+            if nearest_ph and nearest_d < 180:
+                px = (nearest_ph.time_pos / max(self.total_duration, 1)) * w
+                dx = px - sw[0]
+                sw[2] += (dx / max(nearest_d, 1)) * 0.25
+                # Reinforce on arrival — narrative cuts strengthen over time
+                if nearest_d < 12:
+                    nearest_ph.strength = min(1.0, nearest_ph.strength + 0.003)
+            else:
+                # Wander toward subtitle-dense regions
+                sw[2] += random.gauss(0, 0.4)
+
+            sw[3] += random.gauss(0, 0.15)
+            sw[2] *= 0.91
+            sw[3] *= 0.88
+            sw[0] += sw[2]
+            sw[1] += sw[3]
+            sw[0] = max(5, min(w - 5, sw[0]))
+            sw[1] = max(h * 0.08, min(h * 0.35, sw[1]))
+
+        # ── Cut decisions (style-aware threshold) ─────────────────
         if self.tick % 30 == 0:
             for ph in self.pheromones:
                 if ph.strength >= self.cut_threshold and ph.time_pos not in self.executed_cuts:
+                    # Determine transition type: 95% CUT, 5% dissolve (real ratio)
+                    trans = "CUT"
+                    if random.random() < ANTON_STYLE_PROFILE["transition_ratio"]:
+                        trans = random.choice(ANTON_STYLE_PROFILE["preferred_transitions"])
                     self.executed_cuts.append(ph.time_pos)
                     self.cuts_executed += 1
                     self.stgm_earned += 0.1
-                    self._log(f"✂️ CUT at {ph.time_pos:.2f}s ({ph.source} pheromone, str={ph.strength:.2f})")
+                    self._log(f"✂️ {trans} at {ph.time_pos:.2f}s ({ph.source} pheromone, str={ph.strength:.2f})")
                     self.cut_executed.emit(ph.time_pos, ph.source)
 
         # ── Cohesion index ────────────────────────────────────────
@@ -925,30 +1162,33 @@ class PheromoneMatrixCanvas(QWidget):
                 p.setBrush(QBrush(QColor(255, 120, 255, alpha)))
                 p.drawRect(QRectF(vx, sentinel_y + sentinel_h - bar_h, max(1, w / max(len(self.vocal_energy_map), 1)), bar_h))
 
+        show_swarm = self.view_mode in {"SWARM", "THERMAL", "HUD", "QUAD"}
+
         # ── Cut pheromone lines (vertical) ────────────────────────
-        for ph in self.pheromones:
-            px = (ph.time_pos / max(self.total_duration, 1)) * w
-            alpha = int(ph.strength * 200)
-            if ph.source == "RHYTHM":
-                color = QColor(255, 80, 120, alpha)
-            elif ph.source == "SILENCE":
-                color = QColor(255, 200, 80, alpha)
-            elif ph.source == "NARRATIVE":
-                color = QColor(120, 200, 255, alpha)
-            else:
-                color = QColor(0, 255, 200, alpha)
+        if show_swarm:
+            for ph in self.pheromones:
+                px = (ph.time_pos / max(self.total_duration, 1)) * w
+                alpha = int(ph.strength * 200)
+                if ph.source == "RHYTHM":
+                    color = QColor(255, 80, 120, alpha)
+                elif ph.source == "SILENCE":
+                    color = QColor(255, 200, 80, alpha)
+                elif ph.source == "NARRATIVE":
+                    color = QColor(120, 200, 255, alpha)
+                else:
+                    color = QColor(0, 255, 200, alpha)
 
-            p.setPen(QPen(color, 1 + ph.strength * 2))
-            p.drawLine(QPointF(px, clip_y), QPointF(px, wave_y + wave_h))
+                p.setPen(QPen(color, 1 + ph.strength * 2))
+                p.drawLine(QPointF(px, clip_y), QPointF(px, wave_y + wave_h))
 
-            # Glow dot at top
-            if ph.strength > 0.4:
-                grad = QRadialGradient(px, clip_y - 4, 6)
-                grad.setColorAt(0, QColor(color.red(), color.green(), color.blue(), alpha))
-                grad.setColorAt(1, QColor(0, 0, 0, 0))
-                p.setBrush(QBrush(grad))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.drawEllipse(QPointF(px, clip_y - 4), 6, 6)
+                # Glow dot at top
+                if ph.strength > 0.4:
+                    grad = QRadialGradient(px, clip_y - 4, 6)
+                    grad.setColorAt(0, QColor(color.red(), color.green(), color.blue(), alpha))
+                    grad.setColorAt(1, QColor(0, 0, 0, 0))
+                    p.setBrush(QBrush(grad))
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.drawEllipse(QPointF(px, clip_y - 4), 6, 6)
 
         # ── Executed cuts (bright lines) ──────────────────────────
         for ct in self.executed_cuts:
@@ -958,24 +1198,43 @@ class PheromoneMatrixCanvas(QWidget):
             p.setFont(QFont("Menlo", 6))
             p.drawText(QPointF(px + 2, clip_y - 10), "✂")
 
-        # ── Rhythm swimmers ───────────────────────────────────────
-        for sw in self.rhythm_swimmers:
-            p.setBrush(QBrush(QColor(255, 80, 120, 160)))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(sw[0], sw[1]), 2.5, 2.5)
+        # ── Rhythm/Chroma/Sentinel swimmers ───────────────────────
+        if show_swarm:
+            for sw in self.rhythm_swimmers:
+                p.setBrush(QBrush(QColor(255, 80, 120, 160)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawEllipse(QPointF(sw[0], sw[1]), 2.5, 2.5)
 
-        # ── Chroma swimmers ───────────────────────────────────────
-        for sw in self.chroma_swimmers:
-            alpha = 180 if self.hero_active else 80
-            p.setBrush(QBrush(QColor(120, 200, 255, alpha)))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(sw[0], sw[1]), 2, 2)
+            for sw in self.chroma_swimmers:
+                alpha = 180 if self.hero_active else 80
+                p.setBrush(QBrush(QColor(120, 200, 255, alpha)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawEllipse(QPointF(sw[0], sw[1]), 2, 2)
 
-        # ── Audio sentinels ───────────────────────────────────────
-        for sw in self.audio_sentinels:
-            p.setBrush(QBrush(QColor(255, 120, 255, 120)))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(sw[0], sw[1]), 3, 3)
+            for sw in self.audio_sentinels:
+                p.setBrush(QBrush(QColor(255, 120, 255, 120)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawEllipse(QPointF(sw[0], sw[1]), 3, 3)
+
+        # ── Thermal / Predator view overlay ───────────────────────
+        if self.view_mode in {"THERMAL", "QUAD"}:
+            self._draw_thermal_overlay(p, w, h)
+
+        # ── Targeting HUD overlay ─────────────────────────────────
+        if self.view_mode in {"HUD", "QUAD"}:
+            self._draw_targeting_hud(p, w, h, clip_y, clip_h)
+
+        # ── Quad guide ────────────────────────────────────────────
+        if self.view_mode == "QUAD":
+            p.setPen(QPen(QColor(0, 255, 200, 55), 1))
+            p.drawLine(w / 2, 0, w / 2, h)
+            p.drawLine(0, h / 2, w, h / 2)
+            p.setFont(QFont("Menlo", 7, QFont.Weight.Bold))
+            p.setPen(QPen(QColor(0, 255, 200, 120)))
+            p.drawText(QPointF(10, h / 2 - 6), "THERMAL")
+            p.drawText(QPointF(w / 2 + 10, h / 2 - 6), "SWARM")
+            p.drawText(QPointF(10, h - 8), "HUD")
+            p.drawText(QPointF(w / 2 + 10, h - 8), "AUDIO SENTINEL")
 
         # ── Playhead ──────────────────────────────────────────────
         if self.total_duration > 0:
@@ -1070,6 +1329,57 @@ class PheromoneMatrixCanvas(QWidget):
         p.setPen(QPen(QColor(color.red(), color.green(), color.blue(), 80), 1))
         p.drawPath(path_neg)
 
+    def _draw_thermal_overlay(self, p: QPainter, w: float, h: float):
+        """Predator-like pseudo thermal pass from clip colors + vocal hotspots."""
+        p.setPen(Qt.PenStyle.NoPen)
+        # Base thermal haze
+        p.setBrush(QBrush(QColor(255, 120, 40, 24)))
+        p.drawRect(QRectF(0, 0, w, h))
+
+        # Clip-driven heat blocks
+        for clip in self.clips:
+            x1 = (clip.timeline_start / max(self.total_duration, 1)) * w
+            cw = max(2, (clip.duration / max(self.total_duration, 1)) * w)
+            r, g, b = clip.avg_color
+            # luminance => heat
+            heat = min(255, int(0.2126 * r + 0.7152 * g + 0.0722 * b))
+            p.setBrush(QBrush(QColor(min(255, 120 + heat // 2), min(255, 50 + heat // 4), 20, 45)))
+            p.drawRect(QRectF(x1, h * 0.05, cw, h * 0.72))
+
+        # Vocal hotspots as bright yellow bands
+        if self.vocal_energy_map:
+            for vt, ratio in self.vocal_energy_map[::max(1, len(self.vocal_energy_map) // 250)]:
+                if ratio < 0.25:
+                    continue
+                x = (vt / max(self.total_duration, 1)) * w
+                alpha = min(200, int(60 + ratio * 180))
+                p.setBrush(QBrush(QColor(255, 220, 80, alpha)))
+                p.drawRect(QRectF(x, h * 0.45, max(2, w / 220), h * 0.20))
+
+    def _draw_targeting_hud(self, p: QPainter, w: float, h: float, clip_y: float, clip_h: float):
+        """Cinematic targeting overlays: lock boxes + confidence labels."""
+        p.setFont(QFont("Menlo", 7, QFont.Weight.Bold))
+        p.setPen(QPen(QColor(0, 255, 200, 140), 1))
+        # Box around playhead neighborhood
+        if self.total_duration > 0:
+            x = (self.playhead / self.total_duration) * w
+            rw = min(140, w * 0.15)
+            rh = clip_h + 20
+            p.drawRect(QRectF(max(0, x - rw / 2), max(0, clip_y - 8), min(rw, w), rh))
+            p.drawText(QPointF(max(4, x - rw / 2 + 4), max(12, clip_y - 12)), "TARGET LOCK  0.91")
+        # Corner brackets
+        c = QColor(0, 255, 200, 110)
+        p.setPen(QPen(c, 2))
+        m = 14
+        # TL
+        p.drawLine(6, 6, 6 + m, 6); p.drawLine(6, 6, 6, 6 + m)
+        # TR
+        p.drawLine(w - 6, 6, w - 6 - m, 6); p.drawLine(w - 6, 6, w - 6, 6 + m)
+        # BL
+        p.drawLine(6, h - 6, 6 + m, h - 6); p.drawLine(6, h - 6, 6, h - 6 - m)
+        # BR
+        p.drawLine(w - 6, h - 6, w - 6 - m, h - 6); p.drawLine(w - 6, h - 6, w - 6, h - 6 - m)
+
     def _draw_mini_waveform(self, p: QPainter, data: np.ndarray,
                             x: float, y: float, w: float, h: float, color: QColor):
         """Compact waveform inside clip block."""
@@ -1098,7 +1408,7 @@ class PheromoneMatrixCanvas(QWidget):
 class NLEWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SIFTA NLE — Stigmergic Video Editor")
+        self.setWindowTitle("SIFTA NLE — Stigmergic Swarm Cut Studio")
         self.setMinimumSize(1400, 900)
         self.setStyleSheet("""
             QMainWindow { background: rgb(8, 10, 18); }
@@ -1132,6 +1442,12 @@ class NLEWindow(QMainWindow):
                 background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
                     stop:0 rgb(0,120,80), stop:1 rgb(0,60,40));
                 border-color: rgb(0,255,200);
+            }
+            QPushButton#btnHelp {
+                background: rgb(30,25,42);
+                border: 1px solid rgb(80,70,100);
+                padding: 4px 10px; font-size: 13px; font-weight: bold;
+                color: rgb(0,255,200); min-width: 28px; max-width: 28px;
             }
             QSlider::groove:horizontal {
                 height: 4px; background: rgb(40,35,55); border-radius: 2px;
@@ -1193,7 +1509,7 @@ class NLEWindow(QMainWindow):
 
         # ── Title ─────────────────────────────────────────────────
         title_bar = QHBoxLayout()
-        title = QLabel("🎬 SIFTA NLE — Stigmergic Video Editor")
+        title = QLabel("🎬 SIFTA NLE — Stigmergic Swarm Cut Studio")
         title.setFont(QFont("Menlo", 14, QFont.Weight.Bold))
         title.setStyleSheet("color: rgb(0,255,200); padding: 2px;")
         title_bar.addWidget(title)
@@ -1203,6 +1519,13 @@ class NLEWindow(QMainWindow):
         self.status_label = QLabel("Ready — load files or DEMO")
         self.status_label.setStyleSheet("color: rgb(100,105,130); font-size: 10px;")
         title_bar.addWidget(self.status_label)
+
+        btn_help = QPushButton("?")
+        btn_help.setObjectName("btnHelp")
+        btn_help.setToolTip("Help — SIFTA NLE")
+        btn_help.clicked.connect(self._show_help_dialog)
+        title_bar.addWidget(btn_help)
+
         main.addLayout(title_bar)
 
         # ── Toolbar ───────────────────────────────────────────────
@@ -1220,6 +1543,10 @@ class NLEWindow(QMainWindow):
         btn_srt = QPushButton("📝 Load SRT")
         btn_srt.clicked.connect(self._load_srt)
         toolbar.addWidget(btn_srt)
+
+        btn_fcpxml = QPushButton("📋 Import FCPXML")
+        btn_fcpxml.clicked.connect(self._load_fcpxml)
+        toolbar.addWidget(btn_fcpxml)
 
         toolbar.addWidget(self._separator())
 
@@ -1239,6 +1566,10 @@ class NLEWindow(QMainWindow):
         btn_export_edl.clicked.connect(self._export_edl)
         toolbar.addWidget(btn_export_edl)
 
+        btn_export_fcpxml = QPushButton("📋 Export FCPXML")
+        btn_export_fcpxml.clicked.connect(self._export_fcpxml)
+        toolbar.addWidget(btn_export_fcpxml)
+
         btn_export_filter = QPushButton("🎞 Export FFmpeg")
         btn_export_filter.clicked.connect(self._export_filter)
         toolbar.addWidget(btn_export_filter)
@@ -1247,6 +1578,14 @@ class NLEWindow(QMainWindow):
         btn_render.setObjectName("btnRender")
         btn_render.clicked.connect(self._render)
         toolbar.addWidget(btn_render)
+
+        toolbar.addWidget(self._separator())
+        toolbar.addWidget(QLabel("View:"))
+        self.view_mode_combo = QComboBox()
+        self.view_mode_combo.addItems(["Swarm", "Normal", "Thermal", "HUD", "Quad"])
+        self.view_mode_combo.setCurrentText("Swarm")
+        self.view_mode_combo.currentTextChanged.connect(self._view_mode_changed)
+        toolbar.addWidget(self.view_mode_combo)
 
         toolbar.addStretch()
         main.addLayout(toolbar)
@@ -1320,6 +1659,15 @@ class NLEWindow(QMainWindow):
         log_layout.addWidget(self.log_view)
         sidebar.addTab(log_tab, "🐜 Swarm Log")
 
+        # Style DNA tab — real filmmaker data
+        dna_tab = QWidget()
+        dna_layout = QVBoxLayout(dna_tab)
+        self.dna_view = QTextEdit()
+        self.dna_view.setReadOnly(True)
+        self.dna_view.setHtml(self._build_style_dna_html())
+        dna_layout.addWidget(self.dna_view)
+        sidebar.addTab(dna_tab, "🧬 Style DNA")
+
         splitter.addWidget(sidebar)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
@@ -1336,6 +1684,39 @@ class NLEWindow(QMainWindow):
         sep.setStyleSheet("color: rgb(45,42,65);")
         return sep
 
+    def _show_help_dialog(self):
+        """Show contextual help for SIFTA NLE."""
+        help_file = REPO / "Documents" / "APP_HELP.md"
+        section_text = (
+            "SIFTA NLE Help\n\n"
+            "- Load files/demo/SRT/FCPXML from toolbar.\n"
+            "- Use View mode selector for Swarm/Normal/Thermal/HUD/Quad.\n"
+            "- Export EDL/FCPXML/FFmpeg once cuts are generated.\n"
+            "- Render to process with ffmpeg.\n"
+        )
+        try:
+            if help_file.exists():
+                text = help_file.read_text(encoding="utf-8", errors="replace")
+                # Accept legacy and current headings
+                markers = ["### SIFTA NLE (Video Editor)", "### SIFTA NLE"]
+                idx = -1
+                for marker in markers:
+                    idx = text.find(marker)
+                    if idx >= 0:
+                        break
+                if idx >= 0:
+                    block = text[idx:]
+                    next_h3 = block.find("\n### ", 4)
+                    next_h2 = block.find("\n## ", 4)
+                    ends = [e for e in [next_h3, next_h2] if e > 0]
+                    if ends:
+                        block = block[: min(ends)]
+                    section_text = block.strip()
+        except Exception as e:
+            section_text += f"\n\n(Help file read warning: {e})"
+
+        QMessageBox.information(self, "Help — SIFTA NLE", section_text)
+
     # ── Slots ──────────────────────────────────────────────────────
 
     def _load_files(self):
@@ -1351,7 +1732,7 @@ class NLEWindow(QMainWindow):
     def _load_demo(self):
         self.canvas.load_demo()
         self._update_clip_table()
-        self.status_label.setText("Demo loaded — 6 synthetic clips")
+        self.status_label.setText(f"Demo loaded — {len(self.canvas.clips)} clips (Anton Pictures style)")
 
     def _load_srt(self):
         f, _ = QFileDialog.getOpenFileName(
@@ -1374,6 +1755,11 @@ class NLEWindow(QMainWindow):
             self.canvas._log("🎨 HERO FRAME active — ChromaSwimmers converging on target color")
         else:
             self.canvas._log("🎨 HERO FRAME deactivated")
+
+    def _view_mode_changed(self, mode_text: str):
+        mode = (mode_text or "Swarm").upper()
+        self.canvas.set_view_mode(mode)
+        self.status_label.setText(f"View mode: {mode_text}")
 
     def _rhythm_changed(self, val):
         self.canvas.set_rhythm_density(val)
@@ -1443,6 +1829,131 @@ class NLEWindow(QMainWindow):
             return
         self.canvas._log("🎞 FFmpeg filter script export — use with ffmpeg -filter_complex_script")
         self.status_label.setText("FFmpeg filter exported")
+
+    def _load_fcpxml(self):
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Import FCPXML", str(Path.home()),
+            "FCPXML Files (*.fcpxml *.fcpxml.txt *.fcpxmld);;All (*)"
+        )
+        if f:
+            path = Path(f)
+            # If it's a .fcpxmld bundle, look for Info.fcpxml inside
+            if path.is_dir():
+                info = path / "Info.fcpxml"
+                if info.exists():
+                    path = info
+                else:
+                    self.canvas._log(f"⚠️ No Info.fcpxml found in {path.name}")
+                    return
+            clips = parse_fcpxml(path)
+            if clips:
+                self.canvas.clips = clips
+                self.canvas.total_duration = sum(c.duration for c in clips)
+                self.canvas._init_swimmers()
+                self._update_clip_table()
+                self.canvas._log(f"📋 Imported {len(clips)} clips from FCPXML: {path.name}")
+                self.status_label.setText(f"FCPXML: {len(clips)} clips imported")
+            else:
+                self.canvas._log(f"⚠️ No clips found in {path.name}")
+
+    def _export_fcpxml(self):
+        if not self.canvas.executed_cuts:
+            self.canvas._log("⚠️ No cuts to export")
+            return
+        decisions = []
+        cuts = sorted(self.canvas.executed_cuts)
+        cuts = [0.0] + cuts + [self.canvas.total_duration]
+        for i in range(len(cuts) - 1):
+            seg_start = cuts[i]
+            seg_end = cuts[i + 1]
+            ci = 0
+            for j, clip in enumerate(self.canvas.clips):
+                if clip.timeline_start <= seg_start < clip.timeline_start + clip.duration:
+                    ci = j
+                    break
+            decisions.append(EditDecision(
+                clip_idx=ci,
+                in_time=seg_start - self.canvas.clips[ci].timeline_start,
+                out_time=min(seg_end - self.canvas.clips[ci].timeline_start,
+                             self.canvas.clips[ci].duration),
+                timeline_pos=seg_start,
+            ))
+        fcpxml_str = generate_fcpxml(decisions, self.canvas.clips)
+        out_path = REPO / ".sifta_state" / "sifta_edit.fcpxml"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(fcpxml_str)
+        self.canvas._log(f"📋 FCPXML exported: {out_path}")
+        self.status_label.setText(f"FCPXML saved: {out_path.name}")
+
+    def _build_style_dna_html(self) -> str:
+        """Build the Style DNA help panel with real data."""
+        p = ANTON_STYLE_PROFILE
+        return f"""
+        <div style="font-family: Menlo; font-size: 10px; color: #c8d2f0;">
+        <h2 style="color: #00ffc8;">🧬 ANTON PICTURES STYLE DNA</h2>
+        <p style="color: #8090b0;">Extracted from real FCPXML timelines — this is YOUR editing fingerprint.</p>
+
+        <h3 style="color: #00ffc8;">Cut Timing Profile</h3>
+        <table style="border-collapse: collapse; width: 100%;">
+        <tr><td style="color:#8090b0;">Average cut:</td><td style="color:#00ffc8;">{p['avg_cut_sec']:.3f}s</td></tr>
+        <tr><td style="color:#8090b0;">Median cut:</td><td style="color:#00ffc8;">{p['median_cut_sec']:.3f}s</td></tr>
+        <tr><td style="color:#8090b0;">Fastest flash:</td><td style="color:#ff5078;">{p['min_flash_sec']:.3f}s</td></tr>
+        <tr><td style="color:#8090b0;">Longest hold:</td><td style="color:#ffc850;">{p['max_hold_sec']:.1f}s</td></tr>
+        <tr><td style="color:#8090b0;">Std deviation:</td><td>{p['std_dev_sec']:.3f}s</td></tr>
+        </table>
+
+        <h3 style="color: #00ffc8;">Percentiles</h3>
+        <table style="border-collapse: collapse; width: 100%;">
+        <tr><td style="color:#8090b0;">P10:</td><td>{p['p10']:.1f}s</td>
+            <td style="color:#8090b0;">P25:</td><td>{p['p25']:.1f}s</td></tr>
+        <tr><td style="color:#8090b0;">P50:</td><td style="color:#00ffc8;">{p['p50']:.1f}s</td>
+            <td style="color:#8090b0;">P75:</td><td>{p['p75']:.1f}s</td></tr>
+        <tr><td style="color:#8090b0;">P90:</td><td>{p['p90']:.1f}s</td>
+            <td style="color:#8090b0;">P95:</td><td>{p['p95']:.1f}s</td></tr>
+        </table>
+
+        <h3 style="color: #00ffc8;">Transition Philosophy</h3>
+        <p>Hard cuts: <b style="color:#00ffc8;">{(1 - p['transition_ratio'])*100:.1f}%</b>&nbsp;&nbsp;
+        Transitions: <b>{p['transition_ratio']*100:.1f}%</b></p>
+        <p style="color:#8090b0;">Preferred: {', '.join(p['preferred_transitions'])}</p>
+
+        <h3 style="color: #00ffc8;">Tempo Bands</h3>
+        <table style="border-collapse: collapse; width: 100%;">
+        <tr><td style="color:#ffc850;">Slow Burn:</td><td>&lt; {p['bpm_slow_burn']} BPM → 6+ second clips</td></tr>
+        <tr><td style="color:#78c8ff;">Balanced:</td><td>95-{p['bpm_balanced']} BPM → 3-6s cinematic</td></tr>
+        <tr><td style="color:#ff5078;">Aggressive:</td><td>&gt; {p['bpm_balanced']} BPM → 1.5-3s MTV cuts</td></tr>
+        </table>
+
+        <h3 style="color: #00ffc8;">Subtitle Pacing</h3>
+        <p>Average: <b style="color:#00ffc8;">{p['subtitle_avg_sec']:.3f}s</b>&nbsp;&nbsp;
+        Median: <b>{p['subtitle_med_sec']:.3f}s</b></p>
+
+        <h3 style="color: #00ffc8;">Cinematic Rules</h3>
+        <ul style="color:#8090b0;">
+        <li>Letterbox: {p['letterbox_aspect']}:1 widescreen (no exceptions)</li>
+        <li>MirrorX: {p['mirror_x_prob']*100:.0f}% on B-Roll, {p['mirror_x_cinema']*100:.0f}% on cinema</li>
+        <li>Tail pad: {p['tail_pad_sec']}s dramatic hold before hard cut</li>
+        <li>Color: {p['color_correction']} emulation</li>
+        <li>Logo drops at intervals: {p['logo_intervals']}</li>
+        </ul>
+
+        <h3 style="color: #00ffc8;">The 8 Rules of Control</h3>
+        <ol style="color:#8090b0; font-size: 9px;">
+        <li>Pure JPEG targeting (zero pronouns)</li>
+        <li>Strict single-coverage (clean singles)</li>
+        <li>Metric distance blocking (1.0m lock)</li>
+        <li>Positive-only phrasing (no negatives)</li>
+        <li>Lip-sync bypass (describe motion, not dialogue)</li>
+        <li>Camera-driven energy (isolate action)</li>
+        <li>Anti-stare command (never look at camera)</li>
+        <li>Environmental grounding (ARRI Alexa 65)</li>
+        </ol>
+
+        <p style="color:#555; font-size: 8px; margin-top: 12px;">
+        {p['source']}
+        </p>
+        </div>
+        """
 
     def _render(self):
         if not FFMPEG:

@@ -349,6 +349,9 @@ app.add_middleware(SiftaGetProtectMiddleware)
 if os.path.exists("editor_static"):
     app.mount("/editor_static", StaticFiles(directory="editor_static"), name="editor_static")
 
+if os.path.exists("sifta_dashboard"):
+    app.mount("/sifta_dashboard", StaticFiles(directory="sifta_dashboard"), name="sifta_dashboard")
+
 _api_key = os.environ.get("SIFTA_API_KEY", "").strip()
 if not _api_key:
     print(
@@ -472,9 +475,17 @@ CEMETERY_DIR.mkdir(exist_ok=True)
 
 DETECTIVE_IDS = {"DEEP_SYNTAX_AUDITOR_0X1", "TENSOR_PHANTOM_0X2", "SILICON_HOUND_0X3"}
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def serve_index():
-    return {"status": "SWARM ACTIVE", "message": "HTML DEPRECATED. Execute python3 council_gui.py for physical interface."}
+    try:
+        with open("sifta_dashboard/index.html", "r", encoding="utf-8") as f:
+            # We must inject the CSS/JS paths dynamically or they will fail if we don't route them
+            html = f.read()
+            html = html.replace('href="styles.css"', 'href="/sifta_dashboard/styles.css"')
+            html = html.replace('src="app.js"', 'src="/sifta_dashboard/app.js"')
+            return html
+    except Exception as e:
+        return f"Error loading SIFTA Dashboard: {e}"
 
 
 @app.get("/api/agents")

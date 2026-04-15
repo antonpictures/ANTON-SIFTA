@@ -130,7 +130,7 @@ Use this flow for any app:
 
 ## Creative
 
-### SIFTA NLE (Video Editor)
+### SIFTA NLE
 - **Purpose:** Stigmergic non-linear video editor that replaces the static timeline with a living Pheromone Matrix.
 - **State variables:** `CutPheromone[]` (time, strength, source), `MediaClip[]` (waveform, metadata, avg_color), `SubtitleEntry[]`, `EditDecision[]`.
 - **What to watch:**
@@ -191,10 +191,10 @@ Use this flow for any app:
 - **What to watch:** Proposals, approvals/rejections, intervention auditability.
 - **Key principle:** Human authority over autonomous suggestions.
 
-### Sebastian Batch Editor
-- **Purpose:** Batch media operations with proof-of-useful-work accounting.
-- **What to watch:** Edit completion, QoS of cuts, STGM-linked utility outputs.
-- **Key principle:** Utility-backed compute economics in media workflows.
+### Silence Remover & Stitcher
+- **Purpose:** Fast silence-removal and clip-stitching workflow (formerly labeled "Video Editor").
+- **What to watch:** Silence detection quality, stitch continuity, and final cut pacing.
+- **Key principle:** Deterministic post-processing for speech-heavy footage with utility-backed compute accounting.
 
 ### Desktop GUI (Legacy)
 - **Purpose:** Historical/fallback desktop shell.
@@ -360,6 +360,85 @@ Use this flow for any app:
 - **Data files:**
   - `.sifta_state/territory_routine.json` — persisted pheromone map.
   - `.sifta_state/territory_alerts.jsonl` — alert history.
+
+### Owner Genesis
+
+- **What it is:** The root of all trust. The first thing a new owner sees on a fresh
+  install of SIFTA OS. A ceremony that binds a human to silicon.
+- **State:** Genesis scar (`.sifta_state/owner_genesis.json`) — contains the owner's
+  photo hash, silicon serial, genesis anchor, Ed25519 signature, generation counter.
+- **Metric:** Signature validity, photo hash match, generation count.
+- **Control:**
+  - **Select Owner Photo** — choose a photo (face, document, anything). The photo is
+    SHA-256 hashed and bound to the hardware serial. The photo stays LOCAL ONLY
+    at `~/.sifta_keys/owner_genesis/`. Only the hash enters the ledger.
+  - **Perform Genesis Ceremony** — creates the cryptographic root anchor, signs it
+    with the hardware's Ed25519 key.
+- **What to watch:**
+  - On first boot: the ceremony opens automatically. "The Swarm needs to know its owner."
+  - On subsequent boots: genesis is verified silently. If the photo is missing or
+    tampered, a warning appears.
+  - If the genesis signature is invalid, this is a critical security event — the scar
+    may have been modified.
+  - The **generation counter** tracks how deeply the swarm knows its owner. Phase 1 is
+    the photo. Future phases add GPS, typing rhythm, voice, behavioral DNA.
+- **Key principle:** The machines belong to humans. The swarm serves the owner.
+  Without a genesis, there is no owner. Without an owner, there is no trust.
+- **Transfer:** When hardware changes hands, `owner_wipe()` destroys all local identity
+  data, marks the genesis as TRANSFERRED, and the new owner boots fresh. Old scars remain
+  valid under old keys — history doesn't rewrite.
+- **Spec:** `ARCHITECTURE/owner_genesis_protocol.md` — full 4-phase roadmap.
+
+### Stigmergic Swarm Canvas
+
+- **What it is:** A biological paintbrush. You don't paint pixels — you deploy PigmentForager
+  swimmers on a dark canvas territory.  Your cursor is a Pheromone Emitter: click and
+  drag to drop Intent Pheromone ("require cyan here").  Thousands of PigmentForagers spawn
+  from the canvas edges, swarm toward the trace, and die on contact — permanently staining
+  the canvas with organic, textured strokes.
+- **State:** Pixel canvas (RGBA buffer), active PheromoneTraces (cursor intent), live
+  PigmentForager swarm (position, velocity, pigment color).
+- **Metric:** Active Foragers, Total Pixels Deposited, Pheromone Density.
+- **Control:**
+  - **Pigment** selector — Cyan, Magenta, Yellow, Neon Green, White, Amber.
+  - **Swarm Density** slider — how many foragers spawn per trace point (20–400).
+  - **Evaporation** slider — how fast the pheromone trace fades before foragers arrive.
+    High evaporation = loose, scattered strokes.  Low = dense, saturated.
+  - **Clear Territory** — wipe the canvas, kill all foragers, reset.
+- **What to watch:**
+  - The cursor only leaves a faint glow (intent pheromone).  The paint arrives *later*,
+    carried by the swarm.  The delay between intent and pigment is the swarm's travel time.
+  - Strokes are never pixel-perfect MS-Paint lines.  Foragers jostle, overlap, and splatter
+    — creating organic watercolor texture.
+  - **Stigmergic blending:** paint Yellow next to Blue.  Foragers cross paths and blend
+    into Green without you selecting a green brush.  The swarm does the color math.
+- **Key principle:** The brush is biology, not geometry.  The texture of each stroke is
+  emergent — affected by swarm density, evaporation rate, and the physical distance
+  foragers must travel from the edges.  No two strokes are identical.
+
+### App Manager
+
+- **What it is:** Windows had Add/Remove Programs with a checkbox list.  SIFTA has a
+  conversation.  You type natural language commands to the OS.  The OS understands.
+- **State:** Live `apps_manifest.json` (installed apps), archived `disabled_apps.json`
+  (uninstalled apps).
+- **Metric:** Installed count, category breakdown, signature verification status.
+- **Control:**
+  - `list` / `list simulations` — show all apps, optionally filtered by category.
+  - `info <app>` — details: category, entry point, widget class, file existence.
+  - `uninstall <app>` — removes from manifest, archives to disabled list.
+  - `install <app>` — restores a previously uninstalled app from archive.
+  - `categories` — list all active categories and counts.
+  - `stats` — overview of installed vs archived vs verified.
+  - `help` — command reference.
+- **What to watch:**
+  - Fuzzy matching: you don't need the exact app name.  Type "warehouse" and the OS
+    finds "Warehouse Logistics Test".  Type "fold" and it finds the Fold Swarm.
+  - Uninstall is non-destructive: the app files stay on disk.  Only the manifest entry
+    moves to the disabled archive.  Reinstall is one command away.
+  - The top panel shows the current installed inventory in real time.
+- **Key principle:** You are *speaking* to the OS, not clicking checkboxes.
+  The conversation is the interface.
 
 ---
 
