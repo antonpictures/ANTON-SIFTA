@@ -204,6 +204,23 @@ python3 Applications/sifta_crucible_swarm_sim.py --headless --ticks 12000 --agen
 
 Telemetry: network load %, requests blocked, anomalies quarantined.
 
+### Stigmergic Edge Vision (distributed matrix vision)
+
+CPU-only swimmers walk a noisy **topography** matrix with 3×3 gradient sensing.
+On sharp boundaries they deposit pheromone; evaporation strips noise so ridge/valley
+**structure** emerges. Simulation `UTILITY_MINT` batches go to `.sifta/vision/sim_ledger.jsonl`
+only (not the quorum ledger).
+
+```bash
+# Live matplotlib (default)
+python3 Applications/sifta_vision_edge_sim.py --ticks 12000 --width 400 --height 400 --swimmers 2000
+
+# Headless / overnight
+python3 Applications/sifta_vision_edge_sim.py --headless --ticks 100000 --width 512 --height 512
+```
+
+Core worker: `System/vision_processor_worker.py`.
+
 ---
 
 ## Security Posture
