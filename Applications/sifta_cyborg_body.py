@@ -41,6 +41,18 @@ from PyQt6.QtGui import (
 )
 import numpy as np
 
+# ── Antibody Ledger (persistent immune memory) ─────────────────────
+try:
+    from antibody_ledger import record_kill as _ab_record_kill
+    from antibody_ledger import is_vaccinated as _ab_is_vaccinated
+    from antibody_ledger import get_antibody_count as _ab_count
+    _HAS_ANTIBODY = True
+except ImportError:
+    _HAS_ANTIBODY = False
+    def _ab_record_kill(*a, **kw): return {}
+    def _ab_is_vaccinated(*a, **kw): return False
+    def _ab_count(): return 0
+
 # ── Biopunk Palette ────────────────────────────────────────────────
 C_VOID       = QColor(8, 10, 18)
 C_FLESH      = QColor(35, 28, 38)
@@ -211,6 +223,7 @@ class CyborgCanvas(QWidget):
         self.total_stgm = 0.0
         self.tunes_accepted = 0
         self.attacks_blocked = 0
+        self.vaccinations_applied = 0
         self.log_lines: List[str] = []
 
         self._spawn_swimmers(20)
@@ -255,7 +268,15 @@ class CyborgCanvas(QWidget):
             payload=random.choice(payloads),
         )
         self.hostiles.append(h_agent)
-        self._log(f"☠️ HOSTILE: {h_agent.payload} → {target}")
+
+        # ── Vaccination check (instant immune rejection) ──────────
+        if _ab_is_vaccinated(h_agent.payload):
+            h_agent.alive = False
+            self.attacks_blocked += 1
+            self.vaccinations_applied += 1
+            self._log(f"💉 VACCINATED: {h_agent.payload} → instant reject (antibody match)")
+        else:
+            self._log(f"☠️ HOSTILE: {h_agent.payload} → {target}")
 
     def set_swimmer_count(self, count: int):
         self._spawn_swimmers(count)
@@ -359,7 +380,18 @@ class CyborgCanvas(QWidget):
                 s.stgm_earned += reward
                 self.total_stgm += reward
                 org.health = min(1.0, org.health + 0.05)
-                self._log(f"🐜 {s.sid} DESTROYED {nearest_hostile.payload} in {s.home_organ} (+{reward} STGM)")
+
+                # ── Create antibody (persistent memory B-cell) ────
+                ab = _ab_record_kill(
+                    payload=nearest_hostile.payload,
+                    target_organ=s.home_organ,
+                    killer_swimmer=s.sid,
+                )
+                cached = ab.get("_cached", False)
+                if cached:
+                    self._log(f"🐜 {s.sid} DESTROYED {nearest_hostile.payload} in {s.home_organ} (+{reward} STGM) [known sig]")
+                else:
+                    self._log(f"🧬 {s.sid} DESTROYED {nearest_hostile.payload} → NEW ANTIBODY CREATED (+{reward} STGM)")
 
         elif s.tune_cooldown <= 0 and random.random() < 0.005:
             s.state = "TUNE"
@@ -596,11 +628,14 @@ class CyborgCanvas(QWidget):
         font = QFont("Menlo", 9, QFont.Weight.Bold)
         p.setFont(font)
         s_elapsed = f"{self.sim_time:.0f}s"
+        ab_count = _ab_count()
         p.drawText(QPointF(10, 16),
                    f"CYBORG BODY SIM  |  {s_elapsed}  |  "
                    f"STGM: {self.total_stgm:.2f}  |  "
                    f"Tunes: {self.tunes_accepted}  |  "
-                   f"Hostiles killed: {self.attacks_blocked}")
+                   f"Killed: {self.attacks_blocked}  |  "
+                   f"🧬 Antibodies: {ab_count}  |  "
+                   f"💉 Vaccinated: {self.vaccinations_applied}")
 
         p.end()
 
