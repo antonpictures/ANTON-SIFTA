@@ -385,7 +385,14 @@ class SiftaDesktop(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SIFTA Python GUI OS")
-        self.showFullScreen()
+        self.resize(1280, 720)
+        # Center the window on the active screen
+        screen_geo = QApplication.primaryScreen().availableGeometry()
+        self.move(
+            (screen_geo.width() - self.width()) // 2,
+            (screen_geo.height() - self.height()) // 2
+        )
+        self.show()
         self.active_chat_sub = None
         self._apps_manifest_cache: dict[str, dict] = {}
 
