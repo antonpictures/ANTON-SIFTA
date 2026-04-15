@@ -101,7 +101,7 @@ To prevent UI fragmentation as the app count grows, iSwarm OS enforces global UX
 - **Single Source of Styling**: new apps can inherit `System/sifta_base_widget.py` to get consistent SIFTA chrome (`?` help button, status bar, dark palette, control styling) without re-implementing boilerplate.
 - **Manifest-Driven Governance**: app discovery and launch behavior come from `Applications/apps_manifest.json`, allowing one-place auditing of category, entry point, and widget embedding behavior.
 
-Audit status (April 15, 2026): **29/29 manifest apps have Help coverage and launch under the global window-control policy**.
+Audit status (April 15, 2026): **30/30 manifest apps have Help coverage and launch under the global window-control policy**.
 
 ### Core Modules
 
@@ -124,6 +124,8 @@ Audit status (April 15, 2026): **29/29 manifest apps have Help coverage and laun
 | **Quorum Sensing** | `System/quorum_sense.py` | Multi-agent votes for irreversible actions |
 | **Immune Memory** | `System/immune_memory.py` | Ed25519-signed antibody ledger with cosine similarity matching |
 | **Territory Guardian** | `System/territory_guardian.py` | Geospatial pheromone perimeter — routine learning, deviation detection, safe routing |
+| **Fluid Firmware** | `System/fluid_firmware.py` | Swarm-routed hardware membrane — self-healing silicon, liquid updates, thermal foraging |
+| **Diagnostic Swarm** | `System/diagnostic_swarm.py` | Medical terrain engine — tissue/genomic/blood anomaly detection via swimmer chemotaxis |
 
 ---
 
@@ -231,6 +233,24 @@ The timeline is dead. Welcome to the **Pheromone Matrix.** Four swimmer species 
 | **NarrativeWeaver** | Reads transcript, syncs subtitles, triggers intent-driven cuts |
 
 Cut decisions emerge from pheromone consensus. Export as CMX 3600 EDL (Premiere/DaVinci/FCP) or FFmpeg filter script. Sebastian's original silence-detection jumpcut algo is preserved intact.
+
+### Fluid Firmware — Swarm-Routed Hardware Membrane
+
+```bash
+python3 Applications/sifta_firmware_widget.py       # visual sim (inside iSwarm OS)
+```
+
+Firmware is dead code trying to run physical hardware. Fluid Firmware is living code that learns physical hardware. Conceived by Gemini. Built by Opus. Owned by the Architect.
+
+A 40x60 silicon grid (2400 nodes: transistors, cache, I/O pins). Signal swimmers carry payloads from Input pins (left) to Output pins (right), leaving glowing neon traces. Three operations demonstrate the paradigm:
+
+| Operation | What happens |
+|---|---|
+| **Simulate Degradation** | Random silicon cluster takes thermal damage. Health drops, resistance rises. Swimmers hit the dead zone, their pheromone sours, and they reroute around the damage in real-time. |
+| **Inject Liquid Update** | 15 Gen2 swimmers deployed *concurrently* with Gen1. They lay stronger pheromone, organically overtake old traces. Device updates its core routing logic *while processing data*. Zero downtime. |
+| **Thermal Foragers** | Patrol the chip for temperature spikes, drop thermal pheromone. Signal swimmers learn to avoid hotspots before the heat damages the silicon. |
+
+The chip literally heals its own internal routing without a patch, without a reboot, without a human.
 
 ### Stigmergic Medical Scanner — Swarm Anomaly Detection
 

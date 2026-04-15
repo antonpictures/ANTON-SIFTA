@@ -198,5 +198,13 @@
     "window_width": 1440,
     "window_height": 920,
     "signature": "UNVERIFIED"
+  },
+  "Fluid Firmware": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_firmware_widget.py",
+    "widget_class": "FirmwareWidget",
+    "window_width": 1440,
+    "window_height": 860,
+    "signature": "UNVERIFIED"
   }
 }

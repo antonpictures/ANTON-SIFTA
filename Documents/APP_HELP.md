@@ -225,6 +225,42 @@ Use this flow for any app:
 - **What to watch:** Pulse cadence, anomaly spikes, systemic instability clues.
 - **Key principle:** Early warning before visible failure.
 
+### Fluid Firmware
+- **Purpose:** Replace frozen monolithic firmware with a living fluid membrane.
+  A 40x60 silicon grid (2400 nodes) where signal swimmers carry binary payloads
+  from Input pins (left) to Output pins (right) through transistors and cache.
+  Degraded hardware creates friction.  Swimmers abandon dying traces and
+  stigmergically carve new routes through surviving silicon.
+- **Conceived by:** Gemini.  Built by Opus.  Owned by the Architect.
+- **Swimmer species:**
+  - **Signal Gen1 (blue ●)** — original firmware: carries payloads left→right,
+    deposits blue signal pheromone on successful paths.
+  - **Signal Gen2 (green ◆)** — liquid update: same job, stronger pheromone,
+    smarter routing.  Injected concurrently — organically overtakes Gen1.
+  - **Thermal Forager (orange ▲)** — patrols for temperature spikes, drops
+    thermal pheromone that signal swimmers learn to avoid.
+- **Controls:**
+  - **Power On** — starts signal routing.  Swimmers flow continuously.
+  - **Simulate Degradation** — random cluster of nodes takes thermal damage:
+    health drops, resistance rises, temperature spikes.  Watch the blue traces
+    go dark in the dead zone and reroute around it.
+  - **Inject Liquid Update** — deploys 15 Gen2 swimmers.  Their green traces
+    gradually dominate the blue traces.  Zero downtime.  Zero reboot.
+  - **New Chip** — reset silicon to pristine state.
+- **What to watch:**
+  - **Blue glow** = established signal pathways (Gen1 firmware).
+  - **Green glow** = updated signal pathways (Gen2 liquid update).
+  - **Red zone** = degraded silicon (low health).
+  - **Orange haze** = thermal warning from foragers.
+  - **Telemetry panel** — delivered signals over time + health curve.
+  - The visual shift from straight routing to dynamically curving paths around
+    dead hardware is the whole point.
+- **Key principle:** Firmware is dead code forced onto silicon.  Fluid Firmware is
+  living code that learns the microscopic quirks of its specific physical chip.
+  Hardware gets *better* as it ages because the Swarm maps the real topology.
+- **Data files:**
+  - `.sifta_state/firmware_routing_table.json` — the emergent routing map.
+
 ### Stigmergic Medical Scanner
 - **Purpose:** Treat medical data (tissue cross-sections, gene expression heatmaps,
   blood smear fields) as physical terrain.  Deploy swimmer agents that slow down
