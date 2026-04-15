@@ -603,6 +603,7 @@ class SiftaDesktop(QMainWindow):
 
         # Use a custom dark title bar to avoid white native title strips on macOS.
         title_bar = QWidget()
+        title_bar.setFixedHeight(28)
         title_bar.setStyleSheet(
             "background-color: #0f1118; border-bottom: 1px solid #2a2f3a;"
         )
