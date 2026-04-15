@@ -1,12 +1,1 @@
-{
-  "GTH4921YP3": {
-    "timestamp": 1776221752,
-    "stgm_price": 1.0,
-    "energy": 100,
-    "models": [
-      "llama-4-maverick",
-      "qwen3.5:2b",
-      "llama3:latest"
-    ]
-  }
-}
+{}

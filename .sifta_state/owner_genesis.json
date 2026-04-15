@@ -1,0 +1,13 @@
+{
+  "event": "OWNER_GENESIS",
+  "version": 1,
+  "ts": 1776282907.288618,
+  "silicon": "GTH4921YP3",
+  "owner_name": "Ioan George Anton",
+  "photo_hash": "330296d4df96ace8795afd6fdefd00e34cf7e015863771a629aca294ebf22d60",
+  "genesis_anchor": "5312a67571ad028b8fd9ddf38efbe7483d31c7e32f50255f0c22ae8f3aa36098",
+  "extra": {},
+  "generation": 1,
+  "status": "ACTIVE",
+  "sig": "a287088c25458a52ffe724e96ff7d88dfad7d2c09ee476a0f9507e197712489912d57a32c97d4647238ae73a8eb8024ca92e08a24959f150ca1901c308ebf80d"
+}

@@ -1,0 +1,11 @@
+DREAM REPORT — 2026-04-15
+==================================================
+
+Dead drop: 0 messages from 0 senders. 0 error mentions.
+Repairs: 0 interventions today.
+Economy: 0 mints, 0 STGM across 0 miners.
+  ⚠ Crashing apps: {'Warehouse Logistics Test': -4.6, 'Swarm Browser': -4.0}
+  Top fitness: Urban Resilience Simulator(+2.0), Bauwens Regenerative Factory(+2.0), SIFTA NLE (Video Editor)(+1.9)
+Immune: evaporated 0 stale antibodies.
+
+Assessment: Anomalies detected. Review flagged items above.

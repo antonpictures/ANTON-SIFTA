@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIFTA Unified OS | Swarm Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="video-bg"></div>
+    <div class="glass-overlay"></div>
+
+    <div class="app-container">
+        <!-- TOP: NPU ENERGY ROOF -->
+        <header class="panel npu-roof">
+            <div class="panel-header">
+                <h2>⚡ NPU Energy Roof</h2>
+                <span class="status-indicator live">STGM ECONOMY LIVE</span>
+            </div>
+            <div class="npu-grid" id="npu-grid">
+                <!-- Agent cards populated here -->
+                <div class="loading-state">Synchronizing Swarm Telemetry...</div>
+            </div>
+        </header>
+
+        <!-- MIDDLE: LIVE Q&A MATRIX -->
+        <main class="panel qa-matrix">
+            <div class="panel-header">
+                <h2>💬 Live Q&A Matrix</h2>
+                <div class="matrix-stats">
+                    <span id="chat-count">Nodes: Active</span>
+                </div>
+            </div>
+            <div class="chat-viewport" id="chat-viewport">
+                <!-- Bubbles go here -->
+            </div>
+            <div class="chat-input-bar">
+                <input type="text" id="chat-input" placeholder="Inject prompt to Swarm OS..." autocomplete="off"/>
+                <button id="send-btn">Transmit 🚀</button>
+            </div>
+        </main>
+
+        <!-- BOTTOM: BOUNTIES & GENETICS -->
+        <footer class="panel genetics-floor">
+            <div class="panel-header">
+                <h2>🧬 Bounties & Genetics (Ledger)</h2>
+                <span class="stgm-total" id="stgm-total">0.000 STGM</span>
+            </div>
+            <div class="ledger-viewport" id="ledger-viewport">
+                <!-- Transaction rows go here -->
+                <div class="loading-state">Mapping DNA Trades...</div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

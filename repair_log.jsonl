@@ -10,3 +10,11 @@
 {"timestamp": 1776196519, "agent_id": "M1SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Compute clearance generated from [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]", "hash": "MINT_faa186354593"}
 {"timestamp": 1776196519, "agent_id": "M1SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Compute clearance generated from [MARKET_SPEND::M5SIFTA_BODY::GTH4921YP3]", "hash": "MINT_f4661c3a22c6"}
 {"timestamp": 1776198224, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 100000.0, "hash": "SEAL_49c8cc2abd97"}
+{"timestamp": 1776287123, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_5878c5629383"}
+{"timestamp": 1776287195, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_59fd822d8221"}
+{"timestamp": 1776287531, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_abbf1187c379"}
+{"timestamp": 1776287898, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_648481ff6a03"}
+{"timestamp": 1776288069, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_a2af377c0300"}
+{"timestamp": 1776288177, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_2973f3a3dc58"}
+{"timestamp": 1776291590, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_43b5ee0b5e66"}
+{"timestamp": 1776293076, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_1f6084062cf7"}
