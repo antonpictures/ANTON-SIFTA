@@ -18,3 +18,4 @@
 {"timestamp": 1776288177, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_2973f3a3dc58"}
 {"timestamp": 1776291590, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_43b5ee0b5e66"}
 {"timestamp": 1776293076, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_1f6084062cf7"}
+{"timestamp": 1776293730, "agent_id": "M5SIFTA_BODY", "tx_type": "STGM_MINT", "amount": 1.0, "reason": "Proof of Inference", "hash": "MINED_540fa8b4521c"}
