@@ -3,7 +3,7 @@
 territory_swim_adapter.py — SWIM LOOP INTEGRATION LAYER
 =========================================================
 Bridges territory_consciousness + territory_intrinsic_reward
-+ interference_layer + mycelial_genome INTO the live swim loop (repair.py).
++ interference_layer + mycelial_genome + mutation_governor INTO the live swim loop (repair.py).
 
 This is not a standalone module. It is CALLED by the swim loop.
 
@@ -17,6 +17,8 @@ Lifecycle:
 
   AFTER SWIM:   adapter.after_swim(state, fixed_count)
                 → genome.step() — decay, persist; mesh interference report
+
+Mutation path: genome.propose_mutation → MutationGovernor.allow → Kernel.propose (SCAR) → Governor.commit
 """
 
 from __future__ import annotations
@@ -115,9 +117,15 @@ class TerritorySwimAdapter:
         self._zones_visited: set = set()
         self._step = 0
         self._genome = None
+        self._governor = None
         try:
             from System.mycelial_genome import MycelialGenome
             self._genome = MycelialGenome()
+        except Exception:
+            pass
+        try:
+            from System.mutation_governor import MutationGovernor
+            self._governor = MutationGovernor()
         except Exception:
             pass
         self._load()
@@ -213,7 +221,32 @@ class TerritorySwimAdapter:
             try:
                 intensity = 1.5 if was_changed else 1.0
                 self._genome.visit(file_path, intensity=intensity)
+
+                # High-resonance files propose mutations to the Neural Gate.
+                # These are NOT applied directly; they must pass SCAR consensus.
+                mutation = self._genome.propose_mutation(file_path)
+                if mutation:
+                    if self._governor and not self._governor.allow(file_path, mutation):
+                        print(
+                            f"  [🧬 GOVERNOR] Mutation blocked "
+                            f"{os.path.basename(file_path)} ({self._governor.last_reject_reason})"
+                        )
+                    else:
+                        import sys
+                        _kernel_path = str(_REPO / "Kernel")
+                        if _kernel_path not in sys.path:
+                            sys.path.insert(0, _kernel_path)
+                        import scar_kernel
+                        k = scar_kernel.Kernel()
+                        sid = k.propose(target=file_path, content=mutation)
+                        if self._governor:
+                            self._governor.commit(file_path, mutation)
+                        print(
+                            f"  [🧬 GENOME] Mutation proposed for "
+                            f"{os.path.basename(file_path)} (ScarID: {sid[:8]})"
+                        )
             except Exception:
+                # Genome is a passive observer; Kernel/Governor fail gracefully
                 pass
 
         # ── INTERFERENCE WAVE EMISSION ─────────────────────────────────
