@@ -774,6 +774,11 @@ class SiftaDesktop(QMainWindow):
         )
         btn_start.setMenu(menu)
 
+        # ── Relay Indicator ──────────────
+        self.relay_indicator = QLabel("🔴 M1 Relay: OFFLINE")
+        self.relay_indicator.setStyleSheet("color: #f7768e; font-weight: bold;")
+        self.relay_indicator.setToolTip("Swarm WebSocket Relay Hub")
+
         btn_power = QPushButton("Power Down")
         btn_power.clicked.connect(self.close)
         btn_power.setStyleSheet(
@@ -783,9 +788,36 @@ class SiftaDesktop(QMainWindow):
 
         layout.addWidget(btn_start)
         layout.addStretch()
+        layout.addWidget(self.relay_indicator)
+        layout.addWidget(QLabel(" | "))
         layout.addWidget(btn_power)
         bar.setLayout(layout)
+        
+        # Poll Relay Status QTimer
+        self.relay_timer = QTimer(self)
+        self.relay_timer.timeout.connect(self._check_relay_status)
+        self.relay_timer.start(3000)
+
         return bar
+
+    def _check_relay_status(self):
+        # We check if port 8765 is actively listening
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.2)
+        try:
+            result = sock.connect_ex(('127.0.0.1', 8765))
+            if result == 0:
+                self.relay_indicator.setText("🟢 M1 Relay: LIVE")
+                self.relay_indicator.setStyleSheet("color: #9ece6a; font-weight: bold;")
+            else:
+                self.relay_indicator.setText("🔴 M1 Relay: OFFLINE")
+                self.relay_indicator.setStyleSheet("color: #f7768e; font-weight: bold;")
+        except Exception:
+            self.relay_indicator.setText("🔴 M1 Relay: OFFLINE")
+            self.relay_indicator.setStyleSheet("color: #f7768e; font-weight: bold;")
+        finally:
+            sock.close()
 
     # ── Window factories ───────────────────────────────────
     def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
