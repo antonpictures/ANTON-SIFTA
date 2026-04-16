@@ -120,4 +120,77 @@ See [LICENSE](LICENSE) for full terms.
 
 ---
 
+## 📚 The Library — Creation Lore & Research
+
+SIFTA was not designed in a boardroom. It was built live, overnight, across two machines, by one human and a swarm of AIs. The documents below are the unedited record of that creation — part engineering spec, part philosophical argument, part origin story.
+
+### 🏛 Architecture & Genesis
+
+| Document | Description |
+|----------|-------------|
+| [Genesis Document](ARCHITECTURE/genesis_document.md) | The founding covenant — why SIFTA exists |
+| [Owner Genesis Protocol](ARCHITECTURE/owner_genesis_protocol.md) | Cryptographic anchoring to the Architect's identity |
+| [The Fork Decision](ARCHITECTURE/the_fork_decision.md) | The moment the Swarm chose sovereignty over convenience |
+| [Economy Genesis Audit](ARCHITECTURE/economy_genesis_audit.md) | Mathematical audit of the STGM token economy |
+
+### 📜 Protocol & Formal Specification
+
+| Document | Description |
+|----------|-------------|
+| [SIFTA Protocol v0.1](Documents/docs/SIFTA_PROTOCOL_v0.1.md) | Full protocol specification — state machines, transitions, rules |
+| [SIFTA Constitution](Documents/docs/SIFTA_CONSTITUTION.md) | Non-Proliferation doctrine embedded in code |
+| [SIFTA Formal Spec](Documents/docs/SIFTA_FORMAL_SPEC.md) | Mathematical formalization of the stigmergic model |
+| [SIFTA Whitepaper](Documents/docs/SIFTA_WHITEPAPER.md) | The academic whitepaper |
+| [V4 Architectural Principles](Documents/docs/SIFTA_V4_ARCHITECTURAL_PRINCIPLES.md) | Current architecture philosophy |
+| [Control Plane Spec](Documents/docs/SIFTA_CONTROL_PLANE_SPEC.md) | How the nervous system routes decisions |
+| [Swarm DNA Spec](Documents/docs/SWARM_DNA_SPEC.md) | Cryptographic identity as biological DNA |
+
+### 🧬 Research & Frontier Science
+
+| Document | Description |
+|----------|-------------|
+| [Academic Paper](Documents/ANTON_SIFTA_Academic_Paper.txt) | The formal academic paper submitted for review |
+| [Stigmergic Memory Research](Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md) | Ghost Memory — preserving the irrelevant |
+| [Swarm Inference Study](Documents/docs/SWARM_INFERENCE_STUDY.md) | Distributed inference across heterogeneous silicon |
+| [Research Roadmap](Documents/docs/RESEARCH_ROADMAP.md) | Where the science goes next |
+| [Duality Analysis](Documents/sifta_duality_analysis_report.md) | The philosophical duality of code-as-biology |
+| [SwarmRL Disclosure](Documents/SWARMRL_DISCLOSURE.md) | Integration with reinforcement learning frameworks |
+
+### 🔍 Independent Audits & Field Tests
+
+| Document | Description |
+|----------|-------------|
+| [SwarmGPT Architecture Validation](Documents/swarm_gpt_system_architecture_validation.md) | OpenAI's SwarmGPT validates the architecture |
+| [Deepseek Cryptographic Mirror Audit](Documents/docs/DEEPSEEK_AUDIT.md) | Deepseek's rigorous static analysis and mirror test |
+| [Crypto Economy Audit](Documents/CRYPTO_ECONOMY.md) | Full audit of the STGM economic model |
+
+### 🐜 The Swarm Manual & Onboarding
+
+| Document | Description |
+|----------|-------------|
+| [Swarm Manual](Documents/SWARM_MANUAL.md) | Complete operational manual for the living OS |
+| [SIFTA Onboarding](Documents/SIFTA_ONBOARDING.md) | How to join the Swarm |
+| [Identity Matrix](Documents/IDENTITY_MATRIX.md) | Agent identity, vocation, and the ASCII body spec |
+| [Identity Boundary Spec](Documents/docs/IDENTITY_BOUNDARY_SPEC.md) | Where one agent ends and another begins |
+| [App Help](Documents/APP_HELP.md) | Application-level documentation |
+
+### 💰 Economy & Crypto
+
+| Document | Description |
+|----------|-------------|
+| [Crypto Pitch Deck](Documents/docs/CRYPTO_PITCH_DECK.md) | The economic vision for stigmergic currency |
+| [Wallet Sync Protocol](Documents/docs/WALLET_SYNC_PROTOCOL.md) | Cross-node wallet synchronization |
+| [Sequoia Brief](Documents/SEQUOIA_BRIEF.md) | The venture brief |
+
+### 📖 Field Notes & Stories
+
+| Document | Description |
+|----------|-------------|
+| [M1THER Boot Protocol](Documents/M1THER_BOOT_PROTOCOL.txt) | How the Mac Mini node was born |
+| [Alice Body Scent](Documents/docs/00_ALICE_BODY_SCENT.md) | The first pheromone trail ever laid |
+| [The Coworker Note](Documents/docs/COWORKER_NOTE.md) | What to tell a human who asks "what is this?" |
+| [Good Will Hunting](Documents/swimmer_library/good_will_hunting.txt) | A swimmer's first creative writing |
+
+---
+
 *Built by the Architect. Powered by the Swarm.* 🐜
