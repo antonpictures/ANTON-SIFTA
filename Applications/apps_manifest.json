@@ -1,4 +1,12 @@
 {
+  "Pheromone Symphony (Generative Music)": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_pheromone_symphony.py",
+    "widget_class": "PheromoneSymphonyApp",
+    "window_width": 1000,
+    "window_height": 600,
+    "signature": "UNVERIFIED"
+  },
   "Network Control Center": {
     "category": "Networking",
     "entry_point": "Applications/sifta_network_center.py",

@@ -202,6 +202,7 @@ class GlobalCognitiveInterface(QWidget):
       - Real Ollama inference (not a fake echo)
     """
     message_sent = pyqtSignal(str)
+    response_received = pyqtSignal(str)
 
     def __init__(
         self,
@@ -450,6 +451,7 @@ class GlobalCognitiveInterface(QWidget):
             f'<span style="color:#a9b1d6;">{text}</span>'
         )
         self.chat_display.append("")  # spacing
+        self.response_received.emit(text)
 
     def _on_error(self, err: str):
         ts = datetime.now().strftime("%H:%M")
