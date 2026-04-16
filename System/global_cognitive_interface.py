@@ -335,7 +335,7 @@ class GlobalCognitiveInterface(QWidget):
             return
 
         preload = self.preloader.preload(text, self.app_context)
-        if preload:
+        if preload and preload != self._preloaded_memory_cache:
             self.chat_display.append(f'<span style="color:#565f89; font-size:10px;">[PRELOAD] {preload}</span>')
             self._preloaded_memory_cache = preload
 
