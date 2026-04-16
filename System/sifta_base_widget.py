@@ -27,7 +27,7 @@ if str(_REPO) not in sys.path:
 
 from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton,
-    QPlainTextEdit, QVBoxLayout, QWidget, QFrame,
+    QPlainTextEdit, QVBoxLayout, QWidget, QFrame, QSplitter,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
@@ -112,8 +112,15 @@ def _load_help_text(app_name: str) -> str:
         return f"No help file found for {app_name}.\nExpected: Documents/APP_HELP.md"
 
     text = help_file.read_text(encoding="utf-8", errors="replace")
-    marker = f"### {app_name}"
-    idx = text.find(marker)
+    headings = [app_name]
+    if app_name.startswith("SIFTA "):
+        headings.append(app_name[6:].strip())
+    idx = -1
+    for h in headings:
+        marker = f"### {h}"
+        idx = text.find(marker)
+        if idx >= 0:
+            break
     if idx < 0:
         for line in text.split("\n"):
             if line.startswith("### ") and app_name.lower() in line.lower():
@@ -171,9 +178,40 @@ class SiftaBaseWidget(QWidget):
         root.addLayout(title_row)
 
         # ── Content area (filled by subclass) ─────────────────────
-        self._content_layout = QVBoxLayout()
+        # We use a splitter: app content on the left, GCI chat on the right.
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        self._content_widget = QWidget()
+        self._content_layout = QVBoxLayout(self._content_widget)
         self._content_layout.setSpacing(4)
-        root.addLayout(self._content_layout, 1)
+        self._content_layout.setContentsMargins(0, 0, 0, 0)
+        self._splitter.addWidget(self._content_widget)
+
+        # ── Global Cognitive Interface (chat panel) ──────────────
+        self._gci = None
+        try:
+            from System.global_cognitive_interface import GlobalCognitiveInterface
+            self._gci = GlobalCognitiveInterface(
+                app_context=self.APP_NAME.lower().replace(" ", "_"),
+                entity_name="ALICE_M5",
+                architect_id="IOAN_M5",
+            )
+            self._gci.setMinimumWidth(280)
+            self._gci.setMaximumWidth(420)
+            self._splitter.addWidget(self._gci)
+            # Start with chat collapsed—Architect can open it anytime
+            self._splitter.setSizes([700, 0])
+        except Exception:
+            pass  # GCI is optional; app works without it
+
+        root.addWidget(self._splitter, 1)
+
+        # ── Toggle chat button in the title bar ───────────────────
+        btn_chat = QPushButton("💬")
+        btn_chat.setObjectName("btnHelp")  # reuse the same compact style
+        btn_chat.setToolTip("Toggle Entity Chat")
+        btn_chat.clicked.connect(self._toggle_gci)
+        title_row.insertWidget(title_row.count() - 1, btn_chat)  # before the ? button
 
         self.build_ui(self._content_layout)
 
@@ -202,6 +240,18 @@ class SiftaBaseWidget(QWidget):
         s.setFrameShape(QFrame.Shape.VLine)
         s.setStyleSheet("color: rgb(45,42,65);")
         return s
+
+    def _toggle_gci(self) -> None:
+        """Show/hide the Global Cognitive Interface chat panel."""
+        if not self._gci:
+            return
+        sizes = self._splitter.sizes()
+        if sizes[1] < 10:  # collapsed—open it
+            total = sum(sizes)
+            self._splitter.setSizes([total - 360, 360])
+        else:  # visible—collapse it
+            total = sum(sizes)
+            self._splitter.setSizes([total, 0])
 
     # ── Help system ───────────────────────────────────────────────
 
