@@ -411,12 +411,14 @@ class SiftaDesktop(QMainWindow):
         self.setCentralWidget(central)
 
         # Clock overlay
-        self.clock_label = QLabel(central)
+        self.clock_label = QPushButton(central)
         self.clock_label.setStyleSheet(
-            "color: #a9b1d6; font-family: monospace; font-size: 14px;"
-            "font-weight: bold; background: transparent;"
+            "QPushButton { color: #a9b1d6; font-family: -apple-system, BlinkMacSystemFont, monospace; font-size: 14px;"
+            "font-weight: bold; background: transparent; border: none; text-align: right; padding-right: 5px; }"
+            "QPushButton:hover { color: #ffffff; background: #24283b; border-radius: 4px; }"
         )
-        self.clock_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.clock_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clock_label.clicked.connect(self._open_clock_settings)
 
         # ── Swarm Economy HUD ──────────────────────────────────────
         # Global swarm liquidity (top line)
@@ -490,12 +492,81 @@ class SiftaDesktop(QMainWindow):
         self.open_swarm_chat()
 
     # ── Clock ──────────────────────────────────────────────
+    
+    def _open_clock_settings(self):
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONPATH", str(_REPO))
+        QProcess.startDetached("python3", [str(_REPO / "Applications" / "sifta_clock_settings.py")], str(_REPO))
+    
     def _update_clock(self):
-        dt = QDateTime.currentDateTime().toString("yyyy-MM-dd  hh:mm:ss AP")
-        self.clock_label.setText(dt)
+        settings = {}
+        settings_path = _REPO / ".sifta_state" / "clock_settings.json"
+        if settings_path.exists():
+            try:
+                with open(settings_path, "r") as f:
+                    settings = json.load(f)
+            except Exception:
+                pass
+                
+        now = QDateTime.currentDateTime()
+        
+        # Build the format string
+        fmt_parts = []
+        if settings.get("show_day_of_week", True):
+            fmt_parts.append("ddd")
+        if settings.get("show_date", True):
+            fmt_parts.append("MMM d")
+            
+        # Time string
+        t_fmt = "h:mm" if settings.get("show_am_pm", True) else "H:mm"
+        if settings.get("show_seconds", False):
+            t_fmt += ":ss"
+        if settings.get("show_am_pm", True):
+            t_fmt += " AP"
+            
+        time_str = now.toString(t_fmt)
+        
+        if settings.get("flash_separators", False):
+            if now.time().second() % 2 == 1:
+                time_str = time_str.replace(":", " ")
+                
+        if fmt_parts:
+            date_str = now.toString(" ".join(fmt_parts))
+            time_str = f"{date_str}   {time_str}"
+            
+        if settings.get("style", "Digital") == "Analog":
+            time_str = "⌚ " + time_str  # Represent analog visually in text UI
+            
+        self.clock_label.setText(time_str)
         if hasattr(self, "clock_label"):
             self.clock_label.setGeometry(self.width() - 280, 8, 270, 28)
             self.clock_label.raise_()
+            
+        # Optional: Announce the time
+        if settings.get("announce_time", False) and now.time().second() == 0:
+            m = now.time().minute()
+            interval = settings.get("announce_interval", "On the hour")
+            should_announce = False
+            if interval == "On the hour" and m == 0:
+                should_announce = True
+            elif interval == "On the half hour" and m in (0, 30):
+                should_announce = True
+            elif interval == "On the quarter hour" and m in (0, 15, 30, 45):
+                should_announce = True
+                
+            if should_announce:
+                h = now.time().hour()
+                h_12 = h % 12 or 12
+                ampm = "AM" if h < 12 else "PM"
+                m_str = "o'clock" if m == 0 else str(m)
+                say_text = f"It's {h_12} {m_str} {ampm}"
+                
+                say_args = [say_text]
+                voice = settings.get("announce_voice", "System Voice")
+                if voice != "System Voice":
+                    say_args = ["-v", voice, say_text]
+                
+                QProcess.startDetached("say", say_args)
 
         # ── Update Swarm Economy HUD ──────────────────────────────
         if hasattr(self, "wallet_label"):
@@ -627,23 +698,18 @@ class SiftaDesktop(QMainWindow):
                     elif cat == "System":
                         target_menu = sys_menu
 
-                    app_sub = target_menu.addMenu(f"{app_name} ▶")
-                    app_sub.addAction("Open").triggered.connect(
-                        (
-                            (lambda nm, ep, wc, dat: lambda: self._launch_app(
-                                nm,
-                                ep,
-                                wc,
-                                w=int(dat.get("window_width", 920)),
-                                h=int(dat.get("window_height", 640)),
-                            ))(app_name, entry, widget_class, dict(app_data))
-                            if widget_class
-                            else (lambda nm, e: lambda: self._launch_terminal_app(nm, e))(app_name, entry)
-                        )
+                    launch = (
+                        (lambda nm, ep, wc, dat: lambda: self._launch_app(
+                            nm,
+                            ep,
+                            wc,
+                            w=int(dat.get("window_width", 920)),
+                            h=int(dat.get("window_height", 640)),
+                        ))(app_name, entry, widget_class, dict(app_data))
+                        if widget_class
+                        else (lambda nm, e: lambda: self._launch_terminal_app(nm, e))(app_name, entry)
                     )
-                    app_sub.addAction("Help").triggered.connect(
-                        (lambda nm, data: lambda: self._show_app_help(nm, dict(data)))(app_name, app_data)
-                    )
+                    target_menu.addAction(app_name).triggered.connect(launch)
             except Exception as e:
                 print(f"[Boot Error] Failed to load apps manifest: {e}")
 
@@ -695,7 +761,7 @@ class SiftaDesktop(QMainWindow):
         return bar
 
     # ── Window factories ───────────────────────────────────
-    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None, help_text=None):
+    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
         sub = QMdiSubWindow()
         sub.setWindowFlags(
             Qt.WindowType.SubWindow
@@ -720,22 +786,6 @@ class SiftaDesktop(QMainWindow):
         title_label.setStyleSheet("color: #c0caf5; font-weight: 600;")
         title_layout.addWidget(title_label)
         title_layout.addStretch()
-        btn_help = QPushButton("?")
-        btn_help.setToolTip(f"Help — {title}")
-        btn_help.setFixedSize(22, 20)
-        btn_help.setStyleSheet(
-            "QPushButton { background: #23283a; color: #00ffc8; "
-            "border: 1px solid #3a4360; border-radius: 8px; font-weight: 700; } "
-            "QPushButton:hover { background: #2f3750; }"
-        )
-        btn_help.clicked.connect(
-            lambda: QMessageBox.information(
-                self,
-                f"Help — {title}",
-                (help_text or self._panel_help_text(title)),
-            )
-        )
-        title_layout.addWidget(btn_help)
         btn_close = QPushButton("X")
         btn_close.setToolTip(f"Close — {title}")
         btn_close.setFixedSize(22, 20)
@@ -827,7 +877,7 @@ class SiftaDesktop(QMainWindow):
         return (
             "SIFTA system panel.\n\n"
             "Read values as telemetry: state, trend, and anomaly flags.\n"
-            "Use the Programs → Help menu for app-level manuals."
+            "Use SIFTA → Help to open Documents/APP_HELP.md, or in-app ? on SiftaBaseWidget apps."
         )
 
     def open_swarm_chat(self):
@@ -913,15 +963,7 @@ class SiftaDesktop(QMainWindow):
         try:
             from Applications.sifta_genesis_widget import GenesisWidget
             w = GenesisWidget()
-            help_text = (
-                "Owner Genesis — The root of all trust.\n\n"
-                "Select a photo to bind your identity to this silicon.\n"
-                "The photo is hashed (SHA-256) and signed (Ed25519).\n"
-                "It stays LOCAL ONLY — never in git, never transmitted.\n"
-                "Only the hash enters the ledger."
-            )
-            self._make_sub(w, "Owner Genesis", 620, 720, "#ff28c8",
-                           help_text=help_text)
+            self._make_sub(w, "Owner Genesis", 620, 720, "#ff28c8")
         except Exception as e:
             print(f"[GENESIS] Onboarding failed to load: {e}")
 
@@ -948,79 +990,6 @@ class SiftaDesktop(QMainWindow):
     def _show_fitness_scores(self):
         from Applications.sifta_intelligence_panels import AppFitnessPanel
         self._make_sub(AppFitnessPanel(), "📊 App Fitness", 800, 600, "#7dcfff")
-
-    def _show_app_help(self, app_name: str, app_data: dict) -> None:
-        from PyQt6.QtWidgets import QPlainTextEdit
-
-        cat = app_data.get("category", "Accessories")
-        entry = app_data.get("entry_point", "")
-        widget = app_data.get("widget_class", "")
-
-        category_principles = {
-            "Simulations": "Interpret dynamics, convergence, and failure modes first. Metrics > vibes.",
-            "Creative": "Stigmergic media tools. Watch emergent decisions, pheromone consensus, and export fidelity.",
-            "Networking": "Treat all external IO as hostile by default. Verify provenance and signatures.",
-            "System": "Watch boundaries: identity, authority, execution. Small config changes can have global effects.",
-            "Accessories": "UI/ops tooling for human bandwidth. These are observability and control surfaces.",
-        }
-        app_blurbs = {
-            "Colloid Simulator": "Active-matter stigmergy. Watch local interactions create global order.",
-            "Swarm Arena": "Model-vs-model debugging tournament with reproducible level fixtures.",
-            "Cyborg Organ Simulator": "Organ regulation + BCI intent clustering + signed control events.",
-            "Logistics Swarm (Overnight)": "Pheromone routing under congestion; evaluate throughput vs stability.",
-            "Warehouse Logistics Test": "Validation harness for logistics constraints and regression checks.",
-            "Crucible Cyber-Defense (10-min)": "DDoS + anomaly gauntlet; assess quarantine and resilience under burst.",
-            "Stigmergic Edge Vision": "Distributed edge extraction from noisy fields using swimmer consensus.",
-            "Urban Resilience Simulator": "Vehicle-drone coordination in disrupted infrastructure scenarios.",
-            "Epistemic Mesh (Anti-Gaslight)": "Truth pheromone emerges from cryptographic provenance verification.",
-            "Stigmergic Fold Swarm (Cα / Go)": "Protein-like folding search with Go contacts, sterics, and obstacle fields.",
-            "Intelligence Settings": "Global model/runtime defaults used by system components.",
-            "Circadian Rhythm": "Autonomous scheduling for low-noise night cycles and maintenance windows.",
-            "Cardio Metrics": "Swarm health telemetry and heartbeat diagnostics.",
-            "Biological Dashboard": "Live organism state projection for operator situational awareness.",
-            "Silence Remover & Stitcher": "Deterministic silence-removal and clip-stitch workflow for speech-heavy media.",
-            "SIFTA NLE": "Stigmergic non-linear editing surface with swimmer consensus and export tooling.",
-            "Human Council GUI": "Human governance and decision surface over autonomous proposals.",
-            "Desktop GUI (Legacy)": "Older shell kept for comparison and fallback.",
-            "Swarm Discord Engine": "Bridge layer for Discord ingress/egress in the swarm communication stack.",
-            "Swarm Telegram Engine": "Bridge layer for Telegram ingress/egress in the swarm communication stack.",
-            "Swarm WhatsApp Bridge": "Bridge layer for WhatsApp ingress/egress with strict separation from TRANSEC.",
-            "First Boot Provisioning": "Node bootstrap/provisioning flow for first-run environment setup.",
-        }
-
-        lines = [
-            f"{app_name}",
-            "=" * max(24, len(app_name)),
-            "",
-            f"Category:      {cat}",
-            f"Entry point:   {entry}",
-            f"Widget class:  {widget or 'N/A (terminal app)'}",
-            "",
-            "What you are looking at:",
-            f"  {app_blurbs.get(app_name, 'App-specific operation surface in the SIFTA ecosystem.')}",
-            "",
-            "Scientific reading frame:",
-            f"  {category_principles.get(cat, 'Track state transitions and measurable outputs.')}",
-            "",
-            "Operator checklist:",
-            "  1) Identify primary output metric(s)",
-            "  2) Identify control parameter(s)",
-            "  3) Observe failure mode / saturation behavior",
-            "  4) Verify whether ledger, signatures, or immunity changed",
-            "",
-            "Long-form manual:",
-            "  Open Documents/APP_HELP.md for full per-app sections.",
-        ]
-
-        w = QPlainTextEdit()
-        w.setReadOnly(True)
-        w.setPlainText("\n".join(lines))
-        w.setStyleSheet(
-            "QPlainTextEdit { background: #0b1020; color: #c0caf5; "
-            "font-family: monospace; font-size: 12px; padding: 12px; }"
-        )
-        self._make_sub(w, f"❓ Help — {app_name}", 760, 520, "#565f89")
-
 
 
 # ──────────────────────────────────────────────────────────────
