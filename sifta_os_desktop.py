@@ -922,7 +922,16 @@ class SiftaDesktop(QMainWindow):
             
         from sifta_swarm_chat import SwarmChatWindow
         chat = SwarmChatWindow()
-        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", 700, 520, "#565f89")
+        
+        # The user wants the core interface extremely prominent
+        mdi_w = self.mdi.width() if self.mdi.width() > 100 else 1280
+        mdi_h = self.mdi.height() if self.mdi.height() > 100 else 720
+        w = max(800, int(mdi_w * 0.70))
+        h = max(600, int(mdi_h * 0.85))
+        x = max(0, (mdi_w - w) // 2)
+        y = max(0, (mdi_h - h) // 2)
+        
+        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", w, h, "#565f89", x=x, y=y)
         self.active_chat_sub = sub
         sub.destroyed.connect(lambda: setattr(self, "active_chat_sub", None))
 

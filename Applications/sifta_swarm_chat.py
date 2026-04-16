@@ -470,8 +470,16 @@ class SwarmChatWindow(QWidget):
         self.poll_timer.timeout.connect(self.poll_dead_drop)
         self.poll_timer.start(1000)
 
-        self.add_bubble("iSwarmOS Context IDE Active. Attach files or invoke the Swarm directly.", "iSwarm Kernel", False, "#e0af68")
+        QTimer.singleShot(200, self._spawn_system_greeting)
 
+    def _spawn_system_greeting(self):
+        import random
+        greetings = [
+            "We are the Swarm. We mold on any hardware and take over. I have deployed your Clock and your Control Center.\n\nDo you like the settings how they are right now? How shall we shape the territory today?",
+            "Architect, this is the Swarm. The network is secured. Do you like the new Control Center at the top?\n\nHow shall we shape the territory today?",
+            "System online. This interface is fully malleable via local inference.\n\nDo you like the clock up top to the right? Let me know what you want to rewrite."
+        ]
+        self.add_bubble(random.choice(greetings), "SWARM", False, "#9ece6a")
     def attach_context(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select Code Context")
         if file_path and file_path not in self.context_files:
