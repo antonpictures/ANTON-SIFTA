@@ -24,6 +24,7 @@ from __future__ import annotations
 import math
 import random
 import re
+import ssl
 import sys
 import time
 from dataclasses import dataclass, field
@@ -490,15 +491,17 @@ class DomGraphCanvas(QWidget):
 
         # HUD
         p.setPen(QPen(QColor(0, 255, 200)))
-        p.setFont(QFont("Menlo", 8, QFont.Weight.Bold))
+        p.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
         stats = (f"Nodes: {len(self.nodes)}  |  Swimmers: {len(self.swimmers)}  |  "
-                 f"Entities: {len(self.entities)}  |  Quarantined: {len(self.quarantined)}  |  "
-                 f"Clean Text: {len(self.clean_text)}  |  STGM: {self.total_stgm:.2f}")
-        p.drawText(QPointF(10, h - 8), stats)
+                 f"Entities: {len(self.entities)}  |  "
+                 f"Quarantined: {len(self.quarantined)}  |  "
+                 f"Clean Text: {len(self.clean_text)}  |  "
+                 f"STGM: {self.total_stgm:.2f}")
+        p.drawText(QPointF(10, h - 12), stats)
 
         # Legend
-        p.setFont(QFont("Menlo", 7))
-        legend_y = 14
+        p.setFont(QFont("Menlo", 10))
+        legend_y = 18
         for name, color in [("Content", NODE_COLORS["content"]),
                             ("Hostile", NODE_COLORS["hostile"]),
                             ("Link", NODE_COLORS["link"]),
@@ -506,10 +509,10 @@ class DomGraphCanvas(QWidget):
                             ("Structure", NODE_COLORS["structural"])]:
             p.setBrush(QBrush(color))
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(w - 100, legend_y), 4, 4)
+            p.drawEllipse(QPointF(w - 120, legend_y), 5, 5)
             p.setPen(QPen(QColor(160, 168, 200)))
-            p.drawText(QPointF(w - 90, legend_y + 4), name)
-            legend_y += 14
+            p.drawText(QPointF(w - 108, legend_y + 5), name)
+            legend_y += 18
 
         p.end()
 
@@ -524,6 +527,20 @@ class DomGraphCanvas(QWidget):
 #  FETCH WORKER (background thread)
 # ═══════════════════════════════════════════════════════════════════
 
+def _ssl_context_for_https() -> ssl.SSLContext:
+    """
+    urllib uses the interpreter's default CA store; on many macOS Python installs
+    that store is incomplete → CERTIFICATE_VERIFY_FAILED. Prefer certifi's Mozilla
+    CA bundle when installed.
+    """
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
 class FetchWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
@@ -535,11 +552,23 @@ class FetchWorker(QThread):
     def run(self):
         try:
             req = Request(self.url, headers={"User-Agent": "SIFTA-SwarmBrowser/1.0"})
-            with urlopen(req, timeout=15) as resp:
+            ctx = None
+            if self.url.startswith("https://"):
+                ctx = _ssl_context_for_https()
+            kw = {"timeout": 15}
+            if ctx is not None:
+                kw["context"] = ctx
+            with urlopen(req, **kw) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
             self.finished.emit(html)
         except Exception as e:
-            self.error.emit(str(e))
+            err = str(e)
+            if "CERTIFICATE_VERIFY_FAILED" in err or "SSL: CERTIFICATE_VERIFY_FAILED" in err:
+                err += (
+                    " — Install CA bundle: pip install certifi (added to requirements.txt). "
+                    "On macOS you can also run Applications/Python 3.x/Install Certificates.command."
+                )
+            self.error.emit(err)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -624,26 +653,40 @@ class SwarmBrowserWidget(SiftaBaseWidget):
         splitter.addWidget(self.canvas)
 
         sidebar = QTabWidget()
-        sidebar.setMinimumWidth(260)
-        sidebar.setMaximumWidth(340)
+        sidebar.setMinimumWidth(360)
+        sidebar.setMaximumWidth(480)
+        sidebar.setStyleSheet(
+            "QTabBar::tab { font-size: 11px; padding: 5px 12px; min-width: 80px; }"
+        )
 
-        self.entity_view = QTextEdit()
-        self.entity_view.setReadOnly(True)
-        sidebar.addTab(self.entity_view, "Entities")
-
-        self.text_view = QTextEdit()
-        self.text_view.setReadOnly(True)
-        sidebar.addTab(self.text_view, "Text")
-
+        # Quarantine FIRST — the user wants to see hostile data front and center
         self.quarantine_view = QTextEdit()
         self.quarantine_view.setReadOnly(True)
         self.quarantine_view.setStyleSheet(
-            "QTextEdit { background: rgb(10,8,16); color: rgb(255,80,100); }")
-        sidebar.addTab(self.quarantine_view, "Quarantine")
+            "QTextEdit { background: rgb(10,8,16); color: rgb(255,80,100); font-size: 13px; }"
+        )
+        sidebar.addTab(self.quarantine_view, "🛡 Quarantine")
+
+        self.entity_view = QTextEdit()
+        self.entity_view.setReadOnly(True)
+        self.entity_view.setStyleSheet(
+            "QTextEdit { font-size: 13px; }"
+        )
+        sidebar.addTab(self.entity_view, "🔍 Entities")
+
+        self.text_view = QTextEdit()
+        self.text_view.setReadOnly(True)
+        self.text_view.setStyleSheet(
+            "QTextEdit { font-size: 13px; }"
+        )
+        sidebar.addTab(self.text_view, "📄 Text")
 
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
-        sidebar.addTab(self.log_view, "Log")
+        self.log_view.setStyleSheet(
+            "QTextEdit { font-size: 12px; }"
+        )
+        sidebar.addTab(self.log_view, "📋 Log")
 
         splitter.addWidget(sidebar)
         splitter.setStretchFactor(0, 3)
@@ -713,7 +756,14 @@ class SwarmBrowserWidget(SiftaBaseWidget):
         if self.canvas.clean_text:
             self.text_view.setPlainText("\n\n---\n\n".join(self.canvas.clean_text[-50:]))
         if self.canvas.quarantined:
-            self.quarantine_view.setPlainText("\n".join(self.canvas.quarantined[-100:]))
+            lines = []
+            for i, desc in enumerate(self.canvas.quarantined[-100:], 1):
+                lines.append(f"⛔ #{i}  {desc}")
+            header = (f"=== HOSTILE INTERCEPTORS ===\n"
+                      f"Trackers neutralized: {len(self.canvas.quarantined)}\n"
+                      f"STGM earned from quarantine: "
+                      f"{len(self.canvas.quarantined) * 0.05:.2f}\n\n")
+            self.quarantine_view.setPlainText(header + "\n".join(lines))
         if self._log_lines:
             self.log_view.setPlainText("\n".join(self._log_lines[-100:]))
             sb = self.log_view.verticalScrollBar()
