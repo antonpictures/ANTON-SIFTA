@@ -37,7 +37,7 @@ except ImportError:
             f.write(json.dumps(event) + "\n")
 # ──────────────────────────────────────────────────────────────────────────────
 ROOT_DIR  = Path(__file__).parent.parent
-LOG_PATH  = ROOT_DIR / "repair_log.jsonl"
+LOG_PATH  = ROOT_DIR / "Utilities" / "repair_log.jsonl"
 STATE_DIR = ROOT_DIR / ".sifta_state"
 
 
