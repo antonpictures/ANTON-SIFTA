@@ -188,14 +188,20 @@ class MemoryForager:
                 retention  = trace.retention()
                 
                 # --- Pheromone Luck / Serendipity Factor ---
-                # A 5% chance that a faded memory suddenly surges to absolute vividness.
-                # Modeling the chaotic, unpredictable associative nature of human luck.
+                # Luck = |Actual_Outcome - Expected_Probability|
+                # Actual_Outcome  = raw_similarity (how relevant this trace IS to the query)
+                # Expected_Prob   = retention (what the Ebbinghaus curve says SHOULD survive)
+                #
+                # High luck = dying memory that happens to be relevant.
+                # Low luck  = vivid memory that is obviously useful (no serendipity needed).
                 lucky = False
-                if retention < 0.25 and random.random() < 0.05:
-                    retention = 1.0  # Lucky surge!
-                    lucky = True
-                    # artificially boost raw similarity so it cuts through the noise
-                    raw_similarity = min(1.0, raw_similarity + 0.4)
+                if retention < 0.25:
+                    luck_variance = abs(raw_similarity - retention)
+                    luck_chance   = min(0.12, luck_variance * 0.25)  # cap at 12%
+                    if random.random() < luck_chance:
+                        retention = 1.0  # Lucky surge!
+                        lucky = True
+                        raw_similarity = min(1.0, raw_similarity + 0.4)
 
                 confidence = raw_similarity * (0.3 + 0.7 * retention)  # floor at 30% even for faded
 
@@ -234,6 +240,13 @@ class StigmergicMemoryBus:
         self.architect_id = architect_id
         LEDGER_DIR.mkdir(exist_ok=True)
         self._forager_counter = 0
+
+        # Ghost Memory — the preservation of the irrelevant
+        try:
+            from System.ghost_memory import GhostMemory
+            self._ghost = GhostMemory(architect_id=architect_id)
+        except Exception:
+            self._ghost = None
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -281,6 +294,16 @@ class StigmergicMemoryBus:
             )
         except Exception:
             pass  # heartbeat is optional — local memory always works
+
+        # GhostSentinel — check if this memory is worth preserving forever
+        if self._ghost:
+            try:
+                self._ghost.maybe_preserve(
+                    text=text, app_context=app_context,
+                    semantic_tags=tags, recall_count=0
+                )
+            except Exception:
+                pass
 
         return trace
 
@@ -381,6 +404,12 @@ class StigmergicMemoryBus:
                     except Exception:
                         pass
         return [t for t in traces if t.get("architect_id") == self.architect_id]
+
+    def ghost_drift(self) -> dict | None:
+        """Ask the ghost layer for a serendipitous fragment."""
+        if self._ghost:
+            return self._ghost.drift()
+        return None
 
     def total_stgm_earned(self) -> float:
         """How much STGM the memory swimmers have earned total."""

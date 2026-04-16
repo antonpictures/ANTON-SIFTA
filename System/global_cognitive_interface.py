@@ -392,12 +392,33 @@ class GlobalCognitiveInterface(QWidget):
         if self._worker and self._worker.isRunning():
             return  # primary worker is busy
 
+        # 4.5 Ghost Layer — serendipitous identity fragments
+        ghost_whisper = ""
+        if self._bus:
+            try:
+                ghost = self._bus.ghost_drift()
+                if ghost:
+                    frag = ghost.get('data', '')
+                    ctx  = ghost.get('ctx', '?')
+                    ts = datetime.now().strftime("%H:%M")
+                    self.chat_display.append(
+                        f'<span style="color:#414868; font-size:9px;">[{ts}] 👻 Ghost Memory (from {ctx}): "{frag[:120]}"</span>'
+                    )
+                    ghost_whisper = (
+                        f"\n\n[GHOST MEMORY — an old, almost-lost fragment from '{ctx}']\n"
+                        f"\"{frag}\"\n"
+                        f"[This surfaced involuntarily. If relevant, weave it gently into your response.]"
+                    )
+            except Exception:
+                pass
+
         system_prompt = (
             f"You are {self.entity_name}, the sovereign intelligence of SIFTA Living OS. "
             f"You are speaking to the Architect inside the '{self.app_context}' application. "
             f"Be helpful, concise, and warm. If relevant memories exist below, reference them naturally. "
             f"Keep responses under 150 words unless asked for detail."
             f"{memory_context}"
+            f"{ghost_whisper}"
         )
 
         self._worker = _GCIWorker(prompt=text, system=system_prompt, model=self._model)
