@@ -114,13 +114,12 @@
   "Biological Dashboard": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_biological_gui.py",
+    "widget_class": "BiologicalDashboardWidget",
+    "window_width": 960,
+    "window_height": 640,
     "signature": "UNVERIFIED"
   },
-  "Human Council GUI": {
-    "category": "Accessories",
-    "entry_point": "Applications/council_gui.py",
-    "signature": "UNVERIFIED"
-  },
+
   "First Boot Provisioning": {
     "category": "System",
     "entry_point": "Applications/sifta_setup_gui.py",
@@ -153,11 +152,6 @@
   "Silence Remover & Stitcher": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_sebastian_editor.py",
-    "signature": "UNVERIFIED"
-  },
-  "Desktop GUI (Legacy)": {
-    "category": "Accessories",
-    "entry_point": "Applications/sifta_desktop_gui.py",
     "signature": "UNVERIFIED"
   },
   "SIFTA File Navigator": {
