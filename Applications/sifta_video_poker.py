@@ -249,15 +249,26 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
     def build_ui(self, layout: QVBoxLayout) -> None:
         self.set_status("Initializing Biological Luck Engine...")
         
-        self.credits = 1000
-        self.bet = 50
+        try:
+            from System.casino_vault import CasinoVault
+            self.vault = CasinoVault(architect_id="IOAN_M5")
+        except ImportError:
+            self._gci.append_system_message("[SYSTEM ERROR] Could not locate Casino Vault.")
+            return
+
+        self.bet = 0.1
         self.phase = 'betting' # betting -> dealt -> drawn
         
         # HUD
         hud_layout = QHBoxLayout()
-        self.wallet_label = QLabel(f"Wallet: {self.credits} STGM | Bet: {self.bet} STGM")
+        self.wallet_label = QLabel("")
         self.wallet_label.setStyleSheet("color: #9ece6a; font-weight: bold; font-family: monospace; font-size: 14px;")
+        
+        self.casino_label = QLabel("")
+        self.casino_label.setStyleSheet("color: #f7768e; font-weight: bold; font-family: monospace; font-size: 14px; padding-left: 20px;")
+        
         hud_layout.addWidget(self.wallet_label)
+        hud_layout.addWidget(self.casino_label)
         
         hud_layout.addStretch()
         
@@ -273,9 +284,13 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         if self._gci:
             self._gci.message_sent.connect(self.on_user_typing)
             self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: How to Play: Type 'deal' to draw cards. Type 'hold 1 3' to keep cards 1 and 3.]</span>")
+        self.update_hud()
 
     def update_hud(self):
-        self.wallet_label.setText(f"Wallet: {self.credits} STGM | Bet: {self.bet} STGM")
+        player_stgm = round(self.vault.get_real_player_wallet(), 2)
+        casino_stgm = round(self.vault.casino_balance, 2)
+        self.wallet_label.setText(f"Architect Wallet: {player_stgm} STGM | Bet: {self.bet} STGM")
+        self.casino_label.setText(f"Casino Vault: {casino_stgm} STGM")
 
     def on_user_typing(self, text: str):
         # Increase heat
@@ -317,11 +332,11 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                         self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: Specify which cards to hold, e.g. 'hold 1 4']</span>")
 
     def _do_deal(self):
-        if self.credits < self.bet:
-            if self._gci: self._gci.chat_display.append("<span style='color:#f7768e;'>[SYSTEM: Insufficient STGM for bet!]</span>")
+        # Process financial transaction
+        if not self.vault.process_bet(self.bet):
+            if self._gci: self._gci.chat_display.append("<span style='color:#f7768e;'>[SYSTEM: Insufficient STGM. Cut-off protocol engaged. Produce memories to earn more capital.]</span>")
             return
             
-        self.credits -= self.bet
         self.update_hud()
         
         self.phase = 'dealt'
@@ -332,7 +347,8 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.canvas.update()
         
         if self._gci:
-            self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Dealt 5 cards. Total STGM: {self.credits}]</span>")
+            wallet = round(self.vault.get_real_player_wallet(), 2)
+            self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Placed {self.bet} bet. Dealt 5 cards. Architect STGM: {wallet}]</span>")
 
     def _do_draw(self):
         self.phase = 'drawn'
@@ -358,14 +374,13 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         payout_mult = PAY_TABLE.get(result, 0)
         win_amount = payout_mult * self.bet
         
-        self.credits += win_amount
-        self.update_hud()
-        
         if win_amount > 0:
-            self.canvas.result_text = f"{result} (+{win_amount} STGM)"
+            self.vault.process_payout(win_amount, reason=result)
+            self.canvas.result_text = f"{result} (+{win_amount:.1f} STGM)"
         else:
             self.canvas.result_text = "NO WIN"
             
+        self.update_hud()
         self.canvas.update()
 
 if __name__ == "__main__":
