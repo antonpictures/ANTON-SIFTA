@@ -420,6 +420,16 @@ class SiftaDesktop(QMainWindow):
         self.clock_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clock_label.clicked.connect(self._open_clock_settings)
 
+        # Control Center overlay
+        self.cc_label = QPushButton("􀜊", central)
+        self.cc_label.setStyleSheet(
+            "QPushButton { color: #a9b1d6; font-family: -apple-system, BlinkMacSystemFont, monospace; font-size: 16px;"
+            "font-weight: bold; background: transparent; border: none; }"
+            "QPushButton:hover { color: #ffffff; background: #24283b; border-radius: 4px; }"
+        )
+        self.cc_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cc_label.clicked.connect(self._open_control_center)
+
         # ── Swarm Economy HUD ──────────────────────────────────────
         # Global swarm liquidity (top line)
         self.wallet_label = QLabel(central)
@@ -491,8 +501,19 @@ class SiftaDesktop(QMainWindow):
         # Boot: open chat by default
         self.open_swarm_chat()
 
-    # ── Clock ──────────────────────────────────────────────
+    # ── Clock & Control Center ─────────────────────────────
     
+    def _open_control_center(self):
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONPATH", str(_REPO))
+        
+        # Calculate exactly where it should appear
+        geometry = self.geometry()
+        x = geometry.x() + self.width() - 20
+        y = geometry.y() + 40
+        
+        QProcess.startDetached("python3", [str(_REPO / "Applications" / "sifta_control_center.py"), str(x), str(y)], str(_REPO))
+        
     def _open_clock_settings(self):
         env = QProcessEnvironment.systemEnvironment()
         env.insert("PYTHONPATH", str(_REPO))
@@ -539,8 +560,12 @@ class SiftaDesktop(QMainWindow):
             
         self.clock_label.setText(time_str)
         if hasattr(self, "clock_label"):
-            self.clock_label.setGeometry(self.width() - 280, 8, 270, 28)
+            self.clock_label.setGeometry(self.width() - 320, 8, 275, 28)
             self.clock_label.raise_()
+            
+        if hasattr(self, "cc_label"):
+            self.cc_label.setGeometry(self.width() - 40, 8, 30, 28)
+            self.cc_label.raise_()
             
         # Optional: Announce the time
         if settings.get("announce_time", False) and now.time().second() == 0:
@@ -628,9 +653,11 @@ class SiftaDesktop(QMainWindow):
         super().resizeEvent(event)
         w = self.width()
         if hasattr(self, "clock_label"):
-            self.clock_label.setGeometry(w - 280, 8, 270, 28)
+            self.clock_label.setGeometry(w - 320, 8, 275, 28)
+        if hasattr(self, "cc_label"):
+            self.cc_label.setGeometry(w - 40, 8, 30, 28)
         if hasattr(self, "wallet_label"):
-            self.wallet_label.setGeometry(w - 540, 4, 240, 22)
+            self.wallet_label.setGeometry(w - 580, 4, 240, 22)
         if hasattr(self, "wallet_local_label"):
             self.wallet_local_label.setGeometry(w - 540, 24, 240, 16)
         if hasattr(self, "economy_pulse"):
