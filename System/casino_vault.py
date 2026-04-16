@@ -73,12 +73,6 @@ class CasinoVault:
         from System.stigmergic_memory_bus import StigmergicMemoryBus
         bus = StigmergicMemoryBus(architect_id=self.architect_id)
         minted = bus.total_stgm_earned()
-        
-        # If the user has never mined memory and has 0.0, give them 2.0 STGM to start
-        # so they can at least play 20 hands and understand the physics without being blocked instantly.
-        if minted == 0.0:
-             minted = 2.0 
-             
         return minted + self.player_net
 
     def process_bet(self, amount: float) -> bool:
