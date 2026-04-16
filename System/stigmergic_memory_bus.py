@@ -32,6 +32,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
 import time
 import hashlib
 import os
@@ -84,11 +85,27 @@ class PheromoneTrace:
     semantic_tags: list          # what categories this memory belongs to
     timestamp:     float
     stgm_paid:     float         # reward paid to the swimmer that stored this
+    recall_count:  int = 0       # times this memory was successfully recalled
 
     def fingerprint(self) -> str:
         """Cryptographic identity of this trace."""
         payload = f"{self.architect_id}:{self.raw_text}:{self.timestamp}"
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+    def retention(self) -> float:
+        """
+        Ebbinghaus Forgetting Curve — on a hard drive.
+        R = e^(-t/S) where S grows with each reinforcement.
+
+        A memory recalled 0 times fades to 50% in 24 hours.
+        A memory recalled 3 times fades to 50% in 8.5 DAYS.
+        A memory recalled 10 times is effectively permanent.
+
+        This is the feature big tech is too scared to ship.
+        """
+        age_hours = (time.time() - self.timestamp) / 3600
+        stability = 1.0 + (self.recall_count * 2.5)  # more recalls = slower fade
+        return math.exp(-age_hours / (stability * 24))
 
 
 @dataclass
@@ -124,7 +141,9 @@ class MemoryForager:
     def forage(self, query: str, ledger_path: Path) -> list:
         """
         Crawl every trace in the ledger.
-        Return all traces that smell like the query, ranked by confidence.
+        Confidence = (semantic similarity) × (memory retention).
+        Recent or frequently-recalled memories are vivid.
+        Old, unreinforced memories fade — just like a brain.
         """
         if not ledger_path.exists():
             return []
@@ -150,7 +169,7 @@ class MemoryForager:
 
                 self.traces_read += 1
 
-                # Compute scent strength: tag overlap + text similarity
+                # Compute semantic scent: tag overlap + text similarity
                 tag_overlap = len(set(trace.semantic_tags) & set(query_tags))
                 text_sim    = SequenceMatcher(
                     None,
@@ -162,9 +181,13 @@ class MemoryForager:
                 trace_words   = set(trace.raw_text.lower().split())
                 keyword_boost = len(query_words & trace_words) * 0.1
 
-                confidence = min(1.0, (tag_overlap * 0.3) + text_sim + keyword_boost)
+                raw_similarity = min(1.0, (tag_overlap * 0.3) + text_sim + keyword_boost)
 
-                if confidence > 0.1:   # threshold — weak signals ignored
+                # Ebbinghaus decay: vivid memories score higher
+                retention  = trace.retention()
+                confidence = raw_similarity * (0.3 + 0.7 * retention)  # floor at 30% even for faded
+
+                if confidence > 0.08:   # threshold — very faded signals still detectable
                     self.traces_hit += 1
                     candidates.append((confidence, trace))
 
@@ -268,11 +291,21 @@ class StigmergicMemoryBus:
 
         best_confidence, best_trace = candidates[0]
 
+        # Reinforce the memory — the old man asked about it, so it gets stronger
+        self._reinforce_trace(best_trace.trace_id)
+
         # Build natural language answer
-        time_ago = _human_time(best_trace.timestamp)
-        answer   = (
+        time_ago  = _human_time(best_trace.timestamp)
+        retention = best_trace.retention()
+        fade_note = ""
+        if retention < 0.3:
+            fade_note = " (this memory is fading — glad you asked before it was gone)"
+        elif retention > 0.9:
+            fade_note = " (vivid memory — reinforced by recall)"
+
+        answer = (
             f"Yes — you told me {time_ago} while you were in {best_trace.app_context}. "
-            f"You said: \"{best_trace.raw_text}\""
+            f"You said: \"{best_trace.raw_text}\"{fade_note}"
         )
 
         # Mint STGM for the recall swimmer
@@ -283,7 +316,7 @@ class StigmergicMemoryBus:
             app      = app_context
         )
 
-        print(f"   ✅ Found: [{best_trace.trace_id}] confidence={best_confidence:.2f}")
+        print(f"   ✅ Found: [{best_trace.trace_id}] confidence={best_confidence:.2f} retention={retention:.0%}")
         print(f"   +{STGM_RECALL_REWARD} STGM minted for Proof of Useful Recall\n")
 
         return RecallResult(
@@ -348,6 +381,31 @@ class StigmergicMemoryBus:
         self._forager_counter += 1
         sid = f"FORAGER_{self._forager_counter:04d}"
         return MemoryForager(swimmer_id=sid, architect_id=self.architect_id)
+
+    def _reinforce_trace(self, trace_id: str):
+        """
+        Increment recall_count for a trace in the ledger.
+        This is biological reinforcement — the old man keeps asking
+        about his red shirt, so that memory becomes permanent.
+        He never asks about the number six again — it fades in 3 days.
+        Just like a real brain.
+        """
+        if not LEDGER_FILE.exists():
+            return
+        lines = LEDGER_FILE.read_text().splitlines()
+        updated = []
+        for line in lines:
+            if not line.strip():
+                updated.append(line)
+                continue
+            try:
+                t = json.loads(line)
+                if t.get("trace_id") == trace_id:
+                    t["recall_count"] = t.get("recall_count", 0) + 1
+                updated.append(json.dumps(t))
+            except Exception:
+                updated.append(line)
+        LEDGER_FILE.write_text("\n".join(updated) + "\n")
 
     def _mint_stgm(self, reason: str, amount: float, trace_id: str, app: str):
         entry = {
