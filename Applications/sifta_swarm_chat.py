@@ -609,6 +609,54 @@ class SwarmChatWindow(QWidget):
             self.factory_worker.build_failed.connect(self._on_factory_failure)
             self.factory_worker.start()
             return
+            
+        # ── CRUCIBLE SANDBOX COMMANDS ───────────────────────────────────
+        sandbox_match = re.match(r'^sandbox:\s*(\w+)', text, re.IGNORECASE)
+        if sandbox_match:
+            slug = sandbox_match.group(1).strip()
+            crucible_path = _REPO / "System" / "Crucible" / f"{slug}.py"
+            if crucible_path.exists():
+                self.add_bubble(f"🧪 Launching {slug} from Crucible...", "CRUCIBLE", False, "#e0af68")
+                import subprocess
+                subprocess.Popen([sys.executable, str(crucible_path)])
+            else:
+                self.add_bubble(f"❌ {slug}.py not found in Crucible.", "CRUCIBLE", False, "#f7768e")
+            return
+            
+        approve_match = re.match(r'^approve:\s*(\w+)', text, re.IGNORECASE)
+        if approve_match:
+            slug = approve_match.group(1).strip()
+            crucible_path = _REPO / "System" / "Crucible" / f"{slug}.py"
+            swimmer_path = _REPO / "Applications" / "swimmer_built" / f"{slug}.py"
+            if crucible_path.exists():
+                swimmer_path.parent.mkdir(parents=True, exist_ok=True)
+                crucible_path.rename(swimmer_path)
+                
+                # We need to register it
+                from System.swimmer_app_factory import _register_manifest, _extract_class_info
+                info = _extract_class_info(swimmer_path.read_text())
+                if info:
+                    _register_manifest(info["app_name"], info["class_name"], f"{slug}.py")
+                    self.add_bubble(f"✅ Approved! {info['app_name']} is now in the desktop menu.", "CRUCIBLE", False, "#9ece6a")
+                else:
+                    self.add_bubble(f"⚠️ Moved to swimmer_built, but failed to parse class name for manifest.", "CRUCIBLE", False, "#e0af68")
+            else:
+                self.add_bubble(f"❌ {slug}.py not found in Crucible.", "CRUCIBLE", False, "#f7768e")
+            return
+            
+        reject_match = re.match(r'^reject:\s*(\w+)\s+(.+)', text, re.IGNORECASE)
+        if reject_match:
+            slug = reject_match.group(1).strip()
+            reason = reject_match.group(2).strip()
+            crucible_path = _REPO / "System" / "Crucible" / f"{slug}.py"
+            if crucible_path.exists():
+                crucible_path.unlink()
+            
+            self.add_bubble(f"🚫 Rejected {slug}. Rebuilding with feedback: {reason}", "CRUCIBLE", False, "#f7768e")
+            # Auto-trigger new build
+            self.input_field.setPlainText(f"build: {slug.replace('_', ' ')} — IMPORTANT FEEDBACK FROM PREVIOUS BUILD: {reason}")
+            self.transmit()
+            return
 
         if "SWARM" in target or "GROUP" in target:
             self.transmit_btn.setEnabled(False)

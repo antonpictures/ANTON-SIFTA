@@ -32,6 +32,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 APPS_DIR = _REPO / "Applications" / "swimmer_built"
+CRUCIBLE_DIR = _REPO / "System" / "Crucible"
 MANIFEST_PATH = _REPO / "Applications" / "apps_manifest.json"
 
 # ── Security Blocklist ─────────────────────────────────────────────────────
@@ -300,8 +301,9 @@ class AppFactoryWorker(QThread):
             filename = f"{slug}.py"
             filepath = APPS_DIR / filename
 
-            # ── 7. Write file ───────────────────────────────────────
-            APPS_DIR.mkdir(parents=True, exist_ok=True)
+            # ── 7. Write to Crucible Sandbox ─────────────────────────
+            CRUCIBLE_DIR.mkdir(parents=True, exist_ok=True)
+            filepath = CRUCIBLE_DIR / filename
             filepath.write_text(code + "\n", encoding="utf-8")
 
             # ── 8. Import test ──────────────────────────────────────
@@ -311,17 +313,18 @@ class AppFactoryWorker(QThread):
                 filepath.unlink(missing_ok=True)  # Clean up broken file
                 continue
 
-            # ── 9. Register in manifest ─────────────────────────────
-            _register_manifest(app_name, class_name, filename)
+            # ── 9. Skip Manifest (Wait for Approval) ────────────────
+            # We do NOT call _register_manifest here. The app stays in
+            # the Crucible until the Architect explicitly approves it.
 
             # ── 10. Mint STGM ───────────────────────────────────────
             _mint_stgm(app_name, self.model)
 
             self.build_complete.emit(
-                f"✅ App '{app_name}' built and registered!\n"
-                f"📁 File: Applications/swimmer_built/{filename}\n"
-                f"🎮 Open it from Programs > Swimmer Built.\n"
-                f"💰 STGM minted for the work."
+                f"✅ App '{app_name}' built and placed in the Crucible Sandbox.\n"
+                f"🧪 Type `sandbox {slug}` to test it.\n"
+                f"✅ Type `approve {slug}` to add it to your Programs menu.\n"
+                f"❌ Type `reject {slug} <reason>` to delete and rebuild."
             )
             return
 
