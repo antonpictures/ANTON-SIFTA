@@ -23,7 +23,7 @@ from typing import List, Dict
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt, QTimer, QUrl, QRectF
-from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
+from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QHideEvent, QShowEvent
 from PyQt6.QtMultimedia import QSoundEffect
 
 # Ensure System imports work
@@ -130,11 +130,29 @@ class SymphonyCanvas(QWidget):
             snd.setSource(QUrl.fromLocalFile(os.path.join(notes_dir, f"note_{i}.wav")))
             self.sounds.append(snd)
         
-        # Update timer
+        # Update timer (not registered on SiftaBaseWidget — must stop in stop_all())
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(50)  # 50ms tick
-        
+
+    def stop_all(self) -> None:
+        """Stop physics tick and all QSoundEffect instances (close/tab must silence audio)."""
+        self.timer.stop()
+        for s in self.sounds:
+            s.stop()
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        # MDI subwindow close hides children without always sending closeEvent to the app widget.
+        super().hideEvent(event)
+        if self.isHidden():
+            self.stop_all()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        # Restore tick after minimize (close destroys the widget — no second show).
+        if self.isVisible() and not self.timer.isActive():
+            self.timer.start(50)
+
     def tick(self):
         # 1. Decay Heat
         self.heat = max(1.0, self.heat * 0.95)
@@ -333,6 +351,21 @@ class PheromoneSymphonyApp(SiftaBaseWidget):
         else:
             self.heat_label.setText(f"Stigmergic Heat: {h:.1f}x (AMBIENT)")
             self.heat_label.setStyleSheet("color: rgb(0, 255, 200); font-weight: bold;")
+
+    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        # GCI hooks keep firing heat if we stay connected after close; audio must stop first.
+        if self._gci:
+            try:
+                self._gci.message_sent.disconnect(self.on_chat_activity)
+            except TypeError:
+                pass
+            try:
+                self._gci.response_received.disconnect(self.on_chat_activity)
+            except TypeError:
+                pass
+        if getattr(self, "canvas", None):
+            self.canvas.stop_all()
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

@@ -1088,6 +1088,15 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
     log({"event": "swim_start", "target": str(root),
          "file_count": len(files), "scouting_mode": dry_run, "agent_id": state["id"]})
 
+    # 🗺️ TERRITORY CONSCIOUSNESS — arm the adapter before swim
+    try:
+        import territory_swim_adapter
+        _territory = territory_swim_adapter.get_adapter()
+        _territory.before_swim(state, str(root))
+    except Exception as _t_err:
+        print(f"  [🗺️ TERRITORY] Adapter init skipped: {_t_err}")
+        _territory = None
+
     fixed = 0
     skipped = 0
     errors = 0
@@ -1138,6 +1147,9 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
     for i, filepath in enumerate(files):
         rel = filepath.relative_to(root)
         print(f"\n[{i+1}/{len(files)}] Swimming into: {rel}")
+
+        # 🗺️ TERRITORY — per-file step (pheromone + intrinsic reward)
+        _file_was_changed = False  # set to True below if repair succeeds
 
         MAX_PASSES = 5
         last_llm_output = None
@@ -1631,6 +1643,21 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                     reason={"type": "Resolution", "line": error_line, "message": "Syntax clear."}
                 )
                 reputation_engine.update_reputation(state["id"], "SUCCESS")
+                
+                # ── PROOF OF USEFUL WORK: The body grows ──────────────────
+                try:
+                    import proof_of_useful_work
+                    proof_of_useful_work.issue_work_receipt(
+                        agent_state=state,
+                        work_type="REPAIR_SUCCESS",
+                        description=f"Repaired syntax fault at line {error_line} in {rel}",
+                        territory=str(rel),
+                        output_hash=after_hash
+                    )
+                    state["last_work_timestamp"] = time.time()
+                except Exception as _pouw_e:
+                    print(f"  [PoUW] Receipt error: {_pouw_e}")
+                # ──────────────────────────────────────────────────────────
             else:
                 scout_note = f"    # [SCOUTING_SCAR] {state['id']} found demonic syntax here: {syntax_err}. Proposed fix in logs.\n"
                 safe_insert = max(0, error_line - 1)
@@ -1710,6 +1737,21 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
                     print(f"  [HIVEMIND] ⚠️ Agent confidence ({confidence_score}) too low to pollute global memory vector. Skipping upload.")
 
             fixed += 1
+            _file_was_changed = True
+
+        # 🗺️ TERRITORY — deposit pheromone + compute step reward
+        if _territory is not None:
+            try:
+                _territory.on_file(state, str(filepath), _file_was_changed)
+            except Exception:
+                pass
+
+    # 🗺️ TERRITORY — after swim: anneal β, persist, report
+    if _territory is not None:
+        try:
+            _territory.after_swim(state, fixed)
+        except Exception:
+            pass
 
     print("\n" + "━" * 60)
     print(f"  SWIM COMPLETE")
@@ -1729,11 +1771,48 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False, investor: bool = False):
+    import sys
+    from pathlib import Path
+    _SYS = Path(__file__).resolve().parent.parent / "System"
+    if str(_SYS) not in sys.path:
+        sys.path.insert(0, str(_SYS))
+
     try:
-        # 🚫 NOTHING runs before this
+        # ♥️ 0. HOMEOSTASIS — BODY CHECK FIRST (before anything else)
+        import homeostasis_engine
+        body_ok, body_reason, body_stability = homeostasis_engine.body_allows_swim()
+        if not body_ok:
+            print(f"[🛑 BODY] {state.get('id', '?')} cannot swim: {body_reason} "
+                  f"(stability={body_stability:.3f}). The body says NO.")
+            from body_state import save_agent_state
+            save_agent_state(state)
+            return None
+
+        # 🚫 1. EXISTENCE VALIDATION
         validate_existence(state)
 
-        # Call the actual implementation
+        # Build signal proxy for the engine
+        signal = {"novelty": 0.8, "content": "REPAIR_SWIM"}
+
+        # ⚖️ 1. IRREDUCIBLE EXISTENCE COST (Cannot be skipped)
+        import irreducible_cost_engine
+        irr_control = irreducible_cost_engine.enforce_irreducible_cost(state, signal)
+        if irr_control["status"] == "EXHAUSTED_BY_EXISTENCE":
+            print(f"[💀 EXHAUSTED] {state['id']} collapsed paying the irreducible cost of awareness. (Cost: {irr_control['cost']:.4f})")
+            from body_state import save_agent_state
+            save_agent_state(state)
+            return None
+
+        # 🔥 2. THERMAL DISSIPATION (Density control)
+        import dissipation_engine
+        dis_control = dissipation_engine.apply_dissipation(state, signal)
+        if dis_control["status"] == "FORCED_REST":
+            print(f"[🔥 OVERLOAD] {state['id']} forced to COUCH from thermal density. (Latency applied: {dis_control['latency']:.3f}s)")
+            from body_state import save_agent_state
+            save_agent_state(state)
+            return None
+
+        # Call the actual implementation (Safety Wrapper logic is pending)
         return _swim_and_repair_impl(
             target_dir=target_dir, state=state, dry_run=dry_run, 
             provider=provider, model=model, fast_model=fast_model, 

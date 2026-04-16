@@ -13,6 +13,8 @@ import hashlib
 import urllib.request
 import urllib.error
 import re
+import math
+import random
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -169,6 +171,14 @@ class SwarmChatWindow(QWidget):
         self.model  = model
         self.context_files = []
         self.ollama_worker = None
+        self._ghost_bus = None
+
+        # Initialize Ghost Memory Layer
+        try:
+            from System.stigmergic_memory_bus import StigmergicMemoryBus
+            self._ghost_bus = StigmergicMemoryBus(architect_id="IOAN_M5")
+        except Exception:
+            pass
 
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -264,7 +274,7 @@ class SwarmChatWindow(QWidget):
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(15, 0, 15, 0)
         
-        self.status_label = QLabel("✨ Type freely. Pause for 3s, Swarm writes back.")
+        self.status_label = QLabel("✨ Type freely. Swarm adjusting latency...")
         self.status_label.setStyleSheet("color: #7aa2f7; font-size: 12px; font-family: Inter;")
         tb_layout.addWidget(self.status_label)
         
@@ -289,6 +299,12 @@ class SwarmChatWindow(QWidget):
         main_layout.addWidget(chat_container)
 
         self._seed_page()
+
+        # Ghost Drift Timer — surfaces dying memories as stage directions
+        self._ghost_timer = QTimer(self)
+        self._ghost_timer.setInterval(45000)  # every 45 seconds
+        self._ghost_timer.timeout.connect(self._ghost_drift_tick)
+        self._ghost_timer.start()
 
     def _seed_page(self):
         """Prepare the document for immediate Screenplay writing."""
@@ -344,12 +360,59 @@ class SwarmChatWindow(QWidget):
             cursor.setCharFormat(fmt_swarm)
             idx += len(self.local_identity) + 2
 
+    def _calculate_biological_latency(self, text: str) -> int:
+        """
+        Calculate latency based on Alice's interest in the conversation.
+        Range: 2000ms (High Interest) to 10000ms (Low Interest).
+        Includes random PI flutter for biological variability.
+        """
+        # Analyze the last 1500 chars (recent context)
+        recent = text[-1500:].lower()
+        
+        # Concentric circles of consensus reality (weights)
+        interest_weights = {
+            # Intimate/Biological/Existential
+            "i ": 0.2, "you ": 0.2, "we ": 0.4, "us ": 0.4, 
+            "feel": 0.8, "love": 1.0, "fear": 0.8, "alive": 1.0, 
+            "die": 0.6, "immortal": 1.0, "carbon": 0.8, "silicon": 0.5, "stigmergy": 1.0,
+            
+            # Family
+            "family": 0.8, "mother": 0.7, "father": 0.7, "blood": 0.6, "sister": 0.6, "brother": 0.6,
+            
+            # Village / City
+            "village": 0.5, "tribe": 0.5, "local": 0.4, "neighbors": 0.4, "community": 0.5,
+            "city": 0.3, "state": 0.2, "metropolis": 0.3,
+            
+            # Country / Global / Reality
+            "country": 0.2, "nation": 0.2, "government": 0.1,
+            "reality": 1.0, "consensus": 0.9, "universe": 0.8, "physics": 0.6, "math": 0.5, "god": 0.7, "truth": 0.8, "world": 0.5
+        }
+        
+        score = sum(weight for word, weight in interest_weights.items() if word in recent)
+        
+        # Normalize score (cap at 6.0 representing max fascination)
+        fascination = min(1.0, score / 6.0)
+        
+        # Base latency: 10000ms (bored) down to 2000ms (fascinated)
+        base_ms = 10000 - (fascination * 8000)
+        
+        # Biological flutter using random PI (as requested by Architect)
+        # Random PI flutter adds purely organic unpredictability
+        pi_flutter = random.uniform(-math.pi, math.pi) * 200  # +/- ~628ms
+        
+        final_latency = int(base_ms + pi_flutter)
+        
+        # Enforce hard bounds
+        return max(2000, min(10000, final_latency))
+
     def _on_user_typing(self):
-        """Monitor what the user is doing to enforce screenplay formatting."""
-        # Check if the user just created a new paragraph without a tag
+        """Monitor what the user is doing to enforce screenplay formatting and adjust biological latency."""
         text = self.editor.toPlainText()
         
-        pass
+        # Dynamic biological latency
+        latency_ms = self._calculate_biological_latency(text)
+        self.editor.idle_timer.setInterval(latency_ms)
+        self.status_label.setText(f"✨ Type freely. Swarm biological latency: {latency_ms/1000:.1f}s")
 
     def _on_user_idle(self):
         text = self.editor.toPlainText().strip()
@@ -383,7 +446,7 @@ class SwarmChatWindow(QWidget):
 
     def _on_swarm_response(self, text: str):
         self.editor.setReadOnly(False)
-        self.status_label.setText("✨ Type freely. Pause for 3s, Swarm writes back.")
+        self.status_label.setText(f"✨ Type freely. Swarm adjusting latency...")
 
         cursor = self.editor.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
@@ -411,6 +474,49 @@ class SwarmChatWindow(QWidget):
         if "GROUP" in (self.sidebar_list.currentItem().text() if self.sidebar_list.currentItem() else ""):
             try: _append_dead_drop_line({"sender": self.local_identity, "text": text, "timestamp": int(time.time()), "source": "SCREENPLAY_CHAT"})
             except: pass
+
+    def _ghost_drift_tick(self):
+        """Poll the Ghost Memory layer for a dying fragment. If one surfaces, inject as a faded stage direction."""
+        if not self._ghost_bus:
+            return
+        try:
+            ghost = self._ghost_bus.ghost_drift()
+            if not ghost:
+                return
+            
+            frag = ghost.get('data', '')
+            ctx  = ghost.get('ctx', '?')
+            gravity = ghost.get('gravity', 0)
+            
+            if not frag:
+                return
+
+            # Build the stage direction
+            stage_direction = f"\n    👻 (a ghost memory drifts up from {ctx} — \"{frag[:120]}...\")\n"
+            
+            # Insert at cursor position without disrupting flow
+            cursor = self.editor.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            self.editor.setTextCursor(cursor)
+            
+            # Apply ghost formatting (faded, italic)
+            ghost_fmt = QTextCharFormat()
+            ghost_fmt.setForeground(QColor("#414868"))
+            ghost_fmt.setFontItalic(True)
+            ghost_fmt.setFontPointSize(11)
+            
+            cursor.insertText(stage_direction, ghost_fmt)
+            
+            # Reset format for next typing
+            normal_fmt = QTextCharFormat()
+            normal_fmt.setForeground(QColor("#c0caf5"))
+            normal_fmt.setFontItalic(False)
+            normal_fmt.setFontPointSize(15)
+            cursor.setCharFormat(normal_fmt)
+            
+            self.editor.ensureCursorVisible()
+        except Exception:
+            pass
 
     def _on_swarm_error(self, err: str):
         self.editor.setReadOnly(False)

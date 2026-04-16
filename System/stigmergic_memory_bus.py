@@ -305,6 +305,27 @@ class StigmergicMemoryBus:
             except Exception:
                 pass
 
+        # ── PROOF OF USEFUL WORK: storing a memory IS an act of existence ──
+        try:
+            from System.proof_of_useful_work import issue_work_receipt
+            # The memory bus acts on behalf of a virtual forager
+            _forager_state = {
+                "id": f"MEMORY_SWIMMER_{self.architect_id}",
+                "work_chain": [],
+                "useful_work_score": 0.5,
+                "last_work_timestamp": time.time()
+            }
+            issue_work_receipt(
+                agent_state=_forager_state,
+                work_type="MEMORY_STORE",
+                description=f"Stored memory from {app_context}: {text[:80]}",
+                territory=app_context,
+                output_hash=tid
+            )
+        except Exception:
+            pass
+        # ───────────────────────────────────────────────────────────────────
+
         return trace
 
     def recall(self, query: str, app_context: str) -> RecallResult:
@@ -360,7 +381,28 @@ class StigmergicMemoryBus:
         )
 
         print(f"   ✅ Found: [{best_trace.trace_id}] confidence={best_confidence:.2f} retention={retention:.0%}")
-        print(f"   +{STGM_RECALL_REWARD} STGM minted for Proof of Useful Recall\n")
+        print(f"   +{STGM_RECALL_REWARD} STGM minted for Proof of Useful Recall")
+
+        # ── PROOF OF USEFUL WORK: recalling across apps = verified act ──
+        try:
+            from System.proof_of_useful_work import issue_work_receipt
+            _forager_state = {
+                "id": f"MEMORY_SWIMMER_{self.architect_id}",
+                "work_chain": [],
+                "useful_work_score": 0.5,
+                "last_work_timestamp": time.time()
+            }
+            issue_work_receipt(
+                agent_state=_forager_state,
+                work_type="MEMORY_RECALL",
+                description=f"Cross-app recall from {best_trace.app_context} to {app_context}",
+                territory=app_context,
+                output_hash=best_trace.trace_id
+            )
+        except Exception:
+            pass
+        # ─────────────────────────────────────────────────────────────────
+
 
         return RecallResult(
             found          = True,

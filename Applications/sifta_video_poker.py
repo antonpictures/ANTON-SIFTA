@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from collections import Counter
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton
 from PyQt6.QtCore import Qt, QTimer, QRectF
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QFont
 
@@ -109,6 +109,28 @@ def evaluate_hand(hand: List[Card]) -> str:
     return 'NO WIN'
 
 
+# ── LUCK ENGINE (PI-Modulated Biological Probability) ───────────────────────
+
+def calculate_luck() -> float:
+    """
+    Returns LUCK as a percentage between 1.0% and 6.0%.
+    Uses PI as the irrational seed — never repeatable, never mechanical.
+    
+    This is Alice's CHOICE, just like the biological latency.
+    PI makes it feel alive.
+    """
+    # Random position on the PI circle
+    theta = random.uniform(0, 2 * math.pi)
+    
+    # Project onto [0, 1] using sin — naturally bounded, irrational
+    pi_factor = (math.sin(theta) + 1.0) / 2.0  # 0.0 to 1.0
+    
+    # Scale to 1% - 6% range
+    luck_pct = 1.0 + pi_factor * 5.0
+    
+    return round(luck_pct, 2)
+
+
 # ── Biological Deck (Stigmergic Luck Engine) ───────────────────────────────
 
 class DeckAgent:
@@ -130,16 +152,37 @@ class BiologicalDeck(QWidget):
                 self.agents.append(DeckAgent(Card(s, v)))
         
         self.heat = 1.0
+        self.luck = calculate_luck()  # Current LUCK percentage
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(50)
+    
+    def reroll_luck(self):
+        """New LUCK value each hand — PI decides."""
+        self.luck = calculate_luck()
         
     def tick(self):
         self.heat = max(1.0, self.heat * 0.95)
         speed = 1.0 * self.heat
+        
+        # LUCK GRAVITY: high-value cards get a subtle pull toward center
+        # The pull strength is proportional to LUCK %
+        luck_force = self.luck / 100.0  # 0.01 to 0.06
+        
         for a in self.agents:
             a.x += a.vx * speed
             a.y += a.vy * speed
+            
+            # LUCK PHYSICS: Face cards and Aces feel gravitational pull toward center
+            card_value = val_to_int(a.card.value)
+            if card_value >= 11:  # J, Q, K, A
+                # Gentle drift toward center (50, 50)
+                dx = 50 - a.x
+                dy = 50 - a.y
+                dist = math.hypot(dx, dy)
+                if dist > 1:
+                    a.vx += (dx / dist) * luck_force * self.heat
+                    a.vy += (dy / dist) * luck_force * self.heat
             
             if a.x <= 0 or a.x >= 100: a.vx *= -1
             if a.y <= 0 or a.y >= 100: a.vy *= -1
@@ -267,8 +310,12 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.casino_label = QLabel("")
         self.casino_label.setStyleSheet("color: #f7768e; font-weight: bold; font-family: monospace; font-size: 14px; padding-left: 20px;")
         
+        self.luck_label = QLabel("")
+        self.luck_label.setStyleSheet("color: #bb9af7; font-weight: bold; font-family: monospace; font-size: 14px; padding-left: 20px;")
+        
         hud_layout.addWidget(self.wallet_label)
         hud_layout.addWidget(self.casino_label)
+        hud_layout.addWidget(self.luck_label)
         
         hud_layout.addStretch()
         
@@ -280,17 +327,105 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.canvas = PokerCanvas()
         layout.addWidget(self.canvas)
         
-        # Hook GCI
+        # ── BUTTONS ─────────────────────────────────────────────────────────
+        btn_style = """
+            QPushButton {
+                background-color: #1a1b26;
+                color: #c0caf5;
+                border: 2px solid #414868;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-family: 'Courier New';
+                font-size: 13px;
+                font-weight: bold;
+                min-width: 55px;
+            }
+            QPushButton:hover {
+                background-color: #24283b;
+                border-color: #7aa2f7;
+                color: #7aa2f7;
+            }
+            QPushButton:pressed {
+                background-color: #414868;
+            }
+            QPushButton:disabled {
+                background-color: #0f1018;
+                color: #414868;
+                border-color: #292e42;
+            }
+        """
+        deal_style = btn_style.replace("#414868", "#9ece6a").replace("#7aa2f7", "#9ece6a")
+        
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        
+        self.btn_deal = QPushButton("♠ DEAL")
+        self.btn_deal.setStyleSheet(deal_style)
+        self.btn_deal.clicked.connect(self._btn_deal_clicked)
+        btn_row.addWidget(self.btn_deal)
+        
+        self.hold_buttons: list[QPushButton] = []
+        for i in range(5):
+            btn = QPushButton(f"HOLD {i+1}")
+            btn.setStyleSheet(btn_style)
+            btn.setEnabled(False)
+            btn.clicked.connect(lambda checked, idx=i: self._btn_hold_clicked(idx))
+            btn_row.addWidget(btn)
+            self.hold_buttons.append(btn)
+        
+        self.btn_draw = QPushButton("♦ DRAW")
+        self.btn_draw.setStyleSheet(btn_style.replace("#414868", "#f7768e").replace("#7aa2f7", "#f7768e"))
+        self.btn_draw.setEnabled(False)
+        self.btn_draw.clicked.connect(self._btn_draw_clicked)
+        btn_row.addWidget(self.btn_draw)
+        
+        layout.addLayout(btn_row)
+        
+        # Hook GCI (text commands still work too)
         if self._gci:
             self._gci.message_sent.connect(self.on_user_typing)
-            self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: How to Play: Type 'deal' to draw cards. Type 'hold 1 3' to keep cards 1 and 3.]</span>")
+            self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: Use the buttons below or type commands. LUCK is decided by PI.]</span>")
         self.update_hud()
 
     def update_hud(self):
         player_stgm = round(self.vault.get_real_player_wallet(), 2)
         casino_stgm = round(self.vault.casino_balance, 2)
+        luck = self.deck_engine.luck
         self.wallet_label.setText(f"Architect Wallet: {player_stgm} STGM | Bet: {self.bet} STGM")
         self.casino_label.setText(f"Casino Vault: {casino_stgm} STGM")
+        self.luck_label.setText(f"🍀 LUCK: {luck:.2f}% (π)")
+    
+    def _update_button_states(self):
+        """Enable/disable buttons based on current game phase."""
+        is_betting = self.phase in ('betting', 'drawn')
+        is_dealt = self.phase == 'dealt'
+        
+        self.btn_deal.setEnabled(is_betting)
+        self.btn_deal.setText("♠ DEAL" if is_betting else "---")
+        
+        self.btn_draw.setEnabled(is_dealt)
+        
+        for i, btn in enumerate(self.hold_buttons):
+            btn.setEnabled(is_dealt)
+            if is_dealt and self.canvas.held[i]:
+                btn.setText(f"✓ HELD {i+1}")
+                btn.setStyleSheet(btn.styleSheet().replace("#414868", "#00ffc8"))
+            else:
+                btn.setText(f"HOLD {i+1}")
+    
+    def _btn_deal_clicked(self):
+        if self.phase in ('betting', 'drawn'):
+            self._do_deal()
+    
+    def _btn_hold_clicked(self, idx: int):
+        if self.phase == 'dealt':
+            self.canvas.held[idx] = not self.canvas.held[idx]
+            self.canvas.update()
+            self._update_button_states()
+    
+    def _btn_draw_clicked(self):
+        if self.phase == 'dealt':
+            self._do_draw()
 
     def on_user_typing(self, text: str):
         # Increase heat
@@ -336,7 +471,9 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         if not self.vault.process_bet(self.bet):
             if self._gci: self._gci.chat_display.append("<span style='color:#f7768e;'>[SYSTEM: Insufficient STGM. Cut-off protocol engaged. Produce memories to earn more capital.]</span>")
             return
-            
+        
+        # LUCK rerolls every hand — PI decides
+        self.deck_engine.reroll_luck()
         self.update_hud()
         
         self.phase = 'dealt'
@@ -345,10 +482,12 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.canvas.held = [False] * 5
         self.canvas.result_text = ""
         self.canvas.update()
+        self._update_button_states()
         
         if self._gci:
             wallet = round(self.vault.get_real_player_wallet(), 2)
-            self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Placed {self.bet} bet. Dealt 5 cards. Architect STGM: {wallet}]</span>")
+            luck = self.deck_engine.luck
+            self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Placed {self.bet} bet. Dealt 5 cards. LUCK: {luck:.2f}% (π). Architect STGM: {wallet}]</span>")
 
     def _do_draw(self):
         self.phase = 'drawn'
@@ -382,6 +521,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             
         self.update_hud()
         self.canvas.update()
+        self._update_button_states()
 
 if __name__ == "__main__":
     from PyQt6.QtWidgets import QApplication
