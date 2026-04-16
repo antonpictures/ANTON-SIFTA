@@ -338,6 +338,15 @@ class SwarmChatWindow(QWidget):
         if _node: self.local_identity, self.local_face, self.local_color, self.local_serial = _node[0], _node[1], _node[2], _serial
         else: self.local_identity, self.local_face, self.local_color, self.local_serial = f"NATIVE_SWARM", "[?_?]", "#bb9af7", _serial
 
+        # ── Temporal Spine ──────────────
+        try:
+            from System.temporal_spine import TemporalSpine
+            self.temporal_spine = TemporalSpine(architect_id="IOAN_M5")
+            self.temporal_beat = self.temporal_spine.open_session(app_context="swarm_chat")
+        except Exception:
+            self.temporal_spine = None
+            self.temporal_beat = None
+
         # ── Left Sidebar ───────────────
         sidebar_frame = QFrame()
         sidebar_frame.setFixedWidth(240)
@@ -702,4 +711,16 @@ class SwarmChatWindow(QWidget):
 
     def _change_model(self, model_name):
         self.model = model_name
+
+    def closeEvent(self, event):
+        if self.temporal_spine and self.temporal_beat:
+            try:
+                # Capture the last few words the Architect sent
+                last_words = "session closed"
+                if hasattr(self, 'msg_history') and self.msg_history:
+                    last_words = self.msg_history[-1].get("text", last_words)
+                self.temporal_spine.close_session(self.temporal_beat, last_words=last_words)
+            except Exception:
+                pass
+        super().closeEvent(event)
 
