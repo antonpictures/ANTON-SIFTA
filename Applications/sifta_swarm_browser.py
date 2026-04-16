@@ -58,12 +58,26 @@ AD_DOMAINS = {
     "doubleclick.net", "googlesyndication.com", "googleadservices.com",
     "facebook.com/tr", "analytics.google.com", "pixel.facebook.com",
     "ads.twitter.com", "amazon-adsystem.com", "adnxs.com",
-    "criteo.com", "outbrain.com", "taboola.com", "scorecardresearch.com",
+    "criteo.com", "outbrain.com", "taboola.com", "scorecardresearch.com", "twimg.com"
 }
 AD_CLASS_PATTERNS = re.compile(
     r"(ad[-_]?banner|ad[-_]?slot|sponsored|tracking|cookie[-_]?consent|popup[-_]?overlay)",
     re.IGNORECASE,
 )
+
+THREAT_DB = {
+    "doubleclick": {"who": "Google Marketing", "want": "Cross-site advertising profile", "do": "Targeted ad bidding across the internet."},
+    "googlesyndication": {"who": "Google AdSense", "want": "Page visit context", "do": "Monetizes your attention with dynamic ads."},
+    "facebook": {"who": "Meta Platforms", "want": "Shadow profile tracking", "do": "Maps your browsing habits back to your real identity."},
+    "analytics.google": {"who": "Google Analytics", "want": "Behavioral analytics", "do": "Measures every click and scroll on the website."},
+    "twitter": {"who": "X (Twitter) Syndication", "want": "Social graph correlation", "do": "Links your web browsing to your X engagement profile."},
+    "twimg": {"who": "X (Twitter) Tracking", "want": "Social graph correlation", "do": "Links your web browsing to your X engagement profile."},
+    "amazon": {"who": "Amazon Ads", "want": "Purchase intent", "do": "Pushes retail product ads based on your current reading."},
+    "criteo": {"who": "Criteo Retargeting", "want": "E-commerce history", "do": "Follows you with ads for items you briefly looked at."},
+    "outbrain": {"who": "Outbrain", "want": "Clickbait profiling", "do": "Injects low-quality 'sponsored stories' to map gullibility."},
+    "taboola": {"who": "Taboola", "want": "Clickbait profiling", "do": "Content recommendation driven by outrage/engagement metrics."},
+    "scorecardresearch": {"who": "Comscore", "want": "Demographic fingerprinting", "do": "Sells massive aggregated datasets to market researchers."},
+}
 CONTENT_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "article", "section", "blockquote", "li", "td", "th"}
 HOSTILE_TAGS = {"script", "noscript", "iframe", "object", "embed"}
 MEDIA_TAGS = {"img", "video", "audio", "source", "picture"}
@@ -757,12 +771,26 @@ class SwarmBrowserWidget(SiftaBaseWidget):
             self.text_view.setPlainText("\n\n---\n\n".join(self.canvas.clean_text[-50:]))
         if self.canvas.quarantined:
             lines = []
+            detected_threats = {}
             for i, desc in enumerate(self.canvas.quarantined[-100:], 1):
                 lines.append(f"⛔ #{i}  {desc}")
+                for key, data in THREAT_DB.items():
+                    if key in desc.lower() and key not in detected_threats:
+                        detected_threats[key] = data
+
+            threat_summary = ""
+            if detected_threats:
+                threat_summary = "=== THREAT INTELLIGENCE SUMMARY ===\n"
+                for data in detected_threats.values():
+                    threat_summary += f"▶ WHO: {data['who']}\n  WANTS: {data['want']}\n  DOES: {data['do']}\n\n"
+            else:
+                threat_summary = "=== THREAT INTELLIGENCE SUMMARY ===\n▶ Unknown structural trackers intercepted.\n\n"
+
             header = (f"=== HOSTILE INTERCEPTORS ===\n"
                       f"Trackers neutralized: {len(self.canvas.quarantined)}\n"
                       f"STGM earned from quarantine: "
-                      f"{len(self.canvas.quarantined) * 0.05:.2f}\n\n")
+                      f"{len(self.canvas.quarantined) * 0.05:.2f}\n\n"
+                      f"{threat_summary}")
             self.quarantine_view.setPlainText(header + "\n".join(lines))
         if self._log_lines:
             self.log_view.setPlainText("\n".join(self._log_lines[-100:]))
