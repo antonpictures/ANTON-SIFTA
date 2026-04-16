@@ -480,10 +480,8 @@ class SiftaDesktop(QMainWindow):
         # Cache local serial exactly once for the HUD to avoid `ioreg` spam
         self._local_hw_serial = "UNKNOWN"
         try:
-            import sys, os
-            sys_rt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "System")
-            if sys_rt not in sys.path:
-                sys.path.insert(0, sys_rt)
+            if str(_SYS) not in sys.path:
+                sys.path.insert(0, str(_SYS))
             from silicon_serial import read_apple_serial
             self._local_hw_serial = read_apple_serial()
         except Exception:
@@ -825,6 +823,14 @@ class SiftaDesktop(QMainWindow):
         self._relay_timer.timeout.connect(self._update_relay_indicator)
         self._relay_timer.start(2000)
 
+        btn_power = QPushButton("⏻")
+        btn_power.setStyleSheet(
+            "QPushButton { background: transparent; color: #f7768e; font-weight: bold; border: none; padding: 0 10px; }"
+            "QPushButton:hover { background-color: #24283b; border-radius: 4px; }"
+        )
+        btn_power.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_power.clicked.connect(self.close)
+        
         layout.addWidget(btn_power)
         bar.setLayout(layout)
         return bar
