@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import List, Dict
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt, QTimer, QUrl, QRectF
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
 from PyQt6.QtMultimedia import QSoundEffect
@@ -37,35 +37,36 @@ from System.sifta_base_widget import SiftaBaseWidget
 # ── Audio Synthesizer ───────────────────────────────────────────────────────
 
 NOTES = [
-    220.00,  # A3
     261.63,  # C4
     293.66,  # D4
     329.63,  # E4
+    349.23,  # F4
     392.00,  # G4
     440.00,  # A4
+    493.88,  # B4
     523.25,  # C5
     587.33,  # D5
     659.25,  # E5
+    698.46,  # F5
     783.99,  # G5
     880.00,  # A5
-    1046.50  # C6
+    987.77   # B5
 ]
 
-PENTATONIC_SCALE = [
-    (0, "A3"), (1, "C4"), (2, "D4"), (3, "E4"), (4, "G4"),
-    (5, "A4"), (6, "C5"), (7, "D5"), (8, "E5"), (9, "G5"),
-    (10, "A5"), (11, "C6")
+DIATONIC_SCALE = [
+    (0, "C4"), (1, "D4"), (2, "E4"), (3, "F4"), (4, "G4"), (5, "A4"), (6, "B4"),
+    (7, "C5"), (8, "D5"), (9, "E5"), (10, "F5"), (11, "G5"), (12, "A5"), (13, "B5")
 ]
 
 def synthesize_audio() -> str:
-    """Generates 12 pure sine wave notes in a temporary directory, returning the path."""
+    """Generates 14 pure sine wave notes in a temporary directory, returning the path."""
     tmpdir = Path(tempfile.gettempdir()) / "sifta_audio"
     tmpdir.mkdir(exist_ok=True)
     
     sample_rate = 44100
     duration = 1.0  # 1 second notes
     
-    for idx, (note_idx, name) in enumerate(PENTATONIC_SCALE):
+    for idx, (note_idx, name) in enumerate(DIATONIC_SCALE):
         freq = NOTES[note_idx]
         wav_path = tmpdir / f"note_{idx}.wav"
         if not wav_path.exists():
@@ -124,7 +125,7 @@ class SymphonyCanvas(QWidget):
         
         # Audio Initialization
         self.sounds: List[QSoundEffect] = []
-        for i in range(12):
+        for i in range(14):
             snd = QSoundEffect(self)
             snd.setSource(QUrl.fromLocalFile(os.path.join(notes_dir, f"note_{i}.wav")))
             self.sounds.append(snd)
@@ -169,10 +170,11 @@ class SymphonyCanvas(QWidget):
                 gx, gy = int(a.x), int(a.y)
                 self.pheromones[gx][gy] = min(1.0, self.pheromones[gx][gy] + 0.3)
                 
-        # 3. Pheromone Decay
+        # 3. Pheromone Decay (Fossils >= 5.0 are immune)
         for x in range(self.grid_w):
             for y in range(self.grid_h):
-                if self.pheromones[x][y] > 0:
+                val = self.pheromones[x][y]
+                if val > 0 and val < 5.0:
                     self.pheromones[x][y] *= 0.96 # Exponential decay
                     if self.pheromones[x][y] < 0.01:
                         self.pheromones[x][y] = 0.0
@@ -188,12 +190,12 @@ class SymphonyCanvas(QWidget):
         
     def scan_and_play(self, x_idx: int):
         column = self.pheromones[x_idx]
-        bucket_size = self.grid_h / 12.0
+        bucket_size = self.grid_h / 14.0
         
-        buckets = [0.0] * 12
+        buckets = [0.0] * 14
         for y, val in enumerate(column):
             if val > 0:
-                b_idx = min(11, int(y / bucket_size))
+                b_idx = min(13, int(y / bucket_size))
                 buckets[b_idx] += val
                 
         for i, val in enumerate(buckets):
@@ -204,6 +206,19 @@ class SymphonyCanvas(QWidget):
                     self.sounds[i].stop()
                 self.sounds[i].setVolume(vol)
                 self.sounds[i].play()
+
+    def load_fossil_score(self, score_data: List[tuple]):
+        """Load permanent pheromone scars that do not decay."""
+        bucket_size = self.grid_h / 14.0
+        # Wipe the biological memory
+        self.pheromones = [[0.0 for _ in range(self.grid_h)] for _ in range(self.grid_w)]
+        
+        for x_start, x_end, note_idx in score_data:
+            # Drop Y coordinate right in the middle of the pitch bucket
+            y_center = int((note_idx + 0.5) * bucket_size)
+            for x in range(int(x_start), int(x_end)):
+                if 0 <= x < self.grid_w and 0 <= y_center < self.grid_h:
+                    self.pheromones[x][y_center] = 5.0 # FOSSIL MARKER
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -216,7 +231,10 @@ class SymphonyCanvas(QWidget):
         for x in range(self.grid_w):
             for y in range(self.grid_h):
                 val = self.pheromones[x][y]
-                if val > 0:
+                if val >= 5.0:
+                    # Fossils are solid gold/yellow
+                    painter.fillRect(x * self.cell_sz, y * self.cell_sz, self.cell_sz, self.cell_sz, QColor(255, 215, 0, 255))
+                elif val > 0:
                     # Map to a fiery/cyber green based on intensity
                     r = int(val * 0)
                     g = int(val * 255)
@@ -241,7 +259,7 @@ class PheromoneSymphonyApp(SiftaBaseWidget):
     APP_NAME = "Pheromone Symphony"
 
     def build_ui(self, layout: QVBoxLayout) -> None:
-        self.set_status("Synthesizing audio nodes (Pentatonic)...")
+        self.set_status("Synthesizing audio nodes (Diatonic)...")
         
         # Generate audio files on boot
         notes_dir = synthesize_audio()
@@ -251,6 +269,11 @@ class PheromoneSymphonyApp(SiftaBaseWidget):
         self.heat_label = QLabel("Stigmergic Heat: 1.0x (Ambient)")
         self.heat_label.setStyleSheet("color: rgb(0, 255, 200); font-weight: bold;")
         top_bar.addWidget(self.heat_label)
+        
+        btn_mozart = QPushButton("Load Fossil Pheromones (Mozart K 545)")
+        btn_mozart.clicked.connect(self.load_mozart)
+        top_bar.addWidget(btn_mozart)
+        
         top_bar.addStretch()
         layout.addLayout(top_bar)
         
@@ -266,6 +289,32 @@ class PheromoneSymphonyApp(SiftaBaseWidget):
             
         # UI update timer for heat label
         self.ui_timer = self.make_timer(100, self.update_heat_label)
+
+    def load_mozart(self):
+        # Mozart Sonata K 545 mapped to Diatonic X/Y coordinates
+        # C5=7, E5=9, G5=11, B4=6, D5=8, A5=12, F5=10
+        score = [
+            (0, 8, 7),     # C5
+            (10, 13, 9),   # E5
+            (15, 18, 11),  # G5
+            
+            (20, 23, 6),   # B4
+            (25, 27, 7),   # C5
+            (28, 30, 8),   # D5
+            (31, 38, 7),   # C5
+            
+            (40, 48, 12),  # A5
+            (50, 53, 11),  # G5
+            (55, 58, 7),   # C5
+            
+            (60, 63, 10),  # F5
+            (65, 68, 9),   # E5
+            (70, 78, 8),   # D5
+            
+            (80, 88, 7),   # C5
+        ]
+        self.canvas.load_fossil_score(score)
+        self.set_status("Fossil Pheromones loaded: Mozart Sonata K 545.")
         
     def on_chat_activity(self, text: str):
         # Spike the heat when chat occurs
