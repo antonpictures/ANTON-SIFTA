@@ -131,28 +131,27 @@ class WarehouseStreamWidget(_StreamPanel):
 
 
 class CyborgPanelWidget(QWidget):
-    """Cyborg Organ Simulator — living split-pane with Swarm conversation."""
+    """Cyborg Organ Simulator — split-pane with Stigmergic Writer co-authoring."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         import json
+        import re
         import urllib.request
-        import urllib.error
-        import time
-        import datetime
 
         self._proc: QProcess | None = None
+        self._ghost_worker = None
 
         main_lay = QVBoxLayout(self)
         main_lay.setContentsMargins(0, 0, 0, 0)
 
-        # ── Split: Sim output (left) + Chat (right) ────────────
         from PyQt6.QtWidgets import QSplitter, QTextEdit, QFrame
-        from PyQt6.QtCore import QThread, pyqtSignal
+        from PyQt6.QtCore import QTimer, QThread, pyqtSignal
+        from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QKeyEvent
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # LEFT: Simulation output
+        # ── LEFT: Simulation output ────────────────────────────────
         left = QWidget()
         left_lay = QVBoxLayout(left)
         left_lay.setContentsMargins(8, 8, 4, 8)
@@ -181,52 +180,87 @@ class CyborgPanelWidget(QWidget):
 
         splitter.addWidget(left)
 
-        # RIGHT: Swarm conversation
+        # ── RIGHT: Stigmergic Writer (ghost-text, no send button) ──
         right = QWidget()
         right_lay = QVBoxLayout(right)
         right_lay.setContentsMargins(4, 8, 8, 8)
 
-        chat_title = QLabel("💬 Talk to the Swarm during the test")
-        chat_title.setStyleSheet("color: #bb9af7; font-weight: bold; font-size: 12px;")
-        right_lay.addWidget(chat_title)
+        writer_title = QLabel("📝 Write with the Swarm — just type, pause, Tab to accept")
+        writer_title.setStyleSheet("color: #bb9af7; font-weight: bold; font-size: 11px;")
+        right_lay.addWidget(writer_title)
 
-        self._chat_display = QTextEdit()
-        self._chat_display.setReadOnly(True)
-        self._chat_display.setStyleSheet(
-            "QTextEdit { background: #0d0e17; color: #c0caf5; border: 1px solid #1f2335;"
-            " border-radius: 8px; font-size: 13px; font-family: -apple-system, Inter, sans-serif; padding: 10px; }"
-        )
-        right_lay.addWidget(self._chat_display)
+        # Ghost-text enabled editor (inline class to avoid import issues)
+        _parent_ref = self
 
-        # System greeting
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(300, lambda: self._chat_display.append(
-            '<p style="color: #9ece6a;"><b>SWARM</b> • Cyborg test standing by. '
-            'The pacemaker, cochlear implant and NFC gate are loaded. '
-            'Talk to me while we run the simulation — what do you want to explore?</p>'
-        ))
+        class _CyborgEditor(QTextEdit):
+            def __init__(self):
+                super().__init__()
+                self.ghost_text = ""
+                self.ghost_start_pos = -1
+                self.has_ghost = False
+                self.idle_timer = QTimer(self)
+                self.idle_timer.setSingleShot(True)
+                self.idle_timer.setInterval(3000)
+                self.setFont(QFont("Inter", 14))
+                self.setStyleSheet(
+                    "QTextEdit {"
+                    "  background-color: #0a0b14; color: #c8d0f0;"
+                    "  border: 1px solid #1f2335; border-radius: 8px;"
+                    "  padding: 20px 24px; selection-background-color: #1e3a5f;"
+                    "}"
+                )
+                self.setAcceptRichText(True)
 
-        input_row = QHBoxLayout()
-        self._chat_input = QTextEdit()
-        self._chat_input.setPlaceholderText("Talk to M5Queen about the cyborg test…")
-        self._chat_input.setFixedHeight(50)
-        self._chat_input.setStyleSheet(
-            "QTextEdit { background: #1a1b26; color: #c0caf5; border: 1px solid #414868;"
-            " border-radius: 10px; padding: 8px 12px; font-size: 13px; }"
-            "QTextEdit:focus { border-color: #7aa2f7; }"
-        )
-        input_row.addWidget(self._chat_input)
+            def keyPressEvent(self, event):
+                if event.key() == Qt.Key.Key_Tab and self.has_ghost:
+                    self._accept_ghost()
+                    return
+                if self.has_ghost:
+                    self._dismiss_ghost()
+                self.idle_timer.stop()
+                self.idle_timer.start()
+                super().keyPressEvent(event)
 
-        send_btn = QPushButton("🚀")
-        send_btn.setFixedSize(42, 42)
-        send_btn.setStyleSheet(
-            "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #1a73e8,stop:1 #3282f6);"
-            " color: white; border-radius: 21px; font-size: 18px; }"
-            "QPushButton:hover { background: #5599ff; }"
-        )
-        send_btn.clicked.connect(self._send_chat)
-        input_row.addWidget(send_btn)
-        right_lay.addLayout(input_row)
+            def inject_ghost(self, text):
+                self._dismiss_ghost()
+                cursor = self.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                self.ghost_start_pos = cursor.position()
+                fmt = QTextCharFormat()
+                fmt.setForeground(QColor(100, 110, 140, 120))
+                fmt.setFontItalic(True)
+                cursor.insertText(text, fmt)
+                self.ghost_text = text
+                self.has_ghost = True
+
+            def _accept_ghost(self):
+                if not self.has_ghost:
+                    return
+                cursor = self.textCursor()
+                cursor.setPosition(self.ghost_start_pos)
+                cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+                fmt = QTextCharFormat()
+                fmt.setForeground(QColor(200, 210, 240))
+                fmt.setFontItalic(False)
+                cursor.insertText(self.ghost_text, fmt)
+                self.has_ghost = False
+                self.ghost_text = ""
+                self.ghost_start_pos = -1
+
+            def _dismiss_ghost(self):
+                if not self.has_ghost:
+                    return
+                cursor = self.textCursor()
+                cursor.setPosition(self.ghost_start_pos)
+                cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+                cursor.removeSelectedText()
+                self.has_ghost = False
+                self.ghost_text = ""
+                self.ghost_start_pos = -1
+
+        self._editor = _CyborgEditor()
+        self._editor.idle_timer.timeout.connect(self._on_idle)
+        right_lay.addWidget(self._editor)
 
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
@@ -234,8 +268,18 @@ class CyborgPanelWidget(QWidget):
 
         main_lay.addWidget(splitter)
 
-        # Store references for chat
-        self._ollama_thread = None
+        # Seed the page with a contextual greeting
+        from datetime import datetime
+        seed = (
+            f"# Cyborg Test Log — {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n"
+            "The pacemaker, cochlear implant and NFC gate are loaded. "
+            "Swimmers are deploying with Ed25519-signed commands.\n\n"
+            "---\n\n"
+        )
+        self._editor.setPlainText(seed)
+        cursor = self._editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self._editor.setTextCursor(cursor)
 
         # Auto-start sim
         self._start()
@@ -266,71 +310,67 @@ class CyborgPanelWidget(QWidget):
         self._log.insertPlainText(data)
         self._log.moveCursor(self._log.textCursor().MoveOperation.End)
 
-    def _send_chat(self) -> None:
-        text = self._chat_input.toPlainText().strip()
-        if not text:
+    def _on_idle(self):
+        """Fired 3 seconds after last keystroke — generate ghost text."""
+        if self._editor.has_ghost:
             return
-        self._chat_input.clear()
+        text = self._editor.toPlainText().strip()
+        if len(text) < 20:
+            return
 
-        import datetime
-        ts = datetime.datetime.now().strftime("%H:%M")
-        self._chat_display.append(
-            f'<p style="color: #7aa2f7;"><b>Architect</b> • {ts}<br>{text}</p>'
-        )
+        if self._ghost_worker and self._ghost_worker.isRunning():
+            return
 
-        # Fire Ollama inference in a background thread
         import json
         import urllib.request
+        import re
+        from PyQt6.QtCore import QThread, pyqtSignal
 
-        class _OllamaChat(QThread):
-            response_ready = pyqtSignal(str)
-            error_signal = pyqtSignal(str)
-            def __init__(self, prompt, parent=None):
+        class _GhostWorker(QThread):
+            ghost_ready = pyqtSignal(str)
+            def __init__(self, context, parent=None):
                 super().__init__(parent)
-                self.prompt = prompt
+                self.context = context
             def run(self):
                 try:
-                    payload = json.dumps({
-                        "model": "qwen3:4b",
-                        "prompt": self.prompt,
-                        "system": (
-                            "You are M5Queen, a sovereign swarm intelligence controlling a cyborg organ simulator. "
-                            "You manage a pacemaker, cochlear implant, and NFC gate via cryptographically signed swimmers. "
-                            "The Architect is talking to you during a live test. Be conversational, warm, and knowledgeable "
-                            "about the cyborg systems. Keep replies SHORT (2-4 sentences)."
-                        ),
-                        "stream": False
+                    prompt = (
+                        "You are a co-author inside a cyborg organ test log. "
+                        "The human is writing notes during a live pacemaker/cochlear/NFC simulation. "
+                        "Continue their text naturally. Write 1-2 sentences MAX. "
+                        "Match their tone. DO NOT repeat what they wrote. "
+                        "DO NOT use quotes or explain yourself. Just continue.\n\n"
+                        f"Text so far:\n{self.context[-1500:]}\n\nContinue:"
+                    )
+                    data = json.dumps({
+                        "model": "gemma4:latest",
+                        "prompt": prompt,
+                        "stream": False,
+                        "temperature": 0.5,
+                        "num_predict": 80,
                     }).encode("utf-8")
                     req = urllib.request.Request(
                         "http://127.0.0.1:11434/api/generate",
-                        data=payload,
+                        data=data,
                         headers={"Content-Type": "application/json"},
-                        method="POST"
                     )
-                    with urllib.request.urlopen(req, timeout=120) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        self.response_ready.emit(data.get("response", "[EMPTY]"))
-                except Exception as e:
-                    self.error_signal.emit(str(e))
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        result = json.loads(resp.read().decode("utf-8"))
+                        text = result.get("response", "").strip()
+                        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+                        if text:
+                            self.ghost_ready.emit(text)
+                except Exception:
+                    pass
 
-        self._ollama_thread = _OllamaChat(text, self)
-        self._ollama_thread.response_ready.connect(self._on_chat_response)
-        self._ollama_thread.error_signal.connect(self._on_chat_error)
-        self._ollama_thread.start()
+        self._ghost_worker = _GhostWorker(text, self)
+        self._ghost_worker.ghost_ready.connect(self._on_ghost_ready)
+        self._ghost_worker.start()
 
-    def _on_chat_response(self, text: str) -> None:
-        import datetime
-        ts = datetime.datetime.now().strftime("%H:%M")
-        self._chat_display.append(
-            f'<p style="color: #9ece6a;"><b>M5Queen</b> • {ts}<br>{text}</p>'
-        )
-        sb = self._chat_display.verticalScrollBar()
-        sb.setValue(sb.maximum())
-
-    def _on_chat_error(self, err: str) -> None:
-        self._chat_display.append(
-            f'<p style="color: #f7768e;"><b>ERROR</b><br>{err}</p>'
-        )
+    def _on_ghost_ready(self, suggestion: str):
+        if not suggestion:
+            return
+        if not self._editor.idle_timer.isActive():
+            self._editor.inject_ghost(" " + suggestion)
 
     def closeEvent(self, event) -> None:
         if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:
