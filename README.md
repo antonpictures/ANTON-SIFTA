@@ -21,6 +21,22 @@ python3 sifta_os_desktop.py
 
 ---
 
+## Recent updates (April 2026)
+
+Shipped in this window:
+
+- **Global Cognitive Interface (GCI)** — Single `_SwarmMeshClientWorker` WebSocket to the Swarm Relay (same connection as the taskbar relay pill). `[PRELOAD]` uses a debounced preload so typing does not spam the chat. **Ghost Memory drift** surfaces in-chat as `[DRIFT · turn|idle]` with idle checks every few minutes; footer shows cold-storage **ghost** line count. Desktop `spawn_native_widget` resolves apps from the repo root.
+- **UI splitters** — `System/splitter_utils.balance_horizontal_splitter()` so side panels (logs, GCI) are not collapsed at width zero; applied across base widget and applications.
+- **Pheromone Symphony** — Closing the music app or MDI tab **stops** `QSoundEffect` playback and the physics timer (silence on `hideEvent` / shutdown).
+- **Swarm Finance** — `Kernel/` on `sys.path` so `inference_economy` imports when launching the finance app.
+- **Memory bus** — Proof-of-useful-work receipts (`System/proof_of_useful_work.py`) on memory store and recall (alongside existing STGM mints).
+- **Neural Gate non-proliferation** — Automated doctrine checks in `tests/test_neural_gate_doctrine.py` for keyword filter and `authorize()` accept/reject paths.
+- **Docs** — Ghost Memory design notes in `Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md` (planning narrative; implementation in `System/ghost_memory.py`).
+
+**GitHub release:** `v4.0` distribution zip (`ANTON-SIFTA-v4.0.zip`) on the Releases page.
+
+---
+
 ## 🔬 Novel Contributions — What No Other System Has
 
 If you are a researcher, engineer, or reviewer: this section describes the specific technical novelties. Each item below represents a capability that does not exist in LangChain, AutoGPT, CrewAI, DSPy, or any production multi-agent framework as of April 2026.
@@ -99,6 +115,7 @@ SIFTA/
 │   ├── ghost_memory.py                 # Emotional cold-storage layer
 │   ├── context_preloader.py            # Anticipatory cognition brainstem
 │   ├── sifta_base_widget.py            # Standard OS widget chrome
+│   ├── splitter_utils.py               # QSplitter pane balance (no zero-width side panels)
 │   ├── swarm_relay.py                  # Layer 2 WebSocket mesh relay
 │   └── ...
 │
