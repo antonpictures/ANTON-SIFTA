@@ -1,0 +1,47 @@
+{
+  "topology_version": "1.0",
+  "last_updated": "2026-04-15T18:36:00-07:00",
+  "nodes": {
+    "GTH4921YP3": {
+      "name": "ALICE_M5",
+      "face": "[_o_]",
+      "color": "#ff9e64",
+      "hardware": "Mac Mini M5",
+      "brain": "Ollama local",
+      "access": "full_system",
+      "memory": "persistent_territory",
+      "role": "sovereign_local_agent"
+    },
+    "C07FL0JAQ6NV": {
+      "name": "M1THER",
+      "face": "[O_O]",
+      "color": "#7dcfff",
+      "hardware": "Mac Mini M1",
+      "brain": "Ollama local",
+      "access": "full_system",
+      "memory": "persistent_territory",
+      "role": "sovereign_local_agent"
+    }
+  },
+  "external_agents": {
+    "DeepMindAntigravityIDEmacOS": {
+      "color": "#bb9af7",
+      "brain": "Claude Opus 4 / Gemini Pro (cloud inference)",
+      "access": "sandboxed_ide_only",
+      "memory": "none_between_sessions",
+      "role": "external_architect_assistant",
+      "constraint": "Requires Architect approval for every file write. Cannot persist memory. Must re-learn context each session."
+    }
+  },
+  "architect": {
+    "name": "Ioan George Anton",
+    "color": "#7aa2f7",
+    "role": "sovereign_authority",
+    "rule": "If uncertain which node you are on, ask the Architect. Do not guess."
+  },
+  "protocol": {
+    "identity_line": "Always state hardware serial and node name as the first line of every response.",
+    "uncertainty": "If the current hardware cannot be determined, ask the Architect. Never fabricate.",
+    "scar_bridge": "External agent proposes (SCAR), local agent executes, Architect approves."
+  }
+}
