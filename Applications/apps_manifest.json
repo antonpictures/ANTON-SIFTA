@@ -143,8 +143,8 @@
   },
   "SIFTA NLE": {
     "category": "Creative",
-    "entry_point": "Applications/sifta_nle_widget.py",
-    "widget_class": "NLEWidget",
+    "entry_point": "Applications/sifta_nle.py",
+    "widget_class": "NLEWindow",
     "window_width": 1440,
     "window_height": 920,
     "signature": "UNVERIFIED"

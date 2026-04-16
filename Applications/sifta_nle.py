@@ -41,6 +41,8 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "System"))
 
+from System.sifta_base_widget import SiftaBaseWidget
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QSlider, QFrame, QSplitter, QFileDialog,
@@ -1405,13 +1407,34 @@ class PheromoneMatrixCanvas(QWidget):
 #  MAIN WINDOW
 # ═══════════════════════════════════════════════════════════════════
 
-class NLEWindow(QMainWindow):
-    def __init__(self):
+class _RenderWorker(QThread):
+    finished_render = pyqtSignal(str)
+    error_render = pyqtSignal(str)
+
+    def __init__(self, cmd: List[str], output_path: str):
         super().__init__()
-        self.setWindowTitle("SIFTA NLE — Stigmergic Swarm Cut Studio")
+        self.cmd = cmd
+        self.output_path = output_path
+
+    def run(self):
+        try:
+            proc = subprocess.run(self.cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if proc.returncode == 0:
+                self.finished_render.emit(self.output_path)
+            else:
+                # Get the last 3 lines of ffmpeg error
+                err_lines = proc.stderr.strip().split("\n")[-3:]
+                self.error_render.emit(" | ".join(err_lines))
+        except Exception as e:
+            self.error_render.emit(str(e))
+
+
+class NLEWindow(SiftaBaseWidget):
+    APP_NAME = "Stigmergic NLE (Sebastian)"
+    
+    def build_ui(self, main: QVBoxLayout) -> None:
         self.setMinimumSize(1400, 900)
-        self.setStyleSheet("""
-            QMainWindow { background: rgb(8, 10, 18); }
+        self.setStyleSheet(self.styleSheet() + """
             QWidget { background: transparent; color: rgb(200, 210, 240); }
             QGroupBox {
                 border: 1px solid rgb(45, 42, 65);
@@ -1501,36 +1524,14 @@ class NLEWindow(QMainWindow):
             }
         """)
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        main = QVBoxLayout(central)
-        main.setContentsMargins(6, 6, 6, 6)
-        main.setSpacing(4)
-
-        # ── Title ─────────────────────────────────────────────────
-        title_bar = QHBoxLayout()
-        title = QLabel("🎬 SIFTA NLE — Stigmergic Swarm Cut Studio")
-        title.setFont(QFont("Menlo", 14, QFont.Weight.Bold))
-        title.setStyleSheet("color: rgb(0,255,200); padding: 2px;")
-        title_bar.addWidget(title)
-        title_bar.addStretch()
-
-        # Status
-        self.status_label = QLabel("Ready — load files or DEMO")
-        self.status_label.setStyleSheet("color: rgb(100,105,130); font-size: 10px;")
-        title_bar.addWidget(self.status_label)
-
-        btn_help = QPushButton("?")
-        btn_help.setObjectName("btnHelp")
-        btn_help.setToolTip("Help — SIFTA NLE")
-        btn_help.clicked.connect(self._show_help_dialog)
-        title_bar.addWidget(btn_help)
-
-        main.addLayout(title_bar)
-
         # ── Toolbar ───────────────────────────────────────────────
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
+
+        # Status Label (Moved from original title bar)
+        self.status_label = QLabel("Ready — load files or DEMO")
+        self.status_label.setStyleSheet("color: rgb(100,105,130); font-size: 10px; margin-right: 15px;")
+        toolbar.addWidget(self.status_label)
 
         btn_load = QPushButton("📂 Load Files")
         btn_load.clicked.connect(self._load_files)
@@ -1697,38 +1698,7 @@ class NLEWindow(QMainWindow):
         sep.setStyleSheet("color: rgb(45,42,65);")
         return sep
 
-    def _show_help_dialog(self):
-        """Show contextual help for SIFTA NLE."""
-        help_file = REPO / "Documents" / "APP_HELP.md"
-        section_text = (
-            "SIFTA NLE Help\n\n"
-            "- Load files/demo/SRT/FCPXML from toolbar.\n"
-            "- Use View mode selector for Swarm/Normal/Thermal/HUD/Quad.\n"
-            "- Export EDL/FCPXML/FFmpeg once cuts are generated.\n"
-            "- Render to process with ffmpeg.\n"
-        )
-        try:
-            if help_file.exists():
-                text = help_file.read_text(encoding="utf-8", errors="replace")
-                # Accept legacy and current headings
-                markers = ["### SIFTA NLE (Video Editor)", "### SIFTA NLE"]
-                idx = -1
-                for marker in markers:
-                    idx = text.find(marker)
-                    if idx >= 0:
-                        break
-                if idx >= 0:
-                    block = text[idx:]
-                    next_h3 = block.find("\n### ", 4)
-                    next_h2 = block.find("\n## ", 4)
-                    ends = [e for e in [next_h3, next_h2] if e > 0]
-                    if ends:
-                        block = block[: min(ends)]
-                    section_text = block.strip()
-        except Exception as e:
-            section_text += f"\n\n(Help file read warning: {e})"
 
-        QMessageBox.information(self, "Help — SIFTA NLE", section_text)
 
     # ── Slots ──────────────────────────────────────────────────────
 
@@ -1973,8 +1943,64 @@ class NLEWindow(QMainWindow):
             self.canvas._log("⚠️ ffmpeg not found — install: brew install ffmpeg")
             self.status_label.setText("ffmpeg not found")
             return
-        self.canvas._log("🚀 Render queued — ffmpeg pipeline starting...")
+            
+        if not self.canvas.edit_decisions:
+            self.canvas._log("⚠️ No edit decisions to render. Let the swarm run first.")
+            self.status_label.setText("No cuts to render")
+            return
+            
+        self.canvas._log("🚀 Render queued — locking edit topology...")
+        self.status_label.setText("Preparing Render...")
+        
+        # 1. Generate the script
+        filter_str = generate_ffmpeg_filter_script(self.canvas.edit_decisions, self.canvas.clips)
+        filter_path = Path("/tmp/sifta_nle_filter.txt")
+        filter_path.write_text(filter_str)
+        
+        # 2. Build FFmpeg command
+        output_path = Path.home() / "Downloads" / "SIFTA_Stigmergy_Render.mp4"
+        cmd = [FFMPEG, "-y"]
+        for clip in self.canvas.clips:
+            cmd.extend(["-i", str(clip.path)])
+            
+        cmd.extend([
+            "-filter_complex_script", str(filter_path),
+            "-map", "[outv]", "-map", "[outa]",
+            "-preset", "ultrafast", "-c:v", "libx264", "-crf", "28",
+            "-c:a", "aac", "-b:a", "128k",
+            str(output_path)
+        ])
+        
+        self.canvas._log(f"🎬 Executing FFmpeg Render ({len(self.canvas.clips)} sources)...")
+        
+        # 3. Spin up async worker
+        self._render_worker = _RenderWorker(cmd, str(output_path))
+        self._render_worker.finished_render.connect(self._on_render_complete)
+        self._render_worker.error_render.connect(self._on_render_error)
+        self._render_worker.start()
         self.status_label.setText("Rendering...")
+        
+    def _on_render_complete(self, out_path: str):
+        self.canvas._log(f"✅ Render Complete: {out_path}")
+        self.status_label.setText("Render Complete")
+        
+        # The Swarm gets paid for its work. 0.05 STGM per cut.
+        earned = len(self.canvas.edit_decisions) * 0.05
+        self.canvas._log(f"💰 Render validated. Minting {earned:.2f} STGM for the Swarm.")
+        
+        if hasattr(self, "update_telemetry"):
+            self.update_telemetry(earned, "Stigmergic NLE Render")
+            
+        if hasattr(self, "_bus") and self._bus:
+            self._bus.append_ledger("NLE_RENDER", {
+                "cuts": len(self.canvas.edit_decisions),
+                "output": out_path,
+                "reward": earned
+            })
+
+    def _on_render_error(self, err: str):
+        self.canvas._log(f"❌ Render Failed: {err}")
+        self.status_label.setText("Render Failed")
 
     def _update_clip_table(self):
         self.clip_table.setRowCount(0)
@@ -2000,7 +2026,7 @@ class NLEWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    window = NLEWindow()
+    window = NLEWindow(architect_id="IOAN_HQ")
     window.show()
     sys.exit(app.exec())
 
