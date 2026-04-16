@@ -283,20 +283,22 @@ class FirmwareWidget(SiftaBaseWidget):
         layout.addLayout(ctrl)
 
         # ── Splitter: canvas + log ──────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self._canvas = FirmwareCanvas()
-        splitter.addWidget(self._canvas)
+        self._pane_splitter.addWidget(self._canvas)
 
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
+        self._log.setMinimumWidth(220)
         self._log.setMaximumWidth(320)
         self._log.setPlaceholderText("Firmware log...")
-        splitter.addWidget(self._log)
+        self._pane_splitter.addWidget(self._log)
 
-        splitter.setStretchFactor(0, 5)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
+        self._pane_splitter.setStretchFactor(0, 5)
+        self._pane_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         # ── State ───────────────────────────────────────────────
         self._grid = SiliconGrid(rows=40, cols=60)
@@ -316,6 +318,18 @@ class FirmwareWidget(SiftaBaseWidget):
         self._log_msg("Input pins: 40 (left edge)  |  Output pins: 40 (right edge)")
         self._log_msg("Cache region: center block  |  Power On to begin routing")
         self.set_status("Ready — Power On to begin")
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=260,
+            min_left=240,
+            max_right=320,
+        )
 
     def _toggle_sim(self):
         if self._running:

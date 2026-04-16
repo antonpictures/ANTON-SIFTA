@@ -17,7 +17,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QMdiArea, QMdiSubWindow,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox, QListWidget
+    QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox, QListWidget, QSplitter
 )
 from PyQt6.QtCore import Qt, QPoint, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
@@ -26,6 +26,8 @@ _REPO = Path(__file__).resolve().parent
 _SYS = _REPO / "System"
 
 # ── Swarm Intelligence Subsystems ────────────────────────────
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 if str(_SYS) not in sys.path:
     sys.path.insert(0, str(_SYS))
 
@@ -402,9 +404,27 @@ class SiftaDesktop(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # ── Desktop Splitter (MDI + GCI) ──
+        self._desktop_splitter = QSplitter(Qt.Orientation.Horizontal)
+
         self.mdi = QMdiArea()
         self.mdi.setBackground(QColor("#08080c"))
-        main_layout.addWidget(self.mdi)
+        self._desktop_splitter.addWidget(self.mdi)
+        
+        # ── Global Cognitive Interface ──
+        try:
+            sys.path.insert(0, str(_SYS))
+            from global_cognitive_interface import GlobalCognitiveInterface
+            self._gci = GlobalCognitiveInterface(app_context="os_desktop", entity_name="ALICE_M5", architect_id="IOAN_M5")
+            self._gci.setMinimumWidth(280)
+            self._gci.setMaximumWidth(420)
+            self._desktop_splitter.addWidget(self._gci)
+            QTimer.singleShot(0, self._balance_desktop_gci_splitter)
+        except Exception as e:
+            print(f"[Desktop] GCI failed to load: {e}")
+            self._gci = None
+
+        main_layout.addWidget(self._desktop_splitter)
         main_layout.addWidget(self._build_taskbar())
 
         central.setLayout(main_layout)
@@ -501,6 +521,20 @@ class SiftaDesktop(QMainWindow):
         # Boot: open chat by default
         self.open_swarm_chat()
 
+    def _balance_desktop_gci_splitter(self) -> None:
+        if not getattr(self, "_gci", None):
+            return
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._desktop_splitter,
+            self,
+            left_ratio=0.68,
+            min_right=280,
+            min_left=400,
+            max_right=420,
+        )
+
     # ── Clock & Control Center ─────────────────────────────
     
     def _open_control_center(self):
@@ -562,10 +596,7 @@ class SiftaDesktop(QMainWindow):
         if fmt_parts:
             date_str = now.toString(" ".join(fmt_parts))
             time_str = f"{date_str}   {time_str}"
-            
-        if settings.get("style", "Digital") == "Analog":
-            time_str = "⌚ " + time_str  # Represent analog visually in text UI
-            
+
         self.clock_label.setText(time_str)
         if hasattr(self, "clock_label"):
             self.clock_label.setGeometry(self.width() - 320, 8, 275, 28)
@@ -782,51 +813,57 @@ class SiftaDesktop(QMainWindow):
         )
         btn_start.setMenu(menu)
 
-        # ── Relay Indicator ──────────────
-        self.relay_indicator = QLabel("🔴 M1 Relay: OFFLINE")
-        self.relay_indicator.setStyleSheet("color: #f7768e; font-weight: bold;")
-        self.relay_indicator.setToolTip("Swarm WebSocket Relay Hub")
-
-        btn_power = QPushButton("Power Down")
-        btn_power.clicked.connect(self.close)
-        btn_power.setStyleSheet(
-            "QPushButton { color: #f7768e; background: transparent; padding: 6px 12px; }"
-            "QPushButton:hover { color: #db4b4b; }"
+        # ── Relay Status Indicator ──
+        self._relay_indicator = QLabel("● Relay: …")
+        self._relay_indicator.setStyleSheet(
+            "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
         )
+        layout.addWidget(self._relay_indicator)
 
-        layout.addWidget(btn_start)
-        layout.addStretch()
-        layout.addWidget(self.relay_indicator)
-        layout.addWidget(QLabel(" | "))
+        # Heartbeat timer to check GCI mesh status
+        self._relay_timer = QTimer(self)
+        self._relay_timer.timeout.connect(self._update_relay_indicator)
+        self._relay_timer.start(2000)
+
         layout.addWidget(btn_power)
         bar.setLayout(layout)
-        
-        # Poll Relay Status QTimer
-        self.relay_timer = QTimer(self)
-        self.relay_timer.timeout.connect(self._check_relay_status)
-        self.relay_timer.start(3000)
-
         return bar
 
-    def _check_relay_status(self):
-        # We check if port 8765 is actively listening
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.2)
+    def _update_relay_indicator(self):
+        """Check if the GCI's WebSocket mesh client is connected."""
+        if not hasattr(self, "_gci") or self._gci is None:
+            self._relay_indicator.setText("● Relay: N/A")
+            self._relay_indicator.setStyleSheet(
+                "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
+            )
+            return
         try:
-            result = sock.connect_ex(('127.0.0.1', 8765))
-            if result == 0:
-                self.relay_indicator.setText("🟢 M1 Relay: LIVE")
-                self.relay_indicator.setStyleSheet("color: #9ece6a; font-weight: bold;")
+            mesh = self._gci._mesh_client
+            if mesh and mesh.isRunning():
+                label_text = self._gci._mesh_status_label.text()
+                if "LIVE" in label_text:
+                    self._relay_indicator.setText("🟢 M1 Relay: LIVE")
+                    self._relay_indicator.setStyleSheet(
+                        "color: #9ece6a; font-family: monospace; font-size: 11px;"
+                        " font-weight: bold; padding: 0 8px;"
+                    )
+                else:
+                    self._relay_indicator.setText("🔴 M1 Relay: OFFLINE")
+                    self._relay_indicator.setStyleSheet(
+                        "color: #f7768e; font-family: monospace; font-size: 11px;"
+                        " font-weight: bold; padding: 0 8px;"
+                    )
             else:
-                self.relay_indicator.setText("🔴 M1 Relay: OFFLINE")
-                self.relay_indicator.setStyleSheet("color: #f7768e; font-weight: bold;")
+                self._relay_indicator.setText("🔴 M1 Relay: OFFLINE")
+                self._relay_indicator.setStyleSheet(
+                    "color: #f7768e; font-family: monospace; font-size: 11px;"
+                    " font-weight: bold; padding: 0 8px;"
+                )
         except Exception:
-            self.relay_indicator.setText("🔴 M1 Relay: OFFLINE")
-            self.relay_indicator.setStyleSheet("color: #f7768e; font-weight: bold;")
-        finally:
-            sock.close()
-
+            self._relay_indicator.setText("● Relay: Error")
+            self._relay_indicator.setStyleSheet(
+                "color: #e0af68; font-family: monospace; font-size: 11px; padding: 0 8px;"
+            )
     # ── Window factories ───────────────────────────────────
     def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
         sub = QMdiSubWindow()

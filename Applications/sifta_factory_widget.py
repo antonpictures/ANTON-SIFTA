@@ -306,20 +306,22 @@ class FactoryWidget(SiftaBaseWidget):
 
         layout.addLayout(ctrl)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self._canvas = FactoryCanvas()
-        splitter.addWidget(self._canvas)
+        self._pane_splitter.addWidget(self._canvas)
 
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
+        self._log.setMinimumWidth(240)
         self._log.setMaximumWidth(340)
         self._log.setPlaceholderText("Production log...")
-        splitter.addWidget(self._log)
+        self._pane_splitter.addWidget(self._log)
 
-        splitter.setStretchFactor(0, 5)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
+        self._pane_splitter.setStretchFactor(0, 5)
+        self._pane_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         self._floor = FactoryFloor(rows=20, cols=30)
         self._swimmers = spawn_factory_swimmers(self._floor)
@@ -335,6 +337,18 @@ class FactoryWidget(SiftaBaseWidget):
         self._log_msg("Product: ODRI Joint Module (6 components)")
         self._log_msg("STGM minted ONLY for physical production. Start Production to begin.")
         self.set_status("Ready — Start Production")
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=260,
+            min_left=240,
+            max_right=340,
+        )
 
     def _toggle(self):
         if self._running:

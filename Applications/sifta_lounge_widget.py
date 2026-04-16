@@ -296,10 +296,10 @@ class LoungeWidget(SiftaBaseWidget):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.canvas = LoungeCanvas()
-        splitter.addWidget(self.canvas)
+        self._pane_splitter.addWidget(self.canvas)
 
         self.insight_log = QTextEdit()
         self.insight_log.setReadOnly(True)
@@ -308,12 +308,25 @@ class LoungeWidget(SiftaBaseWidget):
         self.insight_log.setStyleSheet(
             "QTextEdit { background: rgb(10,8,16); color: rgb(255,200,60); "
             "font-family: 'Menlo'; font-size: 9px; padding: 6px; }")
-        splitter.addWidget(self.insight_log)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
+        self._pane_splitter.addWidget(self.insight_log)
+        self._pane_splitter.setStretchFactor(0, 3)
+        self._pane_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         self._refresh = self.make_timer(1000, self._refresh_log)
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=240,
+            min_left=200,
+            max_right=320,
+        )
 
     def _start(self):
         self.canvas.start_lounge()

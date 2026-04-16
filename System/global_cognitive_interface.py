@@ -20,6 +20,9 @@ import os
 import sys
 import time
 import urllib.request
+import asyncio
+import websockets
+from queue import Queue, Empty
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -34,6 +37,12 @@ from PyQt6.QtGui import QFont, QTextCursor
 _REPO = Path(__file__).resolve().parent.parent
 DOCS_DIR = _REPO / ".sifta_documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Layer 2 Configuration ────────────────────────────────────────────────────
+# Set SWARM_RELAY_URI in your environment to point at M1's relay when it's remote.
+# Example: export SWARM_RELAY_URI=ws://192.168.1.42:8765
+# Default: localhost (for testing on the same machine)
+SWARM_RELAY_URI = os.environ.get("SWARM_RELAY_URI", "ws://127.0.0.1:8765")
 
 
 # ── Ollama Worker (background thread for real responses) ────────────────────
@@ -80,6 +89,102 @@ class _GCIWorker(QThread):
         except Exception as e:
             self.error_signal.emit(f"[Ollama offline] {e}")
 
+class _ContextWorker(QThread):
+    """Parallel swarm worker: Runs a secondary small model to deduce intent/subtext."""
+    def __init__(self, prompt: str, system: str, model: str = "gemma4:latest"):
+        super().__init__()
+        self.prompt = prompt
+        self.system = system
+        self.model = model
+        self.intent_found = ""
+
+    def run(self):
+        try:
+            import re
+            payload = json.dumps({
+                "model": self.model,
+                "prompt": self.prompt,
+                "system": self.system,
+                "stream": False,
+                "temperature": 0.2,
+                "num_predict": 64,
+            }).encode("utf-8")
+            
+            req = urllib.request.Request(
+                "http://127.0.0.1:11434/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                text = data.get("response", "").strip()
+                self.intent_found = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+        except:
+            pass
+
+
+# ── Swarm Mesh Client (Layer 2) ──────────────────────────────────────────────
+
+class _SwarmMeshClientWorker(QThread):
+    """Background asyncio worker maintaining a persistent WebSocket to the Swarm Relay."""
+    swarm_message_ready = pyqtSignal(str)
+    connection_status = pyqtSignal(bool)
+
+    def __init__(self, uri="ws://127.0.0.1:8765", architect_id="IOAN_M5"):
+        super().__init__()
+        self.uri = uri
+        self.architect_id = architect_id
+        self._send_queue = Queue()
+        self._loop = None
+        self._running = True
+
+    def send_to_swarm(self, message: dict):
+        self._send_queue.put(json.dumps(message))
+
+    def run(self):
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_until_complete(self._client_loop())
+
+    async def _client_loop(self):
+        while self._running:
+            try:
+                async with websockets.connect(self.uri) as ws:
+                    self.connection_status.emit(True)
+                    # Announce presence
+                    await ws.send(json.dumps({"type": "REGISTER", "sender": self.architect_id}))
+                    
+                    receive_task = asyncio.create_task(ws.recv())
+                    
+                    while self._running:
+                        try:
+                            # Flush outgoing queue
+                            while not self._send_queue.empty():
+                                msg_to_send = self._send_queue.get_nowait()
+                                await ws.send(msg_to_send)
+                        except Empty:
+                            pass
+                        
+                        # Wait for incoming messages, max 0.05s to allow queue checking
+                        done, pending = await asyncio.wait([receive_task], timeout=0.05)
+                        if receive_task in done:
+                            try:
+                                raw_msg = receive_task.result()
+                                self.swarm_message_ready.emit(raw_msg)
+                                receive_task = asyncio.create_task(ws.recv())
+                            except websockets.exceptions.ConnectionClosed:
+                                break
+                                
+            except Exception as e:
+                self.connection_status.emit(False)
+                await asyncio.sleep(2)  # Reconnect backoff
+
+    def stop(self):
+        self._running = False
+        self.wait()
+
+
 
 # ── Global Cognitive Interface Widget ────────────────────────────────────────
 
@@ -116,6 +221,12 @@ class GlobalCognitiveInterface(QWidget):
         except Exception:
             pass
 
+        # ── Start Mesh Client 
+        self._mesh_client = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id=self.architect_id)
+        self._mesh_client.swarm_message_ready.connect(self._on_swarm_message)
+        self._mesh_client.connection_status.connect(self._on_swarm_status)
+        self._mesh_client.start()
+
         self._build_ui()
 
     def _build_ui(self):
@@ -142,6 +253,11 @@ class GlobalCognitiveInterface(QWidget):
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet("color: rgb(45, 42, 65);")
         lay.addWidget(sep)
+        
+        # Mesh Status Indicator
+        self._mesh_status_label = QLabel("Layer 2 Mesh: Connecting...")
+        self._mesh_status_label.setStyleSheet("color: rgb(150, 155, 180); font-size: 9px;")
+        lay.addWidget(self._mesh_status_label)
 
         # Chat display
         self.chat_display = QTextEdit()
@@ -219,12 +335,29 @@ class GlobalCognitiveInterface(QWidget):
                 mem = self._bus.recall_context_block(text, app_context=self.app_context, top_k=3)
                 if mem:
                     memory_context = "\n\n" + mem
+                    # ── LAYER 2: Shared Cross-Node Recall ────────────────
+                    self._mesh_client.send_to_swarm({
+                        "type": "MEMORY_HINT",
+                        "sender": self.architect_id,
+                        "target": "ALL",
+                        "text": mem.splitlines()[0][:120] + "..."
+                    })
             except Exception:
                 pass
 
-        # 3. Dispatch to Ollama
+        # 3. Broadcast to Swarm Mesh
+        mesh_payload = {
+            "type": "CHAT",
+            "sender": self.architect_id,
+            "target": "ALL",
+            "text": text,
+            "context": self.app_context
+        }
+        self._mesh_client.send_to_swarm(mesh_payload)
+
+        # 4. Dispatch to local Ollama (Parallel Swarm)
         if self._worker and self._worker.isRunning():
-            return  # already thinking
+            return  # primary worker is busy
 
         system_prompt = (
             f"You are {self.entity_name}, the sovereign intelligence of SIFTA Living OS. "
@@ -239,7 +372,22 @@ class GlobalCognitiveInterface(QWidget):
         self._worker.error_signal.connect(self._on_error)
         self._worker.start()
 
+        # Fire secondary parallel worker (Empathy/Intent analysis)
+        context_prompt = "Identify the core underlying emotional intent or hidden requirement in this message in 5 words or less."
+        self._ctx_worker = _ContextWorker(prompt=text, system=context_prompt, model=self._model)
+        self._ctx_worker.finished.connect(self._on_context_finished)
+        self._ctx_worker.start()
+
         self.message_sent.emit(text)
+
+    def _on_context_finished(self):
+        if hasattr(self, "_ctx_worker") and self._ctx_worker.intent_found:
+            self._mesh_client.send_to_swarm({
+                "type": "MEMORY_HINT",
+                "sender": f"SWARM_INTENT_{self.architect_id}",
+                "target": "ALL",
+                "text": f"Subtext: {self._ctx_worker.intent_found}"
+            })
 
     def _on_response(self, text: str):
         ts = datetime.now().strftime("%H:%M")
@@ -254,6 +402,46 @@ class GlobalCognitiveInterface(QWidget):
         self.chat_display.append(
             f'<span style="color:#f7768e;">[{ts}] {err}</span>'
         )
+
+    # ── Swarm Mesh Networking ──────────────────────────────────
+    
+    def _on_swarm_status(self, connected: bool):
+        if connected:
+            self._mesh_status_label.setText("Layer 2 Mesh: LIVE 🟢")
+            self._mesh_status_label.setStyleSheet("color: rgb(0, 255, 200); font-size: 9px;")
+        else:
+            self._mesh_status_label.setText("Layer 2 Mesh: OFFLINE 🔴")
+            self._mesh_status_label.setStyleSheet("color: rgb(247, 118, 142); font-size: 9px;")
+
+    def _on_swarm_message(self, raw_message: str):
+        try:
+            msg = json.loads(raw_message)
+            msg_type = msg.get("type")
+            sender = msg.get("sender", "UNKNOWN")
+            
+            # Don't echo our own broadcasts
+            if sender == self.architect_id:
+                return
+                
+            if msg_type == "CHAT":
+                ts = datetime.now().strftime("%H:%M")
+                text = msg.get("text", "")
+                self.chat_display.append(
+                    f'<span style="color:#bb9af7;font-weight:bold;">[{ts}] {sender}:</span> '
+                    f'<span style="color:#c0caf5;">{text}</span>'
+                )
+                
+            elif msg_type == "MEMORY_HINT":
+                # Parallel memory sync across nodes
+                hint = msg.get("text", "")
+                ts = datetime.now().strftime("%H:%M")
+                self.chat_display.append(
+                    f'<span style="color:#e0af68;">[{ts}] 🧠 Swarm Recall ({sender}):</span> '
+                    f'<span style="color:#c0caf5;"><i>{hint}</i></span>'
+                )
+                
+        except json.JSONDecodeError:
+            pass
 
     # ── Document Save/Load ─────────────────────────────────────
 

@@ -16,7 +16,7 @@ from PyQt6.QtCore import Qt, QPoint, QPropertyAnimation, QRect, QEasingCurve, py
 from PyQt6.QtGui import QColor, QPainter, QFont, QBrush, QPen
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QFrame, QRadioButton, QButtonGroup, QComboBox, QPushButton
+    QFrame, QComboBox, QPushButton,
 )
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -25,7 +25,6 @@ SETTINGS_PATH = _REPO / ".sifta_state" / "clock_settings.json"
 DEFAULT_SETTINGS = {
     "show_date": True,
     "show_day_of_week": True,
-    "style": "Digital",
     "show_am_pm": True,
     "flash_separators": False,
     "show_seconds": False,
@@ -42,6 +41,7 @@ def load_settings() -> dict:
                 data = json.load(f)
                 out = DEFAULT_SETTINGS.copy()
                 out.update(data)
+                out.pop("style", None)  # legacy Analog/Digital — digital only now
                 return out
         except Exception:
             return DEFAULT_SETTINGS.copy()
@@ -138,7 +138,7 @@ class ClockSettingsApp(QWidget):
         super().__init__()
         self.setWindowTitle("Clock")
         self.setStyleSheet("background: #121214; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;")
-        self.setFixedSize(400, 520)
+        self.setFixedSize(400, 460)
         
         self.config = load_settings()
         
@@ -166,32 +166,7 @@ class ClockSettingsApp(QWidget):
         main_layout.addWidget(lbl_time)
         
         g_time = SettingsGroup()
-        
-        # Style row (radio buttons)
-        style_widget = QWidget()
-        style_layout = QHBoxLayout(style_widget)
-        style_layout.setContentsMargins(0, 0, 0, 0)
-        style_layout.setSpacing(15)
-        
-        self.rb_digital = QRadioButton("Digital")
-        self.rb_analog = QRadioButton("Analog")
-        self.rb_digital.setStyleSheet("color: white; font-size: 13px;")
-        self.rb_analog.setStyleSheet("color: white; font-size: 13px;")
-        
-        if self.config.get("style", "Digital") == "Digital":
-            self.rb_digital.setChecked(True)
-        else:
-            self.rb_analog.setChecked(True)
-            
-        self.bg_style = QButtonGroup()
-        self.bg_style.addButton(self.rb_digital)
-        self.bg_style.addButton(self.rb_analog)
-        self.bg_style.buttonClicked.connect(self._on_style_changed)
-        
-        style_layout.addWidget(self.rb_digital)
-        style_layout.addWidget(self.rb_analog)
-        g_time.add_row("Style", style_widget, False)
-        
+
         g_time.add_row("Show AM/PM", SwitchControl("show_am_pm", self.config), False)
         g_time.add_row("Flash the time separators", SwitchControl("flash_separators", self.config), False)
         g_time.add_row("Display the time with seconds", SwitchControl("show_seconds", self.config), True)
@@ -226,10 +201,6 @@ class ClockSettingsApp(QWidget):
 
         main_layout.addStretch()
 
-    def _on_style_changed(self):
-        self.config["style"] = "Digital" if self.rb_digital.isChecked() else "Analog"
-        save_settings(self.config)
-        
     def _on_interval_changed(self, text):
         self.config["announce_interval"] = text
         save_settings(self.config)

@@ -185,10 +185,10 @@ class NLEWidget(QWidget):
         slider_row.addStretch()
         main.addLayout(slider_row)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.canvas = PheromoneMatrixCanvas()
         self.canvas.cut_executed.connect(self._on_cut)
-        splitter.addWidget(self.canvas)
+        self._pane_splitter.addWidget(self.canvas)
 
         sidebar = QTabWidget()
         sidebar.setMaximumWidth(320)
@@ -218,16 +218,29 @@ class NLEWidget(QWidget):
         ll.addWidget(self.log_view)
         sidebar.addTab(log_tab, "Log")
 
-        splitter.addWidget(sidebar)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        main.addWidget(splitter, 1)
+        self._pane_splitter.addWidget(sidebar)
+        self._pane_splitter.setStretchFactor(0, 3)
+        self._pane_splitter.setStretchFactor(1, 1)
+        main.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         self.log_timer = QTimer(self)
         self.log_timer.timeout.connect(self._refresh_log)
         self.log_timer.start(500)
 
         QTimer.singleShot(200, self._load_demo)
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=260,
+            min_left=240,
+            max_right=320,
+        )
 
     def _sep(self) -> QFrame:
         s = QFrame()

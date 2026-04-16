@@ -688,13 +688,13 @@ class SwarmBrowserWidget(SiftaBaseWidget):
         layout.addLayout(url_row)
 
         # Splitter: canvas + sidebar
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.canvas = DomGraphCanvas()
         self.canvas.entity_found.connect(self._on_entity)
         self.canvas.tracker_killed.connect(self._on_tracker)
         self.canvas.log_msg.connect(self._on_log)
-        splitter.addWidget(self.canvas)
+        self._pane_splitter.addWidget(self.canvas)
 
         sidebar = QTabWidget()
         sidebar.setMinimumWidth(360)
@@ -732,15 +732,28 @@ class SwarmBrowserWidget(SiftaBaseWidget):
         )
         sidebar.addTab(self.log_view, "📋 Log")
 
-        splitter.addWidget(sidebar)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
+        self._pane_splitter.addWidget(sidebar)
+        self._pane_splitter.setStretchFactor(0, 3)
+        self._pane_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         self._log_lines: List[str] = []
         self._fetch_worker: Optional[FetchWorker] = None
 
         self._refresh_timer = self.make_timer(500, self._refresh_panels)
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.68,
+            min_right=360,
+            min_left=280,
+            max_right=480,
+        )
 
     def _go(self):
         url = self.url_input.text().strip()

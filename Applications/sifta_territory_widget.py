@@ -316,20 +316,22 @@ class TerritoryWidget(SiftaBaseWidget):
         layout.addLayout(ctrl)
 
         # ── Splitter: map + alert log ───────────────────────────
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self._canvas = TacticalMapCanvas()
-        splitter.addWidget(self._canvas)
+        self._pane_splitter.addWidget(self._canvas)
 
         self._alert_log = QPlainTextEdit()
         self._alert_log.setReadOnly(True)
+        self._alert_log.setMinimumWidth(260)
         self._alert_log.setMaximumWidth(360)
         self._alert_log.setPlaceholderText("Alert log...")
-        splitter.addWidget(self._alert_log)
+        self._pane_splitter.addWidget(self._alert_log)
 
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
+        self._pane_splitter.setStretchFactor(0, 4)
+        self._pane_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         # ── Initialize graph + entity + swimmers ────────────────
         self._graph, self._pois = generate_brawley_grid()
@@ -356,6 +358,18 @@ class TerritoryWidget(SiftaBaseWidget):
         self._timer: QTimer | None = None
         self._canvas.render_frame()
         self.set_status("Ready — click Start Patrol")
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=260,
+            min_left=240,
+            max_right=360,
+        )
 
     def _spawn_swimmers(self):
         g = self._graph

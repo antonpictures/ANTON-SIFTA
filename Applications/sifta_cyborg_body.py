@@ -1029,10 +1029,10 @@ class CyborgWindow(QMainWindow):
         main_layout.addLayout(controls)
 
         # Splitter: Canvas + Log
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.canvas = CyborgCanvas()
-        splitter.addWidget(self.canvas)
+        self._pane_splitter.addWidget(self.canvas)
 
         log_group = QGroupBox("IMMUNE SYSTEM LOG")
         log_layout = QVBoxLayout(log_group)
@@ -1041,16 +1041,29 @@ class CyborgWindow(QMainWindow):
         self.log_view.setMinimumWidth(260)
         self.log_view.setMaximumWidth(320)
         log_layout.addWidget(self.log_view)
-        splitter.addWidget(log_group)
+        self._pane_splitter.addWidget(log_group)
 
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        main_layout.addWidget(splitter, 1)
+        self._pane_splitter.setStretchFactor(0, 3)
+        self._pane_splitter.setStretchFactor(1, 1)
+        main_layout.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         # Log refresh
         self.log_timer = QTimer(self)
         self.log_timer.timeout.connect(self._refresh_log)
         self.log_timer.start(400)
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=260,
+            min_left=240,
+            max_right=320,
+        )
 
     def _inject(self):
         self.canvas.inject_hostile()

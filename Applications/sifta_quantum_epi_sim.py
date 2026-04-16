@@ -1027,20 +1027,21 @@ class QuantumEpiWindow(QMainWindow):
         q_controls.addStretch()
         q_layout.addLayout(q_controls)
 
-        q_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._q_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.q_canvas = QuantumSurfaceCanvas()
-        q_splitter.addWidget(self.q_canvas)
+        self._q_splitter.addWidget(self.q_canvas)
 
         q_log_group = QGroupBox("QUANTUM LOG")
         q_log_layout = QVBoxLayout(q_log_group)
         self.q_log = QTextEdit()
         self.q_log.setReadOnly(True)
+        self.q_log.setMinimumWidth(220)
         self.q_log.setMaximumWidth(280)
         q_log_layout.addWidget(self.q_log)
-        q_splitter.addWidget(q_log_group)
-        q_splitter.setStretchFactor(0, 3)
-        q_splitter.setStretchFactor(1, 1)
-        q_layout.addWidget(q_splitter, 1)
+        self._q_splitter.addWidget(q_log_group)
+        self._q_splitter.setStretchFactor(0, 3)
+        self._q_splitter.setStretchFactor(1, 1)
+        q_layout.addWidget(self._q_splitter, 1)
 
         tabs.addTab(q_tab, "⚛ Quantum Surface Code")
 
@@ -1081,29 +1082,52 @@ class QuantumEpiWindow(QMainWindow):
         e_controls.addStretch()
         e_layout.addLayout(e_controls)
 
-        e_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._e_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.e_canvas = EpidemiologyCanvas()
-        e_splitter.addWidget(self.e_canvas)
+        self._e_splitter.addWidget(self.e_canvas)
 
         e_log_group = QGroupBox("EPIDEMIOLOGY LOG")
         e_log_layout = QVBoxLayout(e_log_group)
         self.e_log = QTextEdit()
         self.e_log.setReadOnly(True)
+        self.e_log.setMinimumWidth(220)
         self.e_log.setMaximumWidth(280)
         e_log_layout.addWidget(self.e_log)
-        e_splitter.addWidget(e_log_group)
-        e_splitter.setStretchFactor(0, 3)
-        e_splitter.setStretchFactor(1, 1)
-        e_layout.addWidget(e_splitter, 1)
+        self._e_splitter.addWidget(e_log_group)
+        self._e_splitter.setStretchFactor(0, 3)
+        self._e_splitter.setStretchFactor(1, 1)
+        e_layout.addWidget(self._e_splitter, 1)
 
         tabs.addTab(e_tab, "🦠 Epidemiological Containment")
 
         main.addWidget(tabs)
 
+        QTimer.singleShot(0, self._balance_splitters)
+
         # Log refresh
         self.log_timer = QTimer(self)
         self.log_timer.timeout.connect(self._refresh_logs)
         self.log_timer.start(500)
+
+    def _balance_splitters(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._q_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=220,
+            min_left=240,
+            max_right=280,
+        )
+        balance_horizontal_splitter(
+            self._e_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=220,
+            min_left=240,
+            max_right=280,
+        )
 
     # ── Quantum slots ─────────────────────────────────────────────
     def _q_inject(self):

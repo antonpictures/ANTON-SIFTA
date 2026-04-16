@@ -1621,11 +1621,11 @@ class NLEWindow(QMainWindow):
         main.addLayout(slider_row)
 
         # ── Splitter: Canvas + Sidebar ────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.canvas = PheromoneMatrixCanvas()
         self.canvas.cut_executed.connect(self._on_cut)
-        splitter.addWidget(self.canvas)
+        self._pane_splitter.addWidget(self.canvas)
 
         # Sidebar tabs
         sidebar = QTabWidget()
@@ -1668,15 +1668,28 @@ class NLEWindow(QMainWindow):
         dna_layout.addWidget(self.dna_view)
         sidebar.addTab(dna_tab, "🧬 Style DNA")
 
-        splitter.addWidget(sidebar)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        main.addWidget(splitter, 1)
+        self._pane_splitter.addWidget(sidebar)
+        self._pane_splitter.setStretchFactor(0, 3)
+        self._pane_splitter.setStretchFactor(1, 1)
+        main.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         # ── Log refresh timer ─────────────────────────────────────
         self.log_timer = QTimer(self)
         self.log_timer.timeout.connect(self._refresh_log)
         self.log_timer.start(500)
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=280,
+            min_left=240,
+            max_right=340,
+        )
 
     def _separator(self):
         sep = QFrame()

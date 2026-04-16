@@ -13,6 +13,8 @@ from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 
 class _StreamPanel(QWidget):
@@ -149,7 +151,7 @@ class CyborgPanelWidget(QWidget):
         from PyQt6.QtCore import QTimer, QThread, pyqtSignal
         from PyQt6.QtGui import QTextCursor, QTextCharFormat, QColor, QFont, QKeyEvent
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # ── LEFT: Simulation output ────────────────────────────────
         left = QWidget()
@@ -178,7 +180,7 @@ class CyborgPanelWidget(QWidget):
         btn_row.addStretch()
         left_lay.addLayout(btn_row)
 
-        splitter.addWidget(left)
+        self._pane_splitter.addWidget(left)
 
         # ── RIGHT: Stigmergic Writer (ghost-text, no send button) ──
         right = QWidget()
@@ -262,11 +264,12 @@ class CyborgPanelWidget(QWidget):
         self._editor.idle_timer.timeout.connect(self._on_idle)
         right_lay.addWidget(self._editor)
 
-        splitter.addWidget(right)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
+        self._pane_splitter.addWidget(right)
+        self._pane_splitter.setStretchFactor(0, 1)
+        self._pane_splitter.setStretchFactor(1, 1)
 
-        main_lay.addWidget(splitter)
+        main_lay.addWidget(self._pane_splitter)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         # Seed the page with a contextual greeting
         from datetime import datetime
@@ -283,6 +286,17 @@ class CyborgPanelWidget(QWidget):
 
         # Auto-start sim
         self._start()
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.55,
+            min_right=280,
+            min_left=280,
+        )
 
     def _start(self) -> None:
         if self._proc is not None and self._proc.state() != QProcess.ProcessState.NotRunning:

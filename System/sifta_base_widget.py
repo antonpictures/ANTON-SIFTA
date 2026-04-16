@@ -199,8 +199,7 @@ class SiftaBaseWidget(QWidget):
             self._gci.setMinimumWidth(280)
             self._gci.setMaximumWidth(420)
             self._splitter.addWidget(self._gci)
-            # Start with chat collapsed—Architect can open it anytime
-            self._splitter.setSizes([700, 0])
+            QTimer.singleShot(0, self._balance_gci_splitter)
         except Exception:
             pass  # GCI is optional; app works without it
 
@@ -240,6 +239,21 @@ class SiftaBaseWidget(QWidget):
         s.setFrameShape(QFrame.Shape.VLine)
         s.setStyleSheet("color: rgb(45,42,65);")
         return s
+
+    def _balance_gci_splitter(self) -> None:
+        """Give GCI a usable initial width (Qt often leaves the right pane at 0)."""
+        if not self._gci:
+            return
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._splitter,
+            self,
+            left_ratio=0.68,
+            min_right=280,
+            min_left=360,
+            max_right=420,
+        )
 
     def _toggle_gci(self) -> None:
         """Show/hide the Global Cognitive Interface chat panel."""

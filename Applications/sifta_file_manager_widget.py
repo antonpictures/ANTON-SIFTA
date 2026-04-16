@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -38,6 +39,8 @@ from PyQt6.QtWidgets import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HOME = Path.home()
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 # ── File size formatting ─────────────────────────────────────────────────────
 
@@ -316,18 +319,19 @@ class FileNavigatorWidget(QWidget):
         root.addWidget(title_bar)
 
         # ── Dual Panes ───────────────────────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setStyleSheet(
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter.setStyleSheet(
             "QSplitter::handle { background: #1f2335; width: 2px; }"
         )
 
         self.left = FinderPane("Left", str(REPO_ROOT))
         self.right = FinderPane("Right", str(HOME))
-        splitter.addWidget(self.left)
-        splitter.addWidget(self.right)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-        root.addWidget(splitter, 1)
+        self._pane_splitter.addWidget(self.left)
+        self._pane_splitter.addWidget(self.right)
+        self._pane_splitter.setStretchFactor(0, 1)
+        self._pane_splitter.setStretchFactor(1, 1)
+        root.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         # ── Action Bar ───────────────────────────────────────────────
         action_bar = QFrame()
@@ -378,6 +382,17 @@ class FileNavigatorWidget(QWidget):
         action_layout.addWidget(self.status)
 
         root.addWidget(action_bar)
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.5,
+            min_right=260,
+            min_left=260,
+        )
 
     # ── Operations ───────────────────────────────────────────────────
 

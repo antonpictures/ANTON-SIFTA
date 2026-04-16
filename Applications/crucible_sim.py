@@ -865,11 +865,11 @@ class CrucibleWindow(QMainWindow):
         main_layout.addLayout(metrics)
 
         # ── Main content: Canvas + Log ────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.canvas = CrucibleCanvas()
         self.canvas.stats_updated.connect(self._update_metrics)
-        splitter.addWidget(self.canvas)
+        self._pane_splitter.addWidget(self.canvas)
 
         # Terminal log
         log_group = QGroupBox("SWARM TERMINAL")
@@ -879,16 +879,29 @@ class CrucibleWindow(QMainWindow):
         self.log_view.setMinimumWidth(280)
         self.log_view.setMaximumWidth(350)
         log_layout.addWidget(self.log_view)
-        splitter.addWidget(log_group)
+        self._pane_splitter.addWidget(log_group)
 
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
-        main_layout.addWidget(splitter, 1)
+        self._pane_splitter.setStretchFactor(0, 3)
+        self._pane_splitter.setStretchFactor(1, 1)
+        main_layout.addWidget(self._pane_splitter, 1)
+        QTimer.singleShot(0, self._balance_pane_splitter)
 
         # ── Log refresh timer ─────────────────────────────────────
         self.log_timer = QTimer(self)
         self.log_timer.timeout.connect(self._refresh_log)
         self.log_timer.start(500)
+
+    def _balance_pane_splitter(self) -> None:
+        from System.splitter_utils import balance_horizontal_splitter
+
+        balance_horizontal_splitter(
+            self._pane_splitter,
+            self,
+            left_ratio=0.72,
+            min_right=280,
+            min_left=240,
+            max_right=350,
+        )
 
     def _toggle_crucible(self):
         if self.canvas.crucible_active:
