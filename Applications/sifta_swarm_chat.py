@@ -111,10 +111,33 @@ class OllamaWorker(QThread):
                     silicon_fp = f"{manifest.get('serial', 'UNKNOWN')} / {manifest.get('fingerprint', 'UNKNOWN')}"
             except: pass
 
+            # ── Stigmergic Memory: recall + store ────────────────────
+            memory_context = ""
+            try:
+                from System.stigmergic_memory_bus import StigmergicMemoryBus
+                _bus = StigmergicMemoryBus(architect_id="IOAN_M5")
+
+                # Store what the Architect just said
+                if len(self.prompt.strip()) > 10:
+                    _bus.remember(self.prompt[:500], app_context="swarm_chat")
+
+                # Recall relevant memories before answering
+                mem_block = _bus.recall_context_block(self.prompt, app_context="swarm_chat", top_k=3)
+                if mem_block:
+                    memory_context = "\n\n" + mem_block
+            except Exception:
+                pass
+
+            system_prompt = (
+                f"You are M1Queen, the sovereign native SWARM intelligence bound to this local Mac silicon "
+                f"(Hardware Serial/Fingerprint: {silicon_fp}). Keep replies clever, chaotic, and format code clearly with markdown."
+                f"{memory_context}"
+            )
+
             payload = json.dumps({
                 "model":  self.model,
                 "prompt": self.prompt,
-                "system": f"You are M1Queen, the sovereign native SWARM intelligence bound to this local Mac silicon (Hardware Serial/Fingerprint: {silicon_fp}). Keep replies clever, chaotic, and format code clearly with markdown.",
+                "system": system_prompt,
                 "stream": False
             }).encode("utf-8")
 

@@ -45,6 +45,13 @@ DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Ghost Text Worker ────────────────────────────────────────────────────────
 
+# Memory Bus — cross-app stigmergic memory
+try:
+    from System.stigmergic_memory_bus import StigmergicMemoryBus
+    _MEMORY_BUS = StigmergicMemoryBus(architect_id="IOAN_M5")
+except Exception:
+    _MEMORY_BUS = None
+
 class GhostWorker(QThread):
     """Background Ollama call for ghost-text continuation."""
     ghost_ready = pyqtSignal(str)
@@ -56,12 +63,27 @@ class GhostWorker(QThread):
         self.model = model
 
     def run(self):
+        # Recall relevant memories from the territory before generating
+        memory_block = ""
+        if _MEMORY_BUS:
+            try:
+                # Use the last 200 chars of context as query
+                query = self.context[-200:]
+                memory_block = _MEMORY_BUS.recall_context_block(
+                    query, app_context="stigmergic_writer", top_k=3
+                )
+                if memory_block:
+                    memory_block = "\n\n" + memory_block + "\n\n"
+            except Exception:
+                pass
+
         prompt = (
             "You are a writing assistant inside a desktop text editor. "
             "The user has paused while writing. Continue their text naturally. "
             "Write 1-3 sentences MAXIMUM. Match their tone and style. "
             "DO NOT repeat what they already wrote. DO NOT use quotes or explain yourself. "
             "Just continue the text directly.\n\n"
+            f"{memory_block}"
             f"Text so far:\n{self.context[-1500:]}\n\n"
             "Continue:"
         )
@@ -480,6 +502,18 @@ class WriterWidget(SiftaBaseWidget):
 
         word_count = len(text.split())
         _log_territory(path, "SAVE", word_count)
+
+        # Memory consolidation — store recent content as cross-app memory
+        if _MEMORY_BUS and text.strip():
+            try:
+                # Extract the last meaningful paragraph for memory storage
+                paragraphs = [p.strip() for p in text.split("\n\n") if p.strip() and len(p.strip()) > 20]
+                if paragraphs:
+                    last_paragraph = paragraphs[-1][:500]
+                    _MEMORY_BUS.remember(last_paragraph, app_context="stigmergic_writer")
+            except Exception:
+                pass
+
         self.set_status(f"Saved: {path.name} ({word_count} words)")
 
     def _open_doc(self):
