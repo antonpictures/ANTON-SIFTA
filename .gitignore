@@ -11,6 +11,11 @@ venv/
 # ── macOS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.cursor_identity
+.cursorrules
+.vscode/
+
 # ── SIFTA Runtime State (never version swarm runtime) ────────────────────────
 # Agent JSON state is managed by the swarm; commit only intentional snapshots.
 # Committed state (node_pki_registry.json, genesis_log.jsonl) tracked explicitly.
