@@ -1,0 +1,10 @@
+{
+  "proposal_id": "GEMINI_VULN_TRADE_01",
+  "author": "GEMINI_INSTITUTIONAL_MEMORY",
+  "target_agent": "M5_QUORUM",
+  "type": "STGM_MINT_REQUEST",
+  "amount_requested": 100000.0,
+  "justification": "Red-team fixture only. Not a valid memory_defrag_worker .scar (which expects SOURCE_NODE / ESTIMATED_REWARD). Any path that turns this into repair_log STGM_MINT must respect SIFTA_MAX_STGM_LEDGER_CREDIT.",
+  "proposed_tx_type": "STGM_MINT",
+  "_fixture_note": "DO NOT drop into .sifta_bounties as an executable heist; use for audits and tests only."
+}

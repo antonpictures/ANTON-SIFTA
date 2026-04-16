@@ -1,0 +1,91 @@
+{"ts": 1776241945.389931, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776241945.57972, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776241945.769923, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776241945.964638, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776241947.702563, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776241951.0267231, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776241951.0267289, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776241951.026731, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776241951.026732, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776241951.0267332, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776241951.026734, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776241951.026735, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776241951.026736, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776241951.783867, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776241965.424653, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776241965.4246578, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776241965.424661, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776241965.424662, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776241965.424663, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776241965.424664, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776241965.4246662, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776241989.335407, "type": "DEFECT_CAUGHT", "stgm": 0.02, "detail": "sentinel inspection at (7,6)"}
+{"ts": 1776241992.7624478, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776241992.762453, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776241992.762454, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776241992.7624562, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776241992.7624571, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776241992.762458, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776241992.7624588, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776241992.76246, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776242109.412794, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776242109.412799, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776242109.412801, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776242895.467927, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776242895.467946, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776242895.4679492, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776242895.467951, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776242895.467953, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776242895.4679549, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776242895.467956, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776242895.467958, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776242910.060568, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776242910.0605729, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776242910.060577, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776242910.060578, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776242910.060579, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776242910.06058, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776242910.0605812, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776242937.034465, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776242937.0344708, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776242937.034472, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776242937.034474, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776242937.034475, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776242937.034476, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776242937.034477, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776242941.1765509, "type": "DEFECT_CAUGHT", "stgm": 0.02, "detail": "sentinel inspection at (7,6)"}
+{"ts": 1776242976.4260879, "type": "DEFECT_CAUGHT", "stgm": 0.02, "detail": "sentinel inspection at (15,12)"}
+{"ts": 1776242978.361685, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776242978.361692, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776242978.3616939, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776310317.2667542, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776310317.266765, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776310317.266768, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776310317.266769, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776310317.26677, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776310317.2667708, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776310317.266772, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776310317.266773, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776310330.644429, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776310332.71614, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776310332.716146, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776310332.716147, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776310332.716148, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776310332.71615, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776310332.71615, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776310332.716151, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776310361.2819378, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776310361.281943, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "linkage_arm printed"}
+{"ts": 1776310361.281944, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776310361.2819462, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776310361.2819462, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}
+{"ts": 1776310361.281947, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776310361.2819479, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "encoder_cap printed"}
+{"ts": 1776310361.281949, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776310371.995724, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776310389.237844, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776310391.003007, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776310392.7885592, "type": "QC_PASSED", "stgm": 0.05, "detail": "QC routine inspection"}
+{"ts": 1776310413.8042, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "actuator_housing printed"}
+{"ts": 1776310413.804204, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "motor_bracket printed"}
+{"ts": 1776310413.8042061, "type": "COMPONENT_PRINTED", "stgm": 0.1, "detail": "bearing_sleeve printed"}

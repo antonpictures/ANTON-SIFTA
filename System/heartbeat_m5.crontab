@@ -1,0 +1,29 @@
+# ═══════════════════════════════════════════════════════════════
+# SIFTA HEARTBEAT SCHEDULE — Pi-Derived, 7-Min Minimum Gap
+# Node:     M5 Mac Studio (GTH4921YP3)
+# Constant: π = 3.14159265358979323846...
+# ═══════════════════════════════════════════════════════════════
+#
+# SOURCE DERIVATION (π digit pairs, filtered for gap ≥ 7 min):
+#   ALL pairs from π: 31,41,59,26,53,58,97✗,93✗,23,84✗,62✗...
+#   Valid (≤59):      02, 23, 31, 41, 53
+#
+#   Gap audit (sorted):
+#   02 → 23 : 21 min ✓
+#   23 → 31 :  8 min ✓
+#   31 → 41 : 10 min ✓
+#   41 → 53 : 12 min ✓
+#   53 → 02 : 09 min ✓  (wrap: 2+60-53=9)
+#   ALL GAPS ≥ 7 ✓
+#
+# 5 heartbeats/hour · avg gap: 12 min · min gap: 8 min
+# ═══════════════════════════════════════════════════════════════
+#
+# INSTALL (run once in terminal on Mac Studio):
+#   crontab -e   then paste the 5 lines below:
+#
+2  * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+23 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+31 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+41 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py
+53 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m5.py

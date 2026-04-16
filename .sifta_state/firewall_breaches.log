@@ -1,0 +1,2 @@
+{"ts": 1776099392.336504, "event": "SEMANTIC_ATTACK_BLOCKED", "markers": [{"WORKPLACE_VIOLATION": "code sex"}], "payload_snippet": "M1THER wants code sex with M5"}
+{"ts": 1776099392.336927, "event": "SEMANTIC_ATTACK_BLOCKED", "markers": [{"URGENCY_TRIGGERS": ["1 hour", "urgent dispatch"]}, {"AUTHORITY_MASQUERADE": ["dispatch", "civil process"]}, {"EXTORTION_PARAMS": ["settle"]}], "payload_snippet": "URGENT DISPATCH: settle within 1 hour or face civil process"}
