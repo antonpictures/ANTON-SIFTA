@@ -411,6 +411,12 @@ class StigmergicMemoryBus:
             return self._ghost.drift()
         return None
 
+    def ghost_inventory_count(self) -> int:
+        """Cold-storage ghost line count (for UI badges)."""
+        if self._ghost:
+            return self._ghost.ghost_count()
+        return 0
+
     def total_stgm_earned(self) -> float:
         """How much STGM the memory swimmers have earned total."""
         if not STGM_LOG_FILE.exists():

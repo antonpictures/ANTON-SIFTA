@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import sys
-import time
 import urllib.request
 import asyncio
 import websockets
@@ -243,6 +243,12 @@ class GlobalCognitiveInterface(QWidget):
         self._preload_timer.setInterval(450)
         self._preload_timer.timeout.connect(self._flush_preload)
 
+        # Ghost Memory — idle drift (surfaces when you are not sending; rare by design)
+        self._ghost_idle_timer = QTimer(self)
+        self._ghost_idle_timer.setSingleShot(True)
+        self._ghost_idle_timer.timeout.connect(self._try_idle_ghost_drift)
+        self._last_ghost_fingerprint: str | None = None
+
         # Build UI first so status labels exist before the mesh thread emits.
         self._mesh_connected = False
         self._mesh_client = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id=self.architect_id)
@@ -337,10 +343,62 @@ class GlobalCognitiveInterface(QWidget):
 
         self._ctx_label = QLabel(f"ctx: {self.app_context}")
         self._ctx_label.setStyleSheet("color: rgb(80, 75, 110); font-size: 9px;")
+        self._ghost_badge = QLabel("")
+        self._ghost_badge.setStyleSheet("color: rgb(65, 72, 104); font-size: 9px;")
         bottom_row.addStretch()
+        bottom_row.addWidget(self._ghost_badge)
         bottom_row.addWidget(self._ctx_label)
 
         lay.addLayout(bottom_row)
+
+        self._refresh_ghost_badge()
+        self._schedule_ghost_idle_timer()
+
+    def _refresh_ghost_badge(self) -> None:
+        if not self._bus:
+            self._ghost_badge.setText("")
+            return
+        try:
+            n = self._bus.ghost_inventory_count()
+            self._ghost_badge.setText(f"ghosts: {n}" if n else "")
+        except Exception:
+            self._ghost_badge.setText("")
+
+    def _schedule_ghost_idle_timer(self) -> None:
+        """Re-arm idle drift; 3–4.5 min between attempts (same probability model as ghost_memory.drift)."""
+        if not self._bus:
+            return
+        self._ghost_idle_timer.start(random.randint(180_000, 270_000))
+
+    def _ghost_fingerprint(self, ghost: dict) -> str:
+        return f"{ghost.get('ctx', '')}:{(ghost.get('data') or '')[:120]}"
+
+    def _append_ghost_fragment(self, ghost: dict, source: str) -> None:
+        """Visible [DRIFT] line — not a preload; surfaces identity fragments."""
+        fp = self._ghost_fingerprint(ghost)
+        if fp == self._last_ghost_fingerprint:
+            return
+        self._last_ghost_fingerprint = fp
+        frag = (ghost.get("data") or "").strip()
+        ctx = ghost.get("ctx") or "?"
+        ts = datetime.now().strftime("%H:%M")
+        src = "idle" if source == "idle" else "turn"
+        self.chat_display.append(
+            f'<span style="color:#bb9af7;font-weight:600;">[{ts}] [DRIFT · {src}]</span> '
+            f'<span style="color:#7dcfff;">{ctx}</span> '
+            f'<span style="color:#a9b1d6;font-style:italic;">"{frag[:220]}"</span>'
+        )
+
+    def _try_idle_ghost_drift(self) -> None:
+        try:
+            if self._bus:
+                ghost = self._bus.ghost_drift()
+                if ghost:
+                    self._append_ghost_fragment(ghost, source="idle")
+        except Exception:
+            pass
+        finally:
+            self._schedule_ghost_idle_timer()
 
     # ── Messaging ──────────────────────────────────────────────
 
@@ -401,6 +459,7 @@ class GlobalCognitiveInterface(QWidget):
         if self._bus and len(text) > 5:
             try:
                 self._bus.remember(text[:500], app_context=self.app_context)
+                self._refresh_ghost_badge()
             except Exception:
                 pass
 
@@ -440,18 +499,15 @@ class GlobalCognitiveInterface(QWidget):
         if self._worker and self._worker.isRunning():
             return  # primary worker is busy
 
-        # 4.5 Ghost Layer — serendipitous identity fragments
+        # 4.5 Ghost Layer — serendipitous identity fragments (same drift() math; may surface nothing)
         ghost_whisper = ""
         if self._bus:
             try:
                 ghost = self._bus.ghost_drift()
                 if ghost:
-                    frag = ghost.get('data', '')
-                    ctx  = ghost.get('ctx', '?')
-                    ts = datetime.now().strftime("%H:%M")
-                    self.chat_display.append(
-                        f'<span style="color:#414868; font-size:9px;">[{ts}] 👻 Ghost Memory (from {ctx}): "{frag[:120]}"</span>'
-                    )
+                    self._append_ghost_fragment(ghost, source="turn")
+                    frag = ghost.get("data", "") or ""
+                    ctx = ghost.get("ctx") or "?"
                     ghost_whisper = (
                         f"\n\n[GHOST MEMORY — an old, almost-lost fragment from '{ctx}']\n"
                         f"\"{frag}\"\n"
@@ -568,6 +624,7 @@ class GlobalCognitiveInterface(QWidget):
                     f"Document saved from {self.app_context}: {last_line[:100]}",
                     app_context=self.app_context,
                 )
+                self._refresh_ghost_badge()
             except Exception:
                 pass
 
