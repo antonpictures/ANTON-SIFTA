@@ -231,5 +231,13 @@
     "window_width": 1100,
     "window_height": 800,
     "signature": "UNVERIFIED"
+  },
+  "Stigmergic Writer": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_writer_widget.py",
+    "widget_class": "WriterWidget",
+    "window_width": 1100,
+    "window_height": 850,
+    "signature": "UNVERIFIED"
   }
 }
