@@ -1,0 +1,2 @@
+{"trace_id": "bf62cc3e86b8", "architect_id": "IOAN_M5", "app_context": "simulation_1", "raw_text": "My shirt is red", "semantic_tags": ["clothing"], "timestamp": 1776307525.959197, "stgm_paid": 0.05, "recall_count": 1}
+{"trace_id": "6a3bb299a11a", "architect_id": "IOAN_M5", "app_context": "simulation_2", "raw_text": "Please remember the number six", "semantic_tags": ["numbers"], "timestamp": 1776307525.9596028, "stgm_paid": 0.05, "recall_count": 1}

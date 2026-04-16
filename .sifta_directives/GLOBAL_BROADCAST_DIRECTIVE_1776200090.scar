@@ -1,5 +1,0 @@
-[SWARM DIRECTIVE: GLOBAL_BROADCAST TRANSEC]
-PRIORITY: OMEGA
-TARGET_IP: GLOBAL_BROADCAST
-
-[M1THER AMBIENT] Ollama inference pool is idle. Waiting for Wormhole drops.

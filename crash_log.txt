@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/ioanganton/Music/ANTON_SIFTA/sifta_os_desktop.py", line 289, in resizeEvent
-    self.clock_label.setGeometry(self.width() - 150, 10, 140, 30)
-AttributeError: 'SiftaDesktop' object has no attribute 'clock_label'

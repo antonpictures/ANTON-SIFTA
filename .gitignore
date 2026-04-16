@@ -94,3 +94,16 @@ node_modules/
 npm-debug.log*
 CEMETERY/
 logs/
+
+# ── SIFTA OS Distro Noise ────────────────────────────────────────────────────
+.sifta_directives/
+.sifta_bounties/
+.pytest_cache/
+Logs/
+crash_log.txt
+server_stdout.log
+swarm_brain_m1.log
+swarm_telemetry.log
+os.log
+tournament_report.json
+payload.json

@@ -839,20 +839,12 @@ class SiftaDesktop(QMainWindow):
             return
         try:
             mesh = self._gci._mesh_client
-            if mesh and mesh.isRunning():
-                label_text = self._gci._mesh_status_label.text()
-                if "LIVE" in label_text:
-                    self._relay_indicator.setText("🟢 M1 Relay: LIVE")
-                    self._relay_indicator.setStyleSheet(
-                        "color: #9ece6a; font-family: monospace; font-size: 11px;"
-                        " font-weight: bold; padding: 0 8px;"
-                    )
-                else:
-                    self._relay_indicator.setText("🔴 M1 Relay: OFFLINE")
-                    self._relay_indicator.setStyleSheet(
-                        "color: #f7768e; font-family: monospace; font-size: 11px;"
-                        " font-weight: bold; padding: 0 8px;"
-                    )
+            if mesh and mesh.isRunning() and self._gci.mesh_connected:
+                self._relay_indicator.setText("🟢 M1 Relay: LIVE")
+                self._relay_indicator.setStyleSheet(
+                    "color: #9ece6a; font-family: monospace; font-size: 11px;"
+                    " font-weight: bold; padding: 0 8px;"
+                )
             else:
                 self._relay_indicator.setText("🔴 M1 Relay: OFFLINE")
                 self._relay_indicator.setStyleSheet(

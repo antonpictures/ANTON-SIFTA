@@ -1,0 +1,4 @@
+{"ts": 1776307525.959378, "reason": "MEMORY_STORE", "amount": 0.05, "trace_id": "bf62cc3e86b8", "app": "simulation_1"}
+{"ts": 1776307525.959659, "reason": "MEMORY_STORE", "amount": 0.05, "trace_id": "6a3bb299a11a", "app": "simulation_2"}
+{"ts": 1776307525.959938, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "bf62cc3e86b8", "app": "simulation_3"}
+{"ts": 1776307525.960145, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "6a3bb299a11a", "app": "simulation_3"}
