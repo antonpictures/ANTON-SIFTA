@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox, QListWidget
 )
-from PyQt6.QtCore import Qt, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
 _REPO = Path(__file__).resolve().parent
@@ -515,9 +515,17 @@ class SiftaDesktop(QMainWindow):
         QProcess.startDetached("python3", [str(_REPO / "Applications" / "sifta_control_center.py"), str(x), str(y)], str(_REPO))
         
     def _open_clock_settings(self):
-        env = QProcessEnvironment.systemEnvironment()
-        env.insert("PYTHONPATH", str(_REPO))
-        QProcess.startDetached("python3", [str(_REPO / "Applications" / "sifta_clock_settings.py")], str(_REPO))
+        # Anchor under the status-bar clock, right edge aligned with the clock strip.
+        tl = self.clock_label.mapToGlobal(QPoint(0, 0))
+        panel_w = 400  # must match ClockSettingsApp.setFixedSize width for alignment
+        w_clock = max(self.clock_label.width(), 1)
+        x = tl.x() + w_clock - panel_w
+        y = tl.y() + self.clock_label.height() + 6
+        QProcess.startDetached(
+            "python3",
+            [str(_REPO / "Applications" / "sifta_clock_settings.py"), str(x), str(y)],
+            str(_REPO),
+        )
     
     def _update_clock(self):
         settings = {}

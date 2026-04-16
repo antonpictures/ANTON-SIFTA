@@ -44,8 +44,11 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import random
+import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -537,3 +540,72 @@ def persist_ledger(floor: FactoryFloor) -> None:
                 "ts": ev.timestamp, "type": ev.event_type,
                 "stgm": ev.stgm, "detail": ev.detail,
             }) + "\n")
+
+
+def credit_architect_factory_mint(delta_stgm: float, tick: int = 0) -> Optional[float]:
+    """
+    Mirror simulated factory STGM into repair_log.jsonl as a signed UTILITY_MINT so
+    ledger_balance() and the OS HUD credit the local canonical agent (owner-bound).
+
+    Applies the same halving multiplier as other swarm mints. Disable with
+    SIFTA_FACTORY_LEDGER_SYNC=0 to keep rewards simulation-only (returns None).
+
+    Returns:
+        float > 0 — amount written to repair_log
+        0.0 — nothing written (rounding / transient failure; caller may retry)
+        None — ledger sync disabled; caller should advance local cursor without writing
+    """
+    if os.environ.get("SIFTA_FACTORY_LEDGER_SYNC", "1").strip().lower() in (
+        "0", "false", "no", "off",
+    ):
+        return None
+    d = float(delta_stgm)
+    if d <= 1e-12:
+        return 0.0
+    try:
+        if str(REPO) not in sys.path:
+            sys.path.insert(0, str(REPO))
+        from datetime import datetime, timezone
+
+        from inference_economy import get_current_halving_multiplier
+
+        if str(REPO / "System") not in sys.path:
+            sys.path.insert(0, str(REPO / "System"))
+        from body_state import SwarmBody
+        from crypto_keychain import get_silicon_identity, sign_block
+        from ledger_append import append_ledger_line
+
+        mult = get_current_halving_multiplier()
+        amount = round(d * mult, 4)
+        if amount <= 0:
+            return 0.0
+
+        sn_agent = SwarmBody.get_local_serial()
+        miner_id = SwarmBody.resolve_agent_from_serial(sn_agent)
+        if not miner_id:
+            miner_id = "ALICE_M5"
+        miner_id = str(miner_id).upper()
+
+        ts_iso = datetime.now(timezone.utc).isoformat()
+        ts_wall = int(time.time())
+        signing = get_silicon_identity()
+        reason = f"BAUWENS_FACTORY_SIM tick={tick}"
+        body = f"UTILITY_MINT::{miner_id}::{amount}::{ts_iso}::{reason}::NODE[{signing}]"
+        sig = sign_block(body)
+
+        event = {
+            "event": "UTILITY_MINT",
+            "timestamp": ts_wall,
+            "ts": ts_iso,
+            "miner_id": miner_id,
+            "amount_stgm": amount,
+            "reason": reason,
+            "hash": str(uuid.uuid4()),
+            "ed25519_sig": sig,
+            "signing_node": signing,
+        }
+        append_ledger_line(REPO / "repair_log.jsonl", event)
+        return amount
+    except Exception as e:
+        print(f"[FACTORY] Ledger credit failed: {e}")
+        return 0.0

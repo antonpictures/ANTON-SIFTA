@@ -1,1 +1,6 @@
-{}
+{
+  "SYNTAX ANALYST:SYNTAX": {
+    "success": 0.99,
+    "fail": 0.0
+  }
+}

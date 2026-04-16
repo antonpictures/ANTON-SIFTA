@@ -152,25 +152,28 @@ Use this flow for any app:
 - **Export:** EDL (CMX 3600) for import into Premiere/DaVinci/FCP, or FFmpeg filter script for direct rendering.
 - **Failure modes:** Over-cutting (threshold too low), dead swimmers (density too low), stale pheromones (all evaporated below threshold).
 
-### Swarm Browser
-- **Purpose:** The web is hostile territory. The Swarm enters it for you. Instead of rendering pretty HTML for human eyes, the browser deploys 70 swimmers into the raw DOM tree to map, harvest, and quarantine.
-- **State variables:** DOM graph (DomNode tree with pheromone_good/pheromone_bad per node), 70 swimmers (4 species), entity list, quarantine list, clean text corpus.
-- **What to watch:**
-  - **DOM graph** — radial tree visualization. Green nodes = content. Red = hostile (ads, trackers, scripts). Blue = links. Gold = media. Gray = structural.
-  - **Pheromone trails** — green glow on edges = useful paths. Red glow = hostile paths. Swimmers follow green, avoid red.
-  - **Swimmers** — colored dots crawling the tree. They physically move between parent/child nodes.
-  - **Quarantine panel** — every tracker, ad iframe, and hostile link the swarm neutralized.
-  - **Entity panel** — extracted names, dates, prices, emails from content nodes.
-  - **Clean Text panel** — article text stripped of noise, ready for consumption.
-  - **STGM counter** — tokens earned for useful extractions and tracker kills.
-- **Swimmer species:**
-  - **SkeletonMapper** (25) — maps div structure, marks content vs noise nodes.
-  - **EntityHarvester** (20) — dives into p/h1-h6, extracts text + named entities via regex NLP.
-  - **LinkSentinel** (15) — follows a[href], checks domains against hostile pattern database.
-  - **MediaExtractor** (10) — finds img/video URLs, flags tracking pixels.
-- **Controls:** URL bar + DEPLOY (fetch live page) or DEMO (synthetic test DOM with embedded ads/trackers).
-- **Key principle:** Browsing is territory mapping. The swarm treats every DOM node as a location to explore, classify, and either harvest or quarantine. STGM is earned for useful work — entity extraction and tracker neutralization. The browser doesn't show you a pretty page; it shows you the nervous system of the page, alive with swimmers.
-- **Failure modes:** Fetch timeout on slow sites, DOM too deep (>10k nodes may slow rendering), hostile JavaScript obfuscation (parser sees static HTML only).
+### SIFTA Swarm Browser
+- **Purpose:** The web is hostile territory — the Swarm maps it as **structure**, not pixels. You give a URL; the app **fetches HTML over HTTPS**, parses the DOM into a graph, and deploys **70 swimmers** (four species) that crawl nodes, deposit pheromone on “good” vs “bad” structure, harvest text and entities, and flag ads/trackers. You do **not** get a full Chrome-like renderer: you get a **living radial map** of the document tree plus side panels. STGM in the HUD reflects **toy accounting** tied to extractions and quarantines in this simulation.
+- **Controls:**
+  - **TARGET** — full `https://…` URL (scheme added if missing).
+  - **DEPLOY** — fetch the page in a background thread, then parse and visualize. Uses Python’s HTTP stack with the **certifi** CA bundle when available so TLS verification matches real browsers on macOS (install: `pip install certifi` / see `requirements.txt`).
+  - **DEMO** — loads a **built-in synthetic HTML** page (embedded ads, trackers, content) so you can see swimmers without the network.
+- **What you see:**
+  - **Main canvas** — radial tree layout of parsed nodes; swimmers as colored dots moving along edges.
+  - **Entities** — regex-extracted cues from text nodes (emails, dates, etc., per implementation).
+  - **Text** — concatenated clean-ish text from content-class nodes.
+  - **Quarantine** — nodes/links classified hostile (known ad domains, suspicious classes, iframes/scripts, etc.).
+  - **Log** — parse/deploy messages and errors.
+- **Swimmer species (from lore / code):**
+  - **SkeletonMapper** — maps structural tags (`div`, landmarks), separates content vs noise.
+  - **EntityHarvester** — works `p`, headings, `article`, etc., for entities and copy.
+  - **LinkSentinel** — walks `a[href]` against hostile-domain and pattern lists.
+  - **MediaExtractor** — `img` / `video` / `source` URLs; flags tracking-style media.
+- **Limits (honest):**
+  - **Static HTML only** — whatever the server returns to a simple GET (no JS execution). SPAs (many Google Labs / app URLs) may return **shell HTML** with little to map; use DEMO or a static or server-rendered page to judge the viz.
+  - **Timeouts / size** — very large DOMs can stress the layout; slow sites can hit fetch timeouts.
+  - **TLS** — if you still see certificate errors after `certifi`, run macOS **Install Certificates.command** for your Python.org install.
+- **Key principle:** Browsing here means **stigmergic cartography** — classify territory, harvest signal, quarantine noise — not scrolling a styled page. Press **?** in the app’s own title row for this section (loaded from this file).
 
 ---
 
@@ -196,10 +199,9 @@ Use this flow for any app:
 - **What to watch:** Silence detection quality, stitch continuity, and final cut pacing.
 - **Key principle:** Deterministic post-processing for speech-heavy footage with utility-backed compute accounting.
 
-### Desktop GUI (Legacy)
-- **Purpose:** Historical/fallback desktop shell.
-- **What to watch:** Compatibility and parity against the current shell.
-- **Key principle:** Evolution with fallback continuity.
+### Wormhole Body Chat (Tk, optional CLI)
+- **Purpose:** Standalone Tk window that polls the wormhole messenger API (`sifta_http_auth` + gateway). Not a second “desktop OS.”
+- **Launch:** `python3 Applications/sifta_desktop_gui.py` (removed from the Programs menu as redundant with Swarm Chat / gateway workflows).
 
 ---
 

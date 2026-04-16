@@ -32,7 +32,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 import numpy as np
 
@@ -46,8 +46,9 @@ from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSplitter,
     QTabWidget, QTextEdit, QVBoxLayout, QWidget, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF, QThread, QUrl, pyqtSignal
 from PyQt6.QtGui import (
+    QDesktopServices,
     QPainter, QColor, QBrush, QPen, QFont, QRadialGradient, QPainterPath,
 )
 
@@ -541,6 +542,18 @@ class DomGraphCanvas(QWidget):
 #  FETCH WORKER (background thread)
 # ═══════════════════════════════════════════════════════════════════
 
+# Many sites return 403 if User-Agent looks like a script. Use a conventional browser string
+# so simple GETs work on servers that only check headers (still no guarantee vs bot shields).
+_BROWSER_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
 def _ssl_context_for_https() -> ssl.SSLContext:
     """
     urllib uses the interpreter's default CA store; on many macOS Python installs
@@ -565,16 +578,25 @@ class FetchWorker(QThread):
 
     def run(self):
         try:
-            req = Request(self.url, headers={"User-Agent": "SIFTA-SwarmBrowser/1.0"})
+            req = Request(self.url, headers=dict(_BROWSER_FETCH_HEADERS))
             ctx = None
             if self.url.startswith("https://"):
                 ctx = _ssl_context_for_https()
-            kw = {"timeout": 15}
+            kw = {"timeout": 20}
             if ctx is not None:
                 kw["context"] = ctx
             with urlopen(req, **kw) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
             self.finished.emit(html)
+        except HTTPError as e:
+            err = f"HTTP Error {e.code}: {e.reason}"
+            if e.code == 403:
+                err += (
+                    " — The server refuses this client (common for major news sites: bot/paywall "
+                    "protection). Swarm Browser is not a full browser: no cookies, no JS, one GET. "
+                    "Use DEMO, try a simpler or static page, or open the page in Safari and work from saved HTML."
+                )
+            self.error.emit(err)
         except Exception as e:
             err = str(e)
             if "CERTIFICATE_VERIFY_FAILED" in err or "SSL: CERTIFICATE_VERIFY_FAILED" in err:
@@ -655,6 +677,14 @@ class SwarmBrowserWidget(SiftaBaseWidget):
         btn_demo.clicked.connect(self._load_demo)
         url_row.addWidget(btn_demo)
 
+        btn_watch = QPushButton("Watch in browser")
+        btn_watch.setToolTip(
+            "Swarm Browser cannot play video — it only parses HTML. "
+            "Opens this URL in Safari/Chrome so you can watch while DEPLOY scans the page."
+        )
+        btn_watch.clicked.connect(self._open_in_system_browser)
+        url_row.addWidget(btn_watch)
+
         layout.addLayout(url_row)
 
         # Splitter: canvas + sidebar
@@ -730,6 +760,18 @@ class SwarmBrowserWidget(SiftaBaseWidget):
         self._on_html(DEMO_HTML)
         self.url_input.setText("demo://sifta-swarm-browser-test-page")
         self.set_status("Demo DOM loaded — swimmers deployed")
+
+    def _open_in_system_browser(self):
+        """Real playback (YouTube, etc.) needs a full browser — we only parse HTML here."""
+        url = self.url_input.text().strip()
+        if not url or url.startswith("demo://"):
+            self.set_status("Set a real http(s) URL first")
+            return
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+            self.url_input.setText(url)
+        QDesktopServices.openUrl(QUrl(url))
+        self.set_status(f"Opened in system browser — {url[:56]}…")
 
     def _on_html(self, html: str):
         nodes = parse_html(html)

@@ -47,7 +47,7 @@ from System.sifta_base_widget import SiftaBaseWidget
 from System.regenerative_factory import (
     FactoryFloor, FactorySwimmer, CellType,
     spawn_factory_swimmers, step_factory, factory_telemetry,
-    persist_ledger, COMPONENTS,
+    persist_ledger, credit_architect_factory_mint, COMPONENTS,
 )
 
 # ── Palette ──────────────────────────────────────────────────────
@@ -92,8 +92,11 @@ class FactoryCanvas(FigureCanvas):
         self._ax_inv = self._fig.add_subplot(gs[0, 1])
         self._ax_stgm = self._fig.add_subplot(gs[1, 0])
         self._ax_info = self._fig.add_subplot(gs[1, 1])
-        for ax in [self._ax_floor, self._ax_inv, self._ax_stgm, self._ax_info]:
+        # Single twin for STGM + parts (twinx() each frame stacks axes and breaks tight_layout)
+        self._ax_stgm_twin = self._ax_stgm.twinx()
+        for ax in [self._ax_floor, self._ax_inv, self._ax_stgm, self._ax_info, self._ax_stgm_twin]:
             ax.set_facecolor(BG)
+        self._fig.subplots_adjust(left=0.05, right=0.97, top=0.95, bottom=0.06)
 
         self._floor: FactoryFloor | None = None
         self._swimmers: List[FactorySwimmer] = []
@@ -231,13 +234,17 @@ class FactoryCanvas(FigureCanvas):
         ax3 = self._ax_stgm
         ax3.clear()
         ax3.set_facecolor(BG)
+        ax3b = self._ax_stgm_twin
+        ax3b.clear()
+        ax3b.set_facecolor(BG)
         if len(self._stgm_history) > 2:
             x = range(len(self._stgm_history))
             ax3.plot(x, self._stgm_history, "-", color="#00ffc8", linewidth=1.0, alpha=0.9)
-            ax3b = ax3.twinx()
             ax3b.plot(x, self._printed_history, "-", color="#44ee66", linewidth=0.8, alpha=0.7)
             ax3b.tick_params(colors="#44ee66", labelsize=4)
             ax3b.set_ylabel("Parts", fontsize=5, color="#44ee66")
+        else:
+            ax3b.set_yticks([])
         ax3.tick_params(colors="#556688", labelsize=4)
         ax3.set_ylabel("STGM", fontsize=5, color="#00ffc8")
         ax3.set_title("PROOF OF USEFUL PHYSICAL WORK", fontsize=7,
@@ -266,7 +273,6 @@ class FactoryCanvas(FigureCanvas):
             ax4.text(0.45, y, val, fontsize=6, color="#00ffc8",
                      fontfamily="monospace", transform=ax4.transAxes, va="top")
 
-        self._fig.tight_layout(pad=0.6)
         self.draw_idle()
 
 
@@ -319,6 +325,7 @@ class FactoryWidget(SiftaBaseWidget):
         self._swimmers = spawn_factory_swimmers(self._floor)
         self._running = False
         self._timer: QTimer | None = None
+        self._quorum_credited_stgm = 0.0  # synced to repair_log UTILITY_MINT
 
         self._canvas.set_data(self._floor, self._swimmers)
         telem = factory_telemetry(self._floor, self._swimmers)
@@ -349,6 +356,7 @@ class FactoryWidget(SiftaBaseWidget):
             self._toggle()
         self._floor = FactoryFloor(rows=20, cols=30)
         self._swimmers = spawn_factory_swimmers(self._floor)
+        self._quorum_credited_stgm = 0.0
         self._canvas.set_data(self._floor, self._swimmers)
         self._canvas._stgm_history.clear()
         self._canvas._printed_history.clear()
@@ -362,6 +370,15 @@ class FactoryWidget(SiftaBaseWidget):
             self._log_msg(msg)
 
         telem = factory_telemetry(self._floor, self._swimmers)
+        total_sim = float(telem["total_stgm"])
+        delta = total_sim - self._quorum_credited_stgm
+        if delta > 1e-9:
+            credited = credit_architect_factory_mint(delta, tick=telem["tick"])
+            if credited is None:
+                self._quorum_credited_stgm = total_sim
+            elif credited > 0:
+                self._quorum_credited_stgm = total_sim
+                self._log_msg(f"Quorum ledger +{credited:.4f} STGM (factory → owner agent)")
         self.set_status(
             f"Tick {telem['tick']} | STGM: {telem['total_stgm']:.2f} | "
             f"Printed: {telem['total_printed']} | "

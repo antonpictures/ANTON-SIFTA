@@ -149,11 +149,6 @@
     "window_height": 920,
     "signature": "UNVERIFIED"
   },
-  "Silence Remover & Stitcher": {
-    "category": "Accessories",
-    "entry_point": "Applications/sifta_sebastian_editor.py",
-    "signature": "UNVERIFIED"
-  },
   "SIFTA File Navigator": {
     "category": "Accessories",
     "entry_point": "Applications/sifta_file_manager_widget.py",

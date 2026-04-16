@@ -1,3 +1,8 @@
+"""
+Optional Tk viewer for the wormhole messenger API (M1SIFTA_BODY ↔ M5SIFTA_BODY).
+This is not the SIFTA OS shell — run sifta_os_desktop.py for the main PyQt desktop.
+Launch standalone: python3 Applications/sifta_desktop_gui.py
+"""
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 import requests

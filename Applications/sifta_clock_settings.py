@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QPropertyAnimation, QRect, QEasingCurve, pyqtProperty
+from PyQt6.QtCore import Qt, QPoint, QPropertyAnimation, QRect, QEasingCurve, pyqtProperty
 from PyQt6.QtGui import QColor, QPainter, QFont, QBrush, QPen
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -241,6 +241,32 @@ class ClockSettingsApp(QWidget):
 def run():
     app = QApplication(sys.argv)
     w = ClockSettingsApp()
+    # Optional argv from SIFTA desktop: x y — anchor under status-bar clock.
+    if len(sys.argv) >= 3:
+        try:
+            x = int(float(sys.argv[1]))
+            y = int(float(sys.argv[2]))
+            nx, ny = x, y
+            scr = app.screenAt(QPoint(nx + w.width() // 2, ny)) or app.primaryScreen()
+            if scr is not None:
+                ag = scr.availableGeometry()
+                if nx + w.width() > ag.right():
+                    nx = ag.right() - w.width()
+                if ny + w.height() > ag.bottom():
+                    ny = ag.bottom() - w.height()
+                nx = max(ag.left(), nx)
+                ny = max(ag.top(), ny)
+            w.move(nx, ny)
+        except ValueError:
+            pass
+    else:
+        # Standalone launch: center on primary screen
+        screen = app.primaryScreen()
+        if screen is not None:
+            geo = screen.availableGeometry()
+            fr = w.frameGeometry()
+            fr.moveCenter(geo.center())
+            w.move(fr.topLeft())
     w.show()
     sys.exit(app.exec())
 
