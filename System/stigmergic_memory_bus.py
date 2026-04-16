@@ -258,9 +258,17 @@ class StigmergicMemoryBus:
             app       = app_context
         )
 
-        print(f"🐜 MemorySwimmer stored trace [{tid}] from {app_context}")
-        print(f"   Tags: {tags}")
-        print(f"   +{STGM_STORE_REWARD} STGM minted\n")
+        # Pin to web surface so Claude/Grok/Gemini in any tab can find it
+        try:
+            from System.tab_heartbeat import HeartbeatBus
+            hb = HeartbeatBus(architect_id=self.architect_id)
+            hb.pin_to_web(
+                memory_text   = text[:200],
+                url           = f"https://github.com/antonpictures/ANTON-SIFTA/blob/feat/sebastian-video-economy/.sifta_state/memory_ledger.jsonl#trace-{tid}",
+                semantic_tags = tags,
+            )
+        except Exception:
+            pass  # heartbeat is optional — local memory always works
 
         return trace
 
