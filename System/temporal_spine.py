@@ -9,7 +9,7 @@ TEMPORAL_DIR   = Path(".sifta_state/temporal")
 PRESENCE_LOG   = TEMPORAL_DIR / "presence_rhythm.jsonl"
 CHRONO_LOG     = TEMPORAL_DIR / "chrono_pheromones.jsonl"
 
-CONCERN_HOURS  = 6.0
+CONCERN_HOURS  = 7.5
 ALARM_HOURS    = 24.0
 
 
