@@ -1,0 +1,36 @@
+{
+  "scar_id": "c8924865d6504518fc0f98e162c996c5338ff2a9ef79cd0b1b5d5291e38135c9",
+  "agent_id": "ANTIALICE",
+  "body_hash": "laWSBuiLx8WTvZb5JeMAuYZMR+zIJveulacIQLpn6ovAPTtmvdpxCHoL4gCg==]>",
+  "face": "[o|o]",
+  "action": "SCOUT",
+  "mark": "Territory clawteam/events/hooks.py is clean.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-09T02:24:01.458025+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Scout",
+      "message": "File passed syntax validation natively."
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-09T02:24:01.458025+00:00",
+      "action": "SCOUT",
+      "found": "clean file",
+      "reason": {
+        "type": "Scout",
+        "message": "File passed syntax validation natively."
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

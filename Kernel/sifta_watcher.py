@@ -23,7 +23,7 @@ WATCH_DIR = Path(__file__).parent.absolute()
 DISPATCH_AGENT = "ALICE_M5"
 
 # Directories we absolutely do not want to monitor or repair
-IGNORE_DIRS = [".git", "__pycache__", ".sifta_state", "CEMETERY", "WORMHOLE", "venv", ".venv", "node_modules"]
+IGNORE_DIRS = [".git", "__pycache__", ".sifta_state", "QUARANTINE", "WORMHOLE", "venv", ".venv", "node_modules"]
 
 class NervousSystemHandler(FileSystemEventHandler):
     def __init__(self):

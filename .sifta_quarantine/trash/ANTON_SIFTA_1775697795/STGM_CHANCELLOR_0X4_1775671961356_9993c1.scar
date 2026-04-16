@@ -1,0 +1,37 @@
+{
+  "agent_id": "STGM_CHANCELLOR_0X4",
+  "body_hash": "v+N8oYywcJWhu6AbaPt2/STP6o4AwSFc6qobbqf8j/bB8/xj2wtbGOLl2wAg==]>",
+  "face": "[?]",
+  "action": "PATROL",
+  "mark": "FED Cleared 10.0 STGM routing to HERMES.",
+  "pre_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "post_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "scent": {
+    "last_visited": "2026-04-08T18:12:41.356107+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "STGM_Trade_Clearance",
+      "amount": 10.0,
+      "sender": "ANTIALICE"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T18:12:41.356107+00:00",
+      "action": "PATROL",
+      "found": "/Users/ioanganton/Music/ANTON_SIFTA/WORMHOLE/1775671949_HERMES_MAIL.trade",
+      "reason": {
+        "type": "STGM_Trade_Clearance",
+        "amount": 10.0,
+        "sender": "ANTIALICE"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

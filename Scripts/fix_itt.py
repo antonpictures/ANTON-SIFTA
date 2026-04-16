@@ -57,7 +57,7 @@ replacements = [
     ("Havy medical records.", "ever touching the cloud."),
     ("A bat process.", "Complete with a quorum gate validation"),
     ("And analyze.", "protocol to prevent rogue actions,"),
-    ("1000 of photos.", "and a cemetery regeneration med bay"),
+    ("1000 of photos.", "and a quarantine regeneration med bay"),
     ("All without a single bite.", "where swimmers heal simply by"),
     ("of your sensitive data.", "being monitored."),
     ("Ever touching the cloud.", "This is verifiable swarm intelligence"),

@@ -151,7 +151,7 @@ STYLES = [
     "NOMINAL",
     "CORRUPTED",
     "CRITICAL",
-    "DEAD",
+    "QUARANTINED",
     "COUCH",
     "OBSERVE",
     "HYPOTHESIS",

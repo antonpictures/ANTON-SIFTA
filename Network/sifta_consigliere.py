@@ -79,7 +79,7 @@ def _read_scars() -> dict:
         if not sifta_dir.is_dir():
             continue
         rel_path = str(sifta_dir.parent.relative_to(ROOT_DIR))
-        if "CEMETERY" in rel_path or "proposals" in rel_path:
+        if "QUARANTINE" in rel_path or "proposals" in rel_path:
             continue
 
         territory_scars = []

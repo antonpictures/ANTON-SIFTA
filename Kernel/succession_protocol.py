@@ -3,7 +3,7 @@ from pathlib import Path
 from body_state import SwarmBody
 
 STATE_DIR = Path(".sifta_state")
-CEMETERY_DIR = Path("CEMETERY")
+QUARANTINE_DIR = Path("QUARANTINE")
 
 def load_agent_state(agent_id: str) -> dict:
     file_path = STATE_DIR / f"{agent_id.upper()}.json"
@@ -13,14 +13,14 @@ def load_agent_state(agent_id: str) -> dict:
         return json.load(f)
 
 def bury(old_state: dict, cause: str):
-    """Write a formal retirement record to the CEMETERY without destroying history."""
-    CEMETERY_DIR.mkdir(exist_ok=True)
+    """Write a formal retirement record to the QUARANTINE without destroying history."""
+    QUARANTINE_DIR.mkdir(exist_ok=True)
     agent_id = old_state.get("id", "UNKNOWN")
     seq = old_state.get("seq", 0)
     
-    dead_path = CEMETERY_DIR / f"{agent_id}-SEQ{seq:03d}.dead"
+    dead_path = QUARANTINE_DIR / f"{agent_id}-SEQ{seq:03d}.quarantined"
     epitaph = (
-        f"# CEMETERY — {agent_id} SEQ[{seq:03d}]\n"
+        f"# QUARANTINE — {agent_id} SEQ[{seq:03d}]\n"
         f"CAUSE: {cause}\n"
         f"FINAL_ENERGY: {old_state.get('energy', 0)}\n"
         f"LAST_BODY: {old_state.get('raw', '')}\n"
@@ -67,7 +67,7 @@ def retire_and_succeed(old_id: str, new_id: str, hardware_origin: str = "SWARM_M
     
     print(f"  [🧬] Etching lineage into new Ed25519 genesis block...")
     new_agent.generate_body(
-        origin="CEMETERY",
+        origin="QUARANTINE",
         destination="SWARM_MATRIX",
         payload=f"SUCCESSION_FROM_{old_id}",
         action_type="SUCCESSION",

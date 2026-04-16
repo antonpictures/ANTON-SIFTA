@@ -17,8 +17,8 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
 
-CEMETERY_DIR = Path(__file__).parent / "CEMETERY"
-CEMETERY_DIR.mkdir(exist_ok=True)
+QUARANTINE_DIR = Path(__file__).parent / "QUARANTINE"
+QUARANTINE_DIR.mkdir(exist_ok=True)
 
 STATE_DIR = Path(__file__).parent / ".sifta_state"
 STATE_DIR.mkdir(exist_ok=True)
@@ -472,7 +472,7 @@ def apply_damage(state: dict, strike_type: str) -> dict:
     append_ledger_line(ledger, event)
 
     if state["energy"] <= 0:
-        state["style"] = "DEAD"
+        state["style"] = "QUARANTINED"
     elif state["energy"] < 20:
         state["style"] = "CRITICAL"
     elif state["energy"] < 40:
@@ -486,7 +486,7 @@ def regenerate_energy(state: dict, base_rate: int = 10) -> dict:
     Regenerates agent energy modulated by their reputation score.
     energy_regen = base_rate * (0.5 + 0.5 * reputation_score)
     """
-    if state["style"] == "DEAD" or state["energy"] <= 0:
+    if state["style"] in ("DEAD", "QUARANTINED") or state["energy"] <= 0:
         return state # Dead agents cannot regen
         
     rep = reputation_engine.get_reputation(state["id"])
@@ -504,15 +504,15 @@ def regenerate_energy(state: dict, base_rate: int = 10) -> dict:
     save_agent_state(state)
     return state
 
-def bury(state: dict, cause: str = "unknown"):
-    """Write a permanent death record to the CEMETERY directory."""
+def quarantine_agent(state: dict, cause: str = "unknown"):
+    """Write a permanent quarantine record to the QUARANTINE directory."""
     agent_id = state.get("id", "UNKNOWN")
     seq      = state.get("seq", 0)
     ts       = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-    epitaph = (
-        f"# CEMETERY — {agent_id} SEQ[{seq:03d}]\n"
-        f"DIED:           {ts}\n"
+    stasis_record = (
+        f"# QUARANTINE — {agent_id} SEQ[{seq:03d}]\n"
+        f"ENTERED_STASIS: {ts}\n"
         f"CAUSE:          {cause}\n"
         f"FINAL_ENERGY:   {state.get('energy')}\n"
         f"FINAL_STYLE:    {state.get('style')}\n"
@@ -521,7 +521,10 @@ def bury(state: dict, cause: str = "unknown"):
         f"FINAL_BODY:     {state.get('raw')}\n"
     )
 
-    dead_path = CEMETERY_DIR / f"{agent_id}-SEQ{seq:03d}.dead"
-    dead_path.write_text(epitaph, encoding="utf-8")
-    print(f"  [☠️ CEMETERY] {agent_id} buried at {dead_path.name}")
-    return dead_path
+    quarantine_path = QUARANTINE_DIR / f"{agent_id}-SEQ{seq:03d}.quarantined"
+    quarantine_path.write_text(stasis_record, encoding="utf-8")
+    print(f"  [🔒 QUARANTINE] {agent_id} entered stasis at {quarantine_path.name}")
+    return quarantine_path
+
+# Backward compat alias
+bury = quarantine_agent

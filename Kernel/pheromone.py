@@ -379,7 +379,7 @@ def scan_all_territories(root_path: Path, active_agent: Dict[str, Any] = None) -
             rel_path = "Root"
             
         # Protect internal system folders from rendering as battleground territories
-        if "CEMETERY" in rel_path or rel_path.startswith(".sifta_cemetery"):
+        if "QUARANTINE" in rel_path or rel_path.startswith(".sifta_quarantine"):
             continue
 
         scars = smell_territory(sifta_dir.parent, active_agent)

@@ -1,15 +1,15 @@
 {
-  "id": "M1QUEEN",
-  "homeworld_serial": "GTH4921YP3",
-  "energy": 100,
-  "style": "NOMINAL",
-  "raw": "",
-  "vin_hash": "c9cafccc4fe8b52340f5fc4cb19f036e62a6a573690a95b97755029af962d387",
-  "ttl": 1776447091,
-  "seq": 1,
-  "hash_chain": [],
-  "context": [
-    "[DEFRAG BY M1QUEEN] [COMPRESSION FALLBACK] Context automatically summarized due to LLM timeout."
-  ],
-  "stgm_balance": 2.5
+    "id": "M1QUEEN",
+    "homeworld_serial": "GTH4921YP3",
+    "energy": 100,
+    "style": "NOMINAL",
+    "raw": "",
+    "vin_hash": "c9cafccc4fe8b52340f5fc4cb19f036e62a6a573690a95b97755029af962d387",
+    "ttl": 1776447091,
+    "seq": 1,
+    "hash_chain": [],
+    "context": [
+        "[DEFRAG BY M1QUEEN] [COMPRESSION FALLBACK] Context automatically summarized due to LLM timeout."
+    ],
+    "stgm_balance": 0.0
 }

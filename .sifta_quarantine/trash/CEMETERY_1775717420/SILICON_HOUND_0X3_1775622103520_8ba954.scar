@@ -1,0 +1,37 @@
+{
+  "agent_id": "SILICON_HOUND_0X3",
+  "body_hash": "I/N+Nh5XE+VIjw2B8UrDMoOAqbePjgnQ9QnTjQ0KOsQxSlWFagKYlGNzMpBg==]>",
+  "face": "[^_&]",
+  "action": "PATROL",
+  "mark": "CID AUTOPSY COMPLETE: KARPATHY_PRIME_0X1-ARRESTED-1775622103 died from 'UNKNOWN' after ? swims.",
+  "pre_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "post_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "scent": {
+    "last_visited": "2026-04-08T04:21:43.520203+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Autopsy",
+      "agent": "KARPATHY_PRIME_0X1-ARRESTED-1775622103",
+      "cause": "UNKNOWN"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T04:21:43.520203+00:00",
+      "action": "PATROL",
+      "found": "CEMETERY/KARPATHY_PRIME_0X1-ARRESTED-1775622103.dead",
+      "reason": {
+        "type": "Autopsy",
+        "agent": "KARPATHY_PRIME_0X1-ARRESTED-1775622103",
+        "cause": "UNKNOWN"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

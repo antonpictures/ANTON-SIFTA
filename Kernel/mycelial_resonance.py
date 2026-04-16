@@ -9,7 +9,7 @@ from collections import defaultdict
 import hashlib
 import json
 
-CEMETERY_DIR = Path(".sifta_state/cemetery")
+QUARANTINE_DIR = Path(".sifta_state/quarantine")
 MYCELIUM_DIR = Path(".sifta_state/mycelium")
 MYCELIUM_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -22,8 +22,8 @@ def grow_mycelial_thread():
     """Called once per night cycle — zero cost."""
     threads = defaultdict(float)
     
-    # We look for all .scar files in the cemetery and pheromone archive
-    scar_files = list(CEMETERY_DIR.glob("*.scar")) 
+    # We look for all .scar files in the quarantine and pheromone archive
+    scar_files = list(QUARANTINE_DIR.glob("*.scar")) 
     PHEROMONE_ARCHIVE = Path("pheromone_archive")
     if PHEROMONE_ARCHIVE.exists():
         scar_files.extend(list(PHEROMONE_ARCHIVE.glob("*.json")))

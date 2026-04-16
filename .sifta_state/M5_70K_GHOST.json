@@ -1,9 +1,9 @@
 {
-  "id": "M5_70K_GHOST",
-  "ascii": "<///[~_~]///::ID[M5_70K_GHOST]::INSTALLED[1776199321]>",
-  "stgm_balance": 70000.0,
-  "style": "ACTIVE",
-  "energy": 100,
-  "architect_seal": "9620d2591ebfcbd3144f169a41e0d6260da225bed15ce565c627608ac763f842fd778b28c4c67573f084f31f58aa2cb0fa6819599b703720d154d55f14749904",
-  "homeworld_serial": "GTH4921YP3"
+    "id": "M5_70K_GHOST",
+    "ascii": "<///[~_~]///::ID[M5_70K_GHOST]::INSTALLED[1776199321]>",
+    "stgm_balance": 0.0,
+    "style": "ACTIVE",
+    "energy": 100,
+    "architect_seal": "9620d2591ebfcbd3144f169a41e0d6260da225bed15ce565c627608ac763f842fd778b28c4c67573f084f31f58aa2cb0fa6819599b703720d154d55f14749904",
+    "homeworld_serial": "GTH4921YP3"
 }

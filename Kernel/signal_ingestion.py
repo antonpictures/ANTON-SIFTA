@@ -98,7 +98,7 @@ ERROR_PATTERNS = [
     (re.compile(r"\bERROR\b|\bFAIL\b|\bCRITICAL\b", re.I),       0.7, 0.8),
     (re.compile(r"\bException\b|\bTraceback\b",       re.I),       0.6, 0.85),
     (re.compile(r"\bBLEEDING\b|\bCORRUPTED\b",       re.I),       0.5, 0.9),
-    (re.compile(r"\bDEAD\b|\bCEMETERY\b",            re.I),       0.4, 0.95),
+    (re.compile(r"\bDEAD\b|\bQUARANTINE\b",            re.I),       0.4, 0.95),
     (re.compile(r"\bUNKNOWN\b|\bANOMALY\b",          re.I),       0.3, 0.99),
 ]
 

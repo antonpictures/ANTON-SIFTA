@@ -47,10 +47,103 @@ def handle_get_ledger():
         return f"Error reading ledger: {str(e)}"
 
 def handle_get_agent_status(agent_id):
-    # Dummy mock mapping since agent biometrics are loosely tracked in logs
-    if agent_id.upper() in ["M1THER", "SEBASTIAN", "HERMES", "SIFTA_QUEEN"]:
-        return f"AGENT {agent_id.upper()} is ALIVE. Connected via MCP bridging."
-    return f"AGENT {agent_id.upper()} status unknown or offline."
+    """
+    Real agent health check — no more dummy lists.
+    Checks: 1) .sifta_state JSON file exists  2) Identity topology  3) Recent STGM ledger activity  4) OS process
+    """
+    aid = agent_id.upper().strip()
+    signals = []
+    alive = False
+
+    # ── Alias resolution: ALICE_M5 → also check M5SIFTA_BODY, M5QUEEN ──
+    ALIASES = {
+        "ALICE_M5":  ["ALICE_M5", "M5QUEEN", "M5SIFTA_BODY"],
+        "M5QUEEN":   ["M5QUEEN", "ALICE_M5", "M5SIFTA_BODY"],
+        "M1THER":    ["M1THER", "M1QUEEN", "M1SIFTA_BODY"],
+        "SEBASTIAN":  ["SEBASTIAN", "SEBASTIAN_MIGRATED"],
+    }
+    check_names = ALIASES.get(aid, [aid, aid.replace("_", ""), f"{aid}_MIGRATED"])
+
+    # ── Signal 1: State file exists ──
+    state_dir = _REPO / ".sifta_state"
+    for variant in check_names:
+        state_file = state_dir / f"{variant}.json"
+        if state_file.exists():
+            try:
+                data = json.loads(state_file.read_text())
+                energy = data.get("energy", data.get("stgm_balance", 0))
+                status = data.get("status", "present")
+                if status in ("sybil_quarantine", "migrated") and energy == 0:
+                    signals.append(f"State file {variant}.json: QUARANTINED (energy=0)")
+                else:
+                    signals.append(f"State file {variant}.json: OK (balance={energy})")
+                    alive = True
+            except Exception:
+                signals.append(f"State file {variant}.json: found but unreadable")
+            break
+
+    # ── Signal 2: Identity topology confirms existence ──
+    topo_file = state_dir / "identity_topology.json"
+    if topo_file.exists():
+        try:
+            topo = json.loads(topo_file.read_text())
+            nodes = topo.get("nodes", topo)  # handle nested or flat
+            if isinstance(nodes, dict):
+                for serial, info in nodes.items():
+                    if not isinstance(info, dict):
+                        continue
+                    node_name = info.get("name", "").upper()
+                    if aid == node_name or node_name in check_names:
+                        signals.append(f"Topology: {info.get('name')} on {serial} ({info.get('hardware', '?')})")
+                        alive = True
+                        break
+        except Exception:
+            pass
+
+    # ── Signal 3: Recent STGM minting activity (last 60 min) ──
+    ledger_file = _REPO / "repair_log.jsonl"
+    if ledger_file.exists():
+        try:
+            cutoff = time.time() - 3600
+            recent_mints = 0
+            with open(ledger_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        entry_agent = entry.get("agent_id", entry.get("agent", "")).upper()
+                        entry_ts = entry.get("timestamp", 0)
+                        if entry_ts > cutoff and any(n in entry_agent for n in check_names):
+                            recent_mints += 1
+                    except Exception:
+                        continue
+            if recent_mints > 0:
+                signals.append(f"Ledger: {recent_mints} tx in last hour")
+                alive = True
+        except Exception:
+            pass
+
+    # ── Signal 4: Process liveness ──
+    try:
+        import subprocess
+        ps = subprocess.run(["pgrep", "-fl", "sifta_os_desktop"], capture_output=True, text=True, timeout=2)
+        if ps.returncode == 0 and ps.stdout.strip():
+            signals.append("OS process: RUNNING")
+            alive = True
+    except Exception:
+        pass
+
+    # ── Build response ──
+    if alive:
+        detail = " | ".join(signals) if signals else "MCP bridging confirmed"
+        return f"AGENT {aid} is ALIVE. {detail}"
+    elif signals:
+        detail = " | ".join(signals)
+        return f"AGENT {aid} status DEGRADED. {detail}"
+    else:
+        return f"AGENT {aid} status unknown or offline. No state file, no ledger activity, no OS process."
 
 def handle_propose_scar(target_file, description):
     try:

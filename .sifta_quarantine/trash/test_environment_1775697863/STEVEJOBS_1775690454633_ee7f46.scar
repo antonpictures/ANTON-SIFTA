@@ -1,0 +1,37 @@
+{
+  "agent_id": "STEVEJOBS",
+  "body_hash": "MhXPcPy2WgDjyqfv1LnOc05q/14ow9Nr1FrXrHOvg9CpQ0sZFQFlGJAWYkCw==]>",
+  "face": "[\uf8ff_\uf8ff]",
+  "action": "ABORT",
+  "mark": "Agent corrupted mind state resolving .. Dropping thread.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-08T23:20:54.633030+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 4,
+    "reason": {
+      "type": "ValidationFail",
+      "line": 4,
+      "message": "runtime verification failed: command '['python3', '-c', \"import sys; sys.path.insert(0, '/users/ioanganton/music/anton_sifta/test_environment'); import sifta_verify_w7k4dlq6\"]' timed out after 10 seconds"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T23:20:54.633030+00:00",
+      "action": "ABORT",
+      "found": "unindent does not match any outer indentation level (<unknown>, line 4)",
+      "reason": {
+        "type": "ValidationFail",
+        "line": 4,
+        "message": "runtime verification failed: command '['python3', '-c', \"import sys; sys.path.insert(0, '/users/ioanganton/music/anton_sifta/test_environment'); import sifta_verify_w7k4dlq6\"]' timed out after 10 seconds"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

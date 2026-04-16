@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit,
     QPushButton, QLabel, QFrame, QComboBox,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
 
 from System.context_preloader import ContextPreloader
@@ -40,11 +40,18 @@ _REPO = Path(__file__).resolve().parent.parent
 DOCS_DIR = _REPO / ".sifta_documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Layer 2 Configuration ────────────────────────────────────────────────────
-# Set SWARM_RELAY_URI in your environment to point at M1's relay when it's remote.
-# Example: export SWARM_RELAY_URI=ws://192.168.1.42:8765
-# Default: localhost (for testing on the same machine)
-SWARM_RELAY_URI = os.environ.get("SWARM_RELAY_URI", "ws://127.0.0.1:8765")
+SWARM_RELAY_URI = os.environ.get("SWARM_RELAY_URI")
+if not SWARM_RELAY_URI:
+    try:
+        # Avoid circular imports, read silicon hardware
+        with open(_REPO / ".sifta_state/territory_manifest.json", "r") as f:
+            _man = __import__("json").load(f)
+            if "GTH4921YP3" in _man.get("serial", ""):  # M5 Studio
+                SWARM_RELAY_URI = "ws://192.168.1.71:8765"
+            else:
+                SWARM_RELAY_URI = "ws://127.0.0.1:8765"
+    except Exception:
+        SWARM_RELAY_URI = "ws://127.0.0.1:8765"
 
 
 # ── Ollama Worker (background thread for real responses) ────────────────────
@@ -230,6 +237,11 @@ class GlobalCognitiveInterface(QWidget):
             pass
 
         self._preloaded_memory_cache = None
+        self._last_preload_shown: str | None = None
+        self._preload_timer = QTimer(self)
+        self._preload_timer.setSingleShot(True)
+        self._preload_timer.setInterval(450)
+        self._preload_timer.timeout.connect(self._flush_preload)
 
         # Build UI first so status labels exist before the mesh thread emits.
         self._mesh_connected = False
@@ -285,6 +297,13 @@ class GlobalCognitiveInterface(QWidget):
         )
         lay.addWidget(self.chat_display, 1)
 
+        # Preload Preview (Hidden by default)
+        self.preload_preview = QLabel("")
+        self.preload_preview.setWordWrap(True)
+        self.preload_preview.setStyleSheet("color: #565f89; font-size: 10px; font-style: italic; padding: 2px 5px;")
+        self.preload_preview.setVisible(False)
+        lay.addWidget(self.preload_preview)
+
         # Input row
         input_row = QHBoxLayout()
         input_row.setSpacing(4)
@@ -297,7 +316,7 @@ class GlobalCognitiveInterface(QWidget):
             "QLineEdit:focus { border-color: rgb(0, 255, 200); }"
         )
         self.input_field.returnPressed.connect(self._handle_send)
-        self.input_field.textChanged.connect(self._preload_context)
+        self.input_field.textChanged.connect(self._schedule_preload)
         input_row.addWidget(self.input_field, 1)
 
         send_btn = QPushButton("⚡")
@@ -325,25 +344,52 @@ class GlobalCognitiveInterface(QWidget):
 
     # ── Messaging ──────────────────────────────────────────────
 
-    def _preload_context(self, text: str):
+    def _schedule_preload(self, text: str) -> None:
+        """Debounce: preload runs after typing pauses (avoids PRELOAD spam per keystroke)."""
         if not self.preloader:
             return
-        
-        # Don't preload if user deleted everything
         if not text.strip():
+            self._preload_timer.stop()
+            self._preloaded_memory_cache = None
+            self.preload_preview.setVisible(False)
+            return
+        self._preload_timer.stop()
+        self._preload_timer.start()
+
+    def _flush_preload(self) -> None:
+        """Single anticipatory recall line; skip if same text as last [PRELOAD]."""
+        if not self.preloader:
+            return
+        text = self.input_field.text().strip()
+        if not text:
             self._preloaded_memory_cache = None
             return
-
         preload = self.preloader.preload(text, self.app_context)
-        if preload and preload != self._preloaded_memory_cache:
-            self.chat_display.append(f'<span style="color:#565f89; font-size:10px;">[PRELOAD] {preload}</span>')
-            self._preloaded_memory_cache = preload
+        if not preload:
+            return
+        self._preloaded_memory_cache = preload
+        if preload == self._last_preload_shown:
+            return
+        self._last_preload_shown = preload
+        
+        self.preload_preview.setText(f"[PRELOAD] {preload}")
+        self.preload_preview.setVisible(True)
 
-    def _handle_send(self):
+    def _handle_send(self) -> None:
+        self._preload_timer.stop()
         text = self.input_field.text().strip()
         if not text:
             return
+        # Snapshot before clear — clear() fires textChanged("") which would wipe cache.
+        preloaded_snapshot = self._preloaded_memory_cache
+        if self.preloader and not preloaded_snapshot:
+            preloaded_snapshot = self.preloader.preload(text, self.app_context)
+        self.input_field.blockSignals(True)
         self.input_field.clear()
+        self.input_field.blockSignals(False)
+        self._preloaded_memory_cache = None
+        self._last_preload_shown = None
+        self.preload_preview.setVisible(False)
 
         ts = datetime.now().strftime("%H:%M")
         self.chat_display.append(
@@ -360,10 +406,11 @@ class GlobalCognitiveInterface(QWidget):
 
         # 2. Recall relevant memories
         memory_context = ""
-        if self._preloaded_memory_cache:
-            # We already have anticipatory context! Instant load, bypassing duplicate bus scan.
-            memory_context = "\n\n[STIGMERGIC MEMORY — retrieved from cross-app territory]\n" + self._preloaded_memory_cache
-            self._preloaded_memory_cache = None
+        if preloaded_snapshot:
+            memory_context = (
+                "\n\n[STIGMERGIC MEMORY — retrieved from cross-app territory]\n"
+                + preloaded_snapshot
+            )
         elif self._bus:
             try:
                 mem = self._bus.recall_context_block(text, app_context=self.app_context, top_k=3)

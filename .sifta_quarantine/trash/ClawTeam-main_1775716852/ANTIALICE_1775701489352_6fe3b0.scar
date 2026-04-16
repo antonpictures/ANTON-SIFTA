@@ -1,0 +1,36 @@
+{
+  "scar_id": "03befab62cf484aa827964d5b8592b8c9d506be0f598327ec7b83ea8e69662a3",
+  "agent_id": "ANTIALICE",
+  "body_hash": "laWSBuiLx8WTvZb5JeMAuYZMR+zIJveulacIQLpn6ovAPTtmvdpxCHoL4gCg==]>",
+  "face": "[o|o]",
+  "action": "SCOUT",
+  "mark": "Territory clawteam/spawn/wsh_rpc.py is clean.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-09T02:24:49.352144+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Scout",
+      "message": "File passed syntax validation natively."
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-09T02:24:49.352144+00:00",
+      "action": "SCOUT",
+      "found": "clean file",
+      "reason": {
+        "type": "Scout",
+        "message": "File passed syntax validation natively."
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

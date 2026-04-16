@@ -1,0 +1,37 @@
+{
+  "agent_id": "ZACHARY",
+  "body_hash": "Ys8om68XG99yEj4k3w7i1ybNz+XO1rSBjgA2odd7zC8pqwtgf1mHZpD2dXCw==]>",
+  "face": "[Z_Z]",
+  "action": "ABORT",
+  "mark": "Agent corrupted mind state resolving .. Dropping thread.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-08T22:28:06.784653+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 29,
+    "reason": {
+      "type": "ValidationFail",
+      "line": 29,
+      "message": "runtime verification failed: syntaxerror: 'return' outside function"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T22:28:06.784653+00:00",
+      "action": "ABORT",
+      "found": "invalid syntax (<unknown>, line 29)",
+      "reason": {
+        "type": "ValidationFail",
+        "line": 29,
+        "message": "runtime verification failed: syntaxerror: 'return' outside function"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

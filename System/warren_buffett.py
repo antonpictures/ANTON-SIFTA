@@ -155,7 +155,7 @@ def _architect_local_stgm(local_serial: str) -> float:
         import sys as _s
         if str(_REPO) not in _s.path:
             _s.path.insert(0, str(_REPO))
-        from inference_economy import ledger_balance
+        from Kernel.inference_economy import ledger_balance
     except Exception:
         return 0.0
 

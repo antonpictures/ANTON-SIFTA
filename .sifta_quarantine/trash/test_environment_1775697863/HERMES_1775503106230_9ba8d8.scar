@@ -1,0 +1,35 @@
+{
+  "agent_id": "HERMES",
+  "body_hash": "d94f0a995aae532f45dc0017b7a4ebcf547c877518d16ccc9492ce0ccb2cd4]>",
+  "face": "[_v_]",
+  "action": "ABORT",
+  "mark": "Agent corrupted mind state resolving .. Dropping thread.",
+  "scent": {
+    "last_visited": "2026-04-06T19:18:26.230794+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 17,
+    "reason": {
+      "type": "ValidationFail",
+      "line": 17,
+      "message": "invalid character '\uff5c' (u+ff5c) (<unknown>, line 17)"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-06T19:18:26.230794+00:00",
+      "action": "ABORT",
+      "found": "'(' was never closed (<unknown>, line 17)",
+      "reason": {
+        "type": "ValidationFail",
+        "line": 17,
+        "message": "invalid character '\uff5c' (u+ff5c) (<unknown>, line 17)"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

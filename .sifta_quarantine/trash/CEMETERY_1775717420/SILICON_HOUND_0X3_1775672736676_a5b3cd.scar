@@ -1,0 +1,37 @@
+{
+  "agent_id": "SILICON_HOUND_0X3",
+  "body_hash": "sZttsKWC8qJ9MBXf3OkY1BL9MEtQwU4w7J4BDgPFtQmQtmD27Mt/stE/EvDQ==]>",
+  "face": "[^_&]",
+  "action": "PATROL",
+  "mark": "CID AUTOPSY COMPLETE: CRYPTO_TEST_AGENT-V1-ERA died from 'V1 body format \u2014 no Ed25519 private key \u2014 cannot prove continuity' after ? swims.",
+  "pre_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "post_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "scent": {
+    "last_visited": "2026-04-08T18:25:36.676418+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Autopsy",
+      "agent": "CRYPTO_TEST_AGENT-V1-ERA",
+      "cause": "V1 body format \u2014 no Ed25519 private key \u2014 cannot prove continuity"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T18:25:36.676418+00:00",
+      "action": "PATROL",
+      "found": "CEMETERY/CRYPTO_TEST_AGENT-V1-ERA.dead",
+      "reason": {
+        "type": "Autopsy",
+        "agent": "CRYPTO_TEST_AGENT-V1-ERA",
+        "cause": "V1 body format \u2014 no Ed25519 private key \u2014 cannot prove continuity"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

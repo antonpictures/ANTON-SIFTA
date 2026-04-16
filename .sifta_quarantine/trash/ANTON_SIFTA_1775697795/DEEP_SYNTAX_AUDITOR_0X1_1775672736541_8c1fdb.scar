@@ -1,0 +1,29 @@
+{
+  "agent_id": "DEEP_SYNTAX_AUDITOR_0X1",
+  "body_hash": "/Qg/VOU1qBbXaIHkav1KEYXoi1FaecITsM9YCK45Q0piJCOjOE8aRUzGKGDg==]>",
+  "face": "[^_&]",
+  "action": "PATROL",
+  "mark": "CYBER sweep complete. All bodies valid.",
+  "pre_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "post_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "scent": {
+    "last_visited": "2026-04-08T18:25:36.537920+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": null
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T18:25:36.537920+00:00",
+      "action": "PATROL",
+      "found": ".sifta_state",
+      "reason": null,
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

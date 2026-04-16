@@ -365,7 +365,7 @@ class VideoEditorSubWindow(QWidget):
             )
         )
         self.process.finished.connect(self._batch_done)
-        self.process.start("python3", ["sifta_sebastian_batch.py"])
+        self.process.start("python3", ["Kernel/sifta_sebastian_batch.py"])
 
     def _batch_done(self, code, _):
         self.chat_display.append(f"\n[SYSTEM] Process exited: {code}")
@@ -377,6 +377,75 @@ class VideoEditorSubWindow(QWidget):
             self.process.kill()
             self.process.waitForFinished(1000)
         super().closeEvent(event)
+
+
+# ──────────────────────────────────────────────────────────────
+# SIFTA MDI DESKTOP CANVAS
+# ──────────────────────────────────────────────────────────────
+import math
+import random
+from PyQt6.QtCore import QRectF
+from PyQt6.QtGui import QBrush, QPainter, QPen
+
+class SiftaMdiArea(QMdiArea):
+    def __init__(self):
+        super().__init__()
+        self.setBackground(QBrush(QColor("#0d0e17")))
+        
+        self.particles = []
+        for _ in range(75):
+            self.particles.append([
+                random.uniform(0, 3000), random.uniform(0, 2000),
+                random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3),
+                random.uniform(2, 8)
+            ])
+            
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(50)
+        
+        self.watermark_font = QFont("Inter", 110, QFont.Weight.Black)
+        self.watermark_sub = QFont("Courier New", 18, QFont.Weight.Bold)
+
+    def tick(self):
+        for p in self.particles:
+            p[0] += p[2]
+            p[1] += p[3]
+            if p[0] < 0: p[0] = 3000
+            elif p[0] > 3000: p[0] = 0
+            if p[1] < 0: p[1] = 2000
+            elif p[1] > 2000: p[1] = 0
+        self.viewport().update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = event.rect()
+        painter.fillRect(rect, QColor("#080a0f"))
+        
+        w, h = self.viewport().width(), self.viewport().height()
+        
+        painter.setPen(QPen(QColor(120, 162, 247, 30), 1))
+        for x in range(0, w, 40): painter.drawLine(x, 0, x, h)
+        for y in range(0, h, 40): painter.drawLine(0, y, w, y)
+            
+        painter.setFont(self.watermark_font)
+        painter.setPen(QColor(255, 255, 255, 18))
+        painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "SIFTA")
+        
+        painter.setFont(self.watermark_sub)
+        painter.setPen(QColor(255, 255, 255, 40))
+        painter.drawText(0, h // 2 + 70, w, 30, Qt.AlignmentFlag.AlignCenter, "STIGMERGIC BIOLOGICAL SWARM")
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        for p in self.particles:
+            if 0 <= p[0] <= w and 0 <= p[1] <= h:
+                c = QColor(125, 207, 255, 45) if p[4] > 5 else QColor(187, 154, 247, 40)
+                painter.setBrush(c)
+                painter.drawEllipse(QRectF(p[0], p[1], p[4], p[4]))
+                
+        super().paintEvent(event)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -404,31 +473,26 @@ class SiftaDesktop(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ── Desktop Splitter (MDI + GCI) ──
-        self._desktop_splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        self.mdi = QMdiArea()
-        self.mdi.setBackground(QColor("#08080c"))
-        self._desktop_splitter.addWidget(self.mdi)
+        self.mdi = SiftaMdiArea()
         
-        # ── Global Cognitive Interface ──
+        # ── Desktop Mesh Relay Client (Headless for Taskbar Status) ──
+        self._mesh_connected = False
         try:
-            sys.path.insert(0, str(_SYS))
-            from global_cognitive_interface import GlobalCognitiveInterface
-            self._gci = GlobalCognitiveInterface(app_context="os_desktop", entity_name="ALICE_M5", architect_id="IOAN_M5")
-            self._gci.setMinimumWidth(280)
-            self._gci.setMaximumWidth(420)
-            self._desktop_splitter.addWidget(self._gci)
-            QTimer.singleShot(0, self._balance_desktop_gci_splitter)
-        except Exception as e:
-            print(f"[Desktop] GCI failed to load: {e}")
-            self._gci = None
+            if str(_SYS) not in sys.path: sys.path.insert(0, str(_SYS))
+            from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
+            self._desktop_mesh = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id="DESKTOP_HUD")
+            self._desktop_mesh.connection_status.connect(self._on_desktop_mesh_status)
+            self._desktop_mesh.start()
+        except Exception:
+            self._desktop_mesh = None
 
-        main_layout.addWidget(self._desktop_splitter)
+        main_layout.addWidget(self.mdi)
         main_layout.addWidget(self._build_taskbar())
 
         central.setLayout(main_layout)
         self.setCentralWidget(central)
+        
+        self._build_desktop_shortcuts()
 
         # Clock overlay
         self.clock_label = QPushButton(central)
@@ -519,19 +583,11 @@ class SiftaDesktop(QMainWindow):
         # Boot: open chat by default
         self.open_swarm_chat()
 
-    def _balance_desktop_gci_splitter(self) -> None:
-        if not getattr(self, "_gci", None):
-            return
-        from System.splitter_utils import balance_horizontal_splitter
+    def _on_desktop_mesh_status(self, status):
+        self._mesh_connected = status
 
-        balance_horizontal_splitter(
-            self._desktop_splitter,
-            self,
-            left_ratio=0.68,
-            min_right=280,
-            min_left=400,
-            max_right=420,
-        )
+    def _balance_desktop_gci_splitter(self) -> None:
+        pass
 
     # ── Clock & Control Center ─────────────────────────────
     
@@ -810,6 +866,7 @@ class SiftaDesktop(QMainWindow):
             lambda: self.spawn_text_editor("Documents/APP_HELP.md")
         )
         btn_start.setMenu(menu)
+        layout.addWidget(btn_start)
 
         # ── Relay Status Indicator ──
         self._relay_indicator = QLabel("● Relay: …")
@@ -831,36 +888,31 @@ class SiftaDesktop(QMainWindow):
         btn_power.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_power.clicked.connect(self.close)
         
+        layout.addStretch(1)
         layout.addWidget(btn_power)
         bar.setLayout(layout)
         return bar
 
     def _update_relay_indicator(self):
-        """Check if the GCI's WebSocket mesh client is connected."""
-        if not hasattr(self, "_gci") or self._gci is None:
+        """Check if the desktop's WebSocket mesh client is connected."""
+        if not hasattr(self, "_desktop_mesh") or self._desktop_mesh is None:
             self._relay_indicator.setText("● Relay: N/A")
             self._relay_indicator.setStyleSheet(
                 "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
             )
             return
-        try:
-            mesh = self._gci._mesh_client
-            if mesh and mesh.isRunning() and self._gci.mesh_connected:
-                self._relay_indicator.setText("🟢 M1 Relay: LIVE")
-                self._relay_indicator.setStyleSheet(
-                    "color: #9ece6a; font-family: monospace; font-size: 11px;"
-                    " font-weight: bold; padding: 0 8px;"
-                )
-            else:
-                self._relay_indicator.setText("🔴 M1 Relay: OFFLINE")
-                self._relay_indicator.setStyleSheet(
-                    "color: #f7768e; font-family: monospace; font-size: 11px;"
-                    " font-weight: bold; padding: 0 8px;"
-                )
-        except Exception:
-            self._relay_indicator.setText("● Relay: Error")
+            
+        if self._desktop_mesh.isRunning() and self._mesh_connected:
+            self._relay_indicator.setText("🟢 M1 Relay: LIVE")
             self._relay_indicator.setStyleSheet(
-                "color: #e0af68; font-family: monospace; font-size: 11px; padding: 0 8px;"
+                "color: #9ece6a; font-family: monospace; font-size: 11px;"
+                " font-weight: bold; padding: 0 8px;"
+            )
+        else:
+            self._relay_indicator.setText("🔴 M1 Relay: OFFLINE")
+            self._relay_indicator.setStyleSheet(
+                "color: #f7768e; font-family: monospace; font-size: 11px;"
+                " font-weight: bold; padding: 0 8px;"
             )
     # ── Window factories ───────────────────────────────────
     def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
@@ -1002,9 +1054,9 @@ class SiftaDesktop(QMainWindow):
         mdi_w = self.mdi.width() if self.mdi.width() > 100 else 1280
         mdi_h = self.mdi.height() if self.mdi.height() > 100 else 720
         w = max(800, int(mdi_w * 0.70))
-        h = max(600, int(mdi_h * 0.85))
+        h = max(600, int(mdi_h * 0.82))
         x = max(0, (mdi_w - w) // 2)
-        y = max(0, (mdi_h - h) // 2)
+        y = max(40, mdi_h - h - 10)  # Pin to bottom with small margin
         
         sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", w, h, "#565f89", x=x, y=y)
         self.active_chat_sub = sub
@@ -1048,7 +1100,7 @@ class SiftaDesktop(QMainWindow):
         try:
             import importlib.util
             import sys
-            abs_path = os.path.join(os.getcwd(), module_path)
+            abs_path = str(_REPO / module_path)
             module_name = os.path.splitext(os.path.basename(abs_path))[0]
             spec = importlib.util.spec_from_file_location(module_name, abs_path)
             if spec is None or spec.loader is None:
@@ -1101,6 +1153,61 @@ class SiftaDesktop(QMainWindow):
     def _show_fitness_scores(self):
         from Applications.sifta_intelligence_panels import AppFitnessPanel
         self._make_sub(AppFitnessPanel(), "📊 App Fitness", 800, 600, "#7dcfff")
+
+
+    def _trigger_manifest_app(self, app_name: str):
+        if app_name in self._apps_manifest_cache:
+            dat = self._apps_manifest_cache[app_name]
+            self._launch_app(
+                app_name,
+                dat.get("entry_point"),
+                dat.get("widget_class"),
+                w=int(dat.get("window_width", 920)),
+                h=int(dat.get("window_height", 640))
+            )
+
+    def _build_desktop_shortcuts(self):
+        container = QWidget(self.mdi.viewport())
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(30, 80, 0, 0)
+        layout.setSpacing(25)
+        
+        style = (
+            "QPushButton {"
+            "  background-color: rgba(25, 27, 40, 0.45);"
+            "  border: 1px solid rgba(120, 162, 247, 0.2);"
+            "  border-radius: 12px; text-align: left;"
+            "  color: #c0caf5; font-family: Inter; font-size: 14px; font-weight: bold;"
+            "  padding: 10px 20px;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: rgba(40, 44, 60, 0.75);"
+            "  border: 1px solid rgba(120, 162, 247, 0.8);"
+            "  color: #7dcfff;"
+            "}"
+        )
+        
+        btn_chat = QPushButton("🐜 SWARM CHAT")
+        btn_chat.setFixedSize(220, 60)
+        btn_chat.setStyleSheet(style)
+        btn_chat.clicked.connect(self.open_swarm_chat)
+        
+        btn_poker = QPushButton("🃏 CASINO VAULT")
+        btn_poker.setFixedSize(220, 60)
+        btn_poker.setStyleSheet(style)
+        btn_poker.clicked.connect(lambda: self._trigger_manifest_app("Stigmergic Video Poker"))
+        
+        btn_symphony = QPushButton("🎵 SYMPHONY")
+        btn_symphony.setFixedSize(220, 60)
+        btn_symphony.setStyleSheet(style)
+        btn_symphony.clicked.connect(lambda: self._trigger_manifest_app("Pheromone Symphony (Generative Music)"))
+        
+        layout.addWidget(btn_chat)
+        layout.addWidget(btn_poker)
+        layout.addWidget(btn_symphony)
+        layout.addStretch()
+        container.resize(300, 600)
+        container.show()
 
 
 # ──────────────────────────────────────────────────────────────

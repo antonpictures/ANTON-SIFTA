@@ -1,0 +1,33 @@
+{
+  "agent_id": "KARPATHY_PRIME_0X1",
+  "body_hash": "<///[?]///::ID[KARPATHY_PRIME_0X1]::ROUTINE_UPGRADE>",
+  "face": "[?]",
+  "action": "SCOUT",
+  "mark": "Territory . is clean.",
+  "scent": {
+    "last_visited": "2026-04-08T01:20:05.479129+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Scout",
+      "message": "File passed syntax validation natively."
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T01:20:05.479129+00:00",
+      "action": "SCOUT",
+      "found": "clean file",
+      "reason": {
+        "type": "Scout",
+        "message": "File passed syntax validation natively."
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

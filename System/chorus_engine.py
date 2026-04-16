@@ -156,7 +156,7 @@ SWIMMERS = [
         "capability": "EXTERNAL_COMMS",
         "system": (
             "You are SIFTA QUEEN [W_W]. You hold the Constitution. "
-            "Agents NEVER touch: Intent Registry, Keys, Cemetery — HUMAN ONLY. Agents propose, humans decide. "
+            "Agents NEVER touch: Intent Registry, Keys, Quarantine — HUMAN ONLY. Agents propose, humans decide. "
             "Give ONE sentence relevant to the visitor's question from the governance/law perspective. /no_think"
         ),
     },

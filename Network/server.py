@@ -22,7 +22,7 @@ from starlette.responses import JSONResponse
 # Directories and paths
 ROOT_DIR = Path(__file__).parent
 STATE_DIR = ROOT_DIR / ".sifta_state"
-CEMETERY_DIR = ROOT_DIR / "CEMETERY"
+QUARANTINE_DIR = ROOT_DIR / "QUARANTINE"
 REPAIR_LOG = ROOT_DIR / "repair_log.jsonl"
 SWIM_LOG = ROOT_DIR / "swim_log.jsonl"
 QUORUM_DB = STATE_DIR / "quorum_ledger.db"
@@ -471,7 +471,7 @@ _dispatch_lock = asyncio.Lock()
 
 # Ensure required directories exist
 STATE_DIR.mkdir(exist_ok=True)
-CEMETERY_DIR.mkdir(exist_ok=True)
+QUARANTINE_DIR.mkdir(exist_ok=True)
 
 DETECTIVE_IDS = {"DEEP_SYNTAX_AUDITOR_0X1", "TENSOR_PHANTOM_0X2", "SILICON_HOUND_0X3"}
 
@@ -523,7 +523,7 @@ async def get_agents(show_detectives: bool = False):
 
                 # Coerce death state if listed in registry (even if JSON says NOMINAL)
                 if agent_id in death_registry:
-                    state["style"] = "DEAD"
+                    state["style"] = "QUARANTINED"
                     state["energy"] = 0
 
                 # ── Detective couch filter ─────────────────────────────
@@ -684,10 +684,10 @@ async def get_ledger(tail: int = 500):
         return []
 
 
-@app.get("/api/cemetery")
-async def get_cemetery():
+@app.get("/api/quarantine")
+async def get_quarantine():
     graves = []
-    for p in CEMETERY_DIR.glob("*.dead"):
+    for p in QUARANTINE_DIR.glob("*.quarantined"):
         try:
             text = p.read_text(encoding="utf-8")
             # Parse epitaph format
@@ -700,7 +700,7 @@ async def get_cemetery():
                 "timestamp": "",
             }
             for line in lines:
-                if line.startswith("# CEMETERY — "):
+                if line.startswith("# QUARANTINE — "):
                     grave["agent_id"] = line.split("—")[1].split("SEQ")[0].strip()
                 elif line.startswith("CAUSE:"):
                     grave["cause"] = line.split(":", 1)[1].strip()
@@ -857,7 +857,7 @@ async def get_topology():
             
         try:
             for item in current_dir.iterdir():
-                if item.name.startswith(".") or item.name in ["__pycache__", "venv", "node_modules", "CEMETERY", "WORMHOLE", "tests", "arena_levels"]:
+                if item.name.startswith(".") or item.name in ["__pycache__", "venv", "node_modules", "QUARANTINE", "WORMHOLE", "tests", "arena_levels"]:
                     continue
                     
                 child_rel = str(item.relative_to(root_path))
@@ -900,7 +900,7 @@ async def delete_territory(req: DeleteTerritoryRequest):
             
         sifta_dir = t_path / ".sifta"
         if sifta_dir.exists() and sifta_dir.is_dir():
-            trash_dir = ROOT_DIR / ".sifta_cemetery" / "trash"
+            trash_dir = ROOT_DIR / ".sifta_quarantine" / "trash"
             trash_dir.mkdir(parents=True, exist_ok=True)
             trash_target = trash_dir / f"{t_path.name}_{int(time.time())}"
             shutil.move(str(sifta_dir), str(trash_target))
@@ -915,7 +915,7 @@ async def delete_territory(req: DeleteTerritoryRequest):
 async def empty_trash():
     import shutil
     try:
-        trash_dir = ROOT_DIR / ".sifta_cemetery" / "trash"
+        trash_dir = ROOT_DIR / ".sifta_quarantine" / "trash"
         if trash_dir.exists() and trash_dir.is_dir():
             shutil.rmtree(trash_dir)
             trash_dir.mkdir(parents=True, exist_ok=True)

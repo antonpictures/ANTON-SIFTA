@@ -1,0 +1,36 @@
+{
+  "scar_id": "c25c98e62f0632e1fb9d0135cc0d295c1cc3ba0e10a0ae16b1ff8e2c91ee0329",
+  "agent_id": "ANTIALICE",
+  "body_hash": "laWSBuiLx8WTvZb5JeMAuYZMR+zIJveulacIQLpn6ovAPTtmvdpxCHoL4gCg==]>",
+  "face": "[o|o]",
+  "action": "SCOUT",
+  "mark": "Territory clawteam/mcp/tools/__init__.py is clean.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-09T02:24:01.498730+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Scout",
+      "message": "File passed syntax validation natively."
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-09T02:24:01.498730+00:00",
+      "action": "SCOUT",
+      "found": "clean file",
+      "reason": {
+        "type": "Scout",
+        "message": "File passed syntax validation natively."
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

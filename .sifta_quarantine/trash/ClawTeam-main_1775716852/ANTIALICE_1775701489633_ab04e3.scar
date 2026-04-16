@@ -1,0 +1,36 @@
+{
+  "scar_id": "822064f4cb4edfd0768e5ea8131f5b0db52b55f3bb05e7450ce779c0c75786bb",
+  "agent_id": "ANTIALICE",
+  "body_hash": "laWSBuiLx8WTvZb5JeMAuYZMR+zIJveulacIQLpn6ovAPTtmvdpxCHoL4gCg==]>",
+  "face": "[o|o]",
+  "action": "SCOUT",
+  "mark": "Territory tests/test_identity.py is clean.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-09T02:24:49.633490+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Scout",
+      "message": "File passed syntax validation natively."
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-09T02:24:49.633490+00:00",
+      "action": "SCOUT",
+      "found": "clean file",
+      "reason": {
+        "type": "Scout",
+        "message": "File passed syntax validation natively."
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

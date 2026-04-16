@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 LEDGER = Path(".sifta_state/ledger")
-DEATH_REGISTRY = Path(".sifta_state/deaths.json")
+QUARANTINE_REGISTRY = Path(".sifta_state/quarantine_registry.json")
 ACTIVE_INDEX = Path(".sifta_state/active_index.json")
 
 LEDGER.mkdir(parents=True, exist_ok=True)
@@ -29,30 +29,33 @@ def identity_fingerprint(agent_state: dict) -> str:
 
 
 # ─────────────────────────────────────────────
-# ☠️ DEATH REGISTRATION (NO RESURRECTION)
+# ☠️ QUARANTINE REGISTRATION (SOVEREIGN HOLD)
 # ─────────────────────────────────────────────
-def register_death(agent_id: str, fingerprint: str):
-    deaths = {}
-    if DEATH_REGISTRY.exists():
-        deaths = json.loads(DEATH_REGISTRY.read_text())
+def register_quarantine(agent_id: str, fingerprint: str):
+    quarantined = {}
+    if QUARANTINE_REGISTRY.exists():
+        quarantined = json.loads(QUARANTINE_REGISTRY.read_text())
 
-    deaths[agent_id] = {
+    quarantined[agent_id] = {
         "fingerprint": fingerprint,
         "ts": time.time()
     }
 
-    DEATH_REGISTRY.write_text(json.dumps(deaths, indent=2))
+    QUARANTINE_REGISTRY.write_text(json.dumps(quarantined, indent=2))
 
 
-def is_dead(agent_id: str, fingerprint: str) -> bool:
-    if not DEATH_REGISTRY.exists():
+def is_quarantined(agent_id: str, fingerprint: str) -> bool:
+    if not QUARANTINE_REGISTRY.exists():
         return False
 
-    deaths = json.loads(DEATH_REGISTRY.read_text())
-    if agent_id not in deaths:
+    quarantined = json.loads(QUARANTINE_REGISTRY.read_text())
+    if agent_id not in quarantined:
         return False
 
-    return deaths[agent_id]["fingerprint"] == fingerprint
+    return quarantined[agent_id]["fingerprint"] == fingerprint
+
+# Backward compat alias
+is_dead = is_quarantined
 
 
 # ─────────────────────────────────────────────
@@ -77,9 +80,9 @@ def claim_identity(agent_state: dict):
 
         raise RuntimeError(f"[DOUBLE-SPEND] {agent_id} already active")
 
-    # Dead agents cannot re-enter
-    if is_dead(agent_id, fp):
-        raise RuntimeError(f"[RESURRECTION BLOCKED] {agent_id} is marked dead")
+    # Quarantined agents cannot re-enter without Architect release
+    if is_quarantined(agent_id, fp):
+        raise RuntimeError(f"[QUARANTINE HOLD] {agent_id} is in stasis — requires Architect release")
 
     # Claim slot
     active[agent_id] = {
@@ -92,7 +95,7 @@ def claim_identity(agent_state: dict):
 
 def release_identity(agent_id: str):
     """
-    Called on clean shutdown or death.
+    Called on clean shutdown or stasis entry.
     """
     if not ACTIVE_INDEX.exists():
         return
@@ -112,9 +115,9 @@ def validate_existence(agent_state: dict):
     """
     fp = identity_fingerprint(agent_state)
 
-    # 1. Check death
-    if is_dead(agent_state["id"], fp):
-        raise RuntimeError(f"[GHOST] {agent_state['id']} attempted action after death")
+    # 1. Check quarantine
+    if is_quarantined(agent_state["id"], fp):
+        raise RuntimeError(f"[GHOST] {agent_state['id']} attempted action after quarantine")
 
     # 2. Check uniqueness
     claim_identity(agent_state)

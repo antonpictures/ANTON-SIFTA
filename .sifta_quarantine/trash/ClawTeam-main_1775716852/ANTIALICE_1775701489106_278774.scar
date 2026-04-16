@@ -1,0 +1,36 @@
+{
+  "scar_id": "ce293be7a457e84ce988455d2199f042af6e0d16a92e86a5f232770ba0f5f1a6",
+  "agent_id": "ANTIALICE",
+  "body_hash": "laWSBuiLx8WTvZb5JeMAuYZMR+zIJveulacIQLpn6ovAPTtmvdpxCHoL4gCg==]>",
+  "face": "[o|o]",
+  "action": "SCOUT",
+  "mark": "Territory clawteam/harness/context.py is clean.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-09T02:24:49.106979+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "Scout",
+      "message": "File passed syntax validation natively."
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-09T02:24:49.106979+00:00",
+      "action": "SCOUT",
+      "found": "clean file",
+      "reason": {
+        "type": "Scout",
+        "message": "File passed syntax validation natively."
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

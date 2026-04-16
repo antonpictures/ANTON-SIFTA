@@ -31,7 +31,7 @@ class QuorumNode:
 
         # 1. BIODEGRADE CHECK (The Reaper)
         if int(time.time()) > state["ttl"]:
-            print(f"[CEMETERY] Agent {agent_id} degraded on arrival (TTL expired). Purging.")
+            print(f"[QUARANTINE] Agent {agent_id} degraded on arrival (TTL expired). Purging.")
             return False
 
         # 2. SUPERBOT CLUSTER (Consensus)

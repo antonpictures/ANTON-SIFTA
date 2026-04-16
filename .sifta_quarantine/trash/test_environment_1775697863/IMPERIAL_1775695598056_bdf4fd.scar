@@ -1,0 +1,38 @@
+{
+  "scar_id": "bf982f64ee32de0b7b030c8478967f6dd21fdd25fc922879f50d72f6e86bfa5e",
+  "agent_id": "IMPERIAL",
+  "body_hash": "35+nXvG3f3Rr+UggsfPszYDWpZeIL+KIWtgMnKj5QhUGtftCcTeamJlh3ZCw==]>",
+  "face": "[@_@]",
+  "action": "REPAIR_FAILED",
+  "mark": "Failed to stitch bite for .. Hallucination detected.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-09T00:46:38.056569+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 1,
+    "reason": {
+      "type": "Hallucination",
+      "line": 1,
+      "message": "illegal target for annotation (<unknown>, line 1)"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-09T00:46:38.056569+00:00",
+      "action": "REPAIR_FAILED",
+      "found": "illegal target for annotation (<unknown>, line 1)",
+      "reason": {
+        "type": "Hallucination",
+        "line": 1,
+        "message": "illegal target for annotation (<unknown>, line 1)"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

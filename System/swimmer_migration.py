@@ -71,13 +71,13 @@ def initiate_migration(agent_id: str, target_serial: str):
     _append_jsonl(MIGRATION_LOG, migration_bundle)
 
     # Purge Biological Host
-    # To prevent cloning, we rename it to a graveyard file and remove it from UI sight.
-    graveyard_path = os.path.join(STATE_DIR, f"{agent_id}_MIGRATED.json")
+    # To prevent cloning, we rename it to a quarantine file and remove it from UI sight.
+    quarantine_path = os.path.join(STATE_DIR, f"{agent_id}_MIGRATED.json")
     swimmer_memory["sybil_quarantined"] = True
     swimmer_memory["energy"] = 0
-    swimmer_memory["ascii"] = f"<///[_GRAVEYARD_]///::ID[{agent_id}]::MIGRATED_TO[{target_serial}]>"
+    swimmer_memory["ascii"] = f"<///[_QUARANTINE_]///::ID[{agent_id}]::MIGRATED_TO[{target_serial}]>"
     
-    with open(graveyard_path, "w") as f:
+    with open(quarantine_path, "w") as f:
         json.dump(swimmer_memory, f, indent=2)
         
     os.remove(agent_fpath)
