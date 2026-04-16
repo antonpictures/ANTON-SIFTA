@@ -34,6 +34,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
 
+from System.context_preloader import ContextPreloader
+
 _REPO = Path(__file__).resolve().parent.parent
 DOCS_DIR = _REPO / ".sifta_documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
@@ -156,7 +158,7 @@ class _SwarmMeshClientWorker(QThread):
                     await ws.send(json.dumps({"type": "REGISTER", "sender": self.architect_id}))
                     
                     receive_task = asyncio.create_task(ws.recv())
-                    
+
                     while self._running:
                         try:
                             # Flush outgoing queue
@@ -165,7 +167,7 @@ class _SwarmMeshClientWorker(QThread):
                                 await ws.send(msg_to_send)
                         except Empty:
                             pass
-                        
+
                         # Wait for incoming messages, max 0.05s to allow queue checking
                         done, pending = await asyncio.wait([receive_task], timeout=0.05)
                         if receive_task in done:
@@ -175,7 +177,10 @@ class _SwarmMeshClientWorker(QThread):
                                 receive_task = asyncio.create_task(ws.recv())
                             except websockets.exceptions.ConnectionClosed:
                                 break
-                                
+
+                    # Socket session ended (disconnect, stop, or recv closed)
+                    self.connection_status.emit(False)
+
             except Exception as e:
                 self.connection_status.emit(False)
                 await asyncio.sleep(2)  # Reconnect backoff
@@ -218,16 +223,25 @@ class GlobalCognitiveInterface(QWidget):
             sys.path.insert(0, str(_REPO))
             from System.stigmergic_memory_bus import StigmergicMemoryBus
             self._bus = StigmergicMemoryBus(architect_id=architect_id)
+            self.preloader = ContextPreloader(architect_id=architect_id)
         except Exception:
+            self.preloader = None
             pass
 
-        # ── Start Mesh Client 
+        self._preloaded_memory_cache = None
+
+        # Build UI first so status labels exist before the mesh thread emits.
+        self._mesh_connected = False
         self._mesh_client = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id=self.architect_id)
         self._mesh_client.swarm_message_ready.connect(self._on_swarm_message)
         self._mesh_client.connection_status.connect(self._on_swarm_status)
+        self._build_ui()
         self._mesh_client.start()
 
-        self._build_ui()
+    @property
+    def mesh_connected(self) -> bool:
+        """True when Layer 2 WebSocket to SWARM_RELAY_URI is up (same source as taskbar)."""
+        return getattr(self, "_mesh_connected", False)
 
     def _build_ui(self):
         self.setStyleSheet("""
@@ -282,6 +296,7 @@ class GlobalCognitiveInterface(QWidget):
             "QLineEdit:focus { border-color: rgb(0, 255, 200); }"
         )
         self.input_field.returnPressed.connect(self._handle_send)
+        self.input_field.textChanged.connect(self._preload_context)
         input_row.addWidget(self.input_field, 1)
 
         send_btn = QPushButton("⚡")
@@ -309,6 +324,20 @@ class GlobalCognitiveInterface(QWidget):
 
     # ── Messaging ──────────────────────────────────────────────
 
+    def _preload_context(self, text: str):
+        if not self.preloader:
+            return
+        
+        # Don't preload if user deleted everything
+        if not text.strip():
+            self._preloaded_memory_cache = None
+            return
+
+        preload = self.preloader.preload(text, self.app_context)
+        if preload:
+            self.chat_display.append(f'<span style="color:#565f89; font-size:10px;">[PRELOAD] {preload}</span>')
+            self._preloaded_memory_cache = preload
+
     def _handle_send(self):
         text = self.input_field.text().strip()
         if not text:
@@ -330,7 +359,11 @@ class GlobalCognitiveInterface(QWidget):
 
         # 2. Recall relevant memories
         memory_context = ""
-        if self._bus:
+        if self._preloaded_memory_cache:
+            # We already have anticipatory context! Instant load, bypassing duplicate bus scan.
+            memory_context = "\n\n[STIGMERGIC MEMORY — retrieved from cross-app territory]\n" + self._preloaded_memory_cache
+            self._preloaded_memory_cache = None
+        elif self._bus:
             try:
                 mem = self._bus.recall_context_block(text, app_context=self.app_context, top_k=3)
                 if mem:
@@ -406,6 +439,7 @@ class GlobalCognitiveInterface(QWidget):
     # ── Swarm Mesh Networking ──────────────────────────────────
     
     def _on_swarm_status(self, connected: bool):
+        self._mesh_connected = connected
         if connected:
             self._mesh_status_label.setText("Layer 2 Mesh: LIVE 🟢")
             self._mesh_status_label.setStyleSheet("color: rgb(0, 255, 200); font-size: 9px;")

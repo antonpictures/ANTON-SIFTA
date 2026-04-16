@@ -36,6 +36,7 @@ import math
 import time
 import hashlib
 import os
+import random
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
@@ -185,6 +186,17 @@ class MemoryForager:
 
                 # Ebbinghaus decay: vivid memories score higher
                 retention  = trace.retention()
+                
+                # --- Pheromone Luck / Serendipity Factor ---
+                # A 5% chance that a faded memory suddenly surges to absolute vividness.
+                # Modeling the chaotic, unpredictable associative nature of human luck.
+                lucky = False
+                if retention < 0.25 and random.random() < 0.05:
+                    retention = 1.0  # Lucky surge!
+                    lucky = True
+                    # artificially boost raw similarity so it cuts through the noise
+                    raw_similarity = min(1.0, raw_similarity + 0.4)
+
                 confidence = raw_similarity * (0.3 + 0.7 * retention)  # floor at 30% even for faded
 
                 if confidence > 0.08:   # threshold — very faded signals still detectable
