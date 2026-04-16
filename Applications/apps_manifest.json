@@ -7,6 +7,14 @@
     "window_height": 600,
     "signature": "UNVERIFIED"
   },
+  "Stigmergic Video Poker": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_video_poker.py",
+    "widget_class": "StigmergicVideoPokerApp",
+    "window_width": 1000,
+    "window_height": 700,
+    "signature": "UNVERIFIED"
+  },
   "Network Control Center": {
     "category": "Networking",
     "entry_point": "Applications/sifta_network_center.py",
