@@ -110,13 +110,13 @@ class FissionEngine:
         except ImportError:
             return 0
             
-        # Unified Arbitration Override Check
+        # Control Hysteresis Override Check
         try:
-            from unified_control_arbitration import get_arbiter
-            arbiter = get_arbiter()
-            state = arbiter.arbitrate()
-            if state.get("overrides", {}).get("fission_lockout", False):
-                return 0  # Arbiter has frozen Fission globally.
+            from control_hysteresis_layer import get_hysteresis_layer
+            hl = get_hysteresis_layer()
+            state = hl.process_field()
+            if state.get("control_field", {}).get("fission_lock", False):
+                return 0  # Hysteresis has frozen Fission globally.
         except ImportError:
             pass
             

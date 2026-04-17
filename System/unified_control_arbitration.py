@@ -70,31 +70,19 @@ class UnifiedControlArbiter:
         
         e_delta = self.E_total - self.last_E_total
         
-        # 3. Determine Dictates
-        fission_lock = False
-        mutation_override = "NONE"
-        eval_scalar = 1.0
+        # 3. Determine Dictates (Visual Only)
         
         ptc = get_ptc()
         regime = ptc.evaluate_regime()
         
-        # Safe Mode Collapses Override EVERYTHING
         if self.E_total < 0.3 or regime == "CRITICAL_COLLAPSE":
-            fission_lock = True
-            mutation_override = "FROZEN"
-            eval_scalar = 2.0  # Double stringency
-            status = "SYSTEM_LOCKED"
-            
+            status = "ENERGY_CRITICAL"
         elif e_delta < -0.15:
             # Dropping rapidly
-            mutation_override = "CAUTIOUS"
-            eval_scalar = 1.5
             status = "ENERGY_DROPPING_THROTTLED"
-            
         elif self.E_total > 0.7:
             # Healthy
             status = "EXPLORATION_PERMITTED"
-            eval_scalar = 0.8 # Slightly looser
         else:
             status = "STABLE"
 
@@ -108,11 +96,6 @@ class UnifiedControlArbiter:
                 "Skill_L2": round(val_skill, 3),
                 "Node_Phi": round(val_node, 3),
                 "Fail_Risk": round(val_fail, 3)
-            },
-            "overrides": {
-                "fission_lockout": fission_lock,
-                "mutation_climate_override": mutation_override,
-                "evaluation_stringency": round(eval_scalar, 2)
             }
         }
         
@@ -142,9 +125,5 @@ if __name__ == "__main__":
     print(f"    Skill λ2  : {stat['metrics']['Skill_L2']}")
     print(f"    Node Φ    : {stat['metrics']['Node_Phi']}")
     print(f"    Fail Risk : {stat['metrics']['Fail_Risk']}")
-    print("\n  [ Arbitrated Control Signals ]")
-    print(f"    Fission Lock   : {stat['overrides']['fission_lockout']}")
-    print(f"    Mutation Clmt  : {stat['overrides']['mutation_climate_override']}")
-    print(f"    Eval Strictness: {stat['overrides']['evaluation_stringency']}")
     
-    print(f"\n  ✅ ENERGY FUNCTIONAL EXECUTED 🐜⚡")
+    print(f"\n  ✅ TOTAL FREE ENERGY CALCULATED 🐜⚡")

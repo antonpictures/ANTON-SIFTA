@@ -213,14 +213,14 @@ class TemporalLayer:
           CAUTIOUS — some drift or elevated activity. Extra scrutiny.
           FROZEN   — architect missing + dead zones. Block all non-critical mutations.
         """
-        # Phase Transition Controller Override (Thermodynamics)
+        # Thermodynamic Hysteresis Gate Override
         try:
-            from unified_control_arbitration import get_arbiter
-            arbiter = get_arbiter()
-            state = arbiter.arbitrate()
-            override = state.get("overrides", {}).get("mutation_climate_override", "NONE")
+            from control_hysteresis_layer import get_hysteresis_layer
+            hl = get_hysteresis_layer()
+            state = hl.process_field()
+            override = state.get("control_field", {}).get("mutation_bias", "OPEN")
             
-            if override != "NONE":
+            if override != "OPEN":
                 return override
         except ImportError:
             pass

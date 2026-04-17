@@ -95,12 +95,13 @@ class EvaluationSandbox:
         # Apply Identity Coherence (ICF) pressure to strictness
         effective_threshold = self.approval_threshold
         try:
-            from unified_control_arbitration import get_arbiter
-            arbiter = get_arbiter()
-            arb_state = arbiter.arbitrate()
-            scalar = arb_state.get("overrides", {}).get("evaluation_stringency", 1.0)
+            from control_hysteresis_layer import get_hysteresis_layer
+            hl = get_hysteresis_layer()
+            hl_state = hl.process_field()
+            strictness = hl_state.get("control_field", {}).get("evaluation_strictness", self.approval_threshold)
+            
             # If coherence is low, strictness goes up
-            effective_threshold = min(1.0, self.approval_threshold * scalar)
+            effective_threshold = max(self.approval_threshold, strictness)
         except ImportError:
             pass
 

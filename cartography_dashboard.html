@@ -521,15 +521,24 @@
         <span class="metric-value" id="arbiter-energy" style="font-size: 1.1rem;">—</span>
       </div>
       <div class="metric-row" style="margin-top: 5px;">
-        <span class="metric-label">Arbiter Override Status</span>
-        <span class="metric-value" id="arbiter-status">—</span>
-      </div>
-      <div class="metric-row">
         <span class="metric-label">Cross-Node Unity (Φ)</span>
         <span class="metric-value" id="arbiter-phi">—</span>
       </div>
-      <div id="arbiter-lock" style="display: none; justify-content: center; margin-top: 10px;">
-        <span style="color: var(--danger); font-family: var(--font-mono); font-weight: bold; background: rgba(225, 112, 85, 0.2); padding: 4px 8px; border: 1px solid var(--danger); border-radius: 4px;">⚠️ ARBITER LOCKED FISSION & MUTATION</span>
+      <hr style="border: 0; border-top: 1px dashed var(--warn); margin: 10px 0; opacity: 0.8;">
+      <div class="metric-row">
+        <span class="metric-label" style="color: var(--warn); font-weight: bold;">[ HYSTERESIS BUFFER ]</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Pending Transition</span>
+        <span class="metric-value" id="hyst-target">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Continuous Energy Load</span>
+        <span class="metric-value" id="hyst-cycles" style="font-family: var(--font-mono); font-size: 1.1em">—</span>
+      </div>
+      <div class="metric-row" style="margin-top: 5px;">
+        <span class="metric-label">Final Active State</span>
+        <span class="metric-value accent" id="hyst-active" style="font-weight: bold">—</span>
       </div>
     </div>
   </div>
@@ -978,23 +987,28 @@ async function loadEigen() {
 async function loadArbiter() {
   const d = await fetchJSON('unified_control_state.json');
   if (!d) return;
-
-  const energyEl = document.getElementById('arbiter-energy');
-  energyEl.textContent = (d.E_total || 0).toFixed(4);
-
-  const statusEl = document.getElementById('arbiter-status');
-  statusEl.textContent = d.status || "UNKNOWN";
-  
-  if (d.E_total < 0.4) energyEl.style.color = "var(--danger)";
-  else if (d.E_total > 0.7) energyEl.style.color = "var(--good)";
-
+  document.getElementById('arbiter-energy').textContent = (d.E_total || 0).toFixed(4);
   document.getElementById('arbiter-phi').textContent = ((d.metrics || {}).Node_Phi || 0.0).toFixed(4);
+}
 
-  if ((d.overrides || {}).fission_lockout) {
-    document.getElementById('arbiter-lock').style.display = 'flex';
-  } else {
-    document.getElementById('arbiter-lock').style.display = 'none';
-  }
+async function loadHysteresis() {
+  const d = await fetchJSON('hysteresis_state.json');
+  if (!d) return;
+
+  const targetEl = document.getElementById('hyst-target');
+  targetEl.textContent = d.target_state || "UNKNOWN";
+  
+  const activeEl = document.getElementById('hyst-active');
+  activeEl.textContent = d.current_state || "UNKNOWN";
+  
+  if (d.current_state === "LOCKED") activeEl.style.color = "var(--danger)";
+  else if (d.current_state === "EXPLORATION") activeEl.style.color = "var(--good)";
+  else activeEl.style.color = "var(--warn)";
+
+  const cycles = d.consecutive_cycles || 0;
+  const max = d.required_cycles || 1;
+  const blocks = "█".repeat(cycles) + "░".repeat(max - cycles);
+  document.getElementById('hyst-cycles').textContent = `[${blocks}] ${cycles}/${max}`;
 }
 
 async function loadAll() {
@@ -1014,7 +1028,8 @@ async function loadAll() {
     loadPTC(),
     loadSpectral(),
     loadEigen(),
-    loadArbiter()
+    loadArbiter(),
+    loadHysteresis()
   ]);
 }
 
