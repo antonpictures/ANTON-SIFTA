@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIFTA — Cartography Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;800&family=Inter:wght@300;400;600;800&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --border: #1e1e2e;
+    --accent: #6c5ce7;
+    --accent2: #00cec9;
+    --accent3: #fd79a8;
+    --warn: #fdcb6e;
+    --danger: #e17055;
+    --success: #00b894;
+    --text: #dfe6e9;
+    --dim: #636e72;
+    --glow: rgba(108, 92, 231, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  /* ── Header ──────────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #12121a 0%, #0a0a0f 100%);
+  }
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 2px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .header .status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: pulse-dot 2s infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .header-right {
+    display: flex; align-items: center; gap: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--dim);
+  }
+
+  /* ── Grid ─────────────────────────────────────────── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px;
+    padding: 20px;
+  }
+
+  /* ── Panel ────────────────────────────────────────── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .panel:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px var(--glow);
+  }
+  .panel-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--accent);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-title .icon { font-size: 16px; }
+
+  /* ── Metrics ──────────────────────────────────────── */
+  .metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .metric-row:last-child { border-bottom: none; }
+  .metric-label {
+    font-size: 12px;
+    color: var(--dim);
+  }
+  .metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .metric-value.good { color: var(--success); }
+  .metric-value.warn { color: var(--warn); }
+  .metric-value.danger { color: var(--danger); }
+  .metric-value.accent { color: var(--accent); }
+  .metric-value.accent2 { color: var(--accent2); }
+
+  /* ── Progress bars ───────────────────────────────── */
+  .bar-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+  .bar-fill.green { background: linear-gradient(90deg, #00b894, #00cec9); }
+  .bar-fill.purple { background: linear-gradient(90deg, #6c5ce7, #a29bfe); }
+  .bar-fill.pink { background: linear-gradient(90deg, #fd79a8, #e84393); }
+  .bar-fill.orange { background: linear-gradient(90deg, #fdcb6e, #e17055); }
+
+  /* ── Gate chain ──────────────────────────────────── */
+  .gate-chain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .gate {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(108, 92, 231, 0.1);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+    color: var(--accent);
+  }
+  .gate.active {
+    background: rgba(0, 184, 148, 0.15);
+    border-color: var(--success);
+    color: var(--success);
+  }
+
+  /* ── Skill list ──────────────────────────────────── */
+  .skill-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 6px;
+    margin-bottom: 6px;
+  }
+  .skill-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent2);
+  }
+  .skill-strength {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+
+  /* ── Big number ──────────────────────────────────── */
+  .big-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 36px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .big-label {
+    font-size: 11px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* ── Anatomy diagram ─────────────────────────────── */
+  .anatomy {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.8;
+    color: var(--dim);
+  }
+  .anatomy .organ {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .anatomy .status-live {
+    color: var(--success);
+    font-size: 10px;
+  }
+  .anatomy .status-missing {
+    color: var(--danger);
+    font-size: 10px;
+  }
+
+  /* ── Full-width panels ───────────────────────────── */
+  .full-width { grid-column: 1 / -1; }
+
+  /* ── Refresh button ──────────────────────────────── */
+  .refresh-btn {
+    background: rgba(108, 92, 231, 0.15);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .refresh-btn:hover {
+    background: var(--accent);
+    color: white;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🐜 SIFTA CARTOGRAPHY</h1>
+  <div class="header-right">
+    <div class="status-dot"></div>
+    <span id="clock">--:--:--</span>
+    <button class="refresh-btn" onclick="loadAll()">⟳ REFRESH</button>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- ═══ TEMPORAL PULSE ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">⏱</span> TEMPORAL PULSE</div>
+    <div id="tempo-content">
+      <div class="metric-row">
+        <span class="metric-label">Dilation</span>
+        <span class="metric-value accent2" id="t-dilation">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Attention</span>
+        <span class="metric-value" id="t-attention">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Architect Drift</span>
+        <span class="metric-value" id="t-drift">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Concern Level</span>
+        <span class="metric-value" id="t-concern">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Swarm Tempo</span>
+        <span class="metric-value accent" id="t-tempo">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Mutation Climate</span>
+        <span class="metric-value" id="t-climate">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Dead Zones</span>
+        <span class="metric-value" id="t-dead">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ ECONOMY ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">💰</span> STGM ECONOMY</div>
+    <div id="econ-content">
+      <div class="big-num" id="e-balance">—</div>
+      <div class="big-label">Casino Vault Balance</div>
+      <div style="margin-top:14px">
+        <div class="metric-row">
+          <span class="metric-label">Skill Registry Invested</span>
+          <span class="metric-value accent" id="e-skill-invested">—</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">SVL Vision Burns</span>
+          <span class="metric-value accent3" id="e-vision-burns">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MUTATION GOVERNOR ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">🧬</span> MUTATION GOVERNOR — 12 GATES</div>
+    <div class="gate-chain" id="gate-chain">
+      <span class="gate active">temporal</span>
+      <span class="gate active">replay</span>
+      <span class="gate active">rate</span>
+      <span class="gate active">cooldown</span>
+      <span class="gate active">budget</span>
+      <span class="gate active">risk</span>
+      <span class="gate active">friction</span>
+      <span class="gate active">reversibility</span>
+      <span class="gate active">attention</span>
+      <span class="gate active">objective</span>
+      <span class="gate active">shadow</span>
+      <span class="gate active">contradiction</span>
+    </div>
+    <div style="margin-top: 12px;">
+      <div class="metric-row">
+        <span class="metric-label">Total Gates</span>
+        <span class="metric-value good">12</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Climate Gate</span>
+        <span class="metric-value" id="g-climate">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SKILL REGISTRY ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">🧠</span> SKILL REGISTRY — MUSCLE MEMORY</div>
+    <div id="skill-content">
+      <div class="metric-row">
+        <span class="metric-label">Total Skills</span>
+        <span class="metric-value accent2" id="s-total">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Avg Strength</span>
+        <span class="metric-value" id="s-avg">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Total Replays</span>
+        <span class="metric-value" id="s-replays">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Success Rate</span>
+        <span class="metric-value" id="s-rate">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">STGM Invested</span>
+        <span class="metric-value accent" id="s-invested">—</span>
+      </div>
+      <div id="skill-list" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- ═══ SVL VISION ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">👁</span> STIGMERGIC VISION LAYER</div>
+    <div id="svl-content">
+      <div class="metric-row">
+        <span class="metric-label">Total Events Logged</span>
+        <span class="metric-value accent2" id="v-events">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Latest Saliency</span>
+        <span class="metric-value" id="v-saliency">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Latest Scene Hash</span>
+        <span class="metric-value" id="v-hash">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Attention State</span>
+        <span class="metric-value" id="v-attention">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ IDENTITY FIREWALL ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">🔐</span> IDENTITY FIREWALL</div>
+    <div id="id-content">
+      <div class="metric-row">
+        <span class="metric-label">Registered Agents</span>
+        <span class="metric-value accent2" id="i-agents">—</span>
+      </div>
+      <div id="agent-list" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- ═══ ORGANISM ANATOMY ═══ -->
+  <div class="panel full-width">
+    <div class="panel-title"><span class="icon">🐜</span> ORGANISM ANATOMY — COMPLETE MAP</div>
+    <div class="anatomy" id="anatomy">
+      <span class="organ">EYES</span>       SVL v2 (Fatigue + Curiosity + Fusion)  <span class="status-live">● LIVE</span><br>
+      <span class="organ">HEARTBEAT</span>  Temporal Layering (unified pulse)       <span class="status-live">● LIVE</span><br>
+      <span class="organ">IMMUNE</span>     Contradiction Engine                    <span class="status-live">● LIVE</span><br>
+      <span class="organ">IDENTITY</span>   Cryptographic Phenotyping               <span class="status-live">● LIVE</span><br>
+      <span class="organ">TRAUMA</span>     Failure Harvesting                      <span class="status-live">● LIVE</span><br>
+      <span class="organ">MUSCLE</span>     Skill Registry (Phase 4)                <span class="status-live">● LIVE</span><br>
+      <span class="organ">ECONOMY</span>    STGM Casino Vault                       <span class="status-live">● LIVE</span><br>
+      <span class="organ">GUARD</span>      12-gate Mutation Governor               <span class="status-live">● LIVE</span><br>
+      <span class="organ">SANDBOX</span>    ClawHarness + Identity Firewall         <span class="status-live">● LIVE</span><br>
+      <span class="organ">IMAGINE</span>    Shadow Simulation (AST dry-run)         <span class="status-live">● LIVE</span><br>
+      <span class="organ">SILENCE</span>    Dead-zone metabolic monitor             <span class="status-live">● LIVE</span><br>
+      <span class="organ">CARTOGRAPHY</span> Dashboard (this screen)                <span class="status-live">● LIVE</span><br>
+    </div>
+  </div>
+
+  <!-- ═══ FAILURE HARVESTER ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">💀</span> FAILURE HARVESTER</div>
+    <div id="fail-content">
+      <div class="metric-row">
+        <span class="metric-label">Total Failures Logged</span>
+        <span class="metric-value danger" id="f-total">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Latest Failure</span>
+        <span class="metric-value" id="f-latest">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ CONTRADICTION ENGINE ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">⚡</span> CONTRADICTION ENGINE</div>
+    <div id="contra-content">
+      <div class="metric-row">
+        <span class="metric-label">Beliefs Tracked</span>
+        <span class="metric-value accent2" id="c-beliefs">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Contradictions Blocked</span>
+        <span class="metric-value danger" id="c-blocked">—</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Data Loader ─────────────────────────────────────────
+// This dashboard reads .sifta_state/ JSON files.
+// Since it's a local file, we use fetch() against a tiny Python server.
+// Run: python3 -m http.server 8484 --directory /path/to/ANTON_SIFTA/.sifta_state
+
+const BASE = 'http://localhost:8484';
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+async function fetchJSON(path) {
+  try {
+    const r = await fetch(`${BASE}/${path}?_=${Date.now()}`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function fetchJSONL(path) {
+  try {
+    const r = await fetch(`${BASE}/${path}?_=${Date.now()}`);
+    if (!r.ok) return [];
+    const text = await r.text();
+    return text.trim().split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+  } catch { return []; }
+}
+
+function climateColor(c) {
+  if (c === 'FROZEN') return 'danger';
+  if (c === 'CAUTIOUS') return 'warn';
+  return 'good';
+}
+
+async function loadTemporal() {
+  const d = await fetchJSON('temporal_layer.json');
+  if (!d) return;
+  document.getElementById('t-dilation').textContent = d.dilation + 'x';
+  document.getElementById('t-attention').textContent = d.attention_hint;
+  document.getElementById('t-drift').textContent = d.architect_drift_hours + 'h';
+  const concern = d.architect_concern;
+  const ce = document.getElementById('t-concern');
+  ce.textContent = concern;
+  ce.className = 'metric-value ' + (concern === 'alarm' ? 'danger' : concern === 'concern' ? 'warn' : 'good');
+  document.getElementById('t-tempo').textContent = d.swarm_tempo;
+  const cl = document.getElementById('t-climate');
+  cl.textContent = d.mutation_climate;
+  cl.className = 'metric-value ' + climateColor(d.mutation_climate);
+  document.getElementById('t-dead').textContent = d.dead_zones;
+  document.getElementById('g-climate').textContent = d.mutation_climate;
+  document.getElementById('g-climate').className = 'metric-value ' + climateColor(d.mutation_climate);
+}
+
+async function loadEconomy() {
+  const txs = await fetchJSONL('casino_vault.jsonl');
+  if (!txs.length) return;
+  let balance = 0;
+  let visionBurns = 0;
+  let skillInvested = 0;
+  txs.forEach(tx => {
+    balance += (tx.casino_delta || 0);
+    if (tx.action === 'SVL_METABOLISM') visionBurns += Math.abs(tx.casino_delta || 0);
+    if (tx.action === 'SKILL_REGISTRY') skillInvested += Math.abs(tx.casino_delta || 0);
+  });
+  document.getElementById('e-balance').textContent = balance.toFixed(2);
+  document.getElementById('e-vision-burns').textContent = visionBurns.toFixed(3) + ' STGM';
+  document.getElementById('e-skill-invested').textContent = skillInvested.toFixed(3) + ' STGM';
+}
+
+async function loadSkills() {
+  const d = await fetchJSON('skill_registry.json');
+  if (!d) return;
+  const skills = Object.values(d);
+  const total = skills.length;
+  const avgStr = total ? (skills.reduce((a, s) => a + s.strength, 0) / total).toFixed(3) : '0';
+  const totalReplays = skills.reduce((a, s) => a + s.use_count, 0);
+  const totalSuccess = skills.reduce((a, s) => a + s.success_count, 0);
+  const rate = totalReplays ? ((totalSuccess / totalReplays) * 100).toFixed(0) + '%' : '—';
+  const invested = skills.reduce((a, s) => a + s.stgm_invested, 0).toFixed(3);
+
+  document.getElementById('s-total').textContent = total;
+  document.getElementById('s-avg').textContent = avgStr;
+  document.getElementById('s-replays').textContent = totalReplays;
+  document.getElementById('s-rate').textContent = rate;
+  document.getElementById('s-rate').className = 'metric-value ' + (parseFloat(rate) > 70 ? 'good' : 'warn');
+  document.getElementById('s-invested').textContent = invested + ' STGM';
+
+  const list = document.getElementById('skill-list');
+  list.innerHTML = '';
+  skills.sort((a, b) => b.strength - a.strength).slice(0, 8).forEach(s => {
+    const color = s.strength > 0.7 ? 'good' : s.strength > 0.3 ? 'warn' : 'danger';
+    list.innerHTML += `<div class="skill-item">
+      <span class="skill-name">${s.name}</span>
+      <span class="skill-strength ${color}">${s.strength.toFixed(2)} ⚡ ${s.use_count} uses</span>
+    </div>`;
+  });
+}
+
+async function loadVision() {
+  const events = await fetchJSONL('vision_events.jsonl');
+  document.getElementById('v-events').textContent = events.length;
+  if (events.length) {
+    const last = events[events.length - 1];
+    document.getElementById('v-saliency').textContent = (last.saliency_score || 0).toFixed(3);
+    document.getElementById('v-hash').textContent = last.scene_hash || '—';
+    document.getElementById('v-attention').textContent = last.attention_state || '—';
+  }
+}
+
+async function loadIdentity() {
+  const d = await fetchJSON('phenotype_registry.json');
+  if (!d) return;
+  const agents = Object.values(d);
+  document.getElementById('i-agents').textContent = agents.length;
+  const list = document.getElementById('agent-list');
+  list.innerHTML = '';
+  agents.slice(0, 6).forEach(a => {
+    const perms = (a.active_phenotype || []).join(', ');
+    list.innerHTML += `<div class="skill-item">
+      <span class="skill-name">${a.lineage_tag}</span>
+      <span class="skill-strength accent">${perms || 'none'}</span>
+    </div>`;
+  });
+}
+
+async function loadFailures() {
+  const entries = await fetchJSONL('failure_log.jsonl');
+  document.getElementById('f-total').textContent = entries.length;
+  if (entries.length) {
+    const last = entries[entries.length - 1];
+    document.getElementById('f-latest').textContent = (last.error_msg || last.task_name || '—').slice(0, 60);
+  }
+}
+
+async function loadContradictions() {
+  const d = await fetchJSON('contradiction_registry.json');
+  if (!d) {
+    document.getElementById('c-beliefs').textContent = '0';
+    document.getElementById('c-blocked').textContent = '0';
+    return;
+  }
+  const beliefs = Object.keys(d.beliefs || d).length;
+  const blocked = (d.blocked_count || 0);
+  document.getElementById('c-beliefs').textContent = beliefs;
+  document.getElementById('c-blocked').textContent = blocked;
+}
+
+async function loadAll() {
+  await Promise.all([
+    loadTemporal(),
+    loadEconomy(),
+    loadSkills(),
+    loadVision(),
+    loadIdentity(),
+    loadFailures(),
+    loadContradictions(),
+  ]);
+}
+
+// Auto-refresh every 5 seconds
+loadAll();
+setInterval(loadAll, 5000);
+</script>
+
+</body>
+</html>
