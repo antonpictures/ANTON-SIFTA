@@ -69,64 +69,67 @@ class AppFitnessPanel(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, C_BG_DEEP)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            p.fillRect(0, 0, w, h, C_BG_DEEP)
 
-        if not self.scores:
-            p.setPen(C_TEXT_DIM)
-            p.setFont(QFont("SF Pro Display", 14))
-            p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No fitness data yet. Launch apps to map.")
-            return
+            if not self.scores:
+                p.setPen(C_TEXT_DIM)
+                p.setFont(QFont("SF Pro Display", 14))
+                p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No fitness data yet. Launch apps to map.")
+                return
 
-        sorted_apps = sorted(self.scores.items(), key=lambda x: -x[1])
-        row_h = 35
-        start_y = 60
-        left_pad = 180
-        bar_max_w = w - left_pad - 60
-        zero_x = left_pad + (bar_max_w * (abs(self.min_score) / (self.max_score - self.min_score)))
+            sorted_apps = sorted(self.scores.items(), key=lambda x: -x[1])
+            row_h = 35
+            start_y = 60
+            left_pad = 180
+            bar_max_w = w - left_pad - 60
+            zero_x = left_pad + (bar_max_w * (abs(self.min_score) / (max(0.1, self.max_score - self.min_score))))
 
-        # Draw Title
-        p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
-        p.setPen(C_TEXT_MAIN)
-        p.drawText(20, 35, "App Fitness Landscape")
-
-        # Zero Line
-        p.setPen(QPen(C_TEXT_DIM, 1, Qt.PenStyle.DashLine))
-        p.drawLine(int(zero_x), start_y, int(zero_x), h - 20)
-
-        p.setFont(QFont("SF Pro Text", 10))
-        for i, (name, score) in enumerate(sorted_apps):
-            y = start_y + (i * row_h)
-            if y > h - 20:
-                break
-            
-            # Name
-            cleaned_name = name.replace(".py", "").replace("sifta_", "").replace("_", " ").title()
+            # Draw Title
+            p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
             p.setPen(C_TEXT_MAIN)
-            p.drawText(QRectF(10, y, left_pad - 20, row_h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, cleaned_name)
+            p.drawText(20, 35, "App Fitness Landscape")
 
-            # Bar
-            bar_w = abs(score) / (self.max_score - self.min_score) * bar_max_w
-            
-            p.setPen(Qt.PenStyle.NoPen)
-            if score >= 0:
-                grad = QLinearGradient(zero_x, 0, zero_x + bar_w, 0)
-                grad.setColorAt(0, QColor(0, 150, 100, 150))
-                grad.setColorAt(1, C_ACCENT_GRN)
-                p.setBrush(grad)
-                p.drawRoundedRect(QRectF(zero_x, y + 8, bar_w, 18), 4, 4)
-            else:
-                grad = QLinearGradient(zero_x - bar_w, 0, zero_x, 0)
-                grad.setColorAt(0, C_ACCENT_RED)
-                grad.setColorAt(1, QColor(150, 0, 40, 150))
-                p.setBrush(grad)
-                p.drawRoundedRect(QRectF(zero_x - bar_w, y + 8, bar_w, 18), 4, 4)
+            # Zero Line
+            p.setPen(QPen(C_TEXT_DIM, 1, Qt.PenStyle.DashLine))
+            p.drawLine(int(zero_x), start_y, int(zero_x), h - 20)
 
-            # Score text
-            p.setPen(C_TEXT_DIM if score < 0 else C_TEXT_MAIN)
-            tx = zero_x + bar_w + 10 if score >= 0 else zero_x - bar_w - 45
-            p.drawText(QRectF(tx, y, 40, row_h), Qt.AlignmentFlag.AlignVCenter, f"{score:+.1f}")
+            p.setFont(QFont("SF Pro Text", 10))
+            for i, (name, score) in enumerate(sorted_apps):
+                y = start_y + (i * row_h)
+                if y > h - 20:
+                    break
+                
+                # Name
+                cleaned_name = name.replace(".py", "").replace("sifta_", "").replace("_", " ").title()
+                p.setPen(C_TEXT_MAIN)
+                p.drawText(QRectF(10, y, left_pad - 20, row_h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, cleaned_name)
+
+                # Bar
+                bar_w = abs(score) / max(0.1, (self.max_score - self.min_score)) * bar_max_w
+                
+                p.setPen(Qt.PenStyle.NoPen)
+                if score >= 0:
+                    grad = QLinearGradient(zero_x, 0, zero_x + bar_w, 0)
+                    grad.setColorAt(0, QColor(0, 150, 100, 150))
+                    grad.setColorAt(1, C_ACCENT_GRN)
+                    p.setBrush(grad)
+                    p.drawRoundedRect(QRectF(zero_x, y + 8, bar_w, 18), 4, 4)
+                else:
+                    grad = QLinearGradient(zero_x - bar_w, 0, zero_x, 0)
+                    grad.setColorAt(0, C_ACCENT_RED)
+                    grad.setColorAt(1, QColor(150, 0, 40, 150))
+                    p.setBrush(grad)
+                    p.drawRoundedRect(QRectF(zero_x - bar_w, y + 8, bar_w, 18), 4, 4)
+
+                # Score text
+                p.setPen(C_TEXT_DIM if score < 0 else C_TEXT_MAIN)
+                tx = zero_x + bar_w + 10 if score >= 0 else zero_x - bar_w - 45
+                p.drawText(QRectF(tx, y, 40, row_h), Qt.AlignmentFlag.AlignVCenter, f"{score:+.1f}")
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -154,66 +157,71 @@ class QuorumSensePanel(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, C_BG_DEEP)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            p.fillRect(0, 0, w, h, C_BG_DEEP)
 
-        p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
-        p.setPen(C_ACCENT_YLW)
-        p.drawText(20, 35, "Quorum Proposals")
-        
-        if not self.proposals:
-            p.setPen(C_TEXT_DIM)
-            p.setFont(QFont("SF Pro Display", 14))
-            p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "The Swarm is at peace.\nNo active consensus proposals.")
-            # Gentle pulsing circle in center
-            r = 50 + math.sin(self.t) * 10
-            p.setPen(QPen(QColor(255, 200, 50, 50), 2))
-            p.setBrush(Qt.PenStyle.NoBrush)
-            p.drawEllipse(QPointF(w/2, h/2), r, r)
-            return
-
-        y = 70
-        for prop in self.proposals:
-            c_w = w - 40
-            c_h = 70
+            p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
+            p.setPen(C_ACCENT_YLW)
+            p.drawText(20, 35, "Quorum Proposals")
             
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(C_BG_PANEL)
-            p.drawRoundedRect(20, y, c_w, c_h, 8, 8)
+            if not self.proposals:
+                p.setPen(C_TEXT_DIM)
+                p.setFont(QFont("SF Pro Display", 14))
+                p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "The Swarm is at peace.\nNo active consensus proposals.")
+                # Gentle pulsing circle in center
+                r = 50 + math.sin(self.t) * 10
+                p.setPen(QPen(QColor(255, 200, 50, 50), 2))
+                p.setBrush(Qt.PenStyle.NoBrush)
+                p.drawEllipse(QPointF(w/2, h/2), r, r)
+                return
 
-            action = prop.get('action_id', '???')
-            ptype = prop.get('type', 'SYSTEM')
-            votes = prop.get('votes', 0)
-            needed = prop.get('needed', 1)
-            age = prop.get('age_sec', 0)
-            
-            p.setFont(QFont("SF Pro Text", 12, QFont.Weight.Bold))
-            p.setPen(C_TEXT_MAIN)
-            p.drawText(35, y + 25, f"[{ptype}] {action}")
+            y = 70
+            for prop in self.proposals:
+                if not isinstance(prop, dict):
+                    continue
+                c_w = w - 40
+                c_h = 70
+                
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(C_BG_PANEL)
+                p.drawRoundedRect(20, y, c_w, c_h, 8, 8)
 
-            p.setFont(QFont("SF Pro Text", 10))
-            p.setPen(C_TEXT_DIM)
-            p.drawText(35, y + 45, f"Age: {int(age)}s | Nodes Signed: {votes}/{needed}")
+                action = prop.get('action_id', '???')
+                ptype = prop.get('type', 'SYSTEM')
+                votes = prop.get('votes', 0)
+                needed = prop.get('needed', 1)
+                age = prop.get('age_sec', 0)
+                
+                p.setFont(QFont("SF Pro Text", 12, QFont.Weight.Bold))
+                p.setPen(C_TEXT_MAIN)
+                p.drawText(35, y + 25, f"[{ptype}] {action}")
 
-            # Neon progress bar
-            pb_x = 35 + 250
-            pb_w = c_w - pb_x - 20
-            ratio = min(1.0, votes / needed)
-            
-            p.setBrush(QColor(10, 10, 15))
-            p.drawRoundedRect(QRectF(pb_x, y + 30, pb_w, 10), 5, 5)
+                p.setFont(QFont("SF Pro Text", 10))
+                p.setPen(C_TEXT_DIM)
+                p.drawText(35, y + 45, f"Age: {int(age)}s | Nodes Signed: {votes}/{needed}")
 
-            if ratio > 0:
-                grad = QLinearGradient(pb_x, 0, pb_x + pb_w * ratio, 0)
-                grad.setColorAt(0, QColor(255, 100, 0))
-                grad.setColorAt(1, C_ACCENT_YLW)
-                p.setBrush(grad)
-                # Pulsing width slightly
-                pulse_w = pb_w * ratio + (math.sin(self.t*5)*2 if ratio < 1 else 0)
-                p.drawRoundedRect(QRectF(pb_x, y + 30, pulse_w, 10), 5, 5)
+                # Neon progress bar
+                pb_x = 35 + 250
+                pb_w = c_w - pb_x - 20
+                ratio = min(1.0, votes / max(1, needed))
+                
+                p.setBrush(QColor(10, 10, 15))
+                p.drawRoundedRect(QRectF(pb_x, y + 30, pb_w, 10), 5, 5)
 
-            y += c_h + 15
+                if ratio > 0:
+                    grad = QLinearGradient(pb_x, 0, pb_x + pb_w * ratio, 0)
+                    grad.setColorAt(0, QColor(255, 100, 0))
+                    grad.setColorAt(1, C_ACCENT_YLW)
+                    p.setBrush(grad)
+                    # Pulsing width slightly
+                    pulse_w = pb_w * ratio + (math.sin(self.t*5)*2 if ratio < 1 else 0)
+                    p.drawRoundedRect(QRectF(pb_x, y + 30, max(1.0, pulse_w), 10), 5, 5)
+
+                y += c_h + 15
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -241,54 +249,57 @@ class ImmuneSystemPanel(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, C_BG_DEEP)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            p.fillRect(0, 0, w, h, C_BG_DEEP)
 
-        p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
-        p.setPen(C_ACCENT_RED)
-        p.drawText(20, 35, "Immune Memory Antibodies")
+            p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
+            p.setPen(C_ACCENT_RED)
+            p.drawText(20, 35, "Immune Memory Antibodies")
 
-        if not self.data:
-            p.setPen(C_TEXT_DIM)
-            p.setFont(QFont("SF Pro Display", 14))
-            p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No immune memory detected.")
-            return
+            if not self.data or not isinstance(self.data, dict):
+                p.setPen(C_TEXT_DIM)
+                p.setFont(QFont("SF Pro Display", 14))
+                p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No immune memory detected.")
+                return
 
-        total_ab = self.data.get('total_antibodies', 0)
-        matches = self.data.get('total_matches', 0)
-        types = self.data.get('types', {})
+            total_ab = self.data.get('total_antibodies', 0)
+            matches = self.data.get('total_matches', 0)
+            types = self.data.get('types', {})
 
-        # Big Stat boxes
-        self._draw_stat_box(p, 20, 60, w//2 - 30, 80, "Antibodies", str(total_ab), C_ACCENT_BLU)
-        self._draw_stat_box(p, w//2 + 10, 60, w//2 - 30, 80, "Total Recognitions", str(matches), C_ACCENT_RED)
+            # Big Stat boxes
+            self._draw_stat_box(p, 20, 60, w//2 - 30, 80, "Antibodies", str(total_ab), C_ACCENT_BLU)
+            self._draw_stat_box(p, w//2 + 10, 60, w//2 - 30, 80, "Total Recognitions", str(matches), C_ACCENT_RED)
 
-        # Ring chart for types
-        if types:
-            cx, cy = w/2, h/2 + 60
-            radius = min(w, h)/4
-            start_angle = self.t * 10
-            
-            colors = [C_ACCENT_RED, C_ACCENT_PUR, C_ACCENT_BLU, C_ACCENT_YLW, C_ACCENT_GRN]
-            total_t = sum(types.values())
-            
-            for i, (k, v) in enumerate(types.items()):
-                span = (v / total_t) * 360 * 16
-                p.setPen(QPen(colors[i % len(colors)], 15, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-                p.drawArc(int(cx - radius), int(cy - radius), int(radius*2), int(radius*2), int(start_angle*16), int(span))
+            # Ring chart for types
+            if types and isinstance(types, dict):
+                cx, cy = w/2, h/2 + 60
+                radius = min(w, h)/4
+                start_angle = self.t * 10
                 
-                # Legend
-                p.setPen(colors[i % len(colors)])
-                p.setFont(QFont("SF Pro Text", 11, QFont.Weight.Bold))
-                p.drawText(int(cx + radius + 30), int(cy - radius + i*25), f"{k}: {v}")
+                colors = [C_ACCENT_RED, C_ACCENT_PUR, C_ACCENT_BLU, C_ACCENT_YLW, C_ACCENT_GRN]
+                total_t = max(1, sum(types.values()))
                 
-                start_angle += span/16
+                for i, (k, v) in enumerate(types.items()):
+                    span = (v / total_t) * 360 * 16
+                    p.setPen(QPen(colors[i % len(colors)], 15, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                    p.drawArc(int(cx - radius), int(cy - radius), int(radius*2), int(radius*2), int(start_angle*16), int(span))
+                    
+                    # Legend
+                    p.setPen(colors[i % len(colors)])
+                    p.setFont(QFont("SF Pro Text", 11, QFont.Weight.Bold))
+                    p.drawText(int(cx + radius + 30), int(cy - radius + i*25), f"{k}: {v}")
+                    
+                    start_angle += span/16
 
-            # Center pulse
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(C_ACCENT_RED.red(), C_ACCENT_RED.green(), C_ACCENT_RED.blue(), 20))
-            pr = 20 + math.sin(self.t*4)*5
-            p.drawEllipse(QPointF(cx, cy), pr, pr)
+                # Center pulse
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(C_ACCENT_RED.red(), C_ACCENT_RED.green(), C_ACCENT_RED.blue(), 20))
+                pr = max(1.0, 20 + math.sin(self.t*4)*5)
+                p.drawEllipse(QPointF(cx, cy), pr, pr)
+        except Exception:
+            pass
 
     def _draw_stat_box(self, p, x, y, w, h, title, val, color):
         p.setPen(Qt.PenStyle.NoPen)
@@ -326,56 +337,59 @@ class DreamReportPanel(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, C_BG_DEEP)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            p.fillRect(0, 0, w, h, C_BG_DEEP)
 
-        p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
-        p.setPen(C_ACCENT_PUR)
-        p.drawText(20, 35, "Nightly Dream Report (Memory Consolidation)")
+            p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
+            p.setPen(C_ACCENT_PUR)
+            p.drawText(20, 35, "Nightly Dream Report (Memory Consolidation)")
 
-        if not self.meta:
+            if not self.meta or not isinstance(self.meta, dict):
+                p.setPen(C_TEXT_DIM)
+                p.setFont(QFont("SF Pro Display", 14))
+                p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No dream data recorded.")
+                return
+
+            last_ts = self.meta.get('last_dream', 'Unknown')
+            p.setFont(QFont("SF Pro Text", 10))
             p.setPen(C_TEXT_DIM)
-            p.setFont(QFont("SF Pro Display", 14))
-            p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No dream data recorded.")
-            return
+            p.drawText(20, 55, f"Last cycle: {last_ts}")
 
-        last_ts = self.meta.get('last_dream', 'Unknown')
-        p.setFont(QFont("SF Pro Text", 10))
-        p.setPen(C_TEXT_DIM)
-        p.drawText(20, 55, f"Last cycle: {last_ts}")
+            analyses = self.meta.get('analyses') or {}
+            dd = analyses.get('dead_drop') or {}
+            eco = analyses.get('economy') or {}
+            rep = analyses.get('repairs') or {}
 
-        analyses = self.meta.get('analyses', {})
-        dd = analyses.get('dead_drop', {})
-        eco = analyses.get('economy', {})
-        rep = analyses.get('repairs', {})
+            grid_y = 80
+            col1 = 20
+            col2 = w/2 + 10
+            card_w = max(10, w/2 - 30)
+            card_h = 100
 
-        grid_y = 80
-        col1 = 20
-        col2 = w/2 + 10
-        card_w = w/2 - 30
-        card_h = 100
+            # DEAD DROP
+            self._draw_card(p, col1, grid_y, card_w, card_h, "Dead Drop Chat", 
+                            f"{dd.get('total_messages',0)} Msgs | {dd.get('unique_senders',0)} Senders\n{dd.get('error_mentions',0)} Errors", 
+                            C_ACCENT_BLU if dd.get('error_mentions',0) < 5 else C_ACCENT_RED)
+            
+            # ECONOMY
+            self._draw_card(p, col2, grid_y, card_w, card_h, "STGM Economy", 
+                            f"{eco.get('mints_today',0)} Mints\n{eco.get('total_stgm_minted',0)} STGM Minted", 
+                            C_ACCENT_GRN if not eco.get('inflation_alert') else C_ACCENT_RED)
+            
+            # REPAIRS
+            self._draw_card(p, col1, grid_y + card_h + 15, card_w, card_h, "Repairs / Interventions", 
+                            f"{rep.get('repairs_today',0)} auto-interventions", 
+                            C_ACCENT_YLW if rep.get('repairs_today',0) > 0 else C_TEXT_DIM)
 
-        # DEAD DROP
-        self._draw_card(p, col1, grid_y, card_w, card_h, "Dead Drop Chat", 
-                        f"{dd.get('total_messages',0)} Msgs | {dd.get('unique_senders',0)} Senders\n{dd.get('error_mentions',0)} Errors", 
-                        C_ACCENT_BLU if dd.get('error_mentions',0) < 5 else C_ACCENT_RED)
-        
-        # ECONOMY
-        self._draw_card(p, col2, grid_y, card_w, card_h, "STGM Economy", 
-                        f"{eco.get('mints_today',0)} Mints\n{eco.get('total_stgm_minted',0)} STGM Minted", 
-                        C_ACCENT_GRN if not eco.get('inflation_alert') else C_ACCENT_RED)
-        
-        # REPAIRS
-        self._draw_card(p, col1, grid_y + card_h + 15, card_w, card_h, "Repairs / Interventions", 
-                        f"{rep.get('repairs_today',0)} auto-interventions", 
-                        C_ACCENT_YLW if rep.get('repairs_today',0) > 0 else C_TEXT_DIM)
-
-        # EVAPORATED (Immune)
-        imm = analyses.get('immune_evaporated', 0)
-        self._draw_card(p, col2, grid_y + card_h + 15, card_w, card_h, "Immune Evaporation", 
-                        f"{imm} stale antibodies removed", 
-                        C_ACCENT_PUR)
+            # EVAPORATED (Immune)
+            imm = analyses.get('immune_evaporated', 0)
+            self._draw_card(p, col2, grid_y + card_h + 15, card_w, card_h, "Immune Evaporation", 
+                            f"{imm} stale antibodies removed", 
+                            C_ACCENT_PUR)
+        except Exception:
+            pass
 
     def _draw_card(self, p, x, y, w, h, title, text, accent):
         p.setPen(Qt.PenStyle.NoPen)
@@ -419,52 +433,55 @@ class NerveChannelPanel(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, C_BG_DEEP)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            p.fillRect(0, 0, w, h, C_BG_DEEP)
 
-        p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
-        p.setPen(C_ACCENT_BLU)
-        p.drawText(20, 35, "UDP Nerve Channel Topology")
+            p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
+            p.setPen(C_ACCENT_BLU)
+            p.drawText(20, 35, "UDP Nerve Channel Topology")
 
-        # Fake moving nodes representing UDP topology between M1/M5
-        cx1, cy1 = w/3, h/2
-        cx2, cy2 = w*2/3, h/2
+            # Fake moving nodes representing UDP topology between M1/M5
+            cx1, cy1 = w/3, h/2
+            cx2, cy2 = w*2/3, h/2
 
-        # Draw wire
-        p.setPen(QPen(QColor(0, 180, 255, 60), 2, Qt.PenStyle.DashLine))
-        p.drawLine(int(cx1), int(cy1), int(cx2), int(cy2))
+            # Draw wire
+            p.setPen(QPen(QColor(0, 180, 255, 60), 2, Qt.PenStyle.DashLine))
+            p.drawLine(int(cx1), int(cy1), int(cx2), int(cy2))
 
-        # Nodes
-        p.setPen(Qt.PenStyle.NoPen)
-        # Node 1
-        p.setBrush(QColor(0, 180, 255, 120 + int(math.sin(self.t*4)*50)))
-        p.drawEllipse(QPointF(cx1, cy1), 30, 30)
-        p.setPen(C_TEXT_MAIN)
-        p.drawText(int(cx1 - 25), int(cy1 + 50), "Local Node (M1)")
+            # Nodes
+            p.setPen(Qt.PenStyle.NoPen)
+            # Node 1
+            p.setBrush(QColor(0, 180, 255, 120 + int(math.sin(self.t*4)*50)))
+            p.drawEllipse(QPointF(cx1, cy1), 30.0, 30.0)
+            p.setPen(C_TEXT_MAIN)
+            p.drawText(int(cx1 - 25), int(cy1 + 50), "Local Node (M1)")
 
-        # Node 2
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(255, 100, 0, 120 + int(math.cos(self.t*4)*50)))
-        p.drawEllipse(QPointF(cx2, cy2), 30, 30)
-        p.setPen(C_TEXT_MAIN)
-        p.drawText(int(cx2 - 25), int(cy2 + 50), "Peer Node (M5)")
+            # Node 2
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 100, 0, 120 + int(math.cos(self.t*4)*50)))
+            p.drawEllipse(QPointF(cx2, cy2), 30.0, 30.0)
+            p.setPen(C_TEXT_MAIN)
+            p.drawText(int(cx2 - 25), int(cy2 + 50), "Peer Node (M5)")
 
-        # Datagram "pulses" moving across
-        prog = (self.t % 2.0) / 2.0
-        px = cx1 + (cx2 - cx1) * prog
-        py = cy1 + (cy2 - cy1) * prog
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(C_ACCENT_GRN)
-        p.drawEllipse(QPointF(px, py), 8, 8)
-        p.setPen(C_ACCENT_GRN)
-        p.setFont(QFont("SF Pro Text", 9))
-        sig_text = self.signals_ref[int(self.t)%len(self.signals_ref)] if self.signals_ref else "PING"
-        p.drawText(int(px - 15), int(py - 15), sig_text)
+            # Datagram "pulses" moving across
+            prog = (self.t % 2.0) / 2.0
+            px = cx1 + (cx2 - cx1) * prog
+            py = cy1 + (cy2 - cy1) * prog
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(C_ACCENT_GRN)
+            p.drawEllipse(QPointF(px, py), 8.0, 8.0)
+            p.setPen(C_ACCENT_GRN)
+            p.setFont(QFont("SF Pro Text", 9))
+            sig_text = self.signals_ref[int(self.t)%max(1, len(self.signals_ref))] if self.signals_ref else "PING"
+            p.drawText(int(px - 15), int(py - 15), sig_text)
 
-        p.setFont(QFont("SF Pro Text", 10))
-        p.setPen(C_TEXT_DIM)
-        p.drawText(20, h - 20, f"Port: 4444 | Datagram: 42 bytes | Crypto: Ed25519")
+            p.setFont(QFont("SF Pro Text", 10))
+            p.setPen(C_TEXT_DIM)
+            p.drawText(20, h - 20, f"Port: 4444 | Datagram: 42 bytes | Crypto: Ed25519")
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -500,56 +517,60 @@ class FileTrailsPanel(QWidget):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, C_BG_DEEP)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            p.fillRect(0, 0, w, h, C_BG_DEEP)
 
-        p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
-        p.setPen(C_ACCENT_GRN)
-        p.drawText(20, 35, "Stigmergic File Trails")
+            p.setFont(QFont("SF Pro Display", 18, QFont.Weight.Bold))
+            p.setPen(C_ACCENT_GRN)
+            p.drawText(20, 35, "Stigmergic File Trails")
 
-        if not self.trail_map:
-            p.setPen(C_TEXT_DIM)
-            p.setFont(QFont("SF Pro Display", 14))
-            p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No paths walked. File trails emerge from continuous usage.")
-            return
+            if not self.trail_map or not isinstance(self.trail_map, dict):
+                p.setPen(C_TEXT_DIM)
+                p.setFont(QFont("SF Pro Display", 14))
+                p.drawText(QRectF(0, 0, w, h), Qt.AlignmentFlag.AlignCenter, "No paths walked. File trails emerge from continuous usage.")
+                return
 
-        # Simple random-ish physics layout based on names hash
-        # To make it beautiful, we draw a web of connections
-        nodes = list(set([k.split("::")[0] for k in self.trail_map.keys()] + [k.split("::")[1] for k in self.trail_map.keys()]))
-        
-        node_pos = {}
-        for i, n in enumerate(nodes):
-            # Deterministic pseudo-random placement
-            hx = int(hash(n) % (w - 100)) + 50
-            hy = int((hash(n) // w) % (h - 150)) + 80
-            # Float slightly
-            hx += math.sin(self.t + i) * 10
-            hy += math.cos(self.t + i*1.5) * 10
-            node_pos[n] = (hx, hy)
-
-        # Draw links
-        for k, weight in self.trail_map.items():
-            a, b = k.split("::")
-            if a in node_pos and b in node_pos:
-                ax, ay = node_pos[a]
-                bx, by = node_pos[b]
-                intensity = min(255, int(weight * 50))
-                p.setPen(QPen(QColor(0, 255, 150, max(20, intensity)), 2 + int(weight*0.5)))
-                p.drawLine(int(ax), int(ay), int(bx), int(by))
-
-        # Draw nodes
-        p.setFont(QFont("SF Pro Text", 9))
-        for i, n in enumerate(nodes):
-            nx, ny = node_pos[n]
-            # determine if in cluster
-            in_cluster = sum([1 for c in self.clusters if n in c]) > 0
+            # Simple random-ish physics layout based on names hash
+            # To make it beautiful, we draw a web of connections
+            nodes = list(set([k.split("::")[0] for k in self.trail_map.keys() if "::" in k] + [k.split("::")[1] for k in self.trail_map.keys() if "::" in k]))
             
-            color = C_ACCENT_GRN if in_cluster else C_TEXT_DIM
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(color)
-            p.drawEllipse(int(nx - 4), int(ny - 4), 8, 8)
-            
-            p.setPen(C_TEXT_MAIN)
-            name = Path(n).name
-            p.drawText(int(nx + 10), int(ny + 4), name)
+            node_pos = {}
+            for i, n in enumerate(nodes):
+                # Deterministic pseudo-random placement
+                hx = int(hash(n) % max(1, w - 100)) + 50
+                hy = int((hash(n) // max(1, w)) % max(1, h - 150)) + 80
+                # Float slightly
+                hx += math.sin(self.t + i) * 10
+                hy += math.cos(self.t + i*1.5) * 10
+                node_pos[n] = (hx, hy)
+
+            # Draw links
+            for k, weight in self.trail_map.items():
+                if "::" not in k: continue
+                a, b = k.split("::", 1)
+                if a in node_pos and b in node_pos:
+                    ax, ay = node_pos[a]
+                    bx, by = node_pos[b]
+                    intensity = min(255, int(weight * 50))
+                    p.setPen(QPen(QColor(0, 255, 150, max(20, intensity)), 2 + int(weight*0.5)))
+                    p.drawLine(int(ax), int(ay), int(bx), int(by))
+
+            # Draw nodes
+            p.setFont(QFont("SF Pro Text", 9))
+            for i, n in enumerate(nodes):
+                nx, ny = node_pos[n]
+                # determine if in cluster
+                in_cluster = sum([1 for c in self.clusters if n in c]) > 0
+                
+                color = C_ACCENT_GRN if in_cluster else C_TEXT_DIM
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(color)
+                p.drawEllipse(int(nx - 4), int(ny - 4), 8, 8)
+                
+                p.setPen(C_TEXT_MAIN)
+                name = Path(n).name
+                p.drawText(int(nx + 10), int(ny + 4), name)
+        except Exception:
+            pass
