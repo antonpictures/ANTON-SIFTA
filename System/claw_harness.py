@@ -74,7 +74,9 @@ class ClawHarness:
         Returns: (success_status, stdout, stderr)
         """
         if not self._is_safe_command(command):
-            return False, "", f"[CLAW BLOCKED] Target binary or construct prohibited: {command}"
+            err_msg = f"[CLAW BLOCKED] Target binary or construct prohibited: {command}"
+            self._harvest_failure(command, err_msg)
+            return False, "", err_msg
 
         # ── Objective worth gate ──────────────────────────────────
         # Claw actions must also pass the swarm's decision gravity field
@@ -83,7 +85,9 @@ class ClawHarness:
             reg = get_registry()
             estimates = reg.estimate_claw_action(command, is_safe=True)
             if not reg.is_worth_it(estimates):
-                return False, "", f"[CLAW LOW-VALUE] Action scored below objective threshold"
+                err_msg = "[CLAW LOW-VALUE] Action scored below objective threshold"
+                self._harvest_failure(command, err_msg)
+                return False, "", err_msg
         except ImportError:
             pass  # Registry not available — degrade gracefully
 
@@ -110,12 +114,34 @@ class ClawHarness:
                 run_wd.rmdir()
 
             self._log_execution(command, success, time.time() - start_t)
+            if not success:
+                self._harvest_failure(command, f"Return Code {proc.returncode}: {proc.stderr}")
             return success, proc.stdout, proc.stderr
             
         except subprocess.TimeoutExpired:
-            return False, "", "[CLAW HALT] Execution exceeded safe thermodynamic margin (timeout)."
+            err_msg = "[CLAW HALT] Execution exceeded safe thermodynamic margin (timeout)."
+            self._harvest_failure(command, err_msg)
+            return False, "", err_msg
         except Exception as e:
-            return False, "", f"[CLAW ERROR] Execution fault: {e}"
+            err_msg = f"[CLAW ERROR] Execution fault: {e}"
+            self._harvest_failure(command, err_msg)
+            return False, "", err_msg
+
+    def _harvest_failure(self, cmd: str, error_msg: str) -> None:
+        """Route failed executions to the harvest subsystem."""
+        try:
+            try:
+                from System.failure_harvesting import get_harvester
+            except ImportError:
+                from failure_harvesting import get_harvester
+            get_harvester().harvest(
+                agent_context="ClawHarness",
+                task_name=f"Crucible_Exec",
+                error_msg=error_msg,
+                context_data={"command": cmd}
+            )
+        except ImportError:
+            pass
 
     def write_crucible_file(self, filename: str, content: str) -> bool:
         """
