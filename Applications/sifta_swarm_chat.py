@@ -151,7 +151,7 @@ class ScreenplayTextEdit(QTextEdit):
             "  selection-background-color: #24283b;"
             "}"
         )
-        self.setAcceptRichText(True)
+        self.setAcceptRichText(False)
 
     def keyPressEvent(self, event: QKeyEvent):
         # Stop timer on any key
