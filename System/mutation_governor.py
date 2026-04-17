@@ -287,6 +287,32 @@ class MutationGovernor:
             except ImportError:
                 pass  # Simulator not available
 
+        # ── §5.2.4 Contradiction gate ─────────────────────────────
+        # For state mutations (.json files in .sifta_state), check if
+        # the proposed content contradicts existing beliefs on the Blackboard.
+        if file_path.endswith('.json') and '.sifta_state' in file_path:
+            try:
+                import json as _json
+                try:
+                    from System.contradiction_engine import get_engine
+                except ImportError:
+                    from contradiction_engine import get_engine
+                engine = get_engine()
+                # Load existing state and read proposed state
+                existing_path = _REPO / file_path
+                if existing_path.exists():
+                    existing = _json.loads(existing_path.read_text())
+                    proposed = _json.loads(mutation)  # mutation = new JSON string
+                    agent_context = f"Governor:{file_path}"
+                    # Check each key the proposed state wants to change
+                    for k, new_val in proposed.items():
+                        safe, msg = engine.assert_belief(agent_context, k, new_val, existing)
+                        if not safe:
+                            self.last_reject_reason = f"contradiction_detected:{k}"
+                            return False
+            except (ImportError, Exception):
+                pass  # Degrade gracefully — never hard-block on parse error
+
         return True
 
     def commit(self, file_path: str, mutation: str) -> None:
