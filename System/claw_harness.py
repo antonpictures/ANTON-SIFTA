@@ -129,7 +129,10 @@ class ClawHarness:
                 run_wd.rmdir()
 
             self._log_execution(command, success, time.time() - start_t)
-            if not success:
+            if success:
+                # ── Skill Registry: promote successful action ─────────
+                self._promote_to_skill(command, proc.stdout, genotype_hash)
+            else:
                 self._harvest_failure(command, f"Return Code {proc.returncode}: {proc.stderr}")
             return success, proc.stdout, proc.stderr
             
@@ -186,6 +189,60 @@ class ClawHarness:
             "success": success,
             "duration": round(duration, 3)
         })
+
+    def _promote_to_skill(self, command: str, stdout: str,
+                          genotype_hash: str = None) -> None:
+        """
+        After a successful Crucible execution, offer the action
+        to the Skill Registry for crystallization.
+        """
+        try:
+            try:
+                from System.skill_registry import get_skill_registry
+            except ImportError:
+                from skill_registry import get_skill_registry
+            reg = get_skill_registry()
+            import shlex
+            tokens = shlex.split(command)
+            reg.mint(
+                name=f"claw_{tokens[0]}" if tokens else "claw_unknown",
+                command_sequence=tokens,
+                context={"source": "ClawHarness", "crucible": True},
+                outcome_summary=stdout[:200] if stdout else "success",
+                discovered_by=genotype_hash or "anonymous",
+                lineage_tag="ClawHarness",
+                tags=["crucible", "auto-discovered"],
+            )
+        except ImportError:
+            pass
+
+    def replay_skill(self, skill_id: str, timeout: int = 15,
+                     genotype_hash: str = None) -> Tuple[bool, str, str]:
+        """
+        Replay a registered skill by its ID.
+        On success: skill strength is reinforced.
+        On failure: skill strength is demoted + failure harvested.
+        """
+        try:
+            try:
+                from System.skill_registry import get_skill_registry
+            except ImportError:
+                from skill_registry import get_skill_registry
+            reg = get_skill_registry()
+            skill = reg.get(skill_id)
+            if skill is None:
+                return False, "", f"[CLAW] Skill {skill_id} not found"
+
+            # Reconstruct and execute the frozen command sequence
+            command = " ".join(skill.command_sequence)
+            ok, out, err = self.execute_in_crucible(
+                command, timeout=timeout, genotype_hash=genotype_hash
+            )
+            # Record the replay result
+            reg.replay(skill_id, success=ok)
+            return ok, out, err
+        except ImportError:
+            return False, "", "[CLAW] Skill registry unavailable"
 
 if __name__ == "__main__":
     claw = ClawHarness()
