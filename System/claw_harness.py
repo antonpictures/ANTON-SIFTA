@@ -76,6 +76,17 @@ class ClawHarness:
         if not self._is_safe_command(command):
             return False, "", f"[CLAW BLOCKED] Target binary or construct prohibited: {command}"
 
+        # ── Objective worth gate ──────────────────────────────────
+        # Claw actions must also pass the swarm's decision gravity field
+        try:
+            from objective_registry import get_registry
+            reg = get_registry()
+            estimates = reg.estimate_claw_action(command, is_safe=True)
+            if not reg.is_worth_it(estimates):
+                return False, "", f"[CLAW LOW-VALUE] Action scored below objective threshold"
+        except ImportError:
+            pass  # Registry not available — degrade gracefully
+
         # Setup sandbox dir with an execution fingerprint
         exec_id = hashlib.md5(f"{time.time()}_{command}".encode()).hexdigest()[:8]
         run_wd = self.crucible_path / exec_id

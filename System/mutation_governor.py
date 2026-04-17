@@ -256,6 +256,21 @@ class MutationGovernor:
             self.last_reject_reason = "attention_exhausted"
             return False
 
+        # ── §5.2.10 Objective worth gate ─────────────────────────
+        # Final question: is this mutation WORTH IT?
+        try:
+            from objective_registry import get_registry
+            reg = get_registry()
+            estimates = reg.estimate_mutation(
+                file_path, mutation,
+                friction=friction, reversibility=rev
+            )
+            if not reg.is_worth_it(estimates):
+                self.last_reject_reason = f"objective_score:{reg.score_action(estimates):.2f}"
+                return False
+        except ImportError:
+            pass  # Registry not available — degrade gracefully
+
         return True
 
     def commit(self, file_path: str, mutation: str) -> None:
