@@ -15,6 +15,11 @@ Frame rate adapts to attention state:
 Only high-saliency frames survive into the blackboard.
 Raw frames are NEVER stored.
 
+SVL v2 additions:
+  - Vision Fatigue:  retinal strain degrades FPS over sustained use
+  - Curiosity Spike: novelty temporarily boosts attention budget
+  - Collective Vision Fusion: overlapping weak traces → stronger beliefs
+
 Requires: pip install opencv-python (cv2)
 Falls back gracefully if not installed.
 
@@ -26,10 +31,11 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from dataclasses import dataclass, asdict
+from collections import Counter
+from dataclasses import dataclass, asdict, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
@@ -51,6 +57,17 @@ FPS_MAP = {
 
 # Saliency threshold — frames below this are silently dropped
 SALIENCY_THRESHOLD = 0.15
+
+# ── Fatigue constants ────────────────────────────────────────
+FATIGUE_RATE      = 0.01    # fatigue gained per processed frame
+FATIGUE_DECAY     = 0.002   # fatigue recovered per dropped frame (rest)
+FATIGUE_THRESHOLD = 0.6     # above this → FPS degrades, thresholds rise
+FATIGUE_MAX       = 1.0     # fully exhausted
+
+# ── Curiosity constants ──────────────────────────────────────
+CURIOSITY_NOVELTY_THRESHOLD = 0.8   # novelty score that triggers a spike
+CURIOSITY_BOOST_DURATION    = 5.0   # seconds the dopamine spike lasts
+CURIOSITY_FPS_MULTIPLIER    = 2.0   # FPS boost during curiosity
 
 
 @dataclass
@@ -88,11 +105,30 @@ class StigmergicVision:
         self._frames_sampled = 0
         self._frames_dropped = 0
 
+        # ── SVL v2: Fatigue state ────────────────────────────────
+        self._fatigue = 0.0            # 0.0 = fresh, 1.0 = exhausted
+        self._fatigue_fps_penalty = 1.0  # multiplier applied to FPS
+
+        # ── SVL v2: Curiosity state ──────────────────────────────
+        self._curiosity_spike_until = 0.0  # timestamp when spike expires
+        self._curiosity_spikes = 0         # total spikes fired
+
         _STATE.mkdir(parents=True, exist_ok=True)
 
     @property
     def target_fps(self) -> float:
-        return FPS_MAP[self.attention]
+        base = FPS_MAP[self.attention]
+        # Fatigue degrades FPS
+        if self._fatigue > FATIGUE_THRESHOLD:
+            overshoot = (self._fatigue - FATIGUE_THRESHOLD) / (FATIGUE_MAX - FATIGUE_THRESHOLD)
+            self._fatigue_fps_penalty = max(0.25, 1.0 - overshoot * 0.75)
+        else:
+            self._fatigue_fps_penalty = 1.0
+        fps = base * self._fatigue_fps_penalty
+        # Curiosity spike temporarily boosts FPS
+        if time.time() < self._curiosity_spike_until:
+            fps *= CURIOSITY_FPS_MULTIPLIER
+        return max(0.1, fps)  # never fully zero
 
     @property
     def sample_interval(self) -> float:
@@ -271,6 +307,16 @@ class StigmergicVision:
         except ImportError:
             pass
 
+        # ── SVL v2: Fatigue accumulation ────────────────────────
+        self._fatigue = min(FATIGUE_MAX, self._fatigue + FATIGUE_RATE)
+
+        # ── SVL v2: Curiosity spike on high novelty ───────────────
+        # Novelty = how different this scene_hash is from the last one
+        # We use saliency as a proxy for novelty
+        if saliency > CURIOSITY_NOVELTY_THRESHOLD:
+            self._curiosity_spike_until = now + CURIOSITY_BOOST_DURATION
+            self._curiosity_spikes += 1
+
         # Write trace to blackboard
         self._write_trace(event)
         self._events_emitted += 1
@@ -285,18 +331,114 @@ class StigmergicVision:
         except Exception:
             pass
 
+    def rest(self):
+        """Voluntary rest. Fatigue decays when the eye is closed."""
+        self._fatigue = max(0.0, self._fatigue - FATIGUE_DECAY * 10)
+
     def report(self) -> str:
+        curiosity_active = time.time() < self._curiosity_spike_until
         lines = [
             f"[VISION] Camera: {'OPEN' if self._cap else 'CLOSED'}",
-            f"  Attention: {self.attention.value} ({self.target_fps} FPS)",
+            f"  Attention: {self.attention.value} ({self.target_fps:.1f} FPS)",
             f"  Sampled: {self._frames_sampled}",
             f"  Dropped: {self._frames_dropped} (below saliency {SALIENCY_THRESHOLD})",
             f"  Events:  {self._events_emitted}",
+            f"  Fatigue: {self._fatigue:.2f} / {FATIGUE_MAX} (penalty: {self._fatigue_fps_penalty:.2f}x)",
+            f"  Curiosity spikes: {self._curiosity_spikes} ({'ACTIVE' if curiosity_active else 'dormant'})",
         ]
         if self._frames_sampled > 0:
             drop_rate = self._frames_dropped / self._frames_sampled * 100
             lines.append(f"  Drop rate: {drop_rate:.0f}% (higher = more efficient)")
         return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════
+# COLLECTIVE VISION FUSION — Ant Colony Inspired
+# ═══════════════════════════════════════════════════════════════
+# No single ant sees everything.
+# Truth emerges from overlapping weak signals.
+# Multiple VisionEvents are fused into a stronger collective belief.
+# ═══════════════════════════════════════════════════════════════
+
+class CollectiveVisionFusion:
+    """
+    Merges multiple weak visual traces into stronger beliefs.
+    
+    In nature, no single ant sees the whole picture. Truth
+    emerges from overlapping, noisy sensor readings. This
+    class implements that principle: many low-confidence
+    observations fuse into a high-confidence consensus.
+    
+    Usage:
+        fusion = CollectiveVisionFusion()
+        fusion.add_trace({"entities": {"door": "open"}, ...})
+        fusion.add_trace({"entities": {"door": "open"}, ...})
+        fusion.add_trace({"entities": {"door": "closed"}, ...})
+        result = fusion.fuse()
+        # → {"fused_entities": {"door": "open"}, "confidence": 0.6}
+    """
+
+    def __init__(self, decay_seconds: float = 30.0):
+        self._buffer: List[Dict[str, Any]] = []
+        self._decay_seconds = decay_seconds
+
+    def add_trace(self, trace: Dict[str, Any]) -> None:
+        """Add a visual trace to the fusion buffer."""
+        trace.setdefault("_ts", time.time())
+        self._buffer.append(trace)
+
+    def _prune_stale(self) -> None:
+        """Remove traces older than decay window."""
+        cutoff = time.time() - self._decay_seconds
+        self._buffer = [t for t in self._buffer if t.get("_ts", 0) > cutoff]
+
+    def fuse(self) -> Dict[str, Any]:
+        """
+        Fuse all buffered traces into a consensus belief.
+        
+        Returns:
+            fused_entities: majority-vote per entity key
+            confidence:     N / (N + 2), approaches 1.0 with more traces
+            trace_count:    number of traces that contributed
+            dissent:        keys where votes were NOT unanimous
+        """
+        self._prune_stale()
+
+        if not self._buffer:
+            return {"fused_entities": {}, "confidence": 0.0,
+                    "trace_count": 0, "dissent": []}
+
+        # Collect all entity votes
+        votes: Dict[str, List[str]] = {}
+        for t in self._buffer:
+            entities = t.get("entities", {})
+            for k, v in entities.items():
+                votes.setdefault(k, []).append(str(v))
+
+        # Majority vote per key
+        fused = {}
+        dissent = []
+        for k, vals in votes.items():
+            counter = Counter(vals)
+            winner, win_count = counter.most_common(1)[0]
+            fused[k] = winner
+            # If not unanimous, flag dissent
+            if len(counter) > 1:
+                dissent.append(k)
+
+        # Confidence: asymptotic — 3 traces = 0.6, 8 traces = 0.8, 18 = 0.9
+        n = len(self._buffer)
+        confidence = round(n / (n + 2), 3)
+
+        return {
+            "fused_entities": fused,
+            "confidence": confidence,
+            "trace_count": n,
+            "dissent": dissent,
+        }
+
+    def clear(self) -> None:
+        self._buffer.clear()
 
 
 # ── Demo (no camera required) ─────────────────────────────────
