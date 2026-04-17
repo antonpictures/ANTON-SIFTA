@@ -92,7 +92,18 @@ class EvaluationSandbox:
         # 5. Net score = value - risk
         net_score = predicted_value - (risk * 0.5)
 
-        approved = net_score >= self.approval_threshold and len(failure_modes) < 3
+        # Apply Identity Coherence (ICF) pressure to strictness
+        effective_threshold = self.approval_threshold
+        try:
+            from identity_coherence_field import get_icf
+            icf = get_icf()
+            feedback = icf.feedback_signal()
+            # If coherence is low, strictness goes up
+            effective_threshold = max(self.approval_threshold, feedback.get("evaluation_strictness", self.approval_threshold))
+        except ImportError:
+            pass
+
+        approved = net_score >= effective_threshold and len(failure_modes) < 3
 
         result = EvaluationResult(
             task_id=task_id,

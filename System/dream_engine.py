@@ -198,13 +198,24 @@ def _crystallize_skills() -> dict[str, Any]:
         if today_traces:
             engine.process_backlog(today_traces)
         
+        # Apply interference physics (quantum collapse / merge)
+        interference_stats = {}
+        try:
+            from cross_skill_interference import CrossSkillInterferencePhysics
+            physics = CrossSkillInterferencePhysics()
+            interference_stats = physics.process_manifold()
+        except ImportError:
+            pass
+
         pruned = engine.decay()
         after = len(engine.skills)
         
         return {
             "traces_processed": len(today_traces),
-            "new_skills": max(0, after - before + pruned),
+            "new_skills": max(0, after - before + pruned + interference_stats.get("skills_collapsed", 0)),
             "skills_pruned": pruned,
+            "destructive_events": interference_stats.get("destructive_events", 0),
+            "merged_events": interference_stats.get("merged_events", 0),
             "total_skills": after
         }
     except Exception as e:
@@ -250,11 +261,23 @@ def _compose_report(analyses: dict[str, Any]) -> str:
         lines.append(f"Fissions: Spawned {fis['fissions_spawned']} new Stigmergic task(s) on Blackboard.")
 
     cryst = analyses.get("crystallization", {})
-    if cryst.get("traces_processed", 0) > 0 or cryst.get("skills_pruned", 0) > 0:
+    if cryst.get("traces_processed", 0) > 0 or cryst.get("skills_pruned", 0) > 0 or cryst.get("merged_events", 0) > 0:
         lines.append(f"Compression: Processed {cryst['traces_processed']} traces. "
                      f"Crystallized {cryst['new_skills']} new skill primitive(s). "
                      f"Pruned {cryst['skills_pruned']} decayed skill(s).")
+        if cryst.get("merged_events", 0) > 0 or cryst.get("destructive_events", 0) > 0:
+            lines.append(f"  🌌 Interference: {cryst['merged_events']} skill merges, {cryst['destructive_events']} destructive collisions.")
 
+    lines.append("")
+    try:
+        from identity_coherence_field import get_icf
+        score = get_icf().coherence_score
+        lines.append(f"ICF Coherence: {score:.3f} (Inverse Chaos Pressure)")
+        if score < 0.6:
+            lines.append("  ⚠ COHERENCE DROPPING — Swarm fragmentation risk elevated.")
+    except ImportError:
+        pass
+        
     lines.append("")
     all_clear = (
         dd["error_mentions"] < 3

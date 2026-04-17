@@ -224,14 +224,34 @@ class MutationGovernorLoop:
 
             if success:
                 # Organism learned something useful — slightly relax constraints
-                gov.friction_ceiling = min(1.0, gov.friction_ceiling + 0.02)
-                gov.risk_threshold = min(1.0, gov.risk_threshold + 0.01)
+                # Scale relaxation by coherence (high coherence = safe to relax more)
+                icf_relax = 0.02
+                try:
+                    from identity_coherence_field import get_icf
+                    icf = get_icf()
+                    press = icf.feedback_signal().get("mutation_pressure", 0.0)
+                    icf_relax = 0.04 * (1.0 - press)  # Low pressure = high coherence
+                except Exception:
+                    pass
+                    
+                gov.friction_ceiling = min(1.0, gov.friction_ceiling + icf_relax)
+                gov.risk_threshold = min(1.0, gov.risk_threshold + (icf_relax / 2.0))
                 self._log("OUTCOME_SUCCESS", proposal_id,
                           f"friction_ceil→{gov.friction_ceiling:.2f} risk_thresh→{gov.risk_threshold:.2f}")
             else:
                 # Mutation failed — tighten the immune response
-                gov.friction_ceiling = max(0.3, gov.friction_ceiling - 0.05)
-                gov.risk_threshold = max(0.3, gov.risk_threshold - 0.03)
+                # If coherence is already falling, tighten much harder to stop panic
+                icf_tight = 0.05
+                try:
+                    from identity_coherence_field import get_icf
+                    icf = get_icf()
+                    press = icf.feedback_signal().get("mutation_pressure", 0.0)
+                    icf_tight = 0.05 + (0.1 * press)
+                except Exception:
+                    pass
+                    
+                gov.friction_ceiling = max(0.3, gov.friction_ceiling - icf_tight)
+                gov.risk_threshold = max(0.3, gov.risk_threshold - (icf_tight * 0.6))
                 # Add extra drift penalty for failed mutations
                 self._identity_drift += DRIFT_PER_MUTATION
                 self._log("OUTCOME_FAILURE", proposal_id,

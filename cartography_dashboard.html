@@ -477,6 +477,29 @@
     </div>
   </div>
 
+  <!-- ═══ COHERENCE FIELD (ICF) ═══ -->
+  <div class="panel" style="border: 1px solid var(--accent);">
+    <div class="panel-title"><span class="icon">🌐</span> COHERENCE FIELD (ICF)</div>
+    <div id="icf-content">
+      <div class="metric-row">
+        <span class="metric-label" style="font-weight: bold; color: var(--accent);">GLOBAL COHERENCE (Inverse Chaos)</span>
+        <span class="metric-value" id="icf-score" style="font-size: 1.5rem; color: var(--accent);">—</span>
+      </div>
+      <div class="metric-row" style="margin-top: 5px;">
+        <span class="metric-label">Feedback: Mutation Pressure</span>
+        <span class="metric-value warn" id="icf-mut-press">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Feedback: Fission Throttle</span>
+        <span class="metric-value warn" id="icf-fiss-press">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Feedback: Evaluation Strictness</span>
+        <span class="metric-value danger" id="icf-eval-press">—</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ FAILURE HARVESTER ═══ -->
   <div class="panel">
     <div class="panel-title"><span class="icon">💀</span> FAILURE HARVESTER</div>
@@ -829,6 +852,25 @@ async function loadCompression() {
   document.getElementById('cp-traces').textContent = totalTraces + "+";
 }
 
+async function loadICF() {
+  const d = await fetchJSON('icf_state.json');
+  if (!d) return;
+
+  const score = (d.coherence_score || 0).toFixed(3);
+  const scoreEl = document.getElementById('icf-score');
+  scoreEl.textContent = score;
+  
+  if (d.coherence_score > 0.7) scoreEl.style.color = "var(--good)";
+  else if (d.coherence_score > 0.5) scoreEl.style.color = "var(--warn)";
+  else scoreEl.style.color = "var(--danger)";
+
+  if (d.feedback) {
+    document.getElementById('icf-mut-press').textContent = "+" + (d.feedback.mutation_pressure || 0).toFixed(3);
+    document.getElementById('icf-fiss-press').textContent = "+" + (d.feedback.fission_threshold_delta || 0).toFixed(3);
+    document.getElementById('icf-eval-press').textContent = (d.feedback.evaluation_strictness || 0).toFixed(3);
+  }
+}
+
 async function loadAll() {
   await Promise.all([
     loadTemporal(),
@@ -842,6 +884,7 @@ async function loadAll() {
     loadEvaluation(),
     loadAdaptation(),
     loadCompression(),
+    loadICF(),
   ]);
 }
 

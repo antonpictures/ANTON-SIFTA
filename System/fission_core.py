@@ -118,7 +118,18 @@ class FissionEngine:
                 continue
                 
             pressure = self.compute_pressure(cluster)
-            if pressure >= self.threshold:
+            
+            # Apply Identity Coherence (ICF) pressure
+            effective_threshold = self.threshold
+            try:
+                from identity_coherence_field import get_icf
+                icf = get_icf()
+                feedback = icf.feedback_signal()
+                effective_threshold += feedback.get("fission_threshold_delta", 0.0)
+            except ImportError:
+                pass
+                
+            if pressure >= effective_threshold:
                 # Fission Triggered
                 fissions += 1
                 cluster["last_fission"] = now
