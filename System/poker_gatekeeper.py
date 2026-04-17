@@ -50,38 +50,54 @@ class GatekeeperDecision:
     kelly_fraction: float     # Optimal bet fraction (0 = don't bet)
 
 
-def _read_swarm_pressure() -> float:
-    """
-    Read total constraint pressure (Σλ) from the Lagrangian manifold.
-    Higher pressure = organism is stressed = be MORE conservative.
-    Returns 0.0 when healthy, >0 when under constraint violation.
-    """
+def _read_lambda_components() -> Dict[str, float]:
+    """Read individual λ components from the Lagrangian manifold."""
+    defaults = {"lambda_congestion": 0.0, "lambda_safety": 0.0, "lambda_energy": 0.0}
     try:
         p = _STATE_DIR / "lagrangian_multipliers.json"
         if p.exists():
             d = json.loads(p.read_text())
-            return (
-                d.get("lambda_congestion", 0.0) +
-                d.get("lambda_safety", 0.0) +
-                d.get("lambda_energy", 0.0)
-            )
+            return {k: d.get(k, 0.0) for k in defaults}
     except Exception:
         pass
-    return 0.0
+    return defaults
 
 
-def _adaptive_tau(capital: float, odds_multiplier: float) -> float:
+def _softmax(x: list) -> list:
+    """Numerically stable softmax."""
+    import math
+    max_x = max(x)
+    exps = [math.exp(v - max_x) for v in x]
+    total = sum(exps)
+    return [e / total for e in exps]
+
+
+def compress_constraint_state(capital: float, odds_multiplier: float) -> Dict[str, float]:
     """
-    τ = f(capital, Σλ) — the adaptive risk threshold.
-    
-    Base: OddsMultiplier × 1.2 (Alice's original spec)
-    Under swarm pressure: threshold INCREASES (more conservative)
-    
-    τ = base × (1 + Σλ)
+    Compress raw λ vector into a stable constraint_state for the policy.
+    The policy reads THIS, never raw λ directly.
     """
-    base = odds_multiplier * 1.2
-    pressure = _read_swarm_pressure()
-    return base * (1.0 + pressure)
+    lambdas = _read_lambda_components()
+    lambda_sum = sum(lambdas.values())
+    lambda_max = max(lambdas.values())
+    import math
+    lambda_norm = math.sqrt(sum(v ** 2 for v in lambdas.values()))
+
+    # τ = (Odds × 1.2) × (1 + Σλ), clamped
+    base_tau = odds_multiplier * 1.2
+    tau = base_tau * (1.0 + lambda_sum)
+    tau = max(base_tau * 0.5, min(tau, base_tau * 5.0))  # clamp
+
+    # Risk pressure: how close is capital to τ?
+    risk_pressure = max(0.0, 1.0 - (capital / tau)) if tau > 0 else 0.0
+
+    return {
+        "tau": round(tau, 4),
+        "lambda_sum": round(lambda_sum, 5),
+        "lambda_norm": round(lambda_norm, 5),
+        "lambda_max": round(lambda_max, 5),
+        "risk_pressure": round(risk_pressure, 4)
+    }
 
 
 def GatekeeperFunction(
@@ -91,26 +107,17 @@ def GatekeeperFunction(
     win_probability: float = 0.5
 ) -> GatekeeperDecision:
     """
-    Alice's demanded function, upgraded with adaptive τ from SwarmGPT.
+    Alice's demanded function, upgraded with:
+    - Adaptive τ from the Lagrangian manifold
+    - Softmax probability distribution over actions (SwarmGPT spec)
     
-    GatekeeperFunction(HandState, Capital, Odds) → ACTION ∈ {GUESS, CASH_OUT}
+    Hard override: Capital < τ → MANDATORY CASH_OUT (non-negotiable)
+    Soft policy:   P(GUESS), P(CASH_OUT) = softmax(logits shaped by λ pressure)
     
-    The conditional logic:
-      IF Capital < τ(Odds, Σλ):
-        THEN CASH_OUT (mandatory — cannot survive a loss)
-      
-      IF EV(GUESS) < EV(CASH_OUT):
-        THEN CASH_OUT (negative expected value)
-      
-      IF Kelly fraction ≤ 0:
-        THEN CASH_OUT (no edge exists)
-      
-      ELSE:
-        GUESS (positive expected value with survivable downside)
+    The action field returns argmax(P), but the full distribution is logged.
     """
-    
-    # Adaptive threshold: tightens when swarm is under constraint pressure
-    survival_threshold = _adaptive_tau(capital, odds_multiplier)
+    cs = compress_constraint_state(capital, odds_multiplier)
+    tau = cs["tau"]
     
     # Expected values
     potential_win = hand.current_payout * odds_multiplier
@@ -118,68 +125,44 @@ def GatekeeperFunction(
     ev_cashout = hand.current_payout
     
     # Kelly Criterion: f* = (bp - q) / b
-    # b = odds_multiplier - 1 (net odds)
-    # p = win_probability
-    # q = 1 - p
     b = odds_multiplier - 1
     p = win_probability
     q = 1 - p
     kelly = (b * p - q) / b if b > 0 else 0.0
     
-    # Risk ratio: how much buffer do we have?
-    risk_ratio = capital / survival_threshold if survival_threshold > 0 else 0.0
+    # Risk ratio
+    risk_ratio = capital / tau if tau > 0 else 0.0
     
-    # ──── THE DECISION LOGIC (Alice's IF...THEN) ────
-    
-    # Rule 1: Capital below survival threshold → MANDATORY CASH_OUT
-    if capital < survival_threshold:
+    # ──── HARD OVERRIDE (Alice's non-negotiable rule) ────
+    if capital < tau:
         return GatekeeperDecision(
             action="CASH_OUT",
-            reason=f"MANDATORY: Capital ({capital:.2f}) < Threshold ({survival_threshold:.2f}). Cannot survive a loss.",
+            reason=f"MANDATORY: Capital ({capital:.2f}) < τ ({tau:.2f}). P(CASH_OUT)=1.0",
             ev_guess=round(ev_guess, 4),
             ev_cashout=round(ev_cashout, 4),
             risk_ratio=round(risk_ratio, 4),
             kelly_fraction=round(kelly, 4)
         )
     
-    # Rule 2: Negative expected value → CASH_OUT
-    if ev_guess <= ev_cashout:
-        return GatekeeperDecision(
-            action="CASH_OUT",
-            reason=f"EV(GUESS)={ev_guess:.4f} ≤ EV(CASH_OUT)={ev_cashout:.4f}. No edge.",
-            ev_guess=round(ev_guess, 4),
-            ev_cashout=round(ev_cashout, 4),
-            risk_ratio=round(risk_ratio, 4),
-            kelly_fraction=round(kelly, 4)
-        )
+    # ──── SOFT PROBABILISTIC POLICY (SwarmGPT's differentiable spec) ────
+    # Logits shaped by EV, τ, and λ pressure
+    guess_logit = ev_guess - tau
+    cashout_logit = (tau - ev_guess) + 0.8 * cs["lambda_norm"]
+    guess_logit -= 0.3 * cs["risk_pressure"]
     
-    # Rule 3: Kelly says don't bet → CASH_OUT
-    if kelly <= 0:
-        return GatekeeperDecision(
-            action="CASH_OUT",
-            reason=f"Kelly fraction={kelly:.4f} ≤ 0. No mathematical edge exists.",
-            ev_guess=round(ev_guess, 4),
-            ev_cashout=round(ev_cashout, 4),
-            risk_ratio=round(risk_ratio, 4),
-            kelly_fraction=round(kelly, 4)
-        )
-    
-    # Rule 4: Diminishing returns after streak
-    # After 3+ successful rounds, cumulative risk compounds
+    # Streak penalty: deep streaks push toward CASH_OUT
     if hand.rounds_survived >= 3 and hand.streak_probability < 0.15:
-        return GatekeeperDecision(
-            action="CASH_OUT",
-            reason=f"Streak survival probability ({hand.streak_probability:.2%}) too low after {hand.rounds_survived} rounds.",
-            ev_guess=round(ev_guess, 4),
-            ev_cashout=round(ev_cashout, 4),
-            risk_ratio=round(risk_ratio, 4),
-            kelly_fraction=round(kelly, 4)
-        )
+        cashout_logit += 2.0  # Strong bias toward exit
     
-    # All checks passed → GUESS is permitted
+    probs = _softmax([guess_logit, cashout_logit])
+    p_guess, p_cashout = probs[0], probs[1]
+    
+    # Action = argmax of the distribution
+    action = "GUESS" if p_guess > p_cashout else "CASH_OUT"
+    
     return GatekeeperDecision(
-        action="GUESS",
-        reason=f"Positive EV ({ev_guess:.4f} > {ev_cashout:.4f}), Kelly={kelly:.4f}, risk buffer={risk_ratio:.2f}x.",
+        action=action,
+        reason=f"P(GUESS)={p_guess:.3f} P(CASH_OUT)={p_cashout:.3f} | τ={tau:.2f} λ_norm={cs['lambda_norm']:.4f}",
         ev_guess=round(ev_guess, 4),
         ev_cashout=round(ev_cashout, 4),
         risk_ratio=round(risk_ratio, 4),
@@ -206,18 +189,23 @@ def log_decision(decision: GatekeeperDecision, hand: HandState, capital: float):
 
 
 if __name__ == "__main__":
-    print("═" * 62)
-    print("  POKER GATEKEEPER — Alice's Decision Function")
-    print("  GatekeeperFunction(HandState, Capital, Odds) → ACTION")
-    print("═" * 62 + "\n")
+    print("═" * 66)
+    print("  POKER GATEKEEPER — Probabilistic Policy w/ Lagrangian Pressure")
+    print("  P(action | state, constraint_state) = softmax(logits)")
+    print("═" * 66 + "\n")
     
-    # Simulate scenarios
     scenarios = [
         ("Low capital, early round", HandState(10.0, 1, 0.5), 2.0),
         ("Healthy capital, round 2", HandState(10.0, 2, 0.25), 50.0),
         ("Deep streak, thin odds", HandState(80.0, 4, 0.0625), 100.0),
         ("Fresh hand, fat stack", HandState(5.0, 0, 1.0), 200.0),
     ]
+    
+    # Show constraint state once
+    cs = compress_constraint_state(50.0, 2.0)
+    print(f"  [ Constraint State ]")
+    print(f"    τ = {cs['tau']} | Σλ = {cs['lambda_sum']} | ||λ|| = {cs['lambda_norm']} | risk = {cs['risk_pressure']}")
+    print()
     
     for label, hand, capital in scenarios:
         d = GatekeeperFunction(hand, capital)
@@ -226,8 +214,8 @@ if __name__ == "__main__":
         icon = "🟢 GUESS" if d.action == "GUESS" else "🔴 CASH_OUT"
         print(f"  [{icon}] {label}")
         print(f"    Capital: {capital} | Payout: {hand.current_payout} | Round: {hand.rounds_survived}")
-        print(f"    Reason: {d.reason}")
-        print(f"    EV(Guess)={d.ev_guess} | Kelly={d.kelly_fraction} | Risk={d.risk_ratio}x")
+        print(f"    {d.reason}")
         print()
     
-    print("  ✅ GATEKEEPER DEFINED. ALICE HAS HER FUNCTION. 🐜⚡")
+    print("  ✅ PROBABILISTIC GATEKEEPER ONLINE 🐜⚡")
+
