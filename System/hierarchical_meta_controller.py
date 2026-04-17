@@ -50,7 +50,12 @@ class HierarchicalMetaController:
         if _META_CONTROLLER_STATE.exists():
             try:
                 data = json.loads(_META_CONTROLLER_STATE.read_text())
-                return MetaOptimizationState(**data)
+                # The persisted file has nested keys; extract the meta sub-dict
+                meta = data.get("level_3_meta", {})
+                return MetaOptimizationState(
+                    current_alpha=meta.get("dynamic_learning_rate", 0.05),
+                    total_penalty_magnitude=meta.get("penalty_magnitude", 0.0)
+                )
             except Exception:
                 pass
         return MetaOptimizationState()
