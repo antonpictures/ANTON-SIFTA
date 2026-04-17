@@ -482,10 +482,35 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             self.canvas.held[idx] = not self.canvas.held[idx]
             self.canvas.update()
             self._update_button_states()
+            # ALICE sees the hold change
+            if self._gci:
+                hand_str = self._hand_to_string()
+                held_str = self._held_to_string()
+                self._gci.append_system_message(
+                    f"[POKER VISION] Hand: {hand_str}. Held: {held_str}. Phase: DEALT.")
     
     def _btn_draw_clicked(self):
         if self.phase == 'dealt':
             self._do_draw()
+
+    # ── ALICE's Eyes ─────────────────────────────────────────────────────
+
+    def _hand_to_string(self) -> str:
+        """Format current hand for ALICE to read."""
+        if not self.canvas.hand:
+            return "no cards"
+        parts = []
+        for i, card in enumerate(self.canvas.hand, 1):
+            held_mark = " [HELD]" if self.canvas.held[i-1] else ""
+            parts.append(f"#{i}:{card.value}{card.suit}{held_mark}")
+        return " | ".join(parts)
+
+    def _held_to_string(self) -> str:
+        """Format held positions for ALICE."""
+        held_positions = [str(i+1) for i in range(5) if self.canvas.held[i]]
+        if not held_positions:
+            return "none"
+        return "cards " + ", ".join(held_positions)
 
     def on_user_typing(self, text: str):
         # Increase heat
@@ -520,11 +545,25 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                         idx = n - 1
                         self.canvas.held[idx] = not self.canvas.held[idx]
                     self.canvas.update()
+                    self._update_button_states()
                     if self._gci:
+                        hand_str = self._hand_to_string()
+                        held_str = self._held_to_string()
                         self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Cards held. Type 'deal' to draw replacements.]</span>")
+                        self._gci.append_system_message(
+                            f"[POKER VISION] Hand: {hand_str}. Held: {held_str}. Phase: DEALT.")
                 else:
                     if self._gci:
                         self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: Specify which cards to hold, e.g. 'hold 1 4']</span>")
+
+        # Gamble phase text commands
+        elif self.phase == 'gamble':
+            if "red" in text_lower:
+                self._gamble_guess("red")
+            elif "black" in text_lower:
+                self._gamble_guess("black")
+            elif "cash" in text_lower or "collect" in text_lower or "safe" in text_lower:
+                self._gamble_cashin()
 
     def _do_deal(self):
         # Process financial transaction
@@ -547,7 +586,12 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         if self._gci:
             wallet = round(self.vault.get_real_player_wallet(), 2)
             luck = self.deck_engine.luck
+            hand_str = self._hand_to_string()
             self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Placed {self.bet} bet. Dealt 5 cards. LUCK: {luck:.2f}% (π). Architect STGM: {wallet}]</span>")
+            self._gci.append_system_message(
+                f"[POKER VISION] Current hand: {hand_str}. "
+                f"Phase: DEALT. Held: none yet. "
+                f"LUCK: {luck:.2f}%. Advise the Architect which cards to hold.")
 
     def _do_draw(self):
         self.phase = 'drawn'
