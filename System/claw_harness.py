@@ -67,12 +67,27 @@ class ClawHarness:
             # Unbalanced quotes
             return False
 
-    def execute_in_crucible(self, command: str, timeout: int = 15) -> Tuple[bool, str, str]:
+    def execute_in_crucible(self, command: str, timeout: int = 15, genotype_hash: str = None) -> Tuple[bool, str, str]:
         """
         Run a command strictly inside the Crucible.
         Cannot use pipes or dangerous shell constructs.
         Returns: (success_status, stdout, stderr)
         """
+        # ── Identity Decoupling (#8) Phenotype Gate ────────────────
+        if genotype_hash:
+            try:
+                try:
+                    from System.identity_decoupling import get_firewall
+                except ImportError:
+                    from identity_decoupling import get_firewall
+                
+                fw = get_firewall()
+                if not fw.verify_action(genotype_hash, "EXECUTE_CRUCIBLE"):
+                    err_msg = f"[CLAW PHY-BLOCK] Genotype '{genotype_hash}' lacks 'EXECUTE_CRUCIBLE' phenotype."
+                    self._harvest_failure(command, err_msg)
+                    return False, "", err_msg
+            except ImportError:
+                pass  # Degrade gracefully if firewall offline
         if not self._is_safe_command(command):
             err_msg = f"[CLAW BLOCKED] Target binary or construct prohibited: {command}"
             self._harvest_failure(command, err_msg)
