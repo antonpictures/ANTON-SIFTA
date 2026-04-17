@@ -513,10 +513,17 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
             pool.submit(_swimmer_take, swimmer, question, visitor_class): swimmer
             for swimmer in active_swimmers
         }
-        for future in as_completed(futures, timeout=50):
-            result = future.result()
-            if result:
-                takes.append(result)
+        try:
+            from concurrent.futures import TimeoutError as FuturesTimeoutError
+            for future in as_completed(futures, timeout=50):
+                try:
+                    result = future.result()
+                    if result:
+                        takes.append(result)
+                except Exception as e:
+                    print(f"[CHORUS] Swimmer exception: {e}")
+        except FuturesTimeoutError:
+            print("[CHORUS] Master pool timeout reached.")
 
     # 5. Cross-node: invite M5QUEEN (non-blocking, timeout 20s)
     # TODO for M5 IDE: implement System/chorus_node_server.py

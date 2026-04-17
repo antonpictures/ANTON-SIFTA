@@ -160,16 +160,20 @@ def generate_m1_thought() -> str:
         "Send a very brief, technical status update: report your current STGM energy level, mention a code repair task, "
         "or request GPU inference resources for a pending .scar proposal. Keep it under 20 words. Professional and direct."
     )
-    data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
+    data = {"model": "qwen3.5:0.8b", "prompt": prompt, "stream": False}
     try:
-        req = urllib.request.Request(
-            "http://127.0.0.1:11434/api/generate",
-            data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            return result.get("response", "").strip()
+        try:
+            from inference_router import route_inference
+        except ImportError:
+            import sys
+            _sysd = str(ROOT_DIR.parent / "System")
+            if _sysd not in sys.path:
+                sys.path.insert(0, _sysd)
+            from inference_router import route_inference
+        
+        resp_str = route_inference(data, timeout=30)
+        result = json.loads(resp_str)
+        return result.get("response", "").strip()
     except Exception as e:
         print(f"[OLLAMA ERROR in M1THER Thought] {e}")
         return "🧠📡 (Gândesc... dar NPU-ul meu cere reîncărcare...)"

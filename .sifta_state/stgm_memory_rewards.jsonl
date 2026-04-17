@@ -1467,3 +1467,5 @@
 {"ts": 1776390773.675536, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "800759c2ae3b", "app": "stigmergic_video_poker"}
 {"ts": 1776390775.176288, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "800759c2ae3b", "app": "stigmergic_video_poker"}
 {"ts": 1776390788.872215, "reason": "MEMORY_STORE", "amount": 0.05, "trace_id": "c7a259a18e90", "app": "stigmergic_video_poker"}
+{"ts": 1776441287.352623, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "986b0da72037", "app": "bauwens_regenerative_factory"}
+{"ts": 1776441287.371304, "reason": "MEMORY_STORE", "amount": 0.05, "trace_id": "217a8e746d24", "app": "bauwens_regenerative_factory"}

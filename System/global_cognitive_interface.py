@@ -61,7 +61,7 @@ class _GCIWorker(QThread):
     response_ready = pyqtSignal(str)
     error_signal   = pyqtSignal(str)
 
-    def __init__(self, prompt: str, system: str, model: str = "gemma4:latest"):
+    def __init__(self, prompt: str, system: str, model: str = "qwen3.5:2b"):
         super().__init__()
         self.prompt = prompt
         self.system = system
@@ -70,7 +70,15 @@ class _GCIWorker(QThread):
     def run(self):
         try:
             import re
-            payload = json.dumps({
+            try:
+                from inference_router import route_inference
+            except ImportError:
+                import sys
+                from pathlib import Path
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+                from inference_router import route_inference
+                
+            payload_dict = {
                 "model":  self.model,
                 "prompt": self.prompt,
                 "system": self.system,
@@ -78,29 +86,22 @@ class _GCIWorker(QThread):
                 "temperature": 0.6,
                 "num_predict": 512,
                 "keep_alive": "2m",
-            }).encode("utf-8")
-
-            req = urllib.request.Request(
-                "http://127.0.0.1:11434/api/generate",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                text = data.get("response", "").strip()
-                # Strip <think> tags from reasoning models
-                text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-                if text:
-                    self.response_ready.emit(text)
-                else:
-                    self.error_signal.emit("[Empty response from model]")
+            }
+            resp_str = route_inference(payload_dict, timeout=120)
+            data = json.loads(resp_str)
+            text = data.get("response", "").strip()
+            # Strip <think> tags from reasoning models
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            if text:
+                self.response_ready.emit(text)
+            else:
+                self.error_signal.emit("[Empty response from model]")
         except Exception as e:
             self.error_signal.emit(f"[Ollama offline] {e}")
 
 class _ContextWorker(QThread):
     """Parallel swarm worker: Runs a secondary small model to deduce intent/subtext."""
-    def __init__(self, prompt: str, system: str, model: str = "gemma4:latest"):
+    def __init__(self, prompt: str, system: str, model: str = "qwen3.5:2b"):
         super().__init__()
         self.prompt = prompt
         self.system = system
@@ -110,25 +111,26 @@ class _ContextWorker(QThread):
     def run(self):
         try:
             import re
-            payload = json.dumps({
+            try:
+                from inference_router import route_inference
+            except ImportError:
+                import sys
+                from pathlib import Path
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+                from inference_router import route_inference
+                
+            payload_dict = {
                 "model": self.model,
                 "prompt": self.prompt,
                 "system": self.system,
                 "stream": False,
                 "temperature": 0.2,
                 "num_predict": 64,
-            }).encode("utf-8")
-            
-            req = urllib.request.Request(
-                "http://127.0.0.1:11434/api/generate",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                text = data.get("response", "").strip()
-                self.intent_found = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            }
+            resp_str = route_inference(payload_dict, timeout=30)
+            data = json.loads(resp_str)
+            text = data.get("response", "").strip()
+            self.intent_found = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
         except:
             pass
 
@@ -224,7 +226,7 @@ class GlobalCognitiveInterface(QWidget):
         self.architect_id = architect_id
         self._worker: Optional[_GCIWorker] = None
         self._bus = None
-        self._model = "gemma4:latest"
+        self._model = "qwen3.5:2b"
         self._app_context_injection = ""  # live state injected by host app (e.g. poker hand)
 
         # Try to initialize Memory Bus
