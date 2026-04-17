@@ -371,6 +371,21 @@
           <span class="metric-label">Total Gravity (Base + Pheromones)</span>
           <span class="metric-value accent2" id="b-strongest-grav">—</span>
         </div>
+        <div class="big-label" style="margin-top: 16px; margin-bottom: 8px;">TOPOLOGY (ROUTER)</div>
+        <div style="display: flex; gap: 10px;">
+          <div style="flex: 1; padding: 8px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; text-align: center;">
+            <div class="metric-label" style="font-size: 9px;">M5_STUDIO</div>
+            <div class="metric-value" style="font-size: 16px;" id="b-m5">0</div>
+          </div>
+          <div style="flex: 1; padding: 8px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; text-align: center;">
+            <div class="metric-label" style="font-size: 9px;">M1_MINI</div>
+            <div class="metric-value" style="font-size: 16px;" id="b-m1">0</div>
+          </div>
+          <div style="flex: 1; padding: 8px; border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; text-align: center; border-color: rgba(225, 112, 85, 0.4);">
+            <div class="metric-label" style="font-size: 9px; color: var(--danger);">CRUCIBLE</div>
+            <div class="metric-value danger" style="font-size: 16px;" id="b-cruc">0</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -668,6 +683,8 @@ async function loadBlackboard() {
   document.getElementById('b-completed').textContent = tasks.filter(t => t.status === 'COMPLETED').length;
   document.getElementById('b-failed').textContent = tasks.filter(t => t.status === 'FAILED').length;
   
+  let hw = { "M5_STUDIO": 0, "M1_MINI": 0, "CRUCIBLE": 0 };
+  
   if (pending.length > 0) {
     const strongest = pending.reduce((prev, current) => 
       (prev.base_gravity + prev.pheromone_thickness > current.base_gravity + current.pheromone_thickness) ? prev : current
@@ -675,10 +692,20 @@ async function loadBlackboard() {
     const grav = (strongest.base_gravity + strongest.pheromone_thickness).toFixed(3);
     document.getElementById('b-strongest-desc').textContent = strongest.description.length > 50 ? strongest.description.substring(0, 50) + "..." : strongest.description;
     document.getElementById('b-strongest-grav').textContent = grav + ' G';
+    
+    pending.forEach(t => {
+      let target = t.hardware_target || "M5_STUDIO";
+      if (!hw[target]) hw[target] = 0;
+      hw[target]++;
+    });
   } else {
     document.getElementById('b-strongest-desc').textContent = "NO ACTIVE WELLS";
     document.getElementById('b-strongest-grav').textContent = "—";
   }
+  
+  document.getElementById('b-m5').textContent = hw["M5_STUDIO"];
+  document.getElementById('b-m1').textContent = hw["M1_MINI"];
+  document.getElementById('b-cruc').textContent = hw["CRUCIBLE"];
 }
 
 async function loadAll() {

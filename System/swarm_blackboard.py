@@ -49,6 +49,7 @@ class TaskNode:
     updated_at: float
     artifacts: List[str]        # Related files or .scar IDs
     assigned_to: Optional[str]  # Which agent claimed it
+    hardware_target: str        # Which physical node this must run on
 
     @property
     def total_gravity(self) -> float:
@@ -83,6 +84,13 @@ class SwarmBlackboard:
         raw = f"{description}:{time.time()}"
         task_id = "TASK_" + hashlib.sha256(raw.encode()).hexdigest()[:12]
 
+        try:
+            from cross_hardware_router import get_router
+            risk = max(0.0, 1.0 - objective_estimates.get("stability", 0.5))
+            hardware_target = get_router().route_task(task_id, risk)
+        except ImportError:
+            hardware_target = "M5_STUDIO"
+
         now = time.time()
         node = TaskNode(
             task_id=task_id,
@@ -93,7 +101,8 @@ class SwarmBlackboard:
             created_at=now,
             updated_at=now,
             artifacts=artifacts,
-            assigned_to=None
+            assigned_to=None,
+            hardware_target=hardware_target
         )
 
         with self._lock:
@@ -148,15 +157,19 @@ class SwarmBlackboard:
 
     # ── Pheromone-Weighted Planning ─────────────────────────────────
 
-    def sample_task(self, agent_id: str) -> Optional[TaskNode]:
+    def sample_task(self, agent_id: str, agent_hardware: str = "M5_STUDIO") -> Optional[TaskNode]:
         """
         Returns a task for the agent to work on. 
         Instead of sorting by strict priority, this uses weighted random 
         sampling (gradient descent) based on `total_gravity`.
         Incorporates Turbulence (climate-driven randomness) and Anti-Starvation.
+        Strictly filters by `agent_hardware`.
         """
         with self._lock:
-            pending = [t for t in self._tasks.values() if t.status == "PENDING"]
+            pending = [
+                t for t in self._tasks.values() 
+                if t.status == "PENDING" and (t.hardware_target == agent_hardware or agent_hardware == "ANY")
+            ]
 
         if not pending:
             return None
@@ -204,6 +217,12 @@ class SwarmBlackboard:
         completed = len([t for t in tasks if t.status == "COMPLETED"])
         failed = len([t for t in tasks if t.status == "FAILED"])
         
+        hardware_distribution = {
+            "M5_STUDIO": len([t for t in pending_tasks if getattr(t, "hardware_target", "M5_STUDIO") == "M5_STUDIO"]),
+            "M1_MINI": len([t for t in pending_tasks if getattr(t, "hardware_target", "M5_STUDIO") == "M1_MINI"]),
+            "CRUCIBLE": len([t for t in pending_tasks if getattr(t, "hardware_target", "M5_STUDIO") == "CRUCIBLE"]),
+        }
+        
         strongest = None
         if pending_tasks:
             strongest = max(pending_tasks, key=lambda t: t.total_gravity)
@@ -213,6 +232,7 @@ class SwarmBlackboard:
             "pending_count": len(pending_tasks),
             "completed_count": completed,
             "failed_count": failed,
+            "hardware_distribution": hardware_distribution,
             "strongest_gravity": strongest.total_gravity if strongest else 0.0,
             "strongest_task_id": strongest.task_id if strongest else None,
             "strongest_desc": strongest.description if strongest else None
