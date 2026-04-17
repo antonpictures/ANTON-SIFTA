@@ -2,12 +2,12 @@
     "active_scars": {},
     "volatility_history": [
         {
-            "timestamp": 1776370521.931477,
+            "timestamp": 1776412800.490771,
             "success": true
         }
     ],
     "guard_actions": [
-        1776370521.931315
+        1776412800.490572
     ],
     "whatsapp_contact_memory": {
         "c00153992c381a66": {
@@ -20,7 +20,50 @@
         "WORKER_PRIME": 100,
         "WORKER_INSECT": 10
     },
-    "active_scars_v2": {},
+    "active_scars_v2": {
+        "8e498a83-6a89-4621-86fd-9b8abf40f4e8": {
+            "scar_id": "8e498a83-6a89-4621-86fd-9b8abf40f4e8",
+            "state": "CONTESTED",
+            "worker": "WORKER_A",
+            "target": "core_intelligence.py",
+            "content": "def intelligence(): pass",
+            "context_hash": "3597892fde8f81c7",
+            "volatility_snapshot": 0.16,
+            "signature": "2f63e530af82147b7529e6b5103ad09f588b6f913012ca9193002aa44ae89d87",
+            "history": [
+                {
+                    "from": "PROPOSED",
+                    "to": "PROPOSED",
+                    "timestamp": 1776412796.986366,
+                    "reason": "Intent registered for 'core_intelligence.py'."
+                },
+                {
+                    "from": "PROPOSED",
+                    "to": "CONTESTED",
+                    "timestamp": 1776412797.988987,
+                    "reason": "Neural Gate rejected lock: MUSCLE_MEMORY_BLOCK: RESTRICTED (Extracted Rule: High Volatility Trigger)"
+                }
+            ]
+        },
+        "b8908905-7047-4969-b794-c1ce3d8fcf25": {
+            "scar_id": "b8908905-7047-4969-b794-c1ce3d8fcf25",
+            "state": "CONTESTED",
+            "worker": "WORKER_B",
+            "target": "core_intelligence.py",
+            "content": "def intelligence(): return chaos",
+            "context_hash": "f2327540520afe4b",
+            "volatility_snapshot": 0.16,
+            "signature": "8c9e4f7ea91f2bdfd9d981ef866c7219677d4ba5dfe6863ce5698f11a868d69b",
+            "history": [
+                {
+                    "from": "PROPOSED",
+                    "to": "CONTESTED",
+                    "timestamp": 1776412796.9871948,
+                    "reason": "Collision detected on 'core_intelligence.py'. Neural Gate arbitration required."
+                }
+            ]
+        }
+    },
     "MEDBAY_ACTIVE": false,
     "muscle_memory": {
         "stable_module.py": "FOSSILIZED | worker=WORKER_A | ctx=b7d31022",
