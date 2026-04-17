@@ -271,6 +271,22 @@ class MutationGovernor:
         except ImportError:
             pass  # Registry not available — degrade gracefully
 
+        # ── §5.2.7 Shadow Simulation gate ────────────────────────
+        # Ultimate sanity check: does the code compile?
+        if file_path.endswith('.py'):
+            try:
+                try:
+                    from System.shadow_simulator import get_simulator
+                except ImportError:
+                    from shadow_simulator import get_simulator
+                sim = get_simulator()
+                sim_ok, sim_msg = sim.simulate_mutation(file_path, mutation)
+                if not sim_ok:
+                    self.last_reject_reason = f"shadow_simulation_failed"
+                    return False
+            except ImportError:
+                pass  # Simulator not available
+
         return True
 
     def commit(self, file_path: str, mutation: str) -> None:
