@@ -212,10 +212,27 @@ class MutationGovernor:
         Return True if this mutation may enter the SCAR proposal pipeline.
         Does not record replay hash — call commit() only after SCAR accepts.
 
-        Gate order: replay → rate → cooldown → budget → risk →
-                    §5.2 friction → §5.2 reversibility → §5.2 attention
+        Gate order: temporal → replay → rate → cooldown → budget → risk →
+                    §5.2 friction → §5.2 reversibility → §5.2 attention →
+                    §5.2.10 objective → §5.2.7 shadow → §5.2.4 contradiction
         """
         self.last_reject_reason = ""
+
+        # ── §5.2.6 Temporal climate gate ──────────────────────────
+        # If the swarm is in FROZEN state, block ALL mutations.
+        # FROZEN = architect absent + dead zones detected.
+        try:
+            try:
+                from System.temporal_layering import get_layer
+            except ImportError:
+                from temporal_layering import get_layer
+            layer = get_layer()
+            last = layer.get_last_pulse()
+            if last and last.mutation_climate == "FROZEN":
+                self.last_reject_reason = "temporal_frozen"
+                return False
+        except ImportError:
+            pass
 
         h = self._mutation_content_hash(mutation)
         if h in self._seen_set:
