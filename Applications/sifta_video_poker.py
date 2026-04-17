@@ -300,7 +300,8 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             return
 
         self.bet = 0.1
-        self.phase = 'betting' # betting -> dealt -> drawn
+        self.phase = 'betting' # betting -> dealt -> drawn -> gamble
+        self.gamble_winnings = 0.0  # current winnings at risk in double-or-nothing
         
         # HUD
         hud_layout = QHBoxLayout()
@@ -380,6 +381,55 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         btn_row.addWidget(self.btn_draw)
         
         layout.addLayout(btn_row)
+
+        # ── DOUBLE OR NOTHING ROW ─────────────────────────────────────────
+        gamble_style = """
+            QPushButton {
+                background-color: #1a1b26;
+                border: 2px solid #414868;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-family: 'Courier New';
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover { background-color: #24283b; }
+            QPushButton:pressed { background-color: #414868; }
+            QPushButton:disabled {
+                background-color: #0f1018;
+                color: #414868;
+                border-color: #292e42;
+            }
+        """
+        gamble_row = QHBoxLayout()
+        gamble_row.setSpacing(12)
+
+        self.gamble_label = QLabel("")
+        self.gamble_label.setStyleSheet("color: #bb9af7; font-weight: bold; font-family: monospace; font-size: 13px;")
+        gamble_row.addWidget(self.gamble_label)
+
+        gamble_row.addStretch()
+
+        self.btn_red = QPushButton("🔴 RED")
+        self.btn_red.setStyleSheet(gamble_style.replace("#414868", "#f7768e") + "QPushButton { color: #f7768e; }")
+        self.btn_red.setEnabled(False)
+        self.btn_red.clicked.connect(lambda: self._gamble_guess("red"))
+        gamble_row.addWidget(self.btn_red)
+
+        self.btn_black = QPushButton("⚫ BLACK")
+        self.btn_black.setStyleSheet(gamble_style.replace("#414868", "#a9b1d6") + "QPushButton { color: #a9b1d6; }")
+        self.btn_black.setEnabled(False)
+        self.btn_black.clicked.connect(lambda: self._gamble_guess("black"))
+        gamble_row.addWidget(self.btn_black)
+
+        self.btn_cashin = QPushButton("💰 CASH IN")
+        self.btn_cashin.setStyleSheet(gamble_style.replace("#414868", "#9ece6a") + "QPushButton { color: #9ece6a; }")
+        self.btn_cashin.setEnabled(False)
+        self.btn_cashin.clicked.connect(self._gamble_cashin)
+        gamble_row.addWidget(self.btn_cashin)
+
+        layout.addLayout(gamble_row)
         
         # Hook GCI (text commands still work too)
         if self._gci:
@@ -399,6 +449,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         """Enable/disable buttons based on current game phase."""
         is_betting = self.phase in ('betting', 'drawn')
         is_dealt = self.phase == 'dealt'
+        is_gamble = self.phase == 'gamble'
         
         self.btn_deal.setEnabled(is_betting)
         self.btn_deal.setText("♠ DEAL" if is_betting else "---")
@@ -412,6 +463,15 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                 btn.setStyleSheet(btn.styleSheet().replace("#414868", "#00ffc8"))
             else:
                 btn.setText(f"HOLD {i+1}")
+
+        # Double-or-nothing buttons
+        self.btn_red.setEnabled(is_gamble)
+        self.btn_black.setEnabled(is_gamble)
+        self.btn_cashin.setEnabled(is_gamble)
+        if is_gamble:
+            self.gamble_label.setText(f"DOUBLE OR NOTHING — {self.gamble_winnings:.2f} STGM at risk!")
+        else:
+            self.gamble_label.setText("")
     
     def _btn_deal_clicked(self):
         if self.phase in ('betting', 'drawn'):
@@ -514,13 +574,79 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         win_amount = payout_mult * self.bet
         
         if win_amount > 0:
-            self.vault.process_payout(win_amount, reason=result)
-            self.canvas.result_text = f"{result} (+{win_amount:.1f} STGM)"
+            # Don't pay out yet — enter gamble phase
+            self.gamble_winnings = win_amount
+            self.phase = 'gamble'
+            self.canvas.result_text = f"{result} (+{win_amount:.1f} STGM) — DOUBLE OR CASH IN?"
+            if self._gci:
+                self._gci.chat_display.append(
+                    f"<span style='color:#bb9af7;'>[SYSTEM: 🎰 WON {win_amount:.2f} STGM ({result})! "
+                    f"Guess RED or BLACK to double, or CASH IN to keep it safe.]</span>")
         else:
             self.canvas.result_text = "NO WIN"
+            self.phase = 'drawn'  # back to betting
             
         self.update_hud()
         self.canvas.update()
+        self._update_button_states()
+
+    def _gamble_guess(self, guess: str):
+        """Double-or-nothing: flip a card. Red or Black?"""
+        if self.phase != 'gamble' or self.gamble_winnings <= 0:
+            return
+
+        # Flip a fresh card from the biological deck
+        flip_card = self.deck_engine.draw_cards(count=1)[0]
+        card_is_red = flip_card.is_red()
+        player_said_red = guess == "red"
+
+        if card_is_red == player_said_red:
+            # WIN — double it
+            self.gamble_winnings *= 2
+            self.canvas.result_text = (
+                f"✅ {flip_card} is {'RED' if card_is_red else 'BLACK'}! "
+                f"DOUBLED → {self.gamble_winnings:.2f} STGM — go again?")
+            if self._gci:
+                self._gci.chat_display.append(
+                    f"<span style='color:#9ece6a;'>[SYSTEM: ✅ Flipped {flip_card} — "
+                    f"{'RED' if card_is_red else 'BLACK'}! Winnings doubled to "
+                    f"{self.gamble_winnings:.2f} STGM. Guess again or CASH IN.]</span>")
+            # Stay in gamble phase — can keep doubling
+        else:
+            # BUST — lose everything
+            lost = self.gamble_winnings
+            self.gamble_winnings = 0
+            self.phase = 'drawn'  # back to betting
+            self.canvas.result_text = (
+                f"💀 {flip_card} is {'RED' if card_is_red else 'BLACK'}! "
+                f"BUST — lost {lost:.2f} STGM")
+            if self._gci:
+                self._gci.chat_display.append(
+                    f"<span style='color:#f7768e;'>[SYSTEM: 💀 Flipped {flip_card} — "
+                    f"{'RED' if card_is_red else 'BLACK'}! BUST. Lost {lost:.2f} STGM. "
+                    f"The house always wins... sometimes.]</span>")
+
+        self.canvas.update()
+        self.update_hud()
+        self._update_button_states()
+
+    def _gamble_cashin(self):
+        """Cash in winnings — safe choice."""
+        if self.phase != 'gamble' or self.gamble_winnings <= 0:
+            return
+
+        cashed = self.gamble_winnings
+        self.vault.process_payout(cashed, reason="gamble_cashin")
+        self.gamble_winnings = 0
+        self.phase = 'drawn'  # back to betting
+        self.canvas.result_text = f"💰 CASHED IN {cashed:.2f} STGM — smart move."
+        if self._gci:
+            self._gci.chat_display.append(
+                f"<span style='color:#9ece6a;'>[SYSTEM: 💰 Cashed in {cashed:.2f} STGM. "
+                f"Smart money. Warren Buffett approves.]</span>")
+
+        self.canvas.update()
+        self.update_hud()
         self._update_button_states()
 
 if __name__ == "__main__":
