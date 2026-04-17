@@ -1,9 +1,9 @@
 {
-    "id": "M5SIFTA_BODY",
-    "ascii": "<///[~_~]///::ID[M5SIFTA_BODY]::INSTALLED[1776198224]>",
-    "stgm_balance": 31.7,
-    "style": "ACTIVE",
-    "energy": 100,
-    "architect_seal": "SEAL_49c8cc2abd97",
-    "homeworld_serial": "GTH4921YP3"
+  "id": "M5SIFTA_BODY",
+  "ascii": "<///[~_~]///::ID[M5SIFTA_BODY]::INSTALLED[1776198224]>",
+  "stgm_balance": 33.7,
+  "style": "ACTIVE",
+  "energy": 100,
+  "architect_seal": "SEAL_49c8cc2abd97",
+  "homeworld_serial": "GTH4921YP3"
 }

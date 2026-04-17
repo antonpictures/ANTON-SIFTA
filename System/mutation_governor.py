@@ -43,7 +43,21 @@ class MutationGovernor:
     - per-file cooldown
     - mutation replay protection (content-hash)
     - risk scoring (System/Kernel paths, large payloads)
+
+    §5.2 Leverage mechanisms (SOLID_PLAN):
+    - friction layer: state-disruption cost penalizes noisy mutation
+    - reversibility index: low-undo actions require human gate
+    - attention budget: hard cap on reads/writes/spawns per cycle
     """
+
+    # ── §5.2.3 Attention budget defaults ─────────────────────────
+    ATTENTION_COSTS = {
+        "read_trace":    5,
+        "analyze_event": 10,
+        "write_trace":   8,
+        "mutate_file":   15,
+        "spawn_agent":   50,
+    }
 
     def __init__(
         self,
@@ -51,11 +65,22 @@ class MutationGovernor:
         file_budget: int = 10,
         cooldown: float = 30.0,
         risk_threshold: float = 0.7,
+        # §5.2 leverage knobs
+        friction_ceiling: float = 0.8,
+        reversibility_threshold: float = 0.3,
+        attention_budget_per_cycle: int = 100,
     ):
         self.max_mutations_per_minute = max_mutations_per_minute
         self.file_budget = file_budget
         self.cooldown = cooldown
         self.risk_threshold = risk_threshold
+
+        # §5.2 leverage
+        self.friction_ceiling = friction_ceiling
+        self.reversibility_threshold = reversibility_threshold
+        self.attention_budget_per_cycle = attention_budget_per_cycle
+        self._attention_spent: int = 0
+        self._cycle_start: float = time.time()
 
         self._global_events: deque[float] = deque()
         self._file_budgets: dict[str, int] = defaultdict(lambda: file_budget)
@@ -83,6 +108,80 @@ class MutationGovernor:
             score += 0.2
 
         return min(score, 1.0)
+
+    # ── §5.2.1 Friction layer ────────────────────────────────────
+
+    def friction_cost(self, file_path: str, mutation: str) -> float:
+        """
+        State disruption cost, not just compute.
+        Biology works because change is expensive.
+        """
+        complexity = min(1.0, len(mutation) / 2000)
+        fp = file_path.replace("\\", "/")
+        # Magnitude: touching System/ or Kernel/ = high disruption
+        magnitude = 0.0
+        if "System" in fp:
+            magnitude += 0.4
+        if "Kernel" in fp:
+            magnitude += 0.3
+        if "__init__" in fp:
+            magnitude += 0.2
+        # Novelty penalty: unique hash = novel = higher friction
+        h = self._mutation_content_hash(mutation)
+        novelty = 0.0 if h in self._seen_set else 0.15
+        return min(1.0, complexity + magnitude + novelty)
+
+    # ── §5.2.2 Reversibility index ───────────────────────────────
+
+    def reversibility_score(self, file_path: str, mutation: str) -> float:
+        """
+        Score undoability [0, 1]. 1.0 = fully reversible.
+        Below threshold → require human gate.
+        """
+        score = 1.0
+        fp = file_path.replace("\\", "/")
+        # Deleting files is irreversible
+        if "delete" in mutation.lower() or "rm " in mutation.lower():
+            score -= 0.6
+        # System/Kernel mutations are harder to undo safely
+        if "System" in fp:
+            score -= 0.2
+        if "Kernel" in fp:
+            score -= 0.3
+        # Large mutations are harder to review and revert
+        if len(mutation) > 1000:
+            score -= 0.15
+        return max(0.0, score)
+
+    # ── §5.2.3 Attention budget ──────────────────────────────────
+
+    def _maybe_reset_attention_cycle(self) -> None:
+        """Auto-reset attention every 60s (one swarm cycle)."""
+        if time.time() - self._cycle_start > 60.0:
+            self._attention_spent = 0
+            self._cycle_start = time.time()
+
+    def spend_attention(self, action: str = "mutate_file") -> bool:
+        """
+        Spend attention tokens. Returns True if budget allows.
+        Call this from swim loops and blackboard readers.
+        """
+        self._maybe_reset_attention_cycle()
+        cost = self.ATTENTION_COSTS.get(action, 10)
+        if self._attention_spent + cost > self.attention_budget_per_cycle:
+            return False
+        self._attention_spent += cost
+        return True
+
+    def attention_remaining(self) -> int:
+        """How many attention tokens remain this cycle."""
+        self._maybe_reset_attention_cycle()
+        return max(0, self.attention_budget_per_cycle - self._attention_spent)
+
+    def reset_attention_cycle(self) -> None:
+        """Manual epoch reset for attention budget."""
+        self._attention_spent = 0
+        self._cycle_start = time.time()
 
     # ── Global rate ──────────────────────────────────────────────
 
@@ -112,6 +211,9 @@ class MutationGovernor:
         """
         Return True if this mutation may enter the SCAR proposal pipeline.
         Does not record replay hash — call commit() only after SCAR accepts.
+
+        Gate order: replay → rate → cooldown → budget → risk →
+                    §5.2 friction → §5.2 reversibility → §5.2 attention
         """
         self.last_reject_reason = ""
 
@@ -135,6 +237,23 @@ class MutationGovernor:
         risk = self._risk_score(file_path, mutation)
         if risk > self.risk_threshold:
             self.last_reject_reason = f"risk:{risk:.2f}"
+            return False
+
+        # ── §5.2.1 Friction gate ─────────────────────────────────
+        friction = self.friction_cost(file_path, mutation)
+        if friction > self.friction_ceiling:
+            self.last_reject_reason = f"friction:{friction:.2f}"
+            return False
+
+        # ── §5.2.2 Reversibility gate ────────────────────────────
+        rev = self.reversibility_score(file_path, mutation)
+        if rev < self.reversibility_threshold:
+            self.last_reject_reason = f"reversibility:{rev:.2f}"
+            return False
+
+        # ── §5.2.3 Attention gate ────────────────────────────────
+        if not self.spend_attention("mutate_file"):
+            self.last_reject_reason = "attention_exhausted"
             return False
 
         return True

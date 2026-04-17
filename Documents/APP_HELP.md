@@ -207,6 +207,75 @@ Use this flow for any app:
 
 ## System
 
+### Swarm Intelligence Panels
+
+These are **read-only diagnostic dashboards**, not input forms. They display the internal
+stigmergic state of the Swarm in real time. Open them via **SIFTA → Swarm Intelligence**.
+
+#### Dream Report
+- **Purpose:** Nightly memory consolidation report — what the Swarm dreamed.
+- **State:** Reads `dream_meta.json` from `.sifta_state/`. Updated by the Swarm's
+  nightly dream cycle (`circadian_rhythm.py`).
+- **What you see:** Four KPI cards:
+  - **Dead Drop Chat** — total messages, unique senders, error mentions from the
+    asynchronous dead-drop communication channel.
+  - **STGM Economy** — mints today, total minted, inflation alert flag.
+  - **Repairs / Interventions** — auto-repair count (Governor + SCAR interventions).
+  - **Immune Evaporation** — stale antibodies removed during the dream cycle.
+- **Key principle:** You don't type in it. It's the morning newspaper.
+  The Swarm consolidates memory while you sleep, and this panel shows the digest.
+- **Failure mode:** If data is stale (e.g. "Last cycle: Unknown"), the nightly
+  dream cycle hasn't run yet. Check `circadian_rhythm.py` cron schedule.
+
+#### Immune Status
+- **Purpose:** Antibody inventory and pattern recognition statistics.
+- **State:** Reads from `immune_memory.py` module. Shows total antibodies,
+  total recognitions, and a ring chart of antibody types.
+- **What you see:** Two stat boxes (antibody count, recognition count) and a
+  rotating ring chart breaking down antibody categories by type.
+- **Key principle:** The immune system learns from attacks. More antibodies =
+  more patterns recognized. The ring chart shows specialization.
+- **Failure mode:** "No immune memory detected" = no attacks have been seen yet.
+
+#### Quorum Proposals
+- **Purpose:** Active consensus proposals awaiting swarm signatures.
+- **State:** Reads from `quorum_sense.py` module.
+- **What you see:** Glowing progress bars showing vote progress for each
+  active proposal (action ID, type, node signatures needed).
+- **Key principle:** Certain swarm actions require multi-node consent before
+  execution. The Quorum panel shows what's pending and how close to passing.
+- **Idle state:** "The Swarm is at peace" with a gentle pulsing circle =
+  no active proposals. This is normal and healthy.
+
+#### Nerve Channel
+- **Purpose:** UDP datagram topology between hardware nodes (M1 ↔ M5).
+- **What you see:** Two pulsing nodes connected by a dashed wire, with a
+  green datagram packet animating between them. Shows signal type name.
+- **Key principle:** Visual proof that the nervous system is alive and
+  datagrams are flowing between nodes on port 4444 with Ed25519 crypto.
+- **Note:** This is a topology visualization, not a live packet sniffer.
+
+#### File Trails
+- **Purpose:** Stigmergic file co-access graph — which files are used together.
+- **State:** Reads from `pheromone_fs.py` trail map and cluster data.
+- **What you see:** A floating network graph where nodes are files and edges
+  represent co-access frequency. Brighter/thicker edges = stronger association.
+  Green nodes = in a cluster. Dim nodes = isolated.
+- **Key principle:** The filesystem learns your habits. Files you always open
+  together develop strong pheromone trails between them. Clusters emerge.
+- **Idle state:** "No paths walked" = not enough file access history yet.
+
+#### App Fitness
+- **Purpose:** Fitness landscape of all SIFTA apps — which are thriving vs struggling.
+- **State:** Reads from `app_fitness.py` scoring module.
+- **What you see:** Horizontal bar chart with positive (green) and negative (red)
+  scores for each app. Zero line in center.
+- **Key principle:** Apps earn fitness through usage, stability, and successful
+  task completion. Negative fitness = crashes, errors, or neglect.
+- **Idle state:** "No fitness data yet" = launch some apps to populate the map.
+
+---
+
 ### First Boot Provisioning
 - **Purpose:** Initial node provisioning and setup.
 - **What to watch:** Bootstrap success, dependency readiness, identity initialization.
