@@ -471,6 +471,7 @@
       <span class="organ">FISSION</span>    Cell Division (Auto-Task Spawning)      <span class="status-live">● LIVE</span><br>
       <span class="organ">ROUTER</span>     Cross-Hardware Topology                 <span class="status-live">● LIVE</span><br>
       <span class="organ">EVAL GATE</span>  Counterfactual Sandbox                  <span class="status-live">● LIVE</span><br>
+      <span class="organ">ADAPTATION</span> Closed-Loop Evolution Loop              <span class="status-live">● LIVE</span><br>
       <span class="organ">CARTOGRAPHY</span> Dashboard (this screen)                <span class="status-live">● LIVE</span><br>
     </div>
   </div>
@@ -517,6 +518,28 @@
       <div class="metric-row">
         <span class="metric-label">Approval Rate</span>
         <span class="metric-value accent2" id="ev-rate">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MUTATION GOVERNOR & DRIFT ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">🧬</span> ADAPTATION & DRIFT</div>
+    <div id="mut-content">
+      <div class="metric-row">
+        <span class="metric-label">Mutations Committed</span>
+        <span class="metric-value accent" id="m-committed">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Mutations Rejected</span>
+        <span class="metric-value danger" id="m-rejected">—</span>
+      </div>
+      <div class="metric-row" style="margin-top: 12px;">
+        <span class="metric-label">Identity Drift Score</span>
+        <span class="metric-value" id="m-drift">—</span>
+      </div>
+      <div class="metric-row" id="m-lockout-row" style="display: none; justify-content: center; margin-top: 10px;">
+        <span style="color: var(--danger); font-family: var(--font-mono); font-weight: bold; background: rgba(225, 112, 85, 0.2); padding: 4px 8px; border: 1px solid var(--danger); border-radius: 4px;">⚠️ ORGANISM LOCKED DUE TO DRIFT ⚠️</span>
       </div>
     </div>
   </div>
@@ -746,6 +769,26 @@ async function loadEvaluation() {
   rateEl.className = 'metric-value ' + (rate > 0.6 ? 'good' : rate > 0.3 ? 'warn' : 'danger');
 }
 
+async function loadAdaptation() {
+  const d = await fetchJSON('governor_loop_state.json');
+  if (!d) return;
+
+  document.getElementById('m-committed').textContent = d.committed || 0;
+  document.getElementById('m-rejected').textContent = d.rejected || 0;
+  
+  const drift = (d.identity_drift || 0).toFixed(3);
+  const driftEl = document.getElementById('m-drift');
+  driftEl.textContent = drift + ' / ' + (d.max_drift || 5.0);
+  
+  if (d.locked) {
+    document.getElementById('m-lockout-row').style.display = 'flex';
+    driftEl.className = 'metric-value danger';
+  } else {
+    document.getElementById('m-lockout-row').style.display = 'none';
+    driftEl.className = d.identity_drift > (d.max_drift * 0.7) ? 'metric-value warn' : 'metric-value';
+  }
+}
+
 async function loadAll() {
   await Promise.all([
     loadTemporal(),
@@ -757,6 +800,7 @@ async function loadAll() {
     loadContradictions(),
     loadBlackboard(),
     loadEvaluation(),
+    loadAdaptation(),
   ]);
 }
 
