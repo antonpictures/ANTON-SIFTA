@@ -178,11 +178,48 @@ class StigmergicVision:
         saliency = min(1.0, change * 5.0)  # amplify small changes
 
         # Drop low-saliency frames — this is the key design decision
+        # ── SVL Constraint #1: Silence Trigger Boost ────────────────
+        try:
+            from temporal_layering import get_layer
+            climate = get_layer().get_last_pulse().mutation_climate if get_layer().get_last_pulse() else "OPEN"
+            if climate in ("CAUTIOUS", "FROZEN"):
+                saliency *= 2.0  # Boost sensitivity when temporal layer detects missing signals
+        except ImportError:
+            pass
+
         if saliency < SALIENCY_THRESHOLD and self._prev_hash == scene_hash:
             self._frames_dropped += 1
             return None
 
         self._prev_hash = scene_hash
+
+        # ── SVL Constraint #2: VLM Pass (Placeholder Object Hint) ───
+        objects_hint = "VLM_MOCK: [Room interior, stable]"
+        if saliency > 0.5:
+            objects_hint = "VLM_MOCK: [Significant motion, entity detected]"
+
+        # ── SVL Constraint #3: STGM Cost ──────────────────────────
+        # Swarm metabolism requires STGM to burn for cognition.
+        try:
+            try:
+                from System.casino_vault import CasinoVault, CasinoTransaction
+            except ImportError:
+                from casino_vault import CasinoVault, CasinoTransaction
+            vault = CasinoVault(architect_id="Ioan_M5")
+            if vault.casino_balance < 0.005:
+                print("⚠️ [SVL] Vision starved. Casino Vault STGM depleted. Closing eyes.")
+                return None
+            
+            # Burn STGM directly from the Swarm's vault
+            vault._write_tx(CasinoTransaction(
+                ts=now,
+                action="SVL_METABOLISM",
+                casino_delta=-0.005,
+                player_delta=0.0,
+                memo=f"Visual cognition burn for frame {scene_hash[:8]}"
+            ))
+        except ImportError:
+            pass
 
         # Build the event — NO raw frame data stored
         eid = hashlib.sha256(
@@ -197,8 +234,42 @@ class StigmergicVision:
             change_magnitude = round(change, 4),
             attention_state  = self.attention.value,
             frame_dimensions = (gray.shape[0], gray.shape[1]),
-            objects_hint     = "",  # future: YOLO or scene classifier
+            objects_hint     = objects_hint,
         )
+
+        # ── SVL Constraint #4: Objective Scoring ──────────────────
+        try:
+            try:
+                from System.objective_registry import get_registry
+            except ImportError:
+                from objective_registry import get_registry
+            reg = get_registry()
+            # Estimate if this visual trace provides actual information gain
+            score = reg.score_action({
+                "information_gain": saliency,
+                "resource_efficiency": -0.1
+            })
+            if score < -0.1:
+                # Frame is useless noise, discard
+                self._frames_dropped += 1
+                return None
+        except ImportError:
+            pass
+
+        # ── SVL Constraint #5: Contradiction Check ────────────────
+        try:
+            try:
+                from System.contradiction_engine import get_engine
+            except ImportError:
+                from contradiction_engine import get_engine
+            engine = get_engine()
+            # If the vision trace claims something contradictory to known state, drop it.
+            safe, reason = engine.assert_belief(f"SVL_{eid}", "vision_state", objects_hint)
+            if not safe:
+                print(f"🛑 [SVL CONTRADICTION] Vision trace blocked: {reason}")
+                return None
+        except ImportError:
+            pass
 
         # Write trace to blackboard
         self._write_trace(event)
