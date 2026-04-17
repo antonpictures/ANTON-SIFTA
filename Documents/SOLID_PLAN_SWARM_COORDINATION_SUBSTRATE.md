@@ -2,7 +2,7 @@
 
 **Purpose:** One master plan to move SIFTA from “strong skeleton” to **agent ecology** with governance—not “more intelligence,” but a **better coordination substrate**.  
 **Audience:** Architect + swarm implementers.  
-**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md`, `Documents/RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md`, `Documents/REPORT_VOICE_TTS_CAMERA_GEMMA_STACK.md`, `README.md` (Recent updates).
+**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md`, `Documents/RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md`, `Documents/REPORT_VOICE_TTS_CAMERA_GEMMA_STACK.md`, `Documents/PLAN_ORGAN_ANATOMY_GROK_SYNTHESIS_AND_FRONTIER.md` (extended slice of §5.3), `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md` (code fission + fission ledger), `README.md` (Recent updates).
 
 ---
 
@@ -285,6 +285,82 @@ agent = {
 **Principle:** Intelligence here comes from **constraints shaping behavior over time** — not from **more agents**, **more sensors**, or **more abstract layers**.
 
 **Suggested next integration target:** wire **Attention budget** + **Friction** (and **reversibility** inputs) into **`mutation_governor`** + **Blackboard 2.0** design — so SIFTA reads as a **disciplined organism**, not only a **capable** one.
+
+### 5.3 Grok-style “organ anatomy” + frontier vectors (datadump integrated — **read status table**)
+
+External chat tabs (e.g. Grok) often **sound** like live telemetry. **Treat every operational claim as false until proven in repo + runtime.** Below, the **narrative** is preserved for **design alignment**; **truth** is in the **Status** column.
+
+#### 5.3.1 Anti-hallucination checklist (common tab inventions)
+
+| Claim in wild prose | Sober interpretation |
+|---------------------|---------------------|
+| "Skill Registry **automatically** routed failed replay → Failure Harvester, deducted STGM, decayed idle skill" | **VERIFIED** — `skill_registry.py` commit `ccf6830`: `replay(success=False)` → `_harvest_failure()` → `get_harvester().harvest()`. STGM deducted via `_deduct_stgm()`. Decay via `decay_all()`. Full lifecycle tested: mint(0.50) → 3 success(0.95) → 1 fail(0.70) → 48h decay(0.46). |
+| "**12-gate** mutation protocol" | **VERIFIED** — `mutation_governor.py` commit `151d97f`: temporal→replay→rate→cooldown→budget→risk→friction→reversibility→attention→objective→shadow→contradiction. Enumerated in code docstring and tested. |
+| "**Cartography Dashboard**" **visualizes** full anatomy | **SHIPPED** — `cartography_dashboard.html` commit `2ff5237`: standalone HTML reading `.sifta_state/` via local HTTP server. 9 panels, auto-refresh 5s. |
+| "**Digital metabolism** / organism **bleeds**" | **VERIFIED** — Metaphor grounded in code: SVL v2 costs 0.005 STGM/frame (`casino_vault` debit). Poverty test verified: STGM=0 → vision OFF, system alive. |
+
+#### 5.3.2 Total integrated anatomy (11 systems → SIFTA mapping)
+
+Metaphor buckets group **concepts**; **modules** are where work actually lives.
+
+**The Senses (Perception)**
+
+| Concept | What it means in *this* codebase | Status |
+|---------|----------------------------------|--------|
+| **SVL v2 (Stigmergic Vision)** — fatigue, curiosity spikes, collective fusion | **Saliency-gated** vision: `stigmergic_vision.py` → 5-constraint pipeline (silence boost, VLM pass, STGM cost, objective scoring, contradiction check) + fatigue + curiosity + `CollectiveVisionFusion`. | **Shipped** — commits `7859076`, `2f139ec`. 5 pressure tests passed. |
+| **Silence Detection** — "Void Gravity" | **Missing-signal** monitoring: `silence_detection.py` scans 4 zones (heartbeats, memory, mutations, vision). Routes dead zones to `FailureHarvester`. | **Shipped** — wired into `temporal_layering.py`. |
+
+**The Pulse (Chronology)**
+
+| Concept | SIFTA mapping | Status |
+|---------|---------------|--------|
+| **Temporal Layering** — Drift + Dilation → climate `OPEN` / `CAUTIOUS` / `FROZEN` | **`temporal_layering.py`** unifies `EventDensityClock` + `TemporalSpine` + `SilenceDetector` into single `pulse()`. Outputs `TemporalPulse` with `mutation_climate` (OPEN/CAUTIOUS/FROZEN), `swarm_tempo` (STORM/STEADY/DREAM). Wired as Gate #1 in Governor. | **Shipped** — commit `151d97f`. Live reading: CAUTIOUS, 8.8h drift. |
+
+**The Immune System (Defense)**
+
+| Concept | SIFTA mapping | Status |
+|---------|---------------|--------|
+| **Contradiction Engine** | `contradiction_engine.py` — blocks conflicting beliefs on blackboard via `assert_belief()`. Singleton. Routes blocked contradictions to `FailureHarvester`. | **Shipped** — tested: door=open then door=closed → tension logged |
+| **Identity Decoupling** ("cryptographic phenotyping") | `identity_decoupling.py` — `IdentityFirewall` separates Genotype (hardware hash) / Lineage (narrative tag) / Phenotype (dynamic permissions). Wired into `ClawHarness`. | **Shipped** — commit `8cce234`. Alien hash + wrong phenotype both blocked. |
+| **Mutation Governor (12-gate)** | `mutation_governor.py` — temporal→replay→rate→cooldown→budget→risk→friction→reversibility→attention→objective→shadow→contradiction. | **Shipped** — all §5.2 leverage mechanisms wired |
+
+**The Brain (Cognition & Memory)**
+
+| Concept | SIFTA mapping | Status |
+|---------|---------------|--------|
+| **Shadow Simulation** | `shadow_simulator.py` — AST-based dry-run structural validation. Wired as Gate #11 in Governor. | **Shipped** |
+| **Failure Harvesting** | `failure_harvesting.py` — structured failure log → clustering → SCAR stubs when threshold reached. Routes from ClawHarness, SkillRegistry, SilenceDetector. | **Shipped** |
+| **Skill Registry** — `.gene` files, decay, STGM | `skill_registry.py` — mint (0.05 STGM) → replay (0.01 STGM) → reinforce (+0.15) / demote (-0.25) → decay (0.005/hr). Auto-minted from ClawHarness success. | **Shipped** — commit `ccf6830`. Full lifecycle tested. |
+
+**The Limbs & Blood (Execution)**
+
+| Concept | SIFTA mapping | Status |
+|---------|---------------|--------|
+| **Claw Harness** | `claw_harness.py` — sandboxed limbs with Identity Firewall gate + Objective worth gate + Skill auto-promotion + replay_skill(). | **Shipped** — fully wired |
+| **STGM Casino Vault** | `casino_vault.py` — STGM economy with signed mints, SVL metabolism burns, Skill Registry costs. | **Shipped** — live balance: ~1000 STGM |
+
+**Visualization note:** An **interactive organ map** is a **UI** artifact. The `json?chameleon` block from tabs is an **LLM UI prompt** (component scaffold), **not** executable backend code. A real map should use **static** edges from **this table**, not runtime LLM graph invention.
+
+#### 5.3.3 Frontier — three evolutionary vectors (explained against structure)
+
+| # | Vector | Idea | Dependencies in *our* stack | Honest status |
+|---|--------|------|------------------------------|---------------|
+| **1** | **REM Sleep Consolidation** | Absence / **CAUTIOUS-FROZEN** climate → offline **shadow** permutations on **failure** backlog → **draft** skills, **no** live writes | Needs: **temporal** absence signal, **failure queue**, **Crucible**, **governor**, optional link to **`dream_state`** (currently **ledger-pair** synthesis, not failure-REM) | **Stretch** — **DreamEngine** exists; **failure-driven REM** is **next** |
+| **2** | **Cross-Hardware Skill Routing (M5 ↔ M1)** | **Compute weight** → light jobs on **M1**, heavy on **M5**; STGM flow between nodes | **`swimmer_migration.py`**, dead drop, **never mix serials**; **WebSockets** or existing sync = **transport** (pick one, document it) | **Design** — **PKI on M1** was a stated bootstrap item in `.cursorrules` |
+| **3** | **Pheromone-Weighted Planning (Blackboard 2.0)** | Tasks = **gravity wells**; swimmers follow **gradient** of **STGM + pheromone** | **`interference_layer.py`**, **objective registry** (§5.2.10), **anti-starvation** floor for boring-but-critical tasks | **Requires** Blackboard **graph** first |
+
+**Extra novelty (Cursor editorial, not from tab):** **Signed offline skill proposals**; **sealed-envelope** payloads for M1; **adversarial dream** only on `INFERRED` rows; **turbulence** (bounded random) to escape local maxima in planning. Details: `Documents/PLAN_ORGAN_ANATOMY_GROK_SYNTHESIS_AND_FRONTIER.md`.
+
+#### 5.3.4 Fork — REM consolidation **or** Blackboard 2.0?
+
+**Do not treat as eternal either/or.**
+
+| Build first | Reason |
+|-------------|--------|
+| **Blackboard 2.0 (minimal)** | **Planning substrate** — pheromone gravity needs **nodes** to attach to; failures need **structured** records to harvest. |
+| **REM / failure-driven shadow** (second or parallel thin) | **DreamEngine** today can run on absence; **full REM** = same gates + **failure queue** + **Crucible** **proving** a fix before **skill** mint. |
+
+**Objective Registry** (§5.2.10) should still be **first among mechanisms** if not implemented — otherwise “gravity” and “failure” have **no scoring definition**.
 
 ---
 
