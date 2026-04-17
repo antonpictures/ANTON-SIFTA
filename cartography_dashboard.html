@@ -342,6 +342,39 @@
     </div>
   </div>
 
+  <!-- ═══ SWARM BLACKBOARD 2.0 ═══ -->
+  <div class="panel full-width">
+    <div class="panel-title"><span class="icon">🕸</span> SWARM BLACKBOARD 2.0 — PHEROMONE GRAVITY WELLS</div>
+    <div id="bb-content" style="display: flex; gap: 40px;">
+      <div style="flex: 1;">
+        <div class="metric-row">
+          <span class="metric-label">Total Tasks in Graph</span>
+          <span class="metric-value" id="b-total">—</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Pending (Active Wells)</span>
+          <span class="metric-value accent" id="b-pending">—</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Completed</span>
+          <span class="metric-value good" id="b-completed">—</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Failed</span>
+          <span class="metric-value danger" id="b-failed">—</span>
+        </div>
+      </div>
+      <div style="flex: 2; padding-left: 20px; border-left: 1px solid rgba(255,255,255,0.05);">
+        <div class="big-label" style="margin-bottom: 8px;">STRONGEST GRAVITY WELL</div>
+        <div class="big-num" style="font-size: 24px; color: var(--accent2);" id="b-strongest-desc">—</div>
+        <div class="metric-row" style="margin-top: 10px;">
+          <span class="metric-label">Total Gravity (Base + Pheromones)</span>
+          <span class="metric-value accent2" id="b-strongest-grav">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ SKILL REGISTRY ═══ -->
   <div class="panel">
     <div class="panel-title"><span class="icon">🧠</span> SKILL REGISTRY — MUSCLE MEMORY</div>
@@ -606,6 +639,29 @@ async function loadContradictions() {
   document.getElementById('c-blocked').textContent = blocked;
 }
 
+async function loadBlackboard() {
+  const d = await fetchJSON('blackboard_graph.json');
+  if (!d) return;
+  const tasks = Object.values(d);
+  document.getElementById('b-total').textContent = tasks.length;
+  const pending = tasks.filter(t => t.status === 'PENDING');
+  document.getElementById('b-pending').textContent = pending.length;
+  document.getElementById('b-completed').textContent = tasks.filter(t => t.status === 'COMPLETED').length;
+  document.getElementById('b-failed').textContent = tasks.filter(t => t.status === 'FAILED').length;
+  
+  if (pending.length > 0) {
+    const strongest = pending.reduce((prev, current) => 
+      (prev.base_gravity + prev.pheromone_thickness > current.base_gravity + current.pheromone_thickness) ? prev : current
+    );
+    const grav = (strongest.base_gravity + strongest.pheromone_thickness).toFixed(3);
+    document.getElementById('b-strongest-desc').textContent = strongest.description.length > 50 ? strongest.description.substring(0, 50) + "..." : strongest.description;
+    document.getElementById('b-strongest-grav').textContent = grav + ' G';
+  } else {
+    document.getElementById('b-strongest-desc').textContent = "NO ACTIVE WELLS";
+    document.getElementById('b-strongest-grav').textContent = "—";
+  }
+}
+
 async function loadAll() {
   await Promise.all([
     loadTemporal(),
@@ -615,6 +671,7 @@ async function loadAll() {
     loadIdentity(),
     loadFailures(),
     loadContradictions(),
+    loadBlackboard(),
   ]);
 }
 
