@@ -469,6 +469,14 @@
         <span class="metric-label">Latest Failure</span>
         <span class="metric-value" id="f-latest">—</span>
       </div>
+      <div class="metric-row" style="margin-top: 12px;">
+        <span class="metric-label">Task Fissions (Auto-Spawned)</span>
+        <span class="metric-value accent" id="f-fissions">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Last Dream Cycle</span>
+        <span class="metric-value" id="f-dream">—</span>
+      </div>
     </div>
   </div>
 
@@ -623,6 +631,17 @@ async function loadFailures() {
   if (entries.length) {
     const last = entries[entries.length - 1];
     document.getElementById('f-latest').textContent = (last.error_msg || last.task_name || '—').slice(0, 60);
+  }
+  
+  const fissions = await fetchJSONL('fission_events.jsonl');
+  document.getElementById('f-fissions').textContent = fissions.length;
+  
+  const dreamMeta = await fetchJSON('dream_meta.json');
+  if (dreamMeta && dreamMeta.last_dream) {
+    const d = new Date(dreamMeta.last_dream);
+    document.getElementById('f-dream').textContent = d.toLocaleTimeString();
+  } else {
+    document.getElementById('f-dream').textContent = "NONE TODAY";
   }
 }
 

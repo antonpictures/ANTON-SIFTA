@@ -164,6 +164,22 @@ def _evaporate_immune() -> int:
         return 0
 
 
+def _process_fissions() -> dict[str, Any]:
+    """Process failure clusters and trigger Stigmergic Task Fissions."""
+    import sys
+    if str(_REPO / "System") not in sys.path:
+        sys.path.insert(0, str(_REPO / "System"))
+    try:
+        from fission_core import get_fission_engine, DecayController
+        dec = DecayController()
+        dec.apply_decay()
+        
+        eng = get_fission_engine()
+        fissions = eng.process_failures()
+        return {"fissions_spawned": fissions, "decay_applied": True}
+    except Exception as e:
+        return {"fissions_spawned": 0, "decay_applied": False, "err": str(e)}
+
 def _compose_report(analyses: dict[str, Any]) -> str:
     """Turn raw analysis dicts into a readable dream report paragraph."""
     dd = analyses["dead_drop"]
@@ -199,6 +215,10 @@ def _compose_report(analyses: dict[str, Any]) -> str:
 
     lines.append(f"Immune: evaporated {imm_evap} stale antibodies.")
 
+    fis = analyses.get("fissions", {"fissions_spawned": 0})
+    if fis["fissions_spawned"] > 0:
+        lines.append(f"Fissions: Spawned {fis['fissions_spawned']} new Stigmergic task(s) on Blackboard.")
+
     lines.append("")
     all_clear = (
         dd["error_mentions"] < 3
@@ -224,6 +244,7 @@ def run_dream_cycle() -> str:
         "economy": _analyze_economy(),
         "fitness": _analyze_fitness(),
         "immune_evaporated": _evaporate_immune(),
+        "fissions": _process_fissions(),
     }
 
     report = _compose_report(analyses)

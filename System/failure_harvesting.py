@@ -150,20 +150,13 @@ class FailureHarvester:
     def _spawn_improvement_task(self, cluster: Dict[str, Any]) -> None:
         """
         Called when a failure reaches critical mass.
-        In the future (Phase 3+), this will submit a Quorum proposal
-        or an Evaluation Sandbox test to write an antibody.
-        For now, it writes a SCAR stub to alert the Swarm.
+        We alert the FissionEngine to check if it's ready to split into a Blackboard Task.
         """
-        print(f"🚨 [FAILURE CLUSTER DETECTED] Creating improvement task for: {cluster['task']}")
-        scar_alert = {
-            "type": "EVOLUTIONARY_PRESSURE",
-            "cluster_task": cluster["task"],
-            "sample_error": cluster["sample_error"],
-            "message": "Swarm is bleeding efficiency. Requesting stigmergic resolution."
-        }
+        print(f"🚨 [FAILURE CLUSTER] Reached critical density: {cluster['task']}")
         try:
-            from quorum_sense import propose_action
-            propose_action("repair", "RESOLVE_FAILURE_CLUSTER", scar_alert)
+            from fission_core import get_fission_engine
+            eng = get_fission_engine()
+            eng.process_failures()
         except ImportError:
             pass
 
