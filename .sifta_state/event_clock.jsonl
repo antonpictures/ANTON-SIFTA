@@ -1,0 +1,4 @@
+{"timestamp": 1776388173.820734, "real_elapsed": 3.0, "events_in_window": 0, "event_rate": 0.0, "dilation": 0.1, "perceived_elapsed": 0.3, "attention_hint": "IDLE"}
+{"timestamp": 1776388175.8771331, "real_elapsed": 2.056, "events_in_window": 20, "event_rate": 2.0, "dilation": 5.0, "perceived_elapsed": 10.282, "attention_hint": "HIGH"}
+{"timestamp": 1776388176.883144, "real_elapsed": 1.006, "events_in_window": 20, "event_rate": 2.0, "dilation": 5.0, "perceived_elapsed": 5.03, "attention_hint": "HIGH"}
+{"timestamp": 1776388176.8838122, "real_elapsed": 0.001, "events_in_window": 20, "event_rate": 2.0, "dilation": 5.0, "perceived_elapsed": 0.003, "attention_hint": "HIGH"}
