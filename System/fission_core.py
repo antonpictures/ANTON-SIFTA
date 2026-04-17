@@ -110,6 +110,16 @@ class FissionEngine:
         except ImportError:
             return 0
             
+        # Unified Arbitration Override Check
+        try:
+            from unified_control_arbitration import get_arbiter
+            arbiter = get_arbiter()
+            state = arbiter.arbitrate()
+            if state.get("overrides", {}).get("fission_lockout", False):
+                return 0  # Arbiter has frozen Fission globally.
+        except ImportError:
+            pass
+            
         now = time.time()
         for cid, cluster in clusters.items():
             # Don't fission if we already fissioned recently (cooldown)

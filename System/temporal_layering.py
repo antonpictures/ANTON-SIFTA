@@ -215,13 +215,13 @@ class TemporalLayer:
         """
         # Phase Transition Controller Override (Thermodynamics)
         try:
-            from phase_transition_control import get_ptc
-            ptc = get_ptc()
-            regime = ptc.state.state
-            if regime == "CRITICAL_COLLAPSE":
-                return "FROZEN"
-            elif regime == "CONSOLIDATION":
-                return "CAUTIOUS"  # Merging skills, limit wild mutations
+            from unified_control_arbitration import get_arbiter
+            arbiter = get_arbiter()
+            state = arbiter.arbitrate()
+            override = state.get("overrides", {}).get("mutation_climate_override", "NONE")
+            
+            if override != "NONE":
+                return override
         except ImportError:
             pass
 
