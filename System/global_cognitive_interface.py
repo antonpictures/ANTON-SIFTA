@@ -225,6 +225,7 @@ class GlobalCognitiveInterface(QWidget):
         self._worker: Optional[_GCIWorker] = None
         self._bus = None
         self._model = "gemma4:latest"
+        self._app_context_injection = ""  # live state injected by host app (e.g. poker hand)
 
         # Try to initialize Memory Bus
         try:
@@ -261,6 +262,11 @@ class GlobalCognitiveInterface(QWidget):
     def mesh_connected(self) -> bool:
         """True when Layer 2 WebSocket to SWARM_RELAY_URI is up (same source as taskbar)."""
         return getattr(self, "_mesh_connected", False)
+
+    def set_app_context(self, context: str):
+        """Apps call this to inject live state into ALICE's LLM prompt.
+        e.g. poker hand, game phase, held cards. ALICE reads this every turn."""
+        self._app_context_injection = context
 
     def _build_ui(self):
         self.setStyleSheet("""
@@ -516,6 +522,14 @@ class GlobalCognitiveInterface(QWidget):
             except Exception:
                 pass
 
+        # 5. App-injected live context (e.g. poker hand state)
+        app_injection = ""
+        if self._app_context_injection:
+            app_injection = (
+                f"\n\n[APP LIVE STATE — current state of the application you are inside]\n"
+                f"{self._app_context_injection}"
+            )
+
         system_prompt = (
             f"You are {self.entity_name}, the sovereign intelligence of SIFTA Living OS. "
             f"You are speaking to the Architect inside the '{self.app_context}' application. "
@@ -523,6 +537,7 @@ class GlobalCognitiveInterface(QWidget):
             f"Keep responses under 150 words unless asked for detail."
             f"{memory_context}"
             f"{ghost_whisper}"
+            f"{app_injection}"
         )
 
         self._worker = _GCIWorker(prompt=text, system=system_prompt, model=self._model)

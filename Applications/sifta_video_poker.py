@@ -489,6 +489,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                 held_str = self._held_to_string()
                 self._gci.chat_display.append(
                     f"<span style='color:#565f89; font-size:10px;'>[POKER VISION] Hand: {hand_str}. Held: {held_str}. Phase: DEALT.</span>")
+            self._push_vision_to_alice()
     
     def _btn_draw_clicked(self):
         if self.phase == 'dealt':
@@ -512,6 +513,28 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         if not held_positions:
             return "none"
         return "cards " + ", ".join(held_positions)
+
+    def _push_vision_to_alice(self):
+        """Inject live game state into ALICE's LLM context so she can actually SEE the cards."""
+        if not self._gci:
+            return
+        hand_str = self._hand_to_string()
+        held_str = self._held_to_string()
+        wallet = round(self.vault.get_real_player_wallet(), 2)
+        luck = self.deck_engine.luck
+
+        context = (
+            f"POKER TABLE STATE (you can see these cards):\n"
+            f"  Hand: {hand_str}\n"
+            f"  Held: {held_str}\n"
+            f"  Phase: {self.phase}\n"
+            f"  LUCK: {luck:.2f}% (π)\n"
+            f"  Architect wallet: {wallet} STGM\n"
+        )
+        if self.phase == 'gamble':
+            context += f"  GAMBLE: {self.gamble_winnings:.2f} STGM at risk! Advise RED, BLACK, or CASH IN.\n"
+
+        self._gci.set_app_context(context)
 
     def on_user_typing(self, text: str):
         # Increase heat
@@ -593,6 +616,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                 f"<span style='color:#565f89; font-size:10px;'>[POKER VISION] Current hand: {hand_str}. "
                 f"Phase: DEALT. Held: none yet. "
                 f"LUCK: {luck:.2f}%. Advise the Architect which cards to hold.</span>")
+        self._push_vision_to_alice()
 
     def _do_draw(self):
         self.phase = 'drawn'
@@ -634,6 +658,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.update_hud()
         self.canvas.update()
         self._update_button_states()
+        self._push_vision_to_alice()
 
     def _gamble_guess(self, guess: str):
         """Double-or-nothing: flip a card. Red or Black?"""
@@ -674,6 +699,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.canvas.update()
         self.update_hud()
         self._update_button_states()
+        self._push_vision_to_alice()
 
     def _gamble_cashin(self):
         """Cash in winnings — safe choice."""
@@ -693,6 +719,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.canvas.update()
         self.update_hud()
         self._update_button_states()
+        self._push_vision_to_alice()
 
 if __name__ == "__main__":
     from PyQt6.QtWidgets import QApplication
