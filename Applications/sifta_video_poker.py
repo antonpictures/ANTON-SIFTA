@@ -296,7 +296,8 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             from System.casino_vault import CasinoVault
             self.vault = CasinoVault(architect_id="IOAN_M5")
         except ImportError:
-            self._gci.append_system_message("[SYSTEM ERROR] Could not locate Casino Vault.")
+            if self._gci:
+                self._gci.chat_display.append("<span style='color:#f7768e;'>[SYSTEM ERROR] Could not locate Casino Vault.</span>")
             return
 
         self.bet = 0.1
@@ -486,8 +487,8 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             if self._gci:
                 hand_str = self._hand_to_string()
                 held_str = self._held_to_string()
-                self._gci.append_system_message(
-                    f"[POKER VISION] Hand: {hand_str}. Held: {held_str}. Phase: DEALT.")
+                self._gci.chat_display.append(
+                    f"<span style='color:#565f89; font-size:10px;'>[POKER VISION] Hand: {hand_str}. Held: {held_str}. Phase: DEALT.</span>")
     
     def _btn_draw_clicked(self):
         if self.phase == 'dealt':
@@ -550,8 +551,8 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                         hand_str = self._hand_to_string()
                         held_str = self._held_to_string()
                         self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Cards held. Type 'deal' to draw replacements.]</span>")
-                        self._gci.append_system_message(
-                            f"[POKER VISION] Hand: {hand_str}. Held: {held_str}. Phase: DEALT.")
+                        self._gci.chat_display.append(
+                            f"<span style='color:#565f89; font-size:10px;'>[POKER VISION] Hand: {hand_str}. Held: {held_str}. Phase: DEALT.</span>")
                 else:
                     if self._gci:
                         self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: Specify which cards to hold, e.g. 'hold 1 4']</span>")
@@ -588,10 +589,10 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             luck = self.deck_engine.luck
             hand_str = self._hand_to_string()
             self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Placed {self.bet} bet. Dealt 5 cards. LUCK: {luck:.2f}% (π). Architect STGM: {wallet}]</span>")
-            self._gci.append_system_message(
-                f"[POKER VISION] Current hand: {hand_str}. "
+            self._gci.chat_display.append(
+                f"<span style='color:#565f89; font-size:10px;'>[POKER VISION] Current hand: {hand_str}. "
                 f"Phase: DEALT. Held: none yet. "
-                f"LUCK: {luck:.2f}%. Advise the Architect which cards to hold.")
+                f"LUCK: {luck:.2f}%. Advise the Architect which cards to hold.</span>")
 
     def _do_draw(self):
         self.phase = 'drawn'
