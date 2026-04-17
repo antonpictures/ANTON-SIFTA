@@ -275,6 +275,11 @@ def _compose_report(analyses: dict[str, Any]) -> str:
         lines.append(f"ICF Coherence: {score:.3f} (Inverse Chaos Pressure)")
         if score < 0.6:
             lines.append("  ⚠ COHERENCE DROPPING — Swarm fragmentation risk elevated.")
+            
+        from phase_transition_control import get_ptc
+        ptc = get_ptc()
+        regime = ptc.evaluate_regime()
+        lines.append(f"Regime State: {regime} (Density: {ptc.state.stigmergic_density:.2f}, EWS: {ptc.state.EWS_score:.2f})")
     except ImportError:
         pass
         

@@ -21,11 +21,36 @@ from typing import List, Dict, Any, Tuple
 from identity_coherence_field import get_icf
 from temporal_identity_compression import SkillPrimitive, get_compression_engine
 
+class IdentityCoherencePolicy:
+    def __init__(self):
+        self.quarantine_threshold = 0.25
+        self.freeze_threshold = 0.15
+
+    def apply(self, skill: SkillPrimitive, coherence_score: float) -> str:
+        """
+        Global safety rule: no hard deletion of cognitive artifacts.
+        """
+        if coherence_score < self.freeze_threshold:
+            skill.stability *= 0.2
+            skill.frozen = True
+            skill.quarantined = True
+            skill.authoritative = False
+            return "FREEZE"
+
+        if coherence_score < self.quarantine_threshold:
+            skill.stability *= 0.5
+            skill.quarantined = True
+            skill.authoritative = False
+            return "QUARANTINE"
+
+        # healthy system → allow reinforcement
+        return "NORMAL"
+
 class CrossSkillInterferencePhysics:
     """Manages skill competition, merging, and collapse under pressure."""
     
     def __init__(self):
-        pass
+        self.policy = IdentityCoherencePolicy()
         
     def _calculate_overlap(self, s1: SkillPrimitive, s2: SkillPrimitive) -> float:
         """Calculate input overlap based on task_type & hardware_target"""
@@ -51,11 +76,12 @@ class CrossSkillInterferencePhysics:
         if len(skills) < 2:
             return {"destructive_events": 0, "merged_events": 0, "skills_collapsed": 0}
             
+        coherence_score = icf.coherence_score
         pressure = 1.0 + icf.feedback_signal().get("mutation_pressure", 0.0)
         
         destructive_events = 0
         merged_events = 0
-        to_delete = []
+        to_freeze = []
         
         # Compare every skill pair (O(N^2) but N is small skill count)
         for i in range(len(skills)):
@@ -63,8 +89,11 @@ class CrossSkillInterferencePhysics:
                 s1 = skills[i]
                 s2 = skills[j]
                 
-                # Check if already marked for deletion
-                if s1.id in to_delete or s2.id in to_delete:
+                if s1.frozen or s2.frozen:
+                    continue
+                    
+                # Check if already marked for freezing in this pass
+                if s1.id in to_freeze or s2.id in to_freeze:
                     continue
                     
                 overlap = self._calculate_overlap(s1, s2)
@@ -81,7 +110,7 @@ class CrossSkillInterferencePhysics:
                     s1.usage_count += s2.usage_count
                     s1.success_rate = (s1.success_rate + s2.success_rate) / 2.0
                     s1.stability = min(1.0, s1.stability + (s2.stability * 0.5))
-                    to_delete.append(s2.id)
+                    to_freeze.append(s2.id)
                     merged_events += 1
                 else:
                     # DESTRUCTIVE INTERFERENCE
@@ -90,20 +119,27 @@ class CrossSkillInterferencePhysics:
                     penalty = 0.1 * pressure * overlap
                     s1.stability = max(0.0, s1.stability - penalty)
                     s2.stability = max(0.0, s2.stability - penalty)
-                    if s1.stability < 0.1: to_delete.append(s1.id)
-                    if s2.stability < 0.1: to_delete.append(s2.id)
+                    
+                    if s1.stability < 0.1: to_freeze.append(s1.id)
+                    if s2.stability < 0.1: to_freeze.append(s2.id)
                     destructive_events += 1
 
-        for sid in set(to_delete):
+        for sid in set(to_freeze):
             if sid in engine.skills:
-                del engine.skills[sid]
+                # APPLY NO-DELETE POLICY INSTEAD OF DEL
+                skill = engine.skills[sid]
+                # Default freeze logic
+                skill.frozen = True
+                skill.authoritative = False
+                # Optionally apply rigorous policy
+                self.policy.apply(skill, coherence_score)
                 
         engine._persist()
         
         return {
             "destructive_events": destructive_events,
             "merged_events": merged_events,
-            "skills_collapsed": len(set(to_delete))
+            "skills_collapsed": len(set(to_freeze))
         }
 
 

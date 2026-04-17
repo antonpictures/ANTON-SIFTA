@@ -457,6 +457,8 @@
   <div class="panel full-width">
     <div class="panel-title"><span class="icon">🐜</span> ORGANISM ANATOMY — COMPLETE MAP</div>
     <div class="anatomy" id="anatomy">
+      <span class="organ" style="color: var(--accent);">THERMODYNAMICS</span> Phase Transition Controller       <span class="status-live">● LIVE</span><br>
+      <span class="organ" style="color: var(--accent);">COHERENCE</span>  Identity Coherence Field (ICF)          <span class="status-live">● LIVE</span><br>
       <span class="organ">EYES</span>       SVL v2 (Fatigue + Curiosity + Fusion)  <span class="status-live">● LIVE</span><br>
       <span class="organ">HEARTBEAT</span>  Temporal Layering (unified pulse)       <span class="status-live">● LIVE</span><br>
       <span class="organ">IMMUNE</span>     Contradiction Engine                    <span class="status-live">● LIVE</span><br>
@@ -496,6 +498,19 @@
       <div class="metric-row">
         <span class="metric-label">Feedback: Evaluation Strictness</span>
         <span class="metric-value danger" id="icf-eval-press">—</span>
+      </div>
+      <hr style="border: 0; border-top: 1px dotted var(--accent); margin: 10px 0; opacity: 0.5;">
+      <div class="metric-row">
+        <span class="metric-label" style="font-weight: bold; color: var(--text);">MACRO-STATE (Regime)</span>
+        <span class="metric-value" id="ptc-regime" style="font-size: 1.1rem;">—</span>
+      </div>
+      <div class="metric-row" style="margin-top: 5px;">
+        <span class="metric-label">Stigmergic Density (ρ)</span>
+        <span class="metric-value" id="ptc-density">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Early Warning Signal (EWS)</span>
+        <span class="metric-value" id="ptc-ews">—</span>
       </div>
     </div>
   </div>
@@ -871,6 +886,27 @@ async function loadICF() {
   }
 }
 
+async function loadPTC() {
+  const d = await fetchJSON('regime_state.json');
+  if (!d) return;
+
+  const regimeEl = document.getElementById('ptc-regime');
+  regimeEl.textContent = d.state || "UNKNOWN";
+  
+  if (d.state === "EXPLORATION") regimeEl.style.color = "var(--good)";
+  else if (d.state === "CONSOLIDATION") regimeEl.style.color = "var(--accent)";
+  else if (d.state === "CRITICAL_COLLAPSE") regimeEl.style.color = "var(--danger)";
+
+  document.getElementById('ptc-density').textContent = (d.stigmergic_density || 0).toFixed(4);
+  
+  const ews = d.EWS_score || 0;
+  const ewsEl = document.getElementById('ptc-ews');
+  ewsEl.textContent = ews.toFixed(4);
+  if (ews > 0.3) ewsEl.style.color = "var(--danger)";
+  else if (ews > 0.15) ewsEl.style.color = "var(--warn)";
+  else ewsEl.style.color = "var(--text-secondary)";
+}
+
 async function loadAll() {
   await Promise.all([
     loadTemporal(),
@@ -885,6 +921,7 @@ async function loadAll() {
     loadAdaptation(),
     loadCompression(),
     loadICF(),
+    loadPTC(),
   ]);
 }
 

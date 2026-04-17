@@ -213,6 +213,18 @@ class TemporalLayer:
           CAUTIOUS — some drift or elevated activity. Extra scrutiny.
           FROZEN   — architect missing + dead zones. Block all non-critical mutations.
         """
+        # Phase Transition Controller Override (Thermodynamics)
+        try:
+            from phase_transition_control import get_ptc
+            ptc = get_ptc()
+            regime = ptc.state.state
+            if regime == "CRITICAL_COLLAPSE":
+                return "FROZEN"
+            elif regime == "CONSOLIDATION":
+                return "CAUTIOUS"  # Merging skills, limit wild mutations
+        except ImportError:
+            pass
+
         if concern in ("alarm",) or dead_zones >= 3:
             return "FROZEN"
         if concern in ("concern", "drifting") or dead_zones >= 1:

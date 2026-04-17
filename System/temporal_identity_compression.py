@@ -35,6 +35,9 @@ class SkillPrimitive:
     created_at: float
     last_used: float
     stability: float
+    frozen: bool = False
+    quarantined: bool = False
+    authoritative: bool = True
     example_payload: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -169,29 +172,31 @@ class TemporalIdentityCompressionEngine:
         """
         return [
             s for s in self.skills.values()
-            if context in s.pattern_signature
+            if context in s.pattern_signature and not s.frozen and not s.quarantined
         ]
 
     def decay(self) -> int:
         """
         Weak skills fade unless reinforced. Call during REM.
-        Returns number of deleted skills.
+        Returns number of newly FROZEN skills (NO DELETION ALLOWED).
         """
-        to_delete = []
+        newly_frozen = 0
 
         for sid, skill in self.skills.items():
+            if skill.frozen:
+                continue
+                
             skill.stability *= 0.995
 
             if skill.stability < 0.1:
-                to_delete.append(sid)
-
-        for sid in to_delete:
-            del self.skills[sid]
+                skill.frozen = True
+                skill.authoritative = False
+                newly_frozen += 1
             
-        if to_delete:
+        if newly_frozen > 0:
             self._persist()
             
-        return len(to_delete)
+        return newly_frozen
 
     # ── Persistence ──────────────────────────────────────────────
 
