@@ -180,6 +180,36 @@ def _process_fissions() -> dict[str, Any]:
     except Exception as e:
         return {"fissions_spawned": 0, "decay_applied": False, "err": str(e)}
 
+def _crystallize_skills() -> dict[str, Any]:
+    """Parse execution traces during REM to compress success patterns into Skills."""
+    import sys
+    if str(_REPO / "System") not in sys.path:
+        sys.path.insert(0, str(_REPO / "System"))
+    try:
+        from temporal_identity_compression import get_compression_engine
+        engine = get_compression_engine()
+        
+        # Load raw execution traces from today
+        trace_log = _STATE_DIR / "execution_traces.jsonl"
+        traces = _read_jsonl(trace_log)
+        today_traces = [t for t in traces if _entry_is_today(t)]
+        
+        before = len(engine.skills)
+        if today_traces:
+            engine.process_backlog(today_traces)
+        
+        pruned = engine.decay()
+        after = len(engine.skills)
+        
+        return {
+            "traces_processed": len(today_traces),
+            "new_skills": max(0, after - before + pruned),
+            "skills_pruned": pruned,
+            "total_skills": after
+        }
+    except Exception as e:
+        return {"traces_processed": 0, "new_skills": 0, "skills_pruned": 0, "err": str(e)}
+
 def _compose_report(analyses: dict[str, Any]) -> str:
     """Turn raw analysis dicts into a readable dream report paragraph."""
     dd = analyses["dead_drop"]
@@ -219,6 +249,12 @@ def _compose_report(analyses: dict[str, Any]) -> str:
     if fis["fissions_spawned"] > 0:
         lines.append(f"Fissions: Spawned {fis['fissions_spawned']} new Stigmergic task(s) on Blackboard.")
 
+    cryst = analyses.get("crystallization", {})
+    if cryst.get("traces_processed", 0) > 0 or cryst.get("skills_pruned", 0) > 0:
+        lines.append(f"Compression: Processed {cryst['traces_processed']} traces. "
+                     f"Crystallized {cryst['new_skills']} new skill primitive(s). "
+                     f"Pruned {cryst['skills_pruned']} decayed skill(s).")
+
     lines.append("")
     all_clear = (
         dd["error_mentions"] < 3
@@ -245,6 +281,7 @@ def run_dream_cycle() -> str:
         "fitness": _analyze_fitness(),
         "immune_evaporated": _evaporate_immune(),
         "fissions": _process_fissions(),
+        "crystallization": _crystallize_skills(),
     }
 
     report = _compose_report(analyses)

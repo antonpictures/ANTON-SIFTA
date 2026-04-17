@@ -465,6 +465,7 @@
       <span class="organ">MUSCLE</span>     Skill Registry (Phase 4)                <span class="status-live">● LIVE</span><br>
       <span class="organ">ECONOMY</span>    STGM Casino Vault                       <span class="status-live">● LIVE</span><br>
       <span class="organ">GUARD</span>      12-gate Mutation Governor               <span class="status-live">● LIVE</span><br>
+      <span class="organ">COMPRESSION</span>Temporal Skill Crystallization          <span class="status-live">● LIVE</span><br>
       <span class="organ">SANDBOX</span>    ClawHarness + Identity Firewall         <span class="status-live">● LIVE</span><br>
       <span class="organ">IMAGINE</span>    Shadow Simulation (AST dry-run)         <span class="status-live">● LIVE</span><br>
       <span class="organ">SILENCE</span>    Dead-zone metabolic monitor             <span class="status-live">● LIVE</span><br>
@@ -540,6 +541,25 @@
       </div>
       <div class="metric-row" id="m-lockout-row" style="display: none; justify-content: center; margin-top: 10px;">
         <span style="color: var(--danger); font-family: var(--font-mono); font-weight: bold; background: rgba(225, 112, 85, 0.2); padding: 4px 8px; border: 1px solid var(--danger); border-radius: 4px;">⚠️ ORGANISM LOCKED DUE TO DRIFT ⚠️</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TEMPORAL IDENTITY COMPRESSION ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">💎</span> TEMPORAL COMPRESSION</div>
+    <div id="comp-content">
+      <div class="metric-row">
+        <span class="metric-label">Execution Traces Ingested</span>
+        <span class="metric-value accent" id="cp-traces">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Crystallized Primitives</span>
+        <span class="metric-value good" id="cp-primitives">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Highly Stable Skills (>0.8)</span>
+        <span class="metric-value accent2" id="cp-stable">—</span>
       </div>
     </div>
   </div>
@@ -789,6 +809,26 @@ async function loadAdaptation() {
   }
 }
 
+async function loadCompression() {
+  const d = await fetchJSON('crystallized_skills.json');
+  if (!d) return;
+
+  const skills = Object.values(d);
+  document.getElementById('cp-primitives').textContent = skills.length;
+  
+  let highlyStable = 0;
+  let totalTraces = 0;
+  skills.forEach(s => {
+    if (s.stability > 0.8) highlyStable++;
+    totalTraces += (s.usage_count || 0);
+  });
+  
+  document.getElementById('cp-stable').textContent = highlyStable;
+  
+  // Traces are ephemeral but let's aggregate usage counts from primitives
+  document.getElementById('cp-traces').textContent = totalTraces + "+";
+}
+
 async function loadAll() {
   await Promise.all([
     loadTemporal(),
@@ -801,6 +841,7 @@ async function loadAll() {
     loadBlackboard(),
     loadEvaluation(),
     loadAdaptation(),
+    loadCompression(),
   ]);
 }
 
