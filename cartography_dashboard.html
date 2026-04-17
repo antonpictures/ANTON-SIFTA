@@ -468,6 +468,9 @@
       <span class="organ">SANDBOX</span>    ClawHarness + Identity Firewall         <span class="status-live">● LIVE</span><br>
       <span class="organ">IMAGINE</span>    Shadow Simulation (AST dry-run)         <span class="status-live">● LIVE</span><br>
       <span class="organ">SILENCE</span>    Dead-zone metabolic monitor             <span class="status-live">● LIVE</span><br>
+      <span class="organ">FISSION</span>    Cell Division (Auto-Task Spawning)      <span class="status-live">● LIVE</span><br>
+      <span class="organ">ROUTER</span>     Cross-Hardware Topology                 <span class="status-live">● LIVE</span><br>
+      <span class="organ">EVAL GATE</span>  Counterfactual Sandbox                  <span class="status-live">● LIVE</span><br>
       <span class="organ">CARTOGRAPHY</span> Dashboard (this screen)                <span class="status-live">● LIVE</span><br>
     </div>
   </div>
@@ -491,6 +494,29 @@
       <div class="metric-row">
         <span class="metric-label">Last Dream Cycle</span>
         <span class="metric-value" id="f-dream">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ EVALUATION SANDBOX ═══ -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">🛡</span> EVALUATION SANDBOX</div>
+    <div id="eval-content">
+      <div class="metric-row">
+        <span class="metric-label">Tasks Evaluated</span>
+        <span class="metric-value" id="ev-total">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Approved</span>
+        <span class="metric-value good" id="ev-approved">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Rejected</span>
+        <span class="metric-value danger" id="ev-rejected">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Approval Rate</span>
+        <span class="metric-value accent2" id="ev-rate">—</span>
       </div>
     </div>
   </div>
@@ -708,6 +734,18 @@ async function loadBlackboard() {
   document.getElementById('b-cruc').textContent = hw["CRUCIBLE"];
 }
 
+async function loadEvaluation() {
+  const d = await fetchJSON('evaluation_stats.json');
+  if (!d) return;
+  document.getElementById('ev-total').textContent = (d.approved || 0) + (d.rejected || 0);
+  document.getElementById('ev-approved').textContent = d.approved || 0;
+  document.getElementById('ev-rejected').textContent = d.rejected || 0;
+  const rate = d.approval_rate || 0;
+  const rateEl = document.getElementById('ev-rate');
+  rateEl.textContent = (rate * 100).toFixed(0) + '%';
+  rateEl.className = 'metric-value ' + (rate > 0.6 ? 'good' : rate > 0.3 ? 'warn' : 'danger');
+}
+
 async function loadAll() {
   await Promise.all([
     loadTemporal(),
@@ -718,6 +756,7 @@ async function loadAll() {
     loadFailures(),
     loadContradictions(),
     loadBlackboard(),
+    loadEvaluation(),
   ]);
 }
 

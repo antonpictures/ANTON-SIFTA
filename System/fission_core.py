@@ -124,11 +124,32 @@ class FissionEngine:
                 cluster["last_fission"] = now
                 cluster["fission_count"] = cluster.get("fission_count", 0) + 1
                 
-                # Spawn Task on Blackboard
+                # Build the task proposal
                 task_desc = f"RESOLVE FAILURE CLUSTER: {cluster.get('task', 'Unknown')} | ERROR: {str(cluster.get('sample_error', ''))[:100]}"
                 
                 # Estimates heavily weight towards task_success and stability
                 estimates = {"task_success": 1.0, "stability": 1.0, "exploration": 0.2}
+                
+                # ── EVALUATION GATE ──────────────────────────────
+                # The task must survive counterfactual simulation
+                # before it is allowed to touch real hardware.
+                gate_passed = True
+                try:
+                    from evaluation_sandbox import get_sandbox
+                    sandbox = get_sandbox()
+                    eval_result = sandbox.evaluate(
+                        f"FISSION_{cid}", task_desc, estimates
+                    )
+                    if not eval_result.approved:
+                        # Rejected — feed back to harvester as pre-mortem
+                        sandbox.reject_to_harvester(eval_result)
+                        gate_passed = False
+                except ImportError:
+                    pass  # No sandbox available — allow through
+                
+                if not gate_passed:
+                    continue  # Skip this cluster — it didn't pass evaluation
+                # ── END GATE ─────────────────────────────────────
                 
                 node = board.post_task(task_desc, estimates)
                 
