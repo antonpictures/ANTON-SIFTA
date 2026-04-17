@@ -181,6 +181,11 @@
     "window_height": 820,
     "signature": "UNVERIFIED"
   },
+  "Vector 11 Gatekeeper Sim": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_gatekeeper_sim.py",
+    "signature": "UNVERIFIED"
+  },
   "Territory Is The Law": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_territory_widget.py",
