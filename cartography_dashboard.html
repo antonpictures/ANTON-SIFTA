@@ -484,8 +484,12 @@
     <div class="panel-title"><span class="icon">🌐</span> COHERENCE FIELD (ICF)</div>
     <div id="icf-content">
       <div class="metric-row">
-        <span class="metric-label" style="font-weight: bold; color: var(--accent);">GLOBAL COHERENCE (Inverse Chaos)</span>
+        <span class="metric-label" style="font-weight: bold; color: var(--accent);">GLOBAL COHERENCE (Quantized Field)</span>
         <span class="metric-value" id="icf-score" style="font-size: 1.5rem; color: var(--accent);">—</span>
+      </div>
+      <div class="metric-row" style="margin-top: 5px;">
+        <span class="metric-label">Entropy Packet Vector [H_Rt, H_Sk, H_Mut]</span>
+        <span class="metric-value" id="icf-packet" style="font-family: var(--font-mono); font-size: 0.9rem;">[—]</span>
       </div>
       <div class="metric-row" style="margin-top: 5px;">
         <span class="metric-label">Feedback: Mutation Pressure</span>
@@ -598,6 +602,18 @@
       <div class="metric-row">
         <span class="metric-label">Highly Stable Skills (>0.8)</span>
         <span class="metric-value accent2" id="cp-stable">—</span>
+      </div>
+      <hr style="border: 0; border-top: 1px dotted var(--accent); margin: 10px 0; opacity: 0.5;">
+      <div class="metric-row">
+        <span class="metric-label" style="font-weight: bold;">Algebraic Connectivity (λ2)</span>
+        <span class="metric-value" id="sp-lambda2">—</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Fiedler Gap (λ3 - λ2)</span>
+        <span class="metric-value" id="sp-fiedler">—</span>
+      </div>
+      <div class="metric-row" id="sp-schism-row" style="display: none; justify-content: center; margin-top: 10px;">
+        <span style="color: var(--danger); font-family: var(--font-mono); font-weight: bold; background: rgba(225, 112, 85, 0.2); padding: 4px 8px; border: 1px solid var(--danger); border-radius: 4px;">⚠️ SPECTRAL SCHISM (Disconnected Graph)</span>
       </div>
     </div>
   </div>
@@ -871,9 +887,12 @@ async function loadICF() {
   const d = await fetchJSON('icf_state.json');
   if (!d) return;
 
-  const score = (d.coherence_score || 0).toFixed(3);
+  const score = (d.quantized_icf || d.coherence_score || 0).toFixed(3);
   const scoreEl = document.getElementById('icf-score');
   scoreEl.textContent = score;
+
+  const vector = d.entropy_vector || [0.0, 0.0, 0.0];
+  document.getElementById('icf-packet').textContent = `[${vector.map(v => v.toFixed(2)).join(', ')}]`;
   
   if (d.coherence_score > 0.7) scoreEl.style.color = "var(--good)";
   else if (d.coherence_score > 0.5) scoreEl.style.color = "var(--warn)";
@@ -883,6 +902,20 @@ async function loadICF() {
     document.getElementById('icf-mut-press').textContent = "+" + (d.feedback.mutation_pressure || 0).toFixed(3);
     document.getElementById('icf-fiss-press').textContent = "+" + (d.feedback.fission_threshold_delta || 0).toFixed(3);
     document.getElementById('icf-eval-press').textContent = (d.feedback.evaluation_strictness || 0).toFixed(3);
+  }
+}
+
+async function loadSpectral() {
+  const d = await fetchJSON('spectral_entanglement.json');
+  if (!d) return;
+
+  document.getElementById('sp-lambda2').textContent = (d.algebraic_connectivity || 0).toFixed(5);
+  document.getElementById('sp-fiedler').textContent = (d.fiedler_gap || 0).toFixed(5);
+  
+  if (d.schism_warning) {
+    document.getElementById('sp-schism-row').style.display = 'flex';
+  } else {
+    document.getElementById('sp-schism-row').style.display = 'none';
   }
 }
 
@@ -922,6 +955,7 @@ async function loadAll() {
     loadCompression(),
     loadICF(),
     loadPTC(),
+    loadSpectral()
   ]);
 }
 

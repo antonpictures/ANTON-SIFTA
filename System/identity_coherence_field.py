@@ -34,6 +34,8 @@ class IdentityCoherenceField:
 
     def __init__(self):
         self.coherence_score: float = 1.0
+        self.quantized_icf: float = 1.0
+        self.entropy_vector: List[float] = [0.0, 0.0, 0.0]  # [H_routing, H_skill, H_mutation]
         self.last_snapshot_ts: float = 0.0
         self._load()
 
@@ -114,6 +116,17 @@ class IdentityCoherenceField:
         self.coherence_score = (self.coherence_score * 0.7) + (max(0.0, min(1.0, score)) * 0.3)
         self.last_snapshot_ts = time.time()
         
+        # Quantize the Field (Δ = 0.05 bins)
+        delta = 0.05
+        self.quantized_icf = round(self.coherence_score / delta) * delta
+        
+        # Formalize the multidimensional Entropy Vector
+        self.entropy_vector = [
+            round(routing_var, 3),
+            round(entropy, 3),
+            round(drift, 3)
+        ]
+        
         self._persist()
         return self.coherence_score
 
@@ -122,12 +135,10 @@ class IdentityCoherenceField:
 
     def feedback_signal(self) -> Dict[str, float]:
         """
-        Sends corrective pressure back into:
-        - MutationGovernor (tighten/loosen)
-        - Fission threshold (spawn rate)
-        - Evaluation strictness (sandbox firewall)
+        Sends corrective pressure back to the organism.
+        Uses QUANTIZED ICF to prevent micro-oscillations/noise in the control layer.
         """
-        score = self.coherence_score
+        score = self.quantized_icf
         return {
             # Low coherence = high mutation pressure (tightens Governor friction)
             "mutation_pressure": 1.0 - score,
@@ -144,6 +155,8 @@ class IdentityCoherenceField:
         try:
             _ICF_STATE.write_text(json.dumps({
                 "coherence_score": self.coherence_score,
+                "quantized_icf": self.quantized_icf,
+                "entropy_vector": self.entropy_vector,
                 "last_snapshot_ts": self.last_snapshot_ts,
                 "feedback": self.feedback_signal()
             }, indent=2))
@@ -156,6 +169,8 @@ class IdentityCoherenceField:
         try:
             data = json.loads(_ICF_STATE.read_text())
             self.coherence_score = data.get("coherence_score", 1.0)
+            self.quantized_icf = data.get("quantized_icf", 1.0)
+            self.entropy_vector = data.get("entropy_vector", [0.0, 0.0, 0.0])
             self.last_snapshot_ts = data.get("last_snapshot_ts", 0.0)
         except Exception:
             pass

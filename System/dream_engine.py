@@ -206,6 +206,15 @@ def _crystallize_skills() -> dict[str, Any]:
             interference_stats = physics.process_manifold()
         except ImportError:
             pass
+            
+        # Run Spectral Graph Analysis (Laplacian Fiedler Gap)
+        spectral_stats = {}
+        try:
+            from skill_spectral_analyzer import get_analyzer
+            analyzer = get_analyzer()
+            spectral_stats = analyzer.compute_laplacian()
+        except ImportError:
+            pass
 
         pruned = engine.decay()
         after = len(engine.skills)
@@ -214,8 +223,9 @@ def _crystallize_skills() -> dict[str, Any]:
             "traces_processed": len(today_traces),
             "new_skills": max(0, after - before + pruned + interference_stats.get("skills_collapsed", 0)),
             "skills_pruned": pruned,
-            "destructive_events": interference_stats.get("destructive_events", 0),
             "merged_events": interference_stats.get("merged_events", 0),
+            "spectral_connectivity": spectral_stats.get("algebraic_connectivity", 0.0),
+            "spectral_schism": spectral_stats.get("schism_warning", False),
             "total_skills": after
         }
     except Exception as e:
@@ -266,8 +276,11 @@ def _compose_report(analyses: dict[str, Any]) -> str:
                      f"Crystallized {cryst['new_skills']} new skill primitive(s). "
                      f"Pruned {cryst['skills_pruned']} decayed skill(s).")
         if cryst.get("merged_events", 0) > 0 or cryst.get("destructive_events", 0) > 0:
-            lines.append(f"  🌌 Interference: {cryst['merged_events']} skill merges, {cryst['destructive_events']} destructive collisions.")
-
+            lines.append(f"  -> Collisions : {cryst.get('destructive_events', 0)} Destructive, {cryst.get('merged_events', 0)} Constructive")
+    lines.append(f"  -> Graph      : λ2 = {cryst.get('spectral_connectivity', 0.0)}")
+    if cryst.get("spectral_schism"):
+        lines.append("  ⚠ SPECTRAL SCHISM DETECTED — Swarm memory disjointed.")
+        
     lines.append("")
     try:
         from identity_coherence_field import get_icf
