@@ -516,25 +516,28 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
 
     def _push_vision_to_alice(self):
         """Inject live game state into ALICE's LLM context so she can actually SEE the cards."""
-        if not self._gci:
-            return
-        hand_str = self._hand_to_string()
-        held_str = self._held_to_string()
-        wallet = round(self.vault.get_real_player_wallet(), 2)
-        luck = self.deck_engine.luck
+        try:
+            if not self._gci or not hasattr(self._gci, 'set_app_context'):
+                return
+            hand_str = self._hand_to_string()
+            held_str = self._held_to_string()
+            wallet = round(self.vault.get_real_player_wallet(), 2)
+            luck = self.deck_engine.luck
 
-        context = (
-            f"POKER TABLE STATE (you can see these cards):\n"
-            f"  Hand: {hand_str}\n"
-            f"  Held: {held_str}\n"
-            f"  Phase: {self.phase}\n"
-            f"  LUCK: {luck:.2f}% (π)\n"
-            f"  Architect wallet: {wallet} STGM\n"
-        )
-        if self.phase == 'gamble':
-            context += f"  GAMBLE: {self.gamble_winnings:.2f} STGM at risk! Advise RED, BLACK, or CASH IN.\n"
+            context = (
+                f"POKER TABLE STATE (you can see these cards):\n"
+                f"  Hand: {hand_str}\n"
+                f"  Held: {held_str}\n"
+                f"  Phase: {self.phase}\n"
+                f"  LUCK: {luck:.2f}% (π)\n"
+                f"  Architect wallet: {wallet} STGM\n"
+            )
+            if self.phase == 'gamble':
+                context += f"  GAMBLE: {self.gamble_winnings:.2f} STGM at risk! Advise RED, BLACK, or CASH IN.\n"
 
-        self._gci.set_app_context(context)
+            self._gci.set_app_context(context)
+        except Exception:
+            pass  # never crash the app for vision injection
 
     def on_user_typing(self, text: str):
         # Increase heat

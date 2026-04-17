@@ -4,3 +4,22 @@
 {"ts": 1776373383.349837, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
 {"ts": 1776374692.939775, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
 {"ts": 1776374707.334888, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776388991.224083, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776388994.149914, "action": "PAYOUT", "casino_delta": -0.1, "player_delta": 0.1, "memo": "Payout for: jacks or better"}
+{"ts": 1776388997.4416142, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776389000.536696, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776389002.635891, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776389003.599627, "action": "PAYOUT", "casino_delta": -0.2, "player_delta": 0.2, "memo": "Payout for: two pair"}
+{"ts": 1776389007.143352, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776389008.763419, "action": "PAYOUT", "casino_delta": -0.1, "player_delta": 0.1, "memo": "Payout for: jacks or better"}
+{"ts": 1776389020.3866189, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776389510.927458, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776389624.8144152, "action": "PAYOUT", "casino_delta": -0.1, "player_delta": 0.1, "memo": "Payout for: gamble_cashin"}
+{"ts": 1776389629.14951, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776389640.6370401, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776390002.8929641, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776390034.1757178, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776390233.789433, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776390237.1510599, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776390450.563594, "action": "PAYOUT", "casino_delta": -0.4, "player_delta": 0.4, "memo": "Payout for: gamble_cashin"}
+{"ts": 1776390601.205081, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
