@@ -405,9 +405,9 @@ class DreamReportPanel(QWidget):
         
         p.setPen(C_TEXT_DIM)
         p.setFont(QFont("SF Pro Text", 11))
-        p.drawText(QRectF(x + 15, y + 40, w - 20, h - 40), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.TextWordWrap, text)
-
-
+        # PyQt6 strongly types Enums. Int casting is needed to combine AlignmentFlag and TextFlag
+        flags = int(Qt.AlignmentFlag.AlignLeft.value) | int(Qt.TextFlag.TextWordWrap.value)
+        p.drawText(QRectF(x + 15, y + 40, w - 20, h - 40), flags, text)
 # ═══════════════════════════════════════════════════════════════════
 # 5. NERVE CHANNEL (UDP Matrix Particle Flow)
 # ═══════════════════════════════════════════════════════════════════
