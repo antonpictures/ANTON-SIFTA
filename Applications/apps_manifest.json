@@ -1,4 +1,12 @@
 {
+  "Cartography Dashboard": {
+    "category": "System",
+    "entry_point": "Applications/sifta_cartography_widget.py",
+    "widget_class": "CartographyWidget",
+    "window_width": 1000,
+    "window_height": 600,
+    "signature": "UNVERIFIED"
+  },
   "Pheromone Symphony (Generative Music)": {
     "category": "Creative",
     "entry_point": "Applications/sifta_pheromone_symphony.py",

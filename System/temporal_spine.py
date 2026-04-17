@@ -1,13 +1,21 @@
 import json
+import sys
 import time
 import hashlib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-TEMPORAL_DIR   = Path(".sifta_state/temporal")
-PRESENCE_LOG   = TEMPORAL_DIR / "presence_rhythm.jsonl"
-CHRONO_LOG     = TEMPORAL_DIR / "chrono_pheromones.jsonl"
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+TEMPORAL_DIR = _REPO / ".sifta_state" / "temporal"
+PRESENCE_LOG = TEMPORAL_DIR / "presence_rhythm.jsonl"
+CHRONO_LOG = TEMPORAL_DIR / "chrono_pheromones.jsonl"
+
+# Dream consolidation: run after ≥1h absence (hippocampal replay — INFERRED traces only)
+_DREAM_ABSENCE_MIN_SEC = 3600.0
 
 CONCERN_HOURS  = 7.5
 ALARM_HOURS    = 24.0
@@ -59,14 +67,32 @@ class TemporalSpine:
         TEMPORAL_DIR.mkdir(parents=True, exist_ok=True)
 
     def open_session(self, app_context: str) -> PresenceBeat:
-        bid  = hashlib.sha256(f"{time.time()}:{app_context}".encode()).hexdigest()[:10]
+        absence_sec = self._absence_seconds_before_open()
+        gap_since_last_session_start = self._time_since_last()
+
+        bid = hashlib.sha256(f"{time.time()}:{app_context}".encode()).hexdigest()[:10]
         beat = PresenceBeat(bid, app_context, time.time())
         with open(PRESENCE_LOG, "a") as f:
             f.write(json.dumps(asdict(beat)) + "\n")
-        gap = self._time_since_last()
+
+        gap = gap_since_last_session_start
         if gap and gap > 60:
             print(f"🕐 Welcome back. {_felt_time(gap)} since you were last here.")
             print(f"   {self._greeting(gap)}\n")
+
+        # Swarm dreams: tag-overlap synthesis during absence (does not touch ground-truth ledger)
+        if absence_sec is not None and absence_sec >= _DREAM_ABSENCE_MIN_SEC:
+            try:
+                from System.dream_state import DreamEngine
+
+                _dream = DreamEngine(self.architect_id)
+                _dream.dream(absence_hours=absence_sec / 3600.0)
+                brief = _dream.morning_briefing()
+                if brief:
+                    print(brief + "\n")
+            except Exception:
+                pass
+
         return beat
 
     def close_session(self, beat: PresenceBeat, last_words: str = ""):
@@ -133,6 +159,26 @@ class TemporalSpine:
                 except Exception:
                     pass
         return (time.time() - last_ts) if last_ts else None
+
+    def _absence_seconds_before_open(self) -> Optional[float]:
+        """
+        Time since the previous session *ended* (uses last closed beat's
+        timestamp + session_len). Falls back to _time_since_last if unknown.
+        """
+        if not PRESENCE_LOG.exists():
+            return None
+        lines = [ln.strip() for ln in PRESENCE_LOG.read_text().splitlines() if ln.strip()]
+        if not lines:
+            return None
+        try:
+            last = json.loads(lines[-1])
+            ts = float(last.get("timestamp", 0))
+            slen = float(last.get("session_len") or 0)
+            if slen > 0:
+                return max(0.0, time.time() - (ts + slen))
+        except Exception:
+            pass
+        return self._time_since_last()
 
     def _greeting(self, gap: float) -> str:
         h = gap / 3600

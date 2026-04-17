@@ -67,6 +67,18 @@ class Kernel:
 
     # ── Propose ─────────────────────────────────────────────
     def propose(self, target: str, content: str) -> str:
+        import sys
+        from pathlib import Path
+        _sys_path = str(Path(__file__).resolve().parent.parent / "System")
+        if _sys_path not in sys.path:
+            sys.path.append(_sys_path)
+            
+        try:
+            from genesis_lock import enforce_genesis_lock
+            enforce_genesis_lock(target, content)
+        except ImportError:
+            pass  # Fallback if System is unreachable
+
         # Fossil fast-path
         if target in self.fossils:
             sid, expected_hash = self.fossils[target]

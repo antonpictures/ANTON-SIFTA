@@ -27,6 +27,17 @@ def get_silicon_identity():
     s = read_apple_serial()
     return s if s else "UNKNOWN_SERIAL"
 
+def get_genesis_anchor() -> str:
+    """Combines hardware serial with the root biological anchor (Lana's picture hash)."""
+    hw_id = get_silicon_identity()
+    anchor_path = os.path.join(REPO_ROOT, "lana_kernel_pic.PNG")
+    if os.path.exists(anchor_path):
+        import hashlib
+        with open(anchor_path, "rb") as f:
+            h = hashlib.sha256(f.read()).hexdigest()
+        return f"{hw_id}::ANCHOR::{h}"
+    return f"{hw_id}::NO_ANCHOR"
+
 def _ensure_keychain():
     """Generates the off-mesh Private Key if the biological node natively lacks one."""
     if not os.path.exists(KEY_DIR):

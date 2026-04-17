@@ -54,6 +54,12 @@ class MycelialGenome:
     that feed into the SCAR proposal pipeline — never self-executing.
     """
 
+    # ── Heatwave constants ───────────────────────────────────────
+    CAPACITY_LIMIT      = 500     # max files in the pressure field
+    HEATWAVE_THRESHOLD  = 0.80    # 80% density triggers accelerated decay
+    HEATWAVE_DECAY      = 0.85    # aggressive decay during heatwave (vs 0.99 normal)
+    HEATWAVE_CULL_RATIO = 0.25    # evict bottom 25% of field during heatwave
+
     def __init__(
         self,
         root: str | Path | None = None,
@@ -68,6 +74,8 @@ class MycelialGenome:
 
         self.resonance: Dict[str, float] = defaultdict(float)
         self.last_visit: Dict[str, float] = {}
+        self._heatwave_active = False
+        self._heatwave_count = 0
 
         self._load()
 
@@ -87,6 +95,10 @@ class MycelialGenome:
             "timestamp": time.time(),
             "resonance": dict(self.resonance),
             "last_visit": self.last_visit,
+            "heatwave_active": self._heatwave_active,
+            "heatwave_count": self._heatwave_count,
+            "capacity": self.CAPACITY_LIMIT,
+            "density": self._field_density()
         }
         _GENOME_STATE.write_text(json.dumps(payload))
 
@@ -110,16 +122,59 @@ class MycelialGenome:
         self.resonance[p] += intensity
         self.last_visit[p] = time.time()
 
+    def _field_density(self) -> float:
+        """Current field occupancy as fraction of capacity."""
+        return len(self.resonance) / max(self.CAPACITY_LIMIT, 1)
+
     def decay_field(self) -> None:
-        """Global tick: decay all resonance; drop files below death threshold."""
+        """
+        Global tick: decay all resonance; drop files below death threshold.
+
+        HEATWAVE PROTOCOL:
+        When field density exceeds 80% of CAPACITY_LIMIT, static decay
+        fails — traces accumulate faster than they evaporate.
+        The heatwave triggers:
+          1. Decay rate jumps from 0.99 → 0.85 (aggressive evaporation)
+          2. Bottom 25% of the field is culled immediately
+          3. Heatwave persists until density drops below 60%
+        This prevents stigmergic flooding during high-activity flow states.
+        """
+        density = self._field_density()
+
+        # Check heatwave activation / deactivation
+        if density >= self.HEATWAVE_THRESHOLD:
+            if not self._heatwave_active:
+                self._heatwave_active = True
+                self._heatwave_count += 1
+                print(f"  [🔥 HEATWAVE #{self._heatwave_count}] Field density {density:.0%} "
+                      f"— accelerating evaporation ({len(self.resonance)} files)")
+        elif density < 0.60:
+            if self._heatwave_active:
+                self._heatwave_active = False
+                print(f"  [❄️ HEATWAVE OVER] Field density {density:.0%} — normal decay restored")
+
+        # Select decay rate
+        effective_decay = self.HEATWAVE_DECAY if self._heatwave_active else self.decay
+
+        # Apply decay
         dead = []
         for k in list(self.resonance.keys()):
-            self.resonance[k] *= self.decay
+            self.resonance[k] *= effective_decay
             if self.resonance[k] < self.death_threshold:
                 dead.append(k)
         for k in dead:
             del self.resonance[k]
             self.last_visit.pop(k, None)
+
+        # Heatwave cull: evict bottom 25% by resonance if still over threshold
+        if self._heatwave_active and self._field_density() >= self.HEATWAVE_THRESHOLD:
+            sorted_files = sorted(self.resonance.items(), key=lambda x: x[1])
+            cull_count = int(len(sorted_files) * self.HEATWAVE_CULL_RATIO)
+            for path, _ in sorted_files[:cull_count]:
+                del self.resonance[path]
+                self.last_visit.pop(path, None)
+            if cull_count > 0:
+                print(f"  [🔥 HEATWAVE CULL] Evicted {cull_count} low-resonance files")
 
     def compute_resonance(self, path: str | Path) -> float:
         """Effective resonance = base × recency factor."""
@@ -182,6 +237,14 @@ class MycelialGenome:
         """Called every swarm tick (after all visits for this cycle)."""
         self.decay_field()
 
+    @property
+    def is_heatwave(self) -> bool:
+        return self._heatwave_active
+
+    @property
+    def field_density(self) -> float:
+        return self._field_density()
+
     def get_active_files(self) -> Dict[str, float]:
         """Files above death threshold — the living pressure field."""
         return {
@@ -194,8 +257,12 @@ class MycelialGenome:
 
     def report(self) -> str:
         active = self.get_active_files()
+        density = self._field_density()
+        status = "🔥 HEATWAVE" if self._heatwave_active else "❄️ NORMAL"
         lines = [
-            f"[GENOME] Active files: {len(active)}  |  "
+            f"[GENOME] Active files: {len(active)}/{self.CAPACITY_LIMIT}  |  "
+            f"Density: {density:.0%}  |  Status: {status}  |  "
+            f"Heatwaves: {self._heatwave_count}  |  "
             f"Total resonance: {sum(active.values()):.2f}",
         ]
         for path, res in sorted(active.items(), key=lambda x: -x[1])[:15]:
