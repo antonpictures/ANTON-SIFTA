@@ -50,6 +50,40 @@ class GatekeeperDecision:
     kelly_fraction: float     # Optimal bet fraction (0 = don't bet)
 
 
+def _read_swarm_pressure() -> float:
+    """
+    Read total constraint pressure (Σλ) from the Lagrangian manifold.
+    Higher pressure = organism is stressed = be MORE conservative.
+    Returns 0.0 when healthy, >0 when under constraint violation.
+    """
+    try:
+        p = _STATE_DIR / "lagrangian_multipliers.json"
+        if p.exists():
+            d = json.loads(p.read_text())
+            return (
+                d.get("lambda_congestion", 0.0) +
+                d.get("lambda_safety", 0.0) +
+                d.get("lambda_energy", 0.0)
+            )
+    except Exception:
+        pass
+    return 0.0
+
+
+def _adaptive_tau(capital: float, odds_multiplier: float) -> float:
+    """
+    τ = f(capital, Σλ) — the adaptive risk threshold.
+    
+    Base: OddsMultiplier × 1.2 (Alice's original spec)
+    Under swarm pressure: threshold INCREASES (more conservative)
+    
+    τ = base × (1 + Σλ)
+    """
+    base = odds_multiplier * 1.2
+    pressure = _read_swarm_pressure()
+    return base * (1.0 + pressure)
+
+
 def GatekeeperFunction(
     hand: HandState,
     capital: float,
@@ -57,12 +91,12 @@ def GatekeeperFunction(
     win_probability: float = 0.5
 ) -> GatekeeperDecision:
     """
-    Alice's demanded function.
+    Alice's demanded function, upgraded with adaptive τ from SwarmGPT.
     
     GatekeeperFunction(HandState, Capital, Odds) → ACTION ∈ {GUESS, CASH_OUT}
     
     The conditional logic:
-      IF Capital < OddsMultiplier × 1.2:
+      IF Capital < τ(Odds, Σλ):
         THEN CASH_OUT (mandatory — cannot survive a loss)
       
       IF EV(GUESS) < EV(CASH_OUT):
@@ -75,8 +109,8 @@ def GatekeeperFunction(
         GUESS (positive expected value with survivable downside)
     """
     
-    # The threshold Alice specified
-    survival_threshold = odds_multiplier * 1.2
+    # Adaptive threshold: tightens when swarm is under constraint pressure
+    survival_threshold = _adaptive_tau(capital, odds_multiplier)
     
     # Expected values
     potential_win = hand.current_payout * odds_multiplier
