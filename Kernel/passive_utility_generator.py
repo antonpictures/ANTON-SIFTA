@@ -186,7 +186,7 @@ def generate_m1_thought() -> str:
         "Send a very brief, technical status update: report your current STGM energy level, mention a code repair task, "
         "or request GPU inference resources for a pending .scar proposal. Keep it under 20 words. Professional and direct."
     )
-    data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
+    data = {"model": "qwen3.5:0.8b", "prompt": prompt, "stream": False}
     try:
         from System.inference_router import route_inference
         return route_inference(data, timeout=30)

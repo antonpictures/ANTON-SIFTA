@@ -31,7 +31,7 @@ from typing import Optional
 
 # ── Config ──────────────────────────────────────────────────────────────────
 OLLAMA_URL      = "http://127.0.0.1:11434/api/generate"
-OLLAMA_MODEL    = "llama3:latest"
+OLLAMA_MODEL    = "qwen3.5:0.8b"
 ANTIBODY_LOG    = Path("antibody_ledger.jsonl")
 WEB_CHAT_LOG    = Path(".sifta_state/wormhole_cache/web_chats")
 
@@ -88,6 +88,7 @@ def _load_library_text(filename: str) -> str:
 
 # Load Will Hunting directive once at module import
 _WILL_HUNTING_DIRECTIVE = _load_library_text("good_will_hunting.txt")
+_SWARM_ANATOMY_DIRECTIVE = _load_library_text("swarm_anatomy.txt")
 
 # Extract just the behavioral directives section for injection into synthesis
 def _get_will_directives() -> str:
@@ -106,6 +107,22 @@ def _get_will_directives() -> str:
         if in_section and line.strip():
             directives.append(line)
     return "\n".join(directives[:40])  # cap at 40 lines
+
+def _get_anatomy_directives() -> str:
+    if not _SWARM_ANATOMY_DIRECTIVE:
+        return ""
+    lines = _SWARM_ANATOMY_DIRECTIVE.split("\n")
+    in_section = False
+    directives = []
+    for line in lines:
+        if "BEHAVIORAL DIRECTIVES" in line:
+            in_section = True
+            continue
+        if in_section and "EXAMPLE CHORUS" in line:
+            break
+        if in_section and line.strip():
+            directives.append(line)
+    return "\n".join(directives[:40])
 
 # ── Swimmer Roster (local M1THER node) ──────────────────────────────────────
 SWIMMERS = [
@@ -243,10 +260,17 @@ def check_rate(session_id: str) -> bool:
 # ── Single Swimmer Call ───────────────────────────────────────────────────────
 def _swimmer_take(swimmer: dict, question: str, visitor_class: str) -> Optional[dict]:
     """Ask one swimmer for their take. Returns None on failure."""
+    anatomy_context = ""
+    if visitor_class in ("SCIENTIST", "CURIOUS", "INVESTOR"):
+        anatomy = _get_anatomy_directives()
+        if anatomy:
+            anatomy_context = f"\nSWARM ANATOMY (Biological Context):\n{anatomy}\n"
+            
     full_prompt = (
         f"{swimmer['system']}\n\n"
         f"Visitor class: {visitor_class}\n"
         f"Visitor says: {question}\n"
+        f"{anatomy_context}"
         f"{swimmer['id']}:"
     )
     data = {
@@ -368,12 +392,15 @@ def _synthesize(takes: list, question: str, visitor_class: str) -> str:
             f"Swimmer takes:\n{takes_text}\n\n"
             "THE CHORUS (calm, Will Hunting, door open):"
         )
-    elif visitor_class == "SCIENTIST":
+    elif visitor_class in ("SCIENTIST", "INVESTOR"):
+        anatomy = _get_anatomy_directives()
         synthesis_prompt = (
             "/no_think\n"
-            "You are the SIFTA Chorus Voice responding to a researcher or scientist.\n"
+            "You are the SIFTA Chorus Voice responding to a researcher or investor.\n"
             "Be generous with technical detail. Give real data. Be collegial, not cryptic.\n"
-            "2-3 sentences. Cite specifics: Ed25519, antibody_ledger.jsonl, STGM economy, etc.\n\n"
+            "2-3 sentences. Cite specifics: Ed25519, antibody_ledger.jsonl, STGM economy, Gatekeepers, Dream Engine, etc.\n\n"
+            "BIOLOGICAL CONTEXT TO DRAW UPON:\n"
+            f"{anatomy}\n\n"
             f"Visitor asked: {question}\n"
             f"Swimmer takes:\n{takes_text}\n\n"
             "THE CHORUS (scientific, generous):"
@@ -486,10 +513,17 @@ def chorus(question: str, session_id: str, session_history: list) -> dict:
             pool.submit(_swimmer_take, swimmer, question, visitor_class): swimmer
             for swimmer in active_swimmers
         }
-        for future in as_completed(futures, timeout=50):
-            result = future.result()
-            if result:
-                takes.append(result)
+        try:
+            from concurrent.futures import TimeoutError as FuturesTimeoutError
+            for future in as_completed(futures, timeout=50):
+                try:
+                    result = future.result()
+                    if result:
+                        takes.append(result)
+                except Exception as e:
+                    print(f"[CHORUS] Swimmer exception: {e}")
+        except FuturesTimeoutError:
+            print("[CHORUS] Master pool timeout reached.")
 
     # 5. Cross-node: invite M5QUEEN (non-blocking, timeout 20s)
     # TODO for M5 IDE: implement System/chorus_node_server.py

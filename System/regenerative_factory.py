@@ -565,12 +565,13 @@ def credit_architect_factory_mint(delta_stgm: float, tick: int = 0) -> Optional[
     try:
         if str(REPO) not in sys.path:
             sys.path.insert(0, str(REPO))
-        from datetime import datetime, timezone
-
-        from inference_economy import get_current_halving_multiplier
-
         if str(REPO / "System") not in sys.path:
             sys.path.insert(0, str(REPO / "System"))
+        if str(REPO / "Kernel") not in sys.path:
+            sys.path.insert(0, str(REPO / "Kernel"))
+            
+        from datetime import datetime, timezone
+        from inference_economy import get_current_halving_multiplier
         from body_state import SwarmBody
         from crypto_keychain import get_silicon_identity, sign_block
         from ledger_append import append_ledger_line

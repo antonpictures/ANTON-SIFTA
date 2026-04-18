@@ -77,7 +77,7 @@ class _GCIWorker(QThread):
     response_ready = pyqtSignal(str)
     error_signal   = pyqtSignal(str)
 
-    def __init__(self, prompt: str, system: str, model: str = "gemma4:latest"):
+    def __init__(self, prompt: str, system: str, model: str = "qwen3.5:2b"):
         super().__init__()
         self.prompt = prompt
         self.system = system
@@ -110,7 +110,7 @@ class _GCIWorker(QThread):
 
 class _ContextWorker(QThread):
     """Parallel swarm worker: Runs a secondary small model to deduce intent/subtext."""
-    def __init__(self, prompt: str, system: str, model: str = "gemma4:latest"):
+    def __init__(self, prompt: str, system: str, model: str = "qwen3.5:2b"):
         super().__init__()
         self.prompt = prompt
         self.system = system
@@ -228,7 +228,7 @@ class GlobalCognitiveInterface(QWidget):
         self.architect_id = architect_id
         self._worker: Optional[_GCIWorker] = None
         self._bus = None
-        self._model = "gemma4:latest"
+        self._model = "qwen3.5:2b"
         self._app_context_injection = ""  # live state injected by host app (e.g. poker hand)
 
         # Try to initialize Memory Bus
