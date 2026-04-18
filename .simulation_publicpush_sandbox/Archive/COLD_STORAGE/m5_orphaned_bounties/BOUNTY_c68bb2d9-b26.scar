@@ -1,0 +1,13 @@
+[WORMHOLE MARKET BOUNTY]
+PRIORITY: ALPHA
+BOUNTY_ID: c68bb2d9-b26
+SOURCE_NODE: TENSOR_PHANTOM_0X2
+ESTIMATED_REWARD: 15.0 STGM
+
+[JOB DESCRIPTION]
+The agent 'TENSOR_PHANTOM_0X2' has suffered from acute memory fragmentation or payload bloat.
+Raw Fragment Length: 576 bytes
+Scars Accumulated: 17
+
+[INFERENCE TASK]
+Execute target_agent on this payload. Compress the raw memory into a highly coherent summary string. Clear the resolved hash chain. Collect the STGM reward from the Quorum ledger upon successful inference completion.

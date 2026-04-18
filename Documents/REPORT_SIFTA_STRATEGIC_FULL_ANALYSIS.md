@@ -29,7 +29,7 @@ It is **not** a mass-market mobile app today; it is a **deep, idiosyncratic** re
 | **Shell / “OS”** | `sifta_os_desktop.py` — **QMainWindow** MDI desktop, taskbar, shortcuts, optional **WebSocket** mesh client to a relay (`_SwarmMeshClientWorker`), clock overlay. |
 | **Apps** | Multiple `Applications/*.py` widgets (finance, NLE, cyborg body, app manager, etc.) loaded via manifest patterns described in README. |
 | **Cognitive / chat** | `System/global_cognitive_interface.py` — human ↔ entity chat; preload / drift concepts per README. |
-| **Memory** | `stigmergic_memory_bus.py`, `ghost_memory.py`, ledgers under `.sifta_state/`, Ebbinghaus-style decay narratives (see README formulas). |
+| **Memory** | `stigmergic_memory_bus.py`, `marrow_memory.py` (originally drafted as "ghost_memory"), ledgers under `.sifta_state/`, Ebbinghaus-style decay narratives (see README formulas). |
 | **Economy metaphor** | STGM minting patterns, casino vault files, PoUW hooks — **internal** economy, **not** a public blockchain product by default. |
 | **Security / doctrine** | `Security/cognitive_firewall.py` / Neural Gate narrative, non-proliferation tests (`tests/test_neural_gate_doctrine.py`). |
 | **Crypto identity** | `System/crypto_keychain.py` — project rules require **Ed25519** signing for financial ledger events. |
@@ -45,7 +45,7 @@ It is **not** a mass-market mobile app today; it is a **deep, idiosyncratic** re
 
 - **Runs a local GUI “OS”** with MDI windows and an app ecosystem.  
 - **Coordinates memory** through **stigmergic** traces (files, ledgers) rather than only a cloud vector DB (per README claims).  
-- **Models forgetting, ghosts, luck** — intentionally **non-standard** compared to corporate RAG.  
+- **Models forgetting, marrows, luck** — intentionally **non-standard** compared to corporate RAG.  
 - **Binds identity to hardware serial** in the architecture narrative — relevant to **sovereignty** and **anti-cloning** stories.  
 - **Enforces a non-proliferation stance** in license + firewall doctrine (keyword blocks, tests).  
 - **Supports swarm relay / mesh** concepts for multi-tab or multi-node coordination (implementation varies by component).
@@ -57,7 +57,7 @@ It is **not** a mass-market mobile app today; it is a **deep, idiosyncratic** re
 Typical founder motivations that match this repo’s direction:
 
 1. **Sovereignty:** Run powerful workflows **without** renting a single vendor’s cloud brain for everything.  
-2. **Research differentiation:** Stigmergy-on-disk, Ebbinghaus, ghost memory — **publishable** novelty if evaluated honestly.  
+2. **Research differentiation:** Stigmergy-on-disk, Ebbinghaus, marrow memory — **publishable** novelty if evaluated honestly.  
 3. **Two-node topology:** A **studio** + **sentry** split matches **security** and **availability** instincts.  
 4. **Ethical charter:** Non-proliferation license expresses **values** and **reduces** certain partnership classes (defense/surveillance) — if that aligns with you, it’s a **feature**, not a bug.  
 5. **Long-horizon play:** The “organism / economy / territory” stack is **defensible narrative** for a **loyal** niche even before mass adoption.

@@ -23,25 +23,18 @@ fi
 echo "  [BOOT] Checking dependencies..."
 python3 -m pip install -q -r requirements.txt
 
-
-
-# Launch Hermes Kernel (Async background orchestrator)
-echo "  [BOOT] Igniting Hermes Cognitive Kernel in background..."
-python3 hermes_kernel.py > hermes_stdout.log 2>&1 &
-HERMES_PID=$!
-
-# Launch the server in the background
-echo "  [BOOT] Starting SIFTA Network Server in background..."
-python3 server.py > server_stdout.log 2>&1 &
-SERVER_PID=$!
+# ── C47H 2026-04-18 (Architect-ratified surgical revert): ────────────────────
+# The previous bootloader spawned `hermes_kernel.py` and `server.py` in the
+# background, but neither file exists in this repo. They printed cheerful
+# "Igniting..." lines and then silently filled `hermes_stdout.log` and
+# `server_stdout.log` with "[Errno 2] No such file or directory" forever.
+# SIFTA is an honest OS — it doesn't lie to its nodes about what's running.
+# The desktop UI below is the entire boot sequence. Future background services
+# (relay, kernel daemon, etc.) get added back here only when their files exist.
+# ─────────────────────────────────────────────────────────────────────────────
 
 # Launch the graphical Python OS Desktop (FOREGROUND)
 echo "  [BOOT] Launching SIFTA Python OS UI..."
 python3 sifta_os_desktop.py
-
-# Cleanup when OS Interface exits
-echo "  [SHUTDOWN] Powering down Swarm threads..."
-kill $HERMES_PID >/dev/null 2>&1
-kill $SERVER_PID >/dev/null 2>&1
 
 echo "  [OFFLINE] Sweet dreams, SIFTA."

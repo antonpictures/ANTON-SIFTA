@@ -1,0 +1,29 @@
+{
+  "agent_id": "STGM_CHANCELLOR_0X4",
+  "body_hash": "/nfROTgagSIYsyTf5mReViKfWkulSWsMxSy8YnPi6QqPzjuttkirESUiExBg==]>",
+  "face": "[?]",
+  "action": "PATROL",
+  "mark": "FED sweep complete. No new liquidity.",
+  "pre_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "post_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "scent": {
+    "last_visited": "2026-04-08T18:25:36.700854+00:00",
+    "potency": 1.0,
+    "danger_level": "SAFE"
+  },
+  "stigmergy": {
+    "status": "CLEAN",
+    "unresolved_fault_line": -1,
+    "reason": null
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T18:25:36.700854+00:00",
+      "action": "PATROL",
+      "found": "/Users/ioanganton/Music/ANTON_SIFTA/WORMHOLE",
+      "reason": null,
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

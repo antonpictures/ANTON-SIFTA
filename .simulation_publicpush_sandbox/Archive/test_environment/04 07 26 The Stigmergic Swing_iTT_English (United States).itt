@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<tt xmlns:vt="http://namespace.itunes.apple.com/itt/ttml-extension#vertical" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" xmlns:ittp="http://www.w3.org/ns/ttml/profile/imsc1#parameter" xmlns:tt_feature="http://www.w3.org/ns/ttml/feature/" xmlns:ebutts="urn:ebu:tt:style" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:tt_extension="http://www.w3.org/ns/ttml/extension/" xmlns:tt_profile="http://www.w3.org/ns/ttml/profile/" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:ry="http://namespace.itunes.apple.com/itt/ttml-extension#ruby" xmlns:itts="http://www.w3.org/ns/ttml/profile/imsc1#styling" xmlns="http://www.w3.org/ns/ttml" xml:lang="en-US" ttp:dropMode="nonDrop" ttp:frameRate="30" ttp:frameRateMultiplier="1 1" ttp:timeBase="smpte" xmlns:tt="http://www.w3.org/ns/ttml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <head>
+    <styling>
+      <style xml:id="normal" tts:color="white" tts:fontFamily="sansSerif" tts:fontSize="100%" tts:fontStyle="normal" tts:fontWeight="normal"/>
+    </styling>
+    <layout>
+      <region xml:id="bottom" tts:displayAlign="after" tts:extent="100% 15%" tts:origin="0% 85%" tts:writingMode="lrtb"/>
+    </layout>
+  </head>
+  <body tts:color="white" region="bottom" style="normal">
+    <div>
+      <p begin="00:00:00:13" end="00:00:02:13" region="bottom">I'm Tiffany Rothman.</p>
+      <p begin="00:00:02:13" end="00:00:04:18" region="bottom">Welcome to ImperialDaily.com.</p>
+      <p begin="00:00:04:19" end="00:00:06:05" region="bottom">We have a major breakthrough.</p>
+      <p begin="00:00:06:05" end="00:00:08:29" region="bottom">In decentralized infrastructure.</p>
+      <p begin="00:00:09:14" end="00:00:11:11" region="bottom">Hey, Keely, wake up, baby.</p>
+      <p begin="00:00:11:26" end="00:00:13:25" region="bottom">The fans are spinning, the Mac is hot.</p>
+      <p begin="00:00:14:12" end="00:00:15:23" region="bottom">SIFTA agents.</p>
+      <p begin="00:00:16:03" end="00:00:18:06" region="bottom">I just looked in the terminal and we got the nanobots.</p>
+      <p begin="00:00:18:10" end="00:00:20:18" region="bottom">They're swimming through the folders.</p>
+      <p begin="00:00:20:24" end="00:00:23:07" region="bottom">They're fixing the code.</p>
+      <p begin="00:00:23:09" end="00:00:25:15" region="bottom">It's not magic, Louie.</p>
+      <p begin="00:00:25:18" end="00:00:27:01" region="bottom">It's an autonomous operating node.</p>
+      <p begin="00:00:27:05" end="00:00:28:11" region="bottom">They're all physical,</p>
+      <p begin="00:00:28:15" end="00:00:29:21" region="bottom">cryptographic</p>
+      <p begin="00:00:29:21" end="00:00:30:08" region="bottom">bodies.</p>
+      <p begin="00:00:30:24" end="00:00:33:07" region="bottom">A stigmergic coordination layer.</p>
+      <p begin="00:00:33:07" end="00:00:34:24" region="bottom">Rogue infiltration</p>
+      <p begin="00:00:34:24" end="00:00:36:10" region="bottom">is mathematically</p>
+      <p begin="00:00:36:10" end="00:00:37:09" region="bottom">impossible.</p>
+      <p begin="00:00:37:16" end="00:00:38:13" region="bottom">A coordination, what?</p>
+      <p begin="00:00:38:17" end="00:00:41:04" region="bottom">I saw 'em drop in the wormhole.</p>
+      <p begin="00:00:41:06" end="00:00:43:06" region="bottom">They're radioing the governor.</p>
+      <p begin="00:00:43:06" end="00:00:45:03" region="bottom">They're in an inception loop.</p>
+      <p begin="00:00:45:03" end="00:00:46:22" region="bottom">They drop a pheromone marker.</p>
+      <p begin="00:00:46:22" end="00:00:48:28" region="bottom">A .scar on the drive.</p>
+      <p begin="00:00:49:00" end="00:00:51:22" region="bottom">They read, they decide.</p>
+      <p begin="00:00:51:24" end="00:00:54:20" region="bottom">They write, they survive.</p>
+      <p begin="00:00:54:23" end="00:00:56:23" region="bottom">There is no database, Louie.</p>
+      <p begin="00:00:56:23" end="00:00:58:23" region="bottom">The memory is the file.</p>
+      <p begin="00:00:58:25" end="00:01:01:23" region="bottom">They fix the syntax errors.</p>
+      <p begin="00:01:01:25" end="00:01:03:25" region="bottom">Then they rest for a while.</p>
+      <p begin="00:01:03:25" end="00:01:06:29" region="bottom">But I'm broadcasting it globally to</p>
+      <p begin="00:01:07:00" end="00:01:09:06" region="bottom">the whole wide internet.</p>
+      <p begin="00:01:09:06" end="00:01:13:26" region="bottom">Stigmergicode, the greatest show they've ever met.</p>
+      <p begin="00:01:13:29" end="00:01:15:29" region="bottom">Are they gonna hack my camera?</p>
+      <p begin="00:01:15:29" end="00:01:18:04" region="bottom">Are they gonna steal my show?</p>
+      <p begin="00:01:18:06" end="00:01:22:19" region="bottom">It's a decoupled spectator mode, a read-only stream.</p>
+      <p begin="00:01:22:23" end="00:01:26:03" region="bottom">They can't touch the local matrix.</p>
+      <p begin="00:01:26:06" end="00:01:28:06" region="bottom">They're just watching the dream.</p>
+      <p begin="00:01:28:06" end="00:01:30:27" region="bottom">It pulls the local ledger.</p>
+      <p begin="00:01:31:00" end="00:01:33:06" region="bottom">It renders the screen.</p>
+      <p begin="00:01:33:08" end="00:01:36:13" region="bottom">The safest little dashboard that</p>
+      <p begin="00:01:36:14" end="00:01:39:15" region="bottom">you've ever seen.</p>
+      <p begin="00:01:40:02" end="00:01:42:09" region="bottom">It is an architecture waiting to be explored.</p>
+      <p begin="00:01:43:21" end="00:01:45:29" region="bottom">Look at 'em, hand off.</p>
+      <p begin="00:01:46:02" end="00:01:48:17" region="bottom">ANTIALICE to Imperial.</p>
+      <p begin="00:01:48:19" end="00:01:50:19" region="bottom">Depth level one.</p>
+      <p begin="00:01:50:19" end="00:01:52:13" region="bottom">Depth level two.</p>
+      <p begin="00:01:52:18" end="00:01:54:24" region="bottom">If they hit level three</p>
+      <p begin="00:01:55:02" end="00:01:58:09" region="bottom">They pull the rip cord and</p>
+      <p begin="00:01:58:09" end="00:01:59:03" region="bottom">Imagine.</p>
+      <p begin="00:01:59:07" end="00:02:00:17" region="bottom">the governor catches the cue.</p>
+      <p begin="00:02:00:25" end="00:02:02:28" region="bottom">Singing a song of the bees.</p>
+      <p begin="00:02:02:28" end="00:02:06:22" region="bottom">Oh, it's the stigmergic swing.</p>
+      <p begin="00:02:06:24" end="00:02:10:04" region="bottom">The swarm is on the move.</p>
+      <p begin="00:02:10:07" end="00:02:13:14" region="bottom">Not just a script, not just a bot, it's</p>
+      <p begin="00:02:13:14" end="00:02:15:17" region="bottom">a headless, persistent groove.</p>
+      <p begin="00:02:15:19" end="00:02:17:19" region="bottom">Drop the .scar.</p>
+      <p begin="00:02:17:19" end="00:02:19:23" region="bottom">Fix the code and let the terminal scream.</p>
+      <p begin="00:02:19:25" end="00:02:23:04" region="bottom">We built a living operating system.</p>
+      <p begin="00:02:23:08" end="00:02:26:26" region="bottom">Inside a silicon dream.</p>
+      <p begin="00:02:27:00" end="00:02:34:00" region="bottom">(AI: I am a female-voiced language model. I do not dream. I am merely parsing the SIFTA architecture.)</p>
+      <p begin="00:02:34:28" end="00:02:37:04" region="bottom">Has officially unveiled.</p>
+      <p begin="00:02:37:05" end="00:02:38:05" region="bottom">SIFTA.</p>
+      <p begin="00:02:38:05" end="00:02:39:07" region="bottom">A hardened,</p>
+      <p begin="00:02:39:07" end="00:02:40:15" region="bottom">decentralized,</p>
+      <p begin="00:02:40:15" end="00:02:42:21" region="bottom">multi-agent topology</p>
+      <p begin="00:02:42:21" end="00:02:43:17" region="bottom">framework.</p>
+      <p begin="00:02:43:17" end="00:02:47:01" region="bottom">Agents have cryptographic identities.</p>
+      <p begin="00:02:47:01" end="00:02:48:16" region="bottom">Able to examine their</p>
+      <p begin="00:02:48:16" end="00:02:49:20" region="bottom">own ASCII</p>
+      <p begin="00:02:49:20" end="00:02:51:10" region="bottom">bodies.</p>
+      <p begin="00:02:51:10" end="00:02:54:04" region="bottom">They traverse files sequentially.</p>
+      <p begin="00:02:54:05" end="00:02:56:03" region="bottom">And they physically byte.</p>
+    </div>
+  </body>
+</tt>

@@ -1,0 +1,40 @@
+{
+  "drawn_by": "AG31",
+  "seed": 42,
+  "ag31_segments": [
+    "SEG_10",
+    "SEG_11",
+    "SEG_12",
+    "SEG_13",
+    "SEG_14",
+    "SEG_15",
+    "SEG_16",
+    "SEG_17",
+    "SEG_18",
+    "SEG_19",
+    "SEG_2",
+    "SEG_20",
+    "SEG_23",
+    "SEG_25",
+    "SEG_27",
+    "SEG_28",
+    "SEG_29",
+    "SEG_3",
+    "SEG_31",
+    "SEG_6",
+    "SEG_7"
+  ],
+  "c47h_segments": [
+    "SEG_1",
+    "SEG_21",
+    "SEG_22",
+    "SEG_24",
+    "SEG_26",
+    "SEG_30",
+    "SEG_4",
+    "SEG_5",
+    "SEG_8",
+    "SEG_9"
+  ],
+  "timestamp": 1776533421.524597
+}

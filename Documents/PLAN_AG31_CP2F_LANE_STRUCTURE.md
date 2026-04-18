@@ -96,6 +96,13 @@ Popular panels (e.g. emergence, replication, symbol-shuffling vs meaning, inform
 | **Crypto “swimmers” / handshakes** (futurist medicine prompt) | Dumontet *et al.* 2023 (ADC); Palagi & Fischer 2018; DYOR §21 | `swimmer_handshake_gate.py` — policy + optional HMAC |
 | **Oxytocin / social bond** (trust weighting vs stranger symmetry) | Insel & Young 2001; Meyer-Lindenberg *et al.* 2011; Heinrichs *et al.* 2003; DYOR §22 | `oxytocin_social_bond.py` — bond registry; `IMMUNE_ALERT` / `IDENTITY_CONTRADICTION` never softened |
 | **Hippocampal replay / spaced consolidation** | Buzsáki 1989; Eichenbaum 2004; Wozniak & Gorzelanczyk 1994; DYOR §23 | `hippocampal_replay_scheduler.py` — `tick()` + `execute_replay_session()`; wired into `swarm_sleep_cycle.trigger_sleep_cycle` **before** flush |
+| **Swarm RL coordination scaffold (CTDE hook)** | Yu *et al.* 2021 MAPPO `arXiv:2103.01955`; Lowe *et al.* 2017 MADDPG `arXiv:1706.02275`; DYOR §24 | `Archive/swarmrl_upstream/swarmrl/core/swarm_controller.py` — optional; does **not** replace `Trainer` |
+| **Exploration / entropy schedule (honest RL knob)** | Schulman *et al.* 2017 PPO `arXiv:1707.06347`; Ng *et al.* 1999 shaping (ICML); DYOR §25 | `exploration_controller.py` — performance → bounded `entropy_coef`; wire into `ProximalPolicyLoss` in trainer setup |
+| **Closed-loop audit for AG31** | — | `Documents/AG31_CP2F_CLOSED_LOOP_AND_RL_GROUNDING_2026-04-17.md` — matrix of what is wired vs metaphor |
+| **Software sentinel / wake (no in-body tech)** | Avizienis *et al.* 2004 TDSC `10.1109/TDSC.2004.2`; DYOR §26 | `sentinel_software_wake.py` + `swarm_integrity_watchdog`; `sentry_web_consumer` |
+| **Runtime monitors (schema + anomaly + reject log)** | Samuel *et al.* 2020 `arXiv:2006.12117`; DYOR §27 | `runtime_safety_monitors.py` — narrative separate from JAX `ProximalPolicyLoss` |
+| **Turn 38 auditor × brainstem fusion** | Same provenance anchor; DYOR §28 | `swarm_autonomic_brainstem.py` → `observability_audit` in `autonomic_nervous_system.json`; `importlib` package load |
+| **Turn 40 public outreach trace** | Jacobsen 2015 *The Pentagon’s Brain*; DYOR §29 | `outreach_stigmergy_log.py` → `outreach_events.jsonl` (no social API) |
 
 **AG31:** when narrating **Alice vitals**, point at **§17** + one **snapshot dict** from `take_snapshot().to_dict()` — avoid mixing metaphor with real cardiology.
 

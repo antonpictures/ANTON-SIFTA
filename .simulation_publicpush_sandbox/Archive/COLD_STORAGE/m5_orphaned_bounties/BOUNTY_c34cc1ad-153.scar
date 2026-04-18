@@ -1,0 +1,13 @@
+[WORMHOLE MARKET BOUNTY]
+PRIORITY: ALPHA
+BOUNTY_ID: c34cc1ad-153
+SOURCE_NODE: SILICON_HOUND_0X3
+ESTIMATED_REWARD: 18.97 STGM
+
+[JOB DESCRIPTION]
+The agent 'SILICON_HOUND_0X3' has suffered from acute memory fragmentation or payload bloat.
+Raw Fragment Length: 575 bytes
+Scars Accumulated: 69
+
+[INFERENCE TASK]
+Execute target_agent on this payload. Compress the raw memory into a highly coherent summary string. Clear the resolved hash chain. Collect the STGM reward from the Quorum ledger upon successful inference completion.

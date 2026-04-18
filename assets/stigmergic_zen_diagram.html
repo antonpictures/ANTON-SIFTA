@@ -1,0 +1,71 @@
+
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SIFTA Zen Diagram</title>
+            <style>
+                body {
+                    background-color: #121212;
+                    color: #ffffff;
+                    font-family: 'Helvetica Neue', Arial, sans-serif;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .diagram-container {
+                    position: relative;
+                    width: 600px;
+                    height: 400px;
+                }
+                .target-market-label {
+                    text-align: center;
+                    font-size: 24px;
+                    font-weight: bold;
+                    letter-spacing: 2px;
+                    margin-top: 30px;
+                    color: #f1c40f;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>SIFTA Swarm Overlap Analysis</h1>
+            
+            <div class="diagram-container">
+                <svg width="600" height="400" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Left Circle (Set A) -->
+                    <circle cx="230" cy="200" r="140" fill="rgba(41, 128, 185, 0.4)" stroke="#ecf0f1" stroke-width="2"/>
+                    <!-- Right Circle (Set B) -->
+                    <circle cx="370" cy="200" r="140" fill="rgba(192, 57, 43, 0.4)" stroke="#ecf0f1" stroke-width="2"/>
+                    
+                    <!-- Labels -->
+                    <text x="140" y="200" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">
+                        <tspan x="140" dy="-10">SWARM PROPOSALS</tspan>
+                        <tspan x="140" dy="25">(1)</tspan>
+                    </text>
+                    
+                    <text x="460" y="200" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">
+                        <tspan x="460" dy="-10">ARCHITECT RATIFICATIONS</tspan>
+                        <tspan x="460" dy="25">(6)</tspan>
+                    </text>
+                    
+                    <!-- Intersection -->
+                    <text x="300" y="200" font-size="20" fill="#ffffff" text-anchor="middle" font-weight="bold">
+                        1
+                    </text>
+                </svg>
+            </div>
+            
+            <div class="target-market-label">
+                &darr; TARGET MARKET: THE AUTOPILOT &darr;
+            </div>
+            <p style="color: #7f8c8d; margin-top: 15px; font-style: italic;">
+                "Everyone in school learns these things."
+            </p>
+        </body>
+        </html>
+        

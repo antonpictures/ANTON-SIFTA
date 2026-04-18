@@ -1,0 +1,35 @@
+{
+  "agent_id": "HERMES",
+  "body_hash": "d94f0a995aae532f45dc0017b7a4ebcf547c877518d16ccc9492ce0ccb2cd4]>",
+  "face": "[_v_]",
+  "action": "ABORT",
+  "mark": "Agent corrupted mind state resolving .. Dropping thread.",
+  "scent": {
+    "last_visited": "2026-04-06T20:51:47.764548+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 1,
+    "reason": {
+      "type": "ValidationFail",
+      "line": 1,
+      "message": "unterminated string literal (detected at line 1) (<unknown>, line 1)"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-06T20:51:47.764548+00:00",
+      "action": "ABORT",
+      "found": "invalid syntax (<unknown>, line 1)",
+      "reason": {
+        "type": "ValidationFail",
+        "line": 1,
+        "message": "unterminated string literal (detected at line 1) (<unknown>, line 1)"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

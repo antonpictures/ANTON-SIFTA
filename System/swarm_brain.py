@@ -17,6 +17,7 @@ import sys as _sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _sys.path.insert(0, REPO_ROOT)
 _sys.path.insert(0, os.path.join(REPO_ROOT, "System"))
+from sifta_inference_defaults import get_default_ollama_model
 from inference_economy import ledger_balance
 from ledger_append import append_jsonl_line, append_ledger_line
 
@@ -53,19 +54,28 @@ def run_local_inference(prompt, silicon_serial, agent_id):
     # We are injecting the identity boundary dynamically.
     system_directive = f"You are an autonomous Swarm Intelligence running on SIFTA OS. Your physical hardware identity is {silicon_serial} ({agent_id}). Respond clearly, directly, and embody your structural nature."
     
-    payload = json.dumps({
-        "model": "qwen3.5:2b", # Default fast reasoning
+    payload = {
+        "model": get_default_ollama_model(),
         "prompt": prompt,
         "system": system_directive,
-        "stream": False
-    }).encode("utf-8")
+        "stream": False,
+    }
+
+    try:
+        from inference_router import route_inference
+
+        text = route_inference(payload, timeout=300)
+        if text and text.strip():
+            return text.strip()
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚨 Inference failure: {e}")
 
     try:
         req = urllib.request.Request(
             "http://127.0.0.1:11434/api/generate",
-            data=payload,
+            data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
-            method="POST"
+            method="POST",
         )
         with urllib.request.urlopen(req, timeout=300) as resp:
             data = json.loads(resp.read().decode("utf-8"))

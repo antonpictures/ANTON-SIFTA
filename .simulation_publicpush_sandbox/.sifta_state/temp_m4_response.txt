@@ -1,0 +1,17 @@
+Here is a summary of how a working engineer tackles a flaky script, broken down into three core steps:
+
+**1. Instrument and Capture State (Eliminate Blind Spots)**
+You cannot debug what you cannot see. Flaky scripts usually fail because of edge cases in the environment, timing, or external dependencies. 
+* **Add Granular Logging:** Introduce high-precision timestamps and log the inputs, outputs, and HTTP status codes of all external calls. 
+* **Capture the Environment:** When a failure occurs, dump the current state—environment variables, memory usage, and active process/thread IDs. This gives you a complete "black box" recording to analyze rather than relying on a generic stack trace.
+
+**2. Isolate and Amplify the Failure (Force the Bug Out)**
+A flaky script is just a bug hiding behind probability. Your goal is to change the environment to make the failure happen 100% of the time.
+* **Run in a Tight Loop:** Execute the script hundreds or thousands of times consecutively (e.g., using a simple shell loop) to see how frequently it fails.
+* **Stress the Constraints:** Throtle the network, restrict CPU/memory, or run multiple instances concurrently. If the flakiness is caused by a race condition or a timeout, putting the script under pressure will expose the bottleneck immediately.
+
+**3. Target Implicit Assumptions and Harden (Fix the Root Cause)**
+Once you have the data and can reproduce the failure, look for the "usual suspects" of script flakiness, which almost always stem from the script making an implicit assumption:
+* **Timing Assumptions:** If the script assumes a task will take "about 2 seconds," replace arbitrary `sleep(2)` commands with active polling or event-driven waits.
+* **State Assumptions:** If the script assumes a clean environment, ensure you add strict setup and teardown/cleanup routines so leftover files or database rows don't poison the next run.
+* **Network Assumptions:** If the script assumes perfect connectivity, wrap external API and database calls in robust retry blocks with exponential backoff.

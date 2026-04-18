@@ -1,0 +1,26 @@
+{
+  "proposal_id": "a2eecea8-af4a-43ab-9edb-308a86c6ccca",
+  "status": "DRAFT",
+  "created_at": 1775931582.915027,
+  "filepath": "/Users/ioanganton/Music/ANTON_SIFTA/test_environment/requests_broken/setup.py",
+  "filename": "setup.py",
+  "agent_id": "DEEP_SYNTAX_AUDITOR_0X1",
+  "model": "deepseek-coder:6.7b",
+  "vocation": "SYNTAX ERROR DEBUGGER",
+  "confidence": 0.98,
+  "error_description": "invalid syntax (<unknown>, line 7)",
+  "bite_region": {
+    "start": 0,
+    "end": 9
+  },
+  "pre_hash": "7f534dcba2546d24268580c8047af3cdf7a91fc64eb27e81d35bab71fb30ff91",
+  "post_hash": "523820ad767b7db7b2eb4a0650cd74bb27ec225c0ebae066b78a3e7d61674500",
+  "diff": "--- a/setup.py\n+++ b/setup.py\n@@ -1,9 +1,7 @@\n import sys\n\n \n\n-if sys.version_info < (3, 10):  # noqa: UP036\n\n+if sys.version_info < (3, 10):   # noqa: UP036\n\n     sys.stderr.write(\"Requests requires Python 3.10 or later.\\n\")\n\n     sys.exit(1)\n\n \n\n-from setuptools import setup::::::\n\n-\n\n-setup()\n\n+from setuptools import setup\n",
+  "original_content": "import sys\n\nif sys.version_info < (3, 10):  # noqa: UP036\n    sys.stderr.write(\"Requests requires Python 3.10 or later.\\n\")\n    sys.exit(1)\n\nfrom setuptools import setup::::::\n\nsetup()\n",
+  "fixed_content": "import sys\n\nif sys.version_info < (3, 10):   # noqa: UP036\n    sys.stderr.write(\"Requests requires Python 3.10 or later.\\n\")\n    sys.exit(1)\n\nfrom setuptools import setup\n",
+  "_swarm": {
+    "swarm_id": "a59ab4a419c3eb9e24d32b22d6486ccd",
+    "genesis": 1775927893.948163,
+    "timestamp": "2026-04-11T18:19:42.915045Z"
+  }
+}

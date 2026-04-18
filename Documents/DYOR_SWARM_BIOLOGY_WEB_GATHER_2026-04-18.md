@@ -530,3 +530,132 @@ Composer-class models on Cursor are optimized for **fast, cost-efficient** turns
 | Relational / declarative prioritization | Eichenbaum 2004 | `consolidation_priority` weights stability + ease updates |
 | Expanding retrieval intervals | Wozniak & Gorzelanczyk 1994 | SM-2-style `ease_factor` and `interval_s` growth |
 | Volatile vs durable store | — | `hippocampal_engrams.json` (durable) + `pfc_working_memory.json` `fused_working_memory` merge |
+
+---
+
+## 24. Batch 19 — multi-agent RL coordination (CTDE / MAPPO / MADDPG) (2026-04-17)
+
+*Web pull (CP2F): engineering anchors for **`Archive/swarmrl_upstream/swarmrl/core/swarm_controller.py`** (shared observation summary + swarm reward hook). **Epistemic guardrail:** a browser tab’s claims about `swarmrl.zip` layout or `git push` were **not** verified by CP2F — this batch cites **papers** and **on-disk** upstream under `Archive/swarmrl_upstream/`.*
+
+### 24.1 MAPPO — centralized critic, on-policy multi-agent PPO
+
+- **Yu *et al.* — “The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games”** — arXiv **`2103.01955`** — MAPPO: value function can use **global** information during training; actors remain **decentralized** at execution — matches the “aggregate then per-agent act” scaffold.
+
+### 24.2 MADDPG — multi-agent actor–critic (mixed coop / comp)
+
+- **Lowe *et al.* — “Multi-Agent Actor-Critic for Mixed Cooperative-Competitive Environments”** — arXiv **`1706.02275`** — NeurIPS 2017 — centralized critics conditioning on other agents’ actions during training; **execution** uses local policies — historical CTDE reference.
+
+### 24.3 Mapping (Batch 19 → code)
+
+| Idea | Anchor | SIFTA / SwarmRL hook |
+|------|--------|----------------------|
+| Shared summary of local obs | Yu *et al.* 2021 (global value inputs) | `SwarmController.aggregate_observations` |
+| Per-agent action with shared context | Lowe *et al.* 2017; Yu *et al.* 2021 | `SwarmController.select_actions` |
+| Cooperative return scalar | MAPPO / team reward conventions | `SwarmController.compute_swarm_reward` |
+| Full training loop | Existing upstream | `swarmrl.trainers` + `ActorCriticAgent` — controller is **additive**, not a fork |
+
+---
+
+## 25. Batch 20 — reward shaping, PPO entropy, “narrative → knob” honesty (2026-04-17)
+
+*Web pull (CP2F): **engineering** RL anchors for reframing “serotonin / dominance” as **reward shaping** + **exploration pressure** (`System/exploration_controller.py`). See also **`Documents/AG31_CP2F_CLOSED_LOOP_AND_RL_GROUNDING_2026-04-17.md`**.*
+
+### 25.1 Potential-based reward shaping (policy invariance)
+
+- **Ng, Harada & Russell — “Policy Invariance Under Reward Transformations: Theory and Application to Reward Shaping”** — ICML **1999** (pages 278–287). PDF mirror via Berkeley: `https://people.eecs.berkeley.edu/~russell/papers/icml99-shaping.pdf` — potential-based shaping preserves optimal policy under stated conditions; legitimizes **additive** training signals **if** constructed as potential differences (contrast ad-hoc “social reward” hacks).
+
+### 25.2 PPO — clipped objective + entropy bonus
+
+- **Schulman *et al.* — “Proximal Policy Optimization Algorithms”** — arXiv **`1707.06347`** (2017). OpenAI / canonical PPO reference — **entropy coefficient** as explicit exploration control (matches `ProximalPolicyLoss` in `Archive/swarmrl_upstream/swarmrl/losses/proximal_policy_loss.py`).
+
+### 25.3 Mapping (Batch 20 → code)
+
+| Narrative (avoid literal biology) | Anchor | SIFTA hook |
+|-----------------------------------|--------|------------|
+| “Social / validation reward” | Ng *et al.* 1999 | Design `R_shaping` as potential-based if you need policy invariance |
+| “Serotonin / exploration mood” | Schulman *et al.* 2017 | `ExplorationController` → feed `entropy_coef` into PPO construction |
+| Closed-loop audit | — | `Documents/AG31_CP2F_CLOSED_LOOP_AND_RL_GROUNDING_2026-04-17.md` |
+
+---
+
+## 26. Batch 26 — “Sentinel / wake” as **software** dependability (2026-04-17)
+
+*Web pull (CP2F): **grounding** for SwarmGPT-tab hallucinations that conflate OS sleep, multi-agent software, and **in-body nanobots**. The latter is **not** established clinical deployment (see **§21** for microrobotics state of art). Here: **fault detection, monitoring, wake = operator attention** — standard computing.*
+
+### 26.1 Dependability taxonomy — faults, errors, failures
+
+- **Avizienis, Laprie, Randell & Landwehr — “Basic Concepts and Taxonomy of Dependable and Secure Computing”** — *IEEE Transactions on Dependable and Secure Computing* **1** (1), 11–33 (2004). IEEE Xplore document **`1335465`** — DOI `10.1109/TDSC.2004.2` — unifies reliability, availability, safety, integrity; **means** include fault tolerance, removal, forecasting — engineering frame for “sentinel” processes.
+
+### 26.2 Watchdog / monitoring (embedded analogy only)
+
+- **Multiple watchdog timers** — e.g. IEEE literature on redundant watchdog architectures for embedded reliability (industrial practice: periodic kick, timeout → recovery). *Analogue:* `swarm_integrity_watchdog` + `sentinel_software_wake` — **not** implant hardware.
+
+### 26.3 Epistemic guardrail (nanobots / in vivo “drones”)
+
+- **No claim** that SIFTA installs physical agents in humans. **§21** (Palagi & Fischer 2018; Dumontet *et al.* 2023) discusses **engineering** microrobotics / ADC targeting — still not “nanobots guarding a person from inside” as popular lore.
+
+### 26.4 Mapping (Batch 26 → code)
+
+| Metaphor | Real mechanism | SIFTA hook |
+|----------|----------------|------------|
+| Sentinel / wake | Monitoring + integrity degradation | `sentinel_software_wake.evaluate_sentinel_orchestration()` |
+| Owner sleeps | Host idle / low background work | OS power policy + optional cron; **not** biological sleep control |
+| Drones wake | Escalation / alerts | `wake_recommended` + logs; `sentry_web_consumer` HTTP health |
+
+---
+
+## 27. Batch 27 — ML provenance / observability (narrative vs execution) (2026-04-17)
+
+*Web pull (CP2F): anchor **distributed experiment observability** (IdentityField, JSONL, Alice report) in peer-reviewed / arXiv literature — not as biology, but as **reproducibility + lineage**.*
+
+### 27.1 ML pipelines — provenance, reproducibility, FAIR
+
+- **Samuel, Löffler & König-Ries — “Machine Learning Pipelines: Provenance, Reproducibility and FAIR Data Principles”** — arXiv **`2006.12117`** (22 Jun 2020) — `https://arxiv.org/abs/2006.12117` — end-to-end reproducibility factors beyond code + data; ProvBook / notebook provenance — **parallel** to SIFTA’s append-only traces and registry deposits.
+
+### 27.2 Dependability (fault / validation framing)
+
+- **Avizienis *et al.* (2004)** — TDSC taxonomy — already **§26**; **means**: fault prevention, tolerance, removal, forecasting — maps to **schema validation**, **watchdog**, **quarantine**.
+
+### 27.3 Mapping (Batch 27 → code)
+
+| Tab metaphor | Engineering | SIFTA hook |
+|--------------|-------------|------------|
+| Macrophage / phagocytosis | Reject bad transition; isolate bad state | `log_invalid_transition()`; `immune_quarantine.jsonl` |
+| Sentinel patrol | Background monitors | `IntegrityMonitor`, `AnomalyDetector`, `sentinel_software_wake` |
+| “Bloodstream” | Shared filesystem / JSONL | `ide_stigmergic_trace.jsonl`, `memory_ledger.jsonl` |
+| Narrative UI | Docs + Alice copy only | **Not** imported by PPO loss |
+
+| Module | Role |
+|--------|------|
+| `runtime_safety_monitors.py` | `SchemaValidator` + `AnomalyDetector` + combined `run_runtime_safety_scan()` |
+
+---
+
+## 28. Batch 28 — Turn 38 “Mathematical Auditor Fusion” (brainstem × observability) (2026-04-17)
+
+*CP2F note: **no new biology** — this is the wiring step where `swarm_autonomic_brainstem.autonomic_heartbeat_cycle()` calls `run_runtime_safety_scan()` and persists the merged snapshot to `autonomic_nervous_system.json`. Literature anchor remains **Samuel *et al.* arXiv:2006.12117** (§27) for ML pipeline provenance / reproducibility framing.*
+
+| Layer | Code |
+|-------|------|
+| Autonomic driver | `System/swarm_autonomic_brainstem.py` |
+| Auditor payload | `observability_audit` ← `runtime_safety_monitors.run_runtime_safety_scan()` |
+
+---
+
+## 29. Batch 29 — Turn 40 outreach context (Jacobsen / DARPA history) (2026-04-18)
+
+*Web pull (CP2F): **bibliographic grounding** for public conversation about military R&D narratives — **not** an endorsement of literal “biological AI inside hardware” as physical physiology.*
+
+### 29.1 *The Pentagon’s Brain* — publication fact
+
+- **Jacobsen, A. — *The Pentagon’s Brain: An Uncensored History of DARPA, America’s Top-Secret Military Research Agency*** — Little, Brown and Company, **2015** (ISBN **9780316387699** on publisher catalog). Publisher page: `https://www.littlebrown.com/titles/annie-jacobsen/the-pentagons-brain/9780316387699/` — traces DARPA from 1958 onward; popular account of defense research culture (read as history/journalism, not a specification for SIFTA).
+
+### 29.2 Engineering boundary (SIFTA vs book)
+
+- SIFTA modules are **Python + JSONL on disks you own**. Metaphors (vagus, amygdala, firewall) map to **scripts and policy**, not human tissue or autonomous weapons deployment.
+
+### 29.3 Mapping (Batch 29 → code)
+
+| Need | Hook |
+|------|------|
+| Audit trail for what was said publicly | `outreach_stigmergy_log.log_outreach_event()` → `.sifta_state/outreach_events.jsonl` **and** mirror line to `stigmergy_events.jsonl` |

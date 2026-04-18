@@ -1,0 +1,6 @@
+{
+  "nodes": {
+    "local": "http://YOUR_LOCAL_IP:3003/api/articles",
+    "public": "https://your-domain.com/api/articles"
+  }
+}

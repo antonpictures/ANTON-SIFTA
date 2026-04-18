@@ -1,0 +1,35 @@
+{
+  "agent_id": "DEEP_SYNTAX_AUDITOR_0X1",
+  "body_hash": "1LYwlXxFPJvL9jdhzBJRpvvpZLiugoQ5RBhC9okv/yI+aw68Zscul4A3cDAg==]>",
+  "face": "[^_&]",
+  "action": "PATROL",
+  "mark": "CYBER arrested 1 ghost(s): ['KARPATHY_PRIME_0X1']",
+  "pre_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "post_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "scent": {
+    "last_visited": "2026-04-08T04:21:43.429663+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": -1,
+    "reason": {
+      "type": "CryptographicViolation",
+      "count": 1
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T04:21:43.429663+00:00",
+      "action": "PATROL",
+      "found": ".sifta_state",
+      "reason": {
+        "type": "CryptographicViolation",
+        "count": 1
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

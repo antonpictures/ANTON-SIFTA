@@ -38,7 +38,7 @@ Everything else in this document **hangs off** that spine.
 
 ## 3. Plain terms
 
-- **Today:** system **acts** and **remembers** (ledgers, ghosts, scars).  
+- **Today:** system **acts** and **remembers** (ledgers, marrows, scars).  
 - **Next:** system **condenses** — same structural win repeated under eval → **crystallized skill** with **version**, **signature**, **stability**, **decay**.  
 - **Tie to REM:** offline / low-attention windows (`temporal_spine`, `dream_state`) **reprocess** buffers — **not** to invent facts, but to **merge** and **promote** **patterns** that pass **objective + governor** gates.
 

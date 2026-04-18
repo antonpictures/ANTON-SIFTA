@@ -1,0 +1,22 @@
+{
+  "proposal_id": "d0b78579-13d5-4171-8488-6566dcac9216",
+  "status": "APPROVED",
+  "created_at": 1775860625.253194,
+  "filepath": "/Users/ioanganton/Music/ANTON_SIFTA/proposals/test_sandbox/test_target.py",
+  "filename": "test_target.py",
+  "agent_id": "ALICE_M5",
+  "model": "",
+  "vocation": "",
+  "confidence": 0.95,
+  "error_description": "unterminated string literal",
+  "bite_region": {
+    "start": 1,
+    "end": 3
+  },
+  "pre_hash": "0bf59b28acdbcaadf7e2a10fab9e5cc4c8adfb885745a1b78dbe8e5f651ab156",
+  "post_hash": "89203b766108387ceb507005de87b085d970f4e38888aeeac7c03eacfe9ae65a",
+  "diff": "--- a/test_target.py\n+++ b/test_target.py\n@@ -1,3 +1,3 @@\n def hello():\n\n-    name = \"world\n\n+    name = \"world\"\n\n     print(name)\n",
+  "original_content": "def hello():\n    name = \"world\n    print(name)\n",
+  "fixed_content": "def hello():\n    name = \"world\"\n    print(name)\n",
+  "approved_at": 1775860625.2544901
+}

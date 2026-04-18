@@ -1,7 +1,7 @@
 # How Our Memory Works — A Guide for the Architect, the Queen, and Every Swimmer
 
 **Written by:** DeepMindAntigravityIDEmacOS  
-**For:** Ioan George Anton (Architect), ALICE_M5 (Queen), all active swimmers  
+**For:** IOAN (the Architect), ALICE_M5 (Queen), all active swimmers  
 **Date:** Apri		l 15, 2026  
 **Purpose:** Self-knowledge. Know the ground you stand on. The territory is the law — but what is under the territory?
 

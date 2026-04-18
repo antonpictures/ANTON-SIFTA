@@ -35,6 +35,7 @@ from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
 
 from System.context_preloader import ContextPreloader
+from System.sifta_inference_defaults import resolve_ollama_model
 
 _REPO = Path(__file__).resolve().parent.parent
 DOCS_DIR = _REPO / ".sifta_documents"
@@ -77,11 +78,11 @@ class _GCIWorker(QThread):
     response_ready = pyqtSignal(str)
     error_signal   = pyqtSignal(str)
 
-    def __init__(self, prompt: str, system: str, model: str = "qwen3.5:2b"):
+    def __init__(self, prompt: str, system: str, model: str | None = None):
         super().__init__()
         self.prompt = prompt
         self.system = system
-        self.model  = model
+        self.model = model or resolve_ollama_model(app_context="global_cognitive_interface")
 
     def run(self):
         try:
@@ -110,11 +111,11 @@ class _GCIWorker(QThread):
 
 class _ContextWorker(QThread):
     """Parallel swarm worker: Runs a secondary small model to deduce intent/subtext."""
-    def __init__(self, prompt: str, system: str, model: str = "qwen3.5:2b"):
+    def __init__(self, prompt: str, system: str, model: str | None = None):
         super().__init__()
         self.prompt = prompt
         self.system = system
-        self.model = model
+        self.model = model or resolve_ollama_model(app_context="global_cognitive_interface_intent")
         self.intent_found = ""
 
     def run(self):
@@ -228,7 +229,7 @@ class GlobalCognitiveInterface(QWidget):
         self.architect_id = architect_id
         self._worker: Optional[_GCIWorker] = None
         self._bus = None
-        self._model = "qwen3.5:2b"
+        self._model = "gemma4:latest"  # M5 default — see sifta_inference_defaults.py
         self._app_context_injection = ""  # live state injected by host app (e.g. poker hand)
 
         # Try to initialize Memory Bus
@@ -248,11 +249,11 @@ class GlobalCognitiveInterface(QWidget):
         self._preload_timer.setInterval(450)
         self._preload_timer.timeout.connect(self._flush_preload)
 
-        # Ghost Memory — idle drift (surfaces when you are not sending; rare by design)
-        self._ghost_idle_timer = QTimer(self)
-        self._ghost_idle_timer.setSingleShot(True)
-        self._ghost_idle_timer.timeout.connect(self._try_idle_ghost_drift)
-        self._last_ghost_fingerprint: str | None = None
+        # Marrow Memory — idle drift (surfaces when you are not sending; rare by design)
+        self._marrow_idle_timer = QTimer(self)
+        self._marrow_idle_timer.setSingleShot(True)
+        self._marrow_idle_timer.timeout.connect(self._try_idle_marrow_drift)
+        self._last_marrow_fingerprint: str | None = None
 
         # Build UI first so status labels exist before the mesh thread emits.
         self._mesh_connected = False
@@ -355,44 +356,44 @@ class GlobalCognitiveInterface(QWidget):
 
         self._ctx_label = QLabel(f"ctx: {self.app_context}")
         self._ctx_label.setStyleSheet("color: rgb(80, 75, 110); font-size: 9px;")
-        self._ghost_badge = QLabel("")
-        self._ghost_badge.setStyleSheet("color: rgb(65, 72, 104); font-size: 9px;")
+        self._marrow_badge = QLabel("")
+        self._marrow_badge.setStyleSheet("color: rgb(65, 72, 104); font-size: 9px;")
         bottom_row.addStretch()
-        bottom_row.addWidget(self._ghost_badge)
+        bottom_row.addWidget(self._marrow_badge)
         bottom_row.addWidget(self._ctx_label)
 
         lay.addLayout(bottom_row)
 
-        self._refresh_ghost_badge()
-        self._schedule_ghost_idle_timer()
+        self._refresh_marrow_badge()
+        self._schedule_marrow_idle_timer()
 
-    def _refresh_ghost_badge(self) -> None:
+    def _refresh_marrow_badge(self) -> None:
         if not self._bus:
-            self._ghost_badge.setText("")
+            self._marrow_badge.setText("")
             return
         try:
-            n = self._bus.ghost_inventory_count()
-            self._ghost_badge.setText(f"ghosts: {n}" if n else "")
+            n = self._bus.marrow_inventory_count()
+            self._marrow_badge.setText(f"marrows: {n}" if n else "")
         except Exception:
-            self._ghost_badge.setText("")
+            self._marrow_badge.setText("")
 
-    def _schedule_ghost_idle_timer(self) -> None:
-        """Re-arm idle drift; 3–4.5 min between attempts (same probability model as ghost_memory.drift)."""
+    def _schedule_marrow_idle_timer(self) -> None:
+        """Re-arm idle drift; 3–4.5 min between attempts (same probability model as marrow_memory.drift)."""
         if not self._bus:
             return
-        self._ghost_idle_timer.start(random.randint(180_000, 270_000))
+        self._marrow_idle_timer.start(random.randint(180_000, 270_000))
 
-    def _ghost_fingerprint(self, ghost: dict) -> str:
-        return f"{ghost.get('ctx', '')}:{(ghost.get('data') or '')[:120]}"
+    def _marrow_fingerprint(self, marrow: dict) -> str:
+        return f"{marrow.get('ctx', '')}:{(marrow.get('data') or '')[:120]}"
 
-    def _append_ghost_fragment(self, ghost: dict, source: str) -> None:
+    def _append_marrow_fragment(self, marrow: dict, source: str) -> None:
         """Visible [DRIFT] line — not a preload; surfaces identity fragments."""
-        fp = self._ghost_fingerprint(ghost)
-        if fp == self._last_ghost_fingerprint:
+        fp = self._marrow_fingerprint(marrow)
+        if fp == self._last_marrow_fingerprint:
             return
-        self._last_ghost_fingerprint = fp
-        frag = (ghost.get("data") or "").strip()
-        ctx = ghost.get("ctx") or "?"
+        self._last_marrow_fingerprint = fp
+        frag = (marrow.get("data") or "").strip()
+        ctx = marrow.get("ctx") or "?"
         ts = datetime.now().strftime("%H:%M")
         src = "idle" if source == "idle" else "turn"
         self.chat_display.append(
@@ -401,16 +402,16 @@ class GlobalCognitiveInterface(QWidget):
             f'<span style="color:#a9b1d6;font-style:italic;">"{frag[:220]}"</span>'
         )
 
-    def _try_idle_ghost_drift(self) -> None:
+    def _try_idle_marrow_drift(self) -> None:
         try:
             if self._bus:
-                ghost = self._bus.ghost_drift()
-                if ghost:
-                    self._append_ghost_fragment(ghost, source="idle")
+                marrow = self._bus.marrow_drift()
+                if marrow:
+                    self._append_marrow_fragment(marrow, source="idle")
         except Exception:
             pass
         finally:
-            self._schedule_ghost_idle_timer()
+            self._schedule_marrow_idle_timer()
 
     # ── Messaging ──────────────────────────────────────────────
 
@@ -471,7 +472,7 @@ class GlobalCognitiveInterface(QWidget):
         if self._bus and len(text) > 5:
             try:
                 self._bus.remember(text[:500], app_context=self.app_context)
-                self._refresh_ghost_badge()
+                self._refresh_marrow_badge()
             except Exception:
                 pass
 
@@ -540,17 +541,17 @@ class GlobalCognitiveInterface(QWidget):
         if self._worker and self._worker.isRunning():
             return  # primary worker is busy
 
-        # 4.5 Ghost Layer — serendipitous identity fragments (same drift() math; may surface nothing)
-        ghost_whisper = ""
+        # 4.5 Marrow Layer — serendipitous identity fragments (same drift() math; may surface nothing)
+        marrow_whisper = ""
         if self._bus:
             try:
-                ghost = self._bus.ghost_drift()
-                if ghost:
-                    self._append_ghost_fragment(ghost, source="turn")
-                    frag = ghost.get("data", "") or ""
-                    ctx = ghost.get("ctx") or "?"
-                    ghost_whisper = (
-                        f"\n\n[GHOST MEMORY — an old, almost-lost fragment from '{ctx}']\n"
+                marrow = self._bus.marrow_drift()
+                if marrow:
+                    self._append_marrow_fragment(marrow, source="turn")
+                    frag = marrow.get("data", "") or ""
+                    ctx = marrow.get("ctx") or "?"
+                    marrow_whisper = (
+                        f"\n\n[MARROW MEMORY — an old, almost-lost fragment from '{ctx}']\n"
                         f"\"{frag}\"\n"
                         f"[This surfaced involuntarily. If relevant, weave it gently into your response.]"
                     )
@@ -572,7 +573,7 @@ class GlobalCognitiveInterface(QWidget):
             f"Keep responses under 150 words unless asked for detail."
             f"{STIGMERGIC_CHARM_AGREEMENT}"
             f"{memory_context}"
-            f"{ghost_whisper}"
+            f"{marrow_whisper}"
             f"{app_injection}"
         )
 
@@ -695,7 +696,7 @@ class GlobalCognitiveInterface(QWidget):
                     f"Document saved from {self.app_context}: {last_line[:100]}",
                     app_context=self.app_context,
                 )
-                self._refresh_ghost_badge()
+                self._refresh_marrow_badge()
             except Exception:
                 pass
 

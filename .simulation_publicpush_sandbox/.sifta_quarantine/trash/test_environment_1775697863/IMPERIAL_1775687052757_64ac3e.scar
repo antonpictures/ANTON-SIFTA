@@ -1,0 +1,37 @@
+{
+  "agent_id": "IMPERIAL",
+  "body_hash": "35+nXvG3f3Rr+UggsfPszYDWpZeIL+KIWtgMnKj5QhUGtftCcTeamJlh3ZCw==]>",
+  "face": "[@_@]",
+  "action": "ABORT",
+  "mark": "Agent corrupted mind state resolving .. Dropping thread.",
+  "pre_territory_hash": null,
+  "post_territory_hash": null,
+  "scent": {
+    "last_visited": "2026-04-08T22:24:12.757831+00:00",
+    "potency": 1.0,
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 19,
+    "reason": {
+      "type": "ValidationFail",
+      "line": 19,
+      "message": "invalid syntax (<unknown>, line 19)"
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-04-08T22:24:12.757831+00:00",
+      "action": "ABORT",
+      "found": "unterminated string literal (detected at line 19) (<unknown>, line 19)",
+      "reason": {
+        "type": "ValidationFail",
+        "line": 19,
+        "message": "invalid syntax (<unknown>, line 19)"
+      },
+      "parent_hash": null,
+      "action_hash": null
+    }
+  ]
+}

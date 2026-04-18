@@ -2,6 +2,11 @@
 """
 stigmergic_detector.py - Score stigmergic marker density in text.
 """
+# ════════════════════════════════════════════════════════════════════════
+# VISION-SYSTEM-ROLE: the optic nerve signature processor
+# Analogue mapped from Land & Nilsson (2012) via DYOR §E.
+# Integrates with Swarm-Eye Olympiad M5.2.
+# ════════════════════════════════════════════════════════════════════════
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass

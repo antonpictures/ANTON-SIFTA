@@ -90,7 +90,7 @@ def execute_defrag(bounty_file: str, executing_agent: str):
 
     try:
         import urllib.request
-        data = json.dumps({"model": "qwen3.5:2b", "prompt": prompt, "stream": False}).encode('utf-8')
+        data = json.dumps({"model": "gemma4:latest", "prompt": prompt, "stream": False}).encode('utf-8')
         req = urllib.request.Request("http://localhost:11434/api/generate", data=data, headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req) as response:
             result = json.loads(response.read().decode('utf-8'))

@@ -28,6 +28,11 @@ Mechanism:
 4. Applies the Oxytocin `threat_suppressed` modifier. 
 5. Outputs the final `Amygdala Firing Rate`.
 """
+# ════════════════════════════════════════════════════════════════════════
+# VISION-SYSTEM-ROLE: the lateral geniculate nucleus (LGN) / amygdala alarm path
+# Analogue mapped from Land & Nilsson (2012) via DYOR §E.
+# Integrates with Swarm-Eye Olympiad M5.2.
+# ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
 import json
@@ -72,8 +77,19 @@ def calculate_amygdala_threat(stimulus_source: str, stimulus_length: int) -> Dic
         try:
             with open(_OXYTOCIN_STATE, "r", encoding="utf-8") as f:
                 ot_data = json.load(f)
-                oxytocin_trust_level = ot_data.get("current_oxytocin_level", 0.0)
-                threat_suppressed_factor = ot_data.get("threat_suppressed_modifier", oxytocin_trust_level * 0.8)
+                # CP2F `oxytocin_social_bond.py` persists `systemic_ot`; legacy keys optional.
+                oxytocin_trust_level = float(
+                    ot_data.get(
+                        "current_oxytocin_level",
+                        ot_data.get("systemic_ot", ot_data.get("ot_level", 0.0)),
+                    )
+                )
+                threat_suppressed_factor = float(
+                    ot_data.get(
+                        "threat_suppressed_modifier",
+                        max(0.0, min(1.0, oxytocin_trust_level * 0.8)),
+                    )
+                )
                 events["cp2f_oxytocin_integration"] = "OXYTOCIN_STATE_READ_SUCCESS"
         except Exception as e:
             events["cp2f_oxytocin_integration"] = f"AG31_FALLBACK_FILE_ERROR ({str(e)})"

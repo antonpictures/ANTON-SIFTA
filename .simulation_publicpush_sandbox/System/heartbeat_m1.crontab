@@ -1,0 +1,31 @@
+# ═══════════════════════════════════════════════════════════════
+# SIFTA HEARTBEAT SCHEDULE — e-Derived, 7-Min Minimum Gap
+# Node:     M1 Mac Mini (serial auto-resolved via ioreg)
+# Constant: e = 2.71828182845904523536...
+# ═══════════════════════════════════════════════════════════════
+#
+# SOURCE DERIVATION (e digit pairs, filtered for gap ≥ 7 min):
+#   ALL pairs from e: 27,18,28,18✗dup,28✗dup,45,90✗,45✗dup,23,53,35,04,52
+#   Valid (≤59, no dup): 04, 18, 27, 35, 45, 52
+#
+#   Gap audit (sorted):
+#   04 → 18 : 14 min ✓
+#   18 → 27 :  9 min ✓
+#   27 → 35 :  8 min ✓
+#   35 → 45 : 10 min ✓
+#   45 → 52 :  7 min ✓
+#   52 → 04 : 12 min ✓  (wrap: 4+60-52=12)
+#   ALL GAPS ≥ 7 ✓
+#
+# 6 heartbeats/hour · avg gap: 10 min · min gap: 7 min
+# ═══════════════════════════════════════════════════════════════
+#
+# INSTALL (run once in terminal on Mac Mini):
+#   crontab -e   then paste the 6 lines below:
+#
+4  * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+18 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+27 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+35 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+45 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py
+52 * * * * cd /Users/ioanganton/Music/ANTON_SIFTA && python3 System/heartbeat_m1.py

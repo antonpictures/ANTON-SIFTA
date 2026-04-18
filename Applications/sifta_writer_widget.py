@@ -38,6 +38,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtPrintSupport import QPrinter
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.sifta_save_defaults import default_sifta_save_path
 
 DOCS_DIR = _REPO / ".sifta_documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
@@ -486,8 +487,10 @@ class WriterWidget(SiftaBaseWidget):
             path = self.current_file
         else:
             path, _ = QFileDialog.getSaveFileName(
-                self, "Save Document", str(DOCS_DIR),
-                "SIFTA Documents (*.sifta.md);;All Files (*)"
+                self,
+                "Save Document",
+                str(default_sifta_save_path(DOCS_DIR)),
+                "SIFTA Documents (*.sifta.md);;All Files (*)",
             )
             if not path:
                 return
@@ -534,9 +537,10 @@ class WriterWidget(SiftaBaseWidget):
         self.set_status(f"Opened: {path.name} ({word_count} words)")
 
     def _export_pdf(self):
+        _md_default = default_sifta_save_path(DOCS_DIR)
+        _pdf_default = _md_default.parent / (_md_default.name.replace(".sifta.md", ".pdf"))
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export PDF", str(DOCS_DIR / "export.pdf"),
-            "PDF Files (*.pdf)"
+            self, "Export PDF", str(_pdf_default), "PDF Files (*.pdf)"
         )
         if not path:
             return

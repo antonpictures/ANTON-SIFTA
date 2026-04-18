@@ -16,6 +16,7 @@ import re
 import math
 import random
 from pathlib import Path
+from typing import Dict, List, Any, Optional
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
@@ -26,10 +27,19 @@ from PyQt6.QtGui import QFont, QColor, QTextCursor, QTextCharFormat, QKeyEvent
 
 _REPO = Path(__file__).resolve().parent.parent
 _SYS = _REPO / "System"
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 if str(_SYS) not in sys.path:
     sys.path.insert(0, str(_SYS))
 
 from ledger_append import append_jsonl_line
+from sifta_save_defaults import default_sifta_save_path
+
+from System.sifta_inference_defaults import (
+    get_default_ollama_model,
+    resolve_ollama_model,
+    sanitize_model_name,
+)
 
 def _append_repair_log_line(row: dict) -> None:
     if str(_SYS) not in sys.path:
@@ -64,11 +74,12 @@ class OllamaWorker(QThread):
     response_ready = pyqtSignal(str)
     error_signal   = pyqtSignal(str)
 
-    def __init__(self, prompt: str, local_identity: str, model: str = "qwen3.5:2b"):
+    def __init__(self, prompt: str, local_identity: str, model: Optional[str] = None):
         super().__init__()
         self.prompt = prompt
         self.local_identity = local_identity
-        self.model  = model
+        # Production default: gemma4:latest; per-app override via swimmer_ollama_assignments.json
+        self.model = model or resolve_ollama_model(app_context="swarm_chat")
 
     def run(self):
         try:
@@ -97,17 +108,17 @@ class OllamaWorker(QThread):
                 f"{memory_context}"
             )
 
-            payload = json.dumps({
-                "model":  self.model,
+            model = sanitize_model_name(self.model)
+            payload = {
+                "model": model,
                 "prompt": f"Document context:\n{self.prompt[-3000:]}\n\nContinue the dialogue:",
                 "system": system_prompt,
-                "stream": False
-            }).encode("utf-8")
+                "stream": False,
+            }
+            from System.inference_router import route_inference
 
-            req = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=payload, headers={"Content-Type": "application/json"}, method="POST")
-            with urllib.request.urlopen(req, timeout=600) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                
+            text = route_inference(payload, timeout=600).strip()
+            if text:
                 # Mining Check
                 try:
                     from silicon_serial import read_apple_serial
@@ -128,10 +139,11 @@ class OllamaWorker(QThread):
                         _append_repair_log_line(tx)
                 except: pass
                 
-                res = data.get("response", "").strip()
-                # Remove think blocks
-                res = re.sub(r'<think>.*?</think>', '', res, flags=re.DOTALL).strip()
+                res = re.sub(r'<redacted_thinking>.*?</think>', '', text, flags=re.DOTALL).strip()
                 self.response_ready.emit(res)
+            else:
+                self.error_signal.emit("[OLLAMA FAULT] Empty response from model")
+
 
         except Exception as e:
             self.error_signal.emit(f"[OLLAMA FAULT] {e}")
@@ -176,17 +188,17 @@ class ScreenplayTextEdit(QTextEdit):
 
 
 class SwarmChatWindow(QWidget):
-    def __init__(self, model: str = "qwen3.5:2b"):
+    def __init__(self, model: str | None = None):
         super().__init__()
-        self.model  = model
+        self.model = model or get_default_ollama_model()
         self.context_files = []
         self.ollama_worker = None
-        self._ghost_bus = None
+        self._marrow_bus = None
 
-        # Initialize Ghost Memory Layer
+        # Initialize Marrow Memory Layer
         try:
             from System.stigmergic_memory_bus import StigmergicMemoryBus
-            self._ghost_bus = StigmergicMemoryBus(architect_id="IOAN_M5")
+            self._marrow_bus = StigmergicMemoryBus(architect_id="IOAN_M5")
         except Exception:
             pass
 
@@ -310,11 +322,11 @@ class SwarmChatWindow(QWidget):
 
         self._seed_page()
 
-        # Ghost Drift Timer — surfaces dying memories as stage directions
-        self._ghost_timer = QTimer(self)
-        self._ghost_timer.setInterval(45000)  # every 45 seconds
-        self._ghost_timer.timeout.connect(self._ghost_drift_tick)
-        self._ghost_timer.start()
+        # Marrow Drift Timer — surfaces dying memories as stage directions
+        self._marrow_timer = QTimer(self)
+        self._marrow_timer.setInterval(45000)  # every 45 seconds
+        self._marrow_timer.timeout.connect(self._marrow_drift_tick)
+        self._marrow_timer.start()
 
         # Cross-node dead-drop relay poll — pulls M1↔M5 chat as pheromone.
         self._drop_timer = QTimer(self)
@@ -502,37 +514,37 @@ class SwarmChatWindow(QWidget):
             except Exception:
                 pass
 
-    def _ghost_drift_tick(self):
-        """Poll the Ghost Memory layer for a dying fragment. If one surfaces, inject as a faded stage direction."""
-        if not self._ghost_bus:
+    def _marrow_drift_tick(self):
+        """Poll the Marrow Memory layer for a dying fragment. If one surfaces, inject as a faded stage direction."""
+        if not self._marrow_bus:
             return
         try:
-            ghost = self._ghost_bus.ghost_drift()
-            if not ghost:
+            marrow = self._marrow_bus.marrow_drift()
+            if not marrow:
                 return
             
-            frag = ghost.get('data', '')
-            ctx  = ghost.get('ctx', '?')
-            gravity = ghost.get('gravity', 0)
+            frag = marrow.get('data', '')
+            ctx  = marrow.get('ctx', '?')
+            gravity = marrow.get('gravity', 0)
             
             if not frag:
                 return
 
-            # Build the stage direction
-            stage_direction = f"\n    👻 (a ghost memory drifts up from {ctx} — \"{frag[:120]}...\")\n"
+            # Build the stage direction (🦴 = bone marrow surfacing)
+            stage_direction = f"\n    🦴 (a marrow memory surfaces from {ctx} — \"{frag[:120]}...\")\n"
             
             # Insert at cursor position without disrupting flow
             cursor = self.editor.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.End)
             self.editor.setTextCursor(cursor)
             
-            # Apply ghost formatting (faded, italic)
-            ghost_fmt = QTextCharFormat()
-            ghost_fmt.setForeground(QColor("#414868"))
-            ghost_fmt.setFontItalic(True)
-            ghost_fmt.setFontPointSize(11)
+            # Apply marrow formatting (faded, italic — same look as before)
+            marrow_fmt = QTextCharFormat()
+            marrow_fmt.setForeground(QColor("#414868"))
+            marrow_fmt.setFontItalic(True)
+            marrow_fmt.setFontPointSize(11)
             
-            cursor.insertText(stage_direction, ghost_fmt)
+            cursor.insertText(stage_direction, marrow_fmt)
             
             # Reset format for next typing
             normal_fmt = QTextCharFormat()
@@ -559,7 +571,12 @@ class SwarmChatWindow(QWidget):
     def _save_doc(self):
         docs_dir = _REPO / ".sifta_documents"
         docs_dir.mkdir(exist_ok=True)
-        path, _ = QFileDialog.getSaveFileName(self, "Save SIFTA Document", str(docs_dir), "SIFTA Documents (*.sifta.md);;All Files (*)")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save SIFTA Document",
+            str(default_sifta_save_path(docs_dir)),
+            "SIFTA Documents (*.sifta.md);;All Files (*)",
+        )
         if not path: return
         Path(path).write_text(self.editor.toPlainText(), encoding="utf-8")
         self.status_label.setText(f"💾 Saved {Path(path).name}")
@@ -574,10 +591,10 @@ class SwarmChatWindow(QWidget):
                     models = [m["name"] for m in data["models"]]
         except Exception: pass
         if not models:
-            models = ["qwen3.5:2b (Offline Fallback)"]
-        
-        best = ["gemma4:latest", "llama3:latest"]
-        for b in best:
+            models = [f"{get_default_ollama_model()} (Offline Fallback)"]
+
+        preferred = [get_default_ollama_model(), "llama3:latest", "phi4-mini-reasoning:latest"]
+        for b in preferred:
             if b in models:
                 self.model = b
                 break
@@ -592,7 +609,7 @@ class SwarmChatWindow(QWidget):
         Previously a no-op (DeepMind bug 3) — the Mac Mini entity could only
         hear local typing.  Now reads the *other* queen's drop file via
         swarm_chat_relay (watermarked, deduped, identity-tagged) and injects
-        each new row as a faded ghost-style stage direction so Screenplay
+        each new row as a faded drift-style stage direction so Screenplay
         flow isn't disrupted.
         """
         if not _RELAY_AVAILABLE:
@@ -608,10 +625,10 @@ class SwarmChatWindow(QWidget):
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.editor.setTextCursor(cursor)
 
-        ghost_fmt = QTextCharFormat()
-        ghost_fmt.setForeground(QColor("#9ece6a"))  # green = remote pheromone
-        ghost_fmt.setFontItalic(True)
-        ghost_fmt.setFontPointSize(11)
+        drop_fmt = QTextCharFormat()
+        drop_fmt.setForeground(QColor("#9ece6a"))  # green = remote pheromone
+        drop_fmt.setFontItalic(True)
+        drop_fmt.setFontPointSize(11)
 
         for m in msgs:
             src_tag = m.source_serial[-4:] if m.source_serial else "????"
@@ -620,7 +637,7 @@ class SwarmChatWindow(QWidget):
                 f"\n    📡 (dead-drop from {m.sender} @ {src_tag} via {m.source_file}) "
                 f"— {preview}\n"
             )
-            cursor.insertText(stage, ghost_fmt)
+            cursor.insertText(stage, drop_fmt)
 
         normal_fmt = QTextCharFormat()
         normal_fmt.setForeground(QColor("#c0caf5"))

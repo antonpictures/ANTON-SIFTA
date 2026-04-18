@@ -26,6 +26,11 @@ Mechanism:
    storage, and moves it to `immune_quarantine.jsonl`.
 4. Triggers systemic Inflammation (lowers Dopamine slightly, flags Alice).
 """
+# ════════════════════════════════════════════════════════════════════════
+# VISION-SYSTEM-ROLE: the retinal microglia (tissue maintenance)
+# Analogue mapped from Land & Nilsson (2012) via DYOR §E.
+# Integrates with Swarm-Eye Olympiad M5.2.
+# ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
 import json

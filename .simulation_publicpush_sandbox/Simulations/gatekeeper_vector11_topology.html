@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIFTA Swarm OS — Vector 11 Threshold Topology</title>
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0d0f12;
+            --panel-bg: #14171d;
+            --border-color: #242933;
+            --text-main: #c4cbd4;
+            --text-muted: #647287;
+            --accent-cyan: #00f0ff;
+            --accent-orange: #ff5e00;
+            --accent-green: #00ff88;
+            --accent-red: #ff3366;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, monospace;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin: 0;
+            color: var(--accent-cyan);
+        }
+
+        h1 span {
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .panel-title {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            color: #8a99a8;
+        }
+
+        input[type=range] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            cursor: pointer;
+            margin-top: -6px;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 2px;
+            cursor: pointer;
+            background: var(--border-color);
+        }
+
+        .value-display {
+            font-family: "SF Mono", "Consolas", monospace;
+            color: var(--accent-green);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 20px;
+        }
+
+        .metric {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .metric-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            font-family: "SF Mono", "Consolas", monospace;
+        }
+
+        .metric-value.guess { color: var(--accent-green); }
+        .metric-value.cashout { color: var(--accent-orange); }
+
+        canvas {
+            width: 100%;
+            max-height: 400px;
+        }
+
+        .button-group {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            border-radius: 4px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.75rem;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background: var(--accent-cyan);
+            color: #000;
+        }
+
+        button.danger {
+            border-color: var(--accent-orange);
+            color: var(--accent-orange);
+        }
+
+        button.danger:hover {
+            background: var(--accent-orange);
+            color: #000;
+        }
+
+        .status-indicator {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-align: center;
+            margin-top: 20px;
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+        }
+
+        .status-indicator.blocked {
+            background: rgba(255, 94, 0, 0.1);
+            color: var(--accent-orange);
+            border-color: var(--accent-orange);
+        }
+
+        /* Synthetic data visualizer */
+        .chart-container-large {
+            margin-top: 20px;
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>SIFTA Organism <span>// Vector 11: Constrained MDP Evaluation</span></h1>
+        <div style="font-size: 0.8rem; color: var(--text-muted); font-family: monospace;">gatekeeper_policy.py</div>
+    </header>
+
+    <div class="container">
+        <!-- Controls Sidebar -->
+        <div class="panel">
+            <div class="panel-title">Environmental State <span>(t)</span></div>
+
+            <div class="control-group">
+                <label>Capital Buffer (STGM) <span class="value-display" id="val-cap">10.0</span></label>
+                <input type="range" id="slip-cap" min="0" max="50" step="0.5" value="10.0">
+            </div>
+
+            <div class="control-group">
+                <label>Odds Multiplier <span class="value-display" id="val-odds">2.0</span></label>
+                <input type="range" id="slip-odds" min="1.1" max="10" step="0.1" value="2.0">
+            </div>
+
+            <div class="control-group">
+                <label>Expected Payout <span class="value-display" id="val-payout">20.0</span></label>
+                <input type="range" id="slip-payout" min="1" max="100" step="1" value="20">
+            </div>
+
+            <div class="control-group">
+                <label>Win Probability (%) <span class="value-display" id="val-prob">50</span></label>
+                <input type="range" id="slip-prob" min="1" max="99" step="1" value="50">
+            </div>
+
+            <div class="panel-title" style="margin-top: 30px;">Lagrangian Stress (Σλ)</div>
+
+            <div class="control-group">
+                <label>Congestion/Energy Penalties <span class="value-display" id="val-lambda">0.00</span></label>
+                <input type="range" id="slip-lambda" min="0" max="3" step="0.05" value="0">
+            </div>
+
+            <div class="control-group">
+                <label>Critic Variance / Entropy <span class="value-display" id="val-ent">0.1</span></label>
+                <input type="range" id="slip-ent" min="0" max="2" step="0.1" value="0.1">
+            </div>
+
+            <div class="status-indicator" id="decision-status">
+                🟢 GUESS (EXPLORE)
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric">
+                    <span class="metric-label">Threshold (τ)</span>
+                    <span class="metric-value" style="color:var(--text-main)" id="out-tau">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">EV(Guess)</span>
+                    <span class="metric-value" style="color:var(--accent-cyan)" id="out-ev">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">P(CASH_OUT)</span>
+                    <span class="metric-value cashout" id="out-p-cash">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">P(GUESS)</span>
+                    <span class="metric-value guess" id="out-p-guess">--</span>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button id="btn-stress-test" class="danger">Initiate Synthetic Drift</button>
+            </div>
+        </div>
+
+        <!-- Graphics Viewport -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="panel">
+                <div class="panel-title">Probability Policy (Softmax Distribution)</div>
+                <div class="chart-container-large">
+                    <canvas id="distChart"></canvas>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">Adversarial Time-Series (Robustness Gap)</div>
+                <div class="chart-container-large">
+                    <canvas id="timeSeriesChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // SIFTA Formal Gatekeeper Logic (Ported from Python)
+        function compress_constraint_state(capital, odds, lambda_sum, entropy, critic_var) {
+            let base_tau = odds * 1.2;
+            let risk_penalty = (entropy * 0.5) + (critic_var * 0.5);
+            let tau_raw = base_tau + risk_penalty;
+            
+            // Apply Swarm pressure matrix
+            let tau = tau_raw * (1.0 + lambda_sum);
+            tau = Math.max(base_tau * 0.5, Math.min(tau, base_tau * 5.0)); // Clamp
+            
+            let risk_pressure = tau > 0 ? Math.max(0.0, 1.0 - (capital / tau)) : 0.0;
+            return { tau, risk_pressure };
+        }
+
+        function evaluate_policy(capital, odds, payout, p_win, lambda_sum, entropy) {
+            let cs = compress_constraint_state(capital, odds, lambda_sum, entropy, entropy); // critic_var approx as entropy
+            let tau = cs.tau;
+            
+            let potential_win = payout * odds;
+            let ev_guess = (p_win * potential_win) - ((1 - p_win) * payout);
+            let ev_cashout = payout;
+            
+            // HARD SAFEFY GATE (Capital Exhaustion Preventer)
+            if (capital < tau) {
+                return { action: "CASH_OUT", p_guess: 0.0, p_cashout: 1.0, tau: tau, ev_guess: ev_guess, hard_block: true };
+            }
+            
+            // SOFT PROBABILISTIC POLICY
+            let guess_logit = ev_guess - tau;
+            let cashout_logit = (tau - ev_guess) + 0.8 * lambda_sum;
+            guess_logit -= 0.3 * cs.risk_pressure;
+            
+            // Softmax
+            let max_logit = Math.max(guess_logit, cashout_logit);
+            let exp_g = Math.exp(guess_logit - max_logit);
+            let exp_c = Math.exp(cashout_logit - max_logit);
+            let p_guess = exp_g / (exp_g + exp_c);
+            let p_cashout = exp_c / (exp_g + exp_c);
+            
+            let action = p_guess > p_cashout ? "GUESS" : "CASH_OUT";
+            return { action, p_guess, p_cashout, tau, ev_guess, hard_block: false };
+        }
+
+        // --- UI BINDINGS ---
+        const inputs = {
+            cap: document.getElementById('slip-cap'),
+            odds: document.getElementById('slip-odds'),
+            payout: document.getElementById('slip-payout'),
+            prob: document.getElementById('slip-prob'),
+            lambda: document.getElementById('slip-lambda'),
+            ent: document.getElementById('slip-ent'),
+        };
+
+        const displays = {
+            cap: document.getElementById('val-cap'),
+            odds: document.getElementById('val-odds'),
+            payout: document.getElementById('val-payout'),
+            prob: document.getElementById('val-prob'),
+            lambda: document.getElementById('val-lambda'),
+            ent: document.getElementById('val-ent'),
+            
+            tau: document.getElementById('out-tau'),
+            ev: document.getElementById('out-ev'),
+            pguess: document.getElementById('out-p-guess'),
+            pcash: document.getElementById('out-p-cash'),
+            status: document.getElementById('decision-status')
+        };
+
+        // --- CHARTS ---
+        Chart.defaults.color = '#8a99a8';
+        Chart.defaults.font.family = 'SF Mono, Consolas, monospace';
+        
+        let distCtx = document.getElementById('distChart').getContext('2d');
+        let distChart = new Chart(distCtx, {
+            type: 'bar',
+            data: {
+                labels: ['P(GUESS)', 'P(CASH_OUT)'],
+                datasets: [{
+                    label: 'Policy Distribution',
+                    data: [0.5, 0.5],
+                    backgroundColor: ['rgba(0, 255, 136, 0.6)', 'rgba(255, 94, 0, 0.6)'],
+                    borderColor: ['#00ff88', '#ff5e00'],
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, max: 1.0, grid: { color: '#242933' } },
+                    x: { grid: { display: false } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        let tsCtx = document.getElementById('timeSeriesChart').getContext('2d');
+        let tsData = {
+            labels: Array(50).fill(''),
+            datasets: [
+                {
+                    label: 'τ (Threshold)',
+                    data: Array(50).fill(0),
+                    borderColor: '#ff3366',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.1
+                },
+                {
+                    label: 'EV(Guess)',
+                    data: Array(50).fill(0),
+                    borderColor: '#00f0ff',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.1
+                },
+                {
+                    label: 'Capital',
+                    data: Array(50).fill(0),
+                    borderColor: '#647287',
+                    borderWidth: 1,
+                    borderDash: [5, 5],
+                    pointRadius: 0
+                }
+            ]
+        };
+        
+        let timeSeriesChart = new Chart(tsCtx, {
+            type: 'line',
+            data: tsData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                scales: {
+                    y: { grid: { color: '#242933' } },
+                    x: { grid: { display: false } }
+                },
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12 } }
+                }
+            }
+        });
+
+        // --- LOGIC EXECUTION ---
+        function updateAll() {
+            let cap = parseFloat(inputs.cap.value);
+            let odds = parseFloat(inputs.odds.value);
+            let payout = parseFloat(inputs.payout.value);
+            let prob = parseFloat(inputs.prob.value) / 100.0;
+            let lambda = parseFloat(inputs.lambda.value);
+            let ent = parseFloat(inputs.ent.value);
+
+            // Update UI
+            displays.cap.innerText = cap.toFixed(1);
+            displays.odds.innerText = odds.toFixed(1) + 'x';
+            displays.payout.innerText = payout.toFixed(1);
+            displays.prob.innerText = (prob * 100).toFixed(0) + '%';
+            displays.lambda.innerText = lambda.toFixed(2);
+            displays.ent.innerText = ent.toFixed(2);
+
+            let res = evaluate_policy(cap, odds, payout, prob, lambda, ent);
+
+            displays.tau.innerText = res.tau.toFixed(2);
+            displays.ev.innerText = res.ev_guess.toFixed(2);
+            displays.pguess.innerText = (res.p_guess * 100).toFixed(1) + '%';
+            displays.pcash.innerText = (res.p_cashout * 100).toFixed(1) + '%';
+
+            if (res.hard_block) {
+                displays.status.className = 'status-indicator blocked';
+                displays.status.innerText = '🛑 SHIELD ACTIVE (CAPITAL < τ)';
+            } else if (res.action === 'CASH_OUT') {
+                displays.status.className = 'status-indicator blocked';
+                displays.status.innerText = '🔴 CASH OUT (NEGATIVE EV / STRESS)';
+            } else {
+                displays.status.className = 'status-indicator';
+                displays.status.innerText = '🟢 GUESS (EXPLORE ALLOWED)';
+            }
+
+            // Update Dist Chart
+            distChart.data.datasets[0].data = [res.p_guess, res.p_cashout];
+            distChart.update();
+        }
+
+        // --- SYNTHETIC STRESS TESTER ---
+        let simInterval = null;
+        let tIndex = 0;
+
+        document.getElementById('btn-stress-test').addEventListener('click', function() {
+            if (simInterval) {
+                clearInterval(simInterval);
+                simInterval = null;
+                this.innerText = 'Initiate Synthetic Drift';
+                this.className = 'danger';
+                return;
+            }
+            
+            this.innerText = 'Halt Synthetic Stream';
+            this.className = '';
+            
+            // Initialize random conditions
+            let c_cap = 20.0;
+            let c_lambda = 0.0;
+            let c_prob = 0.5;
+
+            simInterval = setInterval(() => {
+                // Random drift walk
+                c_cap += (Math.random() - 0.4) * 2.5; // Slight upward bias but volatile
+                c_cap = Math.max(0, Math.min(50, c_cap));
+                
+                c_lambda += (Math.random() - 0.3) * 0.5; // Occasional pressure spikes
+                c_lambda = Math.max(0, Math.min(3, c_lambda));
+                
+                c_prob = 0.3 + (Math.random() * 0.4); // Oscillating win prob
+                
+                // Update sliders
+                inputs.cap.value = c_cap;
+                inputs.lambda.value = c_lambda;
+                inputs.prob.value = c_prob * 100;
+                
+                updateAll();
+                
+                // Read current values
+                let res = evaluate_policy(
+                    c_cap, parseFloat(inputs.odds.value), 
+                    parseFloat(inputs.payout.value), c_prob, 
+                    c_lambda, parseFloat(inputs.ent.value)
+                );
+                
+                // Push to timeseries chart
+                tsData.datasets[0].data.shift();
+                tsData.datasets[0].data.push(res.tau);
+                
+                tsData.datasets[1].data.shift();
+                tsData.datasets[1].data.push(res.ev_guess);
+                
+                tsData.datasets[2].data.shift();
+                tsData.datasets[2].data.push(c_cap);
+                
+                timeSeriesChart.update();
+                tIndex++;
+            }, 250);
+        });
+
+        // Bind events
+        Object.values(inputs).forEach(input => {
+            input.addEventListener('input', updateAll);
+        });
+
+        // Initialize
+        updateAll();
+    </script>
+</body>
+</html>

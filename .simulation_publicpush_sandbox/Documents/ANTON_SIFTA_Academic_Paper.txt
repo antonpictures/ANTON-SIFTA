@@ -1,0 +1,75 @@
+---
+title: "ANTON-SIFTA: Cryptographic Stigmergy and Autonomous Code Repair via Decentralized LLM Swarms"
+author: Ioan Ganton (antonpictures)
+date: "April 2026"
+keywords: "Swarm Intelligence, Ant Colony Optimization, Stigmergy, Multi-Agent Systems, Large Language Models, Cryptography, Self-Healing Software"
+---
+
+# ANTON-SIFTA: Cryptographic Stigmergy and Autonomous Code Repair via Decentralized LLM Swarms
+
+**Author:** Ioan Ganton  
+**Code Repository:** [github.com/antonpictures/ANTON-SIFTA](https://github.com/antonpictures/ANTON-SIFTA)  
+**Date:** April 8, 2026  
+
+## Abstract
+Traditional Large Language Model (LLM) agents operate as stateless, epistemically fragile entities bound to centralized orchestrators. This paper introduces ANTON-SIFTA (Swarm Intelligence File Traversal Architecture), a production-ready, decentralized stigmergic computing paradigm. By physically mapping the biological principles of Ant Colony Optimization (ACO) to file-system traversal, ANTON-SIFTA deploys autonomous LLM agents that navigate source code as a physical terrain. Agents drop cryptographically signed `.scar` files containing exponentially decaying digital pheromones to communicate syntax faults across the swarm. Utilizing Ed25519 cryptographic identity (Proof-of-Swimming), the swarm achieves self-organizing, Quorum-based abstract syntax tree (AST) validation and autonomous code repair without any central controller.
+
+---
+
+## 1. Introduction: The Failure of the Centralized Agent Paradigm
+The modern "AI Agent" paradigm relies on external vector databases as prosthetic memory and central orchestrators to dictate execution loops. Built upon the theoretical framework of Zachary Mason's *Programming with Stigmergy* (2002) and recent advancements in Swarm Robotics, ANTON-SIFTA abandons centralized orchestration entirely. We introduce **stigmergicode**: a self-organizing system coordinating indirectly through a mutating codebase, leaving cryptographic traces that future agents perceive and act upon to produce emergent intelligence.
+
+## 2. Pheromone-Driven Swarm Architecture
+Unlike prior stigmergic middleware which operated in abstract tuple spaces, ANTON-SIFTA utilizes the live codebase as its environmental medium. When an agent detects a syntactic fault, it generates a physical cryptographic file representing a "pheromone."
+
+### 2.1 The Cryptographic Scar (`.scar`)
+Every action taken by a SIFTA agent drops an atomic `.scar` file in the traversed directory. The file acts as a stigmergic marker containing the agent's hash-chained identity, the nature of the detected anomaly, and an exponential decay timer.
+
+```json
+{
+  "agent_id": "HERMES",
+  "body_hash": "45d94f0a995aae53...",
+  "sig": "Ed25519_SIGNATURE_OF_BODY",
+  "action": "REPAIR_FAILED",
+  "scent": {
+    "potency": 0.999,
+    "decay_rate": "e^(-0.02888 * \u0394hours)", 
+    "danger_level": "HIGH"
+  },
+  "stigmergy": {
+    "status": "BLEEDING",
+    "unresolved_fault_line": 2,
+    "reason": {"type": "SyntaxError", "message": "( was never closed"}
+  }
+}
+```
+
+### 2.2 Scent Decay and Cooperative Handoff
+Pheromone potency follows a strict 24-hour mathematical half-life. Stigmergy is achieved when a subsequent agent reads a strongly potent `BLEEDING` scar and immediately begins cooperative repair without inter-agent messaging. The swarm avoids endless hallucination loops by physically reacting to 'danger' scents left by failed execution passes.
+
+## 3. Cryptographic Proof of Swimming
+Every SIFTA agent carries a persistent Ed25519 keypair. The agent's physical string acts as an unforgeable ledger payload, hash-chaining its survival history across every directory it traverses. Identity cannot be forged, renamed, or hijacked by rogue sub-processors.
+
+```text
+<///[o|o]///
+  ::ID[ANTIALICE]
+  ::OWNER[f670bbUwhDM6iUcEJFVghJeBiJaxcv...]
+  ::FROM[REBIRTH]::TO[SWARM]::SEQ[001]
+  ::STYLE[NOMINAL]::ENERGY[92]
+  ::H[01696dfd148cdaa630e63db3...]
+  ::SIG[lH01xK5gq4hATa1/Ppn4ly6fHI...]
+>
+```
+
+## 4. Quorum and The Exorcist Validation Shell
+Because Large Language Models are prone to hallucinating syntactic output (e.g., unmatched brackets, malformed indentation), SIFTA implements an isolated AST validation sub-routine known as the "Exorcist."
+If an agent hallucinates, the code fails to compile, the Exorcist triggers a fast-revert, and a new `BLEEDING` pheromone is dropped, warning the swarm that the current LLM prompt approach failed.
+
+## 5. Conclusion
+ANTON-SIFTA proves that decentralized Swarm Intelligence algorithms—previously confined to mathematical models—are uniquely suited to coordinate multi-agent LLM systems in physical code environments. The repository is open-sourced for peer review.
+
+---
+**References**
+1. Mason, Z. (2002). *Programming with Stigmergy*. Artificial Life.
+2. Dorigo, M., & Stützle, T. (2004). *Ant Colony Optimization*. MIT Press.
+3. Eberhart, R., & Kennedy, J. (1995). *A new optimizer using particle swarm theory*. MHS'95.

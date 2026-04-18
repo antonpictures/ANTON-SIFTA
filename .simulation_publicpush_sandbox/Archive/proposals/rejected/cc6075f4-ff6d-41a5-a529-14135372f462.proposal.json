@@ -1,0 +1,23 @@
+{
+  "proposal_id": "cc6075f4-ff6d-41a5-a529-14135372f462",
+  "status": "REJECTED",
+  "created_at": 1775860625.268106,
+  "filepath": "/Users/ioanganton/Music/ANTON_SIFTA/proposals/test_sandbox/test_target.py",
+  "filename": "test_target.py",
+  "agent_id": "ALICE_M5",
+  "model": "",
+  "vocation": "",
+  "confidence": 1.0,
+  "error_description": "",
+  "bite_region": {
+    "start": 1,
+    "end": 3
+  },
+  "pre_hash": "0bf59b28acdbcaadf7e2a10fab9e5cc4c8adfb885745a1b78dbe8e5f651ab156",
+  "post_hash": "89203b766108387ceb507005de87b085d970f4e38888aeeac7c03eacfe9ae65a",
+  "diff": "--- a/test_target.py\n+++ b/test_target.py\n@@ -1,3 +1,3 @@\n def hello():\n\n-    name = \"world\n\n+    name = \"world\"\n\n     print(name)\n",
+  "original_content": "def hello():\n    name = \"world\n    print(name)\n",
+  "fixed_content": "def hello():\n    name = \"world\"\n    print(name)\n",
+  "rejected_at": 1775860625.2687528,
+  "rejection_reason": "Bad fix"
+}

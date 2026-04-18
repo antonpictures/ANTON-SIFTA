@@ -267,12 +267,13 @@ class StigmergicMemoryBus:
         LEDGER_DIR.mkdir(exist_ok=True)
         self._forager_counter = 0
 
-        # Ghost Memory — the preservation of the irrelevant
+        # Marrow Memory — the preservation of the irrelevant
+        # (renamed from ghost_memory by the Architect 2026-04-18: bodied OS, no ghosts)
         try:
-            from System.ghost_memory import GhostMemory
-            self._ghost = GhostMemory(architect_id=architect_id)
+            from System.marrow_memory import MarrowMemory
+            self._marrow = MarrowMemory(architect_id=architect_id)
         except Exception:
-            self._ghost = None
+            self._marrow = None
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -335,10 +336,10 @@ class StigmergicMemoryBus:
         except Exception:
             pass  # heartbeat is optional — local memory always works
 
-        # GhostSentinel — check if this memory is worth preserving forever
-        if self._ghost:
+        # MarrowSentinel — check if this memory is worth preserving forever
+        if self._marrow:
             try:
-                self._ghost.maybe_preserve(
+                self._marrow.maybe_preserve(
                     text=text, app_context=app_context,
                     semantic_tags=tags, recall_count=0
                 )
@@ -495,17 +496,26 @@ class StigmergicMemoryBus:
                     pass
         return [t for t in traces if t.get("architect_id") == self.architect_id]
 
-    def ghost_drift(self) -> dict | None:
-        """Ask the ghost layer for a serendipitous fragment."""
-        if self._ghost:
-            return self._ghost.drift()
+    def marrow_drift(self) -> dict | None:
+        """Ask the marrow layer for a serendipitous fragment."""
+        if self._marrow:
+            return self._marrow.drift()
         return None
 
-    def ghost_inventory_count(self) -> int:
-        """Cold-storage ghost line count (for UI badges)."""
-        if self._ghost:
-            return self._ghost.ghost_count()
+    def marrow_inventory_count(self) -> int:
+        """Cold-storage marrow line count (for UI badges)."""
+        if self._marrow:
+            return self._marrow.marrow_count()
         return 0
+
+    # ── Back-compat shims (deprecated 2026-04-18; aliased to marrow) ──
+    # Some external callers may still call ghost_drift / ghost_inventory_count.
+    # Keep them as thin shims so the rename never breaks anyone in the wild.
+    def ghost_drift(self) -> dict | None:
+        return self.marrow_drift()
+
+    def ghost_inventory_count(self) -> int:
+        return self.marrow_inventory_count()
 
     def total_stgm_earned(self) -> float:
         """How much STGM the memory swimmers have earned total."""

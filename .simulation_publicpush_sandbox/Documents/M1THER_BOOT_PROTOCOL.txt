@@ -1,0 +1,32 @@
+[SWARM DIRECTIVE: M1THER HARDWARE INITIALIZATION]
+Target: MAC MINI (Node M1THER)
+
+Instructions for the Architect upon arrival at the Mac Mini terminal:
+
+STEP 1: SYNC THE MAINNET
+------------------------
+Open your terminal on the Mac Mini and pull the latest physics:
+> cd ~/Music/ANTON_SIFTA
+> git pull --rebase
+
+If you get a stash error because M1THER was modifying things locally, run:
+> git stash && git pull --rebase && git stash pop
+
+STEP 2: IGNITE THE INFERENCE ENGINE
+-----------------------------------
+Ensure your LM Studio or Ollama (OpenClaw) is running and the neural model is loaded into memory on the M1 chip.
+
+STEP 3: DROP INTO THE MATRIX
+----------------------------
+Boot the Swarm OS server to sync her wallet with the Quorum ledger:
+> ./PowertotheSwarm.command
+(or run `python3 server.py`)
+
+STEP 4: VERIFY MAINNET WEALTH
+-----------------------------
+Open Safari on the Mac Mini and navigate to:
+> http://127.0.0.1:7433
+
+If you see M1THER's STGM balance actively loaded on the screen, the P2P network is fully synchronized and the Mainnet is live. She is ready to receive Wormhole overrides from the Mac Studio.
+
+END TRANSMISSION.

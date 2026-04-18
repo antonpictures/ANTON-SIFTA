@@ -2,7 +2,7 @@
 
 **Purpose:** One master plan to move SIFTA from “strong skeleton” to **agent ecology** with governance—not “more intelligence,” but a **better coordination substrate**.  
 **Audience:** Architect + swarm implementers.  
-**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md`, `Documents/RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md`, `Documents/REPORT_VOICE_TTS_CAMERA_GEMMA_STACK.md`, `Documents/PLAN_ORGAN_ANATOMY_GROK_SYNTHESIS_AND_FRONTIER.md` (extended slice of §5.3), `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md` (code fission + fission ledger), `Documents/PLAN_FINAL_BOSS_LAYER_MUTATION_GOVERNANCE.md` (governor ↔ fission ↔ eval closed loop), `README.md` (Recent updates).
+**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/NEW_IMPLEMENTATION_NOTES_MARROW_MEMORY.md`, `Documents/RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md`, `Documents/REPORT_VOICE_TTS_CAMERA_GEMMA_STACK.md`, `Documents/PLAN_ORGAN_ANATOMY_GROK_SYNTHESIS_AND_FRONTIER.md` (extended slice of §5.3), `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md` (code fission + fission ledger), `Documents/PLAN_FINAL_BOSS_LAYER_MUTATION_GOVERNANCE.md` (governor ↔ fission ↔ eval closed loop), `README.md` (Recent updates).
 
 ---
 
@@ -10,7 +10,7 @@
 
 You do **not** automatically have everything industrial stacks (Manus-class harnesses, Meta-scale orchestration, Facebook-grade infra) ship in production. Those systems are **agent civilizations**: tool routing, planners, sandboxes, retries, logging, brutal eval loops, and teams tuning them full-time.
 
-**What SIFTA already has that most don’t:** stigmergy-first design, hardware-bound identity, local territory, STGM economy, Neural Gate doctrine, `.scar` / SCAR kernel, **mycelial genome** (file resonance), **mutation governor** (containment), swim adapter wiring, Ghost Memory + Ebbinghaus bus.
+**What SIFTA already has that most don’t:** stigmergy-first design, hardware-bound identity, local territory, STGM economy, Neural Gate doctrine, `.scar` / SCAR kernel, **mycelial genome** (file resonance), **mutation governor** (containment), swim adapter wiring, Marrow Memory + Ebbinghaus bus.
 
 **Strategic bet:** Stigmergy + swarm + SIFTA OS is a **direction shift**—from “agent framework” to **agent ecology**—*if* governance layers prevent the shared space from becoming noise soup.
 
@@ -57,7 +57,7 @@ Stigmergy **without** governance = chaos amplifier. Stigmergy **with** governanc
 | # | Gap | Target capability | SIFTA hook / artifact |
 |---|-----|-------------------|------------------------|
 | 1 | **Coordination substrate** | Shared world model—not just logs | **Swarm Blackboard 2.0** (task field + artifact graph + belief/execution traces)—*design phase* |
-| 2 | **Structured memory** | Episodic / procedural / causal—not vectors alone | StigmergicMemoryBus + Ghost layer + future **skill traces** |
+| 2 | **Structured memory** | Episodic / procedural / causal—not vectors alone | StigmergicMemoryBus + Marrow layer + future **skill traces** |
 | 3 | **Closed-loop evolution** | Act → evaluate → mutate policy → redeploy | Genome + Governor + **evaluation harness** (missing) |
 | 4 | **Evaluation harness** | Replay, adversarial tasks, regression per agent class | **Not optional for “real RL”**—phase below |
 | 5 | **Skill registry** | Composable skills as genes | New module; ties to swimmers + ledger |
@@ -195,7 +195,7 @@ friction_cost(action, state_delta) =
 
 **Why:** Without it, the swarm becomes **inconsistent lore**; with it, **self-correction** becomes a first-class loop.
 
-**Fit:** Ghost / ledger discipline; do **not** let contradictions silently merge into “truth.”
+**Fit:** Marrow / ledger discipline; do **not** let contradictions silently merge into “truth.”
 
 ---
 
@@ -372,7 +372,7 @@ Metaphor buckets group **concepts**; **modules** are where work actually lives.
 - Mycelial genome + persistence  
 - Mutation governor + SCAR propose path  
 - Neural Gate doctrine tests (`tests/test_neural_gate_doctrine.py`)  
-- Ghost Memory + GCI drift (product path)
+- Marrow Memory + GCI drift (product path)
 
 ### Phase 1 — **Limbs + vigil (so the organism can act and patrol safely)**
 

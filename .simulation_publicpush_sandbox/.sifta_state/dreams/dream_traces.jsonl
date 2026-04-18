@@ -1,0 +1,1 @@
+{"dream_id": "45312bf3f8", "source_ids": ["aaa1", "ddd4"], "synthesis": "INFERRED [clothing + identity]: 'My shirt is red' and 'I prefer red things' are related \u2014 the Architect may expect these to connect.", "semantic_tags": ["clothing", "identity"], "confidence": 0.8, "timestamp": 1776384073.256124, "stgm_minted": 0.08, "cycle": 0, "kind": "INFERRED"}
