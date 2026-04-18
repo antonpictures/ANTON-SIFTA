@@ -1,15 +1,1 @@
-{
-    "agent_id": "MACMINI.LAN_MEDIC_31c823",
-    "role": "MEDIC",
-    "territory": "MACMINI.LAN",
-    "silicon_id": "31c823ebf8ab84dc",
-    "serial": "C07FL0JAQ6NV",
-    "processor": "arm",
-    "born": 1776143005,
-    "status": "ACTIVE",
-    "stgm_balance": 0.0,
-    "tasks_complete": 0,
-    "trust_score": 1.0,
-    "biometric_lock": true,
-    "note": "Native agent \u2014 silicon-bound. Non-transferable. Non-cloneable."
-}
+{"agent_id":"MACMINI.LAN_MEDIC_31c823","role":"MEDIC","territory":"MACMINI.LAN","silicon_id":"31c823ebf8ab84dc","serial":"C07FL0JAQ6NV","processor":"arm","born":1776143005,"status":"ACTIVE","stgm_balance":0.0,"tasks_complete":0,"trust_score":1.0,"biometric_lock":true,"note":"Native agent \u2014 silicon-bound. Non-transferable. Non-cloneable."}

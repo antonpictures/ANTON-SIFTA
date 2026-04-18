@@ -34,12 +34,19 @@ SIFTA Non-Proliferation Public License applies.
 """
 
 import json
+import sys
 import time
 import hashlib
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
 from enum import Enum
+
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+from System.jsonl_file_lock import append_line_locked, read_text_locked
 
 APOPTOSIS_DIR  = Path(".sifta_state/apoptosis")
 DEATH_LOG      = APOPTOSIS_DIR / "death_certificates.jsonl"
@@ -58,6 +65,7 @@ class DeathReason(str, Enum):
     ECONOMIC_PARASITE = "ECONOMIC_PARASITE"   # costs more than it earns
     DUPLICATE_DETECTED= "DUPLICATE_DETECTED"  # healthier twin exists
     VOLUNTARY         = "VOLUNTARY"           # swimmer chose to go
+    METABOLIC_STARVATION = "METABOLIC_STARVATION"  # V15: λ-pressure killed the economy
 
 
 @dataclass
@@ -103,13 +111,16 @@ class Apoptosis:
     """
 
     @staticmethod
-    def should_die(vitals: SwimmerVitals) -> Optional[DeathReason]:
+    def should_die(vitals: SwimmerVitals, lambda_norm: float = 0.0) -> Optional[DeathReason]:
         """
         The swimmer reads its own vitals and decides.
         Returns the reason it should die, or None if it should live.
 
         Called by the swimmer on every heartbeat.
         The swimmer trusts the result.
+
+        V15: lambda_norm modulates the parasite threshold.
+        Under high λ, the Swarm becomes ruthless with poor performers.
         """
         age_hours = (time.time() - vitals.born_at) / 3600
 
@@ -123,11 +134,26 @@ class Apoptosis:
             return DeathReason.METABOLIC_WASTE
 
         # Check 3: Economic parasite — costs more than it earns
+        #   V15: under high λ, the parasite_ratio threshold rises
+        #   (Swarm becomes less tolerant of unprofitable swimmers)
         metabolic_cost = age_hours * STGM_COST_PER_HOUR
+        pressure_adjusted_ratio = PARASITE_RATIO * (1.0 + lambda_norm)
         if metabolic_cost > 0.1:  # only check after meaningful age
             earn_ratio = vitals.stgm_earned / metabolic_cost
-            if earn_ratio < PARASITE_RATIO:
+            if earn_ratio < pressure_adjusted_ratio:
                 return DeathReason.ECONOMIC_PARASITE
+
+        # Check 4: V15 — Metabolic starvation under λ pressure
+        #   If the swimmer's STGM balance is below the dynamic store fee,
+        #   it literally cannot afford to store memories anymore.
+        try:
+            from System.stgm_metabolic import calculate_dynamic_store_fee
+            min_viable = calculate_dynamic_store_fee(lambda_norm)
+            net_balance = vitals.stgm_earned - vitals.stgm_cost
+            if net_balance < min_viable and lambda_norm > 0.5:
+                return DeathReason.METABOLIC_STARVATION
+        except Exception:
+            pass
 
         return None   # healthy — keep swimming
 
@@ -144,6 +170,29 @@ class Apoptosis:
 
         age_hours = (time.time() - vitals.born_at) / 3600
 
+        # ── V15: MEMORY SALVAGE — scrape the swimmer's brain before death ──
+        salvaged = 0
+        try:
+            from System.adaptive_constraint_memory_field import AdaptiveConstraintMemoryField
+            from System.stigmergic_memory_bus import StigmergicMemoryBus
+
+            acmf = AdaptiveConstraintMemoryField()
+            bus = StigmergicMemoryBus(f"APOPTOSIS_{vitals.swimmer_id}")
+
+            # Scan the fitness overlay for any traces this swimmer contributed to
+            for tid, entry in acmf._cache.items():
+                if entry.fitness > 1.2:  # only salvage high-fitness memories
+                    bus.remember(
+                        f"[SALVAGED from {vitals.swimmer_id}] trace {tid} (fitness: {entry.fitness:.2f})",
+                        app_context="apoptosis_salvage",
+                        decay_modifier=0.3,  # epigenetic: slow decay, ancestral memory
+                    )
+                    salvaged += 1
+                    if salvaged >= 3:  # cap: don't spam the ledger during mass death
+                        break
+        except Exception:
+            pass
+
         cert = DeathCertificate(
             swimmer_id  = vitals.swimmer_id,
             reason      = reason.value,
@@ -155,9 +204,8 @@ class Apoptosis:
             epitaph     = epitaph or Apoptosis._default_epitaph(reason, vitals),
         )
 
-        # Write death certificate
-        with open(DEATH_LOG, "a") as f:
-            f.write(json.dumps(asdict(cert)) + "\n")
+        # Write death certificate (flock-safe)
+        append_line_locked(DEATH_LOG, json.dumps(asdict(cert)) + "\n")
 
         # Remove from registry
         Apoptosis._remove_from_registry(vitals.swimmer_id)
@@ -167,6 +215,7 @@ class Apoptosis:
         print(f"   Age     : {age_hours:.1f}h")
         print(f"   Scars   : {vitals.scars}")
         print(f"   Earned  : {vitals.stgm_earned:.4f} STGM")
+        print(f"   Salvaged: {salvaged} high-fitness memories")
         print(f"   Epitaph : \"{cert.epitaph}\"\n")
 
         return cert
@@ -185,6 +234,9 @@ class Apoptosis:
                     f"The math is clear.")
         if reason == DeathReason.DUPLICATE_DETECTED:
             return "A healthier version of me exists. I step aside."
+        if reason == DeathReason.METABOLIC_STARVATION:
+            return (f"λ pressure starved my economy. Earned {vitals.stgm_earned:.4f} STGM "
+                    f"but the metabolic cost exceeded my supply. The Swarm thinned the herd.")
         return "My work here is done."
 
     @staticmethod

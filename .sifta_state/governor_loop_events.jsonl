@@ -1,0 +1,2 @@
+{"ts": 1776402979.725195, "action": "GOVERNOR_REJECT", "ref": "MUT_a929444cffce", "detail": "reason=shadow_simulation_failed", "drift": 0.0, "locked": false}
+{"ts": 1776402979.7256262, "action": "EVAL_REJECT", "ref": "MUT_f47d3b2eeb60", "detail": "score=-0.311 modes=['INSTABILITY_SPIKE', 'LOW_UTILITY_PROJECTION', 'RISK_DOMINANT_STATE', 'CATASTROPHIC_RISK']", "drift": 0.0, "locked": false}

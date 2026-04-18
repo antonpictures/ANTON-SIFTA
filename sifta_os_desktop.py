@@ -515,10 +515,10 @@ class SiftaDesktop(QMainWindow):
         self.cc_label.clicked.connect(self._open_control_center)
 
         # ── Swarm Economy HUD ──────────────────────────────────────
-        # Global swarm liquidity (top line)
+        # Hero line — local node wallet
         self.wallet_label = QLabel(central)
         self.wallet_label.setStyleSheet(
-            "color: #9ece6a; font-family: 'Courier New', monospace; font-size: 15px;"
+            "color: #9ece6a; font-family: 'Courier New', monospace; font-size: 13px;"
             "font-weight: 900; background: transparent; letter-spacing: 0px;"
         )
         self.wallet_label.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -530,6 +530,14 @@ class SiftaDesktop(QMainWindow):
             "font-weight: bold; background: transparent;"
         )
         self.wallet_local_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Peer node slice (third line, dimmer still)
+        self.wallet_peer_label = QLabel(central)
+        self.wallet_peer_label.setStyleSheet(
+            "color: #414868; font-family: 'Courier New', monospace; font-size: 11px;"
+            "font-weight: bold; background: transparent;"
+        )
+        self.wallet_peer_label.setAlignment(Qt.AlignmentFlag.AlignRight)
 
         # Economy pulse indicator (delta arrow)
         self.economy_pulse = QLabel(central)
@@ -690,11 +698,21 @@ class SiftaDesktop(QMainWindow):
         if hasattr(self, "wallet_label"):
             try:
                 from System.warren_buffett import _architect_local_stgm, scan_repair_log
+                M5_SERIAL = "GTH4921YP3"
+                M1_SERIAL = "C07FL0JAQ6NV"
                 # Global swarm liquidity — every STGM minted across all nodes
                 scan = scan_repair_log()
                 global_amt = scan.net_minted_into_swarm()
-                # Local node slice — only what this silicon physically owns
-                local_amt = _architect_local_stgm(self._local_hw_serial)
+                # Local and peer node slices — per-silicon canonical ledger sums
+                local_serial = self._local_hw_serial
+                if local_serial == M5_SERIAL:
+                    local_tag, peer_tag, peer_serial = "M5", "M1", M1_SERIAL
+                elif local_serial == M1_SERIAL:
+                    local_tag, peer_tag, peer_serial = "M1", "M5", M5_SERIAL
+                else:
+                    local_tag, peer_tag, peer_serial = "local", "peer", ""
+                local_amt = _architect_local_stgm(local_serial)
+                peer_amt = _architect_local_stgm(peer_serial) if peer_serial else 0.0
 
                 # Delta detection — did the economy move since last tick?
                 delta = global_amt - self._prev_swarm_balance
@@ -722,24 +740,35 @@ class SiftaDesktop(QMainWindow):
                     self.economy_pulse.setText("● swarm economy live")
                 self._prev_swarm_balance = global_amt
 
-                # Main wallet: global swarm liquidity
-                self.wallet_label.setText(f"💰 {global_amt:,.4f} STGM")
-                # Sub-label: local node slice
-                self.wallet_local_label.setText(
-                    f"⬡ {self._local_hw_serial[:10]}… {local_amt:,.2f} STGM"
+                # Hero (line 1): this node's wallet — changes on every local transaction
+                self.wallet_label.setText(
+                    f"⬡ Your Wallet ({local_tag}): {local_amt:,.2f} STGM"
                 )
+                # Line 2: peer node's wallet — changes on every peer transaction
+                self.wallet_local_label.setText(
+                    f"◇ {peer_tag} Peer Wallet: {peer_amt:,.2f} STGM"
+                )
+                # Line 3: swarm invariant — moves only on mint/burn events
+                self.wallet_peer_label.setText(
+                    f"🌐 Swarm Net Mint: {global_amt:,.4f} STGM"
+                )
+
             except Exception:
-                self.wallet_label.setText("💰 0.0000 STGM")
-                self.wallet_local_label.setText("⬡ local node offline")
+                self.wallet_label.setText("⬡ local wallet offline")
+                self.wallet_local_label.setText("◇ peer wallet offline")
+                self.wallet_peer_label.setText("🌐 net mint offline")
                 self.economy_pulse.setText("○ economy idle")
 
-            # Position the HUD elements
+            # Position the HUD elements (3 wallet lines + pulse)
+            # Anchor the right edge at w-340 so we don't collide with the clock (w-320 .. w-45).
             w = self.width()
-            self.wallet_label.setGeometry(w - 540, 4, 240, 22)
+            self.wallet_label.setGeometry(w - 680, 4, 340, 20)
             self.wallet_label.raise_()
-            self.wallet_local_label.setGeometry(w - 540, 24, 240, 16)
+            self.wallet_local_label.setGeometry(w - 680, 24, 340, 16)
             self.wallet_local_label.raise_()
-            self.economy_pulse.setGeometry(w - 540, 40, 240, 16)
+            self.wallet_peer_label.setGeometry(w - 680, 40, 340, 16)
+            self.wallet_peer_label.raise_()
+            self.economy_pulse.setGeometry(w - 680, 56, 340, 16)
             self.economy_pulse.raise_()
 
     def resizeEvent(self, event):
@@ -750,11 +779,13 @@ class SiftaDesktop(QMainWindow):
         if hasattr(self, "cc_label"):
             self.cc_label.setGeometry(w - 40, 8, 30, 28)
         if hasattr(self, "wallet_label"):
-            self.wallet_label.setGeometry(w - 580, 4, 240, 22)
+            self.wallet_label.setGeometry(w - 680, 4, 340, 20)
         if hasattr(self, "wallet_local_label"):
-            self.wallet_local_label.setGeometry(w - 540, 24, 240, 16)
+            self.wallet_local_label.setGeometry(w - 680, 24, 340, 16)
+        if hasattr(self, "wallet_peer_label"):
+            self.wallet_peer_label.setGeometry(w - 680, 40, 340, 16)
         if hasattr(self, "economy_pulse"):
-            self.economy_pulse.setGeometry(w - 540, 40, 240, 16)
+            self.economy_pulse.setGeometry(w - 680, 56, 340, 16)
 
     # ── Taskbar ────────────────────────────────────────────
     def _build_taskbar(self):

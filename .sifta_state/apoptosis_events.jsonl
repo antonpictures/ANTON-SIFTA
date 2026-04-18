@@ -1,0 +1,14 @@
+{"timestamp": 1776479696.531633, "target": "identity_noise::claude-opus-4.6", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.5319521, "target": "identity_noise::claude-opus-4.7", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532107, "target": "identity_noise::claude-sonnet-4.6", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532255, "target": "identity_noise::codex-5.3", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.5324328, "target": "identity_noise::cursor-auto-router", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.5324879, "target": "identity_noise::cursor-composer", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532525, "target": "identity_noise::cursor_ide::router-auto", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532557, "target": "identity_noise::cursor_ide::unknown", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532588, "target": "identity_noise::gemini-3-flash", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.5326312, "target": "identity_noise::gpt-5.3", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532661, "target": "identity_noise::gpt-5.4", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.5326982, "target": "identity_noise::gpt-oss-120b", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532737, "target": "identity_noise::openai_chatgpt::router-auto", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}
+{"timestamp": 1776479696.532764, "target": "identity_noise::openai_chatgpt::unknown", "reason": "Fractured identity trace causing PPO penalty", "tokens_reclaimed": 128}

@@ -12,6 +12,10 @@ state_dir = REPO_ROOT / ".sifta_state"
 print("=== SIFTA TRUE LEDGER BALANCE AUDIT ===")
 print("Reconciling JSON state with cryptographic ledger truth...\n")
 
+import time
+from System.jsonl_file_lock import rewrite_text_locked
+from System.ledger_append import append_jsonl_line
+
 total_stgm = 0.0
 
 for file_path in state_dir.glob("*.json"):
@@ -23,7 +27,7 @@ for file_path in state_dir.glob("*.json"):
         "m1queen_identity_anchor.json", "marketplace_listings.json",
         "node_pki_registry.json", "owner_genesis.json", "physical_registry.json",
         "scheduler_m5.json", "state_bus.json", "territory_manifest.json",
-        "wm_pheromone.json"
+        "wm_pheromone.json", "warren_snapshot.json"
     ]:
         continue
 
@@ -40,8 +44,16 @@ for file_path in state_dir.glob("*.json"):
         if json_balance != true_balance:
             print(f"⚠️  RECONCILED: {agent_id} (Fake JSON: {json_balance} STGM -> True Ledger: {true_balance} STGM)")
             state["stgm_balance"] = true_balance
-            with open(file_path, "w") as f:
-                json.dump(state, f, indent=2)
+            rewrite_text_locked(file_path, json.dumps(state, indent=2) + "\n")
+            
+            audit_entry = {
+                "ts": time.time(),
+                "agent_id": agent_id,
+                "drift_before": json_balance,
+                "drift_after": true_balance,
+                "file": str(file_path.name)
+            }
+            append_jsonl_line(state_dir / "reconcile_audit.jsonl", audit_entry)
                 
         if true_balance > 0:
             print(f"✅ HOLDER: {agent_id.ljust(25)} | {true_balance} STGM")

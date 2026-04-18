@@ -12,6 +12,9 @@ Does NOT mutate the primary memory ledger.
 Does NOT delete swimmer state.
 STGM dream rewards append to the same jsonl pattern as StigmergicMemoryBus.
 
+I/O: `memory_ledger.jsonl` and logs use `read_text_locked` / `append_line_locked`
+(POSIX flock) — no destructive full-file rewrites; test seeds append only if ledger empty.
+
 Integration: see TemporalSpine.open_session / close_session hooks.
 """
 from __future__ import annotations
@@ -19,12 +22,21 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import sys
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+from System.jsonl_file_lock import (
+    append_line_locked,
+    read_text_locked,
+)
+
 _STATE = _REPO / ".sifta_state"
 _DREAM_DIR = _STATE / "dreams"
 _DREAM_LOG = _DREAM_DIR / "dream_traces.jsonl"
@@ -47,8 +59,7 @@ def _mint_stgm_dream(amount: float, trace_id: str, app: str = "dream_state") -> 
     }
     _STATE.mkdir(parents=True, exist_ok=True)
     try:
-        with open(_STGM_LOG, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        append_line_locked(_STGM_LOG, json.dumps(entry) + "\n")
     except Exception:
         pass
 
@@ -165,8 +176,7 @@ class DreamEngine:
                 cycle=cycle,
             )
 
-            with open(_DREAM_LOG, "a", encoding="utf-8") as f:
-                f.write(json.dumps(asdict(dream)) + "\n")
+            append_line_locked(_DREAM_LOG, json.dumps(asdict(dream)) + "\n")
 
             _mint_stgm_dream(STGM_DREAM_REWARD, did, "dream_state")
             self.stgm_earned += STGM_DREAM_REWARD
@@ -186,44 +196,47 @@ class DreamEngine:
         if not _LEDGER_FILE.exists():
             return []
         out: list[dict[str, Any]] = []
-        with open(_LEDGER_FILE, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    out.append(json.loads(line))
-                except Exception:
-                    pass
+        raw = read_text_locked(_LEDGER_FILE, encoding="utf-8", errors="replace")
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                pass
         return out
 
     def _load_dreams(self) -> list[dict[str, Any]]:
         if not _DREAM_LOG.exists():
             return []
         out: list[dict[str, Any]] = []
-        with open(_DREAM_LOG, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    out.append(json.loads(line))
-                except Exception:
-                    pass
+        raw = read_text_locked(_DREAM_LOG, encoding="utf-8", errors="replace")
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                pass
         return out
 
     def _already_dreamed(self, pair_key: str) -> bool:
         if not _DREAM_LOG.exists():
             return False
-        with open(_DREAM_LOG, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    d = json.loads(line)
-                    sids = d.get("source_ids") or []
-                    if len(sids) >= 2 and _pair_key(str(sids[0]), str(sids[1])) == pair_key:
-                        return True
-                except Exception:
-                    pass
+        raw = read_text_locked(_DREAM_LOG, encoding="utf-8", errors="replace")
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                sids = d.get("source_ids") or []
+                if len(sids) >= 2 and _pair_key(str(sids[0]), str(sids[1])) == pair_key:
+                    return True
+            except Exception:
+                pass
         return False
 
 def _pair_key(id1: str, id2: str) -> str:
@@ -274,9 +287,11 @@ if __name__ == "__main__":
             "recall_count": 0,
         },
     ]
-    with open(_LEDGER_FILE, "w", encoding="utf-8") as f:
+    # NOTE: Never destructively overwrite the sacred ledger.
+    # For testing, we append seeds only if the ledger is empty.
+    if not _LEDGER_FILE.exists() or _LEDGER_FILE.stat().st_size == 0:
         for s in seeds:
-            f.write(json.dumps(s) + "\n")
+            append_line_locked(_LEDGER_FILE, json.dumps(s) + "\n")
 
     print("=" * 62)
     print("  SIFTA — DREAM STATE")

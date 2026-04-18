@@ -1,0 +1,23 @@
+{"ts": 1776399535.958613, "action": "MINTED", "skill_id": "7127d6750cd8277d", "name": "claw_ls", "discoverer": "79e1fcc0d7a8", "lineage": "ClawHarness", "cost": 0.05}
+{"ts": 1776399535.958859, "action": "REPLAY_SUCCESS", "skill_id": "7127d6750cd8277d", "name": "claw_ls", "strength": 0.65, "use_count": 1}
+{"ts": 1776399535.9590669, "action": "REPLAY_SUCCESS", "skill_id": "7127d6750cd8277d", "name": "claw_ls", "strength": 0.8, "use_count": 2}
+{"ts": 1776399535.959254, "action": "REPLAY_SUCCESS", "skill_id": "7127d6750cd8277d", "name": "claw_ls", "strength": 0.95, "use_count": 3}
+{"ts": 1776399535.9594471, "action": "REPLAY_FAIL", "skill_id": "7127d6750cd8277d", "name": "claw_ls", "strength": 0.7, "use_count": 4}
+{"ts": 1776399535.964142, "action": "MINT_DUPLICATE", "skill_id": "7127d6750cd8277d", "name": "claw_ls"}
+{"ts": 1776399535.964389, "action": "REPLAY_SUCCESS", "skill_id": "7127d6750cd8277d", "name": "claw_ls", "strength": 0.65, "use_count": 1}
+{"ts": 1776403610.362808, "action": "MINTED", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: LogScrape|M1_MINI|true", "discoverer": "TemporalComp", "lineage": "unknown", "cost": 0.05}
+{"ts": 1776404873.067011, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: DataScrape|GPU_RIG|true"}
+{"ts": 1776404873.075331, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CodeCompile|M1_MINI|true"}
+{"ts": 1776404873.076921, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CryptoMint|EDGE_NODE|true"}
+{"ts": 1776404873.077755, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CodeCompile|GPU_RIG|true"}
+{"ts": 1776404873.07811, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CryptoMint|GPU_RIG|true"}
+{"ts": 1776404873.080514, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: VideoRender|M1_MINI|true"}
+{"ts": 1776404873.081944, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: VideoRender|EDGE_NODE|true"}
+{"ts": 1776404873.0824199, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: DataScrape|M5_STUDIO|true"}
+{"ts": 1776404873.0829399, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: VideoRender|GPU_RIG|true"}
+{"ts": 1776404873.087048, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CodeCompile|EDGE_NODE|true"}
+{"ts": 1776404873.0918138, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CryptoMint|M5_STUDIO|true"}
+{"ts": 1776404873.098378, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CryptoMint|M1_MINI|true"}
+{"ts": 1776404873.1024902, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: VideoRender|M5_STUDIO|true"}
+{"ts": 1776404873.104345, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: DataScrape|M1_MINI|true"}
+{"ts": 1776404873.122299, "action": "MINT_DUPLICATE", "skill_id": "4f53cda18c2baa0c", "name": "Crystallized: CodeCompile|M5_STUDIO|true"}

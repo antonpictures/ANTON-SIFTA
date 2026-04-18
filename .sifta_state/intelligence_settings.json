@@ -1,6 +1,1 @@
-{
-  "active_engine": "ollama",
-  "ollama_model": "llama3:latest",
-  "openrouter_key": "",
-  "openrouter_model": "meta-llama/llama-4-maverick"
-}
+{"active_engine":"ollama","ollama_model":"llama3:latest","openrouter_key":"","openrouter_model":"meta-llama/llama-4-maverick"}

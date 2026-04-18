@@ -23,3 +23,19 @@
 {"ts": 1776390237.1510599, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
 {"ts": 1776390450.563594, "action": "PAYOUT", "casino_delta": -0.4, "player_delta": 0.4, "memo": "Payout for: gamble_cashin"}
 {"ts": 1776390601.205081, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776399021.231078, "action": "TEST_DRAIN", "casino_delta": -1000.9990000000004, "player_delta": 0.0, "memo": "Reality pressure test: poverty"}
+{"ts": 1776399021.2648692, "action": "TEST_RESTORE", "casino_delta": 1001.0000000000003, "player_delta": 0.0, "memo": "Restored after poverty test"}
+{"ts": 1776399535.958302, "action": "SKILL_REGISTRY", "casino_delta": -0.05, "player_delta": 0.0, "memo": "Skill mint: claw_ls"}
+{"ts": 1776399535.958823, "action": "SKILL_REGISTRY", "casino_delta": -0.01, "player_delta": 0.0, "memo": "Skill replay: claw_ls"}
+{"ts": 1776399535.959033, "action": "SKILL_REGISTRY", "casino_delta": -0.01, "player_delta": 0.0, "memo": "Skill replay: claw_ls"}
+{"ts": 1776399535.959224, "action": "SKILL_REGISTRY", "casino_delta": -0.01, "player_delta": 0.0, "memo": "Skill replay: claw_ls"}
+{"ts": 1776399535.959418, "action": "SKILL_REGISTRY", "casino_delta": -0.01, "player_delta": 0.0, "memo": "Skill replay: claw_ls"}
+{"ts": 1776399535.964313, "action": "SKILL_REGISTRY", "casino_delta": -0.01, "player_delta": 0.0, "memo": "Skill replay: claw_ls"}
+{"ts": 1776403610.362626, "action": "SKILL_REGISTRY", "casino_delta": -0.05, "player_delta": 0.0, "memo": "Skill mint: Crystallized: LogScrape|M1_MINI|true"}
+{"ts": 1776447613.35501, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776447630.548341, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776447638.50937, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776447656.2886689, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776447659.1640341, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776447663.063576, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}
+{"ts": 1776447679.75793, "action": "BET", "casino_delta": 0.1, "player_delta": -0.1, "memo": "Placed bet of 0.1 STGM"}

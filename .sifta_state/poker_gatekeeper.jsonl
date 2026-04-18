@@ -1,0 +1,12 @@
+{"ts": 1776411648.7149508, "action": "CASH_OUT", "reason": "MANDATORY: Capital (2.00) < Threshold (2.40). Cannot survive a loss.", "capital": 2.0, "payout": 10.0, "risk_ratio": 0.8333, "kelly": 0.0}
+{"ts": 1776411648.715779, "action": "CASH_OUT", "reason": "EV(GUESS)=5.0000 \u2264 EV(CASH_OUT)=10.0000. No edge.", "capital": 50.0, "payout": 10.0, "risk_ratio": 20.8333, "kelly": 0.0}
+{"ts": 1776411648.715947, "action": "CASH_OUT", "reason": "EV(GUESS)=40.0000 \u2264 EV(CASH_OUT)=80.0000. No edge.", "capital": 100.0, "payout": 80.0, "risk_ratio": 41.6667, "kelly": 0.0}
+{"ts": 1776411648.716038, "action": "CASH_OUT", "reason": "EV(GUESS)=2.5000 \u2264 EV(CASH_OUT)=5.0000. No edge.", "capital": 200.0, "payout": 5.0, "risk_ratio": 83.3333, "kelly": 0.0}
+{"ts": 1776411842.302293, "action": "CASH_OUT", "reason": "MANDATORY: Capital (2.00) < Threshold (2.40). Cannot survive a loss.", "capital": 2.0, "payout": 10.0, "risk_ratio": 0.8333, "kelly": 0.0}
+{"ts": 1776411842.303469, "action": "CASH_OUT", "reason": "EV(GUESS)=5.0000 \u2264 EV(CASH_OUT)=10.0000. No edge.", "capital": 50.0, "payout": 10.0, "risk_ratio": 20.8333, "kelly": 0.0}
+{"ts": 1776411842.303544, "action": "CASH_OUT", "reason": "EV(GUESS)=40.0000 \u2264 EV(CASH_OUT)=80.0000. No edge.", "capital": 100.0, "payout": 80.0, "risk_ratio": 41.6667, "kelly": 0.0}
+{"ts": 1776411842.303604, "action": "CASH_OUT", "reason": "EV(GUESS)=2.5000 \u2264 EV(CASH_OUT)=5.0000. No edge.", "capital": 200.0, "payout": 5.0, "risk_ratio": 83.3333, "kelly": 0.0}
+{"ts": 1776412302.290041, "action": "CASH_OUT", "reason": "MANDATORY: Capital (2.00) < \u03c4 (2.40). P(CASH_OUT)=1.0", "capital": 2.0, "payout": 10.0, "risk_ratio": 0.8333, "kelly": 0.0}
+{"ts": 1776412302.293383, "action": "GUESS", "reason": "P(GUESS)=0.995 P(CASH_OUT)=0.005 | \u03c4=2.40 \u03bb_norm=0.0000", "capital": 50.0, "payout": 10.0, "risk_ratio": 20.8333, "kelly": 0.0}
+{"ts": 1776412302.2934709, "action": "GUESS", "reason": "P(GUESS)=1.000 P(CASH_OUT)=0.000 | \u03c4=2.40 \u03bb_norm=0.0000", "capital": 100.0, "payout": 80.0, "risk_ratio": 41.6667, "kelly": 0.0}
+{"ts": 1776412302.293542, "action": "GUESS", "reason": "P(GUESS)=0.550 P(CASH_OUT)=0.450 | \u03c4=2.40 \u03bb_norm=0.0000", "capital": 200.0, "payout": 5.0, "risk_ratio": 83.3333, "kelly": 0.0}

@@ -1,0 +1,3 @@
+{"timestamp": 1776479835.535174, "memory_payload": "Identity is measured via CRDT fields, not asserted via API labels.", "synaptic_weight": 1.0382, "reward_score": -0.1179, "access_count": 1, "owner": "ALICE_PIPELINE"}
+{"timestamp": 1776479835.538086, "memory_payload": "Pheromone mirroring is the primary failure mode; rely on substrate falsifiability.", "synaptic_weight": 1.1382, "reward_score": -0.1179, "access_count": 1, "owner": "ALICE_PIPELINE"}
+{"timestamp": 1776479835.539737, "memory_payload": "Apoptosis successfully culls identity noise and stabilizes the reward function.", "synaptic_weight": 1.2382, "reward_score": -0.1179, "access_count": 1, "owner": "ALICE_PIPELINE"}

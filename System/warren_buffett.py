@@ -170,6 +170,8 @@ def _architect_local_stgm(local_serial: str) -> float:
             continue
         try:
             data = json.loads(fp.read_text(encoding="utf-8", errors="replace"))
+            if not isinstance(data, dict):
+                continue
         except Exception:
             continue
         if str(data.get("homeworld_serial", "")) != local_serial:

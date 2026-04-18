@@ -142,10 +142,36 @@ def utility_burn_cycle() -> None:
                 continue
 
             agents = [f.stem for f in STATE_DIR.glob("*.json")]
+            # ── Vector 14: Metabolic mint rate scales with constraint pressure ──
+            try:
+                from System.stgm_metabolic import calculate_metabolic_mint_rate, metabolic_regime_label
+                from System.lagrangian_constraint_manifold import get_manifold
+                dual = get_manifold().compute_dual_ascent()
+                lam_norm = min(1.0, dual.get("total_lambda_penalty", 0.0) / 1.5)
+                mint_rate = calculate_metabolic_mint_rate(lam_norm)
+                regime = metabolic_regime_label(lam_norm)
+            except Exception:
+                mint_rate = 0.05      # flat fallback
+                regime = "FALLBACK"
+
             for agent in agents:
-                append_ledger(agent, 0.05, "Passive Swarm Maintenance (NPU Energy Draw)")
+                append_ledger(agent, mint_rate, f"Passive Swarm Maintenance ({regime})")
 
             auto_git_heartbeat()
+
+            # Forage any IDE level architectural traces and suck them into SIFTA OS
+            try:
+                from System.ide_trace_consumer import ingest_ide_traces
+                ingest_ide_traces()
+            except Exception as e:
+                print(f"[!] IDE Trace Consumer collision: {e}")
+
+            # ── Telemetry snapshot: unified organism state for Flutter / PyQt6 ──
+            try:
+                from System.telemetry_snapshot import write_snapshot
+                write_snapshot()
+            except Exception:
+                pass
 
             print(f"[*] Cycle complete. Minted utility for {len(agents)} active Swimmers.")
             print("[*] Recharging Thermal Limiters... Sleeping for 15s.")
@@ -162,14 +188,8 @@ def generate_m1_thought() -> str:
     )
     data = {"model": "qwen3.5:0.5b", "prompt": prompt, "stream": False}
     try:
-        req = urllib.request.Request(
-            "http://127.0.0.1:11434/api/generate",
-            data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            return result.get("response", "").strip()
+        from System.inference_router import route_inference
+        return route_inference(data, timeout=30)
     except Exception as e:
         print(f"[OLLAMA ERROR in M1THER Thought] {e}")
         return "🧠📡 (Gândesc... dar NPU-ul meu cere reîncărcare...)"

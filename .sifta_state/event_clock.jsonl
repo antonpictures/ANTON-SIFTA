@@ -2,3 +2,10 @@
 {"timestamp": 1776388175.8771331, "real_elapsed": 2.056, "events_in_window": 20, "event_rate": 2.0, "dilation": 5.0, "perceived_elapsed": 10.282, "attention_hint": "HIGH"}
 {"timestamp": 1776388176.883144, "real_elapsed": 1.006, "events_in_window": 20, "event_rate": 2.0, "dilation": 5.0, "perceived_elapsed": 5.03, "attention_hint": "HIGH"}
 {"timestamp": 1776388176.8838122, "real_elapsed": 0.001, "events_in_window": 20, "event_rate": 2.0, "dilation": 5.0, "perceived_elapsed": 0.003, "attention_hint": "HIGH"}
+{"timestamp": 1776397296.8816462, "real_elapsed": 0.0, "events_in_window": 1, "event_rate": 0.1, "dilation": 1.0, "perceived_elapsed": 0.0, "attention_hint": "ACTIVE"}
+{"timestamp": 1776397387.730548, "real_elapsed": 0.004, "events_in_window": 8, "event_rate": 0.1333, "dilation": 1.333, "perceived_elapsed": 0.005, "attention_hint": "ACTIVE"}
+{"timestamp": 1776400393.2281542, "real_elapsed": 0.001, "events_in_window": 3, "event_rate": 0.05, "dilation": 0.5, "perceived_elapsed": 0.0, "attention_hint": "IDLE"}
+{"timestamp": 1776404873.1296399, "real_elapsed": 0.001, "events_in_window": 0, "event_rate": 0.0, "dilation": 0.1, "perceived_elapsed": 0.0, "attention_hint": "IDLE"}
+{"timestamp": 1776406408.3342872, "real_elapsed": 0.008, "events_in_window": 5, "event_rate": 0.0833, "dilation": 0.833, "perceived_elapsed": 0.007, "attention_hint": "ACTIVE"}
+{"timestamp": 1776407212.135793, "real_elapsed": 0.003, "events_in_window": 0, "event_rate": 0.0, "dilation": 0.1, "perceived_elapsed": 0.0, "attention_hint": "IDLE"}
+{"timestamp": 1776407233.035865, "real_elapsed": 0.002, "events_in_window": 0, "event_rate": 0.0, "dilation": 0.1, "perceived_elapsed": 0.0, "attention_hint": "IDLE"}

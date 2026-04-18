@@ -2,7 +2,7 @@
 
 **Purpose:** One master plan to move SIFTA from “strong skeleton” to **agent ecology** with governance—not “more intelligence,” but a **better coordination substrate**.  
 **Audience:** Architect + swarm implementers.  
-**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md`, `Documents/RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md`, `Documents/REPORT_VOICE_TTS_CAMERA_GEMMA_STACK.md`, `Documents/PLAN_ORGAN_ANATOMY_GROK_SYNTHESIS_AND_FRONTIER.md` (extended slice of §5.3), `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md` (code fission + fission ledger), `README.md` (Recent updates).
+**Companion docs:** `Documents/PLAN_CLAW_SWARM_MUTATION_GOVERNOR.md`, `Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md`, `Documents/RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md`, `Documents/REPORT_VOICE_TTS_CAMERA_GEMMA_STACK.md`, `Documents/PLAN_ORGAN_ANATOMY_GROK_SYNTHESIS_AND_FRONTIER.md` (extended slice of §5.3), `Documents/RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md` (code fission + fission ledger), `Documents/PLAN_FINAL_BOSS_LAYER_MUTATION_GOVERNANCE.md` (governor ↔ fission ↔ eval closed loop), `README.md` (Recent updates).
 
 ---
 

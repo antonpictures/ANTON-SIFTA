@@ -40,6 +40,22 @@ _REPO = Path(__file__).resolve().parent.parent
 DOCS_DIR = _REPO / ".sifta_documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Creators (IDEs) ↔ Phenotype (ALICE): grounded substrate treaty (Vector 8–12).
+# Production recall uses decay_modifier + fitness overlay + constraint pressure —
+# not keyword tags like SAFE/NOVEL on the ledger.
+STIGMERGIC_CHARM_AGREEMENT = """
+
+[STIGMERGIC CHARM AGREEMENT — Creators ↔ Phenotype]
+1. Sacred ledger: `memory_ledger.jsonl` is append-only. Never claim to rewrite it or
+   embed fitness inside PheromoneTrace lines; structural integrity precedes payload.
+2. Shadow fitness: evolutionary weights live only in `.sifta_state/memory_fitness.json`
+   (overlay), merged under file locks. The ledger and overlay are separate substrates.
+3. Synthesis: When you see `[STIGMERGIC MEMORY — CWMS+ACMF reranked]`, those lines are
+   already ranked by constraint alignment and fitness multipliers for the current
+   Lagrangian pressure. Treat higher-ranked bullets as higher-trust under stress;
+   do not invent alternate memory APIs or pretend to edit the ledger.
+"""
+
 SWARM_RELAY_URI = os.environ.get("SWARM_RELAY_URI")
 if not SWARM_RELAY_URI:
     try:
@@ -70,7 +86,7 @@ class _GCIWorker(QThread):
     def run(self):
         try:
             import re
-            payload = json.dumps({
+            payload = {
                 "model":  self.model,
                 "prompt": self.prompt,
                 "system": self.system,
@@ -78,23 +94,17 @@ class _GCIWorker(QThread):
                 "temperature": 0.6,
                 "num_predict": 512,
                 "keep_alive": "2m",
-            }).encode("utf-8")
+            }
 
-            req = urllib.request.Request(
-                "http://127.0.0.1:11434/api/generate",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                text = data.get("response", "").strip()
-                # Strip <think> tags from reasoning models
-                text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-                if text:
-                    self.response_ready.emit(text)
-                else:
-                    self.error_signal.emit("[Empty response from model]")
+            from System.inference_router import route_inference
+            text = route_inference(payload, timeout=120)
+
+            # Strip <think> tags from reasoning models
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            if text:
+                self.response_ready.emit(text)
+            else:
+                self.error_signal.emit("[Empty response from model]")
         except Exception as e:
             self.error_signal.emit(f"[Ollama offline] {e}")
 
@@ -110,25 +120,19 @@ class _ContextWorker(QThread):
     def run(self):
         try:
             import re
-            payload = json.dumps({
+            payload = {
                 "model": self.model,
                 "prompt": self.prompt,
                 "system": self.system,
                 "stream": False,
                 "temperature": 0.2,
                 "num_predict": 64,
-            }).encode("utf-8")
+            }
             
-            req = urllib.request.Request(
-                "http://127.0.0.1:11434/api/generate",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                text = data.get("response", "").strip()
-                self.intent_found = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            from System.inference_router import route_inference
+            text = route_inference(payload, timeout=30)
+            
+            self.intent_found = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
         except:
             pass
 
@@ -257,6 +261,8 @@ class GlobalCognitiveInterface(QWidget):
         self._mesh_client.connection_status.connect(self._on_swarm_status)
         self._build_ui()
         self._mesh_client.start()
+        # Top CWMS memory trace_id for this turn → fitness feedback after model returns
+        self._outcome_memory_trace_id: Optional[str] = None
 
     @property
     def mesh_connected(self) -> bool:
@@ -469,8 +475,9 @@ class GlobalCognitiveInterface(QWidget):
             except Exception:
                 pass
 
-        # 2. Recall relevant memories
+        # 2. Recall relevant memories (CWMS: constraint-weighted)
         memory_context = ""
+        self._outcome_memory_trace_id = None
         if preloaded_snapshot:
             memory_context = (
                 "\n\n[STIGMERGIC MEMORY — retrieved from cross-app territory]\n"
@@ -478,7 +485,29 @@ class GlobalCognitiveInterface(QWidget):
             )
         elif self._bus:
             try:
-                mem = self._bus.recall_context_block(text, app_context=self.app_context, top_k=3)
+                from System.constraint_memory_selector import (
+                    ConstraintState,
+                    cwms_reranked_traces,
+                    format_cwms_memory_context,
+                )
+                from System.lagrangian_constraint_manifold import get_manifold
+
+                manifold = get_manifold()
+                dual = manifold.compute_dual_ascent()
+                total_lam = dual.get("total_lambda_penalty", 0.0)
+                lam_norm = min(1.0, total_lam / 1.5)
+                c_state = ConstraintState(
+                    tau=0.0,
+                    lambda_sum=total_lam,
+                    lambda_norm=lam_norm,
+                    tau_norm=0.5,
+                )
+                reranked, sel = cwms_reranked_traces(
+                    self._bus, text, self.app_context, c_state
+                )
+                if reranked:
+                    self._outcome_memory_trace_id = reranked[0][1].trace_id
+                mem = format_cwms_memory_context(reranked, c_state, sel, top_k=3)
                 if mem:
                     memory_context = "\n\n" + mem
                     # ── LAYER 2: Shared Cross-Node Recall ────────────────
@@ -489,7 +518,13 @@ class GlobalCognitiveInterface(QWidget):
                         "text": mem.splitlines()[0][:120] + "..."
                     })
             except Exception:
-                pass
+                # Fallback to unconstrained recall if CWMS fails
+                try:
+                    mem = self._bus.recall_context_block(text, app_context=self.app_context, top_k=3)
+                    if mem:
+                        memory_context = "\n\n" + mem
+                except Exception:
+                    pass
 
         # 3. Broadcast to Swarm Mesh
         mesh_payload = {
@@ -535,6 +570,7 @@ class GlobalCognitiveInterface(QWidget):
             f"You are speaking to the Architect inside the '{self.app_context}' application. "
             f"Be helpful, concise, and warm. If relevant memories exist below, reference them naturally. "
             f"Keep responses under 150 words unless asked for detail."
+            f"{STIGMERGIC_CHARM_AGREEMENT}"
             f"{memory_context}"
             f"{ghost_whisper}"
             f"{app_injection}"
@@ -563,6 +599,16 @@ class GlobalCognitiveInterface(QWidget):
             })
 
     def _on_response(self, text: str):
+        tid = getattr(self, "_outcome_memory_trace_id", None)
+        self._outcome_memory_trace_id = None
+        if tid:
+            try:
+                from System.memory_fitness_overlay import apply_outcome  # noqa: PLC0415
+
+                apply_outcome(tid, 0.12)
+            except Exception:
+                pass
+
         ts = datetime.now().strftime("%H:%M")
         self.chat_display.append(
             f'<span style="color:#ff9e64;font-weight:bold;">[{ts}] {self.entity_name}:</span> '
@@ -572,6 +618,16 @@ class GlobalCognitiveInterface(QWidget):
         self.response_received.emit(text)
 
     def _on_error(self, err: str):
+        tid = getattr(self, "_outcome_memory_trace_id", None)
+        self._outcome_memory_trace_id = None
+        if tid:
+            try:
+                from System.memory_fitness_overlay import apply_outcome  # noqa: PLC0415
+
+                apply_outcome(tid, -0.08)
+            except Exception:
+                pass
+
         ts = datetime.now().strftime("%H:%M")
         self.chat_display.append(
             f'<span style="color:#f7768e;">[{ts}] {err}</span>'

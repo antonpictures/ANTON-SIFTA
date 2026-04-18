@@ -1,0 +1,6 @@
+{"task_id": "TEST_SAFE", "approved": true, "score": 0.5748, "risk": 0.1404, "predicted_value": 0.645, "failure_modes": [], "ts": 1776402496.817685}
+{"task_id": "TEST_DANGER", "approved": false, "score": -0.13, "risk": 1.0, "predicted_value": 0.37, "failure_modes": ["INSTABILITY_SPIKE", "RISK_DOMINANT_STATE", "CATASTROPHIC_RISK"], "ts": 1776402496.817934}
+{"task_id": "TEST_GARBAGE", "approved": false, "score": -0.1349, "risk": 0.5199, "predicted_value": 0.125, "failure_modes": ["LOW_UTILITY_PROJECTION", "RISK_DOMINANT_STATE"], "ts": 1776402496.818053}
+{"task_id": "MUT_a929444cffce", "approved": true, "score": 0.458, "risk": 0.094, "predicted_value": 0.505, "failure_modes": [], "ts": 1776402979.715214}
+{"task_id": "MUT_f47d3b2eeb60", "approved": false, "score": -0.3107, "risk": 0.9715, "predicted_value": 0.175, "failure_modes": ["INSTABILITY_SPIKE", "LOW_UTILITY_PROJECTION", "RISK_DOMINANT_STATE", "CATASTROPHIC_RISK"], "ts": 1776402979.725336}
+{"task_id": "INTEGRITY_TEST", "approved": false, "score": 0.4967, "risk": 0.0766, "predicted_value": 0.535, "failure_modes": [], "ts": 1776407233.0724428}

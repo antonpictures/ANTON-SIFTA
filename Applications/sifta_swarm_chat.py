@@ -38,7 +38,17 @@ def _append_repair_log_line(row: dict) -> None:
     append_ledger_line(_REPO / "repair_log.jsonl", row)
 
 def _append_dead_drop_line(row: dict) -> None:
+    # Kept for any legacy callers; new code uses swarm_chat_relay.publish_outbound
+    # which routes to the *local* queen's drop file (M5→m5queen, M1→m1queen) and
+    # mirrors the event to .sifta_state/ide_stigmergic_trace.jsonl.
     append_jsonl_line(_REPO / "m5queen_dead_drop.jsonl", row)
+
+try:
+    from swarm_chat_relay import poll_incoming as _relay_poll_incoming
+    from swarm_chat_relay import publish_outbound as _relay_publish_outbound
+    _RELAY_AVAILABLE = True
+except Exception:
+    _RELAY_AVAILABLE = False
 
 def close_parent_subwindow(widget):
     from PyQt6.QtWidgets import QMdiSubWindow
@@ -306,6 +316,12 @@ class SwarmChatWindow(QWidget):
         self._ghost_timer.timeout.connect(self._ghost_drift_tick)
         self._ghost_timer.start()
 
+        # Cross-node dead-drop relay poll — pulls M1↔M5 chat as pheromone.
+        self._drop_timer = QTimer(self)
+        self._drop_timer.setInterval(15000)  # every 15 seconds
+        self._drop_timer.timeout.connect(self.poll_dead_drop)
+        self._drop_timer.start()
+
     def _seed_page(self):
         """Prepare the document for immediate Screenplay writing."""
         dt = datetime.datetime.now().strftime('%B %d, %Y at %I:%M %p')
@@ -417,17 +433,16 @@ class SwarmChatWindow(QWidget):
     def _on_user_idle(self):
         text = self.editor.toPlainText().strip()
         if not text: return
-        
-        # Avoid swarm ping-pong (only reply if Architect spoke last)
-        last_chunk = text[-200:]
+
+        # Avoid swarm ping-pong — full-text scan, not last-200 chars (DeepMind bug 2).
+        # Long swarm replies pushed [ARCHITECT] outside the window and the guard
+        # mis-fired; scanning the whole text is O(n) and robust.
         swarm_tag = f"[{self.local_identity}]"
-        
-        last_arch = last_chunk.rfind("[ARCHITECT]")
-        last_sw = last_chunk.rfind(swarm_tag)
-        
+        last_arch = text.rfind("[ARCHITECT]")
+        last_sw = text.rfind(swarm_tag)
         if last_sw > last_arch and last_arch != -1:
             return  # Swarm spoke last, wait for user
-            
+
         if self.ollama_worker and self.ollama_worker.isRunning():
             return
 
@@ -439,10 +454,17 @@ class SwarmChatWindow(QWidget):
             ctx = ", ".join([os.path.basename(f) for f in self.context_files])
             prompt += f"\n\n[CONTEXT ATTACHED: {ctx}]\n"
 
-        self.ollama_worker = OllamaWorker(prompt, self.local_identity, model=self.model)
-        self.ollama_worker.response_ready.connect(self._on_swarm_response)
-        self.ollama_worker.error_signal.connect(self._on_swarm_error)
-        self.ollama_worker.start()
+        # Guard worker construction (DeepMind bug 1) — if OllamaWorker raises,
+        # the editor must not stay read-only forever.
+        try:
+            self.ollama_worker = OllamaWorker(prompt, self.local_identity, model=self.model)
+            self.ollama_worker.response_ready.connect(self._on_swarm_response)
+            self.ollama_worker.error_signal.connect(self._on_swarm_error)
+            self.ollama_worker.start()
+        except Exception as exc:
+            self.editor.setReadOnly(False)
+            self.ollama_worker = None
+            self.status_label.setText(f"❌ Swarm worker failed: {exc}")
 
     def _on_swarm_response(self, text: str):
         self.editor.setReadOnly(False)
@@ -470,10 +492,15 @@ class SwarmChatWindow(QWidget):
         # Scroll to bottom
         self.editor.ensureCursorVisible()
         
-        # Dead drop
+        # Dead drop — route to the *local* queen's file + mirror to IDE trace.
         if "GROUP" in (self.sidebar_list.currentItem().text() if self.sidebar_list.currentItem() else ""):
-            try: _append_dead_drop_line({"sender": self.local_identity, "text": text, "timestamp": int(time.time()), "source": "SCREENPLAY_CHAT"})
-            except: pass
+            try:
+                if _RELAY_AVAILABLE:
+                    _relay_publish_outbound(sender=self.local_identity, text=text, source="SCREENPLAY_CHAT")
+                else:
+                    _append_dead_drop_line({"sender": self.local_identity, "text": text, "timestamp": int(time.time()), "source": "SCREENPLAY_CHAT"})
+            except Exception:
+                pass
 
     def _ghost_drift_tick(self):
         """Poll the Ghost Memory layer for a dying fragment. If one surfaces, inject as a faded stage direction."""
@@ -560,4 +587,44 @@ class SwarmChatWindow(QWidget):
         self.model = model_name
 
     def poll_dead_drop(self):
-        pass  # In Screenplay mode, we don't randomly inject chat bubbles.
+        """Pull any new cross-node chat rows and surface them as stage directions.
+
+        Previously a no-op (DeepMind bug 3) — the Mac Mini entity could only
+        hear local typing.  Now reads the *other* queen's drop file via
+        swarm_chat_relay (watermarked, deduped, identity-tagged) and injects
+        each new row as a faded ghost-style stage direction so Screenplay
+        flow isn't disrupted.
+        """
+        if not _RELAY_AVAILABLE:
+            return
+        try:
+            msgs = _relay_poll_incoming(max_rows=5)
+        except Exception:
+            return
+        if not msgs:
+            return
+
+        cursor = self.editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.editor.setTextCursor(cursor)
+
+        ghost_fmt = QTextCharFormat()
+        ghost_fmt.setForeground(QColor("#9ece6a"))  # green = remote pheromone
+        ghost_fmt.setFontItalic(True)
+        ghost_fmt.setFontPointSize(11)
+
+        for m in msgs:
+            src_tag = m.source_serial[-4:] if m.source_serial else "????"
+            preview = m.text if len(m.text) <= 280 else m.text[:280] + "…"
+            stage = (
+                f"\n    📡 (dead-drop from {m.sender} @ {src_tag} via {m.source_file}) "
+                f"— {preview}\n"
+            )
+            cursor.insertText(stage, ghost_fmt)
+
+        normal_fmt = QTextCharFormat()
+        normal_fmt.setForeground(QColor("#c0caf5"))
+        normal_fmt.setFontItalic(False)
+        normal_fmt.setFontPointSize(15)
+        cursor.setCharFormat(normal_fmt)
+        self.editor.ensureCursorVisible()

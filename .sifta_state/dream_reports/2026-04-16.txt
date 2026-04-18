@@ -1,0 +1,17 @@
+DREAM REPORT — 2026-04-16
+==================================================
+
+Dead drop: 60 messages from 2 senders. 3 error mentions.
+Repairs: 57 interventions today.
+  ⚠ Repeat failures: {'unknown': 57}
+Economy: 0 mints, 0 STGM across 0 miners.
+  ⚠ Crashing apps: {'Warehouse Logistics Test': -4.232, 'Swarm Finance': -5.0}
+  Top fitness: Stigmergic Video Poker(+11.0), Stigmergic Writer(+3.8), Cyborg Organ Simulator(+3.8)
+Immune: evaporated 0 stale antibodies.
+Compression: Processed 200 traces. Crystallized 0 new skill primitive(s). Pruned 0 decayed skill(s).
+  -> Graph      : λ2 = 0.88683
+
+ICF Coherence: 0.972 (Inverse Chaos Pressure)
+Regime State: CONSOLIDATION (Density: 0.80, EWS: 0.02)
+
+Assessment: Anomalies detected. Review flagged items above.

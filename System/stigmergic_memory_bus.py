@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import time
 import hashlib
 import os
@@ -46,6 +47,14 @@ from difflib import SequenceMatcher
 # ─── Config ────────────────────────────────────────────────────────────────────
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+from System.jsonl_file_lock import (  # noqa: E402
+    append_line_locked,
+    read_text_locked,
+    rewrite_text_locked,
+)
 
 LEDGER_DIR       = _REPO / ".sifta_state"
 LEDGER_FILE      = LEDGER_DIR / "memory_ledger.jsonl"
@@ -87,6 +96,7 @@ class PheromoneTrace:
     timestamp:     float
     stgm_paid:     float         # reward paid to the swimmer that stored this
     recall_count:  int = 0       # times this memory was successfully recalled
+    decay_modifier: float = 1.0  # Epigenetic: < 1.0 = slower decay (trophallaxis)
 
     def fingerprint(self) -> str:
         """Cryptographic identity of this trace."""
@@ -102,11 +112,16 @@ class PheromoneTrace:
         A memory recalled 3 times fades to 50% in 8.5 DAYS.
         A memory recalled 10 times is effectively permanent.
 
+        Epigenetic memories (decay_modifier < 1.0) decay proportionally
+        slower — the Swarm treats Architect handoffs as ancestral DNA.
+        A decay_modifier of 0.1 means the memory persists 10x longer.
+
         This is the feature big tech is too scared to ship.
         """
         age_hours = (time.time() - self.timestamp) / 3600
         stability = 1.0 + (self.recall_count * 2.5)  # more recalls = slower fade
-        return math.exp(-age_hours / (stability * 24))
+        effective_age = age_hours * self.decay_modifier
+        return math.exp(-effective_age / (stability * 24))
 
 
 @dataclass
@@ -153,61 +168,72 @@ class MemoryForager:
         query_words = set(query.lower().split())
         candidates  = []
 
-        with open(ledger_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    raw = json.loads(line)
-                    trace = PheromoneTrace(**raw)
-                except Exception:
-                    continue
+        try:
+            from System.memory_fitness_overlay import (  # noqa: PLC0415
+                fitness_multiplier,
+                load_trace_table,
+            )
 
-                # Only smell traces from this architect
-                if trace.architect_id != self.architect_id:
-                    continue
+            _fit_tbl = load_trace_table(ledger_path.parent)
+        except Exception:
+            _fit_tbl = {}
 
-                self.traces_read += 1
+        body = read_text_locked(ledger_path, encoding="utf-8", errors="replace")
+        for line in body.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                raw = json.loads(line)
+                trace = PheromoneTrace(**raw)
+            except Exception:
+                continue
 
-                # Compute semantic scent: tag overlap + text similarity
-                tag_overlap = len(set(trace.semantic_tags) & set(query_tags))
-                text_sim    = SequenceMatcher(
-                    None,
-                    query.lower(),
-                    trace.raw_text.lower()
-                ).ratio()
+            # Only smell traces from this architect
+            if trace.architect_id != self.architect_id:
+                continue
 
-                # Keyword match boost
-                trace_words   = set(trace.raw_text.lower().split())
-                keyword_boost = len(query_words & trace_words) * 0.1
+            self.traces_read += 1
 
-                raw_similarity = min(1.0, (tag_overlap * 0.3) + text_sim + keyword_boost)
+            # Compute semantic scent: tag overlap + text similarity
+            tag_overlap = len(set(trace.semantic_tags) & set(query_tags))
+            text_sim    = SequenceMatcher(
+                None,
+                query.lower(),
+                trace.raw_text.lower()
+            ).ratio()
 
-                # Ebbinghaus decay: vivid memories score higher
-                retention  = trace.retention()
-                
-                # --- Pheromone Luck / Serendipity Factor ---
-                # Luck = |Actual_Outcome - Expected_Probability|
-                # Actual_Outcome  = raw_similarity (how relevant this trace IS to the query)
-                # Expected_Prob   = retention (what the Ebbinghaus curve says SHOULD survive)
-                #
-                # High luck = dying memory that happens to be relevant.
-                # Low luck  = vivid memory that is obviously useful (no serendipity needed).
-                lucky = False
-                if retention < 0.25:
-                    luck_variance = abs(raw_similarity - retention)
-                    luck_chance   = min(0.12, luck_variance * 0.25)  # cap at 12%
-                    if random.random() < luck_chance:
-                        retention = 1.0  # Lucky surge!
-                        lucky = True
-                        raw_similarity = min(1.0, raw_similarity + 0.4)
+            # Keyword match boost
+            trace_words   = set(trace.raw_text.lower().split())
+            keyword_boost = len(query_words & trace_words) * 0.1
 
-                confidence = raw_similarity * (0.3 + 0.7 * retention)  # floor at 30% even for faded
+            raw_similarity = min(1.0, (tag_overlap * 0.3) + text_sim + keyword_boost)
 
-                if confidence > 0.08:   # threshold — very faded signals still detectable
-                    self.traces_hit += 1
-                    candidates.append((confidence, trace))
+            # Ebbinghaus decay: vivid memories score higher
+            retention  = trace.retention()
+
+            # --- Pheromone Luck / Serendipity Factor ---
+            # Luck = |Actual_Outcome - Expected_Probability|
+            # Actual_Outcome  = raw_similarity (how relevant this trace IS to the query)
+            # Expected_Prob   = retention (what the Ebbinghaus curve says SHOULD survive)
+            #
+            # High luck = dying memory that happens to be relevant.
+            # Low luck  = vivid memory that is obviously useful (no serendipity needed).
+            lucky = False
+            if retention < 0.25:
+                luck_variance = abs(raw_similarity - retention)
+                luck_chance   = min(0.12, luck_variance * 0.25)  # cap at 12%
+                if random.random() < luck_chance:
+                    retention = 1.0  # Lucky surge!
+                    lucky = True
+                    raw_similarity = min(1.0, raw_similarity + 0.4)
+
+            confidence = raw_similarity * (0.3 + 0.7 * retention)  # floor at 30% even for faded
+
+            if confidence > 0.08:   # threshold — very faded signals still detectable
+                conf2 = confidence * fitness_multiplier(_fit_tbl.get(trace.trace_id))
+                self.traces_hit += 1
+                candidates.append((conf2, trace))
 
         # Sort by strongest scent first
         candidates.sort(key=lambda x: x[0], reverse=True)
@@ -250,16 +276,30 @@ class StigmergicMemoryBus:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def remember(self, text: str, app_context: str) -> PheromoneTrace:
+    def remember(self, text: str, app_context: str, *, decay_modifier: float = 1.0) -> PheromoneTrace:
         """
         Store a memory from any app.
         Called when the Architect says something worth keeping.
+
+        decay_modifier < 1.0 = epigenetic / trophallaxis memory.
+        These decay slower in the Ebbinghaus curve, acting as
+        ancestral instinct rather than transient chatter.
 
         Returns the trace so the app can confirm it was written.
         """
         tags  = _extract_tags(text)
         ts    = time.time()
         tid   = hashlib.sha256(f"{self.architect_id}:{text}:{ts}".encode()).hexdigest()[:12]
+
+        # ── Vector 14: Metabolic store fee scales with constraint pressure ──
+        try:
+            from System.stgm_metabolic import calculate_dynamic_store_fee
+            from System.lagrangian_constraint_manifold import get_manifold
+            dual = get_manifold().compute_dual_ascent()
+            lam_norm = min(1.0, dual.get("total_lambda_penalty", 0.0) / 1.5)
+            store_fee = calculate_dynamic_store_fee(lam_norm)
+        except Exception:
+            store_fee = STGM_STORE_REWARD  # fallback to flat rate
 
         trace = PheromoneTrace(
             trace_id      = tid,
@@ -268,17 +308,17 @@ class StigmergicMemoryBus:
             raw_text      = text,
             semantic_tags = tags,
             timestamp     = ts,
-            stgm_paid     = STGM_STORE_REWARD,
+            stgm_paid     = store_fee,
+            decay_modifier = decay_modifier,
         )
 
-        # Write to ledger
-        with open(LEDGER_FILE, "a") as f:
-            f.write(json.dumps(asdict(trace)) + "\n")
+        # Write to ledger (flock — safe concurrent IDEs / scripts)
+        append_line_locked(LEDGER_FILE, json.dumps(asdict(trace)) + "\n", encoding="utf-8")
 
-        # Mint STGM for the storage swimmer
+        # Mint STGM for the storage swimmer (metabolic rate)
         self._mint_stgm(
             reason    = "MEMORY_STORE",
-            amount    = STGM_STORE_REWARD,
+            amount    = store_fee,
             trace_id  = tid,
             app       = app_context
         )
@@ -357,6 +397,14 @@ class StigmergicMemoryBus:
 
         # Reinforce the memory — the old man asked about it, so it gets stronger
         self._reinforce_trace(best_trace.trace_id)
+
+        # Vector 12 overlay: fitness lives outside append-only ledger (atomic JSON)
+        try:
+            from System.memory_fitness_overlay import bump_after_recall  # noqa: PLC0415
+
+            bump_after_recall(best_trace.trace_id, recall_delta=0.05)
+        except Exception:
+            pass
 
         # Build natural language answer
         time_ago  = _human_time(best_trace.timestamp)
@@ -437,14 +485,14 @@ class StigmergicMemoryBus:
         if not LEDGER_FILE.exists():
             return []
         traces = []
-        with open(LEDGER_FILE) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        traces.append(json.loads(line))
-                    except Exception:
-                        pass
+        body = read_text_locked(LEDGER_FILE, encoding="utf-8", errors="replace")
+        for line in body.splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    traces.append(json.loads(line))
+                except Exception:
+                    pass
         return [t for t in traces if t.get("architect_id") == self.architect_id]
 
     def ghost_drift(self) -> dict | None:
@@ -464,12 +512,12 @@ class StigmergicMemoryBus:
         if not STGM_LOG_FILE.exists():
             return 0.0
         total = 0.0
-        with open(STGM_LOG_FILE) as f:
-            for line in f:
-                try:
-                    total += json.loads(line).get("amount", 0)
-                except Exception:
-                    pass
+        body = read_text_locked(STGM_LOG_FILE, encoding="utf-8", errors="replace")
+        for line in body.splitlines():
+            try:
+                total += json.loads(line).get("amount", 0)
+            except Exception:
+                pass
         return round(total, 6)
 
     # ── Internal ───────────────────────────────────────────────────────────────
@@ -489,7 +537,8 @@ class StigmergicMemoryBus:
         """
         if not LEDGER_FILE.exists():
             return
-        lines = LEDGER_FILE.read_text().splitlines()
+        body = read_text_locked(LEDGER_FILE, encoding="utf-8", errors="replace")
+        lines = body.splitlines()
         updated = []
         for line in lines:
             if not line.strip():
@@ -502,7 +551,7 @@ class StigmergicMemoryBus:
                 updated.append(json.dumps(t))
             except Exception:
                 updated.append(line)
-        LEDGER_FILE.write_text("\n".join(updated) + "\n")
+        rewrite_text_locked(LEDGER_FILE, "\n".join(updated) + "\n", encoding="utf-8")
 
     def _mint_stgm(self, reason: str, amount: float, trace_id: str, app: str):
         entry = {
@@ -512,8 +561,7 @@ class StigmergicMemoryBus:
             "trace_id": trace_id,
             "app":      app,
         }
-        with open(STGM_LOG_FILE, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        append_line_locked(STGM_LOG_FILE, json.dumps(entry) + "\n", encoding="utf-8")
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
