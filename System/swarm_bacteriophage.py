@@ -76,6 +76,13 @@ class SwarmBacteriophage:
             try:
                 append_line_locked(self.rewards_ledger, json.dumps(canonical_reward) + "\n")
                 print(f"[+] Wealth chemically redistributed to environment.")
+                
+                # F10 Wiring: Inject Epigenetic Trauma (Viral Lysis)
+                try:
+                    from System.swarm_epigenetics import SwarmEpigenetics
+                    SwarmEpigenetics().record_environmental_trauma(swimmer_id, "viral_lysis", 5.0)
+                except ImportError:
+                    pass
             except Exception:
                 pass
                 

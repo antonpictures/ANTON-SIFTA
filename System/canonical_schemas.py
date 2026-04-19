@@ -109,6 +109,26 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "code_quarantined",   # Boolean indicating execution block
         "timestamp",          # epoch seconds
     },
+
+    # Endosymbiosis (Eukaryogenesis) Relational Ledger — written by System/swarm_endosymbiosis.py
+    # NOTE: Binds two Swimmers permanently without polluting _BODY.json keys.
+    "eukaryote_pairings.jsonl": {
+        "ts",                 # epoch seconds
+        "nucleus_id",         # commander swimmer
+        "mitochondria_id",    # high-yield STGM producer swimmer
+        "fused_at",           # epoch seconds of the engulfment
+        "role_split",         # e.g., "STGM_GENERATION_TO_NUCLEUS"
+        "trace_id",
+    },
+
+    # Epigenetic Generational Trauma (DNA Methylation) — written by System/swarm_epigenetics.py
+    "epigenetic_methylations.jsonl": {
+        "ts",                 # epoch seconds
+        "swimmer_id",         # the traumatized organism
+        "trauma_source",      # human-readable source of trauma (e.g. "phage_lysis")
+        "methylation_value",  # float measuring expression suppression
+        "trace_id",
+    },
 }
 
 

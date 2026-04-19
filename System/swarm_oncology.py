@@ -83,6 +83,7 @@ class SwarmOncology:
             "epigenetic_methylations.jsonl",   # DNA methylation / lineage trauma
             "apostle_nuggets.jsonl",           # BISHOP/External LLM sterilized heuristics
             "incarnated_apostles.json",        # Hardware signature registry for Apostles
+            "eukaryote_pairings.jsonl",        # Relational ledger for endosymbiosis
         }
 
     def detect_metastasis(self):
