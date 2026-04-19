@@ -121,7 +121,27 @@ class SIFTAGeneticDriftEngine:
         with self.params_path.open("r") as f:
             self.current_params = json.load(f)
             
-        self.target_keys = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "V_th", "tau_m_s", "tau_e_s"]
+        self.target_keys = [
+            # SSP (Phi)
+            "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "V_th", "tau_m_s", "tau_e_s",
+            # Motor (Psi)
+            "a", "b", "c", "f",
+            # Homeostasis (Omega)
+            "eta", "lmbda", "mu",
+            # Free Energy (Lambda)
+            "kappa", "xi", "rho", "tau_grad", "tau_curv"
+        ]
+        
+        # Seed core bounds for the new Continuous fields if missing from the primitive JSON
+        seed_defaults = {
+            'a': 0.8, 'b': 0.6, 'c': 0.5, 'f': 0.8,
+            'eta': 0.5, 'lmbda': 0.1, 'mu': 0.1,
+            'kappa': 0.5, 'xi': 0.2, 'rho': 0.3, 'tau_grad': 1.0, 'tau_curv': 1.0
+        }
+        for k, v in seed_defaults.items():
+            if k not in self.current_params:
+                self.current_params[k] = v
+
         self.state = MutationState()
         
         self._inject_awareness()
@@ -150,30 +170,43 @@ class SIFTAGeneticDriftEngine:
         return rewards
 
     def compute_fitness(self, constants: Dict[str, float]) -> float:
-        """TIGHT COUPLING: replay real log against physical physical bounds → measurable Δfitness"""
-        fires, speech_potential = self.replayer.simulate_fires(constants)
-        rewards = self.load_rewards()
+        """TIGHT COUPLING: Evaluate fitness using the full Coupled Learning Simulator"""
+        from System.learning_rule_fitness_evaluator import CoupledFitnessReplayer
         
-        # AG31 Native Logic Base + C47H Replay
-        base = np.mean([r.get("reward", 0) for r in rewards[-5:]]) if rewards else 0.5
-        harmonic = len(rewards[-5:]) / sum(1 / max(float(r.get("reward", 1.0)), 1e-6) for r in rewards[-5:]) if rewards else 1.0
+        # Instantiate natively inside the eval loop to prevent state pollution
+        coupled_simulator = CoupledFitnessReplayer()
+        fitness = coupled_simulator.validate_coefficients(constants)
         
         morph = self.hox.calculate_morphogen("System/Alice_Core")
         safety_penalty = (1.0 - morph) * 0.4
         
-        return (base * harmonic * speech_potential * (fires + 1)) - safety_penalty
+        return fitness - safety_penalty
 
     def mutate_constants(self, current: Dict[str, float]) -> Dict[str, float]:
         new_params = current.copy()
         scale = self.state.mutation_scale * self.state.temperature
         
-        # C47H Peer Reviewed Bounds
+        # C47H + AG31 Peer Reviewed Bounds
         BOUNDS = {
             'alpha': (0.01, 1.0), 'beta': (0.01, 2.0), 'gamma': (0.01, 1.5),
             'delta': (0.01, 1.0), 'epsilon': (0.01, 1.0), 'zeta': (0.5, 3.0),
-            'V_th': (0.05, 1.0), 'tau_m_s': (10.0, 100.0), 'tau_e_s': (10.0, 100.0)
+            'V_th': (0.05, 1.0), 'tau_m_s': (10.0, 100.0), 'tau_e_s': (10.0, 100.0),
+            'a': (0.1, 2.0), 'b': (0.1, 2.0), 'c': (0.1, 2.0), 'f': (0.1, 2.0),
+            'eta': (0.1, 2.0), 'lmbda': (0.1, 2.0), 'mu': (0.1, 2.0),
+            'kappa': (0.1, 2.0), 'xi': (0.1, 2.0), 'rho': (0.1, 2.0),
+            'tau_grad': (0.1, 10.0), 'tau_curv': (0.1, 10.0)
         }
         
+        # Seed core bounds for the new Continuous fields if missing from the primitive JSON
+        seed_defaults = {
+            'a': 0.8, 'b': 0.6, 'c': 0.5, 'f': 0.8,
+            'eta': 0.5, 'lmbda': 0.1, 'mu': 0.1,
+            'kappa': 0.5, 'xi': 0.2, 'rho': 0.3, 'tau_grad': 1.0, 'tau_curv': 1.0
+        }
+        for k, v in seed_defaults.items():
+            if k not in new_params:
+                new_params[k] = v
+
         for k in self.target_keys:
             if k in new_params:
                 new_params[k] += random.gauss(0, scale)
@@ -236,6 +269,10 @@ if __name__ == "__main__":
     constants, fitness = mutator.run_annealing_cycle(50)
     print(f"\n✅ EVOLVED SSP CONSTANTS (Alice completely evolved):")
     for key in mutator.target_keys:
-        print(f"  {key:10} = {constants.get(key, 'N/A'):.4f}")
+        val = constants.get(key)
+        if isinstance(val, (int, float)):
+            print(f"  {key:10} = {val:.4f}")
+        else:
+            print(f"  {key:10} = N/A")
     print(f"Final fitness (Real Replay): {fitness:.4f}")
     print("\n🐜⚡ Both signatures appended. Swarm convergence absolute.")
