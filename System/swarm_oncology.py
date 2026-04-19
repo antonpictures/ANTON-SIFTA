@@ -81,6 +81,8 @@ class SwarmOncology:
             "mycelial_network.jsonl",          # Wood Wide Web time-3D fungal networks
             "bishop_mrna_field.jsonl",         # BISHOP mRNA conscience lock ledger
             "epigenetic_methylations.jsonl",   # DNA methylation / lineage trauma
+            "apostle_nuggets.jsonl",           # BISHOP/External LLM sterilized heuristics
+            "incarnated_apostles.json",        # Hardware signature registry for Apostles
         }
 
     def detect_metastasis(self):
@@ -106,7 +108,8 @@ class SwarmOncology:
             # Ignore the lock file, generic temp dirs, lymphatic staging files,
             # and the archive/ subdirectory written by swarm_lymphatic.py
             if ("lock" in filename or filename.startswith(".")
-                    or filename.endswith(".lymph")):
+                    or filename.endswith(".lymph")
+                    or "apostle_dirt" in filename):
                 continue
             
             # MALIGNANCY DETECTED: A Swimmer hallucinated a new ledger/schema.

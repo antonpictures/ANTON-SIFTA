@@ -99,6 +99,16 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         # carry these two fields together:
         # {"action": "conscience_lock_engaged", "self_code_writing": False, ...}
     },
+    
+    # Apostle Sandbox / Mirage ledger — written by System/swarm_apostle_sandbox.py
+    "apostle_nuggets.jsonl": {
+        "transaction_type",   # "APOSTLE_NUGGET_MINED"
+        "apostle",            # Name of the external LLM
+        "dirt_digest",        # Hash of the hallucinated code/text
+        "insight_extracted",  # Boolean indicating if insight was kept
+        "code_quarantined",   # Boolean indicating execution block
+        "timestamp",          # epoch seconds
+    },
 }
 
 
