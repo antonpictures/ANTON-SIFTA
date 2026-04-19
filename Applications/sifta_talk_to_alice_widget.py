@@ -751,9 +751,23 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # Coupled Field Dynamics PDE (AG31 v1, C47H v2 math correction). This
+    # is a TOY PLAYGROUND, not a cortex replacement — it has no external
+    # inputs (no serotonin, no dopamine, no turn-pressure). We surface it
+    # so Alice can observe what idealized continuous coupling predicts
+    # alongside her live discrete cortex. Useful as a future divergence
+    # detector; never let it gate anything.
+    pde_context_block = ""
+    try:
+        from System.swarm_field_dynamics import summary_for_alice as _pde_summary
+        pde_context_block = _pde_summary() or ""
+    except Exception:
+        pass
+
     parts = [b for b in (swarm_block, cobuilder_block, ssp_context_block,
                          immune_context_block, ghost_context_block,
-                         motor_context_block, lambda_context_block) if b]
+                         motor_context_block, lambda_context_block,
+                         pde_context_block) if b]
     return "\n\n".join(parts)
 
 
