@@ -80,6 +80,71 @@ def rewrite_text_locked(path: Path, content: str, *, encoding: str = "utf-8") ->
             fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+def compact_locked(
+    path: Path,
+    predicate: Callable[[str], bool],
+    *,
+    encoding: str = "utf-8",
+) -> tuple:
+    """
+    Read-modify-write a line-oriented file atomically under one exclusive lock.
+
+    For each non-empty line, predicate(line) returns True (keep) or False (evict).
+    Empty lines are silently dropped (treated as evicted but not returned).
+
+    Returns (kept_count, evicted_lines) so the caller can archive evictions
+    AFTER the lock is released — keeping the critical section short.
+
+    Race-free against concurrent append_line_locked on the SAME path:
+      - We hold LOCK_EX across read → truncate → write.
+      - Concurrent producers using append_line_locked block on the same flock,
+        then their append goes to the freshly-rewritten file.
+      - No os.rename, no inode swap, no F18-class data loss.
+
+    Returns (0, []) if the file does not exist.
+    """
+    if not path.exists():
+        return 0, []
+
+    if not _HAVE_FLOCK:
+        # No flock available (Windows). Best-effort, single-writer assumption.
+        text = path.read_text(encoding=encoding)
+        kept_lines = []
+        evicted_lines = []
+        for line in text.splitlines(keepends=True):
+            if not line.strip():
+                continue
+            if predicate(line):
+                kept_lines.append(line)
+            else:
+                evicted_lines.append(line)
+        path.write_text("".join(kept_lines), encoding=encoding)
+        return len(kept_lines), evicted_lines
+
+    with open(path, "a+", encoding=encoding) as f:
+        fd = f.fileno()
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            text = f.read()
+            kept_lines = []
+            evicted_lines = []
+            for line in text.splitlines(keepends=True):
+                if not line.strip():
+                    continue
+                if predicate(line):
+                    kept_lines.append(line)
+                else:
+                    evicted_lines.append(line)
+            f.seek(0)
+            f.truncate(0)
+            f.write("".join(kept_lines))
+            f.flush()
+            return len(kept_lines), evicted_lines
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def read_write_json_locked(
     path: Path,
     updater: Callable[[Dict[str, Any]], Dict[str, Any]],
