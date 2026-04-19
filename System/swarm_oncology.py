@@ -78,6 +78,7 @@ class SwarmOncology:
             "hgt_plasmids.jsonl",              # Horizontal Gene Transfer vectors
             "endocrine_glands.jsonl",          # Global Adrenaline Output ledgers
             "bioluminescence_photons.jsonl",   # Quorum Sensing structural signals
+            "mycelial_network.jsonl",          # Wood Wide Web time-3D fungal networks
             # Deprecated/Hallucinated ledgers that exist logically but no longer map
             # to active physics engines (if we find them, they are benign scars or 
             # active tumors depending on when they are touched).
