@@ -419,6 +419,108 @@ def summary_for_alice() -> str:
     )
 
 
+# ── Closed-loop coupling: Λ → Ψ.R_risk (probabilistic inhibitor) ────────
+def _read_live_phi() -> Optional[float]:
+    """Pull Φ V_natural from the speech_potential.json ledger if present.
+    Returns None if SSP has not run yet."""
+    p = _STATE_DIR / "speech_potential.json"
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text("utf-8"))
+        v = data.get("V_natural")
+        if v is None:
+            v = data.get("V")
+        return float(v) if v is not None else None
+    except Exception:
+        return None
+
+
+def _read_live_psi() -> Optional[float]:
+    """Pull Ψ V_m from motor_potential.json and normalize to [0, 1].
+    Ψ V_m typically rides in [-2, 2] with V_th around 1.0; we sigmoid
+    against V_th so the input scale matches Λ's expectations."""
+    p = _STATE_DIR / "motor_potential.json"
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text("utf-8"))
+        v = float(data.get("V_m", 0.0))
+        # Sigmoid centered on 0 with mild slope → [0, 1] mapping
+        return _sigmoid(v)
+    except Exception:
+        return None
+
+
+def _read_live_env_anomaly() -> float:
+    """Pull OIS p_anomaly as the env_energy proxy. BENIGN_HOMEOSTASIS →
+    near zero; DRIFT_WARNING / ZERO_DAY_FAILURE → toward 1. Returns
+    a safe 0.0 if OIS state is missing (don't fabricate threat)."""
+    # OIS persists its baseline + most recent verdict; we read the
+    # last p_anomaly if available. Different OIS revisions have stored
+    # this under different keys; we try both common ones.
+    for fname in ("optical_immune_state.json", "optical_immune_baseline.json"):
+        p = _STATE_DIR / fname
+        if not p.exists():
+            continue
+        try:
+            data = json.loads(p.read_text("utf-8"))
+            for key in ("last_p_anomaly", "p_anomaly", "anomaly_p"):
+                if key in data:
+                    return max(0.0, min(1.0, float(data[key])))
+        except Exception:
+            continue
+    return 0.0
+
+
+def couple_to_motor() -> dict:
+    """Closed-loop step: read live {Φ, Ψ, OIS}, compute Λ, push the
+    Λ-derived inhibitor strength into Ψ's R_risk EMA via the new
+    record_environmental_inhibitor() sentinel API.
+
+    Returns a telemetry dict with the inputs, Λ, Λ_z, and the inhibitor
+    strength that was applied (or 0 if Welford has not warmed up yet).
+
+    Total — never raises. Safe to call once per conversational turn
+    from the talk widget. The biology stays stochastic: Ψ's gate is
+    still a Gerstner escape-noise LIF spike; we are only adjusting
+    its R_risk input so the gate inhibits PROBABILISTICALLY when Λ
+    flags environmental jerkiness."""
+    try:
+        phi = _read_live_phi()
+        psi = _read_live_psi()
+        env = _read_live_env_anomaly()
+        if phi is None or psi is None:
+            # Live cortex hasn't populated state yet — do nothing safely.
+            return {"applied": 0.0, "reason": "cortex_state_missing"}
+
+        fe = _get()
+        lam = fe.compute(phi_raw=phi, psi_raw=psi, env_energy=env)
+        inhibitor = fe.evaluate_as_inhibitor()
+
+        applied = 0.0
+        if inhibitor > 0.0:
+            try:
+                from System.swarm_motor_potential import record_environmental_inhibitor
+                record_environmental_inhibitor(inhibitor)
+                applied = inhibitor
+            except Exception:
+                pass
+
+        return {
+            "phi":        phi,
+            "psi":        psi,
+            "env_anomaly": env,
+            "lambda":     lam,
+            "lambda_z":   fe._lambda_z(lam),
+            "inhibitor":  inhibitor,
+            "applied":    applied,
+            "n_samples":  fe.lambda_n,
+        }
+    except Exception as e:
+        return {"applied": 0.0, "reason": f"exception: {type(e).__name__}"}
+
+
 # ── Smoke test ──────────────────────────────────────────────────────────
 def _smoke() -> int:
     import tempfile, shutil, random as _random

@@ -486,6 +486,37 @@ def record_outcome(success: bool, risk: float = 0.0) -> None:
         pass
 
 
+def record_environmental_inhibitor(strength: float) -> None:
+    """Sentinel-side risk push (NOT caller-side action feedback).
+
+    Used by upstream environmental sentinels — currently Λ(t) via
+    System.swarm_free_energy.couple_to_motor() — to signal that the
+    environment is unstable in a way that should bias Ψ toward
+    inhibition WITHOUT changing the stochastic LIF gate. Strength in
+    [0, 1] gets EMA-mixed into risk_ema at the same rate as a normal
+    risk feedback row, so Φ/Ψ keep their Gerstner escape-noise
+    behavior and the brake comes through probabilistically rather
+    than as a hard override.
+
+    Semantically distinct from `record_outcome(success, risk)` which
+    is meant for 'I just did X, here is how it went'. This one is
+    'a sentinel just observed environmental jerkiness'. We log the
+    distinction to make audits readable. Total — never raises.
+    """
+    try:
+        s = max(0.0, min(1.0, float(strength)))
+        if s <= 0.0:
+            return
+        coeffs = _load_coefficients()
+        state  = _load_state()
+        state.risk_ema = ((1 - coeffs.risk_alpha) * state.risk_ema
+                          + coeffs.risk_alpha * s)
+        state.last_update_ts = time.time()
+        _save_state(state)
+    except Exception:
+        pass
+
+
 def record_task_event(intensity: float = 1.0) -> None:
     """Caller-side push: 'a task just started / is pending / repeated'.
     Intensity is multiplicative — a low-priority chore is 0.3, a hot

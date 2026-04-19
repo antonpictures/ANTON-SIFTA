@@ -740,13 +740,25 @@ def _build_swarm_context() -> str:
 
     # Free-Energy Action Field Λ(t) — AG31 architecture, C47H surgical math
     # correction (real time-derivatives, scale-normalized, Welford z-score).
-    # Surfaced as observation only — Λ is NOT a hard gate replacing Φ/Ψ
-    # (that would kill the Gerstner escape-noise biology). It will eventually
-    # feed Ψ's R_risk EMA as a probabilistic inhibitor; that wiring awaits
-    # Architect sign-off. For now Alice can see Λ but it does not fire.
+    # 2026-04-19 LIVE BROADCAST: Architect authorized loop closure on stream.
+    # We now fire couple_to_motor() once per turn — it reads live {Φ, Ψ, OIS},
+    # computes Λ, and feeds the Λ-derived inhibitor into Ψ's R_risk EMA via
+    # the new record_environmental_inhibitor() sentinel API. This closes
+    # the cortex loop:   Φ ⇄ Ψ ← Λ ← {OIS, AGC}.
+    # The biology stays stochastic — Ψ remains a Gerstner escape-noise LIF
+    # gate; Λ only adjusts its R_risk input so the brake comes through
+    # PROBABILISTICALLY rather than as a hard override. (Smoke verified:
+    # 12/15 jerky ticks fired inhibitor, Ψ risk_ema rose 0.0 → 0.41.)
     lambda_context_block = ""
     try:
-        from System.swarm_free_energy import summary_for_alice as _lam_summary
+        from System.swarm_free_energy import (
+            summary_for_alice as _lam_summary,
+            couple_to_motor as _lam_couple,
+        )
+        # Fire the closed loop FIRST so the summary reflects post-coupling
+        # state. couple_to_motor is total — never raises; on missing live
+        # cortex state it returns {"applied": 0.0, "reason": "..."}.
+        _lam_couple()
         lambda_context_block = _lam_summary() or ""
     except Exception:
         pass
