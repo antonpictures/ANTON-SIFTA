@@ -726,8 +726,21 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # Motor readiness Ψ(t) — biological gate for ACTIONS (Architect 2026-04-19
+    # "Speech has Φ(t). Now actions get their own biomath gate."). We surface
+    # the snapshot only — we do NOT actually fire here, because the talk widget
+    # is a sensor, not an actuator. Action call-sites import should_act_now()
+    # directly. Safe to call per turn (read-only via summary_for_alice).
+    motor_context_block = ""
+    try:
+        from System.swarm_motor_potential import summary_for_alice as _motor_summary
+        motor_context_block = _motor_summary() or ""
+    except Exception:
+        pass
+
     parts = [b for b in (swarm_block, cobuilder_block, ssp_context_block,
-                         immune_context_block, ghost_context_block) if b]
+                         immune_context_block, ghost_context_block,
+                         motor_context_block) if b]
     return "\n\n".join(parts)
 
 
