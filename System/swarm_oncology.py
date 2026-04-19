@@ -64,11 +64,18 @@ class SwarmOncology:
         self.healthy_schemas = {
             "ide_stigmergic_trace.jsonl",
             "work_receipts.jsonl",             # [AG31 Fix] BISHOP missed the valid reward ledger
+            "stgm_memory_rewards.jsonl",       # [AG31 Fix] Old biological ledger required for stability
             "amygdala_nociception.jsonl",
             "entorhinal_spatial_map.jsonl",
             "long_term_instincts.json",
             "nmj_acetylcholine.jsonl",
             "oncology_tumors.jsonl",
+            "wernicke_semantics.jsonl",        # Core Wernicke Broca semantic stream
+            "audio_ingress_log.jsonl",         # Core Acoustic Stream
+            "clinical_heartbeat.json",         # Health Monitor
+            "event_clock.jsonl",               # Chronometry
+            "clock_settings.json",             # Chronometry bounds
+            "hgt_plasmids.jsonl",              # Horizontal Gene Transfer vectors
             # Deprecated/Hallucinated ledgers that exist logically but no longer map
             # to active physics engines (if we find them, they are benign scars or 
             # active tumors depending on when they are touched).
