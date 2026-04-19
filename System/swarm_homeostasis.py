@@ -16,6 +16,7 @@ from pathlib import Path
 from collections import deque
 
 from System.jsonl_file_lock import append_line_locked
+from dataclasses import dataclass, asdict
 
 def _tanh(x: float) -> float:
     return math.tanh(x)
@@ -23,15 +24,30 @@ def _tanh(x: float) -> float:
 def _sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
+@dataclass
+class HomeostasisCoefficients:
+    eta: float = 1.2
+    lmbda: float = 0.4
+    mu: float = 0.4
+    version: str = "2026-04-19.v1"
+
 class Homeostasis:
     def __init__(self):
         # Target active behavior bounds parameters
         self.target_activity = 0.5  # ideal combined biological activity (normalized)
 
-        # Modulatory Weights
-        self.eta = 1.2     # activity correction gradient
-        self.lmbda = 0.4   # speech stability
-        self.mu = 0.4      # action stability
+        # Dual IDE Trace & State logging
+        self.state_dir = Path(".sifta_state")
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.trace_path = self.state_dir / "homeostasis_field_traces.jsonl"
+        self.state_path = self.state_dir / "homeostasis_state.json"
+        
+        # Load Modulatory Weights
+        self.coeffs_path = self.state_dir / "homeostasis_coefficients.json"
+        self.coeffs = self._load_coefficients()
+        self.eta = self.coeffs.eta
+        self.lmbda = self.coeffs.lmbda
+        self.mu = self.coeffs.mu
 
         # Deep memory buffers
         self.phi_hist = deque(maxlen=32)
@@ -40,13 +56,24 @@ class Homeostasis:
 
         self.last_t = time.time()
         
-        # Dual IDE Trace & State logging
-        self.state_dir = Path(".sifta_state")
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        self.trace_path = self.state_dir / "homeostasis_field_traces.jsonl"
-        self.state_path = self.state_dir / "homeostasis_state.json"
-        
         self._load_state()
+
+    def _load_coefficients(self) -> HomeostasisCoefficients:
+        if self.coeffs_path.exists():
+            try:
+                data = json.loads(self.coeffs_path.read_text())
+                valid_keys = {k for k in HomeostasisCoefficients.__dataclass_fields__}
+                filtered = {k: v for k, v in data.items() if k in valid_keys}
+                return HomeostasisCoefficients(**filtered)
+            except Exception:
+                pass
+        
+        default = HomeostasisCoefficients()
+        try:
+            self.coeffs_path.write_text(json.dumps(asdict(default), indent=2))
+        except Exception:
+            pass
+        return default
 
     def _load_state(self):
         """Rehydrates the biological queue across instantiations."""

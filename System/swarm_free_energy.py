@@ -78,6 +78,18 @@ _STATE_PATH  = _STATE_DIR / "free_energy_state.json"
 _LEDGER_PATH = _STATE_DIR / "free_energy_traces.jsonl"
 
 
+from dataclasses import dataclass, asdict
+
+@dataclass
+class FreeEnergyCoefficients:
+    kappa: float = 0.6
+    xi: float = 0.4
+    rho: float = 0.5
+    tau_grad: float = 1.0
+    tau_curv: float = 1.0
+    version: str = "2026-04-19.v1"
+
+
 def _sigmoid(x: float) -> float:
     if x >  50: return 1.0
     if x < -50: return 0.0
@@ -97,27 +109,24 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
 
 
 class FreeEnergy:
-    """Free Energy Action Field Λ(t). Two ways to consume:
-      • should_act(Λ) → bool   [AG31's original deterministic gate;
-                                use only as an external safety override]
-      • evaluate_as_inhibitor() → float ∈ [0, 1]
-                                  [biologically correct: feed into Ψ's
-                                   R_risk EMA so the Gerstner escape-noise
-                                   gate inhibits probabilistically]
-    """
+    """Free Energy Action Field Λ(t)."""
 
     def __init__(self):
+        # ── Paths (AG31's contract) ──────────────────────────────────────
+        self.state_dir   = _STATE_DIR
+        self.ledger_path = _LEDGER_PATH
+        self.state_path  = _STATE_PATH
+        self.coeffs_path = _STATE_DIR / "free_energy_coefficients.json"
+        
         # ── Lagrangian weights (preserved from AG31 v1) ──────────────────
-        self.kappa = 0.6   # environment gradient penalty (instability)
-        self.xi    = 0.4   # acceleration penalty (jerkiness prevention)
-        self.rho   = 0.5   # entropy penalty (confusion / mixed signals)
+        self.coeffs = self._load_coefficients()
+        self.kappa = self.coeffs.kappa   # environment gradient penalty (instability)
+        self.xi    = self.coeffs.xi      # acceleration penalty (jerkiness prevention)
+        self.rho   = self.coeffs.rho     # entropy penalty (confusion / mixed signals)
 
         # ── Characteristic time scales for dimensionless normalization ──
-        # These set "what counts as fast change" so τ·∂/∂t becomes
-        # dimensionless. Tunable on disk via _load_state.
-        self.tau_grad = 1.0       # seconds — env_energy that swings by 1
-                                  # per second saturates the gradient term
-        self.tau_curv = 1.0       # seconds² — quadratic for second deriv
+        self.tau_grad = self.coeffs.tau_grad   # seconds — env_energy that swings by 1
+        self.tau_curv = self.coeffs.tau_curv   # seconds² — quadratic for second deriv
 
         # ── Persistent history (timestamped so derivatives are honest) ──
         # We store (ts, value) pairs; deque maxlen=8 caps memory.
@@ -126,23 +135,31 @@ class FreeEnergy:
         self.energy_hist: Deque[Tuple[float, float]] = deque(maxlen=8)
 
         # ── Welford-style running statistics over Λ for z-scoring ────────
-        # Used by evaluate_as_inhibitor() so we never need a static
-        # "Λ > 0" threshold — Λ_z self-calibrates to Alice's history.
         self.lambda_n:  int   = 0
         self.lambda_mu: float = 0.0
         self.lambda_M2: float = 0.0   # sum of squared deviations from mean
 
-        # Most-recent instantaneous Λ — written by compute(), read by
-        # external sentinels via the on-disk last_lambda field. Welford
-        # mean alone lags reality by O(n); sentinels need the live value.
+        # Most-recent instantaneous Λ 
         self._last_lambda: float = 0.0
 
         self.last_t: float = time.time()
-
-        # ── Paths (AG31's contract) ──────────────────────────────────────
-        self.state_dir   = _STATE_DIR
-        self.ledger_path = _LEDGER_PATH
-        self.state_path  = _STATE_PATH
+        
+    def _load_coefficients(self) -> FreeEnergyCoefficients:
+        if self.coeffs_path.exists():
+            try:
+                data = json.loads(self.coeffs_path.read_text())
+                valid_keys = {k for k in FreeEnergyCoefficients.__dataclass_fields__}
+                filtered = {k: v for k, v in data.items() if k in valid_keys}
+                return FreeEnergyCoefficients(**filtered)
+            except Exception:
+                pass
+        
+        default = FreeEnergyCoefficients()
+        try:
+            self.coeffs_path.write_text(json.dumps(asdict(default), indent=2))
+        except Exception:
+            pass
+        return default
 
         self._load_state()
 

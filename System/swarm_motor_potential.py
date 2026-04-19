@@ -152,6 +152,7 @@ class MotorCoefficients:
     d:  float = 0.5   # task-integral pressure (d · ∫E_task)
     e:  float = 0.9   # success EMA bonus (e · R_success)
     f:  float = 1.0   # risk EMA penalty (− f · R_risk)
+    ach_recruitment_weight: float = 0.4 # stigmergic ACh local recruitment
 
     # ── LIF dynamics ─────────────────────────────────────────────────────
     tau_m:    float = 4.0        # membrane time constant (s) — slower than SSP
@@ -197,6 +198,7 @@ class MotorState:
     task_events:            List[Tuple[float, float]] = field(default_factory=list)
                                             # [(ts, intensity), ...]
     n_fires_total:          int   = 0
+    vesicle_fatigue:        float = 0.0     # Action output fatigue
     version:                str   = MODULE_VERSION
 
 
@@ -446,6 +448,22 @@ def _harvest_external_outcomes(state: MotorState, coeffs: MotorCoefficients,
     return n_s, n_r
 
 
+def _sense_acetylcholine(now: float) -> float:
+    """Read local Stigmergic Acetylcholine (ACh) traces from nmj_acetylcholine.jsonl.
+    These traces recruit Swimmers by lowering the dynamic activation threshold."""
+    ach_ledger = _STATE_DIR / "nmj_acetylcholine.jsonl"
+    if not ach_ledger.exists():
+        return 0.0
+
+    ach_concentration = 0.0
+    for r in _tail_jsonl_rows(ach_ledger, max_bytes=65536)[-50:]:
+        age = now - float(r.get("timestamp", 0.0) or 0.0)
+        # ACh degrades rapidly relative to time
+        if 0 <= age < 60:
+            ach_concentration += math.exp(-age / 10.0)
+            
+    return min(0.5, ach_concentration)  # cap facilitation
+
 # ── LIF + escape-noise primitives (mirrors SSP) ──────────────────────────────
 def _sigmoid(x: float) -> float:
     if x > 50:
@@ -580,6 +598,7 @@ def should_act_now(*, dt_override: Optional[float] = None) -> MotorDecision:
     dD    = _read_dopamine_delta(state)
     cort  = _read_cortisol()
     Etask = _task_integral(state, coeffs, now)
+    local_ach = _sense_acetylcholine(now)
 
     I_drive = (
         coeffs.a * phi
@@ -588,6 +607,7 @@ def should_act_now(*, dt_override: Optional[float] = None) -> MotorDecision:
         + coeffs.d * Etask
         + coeffs.e * state.success_ema
         - coeffs.f * state.risk_ema
+        + coeffs.ach_recruitment_weight * local_ach
     )
 
     # Membrane evolution
@@ -604,7 +624,9 @@ def should_act_now(*, dt_override: Optional[float] = None) -> MotorDecision:
         spike_prob = 0.0
     else:
         # rate ~ σ((V − V_th) / Δu), integrated over dt
-        rate = _sigmoid((V_new - coeffs.V_th) / max(1e-3, coeffs.Delta_u))
+        # dynamic threshold accounts for physical Motor limitations (fatigue)
+        dynamic_V_th = coeffs.V_th + state.vesicle_fatigue
+        rate = _sigmoid((V_new - dynamic_V_th) / max(1e-3, coeffs.Delta_u))
         # convert rate to per-Δt probability via 1 - exp(-rate·dt/τ)
         # (consistent with SSP's discretization)
         u = rate * (dt / max(1e-3, coeffs.tau_m))
@@ -617,6 +639,10 @@ def should_act_now(*, dt_override: Optional[float] = None) -> MotorDecision:
         state.refractory_remaining = coeffs.refractory_s
         state.last_fire_ts = now
         state.n_fires_total += 1
+        state.vesicle_fatigue = min(2.0, state.vesicle_fatigue + 0.15)
+    else:
+        # Metabolize / rest (biological recovery of synaptic vesicles)
+        state.vesicle_fatigue = max(0.0, state.vesicle_fatigue - 0.02 * dt)
 
     state.V_m = V_new
     state.last_update_ts = now
