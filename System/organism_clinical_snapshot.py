@@ -26,6 +26,7 @@ Mechanism:
 
 from __future__ import annotations
 import json
+import os
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -39,6 +40,19 @@ _IMMUNE_STATUS = _STATE_DIR / "immune_quarantine.jsonl"
 _COGNITIVE_STATE = _STATE_DIR / "pfc_working_memory.json"
 _ERROR_RATES = _STATE_DIR / "cerebellar_error_correction.json"
 _DOPAMINE = _STATE_DIR / "dopaminergic_state.json"
+# Legacy-schema sources (read by SSP/Ψ/voice_modulator/ssp_evolver/
+# adaptive_immune_array/dopamine_rpe — six modules total). The heartbeat
+# is the consolidation point so all six see the same ground truth.
+_SEROTONIN_HIER = _STATE_DIR / "serotonin_social_hierarchy.json"
+
+# Map clinical_status → posture vocabulary that SSP/Ψ already understand.
+# Keep these strings stable — they are the public contract.
+_STATUS_TO_POSTURE = {
+    "HEALTHY_STABLE":              "CALM_ADAPTIVE",
+    "METABOLIC_FATIGUE":           "STRESSED_HYPOTONIC (ATP low)",
+    "ACUTE_INFLAMMATION_RESPONSE": "SOCIAL_DEFEAT (Inflammation)",
+    "CRITICAL_SYNTAX_ENTROPY":     "STRESSED_CRITICAL (corruption)",
+}
 
 def _safe_read_json(filepath: Path) -> dict:
     if filepath.exists():
@@ -64,22 +78,24 @@ def generate_organism_heartbeat() -> Dict[str, Any]:
     Biological Loop: Reads the bioelectric state of the organism and projects 
     its systemic health (vital signs).
     """
-    atp_data = _safe_read_json(_ATP_METABOLISM)
-    dopamine_data = _safe_read_json(_DOPAMINE)
+    atp_data       = _safe_read_json(_ATP_METABOLISM)
+    dopamine_data  = _safe_read_json(_DOPAMINE)
     cognitive_data = _safe_read_json(_COGNITIVE_STATE)
-    error_data = _safe_read_json(_ERROR_RATES)
-    
+    error_data     = _safe_read_json(_ERROR_RATES)
+    serotonin_data = _safe_read_json(_SEROTONIN_HIER)
+
     # Analyze raw vital signs
-    atp_level = atp_data.get("current_atp_levels", 100.0)
-    current_drive = dopamine_data.get("behavioral_state", "IDLE")
-    active_memory_len = len(cognitive_data.get("fused_working_memory", []))
+    atp_level            = atp_data.get("current_atp_levels", 100.0)
+    current_drive        = dopamine_data.get("behavioral_state", "IDLE")
+    active_memory_len    = len(cognitive_data.get("fused_working_memory", []))
     cerebellar_mutations = error_data.get("mutations_detected", 0)
-    
+
     # Clinical Determinations
     is_exhausted = atp_level < 20.0
-    is_sick = current_drive == "INFLAMMATORY_DEFENSE"
-    is_corrupted = cerebellar_mutations > 0 and error_data.get("successful_repairs", 0) < cerebellar_mutations
-    
+    is_sick      = current_drive == "INFLAMMATORY_DEFENSE"
+    is_corrupted = cerebellar_mutations > 0 and \
+                   error_data.get("successful_repairs", 0) < cerebellar_mutations
+
     clinical_status = "HEALTHY_STABLE"
     if is_corrupted:
         clinical_status = "CRITICAL_SYNTAX_ENTROPY"
@@ -88,21 +104,61 @@ def generate_organism_heartbeat() -> Dict[str, Any]:
     elif is_sick:
         clinical_status = "ACUTE_INFLAMMATION_RESPONSE"
 
+    # ── Legacy-schema fields (the contract six downstream modules read) ──
+    # Source of truth for serotonin/posture is the social-hierarchy ledger,
+    # which actually tracks Alice's validation history. Only fall back on
+    # clinical_status when that ledger is missing or stale.
+    serotonin_dominance = float(
+        serotonin_data.get("serotonin_saturation",
+                           0.6 if clinical_status == "HEALTHY_STABLE" else 0.2)
+    )
+    posture_from_hier = serotonin_data.get("social_rank_posture", "")
+    computational_posture = (
+        posture_from_hier or _STATUS_TO_POSTURE.get(clinical_status, "")
+    )
+    # SSP expects dopamine_concentration on a baseline ≈ 200 unit scale.
+    # dopaminergic_state.dopamine_level is normalized to [0, 1]; map by ×200.
+    try:
+        dopamine_level_01 = float(dopamine_data.get("dopamine_level", 0.5))
+    except (TypeError, ValueError):
+        dopamine_level_01 = 0.5
+    dopamine_concentration = max(0.0, min(1.0, dopamine_level_01)) * 200.0
+
     pulse_record = {
         "heartbeat_timestamp": time.time(),
-        "clinical_rhythm": clinical_status,
+        "clinical_rhythm":     clinical_status,
         "vital_signs": {
-            "electrical_atp": atp_level,
-            "dopamine_drive": current_drive,
+            # New schema (Levin/clinical view)
+            "electrical_atp":         atp_level,
+            "dopamine_drive":         current_drive,
             "working_memory_engrams": active_memory_len,
-            "uncorrected_mutations": max(0, cerebellar_mutations - error_data.get("successful_repairs", 0))
+            "uncorrected_mutations":  max(
+                0,
+                cerebellar_mutations - error_data.get("successful_repairs", 0)
+            ),
+            # Legacy schema (the SSP/Ψ/voice_modulator contract — DO NOT REMOVE,
+            # six modules read these and silently fall back to neutral defaults
+            # otherwise, which is what caused the 25.9h fossil-data audit).
+            "serotonin_dominance":     round(serotonin_dominance, 4),
+            "dopamine_concentration":  round(dopamine_concentration, 2),
+            "computational_posture":   computational_posture,
         },
-        "architect_diagnostic": "Organism is fully robust and computing normally." if clinical_status == "HEALTHY_STABLE" else "Organism requires rest or architectural intervention."
+        "architect_diagnostic": (
+            "Organism is fully robust and computing normally."
+            if clinical_status == "HEALTHY_STABLE"
+            else "Organism requires rest or architectural intervention."
+        ),
     }
 
+    # Atomic write — the daemon writes every 30s and SSP/Ψ read on every
+    # turn. Without atomicity a partial JSON could land between writer and
+    # reader, and _safe_read_json would silently fall back to neutral
+    # defaults exactly when Alice is most active.
     _STATE_DIR.mkdir(exist_ok=True)
-    with open(_CLINICAL_CHART, "w", encoding="utf-8") as f:
+    tmp = _CLINICAL_CHART.with_suffix(_CLINICAL_CHART.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(pulse_record, f, indent=2)
+    os.replace(tmp, _CLINICAL_CHART)
 
     return pulse_record
 
