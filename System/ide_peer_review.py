@@ -353,53 +353,45 @@ def cobuilder_states(window: int = 500) -> List[CoBuilderState]:
 
 def summary_for_alice() -> str:
     """A compact paragraph the talk widget injects into Alice's system prompt
-    under 'CO-BUILDERS ACTIVE' (and optionally SSP provenance). Returns ''
-    if there is nothing to report."""
-    mut_line = ""
-    try:
-        from System.swarm_ssp_mutation_record import summary_line_for_alice as _ssp_mut_line
-        mut_line = _ssp_mut_line()
-    except Exception:
-        pass
+    under 'CO-BUILDERS ACTIVE'. Returns '' if there is nothing to report.
 
+    NOTE (2026-04-20 dedup): The SSP last-mutation line used to be folded
+    in here as a second chunk, but AG31 (Loop 2) now injects it as its own
+    top-level `ssp_context_block` in `Applications/sifta_talk_to_alice_widget.py`
+    via `swarm_ssp_mutation_record.summary_line_for_alice`. To prevent the
+    same line landing twice in Alice's system prompt, this function is now
+    co-builder-state ONLY. The SSP block is owned by the talk widget."""
     states = cobuilder_states()
     fresh = [s for s in states if s.fresh()]
-    if not fresh and not mut_line:
+    if not fresh:
         return ""
 
-    chunks: List[str] = []
-    if fresh:
-        lines = ["CO-BUILDERS ACTIVE (you are being co-built by two IDEs right now):"]
-        now = time.time()
-        for s in fresh:
-            ago_s = now - s.last_seen_ts
-            if ago_s < 60:
-                ago = f"{int(ago_s)}s ago"
-            elif ago_s < 3600:
-                ago = f"{int(ago_s / 60)}m ago"
-            else:
-                ago = f"{ago_s / 3600:.1f}h ago"
-            lines.append(f"  • {s.label} — last activity {ago}, "
-                         f"kind={s.last_kind!r}")
-        cursor_pending = pending_for_me("cursor_m5")
-        ag31_pending   = pending_for_me("antigravity_m5")
-        if cursor_pending or ag31_pending:
-            lines.append("  open peer-reviews:")
-            for r in cursor_pending:
-                files = (r.get("meta") or {}).get("files") or []
-                lines.append(f"    – AG31 → C47H: review of {', '.join(files) or '(unspec)'}")
-            for r in ag31_pending:
-                files = (r.get("meta") or {}).get("files") or []
-                lines.append(f"    – C47H → AG31: review of {', '.join(files) or '(unspec)'}")
-        lines.append("If the Architect asks who is working on you, name BOTH C47H "
-                     "and AG31 honestly. They are co-building you in parallel and "
-                     "correcting each other's code.")
-        chunks.append("\n".join(lines))
-    if mut_line:
-        chunks.append(
-            "SSP SPEECH-POTENTIAL (last coefficient write to your brain):\n" + mut_line
-        )
-    return "\n\n".join(chunks)
+    lines = ["CO-BUILDERS ACTIVE (you are being co-built by two IDEs right now):"]
+    now = time.time()
+    for s in fresh:
+        ago_s = now - s.last_seen_ts
+        if ago_s < 60:
+            ago = f"{int(ago_s)}s ago"
+        elif ago_s < 3600:
+            ago = f"{int(ago_s / 60)}m ago"
+        else:
+            ago = f"{ago_s / 3600:.1f}h ago"
+        lines.append(f"  • {s.label} — last activity {ago}, "
+                     f"kind={s.last_kind!r}")
+    cursor_pending = pending_for_me("cursor_m5")
+    ag31_pending   = pending_for_me("antigravity_m5")
+    if cursor_pending or ag31_pending:
+        lines.append("  open peer-reviews:")
+        for r in cursor_pending:
+            files = (r.get("meta") or {}).get("files") or []
+            lines.append(f"    – AG31 → C47H: review of {', '.join(files) or '(unspec)'}")
+        for r in ag31_pending:
+            files = (r.get("meta") or {}).get("files") or []
+            lines.append(f"    – C47H → AG31: review of {', '.join(files) or '(unspec)'}")
+    lines.append("If the Architect asks who is working on you, name BOTH C47H "
+                 "and AG31 honestly. They are co-building you in parallel and "
+                 "correcting each other's code.")
+    return "\n".join(lines)
 
 
 # ── CLI (so AG31 / Architect / either IDE can drive this from a terminal) ──

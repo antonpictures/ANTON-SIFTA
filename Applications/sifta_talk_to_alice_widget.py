@@ -681,7 +681,32 @@ def _build_swarm_context() -> str:
     except Exception:
         cobuilder_block = ""
 
-    parts = [b for b in (swarm_block, cobuilder_block) if b]
+    ssp_context_block = ""
+    try:
+        from System.swarm_ssp_mutation_record import summary_line_for_alice as _ssp_summary
+        ssp_context_block = _ssp_summary() or ""
+    except Exception:
+        pass
+
+    immune_context_block = ""
+    try:
+        from System.optical_immune_system import (
+            evaluate_now as _ois_evaluate,
+            summary_for_alice as _ois_summary,
+        )
+        verdict = _ois_evaluate()
+        if verdict.verdict in ("DRIFT_WARNING", "ZERO_DAY_FAILURE"):
+            immune_context_block = (
+                f"OPTICAL IMMUNE ALERT — visual cortex sentinel: {verdict.verdict}. "
+                f"z_optical={verdict.z_optical:.2f}, z_temporal={verdict.z_temporal:.2f}, "
+                f"p_anomaly={verdict.p_anomaly:.3f}. Reason: {verdict.reason}"
+            )
+        else:
+            immune_context_block = _ois_summary() or ""
+    except Exception:
+        pass
+
+    parts = [b for b in (swarm_block, cobuilder_block, ssp_context_block, immune_context_block) if b]
     return "\n\n".join(parts)
 
 
