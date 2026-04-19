@@ -79,9 +79,8 @@ class SwarmOncology:
             "endocrine_glands.jsonl",          # Global Adrenaline Output ledgers
             "bioluminescence_photons.jsonl",   # Quorum Sensing structural signals
             "mycelial_network.jsonl",          # Wood Wide Web time-3D fungal networks
-            # Deprecated/Hallucinated ledgers that exist logically but no longer map
-            # to active physics engines (if we find them, they are benign scars or 
-            # active tumors depending on when they are touched).
+            "bishop_mrna_field.jsonl",         # BISHOP mRNA conscience lock ledger
+            "epigenetic_methylations.jsonl",   # DNA methylation / lineage trauma
         }
 
     def detect_metastasis(self):
@@ -97,15 +96,17 @@ class SwarmOncology:
         for file_path in self.state_dir.glob("*"):
             if not file_path.is_file():
                 continue
-                
+
             filename = file_path.name
-            
+
             # Ignore healthy Swimmer bodies and canonical ledgers
             if filename.endswith("_BODY.json") or filename in self.healthy_schemas:
                 continue
-                
-            # Ignore the lock file and generic temp directories
-            if "lock" in filename or filename.startswith("."):
+
+            # Ignore the lock file, generic temp dirs, lymphatic staging files,
+            # and the archive/ subdirectory written by swarm_lymphatic.py
+            if ("lock" in filename or filename.startswith(".")
+                    or filename.endswith(".lymph")):
                 continue
             
             # MALIGNANCY DETECTED: A Swimmer hallucinated a new ledger/schema.
