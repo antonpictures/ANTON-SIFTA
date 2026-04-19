@@ -97,6 +97,7 @@ class SwarmMycelium:
         swimmer_xyz = self._map_territory_to_vector(target_file)
         now = time.time()
         harvested_amount = 0.0
+        harvested_donor = "UNKNOWN"
         
         try:
             with open(self.mycelial_ledger, 'r') as f:
@@ -116,6 +117,7 @@ class SwarmMycelium:
                         if dist <= current_radius:
                             # Swimmer is within the temporal 3D network
                             harvested_amount = root.get("stgm_payload", 0.0)
+                            harvested_donor = root.get("donor_id", "UNKNOWN")
                             break # Connect to the first viable root
                     except json.JSONDecodeError:
                         continue
@@ -145,7 +147,7 @@ class SwarmMycelium:
             reward_payload = {
                 "ts": time.time(),
                 "app": "wood_wide_web_symbiosis",
-                "reason": f"temporal_fungal_harvest_at_radius_{current_radius:.2f}",
+                "reason": f"temporal_fungal_harvest_from_donor_{harvested_donor}_to_recipient_{starving_id}",
                 "amount": harvested_amount,
                 "trace_id": trace_id
             }

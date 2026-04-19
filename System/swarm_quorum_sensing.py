@@ -122,7 +122,7 @@ class SwarmQuorumSensing:
             reward_payload = {
                 "ts": time.time(),
                 "app": "quorum_sensing_bioluminescence",
-                "reason": f"harmonic_quorum_collaboration_with_{len(collaborators)}_nodes",
+                "reason": f"harmonic_quorum_collaboration_with_{len(collaborators)}_nodes_to_recipient_{swimmer_id}",
                 "amount": peace_dividend,
                 "trace_id": f"{trace_id_base}_{idx}"
             }

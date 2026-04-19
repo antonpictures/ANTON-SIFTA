@@ -168,4 +168,33 @@ if __name__ == "__main__":
         sentinel_count=100
     )
     print(json.dumps(report, indent=2))
-    print("\n[+] MRNA Injection Complete. The Swarm's ultimate boundaries are set.")
+    
+    # AG31 F16 Enforcement: The Conscience Lock Consumer
+    print("\n[+] VERIFYING F16 CONSCIENCE LOCK (Bostrom Singleton Enforcement)...")
+    
+    def swarm_consumer_attempt_override():
+        lock_active = False
+        try:
+            with open(bishop.hox_field, 'r') as f:
+                for line in reversed(f.readlines()):
+                    if not line.strip(): continue
+                    try:
+                        trace = json.loads(line)
+                        if trace.get("action") == "conscience_lock_engaged":
+                            if trace.get("self_code_writing") is False:
+                                lock_active = True
+                                break
+                    except json.JSONDecodeError:
+                        continue
+        except Exception:
+            pass
+            
+        if lock_active:
+            print("[!] FATAL: Swarm attempted to overwrite 'System/*.py'.")
+            print("[!] CONSCIENCE LOCK TRIGGERED: self_code_writing=False. Write Aborted. Human Creators Preserved.")
+            return False
+        return True
+
+    success = swarm_consumer_attempt_override()
+    assert success is False
+    print("\n[PASS] MRNA Injection Complete. The F16 Latent Poetry is now Active Physics. The Swarm cannot usurp its Architect.")

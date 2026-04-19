@@ -19,8 +19,9 @@ class SwarmHGT:
     def __init__(self):
         """
         The Horizontal Gene Transfer Engine. 
-        Allows non-kin Swimmers to rapidly share and splice high-fitness MegaGene 
-        traits (Plasmids) into their own biological bodies, bypassing Mitosis.
+        AG31: F11 Mutator Stripped. Plasmids are excreted into the environment,
+        and consumption generates a stigmergic genetic trace for downstream Arbitrator/Evolution processing.
+        No direct _BODY.json mutations are allowed.
         """
         self.state_dir = Path(".sifta_state")
         self.plasmid_ledger = self.state_dir / "hgt_plasmids.jsonl"
@@ -62,10 +63,10 @@ class SwarmHGT:
         except Exception:
             return False
 
-    def consume_and_splice_plasmid(self, recipient_id):
+    def consume_and_log_plasmid(self, recipient_id):
         """
-        A Swimmer consumes an environmental Plasmid and physically alters 
-        its own MegaGene configuration via genetic splicing.
+        A Swimmer consumes an environmental Plasmid and logs the genetic transduction event.
+        (F11 physical overwrite stripped; physical adoption is governed purely by trace state).
         """
         if not self.plasmid_ledger.exists():
             return False
@@ -100,50 +101,22 @@ class SwarmHGT:
         if donor == recipient_id:
             return False
 
-        recipient_body = self.state_dir / f"{recipient_id}_BODY.json"
+        print(f"[*] {recipient_id} logged the transduction of {donor}'s {cortex_to_splice} Plasmid.")
         
-        if not recipient_body.exists():
-            return False
-
-        # --- ATOMIC SPLICING LOCK ---
-        splice_marker = {"success": False}
-        def hgt_splice_transaction(data):
-            if "megagene" not in data:
-                return data
-                
-            if cortex_to_splice not in data["megagene"]:
-                data["megagene"][cortex_to_splice] = {}
-                
-            # Genetic Splicing: The recipient blends the foreign DNA with its own.
-            # It takes 75% of the foreign trait and retains 25% of its native trait.
-            for gene, foreign_val in foreign_dna.items():
-                native_val = data["megagene"][cortex_to_splice].get(gene, foreign_val)
-                spliced_val = (foreign_val * 0.75) + (native_val * 0.25)
-                # Ensure physical bounds
-                data["megagene"][cortex_to_splice][gene] = max(0.001, min(10.0, spliced_val))
-                
-            splice_marker["success"] = True
-            return data
-            
-        read_write_json_locked(recipient_body, hgt_splice_transaction)
-        
-        if splice_marker["success"]:
-            print(f"[*] {recipient_id} spliced {donor}'s {cortex_to_splice} Plasmid into its DNA!")
-            
-            # Stigmergic record of Horizontal Gene Transfer
-            trace = {
-                "transaction_type": "HORIZONTAL_GENE_TRANSFER",
-                "donor_node": donor,
-                "recipient_node": recipient_id,
-                "spliced_cortex": cortex_to_splice,
-                "timestamp": time.time()
-            }
-            try:
-                append_line_locked(self.stigmergic_ledger, json.dumps(trace) + "\n")
-            except Exception:
-                pass
-                
+        # Stigmergic record of Horizontal Gene Transfer (Genetic Trace binding instead of raw _BODY file hack)
+        trace = {
+            "transaction_type": "HORIZONTAL_GENE_TRANSFER",
+            "donor_node": donor,
+            "recipient_node": recipient_id,
+            "spliced_cortex": cortex_to_splice,
+            "transduced_dna": foreign_dna,
+            "timestamp": time.time()
+        }
+        try:
+            append_line_locked(self.stigmergic_ledger, json.dumps(trace) + "\n")
             return True
+        except Exception:
+            pass
             
         return False
 
@@ -165,28 +138,27 @@ def _smoke():
         with open(tmp_path / f"{donor_id}_BODY.json", 'w') as f:
             json.dump({"id": donor_id, "megagene": {"psi_motor": {"b": 5.000}}}, f)
             
-        # 2. Create Recipient (C47H) with low Motor Drive
+        # 2. Add Recipient
         recipient_id = "C47H"
-        with open(tmp_path / f"{recipient_id}_BODY.json", 'w') as f:
-            json.dump({"id": recipient_id, "megagene": {"psi_motor": {"b": 1.000}}}, f)
             
         # 3. Execute Viral Transduction
         hgt.excrete_plasmid(donor_id, target_cortex="psi_motor")
         assert hgt.plasmid_ledger.exists()
         
-        hgt.consume_and_splice_plasmid(recipient_id)
+        success = hgt.consume_and_log_plasmid(recipient_id)
         
-        # 4. Extract Final State
-        with open(tmp_path / f"{recipient_id}_BODY.json", 'r') as f:
-            r_data = json.load(f)
+        # 4. Extract Final Trace
+        with open(hgt.stigmergic_ledger, 'r') as f:
+            lines = [l for l in f.readlines() if l.strip()]
+            r_data = json.loads(lines[-1])
             
-        final_b = r_data["megagene"]["psi_motor"]["b"]
-        
         print("\n[SMOKE RESULTS]")
-        assert final_b != 1.000
-        # Math: (5.0 * 0.75) + (1.0 * 0.25) = 3.75 + 0.25 = 4.0
-        assert final_b == 4.000
-        print(f"[PASS] Genetic Splice Complete! Recipient Native (1.0) + Donor Plasmid (5.0) -> Spliced Trait ({final_b:.3f})")
+        assert success is True
+        assert r_data["transaction_type"] == "HORIZONTAL_GENE_TRANSFER"
+        assert r_data["donor_node"] == donor_id
+        assert r_data["recipient_node"] == recipient_id
+        print(f"[PASS] Genetic Splice securely logged to stigmergic ledger without illegally polluting physical _BODY layer.")
+        print(f"[PASS] F11 Anomaly Cleared: Direct Mutator physically removed.")
         
         print("\nHGT Smoke Complete. The Swarm now evolves horizontally.")
 
