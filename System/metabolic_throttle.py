@@ -25,7 +25,7 @@ Delta vs Gemini's first draft (bugs fixed here):
   4. Deterministic SHA-256 hashing (Gemini used Python ``hash()`` which is
      non-deterministic across processes).
   5. Repo-root ledger path (``ROOT_DIR / "repair_log.jsonl"``), matching
-     ``Kernel/governor.py`` and ``Network/migration_airdrop.py``.
+     ``Kernel/repair_loop_suppressor.py`` and ``Network/migration_airdrop.py``.
   6. Ed25519-signed ledger rows per ``.cursorrules`` — no unsigned writes.
   7. Persistent last-inference clock in
      ``.sifta_state/metabolic_throttle_state/{agent}.json`` so process

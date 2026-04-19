@@ -36,6 +36,7 @@ from stigmergic_wm import neighbors as wm_neighbors  # noqa: E402
 from stigmergic_wm import record_open as wm_record_open  # noqa: E402
 from stigmergic_wm import reset_session as wm_reset_session  # noqa: E402
 from stigmergic_wm import suggest_position  # noqa: E402
+from stigmergic_wm import _load as wm_load  # noqa: E402
 from pheromone_fs import clusters as fs_clusters  # noqa: E402
 from pheromone_fs import neighbors as fs_neighbors  # noqa: E402
 from pheromone_fs import record_access as fs_record_access  # noqa: E402
@@ -492,7 +493,7 @@ class SiftaDesktop(QMainWindow):
         central.setLayout(main_layout)
         self.setCentralWidget(central)
         
-        self._build_desktop_shortcuts()
+        # self._build_desktop_shortcuts() # Removed by Architect
 
         # Clock overlay
         self.clock_label = QPushButton(central)
@@ -588,8 +589,19 @@ class SiftaDesktop(QMainWindow):
         except Exception:
             self._boot_dream = None
 
-        # Boot: open chat by default
-        self.open_swarm_chat()
+        # Boot: open last used apps or leave pristine
+        try:
+            last_state = wm_load()
+            last_apps = last_state.get("last_session", [])
+            wm_reset_session()
+            
+            for app_name in last_apps:
+                if "Swarm Chat" in app_name or app_name == "🐜 SIFTA CORE CHAT":
+                    self.open_swarm_chat()
+                else:
+                    self._trigger_manifest_app(app_name)
+        except Exception:
+            wm_reset_session()
 
     def _on_desktop_mesh_status(self, status):
         self._mesh_connected = status
@@ -861,6 +873,37 @@ class SiftaDesktop(QMainWindow):
                         else (lambda nm, e: lambda: self._launch_terminal_app(nm, e))(app_name, entry)
                     )
                     target_menu.addAction(app_name).triggered.connect(launch)
+
+                # ── AUTOSTART ───────────────────────────────────────────────
+                # Any manifest entry with `"autostart": true` is opened
+                # automatically when the desktop comes up. This is how Alice
+                # (Talk-to-Alice + What-Alice-Sees) becomes part of "the OS"
+                # without the Architect ever clicking a menu. Each app gets
+                # its own QTimer.singleShot using its `autostart_delay_ms` so
+                # they appear in `autostart_order` and the desktop has time
+                # to paint before camera/mic init kicks in.
+                #
+                # macOS reality (one-time, then forever):
+                #   The very first boot after a fresh install will trigger
+                #   the system TCC consent dialog for Camera and Microphone
+                #   when the widgets initialize. Click Allow once for each.
+                #   macOS persists the grant per app; subsequent boots are
+                #   silent.
+                autostart_entries = [
+                    (name, dat) for name, dat in apps.items()
+                    if dat.get("autostart") is True and dat.get("entry_point")
+                ]
+                autostart_entries.sort(
+                    key=lambda kv: (int(kv[1].get("autostart_order", 99)),
+                                    kv[0].lower())
+                )
+                for ord_idx, (name, dat) in enumerate(autostart_entries):
+                    delay = int(dat.get("autostart_delay_ms",
+                                        700 + 600 * ord_idx))
+                    QTimer.singleShot(
+                        delay,
+                        (lambda nm: lambda: self._autostart_one(nm))(name),
+                    )
             except Exception as e:
                 print(f"[Boot Error] Failed to load apps manifest: {e}")
 
@@ -940,10 +983,10 @@ class SiftaDesktop(QMainWindow):
                 " font-weight: bold; padding: 0 8px;"
             )
         else:
-            self._relay_indicator.setText("🔴 M1 Relay: OFFLINE")
+            self._relay_indicator.setText("○ Mesh: Local Only")
             self._relay_indicator.setStyleSheet(
-                "color: #f7768e; font-family: monospace; font-size: 11px;"
-                " font-weight: bold; padding: 0 8px;"
+                "color: #565f89; font-family: monospace; font-size: 11px;"
+                " font-weight: normal; padding: 0 8px;"
             )
     # ── Window factories ───────────────────────────────────
     def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
@@ -1186,6 +1229,20 @@ class SiftaDesktop(QMainWindow):
         self._make_sub(AppFitnessPanel(), "📊 App Fitness", 800, 600, "#7dcfff")
 
 
+    def _autostart_one(self, app_name: str) -> None:
+        """
+        Open one autostart app and announce it on stderr so a silent
+        failure (e.g. faster-whisper not installed, camera blocked) is
+        visible in the boot log instead of looking like Alice just chose
+        not to wake up.
+        """
+        try:
+            print(f"[AUTOSTART] launching {app_name!r}…", file=sys.stderr)
+            self._trigger_manifest_app(app_name)
+        except Exception as exc:
+            print(f"[AUTOSTART] {app_name!r} failed: "
+                  f"{type(exc).__name__}: {exc}", file=sys.stderr)
+
     def _trigger_manifest_app(self, app_name: str):
         if app_name in self._apps_manifest_cache:
             dat = self._apps_manifest_cache[app_name]
@@ -1198,47 +1255,8 @@ class SiftaDesktop(QMainWindow):
             )
 
     def _build_desktop_shortcuts(self):
-        container = QWidget(self.mdi.viewport())
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(30, 80, 0, 0)
-        layout.setSpacing(25)
-        
-        style = (
-            "QPushButton {"
-            "  background-color: rgba(25, 27, 40, 0.45);"
-            "  border: 1px solid rgba(120, 162, 247, 0.2);"
-            "  border-radius: 12px; text-align: left;"
-            "  color: #c0caf5; font-family: Inter; font-size: 14px; font-weight: bold;"
-            "  padding: 10px 20px;"
-            "}"
-            "QPushButton:hover {"
-            "  background-color: rgba(40, 44, 60, 0.75);"
-            "  border: 1px solid rgba(120, 162, 247, 0.8);"
-            "  color: #7dcfff;"
-            "}"
-        )
-        
-        btn_chat = QPushButton("🐜 SWARM CHAT")
-        btn_chat.setFixedSize(220, 60)
-        btn_chat.setStyleSheet(style)
-        btn_chat.clicked.connect(self.open_swarm_chat)
-        
-        btn_poker = QPushButton("🃏 CASINO VAULT")
-        btn_poker.setFixedSize(220, 60)
-        btn_poker.setStyleSheet(style)
-        btn_poker.clicked.connect(lambda: self._trigger_manifest_app("Stigmergic Video Poker"))
-        
-        btn_symphony = QPushButton("🎵 SYMPHONY")
-        btn_symphony.setFixedSize(220, 60)
-        btn_symphony.setStyleSheet(style)
-        btn_symphony.clicked.connect(lambda: self._trigger_manifest_app("Pheromone Symphony (Generative Music)"))
-        
-        layout.addWidget(btn_chat)
-        layout.addWidget(btn_poker)
-        layout.addWidget(btn_symphony)
-        layout.addStretch()
-        container.resize(300, 600)
-        container.show()
+        # Removed. The desktop is now a pristine stigmergic canvas. 
+        pass
 
 
 # ──────────────────────────────────────────────────────────────

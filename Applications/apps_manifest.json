@@ -31,6 +31,14 @@
     "window_height": 760,
     "signature": "UNVERIFIED"
   },
+  "IoT Swarm Connector": {
+    "category": "Networking",
+    "entry_point": "Applications/sifta_iot_connector.py",
+    "widget_class": "IoTConnectorWidget",
+    "window_width": 960,
+    "window_height": 620,
+    "signature": "UNVERIFIED"
+  },
   "Colloid Simulator": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_colloid_widget.py",
@@ -256,6 +264,28 @@
     "widget_class": "WriterWidget",
     "window_width": 1100,
     "window_height": 850,
+    "signature": "UNVERIFIED"
+  },
+  "What Alice Sees": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_what_alice_sees_widget.py",
+    "widget_class": "WhatAliceSeesWidget",
+    "window_width": 1100,
+    "window_height": 700,
+    "autostart": true,
+    "autostart_order": 2,
+    "autostart_delay_ms": 1400,
+    "signature": "UNVERIFIED"
+  },
+  "Talk to Alice": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_talk_to_alice_widget.py",
+    "widget_class": "TalkToAliceWidget",
+    "window_width": 960,
+    "window_height": 640,
+    "autostart": true,
+    "autostart_order": 1,
+    "autostart_delay_ms": 700,
     "signature": "UNVERIFIED"
   }
 }

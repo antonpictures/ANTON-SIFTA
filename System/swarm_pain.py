@@ -28,6 +28,14 @@ _STATE.mkdir(parents=True, exist_ok=True)
 PAIN_LOG = _STATE / "pain_pheromones.jsonl"
 ACUTE_DECAY_SECONDS = 1800  # Halves rapidly
 
+# C47H BUG-16 fix: smoke isolation hook for the pain → potential-field wiring.
+# When None, broadcast_pain writes its deadzone into the production
+# .sifta_state/potential_field.json (correct production behavior). Smoke tests
+# must set this to a tmp directory before broadcasting and restore it after,
+# mirroring the existing PAIN_LOG override pattern. Without this hook, every
+# pain smoke segment leaks severity*1000 deadzones into the real organism.
+POTENTIAL_FIELD_STATE_DIR: Optional[Path] = None
+
 
 # ─── C47H 2026-04-18 (R2 audit fix #1): path canonicalization ──────────────
 # Same gap as R3 had: broadcast_pain stored str(Path(t)) raw, so absolute
@@ -74,6 +82,63 @@ class SwarmPainNetwork:
         try:
             with open(PAIN_LOG, "a") as f:
                 f.write(json.dumps(row) + "\n")
+        except Exception:
+            pass
+
+        # C47H BUG-17 fix: Pain → Path-Graph Stigmergy (deadzone) wiring.
+        # Separated from the JSONL write so a field-side failure can't silently
+        # swallow the pain ledger emission, and persistence is explicit via
+        # commit() (write_deadzone is lazy by design — see swarm_potential_field).
+        # Without commit() the deadzone would be mutated in-memory then dropped
+        # when the field reference goes out of scope (the pre-fix bug).
+        try:
+            from System.swarm_potential_field import SwarmPotentialField
+            # POTENTIAL_FIELD_STATE_DIR is read at call-time so smokes can
+            # override it without re-importing this module.
+            field = SwarmPotentialField(state_dir=POTENTIAL_FIELD_STATE_DIR)
+            field.write_deadzone(Path(territory).resolve(), severity * 1000.0)
+            field.commit()
+            
+            from System.swarm_ghost_calibrator import GhostCalibrator
+            calibrator = GhostCalibrator(state_dir=POTENTIAL_FIELD_STATE_DIR)
+            
+            # Simulated observation time: time elapsed since the last pain event locally
+            # In a true system this reads Swimmer Traversal, but Pain is a proxy for anomaly interaction
+            # If a territory is clean, it won't exist in PAIN_LOG, yielding a massive Delta T
+            T_obs = 1000.0  # default foreign assumption
+            if PAIN_LOG.exists():
+                try:
+                    with open(PAIN_LOG, "r") as f:
+                        lines = f.read().splitlines()
+                        for line in reversed(lines[:-1]): # skip the row we just appended
+                            if not line.strip(): continue
+                            try:
+                                r = json.loads(line)
+                                if r.get("territory") == _canonicalize_territory(territory):
+                                    T_obs = max(0.0, time.time() - r.get("timestamp", time.time()))
+                                    break
+                            except Exception: pass
+                except Exception: pass
+                
+            ghost_score = calibrator.score(Path(territory).resolve(), T_obs, severity)
+            if calibrator.should_trigger(ghost_score):
+                try:
+                    from System.swarm_cherenkov_shock import CherenkovShockField
+                    cherenkov = CherenkovShockField(state_dir=POTENTIAL_FIELD_STATE_DIR)
+                    cherenkov.emit_shockwave(Path(territory).resolve())
+                except Exception:
+                    pass
+            else:
+                # C47H BUG-22b fix: feed non-triggering pain events back into
+                # the baseline. Without this the calibrator's `learn_normal`
+                # is dead code — the baseline dict stays {} forever and every
+                # call to score() falls through the no-baseline branch. Only
+                # NON-triggering events shape the baseline so genuine ghost
+                # spikes don't poison the notion of "normal."
+                try:
+                    calibrator.learn_normal(Path(territory).resolve(), T_obs)
+                except Exception:
+                    pass
         except Exception:
             pass
 

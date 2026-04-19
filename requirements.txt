@@ -12,3 +12,14 @@ matplotlib>=3.8.0
 numpy>=1.26.0
 certifi>=2024.0.0
 websockets==15.0.1
+
+# ── Optional: cross-platform neural TTS (Piper) ──────────────────────────────
+# Used by System/swarm_vocal_cords.py::PiperBackend when no macOS Premium
+# voices are installed (or when SIFTA_VOICE_BACKEND=piper is set, e.g. on
+# Linux nodes). These are NOT required on macOS — `say` covers it. Enable
+# by uncommenting and downloading a voice model into Voices/piper/ from
+# https://github.com/rhasspy/piper/releases (en_US-amy-medium recommended,
+# ~63 MB).
+# piper-tts>=1.2.0
+# onnxruntime>=1.17.0
+# sounddevice>=0.4.6   # already installed transitively via the mic pipeline

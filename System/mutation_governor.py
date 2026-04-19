@@ -34,6 +34,16 @@ _GOVERNOR_STATE = _STATE_DIR / "mutation_governor.json"
 # Cap stored replay hashes to bound memory (FIFO eviction via deque)
 _MAX_REPLAY_TRACK = 8000
 
+# ── §5.2.x Path sensitivity (heat-aware governance) ──────────────
+# Raw heat units that saturate the [0, 1] sensitivity overlay.
+# A sensor write of `intensity = SENSITIVITY_HEAT_SATURATION` drives the
+# overlay to 1.0 (matches a "System" substring contribution exactly).
+SENSITIVITY_HEAT_SATURATION: float = 100.0
+
+# Sentinel meaning "we tried to load SwarmPotentialField once and failed"
+# — prevents re-import storms on every gate call when SPF is absent.
+_SPF_UNAVAILABLE = object()
+
 
 class MutationGovernor:
     """
@@ -42,12 +52,22 @@ class MutationGovernor:
     - per-file budgets
     - per-file cooldown
     - mutation replay protection (content-hash)
-    - risk scoring (System/Kernel paths, large payloads)
+    - heat-aware risk/friction/reversibility scoring (System/Kernel
+      substring floor + SwarmPotentialField overlay; degrades to
+      substring-only when the field is cold or unavailable)
+    - dual-sig audit gate (optional, structural): every SCAR must carry
+      a PheromoneTrace (proposer) + ApprovalTrace (reviewer) when
+      require_dual_sig=True. Reviewer must be in the allowlist.
 
     §5.2 Leverage mechanisms (SOLID_PLAN):
     - friction layer: state-disruption cost penalizes noisy mutation
     - reversibility index: low-undo actions require human gate
     - attention budget: hard cap on reads/writes/spawns per cycle
+    - dual-sig gate: cross-review before commit (structural, not stylistic)
+
+    Quorum tier: when friction > 0.7 and require_dual_sig=True,
+    the gate requires _dual_sig_quorum approvals (default 2).
+    Wire this after allowlist is populated with ≥2 reviewer keys.
     """
 
     # ── §5.2.3 Attention budget defaults ─────────────────────────
@@ -69,6 +89,10 @@ class MutationGovernor:
         friction_ceiling: float = 0.8,
         reversibility_threshold: float = 0.3,
         attention_budget_per_cycle: int = 100,
+        # §5.2.11 Dual-sig audit gate
+        require_dual_sig: bool = False,
+        reviewer_allowlist: Optional[set] = None,
+        _dual_sig_quorum: int = 1,
     ):
         self.max_mutations_per_minute = max_mutations_per_minute
         self.file_budget = file_budget
@@ -82,12 +106,30 @@ class MutationGovernor:
         self._attention_spent: int = 0
         self._cycle_start: float = time.time()
 
+        # §5.2.11 Dual-sig gate
+        # require_dual_sig=False by default — flip True after callers are migrated.
+        # reviewer_allowlist: set of reviewer_public_key_hex strings (flat, v1).
+        # reviewer_registry:  ReviewerRegistry (TUF-adapted, threshold-aware, preferred).
+        # Empty allowlist + no registry + require_dual_sig=True → fail-closed (blocks all).
+        self.require_dual_sig: bool = require_dual_sig
+        self._reviewer_allowlist: set = set(reviewer_allowlist or [])
+        self._reviewer_registry = None  # populated via set_reviewer_registry()
+        # Quorum: SCARs with friction > 0.7 require this many approvals.
+        # Default 1. Bump to 2 once ≥2 reviewer keys are in the allowlist.
+        # TUF threshold: wire _reviewer_registry.threshold_for_role("auditor") here.
+        self._dual_sig_quorum: int = _dual_sig_quorum
+
         self._global_events: deque[float] = deque()
         self._file_budgets: dict[str, int] = defaultdict(lambda: file_budget)
         self._last_mutation_time: dict[str, float] = {}
         self._seen_hashes: deque[str] = deque(maxlen=_MAX_REPLAY_TRACK)
         self._seen_set: set[str] = set()
         self.last_reject_reason: str = ""
+
+        # Lazy SwarmPotentialField cache (populated on first sensitivity query).
+        # Holds either: None (not yet attempted), an SPF instance, or
+        # _SPF_UNAVAILABLE (tried and failed — degrade to substring-only).
+        self._spf_cached = None
 
         self._load()  # may replace _seen_hashes from disk
 
@@ -98,16 +140,167 @@ class MutationGovernor:
 
     def _risk_score(self, file_path: str, mutation: str) -> float:
         score = 0.0
-        fp = file_path.replace("\\", "/")
-
-        if "System" in fp:
-            score += 0.5
-        if "Kernel" in fp:
-            score += 0.3
+        score += self._path_sensitivity(file_path) * 0.5
         if len(mutation) > 500:
             score += 0.2
-
         return min(score, 1.0)
+
+    # ── §5.2.x Heat-aware path sensitivity ───────────────────────
+
+    def _get_potential_field(self):
+        """
+        Lazy-load the SwarmPotentialField once per governor instance.
+
+        Returns the SPF instance, or None if the module is unavailable or
+        instantiation failed. Caches the failure case via _SPF_UNAVAILABLE
+        so we don't pay an import attempt on every gate call.
+
+        The governor degrades gracefully to substring-only sensitivity if
+        the field is absent — daughter-safe: never raises into the gate.
+        """
+        if self._spf_cached is _SPF_UNAVAILABLE:
+            return None
+        if self._spf_cached is not None:
+            return self._spf_cached
+        try:
+            try:
+                from System.swarm_potential_field import SwarmPotentialField
+            except ImportError:
+                from swarm_potential_field import SwarmPotentialField  # type: ignore
+            self._spf_cached = SwarmPotentialField()
+            return self._spf_cached
+        except Exception:
+            self._spf_cached = _SPF_UNAVAILABLE
+            return None
+
+    def _path_sensitivity(self, file_path: str) -> float:
+        """
+        Heat-aware path sensitivity weight in [0, 1.6].
+
+        Sources, combined via MAX (heat never relaxes a substring contribution;
+        a substring match never silences a hot-field signal):
+
+          • Substring floor — backward compatibility for cold/missing field:
+              "System" in fp → +1.0
+              "Kernel" in fp → +0.6   (matches old risk-gate ratio 0.3/0.5)
+            Floors are additive, so a path containing both substrings yields
+            1.6 (preserving the original gate's +0.8 risk-score behavior when
+            multiplied by the call site's 0.5 weight).
+
+          • Heat overlay — only when SwarmPotentialField is loaded AND the
+            resolved path has positive heat. Negative heat (dead zones) is
+            intentionally NOT a sensitivity signal here: dead zones are an
+            auto-immune concern, not a mutation-pressure concern.
+                heat_norm = clamp01(raw_heat / SENSITIVITY_HEAT_SATURATION)
+
+        Path resolution anchors to _REPO (the governor's repo root), NOT the
+        process cwd, because SwarmPotentialField stores absolute resolved
+        paths written by sensors that may run from any directory. A naive
+        Path(fp).resolve() would silently miss every field key — exactly
+        the BUG-17 cosmetic-wiring failure mode (read-side wired, write-side
+        not).
+        """
+        fp = file_path.replace("\\", "/")
+
+        substring_weight = 0.0
+        if "System" in fp:
+            substring_weight += 1.0
+        if "Kernel" in fp:
+            substring_weight += 0.6
+
+        heat_weight = 0.0
+        spf = self._get_potential_field()
+        if spf is not None:
+            try:
+                abs_path = (_REPO / fp).resolve()
+                raw_heat = spf.field.get(abs_path, 0.0)
+                if raw_heat > 0.0:
+                    heat_weight = min(1.0, raw_heat / SENSITIVITY_HEAT_SATURATION)
+            except Exception:
+                pass  # Sensitivity NEVER raises into the gate
+
+        return max(substring_weight, heat_weight)
+
+    # ── §5.2.11 Dual-sig audit gate ──────────────────────────────
+
+    def add_reviewer(self, reviewer_public_key_hex: str) -> None:
+        """
+        Register a reviewer public key in the flat allowlist.
+        For threshold-aware multi-role governance, prefer set_reviewer_registry().
+        TODO: persist allowlist to .sifta_state/reviewer_allowlist.json
+        TODO: revocation — per-key revocation list in .sifta_state/revoked_keys.json
+        """
+        self._reviewer_allowlist.add(reviewer_public_key_hex)
+
+    def remove_reviewer(self, reviewer_public_key_hex: str) -> None:
+        """Remove a reviewer key from the flat allowlist (key rotation / revocation)."""
+        self._reviewer_allowlist.discard(reviewer_public_key_hex)
+
+    def set_reviewer_registry(self, registry: object) -> None:
+        """
+        Use a ReviewerRegistry (TUF-adapted, threshold-aware) as the authoritative
+        source for reviewer pubkeys. Takes precedence over the flat allowlist.
+        """
+        self._reviewer_registry = registry
+
+    def _check_dual_sig(
+        self,
+        friction: float,
+        proposer_trace: object,
+        approver_traces: list,
+    ) -> bool:
+        """
+        Verify the dual-sig contract for a SCAR proposal.
+
+        Quorum: high-friction SCARs (friction > 0.7) require _dual_sig_quorum
+        DISTINCT approvals (multiset blocked — same fix as python-tuf
+        fix-signature-threshold: counting the same key twice toward quorum
+        is a Sybil attack vector).
+
+        Uses ReviewerRegistry if set, falls back to flat allowlist.
+        """
+        try:
+            try:
+                from System.swimmer_pheromone_identity import verify_approval, APPROVAL_TTL
+            except ImportError:
+                from swimmer_pheromone_identity import verify_approval, APPROVAL_TTL
+
+            if proposer_trace is None:
+                self.last_reject_reason = "dual_sig:missing_proposer_trace"
+                return False
+            if not approver_traces:
+                self.last_reject_reason = "dual_sig:missing_approver_trace"
+                return False
+
+            # Quorum: high-friction SCARs require more approvals
+            required = self._dual_sig_quorum if friction > 0.7 else 1
+
+            valid_approvals = 0
+            seen_reviewer_ids: set = set()  # TUF Sybil fix: distinct keys only
+            for apr in approver_traces:
+                # Block same reviewer counting twice toward quorum
+                if apr.reviewer_id in seen_reviewer_ids:
+                    continue
+                if verify_approval(
+                    proposer_trace, apr,
+                    reviewer_allowlist=self._reviewer_allowlist if self._reviewer_allowlist else None,
+                    reviewer_registry=self._reviewer_registry,
+                    approval_ttl=APPROVAL_TTL,
+                ):
+                    seen_reviewer_ids.add(apr.reviewer_id)
+                    valid_approvals += 1
+                if valid_approvals >= required:
+                    return True
+
+            self.last_reject_reason = (
+                f"dual_sig:insufficient_approvals:{valid_approvals}/{required}"
+            )
+            return False
+
+        except Exception as exc:
+            # Dual-sig gate NEVER raises into the caller.
+            self.last_reject_reason = f"dual_sig:error:{type(exc).__name__}"
+            return False
 
     # ── §5.2.1 Friction layer ────────────────────────────────────
 
@@ -118,12 +311,9 @@ class MutationGovernor:
         """
         complexity = min(1.0, len(mutation) / 2000)
         fp = file_path.replace("\\", "/")
-        # Magnitude: touching System/ or Kernel/ = high disruption
-        magnitude = 0.0
-        if "System" in fp:
-            magnitude += 0.4
-        if "Kernel" in fp:
-            magnitude += 0.3
+        # Magnitude: heat-aware path sensitivity (System/Kernel substring
+        # floor preserved when SwarmPotentialField is cold or unavailable).
+        magnitude = self._path_sensitivity(file_path) * 0.5
         if "__init__" in fp:
             magnitude += 0.2
         # Novelty penalty: unique hash = novel = higher friction
@@ -139,15 +329,15 @@ class MutationGovernor:
         Below threshold → require human gate.
         """
         score = 1.0
-        fp = file_path.replace("\\", "/")
         # Deleting files is irreversible
         if "delete" in mutation.lower() or "rm " in mutation.lower():
             score -= 0.6
-        # System/Kernel mutations are harder to undo safely
-        if "System" in fp:
-            score -= 0.2
-        if "Kernel" in fp:
-            score -= 0.3
+        # Heat-aware path sensitivity penalty: System/Kernel paths and any
+        # path with positive SwarmPotentialField heat are harder to undo.
+        # Multiplier 0.5 preserves the historical Kernel reversibility weight
+        # (0.6 * 0.5 = 0.3) and tightens System reversibility (was 0.2 → 0.5),
+        # consistent with the architect's safety-forward directive.
+        score -= self._path_sensitivity(file_path) * 0.5
         # Large mutations are harder to review and revert
         if len(mutation) > 1000:
             score -= 0.15
@@ -205,18 +395,60 @@ class MutationGovernor:
         self._seen_hashes.append(h)
         self._seen_set.add(h)
 
+    def _normalize_fp(self, file_path: str) -> str:
+        """
+        Normalize file_path to a stable repo-relative string before using
+        it as a dict key in _file_budgets and _last_mutation_time.
+
+        WHY: callers pass file_path in different forms depending on their
+        working directory — absolute (/Users/ioanganton/Music/ANTON_SIFTA/...),
+        partial (/Music/ANTON_SIFTA/...), or relative (System/foo.py).
+        Without normalization, the same file accumulates separate budget
+        entries under each path form, silently breaking budget accounting.
+
+        Strategy: try to resolve to absolute, then express relative to _REPO.
+        Falls back to the original string if resolution fails (safe-degrade).
+        """
+        try:
+            p = Path(file_path)
+            if not p.is_absolute():
+                p = (_REPO / p).resolve()
+            else:
+                p = p.resolve()
+            try:
+                return str(p.relative_to(_REPO))
+            except ValueError:
+                return str(p)
+        except Exception:
+            return file_path
+
     # ── Public API ───────────────────────────────────────────────
 
-    def allow(self, file_path: str, mutation: str) -> bool:
+    def allow(
+        self,
+        file_path: str,
+        mutation: str,
+        *,
+        proposer_trace: Optional[object] = None,
+        approver_traces: Optional[list] = None,
+    ) -> bool:
         """
         Return True if this mutation may enter the SCAR proposal pipeline.
         Does not record replay hash — call commit() only after SCAR accepts.
 
         Gate order: temporal → replay → rate → cooldown → budget → risk →
                     §5.2 friction → §5.2 reversibility → §5.2 attention →
+                    §5.2.11 dual-sig (when require_dual_sig=True) →
                     §5.2.10 objective → §5.2.7 shadow → §5.2.4 contradiction
+
+        Dual-sig params (keyword-only, optional):
+            proposer_trace  : PheromoneTrace signed by the proposing swimmer.
+            approver_traces : list[ApprovalTrace] from registered reviewers.
+            Both are ignored when require_dual_sig=False (default).
+            When require_dual_sig=True and traces are absent → rejected.
         """
         self.last_reject_reason = ""
+        file_path = self._normalize_fp(file_path)  # Step 1: stable key
 
         # ── §5.2.6 Temporal climate gate ──────────────────────────
         # If the swarm is in FROZEN state, block ALL mutations.
@@ -272,6 +504,25 @@ class MutationGovernor:
         if not self.spend_attention("mutate_file"):
             self.last_reject_reason = "attention_exhausted"
             return False
+
+        # ── §5.2.11 Dual-sig audit gate ──────────────────────────
+        # Convention becomes structural: gate refuses without the second sig
+        # when enabled. Tiered: by default only the highest-risk paths require
+        # dual-sig (Kernel/ and mutation_governor itself), minimising blast
+        # radius until ≥2 reviewer keys are registered and the pipeline
+        # produces ApprovalTraces in production.
+        _fp_lower = file_path.lower()
+        require_for_this = self.require_dual_sig and (
+            "kernel" in _fp_lower or "mutation_governor" in _fp_lower
+        )
+        if require_for_this:
+            if not self._check_dual_sig(
+                friction, proposer_trace, list(approver_traces or [])
+            ):
+                return False  # last_reject_reason set inside _check_dual_sig
+        # Non-tiered paths pass through in v1.
+        # Expand require_for_this predicate after ≥2 reviewer keys registered
+        # and the pipeline produces valid ApprovalTraces in production.
 
         # ── §5.2.10 Objective worth gate ─────────────────────────
         # Final question: is this mutation WORTH IT?
@@ -334,6 +585,7 @@ class MutationGovernor:
 
     def commit(self, file_path: str, mutation: str) -> None:
         """Call after a mutation is successfully proposed to SCAR."""
+        file_path = self._normalize_fp(file_path)  # Step 1: stable key
         h = self._mutation_content_hash(mutation)
         self._track_seen(h)
         self._global_events.append(time.time())

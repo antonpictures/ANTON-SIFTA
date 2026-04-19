@@ -263,6 +263,102 @@ def synthetic_frame(
 
 
 # ════════════════════════════════════════════════════════════════════════
+# === AG31 PATCH 2026-04-19: camera device discovery ===
+# C47H audit finding: both modules defaulted to AVFoundation index 0
+# (OBS Virtual Camera on this machine), which returns nothing when OBS
+# isn't running. Indices 1-3 are the real cameras:
+#   1 = MacBook Pro Camera  (built-in)
+#   2 = USB Camera VID:1133 PID:2081  (Logitech C920-class)
+#   3 = iPhone Camera via Continuity  (iPhone 15 Plus)
+# Fix: probe at runtime, skip dead devices, return first live index.
+# ════════════════════════════════════════════════════════════════════════
+
+# AVFoundation device index: resolved at runtime so we never silently
+# anchor to a dead virtual device (OBS Virtual Camera = index 0 on this
+# machine, returns nothing when OBS isn't running).
+_AVFOUNDATION_MAX_IDX = 8   # 9 devices detected on this machine (0..8)
+
+# NOTE C47H finding #1: name-based device filtering would be more robust
+# (using system_profiler SPCameraDataType to map index→name then skipping
+# names matching "obs", "virtual", "desk view"). Wired as v4 hardening.
+# Current impl is POSITION-based: skip index 0 in pass 1, probe last in
+# pass 2. Correct on this machine; documents accurately here.
+
+def _discover_real_camera_index() -> int:
+    """
+    Probe cv2 indices 0.._AVFOUNDATION_MAX_IDX and return the first that
+    opens AND returns a real frame.
+
+    Strategy (two-pass, POSITION-based):
+      Pass 1 — indices 1..N: skip index 0 first because on this machine
+               index 0 = OBS Virtual Camera, dead unless OBS is running.
+      Pass 2 — index 0: tried last as fallback. If OBS is running and is
+               intentionally the canonical feed, it wins here.
+
+    NOTE: This is position-based, not name-based filtering. On a machine
+    where a virtual device sits at index 1, it will be selected. Name-based
+    filtering (parse system_profiler, skip by device name) is filed as v4
+    hardening — see _AVFOUNDATION_MAX_IDX comment above.
+
+    Callers that want a specific device should pass camera_index explicitly
+    to webcam_frame(). This helper is the "auto" default only.
+
+    Returns -1 if no camera is readable (CI / no hardware / permission denied).
+    Never raises.
+    """
+    if not HAS_CV2:
+        return -1
+    # Two-pass: try 1..N first, then 0 as last resort
+    for idx in list(range(1, _AVFOUNDATION_MAX_IDX + 1)) + [0]:
+        cap = None
+        try:
+            cap = _cv2.VideoCapture(idx)
+            if not cap.isOpened():
+                continue
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                return idx
+        except Exception:
+            continue
+        finally:
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+    return -1
+
+
+# Cache the discovered index once per process. A running swarm doesn't
+# need to re-scan every blink.
+_UNSET = object()
+_DISCOVERED_CAMERA_IDX: object = _UNSET
+
+def _get_default_camera_index() -> int:
+    """Return cached discovered camera index. -1 = none available."""
+    global _DISCOVERED_CAMERA_IDX
+    if _DISCOVERED_CAMERA_IDX is _UNSET:
+        _DISCOVERED_CAMERA_IDX = _discover_real_camera_index()
+    return _DISCOVERED_CAMERA_IDX  # type: ignore[return-value]
+
+
+def invalidate_camera_cache() -> None:
+    """
+    Force the next webcam_frame() call to re-probe available devices.
+
+    Call this after hardware changes at runtime:
+      - Plugging/unplugging an iPhone (Continuity Camera)
+      - Starting/stopping OBS
+      - Connecting a USB webcam mid-session
+
+    Safe to call from any thread; just resets the sentinel so the next
+    _get_default_camera_index() call re-runs _discover_real_camera_index().
+    """
+    global _DISCOVERED_CAMERA_IDX
+    _DISCOVERED_CAMERA_IDX = _UNSET
+
+
+# ════════════════════════════════════════════════════════════════════════
 # === C47H SECTION M1.4: webcam_frame() — optional priority-B lane ===
 # T65 segment. Webcam capture is OPTIONAL (the Architect explicitly said
 # screen-capture is priority A; webcam is priority B). If cv2 is not
@@ -272,7 +368,7 @@ def synthetic_frame(
 
 def webcam_frame(
     *,
-    camera_index: int = 0,
+    camera_index: int = -1,   # -1 = auto-discover (was hardcoded 0 = OBS Virtual Camera)
     tag: str = "webcam",
     save_to_disk: bool = True,
     grab_timeout_s: float = 1.5,
@@ -282,6 +378,14 @@ def webcam_frame(
     (no cv2, no camera, permission denied, etc.). Never raises on the
     "no hardware" branch — the eye must degrade gracefully.
 
+    camera_index=-1 (default): auto-discover the first live real camera,
+      skipping virtual devices (OBS, Desk View) that may not be producing
+      frames. C47H audit 2026-04-19: old default 0 = OBS Virtual Camera
+      on this machine — silent fallback to synthetic frames all along.
+
+    Pass camera_index explicitly (1, 2, 3, ...) to pin a specific device:
+      1 = MacBook Pro Camera, 2 = Logitech USB, 3 = iPhone Continuity.
+
     >>> # On a CI box with no webcam, expect None.
     >>> result = webcam_frame(grab_timeout_s=0.1)
     >>> result is None or isinstance(result, IrisFrame)
@@ -289,6 +393,12 @@ def webcam_frame(
     """
     if not HAS_CV2:
         return None
+
+    # Resolve auto-discovery
+    if camera_index == -1:
+        camera_index = _get_default_camera_index()
+    if camera_index == -1:
+        return None   # no real camera found
 
     cap = None
     try:

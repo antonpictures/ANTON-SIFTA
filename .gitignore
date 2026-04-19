@@ -39,6 +39,16 @@ sifta_session_log/
 *.lock
 .sifta_state/*.lock
 
+# Scratch / large archives
+scratch.py
+*.zip
+.sifta_state/*.pre_smoke_cleanup_backup
+.sifta_state/iris_frames/
+.sifta_state/acoustic_fields/
+.sifta_state/archive/
+.sifta_state/quarantine/
+.sifta_state/_ssp_smoke/
+
 # Migration artifacts
 .sifta_state/*_MIGRATED.json
 .sifta_state/migration_log.jsonl

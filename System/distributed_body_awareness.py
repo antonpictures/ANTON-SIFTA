@@ -48,12 +48,8 @@ KNOWN_NODES = {
         "host": "127.0.0.1",             # Local
         "serial_prefix": "GTH",           # Mac Studio
         "role": "ARCHITECT_PRIMARY"
-    },
-    "M1_MINI": {
-        "host": "192.168.1.71",           # Mac Mini M1
-        "serial_prefix": "C07",           # Mac Mini
-        "role": "RELAY_NODE"
     }
+    # M1_MINI removed temporarily due to local Wi-Fi AP Isolation limits
 }
 
 
@@ -364,44 +360,8 @@ if __name__ == "__main__":
 
     print(f"  SWARM ACTION: {report['action']}")
 
-    # Attempt to detect M1 (non-blocking ping)
-    print(f"\n  Probing M1 Mini at 192.168.1.71...")
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(1.0)
-        result = s.connect_ex(("192.168.1.71", 8765))
-        s.close()
-        if result == 0:
-            # M1 relay is up — add it to mesh as a simulated node
-            m1_state = {
-                "node_id": "M1_MINI",
-                "stability": 0.75,  # Assumed healthy if relay responds
-                "cpu_load": 0.0,
-                "memory_pressure": 0.0,
-                "disk_percent": 0.0,
-                "io_latency_ms": 0.0,
-                "timestamp": int(time.time()),
-                "received_at": time.time(),
-                "status": "RELAY_UP (estimated)"
-            }
-            get_mesh().update(m1_state)
-            print(f"  🟢 M1 Relay: LIVE (port 8765 open)")
-        else:
-            print(f"  🔴 M1 Relay: OFFLINE (port 8765 closed)")
-            m1_state = {
-                "node_id": "M1_MINI",
-                "stability": 0.0,
-                "cpu_load": 0.0,
-                "memory_pressure": 0.0,
-                "disk_percent": 0.0,
-                "io_latency_ms": 0.0,
-                "timestamp": int(time.time()),
-                "received_at": time.time(),
-                "status": "SILENT"
-            }
-            get_mesh().update(m1_state)
-    except Exception:
-        print(f"  🔴 M1 Relay: UNREACHABLE")
+    # Probing M1 removed: Wi-Fi AP isolation makes it unreachable
+    print(f"\n  [Mesh Operating in Local Isolate Mode]")
 
     # Re-run triage with updated mesh
     report = triage_report()

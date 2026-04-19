@@ -1048,8 +1048,10 @@ def main(argv: List[str]) -> int:
         import tempfile, shutil
         tmp = Path(tempfile.mkdtemp())
         original = _sp_module.PAIN_LOG
+        original_field_dir = _sp_module.POTENTIAL_FIELD_STATE_DIR
         try:
             _sp_module.PAIN_LOG = tmp / "pain.jsonl"
+            _sp_module.POTENTIAL_FIELD_STATE_DIR = tmp  # BUG-16 isolation
             n = SwarmPainNetwork()
             abs_path = str((Path(__file__).resolve().parent.parent /
                             "Kernel" / "rogue_smoke.py"))
@@ -1064,6 +1066,7 @@ def main(argv: List[str]) -> int:
             return f"all three path forms find the same row (g≈{g_rel:.3f})"
         finally:
             _sp_module.PAIN_LOG = original
+            _sp_module.POTENTIAL_FIELD_STATE_DIR = original_field_dir
             shutil.rmtree(tmp, ignore_errors=True)
     results.append(_step("swarm_pain.canonicalization_invariant",
                          _pain_canonicalization_invariant,
@@ -1078,8 +1081,10 @@ def main(argv: List[str]) -> int:
         import tempfile, shutil
         tmp = Path(tempfile.mkdtemp())
         original = _sp_module.PAIN_LOG
+        original_field_dir = _sp_module.POTENTIAL_FIELD_STATE_DIR
         try:
             _sp_module.PAIN_LOG = tmp / "pain.jsonl"
+            _sp_module.POTENTIAL_FIELD_STATE_DIR = tmp  # BUG-16 isolation
             n = SwarmPainNetwork()
             n.broadcast_pain("__SMOKE__", 0.96, "trap.py", "SmokeProbe")
             g = n.get_pain_gradient("trap.py")
@@ -1093,6 +1098,7 @@ def main(argv: List[str]) -> int:
             return f"severity 0.96→{g:.3f}, severity 1.0→{g2:.3f}"
         finally:
             _sp_module.PAIN_LOG = original
+            _sp_module.POTENTIAL_FIELD_STATE_DIR = original_field_dir
             shutil.rmtree(tmp, ignore_errors=True)
     results.append(_step("swarm_pain.early_exit_no_inflation",
                          _pain_early_exit_no_inflation,
@@ -1144,8 +1150,10 @@ def main(argv: List[str]) -> int:
         from System.swarm_inferior_olive import InferiorOlive, ALPHA_CLIMBING
         tmp = Path(tempfile.mkdtemp())
         original = _sp_module.PAIN_LOG
+        original_field_dir = _sp_module.POTENTIAL_FIELD_STATE_DIR
         try:
             _sp_module.PAIN_LOG = tmp / "pain.jsonl"
+            _sp_module.POTENTIAL_FIELD_STATE_DIR = tmp  # BUG-16 isolation
             territory = "Smoke/pain_bridge_probe.py"
             n = SwarmPainNetwork()
             n.broadcast_pain("__SMOKE__", 0.8, territory, "SmokeProbe")
@@ -1174,6 +1182,7 @@ def main(argv: List[str]) -> int:
             )
         finally:
             _sp_module.PAIN_LOG = original
+            _sp_module.POTENTIAL_FIELD_STATE_DIR = original_field_dir
             shutil.rmtree(tmp, ignore_errors=True)
     results.append(_step("swarm_pain.bridge_into_climbing_fibers",
                          _pain_to_olive_climbing_fiber_bridge,
@@ -1370,6 +1379,528 @@ def main(argv: List[str]) -> int:
     results.append(_step("swarm_lineage.chain_walks_back_with_cycle_defense",
                          _lineage_chain_walks_back_through_generations,
                          verbose=args.verbose))
+
+    # --- PHOTONIC SUBSTRATE TESTS ---
+    def _photonic_gradients():
+        from pathlib import Path
+        import tempfile, shutil, time
+        from System.swarm_photonic_field import SwarmPhotonicField
+        
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            field = SwarmPhotonicField(
+                fields_dir=tmp,
+                pheromones_ledger=tmp / "photonic_pheromones.jsonl",
+            )
+            source = "smoke_cam"
+            f1 = [[0.5, 0.5], [0.5, 0.5]]
+            field.ingest_frame(source, f1)
+            assert field.query_photonic_pheromone(source, 0, 0) == 0.0, "Static frame should yield zero gradient"
+            
+            time.sleep(0.01)
+            f2 = [[0.5, 0.5], [0.5, 1.0]]
+            field.ingest_frame(source, f2)
+            assert field.query_photonic_pheromone(source, 1, 1) > 0.1, "Motion must yield positive pheromone"
+            assert field.query_photonic_pheromone(source, 0, 0) == 0.0, "Unchanged pixel must remain zero"
+            return "Photonic gradients map correctly to movement."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("swarm_photonic.computes_gradients", _photonic_gradients, verbose=args.verbose))
+
+    def _photonic_dim_mismatch():
+        from pathlib import Path
+        import tempfile, shutil
+        from System.swarm_photonic_field import SwarmPhotonicField
+        
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            field = SwarmPhotonicField(
+                fields_dir=tmp,
+                pheromones_ledger=tmp / "photonic_pheromones.jsonl",
+            )
+            f1 = [[0.0, 0.0]]
+            field.ingest_frame("cam", f1)
+            f2 = [[0.0]] # Mismatch
+            field.ingest_frame("cam", f2)
+            assert field.query_photonic_pheromone("cam", 0, 0) == 0.0, "Mismatch must flush history and return 0.0"
+            return "Photonic dim mismatch isolated gracefully."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("swarm_photonic.isolates_dim_mismatch", _photonic_dim_mismatch, verbose=args.verbose))
+
+    # --- KURAMOTO OSCILLATOR TESTS ---
+    def _kuramoto_frequency_lock():
+        from pathlib import Path
+        import tempfile, shutil, math
+        from System.swarm_oscillator import SwarmKuramotoOscillator
+        
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            osc_A = SwarmKuramotoOscillator("A", natural_frequency=0.10, coupling_k=1.2, heartbeats_dir=tmp)
+            osc_B = SwarmKuramotoOscillator("B", natural_frequency=0.20, coupling_k=1.2, heartbeats_dir=tmp)
+            osc_A.phase, osc_B.phase = 0.0, math.pi
+            
+            hist_A, hist_B = [], []
+            for i in range(100):
+                osc_A.entrain()
+                osc_B.entrain()
+                if i > 80:
+                    hist_A.append(osc_A.phase)
+                    hist_B.append(osc_B.phase)
+            
+            def uw(p1, p2):
+                d = p1 - p2
+                if d < -math.pi: d += 2*math.pi
+                elif d > math.pi: d -= 2*math.pi
+                return d
+            
+            rA = sum(uw(hist_A[j], hist_A[j-1]) for j in range(1, len(hist_A))) / max(1, len(hist_A)-1)
+            rB = sum(uw(hist_B[j], hist_B[j-1]) for j in range(1, len(hist_B))) / max(1, len(hist_B)-1)
+            
+            assert abs(rA - rB) < 0.05, f"Frequencies failed to lock. A={rA:.3f}, B={rB:.3f}"
+            return "Kuramoto Math: Divergent natural frequencies synchronize successfully."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("swarm_oscillator.kuramoto_lock", _kuramoto_frequency_lock, verbose=args.verbose))
+
+    # --- ACOUSTIC SUBSTRATE TESTS ---
+    def _acoustic_computes_gradients():
+        from pathlib import Path
+        import tempfile, shutil, time
+        from System.swarm_acoustic_field import SwarmAcousticField
+        
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            field = SwarmAcousticField(fields_dir=tmp, pheromones_ledger=tmp/"ledger.jsonl")
+            source = "mic"
+            buf1 = [0.0] * 1024
+            e1 = field.ingest_audio(source, buf1)
+            assert e1 == 0.0, "Silence should yield zero energy."
+            
+            time.sleep(0.01)
+            buf2 = [1.0] * 1024
+            e2 = field.ingest_audio(source, buf2)
+            assert e2 > 10.0, "Square wave blast must yield massive energy"
+            return "Acoustic gradients map correctly to temporal sound shifts."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("swarm_acoustic.computes_gradients", _acoustic_computes_gradients, verbose=args.verbose))
+
+    def _acoustic_nudges_phase():
+        from pathlib import Path
+        import tempfile, shutil, math
+        from System.swarm_oscillator import SwarmKuramotoOscillator
+        from System.swarm_acoustic_field import SwarmAcousticField
+        
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            osc_A = SwarmKuramotoOscillator("A", natural_frequency=0.10, coupling_k=1.2, heartbeats_dir=tmp)
+            osc_A.phase = math.pi / 2  # Un-entrained phase
+            
+            # An external acoustic event pulls the phase towards the target structural beat.
+            # Using 1.0 shock to avoid massive overshoot wrapping the 2pi boundary backwards. 
+            osc_A.perturb_phase(1.0, target_phase=0.0, nudge_k=0.5)
+            assert osc_A.phase < (math.pi / 2), "Oscillator must structurally deviate towards the acoustic target when acoustically shocked."
+            return "Acoustic field correctly entrains biological phase."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("swarm_acoustic.phase_nudge", _acoustic_nudges_phase, verbose=args.verbose))
+
+    # --- CROSS-MODAL MULTISENSORY BINDING TESTS ---
+    def _crossmodal_proto_objects_and_saturation():
+        from pathlib import Path
+        import tempfile, shutil, time
+        from System.swarm_crossmodal_binding import SwarmCrossModalBinder
+        from System.swarm_oscillator import SwarmKuramotoOscillator
+        
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            binder = SwarmCrossModalBinder(window_ms=80, ledger=tmp/"crossmodal.jsonl")
+            oscillator = SwarmKuramotoOscillator("M1", natural_frequency=0.1, coupling_k=1.0, heartbeats_dir=tmp)
+
+            # 1. First Beat (Low coherence)
+            binder.ingest_event("audio", 45.0, timestamp=1000.0)
+            obj_1 = binder.ingest_event("video", 60.0, timestamp=1000.030)
+            assert obj_1 is not None and obj_1["coherence"] == 0.2
+            
+            # Phase perturbation from new object
+            base_phase = oscillator.phase
+            oscillator.perturb_phase(obj_1["magnitude"], coherence=obj_1["coherence"])
+            shift_1 = abs(oscillator.phase - base_phase)
+
+            # 2. Third Beat (High coherence, locked oscillator)
+            binder.ingest_event("audio", 45.0, timestamp=1001.0)
+            binder.ingest_event("video", 60.0, timestamp=1001.030)
+            binder.ingest_event("audio", 45.0, timestamp=1002.0)
+            obj_3 = binder.ingest_event("video", 60.0, timestamp=1002.030)
+            assert obj_3["object_id"] == obj_1["object_id"]
+            assert obj_3["coherence"] > 0.49
+
+            # 3. Saturation Resistance (Noise rejection)
+            oscillator.lock_strength = 6.0 # Highly entrained swarm
+            locked_phase = oscillator.phase
+            
+            # High-magnitude noise blast, very low coherence
+            oscillator.perturb_phase(100.0, coherence=0.1)
+            shift_noise = abs(oscillator.phase - locked_phase)
+            
+            # Due to exp(-6.0), the shock is severely dampened
+            assert shift_noise < 0.05, "Swarm failed Bayesian saturation defense."
+
+            return "Proto-Objects correctly tracked and Bayesian saturation effectively filters noise."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("swarm_crossmodal.object_tracking_and_saturation", _crossmodal_proto_objects_and_saturation, verbose=args.verbose))
+
+    def _potential_field_graph_diffusion():
+        from System.swarm_potential_field import SwarmPotentialField
+        from pathlib import Path
+        import tempfile, shutil
+        
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            field = SwarmPotentialField(state_dir=tmp)
+            file_node = Path("/ide/workspace/main.py")
+            parent_dir = Path("/ide/workspace")
+            sibling_file = Path("/ide/workspace/utils.py")
+            
+            # Audio writes massive reality
+            field.write_potential(file_node, 10.0)
+            field.step()
+            
+            assert field.field.get(parent_dir, 0.0) > 0.0, "Diffusion failed to spread Graph vapor up the directory edge."
+            
+            # Second massive hit pulls swimmer sideways
+            field.write_potential(sibling_file, 50.0)
+            field.step()
+            
+            grad_dest = field.gradient_descent(parent_dir)
+            assert grad_dest == sibling_file, "Gradient mathematically failed to vector path-graph descent."
+            
+            return "Potential Field diffuses correctly and vectors path-graph descent."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("swarm_potential_field.graph_diffusion", _potential_field_graph_diffusion, verbose=args.verbose))
+
+    def _auto_immunity_dead_zone_and_shock():
+        from System.swarm_potential_field import SwarmPotentialField
+        from System.swarm_oscillator import SwarmKuramotoOscillator
+        from pathlib import Path
+        import tempfile, shutil
+        
+        tmp = Path(tempfile.mkdtemp())
+        
+        try:
+            field = SwarmPotentialField(state_dir=tmp)
+            corrupt_node = Path(tmp) / "PheroPath_corrupt_dirt.json"
+            
+            # 1. Topological Repulsion
+            field.write_deadzone(corrupt_node, 1000.0)
+            field.step()
+            
+            dest = field.gradient_descent(corrupt_node)
+            assert dest != corrupt_node, "Topography failed to repulse the swimmer from the Dead Zone."
+
+            # 2. Rhythmic Exclusion
+            osc = SwarmKuramotoOscillator("ImmuneNode", natural_frequency=0.10, coupling_k=1.2, heartbeats_dir=tmp)
+            osc.lock_strength = 10.0 # Strongly locked
+            
+            osc.apply_immune_shock(ledger=tmp/"immune_shock_audit.jsonl")
+            assert osc.lock_strength == 0.0, "Oscillator failed to paralyze rhythmic lock during Auto-Immunity."
+            
+            return "Auto-Immunity repulses Graph geometry and breaks structural Kuramoto logic correctly."
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("sifta_auto_immunity.dead_zone_and_shock", _auto_immunity_dead_zone_and_shock, verbose=args.verbose))
+
+    def _potential_field_persistence():
+        from System.swarm_potential_field import SwarmPotentialField
+        from pathlib import Path
+        import tempfile, shutil
+        
+        test_tmp = Path(tempfile.mkdtemp())
+        target_path = Path("/sifta/virtual/persistence_test.txt")
+        
+        try:
+            # First instantiation drops stigmergic vapor
+            field1 = SwarmPotentialField(state_dir=test_tmp)
+            field1.write_potential(target_path, 100.0)
+            field1.step()
+            
+            # Second instantiation (Simulating Swimmer Death and Reboot)
+            field2 = SwarmPotentialField(state_dir=test_tmp)
+            heat = field2.field.get(target_path, 0.0)
+            
+            # Value should be 100.0 * 0.80 * 0.98 = 78.4 (after 1 tick of biological decay)
+            assert abs(heat - 78.4) < 0.1, "Path-Graph suffered structural amnesia across Object destruction."
+            
+            return "Potential Field state correctly survives on the File System rather than in-memory."
+        finally:
+            shutil.rmtree(test_tmp, ignore_errors=True)
+    results.append(_step("swarm_potential_field.disk_persistence", _potential_field_persistence, verbose=args.verbose))
+
+    def _space_physics_spallation():
+        from System.swarm_potential_field import SwarmPotentialField
+        from System.swarm_space_physics import MuonSwimmer, FluxLattice
+        from pathlib import Path
+        import tempfile, shutil
+        
+        test_tmp = Path(tempfile.mkdtemp())
+        try:
+            field = SwarmPotentialField(state_dir=test_tmp)
+            lattice = FluxLattice()
+            
+            p = Path("/sifta/kernel.py")
+            field.write_potential(p.parent, 10.0)
+            
+            worker = MuonSwimmer(p, energy=2)
+            worker.move(field, lattice)
+            
+            assert worker.energy == 1, "Muon didn't burn transient action energy."
+            isotope = field.field.get(worker.path, 0.0)
+            assert isotope > 0.0, "Spallation failed to drop Stigmergic memory."
+            
+            return "Cosmic-Ray Spallation generated flawless Muon->Isotope transients."
+        finally:
+            shutil.rmtree(test_tmp, ignore_errors=True)
+    results.append(_step("swarm_space_physics.cosmic_ray_spallation", _space_physics_spallation, verbose=args.verbose))
+
+    def _space_physics_reconnection():
+        from System.swarm_potential_field import SwarmPotentialField
+        from System.swarm_space_physics import FluxLattice, MagneticReconnectionEngine, MuonSwimmer
+        from pathlib import Path
+        import tempfile, shutil
+        
+        test_tmp = Path(tempfile.mkdtemp())
+        try:
+            field = SwarmPotentialField(state_dir=test_tmp)
+            lattice = FluxLattice()
+            engine = MagneticReconnectionEngine(crack_threshold=5.0)
+            
+            p1 = Path("/a.py")
+            p2 = Path("/b.py")
+            
+            swimmer = MuonSwimmer(p1, energy=100)
+            
+            for _ in range(6):
+                lattice.inject_twist(p1, p2)
+                
+            breach = engine.cycle(field, lattice, [swimmer])
+            
+            assert breach == True, "Topology failed to trigger Reconnection blast."
+            assert swimmer.alive == False, "Swimmer was not ejected out of the dead-loop during Reconnection."
+            
+            deadzone = field.field.get(p1, 0.0)
+            assert deadzone < 0.0, "Path failed to napalm graph structures after dead-loop snap."
+            
+            return "Magnetic Reconnection engine snapped dead-topologies safely ejecting bio-mass."
+        finally:
+            shutil.rmtree(test_tmp, ignore_errors=True)
+    results.append(_step("swarm_space_physics.magnetic_reconnection", _space_physics_reconnection, verbose=args.verbose))
+
+    def _cherenkov_ghost_detection():
+        from System.swarm_cherenkov_shock import CherenkovShockField
+        from pathlib import Path
+        import tempfile, shutil
+        import os
+        
+        test_tmp = Path(tempfile.mkdtemp())
+        try:
+            cherenkov = CherenkovShockField(state_dir=test_tmp)
+            
+            mock_root = test_tmp / "sifta"
+            mock_core = mock_root / "Core"
+            mock_core.mkdir(parents=True)
+            ghost = (mock_core / "hippocampus.py").resolve()
+            ghost.touch()
+            
+            mock_util = mock_root / "Utilities"
+            mock_util.mkdir(parents=True)
+            swimmer = (mock_util / "router.py").resolve()
+            swimmer.touch()
+            
+            cherenkov.emit_shockwave(ghost)
+            
+            current = swimmer
+            steps_taken = 0
+            while current != ghost and steps_taken < 10:
+                current = cherenkov.shock_inversion_descent(current)
+                steps_taken += 1
+                
+            assert current == ghost, "Graph mathematical calculation fatally wrapped."
+            assert steps_taken == 4, f"Traversal miscalculated shortest Path PDE. Took {steps_taken} steps."
+            
+            return "Cherenkov Radiation propagated non-Euclidean Timefronts successfully routing Swimmers."
+        finally:
+            shutil.rmtree(test_tmp, ignore_errors=True)
+    results.append(_step("swarm_cherenkov_shock.ghost_detection", _cherenkov_ghost_detection, verbose=args.verbose))
+
+    def _ghost_calibration_homeostasis():
+        from System.swarm_ghost_calibrator import GhostCalibrator
+        from pathlib import Path
+        import tempfile, shutil
+        import os
+        
+        test_tmp = Path(tempfile.mkdtemp())
+        try:
+            calibrator = GhostCalibrator(state_dir=test_tmp)
+            target = Path("/sifta/Core/Memory/hippocampus.py").resolve()
+            
+            for val in [10.0, 9.0, 11.0, 10.5, 9.5]:
+                calibrator.learn_normal(target, val)
+                
+            benign_score = calibrator.score(target, T_obs=12.0, severity=0.30)
+            assert calibrator.should_trigger(benign_score) is False, "Calibrator hallucinated a shockwave for benign editing."
+            
+            ghost_score = calibrator.score(target, T_obs=6000.0, severity=0.85)
+            assert calibrator.should_trigger(ghost_score) is True, "Calibrator failed to detect massive Temporal Z-score deviation."
+            
+            return "Homeostatic Ghost Calibration successfully deployed differential topological Z-Scores."
+        finally:
+            shutil.rmtree(test_tmp, ignore_errors=True)
+    results.append(_step("swarm_ghost_calibrator.homeostasis", _ghost_calibration_homeostasis, verbose=args.verbose))
+
+    def _epigenetic_ais_evolution():
+        from System.swarm_epigenetic_ais import GhostAntibody, pso_cycle, immune_selection_cycle, biological_fitness
+        import numpy as np
+        
+        # Consistent reproducible geometry
+        np.random.seed(1337)
+        population = [GhostAntibody(theta=np.random.uniform(-1.0, 1.0, size=3)) for _ in range(10)]
+        features = {"entropy": 0.9, "repeat": 0.8, "depth": 0.5}
+        
+        initial_err = min([biological_fitness(ab.theta, features) for ab in population])
+        
+        for _ in range(20):
+            g_best_ab = min(population, key=lambda x: biological_fitness(x.theta, features))
+            g_best_theta = g_best_ab.theta.copy()
+            pso_cycle(population, g_best_theta)
+            population = immune_selection_cycle(population, features)
+            
+        final_err = min([biological_fitness(ab.theta, features) for ab in population])
+        assert final_err < initial_err, "Epigenetic Swarm Intelligence failed to mathematically converge on Path-Graph boundaries."
+        
+        return "Epigenetic Swimmers successfully cloned and optimized traversal behaviors natively."
+    results.append(_step("swarm_epigenetic_ais.evolution", _epigenetic_ais_evolution, verbose=args.verbose))
+
+    # ── Mutation governor — heat-aware path sensitivity SCAR ─────
+    # Verifies the MutationGovernor._path_sensitivity helper that replaced
+    # six hardcoded `if "System" in fp` substring sites in _risk_score,
+    # friction_cost, and reversibility_score. Three properties asserted:
+    #   1. Cold field → exact legacy magnitudes preserved (zero regression)
+    #   2. Hot non-System path → governance fires from heat alone
+    #   3. Hot System path → no double-count vs cold System path
+    # All three segments use isolated state_dirs / state-file overrides so
+    # nothing leaks into production .sifta_state/{potential_field,mutation_governor}.json.
+
+    def _governor_cold_field_substring_floor():
+        from System import mutation_governor as _mg
+        from System.mutation_governor import MutationGovernor
+        from pathlib import Path
+        import tempfile, shutil
+
+        # Isolate governor persistence — refuse to write to production state.
+        tmp = Path(tempfile.mkdtemp())
+        original_state = _mg._GOVERNOR_STATE
+        _mg._GOVERNOR_STATE = tmp / "governor.json"
+        try:
+            g = MutationGovernor()
+            # Force SPF unavailable so we exercise the substring-only fallback path
+            g._spf_cached = _mg._SPF_UNAVAILABLE
+
+            assert g._path_sensitivity("System/foo.py") == 1.0, "System floor != 1.0"
+            assert g._path_sensitivity("Kernel/foo.py") == 0.6, "Kernel floor != 0.6"
+            assert g._path_sensitivity("Documents/foo.py") == 0.0, "Documents leaked into floor"
+
+            # Risk score: System=0.5, Kernel=0.3, Documents=0.0 (legacy parity)
+            assert abs(g._risk_score("System/foo.py", "x") - 0.5) < 1e-9, "System risk drifted"
+            assert abs(g._risk_score("Kernel/foo.py", "x") - 0.3) < 1e-9, "Kernel risk drifted"
+            assert g._risk_score("Documents/foo.py", "x") == 0.0, "Documents risk leaked"
+            return "Cold-field substring floor preserves legacy risk magnitudes exactly."
+        finally:
+            _mg._GOVERNOR_STATE = original_state
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("mutation_governor.cold_field_substring_floor",
+                         _governor_cold_field_substring_floor, verbose=args.verbose))
+
+    def _governor_heat_overlay_lifts_documents_path():
+        from System import mutation_governor as _mg
+        from System.mutation_governor import MutationGovernor, SENSITIVITY_HEAT_SATURATION
+        from System.swarm_potential_field import SwarmPotentialField
+        from pathlib import Path
+        import tempfile, shutil
+
+        tmp = Path(tempfile.mkdtemp())
+        original_state = _mg._GOVERNOR_STATE
+        _mg._GOVERNOR_STATE = tmp / "governor.json"
+        try:
+            # Build an isolated SPF and inject heat for a Documents/ path,
+            # which the legacy substring gate would have ignored entirely.
+            spf = SwarmPotentialField(state_dir=tmp)
+            doc_rel = "Documents/research_notes.md"
+            doc_abs = (_mg._REPO / doc_rel).resolve()
+            spf.field[doc_abs] = SENSITIVITY_HEAT_SATURATION  # saturates overlay → 1.0
+
+            g = MutationGovernor()
+            g._spf_cached = spf  # inject our isolated field
+
+            sens = g._path_sensitivity(doc_rel)
+            assert sens == 1.0, f"Heat overlay did not fire on Documents/ (got {sens})"
+
+            # Risk gate now sees this hot Documents/ path as a System-class threat.
+            risk = g._risk_score(doc_rel, "x")
+            assert abs(risk - 0.5) < 1e-9, f"Heat-driven risk != 0.5 (got {risk})"
+
+            # And friction + reversibility see it too — Documents/ paths previously
+            # had ZERO contribution from path; now hot ones contribute 0.5 each.
+            fric = g.friction_cost(doc_rel, "x" * 100)
+            rev  = g.reversibility_score(doc_rel, "x")
+            assert fric > 0.4, f"Heat overlay missed friction (got {fric})"
+            assert rev <= 0.5 + 1e-9, f"Heat overlay missed reversibility (got {rev})"
+            return f"Heat overlay correctly governs hot Documents/ path (risk={risk:.2f}, fric={fric:.2f}, rev={rev:.2f})."
+        finally:
+            _mg._GOVERNOR_STATE = original_state
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("mutation_governor.heat_overlay_lifts_documents_path",
+                         _governor_heat_overlay_lifts_documents_path, verbose=args.verbose))
+
+    def _governor_no_double_count_on_hot_system_path():
+        from System import mutation_governor as _mg
+        from System.mutation_governor import MutationGovernor, SENSITIVITY_HEAT_SATURATION
+        from System.swarm_potential_field import SwarmPotentialField
+        from pathlib import Path
+        import tempfile, shutil
+
+        tmp = Path(tempfile.mkdtemp())
+        original_state = _mg._GOVERNOR_STATE
+        _mg._GOVERNOR_STATE = tmp / "governor.json"
+        try:
+            sys_rel = "System/foo.py"
+            sys_abs = (_mg._REPO / sys_rel).resolve()
+
+            # Cold-field governor (no SPF) — legacy behavior baseline
+            g_cold = MutationGovernor()
+            g_cold._spf_cached = _mg._SPF_UNAVAILABLE
+            cold_risk = g_cold._risk_score(sys_rel, "x")
+
+            # Hot-field governor — same path, max heat injected
+            spf = SwarmPotentialField(state_dir=tmp)
+            spf.field[sys_abs] = SENSITIVITY_HEAT_SATURATION * 10  # heavily saturated
+            g_hot = MutationGovernor()
+            g_hot._spf_cached = spf
+            hot_risk = g_hot._risk_score(sys_rel, "x")
+
+            # MAX semantics: hot risk must equal cold risk for a path that
+            # already had a System substring floor of 1.0.
+            assert abs(hot_risk - cold_risk) < 1e-9, (
+                f"Heat double-counted vs substring (cold={cold_risk}, hot={hot_risk})"
+            )
+            return f"Heat overlay does not double-count on hot System/ path (risk pinned at {hot_risk:.2f})."
+        finally:
+            _mg._GOVERNOR_STATE = original_state
+            shutil.rmtree(tmp, ignore_errors=True)
+    results.append(_step("mutation_governor.no_double_count_on_hot_system_path",
+                         _governor_no_double_count_on_hot_system_path, verbose=args.verbose))
 
     # Print + tally
     print()

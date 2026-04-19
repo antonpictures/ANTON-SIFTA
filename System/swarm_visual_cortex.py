@@ -62,6 +62,18 @@ def process_visual_stimulus(image_name: str, multimodal_labels: list, source: st
     
     # 3. Route to Thalamus (If highly salient, it demands attention)
     routing_msg = ""
+    # Cross-modal binder hook
+    binder = None
+    try:
+        try:
+            from System.swarm_crossmodal_binding import get_crossmodal_binder
+            binder = get_crossmodal_binder()
+        except ImportError:
+            from swarm_crossmodal_binding import get_crossmodal_binder
+            binder = get_crossmodal_binder()
+    except Exception:
+        pass
+
     if saliency_score > 0.4:
         # High saliency visual stimulus, punch through to the sensory queue
         _STATE_DIR.mkdir(exist_ok=True)
@@ -82,6 +94,15 @@ def process_visual_stimulus(image_name: str, multimodal_labels: list, source: st
     with open(_OPTIC_NERVE_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(event) + "\n")
         
+    # Feed the cross-modal binder (multimodal perception)
+    if binder and saliency_score > 0.1:
+        try:
+            # Scale visual saliency (0.0-1.0) to match acoustic energy scale (1.0-50.0+)
+            magnitude = saliency_score * 50.0 
+            binder.ingest_event("video", magnitude, timestamp=event["timestamp"], territory=source)
+        except Exception:
+            pass
+            
     return event
 
 

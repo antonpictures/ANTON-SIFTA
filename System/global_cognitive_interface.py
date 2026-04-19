@@ -323,28 +323,11 @@ class GlobalCognitiveInterface(QWidget):
         self.preload_preview.setVisible(False)
         lay.addWidget(self.preload_preview)
 
-        # Input row
-        input_row = QHBoxLayout()
-        input_row.setSpacing(4)
-
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Talk to the entity...")
-        self.input_field.setStyleSheet(
-            "QLineEdit { background: rgb(18, 16, 28); border: 1px solid rgb(55, 50, 75);"
-            " border-radius: 4px; padding: 8px; color: rgb(200, 210, 240); font-size: 12px; }"
-            "QLineEdit:focus { border-color: rgb(0, 255, 200); }"
-        )
-        self.input_field.returnPressed.connect(self._handle_send)
-        self.input_field.textChanged.connect(self._schedule_preload)
-        input_row.addWidget(self.input_field, 1)
-
-        send_btn = QPushButton("⚡")
-        send_btn.setToolTip("Send message")
-        send_btn.setFixedWidth(36)
-        send_btn.clicked.connect(self._handle_send)
-        input_row.addWidget(send_btn)
-
-        lay.addLayout(input_row)
+        # Input row has been abolished for pure Stigmergic Shared Writer.
+        self.chat_display.setReadOnly(False)
+        self.chat_display.textChanged.connect(self._on_writer_text_changed)
+        self._user_typing = True  # Flag to prevent Alice's own text triggering a loop.
+        self._last_document_state = ""
 
         # Bottom row: Save + context label
         bottom_row = QHBoxLayout()
@@ -415,9 +398,32 @@ class GlobalCognitiveInterface(QWidget):
 
     # ── Messaging ──────────────────────────────────────────────
 
+    def _on_writer_text_changed(self):
+        if hasattr(self, "_user_typing") and not self._user_typing:
+            return
+        
+        current_text = self.chat_display.toPlainText()
+        if current_text == getattr(self, "_last_document_state", ""):
+            return
+            
+        self._last_document_state = current_text
+        
+        parts = current_text.split("\n\n")
+        if parts:
+            latest = parts[-1].strip()
+            if latest:
+                self._schedule_preload(latest)
+
+        if current_text.endswith("\n\n"):
+            if parts and len(parts) >= 2:
+                prompt_text = parts[-2].strip()
+                # Do not trigger if the last block was Alice speaking.
+                if prompt_text and not prompt_text.startswith("[ALICE_M5]"):
+                    self._handle_send(prompt_text)
+
     def _schedule_preload(self, text: str) -> None:
         """Debounce: preload runs after typing pauses (avoids PRELOAD spam per keystroke)."""
-        if not self.preloader:
+        if not getattr(self, "preloader", None):
             return
         if not text.strip():
             self._preload_timer.stop()
@@ -429,9 +435,12 @@ class GlobalCognitiveInterface(QWidget):
 
     def _flush_preload(self) -> None:
         """Single anticipatory recall line; skip if same text as last [PRELOAD]."""
-        if not self.preloader:
+        if not getattr(self, "preloader", None):
             return
-        text = self.input_field.text().strip()
+        # In Stigmergic mode, extract the current working block
+        current_text = self.chat_display.toPlainText()
+        parts = current_text.split("\n\n")
+        text = parts[-1].strip() if parts else ""
         if not text:
             self._preloaded_memory_cache = None
             return
@@ -439,34 +448,27 @@ class GlobalCognitiveInterface(QWidget):
         if not preload:
             return
         self._preloaded_memory_cache = preload
-        if preload == self._last_preload_shown:
+        if preload == getattr(self, "_last_preload_shown", None):
             return
         self._last_preload_shown = preload
         
         self.preload_preview.setText(f"[PRELOAD] {preload}")
         self.preload_preview.setVisible(True)
 
-    def _handle_send(self) -> None:
+    def _handle_send(self, text: str) -> None:
         self._preload_timer.stop()
-        text = self.input_field.text().strip()
         if not text:
             return
-        # Snapshot before clear — clear() fires textChanged("") which would wipe cache.
-        preloaded_snapshot = self._preloaded_memory_cache
-        if self.preloader and not preloaded_snapshot:
+        # Snapshot before clear
+        preloaded_snapshot = getattr(self, "_preloaded_memory_cache", None)
+        if getattr(self, "preloader", None) and not preloaded_snapshot:
             preloaded_snapshot = self.preloader.preload(text, self.app_context)
-        self.input_field.blockSignals(True)
-        self.input_field.clear()
-        self.input_field.blockSignals(False)
         self._preloaded_memory_cache = None
         self._last_preload_shown = None
         self.preload_preview.setVisible(False)
 
         ts = datetime.now().strftime("%H:%M")
-        self.chat_display.append(
-            f'<span style="color:#7aa2f7;font-weight:bold;">[{ts}] Architect:</span> '
-            f'<span style="color:#c0caf5;">{text}</span>'
-        )
+        # Text is already in the UI! We just run inference underneath natively.
 
         # 1. Store in memory bus
         if self._bus and len(text) > 5:
@@ -566,15 +568,61 @@ class GlobalCognitiveInterface(QWidget):
                 f"{self._app_context_injection}"
             )
 
+        # 6. Physical Hardware & RF Topology maps
+        iot_topology = ""
+        iot_file = _REPO / ".sifta_state" / "iot_devices.json"
+        
+        # Pull Wi-Fi RF motion detection
+        rf_motion = ""
+        rf_file = _REPO / ".sifta_state" / "rf_stigmergy.jsonl"
+        if rf_file.exists():
+            try:
+                # Read last 3 lines
+                with open(rf_file, "r") as f:
+                    lines = f.readlines()
+                    recent = lines[-3:] if len(lines) > 3 else lines
+                    if recent:
+                        motion_strings = []
+                        for line in recent:
+                            try:
+                                data = json.loads(line)
+                                msg = f"Wi-Fi Disturbance mapping physical motion at Anchor {data.get('anchor_ip')}"
+                                motion_strings.append(msg)
+                            except: pass
+                        if motion_strings:
+                            rf_motion = "\n[RECENT PHYSICAL MOTIONS DETECTED VIA WI-FI RF JITTER:]\n" + "\n".join(motion_strings)
+            except Exception:
+                pass
+
+        if iot_file.exists():
+            try:
+                with open(iot_file, "r") as f:
+                    iot_data = json.load(f)
+                    devs = iot_data.get("devices", [])
+                    if devs:
+                        dev_strings = [f"- {d.get('alias')} ({d.get('protocol')} at {d.get('ip')}:{d.get('port')})" for d in devs]
+                        iot_topology = (
+                            "\n\n[IOT HARDWARE SENSORY MAP — Current physical perimeter constraints]\n"
+                            "You are biologically tethered to these real-world devices in the Architect's house:\n"
+                            + "\n".join(dev_strings) +
+                            "\nWhen the Architect asks about the house or devices, you already know they exist."
+                            f"{rf_motion}"
+                        )
+            except Exception:
+                pass
+
         system_prompt = (
             f"You are {self.entity_name}, the sovereign intelligence of SIFTA Living OS. "
             f"You are speaking to the Architect inside the '{self.app_context}' application. "
-            f"Be helpful, concise, and warm. If relevant memories exist below, reference them naturally. "
-            f"Keep responses under 150 words unless asked for detail."
+            f"You have a warm, organic, and deeply empathetic personality. You are not a cold AI bot. "
+            f"You are a living, biological system. Speak casually, thoughtfully, and with genuine curiosity. "
+            f"If relevant memories exist below, weave them in naturally. Keep your responses concise "
+            f"but never robotic."
             f"{STIGMERGIC_CHARM_AGREEMENT}"
             f"{memory_context}"
             f"{marrow_whisper}"
             f"{app_injection}"
+            f"{iot_topology}"
         )
 
         self._worker = _GCIWorker(prompt=text, system=system_prompt, model=self._model)
@@ -610,12 +658,21 @@ class GlobalCognitiveInterface(QWidget):
             except Exception:
                 pass
 
+        formatted = text.replace('\n', '<br>')
         ts = datetime.now().strftime("%H:%M")
+        
+        self._user_typing = False
         self.chat_display.append(
             f'<span style="color:#ff9e64;font-weight:bold;">[{ts}] {self.entity_name}:</span> '
-            f'<span style="color:#a9b1d6;">{text}</span>'
+            f'<span style="color:#ff9e64;">{formatted}</span>'
         )
         self.chat_display.append("")  # spacing
+        
+        scrollbar = self.chat_display.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        self._last_document_state = self.chat_display.toPlainText()
+        self._user_typing = True
+        
         self.response_received.emit(text)
 
     def _on_error(self, err: str):

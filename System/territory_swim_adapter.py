@@ -125,7 +125,18 @@ class TerritorySwimAdapter:
             pass
         try:
             from System.mutation_governor import MutationGovernor
-            self._governor = MutationGovernor()
+            self._governor = MutationGovernor(
+                require_dual_sig=False,  # dormant — flip True after registry populated
+            )
+            # Wire the TUF-adapted reviewer registry so the dual-sig gate
+            # has its allowlist ready when require_dual_sig is flipped.
+            # Zero behavior change today: require_dual_sig=False means the
+            # registry is loaded but never consulted. One-line flip to activate.
+            try:
+                from System.reviewer_registry import get_default_registry
+                self._governor.set_reviewer_registry(get_default_registry())
+            except Exception:
+                pass  # Registry unavailable — gate stays dormant, no effect
         except Exception:
             pass
         self._load()

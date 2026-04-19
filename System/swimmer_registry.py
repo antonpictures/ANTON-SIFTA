@@ -4,6 +4,22 @@ System/swimmer_registry.py — Swimmer Registry & Health Monitor
 ══════════════════════════════════════════════════════════════════════════════
 Central registry for all software swimmers in Alice's body.
 
+╔══════════════════════════════════════════════════════════════╗
+║  [SANDBOX] CEREMONIAL — 2026-04-18                          ║
+║  Status  : Structurally sound. Currently no live consumers. ║
+║  Wiring  : .heartbeat()    — zero callers in repo           ║
+║            .health_check() — zero production callers        ║
+║            .cull_dead()    — zero callers anywhere          ║
+║  State   : 15 swimmers boot-stamped, all 10h+ past idle     ║
+║            threshold. status=ALIVE but unverified by any    ║
+║            runtime. Do NOT trust .status flags downstream   ║
+║            until a real heartbeat writer is wired.          ║
+║  Fix     : Wire .heartbeat() into swarm_autonomic_brainstem ║
+║            OR bump max_idle_s to reflect real cadence       ║
+║            OR keep this tag until a live consumer exists.   ║
+║  Owner   : SIFTA swarm — ratified by Architect 2026-04-18  ║
+╚══════════════════════════════════════════════════════════════╝
+
 A "swimmer" is any autonomous software agent/process that performs work
 on behalf of the Swarm OS. Each swimmer has:
   - swimmer_id:       unique identifier
