@@ -1,0 +1,32 @@
+{
+  "alpha": 0.27568195948357976,
+  "beta": 0.8550159121062866,
+  "gamma": 0.9940136409924817,
+  "delta": 0.26171475625801055,
+  "epsilon": 0.4285757624401713,
+  "zeta": 3.0,
+  "tau_m_s": 30.0,
+  "tau_e_s": 60.0,
+  "tau_ref_s": 2.0,
+  "V_th": 0.1248154269802666,
+  "V_reset": -0.3,
+  "V_rest": 0.0,
+  "Delta_u": 0.24590643981632102,
+  "version": "2026-04-19.v1",
+  "_last_mutation": {
+    "ide": "cursor_m5",
+    "ts": 1776613177.182917,
+    "module_version": "2026-04-19.v1",
+    "method": "annealing_apply",
+    "fitness_delta": 1.635,
+    "target_rate": 0.6,
+    "observed_rate": 0.3,
+    "iterations_run": 60,
+    "previous_coefficients_ref": ".sifta_state/speech_potential_coefficients.json.rollback",
+    "note": "swarm_ssp_evolver.apply_proposal",
+    "extra": {
+      "proposed_by": "swarm_ssp_evolver",
+      "proposal_provenance_ts": 1776613177.1824698
+    }
+  }
+}

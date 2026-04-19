@@ -706,7 +706,28 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
-    parts = [b for b in (swarm_block, cobuilder_block, ssp_context_block, immune_context_block) if b]
+    # Active-inference ghost calibrator (AGC) — generative-model sentinel,
+    # complementary to the discriminative OIS above. Safe to call per turn:
+    # never writes to alice_conversation.jsonl, never spawns subprocesses.
+    ghost_context_block = ""
+    try:
+        from System.optical_ghost_calibrator import (
+            calibrate_now as _agc_calibrate,
+            summary_for_alice as _agc_summary,
+        )
+        gv = _agc_calibrate()
+        if gv.verdict == "SURPRISE_SPIKE":
+            ghost_context_block = (
+                f"GHOST CALIBRATOR SURPRISE — generative model did not predict "
+                f"this frame: F={gv.F:.2f}, F_z={gv.F_z:.2f}. Reason: {gv.reason}"
+            )
+        else:
+            ghost_context_block = _agc_summary() or ""
+    except Exception:
+        pass
+
+    parts = [b for b in (swarm_block, cobuilder_block, ssp_context_block,
+                         immune_context_block, ghost_context_block) if b]
     return "\n\n".join(parts)
 
 
