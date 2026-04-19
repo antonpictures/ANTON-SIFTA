@@ -132,6 +132,11 @@ class FreeEnergy:
         self.lambda_mu: float = 0.0
         self.lambda_M2: float = 0.0   # sum of squared deviations from mean
 
+        # Most-recent instantaneous Λ — written by compute(), read by
+        # external sentinels via the on-disk last_lambda field. Welford
+        # mean alone lags reality by O(n); sentinels need the live value.
+        self._last_lambda: float = 0.0
+
         self.last_t: float = time.time()
 
         # ── Paths (AG31's contract) ──────────────────────────────────────
@@ -185,6 +190,13 @@ class FreeEnergy:
         except Exception:
             self.last_t = time.time()
 
+        # Restore the most-recent instantaneous Λ (added for divergence
+        # daemon). Default to 0.0 if the on-disk state predates this field.
+        try:
+            self._last_lambda = float(data.get("last_lambda", 0.0))
+        except Exception:
+            self._last_lambda = 0.0
+
     def _save_state(self):
         payload = {
             "module_version": MODULE_VERSION,
@@ -195,6 +207,12 @@ class FreeEnergy:
             "lambda_mu":   self.lambda_mu,
             "lambda_M2":   self.lambda_M2,
             "last_t":      self.last_t,
+            # Instantaneous most-recent Λ — added for the divergence
+            # daemon (and any future sentinel) so they can read the
+            # current field state instead of the long-running Welford
+            # mean. Welford mean is decision-stable but lags the
+            # instantaneous reality by O(n) samples.
+            "last_lambda": getattr(self, "_last_lambda", 0.0),
         }
         _atomic_write_json(self.state_path, payload)
 
@@ -289,6 +307,7 @@ class FreeEnergy:
         )
 
         self._update_lambda_stats(Lambda)
+        self._last_lambda = Lambda
         self._save_state()
         return Lambda
 
