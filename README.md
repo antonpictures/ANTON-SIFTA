@@ -129,6 +129,7 @@ SIFTA/
 ├── Applications/                # 📱 User-facing applications
 │   ├── sifta_nle.py                    # Stigmergic Non-Linear Video Editor
 │   ├── sifta_swarm_arena.py            # Swimmer training arena
+│   ├── alice_in_wwwonderland.py        # YouTube Live broadcaster (Alice speaks stigmergic)
 │   ├── apps_manifest.json              # Application registry
 │   └── ...
 │
@@ -551,6 +552,87 @@ If this drops below 28/28 PASS, something biologically catastrophic happened ups
 - Hafner et al., arXiv:1912.01603 (2019) — Dream to Control (Dreamer)
 - Schrittwieser et al., *Nature* 588:604 (2020) — MuZero
 - Sutton & Barto, *Reinforcement Learning: An Introduction*, 2nd ed. (2018) — chapters 6, 8
+
+---
+
+## 🌐 Chapter III — Alice in WWWonderland (April 19, 2026)
+
+> *"First broadcast of a swarm operating system speaking its own stigmergic language to the open internet."*
+
+`Applications/alice_in_wwwonderland.py` is a single-file YouTube Live broadcaster. It pushes webcam + mic to YouTube's RTMPS ingest via `ffmpeg`, with the swarm's perceptual ledgers burned into the video as live captions. The "stream key" model — same one OBS Studio uses for its Stream tab — keeps the binary off the Google OAuth path; you paste a key once and Alice goes live.
+
+### What goes out on the stream
+
+| Layer | Source | How |
+|---|---|---|
+| Video | AVFoundation webcam, 1280×720@30 | `ffmpeg -f avfoundation -i "<vidx>:<aidx>"` with auto-discovery of real cameras (skips OBS Virtual / Desk View / Screen Capture) |
+| Audio | AVFoundation microphone | Same `-i`. Default routes the room mic, so anything Broca speaks aloud through `say` is broadcast as voice. |
+| Top chyron | Static dedication strip | Burned via `drawtext` filter — `Alice in WWWonderland · SIFTA OS · live` |
+| Bottom chyron | **Live tail of the swarm's JSONL ledgers** | A daemon thread tails `broca_vocalizations.jsonl`, `wernicke_semantics.jsonl`, `swarm_pain.jsonl`, `crossmodal_objects.jsonl`; latest pheromone is atomically rewritten to `.sifta_state/alice_chyron.txt`; ffmpeg's `drawtext reload=1` re-reads it every frame. |
+| Encode | H.264 main profile @ 2500 kbps + AAC 160 kbps stereo @ 44.1 kHz | YouTube's documented sweet spot for 720p30 with `-tune zerolatency` and 2-second keyframe interval |
+| Transport | RTMPS to `rtmps://a.rtmps.youtube.com:443/live2/<KEY>` | TLS-wrapped RTMP by default; `--no-rtmps` to fall back to plain RTMP |
+
+### Stream key handling (the only secret in the system)
+
+Resolution order, first hit wins:
+1. `--stream-key <KEY>` argv
+2. `$ALICE_YOUTUBE_KEY` environment variable
+3. `~/.alice_youtube_key` file — **mode 600 enforced**, refuses to read a world-readable key file the same way `ssh` refuses a permissive private key
+
+The key is **never printed to stdout, stderr, or the ledger** — only a `<first4>…<last4>` fingerprint is logged. The `--dry-run` and supervisor output mask the URL to `…/live2/<KEY>`.
+
+### Quick start
+
+```bash
+# 1. Save your key once (chmod 600 enforced by the script)
+echo "abcd-efgh-ijkl-mnop-qrst" > ~/.alice_youtube_key && chmod 600 ~/.alice_youtube_key
+
+# 2. Confirm ffmpeg can see your real camera + mic
+python3 Applications/alice_in_wwwonderland.py --list-devices
+
+# 3. Print the resolved ffmpeg command without launching (key masked)
+python3 Applications/alice_in_wwwonderland.py --dry-run
+
+# 4. Go live (Ctrl+C ends the broadcast cleanly)
+python3 Applications/alice_in_wwwonderland.py
+```
+
+Get a key at: **studio.youtube.com → Create → Go Live → Stream → "Stream key (paste in encoder)"**.
+
+### Telemetry
+
+Every state change appends to `.sifta_state/alice_stream.jsonl`:
+
+| `stage` | When | Fields |
+|---|---|---|
+| `key_resolved` | Startup | `source` (argv/env/keyfile), `fingerprint` |
+| `broadcast_starting` | Just before `ffmpeg` spawn | full `cmd` (URL still contains key — local file only) |
+| `ffmpeg_status` | Once per second while live | `frame`, `fps`, `bitrate_kbps`, `drop` |
+| `ffmpeg_error` | On any error/Failed/Invalid line from ffmpeg stderr | `line` (truncated) |
+| `chyron_write_failed` | If atomic rewrite of caption file fails | `exc_type`, `exc_msg` |
+| `broadcast_ended` | Process exit | `returncode` |
+
+A live `[ALICE LIVE] frame=… fps=… bitrate=…kbps drop=…` line prints to your terminal once per second so you can confirm bytes are leaving the machine.
+
+### What's deliberately not in v1
+
+| Deferred | Why |
+|---|---|
+| OAuth "connect with Google" button | Stream key is what 90% of OBS users actually use; OAuth needs a Google Cloud project + client secret + browser flow + token refresh, none of which adds a single byte to the stream. |
+| Scene compositor (PIP, transitions, plugin system) | Single video source + two `drawtext` filters. Add `overlay` later if it matters. |
+| BlackHole virtual audio cable routing | Default routes the room mic, so Broca's `say` is captured as voice. Cleaner Alice-only audio is one `--audio=<blackhole_idx>` flag away once `brew install blackhole-2ch` is done. |
+
+### Standalone by design
+
+Alice has **zero** `from System.X import Y` — the AVFoundation device helpers (`_list_avfoundation_devices`, `_pick_best`, `_resolve_audio_index`, `_resolve_video_index`) are inlined. The file ships, runs, and streams whether or not the rest of the SIFTA sensory pipeline is present on the clone. Its only runtime dependencies are `ffmpeg` on PATH and a YouTube stream key.
+
+### Team
+
+| Role | Agent | Contribution |
+|---|---|---|
+| Decision authority, broadcast architect | The Architect (Ioan) | Named the app; first human to publish a swarm OS speaking stigmergic to the world |
+| Generator | C47H (Claude Opus 4.7, Cursor IDE on M5) | Wrote `alice_in_wwwonderland.py` standalone; chyron tailer, stream-key gate, ffmpeg supervisor |
+| Auditor (next round) | AG31 (Gemini 3.1 Pro, Antigravity IDE on M1) | Adversarial review pending |
 
 ---
 
