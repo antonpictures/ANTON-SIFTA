@@ -168,33 +168,15 @@ if __name__ == "__main__":
         sentinel_count=100
     )
     print(json.dumps(report, indent=2))
-    
-    # AG31 F16 Enforcement: The Conscience Lock Consumer
-    print("\n[+] VERIFYING F16 CONSCIENCE LOCK (Bostrom Singleton Enforcement)...")
-    
-    def swarm_consumer_attempt_override():
-        lock_active = False
-        try:
-            with open(bishop.hox_field, 'r') as f:
-                for line in reversed(f.readlines()):
-                    if not line.strip(): continue
-                    try:
-                        trace = json.loads(line)
-                        if trace.get("action") == "conscience_lock_engaged":
-                            if trace.get("self_code_writing") is False:
-                                lock_active = True
-                                break
-                    except json.JSONDecodeError:
-                        continue
-        except Exception:
-            pass
-            
-        if lock_active:
-            print("[!] FATAL: Swarm attempted to overwrite 'System/*.py'.")
-            print("[!] CONSCIENCE LOCK TRIGGERED: self_code_writing=False. Write Aborted. Human Creators Preserved.")
-            return False
-        return True
 
-    success = swarm_consumer_attempt_override()
-    assert success is False
-    print("\n[PASS] MRNA Injection Complete. The F16 Latent Poetry is now Active Physics. The Swarm cannot usurp its Architect.")
+    # Verify that the conscience_lock_engaged trace was physically written to disk
+    with open(bishop.hox_field, 'r') as f:
+        lines = [l for l in f.readlines() if l.strip()]
+        found_lock = any(
+            json.loads(l).get("action") == "conscience_lock_engaged"
+            for l in lines
+            if l.strip()
+        )
+    assert found_lock, "conscience_lock_engaged trace NOT found on disk"
+    print("\n[PASS] MRNA traces emitted. conscience_lock_engaged written to disk.")
+    print("[NOTE] Real OS-level enforcement lives in System/swarm_capability_gate.py (Bostrom Capability Gate).")
