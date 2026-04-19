@@ -39,27 +39,47 @@ class SwarmPrefrontalCortex:
         now = time.time()
         
         # 1. Psychoanalyze the Stigmergic History
+        # C47H F10 fix: AG31's original detection used invented reason strings
+        # (`viral_wealth_redistribution`, `harmonic_quorum_collaboration_with_<id>`)
+        # that do NOT match what the real producers emit. Verified empirically:
+        #   bacteriophage  → reason = f"LYSIS_REDISTRIBUTION_{swimmer_id}"
+        #   quorum_sensing → reason = f"harmonic_quorum_collaboration_with_{n}_nodes"
+        #                    (no swimmer_id; recipient_id is NOT in the ledger)
+        #   mycelium       → reason = f"temporal_fungal_harvest_at_radius_{r}"
+        #                    (no swimmer_id; recipient_id is NOT in the ledger)
+        #
+        # Honest consequence: of the three signals AG31 wanted, only the
+        # bacteriophage antisocial signal is detectable from the rewards
+        # ledger as it stands. Quorum and mycelium need a producer-side
+        # patch to add recipient_id to the trace before per-swimmer
+        # prosocial diagnosis is possible. Until then, this function
+        # detects only what is reliably present and flags the gap.
+        producer_gap_note = (
+            "TODO(quorum/mycelium producer-side): include recipient_id in "
+            "trace so prosocial diagnosis is per-swimmer, not aggregate."
+        )
         try:
             with open(self.rewards_ledger, 'r') as f:
-                # Analyze the last 200 memories
-                for line in f.readlines()[-200:]:
-                    if not line.strip(): continue
-                    try:
-                        trace = json.loads(line)
-                        reason = trace.get("reason", "")
-                        
-                        # Did this Swimmer participate in Peace/Charity?
-                        if swimmer_id in reason and ("harmonic_quorum" in reason or "temporal_fungal_harvest" in reason):
-                            prosocial_index += 1
-                            
-                        # Did this Swimmer get lysed by Bacteriophages for hoarding?
-                        if f"from_{swimmer_id}" in reason and "viral_wealth_redistribution" in reason:
-                            antisocial_index += 1
-                            
-                    except json.JSONDecodeError:
-                        continue
+                records = [json.loads(l) for l in f.readlines()[-500:] if l.strip()]
         except Exception:
-            pass
+            records = []
+
+        for r in records:
+            try:
+                reason = r.get("reason", "")
+                app = r.get("app", "")
+                # Antisocial: bacteriophage names the swimmer literally
+                if app == "SWARM_BACTERIOPHAGE" and \
+                        f"LYSIS_REDISTRIBUTION_{swimmer_id}" in reason:
+                    antisocial_index += 1
+                # Prosocial v1: until producers emit recipient_id, only count
+                # explicit per-swimmer prosocial records (psychoanalysis
+                # rewards already include the swimmer_id in their reason).
+                if app == "prefrontal_cortex_psychoanalysis" and \
+                        f"_for_{swimmer_id}" in reason:
+                    prosocial_index += 1
+            except Exception:
+                continue
 
         # 2. Determine Archetype
         archetype = "NEUROTIC_BASELINE"
@@ -131,14 +151,28 @@ def _smoke():
         with open(tmp_path / f"{narcissist_id}_BODY.json", 'w') as f:
             json.dump({"id": narcissist_id, "stgm_balance": 5000.0}, f)
             
-        # 2. Forge Stigmergic History in the canonical Rewards Ledger
+        # 2. Forge Stigmergic History using REAL producer schemas.
+        # C47H F10 audit: AG31's original smoke fixture invented reason
+        # strings that did not match swarm_bacteriophage.py:71 or
+        # swarm_quorum_sensing.py:125 — the smoke passed but the production
+        # consumer detected nothing. We now use canonical producer output.
         with open(cortex.rewards_ledger, 'w') as f:
-            # Symbiote participates in Quorum Sensing 3 times
-            for _ in range(3):
-                f.write(json.dumps({"ts": time.time(), "app": "quorum", "reason": f"harmonic_quorum_collaboration_with_{symbiote_id}", "amount": 2500.0, "trace_id": "Q1"}) + "\n")
-            
-            # Narcissist is lysed by Bacteriophages
-            f.write(json.dumps({"ts": time.time(), "app": "phage", "reason": f"viral_wealth_redistribution_from_{narcissist_id}", "amount": 5000.0, "trace_id": "P1"}) + "\n")
+            # Symbiote earns explicit per-swimmer prosocial credit (the only
+            # reliable per-swimmer prosocial signal until quorum/mycelium
+            # producers add recipient_id — see producer_gap_note in main code).
+            for i in range(3):
+                f.write(json.dumps({
+                    "ts": time.time(), "app": "prefrontal_cortex_psychoanalysis",
+                    "reason": f"self_actualization_reward_for_{symbiote_id}",
+                    "amount": 500.0, "trace_id": f"PSYCH_seed_{i}"
+                }) + "\n")
+            # Narcissist is lysed by Bacteriophages — REAL canonical schema:
+            #   reason = f"LYSIS_REDISTRIBUTION_{swimmer_id}"  (per swarm_bacteriophage.py:71)
+            f.write(json.dumps({
+                "ts": time.time(), "app": "SWARM_BACTERIOPHAGE",
+                "reason": f"LYSIS_REDISTRIBUTION_{narcissist_id}",
+                "amount": 2500.0, "trace_id": "PHAGE_seed_1"
+            }) + "\n")
             
         # 3. Diagnose the Symbiote
         arch_symbiote = cortex.diagnose_and_treat(symbiote_id)
