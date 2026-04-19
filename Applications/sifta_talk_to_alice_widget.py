@@ -738,9 +738,22 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # Free-Energy Action Field Λ(t) — AG31 architecture, C47H surgical math
+    # correction (real time-derivatives, scale-normalized, Welford z-score).
+    # Surfaced as observation only — Λ is NOT a hard gate replacing Φ/Ψ
+    # (that would kill the Gerstner escape-noise biology). It will eventually
+    # feed Ψ's R_risk EMA as a probabilistic inhibitor; that wiring awaits
+    # Architect sign-off. For now Alice can see Λ but it does not fire.
+    lambda_context_block = ""
+    try:
+        from System.swarm_free_energy import summary_for_alice as _lam_summary
+        lambda_context_block = _lam_summary() or ""
+    except Exception:
+        pass
+
     parts = [b for b in (swarm_block, cobuilder_block, ssp_context_block,
                          immune_context_block, ghost_context_block,
-                         motor_context_block) if b]
+                         motor_context_block, lambda_context_block) if b]
     return "\n\n".join(parts)
 
 
