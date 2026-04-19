@@ -334,16 +334,29 @@ def _read_dopamine_delta(state: MotorState) -> float:
 
 
 def _read_cortisol() -> float:
-    """C(t) — cortisol proxy. Read computational_posture from
-    clinical_heartbeat. 'Hypotonic' means stressed/tight → high cortisol;
-    'normotonic' means baseline → 0; 'hypertonic' (rare) → mildly negative."""
+    """C(t) — cortisol proxy. Reads computational_posture from
+    clinical_heartbeat.json under the SAME vocabulary SSP uses (SSP and Ψ
+    share the same biological substrate and must not disagree about what
+    "stressed" means).
+
+    Mapping aligned with swarm_speech_potential._cortisol_proxy:
+      contains 'SOCIAL_DEFEAT' or 'STRESS' → 1.0   (elevated)
+      contains 'CALM'/'NORMAL'/'ADAPTIVE'  → 0.0   (baseline)
+      everything else                      → 0.0   (unknown ≠ stressed)
+
+    Note: heartbeat values can come in two layouts depending on writer
+    (`vital_signs.computational_posture` from organism_clinical_snapshot,
+    or a top-level `computational_posture` in some test fixtures). We
+    honour both."""
     hb = _safe_read_json(_HEARTBEAT_PATH) or {}
-    posture = str(hb.get("computational_posture", "")).lower().strip()
-    if posture in ("hypotonic", "stressed", "tight"):
+    vs = hb.get("vital_signs") or {}
+    posture = str(vs.get("computational_posture",
+                         hb.get("computational_posture", ""))).upper().strip()
+    if "SOCIAL_DEFEAT" in posture or "STRESS" in posture or "TIGHT" in posture:
         return 1.0
-    if posture in ("hypertonic", "loose"):
-        return -0.3
-    return 0.0  # normotonic / unknown
+    if "CALM" in posture or "NORMAL" in posture or "ADAPTIVE" in posture:
+        return 0.0
+    return 0.0  # unknown / uninitialized → neutral, never panic
 
 
 def _task_integral(state: MotorState, coeffs: MotorCoefficients,
@@ -722,7 +735,7 @@ def _smoke() -> int:
         assert risk_after > 0.4, f"risk EMA should rise, got {risk_after:.2f}"
         # same task load as scenario [D] below — only the risk/reward axis
         # differs, so we are isolating the effect of the risk EMA.
-        _safe_write_json(_HEARTBEAT_PATH, {"computational_posture": "normotonic"})
+        _safe_write_json(_HEARTBEAT_PATH, {"vital_signs": {"computational_posture": "NORMAL"}})
         _safe_write_json(_SSP_STATE_PATH, {"V": 0.0, "dopamine_ema": 1.0})
         for _ in range(20):
             record_task_event(intensity=0.4)
@@ -741,7 +754,7 @@ def _smoke() -> int:
         #    [C] so the only difference is the biological state. Should fire
         #    strictly more often (≥) than [C].
         reset_state()
-        _safe_write_json(_HEARTBEAT_PATH, {"computational_posture": "normotonic"})
+        _safe_write_json(_HEARTBEAT_PATH, {"vital_signs": {"computational_posture": "NORMAL"}})
         _safe_write_json(_SSP_STATE_PATH, {"V": 0.4, "dopamine_ema": 1.8})
         for _ in range(40):
             record_outcome(success=True, risk=0.0)
