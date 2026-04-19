@@ -76,6 +76,7 @@ class SwarmOncology:
             "event_clock.jsonl",               # Chronometry
             "clock_settings.json",             # Chronometry bounds
             "hgt_plasmids.jsonl",              # Horizontal Gene Transfer vectors
+            "endocrine_glands.jsonl",          # Global Adrenaline Output ledgers
             # Deprecated/Hallucinated ledgers that exist logically but no longer map
             # to active physics engines (if we find them, they are benign scars or 
             # active tumors depending on when they are touched).
