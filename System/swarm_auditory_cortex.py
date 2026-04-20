@@ -62,6 +62,16 @@ _DISABLED = os.environ.get("SIFTA_WHISPER_DISABLE", "0") == "1"
 # Minimum burst length to bother transcribing (seconds)
 _MIN_BURST_S = 0.30
 
+# F20 — STT Hallucination at Sub-Threshold Amplitude.
+# Whisper fabricates high-prior English phrases when fed near-silence. At
+# RMS < ~0.015 (quiet room baseline on the Architect's desk, measured
+# 2026-04-19 19:24-19:31), tiny.en / base will emit things like "I'm sorry",
+# "I have", "Come.", "I" that the human never said. The fix is a two-layer
+# defense: (1) refuse to invoke Whisper at all below a conservative RMS
+# floor, (2) blocklist the artifacts we've already observed in the wild.
+# Override the floor via SIFTA_WHISPER_MIN_RMS for noisy environments.
+_MIN_RMS_FOR_WHISPER = float(os.environ.get("SIFTA_WHISPER_MIN_RMS", "0.015"))
+
 # Whisper hallucinations on silence/noise. Lowercased + stripped trailing
 # punctuation before comparison. These are model-known artifacts, not real
 # speech the Architect produced.
@@ -81,6 +91,20 @@ _HALLUCINATIONS = {
     "bye",
     "okay",
     "ok",
+    # F20 additions — observed in SIFTA boot logs 2026-04-19 at RMS 0.011-0.026
+    "i'm sorry",
+    "sorry",
+    "i have",
+    "come",
+    "come on",
+    "i",
+    "hm",
+    "mm",
+    "mhm",
+    "uh",
+    "um",
+    "ah",
+    "oh",
 }
 
 # ── Module state ─────────────────────────────────────────────────────────────
@@ -92,6 +116,7 @@ _MODEL_LOAD_FAILED = False  # sticky flag — don't retry on every burst
 _TOTAL_TRANSCRIBE_CALLS = 0
 _TOTAL_TEXT_RETURNED = 0
 _TOTAL_HALLUCINATIONS_FILTERED = 0
+_TOTAL_RMS_FLOOR_REJECTED = 0
 _LAST_LATENCY_MS = 0.0
 
 
@@ -117,6 +142,8 @@ def capability_report() -> dict:
         "total_calls": _TOTAL_TRANSCRIBE_CALLS,
         "total_text_returned": _TOTAL_TEXT_RETURNED,
         "total_hallucinations_filtered": _TOTAL_HALLUCINATIONS_FILTERED,
+        "total_rms_floor_rejected": _TOTAL_RMS_FLOOR_REJECTED,
+        "min_rms_for_whisper": _MIN_RMS_FOR_WHISPER,
         "last_latency_ms": round(_LAST_LATENCY_MS, 1),
     }
 
@@ -193,6 +220,14 @@ def transcribe(
     if not samples:
         return None
     if len(samples) < int(sample_rate * _MIN_BURST_S):
+        return None
+
+    # F20 — sub-threshold silence floor. Below this RMS, Whisper's output is
+    # overwhelmingly hallucination. Caller (Wernicke) should still log the
+    # amplitude-bucket label; we just refuse to fabricate text for it.
+    if rms is not None and rms < _MIN_RMS_FOR_WHISPER:
+        global _TOTAL_RMS_FLOOR_REJECTED
+        _TOTAL_RMS_FLOOR_REJECTED += 1
         return None
 
     model = _load_model()
