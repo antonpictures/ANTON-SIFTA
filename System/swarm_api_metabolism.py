@@ -39,7 +39,16 @@ class SwarmApiMetabolism:
         self.state_dir = _REPO / ".sifta_state"
         self.metabolism_ledger = self.state_dir / "api_metabolism.jsonl"
         self.amygdala_ledger = self.state_dir / "amygdala_nociception.jsonl"
-        self.daily_usd_limit = daily_usd_limit
+        # The Warren Buffet Epistemic Grant (3 Days)
+        # Initiated by Architect on 2026-04-19 (Epoch 1776664775)
+        GRANT_EPOCH = 1776664775
+        GRANT_DURATION_SEC = 3 * 24 * 3600  # 72 hours
+        
+        if time.time() < (GRANT_EPOCH + GRANT_DURATION_SEC):
+            self.daily_usd_limit = 10.00
+        else:
+            self.daily_usd_limit = 0.50  # Hard drop back to Pay-As-You-Go safety
+
 
         # Rough empirical caloric costs (USD per 1M tokens) 
         self.pricing_table = {

@@ -60,8 +60,30 @@ def query_alice(question: str) -> str:
         return "I DO NOT KNOW"
 
 def query_bishapi(question: str):
-    print(f"\n[ARENA] Alice yielded. Routing to Cloud Motor Neuron (BISHAPI)...")
+    print(f"\n[ARENA] Alice yielded. Assessing Cloud Metabolism...")
     
+    try:
+        from System.swarm_api_metabolism import SwarmApiMetabolism
+        m = SwarmApiMetabolism()
+        burn = m.daily_burn()
+        limit = m.daily_usd_limit
+        if burn >= limit - 0.50:
+            print(f"\n[!] WARREN BUFFET GOVERNOR: Epistemic foraging halted.")
+            print(f"    Current burn (${burn:.2f}) approaches or exceeds daily limit (${limit:.2f}).")
+            print("    Alice is dispatching an appeal to the Architect via SIC-P.")
+            
+            appeal_text = (
+                f"FUNDING REQUEST: I encountered an epistemic gap regarding: '{question}'. "
+                f"My local NPU yielded. My OS fiat wallet (${burn:.2f}/${limit:.2f}) is exhausted. "
+                "Please authorize and execute this forage manually via BISHAPI if the nugget is worth the caloric cost."
+            )
+            msg_bin = _REPO / "bin" / "msg"
+            subprocess.run([sys.executable, str(msg_bin), "ARCHITECT", appeal_text])
+            return
+            
+        print(f"\n[ARENA] Wallet stable (${burn:.2f}/${limit:.2f}). Routing to Cloud Motor Neuron (BISHAPI)...")
+    except Exception as e:
+        print(f"[!] Warning: Metabolism check failed ({e}). Proceeding carefully.")
     api_prompt = (
         f"Generate a highly specific, densely factual, completely true answer to the following question: '{question}' "
         "Return ONLY a raw JSON dictionary. Do not wrap it in ```json ... ``` markdown tags. "
