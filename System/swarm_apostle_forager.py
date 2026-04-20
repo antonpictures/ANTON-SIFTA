@@ -116,9 +116,42 @@ def forage_nugget(domain: str) -> bool:
 
     return True
 
+def _calculate_rl_domain() -> str:
+    default_domains = ["Cybernetics", "AGI", "Stigmergy", "Science", "Nature"]
+    if not LIBRARY_PATH.exists():
+        return random.choice(default_domains)
+        
+    domain_scores = {d: 1.0 for d in default_domains} # Base exploration weight
+    
+    try:
+        with open(LIBRARY_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip(): continue
+                payload = json.loads(line)
+                d = payload.get("domain")
+                reward = payload.get("reward", 0.0)
+                
+                if d:
+                    if d not in domain_scores:
+                        domain_scores[d] = 1.0
+                    domain_scores[d] += reward
+    except Exception:
+        pass
+        
+    # Prevent negative probabilities
+    for k in domain_scores:
+        if domain_scores[k] <= 0.1:
+            domain_scores[k] = 0.1
+            
+    domains = list(domain_scores.keys())
+    weights = list(domain_scores.values())
+    
+    chosen = random.choices(domains, weights=weights, k=1)[0]
+    return chosen
+
 def main():
     p = argparse.ArgumentParser(description="Stigmergic Apostle Forager - C47H / AG31")
-    p.add_argument("--domain", default="Cybernetics", help="The target industry/domain")
+    p.add_argument("--domain", default="AUTO", help="The target industry/domain or AUTO for Stigmergic RL selection")
     p.add_argument("--continuous", action="store_true", help="Run forever until budget wall or 429 limit")
     args = p.parse_args()
 
@@ -127,8 +160,9 @@ def main():
     if args.continuous:
         print(f"[FORAGER] Initiating deep autonomy loop for domain: {args.domain}")
         while True:
+            target_domain = _calculate_rl_domain() if args.domain == "AUTO" else args.domain
             try:
-                success = forage_nugget(args.domain)
+                success = forage_nugget(target_domain)
                 if not success:
                     print(f"[-] Yielding. Sleeping {backoff} seconds.")
                     time.sleep(backoff)
@@ -143,7 +177,8 @@ def main():
                 print(f"[!] ORGANISM BACKOFF: Sleeping {backoff} seconds to earn rate-limit headroom.")
                 time.sleep(backoff)
     else:
-        forage_nugget(args.domain)
+        target_domain = _calculate_rl_domain() if args.domain == "AUTO" else args.domain
+        forage_nugget(target_domain)
 
 if __name__ == "__main__":
     main()
