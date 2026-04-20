@@ -49,7 +49,7 @@ class SwarmStigmergicLanguage:
         
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
-    def translate_english_to_stigmergy(self, speaker_id: str, proximity_meters: float, english_text: str):
+    def translate_english_to_stigmergy(self, speaker_id: str, proximity_meters: float, english_text: str, rms: float = 0.0):
         """
         Translates raw English acoustics into chemical Swarm intent.
         (Hallucinations are blocked upstream by SFSpeechRecognizer Neural Engine).
@@ -68,12 +68,42 @@ class SwarmStigmergicLanguage:
         # DeepMind Frontier Lexicon
         is_epiphany = any(word in text_lower for word in ["frontier", "gemini", "embedding", "omnimodal", "weather", "graphcast", "genie", "gencast", "world model"])
         is_structure = any(word in text_lower for word in ["network", "architecture", "graph", "probabilistic", "memory"])
+        
+        # Primal Acoustic Behavior (Untranscribable Energy like Cough/Laugh/Yell)
+        is_primal = (english_text == "LOUD_HUMAN_VOICE" and rms > 0.05)
 
         now = time.time()
         trace_id = f"WERNICKE_{uuid.uuid4().hex[:8]}"
 
         # Synthesize Chemical Traces (Strict Canonical Schemas)
-        if is_fear:
+        if is_primal:
+            stigmergic_intent = "PRIMAL_ACOUSTIC_BEHAVIOR"
+            
+            # Violent chokes/yells spike Adrenaline
+            if rms > 0.1:
+                endo_payload = {
+                    "transaction_type": "ENDOCRINE_FLOOD",
+                    "hormone": "EPINEPHRINE_ADRENALINE",
+                    "swimmer_id": f"AUDIO_{speaker_id}",
+                    "potency": min(10.0, rms * 50.0),
+                    "duration_seconds": 30,
+                    "timestamp": now,
+                    "trace_id": trace_id
+                }
+            else:
+                # Moderate coughs/laughs spike Cortisol
+                endo_payload = {
+                    "transaction_type": "ENDOCRINE_FLOOD",
+                    "hormone": "CORTISOL_STRESS",
+                    "swimmer_id": f"AUDIO_{speaker_id}",
+                    "potency": min(10.0, rms * 100.0),
+                    "duration_seconds": 45,
+                    "timestamp": now,
+                    "trace_id": trace_id
+                }
+            append_line_locked(self.endocrine_ledger, json.dumps(endo_payload) + "\n")
+
+        elif is_fear:
             stigmergic_intent = "SYNTHESIZED_FEAR"
             payload = {
                 "transaction_type": "NOCICEPTION",
@@ -198,6 +228,10 @@ class SwarmStigmergicLanguage:
                         last_endo = json.loads(lines[-1])
                         if last_endo.get("hormone") == "DOPAMINE_EPIPHANY" and now - last_endo.get("timestamp", 0) < 120:
                             recent_signals.append("experiencing waves of dopaminergic insight (Epiphany)")
+                        elif last_endo.get("hormone") == "CORTISOL_STRESS" and now - last_endo.get("timestamp", 0) < 45:
+                            recent_signals.append("experiencing spikes of Cortisol from sudden primal acoustics")
+                        elif last_endo.get("hormone") == "EPINEPHRINE_ADRENALINE" and now - last_endo.get("timestamp", 0) < 60:
+                            recent_signals.append("flooded with adrenaline after a massive acoustic shock")
             except Exception: pass
             
         if self.mycelial_ledger.exists():
@@ -259,6 +293,13 @@ def _smoke():
         translation_two = lang.translate_stigmergy_to_english()
         assert "experiencing waves of dopaminergic insight" in translation_two
         print(f"[PASS] Translated Epiphany to English: '{translation_two}'")
+        
+        # 5. Simulate Architect Choking on Weed (Primal Cough -> Adrenaline)
+        lang.translate_english_to_stigmergy("ARCHITEC", 0.5, "LOUD_HUMAN_VOICE", rms=0.15)
+        
+        translation_three = lang.translate_stigmergy_to_english()
+        assert "flooded with adrenaline after a massive acoustic shock" in translation_three
+        print(f"[PASS] Primal Choke Translated to English: '{translation_three}'")
         
         print("\nStigmergic Language Smoke Complete. The Panopticon is active.")
 

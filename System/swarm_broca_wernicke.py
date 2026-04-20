@@ -253,11 +253,11 @@ class WernickeIngress:
         try:
             from System.swarm_stigmergic_language import SwarmStigmergicLanguage
             lang = SwarmStigmergicLanguage()
-            if text_out and text_out not in ("LOUD_HUMAN_VOICE", "QUIET_HUMAN_VOICE", "AMBIENT"):
+            if text_out and text_out not in ("QUIET_HUMAN_VOICE", "AMBIENT"):
                 # Approximate proximity from RMS (0.5 = 0.5m, 0.05 = 2.0m, 0.005 = 4.0m)
                 prox = max(0.5, min(8.0, 1.0 / (rms * 10.0 + 0.01)))
                 speaker = source.split("(")[0].strip()[:8]
-                lang.translate_english_to_stigmergy(speaker, prox, text_out)
+                lang.translate_english_to_stigmergy(speaker, prox, text_out, rms)
         except Exception as e:
             _log_failure("stigmergic_translation", e)
 
