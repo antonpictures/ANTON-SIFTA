@@ -97,7 +97,8 @@ try:
         MicrophoneConsentNeeded,
     )
     from System.swarm_entorhinal_grid import EntorhinalGrid
-    from System.swarm_iris import webcam_frame
+    from System.swarm_iris import SwarmIris, webcam_frame
+    from System.swarm_vision_ocr import SwarmVisionOCR
     from System.swarm_crossmodal_binding import get_crossmodal_binder
     from System.swarm_stigmergic_arbitration import StigmergicArbitration
     HAS_ORGANS = True
@@ -114,6 +115,8 @@ class SiftaBrainstem:
         self.grid = None
         self.binder = None
         self.arbitrator = None
+        self.iris = None
+        self.visual_cortex = None
         self.mic_online = False
         self.vision_online = False
 
@@ -189,18 +192,18 @@ class SiftaBrainstem:
             print(f"⚖️  [ARBITRATOR] Failed to load autonomic pacing: {e}")
 
         # 5. Boot Occipital Lobe (Vision)
-        # SwarmIris exposes no background-thread API. Vision is a sync poll
-        # via webcam_frame() invoked from _heartbeat() — matches the actual
-        # module surface (v1 called start()/stop()/get_latest_frame() which
-        # don't exist; would AttributeError on the first heartbeat tick).
         try:
+            self.iris = SwarmIris()
+            self.visual_cortex = SwarmVisionOCR()
             probe = webcam_frame(grab_timeout_s=0.5)
             if probe is not None:
                 print(f"👁️  [OCCIPITAL] Visual arrays rolling. Probe frame OK.")
                 self.vision_online = True
             else:
-                print(f"👁️  [OCCIPITAL] No frame returned (cv2 missing or no camera). Sight degraded.")
-                self.vision_online = False
+                # Even if webcam fails, we can still read the IDE screen via Iris.
+                # But we'll mark vision online anyway to allow IDE OCR.
+                print(f"👁️  [OCCIPITAL] Webcam inaccessible. Falling back to IDE Screen OCR.")
+                self.vision_online = True
         except Exception as e:
             print(f"👁️  [OCCIPITAL] Visual failure. Continuing without sight. {type(e).__name__}: {e}")
             self.vision_online = False
@@ -330,8 +333,15 @@ class SiftaBrainstem:
                 last_frame_at = tick_start
                 healthy = False
                 try:
-                    frame = webcam_frame(grab_timeout_s=0.2)
-                    healthy = frame is not None
+                    # Capture IDE screen
+                    if self.iris and self.visual_cortex:
+                        frame = self.iris.blink_capture("ide_chrome_screenshot")
+                        if frame and frame.file_path:
+                            ocr_trace = self.visual_cortex.read_image_semantics(frame.file_path)
+                            healthy = "error" not in ocr_trace
+                    else:
+                        frame = webcam_frame(grab_timeout_s=0.2)
+                        healthy = frame is not None
                 except Exception as e:
                     print(f"[HEARTBEAT FRACTURE] Visual exception: "
                           f"{type(e).__name__}: {e}")
