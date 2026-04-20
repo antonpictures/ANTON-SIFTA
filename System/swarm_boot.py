@@ -252,6 +252,7 @@ class SiftaBrainstem:
         wait resets to baseline. This stops the ~20 Hz spin that previously
         wrote 55 failure rows per second to the audit ledger when the mic
         was unreachable. Same backoff applies to vision capture failures.
+        """
         last_frame_at = 0.0
         last_ocr_at = 0.0
         BASE_FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
