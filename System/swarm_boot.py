@@ -104,6 +104,8 @@ try:
     from System.swarm_proprioception import SwarmProprioception
     from System.swarm_stigmergic_trash import SwarmStigmergicTrash
     from System.swarm_notification_egress import SwarmNotificationEgress
+    from System.swarm_trash_scout import SwarmTrashScout
+    from System.swarm_warp9 import propose_setting_change
     HAS_ORGANS = True
 except ImportError as exc:
     print(f"[FATAL ERROR] Organism topology fractured on boot. Missing tissue: {exc}")
@@ -123,6 +125,7 @@ class SiftaBrainstem:
         self.proprioception = None
         self.trash = None
         self.egress = None
+        self.scout = None
         self.mic_online = False
         self.vision_online = False
 
@@ -202,6 +205,7 @@ class SiftaBrainstem:
             self.proprioception = SwarmProprioception()
             self.trash = SwarmStigmergicTrash()
             self.egress = SwarmNotificationEgress()
+            self.scout = SwarmTrashScout()
             print("🧱 [SPATIAL] Proprioception and Stigmergic Trash bounded.")
         except Exception as e:
             print(f"🧱 [SPATIAL] Failed to load Spatial boundary constraints: {e}")
@@ -271,9 +275,12 @@ class SiftaBrainstem:
         last_frame_at = 0.0
         last_ocr_at = 0.0
         last_spatial_check_at = 0.0
+        last_scout_check_at = 0.0
+        last_trash_check_at = time.time()
         BASE_FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
         VISION_OCR_INTERVAL_S = 5.0  # Capturing screen text is natively throttled
         SPATIAL_INTERVAL_S = 60.0    # Check physical disk capacity every 60s
+        SCOUT_INTERVAL_S = 3600.0    # Scout biological noise every 1 hour
         BASE_SLEEP_S = 0.05
 
         # Backoff state. Both rails track consecutive failures so they
@@ -303,6 +310,17 @@ class SiftaBrainstem:
                     
             # ── Spatial Awareness (Disk & Trash Check) ───────────────────────
             if self.proprioception and self.trash and self.egress:
+                # 1. Scout Noise continuously in background
+                if self.scout and (tick_start - last_scout_check_at) > SCOUT_INTERVAL_S:
+                    last_scout_check_at = tick_start
+                    try:
+                        scout_res = self.scout.run_sweep()
+                        if scout_res > 0:
+                            print(f"🧹 [SCOUT] Swept {scout_res} biological noise items to quarantine.")
+                    except Exception as e:
+                        print(f"🧹 [SCOUT FRACTURE] Failed to sweep: {e}")
+
+                # 2. Check Disk Limits
                 if (tick_start - last_spatial_check_at) > SPATIAL_INTERVAL_S:
                     last_spatial_check_at = tick_start
                     try:
@@ -313,10 +331,44 @@ class SiftaBrainstem:
                         # Trigger bounds threshold
                         if trash_mass > 1000.0 or percent_free < 10.0:
                             msg = f"Stigmergic Trash bounds breached ({trash_mass:.1f} MB). Free space: {percent_free:.1f}%."
+                            
+                            # Push a Concierge Proposal (2-Phase Consent)
+                            try:
+                                prop = propose_setting_change(
+                                    title="Stigmergic Trash Limit Breached",
+                                    rationale=f"Trash is occupying {trash_mass:.1f}MB and system has {percent_free:.1f}% free space. Approving this will empty the physical bin.",
+                                    target_setting="stigmergic_trash.empty_bin",
+                                    proposed_value=True,
+                                    confidence=0.95
+                                )
+                                print(f"\n🚨 [SPATIAL_ALERT] Created Warp9 Proposal: {prop.proposal_id}")
+                            except Exception as e:
+                                print(f"\n🚨 [SPATIAL_ALERT] Warp9 Hook failed. Using explicit egress. {msg}")
+                            
                             self.egress.tap_architect(msg, title="SIFTA Spatial Alert")
-                            print(f"\n🚨 [SPATIAL_ALERT] {msg}")
                     except Exception as e:
                         print(f"[HEARTBEAT FRACTURE] Spatial check failed: {e}")
+                        
+                # 3. Two-Phase Consent Ratification execution
+                try:
+                    ratified_file = self.trash.state_dir / "warp9_concierge_ratified.jsonl"
+                    if ratified_file.exists():
+                        latest_mtime = ratified_file.stat().st_mtime
+                        if latest_mtime > last_trash_check_at:
+                            last_trash_check_at = tick_start
+                            # Read tail
+                            with open(ratified_file, "r") as f:
+                                for line in f:
+                                    pass # get last line
+                            if line:
+                                import json
+                                row = json.loads(line)
+                                if row.get("action_kind") == "stigmergic_trash.empty_bin" and row.get("ratified_ts", 0) > (tick_start - 120):
+                                    print(f"♻️ [QUARANTINE PURGE] Architect authorized purge. Emptying Stigmergic Bin.")
+                                    res = self.trash.empty_trash()
+                                    print(f"♻️ {res}")
+                except Exception:
+                    pass
 
             # Scale intervals based on emotion.
             current_frame_interval_s = BASE_FRAME_INTERVAL_S / mood_multiplier

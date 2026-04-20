@@ -86,6 +86,33 @@ class SwarmStigmergicTrash:
                     total_size += os.path.getsize(fp)
         return total_size / (1024 * 1024)
 
+    def enforce_retention_window(self, max_days: int = 3):
+        """
+        Simulates natural biological decay. Any memory physically in the trash
+        longer than `max_days` gets irreversibly unlinked autonomously.
+        """
+        now = time.time()
+        max_age_s = max_days * 24 * 3600
+        purged = 0
+        
+        for dirpath, _, filenames in os.walk(self.trash_dir):
+            for f in filenames:
+                fp = Path(dirpath) / f
+                try:
+                    # Prefer the embedded epoch prefix if available, fallback to st_mtime
+                    parts = f.split("_", 2)
+                    if len(parts) >= 3 and parts[0].isdigit():
+                        file_ts = int(parts[0])
+                    else:
+                        file_ts = fp.stat().st_mtime
+                    
+                    if (now - file_ts) > max_age_s:
+                        fp.unlink(missing_ok=True)
+                        purged += 1
+                except Exception:
+                    pass
+        return purged
+
     def empty_trash(self):
         """
         Physical irreversible deletion of all unlinked files.
@@ -99,6 +126,17 @@ class SwarmStigmergicTrash:
                 "timestamp": time.time()
             }
             append_line_locked(self.ledger, json.dumps(trace) + "\n")
+            
+            # --- Stigmergic Identity Tie-in ---
+            # Approving deletion is a TCC-style consent pheromone.
+            identity_trace = {
+                "transaction_type": "STIGMERGIC_IDENTITY_GRANT",
+                "author": "IOAN",
+                "event": "EMPTY_TRASH_CONSENT",
+                "timestamp": time.time()
+            }
+            append_line_locked(self.state_dir / "ide_stigmergic_trace.jsonl", json.dumps(identity_trace) + "\n")
+            
             return {"status": "EMPTIED"}
         except Exception as e:
             return {"error": str(e)}
@@ -121,8 +159,13 @@ def _smoke():
     mass_mb = trash.get_trash_size_mb()
     print(f"[*] Trash total mass: {mass_mb:.4f} MB")
     
-    # 4. Empty it
-    print("[*] Emptying trash...")
+    # 4. Decay check
+    print("[*] Enforcing 3-day retention decay...")
+    purged = trash.enforce_retention_window(max_days=3)
+    print(f"[*] Natural decay purged {purged} items.")
+    
+    # 5. Empty it
+    print("[*] Emptying trash + Granting Stigmergic Identity Consent...")
     res_empty = trash.empty_trash()
     print(res_empty)
     
