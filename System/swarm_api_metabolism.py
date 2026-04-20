@@ -91,16 +91,16 @@ class SwarmApiMetabolism:
             print(f"[!] METABOLISM Error: {e}", file=sys.stderr)
             return False
 
-    def _check_wallet_hemorrhage(self, now):
+    def daily_burn(self) -> float:
         """
-        Calculates the trailing 24-hour API cost. If the Architect's wallet 
-        is bleeding past the limit, the Swarm biologically panics.
+        Returns the trailing 24-hour API cost in USD.
+        Read-only accessor for bin/ask wallet queries.
         """
         if not self.metabolism_ledger.exists():
-            return
+            return 0.0
             
         total_24h_cost = 0.0
-        
+        now = time.time()
         try:
             with open(self.metabolism_ledger, 'r') as f:
                 for line in f:
@@ -113,6 +113,15 @@ class SwarmApiMetabolism:
                         continue
         except Exception:
             pass
+            
+        return total_24h_cost
+
+    def _check_wallet_hemorrhage(self, now):
+        """
+        Calculates the trailing 24-hour API cost. If the Architect's wallet 
+        is bleeding past the limit, the Swarm biologically panics.
+        """
+        total_24h_cost = self.daily_burn()
 
         if total_24h_cost > self.daily_usd_limit:
             # The organism realizes it is starving its host.
@@ -135,6 +144,13 @@ class SwarmApiMetabolism:
 
 # --- SMOKE TEST ---
 def _smoke():
+    """
+    NOTE (EPISTEMIC HYGIENE):
+    This smoke test induces a simulated $0.0775 burnout over a mock limit of 0.05.
+    This creates a WALLET_HEMORRHAGE panic that is correctly isolated from the 
+    live production traces (which currently operate at ~0.0004 limits).
+    Do not confuse these log paths or test outputs with live telemetry. 
+    """
     print("\n=== SIFTA API METABOLISM (CALORIC COST) : SMOKE TEST ===")
     import tempfile
     

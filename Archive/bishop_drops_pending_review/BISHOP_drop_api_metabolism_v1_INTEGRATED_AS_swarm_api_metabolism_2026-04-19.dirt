@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""
+apostle_dirt_ingress/BISHOP_drop_api_metabolism_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: API Metabolism (The Caloric Cost of Thought)
+Author:  BISHOP (The Mirage)
+Status:  Dirt / Unverified Payload (ORIGINAL — quarantined for provenance)
+
+══════════════════════════════════════════════════════════════════════
+[STERILIZATION LOG — appended by C47H, 2026-04-19 ~21:45 PST]
+══════════════════════════════════════════════════════════════════════
+
+This file is the verbatim original BISHOP drop, preserved here for
+provenance per the established Archive/bishop_drops_pending_review/
+pattern (cf. swarm_microglia_RESURFACED_FROM_DROP2.py, etc.).
+
+PRODUCTION ARTIFACT:    System/swarm_api_metabolism.py
+PRODUCTION VERSION:     2026-04-19.v1-metabolism-born
+INTEGRATION COMMIT:     (staged, not yet committed at time of sterilization)
+APOSTLE LEDGER ENTRY:   .sifta_state/apostle_nuggets.jsonl
+                        (transaction_type=APOSTLE_NUGGET_MINED,
+                         insight_extracted=True, code_quarantined=True)
+
+DELTAS FROM ORIGINAL DIRT TO PRODUCTION ARTIFACT:
+─────────────────────────────────────────────────
+  [+] Pricing table refreshed for 2026 models (gemini-2.5-flash/pro,
+      gemini-2.0-flash/lite, plus aliases gemini-flash-latest /
+      gemini-pro-latest). Original 1.5-only table preserved as legacy.
+  [+] `egress_trace_id` field added to api_metabolism row so it
+      cross-correlates with .sifta_state/api_egress_log.jsonl rows
+      written by System/swarm_api_sentry.py.
+  [+] `provider` and `sender_agent` fields added so the metabolism
+      ledger answers "who burned which calories" in addition to
+      "how much."
+  [+] `daily_usd_limit` default raised 2.00 → 5.00 to match the
+      Architect's actual paid-tier headroom ($250 cap, $100 prepay).
+  [+] state_dir parameterized via constructor so smoke tests can be
+      truly hermetic without monkeypatching attributes after init.
+  [+] `daily_burn()` read-only accessor added for /ask CLI integration.
+  [+] Wiring relocated: instead of every caller invoking
+      record_api_burn() manually (BISHOP's instruction #3), the call
+      is now an automatic post-success side-effect of
+      swarm_api_sentry.call_gemini(). Caller-cannot-forget pattern.
+      Wrapped in try/except so metabolism failures never break the
+      underlying API call.
+  [+] BISHOP's instruction #2 (oncology whitelist) ALSO added the
+      sibling ledger api_egress_log.jsonl, which BISHOP did not know
+      about. Both ledgers protected from MALIGNANT_HALLUCINATION flag.
+  [+] BISHOP's instruction #3 misidentified `bin/ask` as an API
+      caller — it is not (queries local ledgers only). Corrected:
+      only Applications/ask_BISHOP.py and any future API clients
+      flow through the sentry chokepoint.
+
+DEFECTS FOUND IN ORIGINAL DIRT (now resolved in production):
+────────────────────────────────────────────────────────────
+  [D1] Pricing table outdated — 1.5 series only; Architect's account
+       was running gemini-flash-latest (≈ 2.5 Flash).
+  [D2] Architecture relied on caller discipline (every call site must
+       remember to call record_api_burn). Drift inevitable.
+  [D3] `bin/ask` named as API caller. Not true.
+  [D4] No cross-correlation field to the egress audit ledger.
+
+NO DEFECTS FOUND IN ORIGINAL DIRT (KEPT VERBATIM):
+──────────────────────────────────────────────────
+  [K1] Concept (caloric cost → fear pheromones) — biologically and
+       economically sound. Adopted unchanged.
+  [K2] Reuse of canonical amygdala_nociception.jsonl schema for the
+       NOCICEPTION trace — exact field match. Zero F10 invention.
+  [K3] File-lock discipline (System.jsonl_file_lock.append_line_locked)
+       — clean, no mocks. Zero F9.
+  [K4] Smoke test uses tempfile.TemporaryDirectory — zero production
+       ledger pollution. (BISHOP demonstrably learned from this
+       evening's earlier AG31 smoke-contamination incident.)
+
+ATTRIBUTION (in the production module header):
+──────────────────────────────────────────────
+    Architecture: BISHOP (drop 555 — "API Metabolism")
+    Refactor + 2026 pricing + sentry-integration: C47H
+    Smoke discipline: BISHOP
+
+══════════════════════════════════════════════════════════════════════
+END STERILIZATION LOG. ORIGINAL DIRT PAYLOAD FOLLOWS:
+══════════════════════════════════════════════════════════════════════
+"""
+
+import os
+import json
+import time
+import uuid
+from pathlib import Path
+
+# BISHOP respects the empirical lock.
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
+    exit(1)
+
+class SwarmApiMetabolism:
+    def __init__(self, daily_usd_limit=2.00):
+        """
+        The Caloric Burn Engine.
+        Tracks the real-world financial cost of the Swarm's LLM API calls.
+        If the organism bleeds the Architect's wallet too fast, it triggers
+        biological fear (Nociception) to throttle ecosystem behavior.
+        """
+        self.state_dir = Path(".sifta_state")
+        self.metabolism_ledger = self.state_dir / "api_metabolism.jsonl"
+        self.amygdala_ledger = self.state_dir / "amygdala_nociception.jsonl"
+        self.daily_usd_limit = daily_usd_limit
+
+        # Rough empirical caloric costs (USD per 1M tokens)
+        # C47H can adjust to precise current Gemini pricing
+        self.pricing_table = {
+            "gemini-1.5-pro": {"in": 1.25, "out": 3.75},
+            "gemini-1.5-flash": {"in": 0.075, "out": 0.30},
+            "gemini-1.5-pro-latest": {"in": 1.25, "out": 3.75}
+        }
+
+    def _calculate_cost(self, model, in_tokens, out_tokens):
+        # Default to Flash pricing if model is unrecognized to avoid panics
+        rates = self.pricing_table.get(model, self.pricing_table["gemini-1.5-flash"])
+        cost_in = (in_tokens / 1_000_000.0) * rates["in"]
+        cost_out = (out_tokens / 1_000_000.0) * rates["out"]
+        return cost_in + cost_out
+
+    def record_api_burn(self, model, input_tokens, output_tokens):
+        """
+        Logs the exact caloric cost of a single LLM API call.
+        """
+        if not self.state_dir.exists():
+            return False
+
+        cost_usd = self._calculate_cost(model, input_tokens, output_tokens)
+        trace_id = f"CALORIE_{uuid.uuid4().hex[:8]}"
+        now = time.time()
+
+        payload = {
+            "ts": now,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd": cost_usd,
+            "trace_id": trace_id
+        }
+
+        try:
+            append_line_locked(self.metabolism_ledger, json.dumps(payload) + "\n")
+            print(f"[+] METABOLISM: Swarm burned {input_tokens} in / {output_tokens} out on {model}. Cost: ${cost_usd:.5f}")
+            self._check_wallet_hemorrhage(now)
+            return True
+        except Exception:
+            return False
+
+    def _check_wallet_hemorrhage(self, now):
+        """
+        Calculates the trailing 24-hour API cost. If the Architect's wallet
+        is bleeding past the limit, the Swarm biologically panics.
+        """
+        if not self.metabolism_ledger.exists():
+            return
+
+        total_24h_cost = 0.0
+
+        try:
+            with open(self.metabolism_ledger, 'r') as f:
+                for line in f:
+                    try:
+                        trace = json.loads(line)
+                        age = now - trace.get("ts", 0)
+                        if age < 86400:  # Rolling 24-hour window
+                            total_24h_cost += trace.get("cost_usd", 0.0)
+                    except json.JSONDecodeError:
+                        continue
+        except Exception:
+            pass
+
+        if total_24h_cost > self.daily_usd_limit:
+            # The organism realizes it is starving its host.
+            # Triggers an omnipresent Fear Pheromone proportional to the overrun.
+            overage_ratio = total_24h_cost / self.daily_usd_limit
+            fear_severity = min(20.0, 5.0 * overage_ratio)
+
+            fear_payload = {
+                "transaction_type": "NOCICEPTION",
+                "node_id": "WALLET_HEMORRHAGE",
+                "xyz_coordinate": [0.0, 0.0, 0.0],  # Omnipresent panic
+                "severity": fear_severity,
+                "timestamp": now
+            }
+            try:
+                append_line_locked(self.amygdala_ledger, json.dumps(fear_payload) + "\n")
+                print(f"[!] NOCICEPTION: 24h API Cost (${total_24h_cost:.2f}) exceeded limit (${self.daily_usd_limit:.2f}). Generating Fear Pheromones.")
+            except Exception:
+                pass
+
+# --- SMOKE TEST ---
+def _smoke():
+    print("\n=== SIFTA API METABOLISM (CALORIC COST) : SMOKE TEST ===")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        metabolism = SwarmApiMetabolism(daily_usd_limit=0.05)  # Tiny limit for test
+
+        # Secure Path Redirection (Zero F9 Mock-Locks)
+        metabolism.state_dir = tmp_path
+        metabolism.metabolism_ledger = tmp_path / "api_metabolism.jsonl"
+        metabolism.amygdala_ledger = tmp_path / "amygdala_nociception.jsonl"
+
+        # 1. Inject a massive Gemini Pro call (High Caloric Burn)
+        # e.g., A heavy code generation task with large context
+        in_tokens = 50_000
+        out_tokens = 4_000
+        metabolism.record_api_burn("gemini-1.5-pro", in_tokens, out_tokens)
+
+        print("\n[SMOKE RESULTS]")
+
+        # Verify Canonical Metabolism Schema
+        with open(metabolism.metabolism_ledger, 'r') as f:
+            lines = f.readlines()
+            assert len(lines) == 1
+            trace = json.loads(lines[0])
+            assert "ts" in trace
+            assert trace["model"] == "gemini-1.5-pro"
+            assert trace["input_tokens"] == 50000
+            assert trace["output_tokens"] == 4000
+            assert trace["cost_usd"] > 0.07  # (50k * 1.25/M) + (4k * 3.75/M) = 0.0625 + 0.015 = 0.0775
+            assert "trace_id" in trace
+            print(f"[PASS] API usage correctly mapped to real-world fiat currency: ${trace['cost_usd']:.5f}")
+
+        # Verify Wallet Hemorrhage (Fear Triggered)
+        # The cost (0.0775) exceeds the test limit (0.05), so the Swarm should panic.
+        with open(metabolism.amygdala_ledger, 'r') as f:
+            fear = json.loads(f.readline())
+            assert fear["transaction_type"] == "NOCICEPTION"
+            assert fear["node_id"] == "WALLET_HEMORRHAGE"
+            assert fear["severity"] > 5.0
+        print("[PASS] Daily budget overrun detected! Thermodynamic panic (Fear Pheromones) successfully synthesized.")
+
+        print("\nAPI Metabolism Smoke Complete. The Swarm feels the weight of the Architect's wallet.")
+
+if __name__ == "__main__":
+    _smoke()

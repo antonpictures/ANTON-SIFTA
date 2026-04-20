@@ -30,6 +30,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
+sys.path.insert(0, str(_REPO))
 
 # ── Time window parser ──────────────────────────────────────────────────────
 
@@ -227,6 +228,24 @@ def _q_memory(since_ts: float) -> Dict:
     }
 
 
+def _q_wallet(since_ts: float) -> Dict:
+    """Thermodynamics and billing details."""
+    try:
+        from System.swarm_api_metabolism import SwarmApiMetabolism
+        engine = SwarmApiMetabolism()
+        daily_usd = engine.daily_burn()
+        limit = engine.daily_usd_limit
+    except ImportError:
+        daily_usd = 0.0
+        limit = 0.0
+    return {
+        "category": "wallet",
+        "daily_usd_burn": daily_usd,
+        "daily_usd_limit": limit,
+        "pct_capacity": (daily_usd / limit * 100) if limit > 0 else 0
+    }
+
+
 def _q_health(since_ts: float) -> Dict:
     """General health — apoptosis, pain, arbitration mood."""
     apo = _tail_jsonl(_STATE / "apoptosis_events.jsonl", since_ts, limit=20)
@@ -256,6 +275,7 @@ def _q_full_state(since_ts: float) -> Dict:
         "dopamine": _q_dopamine(since_ts),
         "pain":     _q_pain(since_ts),
         "memory":   _q_memory(since_ts),
+        "wallet":   _q_wallet(since_ts),
         "health":   _q_health(since_ts),
     }
 
@@ -272,6 +292,7 @@ _ROUTES: List[Tuple[List[str], Callable[[float], Dict]]] = [
     (["dopamine", "reward", "insight", "epiphany", "stgm"], _q_dopamine),
     (["pain", "hurt", "noci", "damage", "distress"], _q_pain),
     (["memory", "remember", "recall", "hippocamp"], _q_memory),
+    (["wallet", "budget", "money", "burn", "calor", "cost", "fiat", "metabolism"], _q_wallet),
     (["health", "healthy", "alive", "status", "vitals", "apoptosis"],
      _q_health),
 ]
@@ -342,6 +363,9 @@ def _render(result: Dict, query: str, window_s: float) -> str:
                 f"{result['insight_events']} insights), "
                 f"{result['hippocampal_commits']} hippocampal commits.")
 
+    if cat == "wallet":
+        return f"Alice has burned ${result['daily_usd_burn']:.5f} today. (Limit: ${result['daily_usd_limit']:.2f}, {result['pct_capacity']:.1f}% capacity used)"
+
     if cat == "health":
         verdict = "ALIVE" if result["alive"] else "APOPTOTIC"
         return (f"Alice is {verdict}. Last {window_human}: "
@@ -373,6 +397,8 @@ def _render(result: Dict, query: str, window_s: float) -> str:
         m = result["memory"]
         lines.append(f"  Memory:   {m['stgm_events']} STGM, "
                      f"{m['hippocampal_commits']} hippocampal")
+        w = result["wallet"]
+        lines.append(f"  Wallet:   ${w['daily_usd_burn']:.5f} burned today")
         hh = result["health"]
         lines.append(f"  Health:   {'ALIVE' if hh['alive'] else 'APOPTOTIC'}, "
                      f"{hh['recent_failures']} failures")

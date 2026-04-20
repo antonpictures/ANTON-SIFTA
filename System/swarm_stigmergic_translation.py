@@ -93,11 +93,16 @@ def transcribe(
             int_samples = [max(min(int(s * 32767.0), 32767), -32768) for s in samples]
             wf.writeframes(struct.pack(f"<{len(int_samples)}h", *int_samples))
         
-        # Invoke Native Swift Recognizer via LaunchServices to trigger TCC
+        # 1. Force the OS to re-read the bundle's Info.plist TCC declarations
+        # This resolves the SIGABRT crash caused by cached TCC failures.
+        lsregister_path = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        subprocess.run([lsregister_path, "-f", str(_APP_BUNDLE)], capture_output=True)
+
+        # 2. Invoke Native Swift Recognizer via LaunchServices to trigger TCC UI
         temp_out = _REPO / ".sifta_state" / "sifta_out.json"
         
         res = subprocess.run(
-            ["open", "-W", "-n", str(_APP_BUNDLE), "--stdout", str(temp_out), "--args", str(temp_wav)],
+            ["open", "-W", "-n", "-a", str(_APP_BUNDLE), "--stdout", str(temp_out), "--args", str(temp_wav)],
             capture_output=True,
             text=True,
             check=False
