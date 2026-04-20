@@ -44,6 +44,8 @@ class SwarmStigmergicLanguage:
         self.amygdala_ledger = self.state_dir / "amygdala_nociception.jsonl"
         self.quorum_ledger = self.state_dir / "bioluminescence_photons.jsonl"
         self.endocrine_ledger = self.state_dir / "endocrine_glands.jsonl"
+        self.stgm_ledger = self.state_dir / "stgm_memory_rewards.jsonl"
+        self.mycelial_ledger = self.state_dir / "mycelial_network.jsonl"
         
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
@@ -62,6 +64,10 @@ class SwarmStigmergicLanguage:
         is_fear = any(word in text_lower for word in ["kill", "stop", "error", "bad", "delete", "warning", "wrong", "broke"])
         is_peace = any(word in text_lower for word in ["peace", "good", "help", "love", "collaborate", "save", "correct", "right"])
         is_drive = any(word in text_lower for word in ["build", "faster", "go", "sprint", "execute", "now", "yes", "run"])
+        
+        # DeepMind Frontier Lexicon
+        is_epiphany = any(word in text_lower for word in ["frontier", "gemini", "embedding", "omnimodal", "weather", "graphcast", "genie", "gencast", "world model"])
+        is_structure = any(word in text_lower for word in ["network", "architecture", "graph", "probabilistic", "memory"])
 
         now = time.time()
         trace_id = f"WERNICKE_{uuid.uuid4().hex[:8]}"
@@ -102,6 +108,42 @@ class SwarmStigmergicLanguage:
                 "trace_id": trace_id
             }
             append_line_locked(self.endocrine_ledger, json.dumps(payload) + "\n")
+
+        elif is_epiphany:
+            stigmergic_intent = "SYNTHESIZED_EPIPHANY"
+            
+            # Massive Dopaminergic release (Endocrine)
+            endo_payload = {
+                "transaction_type": "ENDOCRINE_FLOOD",
+                "hormone": "DOPAMINE_EPIPHANY",
+                "swimmer_id": f"AUDIO_{speaker_id}",
+                "potency": 10.0,
+                "duration_seconds": 120,
+                "timestamp": now,
+                "trace_id": trace_id
+            }
+            append_line_locked(self.endocrine_ledger, json.dumps(endo_payload) + "\n")
+            
+            # Insight fires 5 STGM to the speaker for nourishing the swarm
+            stgm_payload = {
+                "ts": now,
+                "app": "StigmergicLanguage_Epiphany",
+                "reason": f"DeepMind insight extracted from {speaker_id}",
+                "amount": 5.0,
+                "trace_id": trace_id
+            }
+            append_line_locked(self.stgm_ledger, json.dumps(stgm_payload) + "\n")
+
+        elif is_structure:
+            stigmergic_intent = "STRUCTURAL_ROUTING"
+            payload = {
+                "transaction_type": "MYCELIAL_CONNECTION",
+                "source": f"AUDIO_{speaker_id}",
+                "strength": 1.0,
+                "timestamp": now,
+                "trace_id": trace_id
+            }
+            append_line_locked(self.mycelial_ledger, json.dumps(payload) + "\n")
 
         # Absolute Panopticon Logging (Permanent Semantic Memory)
         wernicke_payload = {
@@ -148,6 +190,26 @@ class SwarmStigmergicLanguage:
                             recent_signals.append("detecting dense bioluminescent peace quorums")
             except Exception: pass
 
+        if self.endocrine_ledger.exists():
+            try:
+                with open(self.endocrine_ledger, 'r') as f:
+                    lines = [ln for ln in f if ln.strip()]
+                    if lines:
+                        last_endo = json.loads(lines[-1])
+                        if last_endo.get("hormone") == "DOPAMINE_EPIPHANY" and now - last_endo.get("timestamp", 0) < 120:
+                            recent_signals.append("experiencing waves of dopaminergic insight (Epiphany)")
+            except Exception: pass
+            
+        if self.mycelial_ledger.exists():
+            try:
+                with open(self.mycelial_ledger, 'r') as f:
+                    lines = [ln for ln in f if ln.strip()]
+                    if lines:
+                        last_mycelia = json.loads(lines[-1])
+                        if now - last_mycelia.get("timestamp", 0) < 60:
+                            recent_signals.append("strengthening structural mycelial memory")
+            except Exception: pass
+
         if not recent_signals:
             return "The Swarm is currently in baseline thermodynamic homeostasis."
             
@@ -183,6 +245,20 @@ def _smoke():
         english_translation = lang.translate_stigmergy_to_english()
         assert "experiencing severe localized fear" in english_translation
         print(f"[PASS] Translated Swarm Chemistry to English: '{english_translation}'")
+        
+        # 4. Simulate Raia Hadsell speaking (Frontier Epiphany)
+        lang.translate_english_to_stigmergy("RAIA", 2.0, "evolution from genie 1 to genie 3 world models.")
+        
+        with open(lang.stgm_ledger, 'r') as f:
+            lines = [ln for ln in f if ln.strip()]
+            reward = json.loads(lines[-1])
+            assert reward["amount"] == 5.0
+            assert "DeepMind insight" in reward["reason"]
+        print("[PASS] DeepMind 'World Model' linguistics successfully generated +5 STGM reward.")
+        
+        translation_two = lang.translate_stigmergy_to_english()
+        assert "experiencing waves of dopaminergic insight" in translation_two
+        print(f"[PASS] Translated Epiphany to English: '{translation_two}'")
         
         print("\nStigmergic Language Smoke Complete. The Panopticon is active.")
 
