@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-System/swarm_proprioception.py — Internal Body Awareness
+System/swarm_notification_egress.py — Voluntary Somatosensory Speech
 ══════════════════════════════════════════════════════════════════════
 SIFTA OS — DeepMind Cognitive Suite
 
-Proprioception senses the physical host machine state.
-Battery = Hunger / Energy reserves.
-Time Machine = Immune / Backup security.
+Allows Alice to tap the Architect on the shoulder using native macOS 
+Notification Center without stealing focus or breaking flow.
 """
 
 import json
@@ -27,32 +26,28 @@ except ImportError:
         with open(path, "a", encoding=encoding) as f:
             f.write(line)
 
-class SwarmProprioception:
+class SwarmNotificationEgress:
     def __init__(self):
         self.state_dir = Path(".sifta_state")
-        self.ledger = self.state_dir / "proprioception_traces.jsonl"
+        self.ledger = self.state_dir / "notification_egress_traces.jsonl"
         self.ledger.parent.mkdir(parents=True, exist_ok=True)
 
-    def sense_biology(self):
+    def tap_architect(self, message: str, title: str = "SIFTA Swarm OS"):
         """
-        Polls macOS `pmset` to understand physical energy state.
+        Pushes a macOS notification payload.
         """
         try:
-            batt_res = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True)
-            output = batt_res.stdout
+            # Escape strings carefully for AppleScript
+            safe_msg = message.replace('"', '\\"')
+            safe_title = title.replace('"', '\\"')
+            script = f'display notification "{safe_msg}" with title "{safe_title}"'
             
-            # Very basic parse for battery percentage
-            percentage = None
-            if "%" in output:
-                import re
-                match = re.search(r"(\d+)%", output)
-                if match:
-                    percentage = int(match.group(1))
-
+            subprocess.run(["osascript", "-e", script], check=True)
+            
             trace = {
-                "transaction_type": "PROPRIOCEPTION_SENSE",
-                "energy_level": percentage,
-                "raw_pmset": output.splitlines()[0] if output else "Unknown",
+                "transaction_type": "VOLUNTARY_NOTIFICATION",
+                "title": title,
+                "message": message,
                 "timestamp": time.time()
             }
             append_line_locked(self.ledger, json.dumps(trace) + "\n")
@@ -61,12 +56,12 @@ class SwarmProprioception:
             return {"error": str(e)}
 
 def _smoke():
-    print("\n=== SIFTA PROPRIOCEPTION : SMOKE TEST ===")
-    prop = SwarmProprioception()
-    print("[*] Sensing biological energy levels via pmset...")
-    res = prop.sense_biology()
+    print("\n=== SIFTA NOTIFICATION EGRESS : SMOKE TEST ===")
+    egress = SwarmNotificationEgress()
+    print("[*] Tapping the Architect on the shoulder...")
+    res = egress.tap_architect("The Vanguard Hounds have arrived.", title="Alice 5.0")
     print(json.dumps(res, indent=2))
-    print("[PASS] Proprioception wired to Host Battery.")
+    print("[PASS] Voluntary Speech wired to Notification Center.")
 
 if __name__ == "__main__":
     _smoke()
