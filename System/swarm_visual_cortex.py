@@ -28,10 +28,23 @@ Mechanism:
 
 from __future__ import annotations
 import json
+import sys
 import time
 import hashlib
 from pathlib import Path
 from typing import Dict, Any
+
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    def append_line_locked(path, line, *, encoding="utf-8"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding=encoding) as f:
+            f.write(line)
 
 _STATE_DIR = Path(".sifta_state")
 _OPTIC_NERVE_LOG = _STATE_DIR / "occipital_visual_processing.jsonl"
@@ -75,24 +88,20 @@ def process_visual_stimulus(image_name: str, multimodal_labels: list, source: st
         pass
 
     if saliency_score > 0.4:
-        # High saliency visual stimulus, punch through to the sensory queue
         _STATE_DIR.mkdir(exist_ok=True)
-        with open(_THALAMIC_QUEUE, "a", encoding="utf-8") as f:
-            packet = {
-                "time": time.time(), 
-                "src": f"OCCIPITAL_LOBE_{source}", 
-                "content": f"VISUAL STIMULUS DETECTED: {', '.join(core_features)}"
-            }
-            f.write(json.dumps(packet) + "\n")
+        packet = {
+            "time": time.time(),
+            "src": f"OCCIPITAL_LOBE_{source}",
+            "content": f"VISUAL STIMULUS DETECTED: {', '.join(core_features)}"
+        }
+        append_line_locked(_THALAMIC_QUEUE, json.dumps(packet) + "\n")
         routing_msg = "Forwarded to Thalamus for Working Memory integration."
         event["routing_status"] = "FORWARDED_THALAMUS"
     else:
         routing_msg = "Low visual saliency. Dropped at Occipital layer."
         event["routing_status"] = "DROPPED"
-        
-    # Log the visual event
-    with open(_OPTIC_NERVE_LOG, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event) + "\n")
+
+    append_line_locked(_OPTIC_NERVE_LOG, json.dumps(event) + "\n")
         
     # Feed the cross-modal binder (multimodal perception)
     if binder and saliency_score > 0.1:

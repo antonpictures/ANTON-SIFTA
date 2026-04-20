@@ -51,11 +51,21 @@ from pathlib import Path
 from typing import Any, Iterator, List, Optional, Tuple
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
 _AUDIO_LOG       = _STATE / "audio_ingress_log.jsonl"
 _AUDIO_FAILURES  = _STATE / "audio_ingress_failures.jsonl"
 _BUFFER_DIR      = _STATE / "acoustic_buffers"
 _BUFFER_DIR.mkdir(parents=True, exist_ok=True)
+
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    def append_line_locked(path, line, *, encoding="utf-8"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding=encoding) as f:
+            f.write(line)
 
 MODULE_VERSION = "2026-04-19.v3"
 
@@ -168,8 +178,7 @@ def _log_capture_failure(stage: str, exc: BaseException) -> None:
             "exc_msg": str(exc),
             "suppressed_since_last": suppressed_n,
         }
-        with _AUDIO_FAILURES.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        append_line_locked(_AUDIO_FAILURES, json.dumps(row, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
@@ -711,8 +720,7 @@ def _log_sample(sample: AcousticSample) -> None:
     """Append redacted record (no raw buffer) to audio log. Never raises."""
     try:
         row = sample.to_dict()
-        with _AUDIO_LOG.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        append_line_locked(_AUDIO_LOG, json.dumps(row, ensure_ascii=False) + "\n")
     except Exception:
         pass
 

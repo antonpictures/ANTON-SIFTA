@@ -16,14 +16,29 @@ touching the same geometry by acting as negative RPE.
 """
 
 import json
+import sys
 import time
 import math
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
 _STATE.mkdir(parents=True, exist_ok=True)
+
+try:
+    from System.jsonl_file_lock import append_line_locked, read_text_locked
+except ImportError:
+    def append_line_locked(path, line, *, encoding="utf-8"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding=encoding) as f:
+            f.write(line)
+    def read_text_locked(path, *, encoding="utf-8", errors="replace"):
+        if not path.exists():
+            return ""
+        return path.read_text(encoding=encoding, errors=errors)
 
 PAIN_LOG = _STATE / "pain_pheromones.jsonl"
 ACUTE_DECAY_SECONDS = 1800  # Halves rapidly
@@ -80,8 +95,7 @@ class SwarmPainNetwork:
         }
         
         try:
-            with open(PAIN_LOG, "a") as f:
-                f.write(json.dumps(row) + "\n")
+            append_line_locked(PAIN_LOG, json.dumps(row) + "\n")
         except Exception:
             pass
 
@@ -108,16 +122,15 @@ class SwarmPainNetwork:
             T_obs = 1000.0  # default foreign assumption
             if PAIN_LOG.exists():
                 try:
-                    with open(PAIN_LOG, "r") as f:
-                        lines = f.read().splitlines()
-                        for line in reversed(lines[:-1]): # skip the row we just appended
-                            if not line.strip(): continue
-                            try:
-                                r = json.loads(line)
-                                if r.get("territory") == _canonicalize_territory(territory):
-                                    T_obs = max(0.0, time.time() - r.get("timestamp", time.time()))
-                                    break
-                            except Exception: pass
+                    lines = read_text_locked(PAIN_LOG).splitlines()
+                    for line in reversed(lines[:-1]): # skip the row we just appended
+                        if not line.strip(): continue
+                        try:
+                            r = json.loads(line)
+                            if r.get("territory") == _canonicalize_territory(territory):
+                                T_obs = max(0.0, time.time() - r.get("timestamp", time.time()))
+                                break
+                        except Exception: pass
                 except Exception: pass
                 
             ghost_score = calibrator.score(Path(territory).resolve(), T_obs, severity)
@@ -157,8 +170,7 @@ class SwarmPainNetwork:
         try:
             # We iterate backward since recent pain overlaps heavily
             # In a heavy production system, we'd tail this, but reading the file is ~0.1ms
-            with open(PAIN_LOG, "r") as f:
-                lines = f.read().splitlines()
+            lines = read_text_locked(PAIN_LOG).splitlines()
                 
             for line in reversed(lines):
                 if not line.strip(): continue

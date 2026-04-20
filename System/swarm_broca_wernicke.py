@@ -72,11 +72,21 @@ except Exception:
 MODULE_VERSION = "2026-04-19.v3"
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
 _WERNICKE_LOG     = _STATE / "wernicke_semantics.jsonl"
 _BROCA_SPOKEN_LOG = _STATE / "broca_vocalizations.jsonl"
 _BROCA_FAILURES   = _STATE / "broca_failures.jsonl"
 _STATE.mkdir(parents=True, exist_ok=True)
+
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    def append_line_locked(path, line, *, encoding="utf-8"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding=encoding) as f:
+            f.write(line)
 
 
 # ── Half-duplex gate (kills the Broca→speaker→mic→Wernicke feedback loop) ────
@@ -113,13 +123,12 @@ def _log_failure(stage: str, exc: BaseException) -> None:
     except Exception:
         pass
     try:
-        with _BROCA_FAILURES.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "ts": time.time(),
-                "stage": stage,
-                "exc_type": type(exc).__name__,
-                "exc_msg": str(exc),
-            }, ensure_ascii=False) + "\n")
+        append_line_locked(_BROCA_FAILURES, json.dumps({
+            "ts": time.time(),
+            "stage": stage,
+            "exc_type": type(exc).__name__,
+            "exc_msg": str(exc),
+        }, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
@@ -222,8 +231,7 @@ class WernickeIngress:
         )
 
         try:
-            with self.log_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(evt.to_dict(), ensure_ascii=False) + "\n")
+            append_line_locked(self.log_path, json.dumps(evt.to_dict(), ensure_ascii=False) + "\n")
         except Exception as exc:
             _log_failure("wernicke_log_write", exc)
             return None
@@ -387,13 +395,12 @@ class BrocaEgress:
 
     def _log_spoken(self, text: str, *, ok: bool, rc: int) -> None:
         try:
-            with _BROCA_SPOKEN_LOG.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "ts": time.time(),
-                    "spoken": text,
-                    "ok": ok,
-                    "rc": rc,
-                }, ensure_ascii=False) + "\n")
+            append_line_locked(_BROCA_SPOKEN_LOG, json.dumps({
+                "ts": time.time(),
+                "spoken": text,
+                "ok": ok,
+                "rc": rc,
+            }, ensure_ascii=False) + "\n")
         except Exception as exc:
             _log_failure("log_spoken", exc)
 

@@ -18,15 +18,26 @@ Biology anchor:
 # ── S1: HEADER + DATACLASS — AG31 ───────────────────────────────────────────
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
 _IRIS_LOG = _STATE / "swarm_iris_capture.jsonl"
 MODULE_VERSION = "2026-04-18.olympiad.v2"
+
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    def append_line_locked(path, line, *, encoding="utf-8"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding=encoding) as f:
+            f.write(line)
 
 @dataclass
 class IrisFrame:
@@ -514,8 +525,7 @@ class SwarmIris:
             row = frame.to_dict()
             # Defense in depth: ensure no accidental bytes field exists.
             row.pop("raw_bytes", None)
-            with _IRIS_LOG.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            append_line_locked(_IRIS_LOG, json.dumps(row, ensure_ascii=False) + "\n")
         except Exception as exc:   # pragma: no cover
             print(f"[swarm_iris.log_frame] non-fatal log error: {exc}", file=sys.stderr)
 

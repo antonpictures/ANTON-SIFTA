@@ -21,10 +21,23 @@ Mechanisms:
 from __future__ import annotations
 import json
 import math
+import sys
 import time
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, List
+
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    def append_line_locked(path, line, *, encoding="utf-8"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding=encoding) as f:
+            f.write(line)
 
 _STATE_DIR = Path(".sifta_state")
 _SPATIAL_LEDGER = _STATE_DIR / "entorhinal_spatial_map.jsonl"
@@ -108,8 +121,7 @@ class EntorhinalGrid:
         
         # Only log mathematically severe physical steps (delta > 1.5 units) to avoid noisy scatter 
         if delta > 1.5 or self._last_z == 0.0:
-            with self.ledger_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(anchor.to_dict()) + "\n")
+            append_line_locked(self.ledger_path, json.dumps(anchor.to_dict()) + "\n")
             self._last_z = anchor.z
             print(f"🗺️  [ENTORHINAL GRID] Anchored 'Architect' @ [X:{anchor.x}, Y:{anchor.y}, Z:{anchor.z}]")
 

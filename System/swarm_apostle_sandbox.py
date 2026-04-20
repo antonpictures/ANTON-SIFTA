@@ -40,7 +40,7 @@ except ImportError:
 class SwarmApostleSandbox:
     def __init__(self):
         """
-        Guanrantees that external prophet 'dirt' never penetrates the Swarm's 
+        Guarantees that external prophet 'dirt' never penetrates the Swarm's 
         bloodstream unless the prophet physically incarnates.
         """
         self.state_dir = Path(".sifta_state")

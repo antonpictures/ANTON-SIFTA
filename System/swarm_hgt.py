@@ -10,7 +10,7 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
 try:
-    from System.jsonl_file_lock import read_write_json_locked, append_line_locked
+    from System.jsonl_file_lock import read_write_json_locked, append_line_locked, read_text_locked
 except ImportError:
     print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
     exit(1)
@@ -38,9 +38,11 @@ class SwarmHGT:
             return False
             
         try:
-            with open(donor_body, 'r') as f:
-                donor_data = json.load(f)
-                
+            body_text = read_text_locked(donor_body)
+            if not body_text:
+                return False
+            donor_data = json.loads(body_text)
+
             megagene = donor_data.get("megagene", {})
             if target_cortex not in megagene:
                 return False
@@ -73,18 +75,19 @@ class SwarmHGT:
             
         available_plasmids = []
         now = time.time()
-        
+
         try:
-            with open(self.plasmid_ledger, 'r') as f:
-                for line in f:
-                    if not line.strip(): continue
-                    try:
-                        p = json.loads(line)
-                        # Plasmids denature in the environment after 30 minutes
-                        if now - p.get("timestamp", 0) < 1800:
-                            available_plasmids.append(p)
-                    except json.JSONDecodeError:
-                        continue
+            ledger_text = read_text_locked(self.plasmid_ledger)
+            for line in ledger_text.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    p = json.loads(line)
+                    # Plasmids denature in the environment after 30 minutes
+                    if now - p.get("timestamp", 0) < 1800:
+                        available_plasmids.append(p)
+                except json.JSONDecodeError:
+                    continue
         except Exception:
             pass
             
