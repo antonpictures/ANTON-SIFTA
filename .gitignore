@@ -123,3 +123,4 @@ swarm_telemetry.log
 os.log
 tournament_report.json
 payload.json
+.env
