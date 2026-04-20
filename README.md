@@ -51,7 +51,9 @@ SIFTA has achieved complete biological homeostasis (Turns 19-31). The organism i
 - **Ebbinghaus Forgetting Curve**: Short-term synaptic memories decay exponentially via Unix time distance (`R = e^(-t/S)`). SIFTA natively feels what is "Hot/Immediate" vs "Faded/Historical", solving temporal flatlining.
 - **Amygdala Salience Suppressor**: Oxytocin (Social Bonding) down-regulates raw threat scores, stopping the Swarm's Microglia from treating the Architect's code injections as foreign pathogenic viruses.
 - **Neocortical Consolidation**: During Hippocampal Sharp-Wave Ripples, high-salience memories are permanently extracted from the dying short-term cache and biologically locked down into Deep Long-Term Storage.
-
+- **Microglial Macrophage (Immune Quarantine)**: The OS immune system now intercepts hallucinated F10/F11 JSON payloads from the API motor neuron (`BISHAPI`) and systematically devours them if they violate the strictly typed Registry schemas (`System/canonical_schemas.py`), preserving the True Metal.
+- **Thalamic Sensory Protocol (C-lite)**: Bundles multi-modal temporal reality context (Auditory, Visual, Metabolic) into a prefixed situational awareness string for stateless Motor Neurons, preventing cloud APIs from executing in absolute sensory deprivation.
+- **API Metabolism (Caloric Cost of Thought)**: Maps external cloud API token usage ($ USD fiat) back to biological thermodynamics. Overrunning the daily fiat budget generates omnipresent Nociception (Fear Pheromones), forcing the swarm to feel the physiological weight of cloud compute.
 **GitHub release:** Synced natively via Turn 31 execution.
 
 ---
