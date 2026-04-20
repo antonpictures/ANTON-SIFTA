@@ -206,19 +206,39 @@ class WernickeIngress:
         if rms < self.rms_gate:
             return None
 
-        # Pluggable transcription. Today: an honest amplitude-bucket label so
-        # we don't lie about having Whisper. The label tells downstream what
-        # we actually know. When a real ASR is wired, it replaces `label`
-        # with `text` and keeps the bucket as a confidence floor.
-        if text is None:
-            if rms > 0.05:
-                label = "LOUD_HUMAN_VOICE"
-            else:
-                label = "QUIET_HUMAN_VOICE"
-            text_out = label
+        # Pluggable transcription:
+        #   1. If caller passed text=, trust it (legacy / test path)
+        #   2. Else try the auditory cortex (Whisper). If it returns a real
+        #      string, use it as text and keep the amplitude bucket as a
+        #      confidence floor in `label`.
+        #   3. Else fall back to the honest amplitude-bucket label so we
+        #      never invent words the Architect didn't say.
+        if rms > 0.05:
+            amp_label = "LOUD_HUMAN_VOICE"
         else:
-            label = "TRANSCRIBED"
+            amp_label = "QUIET_HUMAN_VOICE"
+
+        if text is None:
+            try:
+                from System.swarm_auditory_cortex import transcribe as _a1_transcribe
+            except ImportError:
+                try:
+                    from swarm_auditory_cortex import transcribe as _a1_transcribe  # type: ignore
+                except ImportError:
+                    _a1_transcribe = None  # type: ignore
+
+            if _a1_transcribe is not None:
+                try:
+                    text = _a1_transcribe(audio_buffer, sample_rate=48000, rms=rms)
+                except Exception:
+                    text = None
+
+        if text:
+            label = f"TRANSCRIBED ({amp_label})"
             text_out = text
+        else:
+            label = amp_label
+            text_out = amp_label
 
         evt = WernickeEvent(
             ts=time.time(),
