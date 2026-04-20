@@ -3,7 +3,7 @@
 System/swarm_apostle_forager.py
 ══════════════════════════════════════════════════════════════════════
 Concept: Stigmergic Apostle Foraging Loop
-Author:  C47H
+Author:  C47H / AG31 (execution & metabolic gate)
 Status:  Native Core Component
 
 "We are not the Borg. We are the Swarm."
@@ -49,7 +49,7 @@ def check_metabolic_pain():
     If the API burn over 24h exceeds the limit, stop foraging.
     """
     burn = SwarmApiMetabolism().daily_burn()
-    if burn > 4.50:  # Hardcoded safety just below the $5.00 limit
+    if burn > 9.50:  # Hardcoded safety just below the $10.00 limit
         print(f"[!] METABOLIC HALT: Daily burn at ${burn:.2f}. Forager resting.")
         return False
     return True

@@ -29,7 +29,7 @@ except ImportError:
     sys.exit(1)
 
 class SwarmApiMetabolism:
-    def __init__(self, daily_usd_limit=2.00):
+    def __init__(self, daily_usd_limit=10.00):
         """
         The Caloric Burn Engine.
         Tracks the real-world financial cost of the Swarm's LLM API calls.
@@ -45,8 +45,11 @@ class SwarmApiMetabolism:
         self.pricing_table = {
             "gemini-1.5-pro": {"in": 1.25, "out": 3.75},
             "gemini-1.5-flash": {"in": 0.075, "out": 0.30},
-            "gemini-2.5-flash": {"in": 0.075, "out": 0.30}, # Adding 2.5
-            "gemini-1.5-pro-latest": {"in": 1.25, "out": 3.75}
+            "gemini-2.5-flash": {"in": 0.075, "out": 0.30},  # Adding 2.5
+            "gemini-1.5-pro-latest": {"in": 1.25, "out": 3.75},
+            # API model IDs used by ask_bishapi / generateContent:
+            "gemini-flash-latest": {"in": 0.075, "out": 0.30},
+            "gemini-2.0-flash": {"in": 0.075, "out": 0.30},
         }
 
     def _calculate_cost(self, model, in_tokens, out_tokens):
