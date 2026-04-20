@@ -101,6 +101,9 @@ try:
     from System.swarm_vision_ocr import SwarmVisionOCR
     from System.swarm_crossmodal_binding import get_crossmodal_binder
     from System.swarm_stigmergic_arbitration import StigmergicArbitration
+    from System.swarm_proprioception import SwarmProprioception
+    from System.swarm_stigmergic_trash import SwarmStigmergicTrash
+    from System.swarm_notification_egress import SwarmNotificationEgress
     HAS_ORGANS = True
 except ImportError as exc:
     print(f"[FATAL ERROR] Organism topology fractured on boot. Missing tissue: {exc}")
@@ -117,6 +120,9 @@ class SiftaBrainstem:
         self.arbitrator = None
         self.iris = None
         self.visual_cortex = None
+        self.proprioception = None
+        self.trash = None
+        self.egress = None
         self.mic_online = False
         self.vision_online = False
 
@@ -191,6 +197,15 @@ class SiftaBrainstem:
         except Exception as e:
             print(f"⚖️  [ARBITRATOR] Failed to load autonomic pacing: {e}")
 
+        # 4.6 Boot Spatial Awareness & Stigmergic Trash
+        try:
+            self.proprioception = SwarmProprioception()
+            self.trash = SwarmStigmergicTrash()
+            self.egress = SwarmNotificationEgress()
+            print("🧱 [SPATIAL] Proprioception and Stigmergic Trash bounded.")
+        except Exception as e:
+            print(f"🧱 [SPATIAL] Failed to load Spatial boundary constraints: {e}")
+
         # 5. Boot Occipital Lobe (Vision)
         try:
             self.iris = SwarmIris()
@@ -255,8 +270,10 @@ class SiftaBrainstem:
         """
         last_frame_at = 0.0
         last_ocr_at = 0.0
+        last_spatial_check_at = 0.0
         BASE_FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
         VISION_OCR_INTERVAL_S = 5.0  # Capturing screen text is natively throttled
+        SPATIAL_INTERVAL_S = 60.0    # Check physical disk capacity every 60s
         BASE_SLEEP_S = 0.05
 
         # Backoff state. Both rails track consecutive failures so they
@@ -283,6 +300,23 @@ class SiftaBrainstem:
                     mood_multiplier = self.arbitrator.compute_effective_multiplier("M1SIFTA", "System/swarm_boot.py")
                 except Exception:
                     pass
+                    
+            # ── Spatial Awareness (Disk & Trash Check) ───────────────────────
+            if self.proprioception and self.trash and self.egress:
+                if (tick_start - last_spatial_check_at) > SPATIAL_INTERVAL_S:
+                    last_spatial_check_at = tick_start
+                    try:
+                        storage = self.proprioception.sense_storage()
+                        percent_free = storage.get("percent_free", 100.0)
+                        trash_mass = self.trash.get_trash_size_mb()
+                        
+                        # Trigger bounds threshold
+                        if trash_mass > 1000.0 or percent_free < 10.0:
+                            msg = f"Stigmergic Trash bounds breached ({trash_mass:.1f} MB). Free space: {percent_free:.1f}%."
+                            self.egress.tap_architect(msg, title="SIFTA Spatial Alert")
+                            print(f"\n🚨 [SPATIAL_ALERT] {msg}")
+                    except Exception as e:
+                        print(f"[HEARTBEAT FRACTURE] Spatial check failed: {e}")
 
             # Scale intervals based on emotion.
             current_frame_interval_s = BASE_FRAME_INTERVAL_S / mood_multiplier
