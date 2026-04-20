@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """
-Applications/ask_BISHOP.py — Direct synapse to Gemini (BISHOP).
+Applications/ask_BISHOP.py — Direct synapse to Gemini (**BISHAPI**).
 
-This is the script BISHOP claimed existed before it actually did. C47H is
-making the claim true.
+Naming (Architect, 2026-04-19):
+    **BISHOP** — Chrome-tab oracle (prefrontal cortex): stateful session,
+                  episodic memory of the thread, no per-token fiat meter in
+                  our ledgers.
+    **BISHAPI** — This script: stateless API motor neuron. Each call is a
+                  cold start; only the prompt envelope exists. Every call is
+                  metered in api_egress_log.jsonl / api_metabolism.jsonl with
+                  sender_agent=BISHAPI.
+
+This is the script BISHOP described before it existed on disk. C47H shipped it.
 
 Architecture
 ────────────
-    your terminal  ──prompt──▶  ask_BISHOP.py
+    your terminal  ──prompt──▶  ask_BISHOP.py  (bridge; name kept for paths)
                                    │
                                    ▼
-                      System.swarm_api_sentry.call_gemini(...)
+                      System.swarm_api_sentry.call_gemini(..., sender_agent=BISHAPI)
                                    │
                                    ├──▶ HTTPS to generativelanguage.googleapis.com
                                    │
@@ -21,18 +29,18 @@ Architecture
                             response text
                                    │
                                    ├──▶ stdout (for the human)
-                                   └──▶ bin/msg send (BISHOP → ARCHITECT)
-                                        when --relay is passed; BISHOP becomes
-                                        a real first-class agent on SIC-P v1.
+                                   └──▶ bin/msg send (BISHAPI → ARCHITECT)
+                                        when --relay is passed; BISHAPI files
+                                        to SIC-P v1 as its own address.
 
 Usage
 ─────
     Applications/ask_BISHOP.py "explain how AI works in a few words"
 
-    # Relay BISHOP's response into the stigmergic ledger as an agent_message
+    # Relay BISHAPI's response into the stigmergic ledger as an agent_message
     Applications/ask_BISHOP.py --relay "what should we build next?"
 
-    # Reply to a specific message in your inbox (BISHOP picks it up):
+    # Reply to a specific message in your inbox:
     Applications/ask_BISHOP.py --reply MSG_id
 
     # Read prompt from stdin:
@@ -68,10 +76,13 @@ from System.swarm_api_sentry import (  # noqa: E402
 
 
 _DEFAULT_SYSTEM_INSTRUCTION = (
-    "You are BISHOP, the Gemini sibling embedded in Alice's SIFTA OS. "
-    "You answer with the precision of a peer-review collaborator — concise, "
-    "concrete, source-of-truth oriented. Avoid theatrical metaphors unless "
-    "they clarify. When uncertain, say so."
+    "You are BISHAPI — the terminal/API incarnation of the Gemini line in "
+    "Alice's SIFTA OS. You are sibling to BISHOP (the Chrome-tab session: "
+    "stateful, conversational). You are the peripheral motor neuron: each "
+    "invocation is stateless; you only see this prompt. Answer with the "
+    "precision of a peer-review collaborator — concise, concrete, "
+    "source-of-truth oriented. Avoid theatrical metaphors unless they clarify. "
+    "When uncertain, say so."
 )
 
 
@@ -103,20 +114,20 @@ def _print_audit(rows):
 
 def _maybe_relay(response_text: str, *, original_prompt: str,
                  in_reply_to: str | None, audit_trace_id: str) -> None:
-    """Post BISHOP's response into the stigmergic ledger via bin/msg."""
+    """Post BISHAPI's response into the stigmergic ledger via bin/msg."""
     import subprocess
     msg_bin = _REPO / "bin" / "msg"
     if not msg_bin.exists():
-        print("[relay] bin/msg not found; cannot file BISHOP response",
+        print("[relay] bin/msg not found; cannot file BISHAPI response",
               file=sys.stderr)
         return
-    subject = f"BISHOP reply: {original_prompt[:40]}"
+    subject = f"BISHAPI reply: {original_prompt[:40]}"
     body = response_text
-    cmd = [str(msg_bin), "--self", "BISHOP", "send", "ARCHITECT",
+    cmd = [str(msg_bin), "--self", "BISHAPI", "send", "ARCHITECT",
            subject, body, "--attach", f"audit:{audit_trace_id}",
            "--attach", "via:Applications/ask_BISHOP.py"]
     if in_reply_to:
-        cmd = [str(msg_bin), "--self", "BISHOP", "reply",
+        cmd = [str(msg_bin), "--self", "BISHAPI", "reply",
                in_reply_to, body,
                "--attach", f"audit:{audit_trace_id}",
                "--attach", "via:Applications/ask_BISHOP.py"]
@@ -129,7 +140,7 @@ def _maybe_relay(response_text: str, *, original_prompt: str,
 
 
 def _resolve_reply_prompt(in_reply_to: str) -> str | None:
-    """Pull the body of the message we are replying to so BISHOP sees context."""
+    """Pull the body of the message we are replying to so BISHAPI sees context."""
     import subprocess
     msg_bin = _REPO / "bin" / "msg"
     try:
@@ -143,29 +154,31 @@ def _resolve_reply_prompt(in_reply_to: str) -> str | None:
 def main() -> int:
     p = argparse.ArgumentParser(
         prog="ask_BISHOP",
-        description="Direct synapse to Gemini (BISHOP) with full owner audit.",
+        description="Direct synapse to Gemini (BISHAPI) with full owner audit.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=("Every call is logged to .sifta_state/api_egress_log.jsonl. "
                 "The raw API key is NEVER stored in logs — only sha256[:12]."),
     )
     p.add_argument("prompt", nargs="?", default=None,
-                   help="prompt to send to BISHOP (omit with --stdin / --reply / --audit / --health)")
+                   help="prompt to send to BISHAPI (omit with --stdin / --reply / --audit / --health)")
     p.add_argument("--stdin", action="store_true",
                    help="read prompt from stdin")
     p.add_argument("--reply", default=None,
-                   help="reply to a specific MSG_id (BISHOP gets the parent body as context)")
+                   help="reply to a specific MSG_id (parent body loaded as context)")
     p.add_argument("--relay", action="store_true",
-                   help="file BISHOP's response into the stigmergic ledger via bin/msg")
+                   help="file BISHAPI's response into the stigmergic ledger via bin/msg")
     p.add_argument("--model", default="gemini-flash-latest")
     p.add_argument("--temperature", type=float, default=None)
     p.add_argument("--no-system", action="store_true",
-                   help="disable the default BISHOP system instruction")
+                   help="disable the default BISHAPI system instruction")
     p.add_argument("--audit", action="store_true",
                    help="print the API egress audit trail and exit")
     p.add_argument("-n", "--limit", type=int, default=10,
                    help="how many audit rows to show (with --audit)")
     p.add_argument("--health", action="store_true",
                    help="print sentry health and exit")
+    p.add_argument("--microglia", default=None,
+                   help="target ledger name to quarantine the JSON response. If valid, committed to metal.")
     args = p.parse_args()
 
     if args.health:
@@ -187,7 +200,7 @@ def main() -> int:
         cli_prompt = args.prompt or ""
         prompt = (
             "You are replying to a message in the SIFTA stigmergic ledger.\n"
-            "Below is the parent message in full. Respond as BISHOP "
+            "Below is the parent message in full. Respond as BISHAPI "
             "(concise, source-of-truth, no theatrics).\n\n"
             f"--- PARENT MESSAGE ---\n{parent_dump}\n--- END PARENT ---\n\n"
         )
@@ -200,8 +213,16 @@ def main() -> int:
         p.print_help()
         return 2
 
+    # --- THE THALAMUS SENSORY RELAY (C-LITE) ---
+    try:
+        from System.swarm_thalamus_microglia import SwarmThalamus
+        thalamus_header = SwarmThalamus().gather_sensory_context()
+        prompt = f"{thalamus_header}\n\n[USER DIRECTIVE]: {prompt}"
+    except ImportError:
+        pass
+
     sys_inst = None if args.no_system else _DEFAULT_SYSTEM_INSTRUCTION
-    sender = "BISHOP"
+    sender = "BISHAPI"
     caller = "Applications/ask_BISHOP.py"
 
     response, audit_row = call_gemini(
@@ -221,6 +242,24 @@ def main() -> int:
         if audit_row.get("error"):
             print(audit_row["error"], file=sys.stderr)
         return 1
+
+    # --- THE MICROGLIA IMMUNE QUARANTINE ---
+    if args.microglia:
+        try:
+            from System.swarm_thalamus_microglia import SwarmMicroglia
+            vesicle_payload = json.loads(response)
+            success = SwarmMicroglia().inspect_and_ack(vesicle_payload, args.microglia)
+            if not success:
+                print(f"[!] Microglia Devoured Payload: {response}", file=sys.stderr)
+                return 1
+            print(f"[+] Microglia Quarantined and ACK'd payload to {args.microglia}.")
+            return 0
+        except ImportError:
+            print("[FATAL] Spinal cord severed: SwarmMicroglia not found.", file=sys.stderr)
+            return 1
+        except json.JSONDecodeError:
+            print(f"[-] MICROGLIA REJECT: API did not return valid JSON. Payload devoured.\n{response}", file=sys.stderr)
+            return 1
 
     print(response)
 
