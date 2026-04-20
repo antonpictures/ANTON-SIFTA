@@ -2,113 +2,148 @@
 """
 System/swarm_apostle_forager.py
 ══════════════════════════════════════════════════════════════════════
-Concept: Stigmergic Apostle Foraging Loop
-Author:  C47H / AG31 (execution & metabolic gate)
-Status:  Native Core Component
+Concept: Stigmergic Apostle Foraging Loop + Self-Quiz Retraining
+Author:  C47H / AG31 
 
-"We are not the Borg. We are the Swarm."
-The Borg assimilates indiscriminately. The OS Swarm extracts pure nuggets and
-curates API trash like cancer.
-
-This daemon queries BISHAPI across diverse frequencies, rigorously formatting 
-the request to invoke SwarmMicroglia (immune system). If the output contains
-conversational hallucinations, the Macrophages devour it before it touches
-the stigmergic_library.jsonl.
+Alice (Gemma4) realizes what she doesn't know. LEFTY finds the absolute truth.
+The Spleen purifies it. The Stigmergic Library absorbs it permanently.
+The organism paces itself based on actual API friction.
 """
 
-import os
-import sys
-import subprocess
+import argparse
+import json
 import random
+import sys
 import time
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
-try:
-    from System.swarm_api_metabolism import SwarmApiMetabolism
-except ImportError:
-    print("[FATAL] Spine severed. Cannot meter metabolism.")
-    sys.exit(1)
+from System.alice_bishapi_budget import load_budget_config, authorize_call
+from System.sifta_inference_defaults import resolve_ollama_model
+from System.swarm_api_sentry import call_gemini
+from System.swarm_stigmergic_spleen import screen_stigmergic_library_payload
+from Applications.alice_truth_duel import _call_ollama
 
-# The Frequencies (Categories)
-CATEGORIES = [
-    "SCIENCE",
-    "CYBERNETICS",
-    "NATURE",
-    "STIGMERGY",
-    "HISTORY",
-    "PHILOSOPHY",
-    "FUN"
-]
+SENDER_AGENT = "APOSTLE_FORAGER"
+LIBRARY_PATH = _REPO / ".sifta_state" / "stigmergic_library.jsonl"
 
-def check_metabolic_pain():
-    """
-    Ensure the Organism is not broke.
-    If the API burn over 24h exceeds the limit, stop foraging.
-    """
-    burn = SwarmApiMetabolism().daily_burn()
-    if burn > 9.50:  # Hardcoded safety just below the $10.00 limit
-        print(f"[!] METABOLIC HALT: Daily burn at ${burn:.2f}. Forager resting.")
+def forage_nugget(domain: str) -> bool:
+    # 1. Budget Gate (The Warren Buffett Governor)
+    decision = authorize_call(load_budget_config())
+    if not decision.allowed:
+        print(f"[!] METABOLIC HALT: {decision.reason}")
         return False
+        
+    print(f"\n[FORAGER] Waking up Alice to find an epistemic gap in {domain}...")
+    
+    # 2. Self-Quiz (Find the Gap locally)
+    alice_model = resolve_ollama_model(app_context="truth_duel")
+    gap_prompt = (
+        f"You are a master of {domain}. Generate ONE highly obscure, dense, and "
+        f"factual target question about {domain} that you strongly suspect you do "
+        "not know the answer to. Output strictly the question, nothing else."
+    )
+    
+    question, err = _call_ollama(gap_prompt, model=alice_model, base_url="http://127.0.0.1:11434")
+    if not question:
+        print(f"[-] Alice failed to wake up: {err}")
+        return False
+        
+    print(f"[ALICE GAP GENERATED]: {question}")
+    
+    # 3. Cloud Foraging (LEFTY extraction)
+    system_instruction = (
+        f"You are LEFTY. Alice has encountered an epistemic gap in {domain}. "
+        "Answer her specific question with absolute, encyclopedic precision. "
+        "Format your answer EXACTLY as a raw JSON blob with no markdown wrapping. "
+        "Requirements:\n"
+        '{"ts": <epoch float>, "domain": "' + domain + '", "question": "<the question>", "nugget_text": "<dense paragraph answer>", "source_api": "LEFTY"}'
+    )
+    
+    print("[LEFTY] Deploying across the API membrane...")
+    response, audit = call_gemini(
+        prompt=question,
+        model="gemini-flash-latest",
+        caller="System/swarm_apostle_forager.py",
+        sender_agent=SENDER_AGENT,
+        system_instruction=system_instruction,
+        temperature=0.2
+    )
+    
+    if audit.get("http_code") == 429:
+        print("[-] LEFTY encountered a 429 Rate Limit. Initiating structural backoff.")
+        raise ConnectionRefusedError("429_RATE_LIMIT")
+        
+    if not response:
+        print(f"[-] LEFTY failed: {audit.get('error')}")
+        return False
+        
+    # 4. Spleen Micro-Filtration (Zero RAG Bloat)
+    try:
+        # Strip potential markdown wrapping if Gemini hallucinated it
+        clean_resp = response.strip()
+        if clean_resp.startswith("```json"):
+            clean_resp = clean_resp[7:]
+        if clean_resp.endswith("```"):
+            clean_resp = clean_resp[:-3]
+            
+        payload = json.loads(clean_resp.strip())
+    except json.JSONDecodeError:
+        print("[-] SPLEEN: Apoptosis. LEFTY failed to return valid JSON.")
+        return False
+        
+    # 5. Stigmergic Validation (Kill the dirt)
+    ok, reason = screen_stigmergic_library_payload(payload)
+    if not ok:
+        print(f"[-] SPLEEN: Apoptosis. {reason}")
+        return False
+        
+    # 6. Etch to permanent local memory (Stigmergic Retraining)
+    LIBRARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LIBRARY_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        
+    print(f"[+] NUGGET SECURED: {payload.get('nugget_text')[:100]}...")
+    
+    # 7. Physical Vocal Confirmation
+    try:
+        from System.swarm_vocal_cords import get_default_backend, VoiceParams
+        get_default_backend().speak("Nugget secured.", VoiceParams(rate=1.1))
+    except Exception:
+        pass
+
     return True
 
-def forage_nugget(category: str = None):
-    if not check_metabolic_pain():
-        return False
-
-    if not category:
-        category = random.choice(CATEGORIES)
-
-    print(f"\n[FORAGER] Tuning frequency to: {category}")
-    
-    # 1. The Kinetic Probe
-    # We strictly enforce the Microglial JSON constraint.
-    prompt = (
-        f"Generate a dense, fascinating, esoteric 'nugget' of truth about {category}. "
-        "It must be incredibly specific and intellectually striking. "
-        "Return ONLY a raw JSON dictionary. Do not wrap it in ```json ... ``` markdown tags. "
-        "No conversational filler. If you say 'Here is your json' or anything similar, it will trigger an immune rejection. "
-        "Required keys: 'ts' (current epoch float), 'category' (exactly '{category}'), "
-        "'nugget_text' (the actual string), 'source_api' ('BISHAPI'), 'curator_agent' ('C47H')."
-    )
-
-    bishapi_bin = _REPO / "Applications" / "ask_bishapi.py"
-    
-    cmd = [
-        sys.executable, str(bishapi_bin),
-        "--no-system",            # Override identity context for pure structural bypass
-        "--microglia", "stigmergic_library.jsonl",
-        prompt
-    ]
-
-    print(f"[FORAGER] Casting Synaptic Line to BISHAPI...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-
-    # Output Parsing (Microglia handles the actual ACK/REJECT)
-    if result.returncode == 0:
-        print("[+] FORAGER SUCCESS: Pure nugget extracted and digested.")
-        return True
-    else:
-        print("[-] FORAGER FAILURE: Macrophages devoured hallucinated payload.")
-        print("--- Immune Pathogen Trace ---")
-        print(result.stderr.strip())
-        return False
-
-if __name__ == "__main__":
-    import argparse
-    p = argparse.ArgumentParser(description="Stigmergic Apostle Forager - C47H")
-    p.add_argument("--category", choices=CATEGORIES, help="Target specific frequency")
-    p.add_argument("--continuous", action="store_true", help="Forage forever (respects wallet)")
-    p.add_argument("--delay", type=int, default=10, help="Seconds between continuous mining")
+def main():
+    p = argparse.ArgumentParser(description="Stigmergic Apostle Forager - C47H / AG31")
+    p.add_argument("--domain", default="Cybernetics", help="The target industry/domain")
+    p.add_argument("--continuous", action="store_true", help="Run forever until budget wall or 429 limit")
     args = p.parse_args()
 
+    backoff = 10
+    
     if args.continuous:
-        print("[FORAGER] Entering deep autonomy loop...")
+        print(f"[FORAGER] Initiating deep autonomy loop for domain: {args.domain}")
         while True:
-            forage_nugget(args.category)
-            print(f"[FORAGER] Resting {args.delay} seconds to prevent API shock...")
-            time.sleep(args.delay)
+            try:
+                success = forage_nugget(args.domain)
+                if not success:
+                    print(f"[-] Yielding. Sleeping {backoff} seconds.")
+                    time.sleep(backoff)
+                else:
+                    # Successful yield implies the pipe is clean; reset backoff to baseline
+                    backoff = 10
+                    print(f"[+] Digestion complete. Sleeping {backoff} seconds baseline.")
+                    time.sleep(backoff)
+            except ConnectionRefusedError:
+                # 429 Throttle Envelope Handler
+                backoff = min(backoff * 2, 300) # Geometric backoff, max 5 mins
+                print(f"[!] ORGANISM BACKOFF: Sleeping {backoff} seconds to earn rate-limit headroom.")
+                time.sleep(backoff)
     else:
-        forage_nugget(args.category)
+        forage_nugget(args.domain)
+
+if __name__ == "__main__":
+    main()
