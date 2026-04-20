@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import List, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
-_SPEECH_BIN = _REPO / ".sifta_state" / "SiftaSpeech.app" / "Contents" / "MacOS" / "sifta_speech"
+_APP_BUNDLE = _REPO / ".sifta_state" / "SiftaSpeech.app"
 
 # We removed _MIN_RMS_FOR_WHISPER entirely.
 # The only floor is true digital zero.
@@ -37,14 +37,14 @@ _TOTAL_TEXT_RETURNED = 0
 _LAST_LATENCY_MS = 0.0
 
 def is_available() -> bool:
-    return _SPEECH_BIN.exists()
+    return _APP_BUNDLE.exists()
 
 def capability_report() -> dict:
     return {
         "module": "swarm_stigmergic_translation",
         "model_name": "AppleNative_SFSpeechRecognizer_enUS",
         "disabled_by_env": False,
-        "model_loaded": _SPEECH_BIN.exists(),
+        "model_loaded": _APP_BUNDLE.exists(),
         "total_calls": _TOTAL_TRANSCRIBE_CALLS,
         "total_text_returned": _TOTAL_TEXT_RETURNED,
         "last_latency_ms": round(_LAST_LATENCY_MS, 1),
@@ -71,8 +71,8 @@ def transcribe(
         # absolute digital noise floor
         return None
 
-    if not _SPEECH_BIN.exists():
-        print("[A1:Translation] Fatal: sifta_speech binary absent.", file=sys.stderr)
+    if not _APP_BUNDLE.exists():
+        print("[A1:Translation] Fatal: SiftaSpeech.app bundle absent.", file=sys.stderr)
         return None
 
     _TOTAL_TRANSCRIBE_CALLS += 1
@@ -93,15 +93,22 @@ def transcribe(
             int_samples = [max(min(int(s * 32767.0), 32767), -32768) for s in samples]
             wf.writeframes(struct.pack(f"<{len(int_samples)}h", *int_samples))
         
-        # Invoke Native Swift Recognizer
+        # Invoke Native Swift Recognizer via LaunchServices to trigger TCC
+        temp_out = _REPO / ".sifta_state" / "sifta_out.json"
+        
         res = subprocess.run(
-            [str(_SPEECH_BIN), str(temp_wav)],
+            ["open", "-W", "-n", str(_APP_BUNDLE), "--stdout", str(temp_out), "--args", str(temp_wav)],
             capture_output=True,
             text=True,
             check=False
         )
 
-        output = res.stdout.strip()
+        try:
+            output = temp_out.read_text(encoding="utf-8").strip()
+            temp_out.unlink(missing_ok=True)
+        except Exception:
+            output = ""
+
         if not output:
              return None
 

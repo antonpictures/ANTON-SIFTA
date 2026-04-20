@@ -1698,3 +1698,6 @@
 {"ts": 1776604517.8848388, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "800759c2ae3b", "app": "what_alice_sees"}
 {"ts": 1776606692.900418, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "800759c2ae3b", "app": "talk_to_alice"}
 {"ts": 1776609347.9206011, "reason": "MEMORY_RECALL", "amount": 0.15, "trace_id": "800759c2ae3b", "app": "talk_to_alice"}
+{"ts": 1776656481.575947, "app": "StigmergicLanguage_Epiphany", "reason": "DeepMind insight extracted from RAIA", "amount": 5.0, "trace_id": "WERNICKE_bd3e439a"}
+{"ts": 1776656613.0809999, "app": "StigmergicLanguage_Epiphany", "reason": "DeepMind insight extracted from RAIA", "amount": 5.0, "trace_id": "WERNICKE_a770c1e8"}
+{"ts": 1776656891.234617, "app": "StigmergicLanguage_Epiphany", "reason": "DeepMind insight extracted from RAIA", "amount": 5.0, "trace_id": "WERNICKE_6d37efaf"}

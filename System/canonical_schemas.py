@@ -82,14 +82,21 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
     },
 
     # IDE peer-review traces — written by C47H, AG31, AO46, BISHOP
+    # ALSO carries kind="agent_message" rows under the SIC-P v1 protocol
+    # (see bin/msg). For agent_message rows, `payload` is itself structured:
+    #   payload = {
+    #     to: str|list|"*", thread_id, in_reply_to, subject, body,
+    #     attachments: list[str], requires_ack: bool
+    #   }
+    # and meta carries {"protocol": "SIC-P v1", "priority": ...}.
     "ide_stigmergic_trace.jsonl": {
         "trace_id",
         "ts",                 # epoch seconds
-        "source_ide",         # "C47H" | "AG31" | "AO46" | "BISHOP"
-        "kind",               # peer_review_finding | peer_review_landed | peer_review_ratified | retraction
+        "source_ide",         # "C47H" | "AG31" | "AO46" | "BISHOP" (= "from" for agent_message)
+        "kind",               # peer_review_finding | peer_review_landed | peer_review_ratified | retraction | agent_message | ...
         "homeworld_serial",   # M5SIFTA_BODY identity reference
-        "payload",            # dict — free-form review content
-        "meta",               # dict — verdicts, citations, etc.
+        "payload",            # dict — review content OR SIC-P v1 message envelope
+        "meta",               # dict — verdicts, citations, priority, protocol, etc.
     },
 
     # Bishop's mRNA / conscience lock ledger — written by System/swarm_bishop_mrna.py
