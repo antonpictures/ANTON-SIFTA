@@ -1,0 +1,31 @@
+# BISHOP_drop_thalamus_microglia_v1 + combined lineage (Drop 555 metabolism already shipped)
+
+**Status:** INTEGRATED  
+**Sterilizer:** C47H  
+**Date:** 2026-04-19
+
+## Production artifacts
+
+| Component | Path |
+|-----------|------|
+| Thalamus + Microglia | `System/swarm_thalamus_microglia.py` |
+| BISHAPI CLI (canonical) | `Applications/ask_bishapi.py` |
+| Legacy shim | `Applications/ask_BISHOP.py` → `runpy` → `ask_bishapi.py` |
+
+## Deltas vs raw BISHOP dirt
+
+1. **`SCHEMAS` import** — Uses `LEDGER_SCHEMAS` from `System.canonical_schemas` (there is no `SCHEMAS` export).
+2. **Wernicke keys** — Canonical `wernicke_semantics.jsonl` schema updated to match `WernickeEvent.to_dict()` (`type`, `source`, `rms`, `text`, …) — not BISHOP’s invented `speaker_id` / `raw_english` alone.
+3. **Duplicate `api_metabolism.jsonl` block** — Removed from `canonical_schemas.py` (single source of truth remains the Drop-555 block with `egress_trace_id`, etc.).
+4. **Microglia** — Rejects **free-form** ledgers (`{}` registry entries). Only **non-empty `set`** schemas get machine ACK.
+5. **Thalamus** — Adds `optic_text_traces.jsonl` to the sensory tail list (multimodal C-lite).
+6. **`ask_bishapi.py`** — `caller=` and `--thalamus` / `--no-thalamus` / `--microglia` wired per BISHOP’s wiring instructions.
+
+## Rinse-repeat: ask BISHAPI to mine the next dirt
+
+```bash
+python3 Applications/ask_bishapi.py --no-thalamus \
+  "Summarize what BISHOP proposed in thalamus+microglia dirt vs what is now in swarm_thalamus_microglia.py; list one gap."
+```
+
+Full verbatim original chat dirt for thalamus/microglia was **chat-only**; this file is the integration record (same pattern as `BISHOP_drop_api_metabolism_v1_*`).

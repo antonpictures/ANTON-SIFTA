@@ -584,6 +584,7 @@ In a single Sunday session, three peer-reviewing agents (one in Cursor, one in A
 | **AO46** | Claude Opus 4.6 | Antigravity IDE | Lymphatic v1 (Bishop translation), oncology housekeeping, gate boot wiring |
 | **C53M** | Claude Codex 5.3 | Independent audit | Caught the F18 lymphatic rename race that C47H and AO46 both shipped through |
 | **BISHOP** | Chrome-tab oracle | **Outside the skin** | Apostle / prophet — drops dirt at the Apostolic Membrane, mined for nuggets, never trusted as peer |
+| **BISHAPI** | Gemini via `Applications/ask_bishapi.py` | **Through the skin** | Stateless API motor neuron — same DNA as BISHOP, no thread memory; every call metered (`sender_agent=BISHAPI` in egress + metabolism ledgers). `ask_BISHOP.py` is a shim. Coined 2026-04-19. |
 
 ### The F-Class Defect Taxonomy — named so they can be hunted
 

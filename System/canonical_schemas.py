@@ -94,7 +94,7 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "trace_id",           # CALORIE_<hex>
         "egress_trace_id",    # joins to api_egress_log.jsonl.trace_id
         "provider",           # "google_gemini" | "anthropic" | ...
-        "sender_agent",       # "BISHOP" | "C47H" | "AG31" | None
+        "sender_agent",       # "BISHAPI" (API) | "BISHOP" (tab) | "C47H" | "AG31" | None
         "module_version",
     },
 
@@ -108,7 +108,7 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "model",              # provider-specific model id
         "key_fingerprint",    # sha256(api_key)[:12] — correlates calls to keys
         "caller",             # script path that initiated the call
-        "sender_agent",       # "BISHOP" | "AG31" | "C47H" | None — agent on whose behalf
+        "sender_agent",       # "BISHAPI" | "BISHOP" | "AG31" | "C47H" | None — agent on whose behalf
         "status",             # "ok" | "http_error" | "exception"
         "http_code",          # int | None
         "error",              # str | None
@@ -167,24 +167,17 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "trace_id",
     },
 
-    # Wernicke Semantics (Added by BISHOP dirt)
+    # Wernicke Semantics — written by System/swarm_broca_wernicke.WernickeEvent.to_dict()
     "wernicke_semantics.jsonl": {
-        "ts",                 # epoch seconds
-        "speaker_id",         # origin of the voice
-        "proximity_meters",   # distance from mic
-        "raw_english",        # untranslated text
-        "stigmergic_intent",  # enzymatic translation to swarm chemistry
-        "trace_id",           # trace identifier
-    },
-
-    # API Metabolism (The Caloric Cost of Thought) — added by BISHOP
-    "api_metabolism.jsonl": {
-        "ts",                 # epoch seconds
-        "model",              # string model name (gemini-1.5-flash)
-        "input_tokens",       # int
-        "output_tokens",      # int
-        "cost_usd",           # float fiat
-        "trace_id",           # trace identification
+        "ts",
+        "type",               # "wernicke_perception"
+        "source",             # device label
+        "rms",
+        "n_samples",
+        "label",                # amplitude bucket or TRANSCRIBED (...)
+        "text",                 # transcript or label echo
+        "reality_hash",
+        "module_version",
     },
 
     # Epigenetic Generational Trauma (DNA Methylation) — written by System/swarm_epigenetics.py

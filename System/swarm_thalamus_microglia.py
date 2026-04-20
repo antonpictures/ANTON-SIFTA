@@ -3,13 +3,13 @@
 System/swarm_thalamus_microglia.py
 ══════════════════════════════════════════════════════════════════════
 Concept: The Thalamic Relay & Microglial Quarantine (C-lite)
-Author:  BISHOP (The Mirage) -> Integrated by AG31
+Author:  BISHOP (The Mirage) — integrated by AG31 / hardened by C47H
 Status:  Native Core Component
 
-1. Territory C-lite: Use SwarmThalamus().gather_sensory_context() to build 
-   the prefix for the prompt sent to the API BISHOP.
-2. Microglia: When the API BISHOP returns a payload, pass it through 
-   SwarmMicroglia().inspect_and_ack(payload, target_ledger) before writing.
+1. Territory C-lite: SwarmThalamus().gather_sensory_context() prefixes prompts
+   to BISHAPI (Applications/ask_bishapi.py).
+2. Microglia: JSON payloads from BISHAPI pass through inspect_and_ack() before
+   append_line_locked to a named ledger (canonical LEDGER_SCHEMAS keys only).
 """
 
 import os
@@ -33,17 +33,18 @@ class SwarmThalamus:
         """
         The Sensory Relay Station.
         Gathers recent temporal traces across all biological ledgers to give 
-        the amnesiac API BISHOP a real-time snapshot of the Swarm's state.
+        the amnesiac BISHAPI a real-time snapshot of the Swarm's state.
         """
         self.state_dir = _REPO / ".sifta_state"
         self.context_window = context_window_seconds
         
         self.sensory_ledgers = [
             "wernicke_semantics.jsonl",
+            "optic_text_traces.jsonl",
             "amygdala_nociception.jsonl",
             "bioluminescence_photons.jsonl",
             "endocrine_glands.jsonl",
-            "api_metabolism.jsonl"
+            "api_metabolism.jsonl",
         ]
 
     def gather_sensory_context(self):
@@ -97,16 +98,27 @@ class SwarmMicroglia:
         """
         Validates the quarantined payload and commits it to the metal.
         """
-        # 1. Immune Verification (Schema check)
-        expected_keys = SCHEMAS.get(target_ledger_name)
-        if not expected_keys:
-            print(f"[!] MICROGLIA REJECT: Unknown ledger '{target_ledger_name}'. Payload devoured.", file=sys.stderr)
+        raw = SCHEMAS.get(target_ledger_name)
+        if raw is None:
+            print(f"[!] MICROGLIA REJECT: Unknown ledger '{target_ledger_name}'.",
+                  file=sys.stderr)
             return False
+        # bishop_mrna_field is stored as {} in the registry (legacy) — treat as free-form
+        if isinstance(raw, dict):
+            print(f"[!] MICROGLIA REJECT: free-form ledger '{target_ledger_name}' "
+                  f"(no machine ACK). Payload devoured.", file=sys.stderr)
+            return False
+        if not isinstance(raw, set) or len(raw) == 0:
+            print(f"[!] MICROGLIA REJECT: no canonical key set for "
+                  f"'{target_ledger_name}'.", file=sys.stderr)
+            return False
+        expected_keys = raw
 
         payload_keys = set(vesicle_payload_dict.keys())
         if not expected_keys.issubset(payload_keys):
             missing = expected_keys - payload_keys
-            print(f"[!] MICROGLIA REJECT: F10 Schema Hallucination. Missing keys {missing}. Payload devoured.", file=sys.stderr)
+            print(f"[!] MICROGLIA REJECT: F10 — missing keys {sorted(missing)}.",
+                  file=sys.stderr)
             return False
 
         # 2. ACK and Commit (The Synaptic Release)
@@ -124,49 +136,59 @@ class SwarmMicroglia:
 def _smoke():
     print("\n=== SIFTA THALAMUS & MICROGLIA (C-LITE + QUARANTINE) : SMOKE TEST ===")
     import tempfile
-    
-    # Mocking SCHEMAS for the standalone smoke test environment
-    global SCHEMAS
-    SCHEMAS = {
-        "amygdala_nociception.jsonl": {"transaction_type", "node_id", "xyz_coordinate", "severity", "timestamp"}
-    }
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
-        
+
         # --- TEST 1: The Thalamus (Multimodal TS Join) ---
         thalamus = SwarmThalamus(context_window_seconds=60)
         thalamus.state_dir = tmp_path
-        
-        # Inject a fresh Wernicke trace
+
         wernicke_path = tmp_path / "wernicke_semantics.jsonl"
-        with open(wernicke_path, 'w') as f:
-            f.write(json.dumps({"ts": time.time() - 10, "speaker_id": "ARCHITECT", "raw_english": "Test"}) + "\n")
-            
+        row = {
+            "ts": time.time() - 10,
+            "type": "wernicke_perception",
+            "source": "smoke",
+            "rms": 0.01,
+            "n_samples": 1024,
+            "label": "QUIET_HUMAN_VOICE",
+            "text": "Architect smoke",
+            "reality_hash": "00" * 32,
+            "module_version": "smoke",
+        }
+        wernicke_path.write_text(json.dumps(row) + "\n")
+
         context = thalamus.gather_sensory_context()
-        
+
         print("\n[SMOKE RESULTS - THALAMUS]")
-        assert "ARCHITECT" in context
-        print("[PASS] Thalamus successfully bundled recent multimodal sensory traces.")
+        assert "Architect smoke" in context
+        print("[PASS] Thalamus bundled recent Wernicke traces (canonical keys).")
 
         # --- TEST 2: Microglia (Quarantine + ACK) ---
         microglia = SwarmMicroglia()
         microglia.state_dir = tmp_path
-        
-        # Bad Payload (Missing 'severity')
-        bad_payload = {"transaction_type": "NOCICEPTION", "node_id": "API", "xyz_coordinate": [0,0,0], "timestamp": time.time()}
+
+        bad_payload = {
+            "transaction_type": "FEAR_PHEROMONE", "node_id": "API",
+            "xyz_coordinate": [0, 0, 0], "timestamp": time.time(),
+        }
         ack_bad = microglia.inspect_and_ack(bad_payload, "amygdala_nociception.jsonl")
-        
-        # Good Payload (Matches Schema)
-        good_payload = {"transaction_type": "NOCICEPTION", "node_id": "API", "xyz_coordinate": [0,0,0], "severity": 5.0, "timestamp": time.time()}
+
+        good_payload = {
+            "transaction_type": "FEAR_PHEROMONE", "node_id": "API",
+            "xyz_coordinate": [0, 0, 0], "severity": 5.0,
+            "timestamp": time.time(),
+        }
         ack_good = microglia.inspect_and_ack(good_payload, "amygdala_nociception.jsonl")
-        
+
         print("\n[SMOKE RESULTS - MICROGLIA]")
         assert ack_bad is False
-        print("[PASS] Microglia correctly DEVOURS hallucinated payloads missing canonical keys.")
-        
+        print("[PASS] Microglia devours payloads missing canonical keys.")
+
         assert ack_good is True
-        print("[PASS] Microglia correctly ACKs structurally sound payloads into the metal.")
+        amy = tmp_path / "amygdala_nociception.jsonl"
+        assert amy.exists() and amy.stat().st_size > 0
+        print("[PASS] Microglia ACKs sound payloads into the metal.")
 
 if __name__ == "__main__":
     _smoke()

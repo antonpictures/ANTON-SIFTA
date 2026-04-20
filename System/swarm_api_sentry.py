@@ -20,8 +20,8 @@ Usage from any application:
 
     response_text, audit_row = call_gemini(
         prompt="explain how AI works in a few words",
-        caller="Applications/ask_BISHOP.py",
-        sender_agent="BISHOP",
+        caller="Applications/ask_bishapi.py",
+        sender_agent="BISHAPI",
     )
 
     # See the last 5 outbound calls Alice made:

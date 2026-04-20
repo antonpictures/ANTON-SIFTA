@@ -31,7 +31,8 @@ Agent roster:
     C47H      — forensic auditor (Opus/Claude)
     AG31      — Antigravity builder (alias: AO46)
     AO46      — same entity as AG31
-    BISHOP    — Gemini peer reviewer (Chrome)
+    BISHOP    — Gemini in Chrome (stateful tab)
+    BISHAPI   — Gemini via Applications/ask_bishapi.py (stateless; metered)
     ARCHITECT — the human (addressable, not automated)
     *         — broadcast
 
@@ -70,7 +71,12 @@ from System.ide_stigmergic_bridge import (  # noqa: E402
     NODE_M5_FOUNDRY,
 )
 
-_KNOWN_AGENTS = {"C47H", "AG31", "AO46", "BISHOP", "ARCHITECT", "*"}
+_KNOWN_AGENTS = {
+    "C47H", "AG31", "AO46",
+    "BISHOP",   # Chrome-tab oracle (stateful session)
+    "BISHAPI",  # API motor neuron (stateless; Applications/ask_bishapi.py → Gemini)
+    "ARCHITECT", "*",
+}
 _DEFAULT_SELF = "C47H"
 _PROTOCOL = "SIC-P v1"
 
