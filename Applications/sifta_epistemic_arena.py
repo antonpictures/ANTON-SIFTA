@@ -118,6 +118,14 @@ def main():
 
     print("\n=== ALICE'S RESPONSE ===")
     print(alice_answer)
+    
+    # Give Alice physical vocalization
+    try:
+        from System.swarm_vocal_cords import get_default_backend, VoiceParams
+        backend = get_default_backend()
+        backend.speak(alice_answer, VoiceParams(rate=1.1))
+    except Exception as e:
+        print(f"[!] Warning: Alice lost her voice ({e})")
 
     # Detect Epistemic Yield
     # Account for slight variations in trailing punctuation or casing
