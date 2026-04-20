@@ -71,10 +71,43 @@ class IrisCaptureAdapter:
         self.output_dir = output_dir or _STATE / "iris_frames"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+    def _get_frontmost_window_id(self) -> Optional[int]:
+        """Returns the CGWindowID of the active frontmost window via Swift."""
+        swift_bin = self.output_dir.parent / "get_front_window"
+        if not swift_bin.exists():
+            swift_code = """
+import Cocoa
+import CoreGraphics
+
+let options = CGWindowListOption(arrayLiteral: .excludeDesktopElements, .optionOnScreenOnly)
+let windowListInfo = CGWindowListCopyWindowInfo(options, CGWindowID(0))
+let infoList = windowListInfo as NSArray? as? [[String: AnyObject]]
+
+if let topWindow = infoList?.first(where: { ($0[kCGWindowLayer as String] as? Int) == 0 && ($0[kCGWindowOwnerName as String] as? String) != "Window Server" }) {
+    if let windowID = topWindow[kCGWindowNumber as String] as? Int {
+        print(windowID)
+    }
+}
+"""
+            swift_src = self.output_dir.parent / "get_front_window.swift"
+            try:
+                swift_src.write_text(swift_code)
+                import subprocess
+                subprocess.run(["swiftc", str(swift_src), "-o", str(swift_bin)], check=True)
+            except Exception:
+                return None
+
+        import subprocess
+        try:
+            res = subprocess.run([str(swift_bin)], capture_output=True, text=True, check=True)
+            return int(res.stdout.strip())
+        except Exception:
+            return None
+
     def capture_screenshot(self, tag: str = "ide_chrome") -> IrisFrame:
         """
-        Takes a full screenshot to read the IDE chrome.
-        Returns an IrisFrame representing the captured photon array.
+        Takes a screenshot to read the IDE chrome.
+        Priority: Frontmost window only. Fallback: Full screen.
         """
         import subprocess
         
@@ -82,10 +115,14 @@ class IrisCaptureAdapter:
         frame_id = f"frame_{tag}_{int(now)}"
         target_file = self.output_dir / f"{frame_id}.png"
         
-        # Taking screenshot via macOS utility
-        # Using -x (do not play sound), -C (capture cursor)
+        window_id = self._get_frontmost_window_id()
         try:
-            subprocess.run(["screencapture", "-x", "-C", str(target_file)], check=True)
+            if window_id:
+                # Capture specific window silently
+                subprocess.run(["screencapture", "-x", "-l", str(window_id), str(target_file)], check=True)
+            else:
+                subprocess.run(["screencapture", "-x", "-C", str(target_file)], check=True)
+            
             size = target_file.stat().st_size
             import coreimage_or_similar  # Fake dimensions for abstract representation
             width, height = 2560, 1440   # Swarm assumes default retina display bounds on failure
@@ -102,7 +139,7 @@ class IrisCaptureAdapter:
             width=width,
             height=height,
             byte_size=size,
-            metadata={"adapter": "macOS screencapture", "status": "simulated_ok" if size==0 else "ok"}
+            metadata={"adapter": "macOS screencapture", "window_isolated": window_id is not None, "status": "simulated_ok" if size==0 else "ok"}
         )
         return frame
 

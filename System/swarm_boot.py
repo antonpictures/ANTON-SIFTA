@@ -252,9 +252,10 @@ class SiftaBrainstem:
         wait resets to baseline. This stops the ~20 Hz spin that previously
         wrote 55 failure rows per second to the audit ledger when the mic
         was unreachable. Same backoff applies to vision capture failures.
-        """
         last_frame_at = 0.0
+        last_ocr_at = 0.0
         BASE_FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
+        VISION_OCR_INTERVAL_S = 5.0  # Capturing screen text is natively throttled
         BASE_SLEEP_S = 0.05
 
         # Backoff state. Both rails track consecutive failures so they
@@ -327,19 +328,22 @@ class SiftaBrainstem:
                               f"Check mic permission / device.")
 
             # ── Visual ───────────────────────────────────────────────────────
+            vision_pheromone = Path(".sifta_state/PHEROMONE_VISION_OPT_IN")
             if (self.vision_online
                 and tick_start >= vision_next_at
                 and (tick_start - last_frame_at) > current_frame_interval_s):
                 last_frame_at = tick_start
                 healthy = False
                 try:
-                    # Capture IDE screen
-                    if self.iris and self.visual_cortex:
+                    # Capture IDE screen if opted in and throtted interval passed
+                    if self.iris and self.visual_cortex and vision_pheromone.exists() and (tick_start - last_ocr_at) > VISION_OCR_INTERVAL_S:
+                        last_ocr_at = tick_start
                         frame = self.iris.blink_capture("ide_chrome_screenshot")
                         if frame and frame.file_path:
                             ocr_trace = self.visual_cortex.read_image_semantics(frame.file_path)
                             healthy = "error" not in ocr_trace
                     else:
+                        # Otherwise fall back to simple webcam check (no OCR, no full screen grab)
                         frame = webcam_frame(grab_timeout_s=0.2)
                         healthy = frame is not None
                 except Exception as e:
