@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import List, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
-_SPEECH_BIN = _REPO / ".sifta_state" / "sifta_speech"
+_SPEECH_BIN = _REPO / ".sifta_state" / "SiftaSpeech.app" / "Contents" / "MacOS" / "sifta_speech"
 
 # We removed _MIN_RMS_FOR_WHISPER entirely.
 # The only floor is true digital zero.
