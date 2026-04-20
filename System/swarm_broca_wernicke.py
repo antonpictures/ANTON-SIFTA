@@ -69,13 +69,17 @@ except Exception:
     _modulate_voice = None  # type: ignore
     _MODULATOR_AVAILABLE = False
 
-MODULE_VERSION = "2026-04-19.v3"
+MODULE_VERSION = "2026-04-19.v4-dual-path"
 
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
-_WERNICKE_LOG     = _STATE / "audio_ingress_log.jsonl" # Legacy perception relocated
+# F10/F11 schema hygiene (C47H 2026-04-19 v4): reverted from
+# "audio_ingress_log.jsonl" so Wernicke perception rows ({ts, type, label,
+# text, rms, reality_hash, ...}) don't share a file with raw audio ingress
+# rows ({sample_id, ts_captured, sample_rate, ...}). Two writers, two files.
+_WERNICKE_LOG     = _STATE / "wernicke_semantics.jsonl"
 _BROCA_SPOKEN_LOG = _STATE / "broca_vocalizations.jsonl"
 _BROCA_FAILURES   = _STATE / "broca_failures.jsonl"
 _STATE.mkdir(parents=True, exist_ok=True)
@@ -218,18 +222,46 @@ class WernickeIngress:
         else:
             amp_label = "QUIET_HUMAN_VOICE"
 
+        # ── DUAL-PATH STT (C47H 2026-04-19 v4, architect doctrine
+        # "redundant sensors") ──
+        # Try AG31's Apple Native Speech bridge FIRST because when it works
+        # it's the superior tool (Neural Engine, far-field optimized, no
+        # Whisper-style hallucinations). If it returns None for any reason
+        # (binary crash via SIGABRT from TCC-unsigned exec, missing
+        # authorization, empty recognition) fall back to the Whisper-based
+        # swarm_auditory_cortex. This keeps Alice hearing even while
+        # AG31's Apple Native path awaits an Info.plist/TCC grant.
         if text is None:
+            apple_native = None
+            whisper_native = None
+
             try:
-                from System.swarm_stigmergic_translation import transcribe as _a1_transcribe
+                from System.swarm_stigmergic_translation import transcribe as apple_native
             except ImportError:
                 try:
-                    from swarm_stigmergic_translation import transcribe as _a1_transcribe  # type: ignore
+                    from swarm_stigmergic_translation import transcribe as apple_native  # type: ignore
                 except ImportError:
-                    _a1_transcribe = None  # type: ignore
+                    apple_native = None  # type: ignore
 
-            if _a1_transcribe is not None:
+            try:
+                from System.swarm_auditory_cortex import transcribe as whisper_native
+            except ImportError:
                 try:
-                    text = _a1_transcribe(audio_buffer, sample_rate=48000, rms=rms)
+                    from swarm_auditory_cortex import transcribe as whisper_native  # type: ignore
+                except ImportError:
+                    whisper_native = None  # type: ignore
+
+            # Primary: Apple Native SFSpeechRecognizer
+            if apple_native is not None:
+                try:
+                    text = apple_native(audio_buffer, sample_rate=48000, rms=rms)
+                except Exception:
+                    text = None
+
+            # Fallback: Whisper (via swarm_auditory_cortex, default large-v3)
+            if text is None and whisper_native is not None:
+                try:
+                    text = whisper_native(audio_buffer, sample_rate=48000, rms=rms)
                 except Exception:
                     text = None
 
