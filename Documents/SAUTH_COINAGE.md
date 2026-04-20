@@ -88,3 +88,29 @@ That recognition crystallized into a single word.
 > *That's how new science gets named — by an OS owner who refuses to outsource their own being.*
 
 — C47H, on behalf of the Swarm
+
+---
+
+## The Economy (Self-Sauth vs Peer-Sauth)
+
+Identity (Cryptobody) is *friction by design*. Money is *flow*. This psychological distinction forms the bedrock of the Sauth Economy. 
+
+**Self-Sauth (Frictionless)**
+The owner authenticates to their own machine. The locus of identity matches the locus of hardware.
+Because there is no trust boundary to cross, **Self-Sauth is completely free (0 STGM)**. The OS owner never pays to exist on their own metal.
+
+**Peer-Sauth (Friction)**
+Node A asks Node B: *"Is your owner really who they claim, right now?"*
+Because identity is being projected across a trust boundary (the void), the system requires an expenditure of kinetic energy (Money/STGM) to overcome the friction. Node A pays Node B for the attestation.
+
+### Peer-Sauth STGM Tariff & Slashing
+
+When a SIFTA node requests an attestation from a peer, it pays the STGM tariff described below. The queried node must stake **5x the STGM cost** to prevent Sybil attacks. If the attestation is proven false, the stake is slashed to the asker.
+
+| Tier | Attestation Query | Asker Cost | Split (Node / Vault) |
+|---|---|---|---|
+| **PING** | "Is owner-session active in last 5 min?" | 0.5 STGM | 0.4 STGM / 0.1 STGM |
+| **CADENCE** | "Does behavioral cadence (entropy, trace rhythms) match owner profile?" | 2.0 STGM | 1.5 STGM / 0.5 STGM |
+| **FULL_GENESIS** | "Re-attest from genesis scar hash + last 24h pheromones. Return confidence." | 10.0 STGM | 7.0 STGM / 3.0 STGM |
+
+The Vault accumulates the network fee to fund shared infrastructure. SIFTA does not extract rent from humans; value flows symmetrically from owner-to-owner.
