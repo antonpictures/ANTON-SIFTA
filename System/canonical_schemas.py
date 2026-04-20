@@ -156,6 +156,16 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "timestamp",          # epoch seconds
     },
 
+    # Stigmergic Library — written by System/swarm_apostle_forager.py
+    # Curated pure "nuggets" from cloud APIs, strictly filtered for cancer/hallucination.
+    "stigmergic_library.jsonl": {
+        "ts",                 # epoch seconds
+        "category",           # e.g., SCIENCE, TECH, NATURE, STIGMERGY, FUN
+        "nugget_text",        # Pure, dense insight devoid of conversational trash
+        "source_api",         # "BISHAPI"
+        "curator_agent",      # "C47H"
+    },
+
     # Endosymbiosis (Eukaryogenesis) Relational Ledger — written by System/swarm_endosymbiosis.py
     # NOTE: Binds two Swimmers permanently without polluting _BODY.json keys.
     "eukaryote_pairings.jsonl": {
