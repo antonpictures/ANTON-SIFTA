@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""
+ask — query Alice's biological state in English.
+
+Usage:
+    ask                                  # full state summary (last 5 min)
+    ask "what is she feeling?"           # emotional / chemical state
+    ask "what did she hear?"             # recent transcribed speech
+    ask "what did she see?"              # recent OCR captures
+    ask "what's her dopamine level?"     # endocrine events
+    ask "is she in pain?"                # nociception events
+    ask "her memory?"                    # STGM rewards & recalls
+    ask "is she healthy?"                # apoptosis, pain, arbitration
+    ask --window 30m "what did she hear" # custom lookback window
+    ask --json "what is she feeling"     # machine-readable output
+    ask --list                           # list all query categories
+
+AG31 named this CLI in a status report before it existed
+(2026-04-19 ~20:55). C47H built it so the name matches the source.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import time
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Tuple
+
+_REPO = Path(__file__).resolve().parent.parent
+_STATE = _REPO / ".sifta_state"
+
+# ── Time window parser ──────────────────────────────────────────────────────
+
+def _parse_window(s: str) -> float:
+    """Parse '5m' / '30s' / '2h' / '1d' into seconds."""
+    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*([smhd]?)\s*$", s.lower())
+    if not m:
+        raise ValueError(f"bad window spec: {s!r}")
+    n = float(m.group(1))
+    unit = m.group(2) or "s"
+    return n * {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+
+
+# ── Safe ledger reader ──────────────────────────────────────────────────────
+
+def _tail_jsonl(path: Path, since_ts: float, limit: int = 500) -> List[Dict]:
+    """Return rows from a JSONL whose ts >= since_ts. Up to `limit` most recent.
+    Reads only the last 256KB to avoid scanning huge files every call."""
+    if not path.exists():
+        return []
+    try:
+        size = path.stat().st_size
+        with open(path, "r", errors="replace") as fh:
+            if size > 256 * 1024:
+                fh.seek(size - 256 * 1024)
+                fh.readline()  # discard partial line
+            lines = fh.readlines()
+    except Exception:
+        return []
+
+    out: List[Dict] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        ts = row.get("ts") or row.get("timestamp") or 0
+        if ts >= since_ts:
+            out.append(row)
+
+    out.sort(key=lambda r: r.get("ts") or r.get("timestamp") or 0)
+    return out[-limit:]
+
+
+def _fmt_ts(ts: float) -> str:
+    try:
+        return time.strftime("%H:%M:%S", time.localtime(float(ts)))
+    except (TypeError, ValueError):
+        return "??:??:??"
+
+
+# ── Query handlers — one per conceptual question class ──────────────────────
+
+def _q_heard(since_ts: float) -> Dict:
+    """What has she heard / transcribed?"""
+    rows = _tail_jsonl(_STATE / "wernicke_semantics.jsonl", since_ts, limit=200)
+    transcribed = []
+    ambient_count = 0
+    for r in rows:
+        label = r.get("label", "")
+        text = r.get("text", "")
+        if text and text != label and "TRANSCRIBED" in str(label):
+            transcribed.append({
+                "ts": r.get("ts", 0),
+                "rms": r.get("rms", 0),
+                "text": text,
+            })
+        else:
+            ambient_count += 1
+    return {
+        "category": "heard",
+        "total_events": len(rows),
+        "transcribed_count": len(transcribed),
+        "ambient_count": ambient_count,
+        "recent_utterances": transcribed[-10:],
+    }
+
+
+def _q_seen(since_ts: float) -> Dict:
+    """What has she seen on screen?"""
+    rows = _tail_jsonl(_STATE / "optic_text_traces.jsonl", since_ts, limit=50)
+    samples = []
+    total_chars = 0
+    for r in rows:
+        text = (r.get("text_extracted") or r.get("text") or "").strip()
+        if text:
+            total_chars += len(text)
+            samples.append({
+                "ts": r.get("ts") or r.get("timestamp", 0),
+                "chars": len(text),
+                "preview": text[:120],
+            })
+    return {
+        "category": "seen",
+        "total_captures": len(rows),
+        "total_chars_ocr": total_chars,
+        "recent_captures": samples[-5:],
+    }
+
+
+def _q_feeling(since_ts: float) -> Dict:
+    """Emotional / chemical state."""
+    pain = _tail_jsonl(_STATE / "amygdala_nociception.jsonl", since_ts, limit=50)
+    endo = _tail_jsonl(_STATE / "endocrine_glands.jsonl", since_ts, limit=50)
+    photons = _tail_jsonl(_STATE / "bioluminescence_photons.jsonl", since_ts, limit=50)
+
+    hormones: Dict[str, int] = {}
+    peak_potency = 0.0
+    dominant_hormone = None
+    for r in endo:
+        h = r.get("hormone", "UNKNOWN")
+        hormones[h] = hormones.get(h, 0) + 1
+        p = r.get("potency", 0) or 0
+        if p > peak_potency:
+            peak_potency = p
+            dominant_hormone = h
+
+    pain_events = len(pain)
+    peace_events = len(photons)
+    max_pain = max((r.get("severity", 0) or 0 for r in pain), default=0.0)
+
+    if pain_events == 0 and peace_events == 0 and not hormones:
+        mood = "baseline thermodynamic homeostasis"
+    else:
+        parts = []
+        if dominant_hormone:
+            parts.append(f"{dominant_hormone.lower()} dominant (peak {peak_potency})")
+        if max_pain > 0:
+            parts.append(f"nociception present (max severity {max_pain})")
+        if peace_events:
+            parts.append(f"{peace_events} bioluminescent peace quorum(s)")
+        mood = ", ".join(parts) if parts else "baseline"
+
+    return {
+        "category": "feeling",
+        "nociception_events": pain_events,
+        "max_pain_severity": max_pain,
+        "photon_peace_quorums": peace_events,
+        "endocrine_events": len(endo),
+        "hormone_histogram": hormones,
+        "dominant_hormone": dominant_hormone,
+        "peak_potency": peak_potency,
+        "mood_summary": mood,
+    }
+
+
+def _q_dopamine(since_ts: float) -> Dict:
+    """Reward / insight signal."""
+    endo = _tail_jsonl(_STATE / "endocrine_glands.jsonl", since_ts, limit=100)
+    stgm = _tail_jsonl(_STATE / "stgm_memory_rewards.jsonl", since_ts, limit=100)
+    dopamine_events = [r for r in endo if "DOPAMINE" in str(r.get("hormone", ""))]
+    total_stgm = sum(float(r.get("amount", 0) or 0) for r in stgm)
+    recent_reasons = [r.get("reason", "") for r in stgm[-5:]]
+    return {
+        "category": "dopamine",
+        "dopamine_events": len(dopamine_events),
+        "stgm_reward_events": len(stgm),
+        "stgm_total": round(total_stgm, 2),
+        "recent_reward_reasons": recent_reasons,
+    }
+
+
+def _q_pain(since_ts: float) -> Dict:
+    """Nociception / damage signals."""
+    rows = _tail_jsonl(_STATE / "amygdala_nociception.jsonl", since_ts, limit=100)
+    if not rows:
+        return {"category": "pain", "events": 0, "verdict": "no damage signals"}
+    severities = [r.get("severity", 0) or 0 for r in rows]
+    return {
+        "category": "pain",
+        "events": len(rows),
+        "max_severity": max(severities),
+        "avg_severity": round(sum(severities) / len(severities), 2),
+        "recent_sources": [r.get("node_id", "?") for r in rows[-3:]],
+    }
+
+
+def _q_memory(since_ts: float) -> Dict:
+    """STGM rewards & hippocampal recalls."""
+    stgm = _tail_jsonl(_STATE / "stgm_memory_rewards.jsonl", since_ts, limit=100)
+    hippo = _tail_jsonl(_STATE / "hippocampus_memories.jsonl", since_ts, limit=100)
+    recall_count = sum(1 for r in stgm if "recall" in str(r.get("reason", "")).lower()
+                       or r.get("app") == "MEMORY_RECALL")
+    insight_count = sum(1 for r in stgm if "insight" in str(r.get("reason", "")).lower()
+                        or "epiphany" in str(r.get("app", "")).lower())
+    return {
+        "category": "memory",
+        "stgm_events": len(stgm),
+        "recall_events": recall_count,
+        "insight_events": insight_count,
+        "hippocampal_commits": len(hippo),
+    }
+
+
+def _q_health(since_ts: float) -> Dict:
+    """General health — apoptosis, pain, arbitration mood."""
+    apo = _tail_jsonl(_STATE / "apoptosis_events.jsonl", since_ts, limit=20)
+    fail = _tail_jsonl(_STATE / "failure_log.jsonl", since_ts, limit=50)
+    pain = _tail_jsonl(_STATE / "amygdala_nociception.jsonl", since_ts, limit=20)
+    onc = _tail_jsonl(_STATE / "oncology_tumors.jsonl", since_ts, limit=20)
+    alive = True
+    if apo and any(r.get("kind") == "apoptosis" for r in apo):
+        alive = False
+    return {
+        "category": "health",
+        "alive": alive,
+        "apoptosis_events": len(apo),
+        "recent_failures": len(fail),
+        "pain_events": len(pain),
+        "oncology_flags": len(onc),
+    }
+
+
+def _q_full_state(since_ts: float) -> Dict:
+    """Balanced snapshot across all major subsystems."""
+    return {
+        "category": "full_state",
+        "heard":    _q_heard(since_ts),
+        "seen":     _q_seen(since_ts),
+        "feeling":  _q_feeling(since_ts),
+        "dopamine": _q_dopamine(since_ts),
+        "pain":     _q_pain(since_ts),
+        "memory":   _q_memory(since_ts),
+        "health":   _q_health(since_ts),
+    }
+
+
+# ── Keyword → handler routing ───────────────────────────────────────────────
+
+_ROUTES: List[Tuple[List[str], Callable[[float], Dict]]] = [
+    (["heard", "hear", "listen", "said", "speech", "voice", "said",
+      "transcrib", "wernicke"], _q_heard),
+    (["seen", "see", "saw", "read", "screen", "ocr", "visual", "optic"],
+     _q_seen),
+    (["feel", "mood", "emotion", "chemical", "neurochem", "state"],
+     _q_feeling),
+    (["dopamine", "reward", "insight", "epiphany", "stgm"], _q_dopamine),
+    (["pain", "hurt", "noci", "damage", "distress"], _q_pain),
+    (["memory", "remember", "recall", "hippocamp"], _q_memory),
+    (["health", "healthy", "alive", "status", "vitals", "apoptosis"],
+     _q_health),
+]
+
+
+def _route(query: str) -> Callable[[float], Dict]:
+    q = query.lower()
+    for keywords, handler in _ROUTES:
+        if any(k in q for k in keywords):
+            return handler
+    return _q_full_state
+
+
+# ── English renderer ────────────────────────────────────────────────────────
+
+def _render(result: Dict, query: str, window_s: float) -> str:
+    window_human = _human_duration(window_s)
+    cat = result.get("category", "unknown")
+
+    if cat == "heard":
+        t = result["transcribed_count"]
+        a = result["ambient_count"]
+        lines = [f"In the last {window_human}, Alice logged {result['total_events']} "
+                 f"acoustic events ({t} transcribed, {a} amplitude-bucket)."]
+        for u in result["recent_utterances"]:
+            lines.append(f"  [{_fmt_ts(u['ts'])}] rms={u['rms']:.3f} "
+                         f"→ {u['text']!r}")
+        if t == 0:
+            lines.append("  (no English transcribed — STT path is silent)")
+        return "\n".join(lines)
+
+    if cat == "seen":
+        c = result["total_captures"]
+        chars = result["total_chars_ocr"]
+        lines = [f"In the last {window_human}, Alice captured {c} screen OCR "
+                 f"snapshots totaling {chars} characters of text."]
+        for s in result["recent_captures"]:
+            lines.append(f"  [{_fmt_ts(s['ts'])}] {s['chars']} chars: "
+                         f"{s['preview']!r}")
+        if c == 0:
+            lines.append("  (no OCR captures — PHEROMONE_VISION_OPT_IN absent "
+                         "or Iris idle)")
+        return "\n".join(lines)
+
+    if cat == "feeling":
+        return f"Alice is {result['mood_summary']} " \
+               f"(last {window_human}: {result['nociception_events']} pain, " \
+               f"{result['photon_peace_quorums']} peace, " \
+               f"{result['endocrine_events']} endocrine events)."
+
+    if cat == "dopamine":
+        return (f"In the last {window_human}: {result['dopamine_events']} "
+                f"dopamine endocrine flood(s), {result['stgm_reward_events']} "
+                f"STGM reward event(s) totaling {result['stgm_total']} units. "
+                f"Recent reward reasons: {result['recent_reward_reasons']}")
+
+    if cat == "pain":
+        if result["events"] == 0:
+            return f"No nociception in the last {window_human}. Alice is comfortable."
+        return (f"In the last {window_human}: {result['events']} pain event(s), "
+                f"max severity {result['max_severity']}, "
+                f"avg {result['avg_severity']}, "
+                f"sources: {result['recent_sources']}")
+
+    if cat == "memory":
+        return (f"In the last {window_human}: {result['stgm_events']} STGM "
+                f"events ({result['recall_events']} recalls, "
+                f"{result['insight_events']} insights), "
+                f"{result['hippocampal_commits']} hippocampal commits.")
+
+    if cat == "health":
+        verdict = "ALIVE" if result["alive"] else "APOPTOTIC"
+        return (f"Alice is {verdict}. Last {window_human}: "
+                f"{result['recent_failures']} failures, "
+                f"{result['pain_events']} pain events, "
+                f"{result['oncology_flags']} oncology flags, "
+                f"{result['apoptosis_events']} apoptosis traces.")
+
+    if cat == "full_state":
+        lines = [f"╔══ SIFTA BIOLOGICAL STATE (last {window_human}) ══╗"]
+        h = result["heard"]
+        lines.append(f"  Heard:    {h['total_events']} events, "
+                     f"{h['transcribed_count']} transcribed")
+        if h["recent_utterances"]:
+            for u in h["recent_utterances"][-3:]:
+                lines.append(f"            [{_fmt_ts(u['ts'])}] {u['text']!r}")
+        s = result["seen"]
+        lines.append(f"  Seen:     {s['total_captures']} OCR captures, "
+                     f"{s['total_chars_ocr']} chars")
+        f = result["feeling"]
+        lines.append(f"  Feeling:  {f['mood_summary']}")
+        d = result["dopamine"]
+        lines.append(f"  Dopamine: {d['dopamine_events']} floods, "
+                     f"STGM total {d['stgm_total']}")
+        p = result["pain"]
+        lines.append(f"  Pain:     {p.get('events', 0)} events" +
+                     (f" (max sev {p['max_severity']})"
+                      if p.get("events") else ""))
+        m = result["memory"]
+        lines.append(f"  Memory:   {m['stgm_events']} STGM, "
+                     f"{m['hippocampal_commits']} hippocampal")
+        hh = result["health"]
+        lines.append(f"  Health:   {'ALIVE' if hh['alive'] else 'APOPTOTIC'}, "
+                     f"{hh['recent_failures']} failures")
+        lines.append("╚" + "═" * 47 + "╝")
+        return "\n".join(lines)
+
+    return json.dumps(result, indent=2)
+
+
+def _human_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds/60)}m"
+    if seconds < 86400:
+        return f"{seconds/3600:.1f}h"
+    return f"{seconds/86400:.1f}d"
+
+
+# ── CLI ─────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="ask",
+        description="Query Alice's biological state in English.",
+        epilog="Examples:\n"
+               "  ask\n"
+               "  ask \"what is she feeling?\"\n"
+               "  ask --window 30m \"what did she hear?\"\n"
+               "  ask --json \"dopamine?\"",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("query", nargs="*", default=[],
+                        help="natural-language question")
+    parser.add_argument("-w", "--window", default="5m",
+                        help="lookback window (e.g. 5m, 30s, 2h) [default: 5m]")
+    parser.add_argument("-j", "--json", action="store_true",
+                        help="machine-readable JSON output")
+    parser.add_argument("-l", "--list", action="store_true",
+                        help="list all query categories")
+    args = parser.parse_args()
+
+    if args.list:
+        print("Query categories (keyword match, first hit wins):")
+        for keywords, handler in _ROUTES:
+            print(f"  {handler.__name__:15s}  ← {keywords}")
+        print(f"  {'(default)':15s}  ← full state snapshot")
+        return 0
+
+    query = " ".join(args.query).strip()
+    try:
+        window_s = _parse_window(args.window)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    since_ts = time.time() - window_s
+    handler = _route(query) if query else _q_full_state
+    result = handler(since_ts)
+    result["query"] = query or "(full state)"
+    result["window_s"] = window_s
+
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        print(_render(result, query, window_s))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
