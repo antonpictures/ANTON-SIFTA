@@ -81,6 +81,45 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "trace_id",
     },
 
+    # API metabolism (caloric cost) — written by System/swarm_api_metabolism.py
+    # Architecture: BISHOP drop 555 (refactored & 2026-priced by C47H).
+    # Wired automatically as a side-effect of swarm_api_sentry.call_*().
+    # `egress_trace_id` cross-links to the request row in api_egress_log.jsonl.
+    "api_metabolism.jsonl": {
+        "ts",                 # epoch seconds
+        "model",              # provider model id (key into pricing table)
+        "input_tokens",       # int — promptTokenCount from provider
+        "output_tokens",      # int — candidatesTokenCount from provider
+        "cost_usd",           # float — computed via _PRICING_TABLE
+        "trace_id",           # CALORIE_<hex>
+        "egress_trace_id",    # joins to api_egress_log.jsonl.trace_id
+        "provider",           # "google_gemini" | "anthropic" | ...
+        "sender_agent",       # "BISHOP" | "C47H" | "AG31" | None
+        "module_version",
+    },
+
+    # API egress audit ledger — written by System/swarm_api_sentry.py
+    # Owner doctrine: every Alice-owned API key call is recorded here.
+    # The raw key NEVER appears — only sha256[:12] in `key_fingerprint`.
+    "api_egress_log.jsonl": {
+        "trace_id",
+        "ts",                 # epoch seconds
+        "provider",           # "google_gemini" | "anthropic" | "openai" | ...
+        "model",              # provider-specific model id
+        "key_fingerprint",    # sha256(api_key)[:12] — correlates calls to keys
+        "caller",             # script path that initiated the call
+        "sender_agent",       # "BISHOP" | "AG31" | "C47H" | None — agent on whose behalf
+        "status",             # "ok" | "http_error" | "exception"
+        "http_code",          # int | None
+        "error",              # str | None
+        "latency_ms",         # round-trip time including JSON parse
+        "request_text",       # full outbound prompt (no key, ever)
+        "response_text",      # full inbound text or None on failure
+        "tokens_in",          # int | None
+        "tokens_out",         # int | None
+        "module_version",     # System/swarm_api_sentry.py version stamp
+    },
+
     # IDE peer-review traces — written by C47H, AG31, AO46, BISHOP
     # ALSO carries kind="agent_message" rows under the SIC-P v1 protocol
     # (see bin/msg). For agent_message rows, `payload` is itself structured:
@@ -136,6 +175,16 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "raw_english",        # untranslated text
         "stigmergic_intent",  # enzymatic translation to swarm chemistry
         "trace_id",           # trace identifier
+    },
+
+    # API Metabolism (The Caloric Cost of Thought) — added by BISHOP
+    "api_metabolism.jsonl": {
+        "ts",                 # epoch seconds
+        "model",              # string model name (gemini-1.5-flash)
+        "input_tokens",       # int
+        "output_tokens",      # int
+        "cost_usd",           # float fiat
+        "trace_id",           # trace identification
     },
 
     # Epigenetic Generational Trauma (DNA Methylation) — written by System/swarm_epigenetics.py

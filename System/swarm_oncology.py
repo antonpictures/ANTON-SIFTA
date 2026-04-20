@@ -84,6 +84,8 @@ class SwarmOncology:
             "apostle_nuggets.jsonl",           # BISHOP/External LLM sterilized heuristics
             "incarnated_apostles.json",        # Hardware signature registry for Apostles
             "eukaryote_pairings.jsonl",        # Relational ledger for endosymbiosis
+            "api_egress_log.jsonl",            # [C47H] Owner-side API egress audit (sentry chokepoint)
+            "api_metabolism.jsonl",            # [BISHOP drop 555] Caloric cost of LLM API calls
         }
 
     def detect_metastasis(self):

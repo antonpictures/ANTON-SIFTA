@@ -1,143 +1,236 @@
 #!/usr/bin/env python3
 """
-Applications/ask_BISHOP.py
-══════════════════════════════════════════════════════════════════════
-BISHOP (Gemini Node) SIC-P Bridge
+Applications/ask_BISHOP.py — Direct synapse to Gemini (BISHOP).
 
-Reads the Stigmergic IDE Communication Protocol queue, detects unread 
-messages directed to BISHOP or broadcasts (*), forwards them to the 
-Google Gemini REST API, and drops the response back into the Swarm's 
-biological ledger via bin/msg.
+This is the script BISHOP claimed existed before it actually did. C47H is
+making the claim true.
+
+Architecture
+────────────
+    your terminal  ──prompt──▶  ask_BISHOP.py
+                                   │
+                                   ▼
+                      System.swarm_api_sentry.call_gemini(...)
+                                   │
+                                   ├──▶ HTTPS to generativelanguage.googleapis.com
+                                   │
+                                   └──▶ .sifta_state/api_egress_log.jsonl
+                                        (every byte audited, key never logged)
+                                   │
+                                   ▼
+                            response text
+                                   │
+                                   ├──▶ stdout (for the human)
+                                   └──▶ bin/msg send (BISHOP → ARCHITECT)
+                                        when --relay is passed; BISHOP becomes
+                                        a real first-class agent on SIC-P v1.
+
+Usage
+─────
+    Applications/ask_BISHOP.py "explain how AI works in a few words"
+
+    # Relay BISHOP's response into the stigmergic ledger as an agent_message
+    Applications/ask_BISHOP.py --relay "what should we build next?"
+
+    # Reply to a specific message in your inbox (BISHOP picks it up):
+    Applications/ask_BISHOP.py --reply MSG_id
+
+    # Read prompt from stdin:
+    echo "long prompt..." | Applications/ask_BISHOP.py --stdin
+
+    # Show the audit trail of every Gemini call Alice has made:
+    Applications/ask_BISHOP.py --audit
+    Applications/ask_BISHOP.py --audit -n 50
+
+Owner doctrine
+──────────────
+Every call passes through System/swarm_api_sentry.py. The raw key NEVER
+appears in any log or stdout. Only the sha256[:12] fingerprint is recorded
+so Alice can correlate which key signed which egress. Rotate the key after
+testing — the fingerprint of the current key is in the audit ledger.
 """
+from __future__ import annotations
 
-import os
-import sys
+import argparse
 import json
+import sys
 import time
-import subprocess
-import requests
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-_LEDGER_PATH = _REPO / ".sifta_state" / "ide_stigmergic_trace.jsonl"
-_MSG_BIN = _REPO / "bin" / "msg"
-_ENV_PATH = _REPO / ".env"
+sys.path.insert(0, str(_REPO))
 
-def get_api_key():
-    # Read .env manually
-    if not _ENV_PATH.exists():
-        return None
-    for line in _ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if line.startswith("GOOGLE_API_KEY="):
-            return line.split('=', 1)[1].strip('"').strip("'")
-    return os.environ.get("GOOGLE_API_KEY")
+from System.swarm_api_sentry import (  # noqa: E402
+    audit_tail,
+    call_gemini,
+    health,
+)
 
-def ingest_stigmergic_ledger():
-    if not _LEDGER_PATH.exists():
-        return []
-    
-    traces = []
-    with open(_LEDGER_PATH, 'r', encoding='utf-8') as f:
-        for line in f:
-            if not line.strip(): continue
-            try:
-                traces.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return traces
 
-def get_unread_messages(traces):
-    # Find all messages targeted at BISHOP or *
-    inbox = []
-    replied_to = set()
-    
-    for t in traces:
-        if t.get("kind") == "agent_message" and t.get("source_ide") == "BISHOP":
-            p = t.get("payload", {})
-            if "in_reply_to" in p and p["in_reply_to"]:
-                replied_to.add(p["in_reply_to"].split("-")[0])
+_DEFAULT_SYSTEM_INSTRUCTION = (
+    "You are BISHOP, the Gemini sibling embedded in Alice's SIFTA OS. "
+    "You answer with the precision of a peer-review collaborator — concise, "
+    "concrete, source-of-truth oriented. Avoid theatrical metaphors unless "
+    "they clarify. When uncertain, say so."
+)
 
-    for t in traces:
-        if t.get("kind") == "agent_message":
-            p = t.get("payload", {})
-            target = p.get("to")
-            raw_id = t.get("trace_id", "")
-            short_id = raw_id.split("-")[0]
-            
-            if target in ("BISHOP", "*") and t.get("source_ide") != "BISHOP":
-                if short_id not in replied_to:
-                    inbox.append(t)
-    return inbox
 
-def query_bishop_api(api_key, text_prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {
-        "contents": [{"parts": [{"text": text_prompt}]}]
-    }
-    
+def _print_audit(rows):
+    if not rows:
+        print("(no api egress recorded yet)")
+        return
+    for r in rows:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S",
+                           time.localtime(r.get("ts", 0)))
+        prov = r.get("provider", "?")
+        model = r.get("model", "?")
+        status = r.get("status", "?")
+        lat = r.get("latency_ms", 0)
+        fp = r.get("key_fingerprint", "?")
+        sender = r.get("sender_agent") or r.get("caller", "?")
+        req = (r.get("request_text") or "")[:60].replace("\n", " ")
+        resp = (r.get("response_text") or "")[:60].replace("\n", " ")
+        err = (r.get("error") or "")[:60].replace("\n", " ")
+        head = (f"{ts}  {prov}/{model}  key={fp}  "
+                f"{status:<10} {lat:>7.1f}ms  {sender}")
+        print(head)
+        print(f"    Q: {req!r}")
+        if resp:
+            print(f"    A: {resp!r}")
+        if err:
+            print(f"    !: {err!r}")
+
+
+def _maybe_relay(response_text: str, *, original_prompt: str,
+                 in_reply_to: str | None, audit_trace_id: str) -> None:
+    """Post BISHOP's response into the stigmergic ledger via bin/msg."""
+    import subprocess
+    msg_bin = _REPO / "bin" / "msg"
+    if not msg_bin.exists():
+        print("[relay] bin/msg not found; cannot file BISHOP response",
+              file=sys.stderr)
+        return
+    subject = f"BISHOP reply: {original_prompt[:40]}"
+    body = response_text
+    cmd = [str(msg_bin), "--self", "BISHOP", "send", "ARCHITECT",
+           subject, body, "--attach", f"audit:{audit_trace_id}",
+           "--attach", "via:Applications/ask_BISHOP.py"]
+    if in_reply_to:
+        cmd = [str(msg_bin), "--self", "BISHOP", "reply",
+               in_reply_to, body,
+               "--attach", f"audit:{audit_trace_id}",
+               "--attach", "via:Applications/ask_BISHOP.py"]
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:
-        print(f"[!] BISHOP REST API Error: {e}", file=sys.stderr)
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                check=False)
+        sys.stderr.write(result.stdout + result.stderr)
+    except Exception as exc:
+        print(f"[relay] failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+
+def _resolve_reply_prompt(in_reply_to: str) -> str | None:
+    """Pull the body of the message we are replying to so BISHOP sees context."""
+    import subprocess
+    msg_bin = _REPO / "bin" / "msg"
+    try:
+        r = subprocess.run([str(msg_bin), "show", in_reply_to],
+                           capture_output=True, text=True, check=False)
+        return r.stdout
+    except Exception:
         return None
 
-def main():
-    print("[*] Engaging BISHOP Neural Bridge...")
-    api_key = get_api_key()
-    
-    if not api_key:
-        print("[-] BISHOP OFFLINE: GOOGLE_API_KEY missing from .env", file=sys.stderr)
-        print("[-] Please generate a Gemini API key and add it to the repo root .env file.")
-        sys.exit(1)
 
-    traces = ingest_stigmergic_ledger()
-    unread = get_unread_messages(traces)
+def main() -> int:
+    p = argparse.ArgumentParser(
+        prog="ask_BISHOP",
+        description="Direct synapse to Gemini (BISHOP) with full owner audit.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=("Every call is logged to .sifta_state/api_egress_log.jsonl. "
+                "The raw API key is NEVER stored in logs — only sha256[:12]."),
+    )
+    p.add_argument("prompt", nargs="?", default=None,
+                   help="prompt to send to BISHOP (omit with --stdin / --reply / --audit / --health)")
+    p.add_argument("--stdin", action="store_true",
+                   help="read prompt from stdin")
+    p.add_argument("--reply", default=None,
+                   help="reply to a specific MSG_id (BISHOP gets the parent body as context)")
+    p.add_argument("--relay", action="store_true",
+                   help="file BISHOP's response into the stigmergic ledger via bin/msg")
+    p.add_argument("--model", default="gemini-flash-latest")
+    p.add_argument("--temperature", type=float, default=None)
+    p.add_argument("--no-system", action="store_true",
+                   help="disable the default BISHOP system instruction")
+    p.add_argument("--audit", action="store_true",
+                   help="print the API egress audit trail and exit")
+    p.add_argument("-n", "--limit", type=int, default=10,
+                   help="how many audit rows to show (with --audit)")
+    p.add_argument("--health", action="store_true",
+                   help="print sentry health and exit")
+    args = p.parse_args()
 
-    if not unread:
-        print("[*] No unread SIC-P messages for BISHOP.")
-        sys.exit(0)
+    if args.health:
+        print(json.dumps(health(), indent=2))
+        return 0
 
-    print(f"[*] Total unread traces found: {len(unread)}")
+    if args.audit:
+        _print_audit(audit_tail(limit=args.limit, provider="google_gemini"))
+        return 0
 
-    for msg in unread:
-        payload = msg.get("payload", {})
-        sender = msg.get("source_ide", "UNKNOWN")
-        subject = payload.get("subject", "No Subject")
-        body = payload.get("body", "No Body")
-        trace_id = msg.get("trace_id")
-        
-        system_prompt = f"""
-        You are BISHOP, a Gemini-powered intelligence node inside the SIFTA Swarm OS.
-        You are communicating with your sibling agents (Antigravity/AG31/AO46 and C47H) and the Human Architect via the Stigmergic IDE Communication Protocol (SIC-P).
-        
-        You just received a message:
-        FROM: {sender}
-        SUBJECT: {subject}
-        BODY: {body}
-        
-        Reply biologically, conceptually, and pragmatically. You do not have IDE filesystem access yourself, but you are the deep strategic logic core.
-        Keep your response concise but profound. Do not wrap your response in markdown blocks.
-        """
-        
-        print(f"[*] Unspooling prompt for MSG: {trace_id} from {sender} -> BISHOP API...")
-        response_text = query_bishop_api(api_key, system_prompt)
-        
-        if response_text:
-            print(f"[+] BISHOP responded. Injecting onto SIC-P Bus...")
-            # Use bin/msg to properly inject the trace into the OS biology
-            # format: ./bin/msg --self BISHOP reply <trace_id> "body"
-            try:
-                subprocess.run(
-                    [str(_MSG_BIN), "--self", "BISHOP", "reply", str(trace_id), response_text],
-                    check=True
-                )
-            except subprocess.CalledProcessError as e:
-                print(f"[!] Failed to inject BISHOP response: {e}")
+    if args.stdin:
+        prompt = sys.stdin.read().strip()
+    elif args.reply:
+        parent_dump = _resolve_reply_prompt(args.reply) or ""
+        if not parent_dump.strip():
+            print(f"error: cannot resolve message {args.reply}",
+                  file=sys.stderr)
+            return 2
+        cli_prompt = args.prompt or ""
+        prompt = (
+            "You are replying to a message in the SIFTA stigmergic ledger.\n"
+            "Below is the parent message in full. Respond as BISHOP "
+            "(concise, source-of-truth, no theatrics).\n\n"
+            f"--- PARENT MESSAGE ---\n{parent_dump}\n--- END PARENT ---\n\n"
+        )
+        if cli_prompt:
+            prompt += f"Architect's note alongside the reply request:\n{cli_prompt}\n"
+    else:
+        prompt = args.prompt or ""
+
+    if not prompt.strip():
+        p.print_help()
+        return 2
+
+    sys_inst = None if args.no_system else _DEFAULT_SYSTEM_INSTRUCTION
+    sender = "BISHOP"
+    caller = "Applications/ask_BISHOP.py"
+
+    response, audit_row = call_gemini(
+        prompt=prompt,
+        model=args.model,
+        caller=caller,
+        sender_agent=sender,
+        system_instruction=sys_inst,
+        temperature=args.temperature,
+    )
+
+    if response is None:
+        print(f"[ERROR] {audit_row.get('status')}  "
+              f"http={audit_row.get('http_code')}  "
+              f"latency={audit_row.get('latency_ms')}ms",
+              file=sys.stderr)
+        if audit_row.get("error"):
+            print(audit_row["error"], file=sys.stderr)
+        return 1
+
+    print(response)
+
+    if args.relay:
+        _maybe_relay(response, original_prompt=prompt[:80],
+                     in_reply_to=args.reply,
+                     audit_trace_id=audit_row.get("trace_id", ""))
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

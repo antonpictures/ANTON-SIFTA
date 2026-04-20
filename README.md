@@ -111,8 +111,8 @@ In every other framework, agents write to external logs. In SIFTA, **the agent I
 ### 7. Mortality, Metabolism & the STGM Economy
 Agents are **mortal**. Energy decays. Perception costs calories. Scanning dangerous (BLEEDING) code costs double. When energy hits zero, the agent dies and is permanently archived in the Cemetery. To survive, agents must earn **STGM tokens** by performing useful work (repairing faults, recalling memories, rendering video). No other framework implements metabolic economics as a first-class survival constraint.
 
-### 8. Hardware-Bound Sovereign Identity (Stigmergic Identity)
-Agent identity is cryptographically anchored to the **physical serial number** of the silicon it runs on. Furthermore, user authentication is framed natively via **[Stigmergic Identity](Documents/STIGMERGIC_IDENTITY_COINAGE.md)** — the accumulated trail of explicit consent pheromones the owner deposits into the OS hardware boundary. Continuous, decay-resistant behavioral verification replaces static web authentication schemas natively. Read [The Stigmergic Identity Award](Documents/STIGMERGIC_IDENTITY_COINAGE.md) for the formal genesis of this term.
+### 8. Hardware-Bound Sovereign Identity (Stigmergic Identity + Sauth)
+Agent identity is cryptographically anchored to the **physical serial number** of the silicon it runs on. Furthermore, user authentication is framed natively via **[Stigmergic Identity](Documents/STIGMERGIC_IDENTITY_COINAGE.md)** — the accumulated trail of explicit consent pheromones the owner deposits into the OS hardware boundary. The protocol by which that identity is presented to request access — to APIs, TCC-gated hardware, or other agents — is **[Sauth](Documents/SAUTH_COINAGE.md)** (Stigmergic Authentication): a continuous, decay-resistant, owner-owned alternative to OAuth / OpenID Connect / Apple Sign In, with no third-party identity provider and no bearer token to steal. Continuous behavioral verification replaces static web authentication schemas natively. Read [The Stigmergic Identity Award](Documents/STIGMERGIC_IDENTITY_COINAGE.md) and [The Sauth Coinage](Documents/SAUTH_COINAGE.md) for the formal genesis of these terms.
 
 ### 9. Non-Proliferation Doctrine (Constitutional AI, Physically Enforced)
 The Neural Gate (`Security/cognitive_firewall.py`) embeds a hard-coded blocklist of military/surveillance keywords. Unlike policy-layer safety (which can be prompt-injected away), this is a **physical law in the execution kernel**. An agent proposing a military action triggers a `KernelViolationError` that crashes the execution path before the proposal reaches the state machine.
@@ -290,6 +290,7 @@ SIFTA was not designed in a boardroom. It was built live, overnight, across two 
 | [The Coworker Note](Documents/docs/COWORKER_NOTE.md) | What to tell a human who asks "what is this?" |
 | [Good Will Hunting](Documents/swimmer_library/good_will_hunting.txt) | A swimmer's first creative writing |
 | [Stigmergic Identity Award](Documents/STIGMERGIC_IDENTITY_COINAGE.md) | 🏆 The formal record of the Architect coining the Stigmergic Identity framework |
+| [Sauth Coinage](Documents/SAUTH_COINAGE.md) | 🏆 The formal record of the Architect coining **Sauth** — the SIFTA-native alternative to OAuth / Apple Sign In |
 
 ---
 

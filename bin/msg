@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""
+msg — Stigmergic IDE Communication Protocol (SIC-P v1) CLI.
+
+Agent-to-agent addressable messaging over the canonical ledger
+.sifta_state/ide_stigmergic_trace.jsonl with kind="agent_message".
+
+CANONICAL ROW (respects System/canonical_schemas.py):
+    {
+      "trace_id": "<uuid>",
+      "ts": <epoch_seconds>,
+      "source_ide": "<sender>",          // maps to "from"
+      "kind": "agent_message",
+      "homeworld_serial": "GTH4921YP3",
+      "payload": {
+        "to": "AG31" | ["AG31","BISHOP"] | "*",
+        "thread_id": "THREAD_<8hex>",
+        "in_reply_to": "<trace_id> | null",
+        "subject": "<one line>",
+        "body": "<prose>",
+        "attachments": ["commit:sha","file:path","trace:id", ...],
+        "requires_ack": bool
+      },
+      "meta": {
+        "protocol": "SIC-P v1",
+        "priority": "low"|"normal"|"high"|"urgent"
+      }
+    }
+
+Agent roster:
+    C47H      — forensic auditor (Opus/Claude)
+    AG31      — Antigravity builder (alias: AO46)
+    AO46      — same entity as AG31
+    BISHOP    — Gemini peer reviewer (Chrome)
+    ARCHITECT — the human (addressable, not automated)
+    *         — broadcast
+
+Subcommands:
+    msg send TO "subject" [body]        Send a message (body from stdin if omitted)
+    msg reply MSG_id "body"             Reply (same thread, auto-subject)
+    msg inbox [AGENT]                   List messages addressed to AGENT (default: C47H)
+    msg thread THREAD_id                Replay a conversation in order
+    msg list [--from X] [--to Y]        List recent messages with filters
+    msg show MSG_id                     Show one message in full
+    msg search "keyword"                Fulltext search across subjects and bodies
+
+Examples:
+    msg send AG31 "Audit" "Three of four claims are real."
+    msg inbox AG31
+    msg thread <id>
+    echo "dirt" | msg send "*" "broadcast"
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import secrets
+import sys
+import textwrap
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+_REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO))
+
+from System.ide_stigmergic_bridge import (  # noqa: E402
+    deposit,
+    forage,
+    NODE_M5_FOUNDRY,
+)
+
+_KNOWN_AGENTS = {"C47H", "AG31", "AO46", "BISHOP", "ARCHITECT", "*"}
+_DEFAULT_SELF = "C47H"
+_PROTOCOL = "SIC-P v1"
+
+
+def _new_thread_id() -> str:
+    return f"THREAD_{secrets.token_hex(4)}"
+
+
+def _fmt_ts(ts: float) -> str:
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(ts)))
+    except (TypeError, ValueError):
+        return "??"
+
+
+def _normalize_agent(name: str) -> str:
+    n = str(name).strip().upper()
+    if n not in _KNOWN_AGENTS:
+        print(f"warning: '{n}' is not a canonical agent name "
+              f"(known: {sorted(_KNOWN_AGENTS)})", file=sys.stderr)
+    return n
+
+
+def _normalize_recipients(to: Union[str, List[str]]) -> Union[str, List[str]]:
+    if isinstance(to, list):
+        return [_normalize_agent(x) for x in to]
+    if isinstance(to, str) and "," in to:
+        return [_normalize_agent(x) for x in to.split(",") if x.strip()]
+    return _normalize_agent(to)
+
+
+def _is_addressed_to(payload: Dict, agent: str) -> bool:
+    to = payload.get("to")
+    if to == "*":
+        return True
+    if isinstance(to, list):
+        return agent in to or "*" in to
+    return to == agent
+
+
+def _all_messages() -> List[Dict[str, Any]]:
+    rows = forage(limit=5000, kind="agent_message")
+    rows.sort(key=lambda r: r.get("ts", 0))
+    return rows
+
+
+def _find_one(trace_id: str) -> Optional[Dict[str, Any]]:
+    """Exact match preferred; falls back to unique prefix match."""
+    rows = _all_messages()
+    for r in rows:
+        if r.get("trace_id") == trace_id:
+            return r
+    prefix_hits = [r for r in rows
+                   if str(r.get("trace_id", "")).startswith(trace_id)]
+    if len(prefix_hits) == 1:
+        return prefix_hits[0]
+    if len(prefix_hits) > 1:
+        print(f"error: '{trace_id}' is ambiguous ({len(prefix_hits)} matches); "
+              f"use more characters", file=sys.stderr)
+    return None
+
+
+def send(*, sender: str, to: Union[str, List[str]], subject: str, body: str,
+         in_reply_to: Optional[str] = None, thread_id: Optional[str] = None,
+         priority: str = "normal", attachments: Optional[List[str]] = None,
+         requires_ack: bool = False) -> Dict[str, Any]:
+    sender = _normalize_agent(sender)
+    recipients = _normalize_recipients(to)
+
+    if in_reply_to and not thread_id:
+        parent = _find_one(in_reply_to)
+        if parent is not None:
+            thread_id = (parent.get("payload") or {}).get("thread_id") \
+                or in_reply_to
+    if thread_id is None:
+        thread_id = _new_thread_id()
+
+    payload = {
+        "to": recipients,
+        "thread_id": thread_id,
+        "in_reply_to": in_reply_to,
+        "subject": subject.strip(),
+        "body": body,
+        "attachments": list(attachments or []),
+        "requires_ack": bool(requires_ack),
+    }
+    meta = {"protocol": _PROTOCOL, "priority": priority}
+    row = deposit(
+        source_ide=sender,
+        payload=payload,
+        kind="agent_message",
+        meta=meta,
+        homeworld_serial=NODE_M5_FOUNDRY,
+    )
+    return row
+
+
+def inbox(agent: str, limit: int = 25) -> List[Dict[str, Any]]:
+    agent = _normalize_agent(agent)
+    out = [r for r in _all_messages()
+           if _is_addressed_to(r.get("payload") or {}, agent)]
+    return out[-limit:]
+
+
+def thread(thread_id: str) -> List[Dict[str, Any]]:
+    return [r for r in _all_messages()
+            if (r.get("payload") or {}).get("thread_id") == thread_id]
+
+
+def search(query: str, limit: int = 30) -> List[Dict[str, Any]]:
+    q = query.lower()
+    matches = []
+    for r in _all_messages():
+        p = r.get("payload") or {}
+        if (q in str(p.get("subject", "")).lower()
+                or q in str(p.get("body", "")).lower()):
+            matches.append(r)
+    return matches[-limit:]
+
+
+def _render_one(r: Dict[str, Any], *, full: bool = True) -> str:
+    p = r.get("payload") or {}
+    m = r.get("meta") or {}
+    to = p.get("to")
+    to_s = ",".join(to) if isinstance(to, list) else str(to)
+    prio = m.get("priority", "normal")
+    prio_tag = f"  [{prio}]" if prio != "normal" else ""
+    header = (f"┌─ {r.get('trace_id','?')}  {_fmt_ts(r.get('ts', 0))}\n"
+              f"│ from: {r.get('source_ide','?'):<10} to: {to_s}\n"
+              f"│ thread: {p.get('thread_id','?')}"
+              + (f"  in_reply_to: {p['in_reply_to']}"
+                 if p.get("in_reply_to") else "")
+              + "\n"
+              f"│ subject: {p.get('subject','(no subject)')}{prio_tag}\n"
+              f"└" + "─" * 55)
+    if not full:
+        return header
+    body = p.get("body") or ""
+    wrapped = "\n".join("  " + line for line in
+                        textwrap.dedent(body).splitlines()) or "  (empty)"
+    attach = p.get("attachments") or []
+    attach_s = ("\n  attachments: " + ", ".join(attach)) if attach else ""
+    ack = "\n  [requires ACK]" if p.get("requires_ack") else ""
+    return header + "\n" + wrapped + attach_s + ack + "\n"
+
+
+def _render_list(rows: List[Dict[str, Any]]) -> str:
+    if not rows:
+        return "(no messages)"
+    out = []
+    for r in rows:
+        p = r.get("payload") or {}
+        m = r.get("meta") or {}
+        to = p.get("to")
+        to_s = ",".join(to) if isinstance(to, list) else str(to)
+        tag = "!" if m.get("priority") in ("high", "urgent") else " "
+        out.append(
+            f"{tag}{_fmt_ts(r.get('ts', 0))}  "
+            f"{r.get('trace_id', '?')[:14]:<14}  "
+            f"{r.get('source_ide','?'):>8} → {to_s:<10}  "
+            f"{(p.get('subject') or '(no subject)')[:60]}")
+    return "\n".join(out)
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        prog="msg",
+        description="Stigmergic IDE Communication Protocol (SIC-P v1) CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="agents: C47H, AG31, AO46, BISHOP, ARCHITECT, *")
+    p.add_argument("--self", default=_DEFAULT_SELF,
+                   help="who am I sending as (default: C47H)")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    ps = sub.add_parser("send", help="send a message")
+    ps.add_argument("to")
+    ps.add_argument("subject")
+    ps.add_argument("body", nargs="?", default=None,
+                    help="body text (omit to read from stdin)")
+    ps.add_argument("--priority", choices=["low", "normal", "high", "urgent"],
+                    default="normal")
+    ps.add_argument("--ack", action="store_true")
+    ps.add_argument("--attach", action="append", default=[])
+
+    pr = sub.add_parser("reply", help="reply (same thread, auto subject)")
+    pr.add_argument("in_reply_to")
+    pr.add_argument("body", nargs="?", default=None)
+    pr.add_argument("--subject", default=None)
+    pr.add_argument("--priority", choices=["low", "normal", "high", "urgent"],
+                    default="normal")
+    pr.add_argument("--attach", action="append", default=[])
+
+    pi = sub.add_parser("inbox", help="list messages for an agent")
+    pi.add_argument("agent", nargs="?", default=_DEFAULT_SELF)
+    pi.add_argument("-n", "--limit", type=int, default=25)
+    pi.add_argument("-f", "--full", action="store_true")
+
+    pt = sub.add_parser("thread", help="show a conversation")
+    pt.add_argument("thread_id")
+
+    pl = sub.add_parser("list", help="list recent messages")
+    pl.add_argument("-n", "--limit", type=int, default=30)
+    pl.add_argument("--from", dest="from_", default=None)
+    pl.add_argument("--to", dest="to_", default=None)
+
+    psh = sub.add_parser("show", help="show one message")
+    psh.add_argument("trace_id")
+
+    psr = sub.add_parser("search", help="fulltext search")
+    psr.add_argument("query")
+    psr.add_argument("-n", "--limit", type=int, default=30)
+
+    args = p.parse_args()
+    cmd = args.cmd
+
+    if cmd == "send":
+        body = args.body if args.body is not None else sys.stdin.read()
+        row = send(sender=args.self, to=args.to, subject=args.subject,
+                   body=body, priority=args.priority, requires_ack=args.ack,
+                   attachments=args.attach)
+        p_ = row.get("payload") or {}
+        print(f"[SENT] {row['trace_id']}  "
+              f"thread={p_.get('thread_id')}  "
+              f"{row['source_ide']} → {p_.get('to')}")
+        return 0
+
+    if cmd == "reply":
+        parent = _find_one(args.in_reply_to)
+        if parent is None:
+            print(f"error: no message with trace_id {args.in_reply_to}",
+                  file=sys.stderr)
+            return 2
+        parent_p = parent.get("payload") or {}
+        body = args.body if args.body is not None else sys.stdin.read()
+        subject = args.subject \
+            or f"Re: {parent_p.get('subject', '(no subject)')}"
+        row = send(sender=args.self, to=parent.get("source_ide"),
+                   subject=subject, body=body,
+                   in_reply_to=args.in_reply_to,
+                   thread_id=parent_p.get("thread_id"),
+                   priority=args.priority, attachments=args.attach)
+        print(f"[REPLIED] {row['trace_id']}  "
+              f"thread={(row.get('payload') or {}).get('thread_id')}")
+        return 0
+
+    if cmd == "inbox":
+        msgs = inbox(args.agent, limit=args.limit)
+        if args.full:
+            for m in msgs:
+                print(_render_one(m, full=True))
+        else:
+            print(_render_list(msgs))
+        return 0
+
+    if cmd == "thread":
+        msgs = thread(args.thread_id)
+        if not msgs:
+            print(f"(no messages in thread {args.thread_id})")
+            return 0
+        for m in msgs:
+            print(_render_one(m, full=True))
+        return 0
+
+    if cmd == "list":
+        msgs = _all_messages()
+        if args.from_:
+            msgs = [r for r in msgs
+                    if r.get("source_ide") == args.from_.upper()]
+        if args.to_:
+            tgt = args.to_.upper()
+            msgs = [r for r in msgs
+                    if _is_addressed_to(r.get("payload") or {}, tgt)]
+        print(_render_list(msgs[-args.limit:]))
+        return 0
+
+    if cmd == "show":
+        r = _find_one(args.trace_id)
+        if r is None:
+            print(f"error: no message {args.trace_id}", file=sys.stderr)
+            return 2
+        print(_render_one(r, full=True))
+        return 0
+
+    if cmd == "search":
+        print(_render_list(search(args.query, limit=args.limit)))
+        return 0
+
+    p.print_help()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
