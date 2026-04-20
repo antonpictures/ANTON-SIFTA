@@ -99,6 +99,7 @@ try:
     from System.swarm_entorhinal_grid import EntorhinalGrid
     from System.swarm_iris import webcam_frame
     from System.swarm_crossmodal_binding import get_crossmodal_binder
+    from System.swarm_stigmergic_arbitration import StigmergicArbitration
     HAS_ORGANS = True
 except ImportError as exc:
     print(f"[FATAL ERROR] Organism topology fractured on boot. Missing tissue: {exc}")
@@ -112,6 +113,7 @@ class SiftaBrainstem:
         self.running = False
         self.grid = None
         self.binder = None
+        self.arbitrator = None
         self.mic_online = False
         self.vision_online = False
 
@@ -179,6 +181,13 @@ class SiftaBrainstem:
         broca._speak("Entorhinal volumetric tracking online.")
         time.sleep(2)
 
+        # 4.5 Boot Arbitration Engine (Emotional Autonomic Control)
+        try:
+            self.arbitrator = StigmergicArbitration()
+            print("⚖️  [ARBITRATOR] Autonomic heartbeat pacing online.")
+        except Exception as e:
+            print(f"⚖️  [ARBITRATOR] Failed to load autonomic pacing: {e}")
+
         # 5. Boot Occipital Lobe (Vision)
         # SwarmIris exposes no background-thread API. Vision is a sync poll
         # via webcam_frame() invoked from _heartbeat() — matches the actual
@@ -242,7 +251,8 @@ class SiftaBrainstem:
         was unreachable. Same backoff applies to vision capture failures.
         """
         last_frame_at = 0.0
-        FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
+        BASE_FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
+        BASE_SLEEP_S = 0.05
 
         # Backoff state. Both rails track consecutive failures so they
         # ramp independently — visual being broken doesn't slow audio,
@@ -258,6 +268,20 @@ class SiftaBrainstem:
 
         while self.running:
             tick_start = time.time()
+
+            # ── Autonomic Pacing ─────────────────────────────────────────────
+            mood_multiplier = 1.0
+            if self.arbitrator:
+                try:
+                    # Retrieve the physical swarm multiplier based on Endocrine Adrenaline and Amygdala Fear.
+                    # Multiplier > 1.0 speeds up the heart. Multiplier < 1.0 slows it down.
+                    mood_multiplier = self.arbitrator.compute_effective_multiplier("M1SIFTA", "System/swarm_boot.py")
+                except Exception:
+                    pass
+
+            # Scale intervals based on emotion.
+            current_frame_interval_s = BASE_FRAME_INTERVAL_S / mood_multiplier
+            current_sleep_s = BASE_SLEEP_S / mood_multiplier
 
             # ── Acoustic ─────────────────────────────────────────────────────
             if self.mic_online and tick_start >= audio_next_at:
@@ -302,7 +326,7 @@ class SiftaBrainstem:
             # ── Visual ───────────────────────────────────────────────────────
             if (self.vision_online
                 and tick_start >= vision_next_at
-                and (tick_start - last_frame_at) > FRAME_INTERVAL_S):
+                and (tick_start - last_frame_at) > current_frame_interval_s):
                 last_frame_at = tick_start
                 healthy = False
                 try:
@@ -332,7 +356,7 @@ class SiftaBrainstem:
                               f"Backoff now {wait:.0f}s. "
                               f"Check camera permission / device.")
 
-            time.sleep(0.05)
+            time.sleep(current_sleep_s)
 
     def _shutdown(self):
         """Clean shutdown and memory sync."""
