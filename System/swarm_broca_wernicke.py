@@ -220,10 +220,10 @@ class WernickeIngress:
 
         if text is None:
             try:
-                from System.swarm_auditory_cortex import transcribe as _a1_transcribe
+                from System.swarm_stigmergic_translation import transcribe as _a1_transcribe
             except ImportError:
                 try:
-                    from swarm_auditory_cortex import transcribe as _a1_transcribe  # type: ignore
+                    from swarm_stigmergic_translation import transcribe as _a1_transcribe  # type: ignore
                 except ImportError:
                     _a1_transcribe = None  # type: ignore
 
