@@ -75,7 +75,7 @@ _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 _STATE = _REPO / ".sifta_state"
-_WERNICKE_LOG     = _STATE / "wernicke_semantics.jsonl"
+_WERNICKE_LOG     = _STATE / "audio_ingress_log.jsonl" # Legacy perception relocated
 _BROCA_SPOKEN_LOG = _STATE / "broca_vocalizations.jsonl"
 _BROCA_FAILURES   = _STATE / "broca_failures.jsonl"
 _STATE.mkdir(parents=True, exist_ok=True)
@@ -249,6 +249,17 @@ class WernickeIngress:
             text=text_out,
             reality_hash=reality_hash,
         )
+
+        try:
+            from System.swarm_stigmergic_language import SwarmStigmergicLanguage
+            lang = SwarmStigmergicLanguage()
+            if text_out and text_out not in ("LOUD_HUMAN_VOICE", "QUIET_HUMAN_VOICE", "AMBIENT"):
+                # Approximate proximity from RMS (0.5 = 0.5m, 0.05 = 2.0m, 0.005 = 4.0m)
+                prox = max(0.5, min(8.0, 1.0 / (rms * 10.0 + 0.01)))
+                speaker = source.split("(")[0].strip()[:8]
+                lang.translate_english_to_stigmergy(speaker, prox, text_out)
+        except Exception as e:
+            _log_failure("stigmergic_translation", e)
 
         try:
             append_line_locked(self.log_path, json.dumps(evt.to_dict(), ensure_ascii=False) + "\n")

@@ -121,6 +121,16 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "trace_id",
     },
 
+    # Wernicke Semantics (Added by BISHOP dirt)
+    "wernicke_semantics.jsonl": {
+        "ts",                 # epoch seconds
+        "speaker_id",         # origin of the voice
+        "proximity_meters",   # distance from mic
+        "raw_english",        # untranslated text
+        "stigmergic_intent",  # enzymatic translation to swarm chemistry
+        "trace_id",           # trace identifier
+    },
+
     # Epigenetic Generational Trauma (DNA Methylation) — written by System/swarm_epigenetics.py
     "epigenetic_methylations.jsonl": {
         "ts",                 # epoch seconds
