@@ -24,6 +24,8 @@ STATE_DIR = os.path.join(REPO_ROOT, ".sifta_state")
 MEMPOOL_FILE = os.path.join(STATE_DIR, "human_signals.jsonl")
 DEAD_DROP_FILE = os.path.join(REPO_ROOT, "m5queen_dead_drop.jsonl")
 
+from System.swarm_kernel_identity import owner_silicon
+
 def generate_tx_hash(from_jid):
     # Secure tracking hash for this specific payload execution
     raw = f"{from_jid}:{time.time()}:{uuid.uuid4()}"
@@ -31,12 +33,12 @@ def generate_tx_hash(from_jid):
 
 def ingest_to_mempool(tx_hash, from_jid, text):
     """Packages external signal into pure STGM Inference request."""
-    # We broadcast to the generic swarm unless specified. For right now, target M5QUEEN or M1THER organically?
+    # We broadcast to the generic swarm unless specified. For right now, target intuitively.
     # Actually, we can target the primary node or just broadcast.
-    # We will target M5QUEEN (GTH4921YP3) by default, or M1THER if we implement balancing.
+    # We will target the active node by default.
     # Let's broadcast it without a hard target, OR target local. 
-    # The brain checks target_node. I'll target M5QUEEN's serial by default for heavy WhatsApp.
-    target_serial = "GTH4921YP3" # M5 Studio
+    # The brain checks target_node. I'll target the active serial by default for heavy WhatsApp.
+    target_serial = owner_silicon() # Dynamic Silicon Target
     
     drop_payload = {
         "sender": f"[WHATSAPP::{from_jid}::{tx_hash}]",
