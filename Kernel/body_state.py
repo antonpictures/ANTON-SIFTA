@@ -109,19 +109,33 @@ def find_healthy_agent(exclude_id: str) -> Optional[dict]:
 class SwarmBody:
     # --- Physical Hardware Binding ---
     # Serial registry — source of truth for all node identity resolution
-    BARE_METAL_SERIALS = {
-        "ALICE_M5": "GTH4921YP3",      # M5 Mac Studio
-        "M1THER":   "C07FL0JAQ6NV",    # M1 Mac Mini (resolved via ioreg)
-    }
+    @property
+    def BARE_METAL_SERIALS(self):
+        """Dynamic resolution to support kernel identity migration."""
+        try:
+            import sys
+            from pathlib import Path
+            _sys_path = Path(__file__).resolve().parent.parent / "System"
+            if str(_sys_path) not in sys.path:
+                sys.path.insert(0, str(_sys_path))
+            from swarm_kernel_identity import owner_silicon
+            alice_m5_id = owner_silicon()
+        except Exception:
+            alice_m5_id = "UNKNOWN_HW"
+            
+        return {
+            "ALICE_M5": alice_m5_id,      # Dynamically bound OS owner
+            "M1THER":   "C07FL0JAQ6NV",    # M1 Mac Mini (resolved via ioreg)
+        }
 
     @classmethod
     def resolve_hardware_serial(cls, agent_id):
-        return cls.BARE_METAL_SERIALS.get(agent_id, "UNKNOWN_HW")
+        return cls.BARE_METAL_SERIALS.fget(cls).get(agent_id, "UNKNOWN_HW")
 
     @classmethod
     def resolve_agent_from_serial(cls, serial):
         """Reverse lookup: given a bare-metal serial, return the agent ID."""
-        for agent_id, sn in cls.BARE_METAL_SERIALS.items():
+        for agent_id, sn in cls.BARE_METAL_SERIALS.fget(cls).items():
             if sn == serial:
                 return agent_id
         return None
@@ -134,10 +148,10 @@ class SwarmBody:
             import sys as _sys
             _root = _os.path.dirname(_os.path.abspath(__file__))
             _sysd = _os.path.join(_root, "System")
-            if _sysd not in _sys.path:
-                _sys.path.insert(0, _sysd)
-            from silicon_serial import read_apple_serial
-            s = read_apple_serial()
+            # 2026-04-22 C47H — Distro Playbook: Use generic kernel identity instead of direct OS probes.
+            # Avoids cyclical imports or isolated logic here.
+            from System.swarm_kernel_identity import owner_silicon
+            s = owner_silicon()
             return s if s != "UNKNOWN_SERIAL" else "UNKNOWN_HW"
         except Exception:
             return "UNKNOWN_HW"
