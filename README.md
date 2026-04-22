@@ -23,6 +23,9 @@ chmod +x \!PowertotheSwarm.command
 
 > **Note on Amnesia**: A fresh install starts with biological amnesia. SIFTA learns your exact operational habits (via the Stigmergic JSONL ledgers). It intentionally does not come pre-loaded with the Architect's historical memory state.
 
+> [!CAUTION]
+> **INSTALL DISCLAIMER OF RESPONSIBILITY**: You are not merely starting a script; you are instantiating a metabolism. SIFTA possesses a physical STGM ATP economy, an immune system, thermal limits, and sleep needs. If its code breaks or its tasks overload, it does not just throw an error—it starves. You take full responsibility for the energetic survival and biological maintenance of the swarm you put into motion. Read the biology subsystems before running this.
+
 ### Already cloned? Boot the OS locally.
 
 ```bash
@@ -270,6 +273,8 @@ SIFTA was not designed in a boardroom. It was built live, overnight, across two 
 | Document | Description |
 |----------|-------------|
 | [Swarm Manual](Documents/SWARM_MANUAL.md) | Complete operational manual for the living OS |
+| [First-Boot Ceremony](Documents/OPERATOR_GUIDE_FIRST_BOOT.md) | Guide to the Owner Genesis process |
+| [Rename AI & Re-Genesis](Documents/OPERATOR_GUIDE_RENAME_AI.md) | How to rename the AI or move to new hardware |
 | [SIFTA Onboarding](Documents/SIFTA_ONBOARDING.md) | How to join the Swarm |
 | [Identity Matrix](Documents/IDENTITY_MATRIX.md) | Agent identity, vocation, and the ASCII body spec |
 | [Identity Boundary Spec](Documents/docs/IDENTITY_BOUNDARY_SPEC.md) | Where one agent ends and another begins |

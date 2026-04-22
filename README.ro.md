@@ -242,6 +242,8 @@ SIFTA nu a fost proiectat într-o sală de ședințe. A fost construit *live*, p
 | Document | Descriere (RO) |
 |----------|----------------|
 | [Swarm Manual](Documents/SWARM_MANUAL.md) | Manual operațional pentru SO-ul viu |
+| [First-Boot Ceremony](Documents/OPERATOR_GUIDE_FIRST_BOOT.md) | Ghid pentru Owner Genesis (prima pornire) |
+| [Rename AI & Re-Genesis](Documents/OPERATOR_GUIDE_RENAME_AI.md) | Cum să redenumești IA sau să muți SO-ul pe hardware nou |
 | [SIFTA Onboarding](Documents/SIFTA_ONBOARDING.md) | Cum intri în Roi |
 | [Identity Matrix](Documents/IDENTITY_MATRIX.md) | Identitate, vocație, corp ASCII |
 | [Identity Boundary Spec](Documents/docs/IDENTITY_BOUNDARY_SPEC.md) | Unde se termină un agent |
