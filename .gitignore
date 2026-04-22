@@ -35,9 +35,15 @@ watcher_metrics.jsonl
 sifta_session_log/
 *.log
 
-# Locked files
+# Locked / process files
 *.lock
 .sifta_state/*.lock
+.sifta_state/*.pid
+.sifta_state/*.bak
+.sifta_state/*.bak.*
+
+# Compiled native helpers (build per platform; never commit binary)
+.sifta_state/sifta_face_detect
 
 # Scratch / large archives
 scratch.py
@@ -124,3 +130,24 @@ os.log
 tournament_report.json
 payload.json
 .env
+
+# ── Architect-local stigauth bundle (screenshots / dirt photos / MANIFESTs) ──
+# 285 MB+ of HEIC/PNG screenshots that live next to the repo as inbound
+# evidence; never push to GitHub. The textual stigauth.txt is bundle index.
+stigauth/
+stigauth.txt
+
+# ── Root-level scratch / dev cruft (do NOT commit; not part of the OS) ───────
+scratch
+scratch_*.py
+old_*.py
+*.patch
+log_alice.patch
+log_desktop.patch
+test_ui_events.py
+swarm_integrity_report.txt
+implementation_plan.md
+
+# ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
+.clinerules
+.distro_build/
