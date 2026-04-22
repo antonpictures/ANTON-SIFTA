@@ -62,11 +62,12 @@ class SwarmSuperiorColliculus:
         self.optimal_entropy = 7.0  
         self.noise_intensity = 0.5  
 
+        from System.swarm_kernel_identity import preferred_camera_label
         # Alice's anatomical optic nerves (hardware array)
         self.optic_array = [
             "USB Camera VID:1133 PID:2081",
             "MacBook Pro Camera",
-            "Ioan's iPhone Camera",
+            preferred_camera_label(),
             "iPhone 15 Camera",
             "OBS Virtual Camera"
         ]

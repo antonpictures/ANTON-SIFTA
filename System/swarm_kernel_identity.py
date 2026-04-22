@@ -55,3 +55,9 @@ def ai_default_name() -> str:
 
 def is_owner_machine(serial: str) -> bool:
     return bool(serial and serial == owner_silicon())
+
+def preferred_camera_label() -> str:
+    gen = _read_genesis()
+    if gen and "preferred_camera_label" in gen:
+        return str(gen["preferred_camera_label"])
+    return "Built-in Camera"
