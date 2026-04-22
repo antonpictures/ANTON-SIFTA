@@ -31,7 +31,7 @@ def generate_scar(action_description, target_file=None):
         _sys = str(_REPO / "System")
         if _sys not in sys.path:
             sys.path.insert(0, _sys)
-        from ledger_append import append_ledger_line
+        from System.ledger_append import append_ledger_line
 
         append_ledger_line(_REPO / "repair_log.jsonl", ledger_entry)
     except Exception:

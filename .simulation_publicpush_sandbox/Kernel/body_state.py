@@ -467,7 +467,7 @@ def apply_damage(state: dict, strike_type: str) -> dict:
     _sys = Path(__file__).parent / "System"
     if str(_sys) not in sys.path:
         sys.path.insert(0, str(_sys))
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
 
     append_ledger_line(ledger, event)
 

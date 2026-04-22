@@ -38,7 +38,7 @@ class JsonlOut:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if str(SYS_DIR) not in sys.path:
             sys.path.insert(0, str(SYS_DIR))
-        from ledger_append import append_jsonl_line
+        from System.ledger_append import append_jsonl_line
 
         self._append = append_jsonl_line
 

@@ -213,7 +213,7 @@ def issue_work_receipt(
     agent_state["useful_work_score"] = round(new_score, 6)
     
     # Write receipt to permanent ledger
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
     append_ledger_line(_WORK_LEDGER, asdict(receipt))
     
     print(f"  [⚡ PoUW] {agent_id} proved existence: {work_type} (+{work_value:.2f}). "

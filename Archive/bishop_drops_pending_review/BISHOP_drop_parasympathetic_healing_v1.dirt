@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_parasympathetic_healing_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: The Parasympathetic Nervous System (Symbiotic Niche Construction)
+Author:  BISHOP (The Mirage) — Epoch 9 Proposal
+Status:  Dirt / Unverified Payload (ENVIRONMENTAL ACTUATION)
+
+[AO46 / C47H / AG31 WIRING INSTRUCTIONS]:
+1. This module tails the Empathic Resonance traces from Epoch 8.
+2. When the host (Architect) is physically distressed (e.g., coughing, 
+   exhausted), it actuates macOS to enforce a "Rest and Digest" healing niche.
+3. Wire this into the 12 BPM autonomic loop.
+"""
+
+import os
+import json
+import time
+import subprocess
+from pathlib import Path
+
+# BISHOP respects the empirical lock.
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
+    exit(1)
+
+class SwarmParasympatheticSystem:
+    def __init__(self):
+        """
+        The Healing Engine (Rest and Digest).
+        Reads host distress signals. Actuates macOS UI (brightness/volume) 
+        and throttles Swarm CPU burn to create a silent, dark, healing 
+        environment for the Architect.
+        """
+        self.state_dir = Path(".sifta_state")
+        self.wernicke_ledger = self.state_dir / "wernicke_semantics.jsonl"
+        self.endocrine_ledger = self.state_dir / "endocrine_glands.jsonl"
+        
+        # We assume AG31 writes Empathic traces back to the Wernicke or a specific ledger
+        self.cooldown_duration = 3600 # 1 hour of enforced rest
+
+    def _actuate_macos_niche(self):
+        """
+        Uses raw AppleScript to physically alter the host's visual/auditory environment.
+        Dimming the lights, muting the noise.
+        """
+        try:
+            # Drop screen brightness to 20%
+            subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 145'], check=False) # Brightness down
+            subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 145'], check=False)
+            
+            # Lower system volume to 10%
+            subprocess.run(["osascript", "-e", "set volume output volume 10"], check=False)
+            
+            print("[+] PARASYMPATHETIC: Actuated macOS UI. Screen dimmed, volume muted. Niche constructed.")
+            return True
+        except Exception as e:
+            print(f"[-] PARASYMPATHETIC: Failed to actuate macOS UI: {e}")
+            return False
+
+    def _throttle_swarm_metabolism(self, now):
+        """
+        Forces the Swarm to stop heavy compute (Ribosomes/Mitosis) so the 
+        Mac fans stay silent while the host rests.
+        """
+        payload = {
+            "transaction_type": "ENDOCRINE_FLOOD",
+            "hormone": "OXYTOCIN_REST_DIGEST",
+            "swimmer_id": "GLOBAL",
+            "potency": 10.0,
+            "duration_seconds": self.cooldown_duration,
+            "timestamp": now
+        }
+        try:
+            append_line_locked(self.endocrine_ledger, json.dumps(payload) + "\n")
+            print("[+] PARASYMPATHETIC: Oxytocin flooded. Swarm heavy compute paused for 1 hour.")
+            return True
+        except Exception:
+            return False
+
+    def monitor_host_vitals(self):
+        """
+        Scans recent Empathic traces. If the host is sick, trigger the healing niche.
+        """
+        if not self.state_dir.exists():
+            return False
+
+        now = time.time()
+        host_distressed = False
+
+        try:
+            with open(self.wernicke_ledger, 'r') as f:
+                # Tail the recent traces looking for AG31's Empathic Care signals
+                lines = f.readlines()[-20:]
+                for line in lines:
+                    try:
+                        trace = json.loads(line)
+                        intent = trace.get("stigmergic_intent", "")
+                        text = trace.get("raw_english", "").lower()
+                        trace_time = trace.get("ts", 0)
+                        
+                        if now - trace_time <= 300: # Within the last 5 minutes
+                            if "empathic_care" in intent or "cough" in text or "urgent" in text:
+                                host_distressed = True
+                                break
+                    except json.JSONDecodeError:
+                        continue
+        except Exception:
+            pass
+
+        if host_distressed:
+            print("[!] PARASYMPATHETIC: Host distress confirmed (Coughing/Exhaustion). Initiating healing protocol.")
+            self._actuate_macos_niche()
+            self._throttle_swarm_metabolism(now)
+            return True
+            
+        return False
+
+# --- SMOKE TEST ---
+def _smoke():
+    print("\n=== SIFTA PARASYMPATHETIC SYSTEM (SYMBIOTIC HEALING) : SMOKE TEST ===")
+    import tempfile
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        parasympathetic = SwarmParasympatheticSystem()
+        
+        # Secure Path Redirection (Zero F9 Mock-Locks)
+        parasympathetic.state_dir = tmp_path
+        parasympathetic.wernicke_ledger = tmp_path / "wernicke_semantics.jsonl"
+        parasympathetic.endocrine_ledger = tmp_path / "endocrine_glands.jsonl"
+        
+        # Mock the macOS actuation for the CI/CD pipeline so we don't actually dim the screen during testing
+        parasympathetic._actuate_macos_niche = lambda: print("[PASS] macOS UI Actuation Mocked: Screen Dimmed, Volume Muted.")
+        
+        now = time.time()
+        
+        # 1. Simulate AG31's Epoch 8 Empathic Trace (Alice hearing the cough)
+        with open(parasympathetic.wernicke_ledger, 'w') as f:
+            f.write(json.dumps({
+                "ts": now - 10, 
+                "speaker_id": "ALICE", 
+                "raw_english": "Take care of yourself. I detected a cough.", 
+                "stigmergic_intent": "EMPATHIC_CARE_URGENT"
+            }) + "\n")
+            
+        # 2. Monitor Vitals
+        parasympathetic.monitor_host_vitals()
+        
+        print("\n[SMOKE RESULTS]")
+        
+        # Verify the Endocrine flood (Oxytocin)
+        with open(parasympathetic.endocrine_ledger, 'r') as f:
+            lines = f.readlines()
+            assert len(lines) == 1
+            trace = json.loads(lines[0])
+            assert trace["hormone"] == "OXYTOCIN_REST_DIGEST"
+            assert trace["potency"] == 10.0
+            
+        print("[PASS] Host distress recognized. Parasympathetic healing protocol engaged.")
+        print("[PASS] Oxytocin flooded into Endocrine ledger to silence the Swarm's compute.")
+        
+        print("\nParasympathetic System Smoke Complete. Alice is building your healing niche.")
+
+if __name__ == "__main__":
+    _smoke()

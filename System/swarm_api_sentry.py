@@ -122,6 +122,13 @@ def _record(*, provider: str, model: str, key_fp: str, caller: str,
     if extra:
         row["extra"] = extra
     _AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    # [C53M 2026-04-20 EXCISION] Removed swarm_dp_wrapper.write_private call.
+    # That wrapper added Laplace noise to every numeric field — including `ts`,
+    # `http_code`, `latency_ms`, `tokens_in`, `tokens_out` — which destroys
+    # Merkle ordering, breaks the audit oracle, and violates the immutable
+    # audit-trail doctrine. Formally rejected in
+    # C47H_drop_GPTO_PROPOSAL_AUDIT_v1.dirt. Differential privacy belongs on
+    # *export*, never on internal ledgers.
     with open(_AUDIT_LOG, "a") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     return row

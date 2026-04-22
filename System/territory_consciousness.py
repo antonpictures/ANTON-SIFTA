@@ -250,7 +250,7 @@ class TerritoryConsciousness:
 
         # Log anomalies
         if anomalies:
-            from ledger_append import append_ledger_line
+            from System.ledger_append import append_ledger_line
             for a in anomalies:
                 a["timestamp"] = time.time()
                 append_ledger_line(_TERRITORY_LOG, a)

@@ -24,6 +24,7 @@ if str(_REPO) not in sys.path:
 
 try:
     from System.jsonl_file_lock import append_line_locked
+    from System.swarm_szilard_demon import SwarmSzilardDemon
 except ImportError:
     def append_line_locked(path, line, *, encoding="utf-8"):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -107,6 +108,23 @@ class SwarmStigmergicTrash:
                         file_ts = fp.stat().st_mtime
                     
                     if (now - file_ts) > max_age_s:
+                        try:
+                            # Apply Szilard Thermodynamic Demon Cost before physical unlink
+                            fp_size = fp.stat().st_size
+                            demon = SwarmSzilardDemon()
+                            kept, cost = demon.evaluate_and_erase(fp_size, mutual_info_score=0.01)
+                            if not kept and cost > 0:
+                                debit_trace = {
+                                    "transaction_type": "THERMODYNAMIC_DECAY_PENALTY",
+                                    "file": fp.name,
+                                    "size_bytes": fp_size,
+                                    "metabolic_cost_stgm": -cost,
+                                    "timestamp": time.time()
+                                }
+                                append_line_locked(demon.stgm_treasury_ledger, json.dumps(debit_trace) + "\n")
+                        except Exception:
+                            pass
+                            
                         fp.unlink(missing_ok=True)
                         purged += 1
                 except Exception:
@@ -118,6 +136,26 @@ class SwarmStigmergicTrash:
         Physical irreversible deletion of all unlinked files.
         """
         try:
+            # First, total the mass being erased for the Demon
+            demon = SwarmSzilardDemon()
+            total_size_bytes = 0
+            for dirpath, _, filenames in os.walk(self.trash_dir):
+                for f in filenames:
+                    fp = os.path.join(dirpath, f)
+                    if not os.path.islink(fp):
+                        total_size_bytes += os.path.getsize(fp)
+            
+            if total_size_bytes > 0:
+                kept, cost = demon.evaluate_and_erase(total_size_bytes, mutual_info_score=0.01)
+                if not kept and cost > 0:
+                    debit_trace = {
+                        "transaction_type": "THERMODYNAMIC_ERASURE_PENALTY",
+                        "size_bytes": total_size_bytes,
+                        "metabolic_cost_stgm": -cost,
+                        "timestamp": time.time()
+                    }
+                    append_line_locked(demon.stgm_treasury_ledger, json.dumps(debit_trace) + "\n")
+
             shutil.rmtree(self.trash_dir)
             self.trash_dir.mkdir(parents=True, exist_ok=True)
             

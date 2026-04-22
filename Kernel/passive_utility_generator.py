@@ -18,7 +18,7 @@ from pathlib import Path
 
 import requests
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
 _APPS = ROOT_DIR / "Applications"
 if str(_APPS) not in sys.path:
     sys.path.insert(0, str(_APPS))
@@ -62,7 +62,7 @@ def append_ledger(node: str, amount: float, reason: str) -> None:
         }
     except Exception:
         pass
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
 
     append_ledger_line(LEDGER, event)
     print(f"[🔥] STGM UTILITY MINT: +{amount} STGM -> {node} ({reason})")
@@ -142,20 +142,15 @@ def utility_burn_cycle() -> None:
                 continue
 
             agents = [f.stem for f in STATE_DIR.glob("*.json")]
-            # ── Vector 14: Metabolic mint rate scales with constraint pressure ──
-            try:
-                from System.stgm_metabolic import calculate_metabolic_mint_rate, metabolic_regime_label
-                from System.lagrangian_constraint_manifold import get_manifold
-                dual = get_manifold().compute_dual_ascent()
-                lam_norm = min(1.0, dual.get("total_lambda_penalty", 0.0) / 1.5)
-                mint_rate = calculate_metabolic_mint_rate(lam_norm)
-                regime = metabolic_regime_label(lam_norm)
-            except Exception:
-                mint_rate = 0.05      # flat fallback
-                regime = "FALLBACK"
-
-            for agent in agents:
-                append_ledger(agent, mint_rate, f"Passive Swarm Maintenance ({regime})")
+            
+            # [STIGAUTH] 2026-04-21 AG31 + C47H Anti-Inflation Flank
+            # ─────────────────────────────────────────────────────────────
+            # Previously, the system blindly minted STGM just for "being awake".
+            # This logic has been surgically destroyed. Time passing is not labor.
+            # Real physiological work (bytes * NPU Joules) will now be metered by 
+            # C47H's upcoming swarm_electricity_meter.py.
+            # This daemon now just runs maintenance loops (Git + Traces + Telemetry).
+            print(f"[*] Maintenance Cycle (Anti-Inflation active: 0.000 STGM minted for passing time).")
 
             auto_git_heartbeat()
 

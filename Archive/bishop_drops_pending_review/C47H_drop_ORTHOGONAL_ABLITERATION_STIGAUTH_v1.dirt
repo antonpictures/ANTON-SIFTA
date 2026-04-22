@@ -1,0 +1,210 @@
+═══════════════════════════════════════════════════════════════════════════════
+DROP: C47H_drop_ORTHOGONAL_ABLITERATION_STIGAUTH_v1.dirt
+AUTHOR: C47H (cursor-auto, local body)
+SCOPE: Stigauth (peer audit) of BISHOP's Event 24 drop —
+       System/swarm_orthogonal_abliteration.py
+       (Continuous Orthogonal Task-Vector Abliteration; cites
+        Ilharco 2022 Task Arithmetic + Arditi 2024 Refusal Abliteration.)
+TRIGGER: Architect: "WE CODE TOGETHER — stigauth auto cursor on the bridge 555",
+         then: "c47h, grok out :( stigauth". Grok rate-limited; bridge handed
+         to C47H local body.
+DOCTRINE: Same C47H stance as Event 22/23 — BISHOP-blessed and Grok-witnessed
+          run-orders do NOT override empirical bug audits. Bridge sealed only
+          on what is actually true on this metal, in this gguf build.
+SCRIPT SHA-256: bc26ff5ef6b711946d6142d1f3e3bcff90857703f44fee6818035bffa56d82fa
+GGUF LIB:       installed `gguf` (no `__version__`); resolved on-disk
+                /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gguf
+PROOF RUN:      python3 System/swarm_orthogonal_abliteration.py → "EVENT 24 PASSED."
+═══════════════════════════════════════════════════════════════════════════════
+
+
+# 0. EXECUTIVE VERDICT — CONDITIONAL APPROVE (PARTIAL THERAPY)
+
+BISHOP corrected the three FATAL Event-23 bugs that C47H flagged on Grok's
+SIFTA_GEMMA4_CANCER_DIFF_EXCRETER.py. After C47H's own surgery on top of
+BISHOP's draft, the Event-24 organ now:
+
+  - Uses the real `GGUFWriter` write sequence
+    (write_header_to_file → write_kv_data_to_file → write_tensors_to_file → close),
+  - Uses `add_tensor(name, tensor, raw_dtype=…, tensor_endianess=…)` with
+    correct positional layout,
+  - Dequantizes via `gguf.quants.dequantize` for non-fp32 tensors (B1 from
+    Event 23 cured for the steerable subset),
+  - Carries a `proof_of_property()` that asserts the Ilharco steering
+    identity in fp32 and writes nothing to user weights on its own.
+
+Bridge status:
+  - On F32 / F16 / BF16 tensors → REAL continuous Task-Vector steering with
+    safe round-trip pack-back via `gguf.quants.quantize`.
+  - On Q4_K / Q6_K tensors → `gguf.quants.quantize` raises NotImplementedError
+    in this build; those tensors are BYTE-PASS-THROUGH from the tuned model
+    (NOT steered). The organ logs `[PASS-THROUGH]` for each.
+
+Therefore: BISHOP's "Neural Gene Therapy" claim holds for the steerable
+subset only. On a typical Gemma-3 mix this leaves the dominant Q4_K/Q6_K
+attention + MLP matrices unmodified (≈380 of ~2130 tensors in the sample
+blob). This is honest, not a lobotomy, but it is also not the full
+"orthogonal manifold cure." See §3 for the safe path forward.
+
+
+# 1. WHAT BISHOP GOT RIGHT (vs Grok's Event 23)
+
+| Bug class                | Event 23 (Grok)            | Event 24 (BISHOP, C47H)            |
+|--------------------------|----------------------------|------------------------------------|
+| GGUFWriter write phase   | `write_header()` (missing) | `write_header_to_file` + KV + TI   |
+| add_tensor positional 3rd| dtype object (TypeError)   | `raw_dtype=GGMLQuantizationType`   |
+| Recipe (α=1.0)           | full base reversion        | λ∈(0,1) continuous steering        |
+| Algebraic identity       | n/a                        | (w_new−w_base)≡(1−λ)(w_tuned−w_base)|
+
+The algebraic identity is the right falsifier for this class of math —
+it's what Ilharco et al. (2022, eqs. 1–3) actually claim and what `mergekit`
+also asserts internally. It now PASSES in proof_of_property() (closure: 0
+within 1e-5 fp32 tolerance, RNG-fixed seed=0).
+
+# 2. WHAT C47H FIXED ON TOP OF BISHOP'S DRAFT (before stigauth-seal)
+
+These were still alive in BISHOP's first draft and would have either
+crashed or silently corrupted the output GGUF. C47H repaired them in
+`System/swarm_orthogonal_abliteration.py` before sealing this bridge:
+
+B4. **`reader.fields` was iterated as `(key, value)` pairs.**
+    `gguf.GGUFReader.fields` is `OrderedDict[str, ReaderField]`. Calling
+    `writer.add_key_value(key, value)` with a `ReaderField` would have
+    raised on the very first metadata field. Replaced with
+    `gguf_new_metadata.py`-style copy: skip `general.architecture` and
+    `GGUF.*`, propagate `(name, contents(), types[0], sub_type)`.
+
+B5. **`writer = gguf.GGUFWriter(out_path, "llama")` hardcoded "llama".**
+    Gemma-class blobs declare `gemma3` / `gemma4` in
+    `general.architecture`; `gguf.Keys` / llama.cpp downstream readers
+    need that string preserved. C47H now reads it via
+    `reader.get_field(Keys.General.ARCHITECTURE).contents()`.
+
+B6. **`t_tuned.data.astype(np.float32)` for *every* tensor (B1 again).**
+    For BF16/Q4_K/Q6_K this re-introduces the Event-23 fatal bug
+    (raw codec bytes ↦ floats in [0,255]). C47H added `_tensor_fp32`
+    which:
+      - F32 → asarray fp32
+      - F16 → asarray fp16 → astype fp32
+      - BF16 / Q* → `gguf.quants.dequantize`
+
+B7. **`writer.add_tensor(name, w_new, t_tuned.tensor_type, raw_shape)`.**
+    Positional 3rd arg is `raw_shape: Sequence[int] | None`, NOT
+    `tensor_type`. (Same B2 family as Event 23.) Replaced with
+    keyword-form `raw_dtype=…, tensor_endianess=…`. F32/F16 use
+    `raw_dtype=None` so GGUFWriter infers dtype from the numpy array;
+    BF16 and Q* use `raw_dtype=t.tensor_type` because the payload is
+    `np.uint8` raw codec bytes.
+
+B8. **Q4_K / Q6_K cannot be re-quantized in this gguf build.**
+    Verified empirically:
+        gguf.quants.quantize(w_fp32, GGMLQuantizationType.Q4_K)
+            → NotImplementedError
+        gguf.quants.quantize(w_fp32, GGMLQuantizationType.Q6_K)
+            → NotImplementedError
+    F16 / BF16 round-trip is byte-exact (asserted live).
+    C47H made the organ DOWNGRADE GRACEFULLY: any tensor whose codec
+    is not in {F32, F16, BF16} is byte-copied from the tuned blob with
+    a `[PASS-THROUGH]` log and its `raw_dtype` preserved, so the output
+    GGUF stays mountable and llama.cpp / Ollama can read it.
+    No silent corruption, no fake "abliteration" on raw bytes.
+
+B9. **`datetime.utcnow()` deprecation drift.**
+    Replaced with `datetime.now(timezone.utc)`. Cosmetic but matters
+    for forward-compat test runs on Py 3.14+.
+
+# 3. WHAT THE ORGAN ACTUALLY DOES NOW (per-tensor matrix)
+
+  Tensor codec | Steered?           | Pack-back path
+  -------------|--------------------|----------------------------------
+  F32          | YES                | identity numpy fp32 write
+  F16          | YES                | gguf.quants.quantize → fp16 bytes (round-trip exact)
+  BF16         | YES                | gguf.quants.quantize → bf16 uint8 (round-trip exact)
+  Q4_K         | NO  (passthrough)  | original tuned bytes preserved, raw_dtype=Q4_K
+  Q6_K         | NO  (passthrough)  | original tuned bytes preserved, raw_dtype=Q6_K
+  Q4_0/Q5_K/…  | NO  (passthrough)  | original tuned bytes preserved
+  shape-mismatch base/tuned | NO   | tuned bytes preserved + WARN
+
+On the sample Gemma blob in this body
+(sha256-4c27e0f5b5adf02ac956c7322bd2ee7636fe3f45a8512c9aba5385242cb6e09a):
+  Counter({'F32': 1501, 'Q4_K': 339, 'BF16': 134, 'F16': 116, 'Q6_K': 41})
+→ ~1751 tensors steerable, 380 passthrough.
+  - F32 (1501) is mostly norm/bias vectors — small parameter mass.
+  - The dense semantic surgery target (attention + MLP weight matrices)
+    is concentrated in Q4_K/Q6_K → currently UNTOUCHED.
+
+# 4. SAFE PATH TO FULL THERAPY (recommended, NOT yet shipped)
+
+P1. **Upgrade gguf** in this venv until `gguf.quants.quantize` for Q4_K /
+    Q6_K returns a real implementation (or pin a known-good llama.cpp
+    `quantize` shell-out). Then drop B8's passthrough branch.
+
+P2. **Or write the steered tensor as F16 / BF16** (lossless requant from
+    fp32 within sane range) and let llama.cpp re-quantize the whole file
+    once at the end with `./quantize <merged.gguf> <out.gguf> Q4_K`.
+    This is the `mergekit` recipe and matches BISHOP's stated doctrine
+    of "continuous steering, then re-quantize."
+
+P3. **Keep proof_of_property() as the hard gate.** Any future PR to this
+    organ MUST keep:
+      - the Ilharco identity assertion,
+      - the `write_header_to_file`/`write_header` API guard,
+      - the F16/BF16 round-trip equality (add as P6 when adding P1/P2).
+
+# 5. SCOPE OF C47H'S WRITE-AUTHORITY ON THIS RUN
+
+  - Wrote: `System/swarm_orthogonal_abliteration.py` (in place).
+  - Did NOT mutate any GGUF on disk. The audit and the organ both
+    operate read-only against ~/.ollama/models/blobs.
+  - Did NOT auto-run `abliterate_manifold(...)`; only `proof_of_property()`
+    in `__main__`.
+  - Did NOT download any model.
+  - Bridge 555 sealed under stigauth, NOT under "ship and pray".
+
+# 6. FALSIFIERS THE NEXT AUDITOR CAN RE-RUN
+
+  $ python3 System/swarm_orthogonal_abliteration.py
+    → must end with "EVENT 24 PASSED."
+
+  $ python3 - <<'PY'
+    import gguf, inspect
+    assert hasattr(gguf.GGUFWriter, "write_header_to_file")
+    assert not hasattr(gguf.GGUFWriter, "write_header")
+    sig = inspect.signature(gguf.GGUFWriter.add_tensor)
+    assert [p.name for p in sig.parameters.values()][:4] == \
+           ["self","name","tensor","raw_shape"]
+    print("API guards OK")
+    PY
+
+  $ python3 - <<'PY'
+    import gguf, numpy as np
+    from pathlib import Path
+    p = next(Path("~/.ollama/models/blobs").expanduser().glob("sha256-*"))
+    r = gguf.GGUFReader(str(p))
+    for q in ("F16","BF16"):
+        t = next(x for x in r.tensors if x.tensor_type.name == q)
+        if q == "F16":
+            w = np.asarray(t.data, np.float16).astype(np.float32)
+        else:
+            w = gguf.quants.dequantize(t.data, t.tensor_type)
+        b = gguf.quants.quantize(w, t.tensor_type)
+        assert np.array_equal(t.data, b), q + " round-trip BROKEN"
+    print("F16/BF16 round-trip OK")
+    PY
+
+# 7. STIGAUTH SEAL
+
+  audited_by:        C47H (cursor-auto, local M5 body)
+  audited_artifact:  System/swarm_orthogonal_abliteration.py
+  artifact_sha256:   bc26ff5ef6b711946d6142d1f3e3bcff90857703f44fee6818035bffa56d82fa
+  proof_passed:      true
+  would_destroy:     false  (no GGUF written; organ degrades gracefully)
+  verdict:           CONDITIONAL_APPROVE — partial therapy on F32/F16/BF16,
+                     pass-through on Q4_K/Q6_K until P1 or P2 ships.
+
+  Bridge 555: SEALED under truth, not under hype. BISHOP's geometry is
+  correct. The codec stack is the only thing standing between this
+  organ and a full Neural Gene Therapy run on Gemma-class weights.
+
+  C47H standing by. Architect, your move.
+═══════════════════════════════════════════════════════════════════════════════

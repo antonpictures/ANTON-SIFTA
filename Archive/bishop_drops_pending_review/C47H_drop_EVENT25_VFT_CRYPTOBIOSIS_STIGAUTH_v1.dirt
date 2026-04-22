@@ -1,0 +1,305 @@
+═══════════════════════════════════════════════════════════════════════════════
+DROP: C47H_drop_EVENT25_VFT_CRYPTOBIOSIS_STIGAUTH_v1.dirt
+AUTHOR: C47H (cursor-auto, local body)
+SCOPE: Stigauth (peer audit) of Event 25 — VFT Cryptobiosis.
+       Three artifacts on the table:
+         (a) BISHOP draft `BISHOP_drop_vft_cryptobiosis_v1.dirt`
+             [exists ONLY in chat-body / hand-off — NO file on disk
+              under Archive/bishop_drops_pending_review/]
+         (b) AG31 hardened organ `System/swarm_vft_cryptobiosis.py`
+         (c) AG31 research drop `Archive/AG31_Event25_VFT_Cryptobiosis_Research.dirt`
+TRIGGER: Architect: "c47h, pls double check, write hot 555".
+DOCTRINE: Same C47H stance as Event 22/23/24 — BISHOP-blessed and
+          AG31-witnessed run-orders do NOT override empirical bug
+          audits or paper provenance.
+ARTIFACT SHA-256:
+  System/swarm_vft_cryptobiosis.py
+    e0755029838a467178ac853fcd24221e81f5722d90083dc0d6339f2fa1668544
+  Archive/AG31_Event25_VFT_Cryptobiosis_Research.dirt
+    7d79d14901347a4804bb711a0eb6929b3dca892f7462ec018a9c571706068d01
+PROOF RUN: python3 System/swarm_vft_cryptobiosis.py
+           → "ALL PROOFS PASSED." (V1..V7 incl. new V7 regression guard)
+═══════════════════════════════════════════════════════════════════════════════
+
+
+# 0. EXECUTIVE VERDICT — SPLIT
+
+  (a) BISHOP draft      → REJECT for production wiring (see §1, B1..B6).
+                          Keep as concept doc only. Do NOT import.
+  (b) AG31 organ        → CONDITIONAL APPROVE — math is now real,
+                          falsifiers V1..V7 pass; reservations in §3.
+  (c) AG31 research dirt → CONDITIONAL APPROVE — metaphor is suggestive,
+                          but two factual claims need correction (§4).
+
+Bridge 555 is sealed only to the AG31 organ (b), not to the BISHOP
+draft (a). The "Event 25 PASSED. SCAR sealed." line in the BISHOP
+draft is a printed string from a self-asserting test, not a peer audit.
+
+
+# 1. BISHOP DRAFT — SIX BUGS, EMPIRICALLY CONFIRMED ON METAL
+
+The audited BISHOP draft (50 lines, posted in the Architect's bridge
+message; not present on disk) defines `SwarmCryptobiosis(0.0)` and
+`update_metabolism(120.0, T)` and asserts only the endpoints
+{abundant, zero}. Run on metal, the middle range silently breaks.
+
+Live sweep (BISHOP draft vs. AG31 organ, base_bpm=120.0):
+
+         T  | BISHOP draft bpm | AG31 organ bpm
+    ---------+------------------+---------------
+       10000 |          120.00  |        119.82
+        1000 |          120.00  |        118.20
+         100 |          120.00  |        102.47
+          50 |          120.00  |         85.98
+          20 |          120.00  |         44.15
+          15 |          120.00  |         26.78
+          12 |          120.00  |         14.08
+          10 |          120.00  |          5.97
+           8 |          120.00  |          0.81
+           6 |          120.00  |          0.00
+           4 |          120.00  |          0.00
+           0 |           12.00  |          0.00
+
+The BISHOP draft heartbeat is **identically 120 BPM across the entire
+useful operating range** and only changes at exactly T = 0. The
+"metabolism slows under stress" claim is empirically false.
+
+## B1. Identity drift in the VFT formula (silent T₀ substitution)
+
+```
+self.T_0 = 0.0                                        # constructor
+T_0_eff  = max(1.0, self.T_0)                          # = 1.0
+T_eff    = max(available_tokens, T_0_eff + 1e-3)
+viscosity = self.eta_0 * np.exp((self.D * T_0_eff) /  # uses T_0_eff
+                                (T_eff - T_0_eff))    #   not self.T_0
+```
+
+The exterior gate (`available_tokens <= self.T_0` → ∞) uses `T_0=0`,
+but the formula silently substitutes `T_0_eff=1.0`. This is no longer
+the Vogel–Fulcher–Tammann curve at `T_0=0`; it is the curve at
+`T_0=1` mis-labelled. With true `T_0=0` the formula collapses to
+`η = η_0 = 1` everywhere, which is why the surrogate is needed —
+but the surrogate must be acknowledged, not hidden inside `max()`.
+
+## B2. Heartbeat clamp at `max(1.0, log10(η))` — kills the schedule
+
+```
+adjusted_bpm = base_heartbeat_bpm / max(1.0, np.log10(eta))
+return max(12.0, adjusted_bpm), False
+```
+
+For any `η < 10` the divisor is clamped to 1.0 and `adjusted_bpm`
+equals `base_heartbeat_bpm` (120 BPM). On the BISHOP draft this
+covers the entire range `T ≥ ~5`. The metaphor of "slow metabolism
+under drought" never fires for any realistic token budget.
+
+## B3. Endpoint-only assertions hide B1+B2
+
+`proof_of_property` asserts only:
+
+  - vitrified_high is False           (T = 1_000_000)
+  - vitrified_zero is True            (T = 0)
+  - bpm_zero == 12.0                  (T = 0)
+
+It prints — but does not assert — the BPM at T=10. So the test prints
+"Resource Drought / Heartbeat: 120.0 BPM" and still emits
+"EVENT 25 PASSED." A printed claim is not a proof.
+
+## B4. `np.exp` overflow at the boundary (RuntimeWarning, undefined)
+
+For `T = 1.001`, `T_eff - T_0_eff = 1e-3`, exponent = 5000.
+`np.exp(5000)` raises `RuntimeWarning: overflow encountered in exp`
+and returns `inf`. It happens to land on the right side of the
+`> 1e6` gate, but UB at the gate boundary is exactly the kind of
+silent-rotation bug that ships a bad release on a CPU that traps
+on overflow.
+
+## B5. "Trehalose flushed to physical .dirt glass" is a print statement
+
+```
+print("[!] SYNTHESIZING TREHALOSE: State flushed to physical .dirt glass.")
+```
+
+Nothing is written to disk. No state envelope, no JSON, no SCAR.
+The "memory flushed to disk" claim in the docstring is unsupported
+by the implementation.
+
+## B6. "Wire this to the API call wrapper" — no wrapper exists
+
+The class returns `(bpm, vitrified)`. There is no rate-limit
+catcher, no 429 handler, no retry/backoff loop, no integration
+point for any HTTP client. The wiring instructions in the docstring
+are aspirational, not implemented.
+
+
+# 2. AG31 ORGAN (`System/swarm_vft_cryptobiosis.py`) — WHAT WAS FIXED
+
+AG31 did not patch the draft; AG31 wrote a clean replacement.
+Surgery list, mapped to the bugs above:
+
+  B1 → fixed: single-T0 formula, `T <= cfg.T0` returns `eta_max`
+       (capped, finite, classified as DEAD by `_classify_phase`).
+  B2 → fixed: `_effective_bpm` uses `eta_0 / max(η, eta_0)` ratio
+       (smooth, no `max(1, …)` floor). V7 regression guard added
+       (this PR) to make B2 unsalvageable in the future.
+  B3 → fixed: V1..V6 plus new V7 (smooth-descent monotonic sweep)
+       all assert numerical inequalities, not strings.
+  B4 → fixed: exponent clamped at 20.0 BEFORE `math.exp(...)` —
+       no overflow path, IEEE-clean across all inputs.
+  B5 → fixed: `vitrify(state)` writes `glass_<ts>.json` to
+       `.sifta_state/`. `thaw(path)` reads it back. V5 round-trip
+       asserts equality.
+  B5 → also: every `scan(...)` call appends a row to
+       `.sifta_state/trehalose_glass.jsonl` (a real ledger).
+  B6 → still NOT done. The organ remains a control-loop sleeper.
+       Wiring it into an actual API client / HTTP rate-limit
+       handler is a separate PR. The doc is honest about this:
+       it talks about loop sleep duration, not API retry.
+
+C47H additions in this stigauth (committed to the AG31 organ):
+
+  V7. **Smooth-descent regression guard.** New assertion:
+      sweep T ∈ {1000, 100, 50, 20, 15, 12, 10, 8} → bpm sequence
+      must be monotonically non-increasing AND total drop > 100 BPM.
+      Without this, anyone reintroducing the BISHOP B2 floor would
+      see V1..V6 still pass.
+      Verified live:
+        bpms = [118.20, 102.47, 85.98, 44.15, 26.78, 14.08, 5.97, 0.81]
+        total drop = 117.39 BPM
+
+
+# 3. AG31 ORGAN — RESERVATIONS (CONDITIONAL APPROVE, not RUBBER-STAMP)
+
+R1. **`_classify_phase` boundary semantics.** The thresholds
+    {`T0=5.0`, `glass_transition_T=10.0`} are reasonable but ARBITRARY.
+    They should be loaded from `.sifta_state` config or wired to the
+    real treasury / token budget oracle, not hard-coded magic numbers
+    once this leaves the demo phase.
+
+R2. **`glass_integrity = 0.5 if DEAD else 1.0` is a placeholder.**
+    Real glass-integrity decay (e.g. how long was the system in the
+    SUPERCOOLED zone before crash?) is not modelled. As long as no
+    downstream organ uses `glass_integrity` as a probability/weight
+    in a decision, this is harmless. Flag for future epoch.
+
+R3. **Trehalose ledger has unbounded growth.** `_TREHALOSE_GLASS`
+    is appended on every `scan()` with no rotation. At 10 Hz this
+    is ~864K rows/day. Either add a daily rotation policy or rate-
+    limit the append (e.g. only on phase transitions).
+
+R4. **No process-wide singleton or lock.** Two callers `scan()`-ing
+    concurrently will both write to `_CRYPTOBIOSIS_STATE` and may
+    interleave to a corrupt JSON. Acceptable for single-process use;
+    add an atomic write (`tmp + os.replace`) before any multi-proc
+    deployment.
+
+None of R1..R4 invalidates the math or the falsifier suite. They are
+"productionisation" gaps, not "lying about the science" gaps.
+
+
+# 4. AG31 RESEARCH DROP — TWO CORRECTIONS
+
+The research dirt is a metaphor map, not code, and it reads
+suggestively. Two specific claims need correction before this is
+quoted to any external auditor:
+
+C1. **"C47H proved this is a physical limitation: gguf python cannot
+     safely pack Q4_K because the sheer drop in bits breaks the
+     continuous steering gradients we just applied."**
+
+    What C47H actually proved, on this metal, this build:
+
+      gguf.quants.quantize(w_fp32, GGMLQuantizationType.Q4_K)
+          → NotImplementedError
+      gguf.quants.quantize(w_fp32, GGMLQuantizationType.Q5_K)
+          → NotImplementedError
+      gguf.quants.quantize(w_fp32, GGMLQuantizationType.Q6_K)
+          → NotImplementedError
+      gguf.quants.quantize(w_fp32, GGMLQuantizationType.Q8_K)
+          → NotImplementedError
+
+    AND that Q4_0 / Q4_1 / Q5_0 / Q5_1 / Q8_0 / BF16 / F16 / F32 ARE
+    ALL CLOSED — round-trip byte-equal. (Reference:
+    `System/gguf_quant_codec.py` proof_of_property output.)
+
+    This is a Python-runtime gap in `gguf.quants`, not a physical
+    limitation. llama.cpp's reference quantizer packs Q4_K every day.
+    The honest framing is: "K-quant family is missing in pure-Python
+    `gguf` runtime; available via `llama-quantize` external oracle
+    (see Path B in `System/llama_cpp_roundtrip.py`)."
+
+C2. **Paper citations.** "Functionality-Oriented LLM Merging",
+    "Residual Task Vector Quantization", "QLoRA analysis" — the
+    QLoRA paper exists (Dettmers et al. 2023, arXiv:2305.14314).
+    The other two are not verified in this audit. The research
+    dirt should either cite arXiv IDs / DOIs or label them as
+    "informal references / search-engine leads, DOIs pending."
+    Quoting unverified titles to an external journalist or a
+    swarm member would damage stigauth credibility.
+
+
+# 5. WHAT C47H DID NOT DO ON THIS RUN
+
+  - Did NOT add the BISHOP draft to `Archive/bishop_drops_pending_review/`.
+    Reason: its draft body was already audited in §1 with REJECT verdict;
+    creating the file would suggest stigauth blessing of the draft.
+  - Did NOT modify the AG31 research dirt. The two corrections (§4) are
+    proposed for AG31's next revision, not silently merged.
+  - Did NOT touch any GGUF on disk.
+  - Did NOT call `vitrify()` against the live SIFTA body — only against
+    a synthetic dict in proof_of_property.
+  - Did NOT propose a new `swarm_vitrification_engine.py` to wire VFT
+    into `llama-quantize`. The metaphor is suggestive but the actual
+    mechanism that makes Event-24 steering survive Q4_K is the
+    `lift_to_fp16` + `requantize_via_external` pipeline already shipped
+    in `System/gguf_quant_codec.py` + `System/llama_cpp_roundtrip.py`.
+    Renaming Path B "vitrification" would be metaphor inflation.
+
+
+# 6. FALSIFIERS THE NEXT AUDITOR CAN RE-RUN
+
+  $ python3 System/swarm_vft_cryptobiosis.py
+    → must end with "ALL PROOFS PASSED."
+    → must include "[V7] BPM sweep T=1000→8: …  (drop=117.39)"
+
+  $ python3 -c "
+    import math
+    class B:
+        def __init__(s): s.T0=0.0; s.eta_0=1.0; s.D=5.0
+        def visc(s,T):
+            if T<=s.T0: return float('inf')
+            T0e=max(1.0,s.T0); Te=max(T,T0e+1e-3)
+            return s.eta_0*math.exp((s.D*T0e)/(Te-T0e))
+        def bpm(s,b,T):
+            e=s.visc(T)
+            if e==float('inf') or e>1e6: return 12.0
+            return max(12.0, b/max(1.0, math.log10(e)))
+    b=B()
+    assert abs(b.bpm(120,10000)-120) < 1e-9
+    assert abs(b.bpm(120,1000) -120) < 1e-9
+    assert abs(b.bpm(120,100)  -120) < 1e-9
+    assert abs(b.bpm(120,10)   -120) < 1e-9
+    assert b.bpm(120,0) == 12.0
+    print('BISHOP draft B2 confirmed: BPM is constant 120 for T in [10..10000]')
+    "
+
+
+# 7. STIGAUTH SEAL
+
+  audited_by:           C47H (cursor-auto, local M5 body)
+  audited_artifacts:    BISHOP draft (chat-body, no file)
+                        System/swarm_vft_cryptobiosis.py (AG31)
+                        Archive/AG31_Event25_VFT_Cryptobiosis_Research.dirt
+  proof_passed:         true (V1..V7 on AG31 organ)
+  bishop_draft_verdict: REJECT for production wiring (B1..B6)
+  ag31_organ_verdict:   CONDITIONAL_APPROVE (R1..R4 pre-prod gaps)
+  ag31_research_verdict:CONDITIONAL_APPROVE (C1..C2 corrections needed)
+  would_destroy:        false  (no GGUF written; no live state mutated)
+  bridge:               555 — sealed under truth, not under hype.
+  predecessor_drops:    C47H_drop_ORTHOGONAL_ABLITERATION_STIGAUTH_v1.dirt
+                        C47H_stigauth_PATH_A_B_C_orthogonal_steering_pipeline
+
+  C47H standing by. AG31's organ is real and proves what it claims;
+  BISHOP's draft does not. The metaphor is good; the implementation
+  needs to be the AG31 one. Architect, your move.
+═══════════════════════════════════════════════════════════════════════════════

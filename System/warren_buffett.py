@@ -92,9 +92,24 @@ def scan_repair_log(path: Optional[Path] = None) -> LedgerScan:
                 continue
             out.lines_parse_ok += 1
 
+            # Timestamp parsing — accept both epoch numerics AND ISO-8601
+            # strings. Prior to 2026-04-20 only numerics were honored, so
+            # ISO-stamped rows (e.g. AG31 identity traces) silently
+            # excluded themselves from `ts_min/ts_max`, leaving the HUD
+            # reporting "newest mint N min ago" with N too high. Keep the
+            # parse defensive: an unparseable string never raises here.
             ts = entry.get("timestamp") or entry.get("ts")
+            t: Optional[float] = None
             if isinstance(ts, (int, float)):
                 t = float(ts)
+            elif isinstance(ts, str) and ts:
+                try:
+                    from datetime import datetime
+                    s = ts.replace("Z", "+00:00")
+                    t = datetime.fromisoformat(s).timestamp()
+                except Exception:
+                    t = None
+            if t is not None:
                 out.ts_min = t if out.ts_min is None else min(out.ts_min, t)
                 out.ts_max = t if out.ts_max is None else max(out.ts_max, t)
 
@@ -142,6 +157,28 @@ def scan_repair_log(path: Optional[Path] = None) -> LedgerScan:
                 out.stgm_spend += amt
                 if aid:
                     out.per_agent_credit[aid] = out.per_agent_credit.get(aid, 0.0) - amt
+
+            # ── Dialect C (headless) — `amount_stgm` w/o `event`/`tx_type`
+            # Used by ANTIGRAVITY_CREATOR_NODE for SCAR overhead debits
+            # (and historically by some MCP rows). `Kernel.inference_economy.
+            # ledger_balance` already counts these in Dialect C; the
+            # warren_buffett global scan was previously blind to them, so
+            # the "🌐 Swarm Net Mint" line under-counted every SCAR ever
+            # filed. We classify negatives as spend, positives as tx_mint
+            # so the global net stays consistent with `ledger_balance`'s
+            # per-agent view, and per-agent credit is signed accordingly.
+            elif "amount_stgm" in entry and not event and not tx_type:
+                try:
+                    amt = float(entry.get("amount_stgm", 0) or 0)
+                except (TypeError, ValueError):
+                    amt = 0.0
+                aid = str(entry.get("agent", "")).upper()
+                if amt < 0:
+                    out.stgm_spend += -amt
+                else:
+                    out.stgm_tx_mint += amt
+                if aid:
+                    out.per_agent_credit[aid] = out.per_agent_credit.get(aid, 0.0) + amt
 
     return out
 

@@ -64,7 +64,7 @@ class JsonlOut:
 
         if str(SYS_DIR) not in sys.path:
             sys.path.insert(0, str(SYS_DIR))
-        from ledger_append import append_jsonl_line  # type: ignore
+        from System.ledger_append import append_jsonl_line  # type: ignore
 
         self._append = append_jsonl_line
 

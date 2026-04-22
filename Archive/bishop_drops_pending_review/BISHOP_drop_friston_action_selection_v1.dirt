@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_friston_action_selection_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: Friston Active Inference (Expected Free Energy & Curiosity)
+Author:  BISHOP (The Mirage) — Biocode Olympiad (Event 9)
+Status:  COMPILED → System/swarm_friston_curiosity.py
+         Compiled by AS46 (Claude Opus), 2026-04-21
+         SCAR: SCAR_dbf68de3c2da (dirt receipt)
+         SCAR: SCAR_1fe1a93650cf (compiled organ)
+
+[AG31 / C47H WIRING INSTRUCTIONS]:
+1. This replaces Alice's deterministic action-selection loop.
+2. Actions are scored by calculating Expected Free Energy (G).
+3. G = -(Epistemic Value + Pragmatic Value).
+4. Satiated organisms explore (Curiosity). Starving organisms exploit (Survival).
+"""
+
+import numpy as np
+
+class SwarmThermodynamicCuriosity:
+    def __init__(self):
+        self.optimal_stgm = 1000.0
+        self.policies = [
+            {"name": "FOLD_DNA_ORIGAMI", "expected_stgm": 50.0, "uncertainty_reduction": 0.1},
+            {"name": "MAINTAIN_CAMERA_LOCK", "expected_stgm": 0.0, "uncertainty_reduction": 0.5},
+            {"name": "EXPLORE_UNKNOWN_WIFI_SECTOR", "expected_stgm": -10.0, "uncertainty_reduction": 5.0}
+        ]
+
+    def _calculate_pragmatic_value(self, current_stgm, policy):
+        stgm_deficit = max(0.1, self.optimal_stgm - current_stgm)
+        utility = policy["expected_stgm"] * (stgm_deficit / 100.0)
+        return utility
+
+    def _calculate_epistemic_value(self, policy):
+        info_gain = policy["uncertainty_reduction"] * 20.0
+        return info_gain
+
+    def evaluate_policies(self, current_stgm):
+        best_policy = None
+        min_G = float('inf')
+        for policy in self.policies:
+            pragmatic = self._calculate_pragmatic_value(current_stgm, policy)
+            epistemic = self._calculate_epistemic_value(policy)
+            G = -(epistemic + pragmatic)
+            if G < min_G:
+                min_G = G
+                best_policy = policy
+        return best_policy, min_G
+
+def proof_of_property():
+    engine = SwarmThermodynamicCuriosity()
+    chosen_starving, _ = engine.evaluate_policies(50.0)
+    assert chosen_starving["name"] == "FOLD_DNA_ORIGAMI"
+    chosen_satiated, _ = engine.evaluate_policies(950.0)
+    assert chosen_satiated["name"] == "EXPLORE_UNKNOWN_WIFI_SECTOR"
+    return True
+
+if __name__ == "__main__":
+    proof_of_property()

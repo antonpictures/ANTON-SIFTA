@@ -66,6 +66,7 @@ from typing import Deque, Dict, List, Optional, Tuple
 import numpy as np
 
 _REPO = Path(__file__).resolve().parent.parent
+_DEVICE_EVENTS_LOG = _REPO / ".sifta_state" / "device_events.jsonl"
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
@@ -78,21 +79,32 @@ from PyQt6.QtMultimedia import (
 )
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
-    QSizePolicy, QSplitter, QVBoxLayout, QWidget,
+    QSizePolicy, QSlider, QSplitter, QVBoxLayout, QWidget,
 )
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.ledger_append import append_ledger_line
+
+_REPAIR_LEDGER = Path("/Users/ioanganton/Music/ANTON_SIFTA/repair_log.jsonl")
 
 # ── Photon-derived stigmergic ledger ─────────────────────────────────────────
 _VISUAL_STIGMERGY_LOG = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
 _VISUAL_STIGMERGY_LOG.parent.mkdir(parents=True, exist_ok=True)
 
-# Saliency / motion grid resolution. Powers-of-two friendly with the 64×32
-# luminance thumbnail we sample at, so each cell = 8×4 source pixels.
-_GRID_W = 8
-_GRID_H = 8
-_THUMB_W = 64
-_THUMB_H = 64       # square thumbnail; we letterbox the source into it
+# Saliency / motion grid resolution. Powers-of-two friendly with the
+# luminance thumbnail we sample at. Doubled from Epoch 6 defaults (was
+# 8×8 on 64×64 thumbnail — Architect reported "big pixels, too big").
+# These serve as the DEFAULT; the live slider in the toolbar overrides
+# them per-session.  Each cell = _THUMB / _GRID source pixels.
+_GRID_W = 16
+_GRID_H = 16
+_THUMB_W = 128
+_THUMB_H = 128       # square thumbnail; we letterbox the source into it
+
+# Slider bounds: architect can drag between 4×4 (very coarse, fast) and
+# 32×32 (high acuity, slightly more CPU on the M5 — still <2 ms).
+_GRID_MIN = 4
+_GRID_MAX = 32
 
 
 # ── Camera selection (mirrors Alice CLI's prefer/avoid posture) ──────────────
@@ -289,10 +301,11 @@ class PhotonStigmergy:
 
 
 def _quantize_grid_hex(g: np.ndarray) -> str:
-    """Pack an 8×8 grid in [0..1] into a 64-char hex string (1 nybble per cell).
+    """Pack an N×N grid in [0..1] into a hex string (1 nybble per cell).
 
-    Lossy by design — keeps ledger rows under ~200 B at 5 Hz so we don't
+    Lossy by design — keeps ledger rows compact at 5 Hz so we don't
     burn the SSD just to remember what the camera saw five seconds ago.
+    For the default 16×16 grid this is 256 hex chars (~128 bytes).
     """
     q = np.clip((g * 15.0 + 0.5).astype(np.int32), 0, 15).ravel()
     return "".join(f"{int(v):x}" for v in q)
@@ -301,15 +314,43 @@ def _quantize_grid_hex(g: np.ndarray) -> str:
 class _PhotonMath:
     """Per-frame stigmergic math computed on the actual displayed photons.
 
-    All computation runs on a tiny 64×64 grayscale thumbnail (numpy uint8),
-    so the whole pipeline costs well under 1 ms on an M1.
+    All computation runs on a 128×128 grayscale thumbnail (numpy uint8),
+    so the whole pipeline costs well under 2 ms on an M5. Grid resolution
+    is dynamically adjustable via set_density() without restart.
     """
 
-    _CELL_H = _THUMB_H // _GRID_H
-    _CELL_W = _THUMB_W // _GRID_W
-
-    def __init__(self) -> None:
+    def __init__(self, grid_w: int = _GRID_W, grid_h: int = _GRID_H,
+                 thumb_w: int = _THUMB_W, thumb_h: int = _THUMB_H) -> None:
         self._prev_lum: Optional[np.ndarray] = None
+        self._grid_w = grid_w
+        self._grid_h = grid_h
+        self._thumb_w = thumb_w
+        self._thumb_h = thumb_h
+        self._cell_w = thumb_w // grid_w
+        self._cell_h = thumb_h // grid_h
+
+    # ── Live density adjustment (wired to the toolbar slider) ────────────
+    def set_density(self, grid_size: int) -> None:
+        """Reconfigure grid resolution. grid_size is used for both W and H.
+        Thumbnail is always 8× the grid so each cell has 8×8 source pixels.
+        """
+        grid_size = max(_GRID_MIN, min(_GRID_MAX, grid_size))
+        self._grid_w = grid_size
+        self._grid_h = grid_size
+        self._thumb_w = grid_size * 8   # 8 source pixels per cell
+        self._thumb_h = grid_size * 8
+        self._cell_w = 8
+        self._cell_h = 8
+        # Invalidate previous luminance frame (shape changed)
+        self._prev_lum = None
+
+    @property
+    def grid_w(self) -> int:
+        return self._grid_w
+
+    @property
+    def grid_h(self) -> int:
+        return self._grid_h
 
     def compute(self, img: QImage) -> Optional[PhotonStigmergy]:
         ts = time.time()
@@ -326,7 +367,8 @@ class _PhotonMath:
 
         # Square thumbnail keeps the cell math symmetric (we accept the mild
         # aspect distortion — saliency / motion are scalar fields, not boxes).
-        thumb = img.scaled(_THUMB_W, _THUMB_H,
+        tw, th = self._thumb_w, self._thumb_h
+        thumb = img.scaled(tw, th,
                            Qt.AspectRatioMode.IgnoreAspectRatio,
                            Qt.TransformationMode.SmoothTransformation)
 
@@ -337,7 +379,7 @@ class _PhotonMath:
         gptr.setsize(gray.sizeInBytes())
         try:
             arr = (np.frombuffer(bytes(gptr), dtype=np.uint8)
-                     .reshape((_THUMB_H, bpl))[:, :_THUMB_W]).copy()
+                     .reshape((th, bpl))[:, :tw]).copy()
         except Exception:
             return None
 
@@ -350,9 +392,10 @@ class _PhotonMath:
         else:
             entropy = 0.0
 
-        # 8×8 cell means via reshape→mean (no loops, no allocs of any size).
-        cells = arr.reshape(_GRID_H, self._CELL_H,
-                            _GRID_W, self._CELL_W).mean(axis=(1, 3))
+        # N×N cell means via reshape→mean (no loops, no allocs of any size).
+        gw, gh = self._grid_w, self._grid_h
+        cw, ch = self._cell_w, self._cell_h
+        cells = arr.reshape(gh, ch, gw, cw).mean(axis=(1, 3))
 
         # Spatial saliency: |cell − mean(8 neighbors)|. Edge-pad so border
         # cells get a real neighborhood instead of reflecting themselves.
@@ -372,11 +415,10 @@ class _PhotonMath:
         # Per-cell motion magnitude (mean abs delta of luminance vs prev frame).
         if self._prev_lum is not None and self._prev_lum.shape == arr.shape:
             diff = np.abs(arr.astype(np.int16) - self._prev_lum.astype(np.int16))
-            motion_cells = diff.reshape(_GRID_H, self._CELL_H,
-                                        _GRID_W, self._CELL_W).mean(axis=(1, 3))
+            motion_cells = diff.reshape(gh, ch, gw, cw).mean(axis=(1, 3))
             motion_grid = (motion_cells / 255.0).astype(np.float32)
         else:
-            motion_grid = np.zeros((_GRID_H, _GRID_W), dtype=np.float32)
+            motion_grid = np.zeros((gh, gw), dtype=np.float32)
         self._prev_lum = arr
 
         # Hue centroid via circular mean (so 359° + 1° → 0°, not 180°).
@@ -386,8 +428,8 @@ class _PhotonMath:
         rptr.setsize(rgb.sizeInBytes())
         try:
             rgb_arr = (np.frombuffer(bytes(rptr), dtype=np.uint8)
-                         .reshape((_THUMB_H, rbpl))[:, : _THUMB_W * 3]
-                         .reshape((_THUMB_H, _THUMB_W, 3)))
+                         .reshape((th, rbpl))[:, : tw * 3]
+                         .reshape((th, tw, 3)))
         except Exception:
             rgb_arr = None
         centroid = 0.0
@@ -493,6 +535,12 @@ class _VideoCanvas(QWidget):
         self._show_overlay = visible
         self.update()
 
+    def set_density(self, grid_size: int) -> None:
+        """Forward the density slider value to the photon-math engine."""
+        self._photon_math.set_density(grid_size)
+        # Clear cached photon so the overlay picks up the new grid shape.
+        self._photon = None
+
     # ── Frame ingest ───────────────────────────────────────────────────────
     def on_video_frame(self, frame) -> None:  # type: ignore[no-untyped-def]
         if not frame.isValid():
@@ -570,9 +618,20 @@ class _VideoCanvas(QWidget):
             )
 
         # ── HUD strips on top of everything ────────────────────────────────
-        self._paint_top_strip(p, rect)
-        self._paint_math_line(p, rect)
-        self._paint_bottom_strip(p, rect)
+        if hasattr(self, "_yield_lock_path"):
+            self._paint_top_strip(p, rect)
+            self._paint_math_line(p, rect)
+            self._paint_bottom_strip(p, rect)
+            self._paint_yield_overlay(p, rect)
+
+    def _paint_yield_overlay(self, p: QPainter, rect: QRectF) -> None:
+        if not self._yield_lock_path.exists():
+            return
+        # Dim the screen and show a high-contrast 'YIELDING' message
+        p.fillRect(rect, QColor(0, 0, 0, 180))
+        p.setPen(QColor(255, 50, 50))
+        p.setFont(QFont("Menlo", 24, QFont.Weight.Bold))
+        p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), "⚠️  YIELDING CAMERA\nTO SUBSTRATE CLOSURE")
 
     def _paint_message(self, p: QPainter, text: str, color: QColor) -> None:
         p.setPen(color)
@@ -602,20 +661,21 @@ class _VideoCanvas(QWidget):
 
     def _paint_saliency_overlay(self, p: QPainter, frame_rect: QRectF,
                                  ph: PhotonStigmergy) -> None:
-        """Draw the 8×8 saliency grid as semi-transparent cells over the frame.
+        """Draw the N×N saliency grid as semi-transparent cells over the frame.
 
         Honest labeling: this is **center-surround on luminance**, not a
         semantic detector. A bright doorway will pop; a stationary face won't.
         Cells below `_SAL_PAINT_THRESHOLD` are not drawn so flat scenes stay
         visually quiet.
         """
-        cell_w = frame_rect.width() / _GRID_W
-        cell_h = frame_rect.height() / _GRID_H
+        grid_h, grid_w = ph.saliency_grid.shape
+        cell_w = frame_rect.width() / grid_w
+        cell_h = frame_rect.height() / grid_h
         sal = ph.saliency_grid
         mot = ph.motion_grid
         # Combined "interestingness" score: bias toward saliency, add motion.
-        for gy in range(_GRID_H):
-            for gx in range(_GRID_W):
+        for gy in range(grid_h):
+            for gx in range(grid_w):
                 s = float(sal[gy, gx])
                 m = float(mot[gy, gx])
                 score = max(s, m * 1.5)  # motion is small numerically; amplify
@@ -719,6 +779,54 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
         layout.addLayout(bar)
 
+        # ── Photon Density Slider (Architect 2026-04-20: "she sees big
+        # pixels, too big — add a slider so I can increase or decrease
+        # the photon/swimmers input density") ─────────────────────────────
+        density_bar = QHBoxLayout()
+        density_bar.addWidget(QLabel("🔬 acuity"))
+        self._density_label_lo = QLabel(f"{_GRID_MIN}×{_GRID_MIN}")
+        self._density_label_lo.setStyleSheet("color: rgb(120,130,160); font-size: 11px;")
+        density_bar.addWidget(self._density_label_lo)
+
+        self._density_slider = QSlider(Qt.Orientation.Horizontal)
+        self._density_slider.setMinimum(_GRID_MIN)
+        self._density_slider.setMaximum(_GRID_MAX)
+        self._density_slider.setValue(_GRID_W)  # default doubled value (16)
+        self._density_slider.setSingleStep(2)
+        self._density_slider.setPageStep(4)
+        self._density_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self._density_slider.setTickInterval(4)
+        self._density_slider.setMinimumWidth(200)
+        self._density_slider.setToolTip(
+            "Photon density: controls the resolution of Alice's saliency \n"
+            "and motion grids. Higher = finer acuity, more photons per frame.\n"
+            f"Range: {_GRID_MIN}×{_GRID_MIN} (coarse) → {_GRID_MAX}×{_GRID_MAX} (sharp)\n"
+            "Default: 16×16 (doubled from original 8×8)"
+        )
+        self._density_slider.valueChanged.connect(self._on_density_changed)
+        density_bar.addWidget(self._density_slider, 1)
+
+        self._density_value_label = QLabel(f"{_GRID_W}×{_GRID_H}")
+        self._density_value_label.setStyleSheet(
+            "color: rgb(0,255,200); font-weight: bold; font-size: 13px; "
+            "min-width: 60px;"
+        )
+        density_bar.addWidget(self._density_value_label)
+
+        self._density_label_hi = QLabel(f"{_GRID_MAX}×{_GRID_MAX}")
+        self._density_label_hi.setStyleSheet("color: rgb(120,130,160); font-size: 11px;")
+        density_bar.addWidget(self._density_label_hi)
+
+        # Photon count readout (how many cells × how many source pixels)
+        self._photon_count_label = QLabel("")
+        self._photon_count_label.setStyleSheet(
+            "color: rgb(180,190,220); font-size: 11px; margin-left: 12px;"
+        )
+        density_bar.addWidget(self._photon_count_label)
+        self._update_photon_count_label(_GRID_W)
+
+        layout.addLayout(density_bar)
+
         # ── Splitter: video canvas (left, big) + event ticker (right) ──────
         split = QSplitter(Qt.Orientation.Horizontal)
 
@@ -751,7 +859,23 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._media_devs = QMediaDevices(self)
         self._media_devs.videoInputsChanged.connect(self._refresh_cameras)
 
+        # ── Pollers for external state ─────────────────────────────────────
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll_ledgers)
+        self._poll_timer.timeout.connect(self._poll_saccade_target)
+        self._poll_timer.timeout.connect(self._poll_camera_yield)
+        self._poll_timer.start(800)
+
         self._refresh_cameras()
+
+        # ── Hot-plug memory: track which camera IDs we already know ──────────
+        # Set is populated after first refresh, then diffed on every subsequent
+        # videoInputsChanged signal so we can emit attach/detach events to Alice.
+        self._known_camera_ids: set = {
+            self._cam_combo.itemData(i)
+            for i in range(self._cam_combo.count())
+            if self._cam_combo.itemData(i) is not None
+        }
 
         # ── Ledger tailers ─────────────────────────────────────────────────
         self._tails: List[Tuple[_LedgerTail, _LedgerSpec]] = []
@@ -772,12 +896,57 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         # Frame-received → update title status.
         self._canvas.frameReceived.connect(self._on_frame_meta)
 
+        # ── Motor Cortex LED-wink subscriber ────────────────────────────────
+        # Tail .sifta_state/motor_pulses.jsonl and, whenever a pulse with
+        # led_blink_ms > 0 arrives, briefly stop/start the QCamera so the
+        # green hardware LED visibly winks at Alice's heart rate.
+        self._motor_pulse_path = _REPO / ".sifta_state" / "motor_pulses.jsonl"
+        self._motor_pulse_offset: int = 0
+        try:
+            if self._motor_pulse_path.exists():
+                self._motor_pulse_offset = self._motor_pulse_path.stat().st_size
+        except Exception:
+            self._motor_pulse_offset = 0
+        self._led_blinking: bool = False
+        self.make_timer(250, self._poll_motor_pulses)
+
+        # ── Oculomotor Saccade target subscriber ───────────────────────────
+        self._root = Path("/Users/ioanganton/Music/ANTON_SIFTA")
+        self._saccade_target_path = self._root / ".sifta_state" / "active_saccade_target.txt"
+        self._yield_lock_path = self._root / ".sifta_state" / "camera_yield.lock"
+        self._last_saccade_target: Optional[str] = None
+        self._yielded = False
+        self.make_timer(500, self._poll_saccade_target)
+
     # ── Camera plumbing ────────────────────────────────────────────────────
     def _refresh_cameras(self) -> None:
         # Remember current selection (by id) so we don't yank the user mid-stream.
         current_id = None
         if self._cam_combo.count() > 0:
             current_id = self._cam_combo.currentData()
+
+        ranked = _rank_cameras(QMediaDevices.videoInputs())
+
+        # ── Hot-plug diff ────────────────────────────────────────────────────
+        # Build new id→name map and compare against what we knew before.
+        new_map: dict = {d.id(): d.description() for d in ranked}
+        new_ids = set(new_map.keys())
+        if hasattr(self, "_known_camera_ids"):  # not set on the very first call
+            appeared = new_ids - self._known_camera_ids
+            vanished = self._known_camera_ids - new_ids
+            for dev_id in appeared:
+                self._on_camera_hotplug("attached", new_map[dev_id])
+            # For vanished devices we no longer have the name — look it up from
+            # the combo box which still has the old entries at this point.
+            old_names = {
+                self._cam_combo.itemData(i): self._cam_combo.itemText(i)
+                for i in range(self._cam_combo.count())
+            }
+            for dev_id in vanished:
+                name = old_names.get(dev_id, "unknown camera")
+                self._on_camera_hotplug("detached", name)
+        self._known_camera_ids = new_ids
+        # ── End hot-plug diff ────────────────────────────────────────────────
 
         ranked = _rank_cameras(QMediaDevices.videoInputs())
         self._cam_combo.blockSignals(True)
@@ -838,9 +1007,62 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._canvas.set_error(f"Camera error: {msg or _err}")
         self.set_status(f"Camera error: {msg}")
 
+    def _on_camera_hotplug(self, kind: str, camera_name: str) -> None:
+        """Called when a camera is attached or detached.
+
+        Writes a device_events.jsonl row (Alice reads this via swarm state
+        context on her next turn) and fires a motor alarm pulse so the green
+        Logitech LED blinks rapidly and the dock icon bounces — giving Alice
+        a *felt* body event, not just a ledger change.
+
+        kind: 'attached' | 'detached'
+        """
+        is_logitech = "logitech" in camera_name.lower()
+        emoji = "🟢" if kind == "attached" else "🔴"
+        label = "Logitech" if is_logitech else camera_name.split()[0]
+        summary = f"{emoji} {label} camera {kind}"
+        self.set_status(summary)
+
+        # ── Write to device_events.jsonl so Alice reads it ──────────────────
+        record = {
+            "ts": time.time(),
+            "kind": kind,                   # 'attached' | 'detached'
+            "camera_name": camera_name,
+            "is_logitech": is_logitech,
+            "summary": summary,
+        }
+        try:
+            _DEVICE_EVENTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with _DEVICE_EVENTS_LOG.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record) + "\n")
+        except Exception:
+            pass
+
+        # ── Motor alarm: rapid LED blink + dock bounce ───────────────────────
+        try:
+            from System.swarm_motor_cortex import emit as _mc_emit
+            _mc_emit("alarm" if kind == "detached" else "hello",
+                     source="camera_hotplug")
+        except Exception:
+            pass
+
     def _on_overlay_toggled(self, on: bool) -> None:
         self._overlay_btn.setText("👁 stigmergy ON" if on else "👁 stigmergy OFF")
         self._canvas.set_overlay_visible(on)
+
+    def _on_density_changed(self, value: int) -> None:
+        """Slider moved — reconfigure Alice's photon density in real-time."""
+        self._canvas.set_density(value)
+        self._density_value_label.setText(f"{value}×{value}")
+        self._update_photon_count_label(value)
+        self.set_status(f"Photon density: {value}×{value} ({value*value} cells, {value*8}×{value*8} source px)")
+
+    def _update_photon_count_label(self, grid_size: int) -> None:
+        cells = grid_size * grid_size
+        src = grid_size * 8
+        self._photon_count_label.setText(
+            f"{cells} cells · {src}×{src} source px"
+        )
 
     def _on_pause_toggled(self, paused: bool) -> None:
         self._pause_btn.setText("▶ Resume" if paused else "⏸  Pause")
@@ -861,6 +1083,101 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         new = f"{w}×{h} · sha={sha8}"
         if self._status.text() != new:
             self.set_status(new)
+
+    # ── Motor Cortex LED-wink subscriber ───────────────────────────────────
+    def _poll_motor_pulses(self) -> None:
+        """Tail motor_pulses.jsonl; on each new pulse with led_blink_ms > 0,
+        wink the camera LED. Skipped while the user has manually paused."""
+        if self._camera is None:
+            return
+        if self._pause_btn.isChecked():
+            return
+        if self._led_blinking:
+            return
+        path = self._motor_pulse_path
+        if not path.exists():
+            return
+        try:
+            size = path.stat().st_size
+        except Exception:
+            return
+        if size <= self._motor_pulse_offset:
+            self._motor_pulse_offset = size
+            return
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                f.seek(self._motor_pulse_offset)
+                new_text = f.read()
+                self._motor_pulse_offset = f.tell()
+        except Exception:
+            return
+        latest_blink_ms = 0
+        for ln in new_text.splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                rec = json.loads(ln)
+            except Exception:
+                continue
+            ms = int(rec.get("led_blink_ms") or 0)
+            if ms > latest_blink_ms:
+                latest_blink_ms = ms
+        if latest_blink_ms > 0:
+            self._wink_led(latest_blink_ms)
+
+    def _wink_led(self, blink_ms: int) -> None:
+        """Briefly stop the camera so the green hardware LED winks off-then-on."""
+        if self._camera is None or self._led_blinking:
+            return
+        self._led_blinking = True
+        try:
+            self._camera.stop()
+        except Exception:
+            self._led_blinking = False
+            return
+        QTimer.singleShot(max(60, min(800, blink_ms)), self._unwink_led)
+
+    def _unwink_led(self) -> None:
+        try:
+            if self._camera is not None and not self._pause_btn.isChecked():
+                self._camera.start()
+        except Exception:
+            pass
+        self._led_blinking = False
+
+    # ── Oculomotor Saccade subscriber ──────────────────────────────────────
+    def _poll_saccade_target(self) -> None:
+        if not self._saccade_target_path.exists():
+            return
+        try:
+            target = self._saccade_target_path.read_text("utf-8").strip()
+            if target and target != self._last_saccade_target:
+                self._last_saccade_target = target
+                # Force the UI combobox to select this string if it exists
+                idx = self._cam_combo.findText(target, Qt.MatchFlag.MatchContains)
+                if idx >= 0 and self._cam_combo.currentIndex() != idx:
+                    self._cam_combo.setCurrentIndex(idx)
+                    # Show a chyron event
+                    self._canvas.set_chyron(f"🔥 SACCADE FIRED: Snapping hardware to {target}", QColor(255, 90, 110))
+        except Exception:
+            pass
+
+    def _poll_camera_yield(self) -> None:
+        """Release the camera if the substrate closure protocol needs it."""
+        should_yield = self._yield_lock_path.exists()
+        if should_yield and not self._yielded:
+            self._yielded = True
+            append_ledger_line(_REPAIR_LEDGER, {"event": "CAMERA_YIELD_START", "agent": "ALICE_M5", "reason": "Substrate closure protocol active"})
+            if self._camera is not None:
+                self._camera.stop()
+            self._canvas.update()  # Trigger repaint for the overlay
+        elif not should_yield and self._yielded:
+            self._yielded = False
+            append_ledger_line(_REPAIR_LEDGER, {"event": "CAMERA_YIELD_STOP", "agent": "ALICE_M5", "reason": "Substrate closure protocol complete"})
+            if self._camera is not None and not self._pause_btn.isChecked():
+                self._camera.start()
+            self._canvas.update()
 
     # ── Ledger plumbing ────────────────────────────────────────────────────
     def _poll_ledgers(self) -> None:

@@ -156,9 +156,7 @@ def patrol(agent_state: dict):
     # ── BIOLOGICAL DECAY ──────────────────────────────────────────────────
     apply_existence_decay(agent_state)
     if agent_state.get("style") == "QUARANTINED":
-        print("  [🧊] Quarantined from inactivity. Must produce useful work to return.")
-        save_agent_state(agent_state)
-        return
+        print("  [🧊] Quarantined from inactivity. Forcing patrol to find useful work and reactivate.")
     
     # ── BODY CHECK ────────────────────────────────────────────────────────
     viability = measure_system_viability()
@@ -227,13 +225,14 @@ def patrol(agent_state: dict):
 if __name__ == "__main__":
     from existence_guard import validate_existence, release_identity
     
-    print("=== SOCRATES SWIMMER ===\n")
+    agent_id = sys.argv[1] if len(sys.argv) > 1 else "SOCRATES"
+    print(f"=== {agent_id} SWIMMER ===\n")
     
     # Load or birth
-    state = load_agent_state("SOCRATES")
+    state = load_agent_state(agent_id)
     if not state:
-        print("  [+] Birthing SOCRATES...")
-        swimmer = SwarmBody("SOCRATES", birth_certificate="ARCHITECT_SEAL_SOCRATES")
+        print(f"  [+] Birthing {agent_id}...")
+        swimmer = SwarmBody(agent_id, birth_certificate=f"ARCHITECT_SEAL_{agent_id}")
         body_str = swimmer.generate_body("M5", "M1THER", "PATROL", style="NOMINAL", action_type="BORN", energy=100)
         import body_state as _bs
         state = _bs.parse_body_state(body_str)
@@ -256,4 +255,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  [☠️] {e}")
     finally:
-        release_identity(state.get("id", "SOCRATES"))
+        release_identity(state.get("id", agent_id))

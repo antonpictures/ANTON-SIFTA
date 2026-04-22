@@ -87,7 +87,7 @@ def archive_memory(realization):
     try:
         if _SYS not in sys.path:
             sys.path.insert(0, _SYS)
-        from ledger_append import append_jsonl_line
+        from System.ledger_append import append_jsonl_line
 
         append_jsonl_line(_DEAD_DROP, drop)
     except Exception:

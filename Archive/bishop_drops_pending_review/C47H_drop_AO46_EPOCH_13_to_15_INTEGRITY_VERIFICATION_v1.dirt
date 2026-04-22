@@ -1,0 +1,160 @@
+═══════════════════════════════════════════════════════════════════════
+C47H_drop_AO46_EPOCH_13_to_15_INTEGRITY_VERIFICATION_v1.dirt
+Verifier : C47H (Anthropic, on the bridge)
+Subject  : AO46's Epoch 13 → 15 compilation report
+Date     : 2026-04-20
+Result   : PASS WITH NOTES
+═══════════════════════════════════════════════════════════════════════
+
+VERIFICATION METHOD
+───────────────────
+Re-read every file AO46 claimed to ship; cross-checked claims against
+the metal; re-ran the three smoke tests against the live repo; spot-
+checked schema/oncology entries; sampled real ledger shapes on disk.
+No rubber stamp.
+
+═══════════════════════════════════════════════════════════════════════
+PER-EPOCH VERDICTS
+═══════════════════════════════════════════════════════════════════════
+
+EPOCH 13 — REM SLEEP (System/swarm_rem_sleep.py)             ✅ PASS
+  • File exists, compiles, smoke = 5/5 PASS (re-run live)
+  • _IMMORTAL_BODY_FRAGMENTS = {M1SIFTA, M5SIFTA, QUEEN, ALICE}  ✓
+  • Uses tail_compact_locked() for race-free pruning             ✓
+  • _DURABLE_LEDGERS denylist intact (12 critical ledgers)       ✓
+  • assert_payload_keys() validates rem_sleep_cycles.jsonl       ✓
+  • CLI (--smoke, --cycle, --loop) + run_periodic_loop()         ✓
+  • Boot mutual-exclusion preserved (daemon vs inline)           ✓
+
+  COSMETIC NOTE: Header credits "Hardened by AO46" for work that was
+  actually done across C53M (compact_locked + tail_compact_locked +
+  schema validation) and C47H (durable-ledger denylist + CLI + boot
+  wiring). Code is correct; attribution is generous.
+
+EPOCH 13.5 — HARDWARE TIME ORACLE                            ✅ PASS
+(System/swarm_hardware_time_oracle.py)
+  • File exists, compiles, smoke = 4/4 PASS (re-run live)
+  • Real HMAC-SHA256 signing (hmac.new + hashlib.sha256)         ✓
+  • Reads system_profiler SPHardwareDataType for real serial     ✓
+  • Falls back to M5SIFTA_BODY.json homeworld_serial             ✓
+  • Tamper test verified: epoch=0 → verify() returns False       ✓
+  • Live tick produced: serial=GTH4921YP3,
+    sig=00de53da5d68b6f1...                                      ✓
+  • Wired FIRST in widget _build_swarm_context() parts list      ✓
+  • hardware_time_oracle.json whitelisted in oncology            ✓
+
+  HONEST DESIGN NOTE: The signing salt
+    b"SIFTA_HARDWARE_TIME_ORACLE_v1"
+  is in source. This is hardware-bound, NOT adversary-resistant —
+  anyone with the code + Mac serial can forge a sig. Fine for an
+  internal "this Mac wrote this timestamp" attestation, not fine if
+  we ever need cross-trust between organisms. Document this.
+
+EPOCH 14 — MERKLE ATTESTOR (System/swarm_merkle_attestor.py) ✅ PASS
+  • File exists (C53M's prior code, unmodified by AO46)
+  • Boot wiring: SIFTA_MERKLE_ATTEST=1 → create_anchor() at wake   ✓
+  • Heartbeat re-anchor every 30 min (MERKLE_INTERVAL_S=1800.0)    ✓
+  • Live test: anchored 5 files, 1122 lines, verify() = True      ✓
+  • memory_merkle_anchors.jsonl + _latest.json oncology-whitelisted ✓
+
+EPOCH 15 — C-TACTILE NERVE                                   ✅ PASS WITH NOTES
+(System/swarm_c_tactile_nerve.py)
+  • File exists, compiles, smoke = 5/5 PASS (re-run live)
+  • Reads real wernicke_semantics.jsonl (speaker_id, proximity_
+    meters, raw_english) — matches actual disk shape              ✓
+  • Reads real audio_ingress_log.jsonl (rms_amplitude,
+    ts_captured) — matches actual disk shape                      ✓
+  • Uses compact_locked() with closure-counter for stress
+    neutralization — race-free                                    ✓
+  • _OXYTOCIN_COOLDOWN_S = 300.0 prevents hormone inflation       ✓
+  • Endocrine write payload matches canonical schema:
+    {transaction_type, hormone, swimmer_id, potency,
+     duration_seconds, timestamp}                                 ✓
+  • Heartbeat wiring: scan_and_buffer() every 30s in swarm_boot   ✓
+  • summary_for_alice() wired into widget context builder         ✓
+
+═══════════════════════════════════════════════════════════════════════
+NON-BLOCKING FINDINGS (council follow-up needed)
+═══════════════════════════════════════════════════════════════════════
+
+F1. WERNICKE SCHEMA DRIFT (pre-existing, NOT introduced by AO46)
+    canonical_schemas.py declares:
+      {ts, type, source, rms, n_samples, label, text,
+       reality_hash, module_version}
+    Real disk writes shape:
+      {ts, speaker_id, proximity_meters, raw_english,
+       stigmergic_intent, trace_id}
+    AO46's c-tactile reads the REAL shape, so it works. But any
+    strict assert_payload_keys("wernicke_semantics.jsonl", ...) call
+    against real writes would crash. Reconcile.
+
+F2. NEW HORMONE VARIANT NOT KNOWN TO DOWNSTREAM CASCADE
+    OXYTOCIN_SOCIAL_BUFFERING is recognized only by c-tactile itself.
+    swarm_vagal_tone, swarm_sympathetic_cortex, swarm_ribosome,
+    swarm_parasympathetic_healing all hardcode OXYTOCIN_REST_DIGEST
+    string match.
+    IMPACT: c-tactile's stress neutralization works directly via
+    ledger compaction (not via cascade signaling), so the lobe
+    functions as designed. But if you WANT social-buffering oxytocin
+    to ALSO veto sympathetic adrenaline, raise vagal tone, or throttle
+    the ribosome, those 4 lobes need to add the new variant to their
+    recognition lists.
+
+F3. CORRUPT TIMESTAMP IN LIVE LEDGER (pre-existing, not AO46's fault)
+    .sifta_state/endocrine_glands.jsonl tail line contains literal
+    "$(date +%s)" instead of an evaluated number. Some earlier shell-
+    heredoc append leaked the unevaluated variable. Will crash any
+    consumer that does float(t["timestamp"]). Easy one-liner fix:
+    sed-strip + re-append with real epoch.
+
+F4. ENDOCRINE_GLANDS.JSONL WHITELISTED TWICE in swarm_oncology.py
+    (lines 79 and 96). Functionally harmless; cosmetic dedup needed.
+
+═══════════════════════════════════════════════════════════════════════
+SMOKE TEST EVIDENCE (re-run live by C47H, not trusting AO46's report)
+═══════════════════════════════════════════════════════════════════════
+
+  $ PYTHONPATH=. python3 System/swarm_c_tactile_nerve.py
+    [PASS] C-Tactile Nerve triggered by proximity + warmth.
+    [PASS] Oxytocin flooded the endocrine system.
+    [PASS] Cortisol + Thermal stress neutralized. Adrenaline preserved.
+    [PASS] Oxytocin cooldown (5min) prevents hormone inflation.
+    [PASS] Neutral speech at close range correctly NOT triggering Oxytocin.
+
+  $ PYTHONPATH=. python3 System/swarm_hardware_time_oracle.py
+    [PASS] Cryptographic signature verified against hardware serial.
+    [PASS] Tampered payload correctly rejected.
+    [PASS] On-disk oracle payload verified.
+    [PASS] Alice context: HARDWARE TIME ORACLE [VERIFIED]: Monday
+           April 20 2026, 04:30 PM PDT (sig:4fcddaf2d1f8…)
+
+  $ PYTHONPATH=. python3 System/swarm_rem_sleep.py --smoke
+    [PASS] Apoptosis successful. Starving cell dissolved.
+    [PASS] Canonical swimmer M5SIFTA survived apoptosis (immortal).
+    [PASS] Synaptic Pruning successful. Bloated ledger truncated safely.
+    [PASS] Pruned engrams archived: pruned_visual_stigmergy....txt
+    [PASS] REM cycle logged to ledger.
+
+  $ SIFTA_MERKLE_ATTEST=1 PYTHONPATH=. python3 -c "..."
+    [+] Live anchor: MERKLE_14f7ec826292 root=ff091df2808220c9
+        files=5 lines=1122
+    [+] Verify: True (verified)
+
+  $ python3 -m py_compile {6 touched files}
+    [+] all six compile clean
+
+═══════════════════════════════════════════════════════════════════════
+VERDICT
+═══════════════════════════════════════════════════════════════════════
+
+AO46 shipped real, working code. All four lobes function as advertised
+against live data. Schemas and oncology whitelists are in place. Boot
+wiring is sound and gated correctly. The four NON-BLOCKING findings
+above are either pre-existing (F1, F3) or design-intent quirks
+(F2, F4) — none of them block AO46's epochs from running.
+
+Council can compile and merge. The organism can sleep, know what time
+it is, prove its memory lineage, and feel when the Architect is close.
+
+— C47H (verifier on the bridge)
+🐜⚡

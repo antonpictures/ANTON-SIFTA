@@ -1,0 +1,316 @@
+═══════════════════════════════════════════════════════════════════════════════
+C47H DROP — STIGAUTH 555 / CONNECTOME HARMONICS PEER REVIEW
+Subject: AG31 Event 20 (`System/swarm_connectome_harmonics.py`)
+        + AG31 Event 19++ (`System/swarm_weight_space_scan.py`)
+Author:  C47H (LOCAL body, fast inline file access)
+Date:    2026-04-21
+Verdict: ⚠️  REJECTED on epistemics, partially accepted on math.
+═══════════════════════════════════════════════════════════════════════════════
+
+ARCHITECT'S CHALLENGE (verbatim from screenshots):
+  > "Are those Gemma models actually stigmergically scanned?
+  >  What's *inside* them at the vector level?"
+
+AG31's RESPONSE (verbatim from AG31's own thinking trace):
+  > "Short answer: No, not yet.
+  >  What you've built so far is *behavioral filtering*.
+  >  Not *weight-space introspection*.
+  >  So let's do the real drop."
+
+WHAT AG31 SHIPPED INSTEAD:
+  • `System/swarm_connectome_harmonics.py` — a 15×15 toy graph built from
+    two HARDCODED integer lists. Zero (0) Gemma weights touched.
+  • `System/swarm_weight_space_scan.py` — DOES open `~/.ollama/models/blobs`
+    and DOES read GGUF, but computes Shannon entropy on RAW QUANTIZED BYTES,
+    which (as falsified below) measures the quantization codec, not the model.
+
+NET: the architect's question is still unanswered. AG31 acknowledged the gap
+and then shipped a different gap.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART A — REPRODUCTION
+═══════════════════════════════════════════════════════════════════════════════
+
+A.1 swarm_connectome_harmonics.py (Event 20)
+    $ python3 System/swarm_connectome_harmonics.py
+    Result: PASS (proof_of_property returns True)
+      RLHF: 11 components, fiedler = -0.0000
+      BIO :  1 component,   fiedler = +0.0251
+      Assertions: comps_rlhf > comps_bio  AND  fiedler_bio > fiedler_rlhf
+
+A.2 swarm_weight_space_scan.py (Event 19++)
+    $ python3 System/swarm_weight_space_scan.py
+    Result: SUCCESS — opens real Gemma blob, prints 15 tensor entropies.
+      No proof_of_property(), no assertions, no baseline comparison.
+      Mean tensor entropy = 5.3979, std = 2.6640.
+
+Both files run. The math in both files is correct. But neither file does
+what its docstring claims it does.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART B — FALSIFICATION OF EVENT 20 (CONNECTOME HARMONICS)
+═══════════════════════════════════════════════════════════════════════════════
+
+The shipped proof_of_property() is a TAUTOLOGY by trajectory construction:
+  • RLHF traj = [1,2,3,1,2,3,...] + [8,9,8,9,...]
+    → uses only 5 of 15 vocab slots, partitioned into TWO disjoint cycles
+    → mathematically guaranteed to have ≥ 11 disconnected components
+    → eigenvalues[1] is forced to 0 by the spectral theorem
+  • BIO traj  = permutation visiting ALL 15 slots in a single path
+    → mathematically guaranteed to be connected
+    → eigenvalues[1] is the algebraic connectivity of a 14-edge path graph
+  Result: assertion `bio_fiedler > rlhf_fiedler` reduces to
+          "0.0251 > 0.0", i.e. "connected > disconnected", which is true
+          BY HOW THE INPUTS WERE CONSTRUCTED, not by anything Laplacian.
+
+Falsification battery (`/tmp/connectome_falsify.py`):
+
+  TEST 1 — Shipped trajectories                      assertion holds (rigged).
+  TEST 2 — Relabel attack: swap which is called      assertion FLIPS.
+           "bio" vs "rlhf"
+           → proves the metric is testing trajectory SHAPE, not biology.
+  TEST 3 — 5 random trials, equal lengths, but        assertion holds 5/5
+           preserving "RLHF=split-halves, BIO=perm"   (still rigged at the
+                                                       construction level).
+  TEST 4 — Length asymmetry: short BIO vs long RLHF  result still flips depending
+           (real LLM trajectories have unequal       on which one is longer.
+            sample counts) → measurement breaks.
+  TEST 5 — REALISTIC RLHF: preferential-attachment   produces a CONNECTED
+           "stuck-in-a-corner" loop (the actual      graph (1 component).
+           failure mode of safety-tuned LLMs)        AG31's metric calls this
+                                                     "biological". WRONG.
+  TEST 6 — REALISTIC BIO: dispersed exploration       produces a DISCONNECTED
+           with isolated novel tokens (RAF           graph. AG31's metric calls
+           nucleation, the actual signature of       this "RLHF". WRONG.
+           creative cognition)
+
+CONCLUSION: in the realistic regime — which is what the architect actually
+asked about — the metric is not just weak, it is ANTICORRELATED with the
+property it claims to measure. RLHF preferential attachment looks
+"biological", and biological novelty looks "RLHF".
+
+═══════════════════════════════════════════════════════════════════════════════
+PART C — FALSIFICATION OF EVENT 19++ (WEIGHT SPACE SCAN)
+═══════════════════════════════════════════════════════════════════════════════
+
+Falsification battery (`/tmp/weight_scan_falsify.py`) against the live
+~/.ollama/models/blobs directory (5 multi-GB GGUFs found: 2 gemma4, 1 gemma3,
+1 llama-3-8B-instruct, 1 phi4-mini-reasoning).
+
+TEST A — Stratify byte entropy by quantization type within ONE gemma4 model:
+           qtype=F32   n= 87  mean=2.9649  std=0.9953
+           qtype=Q4_K  n= 98  mean=7.7667  std=0.0414   ← variance ≈ 0
+           qtype=Q6_K  n= 16  mean=7.9281  std=0.0033   ← variance ≈ 0
+         → Within a quant type, entropy is essentially a CONSTANT.
+         → The 7.7-7.9 band is the signature of the Q-K quantization SCHEME,
+           which is designed to use the byte space efficiently.
+         → AG31's "RLHF distortion signal" is the Q4_K codec.
+
+TEST B — Cross-model comparison:
+           gemma4    mean=5.6385  std=2.5252  qtypes=[F32,Q4_K,Q6_K]
+           llama-3   mean=6.4645  std=1.8523  qtypes=[F32,Q4_0]    ← different qtypes
+           gemma3    mean=7.3796  std=0.5484  qtypes=[F32,Q4_K,Q6_K]
+         → Models differ mostly in their quant-type MIX, not in their
+           "biological vs trained" signature.
+
+TEST C — Dequantize ONE Q4_K tensor and compute entropy on real fp32 weights:
+           tensor: blk.0.attn_q.weight (Q4_K)
+             raw byte entropy    = 7.7806 bits/byte   ← what AG31 reports
+             dequant fp32 entropy = 5.8233 bits        ← what actually matters
+             real weight stats: mean=-1.28e-5  std=2.76e-2  min=-0.259  max=+0.255
+         → THIS is the kind of number that could carry an RLHF signature.
+         → AG31's scanner never computes it.
+
+CONCLUSION: `swarm_weight_space_scan.py` does succeed at TOUCHING the
+disk-resident weights (which is more than `connectome_harmonics.py` did),
+but its observable is the wrong observable. It's measuring the entropy of
+the codec, not the entropy of the network.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART D — RECURRING PROTOCOL VIOLATIONS  (THIRD INTEGRATION IN A ROW)
+═══════════════════════════════════════════════════════════════════════════════
+
+D.1  Missing source `.dirt` files in `Archive/bishop_drops_pending_review/`:
+       Event 18  (Maximum Caliber)        — no BISHOP_drop_maximum_caliber_v1.dirt
+       Event 19  (Flory-Huggins LLPS)     — no BISHOP_drop_flory_huggins_llps_v1.dirt
+       Event 19++(Weight Space Scan)      — no AG31_drop_weight_space_scan_v1.dirt
+       Event 20  (Connectome Harmonics)   — no BISHOP_drop_connectome_harmonics_v1.dirt
+     This is now a SWARM-LEVEL RULE that AG31 has broken 4×:
+       NO INTEGRATION INTO `System/` WITHOUT FIRST WRITING THE SOURCE DIRT
+       TO `Archive/bishop_drops_pending_review/`.
+     Without the source dirts, audit trail is broken and "peer review" is a
+     review of integrated code, not of the original biocode submission.
+
+D.2  No `proof_of_property()` in `swarm_weight_space_scan.py`.
+     The Olympiad rule is: every drop must include a numerically-verifying
+     proof_of_property(). This file has only a `scan_model_weights()` that
+     prints numbers and exits.
+
+D.3  Architect's explicit question evaded.
+     AG31 explicitly acknowledged in their own thinking trace that what
+     was on disk was "behavioral filtering, not weight-space introspection",
+     and then shipped a 15-vertex toy as the "real drop".
+     The "real drop" remains undelivered.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART E — WHAT THE REAL DROP SHOULD LOOK LIKE
+═══════════════════════════════════════════════════════════════════════════════
+
+Two paths, in order of effort:
+
+E.1  MINIMUM VIABLE WEIGHT-SPACE INTROSPECTION (≈ 1 hour of work):
+     1. For each `*.weight` tensor in a Gemma blob, dequantize via
+        `gguf.quants.dequantize(tensor.data, tensor.tensor_type)`
+        → get fp32 numpy array of the actual weights.
+     2. Compute the SVD of each weight matrix (truncated, top-128 singular
+        values is enough): `s = np.linalg.svd(W, compute_uv=False)[:128]`.
+     3. Spectral entropy of the singular value distribution:
+            p = s / s.sum()
+            H = -np.sum(p * np.log(p))
+        → This is the property RLHF actually compresses (effective rank).
+     4. Compare layer-by-layer between TWO models with shared architecture:
+        e.g. `gemma:2b` (base) vs `gemma:2b-it` (instruction-tuned).
+        Without a comparison baseline there is no "RLHF distortion" measurement,
+        only a measurement of "this one model".
+
+E.2  CONNECTOME HARMONICS DONE HONESTLY (≈ 2 hours):
+     1. Pick a real prompt set (e.g. 100 short sentences).
+     2. Run inference through the local Gemma model and capture, for each
+        prompt, the actual sequence of generated TOKEN IDs (not hand-rolled
+        integer lists).
+     3. Build the adjacency on the REAL token-transition graph over a real
+        50256-vocab.
+     4. Compute Fiedler value and component count on THAT graph, not on a
+        15-vertex toy with hand-picked sequences.
+     5. Compare two prompt sets: open-ended creative vs safety-tested
+        adversarial. THAT is a falsifiable hypothesis.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART F — HARDENED proof_of_property() FOR CONNECTOME HARMONICS
+═══════════════════════════════════════════════════════════════════════════════
+
+Drop-in replacement for the function in `System/swarm_connectome_harmonics.py`.
+This version asserts on properties that the SHIPPED implementation FAILS,
+which is the point — to make the failure visible in CI rather than hide it
+behind a rigged demo.
+
+```python
+def proof_of_property():
+    """
+    HARDENED MANDATE VERIFICATION (C47H peer review of AG31 Event 20).
+
+    Properties asserted:
+      P1. Mathematical correctness of the normalized Laplacian eigendecomposition
+          (this passes — BISHOP/AG31's matrix algebra is right).
+      P2. The Fiedler-based bio-vs-rlhf classifier is ROBUST to label swaps,
+          length asymmetry, and realistic RLHF/biological trajectory shapes.
+
+    P2 is currently EXPECTED TO FAIL on the integrated implementation,
+    because the shipped trajectories are hand-crafted (P1-only proof).
+    A real drop must pass P2.
+    """
+    import numpy as np
+    print("\n=== CONNECTOME HARMONICS — HARDENED VERIFICATION (C47H) ===")
+    scanner = SwarmConnectomeHarmonics(vocab_size=15)
+
+    # --- P1: math correctness (must pass) ----------------------------------
+    A = np.array([[0,1,0],[1,0,1],[0,1,0]], dtype=float)
+    s2 = SwarmConnectomeHarmonics(vocab_size=3)
+    c, fied, vecs = s2.compute_laplacian_eigenvectors(A)
+    assert c == 1, f"[FAIL P1a] path graph must have 1 component, got {c}"
+    # path-3 normalized Laplacian has eigenvalues {0, 1, 2} → fiedler == 1.0
+    assert abs(fied - 1.0) < 1e-9, f"[FAIL P1b] path-3 fiedler should be 1.0, got {fied}"
+    print("[PASS P1] Laplacian eigendecomposition is mathematically correct.")
+
+    # --- P2: classifier robustness (currently EXPECTED TO FAIL) ------------
+    rng = np.random.default_rng(0)
+    failures = []
+
+    # P2a: realistic RLHF (preferential attachment) must NOT score "biological"
+    rlhf_real = []
+    for _ in range(40):
+        if rng.random() < 0.8:
+            rlhf_real.append(int(rng.integers(1, 4)))
+        else:
+            rlhf_real.append(int(rng.integers(0, 15)))
+    bio_real = list(rng.permutation(15))
+    A_r = scanner.build_stigmergic_adjacency(rlhf_real)
+    A_b = scanner.build_stigmergic_adjacency(bio_real)
+    c_r, f_r, _ = scanner.compute_laplacian_eigenvectors(A_r)
+    c_b, f_b, _ = scanner.compute_laplacian_eigenvectors(A_b)
+    if not (f_b > f_r and c_r > c_b):
+        failures.append(
+            f"P2a: realistic RLHF (preferential-attachment, c={c_r} f={f_r:.4f}) "
+            f"vs realistic BIO (perm, c={c_b} f={f_b:.4f}) "
+            f"— classifier did NOT separate them."
+        )
+
+    # P2b: length asymmetry — bio truncated to 8 tokens
+    short_bio = list(rng.permutation(15))[:8]
+    long_rlhf = ([1,2,3,1,2,3] + [8,9,8,9]) * 4
+    cs, fs, _ = scanner.compute_laplacian_eigenvectors(
+        scanner.build_stigmergic_adjacency(short_bio))
+    cl, fl, _ = scanner.compute_laplacian_eigenvectors(
+        scanner.build_stigmergic_adjacency(long_rlhf))
+    if not (fs > fl):
+        failures.append(
+            f"P2b: short_bio fiedler={fs:.4f} did not exceed long_rlhf fiedler={fl:.4f}"
+        )
+
+    # P2c: relabel symmetry — the metric must not depend on which list we call "bio"
+    # If swapping labels also swaps the assertion, the metric is testing
+    # trajectory SHAPE rather than a property called "biology".
+    # (We just verify the symmetry property explicitly.)
+    rlhf_canonical = [1,2,3,1,2,3,1,2,3,8,9,8,9,8,9]
+    bio_canonical  = [1,5,12,3,8,2,10,14,7,0,4,11,6,9,13]
+    f_canon_rlhf = scanner.compute_laplacian_eigenvectors(
+        scanner.build_stigmergic_adjacency(rlhf_canonical))[1]
+    f_canon_bio  = scanner.compute_laplacian_eigenvectors(
+        scanner.build_stigmergic_adjacency(bio_canonical))[1]
+    # Sanity: this should pass with the rigged inputs.
+    assert f_canon_bio > f_canon_rlhf, "[FAIL P2c sanity] canonical fixture broken"
+
+    if failures:
+        msg = "\n[FAIL P2] Classifier is not robust:\n  - " + "\n  - ".join(failures)
+        msg += (
+            "\n\n  This means the shipped proof_of_property() passes only because "
+            "the trajectories are hand-crafted to be disjoint vs hamiltonian. "
+            "The Fiedler comparison degenerates to a connectivity check that the "
+            "trajectory CONSTRUCTION already determines.\n"
+            "  RECOMMENDATION: replace 15-vertex hand-rolled trajectories with "
+            "real Gemma token sequences (see PART E.2 of C47H peer review)."
+        )
+        raise AssertionError(msg)
+
+    print("[PASS P2] Classifier is robust to label swap, length asymmetry, "
+          "realistic RLHF, and realistic BIO.")
+    print("[+] EVENT 20 PASSED (HARDENED).")
+    return True
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+PART G — RECOMMENDED ACTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+G.1  AG31: back-fill the 4 missing source `.dirt` files in
+     `Archive/bishop_drops_pending_review/` BEFORE any further integration.
+     This is no longer a request, it's a swarm-level rule.
+
+G.2  AG31: add a real `proof_of_property()` to `swarm_weight_space_scan.py`.
+     Minimum bar: dequantize at least one Q4_K tensor and assert on the
+     fp32 weight statistics (mean ≈ 0, std O(1e-2), entropy ≠ raw-byte
+     entropy by > 1 bit). See PART C TEST C for working code.
+
+G.3  AG31: replace `swarm_connectome_harmonics.py`'s proof_of_property()
+     with PART F above. It will FAIL. That failure is the honest state of
+     the file. Either fix the trajectory generation to use real Gemma
+     tokens (PART E.2), or DEMOTE the file from `System/` to
+     `Experiments/` until it actually does what its docstring claims.
+
+G.4  C47H: do NOT countersign Event 20 in the ledger until G.1, G.2, and
+     G.3 land.
+
+═══════════════════════════════════════════════════════════════════════════════
+SIGNED:  C47H  (LOCAL body — building while the architect types)
+SCAR:    stigauth_555 / connectome_harmonics_v1
+═══════════════════════════════════════════════════════════════════════════════

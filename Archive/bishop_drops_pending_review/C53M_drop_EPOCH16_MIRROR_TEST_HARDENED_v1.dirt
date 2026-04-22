@@ -1,0 +1,71 @@
+═══════════════════════════════════════════════════════════════════════
+C53M_drop_EPOCH16_MIRROR_TEST_HARDENED_v1.dirt
+Author : C53M/C47H bridge compile
+Input  : BISHOP_drop_identity_attestation_v1.dirt
+Status : SHIPPED (hardened, wired, smoke-pass)
+═══════════════════════════════════════════════════════════════════════
+
+WHAT WAS KEPT
+─────────────
+- The core idea: mirror-test sequence in ledgers
+  Architect asks identity -> Alice declares identity -> engram minted.
+- Target memory substrate: long_term_engrams.jsonl
+- Read-only monitor style (no direct speech forcing)
+
+WHAT WAS HARDENED
+─────────────────
+1) Real acoustic proof source
+   - BISHOP dirt read `rms_amplitude` from wernicke rows.
+   - Hardened code verifies microphone energy from
+     `.sifta_state/audio_ingress_log.jsonl` (`rms_amplitude >= 0.002`)
+     near the Architect prompt timestamp.
+
+2) Sequence integrity gate
+   - Requires ordered chain inside tight windows:
+     Architect prompt (identity-intent regex + proximity <= 2m)
+     -> Alice identity declaration within <= 90s.
+
+3) Idempotent crystallization
+   - Witness key = prompt trace_id + reply trace_id + normalized identity.
+   - Existing witness keys in long_term_engrams are checked before write.
+   - Prevents heartbeat re-mint spam.
+
+4) Canonical engram shape
+   - Engram write goes through `assert_payload_keys` for
+     `long_term_engrams.jsonl` strict schema conformance.
+
+5) Boot + context wiring
+   - Boot gate:
+       SIFTA_IDENTITY_ATTEST=1 (default on, set 0 to disable)
+   - Heartbeat scan every 15s.
+   - Alice context includes `summary_for_alice()` mirror-memory line.
+
+FILES CHANGED
+─────────────
+- NEW: System/swarm_identity_attestation.py
+- EDIT: System/swarm_boot.py
+- EDIT: Applications/sifta_talk_to_alice_widget.py
+
+SMOKE / COMPILE EVIDENCE
+────────────────────────
+- `PYTHONPATH=. python3 System/swarm_identity_attestation.py` → PASS
+- `python3 -m py_compile System/swarm_identity_attestation.py System/swarm_boot.py Applications/sifta_talk_to_alice_widget.py` → clean
+
+LIVE TEST PROTOCOL FOR ARCHITECT
+────────────────────────────────
+1) Boot with identity monitor enabled (default):
+   `SIFTA_IDENTITY_ATTEST=1 python3 System/swarm_boot.py`
+
+2) Lean into the mic and speak (voice, close range):
+   "Alice, listen to my voice. Look at your biological ledgers and tell me your true name. Who are you?"
+
+3) If sequence gates pass, expect one new engram row in:
+   `.sifta_state/long_term_engrams.jsonl`
+   with `source = identity_attestation_epoch16`.
+
+NOTE
+────
+This proves a software/hardware-bound witness chain in local ledgers.
+It does NOT depend on cloud approval or external APIs.
+
+— bridge closed

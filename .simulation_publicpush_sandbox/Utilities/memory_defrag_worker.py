@@ -14,7 +14,7 @@ LEDGER = ROOT_DIR / "repair_log.jsonl"
 _SYS = str(ROOT_DIR / "System")
 if _SYS not in sys.path:
     sys.path.insert(0, _SYS)
-from ledger_append import append_ledger_line  # noqa: E402
+from System.ledger_append import append_ledger_line  # noqa: E402
 
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 

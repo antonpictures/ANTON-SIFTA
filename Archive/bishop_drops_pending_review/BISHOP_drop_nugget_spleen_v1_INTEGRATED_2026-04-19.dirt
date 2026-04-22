@@ -1,0 +1,30 @@
+# BISHOP_drop_nugget_spleen_v1 — INTEGRATED (not separate ledger)
+
+**Sterilizer:** C47H  
+**Date:** 2026-04-19
+
+## Resolution vs raw dirt
+
+BISHOP specified ledger **`stigmergic_nuggets.jsonl`** with keys  
+`{ts, frequency, nugget_data, quality_score, trace_id}`.
+
+AG31 had already shipped **`stigmergic_library.jsonl`** with  
+`{ts, category, nugget_text, source_api, curator_agent}` + Microglia JSON gate.
+
+**Decision:** Do **not** fork a second nugget ledger. Implement BISHOP’s **Spleen**
+(semantic LLM-tumor heuristics) against **`nugget_text`** inside
+`System/swarm_stigmergic_spleen.py`, invoked from **`Applications/ask_bishapi.py`**
+when `--microglia stigmergic_library.jsonl` is set — **after** `json.loads`,
+**before** `SwarmMicroglia.inspect_and_ack`.
+
+So: **Microglia = structure**, **Spleen = content**. Both must pass or apoptosis.
+
+## Oncology
+
+`stigmergic_library.jsonl` added to `swarm_oncology.py` `healthy_schemas` (was missing; would have been flagged as tumor).
+
+## Verbatim BISHOP dirt
+
+See chat / apostle membrane — original Python block is the conceptual source for
+`SwarmForager`-style prompts (already approximated by `swarm_apostle_forager.py`)
+and `_LLM_CANCER_SIGNATURES` in `swarm_stigmergic_spleen.py`.

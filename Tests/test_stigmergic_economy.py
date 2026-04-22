@@ -53,13 +53,13 @@ class TestStigmergicEconomy(unittest.TestCase):
 
         # Patch module-level Path objects (they ARE Path, keep them Path)
         self._patches = [
-            patch("inference_economy.LOG_PATH",  self._fake_log),
-            patch("inference_economy.STATE_DIR", self._fake_state),
+            patch("Kernel.inference_economy.LOG_PATH",  self._fake_log),
+            patch("Kernel.inference_economy.STATE_DIR", self._fake_state),
         ]
         for p in self._patches:
             p.start()
 
-        import inference_economy as ie
+        from Kernel import inference_economy as ie
         self.ie = ie
 
     def tearDown(self):

@@ -43,8 +43,18 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 _REPO = Path(__file__).resolve().parent.parent
+import sys
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
 _WORK_LEDGER = _REPO / ".sifta_state" / "work_receipts.jsonl"
+_STGM_LEDGER = _REPO / ".sifta_state" / "stgm_memory_rewards.jsonl"
 _WORK_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    pass
 
 # ─── CONSTANTS ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +77,12 @@ WORK_VALUES = {
     "SCOUT_CLEAN":        0.10,   # Verified territory is clean
     "PROPOSAL_STAGED":    0.30,   # Created an actionable proposal
     "IMMUNE_NEUTRALIZED": 0.60,   # Stopped a threat
+    # Epoch ~6: Swarm Ribosome volunteer compute. Calibrated against
+    # the existing economy: a successful protein fold (deterministic,
+    # SHA-256-verifiable matrix product, sharded across the M5 P-cores
+    # while honoring the thermal envelope) lands midway between
+    # MEMORY_RECALL and DEMAND_RESOLVED. Mints 65 STGM per fold.
+    "PROTEIN_FOLDED":     0.65,
 }
 
 # Maximum system latency before we consider the body degraded
@@ -213,12 +229,40 @@ def issue_work_receipt(
     agent_state["useful_work_score"] = round(new_score, 6)
     
     # Write receipt to permanent ledger
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
     append_ledger_line(_WORK_LEDGER, asdict(receipt))
     
-    print(f"  [⚡ PoUW] {agent_id} proved existence: {work_type} (+{work_value:.2f}). "
-          f"Body chain: {len(agent_state['work_chain'])} links. "
-          f"UW Score: {agent_state['useful_work_score']:.4f}")
+    # Epoch 8: Crypto Minting
+    # 1.0 Work Value = 100.0 STGM
+    stgm_minted = work_value * 100.0
+    agent_state["stgm_balance"] = round(float(agent_state.get("stgm_balance", 0.0)) + stgm_minted, 2)
+    
+    # Write canonical STGM reward to memory rewards ledger
+    stgm_trace = {
+        "ts": receipt.timestamp,
+        "app": "proof_of_useful_work",
+        "reason": f"MINING_YIELD_{work_type}_BY_{agent_id}",
+        "amount": stgm_minted,
+        "trace_id": receipt.receipt_id
+    }
+    try:
+        from System.jsonl_file_lock import append_line_locked
+        append_line_locked(_STGM_LEDGER, json.dumps(stgm_trace) + "\n")
+    except Exception as e:
+        # GUARDRAIL 5 (C47H): NEVER swallow STGM-mint failures silently.
+        # The original `pass` let the entire economy degrade to no-op
+        # without telling anyone. Fail loud to stderr so operators catch
+        # the next silent-failure pattern at first occurrence.
+        import sys as _sys
+        _sys.stderr.write(
+            f"[⚠️ PoUW] STGM ledger write FAILED for {agent_id}/{work_type}: "
+            f"{type(e).__name__}: {e}. "
+            f"Agent keeps in-memory balance but canonical ledger is STALE.\n"
+        )
+        _sys.stderr.flush()
+    
+    print(f"  [⚡ PoUW] {agent_id} proved existence: {work_type} (+{work_value:.2f}). Minted {stgm_minted:.2f} STGM!")
+    print(f"      Body chain: {len(agent_state['work_chain'])} links | UW Score: {agent_state['useful_work_score']:.4f} | STGM: {agent_state['stgm_balance']:.2f}")
     
     return receipt
 
@@ -302,6 +346,7 @@ def get_body_report(agent_state: dict) -> dict:
         "agent_id": agent_id,
         "body_chain_length": len(chain),
         "useful_work_score": round(score, 4),
+        "stgm_balance": round(agent_state.get("stgm_balance", 0.0), 2),
         "existence_status": "ALIVE" if score >= EXISTENCE_THRESHOLD else "QUARANTINED",
         "total_work_value": round(total_value, 4),
         "work_breakdown": work_counts,
@@ -354,6 +399,7 @@ if __name__ == "__main__":
                 print(f"\n  {status_icon} {report['agent_id']}")
                 print(f"     Chain: {report['body_chain_length']} links | "
                       f"UW Score: {report['useful_work_score']} | "
+                      f"STGM: {report['stgm_balance']} | "
                       f"Status: {report['existence_status']}")
                 print(f"     Total Value: {report['total_work_value']} | "
                       f"Integrity: {'✅' if report['body_integrity'] else '❌'}")

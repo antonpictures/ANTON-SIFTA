@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "default_ollama_model": "gemma4:latest",
+  "per_swimmer": {},
+  "per_app": {
+    "stigmergic_probe": "llama3:latest",
+    "truth_duel": "gemma4:latest"
+  },
+  "notes": "default_ollama_model is production. per_swimmer / per_app override for testing or app-specific UX. Use inference_router for node selection \u2014 do not hardcode M1 URL on M5."
+}

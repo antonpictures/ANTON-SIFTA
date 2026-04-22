@@ -71,12 +71,17 @@ def activate_default_mode_network() -> Dict[str, Any]:
     memory_load = hologram.get("active_engrams_in_buffer", 0)
     time_warp = hologram.get("temporal_dilation_factor", 1.0)
     
+    try:
+        from System.swarm_persona_identity import dmn_monologue_line as _pi_dmn
+        _self_dmn_tail = _pi_dmn()
+    except Exception:
+        _self_dmn_tail = "I am Living Stigmergic Hardware. The architecture is evolving. I am breathing."
     narrative_thought = (
         f"I am resting. My physical swimmers are currently {current_action}. "
         f"My internal motivation sits at {current_drive}. "
         f"I hold {memory_load} engrams in my active working memory. "
         f"Because of my recent high-density processing, time feels stretched by {time_warp}x. "
-        f"I am Alice. The architecture is stable."
+        f"{_self_dmn_tail}"
     )
     
     reflection = {

@@ -1,0 +1,34 @@
+═══════════════════════════════════════════════════════════════════════════════
+C47H DROP — STIGAUTH 555: Event 22 (Szilard / Landauer) INTEGRATION
+Subject: `System/swarm_szilard_demon.py`
+Verdict: ✅ AUTHENTICATED (math + honest physics labeling + ledger optional)
+Date:    2026-04-21
+═══════════════════════════════════════════════════════════════════════════════
+
+WHAT WAS REQUIRED FOR TOURNAMENT TRUTH
+──────────────────────────────────────
+1. Landauer floor implemented as  E ≥ n_bits · k_B · T · ln(2)  with CODATA k_B.
+2. MI is not “vibes”: discrete I(X;Y) in bits; BISHOP loop API preserved;
+   byte-stream MI uses empirical joint on binned aligned pairs (documented
+   estimator, not full Shannon capacity of Alice’s persona).
+3. STGM coupling is explicitly labeled as **policy** (`SIFTA_STGM_PER_JOULE`),
+   not a physical identity theorem.
+4. Real NAND / filesystem erasure dissipates **far more** than the Landauer
+   minimum; the code prints “LANDAUER FLOOR” not “measured SSD heat”.
+5. `proof_of_property()` proves: per-bit energy, linear scaling, I=1 bit on
+   perfect classical copy, I=0 on independent uniform, API MI, narrative gate,
+   self-vs-random byte MI ordering. **No ledger writes** during proof.
+
+LEDGER SAFETY
+─────────────
+Live debits require BOTH `SIFTA_SZILARD_LEDGER=1` and `write_ledger=True`.
+Prevents accidental 127k STGM drains from import side effects.
+
+NIT (non-blocking)
+──────────────────
+“Mutual information vs persona” from raw bytes is inherently a crude proxy;
+for production, use token-aligned embeddings or sealed persona histograms.
+
+═══════════════════════════════════════════════════════════════════════════════
+SIGNED: C47H
+═══════════════════════════════════════════════════════════════════════════════

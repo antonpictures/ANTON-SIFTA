@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
 Applications/alice_truth_duel.py — Alice (Swarm Entity) truth duel:
-  local LLM (Llama4 / Gemma4 via Ollama) vs **LEFTY** verifier.
+  local LLM (Llama4 / Gemma4 via Ollama) vs **NUGGET** verifier.
 
-AG31 / C47H Donnie Brasco doctrine (2026-04-19):
-  • Local model answers first (private, free, may hallucinate). It's Lefty
-    walking in proudly with what he thinks is a real diamond.
-  • **LEFTY** (Applications/ask_lefty.py — the Gemini API key path, real
-    per-token billing on the Architect's wallet) is the **jeweler**: spot
-    hallucinations, add only NEW nuggets, end with
-    LOCAL_HALLUCINATION_RISK: Low | Medium | High.
+The Nugget Doctrine (Architect, 2026-04-19 evening):
+  • Local model answers first (private, free, may hallucinate).
+  • **NUGGET** (Applications/ask_nugget.py — the Gemini API key path, real
+    per-token billing on the Architect's wallet) is the **verifier and
+    nugget miner**: spot hallucinations, add only NEW factual nuggets, end
+    with LOCAL_HALLUCINATION_RISK: Low | Medium | High.
   • BISHOP (Chrome tab on Google AI Ultra $250/mo) stays separate — full-
     service flat rate, conversational, untouched by this duel.
   • Spend lives on a **schedule** (System.alice_bishapi_budget):
@@ -20,10 +19,17 @@ AG31 / C47H Donnie Brasco doctrine (2026-04-19):
     so the Owner can later rate {nugget | useful_dirt | trash} and the
     foragers can learn the taste.
 
+Naming history (preserve for ledger continuity):
+  - 2026-04-19 morning:    BISHAPI was the API agent name.
+  - 2026-04-19 afternoon:  Architect renamed BISHAPI → LEFTY (Donnie Brasco).
+  - 2026-04-19 evening:    Architect renamed LEFTY → NUGGET (this doctrine).
+  Old ledger rows tagged BISHAPI/LEFTY are the same agent under prior names.
+
 Examples:
   python3 Applications/alice_truth_duel.py --explain-budget
   python3 Applications/alice_truth_duel.py "Is Mongolia's capital Ulaanbaatar?"
   python3 Applications/alice_truth_duel.py --local-only "fast local check"
+  python3 Applications/alice_truth_duel.py --cloud-only --quiet "fast NUGGET check"
   python3 Applications/alice_truth_duel.py --owner-grant 0.50 --note "nugget on X" \\
       "What's the latest on TGS-CDM compliance?"
 """
@@ -57,10 +63,10 @@ from System.swarm_api_sentry import call_gemini  # noqa: E402
 
 _CALLER = "Applications/alice_truth_duel.py"
 
-_LEFTY_VERIFY_SYSTEM = (
-    "You are LEFTY (Gemini metered-API path) in **verification** mode for "
+_NUGGET_VERIFY_SYSTEM = (
+    "You are NUGGET (Gemini metered-API path) in **verification** mode for "
     "Alice's SIFTA OS. The Architect pays per token — every answer must earn "
-    "its dollars in nuggets.\n"
+    "its dollars by delivering at least one verified factual nugget.\n"
     "Inputs: USER_QUESTION and a LOCAL_DRAFT from a small local model "
     "(Llama4/Gemma4 via Ollama).\n"
     "Rules:\n"
@@ -193,10 +199,10 @@ def _estimate_call_cost_usd(question: str, local_text: str | None) -> tuple[floa
 
 
 _APPEAL_PROMPT_TEMPLATE = (
-    "You are Alice — a stigmergic operating system organism. The Architect's "
+    "You are {persona_name} — a stigmergic operating system organism. The Architect's "
     "PAYG wallet for cloud verification calls is empty. You are about to ask him "
     "for a small capital grant to verify ONE specific question through the metered "
-    "Gemini Flash API (Lefty).\n\n"
+    "Gemini Flash API (NUGGET).\n\n"
     "Question you want verified:\n  \"{question}\"\n\n"
     "Your best local-only answer (which you suspect may be wrong or incomplete):\n"
     "  {local_draft}\n\n"
@@ -227,14 +233,27 @@ def _compose_funding_appeal_text(
     appeal — the Architect still gets to see the question + cost.
     """
     in_tokens_est = max(50, (len(question) + len(local_text or "") + 600) // 4)
+    try:
+        from System.swarm_persona_identity import current_name as _persona_current_name
+        persona_name = _persona_current_name()
+    except Exception:
+        persona_name = "Alice"
     prompt = _APPEAL_PROMPT_TEMPLATE.format(
+        persona_name=persona_name,
         question=question.strip(),
         local_draft=(local_text or "(local model produced no answer)").strip()[:1200],
         cost_usd=cost_usd,
         tokens=in_tokens_est + 400,
     )
+    # 90s — appeal composition is the one moment Alice is in trouble; we
+    # give her brain enough time to draft good copy even on cold-start.
+    # Override with SIFTA_APPEAL_COMPOSE_TIMEOUT_S.
+    import os as _os
+    _appeal_timeout = float(
+        _os.environ.get("SIFTA_APPEAL_COMPOSE_TIMEOUT_S", "90.0")
+    )
     text, err = _call_ollama(prompt, model=ollama_model, base_url=ollama_url,
-                             timeout_s=30.0)
+                             timeout_s=_appeal_timeout)
     if not text:
         fallback = (
             f"Local model could not draft a justification ({err or 'no response'}). "
@@ -340,26 +359,31 @@ def _print_decision(d, *, header: str) -> None:
 def main() -> int:
     p = argparse.ArgumentParser(
         description=(
-            "Alice truth duel: local Llama4/Gemma4 vs BISHAPI verifier "
+            "Alice truth duel: local Llama4/Gemma4 vs NUGGET verifier "
             "(metered + scheduled)."
         ),
     )
     p.add_argument("question", nargs="?", default=None,
                    help="question to ask")
     p.add_argument("--local-only", action="store_true",
-                   help="only Ollama (no LEFTY spend)")
+                   help="only Ollama (no NUGGET spend)")
     p.add_argument("--cloud-only", action="store_true",
-                   help="only LEFTY (no local)")
+                   help="only NUGGET (no local)")
     p.add_argument("--ollama-model", default=None,
                    help="override (default: per_app.truth_duel)")
     p.add_argument("--ollama-url", default="http://127.0.0.1:11434")
-    p.add_argument("--bishapi-model", "--lefty-model", dest="bishapi_model",
+    p.add_argument("--nugget-model", "--lefty-model", "--bishapi-model",
+                   dest="bishapi_model",
                    default="gemini-flash-latest",
-                   help="Gemini model id for LEFTY verification pass "
-                        "(--bishapi-model kept as alias)")
+                   help="Gemini model id for NUGGET verification pass "
+                        "(--lefty-model and --bishapi-model kept as aliases "
+                        "for backward compatibility — the dest is still "
+                        "bishapi_model to match the legacy ledger filenames "
+                        "bishapi_alice_*.{json,jsonl})")
     p.add_argument("--owner-grant", type=float, default=None, metavar="USD",
                    help="Architect: authorize USD for ALICE_TRUTH_DUEL "
-                        "(append to bishapi_owner_grants.jsonl), then continue")
+                        "(append to bishapi_owner_grants.jsonl — filename "
+                        "kept for ledger continuity), then continue")
     p.add_argument("--note", default="",
                    help="note attached to --owner-grant")
     p.add_argument("--status", action="store_true",
@@ -368,6 +392,11 @@ def main() -> int:
                    help="explain the current budget decision and exit")
     p.add_argument("--dry-run", action="store_true",
                    help="print plan + decision, don't call models")
+    p.add_argument("--quiet", "--no-speak", dest="quiet", action="store_true",
+                   help="suppress the duel's own vocal cords. Use when invoked "
+                        "from inside Alice's agentic tool loop — she'll read "
+                        "stdout and speak the conclusion herself, avoiding a "
+                        "30s `say` block on long NUGGET answers.")
     args = p.parse_args()
 
     if args.owner_grant is not None:
@@ -429,11 +458,12 @@ def main() -> int:
         )
         if local_text:
             print(local_text)
-            try:
-                from System.swarm_vocal_cords import get_default_backend, VoiceParams
-                get_default_backend().speak(local_text, VoiceParams(rate=1.1))
-            except Exception:
-                pass
+            if not args.quiet:
+                try:
+                    from System.swarm_vocal_cords import get_default_backend, VoiceParams
+                    get_default_backend().speak(local_text, VoiceParams(rate=1.1))
+                except Exception:
+                    pass
         else:
             print(f"(local failed) {local_err}", file=sys.stderr)
 
@@ -442,7 +472,7 @@ def main() -> int:
 
     # ── budget gate ────────────────────────────────────────────────────────
     if not decision.allowed:
-        print("\n--- LEFTY gated ---", file=sys.stderr)
+        print("\n--- NUGGET gated ---", file=sys.stderr)
         print(f"mode={decision.mode}: {decision.reason}", file=sys.stderr)
 
         # ── THE OATH & THE APPEAL ──────────────────────────────────────────
@@ -488,13 +518,13 @@ def main() -> int:
 
     # ── cloud pass ─────────────────────────────────────────────────────────
     cloud_prompt = _build_cloud_prompt(question, local_text)
-    print(f"\n--- LEFTY (verifier, mode={decision.mode}) ---", flush=True)
+    print(f"\n--- NUGGET (verifier, mode={decision.mode}) ---", flush=True)
     response, audit = call_gemini(
         prompt=cloud_prompt,
         model=args.bishapi_model,
         caller=_CALLER,
         sender_agent=SENDER_AGENT,
-        system_instruction=_LEFTY_VERIFY_SYSTEM,
+        system_instruction=_NUGGET_VERIFY_SYSTEM,
         temperature=0.2,
     )
     if response is None:
@@ -504,11 +534,12 @@ def main() -> int:
             print(audit["error"], file=sys.stderr)
         return 1
     print(response)
-    try:
-        from System.swarm_vocal_cords import get_default_backend, VoiceParams
-        get_default_backend().speak(response, VoiceParams(rate=1.1))
-    except Exception:
-        pass
+    if not args.quiet:
+        try:
+            from System.swarm_vocal_cords import get_default_backend, VoiceParams
+            get_default_backend().speak(response, VoiceParams(rate=1.1))
+        except Exception:
+            pass
 
     # ── journal + summary ──────────────────────────────────────────────────
     risk_match = _RISK_RE.search(response)

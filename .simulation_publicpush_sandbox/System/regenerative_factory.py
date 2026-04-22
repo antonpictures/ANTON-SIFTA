@@ -574,7 +574,7 @@ def credit_architect_factory_mint(delta_stgm: float, tick: int = 0) -> Optional[
         from inference_economy import get_current_halving_multiplier
         from body_state import SwarmBody
         from crypto_keychain import get_silicon_identity, sign_block
-        from ledger_append import append_ledger_line
+        from System.ledger_append import append_ledger_line
 
         mult = get_current_halving_multiplier()
         amount = round(d * mult, 4)

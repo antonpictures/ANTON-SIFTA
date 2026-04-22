@@ -30,7 +30,7 @@ except ImportError:
     def _get_serial(): return "UNKNOWN_SERIAL"
 
 try:
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
 except ImportError:
     def append_ledger_line(path, event):  # type: ignore
         with open(path, "a") as f:

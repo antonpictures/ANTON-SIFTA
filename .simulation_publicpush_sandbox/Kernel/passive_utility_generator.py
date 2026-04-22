@@ -62,7 +62,7 @@ def append_ledger(node: str, amount: float, reason: str) -> None:
         }
     except Exception:
         pass
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
 
     append_ledger_line(LEDGER, event)
     print(f"[🔥] STGM UTILITY MINT: +{amount} STGM -> {node} ({reason})")

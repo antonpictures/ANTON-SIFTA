@@ -382,13 +382,33 @@ def _discover_real_camera_index() -> int:
 _UNSET = object()
 _DISCOVERED_CAMERA_IDX: object = _UNSET
 
+def _get_saccade_target() -> int:
+    """Read the active saccade target injected by the Multisensory Colliculus."""
+    try:
+        from pathlib import Path
+        target_file = Path(__file__).resolve().parent.parent / ".sifta_state/active_saccade_target.txt"
+        if target_file.exists():
+            content = target_file.read_text().strip()
+            if content.isdigit():
+                return int(content)
+    except Exception:
+        pass
+    return -1
+
 def _get_default_camera_index() -> int:
-    """Return cached discovered camera index. -1 = none available."""
+    """Return cached discovered camera index or dictated saccade target."""
     global _DISCOVERED_CAMERA_IDX
-    if _DISCOVERED_CAMERA_IDX is _UNSET:
+    saccade_target = _get_saccade_target()
+    
+    # If Colliculus specifies a target, it overrides discovery.
+    if saccade_target >= 0:
+        if _DISCOVERED_CAMERA_IDX != saccade_target:
+            _DISCOVERED_CAMERA_IDX = saccade_target
+        return _DISCOVERED_CAMERA_IDX
+        
+    if _DISCOVERED_CAMERA_IDX is _UNSET or _DISCOVERED_CAMERA_IDX == -1:
         _DISCOVERED_CAMERA_IDX = _discover_real_camera_index()
     return _DISCOVERED_CAMERA_IDX  # type: ignore[return-value]
-
 
 def invalidate_camera_cache() -> None:
     """

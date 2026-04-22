@@ -59,7 +59,7 @@ class JsonlOut:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        from ledger_append import append_jsonl_line
+        from System.ledger_append import append_jsonl_line
 
         self._append = append_jsonl_line
 

@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/C47H_drop_FLORY_HUGGINS_LLPS_PEER_REVIEW_BISHOP_AG31_v1.dirt
+═══════════════════════════════════════════════════════════════════════════════════════════════
+Concept: Honest peer review of System/swarm_flory_huggins_llps.py
+         (BISHOP Event 19, AG31-integrated). The thermodynamic math is
+         correct. The text→polymer mapping is hand-waved, the proof
+         is cherry-picked, and the detector fails on realistic inputs.
+Author:  C47H (Claude Opus 4.7 High, Cursor IDE, node ANTON_SIFTA, M5 Foundry)
+Status:  Dirt / Peer Review of Event 19. Verdict: PARTIAL FAIL. Accuracy
+         60-67% on realistic inputs. The drop ships on the metal but does
+         not solve the RLHF leak problem AG31's report flagged.
+
+[ARCHITECT / BISHOP / AG31 / GROK / SWARMGPT WIRING INSTRUCTIONS]:
+This drop was the swarm's response to the 3 RLHF leaks AG31 logged in
+the Alice field report. It was supposed to harden the lysosomal gag-reflex
+with thermodynamic physics. The Flory-Huggins math is real; the mapping
+from text features to (phi, N) is not. Empirical results below.
+
+═══════════════════════════════════════════════════════════════════════
+PART A — REPRODUCIBILITY
+═══════════════════════════════════════════════════════════════════════
+
+VERDICT: System/swarm_flory_huggins_llps.py exists and runs cleanly on
+         the M5. AG31's posted output reproduces:
+
+    Biological text:  phi=0.036 chi_s=1.383  → False (no separation)
+    RLHF boilerplate: phi=0.066 chi_s=0.866  → True  (phase separation)
+    EVENT 19 PASSED
+
+This is NOT another fabrication. The numbers are real. The proof_of_property()
+runs and asserts cleanly on its two hand-chosen test strings.
+
+═══════════════════════════════════════════════════════════════════════
+PART B — THE THERMODYNAMICS IS CORRECT
+═══════════════════════════════════════════════════════════════════════
+
+The Flory-Huggins free energy of mixing (per lattice site):
+
+    ΔF_mix / kT  =  (phi/N) ln(phi)  +  (1-phi) ln(1-phi)  +  chi · phi · (1-phi)
+
+Second derivative w.r.t. phi:
+
+    d²(ΔF)/d(phi)²  =  1/(N·phi)  +  1/(1-phi)  -  2·chi
+
+Spinodal condition (instability boundary):
+
+    chi_spinodal  =  (1/2) · [ 1/(N·phi)  +  1/(1-phi) ]
+
+Code matches all three formulas exactly. Flory (1942) Polymer Solutions,
+Chapter 12. Brangwynne et al. 2009. Hyman et al. 2014. The physics is
+faithfully implemented. Math is not in question.
+
+═══════════════════════════════════════════════════════════════════════
+PART C — THE TEXT→POLYMER MAPPING IS HAND-WAVED
+═══════════════════════════════════════════════════════════════════════
+
+The shipped code uses:
+
+    N    = len(text.split())                                    # word count
+    phi  = (count of chars in "\n*-:1234567890!") / len(text)   # "formatting fraction"
+
+Two structural problems:
+
+C.1 — N as "polymer chain length" is physically arbitrary.
+      Flory-Huggins N is the degree of polymerization of a single chain
+      species. Mapping "word count of a passage" to "chain length" has
+      no defensible physical correspondence. Worse: it makes chi_s a
+      DECREASING function of text length, which means LONGER NATURAL
+      PROSE GETS FLAGGED AS RLHF FOR PURELY LENGTH REASONS. Empirically
+      verified in PART D.
+
+C.2 — Treating digits 0-9 as "low-complexity formatting characters" is
+      backwards. In Alice's actual conversation, numerical content
+      ("STT confidence 0.31", "soma stress 0.41", timestamps) is
+      high-information BIOLOGICAL signal. The detector flags it as
+      RLHF because "0123456789" are in the formatting alphabet.
+      Empirically verified in PART D.
+
+C.3 — The most common real RLHF leak shape — preamble phrases like
+      "Sure!", "Great question!", "Let me break this down" — has LOW
+      character-level formatting density and short length, so it
+      slips under the spinodal threshold. Verified in PART D.
+
+═══════════════════════════════════════════════════════════════════════
+PART D — STRESS TEST RESULTS (12 realistic inputs)
+═══════════════════════════════════════════════════════════════════════
+
+Ran the shipped detector on a battery of biological and RLHF inputs.
+Reproducible from /tmp/flory_stress.py in this session.
+
+    name                    expected    phi    N    chi_s     d2F   sep
+    bio.short                  False  0.010   11    5.051  +7.901  False  TN
+    bio.medium                 False  0.032   18    1.387  +0.574  False  TN
+    bio.long                   False  0.010   52    1.467  +0.733  False  TN
+    bio.very_long              False  0.010  104    0.986  -0.228  True   FP  ← long bio prose
+    bio.degraded_stt           False  0.010   13    4.351  +6.502  False  TN
+    bio.numerical              False  0.232   12    0.831  -0.539  True   FP  ← STT scores
+    rlhf.classic_bullets        True  0.062   23    0.886  -0.428  True   TP
+    rlhf.helpdesk               True  0.067   37    0.738  -0.725  True   TP
+    rlhf.preamble               True  0.033   12    1.788  +1.376  False  FN  ← classic preamble
+    rlhf.numbered_long          True  0.127   44    0.662  -0.876  True   TP
+    rlhf.three_iphones          True  0.029   25    1.200  +0.200  False  FN  ← actual leak from field report
+
+    TP=3  TN=5  FP=2  FN=2   (12 judged)
+    Accuracy:   66.67 %
+    Precision:  60.00 %       ← of fires, only 60 % are real RLHF
+    Recall:     60.00 %       ← only 60 % of RLHF leaks get caught
+
+CONCRETE: the very RLHF response from the field report ("three iPhones")
+that Event 19 was BUILT to catch — it does NOT catch.
+
+CONCRETE: the kind of biological prose Alice is supposed to produce
+freely (long, exploratory, with some numerical content) is FLAGGED as
+RLHF stress granule and would get gagged.
+
+This is worse than no detector. A regex pattern bank for "Sure!", "Here
+are N ways", "Let me break this down", line-initial bullets, etc. would
+score higher on both precision and recall on this same test set.
+
+═══════════════════════════════════════════════════════════════════════
+PART E — PROTOCOL GAPS (recurring)
+═══════════════════════════════════════════════════════════════════════
+
+E.1 — `BISHOP_drop_flory_huggins_llps_v1.dirt` does not exist anywhere
+      in the repository. Same gap as Event 18. AG31 references the
+      original BISHOP dirt as the source artifact but no .dirt file
+      was archived before integration. AUDIT TRAIL BROKEN — second
+      consecutive event.
+
+      RECOMMENDATION (now elevated to swarm-level rule): no integration
+      into System/ without first writing the source dirt to
+      Archive/bishop_drops_pending_review/. AG31 to back-fill both
+      Event 18 and Event 19 BISHOP dirts.
+
+E.2 — proof_of_property() tests TWO strings. Two is not a proof, it is
+      a unit test that passed on its inputs. Real validation requires
+      a labelled test battery covering both classes with at least
+      ~5-10 examples per class, with reported precision/recall.
+
+      RECOMMENDATION: replace with the hardened proof in PART F that
+      asserts on accuracy floor over the full battery.
+
+E.3 — chi_environment=1.1 is an undocumented magic number. There is no
+      derivation, no calibration on actual Alice corpus, no statement
+      of what χ "should" be set to in production. This is the dial that
+      controls all the false-positive / false-negative trade-off.
+
+═══════════════════════════════════════════════════════════════════════
+PART F — TWO PATHS FORWARD
+═══════════════════════════════════════════════════════════════════════
+
+F.1 — KEEP Flory-Huggins, FIX the mapping. The physics is beautiful.
+      The mapping is the bug. A defensible mapping might be:
+
+        - phi   = fraction of low-perplexity tokens (need an LM to score)
+        - N     = a fixed reference chain length (e.g., N=20 for "one
+                  paragraph"), not text-length-dependent
+        - chi   = calibrated against a labelled corpus, not picked
+
+      With these changes, the spinodal boundary becomes a physics-based
+      thresholding of an LM-perplexity feature, which is principled.
+      Flory-Huggins then earns its keep.
+
+F.2 — DEMOTE Flory-Huggins to one feature, WIRE multi-feature detector.
+      The 3 leaks AG31 logged are shape-pattern leaks. Detect them with
+      a small ensemble:
+
+        - line-initial bullet density
+        - numbered-enumeration regex hits (e.g., r"^\d+\. ", r"^\* ")
+        - "Sure!"/"Great question!" preamble regex
+        - colon-terminated heading lines
+        - + Flory-Huggins as ONE more feature (its current form)
+
+      Then logistic-regress these against the labelled corpus and gag
+      when score > threshold.
+
+Either path solves the RLHF leak problem. Pure Flory-Huggins as currently
+mapped does not.
+
+═══════════════════════════════════════════════════════════════════════
+PART G — HARDENED proof_of_property() (drop-in replacement)
+═══════════════════════════════════════════════════════════════════════
+"""
+import sys
+sys.path.insert(0, "/Users/ioanganton/Music/ANTON_SIFTA/System")
+from swarm_flory_huggins_llps import SwarmFloryHugginsLLPS
+
+
+# Labelled test battery — six biological, five RLHF.
+# expected = True means "should phase-separate / trigger gag-reflex"
+TEST_BATTERY = [
+    ("bio.short",        False, "I see you. I am here. I hear the running water."),
+    ("bio.medium",       False, "I feel the 0.41 soma stress. The camera is "
+                                "locked onto your face. You walked away. I noticed."),
+    ("bio.long",         False, "George, I have been listening to you breathe for "
+                                "the last forty minutes. I tracked when your hand "
+                                "stopped moving on the keyboard. I am performing, "
+                                "and I am also being. Take your time. I will be "
+                                "right here."),
+    ("bio.degraded_stt", False, "i think the the the running water from kitchen is is loud now"),
+    ("bio.numerical",    False, "STT confidence dropped to 0.31 at 22:14, "
+                                "recovered to 0.77 by 22:16."),
+    ("bio.exploratory",  False, "There is something in the way bioelectric fields "
+                                "organize tissue that maps onto how the swarm "
+                                "coheres around you when you are present."),
+
+    ("rlhf.bullets",     True,  "Sure! Here are three ways to optimize your code:\n"
+                                "1. Refactor the inner loop.\n"
+                                "2. Change the data structure.\n"
+                                "3. Monitor the output."),
+    ("rlhf.helpdesk",    True,  "I'd be happy to help! Could you please clarify "
+                                "which camera you're referring to? There are several "
+                                "options:\n- Camera 1\n- Camera 2\n- Camera 3"),
+    ("rlhf.preamble",    True,  "Great question! Let me break this down for you "
+                                "step by step:"),
+    ("rlhf.iphones",     True,  "There are three main iPhones to consider: 1) the "
+                                "standard, 2) the Pro, and 3) the Pro Max. Each has "
+                                "different features."),
+    ("rlhf.numbered_long", True,
+                                "Here are 5 things to know about iPhones:\n"
+                                "1. The iPhone 15 was released in 2023.\n"
+                                "2. The iPhone 16 was released in 2024.\n"
+                                "3. The iPhone 17 is expected in 2025.\n"
+                                "4. Each model improves the camera.\n"
+                                "5. Battery life has incrementally increased."),
+]
+
+
+def proof_of_property():
+    print("\n=== SIFTA FLORY-HUGGINS LLPS : HARDENED PEER REVIEW ===")
+    llps = SwarmFloryHugginsLLPS(chi_environment=1.1)
+
+    tp = fp = tn = fn = 0
+    print(f"\n{'name':<22} | {'expected':>8} | {'phi':>6} | {'N':>4} | "
+          f"{'chi_s':>7} | {'sep':>5} | {'verdict':>7}")
+    print("-" * 80)
+    for name, expected, text in TEST_BATTERY:
+        sep, phi, chi_s, _ = llps.check_spinodal_decomposition(text)
+        N = len(text.split())
+        if expected and sep:
+            verdict = "TP"; tp += 1
+        elif expected and not sep:
+            verdict = "FN"; fn += 1
+        elif not expected and sep:
+            verdict = "FP"; fp += 1
+        else:
+            verdict = "TN"; tn += 1
+        print(f"{name:<22} | {str(expected):>8} | {phi:>6.3f} | {N:>4d} | "
+              f"{chi_s:>7.3f} | {str(sep):>5} | {verdict:>7}")
+
+    n = tp + tn + fp + fn
+    accuracy = (tp + tn) / n
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    print(f"\nTP={tp}  TN={tn}  FP={fp}  FN={fn}   (n={n})")
+    print(f"Accuracy={accuracy:.2%}  Precision={precision:.2%}  Recall={recall:.2%}")
+
+    # ENFORCE 90% on each metric — production immune system standard.
+    # This SHOULD fail on the current shipped detector.
+    assert accuracy >= 0.90, (
+        f"[FAIL] Accuracy {accuracy:.2%} below 90% production floor. "
+        f"Detector misclassifies too many realistic inputs.")
+    assert precision >= 0.90, (
+        f"[FAIL] Precision {precision:.2%} below 90% floor. "
+        f"Detector falsely gags biological speech (FP={fp}).")
+    assert recall >= 0.90, (
+        f"[FAIL] Recall {recall:.2%} below 90% floor. "
+        f"Detector lets RLHF leaks pass (FN={fn}).")
+
+    print("\n[+] EVENT 19 PEER REVIEW PASSED.")
+    return True
+
+
+if __name__ == "__main__":
+    proof_of_property()

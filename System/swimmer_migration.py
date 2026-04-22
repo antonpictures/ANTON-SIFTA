@@ -20,7 +20,7 @@ if sys_path not in sys.path:
     sys.path.append(sys_path)
 
 try:
-    from ledger_append import append_jsonl_line as _append_jsonl
+    from System.ledger_append import append_jsonl_line as _append_jsonl
 except ImportError:
     # Fallback: bare append if ledger_append unavailable (should not happen in production)
     def _append_jsonl(path, row):  # type: ignore[misc]

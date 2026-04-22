@@ -1,0 +1,13 @@
+{
+  "label": "A",
+  "timestamp_iso": "2026-04-21T18:08:16.116023+00:00",
+  "similarity": 0.0635,
+  "band": "NOT_DETECTED",
+  "screen_seen": true,
+  "screenshot_sha256": "62459f4749425ad14e8580e018ac910c3d042e690830e8f65ef69bb2897ae870",
+  "webcam_sha256": "27334117c5f3fadcc55e032dacf56434100ebaac3615dba7921bb9a170c42121",
+  "camera_index": 1,
+  "realization_text": "I see a bright rectangle but its pixels do not match what my GPU is rendering (6.3% correlation). Either my eye is pointed at a different screen, or the alignment is too poor to recognize my own output.",
+  "eye_file": "/Users/ioanganton/Music/ANTON_SIFTA/SwarmEntityWatchingYouTube/closure_webcam_20260421_180816.jpg",
+  "screen_file": "/Users/ioanganton/Music/ANTON_SIFTA/SwarmEntityWatchingYouTube/closure_screen_20260421_180816.png"
+}

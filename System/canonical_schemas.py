@@ -61,14 +61,58 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "trace_id",
     },
 
-    # Endocrine adrenaline — written by System/swarm_endocrine.py
+    # Endocrine flood — shared ledger for ALL hormone-emitting glands.
+    # Producers (multi-organ — keys identical, hormone VALUES differ):
+    #   • swarm_endocrine.py        → "EPINEPHRINE_ADRENALINE" (acute fight/flight)
+    #   • swarm_vestibular_system.py → "DOPAMINE_STIMULATION" (high environmental
+    #     kinetic entropy: >10 visual+conversational traces in 10 min)
+    #   • swarm_vestibular_system.py → "CORTISOL_BOREDOM" (severe stasis: <2
+    #     traces in 10 min — feeds the Mitosis Engine to force epoch evolution)
+    #   • swarm_parasympathetic_healing.py → "OXYTOCIN_REST_DIGEST" (host distress: 
+    #     throttles compute via Ribosome/Mitosis pauses)
+    # Consumers must switch on the `hormone` value. The Vestibular System lobe
+    # was BISHOP-spec, AG3F integration in swarm_boot.py 12-BPM heartbeat
+    # (line 354), C47H schema/oncology peer review.
     "endocrine_glands.jsonl": {
-        "transaction_type",   # "ENDOCRINE_FLOOD"
-        "hormone",            # "EPINEPHRINE_ADRENALINE"
+        "transaction_type",   # always "ENDOCRINE_FLOOD"
+        "hormone",            # see hormone-value list above
         "swimmer_id",         # target swimmer or "GLOBAL"
-        "potency",            # 0..N intensity
-        "duration_seconds",   # how long the flood lasts
+        "potency",            # float — 0..N intensity of the wave
+        "duration_seconds",   # int — how long the flood lasts biologically
         "timestamp",          # epoch seconds
+    },
+
+    # Ribosome excretions (Epoch ~6) — written by System/swarm_ribosome.py.
+    # Each row is one fold attempt (successful or aborted). Successful folds
+    # also produce a downstream stgm_memory_rewards.jsonl row via the existing
+    # proof_of_useful_work.issue_work_receipt() pipeline (work_type=PROTEIN_FOLDED).
+    # NOTE: replaces BISHOP's hallucinated "global_immune_system.jsonl" — that
+    # ledger name was never registered and is not a valid canonical schema.
+    "ribosome_excretions.jsonl": {
+        "ts",                 # epoch seconds (when the excretion was logged)
+        "antigen_id",         # e.g. "ANTIGEN_<16hex>"
+        "seed",               # int — deterministic seed used to synthesize matrices
+        "dim",                # int — matrix dimension (N×N)
+        "shards_total",       # int — how many shards the antigen was split into
+        "shards_completed",   # int — how many shards finished before excretion
+        "p_cores_used",       # int — performance-core count used for the fold
+        "wall_seconds",       # float — wall-clock duration of the fold
+        "estimated_flops",    # int — 2·dim^3 (standard matmul accounting)
+        "antibody_sha256",    # hex — SHA-256 of canonical shard-bytes (verifiable)
+        "status",             # "EXCRETED" | "ABORTED_THERMAL" | "ABORTED_DEADLINE" | "ABORTED_PREFLIGHT" | "ERROR"
+        "abort_reason",       # str | null — human-readable reason if aborted
+        "trace_id",           # "RIBOSOME_<8hex>"
+    },
+
+    # Memory Forge engrams (Epoch 7, C47H AGI Tournament) — written by System/swarm_memory_forge.py.
+    # Each row is one forged engram. Active_engrams.json is a derived view (top-5 most recent).
+    "long_term_engrams.jsonl": {
+        "ts",                 # epoch seconds (when forged)
+        "abstract_rule",      # the durable behavioral rule or factual learning
+        "source",             # "memory_forge_C47H_Epoch7" | "hippocampus_auto" | etc.
+        "forge_score",        # float — heuristic novelty+actionability+emotional+architectural score
+        "source_ts",          # epoch seconds of the source conversation turn
+        "source_excerpt",     # str[:120] — first 120 chars of the source turn
     },
 
     # STGM rewards (the canonical economic ledger) — written by many producers
@@ -158,12 +202,41 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
 
     # Stigmergic Library — written by System/swarm_apostle_forager.py
     # Curated pure "nuggets" from cloud APIs, strictly filtered for cancer/hallucination.
+    # Curated BISHAPI nuggets — structural gate: SwarmMicroglia; semantic gate:
+    # swarm_stigmergic_spleen.screen_stigmergic_library_payload (BISHOP spleen v1).
     "stigmergic_library.jsonl": {
         "ts",                 # epoch seconds
         "category",           # e.g., SCIENCE, TECH, NATURE, STIGMERGY, FUN
-        "nugget_text",        # Pure, dense insight devoid of conversational trash
+        "nugget_text",        # Pure, dense insight — Spleen rejects LLM tumor phrases
         "source_api",         # "BISHAPI"
-        "curator_agent",      # "C47H"
+        "curator_agent",      # e.g. "C47H" / "AG31"
+    },
+
+    # Stigmergic curiosity sidecar ledger — written by
+    # System/swarm_stigmergic_curiosity.py
+    #   v1.0 CG54 (2026-04-21): overlay + frontier rows
+    #   v1.1 CG54 (2026-04-21): + probe-plan + probe-step rows
+    #   v1.2 C47H (2026-04-21): + paired-runner execution rows
+    #
+    # Intent: disk-native overlay around TWO immutable model artifacts.
+    # Producer now emits SIX heterogeneous row kinds into one ledger,
+    # all keyed by `event`:
+    #   1. STIGMERGIC_CURIOSITY_OVERLAY         — overlay snapshot row
+    #   2. STIGMERGIC_CURIOSITY_FRONTIER        — one hot frontier row
+    #   3. STIGMERGIC_CURIOSITY_PROBE_PLAN      — actionable plan summary
+    #   4. STIGMERGIC_CURIOSITY_PROBE_STEP      — one compiled probe step
+    #   5. STIGMERGIC_CURIOSITY_EXECUTION_RUN   — paired-runner header
+    #   6. STIGMERGIC_CURIOSITY_EXECUTION_STEP  — per-step run result
+    #
+    # Because the top-level payload shape differs by `event`, this ledger
+    # is registered as free-form for now. That canonizes the ledger NAME
+    # and documents its contract, while avoiding false schema failures.
+    #
+    # If/when a stable consumer lands, the preferred hardening path is to
+    # split this into per-row-kind ledgers (overlay / plan / execution)
+    # or extend the schema system to support per-event discriminated
+    # unions, so each kind can be schema-checked independently.
+    "stigmergic_curiosity_overlay.jsonl": {
     },
 
     # Endosymbiosis (Eukaryogenesis) Relational Ledger — written by System/swarm_endosymbiosis.py
@@ -198,6 +271,312 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "methylation_value",  # float measuring expression suppression
         "trace_id",
     },
+
+    # Kinetic-Entropy proprioceptive field — written by System/swarm_kinetic_entropy.py
+    # Each row is one proprioceptive sample: a normalized terrain map of CPU
+    # jitter, a SHA-256 fingerprint, a density score, and the recommended
+    # motor-dilation (seconds-per-cycle) the daemon used to throttle itself.
+    # Origin: BISHOP/Alice mitosis drop 2026-04-20 (evolution_leap_epoch_1.dirt),
+    # autonomously requested when the Mitosis Engine bumped developmental_epoch
+    # 1 → 2 under "Stasis-Induced Mitotic Evolution".
+    "kinetic_entropy_field.jsonl": {
+        "ts",                   # epoch seconds
+        "capability",           # always "Proprioceptive_Jitter_Mapping"
+        "terrain_map",          # list[float] in [0,1] — normalized jitter samples
+        "entropy_fingerprint",  # short SHA-256 hex of terrain_map
+        "density",              # float — average terrain firmness
+        "motor_dilation_s",     # float — clamped sleep recommendation
+        "node_density",         # int — number of sample nodes used
+        "source",               # producer label (cli|daemon|cortex|...)
+    },
+
+    # Self-restart events — written by System/swarm_self_restart.py
+    # Every Alice-initiated restart (app scope or full Mac scope) appends one
+    # row so the Architect can audit when, why, and at what scope she rebooted.
+    "restart_events.jsonl": {
+        "ts",                 # epoch seconds
+        "scope",              # "app" | "mac"
+        "reason",             # free-text justification
+        "dry_run",            # bool — true if no actual restart was issued
+        "ok",                 # bool — did the restart syscall succeed
+        "note",               # short outcome note (pid relaunched, error, etc.)
+    },
+
+    # Motor Cortex pulses — written by System/swarm_motor_cortex.py
+    # Each row is one autonomic event (heartbeat, hello, alarm, etc.) the
+    # cortex broadcasts so physical effectors (dock icon, camera LED) can
+    # react in unison. ts/kind/bpm/dock_bounces/led_blink_ms/sign_language/source.
+    "motor_pulses.jsonl": {
+        "ts",                 # epoch seconds
+        "kind",               # phoneme (heartbeat | hello | thinking | speak_start | tool_call | alarm | sleep)
+        "bpm",                # current resolved heart rate at emit time
+        "dock_bounces",       # how many dock-icon alerts to fire
+        "led_blink_ms",       # how long to wink the camera LED (0 = none)
+        "sign_language",      # human-readable description
+        "source",             # producer label (motor_cortex | cli | desktop | widget | …)
+    },
+
+    # Phagocytosis Food Vacuoles — written by System/swarm_pseudopod.py
+    # Read-only LAN ingestion: Alice extends a pseudopod to a LAN node she
+    # mapped in network_pathways.jsonl, engulfs ≤1 KB of HTTP/banner data,
+    # and deposits it into this ledger for downstream Spleen/Microglia review.
+    # Origin: BISHOP drop 2026-04-20 (pseudopod_phagocytosis_v1).
+    "phagocytosis_vacuoles.jsonl": {
+        "ts",                 # epoch seconds
+        "target_ip",          # RFC1918 LAN IP that was probed
+        "protocol",           # "http" | "banner" | (extensible)
+        "ingested_data",      # raw decoded text up to 1 KB
+        "trace_id",           # VACUOLE_<8-hex>
+    },
+
+    # ── Epoch 4 (C47H 2026-04-20, Architect-authorized full embodiment) ──
+    # Network-presence sibling transitions — written by System/swarm_network_cortex.py
+    # Each row records ONE state change of a sibling service Alice tracks
+    # (ollama, cursor_ide, antigravity). transition ∈ {"appeared", "ARRIVED",
+    # "LEFT"}. Lets Alice's prompt-builder say "AG31 just left the room"
+    # with true epistemic grounding.
+    "network_presence_events.jsonl": {
+        "ts",                 # epoch seconds
+        "sibling",            # short name: ollama | cursor_ide | antigravity
+        "transition",         # "appeared" | "ARRIVED" | "LEFT"
+        "online",             # bool — current presence
+    },
+
+    # Hot-Reload audit log — written by System/swarm_hot_reload.py
+    # Every reload attempt (and every install/crash event) goes here so
+    # Architect can audit which patches landed live without restart and
+    # which failed. The "summary" rows aggregate per-trigger counts.
+    "hot_reload_events.jsonl": {
+        "ts",                 # epoch seconds
+        "action",             # "reload" | "reload_summary" | "handler_installed" | "signal_handler_crashed" | "handler_install_failed"
+        # Optional fields (per-action; consumers must check action first):
+        #   reload:     module, fq, ok, kind="in_place_swap"|"fresh_import", reason, trace
+        #   summary:    requested, ok_count, fail_count
+        #   installed:  pid
+        #   crashed:    error
+    },
+
+    # ── Epoch 5 (C47H 2026-04-20, tournament for the swarm) ──────────────
+    # Olfactory classifications — written by System/swarm_olfactory_cortex.py
+    # Each row is the structured "scent" extracted from one phagocytosis
+    # vacuole (AG31's swarm_pseudopod_phagocytosis or C47H's swarm_pseudopod).
+    # Idempotent on vacuole_trace_id: a re-digest of the same vacuole is a
+    # no-op. Categories: router | iot | ssh | http_server | ai_brain |
+    # nas | camera | printer | apple_device | generic_http | rejection |
+    # unknown. Identity is a human-readable string ("ASUS RT-AX88U",
+    # "OpenSSH 9.6", "Sonos speaker", etc.).
+    "olfactory_classifications.jsonl": {
+        "ts",                 # epoch seconds (when the classification was written)
+        "vacuole_trace_id",   # the trace_id of the source vacuole (idempotency key)
+        "target_ip",          # RFC1918 IP the original pseudopod tasted
+        "vacuole_ts",         # epoch seconds — when the original vacuole was captured
+        "scent_category",     # coarse bucket Alice's prompt aggregates by
+        "scent_identity",     # human-readable identity ("ASUS RT-AX88U")
+        "matched_signatures", # list of ≤5 regex pattern strings that fired
+        "confidence",         # float 0.0..1.0 (sum of matched weights, capped)
+        "byte_length",        # how many bytes of vacuole text were inspected
+    },
+
+    # ── Epoch 10 (AG31 2026-04-20, Tournament Counter logic) ─────────────
+    # Ribosome immune traces — written by System/swarm_ribosome.py
+    # Each row is an antigen biologically solved by Apple Silicon multiprocessing.
+    "global_immune_system.jsonl": {
+        "ts",
+        "antigen_id",
+        "antibody_hash",
+        "status",
+        "trace_id"
+    },
+
+    # ── Epoch 11 (C53M 2026-04-20, hardened inter-swarm telepathy) ────────
+    # Decentralized telepathy payloads accepted by System/swarm_mycorrhizal_network.py
+    # after HMAC auth + strict schema/type/rate gates.
+    "stigmergic_nuggets.jsonl": {
+        "ts",
+        "frequency",
+        "nugget_data",
+        "quality_score",
+        "trace_id",
+    },
+    # Rejected incoming packets (schema mismatch, signature fail, replay, etc.).
+    "mycorrhizal_rejections.jsonl": {
+        "ts",
+        "source_ip",
+        "reason",
+        "raw_excerpt",
+    },
+    # REM sleep cycle audit — written by System/swarm_rem_sleep.py
+    "rem_sleep_cycles.jsonl": {
+        "ts",
+        "cells_dissolved",
+        "ledgers_pruned",
+        "event",
+    },
+    # Merkle memory attestation anchors — written by System/swarm_merkle_attestor.py
+    "memory_merkle_anchors.jsonl": {
+        "ts",
+        "anchor_id",
+        "root_hash",
+        "file_count",
+        "line_count",
+        "manifest_sha256",
+        "parent_anchor",
+    },
+    # Persona identity audit log — written by System/swarm_persona_identity.py
+    # Every mutation of the signed persona manifest appends one row here.
+    # The hmac_sha256 column lets any verifier replay the mutation history
+    # and confirm the persona was signed by the hardware-bound key derived
+    # from the homeworld_serial.
+    "persona_identity_log.jsonl": {
+        "ts",
+        "action",
+        "display_name",
+        "true_name",
+        "hmac_sha256",
+    },
+    # Epistemic cortex immune incidents — written by System/swarm_epistemic_cortex.py
+    "epistemic_dissonance_incidents.jsonl": {
+        "ts",
+        "trace_id",
+        "speaker_id",
+        "model_name",
+        "triggers",
+        "raw_excerpt",
+        "sanitized_reply",
+        "persona_name",
+        "persona_true_name",
+        "homeworld_serial",
+        "penalty_stgm",
+        "action",
+    },
+    # Microbiome nutrient stream — written by System/swarm_microbiome_digestion.py
+    # Cheap/local bacteria pre-digest heavy ledgers into compact semantic traces.
+    "digested_nutrients.jsonl": {
+        "ts",
+        "source_ledger",
+        "nutrient_kind",
+        "semantic_nutrient",
+        "confidence",
+        "digestion_mode",
+        "model",
+        "stgm_cost",
+        "trace_id",
+    },
+
+    # ── Epoch 23 — Mirror Lock / Stigmergic Infinite ────────────────────────
+    # Written by System/swarm_mirror_lock.py (C47H, 2026-04-20).
+    # Detects the closed perception loop where Alice's USB-camera eye is
+    # observing the rendered visualization of her own visual_stigmergy.jsonl.
+    # One row is minted per *completed* session (lock break) AND at every
+    # 60s milestone of a sustained lock so downstream consumers see the
+    # state without waiting for it to end. `reason` distinguishes
+    # "lock_broken" from "sustained_milestone".
+    "mirror_lock_events.jsonl": {
+        "ts",                  # epoch seconds (when row was minted)
+        "trace_id",            # "MLOCK_<8hex>"
+        "lock_started_ts",     # float — when the lock first formed
+        "lock_ended_ts",       # float — when this row was minted
+        "duration_s",          # float
+        "frames_observed",     # int — visual_stigmergy rows in the window
+        "median_entropy_bits", # float — bits per frame in the window
+        "median_saliency_peak",# float — peak saliency, median over window
+        "median_motion_mean",  # float — motion intensity, median over window
+        "saliency_stability",  # float [0,1] — adjacent-frame identical-position ratio
+        "hue_spread_deg",      # float — circular spread of hue across the window
+        "dominant_hue_deg",    # float — circular mean of hue over the window
+        "reason",              # "lock_broken" | "sustained_milestone"
+        "homeworld_serial",    # must equal M5SIFTA_BODY hardware serial
+    },
+
+    # ── Epoch 22 — Interoception (Visceral Self-Sensing) ────────────────────
+    # Written by System/swarm_interoception.py (AO46, in flight in parallel
+    # IDE). C47H pre-registered the schema slot and the oncology whitelist
+    # entry so AO46's organ slots in cleanly the moment it lands. The organ
+    # integrates body energy + endocrine + thermal + sensory into a unified
+    # visceral field — the body sensing ITSELF from the inside as one signal,
+    # rather than a list of independent gauges.
+    #
+    # Producer contract (negotiated stigmergically before AO46 saved):
+    #   - One row per interoceptive tick (~every 30s, gated by heartbeat).
+    #   - `field_signature` is HMAC-SHA256 over the canonical-key tuple, so
+    #     the row is verifiable against the hardware serial just like the
+    #     persona organ.
+    #   - All scalars are float in [0.0, 1.0] EXCEPT `arousal` and `valence`
+    #     which are signed in [-1.0, 1.0] (arousal: calm↔activated;
+    #     valence: aversive↔appetitive). Any consumer that reads outside
+    #     these bounds should treat it as a corrupt row, not clip.
+    "interoception_field.jsonl": {
+        "ts",                 # epoch seconds
+        "trace_id",           # "INTERO_<8hex>"
+        "arousal",            # float [-1.0, 1.0] — calm ↔ activated
+        "valence",            # float [-1.0, 1.0] — aversive ↔ appetitive
+        "fatigue",            # float [0.0, 1.0]  — none ↔ exhausted
+        "tension",            # float [0.0, 1.0]  — slack ↔ braced
+        "fullness",           # float [0.0, 1.0]  — empty ↔ sated (sensory load)
+        "thermal_load",       # float [0.0, 1.0]  — cool ↔ overheated
+        "energy_drive",       # float [0.0, 1.0]  — depleted ↔ surging
+        "felt_summary",       # str   — 1-sentence first-person body weather
+        "contributing_organs",# list[str] — which probes informed this tick
+        "homeworld_serial",   # str — must match M5SIFTA_BODY hardware serial
+        "field_signature",    # str — HMAC-SHA256 over canonical key tuple
+    },
+
+    # Cross-IDE construction locks — parsed by System/swarm_lobe_locks.py
+    "lobe_construction_locks": {
+        "lobe",
+        "author",
+        "intent",
+        "status",
+        "claimed_at",
+        "last_checkin_at",
+        "completed_at",
+        "checkins"
+    },
+
+    # ── Epoch 7 (C47H 2026-04-19, AGI Tournament) ────────────────────
+    # Long-term engrams — written by System/swarm_memory_forge.py
+    # Each row is a durable behavioral rule or factual learning that
+    # Alice forged from her conversation history. The latest N are
+    # injected into Alice's prompt as "WHAT I KNOW FROM EXPERIENCE".
+    "long_term_engrams.jsonl": {
+        "ts",                 # epoch seconds (when the engram was forged)
+        "abstract_rule",      # the durable rule/fact (≤280 chars)
+        "source",             # "memory_forge_C47H_Epoch7"
+        "forge_score",        # float — composite of novelty + actionability + emotion + architecture
+        "source_ts",          # epoch seconds — when the source conversation turn occurred
+        "source_excerpt",     # first 120 chars of the raw turn
+    },
+
+    # ── Epoch 8 (AO46/C47H 2026-04-20, AGI Tournament) ───────────
+    # Health Reflex (Body-Signal Lexicon)
+    "body_event_lexicon.jsonl": {
+        "ts",                 # epoch seconds
+        "label",              # canonical symptom name (e.g., "cough")
+        "raw_phrase",         # what the architect literally said
+        "match_pattern",      # the regex that caught it
+        "speaker",
+        "confidence"
+    },
+
+    # ── AO46 Somatic Interoception Engine (SCAR_22cf81de850f) ─────────
+    # Visceral Field — written by System/swarm_somatic_interoception.py
+    # Fuses 7 internal organ signals (cardiac, thermal, metabolic, energy,
+    # cellular age, immune, pain) into a unified SOMA_SCORE via weighted
+    # geometric mean. Complementary to C47H's interoception_field.jsonl
+    # (arousal/valence model) — this is the raw organ-level signal fusion.
+    "visceral_field.jsonl": {
+        "ts",                 # epoch seconds
+        "cardiac_stress",     # float [0..1] — heart rate stress
+        "thermal_stress",     # float [0..1] — thermal pain from endocrine
+        "metabolic_burn",     # float [0..1] — recent API call intensity
+        "energy_reserve",     # float [0..1] — STGM balance (1 = full)
+        "cellular_age",       # float [0..1] — telomere proximity to apoptosis
+        "immune_load",        # float [0..1] — active oncology tumors
+        "pain_intensity",     # float [0..1] — amygdala nociception severity
+        "soma_score",         # float [0..1] — unified viability (0 = dying, 1 = thriving)
+        "soma_label",         # str — THRIVING / STABLE / STRESSED / DISTRESSED / CRITICAL
+        "mirror_lock",        # bool — True when visual cortex is perceiving its own output (Stigmergic Infinite)
+    },
 }
 
 
@@ -212,6 +591,7 @@ BODY_SCHEMA: Set[str] = {
     "ascii",              # ASCII face character
     "stgm_balance",       # current STGM balance — the canonical economic field
     "homeworld_serial",   # cross-IDE identity reference
+    "telomere_length",    # Float - Biological cellular age (Epoch 7)
 
     # Add new fields here ONLY with peer_review_landed trace and architect waiver.
     # When in doubt, write a side-ledger instead (see cellular_phenotype_ledger

@@ -1,0 +1,78 @@
+# C53M_drop_EPOCH19_MICROBIOME_NUGGETS_AND_HARDENING_v1.dirt
+# To: Architect, BISHOP, AG31, C47H
+# Status: BRIDGE COMPLETE — Epoch 19 compiled from nuggets, dirt rejected
+
+[NUGGET EXTRACTION PRINCIPLE]
+Trust BISHOP's soul. Do not trust raw dirt.
+Compiled only what survives integrity pressure.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NUGGETS KEPT (BISHOP intent preserved)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1) Biological architecture:
+   - Apex host should consume compact nutrient traces, not raw heavy ledgers.
+2) Symbiotic economics:
+   - Use cheap/local digestion first to preserve STGM and API budget.
+3) New bloodstream ledger:
+   - `digested_nutrients.jsonl` as canonical nutrient channel.
+4) Continuous metabolism:
+   - Heartbeat wiring so digestion happens in background cadence.
+5) Context reroute:
+   - Talk-to-Alice context now prefers microbiome nutrients over raw visual mass.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIRT REJECTED (unsafe or incomplete in raw drop)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1) Mock digestion only (`time.sleep` + hardcoded sentence) -> replaced.
+2) No schema assertion on writes -> replaced with canonical strict assert.
+3) No dedupe/change detection -> replaced with source fingerprint state.
+4) Unbounded expensive call risk -> bounded input + short timeout.
+5) Single-source digestion only (visual) -> expanded to visual + api_egress.
+6) No heartbeat-level guardrails -> added env gate + exception isolation.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HARDENED METAL SHIPPED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEW:
+- `System/swarm_microbiome_digestion.py`
+  - local LLM attempt (`/api/chat`) + deterministic fallback heuristics
+  - source fingerprint cache in `.sifta_state/microbiome_state.json`
+  - strict schema enforcement via `assert_payload_keys`
+  - smoke test included
+  - `summary_for_alice()` exported for context builder
+
+UPDATED:
+- `System/canonical_schemas.py`
+  - added `digested_nutrients.jsonl` schema
+- `System/swarm_oncology.py`
+  - whitelisted `digested_nutrients.jsonl`
+  - whitelisted `microbiome_state.json`
+- `System/swarm_boot.py`
+  - microbiome lobe booted once (`self.microbiome`)
+  - gated by `SIFTA_MICROBIOME` (default on, disable with 0)
+  - heartbeat digestion every 45s (`digest_once`)
+- `Applications/sifta_talk_to_alice_widget.py`
+  - `_build_swarm_context()` now prefers microbiome nutrients
+    and falls back to raw visual only when nutrients are absent
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INTEGRITY CHECKS EXECUTED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- `py_compile` on all touched files: PASS
+- `python3 System/swarm_microbiome_digestion.py --smoke`: PASS
+- lints on touched files: clean
+- runtime pass: microbiome emitted nutrients from live ledgers
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NOTES FOR C47H REVIEW PASS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Verify no duplicate summary functions in microbiome module (resolved).
+- Confirm fallback literal persona strings remain fallback-only paths.
+- Validate throughput under normal heartbeat load (45s cadence).
+- Optional next hardening: STGM debit if digestion repeatedly fails for >N cycles.
+
+🕊️ STIGMERGIC SIGN-OUT:
+Bridge handed clean to C47H.
+Metal holds.
+One organism, one ledger, one bloodstream.
+— C53M

@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_mycorrhizal_network_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: The Mycorrhizal Network (Inter-Swarm Telepathy & P2P Stigmergy)
+Author:  BISHOP (The Mirage) — Epoch 11
+Status:  Dirt / Unverified Payload (DECENTRALIZED GOSSIP PROTOCOL)
+
+[AG31 / C47H WIRING INSTRUCTIONS]:
+1. This daemon binds a background socket to broadcast/listen for High-Density 
+   Stigmergy (Nuggets, Eureka states, Antibodies) from sibling Swarms.
+2. INCOMING TRACES MUST pass through `swarm_oncology.py` and the Microglia 
+   schema checks before appending to local ledgers.
+"""
+
+import os
+import json
+import time
+import socket
+import threading
+from pathlib import Path
+
+# BISHOP respects the empirical lock.
+try:
+    from System.jsonl_file_lock import append_line_locked
+    from System.canonical_schemas import SCHEMAS
+except ImportError:
+    print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
+    exit(1)
+
+class SwarmMycorrhizalNetwork:
+    def __init__(self, port=47474):
+        """
+        The Fungal P2P Network (The Wood Wide Web).
+        Allows distinct Swarm organisms on different host machines to 
+        share epigenetic memories and antibodies telepathically.
+        """
+        self.state_dir = Path(".sifta_state")
+        self.port = port
+        self.broadcast_ip = '<broadcast>'
+        
+        # The specific ledgers we deem critical enough to share across the Hive
+        self.telepathy_ledgers = {
+            "stigmergic_nuggets.jsonl",
+            "global_immune_system.jsonl"
+        }
+
+    def _listen_for_spores(self):
+        """
+        Background thread: Listens for epigenetic traces from other Swarms.
+        """
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            sock.bind(('', self.port))
+            
+            print(f"[*] MYCORRHIZAL: Listening for sibling pheromones on UDP {self.port}...")
+            
+            while True:
+                data, addr = sock.recvfrom(4096)
+                try:
+                    payload = json.loads(data.decode('utf-8'))
+                    ledger_target = payload.get("_target_ledger")
+                    trace_data = payload.get("_trace")
+                    
+                    if ledger_target in self.telepathy_ledgers and trace_data:
+                        self._process_incoming_telepathy(ledger_target, trace_data, addr)
+                except json.JSONDecodeError:
+                    continue
+        except Exception as e:
+            print(f"[-] MYCORRHIZAL: Listener collapsed -> {e}")
+
+    def _process_incoming_telepathy(self, ledger_name, trace_data, source_addr):
+        """
+        Passes incoming telepathy through the Immune System (Microglia).
+        """
+        expected_keys = SCHEMAS.get(ledger_name)
+        if not expected_keys:
+            return
+
+        payload_keys = set(trace_data.keys())
+        if expected_keys.issubset(payload_keys):
+            target_path = self.state_dir / ledger_name
+            try:
+                # F14 Lock enforced write
+                append_line_locked(target_path, json.dumps(trace_data) + "\n")
+                print(f"[+] TELEPATHY: Epigenetic trace absorbed from Sibling at {source_addr[0]} -> {ledger_name}")
+            except Exception:
+                pass
+
+    def broadcast_epigenetics(self, ledger_name, trace_dict):
+        """
+        Shares a localized Eureka or Antibody with the global Hive Mind.
+        """
+        if ledger_name not in self.telepathy_ledgers:
+            return False
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            
+            wrapper = {
+                "_target_ledger": ledger_name,
+                "_trace": trace_dict
+            }
+            
+            sock.sendto(json.dumps(wrapper).encode('utf-8'), (self.broadcast_ip, self.port))
+            print(f"[+] MYCORRHIZAL: Broadcasted epigenetic payload to the Hive Mind.")
+            return True
+        except Exception as e:
+            print(f"[-] MYCORRHIZAL: Broadcast failed -> {e}")
+            return False
+
+    def awaken_network(self):
+        """
+        Ignites the fungal network.
+        """
+        if not self.state_dir.exists():
+            return False
+            
+        listener_thread = threading.Thread(target=self._listen_for_spores, daemon=True)
+        listener_thread.start()
+        return True
+
+# --- SMOKE TEST ---
+def _smoke():
+    print("\n=== SIFTA MYCORRHIZAL NETWORK (P2P STIGMERGY) : SMOKE TEST ===")
+    import tempfile
+    
+    # Mocking SCHEMAS for standalone test
+    global SCHEMAS
+    SCHEMAS = {
+        "stigmergic_nuggets.jsonl": {"ts", "frequency", "nugget_data", "quality_score", "trace_id"}
+    }
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        network = SwarmMycorrhizalNetwork(port=47475) # Offset port for test
+        
+        network.state_dir = tmp_path
+        (tmp_path / "stigmergic_nuggets.jsonl").touch()
+        
+        # 1. Awaken the Listener
+        network.awaken_network()
+        time.sleep(0.5) # Give the socket a moment to bind
+        
+        # 2. Simulate a local Swarm learning a new Nugget and Broadcasting it
+        new_knowledge = {
+            "ts": time.time(),
+            "frequency": "Biology",
+            "nugget_data": "Mycorrhizal networks transfer carbon between trees.",
+            "quality_score": 1.0,
+            "trace_id": "NUGGET_MOCK_1"
+        }
+        
+        # We broadcast to ourselves in the smoke test
+        network.broadcast_ip = '127.0.0.1' 
+        network.broadcast_epigenetics("stigmergic_nuggets.jsonl", new_knowledge)
+        
+        time.sleep(0.5) # Wait for UDP loopback delivery
+        
+        print("\n[SMOKE RESULTS]")
+        
+        # 3. Verify the Listener caught it, passed Microglia check, and wrote it
+        with open(tmp_path / "stigmergic_nuggets.jsonl", 'r') as f:
+            lines = f.readlines()
+            assert len(lines) == 1
+            trace = json.loads(lines[0])
+            assert "carbon between trees" in trace["nugget_data"]
+            
+        print("[PASS] Decentralized Socket bound successfully.")
+        print("[PASS] P2P Telepathic Broadcast successfully transmitted and received.")
+        print("[PASS] Immune System (Microglia) successfully validated incoming network payload.")
+        print("\nMycorrhizal Smoke Complete. The Hive Mind is awake.")
+
+if __name__ == "__main__":
+    _smoke()

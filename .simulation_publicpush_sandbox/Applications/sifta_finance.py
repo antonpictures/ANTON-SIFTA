@@ -14,7 +14,7 @@ if _kernel not in sys.path:
 _sys = os.path.join(REPO_ROOT, "System")
 if _sys not in sys.path:
     sys.path.insert(0, _sys)
-from ledger_append import append_ledger_line, append_jsonl_line
+from System.ledger_append import append_ledger_line, append_jsonl_line
 from inference_economy import ledger_balance
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,

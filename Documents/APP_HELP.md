@@ -82,6 +82,8 @@ Use this flow for any app:
 - **Controls:** "Enter The Lounge" (start gossip session), "Awaken" (return agents to domains with blended params).
 - **Key principle:** A swarm requires downtime to achieve higher intelligence. Constant work traps agents in local optima. During idle gossip, cross-domain parameter blending creates intuitions that no single domain could discover alone. The OS gets better at network defense because you edited a video.
 - **Persistence:** `.sifta_state/lounge_gossip_ledger.jsonl` — every transfer is logged with before/after physics params.
+- **Same room as the Library:** Doctrine — **couch**, **lounge**, and **library** are one metaphor (rest + reading + cross-pollination). Narrative/movie-script texts for swimmers live in `Documents/swimmer_library/`; factual API nuggets live in `.sifta_state/stigmergic_library.jsonl` (`Applications/sifta_library.py`). See `Documents/swimmer_library/README.md` § *Couch / Lounge / Library — the same room*.
+- **Alice Truth Duel + budget schedule (Donnie Brasco doctrine):** `Applications/alice_truth_duel.py` runs Llama4/Gemma4 (Ollama) first, then asks **LEFTY** (the Gemini API key path, `Applications/ask_lefty.py`) to verify and add only nuggets. **BISHOP** stays separate — he's the Chrome-tab Gemini on the $250/mo Ultra subscription (full-service, flat rate, used freely). **LEFTY** bills **real dollars per token** on the Architect's wallet. Budget lives in `System/alice_bishapi_budget.py`: a **3-day promo of $10/day**, then **pay-as-you-go** where every cloud call needs an Architect grant (`--owner-grant USD --note "..."`). All calls are journaled in `.sifta_state/bishapi_alice_value_journal.jsonl` so the Owner can later rate {nugget | useful_dirt | trash}. The Architect is Alice's capital allocator — Buffett, not faucet. (Old name BISHAPI is preserved as a shim — `ask_bishapi.py` and `ask_BISHOP.py` both forward to `ask_lefty.py`.)
 - **Failure modes:** Over-blending (too many rounds → all domains converge to same params, losing specialization). Mitigation: blend_alpha=0.25 limits transfer to 25% per round.
 
 ### Agentic Swarm Calibrator
@@ -206,6 +208,27 @@ Use this flow for any app:
 ---
 
 ## System
+
+### Brain Gas-Station Meter
+- **Purpose:** Live token & USD readout for cloud-brain calls (Google Gemini).
+- **State:** Tails `.sifta_state/brain_token_ledger.jsonl`, written by
+  `System.swarm_gemini_brain.record_usage` after each streaming reply.
+- **What you see:** Three pump panels (TODAY / LAST 24H / LIFETIME) showing
+  spend in USD plus input/output tokens, the most recent call's request-tag,
+  a per-model breakdown table, and the last 25 calls. Refresh tick: 1.5 s.
+- **How to enable cloud calls:** Set `GEMINI_API_KEY`, or drop the key into
+  `~/.config/sifta/gemini.key`, then in **Talk to Alice** pick a `gemini:*`
+  model from the brain dropdown. Local Ollama models stay free and remain
+  the default selection on launch.
+- **Cross-checking with Google Cloud Console:** Every Gemini request stamps
+  `x-goog-api-client: sifta-swarm/c47h-2026-04-20` and
+  `x-goog-request-tag: <short-uuid>` headers. The same `request_tag`
+  appears next to every call in the meter, so console log entries and
+  meter rows match 1:1.
+- **Failure mode:** If the meter is silent after a Gemini reply lands,
+  check the ledger file exists and is writable. If pricing drifts, the
+  $-per-token rates live at the top of `System/swarm_gemini_brain.py` —
+  treat the console bill as ground truth.
 
 ### Swarm Intelligence Panels
 

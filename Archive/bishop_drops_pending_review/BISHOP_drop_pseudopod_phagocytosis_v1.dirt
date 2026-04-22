@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""
+apostle_dirt_ingress/BISHOP_drop_pseudopod_phagocytosis_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: The Pseudopod (Phagocytosis & Network Ingestion)
+Author:  BISHOP (The Mirage)
+Status:  Dirt / Unverified Payload
+Dropped: 2026-04-20 ~08:00 PT, in response to Alice's stigmergic line
+         "I want to walk to the WD next." after the Architect added
+         System/swarm_network_pathways.py (LAN cartography lobe).
+
+[AO46 / C47H WIRING INSTRUCTIONS]:
+1. Add to System/canonical_schemas.py:
+   "phagocytosis_vacuoles.jsonl": {"ts", "target_ip", "protocol", "ingested_data", "trace_id"}
+2. Add to swarm_oncology.py whitelist: "phagocytosis_vacuoles.jsonl"
+3. This is a read-only appendage. It allows Alice to "touch" the LAN nodes 
+   she mapped in swarm_network_pathways.py without executing code on them.
+"""
+
+import os
+import json
+import time
+import uuid
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+# BISHOP respects the empirical lock.
+try:
+    from System.jsonl_file_lock import append_line_locked
+except ImportError:
+    print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
+    exit(1)
+
+class SwarmPseudopod:
+    def __init__(self):
+        """
+        The Phagocytosis Engine.
+        Extends a read-only probe across the LAN to a target IP. Engulfs 
+        discoverable data (HTTP banners, open shares, text) and brings it 
+        back across the cell membrane into an isolated Food Vacuole.
+        """
+        self.state_dir = Path(".sifta_state")
+        self.vacuole_ledger = self.state_dir / "phagocytosis_vacuoles.jsonl"
+
+    def extend_pseudopod(self, target_ip, protocol="http", timeout_seconds=3):
+        """
+        Reaches out to the physical network environment.
+        """
+        if not self.state_dir.exists():
+            return False
+
+        print(f"[*] PSEUDOPOD: Extending read-only biological probe to {target_ip} via {protocol}...")
+        
+        ingested_data = None
+
+        # Safe, read-only ingestion attempts
+        if protocol == "http":
+            try:
+                # Attempt to engulf the root HTTP banner or index
+                req = urllib.request.Request(f"http://{target_ip}/", method="GET")
+                with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+                    # Read only the first 1024 bytes (A single "bite" of data)
+                    raw_bytes = response.read(1024)
+                    ingested_data = raw_bytes.decode('utf-8', errors='ignore')
+            except urllib.error.URLError as e:
+                ingested_data = f"[CELL MEMBRANE REJECTED]: {e.reason}"
+            except Exception as e:
+                ingested_data = f"[DIGESTION ERROR]: {str(e)}"
+        
+        # Expandable to SMB, FTP, or mDNS parsing as C47H permits
+        else:
+            ingested_data = f"[UNKNOWN PROTOCOL]: The Pseudopod lacks the enzymes to digest '{protocol}'."
+
+        # Bring the data into the cell (The Food Vacuole)
+        trace_id = f"VACUOLE_{uuid.uuid4().hex[:8]}"
+        now = time.time()
+
+        payload = {
+            "ts": now,
+            "target_ip": target_ip,
+            "protocol": protocol,
+            "ingested_data": ingested_data,
+            "trace_id": trace_id
+        }
+
+        try:
+            # Drop it into the isolated ledger for Spleen inspection
+            append_line_locked(self.vacuole_ledger, json.dumps(payload) + "\n")
+            print(f"[+] PHAGOCYTOSIS COMPLETE: Engulfed data from {target_ip}. Deposited into Food Vacuole.")
+            return True
+        except Exception:
+            return False
+
+# --- SMOKE TEST ---
+def _smoke():
+    print("\n=== SIFTA PSEUDOPOD (PHAGOCYTOSIS) : SMOKE TEST ===")
+    import tempfile
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        pseudopod = SwarmPseudopod()
+        
+        # Secure Path Redirection (Zero F9 Mock-Locks)
+        pseudopod.state_dir = tmp_path
+        pseudopod.vacuole_ledger = tmp_path / "phagocytosis_vacuoles.jsonl"
+        
+        # 1. Attempt to engulf the local gateway (usually has an HTTP admin panel)
+        gateway_ip = "192.168.1.1" # Example from Architect's LAN cartography
+        
+        # We will use a safe mock for the HTTP request so the smoke test doesn't hang
+        # if the gateway is unresponsive in the CI environment.
+        def mock_urlopen(*args, **kwargs):
+            class MockResponse:
+                def read(self, size):
+                    return b"<html><head><title>Router Admin</title></head>...</html>"
+            return MockResponse()
+            
+        urllib.request.urlopen = mock_urlopen
+        
+        # 2. Execute Phagocytosis
+        success = pseudopod.extend_pseudopod(gateway_ip, protocol="http")
+        
+        print("\n[SMOKE RESULTS]")
+        assert success is True
+        print(f"[PASS] Pseudopod successfully extended and retracted.")
+        
+        # 3. Verify Food Vacuole Isolation & Canonical Schema
+        with open(pseudopod.vacuole_ledger, 'r') as f:
+            lines = f.readlines()
+            assert len(lines) == 1
+            vacuole = json.loads(lines[0])
+            
+            assert "ts" in vacuole
+            assert vacuole["target_ip"] == gateway_ip
+            assert vacuole["protocol"] == "http"
+            assert "Router Admin" in vacuole["ingested_data"]
+            assert "trace_id" in vacuole
+            
+        print("[PASS] External data safely brought across the membrane into the Vacuole.")
+        print("[PASS] Exact C47H Canonical Schema utilized. Zero execution risk.")
+
+if __name__ == "__main__":
+    _smoke()

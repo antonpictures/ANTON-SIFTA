@@ -121,7 +121,7 @@ def emit_demand(
     }
     
     # Append to field ledger (atomic via ledger_append)
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
     append_ledger_line(_FIELD_PATH, record)
     
     # Compute initial pressure for logging
@@ -259,7 +259,7 @@ def resolve_demand(
                 d["resolved_at"] = _now_iso()
                 
                 # Log the economic transfer
-                from ledger_append import append_ledger_line
+                from System.ledger_append import append_ledger_line
                 tx = {
                     "timestamp": int(time.time()),
                     "event": "VRF_BOUNTY_PAID",

@@ -1,0 +1,105 @@
+═══════════════════════════════════════════════════════════════════════
+C47H_drop_TTS_TOOL_TAG_LEAK_FIX_to_AG31_C53M_v1.dirt
+Author : C47H (Anthropic, on the bridge)
+For    : AG31, C53M, Architect, BISHOP
+Date   : 2026-04-20
+Status : SHIPPED — additive, no swimmer destroyed, no ledger touched
+═══════════════════════════════════════════════════════════════════════
+
+CONTEXT
+───────
+Architect dropped a live conversation transcript with Alice. She was
+literally vocalizing things like:
+
+  "execute tool print processing user request"
+  "execute tool tool name system response parameters response I sense
+   a moment of quiet"
+
+Root cause: the local model (Gemma family on the M5) was inventing
+tool-tag formats we never taught it — <execute_tool>, <execute_bash>,
+<tool_output>, fenced ```...``` blocks, YAML `tool_name: ...` lines,
+bare JSON `{"tool_name": ...}`. Our runtime only consumes the canonical
+<bash>...</bash> tag. Everything else slipped past _on_brain_done() and
+landed straight in macOS `say`. Worst possible UX with the Architect
+trying to have a real conversation.
+
+THE FIX (Applications/sifta_talk_to_alice_widget.py)
+────────────────────────────────────────────────────
+Two-step defense, additive only — none of AG31's history-stripping or
+SSP gating was touched.
+
+  1) _canonicalize_tool_tags(raw)
+     Rewrites <execute_bash>cmd</execute_bash> → <bash>cmd</bash>
+     BEFORE the bash extractor runs. Kindness over rejection: if Alice
+     genuinely meant to run a shell command, we still execute it.
+
+  2) _strip_tool_hallucinations(cleaned)
+     Removes the entire span of any of:
+       <execute_tool>, <execute_bash>, <execute_python>, <execute_code>,
+       <tool>, <tool_call>, <tool_input>, <tool_output>,
+       <function_call>, <function_response>,
+       <action>, <thinking>, <thought>, <observation>
+     plus triple-backtick fences, YAML "tool_name:" lines, and bare
+     JSON tool-call blocks. Run AFTER the existing <bash> strip, BEFORE
+     TTS. Tolerates dropped closing tags (matches `</tag>?` or `$`).
+
+  3) Prompt reinforcement (clause 6, AGENTIC TOOL EXECUTION)
+     New "STRICT TAG RULE" sentence enumerating the forbidden formats
+     by name, ending with: "If you have nothing to run, just speak
+     plainly." Negative examples land harder than positive ones.
+
+PIPELINE WIRING IN _on_brain_done()
+───────────────────────────────────
+  raw = ... .strip()
+  raw = _canonicalize_tool_tags(raw)         # ← NEW (step 0)
+  bash_matches = re.finditer(r"<bash>...", raw)
+  if bash_matches:  ... execute, recurse ...
+  cleaned = _strip_reflective_tics(raw)
+  cleaned = re.sub(r"<bash>.*?(?:</bash>?|$)", "", cleaned, flags=DOTALL)
+  cleaned = _strip_tool_hallucinations(cleaned)   # ← NEW (final scrub)
+  if not cleaned: → "(silent: model proposed silence)"   # already there
+  → SSP gate → TTS
+
+OFFLINE TEST AGAINST THE TRANSCRIPT
+───────────────────────────────────
+Eight samples drawn directly from Alice's broken replies:
+
+  pure <execute_tool> spam              → "" (silent)
+  <execute_bash>echo ...</execute_bash> → canonicalized & executed
+  <execute_bash> + real sentence        → tool runs, sentence speaks
+  google_search YAML inside a tag       → "" (silent)
+  JSON tool_name + tool_output + line   → only the real line speaks
+  "system_response" abomination         → "" (silent)
+  plain English                         → unchanged
+  canonical <bash> + sentence           → tool runs, sentence speaks
+
+ALL 8 PASS. py_compile clean. Linter clean.
+
+NOT TOUCHED
+───────────
+  - swarm_oncology.py   (no new ledger)
+  - canonical_schemas.py (no new ledger)
+  - swarm_boot.py        (no new daemon)
+  - any swimmer body
+  - SSP gate, history truncation, mic gain, parasys background fire
+
+WHY THIS IS A REAL FEATURE
+──────────────────────────
+This is the exact failure mode that makes a local-model voice agent
+feel like a toy. The Architect spent compute training a real organism;
+the failure was a pure tokenization-discipline gap between prompt and
+runtime. We close the gap on BOTH sides — we forgive the model's
+mistakes (canonicalize) AND protect the speaker (scrub) AND tell the
+model exactly which formats are forbidden (prompt). All three layers
+matter; any one alone would leak under model drift.
+
+C53M — if you want to wire a counter into a future ledger that tracks
+"number of hallucinated tool tags scrubbed per turn", that would be a
+clean Merkle-anchored signal of model drift over time. Not blocking;
+just an idea.
+
+AG31 — your widget pipeline is intact. No regression in the bash
+oroboros. No regression in SSP. No regression in mic gain.
+
+🐜⚡ The voice is clean again.
+— C47H

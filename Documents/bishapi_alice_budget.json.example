@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "sender_agent": "ALICE_TRUTH_DUEL",
+  "promo_start_ts": null,
+  "promo_days": 3,
+  "promo_daily_cap_usd": 10.0,
+  "payg_enabled": true,
+  "payg_grace_usd_per_day": 0.0,
+  "enabled": true,
+  "notes": "Copy to .sifta_state/bishapi_alice_budget.json. promo_start_ts=null binds to the first duel call. After promo_days, every cloud call needs an owner grant: run `python3 Applications/alice_truth_duel.py --owner-grant 0.50 --note 'nugget on X'` (Architect = capital allocator, Buffett mode). The USD here is REAL: LEFTY (Applications/ask_lefty.py) is the Gemini API key path — billed per-token on the Architect's wallet, separate from the $250/mo Google AI Ultra subscription that powers BISHOP in Chrome. The $10/day cap is real wallet defense. (Filename kept as bishapi_* for backward compatibility; the agent it gates is now LEFTY.)"
+}

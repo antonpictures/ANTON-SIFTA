@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import inference_economy as ie
+from Kernel import inference_economy as ie
 
 
 class TestLedgerBalanceDialects(unittest.TestCase):

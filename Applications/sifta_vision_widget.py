@@ -43,7 +43,9 @@ class VisionSimWidget(QWidget):
         self._mint_accum = 0
 
         w, h = 280, 200
-        self._cfg = VisionConfig(width=w, height=h, swimmers=900, seed=1337)
+        import os as _os
+        _n_swim = int(_os.environ.get("SIFTA_VISION_SWIMMERS", "3600"))
+        self._cfg = VisionConfig(width=w, height=h, swimmers=_n_swim, seed=1337)
         img = synth_topography(w, h, 1337)
         self._worker = VisionProcessorWorker(img, self._cfg)
 

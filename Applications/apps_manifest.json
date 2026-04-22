@@ -242,6 +242,22 @@
     "window_height": 720,
     "signature": "UNVERIFIED"
   },
+  "Brain Gas-Station Meter": {
+    "category": "System",
+    "entry_point": "Applications/sifta_gasstation_meter.py",
+    "widget_class": "GasStationMeterWidget",
+    "window_width": 1000,
+    "window_height": 720,
+    "signature": "UNVERIFIED"
+  },
+  "Brain Gas-Station Meter": {
+    "category": "System",
+    "entry_point": "Applications/sifta_gasstation_meter.py",
+    "widget_class": "GasStationMeterWidget",
+    "window_width": 1000,
+    "window_height": 720,
+    "signature": "UNVERIFIED"
+  },
   "Owner Genesis": {
     "category": "System",
     "entry_point": "Applications/sifta_genesis_widget.py",
@@ -272,10 +288,9 @@
     "widget_class": "WhatAliceSeesWidget",
     "window_width": 1100,
     "window_height": 700,
-    "autostart": true,
-    "autostart_order": 2,
-    "autostart_delay_ms": 1400,
-    "signature": "UNVERIFIED"
+    "autostart": false,
+    "signature": "UNVERIFIED",
+    "_autostart_note": "Disabled 2026-04-19 by C47H — autostart unified into 'Alice'. Still launchable standalone from Programs → Creative → What Alice Sees."
   },
   "Talk to Alice": {
     "category": "Creative",
@@ -283,9 +298,20 @@
     "widget_class": "TalkToAliceWidget",
     "window_width": 960,
     "window_height": 640,
+    "autostart": false,
+    "signature": "UNVERIFIED",
+    "_autostart_note": "Disabled 2026-04-19 by C47H — autostart unified into 'Alice'. Still launchable standalone from Programs → Creative → Talk to Alice."
+  },
+  "Alice": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_alice_widget.py",
+    "widget_class": "AliceWidget",
+    "window_width": 1000,
+    "window_height": 850,
     "autostart": true,
     "autostart_order": 1,
     "autostart_delay_ms": 700,
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_note": "Unified Alice — ear (TalkToAliceWidget) + eye (WhatAliceSeesWidget) + mesh in one window. Speaks ONE telemetry greeting on boot (mic / camera / Wi-Fi)."
   }
 }

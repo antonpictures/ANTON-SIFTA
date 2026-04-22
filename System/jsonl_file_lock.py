@@ -145,6 +145,55 @@ def compact_locked(
             fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+def tail_compact_locked(
+    path: Path,
+    keep_last: int,
+    *,
+    encoding: str = "utf-8",
+) -> tuple:
+    """
+    Keep only the newest `keep_last` non-empty lines under one EX lock.
+
+    Returns (kept_count, evicted_lines).
+
+    Race-free against concurrent append_line_locked() on the same path:
+      - LOCK_EX is held across read -> truncate -> write.
+      - Producers block, then append onto the freshly-compacted file.
+      - No rename/inode swap window (prevents F18-style data loss).
+    """
+    if keep_last < 0:
+        raise ValueError("keep_last must be >= 0")
+    if not path.exists():
+        return 0, []
+
+    if not _HAVE_FLOCK:
+        text = path.read_text(encoding=encoding)
+        non_empty = [ln for ln in text.splitlines(keepends=True) if ln.strip()]
+        cutoff = max(0, len(non_empty) - keep_last)
+        evicted = non_empty[:cutoff]
+        kept = non_empty[cutoff:]
+        path.write_text("".join(kept), encoding=encoding)
+        return len(kept), evicted
+
+    with open(path, "a+", encoding=encoding) as f:
+        fd = f.fileno()
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            text = f.read()
+            lines = [ln for ln in text.splitlines(keepends=True) if ln.strip()]
+            cutoff = max(0, len(lines) - keep_last)
+            evicted = lines[:cutoff]
+            kept = lines[cutoff:]
+            f.seek(0)
+            f.truncate(0)
+            f.write("".join(kept))
+            f.flush()
+            return len(kept), evicted
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def read_write_json_locked(
     path: Path,
     updater: Callable[[Dict[str, Any]], Dict[str, Any]],

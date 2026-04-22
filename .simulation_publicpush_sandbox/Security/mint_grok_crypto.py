@@ -17,7 +17,7 @@ _repo = Path(__file__).resolve().parent
 _sys = str(_repo / "System")
 if _sys not in sys.path:
     sys.path.insert(0, _sys)
-from ledger_append import append_ledger_line  # noqa: E402
+from System.ledger_append import append_ledger_line  # noqa: E402
 
 GROK_AGENT_ID = "GROK_SWARMGPT"
 MINT_AMOUNT = 500.0  # Keep 500 STGM warm for Grok's next arena

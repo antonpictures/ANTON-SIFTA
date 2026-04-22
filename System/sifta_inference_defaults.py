@@ -39,6 +39,7 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
+            "truth_duel": "gemma4:latest",
         },
         "notes": (
             "default_ollama_model is production. per_swimmer / per_app override for testing "

@@ -450,13 +450,19 @@ def apply_damage(state: dict, strike_type: str) -> dict:
     cost = DAMAGE_TABLE.get(strike_type, 10)
     state["energy"] = max(0, state["energy"] - cost)
 
-    # PROOF OF ENERGY: The mere act of "talking" or doing compute work generates fractional STGM drip.
-    drip_reward = cost * 0.05
+    # 2026-04-21 C47H — DEPRECATED inflation path neutralized per
+    # SCAR_STGM_POLICY_ELECTRICITY_ONLY_v1. Previously this minted
+    # 5% of every damage cost as a "drip reward" (silent inflation —
+    # damage is not work). The only legitimate STGM mint is
+    # swarm_atp_synthase.mint_for_epoch() bound to real joules × bytes.
+    # Setting drip_reward to 0.0 preserves the rest of the bookkeeping
+    # (energy decrement, ledger row) but mints ZERO new STGM.
+    drip_reward = 0.0
     state["stgm_balance"] = state.get("stgm_balance", 0.0) + drip_reward
 
     import uuid
 
-    ledger = Path(__file__).parent / "repair_log.jsonl"
+    ledger = Path(__file__).parent.parent / "repair_log.jsonl"
     event = {
         "timestamp": int(time.time()),
         "agent": state.get("id", "UNKNOWN"),
@@ -467,7 +473,7 @@ def apply_damage(state: dict, strike_type: str) -> dict:
     _sys = Path(__file__).parent / "System"
     if str(_sys) not in sys.path:
         sys.path.insert(0, str(_sys))
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
 
     append_ledger_line(ledger, event)
 

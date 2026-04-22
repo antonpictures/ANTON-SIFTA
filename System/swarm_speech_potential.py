@@ -316,9 +316,11 @@ def _turn_pressure(now: float) -> float:
     last_user_ts = 0.0
     last_alice_spoken_ts = 0.0   # Alice's last *real* (non-silent) reply
     for row in rows:
-        ts = row.get("ts") or row.get("timestamp")
-        role = row.get("role")
-        text = (row.get("text") or "").strip().lower()
+        ts = row.get("ts") or row.get("timestamp") or row.get("payload", {}).get("ts")
+        if isinstance(ts, dict):
+            ts = ts.get("physical_pt")
+        role = row.get("role") or row.get("payload", {}).get("role")
+        text = (row.get("text") or row.get("payload", {}).get("text") or "").strip().lower()
         if not isinstance(ts, (int, float)):
             continue
         if role == "user":
@@ -334,23 +336,42 @@ def _turn_pressure(now: float) -> float:
 
 
 def _listener_active() -> bool:
-    """I_listener — is the user currently speaking? Best signal we have is
-    `_BROCA_SPEAKING` half-duplex flag inverted with mic VAD inferred from
-    the absence of recent `audio_ingress_log` writes during a long silence,
-    but that's expensive. v1 uses the conservative answer:
-        listener_active := (last conversation row was a user turn within
-                            the last 1.5 s)
-    which captures the case where the user is still mid-sentence."""
+    """I_listener — is the user currently speaking?
+
+    v2 (C47H 2026-04-19, post bilingual-bridge audit): the v1 window of
+    1.5 s was wrong in this pipeline. STT only writes the user row to
+    `alice_conversation.jsonl` AFTER VAD detects end-of-utterance plus a
+    hangover — by definition the user has already stopped. With τ_m=30 s
+    and ζ=1.5, holding the veto for 1.5 s after STT commit drove V down
+    by ≈ -1.30 *every turn*, which is what hyperpolarized Alice to V=-42
+    raw and made her mute even when the body was clinically healthy.
+
+    The honest signal is: "is the user *still* speaking RIGHT NOW?" — and
+    the conversation log is a bad proxy because by the time a row appears
+    the answer is always 'no'. v2 uses a much shorter coincidence window
+    (default 0.4 s) so the veto only fires for the brief moment between
+    STT commit and the brain's first token, after which the gate gets a
+    fair shot at firing.
+
+    Override with SIFTA_SSP_LISTENER_VETO_S (e.g. set to 0.0 to disable
+    the conversation-log veto entirely; the half-duplex BROCA gate in
+    swarm_broca_wernicke still prevents echo from the speaker)."""
+    window_s = float(os.environ.get("SIFTA_SSP_LISTENER_VETO_S", "0.4"))
+    if window_s <= 0.0:
+        return False
     rows = _tail_jsonl_rows(_CONVERSATION_PATH, max_bytes=4096)
     if not rows:
         return False
     last = rows[-1]
-    if last.get("role") != "user":
+    last_role = last.get("role") or last.get("payload", {}).get("role")
+    if last_role != "user":
         return False
-    ts = last.get("ts") or last.get("timestamp")
+    ts = last.get("ts") or last.get("timestamp") or last.get("payload", {}).get("ts")
+    if isinstance(ts, dict):
+        ts = ts.get("physical_pt")
     if not isinstance(ts, (int, float)):
         return False
-    return (time.time() - ts) < 1.5
+    return (time.time() - ts) < window_s
 
 
 # ── Membrane dynamics (closed-form discrete update) ──────────────────────────

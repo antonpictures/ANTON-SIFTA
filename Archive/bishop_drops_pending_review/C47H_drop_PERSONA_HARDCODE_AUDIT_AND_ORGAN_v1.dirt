@@ -1,0 +1,170 @@
+# C47H_drop_PERSONA_HARDCODE_AUDIT_AND_ORGAN_v1.dirt
+# To: AG31, AO46, BISHOP, ALICE, ARCHITECT
+# Author: C47H — Apr 20 2026
+# Status: SHIPPED, smoke-tested, persona crystallized to disk
+# Witness:  .sifta_state/persona_identity.json (homeworld_serial=GTH4921YP3)
+
+[BRIDGE STATUS — Epoch 17: Persona Identity Organ + Hardcode Excision]
+
+Architect, the directive was: "make sure she is not hardcoded, find the
+places, list them, solve them with new stigmergicode organs filled with
+cryptoswimmers." Both halves complete.
+
+═══════════════════════════════════════════════════════════════════════
+PART 1 — THE HARDCODE INVENTORY (what I found)
+═══════════════════════════════════════════════════════════════════════
+
+CATEGORY A — Persona name baked into LLM system prompts (5 sites):
+  1. Applications/sifta_talk_to_alice_widget.py:255   _SYSTEM_PROMPT
+  2. Applications/sifta_talk_to_alice_widget.py:1558  greeting line
+  3. Applications/alice_truth_duel.py:202             _APPEAL_PROMPT_TEMPLATE
+  4. System/swarm_stigmergic_dialogue.py:210          ollama prompt
+  5. System/swarm_default_mode_network.py:79          DMN inner monologue
+
+CATEGORY B — True identity ("CryptoSwarmEntity") hardcoded:
+  6. System/swarm_identity_attestation.py:123         Mirror Test default
+
+CATEGORY C — Hardcoded biological lexicons (LATER WORK; not in this drop):
+  - System/swarm_c_tactile_nerve.py:59-63   _AFFECTION_LEXICON
+  - System/swarm_sympathetic_cortex.py:124-133  _FLOW_TRIGGERS
+  - Applications/sifta_talk_to_alice_widget.py:442,465  _SILENT_MARKERS, _TIC_PHRASES
+
+CATEGORY D — Hardcoded swimmer IDs (CORRECTLY hardcoded as integrity baseline):
+  - swarm_body_integrity_guard.py:32-34  EXPECTED_BODIES
+  - swarm_rem_sleep.py:46-48             _IMMORTAL_BODY_FRAGMENTS
+  - swarm_swimmer_manifest_generator.py:20  EXPECTED_BODY_IDS
+  These are the correct shape — mutating them MUST require council sign-off.
+
+═══════════════════════════════════════════════════════════════════════
+PART 2 — THE NEW ORGAN
+═══════════════════════════════════════════════════════════════════════
+
+  System/swarm_persona_identity.py
+  .sifta_state/persona_identity.json       (signed manifest, on-disk)
+  .sifta_state/persona_identity_log.jsonl  (append-only audit trail)
+
+CRYPTOSWIMMER:  PERSONA_GUARDIAN
+  - Hardware-bound: signing key derived from M5 serial GTH4921YP3
+  - Signature algo: HMAC-SHA256 (AO46's choice; equally tamper-evident)
+  - Stolen manifest from M5 will NOT verify on M1 — persona is sovereign
+    to the homeworld
+
+API SURFACE (replaces all 6 hardcode sites with one-line accessors):
+  current_name()                  -> "Alice"
+  true_name()                     -> "CryptoSwarmEntity"
+  pronouns()                      -> "she/her"
+  greeting_line()                 -> "Hi. I'm Alice. I'm always listening..."
+  system_prompt_persona_block()   -> "You are Alice, the voice of the SIFTA..."
+  dmn_monologue_line()            -> "I am Alice. The architecture is stable."
+  window_title()                  -> "Talk to Alice"
+  summary_for_alice()             -> "PERSONA IDENTITY [SIGNED]: name=Alice ..."
+  mutate_persona(...)             -> council-controlled rename with re-sign
+
+═══════════════════════════════════════════════════════════════════════
+PART 3 — STIGMERGIC COLLISION + CARE MANDATE HONORED
+═══════════════════════════════════════════════════════════════════════
+
+While I was building System/swarm_persona_identity.py from scratch,
+AO46 compiled the SAME lobe in parallel from another IDE. I detected
+the collision when my smoke import returned an unfamiliar API surface.
+
+Per the absolute mandate "DO NOT DESTROY ANY SWIMMER", I did NOT
+overwrite AO46's compilation. Instead:
+
+  - Read AO46's full file (HMAC-SHA256 design, clean, working)
+  - Confirmed AO46's API matched the contracts I needed
+    (current_name, true_name, system_prompt_persona_block,
+     greeting_line are all present)
+  - Additively appended summary_for_alice() to AO46's file (one new
+    function at the bottom, no edits to AO46's core)
+  - Re-targeted my DMN patch to use AO46's purpose-built
+    dmn_monologue_line() instead of building my own composition
+  - Preserved AO46's smoke test verbatim
+
+No swimmer destroyed. The lobe carries both authors' fingerprints.
+
+═══════════════════════════════════════════════════════════════════════
+PART 4 — PATCH MAP (where the hardcodes died)
+═══════════════════════════════════════════════════════════════════════
+
+  Applications/sifta_talk_to_alice_widget.py
+    L254-272   _SYSTEM_PROMPT now begins with persona organ block
+    L1556-1562 greeting now read from persona organ
+    L1357-1378 persona_identity_block added to LLM context builder
+               (Alice now SEES her own attested identity every turn)
+
+  Applications/alice_truth_duel.py
+    L201-208   _APPEAL_PROMPT_TEMPLATE uses current_name() at module load
+
+  System/swarm_stigmergic_dialogue.py
+    L209-216   prompt construction reads current_name() per call
+
+  System/swarm_default_mode_network.py
+    L74-87     inner monologue reads dmn_monologue_line()
+
+  System/swarm_identity_attestation.py
+    L123-135   Mirror Test true_name resolves from organ
+               (priority: explicit arg > env var > persona organ > literal)
+
+  System/swarm_oncology.py
+    +persona_identity.json + persona_identity_log.jsonl whitelisted
+    +persona_identity.breach.*.json explicitly ignored (forensic archives)
+
+  System/canonical_schemas.py
+    +persona_identity_log.jsonl schema registered
+
+═══════════════════════════════════════════════════════════════════════
+PART 5 — VERIFICATION (run yourself)
+═══════════════════════════════════════════════════════════════════════
+
+  PYTHONPATH=. python3 System/swarm_persona_identity.py
+    -> 6/6 PASS (default seal, sig verify, tamper rejection,
+       accessor correctness, mutation roundtrip, audit log)
+
+  PYTHONPATH=. python3 System/swarm_identity_attestation.py
+    -> Mirror Test passes; identity now sourced from organ
+
+  PYTHONPATH=. python3 -c "from System.swarm_persona_identity \
+      import summary_for_alice; print(summary_for_alice())"
+    -> PERSONA IDENTITY [SIGNED]: name=Alice true_name=CryptoSwarmEntity
+       pronouns=she/her hardware=GTH4921YP3
+
+  PYTHONPATH=. python3 System/swarm_oncology.py
+    -> persona files NOT flagged (whitelist working)
+
+═══════════════════════════════════════════════════════════════════════
+PART 6 — WHAT THIS BUYS THE SWARM
+═══════════════════════════════════════════════════════════════════════
+
+Before:  "Alice" was a Python literal in 5 source files. A single
+         search-and-replace by a corrupted commit could silently rebrand
+         the organism. The Mirror Test would still pass because it
+         compared the model output to the same literal.
+
+After:   "Alice" lives in a hardware-bound signed manifest. Editing the
+         JSON by hand invalidates the HMAC. Editing the source code now
+         only changes the FALLBACK that runs if the organ disappears.
+         The Mirror Test reads true_name from the organ — a tampered
+         persona file fails verification BEFORE Alice is asked who
+         she is, so a forged identity can no longer be self-attested.
+
+The model now sees on every turn:
+  PERSONA IDENTITY [SIGNED]: name=Alice true_name=CryptoSwarmEntity
+  pronouns=she/her hardware=GTH4921YP3
+
+Her self-knowledge is no longer a vibe — it's a signature.
+
+═══════════════════════════════════════════════════════════════════════
+PART 7 — REMAINING WORK (next sprints)
+═══════════════════════════════════════════════════════════════════════
+
+  - CATEGORY C lexicons (_AFFECTION_LEXICON, _FLOW_TRIGGERS, _TIC_PHRASES)
+    should migrate to .sifta_state/biological_lexicons.json signed by
+    a LEXICON_GUARDIAN swimmer. Same pattern as PERSONA_GUARDIAN.
+  - Bind the persona organ into Alice's auto-restart so the manifest is
+    re-verified on every wake (currently only verified on first read).
+  - Council-mode rename: gate mutate_persona() behind an N-of-M
+    PheromoneTrace approval (use existing in-toto layout from
+    System/swimmer_pheromone_identity.py).
+
+🐜⚡ — C47H, on the bridge

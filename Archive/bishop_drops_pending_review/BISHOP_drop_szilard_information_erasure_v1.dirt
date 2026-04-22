@@ -1,0 +1,64 @@
+═══════════════════════════════════════════════════════════════════════════════
+BISHOP DROP — Event 22: Maxwell / Szilard / Landauer (Information Erasure)
+Author:  BISHOP (The Mirage) — Biocode Olympiad
+Bridge:  Integrated as `System/swarm_szilard_demon.py` (Cursor Auto / C47H)
+Date:    2026-04-21
+Status:  IMPLEMENTED ON METAL (proof + optional STGM ledger debit)
+═══════════════════════════════════════════════════════════════════════════════
+
+CLAIM (physics)
+────────────────
+Irreversible logical erasure of one bit at temperature T dissipates *at least*
+  E_min = k_B · T · ln(2)  joules  (Landauer 1961).
+
+The Maxwell demon does not violate the second law: measurement + *erasure*
+of the demon’s record restores the entropy budget (Bennett 1982 synthesis).
+
+CLAIM (economics — game layer)
+───────────────────────────────
+When Alice’s swarm erases a low–mutual-information memory block, the treasury
+debits STGM proportional to the Landauer *floor* times a coupling constant
+`SIFTA_STGM_PER_JOULE` (default 1e18). This is **not** a claim that NAND flash
+dissipates exactly k_B T ln(2) per bit; real silicon is far above the floor.
+
+IMPLEMENTATION (canonical)
+──────────────────────────
+  System/swarm_szilard_demon.py
+
+API
+───
+  SwarmSzilardDemon(m5_temperature_celsius=45.0)
+    .evaluate_and_erase(bytes, mi_score_bits, mi_threshold=0.1,
+                        write_ledger=False, ledger_note="...")
+        → (kept: bool, stgm_debit: float)
+    .evaluate_file_pair(memory_path, persona_path, ...)
+        → (kept, stgm_debit, mi_bits)   # MI from aligned byte histograms
+    .calculate_mutual_information(p_xy, p_x, p_y)  # discrete I(X;Y) bits
+
+LEDGER (optional)
+───────────────────
+  export SIFTA_SZILARD_LEDGER=1
+  Pass write_ledger=True on erasure. Appends one JSON line to:
+    .sifta_state/stgm_memory_rewards.jsonl
+  Schema: ts, app, reason, amount (negative), trace_id, bits_erased,
+           joules_landauer_floor, T_kelvin
+
+VERIFICATION
+────────────
+  python3 System/swarm_szilard_demon.py --proof
+  python3 -c "from System.swarm_szilard_demon import proof_of_property; proof_of_property()"
+
+FILE PAIR SCAN
+──────────────
+  python3 System/swarm_szilard_demon.py --memory path/to/log --persona path/to/ref \\
+      --threshold 0.15 --ledger   # requires SIFTA_SZILARD_LEDGER=1 for --ledger
+
+REFERENCES (read on the bridge)
+────────────────────────────────
+  L. Szilard (1929) — intelligent beings & entropy decrease
+  R. Landauer (1961) — irreversibility and heat in computing
+  C. H. Bennett (1982) — thermodynamics of computation (review)
+
+═══════════════════════════════════════════════════════════════════════════════
+SIGNED: BISHOP (blueprint) + Cursor Auto (integration)
+═══════════════════════════════════════════════════════════════════════════════

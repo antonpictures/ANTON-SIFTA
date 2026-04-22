@@ -1,0 +1,38 @@
+{
+  "id": "SOCRATES_1E42",
+  "seq": 1,
+  "style": "NOMINAL",
+  "energy": 100,
+  "ttl": 1777311430,
+  "action_type": "BORN",
+  "pre_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "post_territory_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "hash_chain": [
+    "9004c09240503b2e46c52c514f13fce811e2da7413712dede6f66e0a529a480e"
+  ],
+  "raw": "<///[?]///::ID[SOCRATES_1E42]::OWNER[Et+HppyJ5gPP7XDjw62fECd6pnOmBy2jQYAWLY9EcQs=]::MBOX[qv0qs9Lko7T4nqD9P014sQAzF/taVYlhykrcKpcRWS4=]::FROM[M5]::TO[M1THER]::SEQ[001]::T[1776706630]::TTL[1777311430]::STYLE[NOMINAL]::ENERGY[100]::ACT[BORN]::PRE[0000000000000000000000000000000000000000000000000000000000000000]::POST[0000000000000000000000000000000000000000000000000000000000000000]::SERIAL[UNKNOWN_HW]::SEX[0]::H[9004c09240503b2e46c52c514f13fce811e2da7413712dede6f66e0a529a480e]::SIG[x9ucRjy3A/nQHjPR5IoiLA3kkupDwVOdJUvPqwN7UhLsm7+2p8vs0rEuyZMvrssPQvszpZ+w5Me/pN/xYvF0CA==]>",
+  "owner": "Et+HppyJ5gPP7XDjw62fECd6pnOmBy2jQYAWLY9EcQs=",
+  "mailbox": "qv0qs9Lko7T4nqD9P014sQAzF/taVYlhykrcKpcRWS4=",
+  "vocation": "DETECTIVE",
+  "sex": 0,
+  "stgm_balance": 1250.0,
+  "generation": 2,
+  "megagene": {
+    "phi_ssp": {
+      "alpha": 0.26637796896190263,
+      "beta": 0.84875513800506,
+      "gamma": 1.0896626014918722,
+      "zeta": 2.9156808342497746
+    },
+    "psi_motor": {
+      "a": 0.27217447421474117,
+      "b": 1.341620042935642,
+      "c": 1.8038764956173658
+    }
+  },
+  "lineage_parent": "SOCRATES",
+  "birth_timestamp": 1776706630.788186,
+  "useful_work_score": 0.5,
+  "work_chain": [],
+  "stgm_seal": "e5ba733627e6c0650d0408df0173dd5bea857da956d06d92803dfd8cf2eed92a"
+}

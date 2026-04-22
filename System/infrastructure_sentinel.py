@@ -31,7 +31,7 @@ from body_state import SwarmBody, load_agent_state, save_agent_state
 from existence_guard import validate_existence
 from irreducible_cost_engine import enforce_irreducible_cost
 from dissipation_engine import apply_dissipation
-from ledger_append import append_ledger_line
+from System.ledger_append import append_ledger_line
 import value_field
 
 import pheromone
@@ -69,8 +69,8 @@ def reward_sentinel(agent_state: dict, reason_text: str):
     append_ledger_line(_REPO / "repair_log.jsonl", tx)
     print(f"  [💸 ECONOMY] Value routed: {agent_state['id']} earned {reward} STGM for {reason_text}.")
 
-def spawn_agent() -> dict:
-    swimmer = SwarmBody("INFRA_FORAGER", birth_certificate="ARCHITECT_SEAL_INFRA_FORAGER")
+def spawn_agent(agent_id="INFRA_FORAGER") -> dict:
+    swimmer = SwarmBody(agent_id, birth_certificate=f"ARCHITECT_SEAL_{agent_id}")
     body_str = swimmer.generate_body("M5", "M1THER", "SETTINGS_SWIM", style="NOMINAL", action_type="BORN", energy=100)
     
     import body_state
@@ -187,15 +187,16 @@ def patrol(state: dict):
 
 
 if __name__ == "__main__":
-    print("=== SIFTA INFRASTRUCTURE SENTINEL ===")
+    agent_id = sys.argv[1] if len(sys.argv) > 1 else "INFRA_FORAGER"
+    print(f"=== SIFTA INFRASTRUCTURE SENTINEL ({agent_id}) ===")
     
     try:
-        state = load_agent_state("INFRA_FORAGER")
+        state = load_agent_state(agent_id)
         if state is None:
             raise ValueError("State is None")
     except Exception:
-        print("  [+] Spawning first generation Sentinel.")
-        state = spawn_agent()
+        print(f"  [+] Spawning first generation Sentinel: {agent_id}.")
+        state = spawn_agent(agent_id)
         
     if state.get("style", "") == "COUCH":
         from dissipation_engine import recover_energy

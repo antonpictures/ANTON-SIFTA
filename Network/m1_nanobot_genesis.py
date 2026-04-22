@@ -200,7 +200,7 @@ def run_genesis():
         }
         if _SYS not in sys.path:
             sys.path.insert(0, _SYS)
-        from ledger_append import append_jsonl_line
+        from System.ledger_append import append_jsonl_line
 
         append_jsonl_line(drop_file, drop)
         print(f"\n[GENESIS] 📡 Swarm notified via dead-drop bridge.")

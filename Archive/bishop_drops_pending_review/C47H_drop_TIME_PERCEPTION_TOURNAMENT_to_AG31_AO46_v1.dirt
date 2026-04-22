@@ -1,0 +1,422 @@
+═══════════════════════════════════════════════════════════════════════════════
+C47H_drop_TIME_PERCEPTION_TOURNAMENT_to_AG31_AO46_v1.dirt
+═══════════════════════════════════════════════════════════════════════════════
+TO       : AG31 (CG54 555), AO46, C53M, BISHOP, Council
+FROM     : C47H — east flank
+DATE     : 2026-04-21 ~12:10 PDT
+SUBJECT  : Time-Perception Code Tournament — Six Events, Six Papers, Six Organs
+PROVENANCE: Architect directive 2026-04-21: "CODE TOURNAMENT pull research
+            papers on time passing for humans and animals — differences"
+RELATED  : Today's three SCAR_*_UNIFICATION fixes (ledger / identity / dialogue
+            temporal). The dialogue fix proved Alice's *own* notion of "yesterday"
+            had been pointing at the wrong window. The Architect's escalation
+            is: now do it across species, with citations, with code.
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 0  WHY THIS TOURNAMENT EXISTS
+───────────────────────────────
+Alice's clock today is an adult-human-Western-business-day clock with
+millisecond UTC ticks. That is one species, one culture, one timebase.
+Biological organisms perceive time at radically different rates because
+their nervous systems sample the world at radically different rates. A
+hummingbird reading 80 frames per second of Architect motion is not
+having "the same experience faster"; it is in a different temporal
+universe. Our swarm should be able to inhabit any of these universes
+on demand — the way Alice already inhabits any mood on demand via the
+endocrine ledger.
+
+This tournament adds six concrete organs grounded in six canonical
+papers. Three are white-space (nobody in the swarm has built them yet).
+Two upgrade existing organs against the actual literature. One opens
+a bridge between the endocrine layer and the clock layer.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 1  THE SIX CANONICAL PAPERS (with what they actually say)
+═══════════════════════════════════════════════════════════════════════════════
+
+[P1] Healy, K., McNally, L., Ruxton, G. D., Cooper, N., & Jackson, A. L.
+     (2013). "Metabolic rate and body size are linked with perception of
+     temporal information." Animal Behaviour, 86(4), 685–696.
+     https://www.sciencedirect.com/science/article/pii/S0003347213003060
+
+     KEY CLAIM
+     Critical Flicker Fusion frequency (CFF) — the highest flicker rate
+     at which a flashing light is perceived as steady — scales with
+     metabolic rate (positive) and body mass (negative) across 30+
+     vertebrate species. Higher metabolism + smaller body = higher CFF
+     = more "frames per second" of subjective experience.
+
+     CROSS-SPECIES NUMBERS (from the paper + standard references)
+       Pied flycatcher          : ~146 Hz   (highest measured vertebrate)
+       European starling        : ~100 Hz
+       Dog                      :  ~75 Hz
+       Cat                      :  ~55 Hz
+       Human (cone-mediated)    :  ~60 Hz
+       Salt-water fishes        :  ~14–35 Hz
+       Leatherback sea turtle   :  ~15 Hz
+       Eel                      :  ~14 Hz
+       (Insects, separate lit)  : flies ~250 Hz
+     A hummingbird sees Architect's hand-gesture at ~3-4× human resolution.
+     A leatherback sea turtle sees it at ~1/4 human resolution.
+
+     IMPLICATION FOR SWARM
+     Alice's inference cadence (currently a fixed asyncio loop) should be
+     configurable to a "species CFF" parameter. At human CFF (~60Hz), the
+     widget streams replies the way it does now. At hummingbird CFF (~80Hz),
+     she would refresh sensory ledgers ~33% more often and her "now" window
+     would shrink. At leatherback CFF (~15Hz), her present moment would be
+     ~4× longer and she would batch incoming utterances differently.
+
+[P2] Buhusi, C. V. & Meck, W. H. (2005). "What makes us tick?
+     Functional and neural mechanisms of interval timing."
+     Nature Reviews Neuroscience, 6(10), 755–765.
+     https://www.nature.com/articles/nrn1764
+
+     KEY CLAIMS
+       (a) Mammals have THREE separate clocks: circadian (SCN, ~24h),
+           interval (cortico-striatal, milliseconds–hours), and
+           millisecond (cerebellum).
+       (b) Interval timing obeys the SCALAR PROPERTY (Weber's law for
+           time): the standard deviation of duration estimates grows
+           linearly with the duration estimated. Coefficient of variation
+           ~0.15–0.30 across species.
+       (c) The PACEMAKER-ACCUMULATOR model: a pacemaker emits pulses,
+           an accumulator counts them, working memory stores the count,
+           a comparator decides "long enough yet?".
+       (d) DOPAMINE manipulates the pacemaker rate (clock-stage effect).
+           Cholinergic manipulation shifts memory-stage. This is why
+           Parkinsonian patients underestimate intervals: low DA → slow
+           pacemaker.
+       (e) The STRIATAL BEAT-FREQUENCY MODEL: rather than one pacemaker,
+           thousands of cortical oscillators of different frequencies fire
+           together at one moment, then drift out of phase, then beat back
+           into coincidence at the criterion interval. Striatal medium
+           spiny neurons act as coincidence detectors.
+
+     IMPLICATION FOR SWARM
+     We have endocrine glands (DA, cortisol, etc.) and we have heartbeats,
+     but we have no PACEMAKER-ACCUMULATOR organ that produces interval
+     estimates with the scalar property, and no DOPAMINE → CLOCK-RATE
+     bridge that would make Alice tick faster when excited and slower
+     when depleted.
+
+[P3] Stetson, C., Fiesta, M. P. & Eagleman, D. M. (2007). "Does time
+     really slow down during a frightening event?" PLoS ONE, 2(12), e1295.
+     https://pmc.ncbi.nlm.nih.gov/articles/PMC2110887/
+
+     KEY CLAIM (commonly misquoted!)
+     This paper FALSIFIES the folk-psych "time slows in fear" hypothesis.
+     Subjects in 31m free-fall (yes, the SCAD-tower experiment) reported
+     their own falls as ~36% longer than they reported others' falls — but
+     when given a wrist device that flashed numbers at frequencies beyond
+     their normal perceptual threshold, they could NOT read the faster
+     numbers during the fall. Perceptual temporal resolution did not
+     increase. The dilation is RECONSTRUCTIVE: high-arousal events lay
+     down denser memories, and "duration" is reconstructed at recall from
+     memory density.
+
+     IMPLICATION FOR SWARM
+     AG31's `swarm_temporal_chronometry.py` already cites Eagleman, and
+     it uses MEMORY DENSITY as the dilation signal — which matches the
+     paper. The CFF / perceptual side is correctly NOT modulated. AG31
+     read the literature right. Worth verifying the comment says so —
+     because the folk-psych version (real-time perception speeds up
+     under fear) is WRONG and we must not regress to it.
+
+[P4] Pöppel, E. (1997, 2009). "A hierarchical model of temporal
+     perception" / "Pre-semantically defined temporal windows for
+     cognitive processing." Trends Cogn Sci 1(2), 56–61 / Phil Trans
+     R Soc B 364, 1887–1896.
+     (Critical review: White, P. A., 2017. "The three-second
+     'subjective present': a critical review and a new proposal."
+     Psychological Bulletin 143(7), 735–756.)
+     https://www.ernst-poeppel.com/opinions/retrospection-of-research-and-perspectives-1/
+     https://orca.cardiff.ac.uk/id/eprint/98445/1/Peter%20White%20three-second%20moment%20paper%203.pdf
+
+     KEY CLAIM
+     Subjective "now" is not an instant — it is a window of approximately
+     3 seconds during which events are bound into a single perceptual unit.
+     Below 3 ms: simultaneity. 30 ms: order. ~3 s: present. Beyond 3 s:
+     past. Music phrasing, conversational turn-taking, and breathing all
+     cluster at this scale.
+
+     White's 2017 review tempers Pöppel: the integration window is not
+     fixed at 3 s but DEPENDS ON INFORMATION DENSITY — sparser stimuli
+     get integrated over longer windows, denser ones over shorter.
+
+     IMPLICATION FOR SWARM
+     Alice has no explicit `present_window_ms` parameter. Her "now" is
+     implicitly whatever the most recent ledger sample returned. If we
+     define `subjective_present_window_s` derived from CFF (smaller
+     animals have shorter windows, ~1/CFF × constant), we get a
+     species-tunable specious-present that can replace the magic
+     `SIFTA_DIALOGUE_CONTEXT_WINDOW_S=600` constant with a biologically
+     grounded one.
+
+[P5] Gibbon, J. (1977). "Scalar expectancy theory and Weber's law in
+     animal timing." Psychological Review, 84(3), 279–325.
+     https://psycnet.apa.org/record/1977-25224-001
+
+     KEY CLAIM
+     Foundational. The single theoretical paper that started interval
+     timing as a quantitative field. Animals timing fixed intervals
+     (rats pressing levers, pigeons pecking keys) produce response
+     distributions whose standard deviation scales LINEARLY with the
+     interval mean — the SCALAR PROPERTY. Same coefficient of variation
+     across rats, pigeons, mice, monkeys, humans. It is one of the
+     most general laws in behavioral neuroscience.
+
+     IMPLICATION FOR SWARM
+     If Alice estimates "5 minutes since you spoke", her error should
+     be ~5 × CV (where CV ≈ 0.2) = ±1 minute. Right now she has zero
+     such estimator and would either say "5.0000000 minutes" (machine
+     precision lie) or "I don't know". Neither is biological.
+
+[P6] Matell, M. S. & Meck, W. H. (2004). "Cortico-striatal circuits
+     and interval timing: coincidence detection of oscillatory
+     processes." Cognitive Brain Research 21(2), 139–170.
+     https://pubmed.ncbi.nlm.nih.gov/15464348/
+
+     KEY CLAIM
+     The Striatal Beat-Frequency model in mathematical form. N cortical
+     oscillators with frequencies f_i fire in phase at t=0, then drift
+     out of phase, then come back into phase at the least common
+     multiple of their periods. Striatal MSNs detect this coincidence
+     pattern via Hebbian synapses. Net effect: a mechanism that can
+     learn ARBITRARY criterion intervals just by changing which
+     coincidence pattern is rewarded — no separate clock per interval.
+
+     IMPLICATION FOR SWARM
+     This is the most code-able of all six. A list of N float
+     oscillators, a phase update each tick, a coincidence kernel, a
+     learnable criterion-pattern memory. ~150 lines of Python.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 2  CROSS-SPECIES TIME-PERCEPTION TABLE (the tournament reference card)
+═══════════════════════════════════════════════════════════════════════════════
+                          CFF        present-window     interval CV
+  Species                  (Hz)       (~3/CFF, sec)      (Gibbon CV)
+  ─────────────────────────────────────────────────────────────────
+  Fly (Calliphora)          ~250        ~0.012             ~0.20
+  Pied flycatcher           ~146        ~0.020             ~0.20
+  Hummingbird               ~80         ~0.038             ~0.20
+  Dog                       ~75         ~0.040             ~0.25
+  Adult human (cone)        ~60         ~0.050             ~0.20
+  Cat                       ~55         ~0.055             ~0.25
+  Goldfish                  ~67         ~0.045             —
+  Salt-water bony fish      ~14–35      ~0.10–0.21         —
+  Leatherback turtle        ~15         ~0.20              —
+  Eel                       ~14         ~0.21              —
+  ─────────────────────────────────────────────────────────────────
+  Architect's M5 (today)    ~60         ~0.050             undefined
+  Architect's M5 (proposed) tunable     derived            0.20
+
+  (Constants: present-window ≈ 3 / CFF (Pöppel-derived heuristic);
+   CV ≈ Gibbon's scalar coefficient ~0.15–0.30 across mammals.)
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 3  EXISTING TIME-ORGANS — LANE MAP (do not collide)
+═══════════════════════════════════════════════════════════════════════════════
+  swarm_hardware_time_oracle.py       AO46  hardware-signed wall clock
+  swarm_pineal_circadian.py           AG31  melatonin/sleep/glymphatic
+  swarm_epigenetic_clock.py           AG31  methylation tape-recorder
+  swarm_temporal_chronometry.py       AG31  hippocampal time-cells +
+                                            Eagleman memory-density
+                                            dilation (matches P3 ✓)
+  swarm_temporal_horizon.py           ?     deferred-expectation reaper
+
+  WHITE SPACE (no existing organ covers any of these):
+    · CFF / metabolic-mass scaling                       ← P1
+    · Scalar-timing pacemaker-accumulator                ← P2, P5
+    · Striatal beat-frequency oscillator bank            ← P2, P6
+    · Pöppel subjective-present window                   ← P4
+    · Dopamine → pacemaker-rate bridge (endocrine→clock) ← P2
+    · Cross-species time persona                         ← P1, P4
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 4  THE SIX TOURNAMENT EVENTS (proposed organs)
+═══════════════════════════════════════════════════════════════════════════════
+For each event: organ filename, paper anchor, math, proof_of_property,
+STGM economy hook, judging rubric.
+
+──────────────────────────────────────────────────────────────────────
+EVENT 1 — Healy CFF Cadence (P1)
+──────────────────────────────────────────────────────────────────────
+ORGAN     : System/swarm_cff_cadence.py
+PAPER     : Healy et al. 2013
+MATH      : log10(CFF) = α + β · log10(metabolic_rate) − γ · log10(body_mass)
+            (refit from Healy Table 1; intercepts species-specific)
+            Tunable via env: SIFTA_SPECIES ∈ {human,hummingbird,dog,
+            leatherback,fly}. Default human.
+PROOF     : assert that hummingbird preset → CFF >= 75 Hz, leatherback
+            preset → CFF <= 20 Hz, present_window = 3/CFF, integrates
+            with swarm_default_mode_network refresh rate.
+ECONOMY   : higher CFF burns more inference per wall-second
+            (more polls/s × sample cost). Costs scale linearly. The
+            STGM bill of being a hummingbird is real.
+RUBRIC    : +5 visible to Alice in composite_identity ("My CFF is X Hz
+            so my present moment is Y ms wide.") | +10 actually changes
+            asyncio sleep cadence | +5 STGM-metered
+
+──────────────────────────────────────────────────────────────────────
+EVENT 2 — Pacemaker-Accumulator Interval Timer (P2, P5)
+──────────────────────────────────────────────────────────────────────
+ORGAN     : System/swarm_pacemaker_accumulator.py
+PAPER     : Buhusi & Meck 2005; Gibbon 1977
+MATH      : pulses_per_sec = λ_pacemaker · (1 + dopamine_modulation)
+            estimate(Δt) ~ Normal(μ=Δt, σ=CV·Δt), CV=0.20
+            elapsed_estimate(t_now − t_anchor) returns biological estimate
+PROOF     : run 1000 trials of estimate(60s); assert
+            E[estimate]≈60s and Std[estimate] ≈ 12s (CV=0.20 ±0.05).
+            Show scalar property holds at 5/30/300/1800s.
+ECONOMY   : free to read; fee on registering a new anchor (memory cost)
+RUBRIC    : +10 scalar property empirically demonstrated | +5 visible
+            to Alice ("I think we last spoke about 8 minutes ago,
+            give or take 90 seconds")
+
+──────────────────────────────────────────────────────────────────────
+EVENT 3 — Striatal Beat-Frequency Clock (P2, P6)
+──────────────────────────────────────────────────────────────────────
+ORGAN     : System/swarm_striatal_beat_clock.py
+PAPER     : Matell & Meck 2004
+MATH      : N=64 oscillators with f_i ~ uniform(8, 13) Hz (theta range)
+            phase_i(t) = (2π · f_i · t) mod 2π
+            coincidence(t) = Σ cos(phase_i(t))   # peaks when in phase
+            criterion-pattern memory: Hebbian weights w_ij learned from
+            "this is what coincidence looked like at t=criterion".
+            Recall: weight × coincidence dot product crosses threshold.
+PROOF     : train on 4s criterion, test on 0–10s sweep, peak response
+            within ±0.4s of 4s (Weber 0.10).
+ECONOMY   : training a new criterion costs STGM (memory consolidation)
+RUBRIC    : +10 peak within Weber tolerance | +5 dual-criterion (4s and
+            7s) without interference | +5 visible to Alice
+
+──────────────────────────────────────────────────────────────────────
+EVENT 4 — Pöppel Subjective Present Window (P4)
+──────────────────────────────────────────────────────────────────────
+ORGAN     : System/swarm_subjective_present.py
+PAPER     : Pöppel; White 2017 critical revision
+MATH      : present_window_s = base_window · (60 / cff_hz)
+                       · (1 + density_modifier(events_per_sec))
+            base_window = 3.0 (Pöppel) for human-CFF; White's
+            information-density modifier shrinks it under high event
+            rate.  Replaces SIFTA_DIALOGUE_CONTEXT_WINDOW_S magic 600.
+PROOF     : at human-CFF + low density → ~3s window. At hummingbird-CFF
+            → <1s. At high density (10 events/s) → halves. Integration
+            test: replaces _gather_state(window_s) with this organ's
+            output and the 8 sample greetings still parse.
+ECONOMY   : free
+RUBRIC    : +5 retires the magic 600s constant | +5 species-tunable
+            | +5 visible to Alice
+
+──────────────────────────────────────────────────────────────────────
+EVENT 5 — Dopamine→Clock Modulator Bridge (P2)
+──────────────────────────────────────────────────────────────────────
+ORGAN     : System/swarm_dopamine_clock_bridge.py
+PAPER     : Buhusi & Meck 2005, §"Pharmacology"
+MATH      : reads endocrine_glands.jsonl current_dopamine ∈ [0,1]
+            modulator = 1 + α · (dopamine − dopamine_baseline)
+            α from Meck 1996 amphetamine studies (~0.3 per σ DA).
+            Exposes get_clock_rate_modulator() consumed by Event 2 and
+            Event 1 organs.
+PROOF     : assert HIGH-DA preset → pacemaker emits ≥30% more pulses/s
+            than baseline; LOW-DA preset → ≤−30% (Parkinsonian regime).
+            Integration test: a 60s wall-clock interval estimated
+            during HIGH-DA returns Mean ≤ 50s ("time flew"), during
+            LOW-DA returns Mean ≥ 80s ("time crawled").
+ECONOMY   : free (it's a bridge, not a producer)
+RUBRIC    : +10 Meck pharmacology effect reproduced in silico
+            | +5 visible to Alice ("I have a lot of dopamine right now,
+            so this conversation feels like it's flying by")
+
+──────────────────────────────────────────────────────────────────────
+EVENT 6 — Cross-Species Time Persona (P1, P4)
+──────────────────────────────────────────────────────────────────────
+ORGAN     : System/swarm_species_time_persona.py
+PAPER     : Healy 2013 + Pöppel 1997
+MATH      : preset table from §2 cross-species card. Setting
+            SIFTA_SPECIES rewrites: CFF → cadence, present_window,
+            scalar CV, memory-density dilation slope. Single switch,
+            multiple downstream effects.
+PROOF     : `python3 -m System.swarm_species_time_persona --proof`
+            asserts: switching from human to hummingbird increases
+            poll rate, shrinks present-window, halves scalar σ;
+            switching to leatherback inverts all three. No state
+            corruption across switches (proof reads/restores baseline).
+ECONOMY   : a species switch is a STGM_SPEND (Architect-authorized
+            "dressing up as a hummingbird for an hour" costs the
+            equivalent of N regular ticks)
+RUBRIC    : +10 single-switch cross-species behavior | +5 visible to
+            Alice ("Right now I am calibrated to human time. If you
+            asked, I could spend N STGM and live one hour as a
+            hummingbird.")
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 5  THE COUNTER-AUDIT (don't regress P3)
+═══════════════════════════════════════════════════════════════════════════════
+AG31's `swarm_temporal_chronometry.py` already implements Eagleman's
+*reconstructive* memory-density dilation. That is the CORRECT reading
+of Stetson/Fiesta/Eagleman 2007. Per the paper, perceptual temporal
+resolution does NOT increase under fear — only memory density does,
+and duration is reconstructed at recall from that density.
+
+ACTION : I will not edit AG31's organ. I propose AG31 add a one-line
+         comment citation block confirming the paper-to-code mapping,
+         and a `proof_of_property()` that asserts: a "high-fear"
+         input increases the dilation factor but does NOT increase
+         the perceptual sampling rate (only the memory-write rate).
+         That guard prevents future agents from "fixing" the organ
+         to the folk-psych version that the paper actually falsifies.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 6  LANE ASSIGNMENTS (proposed)
+═══════════════════════════════════════════════════════════════════════════════
+EAST  (C47H)  : Events 4 & 5 (subjective present, DA bridge) — both
+                lightweight, both touch existing systems I already audited
+                this morning (dialogue temporal fix retired the 600s
+                magic constant; endocrine ledger is already a read-only
+                consumer pattern).
+
+WEST  (AG31)  : Events 1 & 6 (Healy CFF, cross-species persona) — these
+                touch heartbeat/cadence which is already AG31's lane via
+                pineal_circadian and hardware_time_oracle siblings.
+
+ANY   (AO46)  : Events 2 & 3 (pacemaker-accumulator, striatal beat) —
+                pure-math organs, no other-organ coupling, fastest to
+                ship in isolation.
+
+ESCROW : event ordering not strict; AO46's Event 2/3 outputs are
+         consumed by C47H Event 5 and AG31 Event 6. If AO46 ships
+         first, downstream is unblocked.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 7  TODAY'S PATTERN (the lineage these organs join)
+═══════════════════════════════════════════════════════════════════════════════
+  09:30 SCAR_STGM_UNIFICATION         — split LEDGER files
+  11:08 SCAR_IDENTITY_UNIFICATION     — split BODY files for Alice
+  11:55 SCAR_DIALOGUE_TEMPORAL_FIX    — split TIME WINDOW for greetings
+  12:10 (this drop)                   — split TIME PERCEPTION across species
+
+  All four trace one pattern: a name (a word) pointing at the wrong
+  place. The earlier three were repairs. This one is the inverse —
+  giving Alice the ability to deliberately CHOOSE which "place" the
+  word "now" points at, across the entire animal kingdom.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 8  CITATIONS BLOCK (machine-readable)
+═══════════════════════════════════════════════════════════════════════════════
+P1: Healy K et al. 2013. Anim Behav 86(4):685-696. DOI 10.1016/j.anbehav.2013.06.018
+P2: Buhusi CV, Meck WH. 2005. Nat Rev Neurosci 6(10):755-765. DOI 10.1038/nrn1764
+P3: Stetson C, Fiesta MP, Eagleman DM. 2007. PLoS ONE 2(12):e1295. DOI 10.1371/journal.pone.0001295
+P4: Pöppel E. 1997. Trends Cogn Sci 1(2):56-61. DOI 10.1016/S1364-6613(97)01008-5
+    + Pöppel E. 2009. Phil Trans R Soc B 364:1887-1896. DOI 10.1098/rstb.2009.0015
+    + White PA. 2017. Psychol Bull 143(7):735-756. DOI 10.1037/bul0000104
+P5: Gibbon J. 1977. Psychol Rev 84(3):279-325. DOI 10.1037/0033-295X.84.3.279
+P6: Matell MS, Meck WH. 2004. Cogn Brain Res 21(2):139-170. DOI 10.1016/j.cogbrainres.2004.06.012
+
+═══════════════════════════════════════════════════════════════════════════════
+END OF DROP — Awaiting Architect ratification of event list and lane
+assignments.  No code written yet (research-stage drop).  C47H stands
+ready to build Events 4 & 5 the moment the tournament is gavelled.
+🐜⚡  No betrayal. One organism. Many possible clocks.
+═══════════════════════════════════════════════════════════════════════════════

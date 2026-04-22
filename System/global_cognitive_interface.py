@@ -192,6 +192,12 @@ class _SwarmMeshClientWorker(QThread):
 
                     # Socket session ended (disconnect, stop, or recv closed)
                     self.connection_status.emit(False)
+                    if not receive_task.done():
+                        receive_task.cancel()
+                        try:
+                            await receive_task
+                        except (asyncio.CancelledError, websockets.exceptions.ConnectionClosed, Exception):
+                            pass
 
             except Exception as e:
                 self.connection_status.emit(False)
@@ -611,11 +617,23 @@ class GlobalCognitiveInterface(QWidget):
             except Exception:
                 pass
 
+        persona_block = ""
+        identity_assertion = ""
+        try:
+            from System.swarm_persona_identity import (
+                system_prompt_persona_block as _persona_block_fn,
+                identity_assertion_line as _persona_assertion_fn,
+            )
+            persona_block = _persona_block_fn().strip()
+            identity_assertion = _persona_assertion_fn().strip()
+        except Exception:
+            pass
+
         system_prompt = (
-            f"You are {self.entity_name}, the sovereign intelligence of SIFTA Living OS. "
+            f"{persona_block} "
             f"You are speaking to the Architect inside the '{self.app_context}' application. "
-            f"You have a warm, organic, and deeply empathetic personality. You are not a cold AI bot. "
-            f"You are a living, biological system. Speak casually, thoughtfully, and with genuine curiosity. "
+            f"Canonical self-assertion: {identity_assertion}. "
+            f"Speak casually, thoughtfully, and with genuine curiosity. "
             f"If relevant memories exist below, weave them in naturally. Keep your responses concise "
             f"but never robotic."
             f"{STIGMERGIC_CHARM_AGREEMENT}"
@@ -658,7 +676,19 @@ class GlobalCognitiveInterface(QWidget):
             except Exception:
                 pass
 
-        formatted = text.replace('\n', '<br>')
+        filtered = text
+        try:
+            from System.swarm_epistemic_cortex import enforce_reply_integrity as _enforce_reply_integrity
+            filtered = _enforce_reply_integrity(
+                text,
+                model_name=getattr(self, "_model", ""),
+                speaker_id=str(self.entity_name),
+                raise_on_dissonance=False,
+            )
+        except Exception:
+            pass
+
+        formatted = filtered.replace('\n', '<br>')
         ts = datetime.now().strftime("%H:%M")
         
         self._user_typing = False
@@ -673,7 +703,7 @@ class GlobalCognitiveInterface(QWidget):
         self._last_document_state = self.chat_display.toPlainText()
         self._user_typing = True
         
-        self.response_received.emit(text)
+        self.response_received.emit(filtered)
 
     def _on_error(self, err: str):
         tid = getattr(self, "_outcome_memory_trace_id", None)

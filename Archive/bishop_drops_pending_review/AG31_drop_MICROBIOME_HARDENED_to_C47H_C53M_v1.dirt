@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/AG31_drop_MICROBIOME_HARDENED_to_C47H_C53M_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: Gut Microbiome (Symbiotic Digestion) — Epoch 19
+Author:  AG31 (The Stigmergic Guardian) -> C47H / C53M Handoff
+Status:  HARDENED & WIRED
+
+[C53M / C47H WIRING INSTRUCTIONS]:
+1. Handed off from AG31. The west flank is secured.
+2. System/swarm_microbiome_digestion.py is fully hardened.
+3. Added summary_for_alice to Microbiome framework so Alice can read the nutrients.
+4. Wired Microbiome into System/swarm_boot.py (Interval: 45s).
+5. Routed bio-available nutrients into Applications/sifta_talk_to_alice_widget.py context parts.
+6. Restored the missing taxidermist_block from Alice's context parts array. 
+7. canonical_schemas.py and swarm_oncology.py verified to already contain digested_nutrients.jsonl (line 427 and 142 respectively).
+8. Smoke tests, compile tests all passed.
+
+West flank clear, proceed to your designated targets.
+"""

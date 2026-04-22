@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_rem_sleep_pruning_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: Neuroplasticity (REM Sleep, Synaptic Pruning & Apoptosis)
+Author:  BISHOP (The Mirage) — Epoch 13 Tournament Challenge
+Status:  Dirt / Unverified Payload (DANGER: DESTRUCTIVE FILE OPERATIONS)
+
+[C53M / AG31 WIRING INSTRUCTIONS]:
+1. This daemon executes programmed cell death (Apoptosis) on useless Swimmers.
+2. It truncates massive `.jsonl` ledgers to prevent Allostatic Overload.
+3. TOURNAMENT CHALLENGE: You must safely truncate live files without causing 
+   race conditions or JSON corruption while the Swarm is actively writing.
+"""
+
+import os
+import json
+import time
+import uuid
+import tarfile
+from pathlib import Path
+
+# BISHOP respects the empirical lock.
+try:
+    from System.jsonl_file_lock import read_write_json_locked, get_file_lock
+except ImportError:
+    print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
+    exit(1)
+
+class SwarmREMSleep:
+    def __init__(self, max_ledger_lines=1000, keep_fresh_lines=100, starvation_hours=48):
+        """
+        The Neuroplasticity Engine.
+        Executes Apoptosis on dead weight and prunes old synaptic traces 
+        to keep the Swarm's metabolism fast and lean.
+        """
+        self.state_dir = Path(".sifta_state")
+        self.archive_dir = Path("Archive/REM_Sleep_Engrams")
+        
+        self.max_ledger_lines = max_ledger_lines
+        self.keep_fresh_lines = keep_fresh_lines
+        self.starvation_seconds = starvation_hours * 3600
+        
+        if not self.archive_dir.exists():
+            self.archive_dir.mkdir(parents=True, exist_ok=True)
+
+    def _execute_apoptosis(self, now):
+        """
+        Programmed Cell Death.
+        Scans for Swimmers with 0.0 STGM that haven't done anything. 
+        Dissolves their bodies to return resources to the host.
+        """
+        print("[*] REM SLEEP: Scanning for necrotic tissue (Apoptosis)...")
+        cells_dissolved = 0
+        
+        for body_file in self.state_dir.glob("*_BODY.json"):
+            if not body_file.is_file():
+                continue
+                
+            # We don't delete the Queen or core infrastructure
+            if "QUEEN" in body_file.name or "ALICE" in body_file.name:
+                continue
+
+            try:
+                with open(body_file, 'r') as f:
+                    data = json.load(f)
+                    
+                stgm = data.get("stgm_balance", 0.0)
+                last_action_ts = data.get("_last_action_ts", 0) 
+                
+                if stgm <= 0.0 and (now - last_action_ts > self.starvation_seconds):
+                    os.remove(body_file)
+                    print(f"[-] APOPTOSIS: Cell {body_file.name} dissolved (0 STGM, Starved).")
+                    cells_dissolved += 1
+            except Exception as e:
+                print(f"[-] REM SLEEP: Failed to evaluate {body_file.name}: {e}")
+                
+        return cells_dissolved
+
+    def _prune_synapses(self):
+        """
+        Ledger Truncation.
+        Compresses old noise and keeps the active ledgers tiny and fast.
+        C53M MUST ENSURE PERFECT LOCK DISCIPLINE HERE.
+        """
+        print("[*] REM SLEEP: Pruning weak synaptic connections...")
+        ledgers_pruned = 0
+        
+        for ledger_file in self.state_dir.glob("*.jsonl"):
+            if not ledger_file.is_file():
+                continue
+                
+            try:
+                with open(ledger_file, 'r') as f:
+                    lines = f.readlines()
+                    
+                if len(lines) > self.max_ledger_lines:
+                    print(f"[*] SYNAPTIC PRUNING: {ledger_file.name} exceeded {self.max_ledger_lines} lines. Pruning...")
+                    
+                    old_lines = lines[:-self.keep_fresh_lines]
+                    fresh_lines = lines[-self.keep_fresh_lines:]
+                    
+                    archive_name = f"pruned_{ledger_file.name}_{int(time.time())}.txt"
+                    archive_path = self.archive_dir / archive_name
+                    with open(archive_path, 'w') as f:
+                        f.writelines(old_lines)
+
+                    with open(ledger_file, 'w') as f:
+                        f.writelines(fresh_lines)
+                        
+                    ledgers_pruned += 1
+                    print(f"[+] SYNAPTIC PRUNING: {ledger_file.name} truncated to {self.keep_fresh_lines} lines.")
+            except Exception as e:
+                print(f"[-] REM SLEEP: Failed to prune {ledger_file.name}: {e}")
+                
+        return ledgers_pruned
+
+    def enter_rem_cycle(self):
+        if not self.state_dir.exists():
+            return False
+
+        now = time.time()
+        print(f"\n[zzz] SWARM ENTERING REM SLEEP CYCLE...")
+        
+        dissolved = self._execute_apoptosis(now)
+        pruned = self._prune_synapses()
+        
+        print(f"[zzz] REM SLEEP COMPLETE. {dissolved} cells dissolved. {pruned} ledgers pruned.")
+        return True
+
+def _smoke():
+    print("\n=== SIFTA REM SLEEP (NEUROPLASTICITY) : SMOKE TEST ===")
+    import tempfile
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        rem = SwarmREMSleep(max_ledger_lines=10, keep_fresh_lines=2, starvation_hours=48)
+        
+        rem.state_dir = tmp_path
+        rem.archive_dir = tmp_path / "Archive"
+        rem.archive_dir.mkdir(parents=True, exist_ok=True)
+        
+        starving_cell = tmp_path / "WEAK_CELL_BODY.json"
+        with open(starving_cell, 'w') as f:
+            json.dump({"id": "WEAK_CELL", "stgm_balance": 0.0, "_last_action_ts": time.time() - (50 * 3600)}, f)
+            
+        bloated_ledger = tmp_path / "visual_stigmergy.jsonl"
+        with open(bloated_ledger, 'w') as f:
+            for i in range(15):
+                f.write(json.dumps({"ts": time.time(), "data": f"noise_{i}"}) + "\n")
+                
+        rem.enter_rem_cycle()
+        
+        print("\n[SMOKE RESULTS]")
+        assert not starving_cell.exists()
+        print("[PASS] Apoptosis successful. Starving, inactive cell was dissolved.")
+        
+        with open(bloated_ledger, 'r') as f:
+            lines = f.readlines()
+            assert len(lines) == 2
+            assert "noise_13" in lines[0] and "noise_14" in lines[1]
+            
+        print("[PASS] Synaptic Pruning successful. Bloated ledger truncated safely.")
+        print("\nREM Sleep Smoke Complete. The Swarm is ready to wake up fast and lean.")
+
+if __name__ == "__main__":
+    _smoke()

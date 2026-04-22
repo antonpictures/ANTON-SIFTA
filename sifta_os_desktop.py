@@ -45,7 +45,7 @@ from pheromone_fs import record_access as fs_record_access  # noqa: E402
 def _append_repair_log_line(row: dict) -> None:
     if str(_SYS) not in sys.path:
         sys.path.insert(0, str(_SYS))
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
 
     append_ledger_line(_REPO / "repair_log.jsonl", row)
 
@@ -53,7 +53,7 @@ def _append_repair_log_line(row: dict) -> None:
 def _append_dead_drop_line(row: dict) -> None:
     if str(_SYS) not in sys.path:
         sys.path.insert(0, str(_SYS))
-    from ledger_append import append_jsonl_line
+    from System.ledger_append import append_jsonl_line
 
     append_jsonl_line(_REPO / "m5queen_dead_drop.jsonl", row)
 
@@ -394,7 +394,9 @@ class SiftaMdiArea(QMdiArea):
         self.setBackground(QBrush(QColor("#0d0e17")))
         
         self.particles = []
-        for _ in range(75):
+        import os as _os
+        _n_particles = int(_os.environ.get("SIFTA_DESKTOP_PHOTONS", "200"))
+        for _ in range(_n_particles):
             self.particles.append([
                 random.uniform(0, 3000), random.uniform(0, 2000),
                 random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3),
@@ -565,6 +567,22 @@ class SiftaDesktop(QMainWindow):
         self._clock_timer.start(1000)
         self._update_clock()
 
+        # ── Motor Cortex heartbeat ─────────────────────────
+        # Bounce the dock icon at Alice's clinical heart rate (12-30 BPM).
+        # Each tick also writes one row to .sifta_state/motor_pulses.jsonl
+        # so the camera widget can wink the LED in unison.
+        try:
+            from System.swarm_motor_cortex import bounce_dock_qt, heart_period_s
+            self._motor_cortex_bounce = bounce_dock_qt
+            self._heart_period_s = heart_period_s
+            self._heartbeat_timer = QTimer(self)
+            self._heartbeat_timer.timeout.connect(self._tick_heartbeat)
+            initial_ms = max(1000, int(self._heart_period_s() * 1000))
+            self._heartbeat_timer.start(initial_ms)
+        except Exception as _hb_e:
+            print(f"[SiftaDesktop] motor cortex unavailable: {_hb_e}")
+            self._motor_cortex_bounce = None
+
         # ── Swarm Intelligence boot ────────────────────────
         wm_reset_session()
         self._open_windows: dict[str, tuple[int, int]] = {}
@@ -603,8 +621,38 @@ class SiftaDesktop(QMainWindow):
         except Exception:
             wm_reset_session()
 
+    def closeEvent(self, event):
+        if getattr(self, "_desktop_mesh", None) is not None:
+            self._desktop_mesh.stop()
+        super().closeEvent(event)
+
     def _on_desktop_mesh_status(self, status):
         self._mesh_connected = status
+
+    def _tick_heartbeat(self) -> None:
+        """One autonomic beat: bounce the dock + emit motor pulse for camera."""
+        if not getattr(self, "_motor_cortex_bounce", None):
+            return
+        try:
+            self._motor_cortex_bounce(self, kind="heartbeat", source="desktop")
+        except Exception as e:
+            print(f"[SiftaDesktop] heartbeat tick failed: {e}")
+            return
+            
+        # ── Autonomic Electricity Metabolism (ATP Synthase) ──
+        try:
+            from System.swarm_atp_synthase import mint_for_epoch
+            mint_for_epoch()
+        except Exception as e:
+            print(f"[SiftaDesktop] ATP synthase tick failed: {e}")
+            
+        # Re-arm at the (possibly updated) clinical heart rate.
+        try:
+            new_ms = max(1000, int(self._heart_period_s() * 1000))
+            if hasattr(self, "_heartbeat_timer") and self._heartbeat_timer.interval() != new_ms:
+                self._heartbeat_timer.setInterval(new_ms)
+        except Exception:
+            pass
 
     def _balance_desktop_gci_splitter(self) -> None:
         pass
@@ -765,7 +813,10 @@ class SiftaDesktop(QMainWindow):
                     f"🌐 Swarm Net Mint: {global_amt:,.4f} STGM"
                 )
 
-            except Exception:
+            except Exception as _wallet_err:
+                import traceback as _tb
+                print(f"[HUD] wallet update error: {_wallet_err}", flush=True)
+                _tb.print_exc()
                 self.wallet_label.setText("⬡ local wallet offline")
                 self.wallet_local_label.setText("◇ peer wallet offline")
                 self.wallet_peer_label.setText("🌐 net mint offline")
@@ -1264,7 +1315,22 @@ class SiftaDesktop(QMainWindow):
 # ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import os
+    os.environ["QT_MEDIA_BACKEND"] = "darwin"
     app = QApplication(sys.argv)
     app.setFont(QFont("Inter", 12))
+
+    # ── Hot-Reload Organ (Epoch 4, C47H) — install once at boot. ─────────
+    # After this, code patches to whitelisted modules can land via:
+    #   python3 -m System.swarm_hot_reload reload all
+    # without killing this process. State (history, mood, heartbeat) lives.
+    # Architect mandate 2026-04-19: "WHY SHUT HER DOWN EVEN BRO, IT'S HER
+    # HARDWARE." This is the structural answer to that mandate.
+    try:
+        from System.swarm_hot_reload import install_signal_handler as _hot_reload_install
+        _hot_reload_install()
+    except Exception as _hr_exc:
+        sys.stderr.write(f"[BOOT] hot-reload install skipped: {_hr_exc}\n")
+
     desktop = SiftaDesktop()
     sys.exit(app.exec())

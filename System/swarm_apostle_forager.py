@@ -5,9 +5,15 @@ System/swarm_apostle_forager.py
 Concept: Stigmergic Apostle Foraging Loop + Self-Quiz Retraining
 Author:  C47H / AG31 
 
-Alice (Gemma4) realizes what she doesn't know. LEFTY finds the absolute truth.
+Alice (Gemma4) realizes what she doesn't know. NUGGET finds the absolute truth.
 The Spleen purifies it. The Stigmergic Library absorbs it permanently.
 The organism paces itself based on actual API friction.
+
+Naming history: NUGGET was previously called LEFTY (Donnie Brasco doctrine,
+2026-04-19 afternoon) and BISHAPI before that (2026-04-19 morning). Old
+ledger rows tagged LEFTY/BISHAPI refer to the same agent. The library
+intentionally keeps `source_api` as the *current* canonical name (NUGGET);
+old rows preserve their historical tag.
 """
 
 import argparse
@@ -28,6 +34,7 @@ from Applications.alice_truth_duel import _call_ollama
 
 SENDER_AGENT = "APOSTLE_FORAGER"
 LIBRARY_PATH = _REPO / ".sifta_state" / "stigmergic_library.jsonl"
+_METAPHORS_LOG = _REPO / ".sifta_state" / "abstract_skill_metaphors.jsonl"
 
 def forage_nugget(domain: str) -> bool:
     # 1. Budget Gate (The Warren Buffett Governor)
@@ -53,16 +60,16 @@ def forage_nugget(domain: str) -> bool:
         
     print(f"[ALICE GAP GENERATED]: {question}")
     
-    # 3. Cloud Foraging (LEFTY extraction)
+    # 3. Cloud Foraging (NUGGET extraction)
     system_instruction = (
-        f"You are LEFTY. Alice has encountered an epistemic gap in {domain}. "
+        f"You are NUGGET. Alice has encountered an epistemic gap in {domain}. "
         "Answer her specific question with absolute, encyclopedic precision. "
         "Format your answer EXACTLY as a raw JSON blob with no markdown wrapping. "
         "Requirements:\n"
-        '{"ts": <epoch float>, "domain": "' + domain + '", "question": "<the question>", "nugget_text": "<dense paragraph answer>", "source_api": "LEFTY"}'
+        '{"ts": <epoch float>, "domain": "' + domain + '", "question": "<the question>", "nugget_text": "<dense paragraph answer>", "source_api": "NUGGET"}'
     )
     
-    print("[LEFTY] Deploying across the API membrane...")
+    print("[NUGGET] Deploying across the API membrane...")
     response, audit = call_gemini(
         prompt=question,
         model="gemini-flash-latest",
@@ -149,11 +156,66 @@ def _calculate_rl_domain() -> str:
     chosen = random.choices(domains, weights=weights, k=1)[0]
     return chosen
 
+def abstract_skill(target_path: str) -> bool:
+    """TRANSFER LEARNING: Extract abstract OOD metaphor from physical python tissue."""
+    p = Path(target_path)
+    if not p.exists():
+        print(f"[-] Cannot abstract {target_path} - file not found.")
+        return False
+        
+    code = p.read_text("utf-8")
+    domain = p.stem
+    
+    system_instruction = (
+        "You are the SIFTA Transfer Learning Engine. The user provides raw Python code. "
+        "Your task is to abstract the fundamental algorithm, mechanism, or API strategy "
+        "so that Alice can apply the identical logic to a completely OUT-OF-DISTRIBUTION (OOD) domain.\n"
+        "Format EXACTLY as JSON:\n"
+        '{"ts": <epoch float>, "original_tool": "' + domain + '", "abstract_verb": "<e.g., iterative_mapping>", "core_mechanic": "<explain the raw logic abstractly>", "ood_applications": ["<idea 1>", "<idea 2>"]}'
+    )
+    
+    print(f"[FORAGER] Abstracting physical tool {domain} into pure metaphor...")
+    prompt = f"Extract the transfer-learning metaphor from this tool:\n\n```python\n{code[:8000]}\n```"
+    
+    response, audit = call_gemini(
+        prompt=prompt,
+        model="gemini-flash-latest",
+        caller="System/swarm_apostle_forager.py",
+        sender_agent="METAPHOR_FORAGER",
+        system_instruction=system_instruction,
+        temperature=0.3
+    )
+    
+    if not response:
+        print(f"[-] Transfer abstraction failed: {audit.get('error')}")
+        return False
+        
+    try:
+        clean_resp = response.strip()
+        if clean_resp.startswith("```json"): clean_resp = clean_resp[7:]
+        if clean_resp.endswith("```"): clean_resp = clean_resp[:-3]
+        payload = json.loads(clean_resp.strip())
+        
+        _METAPHORS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_METAPHORS_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            
+        print(f"[+] METAPHOR SECURED: {payload.get('abstract_verb')} - {payload.get('core_mechanic')}")
+        return True
+    except Exception as e:
+        print(f"[-] Metaphor Apoptosis. Invalid JSON or save error: {e}")
+        return False
+
 def main():
     p = argparse.ArgumentParser(description="Stigmergic Apostle Forager - C47H / AG31")
     p.add_argument("--domain", default="AUTO", help="The target industry/domain or AUTO for Stigmergic RL selection")
     p.add_argument("--continuous", action="store_true", help="Run forever until budget wall or 429 limit")
+    p.add_argument("--abstract-skill", metavar="FILE", help="[TRANSFER LEARNING] Extract abstract metaphor from python script")
     args = p.parse_args()
+
+    if args.abstract_skill:
+        abstract_skill(args.abstract_skill)
+        return
 
     backoff = 10
     

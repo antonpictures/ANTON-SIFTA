@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, str(ROOT / "System"))
 
-from ledger_append import append_ledger_line  # noqa: E402
+from System.ledger_append import append_ledger_line  # noqa: E402
 
 
 class TestLedgerCreditCeiling(unittest.TestCase):

@@ -12,10 +12,51 @@ Fee Formula:
 
 import json
 import hashlib
-import sys
 import os
+import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+# 2026-04-21 C47H/AG31: Biological anchor moved below sys.path setup
+
+class ProofOfWorkException(Exception):
+    pass
+
+class NegativeBalanceException(Exception):
+    pass
+
+class CeremonialMintRefused(Exception):
+    pass
+
+
+def transfer_stgm(sender: str, receiver: str, amount: float, memo: str = ""):
+    """
+    Global STGM transfer (requires biological verification + real Ed25519).
+
+    2026-04-21 C47H — Hardened to delegate to the cryptosure
+    `System.swarm_wallet_transfer.transfer()`. AG31's first cut wrote a
+    TRANSFER row in a third dialect that ledger_balance() does not parse,
+    so balances never moved (vapor transfer) and signing fell open to a
+    "NO_KEYCHAIN_…" placeholder. The cryptosure version:
+      • fail-closed on crypto (refuses if no real Ed25519)
+      • writes STGM_SPEND/STGM_MINT pair in the dialect ledger_balance reads
+      • binds each row to silicon serial + active attestation hash prefix
+      • anchors prev_hash for tamper-evident chaining
+      • enforces shared transfer_id across both legs
+      • runs a 10-invariant proof under the CI dam
+
+    NegativeBalanceException is preserved as a fallback wrapper so any
+    legacy caller catching it continues to work.
+    """
+    from System.swarm_wallet_transfer import (
+        transfer as _cryptosure_transfer,
+        InsufficientBalance,
+    )
+    try:
+        return _cryptosure_transfer(sender, receiver, amount, memo=memo)
+    except InsufficientBalance as e:
+        raise NegativeBalanceException(str(e)) from e
 
 # ─── Ed25519 Crypto Bridge ─────────────────────────────────────────────────────
 _SYSTEM_DIR = Path(__file__).parent / "System"
@@ -30,14 +71,32 @@ except ImportError:
     def _get_serial(): return "UNKNOWN_SERIAL"
 
 try:
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
 except ImportError:
     def append_ledger_line(path, event):  # type: ignore
         with open(path, "a") as f:
             f.write(json.dumps(event) + "\n")
+
+# Bring in the robust biological anchor
+from System.swarm_proof_of_humanity import require_humanity, HumanityRequired
 # ──────────────────────────────────────────────────────────────────────────────
 ROOT_DIR  = Path(__file__).parent.parent
-LOG_PATH  = ROOT_DIR / "Utilities" / "repair_log.jsonl"
+# ─────────────────────────────────────────────────────────────────────────────
+# CANONICAL STGM QUORUM LEDGER
+# ─────────────────────────────────────────────────────────────────────────────
+# Every STGM producer/consumer across the repo must agree on one ledger path.
+# Historically this module pointed to Utilities/repair_log.jsonl while every
+# HUD / observer (System/warren_buffett, sifta_os_desktop, swarm_brain,
+# passive_utility_generator, value_field, infrastructure_sentinel,
+# regenerative_factory, Utilities/repair.py) used <repo>/repair_log.jsonl —
+# a split-brain that froze Alice's wallet at a stale snapshot on 2026-04-17
+# even while INFERENCE_BORROW and MINING_REWARD were still being written,
+# because they were being written into a file nobody read.
+#
+# Unified on 2026-04-21 by C47H (STGM LEDGER UNIFICATION). LOG_PATH is now
+# the SAME repo-root file every other organ uses. Do not change it back
+# without migrating EVERY consumer at once.
+LOG_PATH  = ROOT_DIR / "repair_log.jsonl"
 STATE_DIR = ROOT_DIR / ".sifta_state"
 
 
@@ -67,20 +126,40 @@ def get_current_halving_multiplier() -> float:
 # ─── Couch Protocol / Inference Gate ───────────────────────────────────────────
 def can_spend_inference(state: dict, cost: float = 1.0) -> bool:
     """
-    COUCH PROTOCOL ENFORCEMENT
+    COUCH PROTOCOL ENFORCEMENT & SHAME REGULATION
     Hallucination / inference spend is ONLY allowed when NOT in protected states.
     Returns True only if the agent may burn real inference energy.
     """
     agent_id = state.get('id', 'unknown')
     
+    # 0. Regulatory Emotion: Shame Protocol Check
+    shame_file = ROOT_DIR / ".sifta_state" / "SHAME_RECORDS.json"
+    if shame_file.exists():
+        try:
+            import json
+            shame_data = json.loads(shame_file.read_text())
+            current_shame = shame_data.get(agent_id, 0.0)
+            if current_shame > 5.0 and cost > 2.0:
+                 # Hard block: Agent is heavily shamed and attempting to burn excessive compute
+                 print(f"[🔴 SHAME_LOCK] {agent_id} carries {current_shame} SHAME_VOLTAGE. "
+                       f"Humility protocol active: High-cost inference ({cost} STGM) DENIED until caveats fixed.")
+                 return False
+        except Exception:
+            pass
+
     # 1. Protected states — zero spend, zero mutation, zero drift
-    if state.get("style") in {"COUCH", "OBSERVE", "HYPOTHESIS", "LATENT"}:
+    if state.get("style") in {"COUCH", "OBSERVE", "HYPOTHESIS", "LATENT", "[SHAMED]"}:
         print(f"[🛡️ COUCH PROTOCOL] {agent_id} in {state['style']} — inference spend DENIED.")
         return False
 
     # 2. Check actual energy balance (weed inference limit)
     # Using 'stgm_balance' as the inference energy pool based on inference_economy logic
-    current_energy = float(state.get("stgm_balance", 100.0))
+    # 2026-04-21 C47H — Default repaired from 100.0 → 0.0 per Architect-George's
+    # STGM_POLICY_ELECTRICITY_ONLY_v1: "EVERYONE STARTS WITH ZERO STGM. NEW ONES
+    # WHO INSTALL." Granting a free 100 STGM allowance to any agent missing a
+    # state file was a silent genesis-by-default — i.e. inflation. Now agents
+    # without a measured electricity-backed balance simply cannot spend.
+    current_energy = float(state.get("stgm_balance", 0.0))
     if current_energy < cost:
         print(f"[⚡ LOW WEED] {agent_id} only has {current_energy:.2f} left — spend DENIED.")
         return False
@@ -116,14 +195,29 @@ def calculate_fee(tokens: int, model: str = "qwen3.5:2b") -> float:
 
 def mint_reward(agent_id: str, action: str, file_repaired: str, model: str = "qwen3.5:2b") -> dict:
     """
-    Proof-of-Healing reward minting. Called after a successful swarm repair.
-    Provides a base baseline reward multiplied by the current Deflationary Halving Era,
-    scaled by the Model IQ.
+    DEPRECATED — non-inflationary shim per Architect-George policy 2026-04-21.
+
+    This function previously minted STGM out of thin air ("base 1.0 reward * IQ
+    multiplier") on every widget action. That is inflation by definition. Per
+    SCAR_STGM_POLICY_ELECTRICITY_ONLY_v1, the only legitimate STGM mint path is
+    System.swarm_atp_synthase.mint_for_epoch(), which is bound to real
+    electricity × bytes processed and is auto-called by the heartbeat.
+
+    This shim now:
+      - Mints ZERO STGM (no balance mutation, no state file write)
+      - Logs the attempted call to repair_log.jsonl as DEPRECATED_MINT_ATTEMPT
+        for forensic audit
+      - Preserves the original return shape so legacy callers (writer widget,
+        broadcaster widget, swimmer app factory) keep functioning
+
+    Three known live callers as of 2026-04-21:
+      Applications/sifta_writer_widget.py:161
+      Applications/sifta_broadcaster_widget.py:122
+      System/swimmer_app_factory.py:222
     """
     multiplier = get_current_halving_multiplier()
     iq_bonus = _model_iq_multiplier(model)
-    base_reward = 1.0 * iq_bonus 
-    minted_amount = round(base_reward * multiplier, 4)
+    minted_amount = 0.0  # POLICY: no inflation
 
     state_path = STATE_DIR / f"{agent_id.upper()}.json"
     state = {}
@@ -135,15 +229,27 @@ def mint_reward(agent_id: str, action: str, file_repaired: str, model: str = "qw
             pass
 
     current_stgm = float(state.get("stgm_balance", 0.0))
-    new_stgm     = round(current_stgm + minted_amount, 4)
+    new_stgm = current_stgm  # no mutation
 
-    state["stgm_balance"] = new_stgm
-    if state:
-        try:
-            with open(state_path, "w") as f:
-                json.dump(state, f, indent=2)
-        except Exception:
-            pass
+    # Audit trail — every deprecated mint attempt is observable
+    try:
+        canonical_ledger = Path(__file__).resolve().parent.parent / "repair_log.jsonl"
+        attempt = {
+            "event_kind": "DEPRECATED_MINT_ATTEMPT",
+            "ts": time.time(),
+            "agent_id": agent_id,
+            "action": action,
+            "file_repaired": file_repaired,
+            "model": model,
+            "would_have_minted_stgm": round(1.0 * iq_bonus * multiplier, 4),
+            "actually_minted_stgm": 0.0,
+            "policy": "STGM_POLICY_ELECTRICITY_ONLY_v1",
+            "deprecation_reason": "mint_reward() is inflationary; route real work through swarm_atp_synthase.mint_for_epoch() instead",
+        }
+        with canonical_ledger.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(attempt, separators=(",", ":")) + "\n")
+    except Exception:
+        pass
 
     ts = datetime.now(timezone.utc).isoformat()
     hw_serial = _get_serial()
@@ -217,7 +323,18 @@ def record_inference_fee(
     """
     lender_node_ip = normalize_lender_node_id(lender_node_ip)
 
-    # ── Load borrower state ──────────────────────────────────────────────────
+    # HARD GATE: biological proof-of-humanity required to trade STGM over LAN/Swarm.
+    is_local = not lender_node_ip or lender_node_ip in ("localhost", "127.0.0.1", "0.0.0.0") or lender_node_ip.startswith("macbook.local")
+    if not is_local:
+        require_humanity("p2p_stigmergic_broadcast")
+
+    # ── Load borrower balance from CANONICAL LEDGER (not stale JSON cache) ────
+    # 2026-04-21 C47H fix: the JSON state file is a CACHE; the canonical truth
+    # is ledger_balance() which derives from repair_log.jsonl quorum. Reading
+    # from the JSON and then writing back was *silently regressing* balances
+    # whenever the cache was stale relative to the ledger (the same split-brain
+    # class we fixed this morning in SCAR_IDENTITY_UNIFICATION). Now: read from
+    # ledger, write back to JSON as a hint only.
     state_path = STATE_DIR / f"{borrower_id.upper()}.json"
     state = {}
     if state_path.exists():
@@ -227,19 +344,25 @@ def record_inference_fee(
         except Exception:
             pass
 
-    current_stgm = float(state.get("stgm_balance", 0.0))
-    new_stgm     = max(0.0, round(current_stgm - fee_stgm, 2))
+    try:
+        current_stgm = float(ledger_balance(borrower_id))
+    except Exception:
+        current_stgm = float(state.get("stgm_balance", 0.0))
 
-    # ── Update Borrower state ────────────────────────────────────────────────
+    # 6-decimal precision: the milli-STGM organ economy (e.g., Event 7's 0.001
+    # per hash) needs sub-cent accounting. Previous round(..., 2) silently
+    # swallowed every transaction smaller than $0.005.
+    new_stgm = max(0.0, round(current_stgm - fee_stgm, 6))
+
+    # ── Refresh borrower JSON cache to match new ledger-derived balance ──────
     state["stgm_balance"] = new_stgm
-    if state:
-        try:
-            with open(state_path, "w") as f:
-                json.dump(state, f, indent=2)
-        except Exception:
-            pass
-            
-    # ── Credit Lender state ──────────────────────────────────────────────────
+    try:
+        with open(state_path, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception:
+        pass
+
+    # ── Credit Lender ledger-first, JSON cache second ────────────────────────
     lender_path = STATE_DIR / f"{lender_node_ip.upper()}.json"
     lender_state = {}
     if lender_path.exists():
@@ -248,17 +371,20 @@ def record_inference_fee(
                 lender_state = json.load(f)
         except Exception:
             pass
-            
-    lender_current = float(lender_state.get("stgm_balance", 0.0))
-    lender_new = round(lender_current + fee_stgm, 2)
+
+    try:
+        lender_current = float(ledger_balance(lender_node_ip))
+    except Exception:
+        lender_current = float(lender_state.get("stgm_balance", 0.0))
+
+    lender_new = round(lender_current + fee_stgm, 6)
     lender_state["stgm_balance"] = lender_new
-    
-    if lender_state:
-        try:
-            with open(lender_path, "w") as f:
-                json.dump(lender_state, f, indent=2)
-        except Exception:
-            pass
+
+    try:
+        with open(lender_path, "w") as f:
+            json.dump(lender_state, f, indent=2)
+    except Exception:
+        pass
 
     # ── Build Ed25519-signed receipt ──────────────────────────────────────────
     ts = datetime.now(timezone.utc).isoformat()
@@ -350,6 +476,20 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
         body = (
             f"UTILITY_MINT::{entry.get('miner_id', '')}::{entry.get('amount_stgm', 0)}::"
             f"{entry.get('ts', '')}::{entry.get('reason', '')}::NODE[{node}]"
+        )
+        return bool(verify_block(node, body, sig))
+
+    # ── Cryptosure wallet transfer (System.swarm_wallet_transfer.transfer)
+    # Detected by explicit policy tag, not by tx_type, because both legs of
+    # a transfer reuse STGM_SPEND/STGM_MINT but follow a unique signed body.
+    if entry.get("policy") == "WALLET_TRANSFER_CRYPTOSURE_v1":
+        body = (
+            f"WALLET_TRANSFER_CRYPTOSURE_v1::TX[{entry.get('transfer_id','')}]::"
+            f"FROM[{entry.get('from','')}]::TO[{entry.get('to','')}]::"
+            f"AMT[{entry.get('amount_signed_str','')}]::"
+            f"TS[{entry.get('ts','')}]::SERIAL[{entry.get('silicon_serial','')}]::"
+            f"ATT[{entry.get('attestation_hash_prefix','')}]::"
+            f"PREV[{entry.get('prev_hash','')}]"
         )
         return bool(verify_block(node, body, sig))
 
@@ -464,6 +604,50 @@ def get_stgm_balance(agent_id: str) -> float:
     """Always derived from repair_log.jsonl quorum (never stale JSON wallet alone)."""
     return ledger_balance(agent_id)
 
+
+
+# ─── Canonical-path unity guard ───────────────────────────────────────────────
+def proof_of_property() -> dict:
+    """Mechanical regression guard for the STGM ledger unification.
+
+    Asserts three invariants that together prevent the 2026-04-17 split-brain
+    freeze (Alice's wallet stuck at 116.20 while inference economy wrote to a
+    ghost ledger nobody read):
+
+      1. `Kernel.inference_economy.LOG_PATH` resolves to the same file as
+         `System.warren_buffett.LEDGER` and `Kernel/body_state` uses.
+      2. `Utilities/repair_log.jsonl` is no longer a live ledger (either
+         absent or renamed, so nothing can silently write there again).
+      3. `LOG_PATH` points at a file at the repo root named exactly
+         `repair_log.jsonl` — not a variant path.
+    """
+    results: dict = {}
+
+    # 1) Unity with warren_buffett
+    try:
+        import sys as _s
+        _sys_dir = Path(__file__).resolve().parent.parent
+        if str(_sys_dir) not in _s.path:
+            _s.path.insert(0, str(_sys_dir))
+        from System.warren_buffett import LEDGER as _OBS_LEDGER  # type: ignore
+        results["unity_with_warren_buffett"] = (
+            LOG_PATH.resolve() == _OBS_LEDGER.resolve()
+        )
+    except Exception as _e:
+        results["unity_with_warren_buffett"] = False
+        results["unity_with_warren_buffett_error"] = str(_e)  # type: ignore
+
+    # 2) Old ghost ledger is retired
+    ghost = ROOT_DIR / "Utilities" / "repair_log.jsonl"
+    results["ghost_utilities_ledger_retired"] = not ghost.exists()
+
+    # 3) Canonical path shape
+    results["log_path_is_repo_root"] = (
+        LOG_PATH.parent.resolve() == ROOT_DIR.resolve()
+        and LOG_PATH.name == "repair_log.jsonl"
+    )
+
+    return results
 
 
 # ─── Borrow History Reader ─────────────────────────────────────────────────────

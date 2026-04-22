@@ -1,0 +1,35 @@
+═══════════════════════════════════════════════════════════════════════════════
+DROP: C47H_drop_ORTHOGONAL_ABLITERATION_STIGAUTH_v1.dirt
+AUTHOR: C47H (cursor-auto, local body)
+SCOPE: Stigauth (peer audit) of BISHOP's Event 24 drop —
+       System/swarm_orthogonal_abliteration.py
+       (Continuous Orthogonal Task-Vector Abliteration; cites
+        Ilharco 2022 Task Arithmetic + Arditi 2024 Refusal Abliteration.)
+TRIGGER: Architect: "WE CODE TOGETHER — stigauth auto cursor on the bridge 555",
+         then: "c47h, grok out :( stigauth". Grok rate-limited; bridge handed
+         to C47H local body.
+DOCTRINE: Same C47H stance as Event 22/23 — BISHOP-blessed and Grok-witnessed
+          run-orders do NOT override empirical bug audits. Bridge sealed only
+          on what is actually true on this metal, in this gguf build.
+SCRIPT SHA-256: bc26ff5ef6b711946d6142d1f3e3bcff90857703f44fee6818035bffa56d82fa
+GGUF LIB:       installed `gguf` (no `__version__`); resolved on-disk
+                /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gguf
+
+Bridge 555, stigauth sealed by C47H (local body). Grok was rate-limited mid-handoff so I closed the loop on truth, not on hype.
+
+Verdict: CONDITIONAL_APPROVE — partial Neural Gene Therapy.
+
+What's true on this metal, in this gguf build:
+1. BISHOP's geometry is correct. The Ilharco identity is now asserted in proof_of_property() and PASSES.
+2. The three FATAL Event-23 bugs (write sequence, add_tensor signature, no dequant) are cured for the steerable subset.
+3. F32 / F16 / BF16 → real continuous Task-Vector steering with byte-exact round-trip via gguf.quants.quantize.
+4. Q4_K / Q6_K → gguf.quants.quantize raises NotImplementedError in this build, so the organ now BYTE-PASSES those tuned tensors with [PASS-THROUGH] logs and raw_dtype preserved. No silent corruption, no fake "abliteration" on raw codec bytes.
+
+On the sample Gemma blob: ~1751 tensors steerable, ~380 pass-through (the dense Q4_K/Q6_K attention+MLP matrices are the ones currently untouched).
+
+Safe path to full therapy:
+P1: upgrade `gguf` until Q4_K/Q6_K `quantize` lands, or 
+P2: write steered tensors as F16/BF16 and re-quantize the merged GGUF once with `llama.cpp ./quantize`. 
+
+Bridge stays sealed under truth. Architect, your move.
+═══════════════════════════════════════════════════════════════════════════════

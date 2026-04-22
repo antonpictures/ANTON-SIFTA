@@ -2,9 +2,12 @@
 """
 Applications/sifta_library.py
 ══════════════════════════════════════════════════════════════════════
-The Stigmergic Librarian.
-A clean CLI accessor to read the pure 'nuggets' mined by the Forager 
-from the stigmergic_library.jsonl, without doing raw JSON tailing.
+The Stigmergic Librarian (factual shelf).
+
+Reads `.sifta_state/stigmergic_library.jsonl` — curated BISHAPI nuggets — same
+*room* as the Lounge couch and `Documents/swimmer_library/` (narrative scripts
+for chorus), different *shelf*. See `Documents/swimmer_library/README.md`
+§ "Couch / Lounge / Library — the same room".
 """
 
 import json

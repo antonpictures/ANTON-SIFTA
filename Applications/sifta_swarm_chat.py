@@ -32,7 +32,7 @@ if str(_REPO) not in sys.path:
 if str(_SYS) not in sys.path:
     sys.path.insert(0, str(_SYS))
 
-from ledger_append import append_jsonl_line
+from System.ledger_append import append_jsonl_line
 from sifta_save_defaults import default_sifta_save_path
 
 from System.sifta_inference_defaults import (
@@ -44,7 +44,7 @@ from System.sifta_inference_defaults import (
 def _append_repair_log_line(row: dict) -> None:
     if str(_SYS) not in sys.path:
         sys.path.insert(0, str(_SYS))
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
     append_ledger_line(_REPO / "repair_log.jsonl", row)
 
 def _append_dead_drop_line(row: dict) -> None:
@@ -140,6 +140,16 @@ class OllamaWorker(QThread):
                 except: pass
                 
                 res = re.sub(r'<redacted_thinking>.*?</think>', '', text, flags=re.DOTALL).strip()
+                try:
+                    from System.swarm_epistemic_cortex import enforce_reply_integrity as _enforce_reply_integrity
+                    res = _enforce_reply_integrity(
+                        res,
+                        model_name=model,
+                        speaker_id=self.local_identity,
+                        raise_on_dissonance=False,
+                    )
+                except Exception:
+                    pass
                 self.response_ready.emit(res)
             else:
                 self.error_signal.emit("[OLLAMA FAULT] Empty response from model")

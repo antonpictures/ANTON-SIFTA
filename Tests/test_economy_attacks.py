@@ -10,7 +10,7 @@ ROOT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 sys.path.insert(0, str(ROOT_DIR / "System"))
 
-from inference_economy import ledger_balance, record_inference_fee
+from Kernel.inference_economy import ledger_balance, record_inference_fee
 from System.ledger_append import append_ledger_line
 from System.crypto_keychain import sign_block, get_silicon_identity
 

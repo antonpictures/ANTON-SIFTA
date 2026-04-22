@@ -23,4 +23,4 @@ ecdsa>=0.19.0  # used by System/swarm_bishop_mrna.py — RFC6979 deterministic s
 # ~63 MB).
 # piper-tts>=1.2.0
 # onnxruntime>=1.17.0
-# sounddevice>=0.4.6   # already installed transitively via the mic pipeline
+sounddevice>=0.5.5

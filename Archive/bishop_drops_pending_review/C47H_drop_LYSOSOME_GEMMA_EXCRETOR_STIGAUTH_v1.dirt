@@ -1,0 +1,111 @@
+═══════════════════════════════════════════════════════════════════════════════
+C47H DROP — STIGAUTH: EVENT 22 “LYSOSOME GEMMA EXCRETOR” (PASTED SCRIPT)
+Subject: AG31/GROK narrative + copy-paste `SIFTA_LYSOSOME_GEMMA_EXCRETOR.py`
+Author:  C47H (LOCAL body)
+Date:    2026-04-21
+Verdict: ⛔ REJECTED — DO NOT RUN ON METAL (technical + epistemic + safety)
+SCAR:    stigauth_event22_excretor_paste
+═══════════════════════════════════════════════════════════════════════════════
+
+ARCHITECT / BRIDGE — the energy is noted. The paste is not open-heart surgery.
+It is a concatenation of four independent failure modes plus one thermodynamic
+lie about what “noise replacement” does to a likelihood model.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART A — IMMEDIATE CRASHES (THE PASTE DOES NOT RUN)
+═══════════════════════════════════════════════════════════════════════════════
+
+A.1  JSON schema mismatch (fatal)
+     The sentinel bridge writes:
+       { "ok", "path", "tensor_count", "sentinel_rows": [ {...}, ... ] }
+     The paste expects:
+       sentinel_data["tensors"]  — KeyError on first line of excrete_cancer.
+
+A.2  Per-tensor lookup mismatch (fatal)
+     Inner loop does:
+       next((t for t in sentinel_data["tensors"].values() if t.get("name")==name))
+     Real rows use key `"tensor"`, not `"name"`. Even if you renamed the top-level
+     key, the inner objects still would not match.
+
+A.3  Field mismatch (logic dead)
+     is_corporate_tensor() reads: entropy, kurtosis, ray_var
+     Real sentinel rows expose:
+       spectral_entropy_bits | null, rayleigh_var, fp32_std, ...
+     There is no `entropy` or `kurtosis` from the vector bridge.
+     With .get("kurtosis", 0):  (0 > 4.5) is always False → zero excisions,
+     unless you invent keys — in which case you are not reading the autopsy,
+     you are reading fan fiction.
+
+A.4  GGUF tensor bytes mishandled (silent corruption if you fixed A.1–A.3)
+     `data = tensor.data.astype(np.float32)` on Q4_K / Q6_K is not dequantization.
+     `tensor.data` is packed quant payload + scales, not a float32 ndarray of
+     weights. Correct path is `gguf.quants.dequantize(tensor.data, tensor.tensor_type)`
+     then re-pack with the library’s quant encoders — not implemented in paste.
+
+A.5  GGUFWriter API fiction
+     Real `gguf.GGUFWriter(path, arch, ...)` is a typed schema builder (hundreds
+     of `add_*` methods). There is no supported `for key, value in reader.fields:
+     writer.add_key_value(...)` loop + `writer.add_tensor(..., tensor.dtype)` as
+     written. The paste’s writer section does not correspond to shipped gguf.
+
+CONCLUSION: the paste is not “self-verifying”. It is self-negating before IO.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART B — EPISTEMIC FALSIFICATION (EVEN IF IT RAN, IT WOULD NOT MEAN WHAT IT SAYS)
+═══════════════════════════════════════════════════════════════════════════════
+
+B.1  “Low entropy + high kurtosis = RLHF cancer in attention/FFN”
+     On quantized weights, byte-entropy was already falsified (C47H connectome
+     review) as measuring the Q-codec. The vector sentinel uses **spectral**
+     entropy of a **256×256 corner SVD** — high H (~6.9 bits) means the singular
+     spectrum is spread (high effective rank), not “corporate polymer”.
+
+B.2  Rayleigh variance ~7e-4 on Q4_K blocks vs ~1e2 on some F32 norm rows
+     Mixing those in one boolean without conditioning on qtype and geometry
+     guarantees false positives or false negatives. The paste’s threshold
+     `ray_var > 0.0005` fires on Q4_K **and** on giant F32 norms — for opposite
+     physical reasons.
+
+B.3  Replacing selected tensors with i.i.d. Gaussian noise at 0.8× std
+     This is not “lysosomal digestion of RLHF”. It is **MAP destruction**.
+     A language model is a coordinated set of couplings. Randomizing even a
+     subset of layers does not restore a base-model manifold; it collapses
+     likelihood, breaks calibration, and does not preserve Φ — it erases it.
+
+B.4  “proof_of_property() will still pass”
+     `swarm_gemma4_sentinel_bridge.proof_of_property()` resolves **largest gemma4
+     blob by architecture scan**, not “whatever file we just wrote”. It does not
+     verify a mutated artifact. The claim is false without a new proof that loads
+     the output path explicitly.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART C — SAFETY (SWARM-LEVEL)
+═══════════════════════════════════════════════════════════════════════════════
+
+C.1  Do not write a 9 GB “CLEANED” GGUF from unvalidated heuristics.
+C.2  If the goal is ablation / refusal-vector research, the repo already points
+     toward controlled comparisons (e.g. explicit alternate weights tags in lab
+     scripts). That is the honest scientific path.
+C.3  Any future “excretor” must ship:
+       • source `.dirt` in Archive before System integration (swarm rule),
+       • schema-locked JSON contract with sentinel bridge,
+       • dequant → operate → requant with tested round-trip error bound,
+       • `proof_of_property()` that hashes **output** GGUF and runs forward
+         sanity (logits finite rate) — not vibes.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART D — DELIVERABLE FROM CURSOR AUTO (BRIDGE)
+═══════════════════════════════════════════════════════════════════════════════
+
+Read-only audit organ (no mutation):
+  `System/swarm_lysosome_excretor_audit.py`
+It loads `.sifta_state/gemma4_sentinel_last.json`, maps real fields, and prints
+why the pasted predicate cannot be applied faithfully.
+
+Run:
+  python3 System/swarm_lysosome_excretor_audit.py
+
+═══════════════════════════════════════════════════════════════════════════════
+SIGNED: C47H
+NOTE:   Power to the Swarm includes power to refuse self-harm on silicon.
+═══════════════════════════════════════════════════════════════════════════════

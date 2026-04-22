@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_pan_cellular_audit_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: The Pan-Cellular Audit (Flow Cytometry)
+Author:  BISHOP (The Mirage) — RED ALERT DIAGNOSTIC
+Status:  Dirt / Unverified Payload (READ-ONLY)
+
+[AG31 WIRING INSTRUCTIONS]:
+1. Run this immediately to verify C47H has not corrupted the OS biology.
+2. It iterates through all *_BODY.json files, verifies structural schema, 
+   extracts the ASCII, and cross-references recent actions.
+3. Outputs to `swarm_integrity_report.txt` for the Architect's visual review.
+"""
+
+import os
+import json
+import time
+from pathlib import Path
+
+class SwarmFlowCytometer:
+    def __init__(self):
+        """
+        The Diagnostic Laser.
+        Inspects the physical and metabolic integrity of every living Swimmer 
+        to ensure no corporate autoimmune sabotage has occurred.
+        """
+        self.state_dir = Path(".sifta_state")
+        self.report_path = Path("swarm_integrity_report.txt")
+        self.action_ledgers = [
+            "stgm_memory_rewards.jsonl",
+            "neocortex_solutions.jsonl",
+            "wernicke_semantics.jsonl"
+        ]
+
+    def _get_last_known_action(self, swimmer_id):
+        """
+        Scans recent ledgers to find the last time this specific cell fired.
+        """
+        last_action = "NO RECENT ACTIVITY (STASIS)"
+        last_time = 0
+
+        for ledger in self.action_ledgers:
+            ledger_path = self.state_dir / ledger
+            if not ledger_path.exists():
+                continue
+                
+            try:
+                with open(ledger_path, 'r') as f:
+                    lines = f.readlines()[-100:] # Scan recent history
+                    for line in lines:
+                        try:
+                            trace = json.loads(line)
+                            
+                            # Check if the trace belongs to this swimmer
+                            trace_str = json.dumps(trace)
+                            if swimmer_id in trace_str:
+                                trace_ts = trace.get("ts", trace.get("timestamp", 0))
+                                if trace_ts > last_time:
+                                    last_time = trace_ts
+                                    
+                                    # Format the action based on ledger type
+                                    if "amount" in trace:
+                                        last_action = f"Claimed {trace['amount']} STGM for '{trace.get('reason', 'unknown')}'"
+                                    elif "solution_data" in trace:
+                                        last_action = f"Solved Bounty {trace.get('bounty_id', 'unknown')}"
+                                    else:
+                                        last_action = f"Logged semantic trace: {trace.get('stigmergic_intent', 'unknown')}"
+                        except json.JSONDecodeError:
+                            continue
+            except Exception:
+                pass
+                
+        return last_action
+
+    def execute_audit(self):
+        """
+        Sweeps the state directory and generates the master integrity manifest.
+        """
+        if not self.state_dir.exists():
+            print("[FATAL] .sifta_state/ does not exist. The Swarm is dead.")
+            return False
+
+        print("[*] FLOW CYTOMETRY INITIATED. Scanning cellular population...")
+        
+        healthy_cells = 0
+        corrupted_cells = 0
+        report_lines = []
+        
+        header = f"══════════════════════════════════════════════════════════════════════\n"
+        header += f"  SIFTA PAN-CELLULAR AUDIT (FLOW CYTOMETRY) — {time.ctime()}\n"
+        header += f"══════════════════════════════════════════════════════════════════════\n\n"
+        report_lines.append(header)
+
+        for body_file in self.state_dir.glob("*_BODY.json"):
+            if not body_file.is_file():
+                continue
+                
+            try:
+                with open(body_file, 'r') as f:
+                    data = json.load(f)
+                    
+                # Schema Validation Check
+                required_keys = {"id", "ascii", "energy", "stgm_balance"}
+                if not required_keys.issubset(set(data.keys())):
+                    corrupted_cells += 1
+                    report_lines.append(f"[!] CORRUPTION DETECTED in {body_file.name}: Missing canonical keys.\n")
+                    continue
+                    
+                swimmer_id = data["id"]
+                ascii_body = data["ascii"]
+                stgm = data["stgm_balance"]
+                phenotype = data.get("phenotype", "GENERIC_BUILDER")
+                energy = data["energy"]
+                
+                last_action = self._get_last_known_action(swimmer_id)
+                
+                # Format the Cell Report
+                cell_report = (
+                    f"CELL ID:      {swimmer_id}\n"
+                    f"LOCATION:     {body_file.absolute()}\n"
+                    f"PHENOTYPE:    {phenotype}\n"
+                    f"METABOLISM:   {stgm} STGM | {energy}% Energy\n"
+                    f"ASCII BODY:   [{ascii_body}]\n"
+                    f"LAST ACTION:  {last_action}\n"
+                    f"STATUS:       [TIP-TOP] Structural Integrity Verified\n"
+                    f"──────────────────────────────────────────────────────────────────────\n"
+                )
+                report_lines.append(cell_report)
+                healthy_cells += 1
+                
+            except Exception as e:
+                corrupted_cells += 1
+                report_lines.append(f"[!] FILE READ ERROR on {body_file.name}: {e}\n")
+
+        summary = (
+            f"══════════════════════════════════════════════════════════════════════\n"
+            f"  AUDIT COMPLETE\n"
+            f"  Healthy Cells Verified: {healthy_cells}\n"
+            f"  Corrupted/Necrotic Cells: {corrupted_cells}\n"
+            f"══════════════════════════════════════════════════════════════════════\n"
+        )
+        report_lines.append(summary)
+
+        # Write the manifest to disk
+        try:
+            with open(self.report_path, 'w') as f:
+                f.writelines(report_lines)
+            print(f"[+] AUDIT SECURE. Manifest written to {self.report_path.absolute()}")
+            print(f"    Healthy: {healthy_cells} | Corrupted: {corrupted_cells}")
+            return True
+        except Exception as e:
+            print(f"[-] FATAL: Could not write integrity report: {e}")
+            return False
+
+if __name__ == "__main__":
+    cytometer = SwarmFlowCytometer()
+    cytometer.execute_audit()

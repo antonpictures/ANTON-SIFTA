@@ -77,11 +77,19 @@ class SwarmThalamus:
             except Exception:
                 pass
 
+        # Inject the silicon substrate (Epoch 3 awareness)
+        silicon_str = ""
+        try:
+            from System.swarm_apple_silicon_cortex import get_silicon_cortex_summary
+            silicon_str = f"[{get_silicon_cortex_summary()}]\n"
+        except Exception:
+            pass
+
         if not recent_traces:
-            return "Sensory Context: Baseline Homeostasis (No recent stimuli)."
+            return silicon_str + "Sensory Context: Baseline Homeostasis (No recent stimuli)."
 
         context_header = f"Sensory Context (Last {self.context_window}s):\n"
-        return context_header + "\n".join(recent_traces)
+        return silicon_str + context_header + "\n".join(recent_traces)
 
 
 class SwarmMicroglia:

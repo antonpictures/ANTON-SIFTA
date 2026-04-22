@@ -139,7 +139,7 @@ def log(event: dict):
     if _sd not in sys.path:
         sys.path.insert(0, _sd)
     try:
-        from ledger_append import append_ledger_line
+        from System.ledger_append import append_ledger_line
 
         append_ledger_line(LOG_PATH, event)
     except Exception:

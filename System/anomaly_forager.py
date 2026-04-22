@@ -70,7 +70,7 @@ def _quarantine_line(qpath: Path, entry: dict, reason: str, dry_run: bool) -> No
     qpath.parent.mkdir(parents=True, exist_ok=True)
     try:
         sys.path.insert(0, str(REPO_ROOT / "System"))
-        from ledger_append import append_jsonl_line
+        from System.ledger_append import append_jsonl_line
         append_jsonl_line(qpath, envelope)
     except Exception:
         with open(qpath, "a") as f:

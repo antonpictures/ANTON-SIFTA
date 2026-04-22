@@ -42,7 +42,7 @@ if str(_REPO / "System") not in sys.path:
     sys.path.insert(0, str(_REPO / "System"))
 
 try:
-    from ledger_append import append_jsonl_line as _append
+    from System.ledger_append import append_jsonl_line as _append
 except ImportError:
     def _append(path, row):
         with open(path, "a", encoding="utf-8") as f:

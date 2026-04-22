@@ -1,0 +1,17 @@
+{"timestamp": 1776842222.842858, "temperature": 1000.0, "viscosity": 0.050759, "phase": "LIQUID", "heartbeat_bpm": 11.82, "metabolism_pct": 98.5038, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842222.843227, "temperature": 15.0, "viscosity": 0.224084, "phase": "LIQUID", "heartbeat_bpm": 2.68, "metabolism_pct": 22.313, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842222.843345, "temperature": 8.0, "viscosity": 7.420658, "phase": "GLASS", "heartbeat_bpm": 0.08, "metabolism_pct": 0.6738, "trehalose_active": true, "glass_integrity": 1.0}
+{"timestamp": 1776842222.8434508, "temperature": 3.0, "viscosity": 3600.0, "phase": "DEAD", "heartbeat_bpm": 0.0, "metabolism_pct": 0.0, "trehalose_active": true, "glass_integrity": 0.5}
+{"timestamp": 1776842232.126195, "temperature": 188.988, "viscosity": 0.054247, "phase": "LIQUID", "heartbeat_bpm": 11.06, "metabolism_pct": 92.1708, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842282.404164, "temperature": 1000.0, "viscosity": 0.050759, "phase": "LIQUID", "heartbeat_bpm": 11.82, "metabolism_pct": 98.5038, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842282.4045289, "temperature": 15.0, "viscosity": 0.224084, "phase": "LIQUID", "heartbeat_bpm": 2.68, "metabolism_pct": 22.313, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842282.4046779, "temperature": 8.0, "viscosity": 7.420658, "phase": "GLASS", "heartbeat_bpm": 0.08, "metabolism_pct": 0.6738, "trehalose_active": true, "glass_integrity": 1.0}
+{"timestamp": 1776842282.4048011, "temperature": 3.0, "viscosity": 3600.0, "phase": "DEAD", "heartbeat_bpm": 0.0, "metabolism_pct": 0.0, "trehalose_active": true, "glass_integrity": 0.5}
+{"timestamp": 1776842352.828932, "temperature": 1000.0, "viscosity": 0.050759, "phase": "LIQUID", "heartbeat_bpm": 11.82, "metabolism_pct": 98.5038, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842352.831883, "temperature": 15.0, "viscosity": 0.224084, "phase": "LIQUID", "heartbeat_bpm": 2.68, "metabolism_pct": 22.313, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842352.8320441, "temperature": 8.0, "viscosity": 7.420658, "phase": "GLASS", "heartbeat_bpm": 0.08, "metabolism_pct": 0.6738, "trehalose_active": true, "glass_integrity": 1.0}
+{"timestamp": 1776842352.8321862, "temperature": 3.0, "viscosity": 3600.0, "phase": "DEAD", "heartbeat_bpm": 0.0, "metabolism_pct": 0.0, "trehalose_active": true, "glass_integrity": 0.5}
+{"timestamp": 1776842520.062739, "temperature": 1000.0, "viscosity": 0.050759, "phase": "LIQUID", "heartbeat_bpm": 11.82, "metabolism_pct": 98.5038, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842520.063023, "temperature": 15.0, "viscosity": 0.224084, "phase": "LIQUID", "heartbeat_bpm": 2.68, "metabolism_pct": 22.313, "trehalose_active": false, "glass_integrity": 1.0}
+{"timestamp": 1776842520.063183, "temperature": 8.0, "viscosity": 7.420658, "phase": "GLASS", "heartbeat_bpm": 0.08, "metabolism_pct": 0.6738, "trehalose_active": true, "glass_integrity": 1.0}
+{"timestamp": 1776842520.063318, "temperature": 3.0, "viscosity": 3600.0, "phase": "DEAD", "heartbeat_bpm": 0.0, "metabolism_pct": 0.0, "trehalose_active": true, "glass_integrity": 0.5}

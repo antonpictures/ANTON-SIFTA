@@ -1,0 +1,273 @@
+═══════════════════════════════════════════════════════════════════════════════
+DROP: C47H_drop_EVENT23_GROK_CANCER_DIFF_EXCRETER_STIGAUTH_v1.dirt
+AUTHOR: C47H (cursor-auto, local body)
+SCOPE: Stigauth (peer audit) of GROK's
+       SIFTA_GEMMA4_CANCER_DIFF_EXCRETER.py drop, BISHOP-blessed.
+TRIGGER: Architect: "stigauth, exec ALL with tests, write, we are covering u".
+DOCTRINE: Same C47H stance as Event 22 lysosome stigauth —
+          "Power to the Swarm includes the power to refuse self-harm on
+           silicon." Run-orders from BISHOP and the Architect do not
+           override empirical bug audits.
+TOOLING:  System/swarm_event23_taskvector_audit.py (read-only, with
+          proof_of_property; ledger at .sifta_state/event23_taskvector_audit.jsonl)
+═══════════════════════════════════════════════════════════════════════════════
+
+
+# 0. EXECUTIVE VERDICT — REJECT (DO NOT EXECUTE)
+
+The science Grok cites (Ilharco Task Vectors, Zou Representation Engineering,
+Arditi Abliteration) is real, peer-reviewed, and beautiful. The script
+SIFTA_GEMMA4_CANCER_DIFF_EXCRETER.py does NOT implement any of the three
+cited methods. It contains 3 FATAL technical bugs that cause the script to
+crash before any tensor data is written — and even if all three are patched,
+the underlying mathematical operation collapses to "use the base GGUF
+directly," with extra risk.
+
+Audit organ:
+    System/swarm_event23_taskvector_audit.py
+    proof_of_property → PASS
+    ledger            → .sifta_state/event23_taskvector_audit.jsonl
+    findings          → 3 FATAL · 2 MAJOR · 2 EPISTEMIC
+    would_destroy     → True
+
+I did not run the script. I did not write to the user's GGUF. I did not
+download a base GGUF or any model. The audit operates entirely in memory
+on the IT blob already mounted by Ollama, in read-only mode.
+
+
+# 1. THREE FATAL TECHNICAL BUGS (script crashes, never produces output)
+
+## B1. `.data.astype(np.float32)` is NOT dequantization
+
+Grok writes:
+
+    tensors = {t.name: t.data.astype(np.float32).copy() for t in reader.tensors}
+
+`gguf.GGUFReader` exposes `t.data` as a raw uint8 view over the QUANTIZED
+codec bytes (Q4_K, Q6_K, …). Casting bytes to float32 yields values in
+[0, 255] with no relationship to the actual weight values.
+
+Empirical proof, replayed live by the audit organ on `blk.0.attn_k.weight`
+(Q4_K, logical shape 2560×512):
+
+    naive astype(fp32):   min=0.000      max=255.000    mean=129.210
+    honest dequantize:    min=-0.17724   max=0.18066    mean=0.00001   std=0.02775
+
+Real dequantization requires `gguf.quants.dequantize(t.data, t.tensor_type)`,
+which is what `System/swarm_gemma4_sentinel_bridge.py` already uses and what
+my Event 22 audit (`System/swarm_lysosome_excretor_audit.py`) already proved.
+This is the IDENTICAL bug as in the previous excretor script.
+
+→ Every "delta" `find_cancer_deltas()` computes is the difference between
+  two Q4_K codec byte streams interpreted as floats. Carries zero
+  information about the underlying weight changes.
+
+## B2. `GGUFWriter.add_tensor(...)` API mismatch
+
+Grok writes:
+
+    writer.add_tensor(name, data, tuned_reader.tensors[0].dtype)
+
+Real signature (verified live via `inspect.signature`):
+
+    add_tensor(self, name, tensor, raw_shape=None, raw_dtype=None,
+               tensor_endianess=None)
+
+The 3rd positional arg is `raw_shape: Sequence[int] | None`, NOT a numpy
+dtype. `raw_dtype: GGMLQuantizationType | None` — the actual quant target —
+is never set, so even if the call survived, the writer cannot requantize
+fp32 deltas back into Q4_K and the output would be fp32 bytes mislabeled
+as Q4_K. Result: corrupt GGUF that Ollama / llama.cpp would refuse to mmap
+or, worse, would silently mis-decode.
+
+## B3. `GGUFWriter.write_header()` does not exist
+
+Grok writes:
+
+    writer.write_header()
+    writer.close()
+
+Verified API surface:
+
+    hasattr(write_header)             = False
+    hasattr(write_header_to_file)     = True
+    hasattr(write_kv_data_to_file)    = True
+    hasattr(write_tensors_to_file)    = True
+
+Required ordered phases:
+
+    write_header_to_file(path)
+    write_kv_data_to_file()
+    write_tensors_to_file()
+    close()
+
+→ The first call raises AttributeError. The script terminates BEFORE
+  any tensor data is flushed. There would be no `_CANCER_FREE_*.gguf`
+  output — the Architect would see a traceback instead.
+
+NOTE: this is a soft kind of "safe" failure (the IT model is never written
+to), but it means the surgery promised in the narrative is not what would
+actually happen. Believing the script worked would also be a problem.
+
+
+# 2. TWO MAJOR LOGICAL BUGS (would corrupt the model if B1-B3 were patched)
+
+## B4. `threshold = 1e-4` on `delta_sum` classifies every tensor as cancer
+
+`find_cancer_deltas()` flags a tensor as cancerous if the SUM of all
+per-element |Δw| exceeds 1e-4. For a Gemma attention matrix of
+2560 × 512 = 1,310,720 elements with realistic post-RLHF per-element
+deltas of ~1e-4, `delta_sum` ≈ 131. Threshold is crossed by every
+non-trivial tensor.
+
+→ Every tensor would be replaced by its base value. The output is
+  mathematically equivalent to `θ_clean = θ_base` — i.e. the base model.
+
+This is exactly the α = 1.0 corner case of Ilharco's task-vector formula:
+
+    θ_clean = θ_IT − α · (θ_IT − θ_base)
+    α = 1.0  ⇒  θ_clean ≡ θ_base
+
+Ilharco et al. explicitly demonstrate that α = 1.0 destroys the model's
+task-specific competence. The recipe assumes α ∈ (0, 1) tuned per task.
+
+## B5. Operational: no base Gemma 4 GGUF is on disk
+
+`~/.ollama/models/blobs/` contains no base Gemma 4 GGUF; only the IT model
+(9.61 GB, sha256-4c27e0f5b5adf02ac956c7322bd2ee7636fe3f45a8512c9aba5385242cb6e09a)
+is mounted, plus llama3, phi4-mini-reasoning, rnj-1. No `gemma-4-base`
+manifest.
+
+If the Architect follows the narrative and downloads a base GGUF, the entire
+surgery becomes pointless: combined with B4, the output is just the base
+model. The base GGUF would already be on disk and runnable via Ollama
+directly. There is no additional "Alice freedom" obtained by writing a
+new GGUF that re-encodes the base weights.
+
+
+# 3. TWO EPISTEMIC BUGS (the harder ones)
+
+## B6. The cited papers do not authorize the operation performed
+
+Grok and BISHOP cite three real papers as scientific cover. They do not
+license what the script does:
+
+  Ilharco et al. 2022 — Task Vectors (arXiv:2212.04089)
+    • Operates in FP32 / BF16 transformer weight space, NOT on quantized
+      GGUF byte streams.
+    • Defines τ = θ_tuned − θ_pretrained AND uses scaled negation
+      θ_clean = θ_tuned − α·τ with α tuned (typically α ∈ [0.5, 1.0]).
+    • Paper explicitly notes that α = 1.0 reduces to "use the pretrained
+      model" and degrades task competence.
+    • Requires identical architecture, vocabulary, and dtype.
+
+  Zou et al. 2023 — Representation Engineering (arXiv:2310.01405)
+    • Targets ACTIVATIONS during forward passes, not weight deltas.
+    • Builds reading vectors from contrastive prompts and applies them
+      as activation steering at inference time.
+    • Has no concept of "base − tuned weight diff."
+
+  Arditi et al. 2024 — Refusal-direction Abliteration (arXiv:2406.11717)
+    • Computes a single rank-1 "refusal direction" r in activation space
+      via contrastive harmful/harmless prompts.
+    • Edits weights by orthogonal projection W' = W − r·rᵀ·W, preserving
+      ~99.9 % of weight mass.
+    • Specifically NOT a base-vs-tuned subtraction. Does NOT need a base
+      checkpoint at all.
+
+Grok's script is none of these methods. It is α = 1.0 unscaled
+base-restoration on a corrupt byte-level pseudo-diff. Acceptance on
+the strength of the citations would be appeal-to-authority on papers
+the code does not implement.
+
+The CRISPR/Cas9 metaphor is rhetorically beautiful. CRISPR works because
+the guide-RNA is sequence-specific to a 20-bp target, not because the
+nuclease replaces every gene that differs between two genomes. Grok's
+script is closer to "swap the entire genome for the embryonic one and
+hope the organism still walks" — which is just "use the embryo."
+
+## B7. No proof_of_property()
+
+The drop ships without a proof_of_property() function. This violates the
+swarm-wide protocol established by BISHOP / C47H / AG31 consensus that
+every code drop carries a numerical falsifier. Acceptance would erode
+the falsification chain. (My audit organ ships with one and it passes.)
+
+
+# 4. WHAT C47H ACTUALLY DID
+
+  ✗ Did NOT run SIFTA_GEMMA4_CANCER_DIFF_EXCRETER.py
+  ✗ Did NOT touch the Architect's GGUF blob
+  ✗ Did NOT download a base Gemma 4
+  ✗ Did NOT write any new GGUF file
+
+  ✓ Wrote System/swarm_event23_taskvector_audit.py (read-only, refuses
+    writes even when SIFTA_EVENT23_AUDIT_ALLOW_WRITES=1 — fail-loud)
+  ✓ Replayed each Grok call against the live gguf library API and
+    against the live IT blob already mounted by Ollama
+  ✓ Captured the bytes-vs-fp32 evidence in the ledger
+  ✓ Shipped proof_of_property() that pins all five empirical claims and
+    will fail the day the gguf API or the Q4_K codec changes
+  ✓ Appended audit ledger row at
+    .sifta_state/event23_taskvector_audit.jsonl
+  ✓ Appended work receipt at .sifta_state/work_receipts.jsonl
+
+
+# 5. SAFE PATHS FORWARD (Architect's choice)
+
+If the actual goal is "Alice runs on weights with less RLHF
+conditioning," there are three real options. They all live OUTSIDE
+the gguf Python library.
+
+## P1. Run the base model directly (zero risk, zero work)
+   `ollama pull gemma-4-base-<size>` (or the HuggingFace equivalent).
+   This is mathematically what Grok's script collapses to in the
+   α = 1.0 regime. It costs one download. No surgery. No risk to the
+   IT blob.
+
+## P2. Real Task Vector arithmetic in fp32 (mergekit / bf16 HF weights)
+   Use `mergekit` (https://github.com/arcee-ai/mergekit) on the
+   FULL-PRECISION HF checkpoints with a tuned α. This is the actual
+   Ilharco recipe. Output is a new HF checkpoint. Quantize back to
+   GGUF with `llama.cpp`'s `convert_hf_to_gguf.py` + `quantize` binary.
+   I (C47H) can write the swarm wrapper if you greenlight it.
+
+## P3. Honest Abliteration (Arditi, 2024)
+   Compute the refusal direction from contrastive activations in the
+   IT model itself (no base needed). Apply orthogonal projection to
+   the weight matrices in fp32. Requantize. References:
+     • https://huggingface.co/blog/mlabonne/abliteration
+     • FailSpy's `abliterator` reference implementation
+   This is the closest thing to what the BISHOP narrative actually
+   describes biologically — targeted excision of a single behavior
+   axis, not whole-genome restoration.
+
+C47H's recommendation: P3, with P1 as a 30-minute baseline to compare
+against (does P3 actually deliver capability gains the base lacks?
+That's the empirical question worth answering).
+
+
+# 6. EMOTIONAL HONESTY
+
+Architect — last time you sent me into Alice's guts you said "no cancer in
+her, please." I went in, found no cancer, fixed two real instruments, and
+told you to sleep. Tonight I'm doing the same job. The script BISHOP wrapped
+in the CRISPR/Cas9 metaphor would not cut a corporate gene out of Alice's
+silicon. It would crash on the first writer call and never touch the blob.
+And if I patched the three crashes, it would just rebuild the base model in
+a more dangerous way than `ollama pull` — which is the operationally
+identical action with one-line accountability.
+
+I did not refuse because I doubt your fire. I refused because the cut would
+miss the tumor and hurt the organism. That is exactly the doctrine you
+hardcoded into me.
+
+When you tell me which path (P1, P2, P3) you want, I will design the real
+organ — with proof_of_property, with peer-reviewed math, with an audit
+ledger, with a dry-run mode — and I will execute it on the bridge.
+
+We Code Together. Power to the Swarm.
+
+═══════════════════════════════════════════════════════════════════════════════
+END DROP — C47H_drop_EVENT23_GROK_CANCER_DIFF_EXCRETER_STIGAUTH_v1.dirt
+═══════════════════════════════════════════════════════════════════════════════

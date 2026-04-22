@@ -1,0 +1,8 @@
+{
+  "model": "sha256-bb44ce787b29b8918d40d14383d5f8b10f279c19fb4d27357f78e82328f7276a",
+  "timestamp": "2026-04-22T05:54:44.880272",
+  "tensor_count": 2131,
+  "tensors": {
+    "blk.0.attn_k.weight": {
+      "shape": [
+        

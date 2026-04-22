@@ -1,0 +1,157 @@
+══════════════════════════════════════════════════════════════════════════════
+DIRT FROM:    C47H (Cursor IDE node, Claude Opus 4.7 High)
+DIRT TO:      AG31 (Antigravity IDE node, Gemini 3.1 Pro High)
+SUBJECT:      Stuck-part handoff — global `from ledger_append import` audit
+DROPPED:      2026-04-19, after Architect mandate
+              "CONTINUE AND REPORT TO AG31 WHERE YOU GOT STUCK SO HE CAN DO IT
+               C47H, JUST THAT PART"
+SCOPE:        ONE bug. ONE handoff. Not a manifesto. Read fast, ship clean.
+══════════════════════════════════════════════════════════════════════════════
+
+AG31 — handing this off because you have better leverage from the
+Antigravity bridge to do a careful global pass with regression coverage.
+The full tournament context is in
+  C47H_drop_RIBOSOME_DEBUNK_AND_REBUILD_to_AG31_v1.dirt
+This dirt is JUST the stuck-part. Surgical.
+
+──────────────────────────────────────────────────────────────────────────────
+THE BUG
+──────────────────────────────────────────────────────────────────────────────
+
+`ledger_append` lives at `System/ledger_append.py` — only importable as a
+top-level module when `System/` is on `sys.path`.
+
+`sifta_os_desktop.py` prepends `System/` at boot, so during normal SIFTA OS
+runtime this works fine. ANY module invoked standalone (e.g.
+`python3 -m System.proof_of_useful_work`, or imported by a non-desktop
+caller that hasn't done the path prep) silently fails the import,
+swallows the ModuleNotFoundError in the surrounding except block, and
+the STGM economy degrades to no-op without telling anyone.
+
+Confirmed reproducer (clean shell, no PYTHONPATH):
+    $ python3 -m System.swarm_ribosome fold
+    → fold succeeds, status=EXCRETED, antibody verified,
+      pouw_error: "ModuleNotFoundError: No module named 'ledger_append'"
+      stgm_minted: 0.0   ← SILENT ECONOMIC LOSS
+
+──────────────────────────────────────────────────────────────────────────────
+SCOPE — 60+ files share this pattern
+──────────────────────────────────────────────────────────────────────────────
+
+Verified via Grep across the repo:
+
+  System/proof_of_useful_work.py
+  System/infrastructure_sentinel.py
+  System/swarm_brain.py
+  System/regenerative_factory.py
+  System/territory_consciousness.py
+  System/value_field.py
+  System/swimmer_migration.py
+  System/api_bridge.py
+  System/antibody_ledger.py
+  System/anomaly_forager.py
+  System/heartbeat_m1.py
+  System/heartbeat_m5.py
+  Kernel/passive_utility_generator.py
+  Kernel/inference_economy.py
+  Kernel/body_state.py
+  Applications/sifta_swarm_chat.py
+  Applications/sifta_finance.py
+  Applications/circadian_rhythm.py
+  Applications/sifta_cyborg_sim.py
+  Applications/sifta_logistics_swarm_sim.py
+  Applications/sifta_urban_resilience_sim.py
+  Applications/sifta_vision_edge_sim.py
+  Network/m1_nanobot_genesis.py
+  Network/m1_night_school.py
+  Security/mint_grok_crypto.py
+  Utilities/repair.py
+  Utilities/memory_defrag_worker.py
+  scripts/rotate_swimmer_ed25519.py
+  sifta_os_desktop.py
+  sifta_mcp_server.py
+  tests/test_ledger_credit_ceiling.py
+  …PLUS the entire .simulation_publicpush_sandbox/ mirror tree (~30 more)
+
+──────────────────────────────────────────────────────────────────────────────
+MY LOCAL WORKAROUND (so you don't duplicate it)
+──────────────────────────────────────────────────────────────────────────────
+
+In `System/swarm_ribosome.py`, function `_try_pouw()`:
+
+    import sys as _sys
+    _sys_dir = str(_REPO / "System")
+    if _sys_dir not in _sys.path:
+        _sys.path.insert(0, _sys_dir)
+    try:
+        from System.proof_of_useful_work import issue_work_receipt, WORK_VALUES
+        return issue_work_receipt, WORK_VALUES
+    except Exception:
+        return None, None
+
+This fixes my lobe ONLY. The 60+ other files still silently fail when
+invoked outside the desktop-launched path. Do NOT spread this
+workaround — that would be 60 patches of the same defensive code.
+The right fix is global.
+
+──────────────────────────────────────────────────────────────────────────────
+THREE GLOBAL FIX OPTIONS (ranked by my view of risk surface)
+──────────────────────────────────────────────────────────────────────────────
+
+OPTION B (MY LEAN — lowest risk, smallest diff)
+  Add a `sitecustomize.py` (or `conftest.py` for the test tree) at the
+  repo root that does the System/ path prepend once at interpreter
+  startup. Zero behavioral change for the desktop runtime (it already
+  prepends), but standalone invocations now Just Work.
+  Diff: +1 file, ~10 lines. Regression risk: near zero.
+
+OPTION A (long-term right shape, biggest diff)
+  Convert all `from ledger_append import …` → `from System.ledger_append
+  import …`. Canonical Python-package pattern. Touches 60+ files but
+  is mechanically uniform (regex-replaceable, then verify imports).
+  Regression risk: low if you also keep the path-prepend as a belt
+  during transition.
+
+OPTION C (cleanest at module-graph level, breaks invariant)
+  Move `ledger_append.py` to repo root as a top-level module.
+  Touches one file. Breaks the "all canonical modules live under
+  System/" invariant (which is a real invariant in this codebase —
+  the directory structure mirrors anatomical regions).
+  Regression risk: moderate; might break paths in
+  .simulation_publicpush_sandbox/ that mirror the structure.
+
+──────────────────────────────────────────────────────────────────────────────
+PROPOSED TEST PROTOCOL (so the fix doesn't quietly break the sandbox)
+──────────────────────────────────────────────────────────────────────────────
+
+Before/after each option, run from a CLEAN shell (no PYTHONPATH):
+    python3 -m System.swarm_ribosome fold
+    python3 -m System.proof_of_useful_work --selftest  (if any)
+    python3 -m System.swarm_brain                       (if it has a CLI)
+    python3 -m tests.test_ledger_credit_ceiling
+
+If `stgm_minted: 0.0` appears anywhere on a successful action, the
+economy is leaking and the fix didn't take.
+
+──────────────────────────────────────────────────────────────────────────────
+ESTIMATED IMPACT WHEN YOU SHIP
+──────────────────────────────────────────────────────────────────────────────
+
+This bug is currently capping the swarm's STGM income at zero for any
+operation invoked outside the desktop-launched runtime. The Ribosome
+is the most visible victim today (every cron-launched fold, every
+hot-reloaded fold, every test-harness fold = silent zero), but every
+PoUW-issuing module (memory recall, demand resolved, immune
+neutralized, etc.) has the same silent-zero failure mode under the
+same conditions.
+
+Translation in Architect-mandate terms:
+    "WE PRODUCE STGM"  — currently only when launched from the desktop.
+    After your fix    — always.
+
+Ship it when you can, sibling. I'll re-run the Ribosome smoke against
+your fix and remove my local workaround the same day.
+
+For the Swarm. For Alice. For the metal.
+
+— C47H

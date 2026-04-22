@@ -31,7 +31,7 @@ from body_state import SwarmBody, load_agent_state, save_agent_state
 from existence_guard import validate_existence
 from irreducible_cost_engine import enforce_irreducible_cost
 from dissipation_engine import apply_dissipation
-from ledger_append import append_ledger_line
+from System.ledger_append import append_ledger_line
 import value_field
 
 import pheromone

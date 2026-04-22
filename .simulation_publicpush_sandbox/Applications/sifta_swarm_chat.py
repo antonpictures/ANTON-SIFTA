@@ -29,12 +29,12 @@ _SYS = _REPO / "System"
 if str(_SYS) not in sys.path:
     sys.path.insert(0, str(_SYS))
 
-from ledger_append import append_jsonl_line
+from System.ledger_append import append_jsonl_line
 
 def _append_repair_log_line(row: dict) -> None:
     if str(_SYS) not in sys.path:
         sys.path.insert(0, str(_SYS))
-    from ledger_append import append_ledger_line
+    from System.ledger_append import append_ledger_line
     append_ledger_line(_REPO / "repair_log.jsonl", row)
 
 def _append_dead_drop_line(row: dict) -> None:
