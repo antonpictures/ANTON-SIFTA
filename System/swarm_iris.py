@@ -53,7 +53,8 @@ class IrisFrame:
     byte_size: int
     metadata: Dict[str, Any] = field(default_factory=dict)
     
-    homeworld_serial: str = "GTH4921YP3"
+    from System.swarm_kernel_identity import owner_silicon
+    homeworld_serial: str = field(default_factory=owner_silicon)
     authored_by: str = "AG31+C47H"
 
     def to_dict(self) -> Dict[str, Any]:
