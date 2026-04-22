@@ -114,6 +114,18 @@ class GenesisWidget(SiftaBaseWidget):
 
         layout.addSpacing(8)
 
+        # AI Display Name
+        ai_row = QHBoxLayout()
+        ai_lbl = QLabel("AI Display Name:")
+        ai_lbl.setStyleSheet("font-size: 11px;")
+        ai_row.addWidget(ai_lbl)
+        self.ai_name_input = QLineEdit()
+        self.ai_name_input.setPlaceholderText("Alice")
+        ai_row.addWidget(self.ai_name_input)
+        layout.addLayout(ai_row)
+
+        layout.addSpacing(8)
+
         # Genesis button (disabled until photo selected)
         self.btn_genesis = QPushButton("PERFORM GENESIS CEREMONY")
         self.btn_genesis.setEnabled(False)
@@ -168,6 +180,7 @@ class GenesisWidget(SiftaBaseWidget):
         # Status info
         info_lines = [
             f"Owner:          {vg['owner_name'] or '(unnamed)'}",
+            f"AI Name:        {vg.get('ai_display_name', 'Alice')}",
             f"Silicon:        {vg['silicon']}",
             f"Generation:     {vg['generation']}",
             f"Signature:      {'VALID' if vg['valid'] else 'INVALID'}",
@@ -238,13 +251,15 @@ class GenesisWidget(SiftaBaseWidget):
             return
 
         owner_name = self.name_input.text().strip()
+        ai_name = self.ai_name_input.text().strip() or "Alice"
 
         reply = QMessageBox.question(
             self,
             "Confirm Genesis",
             f"Bind this photo to this silicon?\n\n"
             f"Photo: {Path(self._photo_path).name}\n"
-            f"Owner: {owner_name or '(unnamed)'}\n\n"
+            f"Owner: {owner_name or '(unnamed)'}\n"
+            f"AI Name: {ai_name}\n\n"
             f"This creates the cryptographic root of trust.\n"
             f"The photo stays LOCAL ONLY.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -253,7 +268,7 @@ class GenesisWidget(SiftaBaseWidget):
             return
 
         try:
-            scar = perform_genesis(self._photo_path, owner_name)
+            scar = perform_genesis(self._photo_path, owner_name, ai_display_name=ai_name)
             QMessageBox.information(
                 self,
                 "Genesis Complete",

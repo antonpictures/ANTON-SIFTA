@@ -79,6 +79,7 @@ def _verify(serial: str, payload: str, sig: str) -> bool:
 def perform_genesis(
     photo_path: str,
     owner_name: str = "",
+    ai_display_name: str = "Alice",
     extra_data: Optional[Dict] = None,
 ) -> Dict:
     """
@@ -114,6 +115,7 @@ def perform_genesis(
         "ts": time.time(),
         "silicon": serial,
         "owner_name": owner_name,
+        "ai_display_name": ai_display_name,
         "photo_hash": photo_hash,
         "genesis_anchor": genesis_anchor,
         "extra": extra_data or {},
@@ -181,6 +183,7 @@ def verify_genesis() -> Dict:
     result["exists"] = True
     result["status"] = scar.get("status", "UNKNOWN")
     result["owner_name"] = scar.get("owner_name", "")
+    result["ai_display_name"] = scar.get("ai_display_name", "Alice")
     result["silicon"] = scar.get("silicon", "")
     result["generation"] = scar.get("generation", 0)
 
