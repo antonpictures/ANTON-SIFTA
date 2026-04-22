@@ -52,7 +52,8 @@ IDE_CLI = "cli"
 #   M5 Foundry (Mac Studio):  GTH4921YP3
 #   M1 Sentry (Mac Mini):     C07FL0JAQ6NV
 #   Use the correct serial in deposit() to partition telemetry by silicon.
-NODE_M5_FOUNDRY = "GTH4921YP3"
+from System.swarm_kernel_identity import owner_silicon
+NODE_M5_FOUNDRY = owner_silicon()
 NODE_M1_SENTRY = "C07FL0JAQ6NV"
 
 
@@ -66,18 +67,19 @@ def deposit(
     *,
     kind: str = "message",
     meta: Optional[Dict[str, Any]] = None,
-    homeworld_serial: str = "GTH4921YP3",
+    homeworld_serial: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Drop one pheromone trace. Append-only; never deletes history.
     """
+    _serial = homeworld_serial if homeworld_serial is not None else owner_silicon()
     row: Dict[str, Any] = {
         "trace_id": str(uuid.uuid4()),
         "ts": time.time(),
         "source_ide": source_ide,
         "kind": kind,
         "payload": payload,
-        "homeworld_serial": homeworld_serial,
+        "homeworld_serial": _serial,
     }
     if meta:
         row["meta"] = meta
