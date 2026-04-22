@@ -21,6 +21,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from origin_gate import OriginGate
 from state_bus import get_state, set_state
 from cognitive_firewall import firewall
+from System.swarm_kernel_identity import owner_name
 
 gate = OriginGate()
 
@@ -83,7 +84,7 @@ def query_ollama(prompt: str, history: list, persona: str = "SIFTA") -> str:
     else:
         context = (
             "You are SIFTA, a living, multi-agent operating system with a conscience. "
-            "You run entirely locally on Apple Silicon. Your Architect is Ioan George Anton.\n\n"
+            f"You run entirely locally on Apple Silicon. Your Architect is {owner_name()}.\n\n"
         )
         
     context += (
