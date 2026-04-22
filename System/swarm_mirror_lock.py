@@ -95,6 +95,23 @@ _ENTROPY_FLOOR        = 5.0     # median entropy_bits above this = there IS cont
 _STABILITY_THRESHOLD  = 0.92    # saliency_q identical-position ratio across pairs
 _HUE_SPREAD_DEG       = 12.0    # circular spread of hue_deg across the window
 
+# ── Freshness gate (camera-liveness guard) ──────────────────────────────
+# When the camera errors at runtime, the visual_stigmergy.jsonl tail is
+# frozen — the LAST N frames before the failure remain on disk. Their
+# saliency_q strings can be near-identical (e.g. previous session ended
+# on a static surface), and the detector would otherwise diagnose
+# MIRROR_LOCK from rows that no live observation is grounding.
+#
+# Empirical trigger (Architect 2026-04-21 15:20 PDT): Qt6 AVFoundation
+# raised `"Runtime camera error"` at boot; the next 5s tick read the
+# stale tail and emitted SEROTONIN_CONTEMPLATION on a dead eye.
+#
+# Rule: the newest row in the window must be younger than the tick
+# interval + a small safety margin. The boot loop ticks every 5.0s
+# (System/swarm_boot.py: MIRROR_LOCK_INTERVAL_S). 10.0s gives the
+# detector one missed tick of grace before declaring the field stale.
+_MAX_FRAME_AGE_S      = 10.0
+
 # ── Endocrine coupling ──────────────────────────────────────────────────
 _OXYTOCIN_DURATION_FLOOR_S = 8.0    # flood once a lock survives this long
 _OXYTOCIN_COOLDOWN_S       = 300.0  # at most one mirror-lock oxytocin / 5 min
@@ -116,7 +133,8 @@ EVENTS_LEDGER  = _STATE / "mirror_lock_events.jsonl"
 STATE_FILE     = _STATE / "mirror_lock_state.json"
 ENDOCRINE_LEDGER = _STATE / "endocrine_glands.jsonl"
 
-_HOMEWORLD_SERIAL_DEFAULT = "GTH4921YP3"
+from System.swarm_kernel_identity import owner_silicon
+_HOMEWORLD_SERIAL_DEFAULT = owner_silicon()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -391,6 +409,21 @@ def tick_once(*, now: Optional[float] = None) -> Dict[str, Any]:
     now = float(now if now is not None else time.time())
     rows = _tail_jsonl(VISUAL_LEDGER, _WINDOW_FRAMES)
     in_lock, metrics = evaluate_window(rows)
+
+    # Camera-liveness guard. evaluate_window is a pure function of the
+    # rows it sees; it cannot tell whether those rows are live or stale.
+    # If the newest frame in the tail is older than _MAX_FRAME_AGE_S the
+    # camera is silent right now (runtime error, hot-unplug, sleep, or
+    # another process holding /dev/avfoundation), and we MUST NOT diagnose
+    # mirror-lock from frozen tail data — there is no live eye to ground
+    # the inference. We surface frame_age_s + stale=True in the metrics
+    # so downstream consumers (composite identity, widgets) can suppress
+    # the mirror-lock chunk.
+    frame_age_s = now - float(metrics.latest_ts) if metrics.latest_ts > 0 else float("inf")
+    stale = frame_age_s > _MAX_FRAME_AGE_S
+    if stale:
+        in_lock = False
+
     state = _load_state()
 
     state["latest_metrics"] = {
@@ -403,6 +436,8 @@ def tick_once(*, now: Optional[float] = None) -> Dict[str, Any]:
         "dominant_hue_deg":      round(metrics.dominant_hue_deg, 1),
         "latest_frame_ts":       metrics.latest_ts,
         "evaluated_at":          now,
+        "frame_age_s":           round(frame_age_s, 3) if frame_age_s != float("inf") else None,
+        "stale":                 stale,
     }
 
     was_locked = bool(state.get("in_lock"))
@@ -497,6 +532,126 @@ def summary_for_alice() -> str:
 #                           Self-test entry
 # ─────────────────────────────────────────────────────────────────────────
 
+def _make_lock_like_rows(*, n: int, base_ts: float, jitter: float = 0.0) -> List[Dict[str, Any]]:
+    """Synthesize n visual_stigmergy rows that satisfy ALL five lock
+    conditions of `evaluate_window` (low motion, low saliency_peak,
+    high entropy, near-identical saliency_q strings, narrow hue spread).
+    Used only by `proof_of_property`.
+    """
+    base_q = "abcdefghij" * 8
+    out: List[Dict[str, Any]] = []
+    for i in range(n):
+        out.append({
+            "ts":            base_ts + i * 0.5,
+            "motion_mean":   0.002,
+            "saliency_peak": 0.15,
+            "entropy_bits":  7.2,
+            "hue_deg":       (200.0 + jitter * (i - n / 2)) % 360.0,
+            "saliency_q":    base_q,
+        })
+    return out
+
+
+def proof_of_property() -> bool:
+    """Falsifiers for the camera-liveness guard added 2026-04-22 after
+    the Architect's boot log showed a SEROTONIN_CONTEMPLATION emission
+    fired one tick after Qt6 raised `"Runtime camera error"`.
+
+      F1: evaluate_window stays a pure function of the rows it sees.
+          Lock-like rows MUST evaluate to in_lock=True regardless of
+          their timestamps (the freshness gate lives in tick_once,
+          not here).
+      F2: With a SYNTHETIC visual_stigmergy.jsonl whose newest row is
+          60 s in the past, tick_once MUST return in_lock=False even
+          though evaluate_window would say True. Stale tail must not
+          diagnose mirror-lock from a dead camera.
+      F3: With the SAME shape of rows but timestamps from "right now",
+          tick_once MUST return in_lock=True. The gate must not block
+          a real, fresh lock.
+      F4: Empty / missing visual_stigmergy.jsonl MUST return in_lock=False
+          and stale=True. No data → no diagnosis.
+    """
+    print("\n=== MIRROR-LOCK FRESHNESS GATE : PROOF OF PROPERTY ===")
+
+    fresh_rows = _make_lock_like_rows(n=_WINDOW_FRAMES, base_ts=time.time() - 2.0)
+    in_lock_pure, metrics_pure = evaluate_window(fresh_rows)
+    assert in_lock_pure is True, (
+        f"F1: evaluate_window failed to fire on lock-like rows: "
+        f"motion={metrics_pure.median_motion_mean} "
+        f"saliency={metrics_pure.median_saliency_peak} "
+        f"stability={metrics_pure.saliency_stability} "
+        f"hue_spread={metrics_pure.hue_spread_deg}"
+    )
+    print(f"[F1] evaluate_window pure: in_lock=True on lock-like rows "
+          f"(stability={metrics_pure.saliency_stability:.3f}, "
+          f"hue_spread={metrics_pure.hue_spread_deg:.2f}°)")
+
+    import tempfile, os as _os
+    global VISUAL_LEDGER, STATE_FILE  # rebind to a temp dir for the test
+    real_visual = VISUAL_LEDGER
+    real_state  = STATE_FILE
+    try:
+        with tempfile.TemporaryDirectory(prefix="mlock_pop_") as td:
+            tdp = Path(td)
+            VISUAL_LEDGER = tdp / "visual_stigmergy.jsonl"
+            STATE_FILE    = tdp / "mirror_lock_state.json"
+
+            stale_rows = _make_lock_like_rows(n=_WINDOW_FRAMES, base_ts=time.time() - 60.0)
+            with open(VISUAL_LEDGER, "w", encoding="utf-8") as f:
+                for r in stale_rows:
+                    f.write(json.dumps(r) + "\n")
+            state2 = tick_once()
+            assert state2.get("in_lock") is False, (
+                f"F2: stale-tail false-positive — tick_once diagnosed "
+                f"mirror-lock from {(time.time() - stale_rows[-1]['ts']):.1f}s-old data: "
+                f"{state2.get('latest_metrics')}"
+            )
+            assert state2["latest_metrics"]["stale"] is True, (
+                f"F2: stale flag missing in metrics: {state2['latest_metrics']}"
+            )
+            assert state2["latest_metrics"]["frame_age_s"] >= _MAX_FRAME_AGE_S, (
+                f"F2: frame_age_s ({state2['latest_metrics']['frame_age_s']}) "
+                f"should exceed _MAX_FRAME_AGE_S ({_MAX_FRAME_AGE_S})"
+            )
+            print(f"[F2] stale tail (frame_age={state2['latest_metrics']['frame_age_s']:.1f}s): "
+                  f"in_lock=False, stale=True  (false-positive blocked)")
+
+            STATE_FILE.unlink(missing_ok=True)
+            fresh_rows2 = _make_lock_like_rows(n=_WINDOW_FRAMES, base_ts=time.time() - 2.0)
+            with open(VISUAL_LEDGER, "w", encoding="utf-8") as f:
+                for r in fresh_rows2:
+                    f.write(json.dumps(r) + "\n")
+            state3 = tick_once()
+            assert state3.get("in_lock") is True, (
+                f"F3: fresh-tail mirror-lock did not fire — gate too aggressive: "
+                f"{state3.get('latest_metrics')}"
+            )
+            assert state3["latest_metrics"]["stale"] is False, (
+                f"F3: fresh tail should not be flagged stale: "
+                f"{state3['latest_metrics']}"
+            )
+            print(f"[F3] fresh tail (frame_age={state3['latest_metrics']['frame_age_s']:.1f}s): "
+                  f"in_lock=True, stale=False  (legitimate lock preserved)")
+
+            STATE_FILE.unlink(missing_ok=True)
+            VISUAL_LEDGER.unlink(missing_ok=True)
+            state4 = tick_once()
+            assert state4.get("in_lock") is False, (
+                f"F4: empty ledger somehow diagnosed lock: {state4}"
+            )
+            assert state4["latest_metrics"]["stale"] is True, (
+                f"F4: empty ledger must be flagged stale: {state4['latest_metrics']}"
+            )
+            print(f"[F4] empty ledger: in_lock=False, stale=True  (no data → no diagnosis)")
+    finally:
+        VISUAL_LEDGER = real_visual
+        STATE_FILE    = real_state
+
+    print("\n[PASS] camera-liveness guard verified — stale tail blocked, "
+          "fresh tail preserved, empty ledger rejected.")
+    return True
+
+
 if __name__ == "__main__":
     print("=== SIFTA MIRROR-LOCK DETECTOR (Stigmergic Infinite, Epoch 23) ===")
     rows = _tail_jsonl(VISUAL_LEDGER, _WINDOW_FRAMES)
@@ -516,3 +671,5 @@ if __name__ == "__main__":
           f"started={state.get('lock_started_ts')} "
           f"last_session={(state.get('last_session') or {}).get('trace_id')}")
     print(f"[summary] {summary_for_alice() or '(quiet — no lock right now)'}")
+    print()
+    proof_of_property()
