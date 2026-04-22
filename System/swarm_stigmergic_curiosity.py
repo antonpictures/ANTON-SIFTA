@@ -112,7 +112,8 @@ from System.jsonl_file_lock import append_line_locked  # noqa: E402
 
 _STATE_DIR = _REPO / ".sifta_state"
 _OVERLAY_LEDGER = _STATE_DIR / "stigmergic_curiosity_overlay.jsonl"
-_HOMEWORLD_SERIAL = "GTH4921YP3"
+from System.swarm_kernel_identity import owner_silicon
+_HOMEWORLD_SERIAL = owner_silicon()
 _AUTHOR_AGENT = "CG54"
 
 _DEFAULT_CHUNK_BYTES = 64 * 1024
