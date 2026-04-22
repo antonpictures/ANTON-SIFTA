@@ -24,6 +24,8 @@ from PyQt6.QtGui import QFont, QColor
 
 _REPO = Path(__file__).resolve().parent
 _SYS = _REPO / "System"
+_VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
+_PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
 
 # ── Swarm Intelligence Subsystems ────────────────────────────
 if str(_REPO) not in sys.path:
@@ -184,8 +186,8 @@ class EmbeddedScriptSubWindow(QWidget):
         env.insert("SIFTA_EMBEDDED", "1")
         env.insert("MPLBACKEND", "Agg")
         self.process.setProcessEnvironment(env)
-        self.process.start("python3", [self.script_path])
-        self.log.append(f"> python3 {self.script_path}")
+        self.process.start(_PYTHON_BIN, [self.script_path])
+        self.log.append(f"> {_PYTHON_BIN} {self.script_path}")
         self.log.append("[iSwarm] Embedded mode forced (MPLBACKEND=Agg)")
 
     def _read_merged(self):
@@ -366,7 +368,7 @@ class VideoEditorSubWindow(QWidget):
             )
         )
         self.process.finished.connect(self._batch_done)
-        self.process.start("python3", ["Kernel/sifta_sebastian_batch.py"])
+        self.process.start(_PYTHON_BIN, ["Kernel/sifta_sebastian_batch.py"])
 
     def _batch_done(self, code, _):
         self.chat_display.append(f"\n[SYSTEM] Process exited: {code}")
@@ -668,7 +670,7 @@ class SiftaDesktop(QMainWindow):
         x = geometry.x() + self.width() - 20
         y = geometry.y() + 40
         
-        QProcess.startDetached("python3", [str(_REPO / "Applications" / "sifta_control_center.py"), str(x), str(y)], str(_REPO))
+        QProcess.startDetached(_PYTHON_BIN, [str(_REPO / "Applications" / "sifta_control_center.py"), str(x), str(y)], str(_REPO))
         
     def _open_clock_settings(self):
         # Anchor under the status-bar clock, right edge aligned with the clock strip.
@@ -678,7 +680,7 @@ class SiftaDesktop(QMainWindow):
         x = tl.x() + w_clock - panel_w
         y = tl.y() + self.clock_label.height() + 6
         QProcess.startDetached(
-            "python3",
+            _PYTHON_BIN,
             [str(_REPO / "Applications" / "sifta_clock_settings.py"), str(x), str(y)],
             str(_REPO),
         )
@@ -758,7 +760,8 @@ class SiftaDesktop(QMainWindow):
         if hasattr(self, "wallet_label"):
             try:
                 from System.warren_buffett import _architect_local_stgm, scan_repair_log
-                M5_SERIAL = "GTH4921YP3"
+                from System.swarm_kernel_identity import owner_silicon
+                M5_SERIAL = owner_silicon()
                 M1_SERIAL = "C07FL0JAQ6NV"
                 # Global swarm liquidity — every STGM minted across all nodes
                 scan = scan_repair_log()
