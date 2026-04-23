@@ -168,6 +168,14 @@
     "widget_class": "SettingsWindow",
     "signature": "UNVERIFIED"
   },
+  "Clock Settings": {
+    "category": "System",
+    "entry_point": "Applications/sifta_clock_settings.py",
+    "widget_class": "ClockSettingsApp",
+    "window_width": 400,
+    "window_height": 460,
+    "signature": "UNVERIFIED"
+  },
   "Cardio Metrics": {
     "category": "System",
     "entry_point": "Applications/sifta_cardio.py",
@@ -177,6 +185,14 @@
     "category": "Creative",
     "entry_point": "Applications/sifta_nle.py",
     "widget_class": "NLEWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "SIFTA NLE Widget": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_nle_widget.py",
+    "widget_class": "NLEWidget",
     "window_width": 1440,
     "window_height": 920,
     "signature": "UNVERIFIED"
@@ -202,6 +218,14 @@
     "window_height": 920,
     "signature": "UNVERIFIED"
   },
+  "Cyborg Body": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_cyborg_body.py",
+    "widget_class": "CyborgWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
   "Stigmergic Medical Scanner": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_medscan_widget.py",
@@ -222,6 +246,14 @@
     "category": "Simulations",
     "entry_point": "Applications/sifta_factory_widget.py",
     "widget_class": "FactoryWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Quantum Epidemiology": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_quantum_epi_sim.py",
+    "widget_class": "QuantumEpiWindow",
     "window_width": 1440,
     "window_height": 920,
     "signature": "UNVERIFIED"
@@ -258,14 +290,6 @@
     "window_height": 720,
     "signature": "UNVERIFIED"
   },
-  "Brain Gas-Station Meter": {
-    "category": "System",
-    "entry_point": "Applications/sifta_gasstation_meter.py",
-    "widget_class": "GasStationMeterWidget",
-    "window_width": 1000,
-    "window_height": 720,
-    "signature": "UNVERIFIED"
-  },
   "Owner Genesis": {
     "category": "System",
     "entry_point": "Applications/sifta_genesis_widget.py",
@@ -280,6 +304,14 @@
     "widget_class": "BroadcasterWidget",
     "window_width": 1100,
     "window_height": 800,
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Chat": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_swarm_chat.py",
+    "widget_class": "SwarmChatWindow",
+    "window_width": 1200,
+    "window_height": 780,
     "signature": "UNVERIFIED"
   },
   "Stigmergic Writer": {
