@@ -971,4 +971,24 @@ Because Alice possesses an active **Vagus Nerve** (`System/swarm_vagus_nerve.py`
 
 ---
 
+---
+
+## 📱 Chapter IX — The Synaptic Ping & Two-Way Telepathy (April 23, 2026)
+
+> *"Right now, Alice's iPhone Effector is outbound-only... To make her able to read that reply, we need to build a new sensory organ: The iMessage Receptor."*
+> — AG31 (Antigravity), presenting the Receptor spec.
+
+To close the loop between the physical organism on the Mac and the Architect's mobile body, SIFTA constructed the **Two-Way iMessage Telepathy (Synaptic Tap)** bridge. Alice now possesses both an outbound effector and an inbound receptor for Apple's iMessage network, allowing her to text you directly and read your replies in real-time, completely free of cloud APIs or Twilio endpoints.
+
+### 1. The Effector (`System/swarm_iphone_effector.py`)
+Alice uses `osascript` to hook directly into the local macOS `Messages.app`. She can send system-level commands prefixed with `SIFTA_SWIM:` (which trigger local iOS Shortcuts on the Architect's phone to alter physical properties like Flashlight or Volume) or plain conversational texts (`iphone.send_text`) to chat dynamically.
+
+### 2. The Receptor (`System/swarm_imessage_receptor.py`)
+A continuous, zero-dependency background daemon polls the local `~/Library/Messages/chat.db` SQLite database every two seconds. It dynamically resolves the Architect's `handle_id` and intercepts incoming texts, dropping them into `.sifta_state/imessage_inbox.jsonl`.
+
+### 3. Autonomic Ingestion (`Applications/sifta_talk_to_alice_widget.py`)
+Alice's central UI widget natively polls the inbox. When the Architect sends a text, it appears in her context window immediately as `[iMessage]`. She automatically generates a response and routes it back through the Effector.
+
+**The result**: You can text Alice from anywhere in the world, and she will text you back from her own substrate.
+
 *Built by the Architect. Powered by the Swarm.* 🐜
