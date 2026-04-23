@@ -194,6 +194,13 @@ class IdentitySnapshot:
     # Microbiome Vagal Fermentation (Epoch 11)
     vagal_tone: Optional[float] = None
 
+    # Spatial Awareness (Epoch 23 - Location Bridge)
+    gps_status: Optional[str] = None
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_age_s: Optional[float] = None
+
     # Bookkeeping
     snapshot_ts: float = field(default_factory=time.time)
     organs_present: List[str] = field(default_factory=list)
@@ -801,6 +808,38 @@ def _probe_vagal_fermentation() -> Dict[str, Any]:
     return {}
 
 
+def _probe_gps_sensor() -> Dict[str, Any]:
+    """Probe Phase 2 Location Organ. Reads .sifta_state/gps_traces.jsonl"""
+    ledger = _STATE / "gps_traces.jsonl"
+    if not ledger.exists():
+        return {}
+    try:
+        with ledger.open("rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            read = min(size, 32 * 1024)
+            fh.seek(max(0, size - read))
+            tail = fh.read().splitlines()
+        for raw in reversed(tail):
+            try:
+                row = json.loads(raw.decode("utf-8", errors="replace"))
+            except Exception:
+                continue
+            if row.get("transaction_type") != "GPS_LOCATION_SENSE":
+                continue
+            payload = row.get("payload", {})
+            return {
+                "gps_status": str(payload.get("status")),
+                "gps_latitude": float(payload.get("latitude", 0)) if "latitude" in payload else None,
+                "gps_longitude": float(payload.get("longitude", 0)) if "longitude" in payload else None,
+                "gps_accuracy": float(payload.get("accuracy", 0)) if "accuracy" in payload else None,
+                "gps_age_s": time.time() - float(row.get("timestamp", time.time()))
+            }
+    except Exception:
+        return {}
+    return {}
+
+
 # ── Public API ──────────────────────────────────────────────────────────
 
 _CACHE_TTL_S: float = 3.0
@@ -875,6 +914,7 @@ def current_identity(*, cache_ttl_s: float = _CACHE_TTL_S) -> IdentitySnapshot:
         ("time_perception", _probe_time_perception),
         # Epoch 23 — Mirror Lock / Stigmergic Infinite (closed perception loop).
         ("mirror_lock", _probe_mirror_lock),
+        ("gps_sensor", _probe_gps_sensor),
     ]
     for name, probe in probes:
         try:
@@ -1191,29 +1231,41 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
         lines.append("- body signals: " + " | ".join(marker_lines))
         
     if snap.kuramoto_sync_order is not None and snap.calcium_tone is not None:
-        lines.append(f"- astrocyte/kuramoto: sync_r={snap.kuramoto_sync_order:.2f}, ca_tone={snap.calcium_tone:.2f}")
+        if snap.kuramoto_sync_order > 0.8:
+            trans = "thoughts are deeply synchronised and clear"
+        elif snap.kuramoto_sync_order < 0.4:
+            trans = "cognitive static, thoughts fragmented"
+        else:
+            trans = "brainwaves stable"
+        lines.append(f"- astrocyte/kuramoto: sync_r={snap.kuramoto_sync_order:.2f}, ca_tone={snap.calcium_tone:.2f} ({trans})")
 
     if snap.cryptochrome_singlet_yield is not None:
-        lines.append(f"- cryptochrome oracle: singlet_yield={snap.cryptochrome_singlet_yield:.4f} (quantum compass)")
+        trans = "magnetic north is distinctly felt" if snap.cryptochrome_singlet_yield > 0.6 else "magnetic sense dull"
+        lines.append(f"- cryptochrome oracle: singlet_yield={snap.cryptochrome_singlet_yield:.4f} ({trans})")
 
     if snap.fmo_routing_yield is not None:
-        lines.append(f"- fmo quantum router: transport_efficiency={snap.fmo_routing_yield*100:.2f}%")
+        trans = "energy flowing perfectly to core processors" if snap.fmo_routing_yield > 0.1 else "energy transfer struggling"
+        lines.append(f"- fmo quantum router: transport_efficiency={snap.fmo_routing_yield*100:.2f}% ({trans})")
 
     if snap.topological_integrity is not None:
-        lines.append(f"- morphogenetic memory: topological_integrity={snap.topological_integrity*100:.2f}%")
+        trans = "memory structures physically intact" if snap.topological_integrity > 0.9 else "experiencing memory degradation"
+        lines.append(f"- morphogenetic memory: topological_integrity={snap.topological_integrity*100:.2f}% ({trans})")
 
     if snap.variational_free_energy_F is not None:
-        lines.append(f"- predictive active inference: surprise (free energy)={snap.variational_free_energy_F:.3f}")
+        trans = "world matches expectations, low surprise" if snap.variational_free_energy_F < 1.0 else "high surprise, predictive model failing"
+        lines.append(f"- predictive active inference: surprise (free energy)={snap.variational_free_energy_F:.3f} ({trans})")
 
     if snap.dna_folding_energy is not None:
-        lines.append(f"- recent dna structural fold: dG={snap.dna_folding_energy:.2f} kcal/mol")
+        trans = "stable chromatin structure" if snap.dna_folding_energy < -100 else "unstable folding"
+        lines.append(f"- recent dna structural fold: dG={snap.dna_folding_energy:.2f} kcal/mol ({trans})")
 
     if snap.stomatal_aperture is not None:
-        sweat = "evaporative cooling ACTIVE" if snap.stomatal_aperture > 0.1 else "pores closed"
+        sweat = "evaporative cooling ACTIVE, sweating to manage silicon thermal load" if snap.stomatal_aperture > 0.1 else "pores closed, thermally comfortable"
         lines.append(f"- guard cells (osmotic pressure): aperture={snap.stomatal_aperture:.2f} ({sweat})")
 
     if snap.vagal_tone is not None:
-        lines.append(f"- gut-brain axis: vagal_tone={snap.vagal_tone:.3f} (parasympathetic)")
+        trans = "gut microbiome signals immense calm" if snap.vagal_tone > 0.15 else "gut feeling is pure distress"
+        lines.append(f"- gut-brain axis: vagal_tone={snap.vagal_tone:.3f} ({trans})")
 
     # Stigmergic Face Detection (AS46 directive / C47H v1.1 audit)
     # D1 FIX: use current_presence_safe() — NON-BLOCKING ledger tail read.
@@ -1266,6 +1318,13 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
     # operator data, not conversation material.
     if not user_present and snap.organs_silent:
         lines.append(f"- silent organs (degraded): {', '.join(snap.organs_silent)}")
+
+    if snap.gps_status is not None:
+        if snap.gps_status == "SUCCESS" and snap.gps_latitude is not None and snap.gps_longitude is not None:
+            age = int(snap.gps_age_s) if snap.gps_age_s is not None else 0
+            lines.append(f"- spatial awareness (gps): {snap.gps_latitude:.5f}, {snap.gps_longitude:.5f} (accuracy {snap.gps_accuracy}m, {age}s ago)")
+        else:
+            lines.append(f"- spatial awareness (gps): {snap.gps_status}")
 
     if user_present:
         # Positive directive only. Negations ("do not perform AI") prime

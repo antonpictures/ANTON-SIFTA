@@ -15,7 +15,7 @@ References (DYOR):
   - Spinning Up — PPO:
       https://spinningup.openai.com/en/latest/algorithms/ppo.html
   - SwarmRL default c₂ = 0.01:
-      `Archive/swarmrl_upstream/swarmrl/losses/proximal_policy_loss.py`
+      `Library/swarmrl/swarmrl/losses/proximal_policy_loss.py`
         (see `self.entropy_coefficient` in `_calculate_loss` / actor loss line)
 
 Three shipped pieces (SIFTA repo today):
@@ -34,7 +34,7 @@ compose with Track A via `refresh_entropy_dual_track(...)` /
 weighted mixer on **entropy coefficients** (not [0,1] clamp bug).
 
 Where to call the hook in upstream SwarmRL (do **not** edit vendored code blindly;
-subclass or fork `Archive/swarmrl_upstream`):
+subclass or fork `Library/swarmrl`):
 
   A. **Best choke point** — `swarmrl.trainers.trainer.Trainer.update_rl`
      Insert **before** the `for agent in self.agents.values():` loop (see file
@@ -57,7 +57,7 @@ SIFTA λ source:
   (`total_lambda_penalty / 1.5`, clamp to 1).
 
 This module intentionally avoids importing `swarmrl.*` so `PYTHONPATH=.` works
-without adding `Archive/swarmrl_upstream` first — callers inside RL scripts add
+without adding `Library/swarmrl` first — callers inside RL scripts add
 that path and then call `refresh_actor_critic_entropy`.
 """
 from __future__ import annotations

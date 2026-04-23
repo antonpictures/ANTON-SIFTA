@@ -46,7 +46,8 @@ def get_ignore_list():
         "m5queen_dead_drop.jsonl",
         "artifacts",
         "pytest.ini",
-        "Archive"
+        "Archive",
+        ".personal"
     ]
 
 def scrub_file(src: Path, dst: Path):

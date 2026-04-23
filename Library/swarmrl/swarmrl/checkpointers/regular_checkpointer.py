@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Module for the Save-regularly-Checkpointer
 """

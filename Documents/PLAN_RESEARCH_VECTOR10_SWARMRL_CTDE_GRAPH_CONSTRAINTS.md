@@ -7,7 +7,7 @@
 - **Vector 9** — `System/hierarchical_meta_controller.py` (meta-controller adapts `alpha_ascent` on \(\lambda\) updates; reads manifold penalties).
 
 **Bridge code:** `Network/swarmrl_bridge.py` (multi-agent SCAR consensus).  
-**Upstream reference:** `Archive/swarmrl_upstream/swarmrl/` — `ForceFunction`, `ActorCriticAgent`, `Trainer.update_rl`.
+**Upstream reference:** `Library/swarmrl/swarmrl/` — `ForceFunction`, `ActorCriticAgent`, `Trainer.update_rl`.
 
 ---
 
@@ -32,7 +32,7 @@ Vector 10 is still **constrained optimization + MARL**, not metaphysics.
 
 ### 2.1 CTDE & cooperative MARL (execution vs training)
 
-- **The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games (MAPPO)** — [arXiv:2103.01955](https://arxiv.org/abs/2103.01955). Centralized critic / value, decentralized actors; baseline for **on-policy** SwarmRL trainers in `Archive/swarmrl_upstream/`.  
+- **The Surprising Effectiveness of PPO in Cooperative Multi-Agent Games (MAPPO)** — [arXiv:2103.01955](https://arxiv.org/abs/2103.01955). Centralized critic / value, decentralized actors; baseline for **on-policy** SwarmRL trainers in `Library/swarmrl/`.  
   **Steal for SIFTA:** Training loop may see **global** `ρ`, `λ₂`, `E_total`; **live** agents only see **local** observations + **shared** policy.
 
 - **QMIX / VDN** (factorized value): classic when joint action space blows up — cite original QMIX (ICML 2018) if you add **monotonic** mixing for team return.
@@ -82,7 +82,7 @@ Vector 10 is still **constrained optimization + MARL**, not metaphysics.
 | `hierarchical_meta_controller.py` | Adapts `alpha_ascent` | Also adapt **graph diffusion rate** or **critic loss weight** |
 | `Network/swarmrl_bridge.py` | SCAR consensus | Define **topology** for 10A (**who shares \(\lambda\)**) |
 | `.sifta_state/lagrangian_multipliers.json` | Global \(\lambda\) | Version schema for **per-agent** \(\lambda_i\) + **sync epoch** |
-| `Archive/swarmrl_upstream/.../actor_critic.py` | PPO-style trajectory | Inject **penalty** and **cost** channels; optional **central critic** for CTDE |
+| `Library/swarmrl/.../actor_critic.py` | PPO-style trajectory | Inject **penalty** and **cost** channels; optional **central critic** for CTDE |
 
 ---
 

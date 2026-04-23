@@ -21,7 +21,7 @@ checkpoint on disk** and returns a report dict the Trainer can append
 to its rollout JSONL.
 
 Wiring sketch (do NOT edit vendored upstream — subclass or fork
-`Archive/swarmrl_upstream`):
+`Library/swarmrl`):
 
     class SiftaSteeringTrainer(swarmrl.trainers.trainer.Trainer):
         def update_rl(self):

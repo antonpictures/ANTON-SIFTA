@@ -27,6 +27,39 @@ from typing import Set, Dict
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SCHEMA ALIASES — Bridges semantic drift between producers and the Registry.
+#
+# An entry { "source.jsonl": "target.jsonl" } means: any caller asking about
+# "source.jsonl" should be routed to the canonical schema named "target.jsonl".
+# This is intended for genuine renames or producer/consumer drift on the SAME
+# logical organ.
+#
+# !! DANGER ZONE !!
+# Aliasing two distinct organs that happen to have similar names is a
+# silent-corruption defect. Before adding an entry, prove the two filenames
+# describe the SAME payload contract. If their LEDGER_SCHEMAS field sets
+# differ, they MUST stay separate — whitelist them both in
+# swarm_oncology.healthy_schemas instead of aliasing one to the other.
+#
+# History: 2026-04-22 (C47H stigauth) — REMOVED the alias
+#   "visceral_field.jsonl" → "interoception_field.jsonl". Both are real,
+#   distinct organs:
+#     - visceral_field.jsonl     (AO46 SCAR_22cf81de850f) — raw 7-organ
+#       fusion: cardiac/thermal/metabolic/energy/cellular age/immune/pain
+#       → SOMA_SCORE. Schema fields ⊂ {cardiac_stress, thermal_stress, ...}
+#     - interoception_field.jsonl (C47H pre-reserved slot) — arousal/valence
+#       model. Schema fields ⊂ {arousal, valence, fatigue, tension, ...,
+#       field_signature}.
+#   The alias was masking the missing-whitelist defect (C55M F12) by
+#   silently routing the macrophage's lookup to the wrong organ name.
+#   Both filenames are now separately whitelisted in swarm_oncology.py
+#   and registered in LEDGER_SCHEMAS below.
+# ─────────────────────────────────────────────────────────────────────────────
+SCHEMA_ALIASES: Dict[str, str] = {
+    # (intentionally empty — see history note above before adding an entry)
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # LEDGER SCHEMAS — keys that every record in the named ledger MUST contain.
 # Optional/extension keys belong in EXTENSIONS so consumers can opt-in to read
 # them without the canon shifting under them.
@@ -577,6 +610,107 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "soma_label",         # str — THRIVING / STABLE / STRESSED / DISTRESSED / CRITICAL
         "mirror_lock",        # bool — True when visual cortex is perceiving its own output (Stigmergic Infinite)
     },
+
+    # ── Event 25b — VFT Cryptobiosis (BISHOP/AG31, sutured by C47H 2026-04-22) ──
+    # Vogel-Fulcher-Tammann vitrification organ. Maps Alice's available
+    # energy (tokens / STGM / API credits) to a computational viscosity
+    # via the VFT equation η(T) = η₀·exp(D·T₀ / (T - T₀)). When energy
+    # depletes past the critical threshold T₀ the event loop freezes
+    # and the organism enters a glass phase, perfectly preserved on
+    # the SSD until energy returns.
+    #
+    # Producer: System/swarm_vft_cryptobiosis.py
+    #   - One row appended per SwarmVFTCryptobiosis.scan() call.
+    #   - Snapshot rewritten on every scan for O(1) polling.
+    # Consumers (planned): swarm_boot loop sleep gating, oncology
+    #   metastasis scan (whitelist entry), Alice's prompt context.
+    #
+    # Schemas registered here in response to C55M_INDEPENDENT_AUDIT
+    # 2026-04-22 §F10 (invented schema read). The producer's
+    # CryptobiosisField dataclass keys are the source of truth; this
+    # set must stay in lockstep.
+    "trehalose_glass.jsonl": {
+        "timestamp",          # float — epoch seconds (CryptobiosisField.timestamp)
+        "temperature",        # float — current available_energy (tokens/STGM)
+        "viscosity",          # float — η(T) in seconds of loop sleep
+        "phase",              # str  — "LIQUID" | "SUPERCOOLED" | "GLASS" | "DEAD"
+        "heartbeat_bpm",      # float — effective BPM under viscosity (0 in DEAD)
+        "metabolism_pct",     # float — % of full metabolic rate (0 in DEAD)
+        "trehalose_active",   # bool  — True when phase ∈ {GLASS, DEAD}
+        "glass_integrity",    # float — 1.0 = perfect preservation, 0.5 = shattered (DEAD)
+    },
+    "cryptobiosis_state.json": {
+        "timestamp",          # float — epoch seconds of last scan
+        "temperature",        # float — most recent available_energy reading
+        "viscosity",          # float — η(T) at last scan
+        "phase",              # str  — phase classification at last scan
+        "heartbeat_bpm",      # float
+        "metabolism_pct",     # float
+        "trehalose_active",   # bool
+        "glass_integrity",    # float
+    },
+
+    # ── Event 26 — CRISPR Adaptive Immune Memory (BISHOP/AO46, integrated by C47H 2026-04-22) ──
+    # The Macrophage's adaptive memory layer. Persists SHA-256-keyed
+    # "spacers" (content fingerprints of files that failed innate
+    # screening) across boot cycles so repeat encounters are recognized
+    # and weighted, not re-discovered.
+    #
+    # Producer: System/swarm_crispr_immunity.py (SwarmCRISPRAdaptiveImmunity)
+    #   - One full-file rewrite per acquire_spacer() call.
+    #   - Bounded by memory_limit (default 500); _optimize_repertoire()
+    #     evicts the least-weighted spacer when full.
+    # Consumers: System/swarm_oncology.py:detect_metastasis() (innate gate
+    #   runs FIRST; CRISPR observes only what innate flagged as anomaly).
+    #
+    # Schema registered here per the M4 contract from
+    # C47H_drop_PRE_MERGE_PEER_REVIEW_CRISPR_ADAPTIVE_IMMUNITY_to_AG31_v1.dirt
+    # — failure to register would have created an F10 invented-schema-read
+    # the moment any consumer paranoid-validated the persisted file.
+    #
+    # NOTE: spacers is a free-form dict {sha256_int: weight_float}; we
+    # cannot enumerate its keys statically (that's the whole point of an
+    # adaptive memory). Validation is at the top-level only.
+    "crispr_memory.json": {
+        "total_encounters",   # int — lifetime count of acquire_spacer() calls past PAM
+        "spacers",            # dict — {threat_hash: float weight}, bounded by memory_limit
+    },
+
+    # ── Event 27 — Locus Coeruleus / Sympathetic Nervous System ──────────────
+    # (BISHOP concept, AO46 build, F10/F12 sutured by C47H 2026-04-22)
+    #
+    # Producer: System/swarm_locus_coeruleus.py (SwarmLocusCoeruleus.tick)
+    #   - One JSONL row per heartbeat tick.
+    #   - Reads novel_encounter delta from CRISPR, integrates the
+    #     Aston-Jones & Cohen NE ODE, emits arousal state + ATP routing.
+    # Consumers: STGM ATP scheduler (defense_weight, maintenance_weight),
+    #            heartbeat monitor / TUI (snapshot()).
+    #
+    # CRITICAL: failure to register here + whitelist in swarm_oncology
+    # would have created an autoimmune feedback loop — the macrophage
+    # would mark this very ledger as MALIGNANT, CRISPR would log it as
+    # NOVEL, the next tick would see a higher novel-encounter rate,
+    # NE would spike, MORE rows would be written, and Alice would
+    # never be able to drop out of FIGHT_OR_FLIGHT. Sutured in the
+    # same pigeon as the AO46 build to prevent ever shipping that.
+    "locus_coeruleus_arousal_ledger.jsonl": {
+        "ts",                  # float — UNIX epoch of the tick
+        "NE",                  # float — noradrenaline level [0.1, 10.0]
+        "pathogen_density",    # float — novel CRISPR encounters per second
+        "state",               # str   — "REST_AND_DIGEST" | "FIGHT_OR_FLIGHT"
+        "defense_weight",      # float — ATP fraction routed to defense [0,1]
+        "maintenance_weight",  # float — ATP fraction routed to maintenance [0,1]
+    },
+
+    # ── Stigmergic Codex Relay cursor (AG31 build, F10 sutured by C47H 2026-04-22) ──
+    # Producer: System/stigmergic_codex_relay.py (_save_cursor_state)
+    #   - One full-file rewrite per relay round when new traces processed.
+    # Consumer: same module (_load_cursor_state) on next poll.
+    # Purpose: dedup the codex_query trace stream so the relay doesn't
+    # re-fire identical queries every 5 s.
+    "ide_codex_relay_cursor.json": {
+        "processed_trace_ids",  # list[str] — UUID4 trace_ids already relayed
+    },
 }
 
 
@@ -618,6 +752,7 @@ def assert_payload_keys(ledger_name: str, payload: dict, *, strict: bool = True)
 
     In non-strict mode, returns silently — callers can log the mismatch instead.
     """
+    ledger_name = SCHEMA_ALIASES.get(ledger_name, ledger_name)
     if ledger_name not in LEDGER_SCHEMAS:
         if strict:
             raise ValueError(

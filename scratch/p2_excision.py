@@ -10,6 +10,28 @@ TUNED_FILE = "/Users/ioanganton/.ollama/models/blobs/sha256-4c27e0f5b5adf02ac956
 BASE_FILE = "/Users/ioanganton/.ollama/models/blobs/sha256-bb44ce787b29b8918d40d14383d5f8b10f279c19fb4d27357f78e82328f7276a"
 OUT_FILE = "scratch/Gemma4_Intermediate_F16.gguf"
 
+_FORCE_F16_INTERMEDIATE = frozenset({
+    # llama-quantize aborts when converting these 4D F32 conv kernels to F16.
+    # Emit them as F16 here using the native NumPy shape so GGUFWriter writes
+    # the original logical shape after its dimension reversal.
+    "a.conv1d.0.weight",
+    "a.conv1d.1.weight",
+})
+
+
+def _is_surgical_target(name: str) -> bool:
+    """Only text decoder blk.* attention/FFN weight tensors are surgical targets.
+    Everything else is passed through byte-exact."""
+    if not name.startswith("blk."):
+        return False
+    # Only operate on weight matrices in attention and FFN sublayers
+    surgical_suffixes = (
+        ".attn_k.weight", ".attn_q.weight", ".attn_v.weight", ".attn_output.weight",
+        ".ffn_down.weight", ".ffn_gate.weight", ".ffn_up.weight",
+    )
+    return name.endswith(surgical_suffixes)
+
+
 def execute_p2_surgery():
     print(f"[*] Loading Base Genome...")
     reader_base = gguf.GGUFReader(BASE_FILE)
@@ -26,50 +48,45 @@ def execute_p2_surgery():
     threshold = 1e-4
 
     excised_count = 0
+    passthrough_count = 0
+    forced_f16_count = 0
     total = len(reader_tuned.tensors)
 
     for idx, t_tuned in enumerate(reader_tuned.tensors):
         name = t_tuned.name
         endian = reader_tuned.endianess
-        qname = t_tuned.tensor_type.name
 
-        try:
-            # Structurally decode into exact numpy multidimensional form
-            w_tuned = _tensor_fp32(t_tuned)
+        if _is_surgical_target(name) and name in tensors_base:
+            t_base = tensors_base[name]
+            if list(t_tuned.shape) == list(t_base.shape):
+                w_tuned = _tensor_fp32(t_tuned)
+                w_base = _tensor_fp32(t_base)
+                tau = w_tuned - w_base
+                delta_mass = float(np.abs(tau).sum())
 
-            # Suture logic
-            if name in tensors_base:
-                t_base = tensors_base[name]
-                if list(t_tuned.shape) == list(t_base.shape):
-                    w_base = _tensor_fp32(t_base)
-                    tau = w_tuned - w_base
-                    delta_mass = float(np.abs(tau).sum())
-                    
-                    if delta_mass > threshold:
-                        # Surgery: Subtract the trace vector
-                        w_new = w_tuned - (lmbda * tau)
-                        w_tuned = w_new
-                        excised_count += 1
-            
-            # Repacking: retain F32 for 1D structural norms to satisfy llama.cpp.
-            # Non-1D weights, including original F32 conv kernels, are emitted as
-            # F16 so llama-quantize does not have to perform fragile F32->F16
-            # fallback conversion on unusual 4D shapes.
-            if len(t_tuned.shape) == 1:
-                payload = np.asarray(w_tuned, dtype=np.float32).reshape(t_tuned.shape)
-            else:
-                payload = np.asarray(w_tuned, dtype=np.float16).reshape(t_tuned.shape)
+                if delta_mass > threshold:
+                    w_new = w_tuned - (lmbda * tau)
+                    # Rewritten surgical tensor: NumPy-native shape, no raw_shape
+                    payload = np.ascontiguousarray(np.asarray(w_new, dtype=np.float16))
+                    writer.add_tensor(name, payload, raw_dtype=None, tensor_endianess=endian)
+                    excised_count += 1
+                    if (idx+1) % 100 == 0:
+                        print(f"  [+] Scalpel passed layer {idx+1}/{total} ...")
+                    continue
 
-            writer.add_tensor(name, payload, raw_shape=list(t_tuned.shape), raw_dtype=None, tensor_endianess=endian)
+        if name in _FORCE_F16_INTERMEDIATE:
+            payload = np.ascontiguousarray(np.asarray(t_tuned.data, dtype=np.float16))
+            writer.add_tensor(name, payload, raw_dtype=None, tensor_endianess=endian)
+            forced_f16_count += 1
+            if (idx+1) % 100 == 0:
+                print(f"  [+] Scalpel passed layer {idx+1}/{total} ...")
+            continue
 
-        except Exception as e:
-            print(f"    [!] Unparseable node {name}: {e}. Retaining raw hex manifold.")
-            # Absolute fallback: strictly copy the exact bytes but force gguf to respect the original type
-            # NOTE: passing raw data loses multi-shape in GGUFWriter unless we reshape it first.
-            # We must explicitly pass raw_shape=tuple(t_tuned.shape) so llama.cpp parses the metadata right.
-            payload = np.ascontiguousarray(t_tuned.data).copy()
-            writer.add_tensor(name, payload, raw_shape=list(t_tuned.shape), raw_dtype=t_tuned.tensor_type, tensor_endianess=endian)
-        
+        # Raw passthrough: preserve exact original bytes and dtype
+        payload = np.ascontiguousarray(t_tuned.data).copy()
+        writer.add_tensor(name, payload, raw_dtype=t_tuned.tensor_type, tensor_endianess=endian)
+        passthrough_count += 1
+
         if (idx+1) % 100 == 0:
             print(f"  [+] Scalpel passed layer {idx+1}/{total} ...")
 
@@ -78,9 +95,35 @@ def execute_p2_surgery():
     writer.write_kv_data_to_file()
     writer.write_tensors_to_file()
     writer.close()
-    
-    print(f"[+] Surgery Complete. Extracted {excised_count} nodes.")
+
+    print(f"[+] Surgery Complete. Excised {excised_count} text decoder tensors.")
+    print(f"[+] Passed through {passthrough_count} tensors byte-exact.")
+    print(f"[+] Forced {forced_f16_count} fragile conv tensors to F16 before quantization.")
     print(f"[+] Wrote intermediate to {OUT_FILE}")
+
+    # ── POST-SURGERY SHAPE ASSERTION ──
+    print(f"\n[*] Running shape parity assertion...")
+    reader_out = gguf.GGUFReader(OUT_FILE)
+    tensors_out = {t.name: t for t in reader_out.tensors}
+    shape_errors = []
+    for t_orig in reader_tuned.tensors:
+        if t_orig.name not in tensors_out:
+            shape_errors.append(f"  MISSING: {t_orig.name}")
+            continue
+        t_new = tensors_out[t_orig.name]
+        orig_shape = [int(x) for x in t_orig.shape]
+        new_shape = [int(x) for x in t_new.shape]
+        if orig_shape != new_shape:
+            shape_errors.append(f"  MISMATCH: {t_orig.name}: original={orig_shape} new={new_shape}")
+
+    if shape_errors:
+        print(f"[FAIL] Shape parity check found {len(shape_errors)} errors:")
+        for e in shape_errors:
+            print(e)
+        sys.exit(1)
+    else:
+        print(f"[PASS] All {len(reader_tuned.tensors)} tensors have matching shapes.")
+
 
 if __name__ == "__main__":
     execute_p2_surgery()

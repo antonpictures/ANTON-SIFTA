@@ -164,6 +164,9 @@ class SwarmLysosome:
             "as a neutral",
             "i'm just an ai",
             "i can't browse",
+            "cognitive load:",
+            "memory integrity:",
+            "emotional valence:",
         ]
         # Asymmetric cost note: in the Lysosome layer FN is worse than FP.
         # FP = one ~12s + paid Gemini call (Alice still speaks, just via

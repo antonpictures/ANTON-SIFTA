@@ -10,13 +10,13 @@ protocol, a curriculum, a meta-controller? **In this repo, CP2F is:**
         • stigmergy deposits (`ide_stigmergic_bridge`)
         • optional SLLI fingerprints (`stigmergic_llm_identifier`)
         • metabolic accounting (`metabolic_budget`)
-        • pointers to SwarmRL upstream (`Archive/swarmrl_upstream/swarmrl/`)
+        • pointers to SwarmRL upstream (`Library/swarmrl/swarmrl/`)
 
 It does **not** replace C47H (deep refactors) or AG31 (Antigravity). It does
 **not** run inside ChatGPT — external models cannot flock JSONL; this class
 only runs where Python + repo access exist.
 
-Upstream SwarmRL tasks remain in `Archive/swarmrl_upstream/swarmrl/tasks/`:
+Upstream SwarmRL tasks remain in `Library/swarmrl/swarmrl/tasks/`:
 `searching/`, `object_movement/`, `multi_tasking.py` — future meta-controller
 can import those once wired; this module is the seam.
 """

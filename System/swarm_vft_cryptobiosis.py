@@ -45,9 +45,28 @@ from typing import Optional
 # Constants
 # ────────────────────────────────────────────────────────────────────
 
-_STATE_DIR = Path(__file__).resolve().parent / ".sifta_state"
+# Repo-root canonical state directory. The bug fixed here:
+# `Path(__file__).parent` resolves to `System/`, so the original code
+# wrote `trehalose_glass.jsonl` and `cryptobiosis_state.json` into
+# `System/.sifta_state/` — a stranded organ-local directory invisible
+# to the macrophage (System/swarm_oncology.py points at
+# `Path(".sifta_state")`) and to every other organ that polls the
+# canonical state directory. C55M's audit (Defect F12) flagged the
+# downstream symptom (missing whitelist); C47H caught the upstream
+# wrong-directory bug during stigauth verification on 2026-04-22.
+# Fixed by climbing one extra `.parent` to land on the repo root.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_STATE_DIR = _REPO_ROOT / ".sifta_state"
 _TREHALOSE_GLASS = _STATE_DIR / "trehalose_glass.jsonl"
 _CRYPTOBIOSIS_STATE = _STATE_DIR / "cryptobiosis_state.json"
+
+# F17 (C55M audit): float-equality assertions in V4 (DEAD-phase proof)
+# used `== 0.0`, which is structurally fragile against any future
+# refactor that produces a floating-point near-zero (e.g. 1e-300)
+# instead of the explicit `return 0.0` sentinel. We use a tight
+# tolerance — well below any value the engine could produce by
+# arithmetic — and assert near-zero rather than exact zero.
+_ZERO_EPS = 1e-9
 
 
 @dataclass
@@ -277,8 +296,18 @@ def proof_of_property() -> bool:
     print(f"\n[V4] T=3    → η={field_dead.viscosity:.6f}s  phase={field_dead.phase}  "
           f"metabolism={field_dead.metabolism_pct}%  bpm={field_dead.heartbeat_bpm}")
     assert field_dead.phase == "DEAD", f"V4: expected DEAD, got {field_dead.phase}"
-    assert field_dead.metabolism_pct == 0.0, f"V4: metabolism should be 0, got {field_dead.metabolism_pct}"
-    assert field_dead.heartbeat_bpm == 0.0, f"V4: heartbeat should be 0, got {field_dead.heartbeat_bpm}"
+    # math.isclose() is the stdlib idiom for tolerance comparisons. It rejects
+    # NaN (math.isclose(nan, 0.0) is False), handles signed zero, and reads
+    # exactly like the contract: "metabolism is close to zero." Upgraded
+    # 2026-04-22 (C47H, SwarmGPT review nugget §F17).
+    assert math.isclose(field_dead.metabolism_pct, 0.0, abs_tol=_ZERO_EPS), (
+        f"V4: metabolism should be ~0 (abs_tol={_ZERO_EPS}), "
+        f"got {field_dead.metabolism_pct}"
+    )
+    assert math.isclose(field_dead.heartbeat_bpm, 0.0, abs_tol=_ZERO_EPS), (
+        f"V4: heartbeat should be ~0 (abs_tol={_ZERO_EPS}), "
+        f"got {field_dead.heartbeat_bpm}"
+    )
     print("[PASS] Total collapse: DEAD phase, zero metabolism, zero heartbeat.")
 
     # V5: Vitrify → Thaw round-trip
@@ -323,10 +352,64 @@ def proof_of_property() -> bool:
     print("[PASS] Smooth descent: regression guard against the original "
           "BISHOP-draft floor-at-1 bug.\n")
 
+    # V8: Repo-root .sifta_state pinning (C55M Defect F12 root cause).
+    #     The original code anchored _STATE_DIR to `Path(__file__).parent`,
+    #     which is `System/`, so all writes landed in
+    #     `System/.sifta_state/` — invisible to the macrophage AND to
+    #     every other organ that polls the canonical `.sifta_state/`
+    #     at the repo root. We pin the state dir here so a future
+    #     refactor cannot silently re-strand the organ.
+    expected_state_dir = (Path(__file__).resolve().parent.parent / ".sifta_state").resolve()
+    actual_state_dir   = _STATE_DIR.resolve()
+    assert actual_state_dir == expected_state_dir, (
+        f"V8: trehalose glass would land in the wrong state dir: "
+        f"{actual_state_dir} != {expected_state_dir}. "
+        f"This re-strands the organ from the macrophage and the rest "
+        f"of the body. See C55M_INDEPENDENT_AUDIT_2026-04-22 §F12."
+    )
+    assert _TREHALOSE_GLASS.parent.resolve() == expected_state_dir, (
+        f"V8: trehalose ledger path drifted from canonical state dir: "
+        f"{_TREHALOSE_GLASS}"
+    )
+    assert _CRYPTOBIOSIS_STATE.parent.resolve() == expected_state_dir, (
+        f"V8: cryptobiosis snapshot path drifted from canonical state dir: "
+        f"{_CRYPTOBIOSIS_STATE}"
+    )
+    print(f"[V8] State dir pinned to repo root: {actual_state_dir}")
+    print("[PASS] No organ-local stranding (C55M F12 root cause sealed).\n")
+
+    # V9: Float-tolerance regression guard (C55M Defect F17). The V4
+    #     DEAD-phase assertions used to be `== 0.0`, which would silently
+    #     fail if the engine were ever refactored to compute (rather than
+    #     hard-return) the DEAD sentinel and produced a float at the
+    #     denormal boundary (e.g. 5e-324). We assert the assertion shape:
+    #     a tiny positive value below _ZERO_EPS must satisfy the same
+    #     tolerance check that V4 now uses.
+    tiny_nonzero = 1e-15
+    assert math.isclose(tiny_nonzero, 0.0, abs_tol=_ZERO_EPS), (
+        f"V9: tolerance ({_ZERO_EPS}) too tight to absorb denormal values"
+    )
+    near_eps = _ZERO_EPS * 10.0
+    assert not math.isclose(near_eps, 0.0, abs_tol=_ZERO_EPS), (
+        f"V9: tolerance ({_ZERO_EPS}) too loose — would let real metabolism "
+        f"({near_eps}%) through as 'dead'"
+    )
+    # math.isclose() must reject NaN (a NaN metabolism reading must NEVER be
+    # accepted as 'dead'). This is exactly the brittleness `== 0.0` had:
+    # NaN == 0.0 is False, so silent NaN propagation could escape detection.
+    nan_metabolism = float("nan")
+    assert not math.isclose(nan_metabolism, 0.0, abs_tol=_ZERO_EPS), (
+        "V9: math.isclose() must reject NaN as 'dead' — instrumentation "
+        "failure would otherwise be misclassified as cryptobiosis."
+    )
+    print(f"[V9] Float-tolerance band: [0, {_ZERO_EPS}) sealed; "
+          f"absorbs {tiny_nonzero}, rejects {near_eps}.")
+    print("[PASS] V4 no longer brittle to floating-point sentinel drift.\n")
+
     print("=" * 60)
     print("  VFT CRYPTOBIOSIS ENGINE: ALL PROOFS PASSED.")
     print("  The organism is immortal against environmental collapse.")
-    print("  BISHOP — Event 25b. SCAR sealed.")
+    print("  BISHOP — Event 25b. SCAR sealed (C55M F10/F12/F17 + C47H F-path).")
     print("=" * 60)
     return True
 

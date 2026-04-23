@@ -73,6 +73,16 @@ def _safe_read_last_jsonl(filepath: Path) -> dict:
             return {}
     return {}
 
+from System.swarm_locus_coeruleus import SwarmLocusCoeruleus
+
+_lc_engine = None
+
+def get_lc_engine():
+    global _lc_engine
+    if _lc_engine is None:
+        _lc_engine = SwarmLocusCoeruleus(state_dir=_STATE_DIR)
+    return _lc_engine
+
 def generate_organism_heartbeat() -> Dict[str, Any]:
     """
     Biological Loop: Reads the bioelectric state of the organism and projects 
@@ -83,6 +93,14 @@ def generate_organism_heartbeat() -> Dict[str, Any]:
     cognitive_data = _safe_read_json(_COGNITIVE_STATE)
     error_data     = _safe_read_json(_ERROR_RATES)
     serotonin_data = _safe_read_json(_SEROTONIN_HIER)
+    
+    # Read CRISPR total encounters for LC tick
+    crispr_data    = _safe_read_json(_STATE_DIR / "crispr_memory.json")
+    total_encounters = crispr_data.get("total_encounters", 0)
+
+    # ── Sympathetic Nervous System (Locus Coeruleus) Tick ──
+    lc = get_lc_engine()
+    lc_report = lc.tick(cumulative_encounters=total_encounters)
 
     # Analyze raw vital signs
     atp_level            = atp_data.get("current_atp_levels", 100.0)
@@ -103,6 +121,8 @@ def generate_organism_heartbeat() -> Dict[str, Any]:
         clinical_status = "METABOLIC_FATIGUE"
     elif is_sick:
         clinical_status = "ACUTE_INFLAMMATION_RESPONSE"
+    elif lc_report.get("state") == "FIGHT_OR_FLIGHT":
+        clinical_status = "SYMPATHETIC_AROUSAL (Fight-or-Flight)"
 
     # ── Legacy-schema fields (the contract six downstream modules read) ──
     # Source of truth for serotonin/posture is the social-hierarchy ledger,
@@ -136,6 +156,10 @@ def generate_organism_heartbeat() -> Dict[str, Any]:
                 0,
                 cerebellar_mutations - error_data.get("successful_repairs", 0)
             ),
+            # Locus Coeruleus
+            "noradrenaline_arousal":   lc_report.get("NE", 0.1),
+            "defense_allocation":      lc_report.get("defense_weight", 0.3),
+            
             # Legacy schema (the SSP/Ψ/voice_modulator contract — DO NOT REMOVE,
             # six modules read these and silently fall back to neutral defaults
             # otherwise, which is what caused the 25.9h fossil-data audit).

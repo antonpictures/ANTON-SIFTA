@@ -242,6 +242,14 @@
     "window_height": 720,
     "signature": "UNVERIFIED"
   },
+  "IDE Control Panel": {
+    "category": "System",
+    "entry_point": "Applications/sifta_ide_control_panel.py",
+    "widget_class": "IdeControlPanelWidget",
+    "window_width": 1040,
+    "window_height": 700,
+    "signature": "UNVERIFIED"
+  },
   "Brain Gas-Station Meter": {
     "category": "System",
     "entry_point": "Applications/sifta_gasstation_meter.py",

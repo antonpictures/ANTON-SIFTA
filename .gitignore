@@ -151,3 +151,7 @@ implementation_plan.md
 # ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
 .clinerules
 .distro_build/
+
+# Personal Sandbox
+.personal/
+

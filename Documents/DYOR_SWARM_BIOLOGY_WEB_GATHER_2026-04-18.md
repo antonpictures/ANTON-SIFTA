@@ -535,7 +535,7 @@ Composer-class models on Cursor are optimized for **fast, cost-efficient** turns
 
 ## 24. Batch 19 — multi-agent RL coordination (CTDE / MAPPO / MADDPG) (2026-04-17)
 
-*Web pull (CP2F): engineering anchors for **`Archive/swarmrl_upstream/swarmrl/core/swarm_controller.py`** (shared observation summary + swarm reward hook). **Epistemic guardrail:** a browser tab’s claims about `swarmrl.zip` layout or `git push` were **not** verified by CP2F — this batch cites **papers** and **on-disk** upstream under `Archive/swarmrl_upstream/`.*
+*Web pull (CP2F): engineering anchors for **`Library/swarmrl/swarmrl/core/swarm_controller.py`** (shared observation summary + swarm reward hook). **Epistemic guardrail:** a browser tab’s claims about `swarmrl.zip` layout or `git push` were **not** verified by CP2F — this batch cites **papers** and **on-disk** upstream under `Library/swarmrl/`.*
 
 ### 24.1 MAPPO — centralized critic, on-policy multi-agent PPO
 
@@ -566,7 +566,7 @@ Composer-class models on Cursor are optimized for **fast, cost-efficient** turns
 
 ### 25.2 PPO — clipped objective + entropy bonus
 
-- **Schulman *et al.* — “Proximal Policy Optimization Algorithms”** — arXiv **`1707.06347`** (2017). OpenAI / canonical PPO reference — **entropy coefficient** as explicit exploration control (matches `ProximalPolicyLoss` in `Archive/swarmrl_upstream/swarmrl/losses/proximal_policy_loss.py`).
+- **Schulman *et al.* — “Proximal Policy Optimization Algorithms”** — arXiv **`1707.06347`** (2017). OpenAI / canonical PPO reference — **entropy coefficient** as explicit exploration control (matches `ProximalPolicyLoss` in `Library/swarmrl/swarmrl/losses/proximal_policy_loss.py`).
 
 ### 25.3 Mapping (Batch 20 → code)
 

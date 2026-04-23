@@ -302,7 +302,15 @@ class MacSayBackend:
                 proc = subprocess.run(
                     cmd, capture_output=True, timeout=self._timeout_s,
                 )
-                return proc.returncode == 0
+                if proc.returncode == 0:
+                    return True
+                stderr = proc.stderr.decode("utf-8", errors="replace") if isinstance(proc.stderr, bytes) else str(proc.stderr or "")
+                _log_failure(
+                    "say_nonzero",
+                    RuntimeError(f"say exited {proc.returncode}: {stderr.strip()}"),
+                    backend=self.name,
+                )
+                return False
             except subprocess.TimeoutExpired as exc:
                 _log_failure("say_timeout", exc, backend=self.name)
                 return False
@@ -397,14 +405,60 @@ class PiperBackend:
         return voice
 
     def _play_pcm(self, pcm_bytes: bytes, sample_rate: int) -> bool:
-        """Play int16 mono PCM. Tries sounddevice first, then afplay/aplay."""
+        """Play int16 mono PCM. Tries sounddevice first with fallback walk, then afplay."""
         # Path A: sounddevice (real-time, no temp file).
         try:
             import numpy as np
             import sounddevice as sd
             arr = np.frombuffer(pcm_bytes, dtype=np.int16)
-            sd.play(arr, samplerate=sample_rate, blocking=True)
-            return True
+            
+            # C55 audio output device walking to avoid dead default drops.
+            # sounddevice.default.device is an _InputOutputPair on macOS, not
+            # always a tuple/list, so index it defensively.
+            candidates: List[Tuple[Optional[int], str]] = []
+            seen: set[Optional[int]] = set()
+
+            def add(idx: Optional[int], label: str) -> None:
+                key = None if idx is None else int(idx)
+                if key in seen:
+                    return
+                seen.add(key)
+                candidates.append((key, label))
+
+            try:
+                devices = list(sd.query_devices())
+                default_device = sd.default.device
+                try:
+                    default_idx = default_device[1]
+                except Exception:
+                    default_idx = default_device
+                default_idx = int(default_idx)
+                if default_idx >= 0:
+                    name = ""
+                    if default_idx < len(devices):
+                        name = str(devices[default_idx].get("name") or "")
+                    add(default_idx, f"default output {default_idx}:{name}")
+                for idx, info in enumerate(devices):
+                    if int(info.get("max_output_channels") or 0) > 0:
+                        add(idx, f"output {idx}:{info.get('name') or ''}")
+            except Exception:
+                pass
+            add(None, "system default")
+            
+            failures: List[str] = []
+            for dev_idx, label in candidates:
+                try:
+                    sd.play(arr, samplerate=sample_rate, blocking=True, device=dev_idx)
+                    return True
+                except Exception as exc:
+                    failures.append(f"{label}: {exc}")
+                    continue
+            if failures:
+                _log_failure(
+                    "piper_sounddevice_candidates",
+                    RuntimeError("; ".join(failures[:6])),
+                    backend=self.name,
+                )
         except Exception:
             pass
         # Path B: temp WAV → system player. Slower but always works.
@@ -428,7 +482,15 @@ class PiperBackend:
                 proc = subprocess.run(
                     player, capture_output=True, timeout=self._timeout_s,
                 )
-                return proc.returncode == 0
+                if proc.returncode == 0:
+                    return True
+                stderr = proc.stderr.decode("utf-8", errors="replace") if isinstance(proc.stderr, bytes) else str(proc.stderr or "")
+                _log_failure(
+                    "piper_playback",
+                    RuntimeError(f"{player[0]} exited {proc.returncode}: {stderr.strip()}"),
+                    backend=self.name,
+                )
+                return False
             finally:
                 try:
                     os.unlink(wav_path)

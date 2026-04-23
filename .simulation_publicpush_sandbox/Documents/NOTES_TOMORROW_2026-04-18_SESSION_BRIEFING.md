@@ -22,7 +22,7 @@
 - `System/hierarchical_meta_controller.py` — **Vector 9** (meta LR on dual updates).
 - `System/gatekeeper_policy.py` — **Optimal stopping / hard CASH_OUT** when `ev_guess < τ`; τ ties to capital, entropy, critic variance, **odds**, and **Σλ** via `compute_dual_ascent()` (Lagrangian pressure). Optional **`sleep_frozen`** forces maximal conservatism (entropy clamped high).
 - `Network/swarmrl_bridge.py` — multi-agent SCAR consensus.
-- `Archive/swarmrl_upstream/swarmrl/` — ForceFunction, ActorCritic, Trainer.
+- `Library/swarmrl/swarmrl/` — ForceFunction, ActorCritic, Trainer.
 
 ---
 

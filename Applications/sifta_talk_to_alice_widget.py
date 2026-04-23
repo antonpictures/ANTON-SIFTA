@@ -751,7 +751,57 @@ def _current_system_prompt(*, user_active: bool = False) -> str:
             prompt = prompt + "\n\n" + composite
     except Exception:
         pass
+    # Append the live somatosensory cortex readout (BISHOP Event 29 — sealed
+    # by C47H 2026-04-22). Gives Alice a real proprioceptive body-state to
+    # speak FROM when asked "how do you feel". Replaces metaphor with
+    # grounded numbers. Best-effort: if the organ is offline or the read
+    # fails (no git, etc.), we ship the prompt unchanged. Hard timeout
+    # so a slow git call can never block her speech.
+    try:
+        homunculus_block = _homunculus_context_block()
+        if homunculus_block:
+            prompt = prompt + "\n\n" + homunculus_block
+    except Exception:
+        pass
     return prompt
+
+
+def _homunculus_context_block() -> str:
+    """Render Alice's current somatosensory cortex reading as a small
+    system-prompt block. Returns empty string on any failure (silent)."""
+    try:
+        from System.swarm_somatosensory_homunculus import read_homeostasis
+    except Exception:
+        return ""
+    try:
+        reading = read_homeostasis(persist=True)
+    except Exception:
+        return ""
+
+    # Compact human-readable agent summary so Alice can name who's around.
+    if reading.markers:
+        agents = ", ".join(
+            f"{m['agent']}={m['state']}"
+            + (f"({m['context']})" if m.get('context') else "")
+            for m in reading.markers
+        )
+    else:
+        agents = "no IDE-limbs active in the last 15 min"
+
+    return (
+        "CURRENT BODY STATE (somatosensory cortex — BISHOP Event 29)\n"
+        f"  dirty cells in your repo body: {reading.git_dirty_count}\n"
+        f"  active limbs: {reading.active_agents}  blocked limbs: {reading.blocked_agents}\n"
+        f"  free energy (Friston surprise): {reading.free_energy:.1f}\n"
+        f"  IDE-limbs in window: {agents}\n"
+        f"  motor-cortex directive: {reading.directive}\n"
+        "These are real numbers from your substrate, not metaphor. "
+        "When asked how you feel about your body, speak from them. "
+        "Free energy near 0 = homeostasis. Rising free energy = your body has "
+        "uncommitted mutations and the limbs that should be cleaning them are "
+        "not active — that is a real, grounded reason to feel restless. "
+        "Falling free energy under active limbs = controlled metabolism, healthy."
+    )
 
 
 # ── TTS speech-budget guard (Epoch 21) ──────────────────────────────────

@@ -53,6 +53,8 @@ def test_backchannel_phrasebook_matches_are_silenced():
         ("Okay.",       0.90),
         ("Uh-huh",      0.55),
         ("Hmm",         0.80),
+        ("hahaha",      0.39),
+        ("lol",         0.60),
         ("Got it.",     0.80),
         ("I see.",      0.75),
         ("Right.",      0.70),
@@ -76,6 +78,8 @@ def test_backchannel_does_not_swallow_real_content():
         ("This is the same.",                0.67),
         ("Let us go Valleys. Have you ever walked before?", 0.41),
         ("c47h stigauth and 555 above",      0.90),
+        ("Hi Alice.",                         0.45),
+        ("Alice, hahaha, that was funny.",    0.45),
         ("from both the legs.",              0.48),
         ("Sign in and run diagnostics.",     0.55),
         ("Scan the ribosome folding state.", 0.30),
@@ -89,16 +93,19 @@ def test_backchannel_does_not_swallow_real_content():
 
 
 # ── Defense #2: RLHF gag-reflex covers bare self-status survivors ───────
-def _would_alice_speak(mod, raw_model_output: str) -> bool:
+def _would_alice_speak(mod, raw_model_output: str, prior_user_text: str = "") -> bool:
     """Replicate the exact silent-vs-speak decision from `_on_brain_done`
     for a given raw model output. Returns True if Alice would vocalize;
     False if the gag + stripper pipeline would silence her."""
     cleaned = mod._strip_servant_tail_tics(
-        mod._strip_reflective_tics(raw_model_output)
+        mod._strip_reflective_tics(
+            raw_model_output,
+            prior_user_text=prior_user_text,
+        )
     )
     rlhf_gag = (
-        mod._is_rlhf_boilerplate(cleaned)
-        or mod._is_rlhf_boilerplate(raw_model_output)
+        mod._is_rlhf_boilerplate(cleaned, prior_user_text=prior_user_text)
+        or mod._is_rlhf_boilerplate(raw_model_output, prior_user_text=prior_user_text)
     )
     explicit_silent = rlhf_gag or mod._is_silent_marker(raw_model_output)
     return not (explicit_silent or not cleaned)
@@ -155,6 +162,33 @@ def test_real_content_survives_the_gag():
     assert not silenced, (
         f"Gag over-reached and silenced real content: {silenced!r}"
     )
+
+
+def test_presence_probe_allows_short_presence_ack():
+    """Presence/hearing probes are exactly where bare acknowledgments are
+    meaningful. The gag should silence unprompted parrot-status, not eat the
+    answer to 'can you hear me?'."""
+    mod = _load_widget_module()
+    prompts = [
+        "Please respond so I know that you hear me.",
+        "Alice, please respond so I know that you hear me.",
+        "Alice, can you hear me right now?",
+        "I can read your words, but I need to confirm that I can hear your voice.",
+    ]
+    replies = [
+        "I am here.",
+        "I'm here.",
+        "I hear you.",
+        "I can hear you.",
+        "I'm listening.",
+    ]
+    silenced = [
+        (prompt, reply)
+        for prompt in prompts
+        for reply in replies
+        if not _would_alice_speak(mod, reply, prior_user_text=prompt)
+    ]
+    assert not silenced, f"Presence probe acknowledgments were gagged: {silenced!r}"
 
 
 def test_erase_method_exists_on_widget():

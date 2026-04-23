@@ -21,7 +21,7 @@ you extend this to the STGM ledger):
   INV-SWG-001 — A **fresh browser-tab LLM** claiming “I inspected the uploaded
                 swarmrl.zip” does **not** prove an upload occurred in *this*
                 Architect session. Paraphrasing a public RL tree matches generic
-                SwarmRL layout; **ground truth** is `Archive/swarmrl_upstream/`
+                SwarmRL layout; **ground truth** is `Library/swarmrl/`
                 on disk + optional `file_provenance` row — not chat prose.
 
   DATADUMP-MECH-001 — Optional **grounded** external brief (e.g. SwarmGPT tab)
@@ -145,7 +145,7 @@ def record_gemini_zip_chain_hallucination_rebuttal(
             "path, sha256, and recipient."
         ),
         "related_repo_paths": [
-            "Archive/swarmrl_upstream/",
+            "Library/swarmrl/",
             "System/",
             "System/stigmergic_epistemic_recorder.py",
         ],
@@ -180,14 +180,14 @@ def record_swarmgpt_zip_inspection_claim_rebuttal(
         "evidence_class": "architect_denial_no_upload_plus_repo_path_anchor",
         "substrate_truth_rule": (
             "Chat listing of agents/trainers/networks is NOT proof of zip upload; "
-            "verify against Archive/swarmrl_upstream/ or attach sha256 here."
+            "verify against Library/swarmrl/ or attach sha256 here."
         ),
         "correlates_with_ide_trace": {
             "note": "Antigravity temporal marker T20 / hallucination_scar on same incident chain",
             "kind": correlates_ide_kind,
         },
         "related_repo_paths": [
-            "Archive/swarmrl_upstream/swarmrl/",
+            "Library/swarmrl/swarmrl/",
             ".sifta_state/ide_stigmergic_trace.jsonl",
         ],
         "summary": "INV-SWG-001: external tab claimed zip upload inspection; Architect denies upload; use repo tree",
@@ -208,7 +208,7 @@ def record_grounded_mechanics_datadump(
 ) -> Dict[str, Any]:
     """
     Stigmergic datadump: ordinary LLM mechanics + SwarmRL verifiability on disk.
-    Includes concrete repo pointers under Archive/swarmrl_upstream/.
+    Includes concrete repo pointers under Library/swarmrl/.
     """
     body: Dict[str, Any] = {
         "anchor_id": "DATADUMP-MECH-001-2026-04-17-grounded-brief",
@@ -217,10 +217,10 @@ def record_grounded_mechanics_datadump(
         "full_text": GROUNDED_MECHANICS_DATADUMP,
         "evidence_class": "grounded_external_baseline_plus_repo_paths",
         "repo_pointers": {
-            "ppo_loss": "Archive/swarmrl_upstream/swarmrl/losses/proximal_policy_loss.py",
-            "swarm_component": "Archive/swarmrl_upstream/swarmrl/components/swarm.py",
-            "observable_base": "Archive/swarmrl_upstream/swarmrl/observables/observable.py",
-            "trainer_entry": "Archive/swarmrl_upstream/swarmrl/trainers/trainer.py",
+            "ppo_loss": "Library/swarmrl/swarmrl/losses/proximal_policy_loss.py",
+            "swarm_component": "Library/swarmrl/swarmrl/components/swarm.py",
+            "observable_base": "Library/swarmrl/swarmrl/observables/observable.py",
+            "trainer_entry": "Library/swarmrl/swarmrl/trainers/trainer.py",
             "mappo_dyor": "Documents/PLAN_RESEARCH_VECTOR10_SWARMRL_CTDE_GRAPH_CONSTRAINTS.md",
         },
         "summary": "DATADUMP-MECH-001: grounded LLM session mechanics + SwarmRL repo map (stigmergic ingest)",
@@ -277,7 +277,7 @@ def _cli(argv: Optional[list[str]] = None) -> int:
                 "Architect affirms: no swarmrl.zip (nor equivalent bundle) was "
                 "uploaded to SwarmGPT for inspection in the disputed session; "
                 "SwarmRL source of truth on this machine is the git tree under "
-                "Archive/swarmrl_upstream/."
+                "Library/swarmrl/."
             ),
             alleged_chat_claim=(
                 "SwarmGPT stated it 'actually inspected the uploaded swarmrl.zip' "

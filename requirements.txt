@@ -13,6 +13,7 @@ numpy>=1.26.0
 certifi>=2024.0.0
 websockets==15.0.1
 ecdsa>=0.19.0  # used by System/swarm_bishop_mrna.py — RFC6979 deterministic signing of dual-IDE mRNA traces
+faster-whisper>=1.2.1  # local speech-to-text backend for Talk to Alice
 
 # ── Optional: cross-platform neural TTS (Piper) ──────────────────────────────
 # Used by System/swarm_vocal_cords.py::PiperBackend when no macOS Premium

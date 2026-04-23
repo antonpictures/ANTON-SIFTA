@@ -24,7 +24,7 @@
 | `swarm_amygdala_salience` | Threat scoring | **Standalone** | Wire from ingress path when you want immune-style gating. |
 | `serotonin_homeostasis.SerotoninHomeostasis` | 5-HT phase governor | **Loose** — referenced in `hypothalamic_swim_sectors` as string only | **Not** driving PPO `entropy_coefficient` unless you connect it. |
 | `swarm_serotonin_hierarchy` | Validation → JSON vitals | **Standalone** | Narrative telemetry; map to `ExplorationController` if you want RL semantics. |
-| `Archive/swarmrl_upstream/.../ProximalPolicyLoss` | PPO + entropy + GAE | **Yes** — inside trainer stack | **Ground truth** for “real RL” in this repo. |
+| `Library/swarmrl/.../ProximalPolicyLoss` | PPO + entropy + GAE | **Yes** — inside trainer stack | **Ground truth** for “real RL” in this repo. |
 | `swarmrl/core/swarm_controller.SwarmController` | CTDE-style aggregate | **Optional scaffold** | Not yet called from `ContinuousTrainer`; add when you prototype MAPPO-style critics. |
 
 **Bottom line:** Identity + probe + replay-in-sleep are the strongest **closed** loops. “Organs” are mostly **modular** until a **single driver** (desktop OS loop, trainer hook, or relay) calls them in order.

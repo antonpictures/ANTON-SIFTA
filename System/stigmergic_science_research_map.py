@@ -47,7 +47,7 @@ EXECUTION_PLAN_STEPS: List[str] = [
     "Phase 8 — Economics: STGM mint/store stays Ed25519-signed via ``crypto_keychain``; metabolic math never bypasses the ledger.",
     "Phase 9 — Cross-app memory: ``stigmergic_memory_bus`` for UI/process handoff; IDE dirt remains separate from Swarm chat.",
     "Phase 10 — Topology: Mac Mini uses ``IDE_ANTIGRAVITY_MINI``; migrations use ``swimmer_migration`` consent artifacts.",
-    "Phase 11 — SwarmRL fork: wire ``Archive/swarmrl_upstream`` trainer hooks without bloating vendored tree.",
+    "Phase 11 — SwarmRL fork: wire ``Library/swarmrl`` trainer hooks without bloating vendored tree.",
     "Phase 12 — Telemetry: ``telemetry_snapshot.py`` + exoskeleton clients as human-facing observability.",
     "Phase 13 — Science validation: pick 1–2 benchmark environments; log traces + anchors for reproducible ablations.",
     "Phase 14 — Documentation delta: when literature mapping changes, update this module (executable) first, prose docs second.",

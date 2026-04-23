@@ -1,9 +1,9 @@
-# SIFTA Distribution Doctrine — v1
+# SIFTA Distribution Doctrine — v2
 
-**Authors:** Ioan George Anton (Architect) + C47H IDE LLM
+**Authors:** Ioan George Anton (Architect), C47H IDE LLM, AG31
 **Date:** 2026-04-22
-**Stigauth:** `C47H_SIFTA_DISTRO_DOCTRINE_v1`
-**Status:** Active. Supersedes any earlier informal distribution notes.
+**Stigauth:** `C47H_SIFTA_DISTRO_DOCTRINE_v2`
+**Status:** Active. Formalizes the transition to Option B (Two Repos).
 
 ---
 
@@ -21,18 +21,17 @@ doctrine fixes the model without breaking the lab.
 
 ---
 
-## 2. Two tracks, one repo
+## 2. Two tracks, two repos (Option B)
 
-We adopt the same shape Linux distros use:
+We adopt the bifurcated repository shape to maximize safety and cleanliness:
 
 | Track | What it is | Who edits it | Tolerance for mess |
 |---|---|---|---|
-| **Personal SIFTA** (upstream / lab) | The Architect's living workshop on M5. Contains his data, his discoveries, his half-built organs. | Architect + on-site agents (C47H, AG31, AO46, etc.) | High. This is where invention happens. |
-| **Distro SIFTA** (downstream / release) | Same code, parameterized so the runtime asks "who is the owner here?" instead of assuming Ioan. Ships clean. | Promoted from personal via the *Translation Discipline* (§5). | Low. Distro must boot identically on any Apple Silicon Mac. |
+| **Personal SIFTA (antonpictures/ANTON-SIFTA)** | The Architect's living upstream lab on M5. Contains his data, loose sandbox files in `.personal/`, and local testing. | Architect + on-site agents | High. This is where invention happens. |
+| **Distro OS (antonpictures/SIFTA-OS)** | The public distribution. Rendered cleanly via the Phase 6 `distro_scrubber.py`. Ships clean with macOS-style Library/ architecture. | Promoted from personal via the scrubber script. | Low. Must boot identically and anonymously on any Mac out-of-the-box. |
 
 Discoveries flow **personal → distro**. Bug reports flow **distro → personal**.
-There is no fork. The same `git` tree carries both, distinguished only
-by which **runtime literals** are present and which call **kernel accessors**.
+There are two physically separate git trees (`ANTON-SIFTA` vs `SIFTA-OS`). The scrubber bridge protects the public tree from ever directly housing PII history.
 
 ---
 

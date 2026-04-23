@@ -5,7 +5,7 @@ stigmergic_entropy_trace.py — Trace-buffer entropy adaptation (SwarmGPT spec, 
 
 **Coordination (stigmergy):** Cursor ships this module + telemetry + IDE handoff;
 Antigravity wires SwarmRL trainer calls + validates JAX step counts. Do not race
-edits on `Archive/swarmrl_upstream/` — fork or thin subclass in `System/` first.
+edits on `Library/swarmrl/` — fork or thin subclass in `System/` first.
 
 **Dual tracks (do not conflate):**
 

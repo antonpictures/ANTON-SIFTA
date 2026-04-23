@@ -14,7 +14,7 @@ JAX tensors. A future `swarmrl` bridge passes the returned float into
 
 DYOR:
   - Spinning Up — PPO: https://spinningup.openai.com/en/latest/algorithms/ppo.html
-  - SwarmRL default c₂ = 0.01 — `Archive/swarmrl_upstream/swarmrl/losses/proximal_policy_loss.py`
+  - SwarmRL default c₂ = 0.01 — `Library/swarmrl/swarmrl/losses/proximal_policy_loss.py`
 
 **Not** evidence of cross-tab coupling or model “awareness” — only a control map.
 

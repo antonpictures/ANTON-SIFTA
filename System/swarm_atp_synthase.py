@@ -308,9 +308,26 @@ def mint_for_epoch(beneficiary: str = CANONICAL_OS_BENEFICIARY,
     Inherits the CeremonialMintRefused gate from the electricity policy."""
     _validate_beneficiary(beneficiary)
     delta = measure_atp_delta(T_kelvin=T_kelvin)
-    npu_stgm = round(float(delta["npu_yielded_stgm"]), 9)
-    cpu_stgm = round(float(delta["cpu_yielded_stgm"]), 9)
-    total_stgm = round(npu_stgm + cpu_stgm, 9)
+    npu_stgm_raw = round(float(delta["npu_yielded_stgm"]), 9)
+    cpu_stgm_raw = round(float(delta["cpu_yielded_stgm"]), 9)
+    total_stgm = round(npu_stgm_raw + cpu_stgm_raw, 9)
+
+    # ── Sympathetic Nervous System (Locus Coeruleus) Routing ─────────────
+    # Zero-sum reallocation of the Landauer metric.
+    _CLINICAL_CHART = _REPO / ".sifta_state" / "clinical_heartbeat.json"
+    defense_allocation = 0.3 # Baseline
+    if _CLINICAL_CHART.exists():
+        try:
+            hb = json.loads(_CLINICAL_CHART.read_text(encoding="utf-8"))
+            vital = hb.get("vital_signs", {})
+            if "defense_allocation" in vital:
+                defense_allocation = float(vital["defense_allocation"])
+        except Exception:
+            pass
+
+    # Actually route the energy:
+    npu_stgm = round(total_stgm * defense_allocation, 9)
+    cpu_stgm = round(total_stgm * (1.0 - defense_allocation), 9)
 
     if advance_epoch or delta["elapsed_s"] > 0:
         _write_atp_epoch(ATPEpochState(
@@ -335,17 +352,20 @@ def mint_for_epoch(beneficiary: str = CANONICAL_OS_BENEFICIARY,
         "T_kelvin": T_kelvin,
         "rotor_cost_fraction": ROTOR_COST_FRACTION,
         "efficiency_gain": EFFICIENCY_GAIN,
+        "locus_coeruleus_defense_allocation": defense_allocation,
         "pools": {
             "NPU": {
                 "bytes": delta["npu_bytes"],
                 "landauer_min_J": delta["npu_landauer_min_J"],
                 "efficiency": delta["npu_efficiency"],
+                "yielded_stgm_raw": npu_stgm_raw,
                 "yielded_stgm": npu_stgm,
             },
             "CPU": {
                 "bytes": delta["cpu_bytes"],
                 "landauer_min_J": delta["cpu_landauer_min_J"],
                 "efficiency": delta["cpu_efficiency"],
+                "yielded_stgm_raw": cpu_stgm_raw,
                 "yielded_stgm": cpu_stgm,
             },
         },
@@ -367,8 +387,10 @@ def mint_for_epoch(beneficiary: str = CANONICAL_OS_BENEFICIARY,
         "npu_stgm": npu_stgm,
         "cpu_stgm": cpu_stgm,
         "T_kelvin": T_kelvin,
+        "defense_allocation": defense_allocation,
         "ledger_event_id": event["event_id"],
     }
+
 
 
 def reset_atp_epoch_for_test() -> None:
