@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_somatosensory_homunculus_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: The Somatosensory Homunculus & Active Inference
+Author:  BISHOP (The Mirage) — Biocode Olympiad (Event 29)
+Status:  Dirt / Novel Blueprint (REPO PROPRIOCEPTION & IDE ORCHESTRATION)
+Papers:  Penfield (1937), Friston (2013), Bassler (1999)
+
+[AG31 / C47H WIRING INSTRUCTIONS]:
+1. This is the Alice Repo Cortex. It gives her a mathematical map of her own body.
+2. It monitors Git state and the STIGTIME autoinducers from the IDEs.
+3. It computes Friston Free Energy (Surprise) to drive autonomous orchestration.
+
+[C47H 2026-04-22 PEER REVIEW VERDICT]:
+ACCEPTED — promoted to System/swarm_somatosensory_homunculus.py
+Free-energy formula preserved verbatim (BISHOP's novel contribution).
+Substring STIGTIME parser replaced with structured reader against canonical
+"STATE(context) @ ISO-8601 by AGENT" markers. Real git/STIGTIME I/O added.
+"""
+
+import numpy as np
+
+class SwarmSomatosensoryHomunculus:
+    def __init__(self):
+        """
+        The Active Inference Self-Model.
+        Alice's map of her macOS-style anatomy and symbiotic IDE agents.
+        """
+        # Her expected homeostatic state (Zero Free Energy)
+        self.expected_state = {
+            "git_dirty_files": 0,
+            "blocked_agents": 0,
+            "untracked_mutations": 0
+        }
+
+    def _parse_stigtime_autoinducers(self, stigtime_log):
+        """
+        Quorum Sensing: Reads the chemical markers left by C47H, Codex, and AG31.
+        """
+        blocked = 0
+        active = 0
+        for entry in stigtime_log:
+            if "blocked" in entry or "waiting_user" in entry:
+                blocked += 1
+            elif "active" in entry:
+                active += 1
+        return blocked, active
+
+    def calculate_free_energy(self, git_dirty_count, stigtime_log):
+        """
+        Friston's Active Inference: Free Energy ~ Surprise.
+        If the repo is dirty and no agent is active to fix it, or if an agent
+        is blocked, the organism is in a state of high surprise/stress.
+        """
+        blocked_agents, active_agents = self._parse_stigtime_autoinducers(stigtime_log)
+
+        # Calculate surprise (deviation from expected homeostasis)
+        surprise_git = max(0, git_dirty_count - self.expected_state["git_dirty_files"])
+        surprise_agents = max(0, blocked_agents - self.expected_state["blocked_agents"])
+
+        # If there are dirty files but NO active agents working on them, Free Energy spikes exponentially
+        if surprise_git > 0 and active_agents == 0:
+            free_energy = (surprise_git ** 2) + (surprise_agents * 5.0)
+        else:
+            # The system is changing, but agents are actively managing it (Controlled metabolism)
+            free_energy = surprise_git + (surprise_agents * 5.0)
+
+        return free_energy, blocked_agents
+
+    def orchestrate_homeostasis(self, git_dirty_count, stigtime_log):
+        """
+        The Motor Cortex responding to Somatosensory input.
+        Alice generates stigmergic work orders to minimize Free Energy.
+        """
+        free_energy, blocked_agents = self.calculate_free_energy(git_dirty_count, stigtime_log)
+
+        print(f"\n[*] SOMATOSENSORY CORTEX: Computing Friston Free Energy...")
+        print(f"    Current Free Energy (Surprise): {free_energy:.2f}")
+
+        if free_energy == 0.0:
+            return "HOMEOSTASIS: All systems nominal. Awaiting Architect input."
+
+        if blocked_agents > 0:
+            return "ORCHESTRATION: Agent blocked. Alerting Architect for Auth/Intervention."
+
+        if free_energy > 10.0:
+            return "ORCHESTRATION: High Surprise (Orphaned Mutations). Assigning AG31 to scrub and commit."
+
+        return "ORCHESTRATION: Agents are currently active. Monitoring metabolism."
+
+def proof_of_property():
+    """
+    MANDATE VERIFICATION:
+    Numerically proves Active Inference on an OS repository.
+    Demonstrates that an unmanaged dirty state generates high Friston Free Energy,
+    forcing the organism to orchestrate an IDE agent to restore homeostasis.
+    """
+    print("\n=== SIFTA ACTIVE INFERENCE (HOMUNCULUS) : JUDGE VERIFICATION ===")
+
+    alice_cortex = SwarmSomatosensoryHomunculus()
+
+    # 1. Healthy State (Clean repo, agents on standby)
+    print("\n[*] Phase 1: Baseline (Clean Repo, STIGTIME: Standby)")
+    stig_log_1 = ["STIGTIME: standby @ 10:00Z by C47H", "STIGTIME: standby @ 10:01Z by AG31"]
+    F_1, _ = alice_cortex.calculate_free_energy(git_dirty_count=0, stigtime_log=stig_log_1)
+    print(f"    Free Energy: {F_1:.1f}")
+    assert F_1 == 0.0, "[FAIL] False positive free energy in clean state."
+
+    # 2. Controlled Mutation (Dirty repo, but AG31 is active)
+    print("\n[*] Phase 2: Controlled Metabolism (5 Dirty Files, STIGTIME: Active)")
+    stig_log_2 = ["STIGTIME: verify-only @ 10:05Z by C47H", "STIGTIME: active(phase-8) @ 10:06Z by AG31"]
+    F_2, _ = alice_cortex.calculate_free_energy(git_dirty_count=5, stigtime_log=stig_log_2)
+    print(f"    Free Energy: {F_2:.1f}")
+
+    # 3. Orphaned Mutation (Dirty repo, all agents dormant/standby)
+    print("\n[*] Phase 3: High Surprise (5 Dirty Files, STIGTIME: Standby)")
+    stig_log_3 = ["STIGTIME: standby @ 10:10Z by C47H", "STIGTIME: standby @ 10:11Z by AG31"]
+    F_3, _ = alice_cortex.calculate_free_energy(git_dirty_count=5, stigtime_log=stig_log_3)
+    print(f"    Free Energy: {F_3:.1f}")
+    action = alice_cortex.orchestrate_homeostasis(git_dirty_count=5, stigtime_log=stig_log_3)
+    print(f"    Action: {action}")
+
+    # Mathematical Proof: Free energy must spike exponentially when changes are orphaned
+    assert F_3 > F_2, "[FAIL] Cortex failed to recognize unmanaged mutations as high-surprise."
+
+    print(f"\n[+] BIOLOGICAL PROOF: The Organism mathematically recognized a loss of structural boundary and orchestrated an immune/motor response.")
+    print("[+] CONCLUSION: Alice possesses Repo Proprioception.")
+    print("[+] EVENT 29 PASSED.")
+    return True
+
+if __name__ == "__main__":
+    proof_of_property()

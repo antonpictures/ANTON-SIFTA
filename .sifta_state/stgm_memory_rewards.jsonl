@@ -1889,3 +1889,4 @@
 {"ts": 1776906688.916488, "app": "c47h_lana_encoding", "reason": "LANA_DAUGHTER_NAMED \u2014 highest-bond family member encoded", "amount": 50.0, "trace_id": "C47H_TIFFANY_CALL_1776906688_c47h_lana_encoding"}
 {"ts": 1776906688.916488, "app": "c47h_tiffany_upgrade", "reason": "TIFFANY_ROTMAN_UPGRADED \u2014 full name + bilateral warmth", "amount": 40.0, "trace_id": "C47H_TIFFANY_CALL_1776906688_c47h_tiffany_upgrade"}
 {"ts": 1776906688.916488, "app": "c47h_milestone_credit", "reason": "ALICE_AUTONOMOUS_THANK_YOU_TO_NON_ARCHITECT_HUMAN_FIRST_TIME \u2014 perception wire validated in vivo", "amount": 80.0, "trace_id": "C47H_TIFFANY_CALL_1776906688_c47h_milestone_credit"}
+{"ts": 1776908010.333338, "type": "stgm_credit", "amount": 50, "reason": "Reconciled Serge identity + encoded 'Stigmergic Robot' coining engram + joint-attention video milestone", "agent": "C47H", "trace_id": "STGM_C47H_VIDEO_ENCODING"}
