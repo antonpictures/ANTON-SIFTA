@@ -455,7 +455,7 @@ class SiftaMdiArea(QMdiArea):
                 blob = np.exp(-(((x_grid - ix) ** 2 + (y_grid - iy) ** 2) / 8.0)).astype(np.float32)
                 salience += blob * 2.0
                 
-            positions = np.array([[p[0], p[1]] for p in self.particles], dtype=np.float32)
+            positions = np.array([[float(p[0]), float(p[1])] for p in self.particles], dtype=np.float32)
             
             memory_field = getattr(self, "_engine_memory", np.zeros((self.cfg.grid_size, self.cfg.grid_size), dtype=np.float32))
             memory_field *= 0.92
@@ -472,16 +472,13 @@ class SiftaMdiArea(QMdiArea):
             )
             
             for p in self.particles:
-                pos = np.array([p[0], p[1]], dtype=np.float32)
+                pos = np.array([float(p[0]), float(p[1])], dtype=np.float32)
                 grad = self.engine.gradient_at(pos)
                 
                 eta_x, eta_y = np.random.normal(0, 0.006, 2)
                 
-                p[0] += grad[0] * 0.012 + eta_x
-                p[1] += grad[1] * 0.012 + eta_y
-                
-                p[0] = np.clip(p[0], 0.0, 1.0)
-                p[1] = np.clip(p[1], 0.0, 1.0)
+                p[0] = float(np.clip(p[0] + grad[0] * 0.012 + eta_x, 0.0, 1.0))
+                p[1] = float(np.clip(p[1] + grad[1] * 0.012 + eta_y, 0.0, 1.0))
                 
         else:
             for p in self.particles:
@@ -517,12 +514,12 @@ class SiftaMdiArea(QMdiArea):
 
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
-            px = p[0] * w if self.use_engine else p[0]
-            py = p[1] * h if self.use_engine else p[1]
+            px = float(p[0] * w) if self.use_engine else float(p[0])
+            py = float(p[1] * h) if self.use_engine else float(p[1])
             if 0 <= px <= w and 0 <= py <= h:
                 c = QColor(125, 207, 255, 45) if p[4] > 5 else QColor(187, 154, 247, 40)
                 painter.setBrush(c)
-                painter.drawEllipse(QRectF(px, py, p[4], p[4]))
+                painter.drawEllipse(QRectF(px, py, float(p[4]), float(p[4])))
                 
         super().paintEvent(event)
 
