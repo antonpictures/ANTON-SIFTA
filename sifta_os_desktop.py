@@ -395,15 +395,35 @@ class SiftaMdiArea(QMdiArea):
         super().__init__()
         self.setBackground(QBrush(QColor("#0d0e17")))
         
+        try:
+            if str(_SYS) not in sys.path:
+                sys.path.insert(0, str(_SYS))
+            from System.swarm_unified_field_engine import UnifiedFieldEngine, UnifiedFieldConfig
+            self.cfg = UnifiedFieldConfig(grid_size=64, diffusion=0.03)
+            self.engine = UnifiedFieldEngine(self.cfg)
+            self.use_engine = True
+        except Exception as e:
+            print(f"[SiftaMdiArea] UnifiedFieldEngine not found: {e}")
+            self.use_engine = False
+            
         self.particles = []
         import os as _os
         _n_particles = int(_os.environ.get("SIFTA_DESKTOP_PHOTONS", "200"))
+        
+        import random
         for _ in range(_n_particles):
-            self.particles.append([
-                random.uniform(0, 3000), random.uniform(0, 2000),
-                random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3),
-                random.uniform(2, 8)
-            ])
+            if self.use_engine:
+                self.particles.append([
+                    random.uniform(0.0, 1.0), random.uniform(0.0, 1.0),
+                    0.0, 0.0,
+                    random.uniform(2, 8)
+                ])
+            else:
+                self.particles.append([
+                    random.uniform(0, 3000), random.uniform(0, 2000),
+                    random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3),
+                    random.uniform(2, 8)
+                ])
             
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -413,13 +433,65 @@ class SiftaMdiArea(QMdiArea):
         self.watermark_sub = QFont("Courier New", 18, QFont.Weight.Bold)
 
     def tick(self):
-        for p in self.particles:
-            p[0] += p[2]
-            p[1] += p[3]
-            if p[0] < 0: p[0] = 3000
-            elif p[0] > 3000: p[0] = 0
-            if p[1] < 0: p[1] = 2000
-            elif p[1] > 2000: p[1] = 0
+        w, h = self.viewport().width(), self.viewport().height()
+        if w == 0 or h == 0:
+            return
+
+        if self.use_engine:
+            import numpy as np
+            
+            salience = np.zeros((self.cfg.grid_size, self.cfg.grid_size), dtype=np.float32)
+            
+            for win in self.subWindowList():
+                if win.isHidden() or win.isMinimized():
+                    continue
+                cx = (win.x() + win.width() / 2.0) / w
+                cy = (win.y() + win.height() / 2.0) / h
+                
+                ix = int(np.clip(cx * self.cfg.grid_size, 0, self.cfg.grid_size - 1))
+                iy = int(np.clip(cy * self.cfg.grid_size, 0, self.cfg.grid_size - 1))
+                
+                y_grid, x_grid = np.ogrid[:self.cfg.grid_size, :self.cfg.grid_size]
+                blob = np.exp(-(((x_grid - ix) ** 2 + (y_grid - iy) ** 2) / 8.0)).astype(np.float32)
+                salience += blob * 2.0
+                
+            positions = np.array([[p[0], p[1]] for p in self.particles], dtype=np.float32)
+            
+            memory_field = getattr(self, "_engine_memory", np.zeros((self.cfg.grid_size, self.cfg.grid_size), dtype=np.float32))
+            memory_field *= 0.92
+            for pos in positions:
+                i, j = self.engine._idx(pos)
+                memory_field[i, j] += 0.3
+            self._engine_memory = memory_field
+            
+            self.engine.update(
+                memory=memory_field,
+                salience=salience,
+                prediction=salience,
+                positions=positions
+            )
+            
+            for p in self.particles:
+                pos = np.array([p[0], p[1]], dtype=np.float32)
+                grad = self.engine.gradient_at(pos)
+                
+                eta_x, eta_y = np.random.normal(0, 0.006, 2)
+                
+                p[0] += grad[0] * 0.012 + eta_x
+                p[1] += grad[1] * 0.012 + eta_y
+                
+                p[0] = np.clip(p[0], 0.0, 1.0)
+                p[1] = np.clip(p[1], 0.0, 1.0)
+                
+        else:
+            for p in self.particles:
+                p[0] += p[2]
+                p[1] += p[3]
+                if p[0] < 0: p[0] = w
+                elif p[0] > w: p[0] = 0
+                if p[1] < 0: p[1] = h
+                elif p[1] > h: p[1] = 0
+                
         self.viewport().update()
 
     def paintEvent(self, event):
@@ -445,10 +517,12 @@ class SiftaMdiArea(QMdiArea):
 
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
-            if 0 <= p[0] <= w and 0 <= p[1] <= h:
+            px = p[0] * w if self.use_engine else p[0]
+            py = p[1] * h if self.use_engine else p[1]
+            if 0 <= px <= w and 0 <= py <= h:
                 c = QColor(125, 207, 255, 45) if p[4] > 5 else QColor(187, 154, 247, 40)
                 painter.setBrush(c)
-                painter.drawEllipse(QRectF(p[0], p[1], p[4], p[4]))
+                painter.drawEllipse(QRectF(px, py, p[4], p[4]))
                 
         super().paintEvent(event)
 
