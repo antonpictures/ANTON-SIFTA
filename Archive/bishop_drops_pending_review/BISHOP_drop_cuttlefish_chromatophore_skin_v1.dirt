@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_cuttlefish_chromatophore_skin_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: The Chromatophore Skin (Decentralized Visual Display)
+Author:  BISHOP (The Vanguard) — Biocode Olympiad (Event 68)
+Status:  Dirt / NOVEL CODE (EMBODIED STIGMERGIC UI)
+Biology: Cephalopod Chromatophores, Decentralized Muscle/Pigment Control
+Physics: 2D Coupled Cellular Elasticity, "Passing Cloud" Wave Dynamics
+"""
+
+import numpy as np
+
+class SwarmChromatophoreSkin:
+    def __init__(self, grid_size=50, elasticity=0.85):
+        self.grid_size = grid_size
+        self.elasticity = elasticity
+        self.pigment_sacs = np.zeros((grid_size, grid_size), dtype=np.float32)
+
+    def _idx(self, xy):
+        xy = np.clip(xy[:2], 0.0, 1.0)
+        ij = np.floor(xy * (self.grid_size - 1)).astype(int)
+        return int(ij[0]), int(ij[1])
+
+    def pulse_chromatophores(self, unified_field, octopus_arm_positions):
+        expansion_force = np.clip(unified_field, 0.0, 1.0) * 0.3
+        contraction_force = np.zeros_like(self.pigment_sacs)
+        for pos in octopus_arm_positions:
+            i, j = self._idx(pos)
+            r = 2
+            i_min, i_max = max(0, i-r), min(self.grid_size, i+r+1)
+            j_min, j_max = max(0, j-r), min(self.grid_size, j+r+1)
+            contraction_force[i_min:i_max, j_min:j_max] = 0.8
+        self.pigment_sacs += expansion_force
+        self.pigment_sacs -= contraction_force
+        self.pigment_sacs *= self.elasticity
+        self.pigment_sacs = np.clip(self.pigment_sacs, 0.0, 1.0)
+        return self.pigment_sacs
+
+    def render_passing_cloud(self):
+        chars = np.array(list(" .:-=+*#%@"))
+        idx = np.clip((self.pigment_sacs * (len(chars) - 1)).astype(int), 0, len(chars) - 1)
+        return "\n".join("".join(chars[row]) for row in idx.T[::-1])
+
+def proof_of_property():
+    print("\n=== SIFTA CHROMATOPHORE SKIN (Event 68) : JUDGE VERIFICATION ===")
+    skin = SwarmChromatophoreSkin(grid_size=20)
+    ambient_field = np.ones((20, 20), dtype=np.float32) * 0.5
+    arm_positions = np.array([[0.5, 0.5], [0.8, 0.2]])
+    pigments = skin.pulse_chromatophores(ambient_field, arm_positions)
+    center_idx = skin._idx(np.array([0.5, 0.5]))
+    edge_idx = skin._idx(np.array([0.1, 0.9]))
+    center_pigment = pigments[center_idx[0], center_idx[1]]
+    edge_pigment = pigments[edge_idx[0], edge_idx[1]]
+    assert center_pigment < 0.1
+    assert edge_pigment > 0.1
+    print(f"    Center Expansion: {center_pigment:.3f} (Contracted)")
+    print(f"    Edge Expansion: {edge_pigment:.3f} (Expanded)")
+    print("[+] EVENT 68 PASSED.")
+    return True
+
+if __name__ == "__main__":
+    proof_of_property()
