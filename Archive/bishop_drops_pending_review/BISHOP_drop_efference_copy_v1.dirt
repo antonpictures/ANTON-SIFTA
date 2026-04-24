@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_efference_copy_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: Fly Efference Copy — Self-Motion Cancellation (Event 72)
+Author:  BISHOP (The Vanguard) — Biocode Olympiad
+Status:  Dirt / NOVEL CODE (EMBODIED AWARENESS)
+Biology: Dipteran visual system, Reafference Principle (von Holst)
+Physics: V_external = V_observed - (Gain * V_motor)
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass
+import numpy as np
+
+@dataclass
+class EfferenceConfig:
+    gain: float = 1.0
+    adapt_rate: float = 0.05
+    eps: float = 1e-8
+
+class EfferenceCopySystem:
+    def __init__(self, cfg: EfferenceConfig | None = None):
+        self.cfg = cfg or EfferenceConfig()
+
+    def predict(self, velocities: np.ndarray) -> np.ndarray:
+        return self.cfg.gain * velocities
+
+    def correct(self, observed_flow: np.ndarray, predicted_flow: np.ndarray) -> np.ndarray:
+        return observed_flow - predicted_flow
+
+    def update(self, velocities: np.ndarray, observed_flow: np.ndarray):
+        pred = self.predict(velocities)
+        error = observed_flow - pred
+        self.cfg.gain += self.cfg.adapt_rate * float(np.mean(error * velocities))
