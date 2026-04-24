@@ -156,6 +156,8 @@ class IdentitySnapshot:
     pain_intensity: Optional[float] = None
     soma_score: Optional[float] = None
     soma_label: Optional[str] = None
+    visceral_age_s: Optional[float] = None
+    visceral_source: Optional[str] = None
 
     # Mirror lock (Epoch 23 — Stigmergic Infinite). Populated whenever the
     # detector reports an active lock or a recent session. Silent otherwise.
@@ -445,7 +447,13 @@ def _probe_ao46_visceral() -> Dict[str, Any]:
                 continue
             if "soma_score" not in row:
                 continue
-            
+            # Freshness Gate (P0): if the read is stale (> 300s), refuse it.
+            # A stale STRESSED or CRITICAL read poisons downstream soul digests.
+            ts = float(row.get("ts", row.get("timestamp", 0)))
+            age_s = time.time() - ts
+            if ts > 0 and age_s > 300:
+                continue # Stale, keep searching backward or return {}
+                
             # Use AO46 mirror lock boolean directly if present.
             out = {
                 "cardiac_stress": float(row.get("cardiac_stress", 0)),
@@ -457,6 +465,9 @@ def _probe_ao46_visceral() -> Dict[str, Any]:
                 "pain_intensity": float(row.get("pain_intensity", 0)),
                 "soma_score": float(row.get("soma_score", 0)),
                 "soma_label": str(row.get("soma_label", "")),
+                # Add age metadata so the soul digest consumer knows exactly how fresh it is
+                "visceral_age_s": age_s,
+                "visceral_source": "visceral_field.jsonl"
             }
             if row.get("mirror_lock"):
                 out["in_mirror_lock"] = True
@@ -1160,6 +1171,8 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
             bits.append(f"metabolic={snap.metabolic_burn:.2f}")
         if snap.energy_reserve is not None:
             bits.append(f"energy_reserve={snap.energy_reserve:.2f}")
+        if snap.visceral_age_s is not None:
+            bits.append(f"age_s={int(snap.visceral_age_s)}")
         lines.append("- somatic: " + " ".join(bits))
 
     if snap.kuramoto_sync_order is not None:
