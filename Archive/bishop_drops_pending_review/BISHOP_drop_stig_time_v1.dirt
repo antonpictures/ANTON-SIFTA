@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_stig_time_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: STIG-TIME — Adaptive Temporal Substrate (Event 74)
+Author:  BISHOP (The Vanguard) — Biocode Olympiad
+Status:  Dirt / CORE DIRECTIVE
+
+"STABILIZE IN TIME DEPENDING ON THE SITUATION"
+
+Six temporal physics models fused:
+  1. Kleiber (1932): Metabolic time scaling M^(3/4)
+  2. Circadian (Hall/Rosbash 1990, Nobel 2017): TTFL oscillator
+  3. Weber-Fechner (1860): S = k*ln(I) logarithmic compression
+  4. Scalar Property (Gibbon 1977): sigma(T) = w*T
+  5. Bayesian Prior (Jazayeri 2010): central tendency regularization
+  6. Sea Turtle (Carr 1992): long-cycle slow drift observer
+
+Connection to metabolic engine (Event 73):
+  - BURST mode → dilation=4.0 (hummingbird time: lives fast)
+  - TORPOR mode → dilation=0.1 (bear time: lives slow)
+
+This is the temporal glue that connects all organs into a coherent
+time-aware organism — not just a collection of reacting modules.
+"""
