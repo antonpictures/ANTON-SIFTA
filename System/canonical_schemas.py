@@ -1008,6 +1008,145 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "paths_observed",      # int — edge flow aggregate (or caller override)
         "ts",                  # float — epoch seconds at write
     },
+
+    # Active-matter screen digestion — written by System/swarm_physarum_retina.py.
+    "physarum_retina.jsonl": {
+        "event",               # always "physarum_retina_digest"
+        "schema",              # always "SIFTA_PHYSARUM_RETINA_V1"
+        "module_version",      # producer version
+        "image_ref",           # str — source image path/ref
+        "image_sha256",        # str — SHA-256 over canonical image bytes
+        "image_w",             # int
+        "image_h",             # int
+        "num_agents",          # int
+        "sensing_radius",      # int
+        "crowding_penalty",    # float
+        "steps",               # int
+        "grid_size",           # int
+        "digest",              # list[dict] — salient regions
+        "digest_count",        # int
+        "found_bottom_marker", # bool
+        "ts",                  # float
+    },
+
+    # Foveated swarm saccades — written by System/swarm_foveated_saccades.py.
+    "foveated_saccades.jsonl": {
+        "event",               # always "foveated_saccade_digest"
+        "schema",              # always "SIFTA_FOVEATED_SACCADES_V1"
+        "module_version",      # producer version
+        "image_ref",           # str — source image path/ref
+        "image_w",             # int
+        "image_h",             # int
+        "peripheral_scouts",   # int
+        "peripheral_steps",    # int
+        "foveal_agents",       # int
+        "foveal_steps",        # int
+        "target_x",            # int
+        "target_y",            # int
+        "target_salience",     # float
+        "foveal_mean_x",       # float
+        "foveal_mean_y",       # float
+        "foveal_spread",       # float
+        "foveal_digest",       # list[dict] — local cluster centroids
+        "digest_count",        # int
+        "ts",                  # float
+    },
+
+    # Active-matter visual compaction — written by System/swarm_active_matter_vision.py.
+    "visual_active_matter.jsonl": {
+        "event",               # always "visual_active_matter_update"
+        "schema",              # always "SIFTA_VISUAL_ACTIVE_MATTER_V1"
+        "module_version",      # producer version
+        "source_ledger",       # str
+        "frames_observed",     # int
+        "field_energy",        # float
+        "attractor_x",         # float
+        "attractor_y",         # float
+        "persistence",         # float
+        "novelty",             # float
+        "hot_cells",           # int
+        "field_hash",          # str
+        "source_tail_sha8",    # str
+        "ts",                  # float
+    },
+
+    # Native IDE economics — written by System/swarm_ide_cost_ledger.py.
+    "ide_cost_ledger.jsonl": {
+        "event",                    # always "ide_cost_sample"
+        "schema",                   # always "SIFTA_IDE_COST_LEDGER_V1"
+        "surface",                  # cursor | codex | antigravity | alice_local
+        "agent_id",                 # str
+        "model_label",              # str
+        "plan_name",                # str
+        "source_unit",              # native vendor unit
+        "observed_quantity",        # float
+        "observed_cost_usd",        # float
+        "included_usage_remaining", # float | None
+        "on_demand_limit_usd",      # float | None
+        "evidence_kind",            # str
+        "evidence_ref",             # str
+        "stigauth_status",          # str
+        "sampled_at",               # float
+        "ts",                       # float
+    },
+
+    # IDE window topology — written by System/swarm_ide_screen_swimmers.py.
+    "ide_screen_swimmers.jsonl": {
+        "event",          # always "ide_screen_swimmers"
+        "schema",         # always "SIFTA_IDE_SCREEN_SWIMMERS_V1"
+        "module_version", # producer version
+        "grid_size",      # int
+        "screen_w",       # int
+        "screen_h",       # int
+        "windows",        # list[dict] — IDE rectangles + active flag
+        "grid",           # list[list[float]] — normalized pheromone field
+        "glyph",          # str
+        "clusters",       # list[dict]
+        "active_ide",     # str | ""
+        "source",         # str — osascript/test/etc.
+        "ts",             # float
+    },
+
+    # Unified field engine empirical rows — written by
+    # System/swarm_unified_field_engine.py. This is a local simulation substrate:
+    # memory + prediction + repair - danger in one environmental tensor.
+    "unified_field_engine.jsonl": {
+        "event",               # always "unified_field_engine_run"
+        "schema",              # always "SIFTA_UNIFIED_FIELD_ENGINE_V1"
+        "module_version",      # producer version
+        "n_agents",            # int
+        "steps",               # int
+        "grid_size",           # int
+        "weights",             # dict — alpha/beta/gamma/delta
+        "field_energy",        # float — mean abs total field
+        "field_entropy",       # float — normalized Shannon entropy
+        "cohesion",            # float — mean distance to swarm centroid
+        "danger_remaining",    # float — sum danger after run
+        "repair_total",        # float — sum repair after run
+        "prediction_total",    # float — sum prediction after run
+        "path_efficiency",     # float — start-to-goal progress proxy
+        "compute_to_behavior", # float — coordination per minimal policy op proxy
+        "glyph",               # str — ASCII total field
+        "ts",                  # float
+    },
+
+    # Event 66 evolutionary RL meta-cortex — written by
+    # System/swarm_evolutionary_rl.py. Rows record bounded local search over
+    # real UnifiedFieldEngine coefficients and the metrics that selected them.
+    "evolutionary_rl_meta_cortex.jsonl": {
+        "event",               # always "evolutionary_rl_meta_cortex_tune"
+        "schema",              # always "SIFTA_EVOLUTIONARY_RL_META_CORTEX_V1"
+        "module_version",      # producer version
+        "generations",         # int
+        "population",          # int
+        "baseline_weights",    # dict
+        "best_weights",        # dict
+        "baseline_score",      # float
+        "best_score",          # float
+        "reward_delta",        # float
+        "best_metrics",        # dict — path/entropy/danger/repair/prediction/compute
+        "ts",                  # float
+    },
 }
 
 
