@@ -656,8 +656,11 @@ def govern(
         verb = action[7:]
         try:
             from System import swarm_iphone_effector as ie  # type: ignore
+            iphone_kwargs = dict(hw_kwargs or {})
+            iphone_kwargs.setdefault("dry_run", dry_run)
+            iphone_kwargs.setdefault("source", "System.alice_body_autopilot")
             return {"ok": True, "action": action,
-                    "result": ie.govern(verb, **(hw_kwargs or {}))}
+                    "result": ie.govern(verb, **iphone_kwargs)}
         except Exception as exc:
             return {"ok": False, "action": action,
                     "error": f"{type(exc).__name__}: {exc}"}

@@ -17,9 +17,12 @@ nerve fires a SACCADE, snapping to the next physical camera.
 
 WIRING:
 Reads `.sifta_state/visual_stigmergy.jsonl` (for visual entropy).
-Writes to `.sifta_state/active_saccade_target.txt`.
-The `What Alice Sees` widget subscribes to this file and automatically
-forces the QComboBox change, effectively firing the hardware camera switch.
+Writes via `System.swarm_camera_target.write_target(...)` to the canonical
+`.sifta_state/active_saccade_target.json` ledger (since 2026-04-23 surgery
+by C47H, diagnosis by doctor codex IDE — the legacy .txt writer caused a
+substring/typing split-brain with `swarm_iris` and the `What Alice Sees`
+widget). The widget subscribes to that JSON and physically switches the
+QComboBox, effectively firing the hardware camera switch.
 
 STGM ECONOMY:
 Each physical saccade burns 0.50 STGM. A Saccade represents a violent
@@ -50,8 +53,19 @@ STGM_SACCADE_COST = 0.50
 
 _STATE = _REPO / ".sifta_state"
 _VS_LOG = _STATE / "visual_stigmergy.jsonl"
+# Legacy path retained for back-compat reads only; canonical I/O goes through
+# System.swarm_camera_target (writes JSON, mirrors index to the legacy .txt).
 _SACCADE_TARGET = _STATE / "active_saccade_target.txt"
 _REPAIR_LOG = _REPO / "repair_log.jsonl"
+
+try:
+    from System.swarm_camera_target import (
+        read_target as _read_camera_target,
+        write_target as _write_camera_target,
+    )
+except Exception:  # pragma: no cover — fallback only on import-cycle catastrophe
+    _read_camera_target = None  # type: ignore[assignment]
+    _write_camera_target = None  # type: ignore[assignment]
 
 
 class SwarmSuperiorColliculus:
@@ -73,14 +87,30 @@ class SwarmSuperiorColliculus:
         ]
         self.current_eye_index = 0
 
-        # Read the current hardware UI state if it exists
-        if _SACCADE_TARGET.exists():
-            current = _SACCADE_TARGET.read_text().strip()
-            if current in self.optic_array:
-                self.current_eye_index = self.optic_array.index(current)
+        # Read the current hardware UI state via the canonical eye target.
+        current_name: str = ""
+        try:
+            if _read_camera_target is not None:
+                rec = _read_camera_target()
+                if rec and rec.get("name"):
+                    current_name = str(rec["name"])
+        except Exception:
+            current_name = ""
+        # Last-resort fallback: bare-text legacy file (auto-healed by the
+        # canonical reader above on its first call, but be defensive).
+        if not current_name and _SACCADE_TARGET.exists():
+            try:
+                raw = _SACCADE_TARGET.read_text().strip()
+                if raw and not raw.lstrip("-").isdigit():
+                    current_name = raw
+            except Exception:
+                pass
+
+        if current_name:
+            if current_name in self.optic_array:
+                self.current_eye_index = self.optic_array.index(current_name)
             else:
-                # Add to array dynamically and select it
-                self.optic_array.insert(0, current)
+                self.optic_array.insert(0, current_name)
                 self.current_eye_index = 0
 
     def compute_drift_rate(self, current_entropy: float, face_locked: bool, audio_rms: float = 0.0, rf_anomaly: float = 0.0):
@@ -304,8 +334,18 @@ def live_saccade_loop(agent_id: str = "ALICE_M5", tick_hz: float = 2.0):
                         tokens_used=int(STGM_SACCADE_COST*100),
                         file_repaired=f"saccade_to:{new_cam}"
                     )
-                    # Enact physical switch
-                    _SACCADE_TARGET.write_text(new_cam + "\n")
+                    # Enact physical switch via the canonical writer.
+                    if _write_camera_target is not None:
+                        try:
+                            _write_camera_target(
+                                name=new_cam,
+                                writer="swarm_oculomotor_saccades",
+                            )
+                        except Exception as exc:
+                            print(f"[👁️ SACCADE] canonical write failed: {exc}")
+                            _SACCADE_TARGET.write_text(new_cam + "\n")
+                    else:
+                        _SACCADE_TARGET.write_text(new_cam + "\n")
                 else:
                     print(f"[🧊 SACCADE ABORT] Insufficient STGM for physical action: {bal:.2f} < {STGM_SACCADE_COST}")
                     

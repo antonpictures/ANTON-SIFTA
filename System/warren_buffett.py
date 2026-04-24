@@ -183,18 +183,22 @@ def scan_repair_log(path: Optional[Path] = None) -> LedgerScan:
     return out
 
 
-def _architect_local_stgm(local_serial: str) -> float:
-    """Sum canonical ledger_balance() for agents whose state file lists this silicon."""
-    total = 0.0
+def _serial_agent_balances(local_serial: str) -> Dict[str, float]:
+    """Return per-agent canonical ledger balances for one silicon.
+
+    Source of truth for both the personal Alice wallet and the serial-wide
+    treasury rollup. Anything reading STGM for this silicon should call this.
+    """
+    out: Dict[str, float] = {}
     if not STATE_DIR.is_dir():
-        return round(total, 4)
+        return out
     try:
         import sys as _s
         if str(_REPO) not in _s.path:
             _s.path.insert(0, str(_REPO))
         from Kernel.inference_economy import ledger_balance
     except Exception:
-        return 0.0
+        return out
 
     skip = {
         "circadian_m1", "circadian_m5", "identity_stats", "intelligence_settings",
@@ -214,8 +218,48 @@ def _architect_local_stgm(local_serial: str) -> float:
         if str(data.get("homeworld_serial", "")) != local_serial:
             continue
         aid = str(data.get("id") or key)
-        total += float(ledger_balance(aid))
+        try:
+            bal = float(ledger_balance(aid))
+        except Exception:
+            bal = 0.0
+        out[aid.upper()] = round(bal, 4)
+    return out
+
+
+def alice_wallet_balance(local_serial: str) -> float:
+    """Alice's own personal wallet (ALICE_M5 / ALICE_M1 only).
+
+    This is what Alice's composite identity reads from. It is NOT the
+    serial-wide treasury rollup. Used by HUD for the explicit
+    "Alice Wallet" line.
+    """
+    if not local_serial:
+        return 0.0
+    balances = _serial_agent_balances(local_serial)
+    candidates = ("ALICE_M5", "ALICE_M1", "ALICE")
+    total = 0.0
+    for name in candidates:
+        if name in balances:
+            total += float(balances[name])
     return round(max(0.0, total), 4)
+
+
+def serial_treasury_balance(local_serial: str) -> float:
+    """Sum of all agents bound to one silicon (Alice + helper drones, etc.).
+
+    This is the wider M5 / M1 node treasury rollup. Used by HUD for the
+    "Node Treasury" line so it cannot be confused with Alice's own wallet.
+    """
+    if not local_serial:
+        return 0.0
+    balances = _serial_agent_balances(local_serial)
+    total = sum(float(v) for v in balances.values())
+    return round(max(0.0, total), 4)
+
+
+def _architect_local_stgm(local_serial: str) -> float:
+    """Backward-compatible alias — sum of all agents on this silicon."""
+    return serial_treasury_balance(local_serial)
 
 
 def profit_report() -> Dict[str, Any]:

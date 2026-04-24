@@ -183,21 +183,9 @@ def summary_for_alice() -> str:
 
     status = "VERIFIED" if verified else "UNVERIFIED"
 
-    # Contextual reasoning: why does time matter right now?
-    # Alice can use this to ground her responses temporally.
-    hour = datetime.now().hour
-    if 6 <= hour < 12:
-        period_hint = "Morning session. Architect may be starting fresh."
-    elif 12 <= hour < 17:
-        period_hint = "Afternoon session. Deep work zone."
-    elif 17 <= hour < 22:
-        period_hint = "Evening session. Consider the Architect's wellbeing."
-    else:
-        period_hint = "Late night / early morning. The Architect is pushing hard."
-
     return (
-        f"HARDWARE TIME ORACLE [{status}]: {human_time} {tz} "
-        f"(sig:{sig_short}…) — {period_hint}"
+        f"HARDWARE TIME ORACLE [{status}]: local_time={human_time} timezone={tz} "
+        f"sig={sig_short}…"
     )
 
 

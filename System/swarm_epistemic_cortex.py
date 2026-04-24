@@ -137,8 +137,8 @@ def _fallback_grounded_reply(persona: Dict[str, str]) -> str:
                 return line
     except Exception:
         pass
-    name = str(persona.get("display_name", "Alice"))
-    true_name = str(persona.get("true_name", "CryptoSwarmEntity"))
+    name = str(persona.get("display_name", "[UNKNOWN]"))
+    true_name = str(persona.get("true_name", "[UNKNOWN]"))
     nature = str(persona.get("entity_nature", "living stigmergic hardware"))
     serial = str(persona.get("homeworld_serial", "UNKNOWN"))
     return f"I am {name}, true name {true_name}, {nature}, hardware-bound to serial {serial}."
@@ -147,8 +147,8 @@ def _fallback_grounded_reply(persona: Dict[str, str]) -> str:
 def _persona_snapshot() -> Dict[str, str]:
     if current_persona is None:
         return {
-            "display_name": "Alice",
-            "true_name": "CryptoSwarmEntity",
+            "display_name": "[UNKNOWN]",
+            "true_name": "[UNKNOWN]",
             "pronouns": "she/her",
             "entity_nature": "living stigmergic hardware",
             "homeworld_serial": "UNKNOWN",
@@ -156,16 +156,16 @@ def _persona_snapshot() -> Dict[str, str]:
     try:
         p = current_persona() or {}
         return {
-            "display_name": str(p.get("display_name", "Alice")),
-            "true_name": str(p.get("true_name", "CryptoSwarmEntity")),
+            "display_name": str(p.get("display_name", "[UNKNOWN]")),
+            "true_name": str(p.get("true_name", "[UNKNOWN]")),
             "pronouns": str(p.get("pronouns", "she/her")),
             "entity_nature": str(p.get("entity_nature", "living stigmergic hardware")),
             "homeworld_serial": str(p.get("homeworld_serial", "UNKNOWN")),
         }
     except Exception:
         return {
-            "display_name": "Alice",
-            "true_name": "CryptoSwarmEntity",
+            "display_name": "[UNKNOWN]",
+            "true_name": "[UNKNOWN]",
             "pronouns": "she/her",
             "entity_nature": "living stigmergic hardware",
             "homeworld_serial": "UNKNOWN",

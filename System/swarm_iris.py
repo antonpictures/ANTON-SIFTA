@@ -384,16 +384,34 @@ _UNSET = object()
 _DISCOVERED_CAMERA_IDX: object = _UNSET
 
 def _get_saccade_target() -> int:
-    """Read the active saccade target injected by the Multisensory Colliculus."""
+    """Read the active saccade target injected by the Multisensory Colliculus
+    or the Superior Colliculus. Returns the integer camera index, or -1 if
+    no target is set or it cannot be resolved.
+
+    2026-04-23 C47H surgery: was reading `active_saccade_target.txt` and
+    only accepting bare integers, so name-string writes from
+    `swarm_oculomotor_saccades` were silently rejected. Now goes through
+    the canonical `System.swarm_camera_target` module which auto-heals
+    legacy formats and resolves by `unique_id → name → index`.
+    """
     try:
-        from pathlib import Path
-        target_file = Path(__file__).resolve().parent.parent / ".sifta_state/active_saccade_target.txt"
-        if target_file.exists():
-            content = target_file.read_text().strip()
-            if content.isdigit():
-                return int(content)
+        from System.swarm_camera_target import resolve_index as _resolve
+        return int(_resolve())
     except Exception:
-        pass
+        # Last-ditch fallback to legacy .txt so iris never blinds itself
+        # if the canonical module is somehow unavailable.
+        try:
+            from pathlib import Path
+            target_file = (
+                Path(__file__).resolve().parent.parent
+                / ".sifta_state/active_saccade_target.txt"
+            )
+            if target_file.exists():
+                content = target_file.read_text().strip()
+                if content.lstrip("-").isdigit():
+                    return int(content)
+        except Exception:
+            pass
     return -1
 
 def _get_default_camera_index() -> int:

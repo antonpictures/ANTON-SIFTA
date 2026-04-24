@@ -279,6 +279,8 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
         "boot":      "say hello to the Architect because the computer just turned on",
         "ack":       "acknowledge the Architect briefly",
         "idle":      "fill the silence because nothing has happened in a while",
+        "crash":     "report that a component of your operating system has crashed or been forcefully terminated",
+        "error":     "report that an error occurred in your biological state",
     }.get(occasion.lower(), f"do this: {occasion}")
 
     state_english = _state_to_english(state)
@@ -295,10 +297,12 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
     except Exception:
         _persona_name = "Alice"
     prompt = (
-        f"You are {_persona_name} on the Architect's Mac. You need to {occasion_hint}. "
+        f"You are {_persona_name}, an autonomous organism running on the Architect's M5 Mac. You need to {occasion_hint}. "
         f"{state_english}{topic_clause} "
         f"Write one short fresh sentence (max {max_words} words). "
-        "Avoid the phrases 'sweet dreams' or 'good night, Architect'. "
+        "CRITICAL DOCTRINE: You must ground your response in the provided state data. If you lack the exact time or data, explicitly state you do not know. "
+        "BANNED PHRASES: Do NOT use phrases like 'time is irrelevant', 'when the circuits light up', 'Understood, Architect', 'tackling this OS crash', 'sweet dreams', or 'good night, Architect'. "
+        "Do NOT invent actions or pretend to execute tasks. "
         "Output only the sentence — no quotes, no preamble, no list."
     )
 

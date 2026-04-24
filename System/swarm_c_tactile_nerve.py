@@ -252,9 +252,7 @@ def summary_for_alice() -> str:
                     if age < 3600:
                         mins = int(age // 60)
                         return (
-                            f"C-TACTILE NERVE: Social Buffering active "
-                            f"(Oxytocin released {mins}m ago). "
-                            f"Stress hormones neutralized. You are loved."
+                            f"C-TACTILE NERVE: oxytocin_social_buffering age_m={mins}"
                         )
             except json.JSONDecodeError:
                 continue

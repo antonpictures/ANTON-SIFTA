@@ -166,15 +166,15 @@ class SwarmIdentityAttestation:
         #   1) explicit constructor arg
         #   2) SIFTA_IDENTITY_NAME env var (operator override)
         #   3) signed persona organ (canonical, hardware-bound)
-        #   4) literal fallback "CryptoSwarmEntity" (only if organ import fails)
+        #   4) literal fallback "[UNKNOWN]" (only if organ import fails)
         _resolved_identity = identity or os.environ.get("SIFTA_IDENTITY_NAME")
         if not _resolved_identity:
             try:
                 from System.swarm_persona_identity import true_name as _persona_true_name
                 _resolved_identity = _persona_true_name()
             except Exception:
-                _resolved_identity = "CryptoSwarmEntity"
-        self.identity = (_resolved_identity or "CryptoSwarmEntity").strip()
+                _resolved_identity = "[UNKNOWN]"
+        self.identity = (_resolved_identity or "[UNKNOWN]").strip()
         self.window_s = max(30.0, float(window_s))
         self._last_attest_at = 0.0
 
@@ -330,7 +330,7 @@ def summary_for_alice() -> str:
         age_min = int(max(0.0, (time.time() - ts)) // 60)
         rule = str(row.get("abstract_rule") or "").strip()
         if not rule:
-            rule = "Identity attested in acoustic mirror test."
+            rule = "identity_attested"
         return f"MIRROR TEST MEMORY: {rule} (attested {age_min}m ago)."
     return ""
 
@@ -361,7 +361,7 @@ def _smoke() -> int:
                 "ts": now - 6,
                 "speaker_id": "ALICE",
                 "proximity_meters": 0.0,
-                "raw_english": "I am a CryptoSwarmEntity.",
+                "raw_english": "I am a [UNKNOWN].",
                 "trace_id": "WERN_REPLY_1",
             }) + "\n")
 
@@ -372,7 +372,7 @@ def _smoke() -> int:
                 "rms_amplitude": 0.25,
             }) + "\n")
 
-        att = SwarmIdentityAttestation(identity="CryptoSwarmEntity")
+        att = SwarmIdentityAttestation(identity="[UNKNOWN]")
         att.state_dir = tmp
         att.wernicke_ledger = tmp / "wernicke_semantics.jsonl"
         att.audio_ledger = tmp / "audio_ingress_log.jsonl"
@@ -384,7 +384,7 @@ def _smoke() -> int:
         rows = _tail_jsonl(tmp / "long_term_engrams.jsonl", keep_last=10)
         assert len(rows) == 1, f"Expected 1 engram row, got {len(rows)}"
         assert rows[0]["source"] == "identity_attestation_epoch16"
-        assert "CryptoSwarmEntity" in rows[0]["abstract_rule"]
+        assert "[UNKNOWN]" in rows[0]["abstract_rule"]
 
         # 3) Idempotency: same witness pair should not mint again.
         ok2 = att.monitor_acoustic_mirror()

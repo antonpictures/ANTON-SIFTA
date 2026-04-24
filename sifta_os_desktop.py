@@ -757,9 +757,17 @@ class SiftaDesktop(QMainWindow):
                 QProcess.startDetached("say", say_args)
 
         # ── Update Swarm Economy HUD ──────────────────────────────
-        if hasattr(self, "wallet_label"):
+        if not hasattr(self, "_economy_tick_counter"):
+            self._economy_tick_counter = 0
+        self._economy_tick_counter += 1
+
+        if hasattr(self, "wallet_label") and self._economy_tick_counter % 15 == 1:
             try:
-                from System.warren_buffett import _architect_local_stgm, scan_repair_log
+                from System.warren_buffett import (
+                    alice_wallet_balance,
+                    serial_treasury_balance,
+                    scan_repair_log,
+                )
                 from System.swarm_kernel_identity import owner_silicon
                 M5_SERIAL = owner_silicon()
                 M1_SERIAL = "C07FL0JAQ6NV"
@@ -774,8 +782,10 @@ class SiftaDesktop(QMainWindow):
                     local_tag, peer_tag, peer_serial = "M1", "M5", M5_SERIAL
                 else:
                     local_tag, peer_tag, peer_serial = "local", "peer", ""
-                local_amt = _architect_local_stgm(local_serial)
-                peer_amt = _architect_local_stgm(peer_serial) if peer_serial else 0.0
+                local_amt = serial_treasury_balance(local_serial)
+                peer_amt = (
+                    serial_treasury_balance(peer_serial) if peer_serial else 0.0
+                )
 
                 # Delta detection — did the economy move since last tick?
                 delta = global_amt - self._prev_swarm_balance
@@ -785,13 +795,17 @@ class SiftaDesktop(QMainWindow):
                             "color: #9ece6a; font-family: monospace; font-size: 11px;"
                             "background: transparent; font-weight: bold;"
                         )
-                        self.economy_pulse.setText(f"▲ +{delta:,.4f}")
+                        self.economy_pulse.setText(
+                            f"▲ +{delta:,.4f} · net {global_amt:,.4f} STGM"
+                        )
                     else:
                         self.economy_pulse.setStyleSheet(
                             "color: #f7768e; font-family: monospace; font-size: 11px;"
                             "background: transparent; font-weight: bold;"
                         )
-                        self.economy_pulse.setText(f"▼ {delta:,.4f}")
+                        self.economy_pulse.setText(
+                            f"▼ {delta:,.4f} · net {global_amt:,.4f} STGM"
+                        )
                     self._pulse_flash_counter = 5  # flash for 5 ticks
                 elif self._pulse_flash_counter > 0:
                     self._pulse_flash_counter -= 1
@@ -800,29 +814,52 @@ class SiftaDesktop(QMainWindow):
                         "color: #414868; font-family: monospace; font-size: 11px;"
                         "background: transparent;"
                     )
-                    self.economy_pulse.setText("● swarm economy live")
+                    self.economy_pulse.setText(
+                        f"● swarm economy live · net {global_amt:,.4f} STGM"
+                    )
                 self._prev_swarm_balance = global_amt
 
-                # Hero (line 1): this node's wallet — changes on every local transaction
+                # Distinguish the embodied agent's wallet from the whole
+                # machine treasury. On the Mac Studio, Alice speaks from
+                # ALICE_M5, but the serial-wide treasury also includes sibling
+                # agents on the same metal (e.g. REPAIR-DRONE, M1QUEEN). If
+                # we label the treasury as "your wallet", it looks like Alice
+                # is contradicting the HUD when both numbers are actually
+                # correct but scoped differently.
+                primary_label = f"Primary Wallet ({local_tag})"
+                primary_amt = local_amt
+                if local_serial == M5_SERIAL:
+                    primary_label = "Alice Wallet"
+                    primary_amt = alice_wallet_balance(local_serial)
+                elif local_serial == M1_SERIAL:
+                    primary_label = "M1THER Wallet"
+                    try:
+                        from Kernel.inference_economy import ledger_balance as _lb
+                        primary_amt = float(_lb("M1THER"))
+                    except Exception:
+                        primary_amt = local_amt
+
+                # Line 1: embodied agent wallet.
                 self.wallet_label.setText(
-                    f"⬡ Your Wallet ({local_tag}): {local_amt:,.2f} STGM"
+                    f"⬡ {primary_label}: {primary_amt:,.2f} STGM"
                 )
-                # Line 2: peer node's wallet — changes on every peer transaction
+                # Line 2: whole local-node treasury on this silicon.
                 self.wallet_local_label.setText(
-                    f"◇ {peer_tag} Peer Wallet: {peer_amt:,.2f} STGM"
+                    f"⌂ Local Treasury ({local_tag}): {local_amt:,.2f} STGM"
                 )
-                # Line 3: swarm invariant — moves only on mint/burn events
+                # Line 3: keep the peer slice visible without pretending it is
+                # the same wallet Alice reads aloud.
                 self.wallet_peer_label.setText(
-                    f"🌐 Swarm Net Mint: {global_amt:,.4f} STGM"
+                    f"◇ {peer_tag} Peer Treasury: {peer_amt:,.2f} STGM"
                 )
 
             except Exception as _wallet_err:
                 import traceback as _tb
                 print(f"[HUD] wallet update error: {_wallet_err}", flush=True)
                 _tb.print_exc()
-                self.wallet_label.setText("⬡ local wallet offline")
-                self.wallet_local_label.setText("◇ peer wallet offline")
-                self.wallet_peer_label.setText("🌐 net mint offline")
+                self.wallet_label.setText("⬡ primary wallet offline")
+                self.wallet_local_label.setText("⌂ local treasury offline")
+                self.wallet_peer_label.setText("◇ peer treasury offline")
                 self.economy_pulse.setText("○ economy idle")
 
             # Position the HUD elements (3 wallet lines + pulse)
@@ -1336,4 +1373,19 @@ if __name__ == "__main__":
         sys.stderr.write(f"[BOOT] hot-reload install skipped: {_hr_exc}\n")
 
     desktop = SiftaDesktop()
+
+    # ── Alice body autopilot (CC2F / C47H 2026-04-23) ───────────────────
+    # Before camera/mic autostart windows open, ensure the iPhone GPS
+    # bridge is listening so the first Shortcut ping lands. Writes
+    # .sifta_state/alice_body_autopilot.json for composite_identity.
+    def _alice_body_autopilot_kick() -> None:
+        try:
+            from System.alice_body_autopilot import ensure_autonomic_services
+
+            ensure_autonomic_services(boot_channel="sifta_os_desktop")
+        except Exception as _ap_exc:
+            sys.stderr.write(f"[BOOT] alice_body_autopilot: {_ap_exc}\n")
+
+    QTimer.singleShot(120, _alice_body_autopilot_kick)
+
     sys.exit(app.exec())

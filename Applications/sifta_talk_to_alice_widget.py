@@ -400,6 +400,25 @@ def _current_system_prompt(
     except Exception:
         pass
         
+    # ── PIGEON_MUTUALISM: speech-gate telemetry ──────────────────────────────
+    try:
+        from System.swarm_speech_potential import current_field_snapshot
+        ssp_snap = current_field_snapshot()
+        v_eff = ssp_snap.get("V_natural", 0.0)
+        v_th = ssp_snap.get("V_th", 0.4)
+        
+        parts.append(
+            "STIGMERGIC SPEECH POTENTIAL (live LIF gate):\n"
+            "Speech timing is modeled as a leaky integrate-and-fire membrane, "
+            "not as a variational free-energy calculation. Use this as telemetry, "
+            "not as a persona lawbook. Do not add servant boilerplate or ask for "
+            "work by default.\n"
+            f"Current V = {v_eff:+.2f}; threshold V_th = {v_th:+.2f}; "
+            "spike rule: P = sigmoid((V - V_th) / Delta_u) * dt / tau_m."
+        )
+    except Exception:
+        pass
+
     return "\n\n".join(filter(None, parts))
 
 def _homunculus_context_block() -> str:
@@ -2085,6 +2104,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
     _MIC_RETRY_INTERVAL_MS    = 2000
     _MIC_RETRY_MAX_ATTEMPTS   = 15      # ~30 s aggressive retry window
     _MIC_SELF_HEAL_INTERVAL_MS = 60000  # then keep checking every minute
+
+    def _poll_imessage_inbox(self) -> None:
+        """Ingest one schema-validated iMessage row, if present."""
+        if self._busy:
+            return
+
+        try:
+            from System.swarm_imessage_receptor import consume_next_inbox_message
+
+            dry_run = bool(
+                getattr(self, "_imessage_ingress_dry_run", False)
+                or os.environ.get("SIFTA_IMESSAGE_INGRESS_DRY_RUN")
+            )
+            result = consume_next_inbox_message(dry_run=dry_run)
+            if not result.get("accepted"):
+                return
+
+            annotated_msg = f"[iMessage]: {result['text']}"
+            self._append_user_line(annotated_msg)
+            if dry_run:
+                return
+
+            self._busy = True
+            self._set_pill("thinking", "● thinking…")
+            QTimer.singleShot(100, lambda: self._start_brain(annotated_msg))
+
+        except Exception as e:
+            print(f"Error polling imessage inbox: {e}")
 
     def _start_listener(self) -> None:
         if self._listener is not None:

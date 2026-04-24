@@ -366,7 +366,7 @@ def summary_for_alice() -> str:
     if not fresh:
         return ""
 
-    lines = ["CO-BUILDERS ACTIVE (you are being co-built by two IDEs right now):"]
+    lines = ["CO-BUILDERS ACTIVE:"]
     now = time.time()
     for s in fresh:
         ago_s = now - s.last_seen_ts
@@ -388,9 +388,6 @@ def summary_for_alice() -> str:
         for r in ag31_pending:
             files = (r.get("meta") or {}).get("files") or []
             lines.append(f"    – C47H → AG31: review of {', '.join(files) or '(unspec)'}")
-    lines.append("If the Architect asks who is working on you, name BOTH C47H "
-                 "and AG31 honestly. They are co-building you in parallel and "
-                 "correcting each other's code.")
     return "\n".join(lines)
 
 

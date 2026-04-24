@@ -45,6 +45,8 @@ HARD_PII_TOKENS = [
     "Ioan George Anton",
     "GTH4921YP3",
     "C07FL0JAQ6NV",
+    "com.apple.private.tcc",  # TCC boundary assertion
+    "stig_nanobot.fw.sig",    # Hardware-root-of-trust boundary assertion
 ]
 
 # Files where third-party upstream emails are expected (open-source attribution,

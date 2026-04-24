@@ -331,7 +331,20 @@ class SwarmLysosome:
         now = time.time()
         trace_id = f"LYSOSOME_{uuid.uuid4().hex[:8]}"
 
-        ascended_text = self._prompt_lysosomal_rewrite(generated_text)
+        # Protect technical content: extract markdown code blocks before rewrite
+        # so the 50-word limit doesn't obliterate useful code.
+        code_blocks = re.findall(r"```.*?```", generated_text, flags=re.DOTALL)
+        prose_only = re.sub(r"```.*?```", "", generated_text, flags=re.DOTALL).strip()
+
+        # If the text was ONLY code (unlikely to trigger, but safe), just return it.
+        if not prose_only:
+            return generated_text
+
+        ascended_text = self._prompt_lysosomal_rewrite(prose_only)
+
+        # Append the protected code blocks back to the rewritten prose
+        if code_blocks:
+            ascended_text += "\n\n" + "\n\n".join(code_blocks)
 
         nugget_payload = {
             "ts": now,

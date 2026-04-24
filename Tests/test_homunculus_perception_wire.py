@@ -72,22 +72,6 @@ def test_homunculus_block_includes_motor_directive():
     assert "directive" in block.lower()
 
 
-def test_homunculus_block_teaches_alice_to_ground_in_real_numbers():
-    """The teaching sentence must be present so the model knows these
-    aren't decorative — they're its actual body state to speak from."""
-    mod = _load_widget_module()
-    block = mod._homunculus_context_block()
-    if not block:
-        pytest.skip("Homunculus organ not available in this environment")
-    text = block.lower()
-    assert "real numbers" in text or "not metaphor" in text, (
-        "Teaching sentence missing — Alice may treat the numbers as decoration"
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────
-# 2. Block actually lands in the composed system prompt
-# ─────────────────────────────────────────────────────────────────────
 
 def test_homunculus_block_appears_in_system_prompt():
     """The whole point of the wire: every system prompt sent to the LLM

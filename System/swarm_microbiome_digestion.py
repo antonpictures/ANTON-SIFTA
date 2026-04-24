@@ -269,7 +269,7 @@ class SwarmMicrobiomeDigestion:
 
 
 def summary_for_alice() -> str:
-    """Read the latest nutrients and format for Alice's prompt context."""
+    """Read latest nutrients and format as data-only block."""
     rows = _tail_jsonl(_NUTRIENTS, n=6)
     if not rows:
         return ""
@@ -280,18 +280,13 @@ def summary_for_alice() -> str:
         nutr = r.get("semantic_nutrient", "")
         if nutr:
             bullet_points.append(f" - [{kind} from {src}]: {nutr}")
-    
     if not bullet_points:
         return ""
-        
     minutes_ago = int((time.time() - rows[-1].get("ts", time.time())) / 60)
-    out = (
-        f"GUT MICROBIOME NUTRIENTS (Last updated: {minutes_ago}m ago):\n"
-        "The organism's digestive layer has pre-processed heavy sensory ledgers into the following bio-available nutrients:\n"
+    return (
+        f"GUT MICROBIOME NUTRIENTS age_m={minutes_ago}:\n"
         + "\n".join(bullet_points)
     )
-    return out
-
 
 def _smoke() -> int:
     print("\n=== SIFTA MICROBIOME DIGESTION : SMOKE TEST ===")

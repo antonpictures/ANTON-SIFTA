@@ -27,10 +27,34 @@ if str(_REPO) not in sys.path:
 _STATE = _REPO / ".sifta_state"
 _AUDIO_LOG = _STATE / "audio_ingress_log.jsonl"
 _VISION_LOG = _STATE / "face_detection_events.jsonl"
+# Legacy path kept for back-compat reads / proof harness only; canonical I/O
+# now flows through System.swarm_camera_target (see 2026-04-23 surgery).
 _TARGET_STATE = _STATE / "active_saccade_target.txt"
+_TARGET_JSON = _STATE / "active_saccade_target.json"
 
-# Typical MacOS AVFoundation camera indices (ignoring 0 if OBS virtual camera)
-_CAMERA_INDICES = [1, 2, 3]
+try:
+    from System.swarm_camera_target import (
+        read_target as _read_camera_target,
+        write_target as _write_camera_target,
+    )
+except Exception:  # pragma: no cover
+    _read_camera_target = None  # type: ignore[assignment]
+    _write_camera_target = None  # type: ignore[assignment]
+
+
+# Camera index → label table used when we only know the integer index.
+# Mirrors the AVFoundation enumeration that swarm_iris discovers.
+_INDEX_TO_NAME = {
+    0: "USB Camera VID:1133 PID:2081",
+    1: "MacBook Pro Camera",
+    2: "OBS Virtual Camera",
+    3: "iPhone Camera",
+    4: "Ioan's iPhone Camera",
+}
+
+# Alice M5 AVFoundation real-camera ring. OBS/Desk View are intentionally
+# skipped here; they are virtual surfaces, not physical eyes to saccade into.
+_CAMERA_INDICES = [1, 0, 3, 4]
 
 def _read_last_rms() -> float:
     if not _AUDIO_LOG.exists():
@@ -200,15 +224,17 @@ class SwarmMultisensoryColliculus:
         for _ in range(40):
             self.cortex.integrate_neural_field(warm_I_ext, velocity=0.0, dt=1.0)
 
-        # Determine the initial camera from active target if it exists
+        # Determine the initial camera from the canonical eye target. The
+        # canonical reader auto-heals legacy bare-int / bare-name files into
+        # JSON on first access, so this path also handles old state.
         _TARGET_STATE.parent.mkdir(parents=True, exist_ok=True)
-        if _TARGET_STATE.exists():
-            try:
-                content = _TARGET_STATE.read_text().strip()
-                if content.isdigit():
-                    self.current_cam_idx = int(content)
-            except ValueError:
-                pass
+        try:
+            if _read_camera_target is not None:
+                rec = _read_camera_target()
+                if rec and rec.get("index") is not None:
+                    self.current_cam_idx = int(rec["index"])
+        except Exception:
+            pass
 
     def _drive_cortex(self, faces: int, rms: float) -> None:
         """
@@ -316,8 +342,21 @@ class SwarmMultisensoryColliculus:
         else:
             next_idx = cann_idx
 
-        with open(_TARGET_STATE, "w") as f:
-            f.write(str(next_idx))
+        # Canonical write — JSON ledger, mirrors integer to legacy .txt
+        # for stragglers we may have missed.
+        if _write_camera_target is not None:
+            try:
+                _write_camera_target(
+                    name=_INDEX_TO_NAME.get(int(next_idx)),
+                    index=int(next_idx),
+                    writer="swarm_multisensory_colliculus",
+                )
+            except Exception:
+                with open(_TARGET_STATE, "w") as f:
+                    f.write(str(next_idx))
+        else:
+            with open(_TARGET_STATE, "w") as f:
+                f.write(str(next_idx))
 
         if self.ledger_saccades:
             _log_saccade(
@@ -340,13 +379,20 @@ def proof_of_property() -> Dict[str, bool]:
     c.ledger_saccades = False
     c.current_cam_idx = 1
 
-    # Snapshot _TARGET_STATE so we don't mutate live OS state across runs.
+    # Snapshot target state so we don't mutate live OS state across runs.
     saved_target = None
     if _TARGET_STATE.exists():
         try:
             saved_target = _TARGET_STATE.read_text()
         except Exception:
             saved_target = None
+    saved_target_json = None
+    had_target_json = _TARGET_JSON.exists()
+    if had_target_json:
+        try:
+            saved_target_json = _TARGET_JSON.read_text()
+        except Exception:
+            saved_target_json = None
 
     # Monkey-patch the module-level helpers
     global _read_last_rms, _read_faces_detected
@@ -452,6 +498,16 @@ def proof_of_property() -> Dict[str, bool]:
         if saved_target is not None:
             try:
                 _TARGET_STATE.write_text(saved_target)
+            except Exception:
+                pass
+        if saved_target_json is not None:
+            try:
+                _TARGET_JSON.write_text(saved_target_json)
+            except Exception:
+                pass
+        elif not had_target_json and _TARGET_JSON.exists():
+            try:
+                _TARGET_JSON.unlink()
             except Exception:
                 pass
 

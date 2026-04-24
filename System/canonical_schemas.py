@@ -305,6 +305,109 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "trace_id",
     },
 
+    # Stigmergic adapter ecology — written by System/swarm_stigmergic_weight_ecology.py
+    # The registry records trained or planned LoRA/adapter deltas with their
+    # evaluation, regression, risk, energy, and pheromone evidence.
+    "stigmergic_adapter_registry.jsonl": {
+        "event_kind",
+        "ts",
+        "module_version",
+        "adapter_id",
+        "adapter_path",
+        "base_model",
+        "homeworld",
+        "task",
+        "conflict_group",
+        "eval_score",
+        "regression_score",
+        "energy_joules",
+        "risk_score",
+        "pheromone_strength",
+        "created_ts",
+        "evidence_ids",
+        "adapter_sha256",
+        "notes",
+        "record_sha256",
+    },
+
+    # Hippocampal replay quarantine reports derived from held-out, perturbed
+    # memories before an adapter is allowed into the merge planner.
+    "stigmergic_replay_evals.jsonl": {
+        "event_kind",
+        "ts",
+        "module_version",
+        "adapter_id",
+        "base_model",
+        "selected_count",
+        "case_count",
+        "perturbations",
+        "replay_score",
+        "invariant_score",
+        "baseline_score",
+        "counter_score",
+        "margin",
+        "passed",
+        "verdict",
+        "cases",
+        "quarantine_reason",
+        "signer",
+        "signature",
+        "report_sha256",
+    },
+
+    # Extended Phenotype (Event 46) — content-addressed boluses the swarm
+    # deposits to construct the public-facing Castle (Living OS Public
+    # Network). Each row is one mud bolus; the Castle is their Merkle
+    # aggregation. Local-only writes; the publish daemon AG31 wires next
+    # is gated by CastleHomeostasis.
+    "extended_phenotype_boluses.jsonl": {
+        "event_kind",
+        "ts",
+        "module_version",
+        "kind",
+        "ref_sha256",
+        "ref_path",
+        "source_homeworld",
+        "deposited_ts",
+        "payload",
+        "parent_sha256",
+        "tags",
+        "bolus_sha256",
+        "record_sha256",
+    },
+
+    # Extended Phenotype Publish Receipts (Event 46) — written by
+    # System/swarm_publish_daemon.py. Each row records one publish attempt
+    # (success, dry-run, skipped-unchanged, blocked-pii, failure, or
+    # homeostasis-abort) for a single transport URI.
+    "extended_phenotype_publish_receipts.jsonl": {
+        "event_kind",
+        "ts",
+        "module_version",
+        "manifest_sha256",
+        "merkle_root",
+        "transport",
+        "destination_uri",
+        "status",
+        "latency_s",
+        "bytes_transferred",
+        "receipt_sha256",
+    },
+
+    # Deterministic PEFT merge/routing plans derived from the adapter registry.
+    "stigmergic_adapter_merge_plans.jsonl": {
+        "event_kind",
+        "ts",
+        "module_version",
+        "base_model",
+        "combination_type",
+        "density",
+        "selected",
+        "rejected",
+        "recipe",
+        "plan_sha256",
+    },
+
     # Kinetic-Entropy proprioceptive field — written by System/swarm_kinetic_entropy.py
     # Each row is one proprioceptive sample: a normalized terrain map of CPU
     # jitter, a SHA-256 fingerprint, a density score, and the recommended
@@ -333,6 +436,61 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "dry_run",            # bool — true if no actual restart was issued
         "ok",                 # bool — did the restart syscall succeed
         "note",               # short outcome note (pid relaunched, error, etc.)
+    },
+
+    # iMessage ingress — written by System/swarm_imessage_receptor.py and
+    # consumed by Applications/sifta_talk_to_alice_widget.py. Rows are signed
+    # before the UI can convert them into brain input.
+    "imessage_inbox.jsonl": {
+        "schema",
+        "source",
+        "transport",
+        "direction",
+        "ts",
+        "rowid",
+        "source_handle_sha256",
+        "is_from_me",
+        "text",
+        "message_sha256",
+        "processed",
+        "signature",
+    },
+
+    "imessage_ingress_receipts.jsonl": {
+        "event_kind",
+        "ts",
+        "schema",
+        "source",
+        "consumer",
+        "rowid",
+        "message_sha256",
+        "inbox_signature",
+        "dry_run",
+        "accepted",
+        "receipt_hash",
+    },
+
+    # Outbound iPhone/Messages.app effectors — written by
+    # System/swarm_iphone_effector.py. Dry-run is the default; actual sends must
+    # pass source authorization and payload allowlists.
+    "iphone_effector_trace.jsonl": {
+        "event_kind",
+        "schema",
+        "ts",
+        "action",
+        "source",
+        "payload",
+        "full_message",
+        "target_sha256",
+        "dry_run",
+        "allow_send",
+        "authorized_source",
+        "allow_duplicate",
+        "ok",
+        "status",
+        "result",
+        "request_hash",
+        "receipt_hash",
     },
 
     # Motor Cortex pulses — written by System/swarm_motor_cortex.py
@@ -567,18 +725,13 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
     },
 
     # ── Epoch 7 (C47H 2026-04-19, AGI Tournament) ────────────────────
-    # Long-term engrams — written by System/swarm_memory_forge.py
-    # Each row is a durable behavioral rule or factual learning that
-    # Alice forged from her conversation history. The latest N are
-    # injected into Alice's prompt as "WHAT I KNOW FROM EXPERIENCE".
-    "long_term_engrams.jsonl": {
-        "ts",                 # epoch seconds (when the engram was forged)
-        "abstract_rule",      # the durable rule/fact (≤280 chars)
-        "source",             # "memory_forge_C47H_Epoch7"
-        "forge_score",        # float — composite of novelty + actionability + emotion + architecture
-        "source_ts",          # epoch seconds — when the source conversation turn occurred
-        "source_excerpt",     # first 120 chars of the raw turn
-    },
+    # NOTE: long_term_engrams.jsonl was previously defined twice in this
+    # dict (here AND ~535 lines above). Python dict-literal init silently
+    # kept the LAST occurrence which happened to have identical fields,
+    # so no behavioral drift escaped — but the duplication risked drift
+    # on any future edit. C47H removed the second definition during the
+    # 2026-04-23 inbound-drop triage; the canonical definition lives at
+    # the earlier site (registered first by AO46's MEMORY_FORGE_COMPLEMENT).
 
     # ── Epoch 8 (AO46/C47H 2026-04-20, AGI Tournament) ───────────
     # Health Reflex (Body-Signal Lexicon)

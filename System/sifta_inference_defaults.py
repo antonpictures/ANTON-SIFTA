@@ -22,7 +22,7 @@ _STATE = _REPO / ".sifta_state"
 _ASSIGNMENTS = _STATE / "swimmer_ollama_assignments.json"
 
 # Primary default — swimmers + OS helpers unless overridden.
-DEFAULT_OLLAMA_MODEL = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "gemma4:latest")
+DEFAULT_OLLAMA_MODEL = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "alice-phc-cure")
 
 # Models commonly used for SLLI / lightweight probes (not production default).
 STIGMERGIC_TEST_MODEL_PRESETS: tuple[str, ...] = (
@@ -39,7 +39,7 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
-            "truth_duel": "gemma4:latest",
+            "truth_duel": "alice-phc-cure",
         },
         "notes": (
             "default_ollama_model is production. per_swimmer / per_app override for testing "

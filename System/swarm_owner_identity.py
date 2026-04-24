@@ -36,7 +36,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import socket
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
@@ -51,6 +53,36 @@ OWNER_REGISTRY = _STATE / "owner_registry.json"
 HOMEWORLD_FEDERATION = _STATE / "homeworld_federation.jsonl"
 
 MODULE_VERSION = "2026-04-18.warp9.owner_identity.v1"
+
+
+def _autoload_repo_env() -> None:
+    """Source <repo>/.env into os.environ at import time so downstream
+    modules (federation gate, HMAC signer) see the owner's configuration
+    without each entry-point having to call load_dotenv().
+
+    Existing process env wins — we never overwrite. Cursor's sandbox-side
+    secret-redactor sometimes strips IP-shaped lines from .env, so peer
+    coordinates live in .sifta_state/federation_peer.conf instead.
+    """
+    env_path = _REPO / ".env"
+    if not env_path.exists():
+        return
+    try:
+        with env_path.open("r", encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+_autoload_repo_env()
 
 # Federation gate. Default OFF for safety + test discipline.
 FEDERATION_ENABLED = os.environ.get("SIFTA_OWNER_FEDERATION", "0") == "1"
@@ -173,7 +205,51 @@ def register_homeworld(
     HOMEWORLD_FEDERATION.parent.mkdir(parents=True, exist_ok=True)
     with HOMEWORLD_FEDERATION.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record.to_dict(), ensure_ascii=False) + "\n")
+
+    # ── BISHOP Stem Cell trigger ────────────────────────────────────
+    # If `capabilities` includes a hardware morphology hint of the form
+    # ["ram_gb=8", "cpu_cores=8", "npu=1"], the Global Doctor logs a
+    # differentiation prescription for the newcomer. Best-effort: never
+    # raises out of register_homeworld().
+    try:
+        morpho = _extract_morphology_hint(capabilities or [])
+        if morpho is not None:
+            from System.swarm_stem_cell_morphogenesis import differentiate_peer
+            differentiate_peer(
+                new_node_id=f"{machine_label}/{homeworld_serial}",
+                ram_gb=morpho["ram_gb"],
+                cpu_cores=morpho["cpu_cores"],
+                npu_present=morpho["npu_present"],
+                notes=f"auto-prescribed at register_homeworld; role={role}",
+            )
+    except Exception:
+        pass  # Never let the Doctor break registration.
+
     return record
+
+
+def _extract_morphology_hint(capabilities: List[str]) -> Optional[Dict[str, float]]:
+    """
+    Parse `["ram_gb=8.0", "cpu_cores=8", "npu=1"]` from a capabilities list.
+    Returns None if any of the three hints is missing (we don't guess).
+    """
+    parsed: Dict[str, float] = {}
+    for item in capabilities:
+        if "=" not in item:
+            continue
+        key, _, value = item.partition("=")
+        key = key.strip().lower()
+        try:
+            parsed[key] = float(value.strip())
+        except ValueError:
+            continue
+    if all(k in parsed for k in ("ram_gb", "cpu_cores", "npu")):
+        return {
+            "ram_gb": parsed["ram_gb"],
+            "cpu_cores": parsed["cpu_cores"],
+            "npu_present": parsed["npu"],
+        }
+    return None
 
 
 def list_owner_homeworlds(owner_id_key: str) -> List[HomeworldRecord]:
@@ -220,11 +296,86 @@ def is_federated(owner_id_key: str, homeworld_serial: str) -> bool:
 # Self-identification helpers — what machine am I right now?
 # ──────────────────────────────────────────────────────────────────────
 
-def detect_self_homeworld_serial() -> str:
-    """Best-effort: read the homeworld_serial baked into existing SIFTA
-    state. Falls back to socket.gethostname() if no anchors exist yet.
+# Cache the hardware serial after first successful read. Subprocess to
+# `ioreg` costs ~50 ms and the serial cannot change at runtime.
+_HARDWARE_SERIAL_CACHE: Optional[str] = None
+
+
+def _read_hardware_serial_macos() -> Optional[str]:
+    """Query macOS IOKit for the silicon's IOPlatformSerialNumber.
+
+    This is the canonical hardware truth. Must be preferred over any
+    file-based anchor because anchor files get rsync'd between nodes
+    during federation sync — reading them on a peer would falsely
+    report the source node's serial.
     """
-    # Heartbeat web_anchors carry an architect_id like "IOAN_M5".
+    try:
+        proc = subprocess.run(
+            ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True, timeout=3, check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    text = proc.stdout.decode("utf-8", errors="replace")
+    for line in text.splitlines():
+        if "IOPlatformSerialNumber" in line:
+            try:
+                # Format: "IOPlatformSerialNumber" = "GTH4921YP3"
+                return line.split("=")[1].strip().strip('"')
+            except Exception:
+                return None
+    return None
+
+
+def _read_hardware_serial_linux() -> Optional[str]:
+    """Best-effort hardware serial on Linux (RPi, tractor SBC, etc.)."""
+    for candidate in (
+        "/sys/firmware/devicetree/base/serial-number",  # RPi
+        "/sys/class/dmi/id/product_serial",             # generic x86
+        "/sys/class/dmi/id/board_serial",
+    ):
+        try:
+            data = Path(candidate).read_text(errors="replace").strip().strip("\x00")
+            if data and data.lower() not in ("none", "to be filled by o.e.m.", ""):
+                return data
+        except (OSError, PermissionError):
+            continue
+    return None
+
+
+def detect_self_homeworld_serial() -> str:
+    """Identify the silicon this process is running on.
+
+    Resolution order (most-trusted first):
+      1. Hardware: ioreg (macOS) or DMI/devicetree (Linux). Canonical truth.
+         Cannot be falsified by a federation rsync because it asks the
+         silicon directly. This is what makes M1 correctly self-identify
+         as C07FL0JAQ6NV instead of inheriting M5's GTH4921YP3 from
+         rsync'd anchor files.
+      2. Cached web_anchors.jsonl heartbeat. Used only when hardware probe
+         fails AND the file is local-origin (cannot guarantee the latter,
+         so this layer is best-effort and intentionally lower-priority).
+      3. Hostname-derived stable token. Last resort, deterministic but
+         not hardware-bound.
+    """
+    global _HARDWARE_SERIAL_CACHE
+    if _HARDWARE_SERIAL_CACHE:
+        return _HARDWARE_SERIAL_CACHE
+
+    # ── 1. Hardware probe (canonical) ────────────────────────────────────
+    system = platform.system()
+    serial: Optional[str] = None
+    if system == "Darwin":
+        serial = _read_hardware_serial_macos()
+    elif system == "Linux":
+        serial = _read_hardware_serial_linux()
+    if serial:
+        _HARDWARE_SERIAL_CACHE = serial
+        return serial
+
+    # ── 2. Anchor cache fallback (legacy behaviour, rsync-vulnerable) ────
     anchors = _STATE / "heartbeats" / "web_anchors.jsonl"
     if anchors.exists():
         try:
@@ -235,17 +386,17 @@ def detect_self_homeworld_serial() -> str:
                     except Exception:
                         continue
                     sig = row.get("signal_text", "")
-                    # signal_text format: SIFTA: [SIG:<serial>:...]
                     if "[SIG:" in sig:
                         try:
-                            serial = sig.split("[SIG:")[1].split(":")[0]
-                            if serial:
-                                return serial
+                            cached = sig.split("[SIG:")[1].split(":")[0]
+                            if cached:
+                                return cached
                         except Exception:
                             pass
         except OSError:
             pass
-    # Fallback — derive a stable token from the hostname.
+
+    # ── 3. Last-resort hostname token ────────────────────────────────────
     return f"HOST_{hashlib.sha256(socket.gethostname().encode()).hexdigest()[:10]}"
 
 

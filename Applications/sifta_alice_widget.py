@@ -279,6 +279,14 @@ class AliceWidget(QWidget):
         except Exception:
             pass
 
+        try:
+            from System.alice_body_autopilot import read_prompt_line as _body_line
+
+            if _body_line():
+                clauses.append("body control online")
+        except Exception:
+            pass
+
         if not clauses:
             return "Hi. I'm Alice. Sensors warming up."
 

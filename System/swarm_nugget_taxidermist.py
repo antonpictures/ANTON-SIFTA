@@ -297,9 +297,7 @@ def summary_for_alice() -> str:
     mins = int((time.time() - most_recent.get("ts", time.time())) / 60)
     avg_grade = sum(r.get("grade", 0) for r in archived) / total
     return (
-        f"NUGGET TAXIDERMIST: {total} API responses auto-archived as stigmergic knowledge "
-        f"(avg grade {avg_grade:.2f}, last {mins}m ago). "
-        f"Knowledge compounds retroactively."
+        f"NUGGET TAXIDERMIST: archived_count={total} avg_grade={avg_grade:.2f} age_m={mins}"
     )
 
 

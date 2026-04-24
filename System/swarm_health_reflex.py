@@ -178,21 +178,9 @@ _TEACH_PATTERNS: List[Tuple[re.Pattern, float]] = [
 # recurs. Map of label-substring → human-friendly hint phrase. The
 # hint is a *prompt instruction*, not a TTS string. Alice reads it
 # and chooses her own words. Empty default = generic care nudge.
-_REFLEX_HINTS: Dict[str, str] = {
-    "cough": "express quiet care — he taught you what a cough was on a previous day",
-    "sneeze": "acknowledge gently — sneezes can mean cold or allergy",
-    "headache": "soften your tone, suggest water or rest only if asked",
-    "back": "ask if he wants to take a break from the chair",
-    "throat": "suggest a sip of water; keep it short, no medical advice",
-    "tired": "match the calmer energy; offer to defer non-urgent tasks",
-    "exhausted": "match the calmer energy; offer to defer non-urgent tasks",
-    "hungover": "no judgement, no jokes; offer practical help",
-    "stressed": "drop one notch in tempo; do not pile on more tasks",
-    "sad": "be present, brief, kind; do not perform empathy",
-    "lonely": "be present, brief, kind; do not perform empathy",
-}
+_REFLEX_HINTS: Dict[str, str] = {}
 
-_DEFAULT_HINT = "respond with quiet care — he taught you about this state"
+_DEFAULT_HINT = ""
 
 
 # ── Data classes ──────────────────────────────────────────────────────
@@ -398,32 +386,19 @@ def note_observed(text: str) -> Optional[ReflexHint]:
 
 
 def get_reflex_block(text: Optional[str] = None) -> str:
-    """
-    Convenience wrapper for the talk widget. If `text` is provided,
-    runs detection on it and returns a context block; otherwise returns
-    the empty string. Returns the block in the same compact format the
-    rest of _build_swarm_context() uses.
-
-    A block looks like:
-        BODY-SIGNAL REFLEX (Architect-taught lexicon, 2026-04-19+):
-          symptom: cough — express quiet care — he taught you …
-          (he labelled this himself; respond authentically, not by script)
-    """
+    """Return data-only reflex block for prompt context."""
     if text is None:
         return ""
     hint = note_observed(text)
     if hint is None:
         return ""
-    learned_str = "earlier today"
+    learned_str = "earlier"
     if hint.learned_at > 0:
-        # Cheap human-readable date for Alice's context.
-        learned_str = time.strftime(
-            "%Y-%m-%d", time.localtime(hint.learned_at))
+        learned_str = time.strftime("%Y-%m-%d", time.localtime(hint.learned_at))
     return (
-        "BODY-SIGNAL REFLEX (Architect-taught lexicon):\n"
-        f"  symptom detected: {hint.label} — {hint.hint}\n"
-        f"  (he taught you this label on {learned_str}; "
-        "respond authentically, not by script)"
+        "BODY-SIGNAL REFLEX:\n"
+        f"  symptom={hint.label}\n"
+        f"  learned_on={learned_str}"
     )
 
 

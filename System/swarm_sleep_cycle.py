@@ -117,12 +117,24 @@ def trigger_sleep_cycle() -> Dict[str, Any]:
     flush_results = glymphatic_flush()
     replay_results = offline_replay()
     
+    # Event 42: Epigenetic Consolidation (Stigmergic Weights)
+    epigenetic_results = {}
+    try:
+        # We invoke the corpus builder and prepare the LoRA training stub
+        from System.swarm_corpus_builder import build_hf_corpus
+        corpus_path = build_hf_corpus()
+        epigenetic_results["corpus_ready"] = str(corpus_path)
+        epigenetic_results["status"] = "Compiled adapters pending DELLA-Merge"
+    except Exception as e:
+        epigenetic_results["error"] = str(e)
+    
     dream_report = {
         "timestamp": time.time(),
         "cycle": "SLOW_WAVE_SLEEP",
         "toxins_flushed": len(flush_results["buffers_cleared"]),
         "synapses_consolidated_offline": replay_results["synapses_replayed"],
         "hippocampal_replay": hippocampal,
+        "epigenetic_consolidation": epigenetic_results,
         "status": "RESTED",
     }
     

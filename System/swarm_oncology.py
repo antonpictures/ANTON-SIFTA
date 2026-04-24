@@ -90,10 +90,8 @@ class SwarmOncology:
         self.oncology_ledger = self.state_dir / "oncology_tumors.jsonl"
 
         # ── Layer 1: INNATE IMMUNITY ────────────────────────────────────────
-        # Compile-time canon of healthy SIFTA organ schema files. Adding
-        # an entry here is the architect-merged way to legitimize a new
-        # organ's ledger. Removing one without an architect-signed reason
-        # was the M3 violation that motivated this v3 rebuild.
+        # Compile-time canon of healthy SIFTA organ schema files.
+        # Dynamically extended from LEDGER_SCHEMAS to prevent whitelist inversion.
         self.healthy_schemas = {
             "ide_stigmergic_trace.jsonl",
             "work_receipts.jsonl",             # [AG31 Fix] BISHOP missed the valid reward ledger
@@ -114,6 +112,12 @@ class SwarmOncology:
             "mycelial_network.jsonl",          # Wood Wide Web time-3D fungal networks
             "bishop_mrna_field.jsonl",         # BISHOP mRNA conscience lock ledger
             "epigenetic_methylations.jsonl",   # DNA methylation / lineage trauma
+            "stigmergic_adapter_registry.jsonl",     # [C55M Event 42] LoRA adapter provenance
+            "stigmergic_replay_evals.jsonl",          # [C55M Event 42] hippocampal replay quarantine
+            "stigmergic_adapter_merge_plans.jsonl",  # [C55M Event 42] deterministic PEFT merge recipes
+            "stigmergic_adapter_merge_recipe.json",  # [C55M Event 42] latest PEFT recipe snapshot
+            "imessage_ingress.key",           # [C55M Event 49] local HMAC key for iMessage ingress rows
+            "iphone_effector_allowlist.json", # [C55M Event 49] local outbound iPhone command allowlist
             "apostle_nuggets.jsonl",           # BISHOP/External LLM sterilized heuristics
             "incarnated_apostles.json",        # Hardware signature registry for Apostles
             "eukaryote_pairings.jsonl",        # Relational ledger for endosymbiosis
@@ -194,7 +198,14 @@ class SwarmOncology:
 
             # ── Stigmergic Codex Relay (AG31, F12 sutured by C47H 2026-04-22) ──
             "ide_codex_relay_cursor.json",     # AG31 codex bridge dedup state
-        }
+            
+            # ── Curiosity Overlay ──
+            "stigmergic_curiosity_overlay.jsonl",
+
+            # ── Event 46 — Extended Phenotype ──
+            "extended_phenotype_boluses.jsonl",
+            "extended_phenotype_health.jsonl",
+        } | set(LEDGER_SCHEMAS.keys()) | set(SCHEMA_ALIASES.keys())
 
         # Healthy filename PREFIXES — for organs whose filenames are
         # parametric (e.g., glass_<ts>.json snapshots). Match is exact
@@ -215,7 +226,7 @@ class SwarmOncology:
     def _is_cosmetic_skip(self, filename: str) -> bool:
         """Filenames that are not organ ledgers and not threats either."""
         return (
-            "lock" in filename
+            filename.endswith(".lock")
             or filename.startswith(".")
             or filename.endswith(".lymph")
             or "apostle_dirt" in filename

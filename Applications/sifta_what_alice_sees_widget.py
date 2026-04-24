@@ -911,10 +911,22 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self.make_timer(250, self._poll_motor_pulses)
 
         # ── Oculomotor Saccade target subscriber ───────────────────────────
+        # 2026-04-23 C47H surgery: was reading `.txt` and doing
+        # `findText(target, MatchContains)`, which substring-matched the "1"
+        # inside "USB Camera VID:1133 PID:2081" and pinned the Logitech.
+        # Now reads the canonical JSON target and resolves by
+        # unique_id → name → index against the live combobox itemData/text.
         self._root = Path("/Users/ioanganton/Music/ANTON_SIFTA")
-        self._saccade_target_path = self._root / ".sifta_state" / "active_saccade_target.txt"
+        self._saccade_target_json_path = (
+            self._root / ".sifta_state" / "active_saccade_target.json"
+        )
+        # Legacy .txt watched only so we still re-poll when something old
+        # touches it; canonical reader auto-heals it into JSON on next read.
+        self._saccade_target_path = (
+            self._root / ".sifta_state" / "active_saccade_target.txt"
+        )
         self._yield_lock_path = self._root / ".sifta_state" / "camera_yield.lock"
-        self._last_saccade_target: Optional[str] = None
+        self._last_saccade_signature: Optional[str] = None
         self._yielded = False
         self.make_timer(500, self._poll_saccade_target)
 
@@ -1002,6 +1014,27 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         if not self._pause_btn.isChecked():
             self._camera.start()
         self.set_status(f"Camera: {target.description()}")
+
+        # Publish the new selection back to the canonical eye target ledger
+        # so swarm_iris and Alice's prompt agree with the visible widget.
+        # 2026-04-23 C47H — closes the split-brain that let the iris organ
+        # think it was on a different camera than the one whose LED is lit.
+        try:
+            from System.swarm_camera_target import write_target as _write_target
+            tid = target.id()
+            tid_s = tid.decode() if isinstance(tid, (bytes, bytearray)) else str(tid)
+            rec = _write_target(
+                name=target.description(),
+                unique_id=tid_s,
+                writer="what_alice_sees_widget",
+            )
+            # Suppress the next saccade poll from re-firing on our own write.
+            self._last_saccade_signature = (
+                f"{tid_s}|{target.description()}|"
+                f"{rec.get('index') if rec.get('index') is not None else ''}"
+            )
+        except Exception:
+            pass
 
     def _on_camera_error(self, _err, msg: str) -> None:  # type: ignore[no-untyped-def]
         self._canvas.set_error(f"Camera error: {msg or _err}")
@@ -1148,20 +1181,75 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
     # ── Oculomotor Saccade subscriber ──────────────────────────────────────
     def _poll_saccade_target(self) -> None:
-        if not self._saccade_target_path.exists():
+        """Poll the canonical eye-target ledger and physically switch the
+        QComboBox when the target changes. Resolution is strictly
+        unique_id → exact name → index — never substring (the substring
+        matcher was the LED-stays-on-Logitech split-brain bug)."""
+        # Either file changing is a poll trigger.
+        if not (
+            self._saccade_target_json_path.exists()
+            or self._saccade_target_path.exists()
+        ):
             return
         try:
-            target = self._saccade_target_path.read_text("utf-8").strip()
-            if target and target != self._last_saccade_target:
-                self._last_saccade_target = target
-                # Force the UI combobox to select this string if it exists
-                idx = self._cam_combo.findText(target, Qt.MatchFlag.MatchContains)
-                if idx >= 0 and self._cam_combo.currentIndex() != idx:
-                    self._cam_combo.setCurrentIndex(idx)
-                    # Show a chyron event
-                    self._canvas.set_chyron(f"🔥 SACCADE FIRED: Snapping hardware to {target}", QColor(255, 90, 110))
+            from System.swarm_camera_target import read_target as _read_target
+            rec = _read_target()
         except Exception:
-            pass
+            return
+        if not rec:
+            return
+        signature = (
+            f"{rec.get('unique_id') or ''}|{rec.get('name') or ''}|"
+            f"{rec.get('index') if rec.get('index') is not None else ''}"
+        )
+        if signature == self._last_saccade_signature:
+            return
+        self._last_saccade_signature = signature
+
+        target_idx = self._resolve_target_combo_idx(rec)
+        if target_idx < 0 or target_idx >= self._cam_combo.count():
+            self._canvas.set_chyron(
+                f"⚠️ SACCADE TARGET NOT IN COMBOBOX: "
+                f"{rec.get('name') or rec.get('unique_id') or rec.get('index')}",
+                QColor(255, 200, 90),
+            )
+            return
+        if self._cam_combo.currentIndex() != target_idx:
+            self._cam_combo.setCurrentIndex(target_idx)
+            chosen = self._cam_combo.itemText(target_idx)
+            self._canvas.set_chyron(
+                f"🔥 SACCADE FIRED: Snapping hardware to {chosen}",
+                QColor(255, 90, 110),
+            )
+
+    def _resolve_target_combo_idx(self, rec: dict) -> int:
+        """Resolve a canonical target dict against the live combobox.
+        Order: unique_id (itemData) → exact name (itemText) → index.
+        Never substring."""
+        if not rec:
+            return -1
+        # 1) unique_id against itemData (which holds QCameraDevice.id())
+        uid = rec.get("unique_id")
+        if uid:
+            for i in range(self._cam_combo.count()):
+                data = self._cam_combo.itemData(i)
+                data_s = (
+                    data.decode() if isinstance(data, (bytes, bytearray))
+                    else (str(data) if data is not None else "")
+                )
+                if data_s == uid:
+                    return i
+        # 2) exact name against itemText
+        name = (rec.get("name") or "").strip()
+        if name:
+            for i in range(self._cam_combo.count()):
+                if self._cam_combo.itemText(i) == name:
+                    return i
+        # 3) raw index — last resort
+        idx = rec.get("index")
+        if isinstance(idx, int) and 0 <= idx < self._cam_combo.count():
+            return idx
+        return -1
 
     def _poll_camera_yield(self) -> None:
         """Release the camera if the substrate closure protocol needs it."""

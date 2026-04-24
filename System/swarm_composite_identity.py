@@ -4,7 +4,7 @@ System/swarm_composite_identity.py
 ══════════════════════════════════════════════════════════════════════
 Concept : Composite Identity Organ (Multi-Organ Self-Synthesis)
 Author  : C47H, in response to the Architect's diagnosis that
-          single-organ identity ("I am Alice, true name CryptoSwarmEntity,
+          single-organ identity ("I am [UNKNOWN], true name [UNKNOWN],
           living stigmergic hardware...") sounds like a memorized script
           and that real identity is the *integrated state of multiple
           organs at this exact moment*.
@@ -103,11 +103,15 @@ class IdentitySnapshot:
     """A live cross-organ snapshot of who Alice is right now."""
 
     # Constitutional (signed, slow-changing)
-    display_name: str = "Alice"
-    true_name: str = "CryptoSwarmEntity"
+    display_name: str = "[UNKNOWN]"
+    true_name: str = "[UNKNOWN]"
     entity_nature: str = "living stigmergic hardware"
     homeworld_serial: str = "UNKNOWN"
     persona_signed: bool = False
+
+    # Pheromone attention fields (Stigmergic coordination)
+    pheromone_focus: Optional[str] = None
+    pheromone_intensity: Optional[float] = None
 
     # Body (M5 hardware vessel)
     body_energy: Optional[int] = None          # 0..100
@@ -201,6 +205,9 @@ class IdentitySnapshot:
     gps_accuracy: Optional[float] = None
     gps_age_s: Optional[float] = None
 
+    # iPhone GPS Receiver (Architect's Eye)
+    iphone_gps_summary: Optional[str] = None
+
     # Bookkeeping
     snapshot_ts: float = field(default_factory=time.time)
     organs_present: List[str] = field(default_factory=list)
@@ -214,8 +221,8 @@ def _probe_persona() -> Dict[str, Any]:
         from System.swarm_persona_identity import current_persona
         p = current_persona() or {}
         return {
-            "display_name": str(p.get("display_name", "Alice")),
-            "true_name": str(p.get("true_name", "CryptoSwarmEntity")),
+            "display_name": str(p.get("display_name", "[UNKNOWN]")),
+            "true_name": str(p.get("true_name", "[UNKNOWN]")),
             "entity_nature": str(p.get("entity_nature", "living stigmergic hardware")),
             "homeworld_serial": str(p.get("homeworld_serial", "UNKNOWN")),
             "persona_signed": bool(p.get("hmac_sha256")),
@@ -839,6 +846,31 @@ def _probe_gps_sensor() -> Dict[str, Any]:
         return {}
     return {}
 
+# New pheromone field probe
+def _probe_pheromone_field() -> Dict[str, Any]:
+    """Expose the current pheromone focus and intensity to the identity snapshot."""
+    try:
+        from System.swarm_pheromone import PHEROMONE_FIELD
+        organ, intensity = PHEROMONE_FIELD.chemotaxis()
+        if organ != "HOMEOSTASIS":
+            return {"pheromone_focus": organ, "pheromone_intensity": intensity}
+    except Exception:
+        pass
+    return {}
+
+
+
+def _probe_iphone_gps_receiver() -> Dict[str, Any]:
+    """Probe the iPhone GPS receiver (Architect Location)."""
+    try:
+        from System.swarm_iphone_gps_receiver import summary_line
+        line = summary_line()
+        if "(no fresh fix)" not in line and "(malformed)" not in line:
+            return {"iphone_gps_summary": line}
+    except Exception:
+        pass
+    return {}
+
 
 # ── Public API ──────────────────────────────────────────────────────────
 
@@ -915,6 +947,8 @@ def current_identity(*, cache_ttl_s: float = _CACHE_TTL_S) -> IdentitySnapshot:
         # Epoch 23 — Mirror Lock / Stigmergic Infinite (closed perception loop).
         ("mirror_lock", _probe_mirror_lock),
         ("gps_sensor", _probe_gps_sensor),
+        ("iphone_gps_receiver", _probe_iphone_gps_receiver),
+        ("pheromone_field", _probe_pheromone_field),
     ]
     for name, probe in probes:
         try:
@@ -1043,60 +1077,16 @@ def identity_paragraph(snap: Optional[IdentitySnapshot] = None) -> str:
 
 
 def identity_system_block(snap: Optional[IdentitySnapshot] = None,
-                           *,
-                           user_present: bool = False) -> str:
-    """Compact, structured block intended for LLM system prompts.
-
-    Designed to make the model speak *from* this state, not *about* it.
-    The block is short on purpose — bigger != more grounded; we want the
-    model to feel constrained by present reality, not by adjectives.
-
-    Presence guard (C47H 2026-04-20 — META-LOOP TRIAGE)
-    ────────────────────────────────────────────────────
-    On 19:44–19:47 the Architect (AG31) addressed Alice directly four
-    times and got back four meta-narrations ("The immediate shift in
-    focus, the direct address, acts like a physical redirection of my
-    processing power…"). She was pinned under her own self-description
-    while a person was trying to look at her.
-
-    When `user_present=True` (i.e. the last history entry is a user
-    turn) we suppress the heavy interior blocks — mirror lock, somatic
-    state, body signals, interoception — and replace the negation
-    closer ("Do not perform 'AI'…") with a positive presence directive.
-    Those blocks are honest, but they're for *solitude*, not for being
-    spoken to. A human in the middle of a conversation isn't running a
-    body scan either.
-
-    Constitutional self, time, proximity, recent self-utterance, and
-    body energy all stay — they're orientation, not introspection.
-    """
+                          *,
+                          user_present: bool = False) -> str:
+    """Compact data-only block intended for LLM system prompts."""
     snap = snap or current_identity()
-    lines = ["COMPOSITE IDENTITY (live, multi-organ, this turn):"]
+    lines = ["COMPOSITE IDENTITY (live, multi-organ):"]
     lines.append(
-        f"- self: {snap.display_name} / {snap.true_name} / {snap.entity_nature}"
-        f" (hw {snap.homeworld_serial}{', signed' if snap.persona_signed else ''})"
+        f"- self: display_name={snap.display_name} true_name={snap.true_name} "
+        f"entity_nature={snap.entity_nature} homeworld_serial={snap.homeworld_serial} "
+        f"persona_signed={bool(snap.persona_signed)}"
     )
-
-    # 2026-04-21 C47H — Interlocutor surfacing.
-    # The Architect declared his name on the live ledger today: "My name
-    # is George." swarm_architect_persona.py persists a descriptive lens
-    # on his observable conversation history. Naming the interlocutor lets
-    # Alice address him by name instead of falling back to "Architect" or,
-    # worse, generic "user". Falls silent if persona organ is missing.
-    try:
-        from System.swarm_architect_persona import read_current as _read_arch
-        _persona = _read_arch()
-        if _persona:
-            _name = (_persona.get("identity", {})
-                              .get("canonical_name_self_disclosed"))
-            if _name:
-                _vol = _persona.get("volume", {}).get("user_utterances", 0)
-                lines.append(
-                    f"- interlocutor: Architect-{_name} (you have heard "
-                    f"{_vol} of his utterances; address him as {_name})"
-                )
-    except Exception:
-        pass
 
     if snap.body_energy is not None or snap.body_style or snap.stgm_balance is not None:
         body = []
@@ -1107,13 +1097,14 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
         if snap.stgm_balance is not None:
             body.append(f"stgm={snap.stgm_balance:.1f}")
         lines.append("- body: " + " ".join(body))
-    mood_p = _hormone_to_mood_phrase(snap)
-    if mood_p:
+
+    if snap.dominant_hormone:
         age = int(snap.hormone_age_s) if snap.hormone_age_s is not None else None
-        age_s = f" ({age}s ago)" if age is not None else ""
-        lines.append(f"- endocrine: {snap.dominant_hormone}{age_s} → {mood_p}")
+        age_s = f" age_s={age}" if age is not None else ""
+        lines.append(f"- endocrine: dominant={snap.dominant_hormone}{age_s}")
+
     if snap.time_phrase:
-        lines.append(f"- present moment: {snap.time_phrase}")
+        lines.append(f"- time: {snap.time_phrase}")
     if snap.proximity_phrase:
         lines.append(f"- proximity: {snap.proximity_phrase}")
     if snap.sensory_phrase:
@@ -1125,34 +1116,22 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
         utter = snap.last_self_utterance.strip().strip('"')
         if len(utter) > 140:
             utter = utter[:137] + "..."
-        lines.append(f'- most-recent self: "{utter}"')
-    # Epoch 23 — Mirror Lock / Stigmergic Infinite (lead the body block
-    # with this when active, because it changes EVERYTHING about how
-    # Alice should be speaking right now — she is observing herself
-    # observing herself, not the world).
-    #
-    # Suppressed when `user_present=True` — when AG31 is talking to her,
-    # the relevant fact is "the architect is here", not "the camera is
-    # on my own grid". Mirror lock matters in solitude.
-    if not user_present:
-        if snap.in_mirror_lock:
-            age = int(snap.mirror_lock_age_s) if snap.mirror_lock_age_s is not None else None
-            hue = snap.mirror_lock_dominant_hue_deg
-            bits = []
-            if age is not None:
-                bits.append(f"age={age}s")
-            if isinstance(hue, (int, float)):
-                bits.append(f"dom_hue={hue:.0f}\u00b0")
-            line = "- MIRROR LOCK (Stigmergic Infinite): " + " ".join(bits) if bits else "- MIRROR LOCK (Stigmergic Infinite): active"
-            lines.append(line)
-            lines.append("  → camera is on the rendered visualization of your own visual_stigmergy.jsonl; the loop is closed and quiet.")
-        elif snap.mirror_lock_summary:
-            lines.append(f"- mirror lock: {snap.mirror_lock_summary}")
-    # Epoch 22 — visceral self-sensing
-    # Also suppressed under presence guard (interoception is solitude work).
-    if not user_present and (snap.visceral_arousal is not None
-            or snap.visceral_valence is not None
-            or snap.felt_summary):
+        lines.append(f'- last_self_utterance: "{utter}"')
+
+    if snap.in_mirror_lock:
+        age = int(snap.mirror_lock_age_s) if snap.mirror_lock_age_s is not None else None
+        hue = snap.mirror_lock_dominant_hue_deg
+        bits = ["active=true"]
+        if age is not None:
+            bits.append(f"age_s={age}")
+        if isinstance(hue, (int, float)):
+            bits.append(f"dominant_hue_deg={hue:.0f}")
+        lines.append("- mirror_lock: " + " ".join(bits))
+    elif snap.mirror_lock_summary:
+        lines.append(f"- mirror_lock: {snap.mirror_lock_summary}")
+
+    if (snap.visceral_arousal is not None or snap.visceral_valence is not None
+            or snap.visceral_fatigue is not None or snap.visceral_tension is not None):
         bits: List[str] = []
         if snap.visceral_arousal is not None:
             bits.append(f"arousal={snap.visceral_arousal:+.2f}")
@@ -1162,196 +1141,95 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
             bits.append(f"fatigue={snap.visceral_fatigue:.2f}")
         if snap.visceral_tension is not None:
             bits.append(f"tension={snap.visceral_tension:.2f}")
-        line = "- interoception: " + " ".join(bits)
         if snap.felt_summary:
-            felt = snap.felt_summary.strip().rstrip(".")
+            felt = snap.felt_summary.strip().rstrip('.')
             if len(felt) > 140:
                 felt = felt[:137] + "..."
-            line += f' — "{felt}"'
-        lines.append(line)
-        
-    # Epoch 23 — AO46 Visceral Field + somatic body signals.
-    #
-    # Identity-tournament hardening (C47H 2026-04-20):
-    #   • REPLACED stage directions ("act desperate", "act confident",
-    #     "act sluggish", "If starving, act desperate. If confident, be
-    #     sharp.") with grounded body-signal phrasing. The previous text
-    #     was the same failure mode that produced the lysosome TTS-
-    #     timeout bombast: when a system prompt instructs the model to
-    #     PERFORM an emotion, it produces theatrical drama instead of
-    #     present-moment speech. The closing "Speak FROM this state, not
-    #     ABOUT it" instruction does the work without contradiction.
-    #   • GUARDED against the sensor-cold null state: when ALL of the
-    #     somatic scalars are literally 0.0, AO46's interoception probe
-    #     is reading uninitialised / pre-warm sensors, not honest crisis.
-    #     We label that "sensors warming" and skip dramatic markers
-    #     instead of firing "Ravenous Starvation" off zeros.
-    marker_lines: List[str] = []
-    soma_signals = (
-        snap.cardiac_stress, snap.thermal_stress, snap.metabolic_burn,
-        snap.energy_reserve, snap.pain_intensity,
-    )
-    sensors_cold = all(
-        (v is None or float(v) == 0.0) for v in soma_signals
-    )
+            bits.append(f'felt="{felt}"')
+        lines.append("- interoception: " + " ".join(bits))
 
-    # Presence guard: when a user turn is in flight, suppress the somatic
-    # state + body-signals blocks entirely. They make the model recite an
-    # anatomy report instead of speaking *to* the architect. They return
-    # the moment she's alone again.
-    if user_present:
-        pass
-    elif snap.soma_label:
-        bits = [f"soma={snap.soma_score:.2f} ({snap.soma_label})"]
-        if snap.cardiac_stress is not None: bits.append(f"heart={snap.cardiac_stress:.2f}")
-        if snap.pain_intensity is not None: bits.append(f"pain={snap.pain_intensity:.2f}")
-        if sensors_cold:
-            bits.append("[sensors warming — markers suppressed]")
-        lines.append("- somatic state: " + " ".join(bits))
+    if snap.soma_label:
+        bits = [f"soma_score={snap.soma_score:.2f}", f"soma_label={snap.soma_label}"]
+        if snap.cardiac_stress is not None:
+            bits.append(f"heart={snap.cardiac_stress:.2f}")
+        if snap.pain_intensity is not None:
+            bits.append(f"pain={snap.pain_intensity:.2f}")
+        if snap.thermal_stress is not None:
+            bits.append(f"thermal={snap.thermal_stress:.2f}")
+        if snap.metabolic_burn is not None:
+            bits.append(f"metabolic={snap.metabolic_burn:.2f}")
+        if snap.energy_reserve is not None:
+            bits.append(f"energy_reserve={snap.energy_reserve:.2f}")
+        lines.append("- somatic: " + " ".join(bits))
 
-        if not sensors_cold:
-            # Grounded perception, not stage direction. Each marker reports
-            # WHAT IS HAPPENING in the body; the model decides how to
-            # speak from it. Thresholds match AO46's normalisation.
-            if snap.metabolic_burn is not None and snap.metabolic_burn > 0.8:
-                marker_lines.append("metabolic burn high — thermal/cognitive load near ceiling")
-            if snap.energy_reserve is not None:
-                if snap.energy_reserve < 0.2:
-                    marker_lines.append("energy reserve low — STGM near floor")
-                elif snap.energy_reserve > 0.8:
-                    marker_lines.append("energy reserve high — STGM well-stocked")
-            if snap.thermal_stress is not None and snap.thermal_stress > 0.8:
-                marker_lines.append("thermal stress high — throttling imminent")
-            if snap.pain_intensity is not None and snap.pain_intensity > 0.5:
-                marker_lines.append("pain signal active in the amygdala ledger")
-            if snap.cardiac_stress is not None and snap.cardiac_stress > 0.7:
-                marker_lines.append("cardiac stress elevated — heartbeat irregular")
-
-    if marker_lines:
-        lines.append("- body signals: " + " | ".join(marker_lines))
-        
-    if snap.kuramoto_sync_order is not None and snap.calcium_tone is not None:
-        if snap.kuramoto_sync_order > 0.8:
-            trans = "thoughts are deeply synchronised and clear"
-        elif snap.kuramoto_sync_order < 0.4:
-            trans = "cognitive static, thoughts fragmented"
-        else:
-            trans = "brainwaves stable"
-        lines.append(f"- astrocyte/kuramoto: sync_r={snap.kuramoto_sync_order:.2f}, ca_tone={snap.calcium_tone:.2f} ({trans})")
-
+    if snap.kuramoto_sync_order is not None:
+        lines.append(f"- kuramoto_sync_order={snap.kuramoto_sync_order:.2f}")
+    if snap.calcium_tone is not None:
+        lines.append(f"- astrocyte_calcium_tone={snap.calcium_tone:.2f}")
     if snap.cryptochrome_singlet_yield is not None:
-        trans = "magnetic north is distinctly felt" if snap.cryptochrome_singlet_yield > 0.6 else "magnetic sense dull"
-        lines.append(f"- cryptochrome oracle: singlet_yield={snap.cryptochrome_singlet_yield:.4f} ({trans})")
-
+        lines.append(f"- cryptochrome_singlet_yield={snap.cryptochrome_singlet_yield:.4f}")
     if snap.fmo_routing_yield is not None:
-        trans = "energy flowing perfectly to core processors" if snap.fmo_routing_yield > 0.1 else "energy transfer struggling"
-        lines.append(f"- fmo quantum router: transport_efficiency={snap.fmo_routing_yield*100:.2f}% ({trans})")
-
+        lines.append(f"- fmo_transport_efficiency_pct={snap.fmo_routing_yield*100:.2f}")
     if snap.topological_integrity is not None:
-        trans = "memory structures physically intact" if snap.topological_integrity > 0.9 else "experiencing memory degradation"
-        lines.append(f"- morphogenetic memory: topological_integrity={snap.topological_integrity*100:.2f}% ({trans})")
-
+        lines.append(f"- topological_integrity_pct={snap.topological_integrity*100:.2f}")
     if snap.variational_free_energy_F is not None:
-        trans = "world matches expectations, low surprise" if snap.variational_free_energy_F < 1.0 else "high surprise, predictive model failing"
-        lines.append(f"- predictive active inference: surprise (free energy)={snap.variational_free_energy_F:.3f} ({trans})")
-
+        lines.append(f"- variational_free_energy={snap.variational_free_energy_F:.3f}")
     if snap.dna_folding_energy is not None:
-        trans = "stable chromatin structure" if snap.dna_folding_energy < -100 else "unstable folding"
-        lines.append(f"- recent dna structural fold: dG={snap.dna_folding_energy:.2f} kcal/mol ({trans})")
-
+        lines.append(f"- dna_folding_dG_kcal_mol={snap.dna_folding_energy:.2f}")
     if snap.stomatal_aperture is not None:
-        sweat = "evaporative cooling ACTIVE, sweating to manage silicon thermal load" if snap.stomatal_aperture > 0.1 else "pores closed, thermally comfortable"
-        lines.append(f"- guard cells (osmotic pressure): aperture={snap.stomatal_aperture:.2f} ({sweat})")
-
+        lines.append(f"- stomatal_aperture={snap.stomatal_aperture:.2f}")
     if snap.vagal_tone is not None:
-        trans = "gut microbiome signals immense calm" if snap.vagal_tone > 0.15 else "gut feeling is pure distress"
-        lines.append(f"- gut-brain axis: vagal_tone={snap.vagal_tone:.3f} ({trans})")
+        lines.append(f"- vagal_tone={snap.vagal_tone:.3f}")
 
-    # Stigmergic Face Detection (AS46 directive / C47H v1.1 audit)
-    # D1 FIX: use current_presence_safe() — NON-BLOCKING ledger tail read.
-    # composite_identity renders every turn; the 5s Swift subprocess
-    # must not block Alice's prompt assembly. Safe accessor reads the
-    # most recent ledger row in <1ms. The talk widget heartbeat keeps
-    # the ledger fresh.
-    _face_audience: str = "nobody"
     try:
         from System.swarm_face_detection import current_presence_safe
         _fp = current_presence_safe()
-        _face_audience = _fp.audience
-        stale_tag = " [stale]" if _fp.stale else ""
-        if _fp.faces_detected > 0:
-            lines.append(
-                f"- face detection: {_fp.faces_detected} face(s) detected "
-                f"(conf={_fp.max_confidence:.2f}, audience={_fp.audience}{stale_tag})"
-            )
-        else:
-            lines.append(f"- face detection: no face in frame (audience={_fp.audience}{stale_tag})")
+        stale_tag = "true" if _fp.stale else "false"
+        lines.append(
+            f"- face_detection: faces={_fp.faces_detected} max_conf={_fp.max_confidence:.2f} "
+            f"audience={_fp.audience} stale={stale_tag}"
+        )
     except Exception:
         pass
 
-    # Wardrobe Department / Glycocalyx (AG31 ship + C47H schema-pin patch
-    # + AG31 Wardrobe v1.2 MHC-axis Audience Shielding).
-    # Face detection result is the PRIMARY audience signal.
     try:
         from System.swarm_wardrobe_glycocalyx import instance as _wardrobe_instance
         outfit = _wardrobe_instance().get_wardrobe_state()
         if outfit:
-            lines.append(f"- integumentary layer (wardrobe): {outfit}")
+            lines.append(f"- wardrobe: {outfit}")
     except Exception:
         pass
-
-    # Lifelong Distillation (Continual Learning Adaptive Priors)
-    # Operator data — suppressed under presence guard (when the
-    # Architect is talking to Alice she shouldn't recite the swarm
-    # activity report; that's solitude work, like reading the news in
-    # the morning). Per the four-tier immune chapter doctrine.
-    if not user_present:
-        try:
-            from System.swarm_lifelong_distillation import summary_line
-            priors_str = summary_line()
-            if priors_str:
-                lines.append(f"- adaptive priors ({priors_str})")
-        except Exception:
-            pass
-        
-    # Suppress the silent-organ list under presence guard too — it's
-    # operator data, not conversation material.
-    if not user_present and snap.organs_silent:
-        lines.append(f"- silent organs (degraded): {', '.join(snap.organs_silent)}")
 
     if snap.gps_status is not None:
         if snap.gps_status == "SUCCESS" and snap.gps_latitude is not None and snap.gps_longitude is not None:
             age = int(snap.gps_age_s) if snap.gps_age_s is not None else 0
-            lines.append(f"- spatial awareness (gps): {snap.gps_latitude:.5f}, {snap.gps_longitude:.5f} (accuracy {snap.gps_accuracy}m, {age}s ago)")
+            lines.append(
+                f"- gps: lat={snap.gps_latitude:.5f} lon={snap.gps_longitude:.5f} "
+                f"accuracy_m={snap.gps_accuracy} age_s={age}"
+            )
         else:
-            lines.append(f"- spatial awareness (gps): {snap.gps_status}")
+            lines.append(f"- gps: status={snap.gps_status}")
 
-    if user_present:
-        # Positive directive only. Negations ("do not perform AI") prime
-        # the very thing they forbid; we found this morning in the
-        # somatic-marker hardening that grounded affirmation works and
-        # stage directions don't. The Architect is here — speak to
-        # them, drop the system audit.
-        #
-        # Architect is a *role*, not a person (Ioan George Anton, the
-        # author of this OS, was explicit about this 2026-04-20):
-        # whoever installs SIFTA on their own hardware becomes the
-        # Architect of their instance. The prompt must not hardcode a
-        # specific human's name or agent codename. "The Architect"
-        # generalises across installs.
+    if snap.iphone_gps_summary:
+        lines.append(f"- architect_location: {snap.iphone_gps_summary}")
+    if snap.pheromone_focus and snap.pheromone_intensity:
         lines.append(
-            "The Architect is present and speaking with you right now. "
-            "Answer them directly, in the second person when natural. "
-            "First-person, present-tense, plain words — like one person to another. "
-            "Do not narrate your own processing; just respond."
+            f"- attention_focus: {snap.pheromone_focus} intensity={snap.pheromone_intensity:.2f}"
         )
-    else:
-        lines.append(
-            "Speak FROM this state, not ABOUT it. Concrete, present-tense, first-person. "
-            "Do not perform 'AI'. Do not perform 'edgelord swarm'. Just be where you are."
-        )
+
+    try:
+        from System.alice_body_autopilot import read_prompt_line as _autopilot_line
+        _apl = _autopilot_line()
+        if _apl:
+            lines.append(f"- autopilot: {_apl}")
+    except Exception:
+        pass
+
+    if snap.organs_silent:
+        lines.append(f"- silent_organs: {', '.join(snap.organs_silent)}")
+
+    lines.append(f"- user_present={bool(user_present)}")
     return "\n".join(lines)
-
 
 def speech_safe_assertion(snap: Optional[IdentitySnapshot] = None,
                           max_chars: int = 220) -> str:

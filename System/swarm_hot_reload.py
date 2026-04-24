@@ -111,12 +111,44 @@ RELOADABLE: Dict[str, str] = {
     # Teaching patterns, detection keywords, care responses, and cooldown
     # constants are all module-level — hot-reload picks them up immediately.
     "health_reflex": "System.swarm_health_reflex",
+    # Alice's resident body-governance organ is a pure-function / subprocess
+    # launcher surface backed by a JSON snapshot; safe to swap in place.
+    "body_autopilot":   "System.alice_body_autopilot",
+    # Hardware-touch organ: pure stdlib subprocess wrappers around macOS
+    # CLIs (pmset, ioreg, system_profiler, osascript, pbcopy/pbpaste,
+    # diskutil, networksetup). No long-lived state; safe to swap in place.
+    "hardware_body":    "System.alice_hardware_body",
+    # Canonical eye-target ledger (single-truth for active camera). Pure
+    # JSON file I/O + Qt device enumeration. Safe to hot-swap.
+    # Added 2026-04-23 (camera split-brain surgery, C47H).
+    "camera_target":    "System.swarm_camera_target",
+    # Active-window cortex — real macOS NSWorkspace surface via osascript.
+    # Pure subprocess wrapper, safe to swap. Added 2026-04-23 (Vector B,
+    # C47H, post-camera-surgery sortie).
+    "active_window":    "System.swarm_active_window",
+    # Four sensory cortices added in the OS-distro tournament (AG31 cosign):
+    # all are pure-function readers around macOS CLIs, safe to hot-swap.
+    "ble_radar":        "System.swarm_ble_radar",
+    "awdl_mesh":        "System.swarm_awdl_mesh",
+    "unified_log":      "System.swarm_unified_log",
+    "vocal_proprioception": "System.swarm_vocal_proprioception",
     # Per-turn workers in the talk widget. Reloading the MODULE swaps
     # _OllamaWorker class definition; the long-lived TalkToAliceWidget
     # instance will instantiate the NEW class on the next user turn.
     "talk_widget":      "Applications.sifta_talk_to_alice_widget",
     # Stigmergic dialogue composer — pure-function, safe.
     "dialogue":         "System.swarm_stigmergic_dialogue",
+    # Nanobot & macOS subsystems coded by AG31
+    "window_manager":   "System.swarm_window_manager",
+    "hardware_bridge":  "System.swarm_hardware_bridge",
+    "network_state":    "System.swarm_network_state",
+    "encryption":       "System.swarm_encryption",
+    "nanobot_cmd":      "System.swarm_nanobot_cmd",
+    "nanobot_power":    "System.swarm_nanobot_power",
+    "nanobot_vision":   "System.swarm_nanobot_vision",
+    "applescript_effector": "System.swarm_applescript_effector",
+    "vagus_nerve":      "System.swarm_vagus_nerve",
+    "architect_identity": "System.swarm_architect_identity",
 }
 
 

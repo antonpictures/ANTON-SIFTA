@@ -91,19 +91,51 @@ def _canonical(d: Dict[str, Any]) -> str:
     return json.dumps(d, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
-def _sign(payload: Dict[str, Any], kind: str, ts: float) -> str:
+def _sign(
+    from_homeworld: str,
+    to_homeworld: str,
+    msg_id: str,
+    schema: int,
+    owner_id_key: str,
+    kind: str,
+    payload: Dict[str, Any],
+    ts: float,
+) -> str:
+    """C55M-mandated: full 256-bit SHA-256 over the FULL 8-field envelope.
+    Restored 2026-04-23 after a stale `cp` from media_claw silently rolled
+    back the AG31/C47H hardening to 96-bit truncation + 3-field signing.
+    Do not weaken without C55M sign-off.
+    """
     key = os.environ.get(HMAC_KEY_ENV, "").encode("utf-8")
     if not key:
         return ""  # unsigned in test mode is OK; receiver decides whether to trust
-    body = _canonical({"kind": kind, "payload": payload, "ts": ts}).encode("utf-8")
-    return hmac.new(key, body, hashlib.sha256).hexdigest()[:24]
+    body = _canonical({
+        "from": from_homeworld,
+        "to": to_homeworld,
+        "msg_id": msg_id,
+        "schema": schema,
+        "owner": owner_id_key,
+        "kind": kind,
+        "payload": payload,
+        "ts": ts,
+    }).encode("utf-8")
+    return hmac.new(key, body, hashlib.sha256).hexdigest()  # full 64 hex chars
 
 
 def _verify(msg: WarpMessage) -> bool:
-    """True iff signature absent (unsigned, test mode) OR matches HMAC."""
+    """True iff signature absent (unsigned, test mode) OR matches full-envelope HMAC."""
     if not msg.signature:
         return os.environ.get(HMAC_KEY_ENV, "") == ""
-    expected = _sign(msg.payload, msg.kind, msg.ts_sent)
+    expected = _sign(
+        msg.from_homeworld,
+        msg.to_homeworld,
+        msg.msg_id,
+        msg.schema,
+        msg.owner_id_key,
+        msg.kind,
+        msg.payload,
+        msg.ts_sent,
+    )
     return hmac.compare_digest(expected, msg.signature)
 
 
@@ -127,6 +159,7 @@ def send(
 ) -> Optional[WarpMessage]:
     """Append a WarpMessage to the spool path for `to_homeworld`.
 
+    NOTE: `owner_label` is the HUMAN identity (e.g. "IOAN"), NOT the agent's identity.
     Refuses (returns None) when:
       - federation is OFF and `force=False`
       - the target homeworld is not registered to the same owner
@@ -149,8 +182,10 @@ def send(
         return None
 
     ts = time.time()
+    msg_id = uuid.uuid4().hex[:16]
+    schema = 1
     msg = WarpMessage(
-        msg_id=uuid.uuid4().hex[:16],
+        msg_id=msg_id,
         from_homeworld=self_serial,
         from_architect=self_arch,
         to_homeworld=to_homeworld,
@@ -158,7 +193,17 @@ def send(
         kind=kind,
         payload=payload,
         ts_sent=ts,
-        signature=_sign(payload, kind, ts),
+        signature=_sign(
+            self_serial,
+            to_homeworld,
+            msg_id,
+            schema,
+            owner.key,
+            kind,
+            payload,
+            ts,
+        ),
+        schema=schema,
     )
 
     serialized = json.dumps(msg.to_dict(), ensure_ascii=False)
@@ -244,7 +289,9 @@ def list_spool_pairs() -> List[Dict[str, Any]]:
 # ──────────────────────────────────────────────────────────────────────
 
 def send_chat(to_homeworld: str, text: str, *, owner_label: str = "IOAN", force: bool = False) -> Optional[WarpMessage]:
-    """One-shot text chat between two of the owner's machines."""
+    """One-shot text chat between two of the owner's machines.
+    NOTE: `owner_label` must be the human owner (e.g. "IOAN"), not the agent.
+    """
     return send(to_homeworld, kind="chat", payload={"text": text[:8000]},
                 owner_label=owner_label, force=force)
 

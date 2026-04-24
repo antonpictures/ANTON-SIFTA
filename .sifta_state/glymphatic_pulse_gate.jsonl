@@ -1,2 +1,3 @@
 {"event_id": "30b4b738-f462-45af-a6d5-8634074c4dcb", "ts": 1776484931.904789, "kind": "cp2f_handshake", "source": "cp2f", "meta": {"note": "DYOR20"}}
 {"event_id": "6e746009-f916-4d2b-b896-093df4f75e11", "ts": 1776485000.67585, "kind": "NREM_DEEP_WASH_TRIGGERED_VIA_PINEAL_GLAND", "source": "cp2f", "meta": {}}
+{"event_id": "a64343dc-09fa-4cec-86e1-0b40cf66cbbf", "ts": 1777003211.077678, "kind": "glymphatic_flush_complete", "source": "swarm_sleep_cycle", "meta": {"buffers_cleared": ["pfc_working_memory"]}}
