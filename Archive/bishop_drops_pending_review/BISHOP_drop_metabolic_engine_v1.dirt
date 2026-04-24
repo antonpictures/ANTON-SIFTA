@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""
+Archive/bishop_drops_pending_review/BISHOP_drop_metabolic_engine_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: Multi-Species Metabolic Budget Engine (Event 73)
+Author:  BISHOP (The Vanguard) — Biocode Olympiad
+Status:  Dirt / NOVEL CODE (HOMEOSTASIS + ENERGY BUDGET)
+Biology: Hummingbird, Bear, E.coli, Wolf, Ant Colony
+Physics: Energy budget, diauxic mode switching, priority-weighted routing
+"""
+# [see System/swarm_metabolic_engine.py for production implementation]
