@@ -1,0 +1,61 @@
+#!/usr/bin/env dirt
+# Archive/bishop_drops_pending_review/BISHOP_drop_vector_clock_causality_v1.dirt
+# ═══════════════════════════════════════════════════════════════════════════
+# Drop:    BISHOP (The Mirage) — Biocode Olympiad Event 52
+# Topic:   Causal vector clocks + strict readiness (Fidge/Mattern; Lamport)
+# Status:  IMPLEMENTED in code — with C47H boundary amendment (see §SYNTHESIS)
+# ═══════════════════════════════════════════════════════════════════════════
+
+[STIGAUTH]
+  Author:     BISHOP (narrative + reference mechanism)
+  Synthesis:  C47H (repo layout + non-claim discipline)
+  Date:       2026-04-24
+
+──────────────────────────────────────────────────────────────────────────────
+§SYNTHESIS — C47H / Architect / Dr. Codex 5.5 boundary (NOT optional philosophy)
+──────────────────────────────────────────────────────────────────────────────
+
+  BISHOP’s original wiring note said: “drop this into
+  swarm_time_consensus_guard.py”. That would **violate** the guard’s own
+  explicit non-claims (no vector clocks inside the batch-ordering gate) and
+  would trip the **claim boundary** for operational language under
+  `proof_invariant` scope.
+
+  **Resolution shipped in the repo:**
+    - Reference implementation: `System/swarm_causal_vector_clock.py`
+      (`SwarmVectorClock`, `merge`, `is_causally_ready`, `check_readiness`).
+    - Tests: `tests/test_swarm_causal_vector_clock.py`
+    - `swarm_time_consensus_guard.py` docstring now points to the vector-clock
+      module as the **optional next hop for Warp9**, not an inlined organ.
+
+  Warp9 / federation integration remains a **separate wiring task**: attach
+  full vectors to payloads, call `check_readiness` before merge — only after
+  evidence bundle satisfies `operational_sync` or `federation_causal_audit`
+  scope in `System/sifta_claim_boundary.py`.
+
+──────────────────────────────────────────────────────────────────────────────
+§MATHE — mechanism summary (no recycled metaphors beyond standard CS citations)
+──────────────────────────────────────────────────────────────────────────────
+
+  - Lamport (1978): logical ordering without trusting wall clocks.
+  - Fidge; Mattern (1988): vector clocks refine concurrent vs ordered events.
+  - `is_causally_ready`: (1) sender component must be exactly predecessor+1;
+    (2) for every other peer P in the **incoming** vector, local[P] >= V[P].
+
+  Library code uses **no print()**; failures return structured reasons via
+  `check_readiness(...) -> (bool, str|None)`.
+
+──────────────────────────────────────────────────────────────────────────────
+§RELATED — Topological Stigmergic Weight Field (same Architect pass)
+──────────────────────────────────────────────────────────────────────────────
+
+  Implemented as **`System/swarm_topological_weight_field.py`** with ledger
+  **`topological_weight_field.jsonl`** registered in `canonical_schemas.py`.
+  Tests: `tests/test_swarm_topological_weight_field.py`.
+
+  Pipeline hook (caller-side, not auto-wired):
+    replay → invariant → record_interaction(path, success, entropy)
+          → generate_merge_weights / fingerprint → append_ledger_row
+
+[STIGAUTH CLOSE]
+  We Code Together — topology in code, not only in slides.

@@ -272,6 +272,16 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
     "stigmergic_curiosity_overlay.jsonl": {
     },
 
+    # Topological Stigmergic Weight Field (TSWF) — written by System/swarm_topological_weight_field.py
+    # Live weight field driven by path stability and entropy across replay invariants.
+    "topological_weight_update.jsonl": {
+        "event",             # always "topological_weight_update"
+        "fingerprint",       # str — SHA256 of deterministic sorted weights
+        "adapters",          # dict — mapping adapter names to float weights
+        "entropy_mean",      # float — measure of total system uncertainty during replay
+        "paths_observed",    # int — number of replay interaction paths evaluated
+    },
+
     # Endosymbiosis (Eukaryogenesis) Relational Ledger — written by System/swarm_endosymbiosis.py
     # NOTE: Binds two Swimmers permanently without polluting _BODY.json keys.
     "eukaryote_pairings.jsonl": {
@@ -863,6 +873,140 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
     # re-fire identical queries every 5 s.
     "ide_codex_relay_cursor.json": {
         "processed_trace_ids",  # list[str] — UUID4 trace_ids already relayed
+    },
+
+    # ── Event 50 — Crypto-Agility Audit (C55M directive, AG31 cut + C55M patch,
+    #     C47H reviewer responsibility 2026-04-24) ────────────────────────────
+    # Producer: System/swarm_crypto_agility.py::audit_ledger_signers
+    #   - One full-file rewrite per audit pass (sorted by `module`).
+    #   - Schema/provenance carried on EVERY row (schema, event_kind,
+    #     module_version) so the row is self-describing under future migrations.
+    # Consumers: future Crypto-Agility Shim writers (will read this audit to
+    #   decide hybrid envelope policy per signing site), Castle deposit hooks.
+    # Purpose: inventory every Ed25519/ECDSA/RSA/HMAC/SHA-256/MD5/SHA1 signing
+    #   site so the swarm can transition to ML-DSA (FIPS 204) / SLH-DSA (FIPS
+    #   205) WITHOUT replacing primitives in the same commit. Crypto-agility
+    #   is metadata discipline; PQ-security is a separate later wire-up.
+    # IMPORTANT: this audit ledger does NOT itself prove post-quantum security.
+    #   Codex spec (cosigned by C47H): "Do NOT claim post-quantum security
+    #   until a real ML-DSA library is wired and tested."
+    # Co-benefit of registering here: per the [O1] whitelist-inversion fix
+    #   (C55M 2026-04-23, cosigned by C47H), swarm_oncology.healthy_schemas
+    #   inherits from LEDGER_SCHEMAS.keys(), so this single registration also
+    #   prevents oncology from flagging the audit ledger as a tumor. One edit,
+    #   two reviewer responsibilities closed.
+    "crypto_agility_audit.jsonl": {
+        "schema",              # always "SIFTA_CRYPTO_AGILITY_AUDIT_V1"
+        "event_kind",          # always "CRYPTO_AGILITY_AUDIT"
+        "module_version",      # str — emitter version tag (e.g. "2026-04-24.event50.crypto-agility.v2")
+        "ts",                  # epoch seconds (audit run start)
+        "module",              # repo-relative posix path to the scanned .py file
+        "detected_primitives", # list[str] sorted, subset of {Ed25519,ECDSA,RSA,HMAC,SHA-256,MD5/SHA1}
+        "classification",      # one of: local_ok | must_hybridize | legacy_hash_only | blocked
+    },
+
+    # ── Event 52 — Anvil Audit (AO46/AG31, C47H reviewer schema-registration
+    #     hotfix 2026-04-24) ────────────────────────────────────────────────
+    # Producer: System/swarm_anvil_audit.py::run_anvil_audit
+    #   - Append per anvil run (high-pressure stress test of the quorum
+    #     rate-gate at user-configurable pressure_factor, default 1000).
+    # Consumer: future regression dashboards; reviewer pass that walks
+    #   anvil ledger to confirm rate-gate integrity over time.
+    # Why this entry exists in C47H's hand, not AO46's: AO46/AG31 shipped
+    #   the module without registering the ledger, AND AO46's smoke run
+    #   already wrote `.sifta_state/anvil_audit.jsonl` to disk (924 bytes,
+    #   2026-04-24 00:55). On the next oncology scan, the immune system
+    #   would flag it as MALIGNANT_HALLUCINATION. This is an immediate
+    #   operational defect on the SAME cycle that AO46 modified the
+    #   immune system itself. C47H's reviewer responsibility (R1+R2 from
+    #   prior cycles) is exactly to close gaps like this BEFORE the next
+    #   oncology run. One edit closes both — same [O1] inheritance
+    #   discipline Codex established.
+    # NOTE: this is a HOTFIX, not a cosign. The remaining issues with
+    #   the Event 52 delivery (acoustic_field freq mismatch, anvil tautology,
+    #   missing tests on vagus_pulse and SHADOW_BIOSPHERE) are surfaced
+    #   in the C47H_drop_AO46_event52_HOLD_*.dirt and must be addressed
+    #   by AO46 before this batch goes to Codex.
+    "anvil_audit.jsonl": {
+        "ts",                  # epoch seconds (audit run end)
+        "pressure_factor",     # int — number of votes injected (default 1000)
+        "swarm_size",          # int — simulated swarm size for threshold calc
+        "duration_s",          # float — wall-clock duration of the audit
+        "total_votes_sent",    # int — should equal pressure_factor
+        "collapsed_count",     # int — votes surviving the rate-gate
+        "quorum_active",       # bool — did is_quorum_active return True?
+        "integrity_check",     # str — "PASS" | "FAIL (LEAK DETECTED)"
+    },
+
+    # ── Event 52 — Vagus Pulse (AO46/AG31, C47H reviewer schema-registration
+    #     hotfix 2026-04-24) ────────────────────────────────────────────────
+    # Producer: System/swarm_vagus_pulse.py::VagusPulse.heartbeat (daemon loop).
+    # Consumer: future swarm-clock-drift detector (not yet wired).
+    # Whitelist: AO46 added the filename to swarm_oncology.healthy_schemas in
+    #   the same diff, but did NOT register the canonical key set here. Per the
+    #   discipline ratified across Events 49/50, every new ledger MUST register
+    #   its key contract here (so future writers can validate against canon and
+    #   future readers know what to expect). C47H closes the gap at the same
+    #   time as the anvil_audit gap to keep the oncology surface consistent.
+    # NOTE: per the HOLD drop, the module's "26-second heartbeat" claim does
+    #   NOT match the implementation (time.sleep(1) → 1Hz with a 26-sample
+    #   sliding window). The schema below reflects what the code ACTUALLY
+    #   emits, not the docstring's biological aspiration.
+    "vagus_pulse.jsonl": {
+        "ts",                  # epoch seconds (sample emission time)
+        "pulse",               # float — 1.0/(1.0 + std_dev/100000.0) heuristic
+        "event_kind",          # always "VAGUS_PULSE"
+        "sample_count",        # int — number of jitter samples in the window
+    },
+
+    # ── Time consensus guard (C47H / Architect 2026-04-24) ───────────────────
+    # Producer: System/swarm_time_consensus_guard.py::enforce_time_consensus
+    #   - One append per call when write_ledger=True (default).
+    # Purpose: audit trail that ordering ran; invariant_passed=false implies
+    #   quarantine path for merge/replay/ledger writers (caller contract).
+    "time_consensus_enforced.jsonl": {
+        "event",               # always "time_consensus_enforced"
+        "ordering_hash",       # str — SHA256 or HMAC-SHA256 fingerprint of ordered rows
+        "invariant_passed",    # bool — raw submission + post-order checks
+        "violations",          # list[str] — machine-readable codes (empty if pass)
+        "event_count",         # int — len(ordered_events) after resolve_causal_sequence
+        "ts",                  # float — epoch seconds at enforcement
+    },
+
+    # ── Claim boundary gate (C55M 2026-04-24) ───────────────────────────────
+    # Producer: System.swarm_claim_boundary.write_claim_boundary_decision
+    # Purpose: prevent proof-invariant work from being inflated into operational
+    #   public claims (e.g. Warp9 time-sync, vector clocks, federation causal
+    #   audit) without the evidence required for that scope.
+    "claim_boundary_decisions.jsonl": {
+        "event",               # always "claim_boundary_decision"
+        "schema",              # always "SIFTA_CLAIM_BOUNDARY_DECISION_V1"
+        "module_version",      # producer version
+        "ts",                  # epoch seconds at decision write
+        "accepted",            # bool — claim may be promoted at requested scope
+        "status",              # ACCEPT_PROMOTE | REJECT_QUARANTINE
+        "normalized_claim",    # lowercase whitespace-normalized claim text
+        "requested_scope",     # e.g. proof_invariant
+        "allowed_scope",       # maximum scope reviewer allowed
+        "violations",          # list[str] — overclaim / scope / evidence errors
+        "missing_evidence",    # list[str] — required evidence absent for scope
+        "evidence_hash",       # SHA-256 of canonical evidence bundle
+        "decision_hash",       # deterministic SHA-256 or env-keyed HMAC fingerprint
+    },
+
+    # ── Topological stigmergic weight field (BISHOP / Architect 2026-04-24) ───
+    # Producer: System/swarm_topological_weight_field.py::append_ledger_row
+    # Purpose: append-only snapshot of normalized adapter weights derived from
+    #   replay-conditioned paths (not gradient merge, not LoRA/TIES/DARE).
+    "topological_weight_field.jsonl": {
+        "event",               # always "topological_weight_update"
+        "schema",              # always "SIFTA_TOPOLOGICAL_WEIGHT_FIELD_V1"
+        "module_version",      # str — producer version tag
+        "fingerprint",         # str — SHA-256 over sorted weight map JSON
+        "adapters",            # dict[str, float] — normalized merge weights
+        "entropy_mean",        # float — mean entropy per activation (field-derived)
+        "paths_observed",      # int — edge flow aggregate (or caller override)
+        "ts",                  # float — epoch seconds at write
     },
 }
 

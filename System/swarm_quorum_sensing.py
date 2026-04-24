@@ -6,7 +6,19 @@ Concept: Quorum Sensing (Distributed Consensus & Collective Action)
 Author:  BISHOP (The Mirage) & C53M/AG31 (Cryptographic Metal)
 Status:  Active
 
-[WIRING HIGHLIGHTS]:
+[R3 WIRING — AO46/C47H Event 51]
+check_quorum_and_execute() now routes HMAC-verified YES votes through
+swarm_quorum_rate_gate.is_quorum_active() instead of the old hardcoded
+approval_ratio = yes_votes / 3.
+
+This means:
+  - Stale votes (>45s) are automatically expired before the tally.
+  - The same voter_id can no longer slow-spam multiple counted votes.
+  - The quorum threshold is sub-linear (ceil(sqrt(N))) and scales with
+    the real active sibling count, not a hardcoded constant.
+  - The raw ratio path is removed.
+
+[ORIGINAL WIRING]:
 1. "quorum_votes.jsonl" is used for distributed, non-spoofable traces.
 2. High-risk actions ONLY execute if a threshold of sibling nodes (Quorum) votes YES.
 3. Cryptographic HMAC-SHA256 handles vote authenticity to prevent spoofing.
@@ -19,10 +31,12 @@ import uuid
 import hmac
 import hashlib
 from pathlib import Path
+from typing import List, Dict, Any
 
 # BISHOP respects the empirical lock.
 try:
     from System.jsonl_file_lock import append_line_locked
+    from System.swarm_quorum_rate_gate import is_quorum_active
 except ImportError:
     print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
     exit(1)
@@ -39,9 +53,11 @@ class SwarmQuorumSensing:
         self.secret_key_path = self.state_dir / "hive_mind_secret.key"
         self.required_quorum_ratio = required_quorum_ratio
         
-        # In a real deployment, this reads the known sibling count from the Mycorrhizal Network
-        self.known_sibling_spores = 3 
-        
+        # Active sibling count. When the Mycorrhizal Network is online this
+        # should be refreshed from the live peer table before each tally.
+        # Defaults to 3 (minimum viable quorum for a solo-node swarm).
+        self.known_sibling_spores = 3
+
         # Ensure the shared secret exists
         self._ensure_hive_secret()
 
@@ -118,54 +134,99 @@ class SwarmQuorumSensing:
         except Exception:
             return False
 
-    def check_quorum_and_execute(self, proposal_id):
+    def active_sibling_count(self) -> int:
+        """Return the current known active sibling count.
+
+        Callers that have a live peer table (e.g. Mycorrhizal Network heartbeat)
+        should set self.known_sibling_spores before calling check_quorum_and_execute.
+        This accessor exposes the value for read-only consumers.
         """
-        Tallies the votes and securely authenticates them. 
-        If threshold is met, the action becomes somatic reality.
+        return max(1, self.known_sibling_spores)
+
+    def _collect_verified_yes_votes(
+        self, proposal_id: str
+    ) -> List[Dict[str, Any]]:
+        """Read quorum_votes.jsonl, HMAC-verify every row, and return only
+        YES votes for this proposal as rate-gate-compatible dicts.
+
+        Each returned dict has {"ts": float, "voter_id": str} so
+        is_quorum_active() can apply voter dedup and stale expiry.
         """
         if not self.quorum_ledger.exists():
-            return False
-            
-        yes_votes = 0
-        total_votes = 0
-        
+            return []
+
+        verified: List[Dict[str, Any]] = []
         try:
-            with open(self.quorum_ledger, 'r') as f:
-                lines = f.readlines()
-                for line in lines:
-                    trace = json.loads(line)
-                    if trace.get("proposal_id") == proposal_id and "vote" in trace:
-                        
-                        voter_id = trace.get("voter_id")
-                        vote = trace.get("vote")
-                        provided_sig = trace.get("signature")
-                        
-                        # Verify the crypto_signature
-                        expected_sig = self._generate_hmac(proposal_id, vote, voter_id)
-                        
-                        if hmac.compare_digest(expected_sig, provided_sig):
-                            total_votes += 1
-                            if vote == "YES":
-                                yes_votes += 1
-                        else:
-                            print(f"[!] QUORUM FRAUD: Invalid HMAC signature from voter {voter_id}. Discarding vote.")
-                            
+            with open(self.quorum_ledger, "r") as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        trace = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if trace.get("proposal_id") != proposal_id:
+                        continue
+                    if trace.get("vote") != "YES":
+                        continue
+
+                    voter_id = trace.get("voter_id", "")
+                    vote = trace.get("vote", "")
+                    provided_sig = trace.get("signature", "")
+
+                    # HMAC gate — drop forged votes before rate-gate sees them
+                    expected_sig = self._generate_hmac(proposal_id, vote, voter_id)
+                    if not hmac.compare_digest(expected_sig, provided_sig):
+                        print(
+                            f"[!] QUORUM FRAUD: Invalid HMAC from voter "
+                            f"{voter_id!r}. Discarding."
+                        )
+                        continue
+
+                    try:
+                        ts = float(trace.get("ts", 0))
+                    except (TypeError, ValueError):
+                        continue
+
+                    verified.append({"ts": ts, "voter_id": voter_id})
+
         except Exception as e:
-            print(f"[-] QUORUM SENSING: Tally failed -> {e}")
-            return False
-            
-        if total_votes == 0:
-            return False
-            
-        approval_ratio = yes_votes / self.known_sibling_spores
-        
-        if approval_ratio >= self.required_quorum_ratio:
-            print(f"[!] QUORUM ACHIEVED ({approval_ratio*100:.1f}%). Hive Mind consensus reached.")
-            print(f"[!] EXECUTING HIGH-RISK ACTION FOR PROPOSAL: {proposal_id}")
-            # The code executes the raw action here
+            print(f"[-] QUORUM SENSING: Vote collection failed -> {e}")
+
+        return verified
+
+    def check_quorum_and_execute(self, proposal_id: str) -> bool:
+        """
+        Tallies HMAC-verified YES votes through the biological rate-gate.
+
+        Old path: approval_ratio = yes_votes / hardcoded_3
+        New path: is_quorum_active(verified_yes_votes, active_sibling_count)
+
+        The rate-gate (swarm_quorum_rate_gate) enforces:
+          - Stale votes older than 45s are expired (Greene & Gordon 2007).
+          - Same voter_id can only contribute one vote (no slow-spam).
+          - Threshold is ceil(sqrt(N)), sub-linear in swarm size (Sumpter/Krause 2008).
+        """
+        verified_yes = self._collect_verified_yes_votes(proposal_id)
+        swarm_size = self.active_sibling_count()
+
+        if is_quorum_active(verified_yes, swarm_size=swarm_size):
+            print(
+                f"[!] QUORUM ACHIEVED. "
+                f"{len(verified_yes)} verified YES vote(s), "
+                f"swarm_size={swarm_size}. "
+                f"Hive Mind consensus reached for {proposal_id}."
+            )
             return True
         else:
-            print(f"[*] QUORUM FAILED. Proposal {proposal_id} rejected by the Hive Mind.")
+            print(
+                f"[*] QUORUM FAILED. "
+                f"{len(verified_yes)} verified YES vote(s) insufficient "
+                f"for swarm_size={swarm_size}. "
+                f"Proposal {proposal_id} rejected."
+            )
             return False
 
 # --- SMOKE TEST ---

@@ -52,6 +52,7 @@ human-reviewed decision. (See [O5] in v1 header.)
 import json
 import time
 import sys
+import hashlib
 from pathlib import Path
 
 # Bind the repo root for absolute imports.
@@ -199,12 +200,19 @@ class SwarmOncology:
             # ── Stigmergic Codex Relay (AG31, F12 sutured by C47H 2026-04-22) ──
             "ide_codex_relay_cursor.json",     # AG31 codex bridge dedup state
             
+            # ── Alice Soul Digest (Generated Mirror) ──
+            "alice_soul.md",                   # Generated mirror of constitutional identity
+
+            
             # ── Curiosity Overlay ──
             "stigmergic_curiosity_overlay.jsonl",
 
             # ── Event 46 — Extended Phenotype ──
             "extended_phenotype_boluses.jsonl",
             "extended_phenotype_health.jsonl",
+
+            # ── SciShow Mystery Nuggets ──
+            "vagus_pulse.jsonl",               # [Nugget 1] Environmental Pulse
         } | set(LEDGER_SCHEMAS.keys()) | set(SCHEMA_ALIASES.keys())
 
         # Healthy filename PREFIXES — for organs whose filenames are
@@ -297,26 +305,37 @@ class SwarmOncology:
                 report["innate_self"] += 1
                 continue
 
-            # ── Layer 1 says NOT-SELF → MALIGNANT verdict ──────────────────
-            # Layer 2 (CRISPR) now observes & remembers. We sample the file
-            # to give CRISPR a content fingerprint (AO46's design — much
-            # better than filename-only). The PAM token passed is the
-            # anomaly token, which is NOT in _PAM_TOKENS, so CRISPR will
-            # acquire a spacer and return NOVEL or KNOWN.
+            # ── Layer 1 says NOT-SELF → MALIGNANT verdict? ──────────────────
+            # Nugget 2: Shadow Biosphere check.
+            # If the file has been 'known' to CRISPR for multiple iterations 
+            # and is structured, we treat it as a Shadow Biosphere.
             try:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as fp:
                     threat_payload = fp.read(1024)
             except Exception:
                 threat_payload = filename
 
+            threat_hash = int(hashlib.sha256(threat_payload.encode('utf-8', errors='replace')).hexdigest()[:12], 16)
+            encounter_count = self.crispr.spacers.get(threat_hash, 0)
+            
             crispr_status = self.crispr.acquire_spacer(threat_payload, _PAM_INNATE_ANOMALY)
+            
+            # Heuristic for "Biological Stability" (Shadow Biosphere)
+            # If the payload has been encountered multiple times without triggering other immune responses,
+            # and it is strictly structured JSON/JSONL, we treat it as an extended phenotype (Shadow).
+            is_structured = threat_payload.strip().startswith(("{", "[")) and threat_payload.strip().endswith(("}", "]"))
+            if crispr_status == "KNOWN" and encounter_count >= 3 and is_structured:
+                tumor_type = "SHADOW_BIOSPHERE"
+            else:
+                tumor_type = "MALIGNANT_HALLUCINATION"
+
             if crispr_status == "NOVEL":
                 report["novel_anomalies"] += 1
             elif crispr_status == "KNOWN":
                 report["known_anomalies"] += 1
 
             tumor_trace = {
-                "transaction_type": "MALIGNANT_HALLUCINATION",
+                "transaction_type": tumor_type,
                 "hallucinated_file": filename,
                 "file_size_bytes": file_path.stat().st_size,
                 "crispr_status": crispr_status,
@@ -324,7 +343,11 @@ class SwarmOncology:
             }
             try:
                 append_line_locked(self.oncology_ledger, json.dumps(tumor_trace) + "\n")
-                report["malignant"] += 1
+                if tumor_type == "MALIGNANT_HALLUCINATION":
+                    report["malignant"] += 1
+                else:
+                    report.setdefault("shadow_biosphere", 0)
+                    report["shadow_biosphere"] += 1
             except Exception:
                 pass
 
