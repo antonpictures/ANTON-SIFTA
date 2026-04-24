@@ -1,0 +1,72 @@
+# Event 74: Metabolic Budget Homeostasis — Energy Governance Layer
+
+Status: promoted to `System/swarm_metabolic_homeostasis.py`
+
+## Biological Claim
+
+A living organism is not just a pile of sensors and effectors. It becomes a
+stable system when it governs finite energy: reserve, maintenance, exploration,
+repair, and growth must compete under homeostatic/allostatic pressure.
+
+SIFTA already tracks parts of this:
+
+- `api_metabolism.jsonl` tracks real USD/API caloric burn.
+- `metabolic_ledger.jsonl` tracks abstract local ATP units.
+- `repair_log.jsonl` / STGM tracks proof-of-work treasury state.
+
+This organ fuses those into one budget pressure score:
+
+```text
+pressure = 0.45 * usd_pressure
+         + 0.25 * local_atp_pressure
+         + 0.30 * stgm_reserve_pressure
+```
+
+The output is a bounded `budget_multiplier` plus a decision gate for expensive
+work. Emergency repair is preserved through an emergency multiplier floor, but
+low-value spending is throttled when pressure rises.
+
+## Research Backbone
+
+- Kooijman / Dynamic Energy Budget theory: reserve and structure pools allocate
+  finite energy across maintenance, growth, and reproduction.
+- "Dynamic energy budget theory restores coherence in biology" (2010): DEB as a
+  general quantitative model for organism-level metabolism.
+- Sterling & Eyer / McEwen allostasis: stability is maintained by anticipatory
+  adjustment, but repeated stress accumulates cost.
+- Fields et al., "Making the Thermodynamic Cost of Active Inference Explicit",
+  Entropy 26(8):622 (2024): active inference agents must manage thermodynamic
+  free energy, not only variational free energy.
+- Prabhakar et al., PLOS Computational Biology (2012): harvester ant foraging
+  is regulated without central control through returning-forager feedback.
+- Davidson et al., PLOS Computational Biology (2019): harvester ant foraging as
+  a closed-loop excitable system stabilizing outgoing work under energetic
+  tradeoffs.
+
+## Invariants
+
+1. Pressure rises monotonically as USD burn, local ATP burn, and STGM starvation
+   increase.
+2. Low-value work is denied under strain.
+3. Emergency repair remains possible under strain.
+4. Canonical ledger rows validate against `metabolic_homeostasis.jsonl`.
+
+## Integration
+
+Callers can use:
+
+```python
+from System.swarm_metabolic_homeostasis import MetabolicHomeostat
+
+homeostat = MetabolicHomeostat()
+state = homeostat.sample_live()
+decision = homeostat.should_spend(
+    state,
+    external_usd_cost=0.05,
+    local_unit_cost=4.0,
+    expected_value=0.8,
+)
+```
+
+The organ does not mint, spend, or block globally by itself. It is a measurable
+body-budget governor for upstream inference, mutation, and API-call gates.

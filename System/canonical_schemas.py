@@ -613,6 +613,64 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "ledgers_pruned",
         "event",
     },
+    # Electric-field identity traces — written by System/swarm_electric_field.py.
+    # The immutable body identity is the digest/identity_phase pair; JAR may
+    # move carrier_phase, but must never rewrite body_id/homeworld identity.
+    "electric_field_identity.jsonl": {
+        "event",
+        "schema",
+        "module_version",
+        "agent_id",
+        "body_id",
+        "homeworld_serial",
+        "identity_digest",
+        "identity_phase",
+        "carrier_phase",
+        "position",
+        "jar_active",
+        "ts",
+        "envelope_sha256",
+    },
+    # Explicit operator-triggered JSONL rotations — written by
+    # System/swarm_ledger_rotation.py. Evicted rows are gzip-archived before
+    # the hot ledger is compacted to its live-control tail.
+    "ledger_rotation.jsonl": {
+        "event",
+        "schema",
+        "module_version",
+        "ledger_name",
+        "dry_run",
+        "before_bytes",
+        "after_bytes",
+        "keep_last",
+        "kept_lines",
+        "archived_lines",
+        "archive_path",
+        "archive_sha256",
+        "archive_bytes",
+        "reason",
+        "ts",
+    },
+    # Metabolic homeostasis snapshots — written by
+    # System/swarm_metabolic_homeostasis.py. This is the body-budget governor:
+    # real USD burn + abstract ATP units + STGM reserve pressure.
+    "metabolic_homeostasis.jsonl": {
+        "event",
+        "schema",
+        "module_version",
+        "pressure",
+        "mode",
+        "budget_multiplier",
+        "must_rest",
+        "rest_seconds",
+        "allowed_external_usd",
+        "allowed_local_units",
+        "usd_burn_24h",
+        "local_units_24h",
+        "stgm_balance",
+        "recommendation",
+        "ts",
+    },
     # Merkle memory attestation anchors — written by System/swarm_merkle_attestor.py
     "memory_merkle_anchors.jsonl": {
         "ts",
