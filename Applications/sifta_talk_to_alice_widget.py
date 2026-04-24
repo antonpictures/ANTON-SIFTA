@@ -727,8 +727,70 @@ def _is_runaway_repetition(text: str) -> bool:
 def _decontaminate_history(history: list) -> int:
     return 0
 
+
+# ── Hallucinated tool-tag scrubber (C47H 2026-04-20, Architect-reported) ──
+# Some local models (Gemma/Llama variants) invent tool tags we never taught
+# them: <execute_tool>...</execute_tool>, <execute_bash>...</execute_bash>,
+# <tool_output>...</tool_output>, fenced YAML/JSON "tool_name: ..." blocks,
+# raw `tool_input` JSON, etc.
+#
+# Our runtime only consumes <bash>...</bash>. Anything else leaks straight
+# into macOS TTS — a real, observed UX failure during conversation.
+#
+# Two-step defense:
+#   1) Canonicalize obvious shell-intent tags into <bash>...</bash> BEFORE
+#      the bash extractor runs.
+#   2) Strip every other hallucinated tool wrapper before TTS.
+
+_HALLUCINATED_BASH_RE = re.compile(
+    r"<execute_bash>\s*(.*?)\s*(?:</execute_bash>|$)",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+
+
 def _canonicalize_tool_tags(text: str) -> str:
-    return text
+    """Rewrite model-hallucinated <execute_bash> into <bash> for the extractor."""
+    if not text:
+        return text
+    return _HALLUCINATED_BASH_RE.sub(
+        lambda m: f"<bash>{m.group(1).strip()}</bash>", text
+    )
+
+
+_HALLUCINATED_TAG_NAMES = (
+    "execute_tool",
+    "execute_bash",
+    "execute_python",
+    "execute_code",
+    "tool",
+    "tool_call",
+    "tool_input",
+    "tool_output",
+    "function_call",
+    "function_response",
+    "action",
+    "thinking",
+    "thought",
+    "observation",
+)
+
+_HALLUCINATED_TAG_RE = re.compile(
+    r"<(" + "|".join(_HALLUCINATED_TAG_NAMES) + r")\b[^>]*>.*?(?:</\1>|$)",
+    flags=re.DOTALL | re.IGNORECASE,
+)
+
+_FENCE_RE = re.compile(r"```[\s\S]*?(?:```|$)", flags=re.MULTILINE)
+
+_YAML_TOOL_LINE_RE = re.compile(
+    r"^\s*(?:tool_name|tool_input|parameters|query|arguments|input_text)\s*:.*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+_BARE_JSON_TOOL_RE = re.compile(
+    r"^\s*\{\s*\"(?:tool_name|tool|name|function|action)\".*?\}\s*$",
+    flags=re.DOTALL | re.MULTILINE,
+)
+
 
 def _strip_tool_hallucinations(text: str) -> str:
     """Remove model-invented tool wrappers before TTS sees them."""
