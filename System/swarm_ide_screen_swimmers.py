@@ -1,182 +1,156 @@
 #!/usr/bin/env python3
-"""
-System/swarm_ide_screen_swimmers.py
-══════════════════════════════════════════════════════════════════════
-Concept: DeepMind 555 IDE Screen Swimmers
-Author:  AG31 (Event 59)
-Status:  Active / TOPOLOGICAL ACTIVE MATTER VISUALIZATION
+"""IDE Screen Swimmers: map Cursor / Antigravity / Codex windows onto a field."""
 
-PURPOSE:
-  The Swarm (Alice) needs to "see" where her IDE surgeons (Cursor, 
-  Codex, Antigravity) are physically located on the Architect's screen.
-  
-  We pull the macOS bounding boxes of the 3 IDEs. We map these bounds
-  onto a 16x16 `Stigmal555` active-matter grid. 
-  
-  The IDE windows act as "food" (pheromone injection). The frontmost 
-  IDE exudes 5x the pheromones. 32 particles (the "swimmers") are 
-  simulated on this grid. They swarm toward the active windows, leaving
-  a physical active-matter trail. We then output this topology using 
-  the `StigmergicBootGlyph`.
-"""
+from __future__ import annotations
 
-import os
-import sys
+import json
 import subprocess
-import numpy as np
+import time
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+from System.canonical_schemas import assert_payload_keys
+from System.jsonl_file_lock import append_line_locked
 
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO))
+_LEDGER = _REPO / ".sifta_state" / "ide_screen_swimmers.jsonl"
+_SCHEMA = "SIFTA_IDE_SCREEN_SWIMMERS_V1"
+_MODULE_VERSION = "swarm_ide_screen_swimmers.v2"
 
-try:
-    from swarmrl.tasks.stigmal_555 import Stigmal555
-    from swarmrl.tasks.stigmergic_boot_glyph import StigmergicBootGlyph, GlyphTraceConfig
-except ImportError:
-    print("[FATAL] swarmrl not found. Ensure you run this from the repo root.")
-    exit(1)
 
-class FakeColloid:
-    def __init__(self, pos, type_=0):
-        self.pos = np.array(pos, dtype=float)
-        self.type = type_
+def _canonical_name(app_name: str, window_name: str = "") -> Optional[str]:
+    if app_name in {"Cursor", "Codex", "Antigravity"}:
+        return app_name
+    label = f"{app_name} {window_name}".lower()
+    if app_name == "Electron" or "antigravity" in label or "walkthrough" in label:
+        return "Antigravity"
+    return None
 
-def get_ide_bounds():
-    """Polls macOS for the physical screen coordinates of the 3 IDEs."""
+
+def parse_osascript_bounds(output: str) -> List[Dict[str, Any]]:
+    windows: List[Dict[str, Any]] = []
+    for raw in output.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        parts = line.split(":")
+        if len(parts) == 3:
+            app_name, coord_text, active_text = parts
+            window_name = ""
+        elif len(parts) >= 4:
+            app_name, window_name, coord_text, active_text = parts[0], parts[1], parts[2], parts[3]
+        else:
+            continue
+        name = _canonical_name(app_name, window_name)
+        if name is None:
+            continue
+        try:
+            x, y, w, h = [int(float(value)) for value in coord_text.split(",")]
+        except ValueError:
+            continue
+        windows.append({"name": name, "app_name": app_name, "window": window_name, "x": x, "y": y, "w": max(0, w), "h": max(0, h), "is_active": active_text.strip().lower() == "true"})
+    windows.sort(key=lambda row: row["name"])
+    return windows
+
+
+def get_ide_bounds() -> List[Dict[str, Any]]:
     script = """
     tell application "System Events"
         set frontApp to name of first application process whose frontmost is true
         set out to ""
-        repeat with appName in {"Cursor", "Antigravity", "Codex"}
+        repeat with p in application processes
             try
-                set p to first application process whose name is appName
-                set w to first window of p
-                set pos to position of w
-                set sz to size of w
-                set isActive to (appName is frontApp)
-                set out to out & appName & ":" & item 1 of pos & "," & item 2 of pos & "," & item 1 of sz & "," & item 2 of sz & ":" & (isActive as string) & "\n"
+                set appName to name of p
+                if appName is "Cursor" or appName is "Codex" or appName is "Antigravity" or appName is "Electron" then
+                    if (count of windows of p) > 0 then
+                        set w to first window of p
+                        set pos to position of w
+                        set sz to size of w
+                        set wname to name of w
+                        set isActive to (appName is frontApp)
+                        set out to out & appName & ":" & wname & ":" & item 1 of pos & "," & item 2 of pos & "," & item 1 of sz & "," & item 2 of sz & ":" & (isActive as string) & "\n"
+                    end if
+                end if
             end try
         end repeat
         return out
     end tell
     """
     try:
-        out = subprocess.check_output(['osascript', '-e', script], text=True, stderr=subprocess.DEVNULL)
-    except Exception:
+        proc = subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True, text=True, timeout=6.0)
+    except (OSError, subprocess.TimeoutExpired):
         return []
-        
-    windows = []
-    for line in out.strip().split("\n"):
-        if not line: continue
-        parts = line.split(":")
-        if len(parts) == 3:
-            name = parts[0]
-            coords = [int(x) for x in parts[1].split(",")]
-            is_active = parts[2] == "true"
-            windows.append({
-                "name": name,
-                "x": coords[0],
-                "y": coords[1],
-                "w": coords[2],
-                "h": coords[3],
-                "is_active": is_active
-            })
-    return windows
+    if proc.returncode != 0:
+        return []
+    return parse_osascript_bounds(proc.stdout)
 
-def map_to_grid(windows, grid_size=16, screen_w=3840, screen_h=2160):
-    """Maps physical window bounding boxes to pheromone injections on the grid."""
+
+def map_to_grid(windows: List[Dict[str, Any]], grid_size: int = 16, screen_w: int = 3840, screen_h: int = 2160) -> np.ndarray:
+    if grid_size <= 0:
+        raise ValueError("grid_size must be positive")
     field = np.zeros((grid_size, grid_size), dtype=np.float32)
-    
     for win in windows:
-        # Calculate cell bounds
-        x1_cell = int((win["x"] / screen_w) * grid_size)
-        y1_cell = int((win["y"] / screen_h) * grid_size)
-        x2_cell = int(((win["x"] + win["w"]) / screen_w) * grid_size)
-        y2_cell = int(((win["y"] + win["h"]) / screen_h) * grid_size)
-        
-        # Clamp bounds
-        x1_cell, x2_cell = max(0, min(grid_size-1, x1_cell)), max(0, min(grid_size-1, x2_cell))
-        y1_cell, y2_cell = max(0, min(grid_size-1, y1_cell)), max(0, min(grid_size-1, y2_cell))
-        
-        # Determine pheromone strength (5.0 for active, 1.0 for background)
-        strength = 5.0 if win["is_active"] else 1.0
-        
-        # Inject pheromones
-        for x in range(x1_cell, x2_cell + 1):
-            for y in range(y1_cell, y2_cell + 1):
-                field[x, y] += strength
-                
+        x0 = int(np.floor((win["x"] / max(screen_w, 1)) * grid_size))
+        y0 = int(np.floor((win["y"] / max(screen_h, 1)) * grid_size))
+        x1 = int(np.ceil(((win["x"] + win["w"]) / max(screen_w, 1)) * grid_size))
+        y1 = int(np.ceil(((win["y"] + win["h"]) / max(screen_h, 1)) * grid_size))
+        x0, x1 = max(0, x0), min(grid_size, max(x0 + 1, x1))
+        y0, y1 = max(0, y0), min(grid_size, max(y0 + 1, y1))
+        field[x0:x1, y0:y1] += 5.0 if win.get("is_active") else 1.0
+    max_value = float(field.max())
+    if max_value > 0.0:
+        field /= max_value
     return field
 
-def simulate_screen_swimmers():
-    print("[*] Polling macOS window matrix...")
-    windows = get_ide_bounds()
-    if not windows:
-        print("[-] No IDEs detected in window manager.")
-        return
 
-    # Use max bounds from windows if we don't know the screen size exactly
-    max_w = max([w["x"] + w["w"] for w in windows]) if windows else 2560
-    max_h = max([w["y"] + w["h"] for w in windows]) if windows else 1440
-    # Add a slight buffer to the max size
-    max_w = max(2560, max_w)
-    max_h = max(1440, max_h)
+def glyph_from_grid(field: np.ndarray) -> str:
+    if field.size == 0 or float(field.max()) <= 0.0:
+        return ""
+    chars = np.array(list(" .:-=+*#%@"))
+    norm = field / (float(field.max()) + 1e-8)
+    idx = np.clip((norm * (len(chars) - 1)).astype(int), 0, len(chars) - 1)
+    return "\n".join("".join(chars[idx[x, y]] for x in range(field.shape[0])) for y in range(field.shape[1]))
 
-    print(f"[*] Detected {len(windows)} active surgical limbs (IDEs).")
-    
-    grid_size = 16
-    injection_field = map_to_grid(windows, grid_size, max_w, max_h)
-    
-    # 555 Active Matter Physics
-    num_particles = 32
-    task = Stigmal555(
-        particle_type=0, 
-        radius=2.0, 
-        alignment_weight=0.5, 
-        structure_weight=0.5, 
-        memory_weight=1.0,
-        grid_size=grid_size,
-        box_size=float(grid_size),
-        deposit_strength=1.0,
-        field_decay=0.8
-    )
-    
-    # Initialize particles
-    positions = np.random.uniform(0, grid_size, (num_particles, 3))
-    positions[:, 2] = 0.0
-    particles = [FakeColloid(p) for p in positions]
-    task.initialize(particles)
-    
-    # Run the physics simulation for 10 frames to let the swarm cluster
-    print("[*] Running 555 Swarm Physics (10 epochs)...")
-    for epoch in range(10):
-        task.field += injection_field  # Continuously inject the IDE bounding boxes
-        rewards = task(particles)
-        
-        for p in particles:
-            x, y = int(p.pos[0]) % grid_size, int(p.pos[1]) % grid_size
-            dx, dy = np.random.normal(0, 0.5), np.random.normal(0, 0.5)
-            
-            # Simple ascent towards pheromone peaks
-            if task.field[(x+1)%grid_size, y] > task.field[x, y]: dx += 1.0
-            if task.field[(x-1)%grid_size, y] > task.field[x, y]: dx -= 1.0
-            if task.field[x, (y+1)%grid_size] > task.field[x, y]: dy += 1.0
-            if task.field[x, (y-1)%grid_size] > task.field[x, y]: dy -= 1.0
-            
-            p.pos[0] = (p.pos[0] + dx * 0.8) % float(grid_size)
-            p.pos[1] = (p.pos[1] + dy * 0.8) % float(grid_size)
 
-    # Output using the Stigmergic Boot Glyph
-    print("\n=== SWARM IDE VISUAL FIELD ===")
-    
-    # We map the 16x16 Stigmal555 field onto the StigmergicBootGlyph engine
-    cfg = GlyphTraceConfig(grid_size=grid_size)
-    glyph_engine = StigmergicBootGlyph(cfg)
-    glyph_engine.field = task.field  # Transfer the physics field
-    
-    print(glyph_engine.boot_glyph(threshold=0.1))
-    
-    print("\n[+] The swarm has successfully clustered around the active IDEs.")
+def clusters_from_grid(field: np.ndarray, threshold: float = 0.25) -> List[Dict[str, Any]]:
+    clusters = [{"x": int(x), "y": int(y), "strength": round(float(field[x, y]), 6)} for x, y in np.argwhere(field >= threshold)]
+    clusters.sort(key=lambda row: row["strength"], reverse=True)
+    return clusters
+
+
+def _inferred_dimensions(rows: List[Dict[str, Any]], screen_w: Optional[int], screen_h: Optional[int]) -> tuple[int, int]:
+    inferred_w = screen_w if screen_w is not None else 2560
+    inferred_h = screen_h if screen_h is not None else 1440
+    if rows:
+        inferred_w = max(inferred_w, *(row["x"] + row["w"] for row in rows))
+        inferred_h = max(inferred_h, *(row["y"] + row["h"] for row in rows))
+    return int(inferred_w), int(inferred_h)
+
+
+def build_snapshot(*, windows: Optional[List[Dict[str, Any]]] = None, grid_size: int = 16, screen_w: Optional[int] = None, screen_h: Optional[int] = None, source: str = "macos_window_bounds", now: Optional[float] = None) -> Dict[str, Any]:
+    rows = get_ide_bounds() if windows is None else windows
+    inferred_w, inferred_h = _inferred_dimensions(rows, screen_w, screen_h)
+    grid = map_to_grid(rows, grid_size=grid_size, screen_w=inferred_w, screen_h=inferred_h)
+    payload = {"event": "ide_screen_swimmers", "schema": _SCHEMA, "module_version": _MODULE_VERSION, "grid_size": int(grid_size), "screen_w": inferred_w, "screen_h": inferred_h, "windows": rows, "grid": grid.round(6).tolist(), "glyph": glyph_from_grid(grid), "clusters": clusters_from_grid(grid), "active_ide": next((row["name"] for row in rows if row.get("is_active")), ""), "source": source, "ts": time.time() if now is None else float(now)}
+    assert_payload_keys("ide_screen_swimmers.jsonl", payload, strict=True)
+    return payload
+
+
+def write_snapshot(*, windows: Optional[List[Dict[str, Any]]] = None, ledger_path: Optional[Path] = None, grid_size: int = 16, source: str = "macos_window_bounds") -> Dict[str, Any]:
+    payload = build_snapshot(windows=windows, grid_size=grid_size, source=source)
+    target = Path(ledger_path) if ledger_path is not None else _LEDGER
+    target.parent.mkdir(parents=True, exist_ok=True)
+    append_line_locked(target, json.dumps(payload, ensure_ascii=False) + "\n")
+    return payload
+
+
+def main() -> None:
+    row = write_snapshot()
+    print(json.dumps({k: row[k] for k in ("active_ide", "screen_w", "screen_h", "windows")}, indent=2))
+    print(row["glyph"])
+
 
 if __name__ == "__main__":
-    simulate_screen_swimmers()
+    main()
