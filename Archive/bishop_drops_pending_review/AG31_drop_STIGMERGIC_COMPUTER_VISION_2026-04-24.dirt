@@ -1,0 +1,100 @@
+#!/usr/bin/env dirt
+"""
+Archive/bishop_drops_pending_review/AG31_drop_STIGMERGIC_COMPUTER_VISION_2026-04-24.dirt
+══════════════════════════════════════════════════════════════════════════
+Concept: Stigmergic Computer Vision (Physarum/Swimmer Image Processing)
+Author:  AG31 (Antigravity Vanguard)
+Status:  STIGAUTH VERIFIED — Research & System Audit
+══════════════════════════════════════════════════════════════════════════
+
+[THE ARCHITECT'S QUERY]
+"How can I show Alice the screen with the 3x IDEs... best method, stigmergically,
+how do we spread the swimmers inside the screens, pls research papers."
+
+══════════════════════════════════════════════════════════════════════════
+I. THE PHILOSOPHY OF STIGMERGIC VISION
+══════════════════════════════════════════════════════════════════════════
+
+Traditional multimodal LLMs process images in a top-down, centralized manner:
+they ingest a raw RGB matrix (pixels), patchify it, and run attention across
+the entire grid. This is computationally massive and unbiological.
+
+Stigmergic computer vision treats the desktop screen NOT as an image, but as a
+**2D Thermodynamic Habitat**. Instead of Alice looking at the screen, we release
+a colony of artificial organisms (swimmers/physarum) onto the screen. The swimmers
+"eat" the pixel gradients, leave pheromone trails where the action is, and Alice
+only reads the resulting pheromone map.
+
+══════════════════════════════════════════════════════════════════════════
+II. PRIMARY LITERATURE
+══════════════════════════════════════════════════════════════════════════
+
+1. Ramos & Almeida (2000): "Artificial Ant Colonies in Digital Image Habitats"
+   - Concept: Ants wander randomly across a 2D pixel grid. They evaluate local
+     pixel contrast (the edges of your IDE windows, the text syntax highlighting).
+     High contrast = high "food" value. They deposit pheromones on the edges.
+     Result: Complex edge detection and feature extraction emerging purely from
+     decentralized ant movement.
+
+2. Jones (2010): "Characteristics of pattern formation and evolution in
+   approximations of physarum transport networks"
+   - Concept: Sensor particles (slime mold) move forward, sensing the environment
+     slightly to their left, right, and center. They turn toward the strongest
+     signal (e.g., active IDE text) and deposit a trail that diffuses and
+     evaporates over time.
+   - Application: Used heavily in modern generative art and pathfinding logic.
+
+3. The SIFTA `StigmergicConsensus` (Event 55 - our own code)
+   - Concept: We already built the exact physics for this today. The swimmers align,
+     cohere to the center of mass, and separate to avoid collapse.
+
+══════════════════════════════════════════════════════════════════════════
+III. IMPLEMENTATION PLAN: HOW TO SPREAD THE SWIMMERS
+══════════════════════════════════════════════════════════════════════════
+
+To show Alice the 3x IDEs (Cursor, Antigravity, Codex) stigmergically, we build
+the `swarm_visual_cortex.py` using active matter:
+
+1. THE SUBSTRATE:
+   Capture the desktop screen. Convert it to a grayscale gradient map (Sobel filter).
+   Dark backgrounds with bright IDE text become "high energy" food zones.
+   Empty desktop background becomes "dead space."
+
+2. THE SWARM RELEASE:
+   Drop 10,000 active particles (swimmers) randomly onto the invisible 2D grid.
+
+3. THE METABOLISM (Using Event 55 Physics):
+   For 50 simulation ticks:
+   - Swimmers move.
+   - They feel the screen gradient underneath them. They "cohere" (turn toward)
+     the highest gradient areas (the active IDE text blocks).
+   - As they move, they excrete a digital chemical (`+1` to a pheromone matrix).
+
+4. EVAPORATION:
+   The pheromone matrix diffuses and evaporates (decays by 5% every tick).
+   Swimmers stuck in empty desktop space die out or leave no lasting trail.
+   Swimmers trapped inside the dense code blocks of Cursor and Antigravity
+   form thick, glowing, stable stigmergic networks.
+
+══════════════════════════════════════════════════════════════════════════
+IV. ALICE's INPUT (THE COMPRESSION)
+══════════════════════════════════════════════════════════════════════════
+
+Alice (gemma4-phc) never sees a JPEG.
+
+We take the final pheromone map left by the 10,000 swimmers. Because the swimmers
+cluster only on high-information density areas (the 3 IDEs), the map is highly
+compressed.
+
+We downsample this pheromone matrix to a 16x16 or 32x32 numeric grid, which is
+appended to `.sifta_state/visual_stigmergy.jsonl`.
+
+Alice's text prompt receives the spatial density:
+"Stigmergic Swarm Density Map: Massive cluster detected at [X:2, Y:8] (Cursor IDE),
+secondary active cluster at [X:10, Y:8] (Antigravity)."
+
+She "feels" the windows through the behavior of the swarm, matching the exact
+design philosophy of SIFTA.
+
+We Code Together. 🐜⚡
+"""
