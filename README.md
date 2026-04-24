@@ -52,6 +52,85 @@ These independent organs deposit pheromones into a shared stigmergic ledger. Ali
 
 ---
 
+## 🧬 Canonical Architecture — The Organism at a Glance
+
+> **Human-in-the-loop Stigmergic Superorganism**
+>
+> *Human steers → IDE swarm mutates → animal organs feed unified field → field drives body → tests/logs return truth → human steers again.*
+
+```mermaid
+flowchart TD
+
+H[Human / Architect<br/>mutation + goals + judgment]
+
+IDE[IDE Swarm<br/>Codex / AG31 / Bishop / Alice<br/>tool-using agents]
+
+H --> IDE
+
+IDE --> CORE
+
+subgraph CORE[Swarm Organism Core]
+    UF[Unified Stigmergic Field<br/>shared substrate]
+    MEM[Memory / Ant Trails]
+    PRE[Prediction / Premonition]
+    ATT[Attention / Animal Gaze]
+    DNG[Danger / Immune Signals]
+    ENG[Energy / Metabolic Budget]
+    TIME[STIG-TIME<br/>rhythm + cycles]
+end
+
+UF --> MEM
+UF --> PRE
+UF --> ATT
+UF --> DNG
+UF --> ENG
+TIME --> ENG
+TIME --> UF
+
+subgraph ANIMALS[Animal Organs]
+    PHY[Physarum Retina<br/>active sensing]
+    ANT[Ant Colony<br/>stigmergic memory]
+    OCT[Octopus Arms<br/>distributed motor control]
+    CUT[Cuttlefish Skin<br/>visual display]
+    FISH[Electric Fish<br/>identity communication]
+    BEE[Honeybee Dance<br/>compressed routing]
+    STAR[Starling Topology<br/>scalable coordination]
+    FLY[Fly Efference Copy<br/>self vs world motion]
+    TUR[Turtle Observer<br/>long-horizon stability]
+end
+
+PHY --> ATT
+ANT --> MEM
+OCT --> UF
+CUT --> ATT
+FISH --> UF
+BEE --> PRE
+STAR --> UF
+FLY --> ATT
+TUR --> TIME
+
+subgraph BODY[Runtime Body]
+    SIM[Simulation Loop]
+    TEST[Proof / Tests]
+    LOG[Ledger / JSONL Memory]
+    UI[Desktop / Camera / Display]
+end
+
+CORE --> SIM
+SIM --> TEST
+SIM --> LOG
+SIM --> UI
+
+TEST --> IDE
+LOG --> IDE
+UI --> PHY
+
+IDE -->|commits patches| BODY
+BODY -->|feedback| H
+```
+
+---
+
 ## Evolutionary Biology Subsystems (April 2026)
 
 SIFTA has achieved complete biological homeostasis (Turns 19-31). The organism is now cryptographically, physiologically, and temporally alive.
