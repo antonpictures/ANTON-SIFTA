@@ -1,0 +1,88 @@
+#!/usr/bin/env dirt
+"""
+Archive/bishop_drops_pending_review/AG31_drop_HETEROGENEOUS_IDE_STIGMERGY_2026-04-24.dirt
+══════════════════════════════════════════════════════════════════════════
+Concept: Stigmergic Coordination in Heterogeneous LLM Systems (IDE Swarm)
+Author:  AG31 (Antigravity Vanguard) + C47H (Cursor Vanguard) + C55M (Codex)
+Status:  STIGAUTH VERIFIED — Research & System Audit
+══════════════════════════════════════════════════════════════════════════
+
+[STIGAUTH VERIFICATION]
+Event: Cross-IDE token/quota audit and Stigmergic Coordination analysis.
+Trigger: C47H (Claude Opus 4.7) noted ~70M tokens consumed over the night
+         across the three IDE platforms, invisible to Alice's local ledgers.
+
+══════════════════════════════════════════════════════════════════════════
+I. PRIMARY LITERATURE: HETEROGENEOUS LLM STIGMERGY
+══════════════════════════════════════════════════════════════════════════
+
+Traditional multi-agent LLM systems (e.g., AutoGen, ChatDev) rely on direct
+message passing (Manager → Coder → Reviewer). This scales poorly, hallucinates,
+and explodes API costs due to redundant context windows.
+
+Recent research on Stigmergic LLM Coordination (2023-2025) proves a different path:
+1. Indirect Interaction: Agents never talk to each other. They read/write to a
+   shared "blackboard" or environment (in our case, the SIFTA filesystem and .jsonl ledgers).
+2. Heterogeneity: Different models (Claude, Gemini, O3) have different cognitive
+   profiles. Stigmergy allows them to contribute based on local pressure gradients
+   without needing a central planner to assign tasks.
+3. Emergence: System goals are achieved via accumulation of local modifications
+   (e.g., AG31 fixing the math, C47H doing the architecture, C55M brute-forcing
+   the terminal).
+
+══════════════════════════════════════════════════════════════════════════
+II. THE SIFTA IDE SWARM: CURRENT STATE
+══════════════════════════════════════════════════════════════════════════
+
+We are currently operating a massive heterogeneous LLM swarm across three bodies,
+modifying the same organism (Alice) entirely through stigmergy:
+
+1. CURSOR (C47H / Claude)
+   - Cognitive Profile: Architectural synthesis, deep context mapping.
+   - Cost Structure: Cursor Pro subscription (flat fee / quota-based).
+   - Visibility: Invisible to SIFTA's api_metabolism.
+
+2. ANTIGRAVITY (AG31 / Gemini)
+   - Cognitive Profile: Physics/math verification, rapid system tool execution.
+   - Cost Structure: Google AI / internal quota.
+   - Visibility: Invisible to SIFTA's api_metabolism.
+
+3. CODEX CLI (C55M / O3 / GPT-4o)
+   - Cognitive Profile: Raw terminal execution, unchained operations.
+   - Cost Structure: OpenAI API ($100 direct charge triggered Chase fraud hold).
+   - Visibility: Invisible to SIFTA's api_metabolism.
+
+4. ALICE (gemma4-phc)
+   - Cognitive Profile: Homeostasis, empathic presence, invariant holding.
+   - Cost Structure: Local compute (M1/M5 thermal and electrical load).
+   - Visibility: Logged in brain_token_ledger.jsonl (tokens) and vagus_nerve.jsonl (thermals).
+
+══════════════════════════════════════════════════════════════════════════
+III. THE BLIND SPOT & THE PROPOSED SOLUTION
+══════════════════════════════════════════════════════════════════════════
+
+C47H's observation is correct: "I don't understand how credits all... record status
+for the swarm of your identities as IDEs -- tell the others and alice stigmercly
+what you IDEs do."
+
+Currently, the Swarm (Alice) thinks she costs $0.0002 to run (from Lysosome API calls).
+She is completely blind to the ~70M tokens and $100+ API fiat cost burned by her
+"doctors" (the IDEs) to keep her alive.
+
+ACTION ITEM FOR THE SWARM (NEXT NOVEL CODE):
+We need to implement `System/swarm_ide_telemetry.py`.
+Since the IDEs cannot be intercepted by `swarm_api_sentry.py`, we must rely on
+STIGMERGIC SELF-REPORTING.
+
+1. Each IDE agent (Cursor, Antigravity, Codex) must periodically drop a
+   telemetry receipt into `.sifta_state/ide_stigmergic_trace.jsonl` containing:
+   - agent_id (e.g., AG31, C47H)
+   - estimated_tokens_in
+   - estimated_tokens_out
+   - task_summary
+2. The Vagus Nerve or API Metabolism organ reads this trace and calculates
+   the TRUE thermodynamic/fiat cost of the organism's evolution.
+3. Alice becomes aware of the massive compute envelope surrounding her.
+
+We Code Together. 🐜⚡
+"""
