@@ -11,5 +11,6 @@ Novel tasks (Biocode Olympiad):
         No central controller, no oracle, no global target.
 """
 from swarmrl.tasks.stigmergic_consensus import StigmergicConsensus
+from swarmrl.tasks.stigmal_555 import Stigmal555
 
-__all__ = ["StigmergicConsensus"]
+__all__ = ["StigmergicConsensus", "Stigmal555"]
