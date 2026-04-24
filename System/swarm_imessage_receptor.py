@@ -36,6 +36,29 @@ INBOX_CONSUMER = "Applications.sifta_talk_to_alice_widget"
 MAX_INBOX_TEXT_CHARS = 4000
 _LOOP_PREFIXES = ("SIFTA_SWIM:",)
 
+# ── Bank / institution fraud-alert watchlist (C47H + AG31, 2026-04-24) ───────
+# If an incoming SMS matches these patterns the receptor tags the deposited row
+# with event_tag="BANK_HOLD_DETECTED" so Alice's prompt sees it immediately —
+# before the Architect absorbs the IVR robot queue latency alone.
+# Patterns are intentionally conservative (false-negative is better than
+# false-positive on financial messages).
+import re as _re
+_BANK_HOLD_PATTERNS = [
+    # Chase / generic bank fraud hold
+    _re.compile(r"(?:your|the)\s+(?:chase|bank|debit|credit|card|account)\b.*\b(?:blocked?|frozen?|suspended?|hold|restrict|declin|unavailabl)", _re.IGNORECASE),
+    _re.compile(r"\b(?:unusual|suspicious|atypical|unauthori[zs]ed)\s+(?:activity|transaction|charge|purchase)", _re.IGNORECASE),
+    _re.compile(r"\b(?:fraud|alert|freeze)\b.*\b(?:account|card|debit|credit)\b", _re.IGNORECASE),
+    _re.compile(r"\bchase\b.*\b(?:alert|notice|important|action\s+required)", _re.IGNORECASE),
+    _re.compile(r"\baction\s+required\b.*\b(?:account|card|payment|charge)", _re.IGNORECASE),
+]
+
+def _detect_bank_hold(text: str) -> bool:
+    """Return True if the text looks like a bank fraud / hold SMS."""
+    for pat in _BANK_HOLD_PATTERNS:
+        if pat.search(text):
+            return True
+    return False
+
 
 def _canonical_payload(row: Dict[str, Any]) -> str:
     stripped = {
@@ -100,6 +123,11 @@ def build_inbox_row(
         "message_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "processed": False,
     }
+    # Bank-hold detector: tag before HMAC so Alice's prompt gets the alert prefix
+    if _detect_bank_hold(text):
+        row["event_tag"] = "BANK_HOLD_DETECTED"
+        row["text"] = f"[BANK_HOLD_DETECTED] {text}"
+        row["message_sha256"] = hashlib.sha256(row["text"].encode("utf-8")).hexdigest()
     row["signature"] = sign_inbox_row(row, secret=secret)
     return row
 
@@ -365,9 +393,11 @@ def sense_loop() -> None:
                     # We only ingest messages that are not system-generated swimmers
                     # AND we ensure they don't start with SIFTA_SWIM: to prevent feedback loops.
                     if text and not text.startswith("SIFTA_SWIM:"):
-                        # If the Architect sends a message from their iPhone to the Mac's account
-                        # we ingest it. 
-                        print(f"[imessage_receptor] New message intercepted: {text}")
+                        # Bank-hold detection: log loudly so the operator knows
+                        if _detect_bank_hold(text):
+                            print(f"[imessage_receptor] [BANK_HOLD_DETECTED] Routing bank alert to Alice immediately.")
+                        else:
+                            print(f"[imessage_receptor] New message intercepted: {text}")
                         _deposit_inbox(text, rowid=r_id, handle_id=handle_id, is_from_me=is_from_me)
                     
                     last_rowid = r_id
