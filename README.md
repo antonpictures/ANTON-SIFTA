@@ -1199,6 +1199,8 @@ The legacy random-walk particle system in `sifta_os_desktop.py` was replaced wit
 
 BISHOP dropped the **SwarmEvolutionaryMetaCortex** — a Policy Gradient RL layer that wraps the `UnifiedFieldConfig` and dynamically mutates the Swarm's own Laws of Physics based on environmental volatility.
 
+Event 66's exploratory `SwarmEvolutionaryMetaCortex.observe_and_learn()` path remains documented as the proof lineage; the hardened canonical runtime is now `EvolutionaryFieldTuner`, which performs bounded mutation-selection over unified-field weights and applies them through the stabilized `apply_tuned_weights()` API.
+
 **Biological basis**: In real ant colonies, pheromone evaporation rates are not fixed hyperparameters. Colonies in volatile environments self-adapt their evaporation to avoid zombie highways leading to danger (Mavrovouniotis & Yang, 2013).
 
 **Mathematical proof (verified)**:
