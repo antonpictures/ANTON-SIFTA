@@ -361,11 +361,11 @@
         "widget_class": "AliceWidget",
         "window_width": 1000,
         "window_height": 850,
-        "autostart": false,
+        "autostart": true,
         "autostart_order": 1,
         "autostart_delay_ms": 700,
         "signature": "UNVERIFIED",
-        "_note": "Unified Alice \u2014 launchable from the desktop apps menu. Default boot is pristine; set SIFTA_DESKTOP_ENABLE_AUTOSTART=1 for explicit lab autostart runs. Camera remains deferred until Architect taps Enable unless SIFTA_ALICE_UNIFIED_DEFER_EYE=0."
+        "_note": "Alice IS the OS. Autostarts on boot. Camera activates immediately (SIFTA_ALICE_UNIFIED_DEFER_EYE=0 in launcher)."
     },
     "Terminal": {
         "category": "Utilities",
