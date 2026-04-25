@@ -13,13 +13,16 @@ def minimal_runtime_contract() -> str:
     try:
         import json
         from pathlib import Path
+        from System.whatsapp_social_graph import contact_rows_for_alice, load_contacts
         contacts_file = Path(__file__).parent.parent / ".sifta_state" / "whatsapp_contacts.json"
-        if contacts_file.exists():
-            contacts = json.loads(contacts_file.read_text())
-            names = [data.get("display_name") or data.get("jid") for data in contacts.values()]
-            names = sorted(set(n for n in names if n))
-            if names:
-                base += f"\n\nKNOWN WHATSAPP CONTACTS:\n{', '.join(names)}"
+        contacts = load_contacts(contacts_file)
+        names = contact_rows_for_alice(limit=40, contacts=contacts)
+        if names:
+            base += (
+                "\n\nKNOWN WHATSAPP SOCIAL GRAPH:\n"
+                "These are the owner's WhatsApp friends/groups/channels visible to Alice:\n"
+                + "\n".join(f"- {name}" for name in names)
+            )
     except Exception:
         pass
     return base

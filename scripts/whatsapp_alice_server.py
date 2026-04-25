@@ -22,6 +22,13 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from System.swarm_whatsapp_receptor import build_inbox_row
+from System.whatsapp_social_graph import (
+    contact_hash,
+    display_name_for,
+    enrich_contact_record,
+    load_contacts,
+    save_contacts,
+)
 
 STATE_DIR = REPO / ".sifta_state"
 AUDIT_LOG = STATE_DIR / "whatsapp_alice_bridge.jsonl"
@@ -37,7 +44,7 @@ def _now() -> float:
 
 
 def _hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    return contact_hash(value)
 
 
 def _append_audit(row: dict[str, Any]) -> None:
@@ -48,25 +55,15 @@ def _append_audit(row: dict[str, Any]) -> None:
 
 
 def _load_contacts() -> dict[str, Any]:
-    if not CONTACTS.exists():
-        return {}
-    try:
-        return json.loads(CONTACTS.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return load_contacts(CONTACTS)
 
 
 def _save_contacts(data: dict[str, Any]) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    CONTACTS.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    save_contacts(data, CONTACTS)
 
 
 def _contact_display_name(row: dict[str, Any]) -> str:
-    for key in ("display_name", "name", "notify", "verified_name"):
-        value = str(row.get(key) or "").strip()
-        if value:
-            return value
-    return ""
+    return display_name_for(row)
 
 
 def _sync_contacts(rows: list[Any]) -> int:
@@ -82,16 +79,12 @@ def _sync_contacts(rows: list[Any]) -> int:
         key = _hash(jid)
         existing = contacts.get(key, {})
         name = _contact_display_name(item) or existing.get("display_name") or ""
-        updated = dict(existing)
-        updated.update(
-            {
-                "jid_hash": key,
-                "jid": jid,
-                "display_name": name,
-                "chat_type": "group" if jid.endswith("@g.us") else "direct",
-                "source": "whatsapp_contacts_sync",
-                "synced_ts": now,
-            }
+        updated = enrich_contact_record(
+            existing,
+            jid=jid,
+            name=name,
+            source="whatsapp_contacts_sync",
+            now=now,
         )
         if updated != existing:
             contacts[key] = updated
@@ -105,15 +98,12 @@ def _record_contact(from_jid: str, name: str | None) -> None:
     contacts = _load_contacts()
     key = _hash(from_jid)
     row = contacts.get(key, {})
-    row.update(
-        {
-            "jid_hash": key,
-            "jid": from_jid,
-            "display_name": name or row.get("display_name") or "",
-            "last_seen_ts": _now(),
-            "chat_type": "group" if from_jid.endswith("@g.us") else "direct",
-            "source": "whatsapp",
-        }
+    row = enrich_contact_record(
+        row,
+        jid=from_jid,
+        name=name or row.get("display_name") or "",
+        source="whatsapp",
+        now=_now(),
     )
     contacts[key] = row
     _save_contacts(contacts)

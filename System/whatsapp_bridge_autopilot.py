@@ -13,6 +13,13 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
+from System.whatsapp_social_graph import (
+    contact_rows_for_alice,
+    load_contacts,
+    resolve_target,
+    summary_for_alice as social_graph_summary_for_alice,
+)
+
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _CONTACTS_FILE = _STATE / "whatsapp_contacts.json"
@@ -42,31 +49,12 @@ def _deposit_trace(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _load_contacts() -> Dict[str, Any]:
-    if not _CONTACTS_FILE.exists():
-        return {}
-    try:
-        return json.loads(_CONTACTS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return load_contacts(_CONTACTS_FILE)
 
 
 def _resolve_target(target: str) -> str:
     """Resolve a target string (JID or nickname) to a JID."""
-    if "@s.whatsapp.net" in target or "@g.us" in target:
-        return target
-        
-    contacts = _load_contacts()
-    target_lower = target.lower()
-    
-    matches = []
-    for jid_hash, contact in contacts.items():
-        name = (contact.get("display_name") or "").lower()
-        if target_lower in name:
-            matches.append(contact.get("jid"))
-            
-    if len(matches) == 1:
-        return matches[0]
-    return ""
+    return resolve_target(target, _load_contacts())
 
 
 def summary_for_alice(limit: int = 12) -> str:
@@ -75,28 +63,16 @@ def summary_for_alice(limit: int = 12) -> str:
     Raw JIDs stay out of the prompt; Alice only needs names, chat shape, and
     whether a contact is reachable by the local bridge.
     """
-    contacts = _load_contacts()
-    rows = []
-    for row in contacts.values():
-        if not isinstance(row, dict):
-            continue
-        name = str(row.get("display_name") or row.get("name") or "").strip()
-        jid = str(row.get("jid") or "")
-        if not name:
-            continue
-        chat_type = str(row.get("chat_type") or ("group" if jid.endswith("@g.us") else "direct"))
-        last_seen = float(row.get("last_seen_ts") or row.get("synced_ts") or 0.0)
-        rows.append((last_seen, name[:48], chat_type))
-    rows.sort(reverse=True)
-
     lines = [
         "WHATSAPP WORLD:",
         "- transport=WhatsApp via local Baileys phone bridge; inbound messages are real external humans queued into Alice.",
         "- outbound_tool=whatsapp.send; target may be a saved display name or exact WhatsApp JID.",
+        "- social_graph=owner WhatsApp contacts and groups are friends/collaborators/channels of the machine owner.",
     ]
+    lines.append(social_graph_summary_for_alice(limit=limit))
+    rows = contact_rows_for_alice(limit=limit, contacts=_load_contacts())
     if rows:
-        contact_bits = [f"{name} ({chat_type})" for _ts, name, chat_type in rows[:limit]]
-        lines.append(f"- known_contacts={len(rows)} visible_to_alice: " + "; ".join(contact_bits))
+        lines.append("- target_examples: " + "; ".join(rows))
     else:
         lines.append("- known_contacts=0; contacts appear after WhatsApp sync or after a human messages Alice.")
     return "\n".join(lines)
