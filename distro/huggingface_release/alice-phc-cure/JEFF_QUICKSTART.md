@@ -4,6 +4,12 @@ This is the fast path for downloading and running the cured Gemma 4 boot recipe.
 
 Important: this repository does not ship Google/Gemma weights. It ships the clean Ollama `Modelfile`, verification script, audit, license, and provenance. You still pull the upstream weights with Ollama.
 
+Public links:
+
+- Alice PHC brain package: https://huggingface.co/georgeanton/alice-phc-cure
+- SIFTA/Alice OS code: https://github.com/antonpictures/ANTON-SIFTA
+- Jeff's GitHub fork: https://github.com/jeffpowersusr/ANTON-SIFTA
+
 ## 1. Install prerequisites
 
 ```bash

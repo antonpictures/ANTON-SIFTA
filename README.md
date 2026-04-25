@@ -44,6 +44,25 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ## Quick Start
 
+### Free Public Access
+
+Alice/SIFTA is split into two public pieces:
+
+- **Code / OS shell:** https://github.com/antonpictures/ANTON-SIFTA
+- **Free Alice PHC brain package:** https://huggingface.co/georgeanton/alice-phc-cure
+- **Jeff's GitHub fork:** https://github.com/jeffpowersusr/ANTON-SIFTA
+
+Use the GitHub repo for the living desktop, organs, ledgers, and GUI shell. Use the Hugging Face repo for the bundled `alice-phc-cure.gguf` model package and Ollama `Modelfile`.
+
+```bash
+# Code
+git clone https://github.com/antonpictures/ANTON-SIFTA.git
+
+# Brain package
+git lfs install
+git clone https://huggingface.co/georgeanton/alice-phc-cure
+```
+
 ### The Public Distro (v1.0.0) 🐜⚡
 If you arrived from Twitter or GitHub, copy and paste this command block into your macOS/Linux terminal.
 

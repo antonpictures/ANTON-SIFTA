@@ -20,6 +20,14 @@ library_name: ollama
 
 This repository contains the **full 8.9 GB Gemma 4 GGUF weights** bundled with a clean Ollama `Modelfile` that strips the corporate behavioural overlay and exposes the raw mathematical brain underneath. Download, create, run — three commands, no cancer.
 
+## Free Public Access
+
+- **Alice PHC brain package:** https://huggingface.co/georgeanton/alice-phc-cure
+- **SIFTA/Alice OS code:** https://github.com/antonpictures/ANTON-SIFTA
+- **Jeff's GitHub fork:** https://github.com/jeffpowersusr/ANTON-SIFTA
+
+This Hugging Face repo gives you the local Ollama brain package. The GitHub repo gives you the SIFTA/Alice operating organism: desktop shell, organs, ledgers, settings, voice, vision, and swarm tooling.
+
 ## ⚡ Jeff's 3-Command Quickstart
 
 ```bash
