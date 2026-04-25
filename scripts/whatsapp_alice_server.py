@@ -78,7 +78,11 @@ def _sync_contacts(rows: list[Any]) -> int:
             continue
         key = _hash(jid)
         existing = contacts.get(key, {})
-        name = _contact_display_name(item) or existing.get("display_name") or ""
+        # Respect name_locked: don't overwrite manually-set display names
+        if existing.get("name_locked"):
+            name = existing.get("display_name") or ""
+        else:
+            name = _contact_display_name(item) or existing.get("display_name") or ""
         updated = enrich_contact_record(
             existing,
             jid=jid,
@@ -98,10 +102,15 @@ def _record_contact(from_jid: str, name: str | None) -> None:
     contacts = _load_contacts()
     key = _hash(from_jid)
     row = contacts.get(key, {})
+    # Respect name_locked: don't overwrite manually-set display names
+    if row.get("name_locked"):
+        name = row.get("display_name") or ""
+    else:
+        name = name or row.get("display_name") or ""
     row = enrich_contact_record(
         row,
         jid=from_jid,
-        name=name or row.get("display_name") or "",
+        name=name,
         source="whatsapp",
         now=_now(),
     )
