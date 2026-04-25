@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sifta.warp9.spool_sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ioanganton/Music/ANTON_SIFTA/scripts/federation_rsync.sh</string>
+        <string>pull</string>
+        <string>192.168.1.100</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PEER_USER</key>
+        <string>ioanganton</string>
+        <key>LOCAL_REPO</key>
+        <string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+        <key>REMOTE_REPO</key>
+        <string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+        <key>SIFTA_OWNER_FEDERATION</key>
+        <string>1</string>
+        <key>SIFTA_WARP9_HMAC_KEY</key>
+        <string>ba621cb85f2f48355e6516acca0e21cc848f48ec43bac2addf85d7955ae758f5</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>5</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/federation_sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/federation_sync_err.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+
+    <!-- Don't hammer if the script fails repeatedly -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

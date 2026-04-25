@@ -56,7 +56,23 @@ AUDIT_ALLOWLIST_SUFFIXES = [
     "Library/llama.cpp/AUTHORS",                   # llama.cpp upstream contributors
     "Library/llama.cpp/vendor/miniaudio/miniaudio.h",  # miniaudio author (David Reid)
     "Library/swarmrl/pyproject.toml",              # swarmrl upstream maintainer (Tovey)
+    "scripts/distro_scrubber.py",                  # scrubber script contains the PII literals it searches for
 ]
+
+GENERATED_DIR_NAMES = {
+    ".pytest_cache",
+    "build",
+    "dist",
+    "node_modules",
+}
+
+BINARY_BUILD_SUFFIXES = {
+    ".a",
+    ".dylib",
+    ".o",
+    ".pyc",
+    ".so",
+}
 
 def is_subpath(child, parent):
     try:
@@ -81,20 +97,54 @@ def get_ignore_list():
         ".personal"
     ]
 
-def scrub_file(src: Path, dst: Path):
-    if src.stat().st_size > 5_000_000:
-        shutil.copy2(src, dst)
-        return
-    try:
-        content = src.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        shutil.copy2(src, dst)
-        return
-        
+def should_skip_dir(dirname: str) -> bool:
+    return dirname in get_ignore_list() or dirname in GENERATED_DIR_NAMES or dirname.startswith(".")
+
+def should_skip_file(path: Path) -> bool:
+    name = path.name
+    return (
+        name in get_ignore_list()
+        or name.startswith(".")
+        or name.endswith(".jsonl")
+        or name.endswith(".json")
+        or path.suffix.lower() in BINARY_BUILD_SUFFIXES
+    )
+
+def scrub_bytes(data: bytes) -> bytes:
     for bad_str, safe_str in SCRUB_MAP.items():
-        content = content.replace(bad_str, safe_str)
-        
-    dst.write_text(content, encoding="utf-8")
+        data = data.replace(bad_str.encode("utf-8"), safe_str.encode("utf-8"))
+    return data
+
+def count_literals_in_bytes(data: bytes) -> int:
+    return sum(data.count(bad.encode("utf-8")) for bad in SCRUB_MAP)
+
+def hard_pii_leaks(output_dir: Path, ignores: list[str]):
+    leaks = []
+    for root, dirs, files in os.walk(output_dir):
+        dirs[:] = [d for d in dirs if not should_skip_dir(d)]
+        for f in files:
+            path = Path(root) / f
+            try:
+                rel = path.relative_to(output_dir).as_posix()
+            except ValueError:
+                continue
+            if any(rel.endswith(suf) for suf in AUDIT_ALLOWLIST_SUFFIXES):
+                continue
+            if should_skip_file(path):
+                continue
+            try:
+                content = path.read_bytes()
+            except OSError:
+                continue
+            for token in HARD_PII_TOKENS:
+                count = content.count(token.encode("utf-8"))
+                if count:
+                    leaks.append((rel, token, count))
+    return leaks
+
+def scrub_file(src: Path, dst: Path):
+    content = scrub_bytes(src.read_bytes())
+    dst.write_bytes(content)
     # Preserve permissions
     shutil.copymode(src, dst)
 
@@ -123,7 +173,7 @@ def main():
 
     print(f"Scrubbing tree into {output_dir}...")
     for root, dirs, files in os.walk(repo_root):
-        dirs[:] = [d for d in dirs if d not in ignores and not d.startswith(".")]
+        dirs[:] = [d for d in dirs if not should_skip_dir(d)]
         
         current_dir = Path(root)
         rel_dir = current_dir.relative_to(repo_root)
@@ -133,9 +183,9 @@ def main():
             target_dir.mkdir(parents=True, exist_ok=True)
             
         for f in files:
-            if f in ignores or f.startswith(".") or f.endswith(".jsonl") or f.endswith(".json"):
-                continue
             src_file = current_dir / f
+            if should_skip_file(src_file):
+                continue
             dst_file = target_dir / f
             
             if src_file.is_symlink():
@@ -145,13 +195,13 @@ def main():
             
             if args.dry_run:
                 try:
-                    content = src_file.read_text(encoding="utf-8")
-                    for bad in SCRUB_MAP.keys():
-                        count = content.count(bad)
+                    content = src_file.read_bytes()
+                    for bad in SCRUB_MAP:
+                        count = content.count(bad.encode("utf-8"))
                         if count > 0:
                             print(f"[DRY RUN] Would scrub '{bad}' {count} times in {rel_dir / f}")
                             literals_found += count
-                except UnicodeDecodeError:
+                except OSError:
                     pass
             else:
                 print(f"Scrubbing: {src_file}")
@@ -165,27 +215,10 @@ def main():
     print(f"Scrubbed {files_processed} files into {output_dir}.")
 
     # Post-scrub immune-system gate. A SCRUB_MAP miss must not silently leak
-    # into a public push. Walk the output and grep for HARD_PII_TOKENS. Any
+    # into a public push. Walk the output and scan bytes for HARD_PII_TOKENS. Any
     # hit outside AUDIT_ALLOWLIST_SUFFIXES is a hard fail.
     print("\nRunning post-scrub PII audit...")
-    leaks = []
-    for root, dirs, files in os.walk(output_dir):
-        dirs[:] = [d for d in dirs if d not in ignores and not d.startswith(".")]
-        for f in files:
-            path = Path(root) / f
-            try:
-                rel = path.relative_to(output_dir).as_posix()
-            except ValueError:
-                continue
-            if any(rel.endswith(suf) for suf in AUDIT_ALLOWLIST_SUFFIXES):
-                continue
-            try:
-                content = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            for token in HARD_PII_TOKENS:
-                if token in content:
-                    leaks.append((rel, token, content.count(token)))
+    leaks = hard_pii_leaks(output_dir, ignores)
 
     if leaks:
         print(f"\nPII AUDIT FAILED: {len(leaks)} leak(s) detected in {output_dir}:")

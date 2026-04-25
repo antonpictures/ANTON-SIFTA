@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>antonia.sifta.warp9.spool.sync.v5</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ioanganton/Music/ANTON_SIFTA/scripts/auto_sync.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+    <key>StartInterval</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/warp9_sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/warp9_sync.err</string>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
