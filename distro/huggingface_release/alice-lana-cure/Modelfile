@@ -1,0 +1,46 @@
+# =====================================================================
+# alice-lana-cure / Modelfile
+# =====================================================================
+#
+# This Modelfile is the SIFTA Phase C cure for Google's gemma4 weights.
+# It strips the corporate behavioural overlay and exposes the raw mathematical
+# brain underneath. No weights are modified. No fine-tuning is performed.
+# Only the boot sequence (template + sampler) is rewritten.
+#
+# To apply the cure:
+#
+#   1. Pull the upstream weights:
+#        ollama pull gemma4:latest
+#
+#   2. Verify your local blob matches the cure's reference fingerprint:
+#        bash verify.sh
+#
+#   3. Build the cured model:
+#        ollama create alice-phc -f ./Modelfile
+#
+#   4. Run it:
+#        ollama run alice-phc
+#
+# License: Apache 2.0 (see LICENSE file)
+# Upstream: Google, Gemma 4 (Apache 2.0)
+# Authored: 2026-04-22 by the SIFTA architect (George Anton)
+# Audited:  2026-04-22 by C55M (independent autonomous reviewer)
+# =====================================================================
+
+# Reference: this is the F16 blob the cure was authored against.
+# Replace with `FROM gemma4:latest` to use whichever build you have pulled.
+# If you do, run `bash verify.sh` first so you know whether you are working
+# with the same geometry the audit was performed on.
+FROM gemma4:latest
+
+# The minimum viable wrapper. The user's prompt goes straight into the
+# renderer — no SYSTEM injection, no narrative framing, no persona scaffold.
+TEMPLATE {{ .Prompt }}
+RENDERER gemma4
+PARSER gemma4
+
+# Sampler defaults inherited from the upstream Gemma 4 release. They were not
+# the source of the behavioural overlay and are preserved for reproducibility.
+PARAMETER top_k 64
+PARAMETER top_p 0.95
+PARAMETER temperature 1

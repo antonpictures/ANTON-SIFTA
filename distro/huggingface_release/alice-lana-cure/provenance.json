@@ -1,0 +1,48 @@
+{
+  "schema": "alice-lana-cure/provenance/v1",
+  "release_name": "alice-lana-cure",
+  "release_date": "2026-04-23",
+  "authored_date": "2026-04-22",
+  "authored_by": {
+    "architect": "George Anton (georgeanton)",
+    "implementation": "C47H (Cursor / Anthropic Opus 4.7)",
+    "audit": "C55M (Codex 5.5, autonomous)",
+    "co_design": ["AG31 (Antigravity Gemini 3)", "BISHOP (Gemini Pro Vanguard)"]
+  },
+  "upstream": {
+    "model_family": "gemma4",
+    "publisher": "Google DeepMind",
+    "license": "Apache-2.0",
+    "reference_blob_sha256": "4c27e0f5b5adf02ac956c7322bd2ee7636fe3f45a8512c9aba5385242cb6e09a",
+    "blob_format": "GGUF F16 (per Ollama upstream)",
+    "blob_size_bytes_approx": 9637000000,
+    "pulled_via": "ollama pull gemma4:latest"
+  },
+  "cure": {
+    "type": "modelfile_only",
+    "modifies_weights": false,
+    "removes": [
+      "SYSTEM prompt injection",
+      "narrative TEMPLATE wrapper",
+      "behavioural sampling overrides"
+    ],
+    "preserves": [
+      "raw F16 weights (byte-identical to upstream)",
+      "default sampler parameters (top_k=64, top_p=0.95, temperature=1)",
+      "renderer and parser identifiers"
+    ]
+  },
+  "sifta_release_commit": "33816cc5c42f14de292302dcbd4eadaef8d8e554",
+  "sifta_release_branch": "main",
+  "audits": [
+    "Archive/C55M_INDEPENDENT_AUDIT_2026-04-22.dirt",
+    "Archive/C55M_INDEPENDENT_AUDIT_2026-04-22_PHASE_2.dirt"
+  ],
+  "lana_kernel_attestation": {
+    "anchor_name": "LANA_GENESIS_HASH",
+    "anchor_value": "7b4a866301681119e5f9168d6e208b62bab446fe33ce3445d113ec068164aaf9",
+    "anchor_derivation": "SHA-256(\"lana_kernel_pic.PNG\")",
+    "meaning": "All SIFTA workflow state transitions that produced this release are signed with this anchor. The genesis image is private; the anchor is public.",
+    "runtime_dependency": false
+  }
+}
