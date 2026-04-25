@@ -180,7 +180,7 @@ async function connectToWhatsApp() {
 
       req.on("error", () => {
         sock.sendMessage(from, {
-          text: "🔴 SIFTA kernel is offline. Restart whatsapp_swarm.py.",
+          text: "🔴 SIFTA WhatsApp ingest is offline. Restart: PYTHONPATH=. python3 scripts/whatsapp_alice_server.py",
         });
       });
 
