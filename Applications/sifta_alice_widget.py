@@ -5,8 +5,15 @@ sifta_alice_widget.py — Alice (unified ear + eye + mesh, single window)
 Architect doctrine (2026-04-19, C47H):
 The Talk-to-Alice and What-Alice-Sees widgets are two organs of the SAME
 entity (Alice). They were autostarting as TWO separate MDI windows; the
-Architect asked for ONE app that opens by default with both audio and
-video together. This widget is that app.
+Architect asked for ONE app. By default the **ear** (talk + mic path) still
+loads on autostart, but the **eye** (camera / QCamera) stays off until the
+Architect explicitly enables vision — no surprise TCC / green LED on boot.
+
+Env overrides (Architect-tunable, no hardcoding):
+    SIFTA_ALICE_UNIFIED_DEFER_EYE=0
+        Legacy: construct WhatAliceSeesWidget immediately (camera may start on boot).
+    SIFTA_ALICE_UNIFIED_DEFER_EYE=1   (default)
+        Show a one-tap “Enable camera & vision” strip instead of starting QCamera.
 
 Layout
 ──────
@@ -51,7 +58,9 @@ Env overrides (Architect-tunable, no hardcoding):
     SIFTA_ALICE_UNIFIED_GREETING="custom string"
         Override the auto-generated telemetry greeting.
     SIFTA_ALICE_UNIFIED_SPLIT="960,1100"
-        Initial QSplitter sizes (left, right). Defaults to 960,1100.
+        Initial QSplitter sizes (top, bottom). Defaults to 450,400.
+    SIFTA_ALICE_UNIFIED_DEFER_EYE=1
+        Default: camera/vision off until Architect taps Enable (see module header).
 """
 from __future__ import annotations
 
@@ -72,7 +81,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QSplitter, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget
 
 # Child widgets — imported AFTER the env-var suppression above.
 from Applications.sifta_talk_to_alice_widget import (  # noqa: E402
@@ -112,10 +121,37 @@ class AliceWidget(QWidget):
         self._splitter = QSplitter(Qt.Orientation.Vertical, self)
 
         self._talk = TalkToAliceWidget()
-        self._sees = WhatAliceSeesWidget()
+        defer_raw = os.environ.get("SIFTA_ALICE_UNIFIED_DEFER_EYE", "1").strip().lower()
+        self._defer_eye = defer_raw not in ("0", "false", "no", "")
+        self._sees: Optional[WhatAliceSeesWidget] = None
+        self._eye_placeholder: Optional[QWidget] = None
 
-        # Place WhatAliceSees on top, TalkToAlice on bottom
-        self._splitter.addWidget(self._sees)
+        if self._defer_eye:
+            self._eye_placeholder = QWidget(self)
+            ph = QVBoxLayout(self._eye_placeholder)
+            ph.setContentsMargins(24, 24, 24, 24)
+            lbl = QLabel(
+                "Vision / camera is off at boot.\n"
+                "Enable when you want Alice to open the camera (macOS may show TCC)."
+            )
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet("color: #a9b1d6; font-size: 14px;")
+            ph.addWidget(lbl)
+            btn = QPushButton("Enable camera & vision")
+            btn.setStyleSheet(
+                "QPushButton { background: #3865be; color: #ffffff; font-weight: 700;"
+                " padding: 10px 18px; border-radius: 8px; }"
+                "QPushButton:hover { background: #4f7fe2; }"
+            )
+            btn.clicked.connect(self._enable_vision)
+            ph.addWidget(btn)
+            ph.addStretch()
+            self._splitter.addWidget(self._eye_placeholder)
+        else:
+            self._sees = WhatAliceSeesWidget()
+            self._splitter.addWidget(self._sees)
+
+        # Talk panel on bottom (same as before)
         self._splitter.addWidget(self._talk)
 
         try:
@@ -141,15 +177,26 @@ class AliceWidget(QWidget):
         QTimer.singleShot(0, self._dedupe_inner_chrome)
 
         # ── Unified boot greeting (telemetry sweep) ────────────────────
-        # Deferred so child widgets paint and their listeners/cameras
-        # have a chance to actually come online before we probe their
-        # status. 1.2s is a comfortable settle time on M5; tunable via
-        # SIFTA_ALICE_UNIFIED_BOOT_DELAY_MS.
+        # Deferred so child widgets paint and their listeners/mic
+        # have a chance to settle. Camera is probed only if the eye is on.
         if not os.environ.get("SIFTA_ALICE_UNIFIED_BOOT_SILENT"):
             delay_ms = int(
                 os.environ.get("SIFTA_ALICE_UNIFIED_BOOT_DELAY_MS", "1200")
             )
             QTimer.singleShot(delay_ms, self._announce_boot)
+
+    def _enable_vision(self) -> None:
+        """Construct the eye organ on demand so QCamera never starts implicitly."""
+        if self._sees is not None or self._eye_placeholder is None:
+            return
+        self._sees = WhatAliceSeesWidget()
+        idx = self._splitter.indexOf(self._eye_placeholder)
+        if idx < 0:
+            idx = 0
+        self._splitter.replaceWidget(idx, self._sees)
+        self._eye_placeholder.deleteLater()
+        self._eye_placeholder = None
+        QTimer.singleShot(0, self._dedupe_inner_chrome)
 
     # ── Chrome dedup ──────────────────────────────────────────────────
     def _dedupe_inner_chrome(self) -> None:
@@ -163,7 +210,10 @@ class AliceWidget(QWidget):
         # toggle them live via the children's own 💬 chat toggle buttons.
         # Override with SIFTA_ALICE_KEEP_INNER_MESH=1 to keep them.
         if not os.environ.get("SIFTA_ALICE_KEEP_INNER_MESH"):
-            for child in (self._talk, self._sees):
+            _kids = [self._talk]
+            if self._sees is not None:
+                _kids.append(self._sees)
+            for child in _kids:
                 gci = getattr(child, "_gci", None)
                 if gci is not None:
                     try:
@@ -183,7 +233,7 @@ class AliceWidget(QWidget):
         # inside are redundant noise. We do this by walking the child's
         # top-level layout for the QLabel matching its APP_NAME.
         if not os.environ.get("SIFTA_ALICE_KEEP_INNER_TITLES"):
-            for child in (self._talk, self._sees):
+            for child in [self._talk] + ([self._sees] if self._sees is not None else []):
                 self._hide_inner_title_row(child)
 
     def _hide_inner_title_row(self, child: QWidget) -> None:
@@ -257,9 +307,11 @@ class AliceWidget(QWidget):
             pass
 
         try:
-            cam = getattr(self._sees, "_camera", None)
-            if cam is not None:
-                clauses.append("camera online")
+            sees = self._sees
+            if sees is not None:
+                cam = getattr(sees, "_camera", None)
+                if cam is not None:
+                    clauses.append("camera online")
         except Exception:
             pass
 
@@ -299,6 +351,33 @@ class AliceWidget(QWidget):
             sweep = head + "."
 
         return f"{sweep} I'm awake and listening, Architect."
+
+    def closeEvent(self, event) -> None:
+        """Stop the boot-greeting TTS thread and close child widgets cleanly."""
+        tts = getattr(self, "_boot_tts", None)
+        if tts is not None:
+            try:
+                if tts.isRunning():
+                    # Use stop() which kills the subprocess first, then waits for the thread.
+                    if hasattr(tts, "stop"):
+                        tts.stop()
+                    else:
+                        tts.terminate()
+                        tts.wait(2000)
+            except Exception:
+                pass
+            self._boot_tts = None
+        # Delegate to children so their own closeEvent runs
+        for child_attr in ("_talk", "_sees"):
+            child = getattr(self, child_attr, None)
+            if child is not None:
+                try:
+                    child.close()
+                except Exception:
+                    pass
+        super().closeEvent(event)
+
+
 
 
 # ── Standalone launcher (development only) ─────────────────────────────────

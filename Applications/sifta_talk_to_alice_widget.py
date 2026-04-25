@@ -728,33 +728,10 @@ def _decontaminate_history(history: list) -> int:
     return 0
 
 
-# ── Hallucinated tool-tag scrubber (C47H 2026-04-20, Architect-reported) ──
-# Some local models (Gemma/Llama variants) invent tool tags we never taught
-# them: <execute_tool>...</execute_tool>, <execute_bash>...</execute_bash>,
-# <tool_output>...</tool_output>, fenced YAML/JSON "tool_name: ..." blocks,
-# raw `tool_input` JSON, etc.
-#
-# Our runtime only consumes <bash>...</bash>. Anything else leaks straight
-# into macOS TTS — a real, observed UX failure during conversation.
-#
-# Two-step defense:
-#   1) Canonicalize obvious shell-intent tags into <bash>...</bash> BEFORE
-#      the bash extractor runs.
-#   2) Strip every other hallucinated tool wrapper before TTS.
-
-_HALLUCINATED_BASH_RE = re.compile(
-    r"<execute_bash>\s*(.*?)\s*(?:</execute_bash>|$)",
-    flags=re.DOTALL | re.IGNORECASE,
-)
-
-
+# ── Hallucinated tool-tag scrubber: preserve memory text, strip before TTS. ──
 def _canonicalize_tool_tags(text: str) -> str:
-    """Rewrite model-hallucinated <execute_bash> into <bash> for the extractor."""
-    if not text:
-        return text
-    return _HALLUCINATED_BASH_RE.sub(
-        lambda m: f"<bash>{m.group(1).strip()}</bash>", text
-    )
+    """Preserve tool tags exactly; downstream gates decide what can execute."""
+    return text
 
 
 _HALLUCINATED_TAG_NAMES = (
@@ -1273,8 +1250,23 @@ class _TTSWorker(QThread):
         super().__init__(parent)
         self._text = (text or "")[:_MAX_RESPONSE_CHARS]
         self._voice = voice or ""
+        self._proc = None  # Popen handle for killable say subprocess
+
+    def stop(self) -> None:
+        """Kill the say subprocess and wait for this thread to finish."""
+        proc = self._proc
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        if self.isRunning():
+            if not self.wait(1000):
+                self.terminate()
+                self.wait(500)
 
     def run(self) -> None:
+        self.setTerminationEnabled(True)  # allow terminate() to kill blocking subprocess
         if not self._text.strip():
             self.spoken.emit(False)
             return
@@ -1304,7 +1296,7 @@ class _TTSWorker(QThread):
                     self.spoken.emit(True)
                     return
 
-                # Legacy fallback — preserve old behaviour exactly.
+                # Legacy fallback — use Popen so we can kill the process on stop().
                 if not shutil.which("say"):
                     self.failed.emit("`say` not on PATH (non-macOS host).")
                     return
@@ -1312,16 +1304,26 @@ class _TTSWorker(QThread):
                 if self._voice:
                     cmd.extend(["-v", self._voice])
                 cmd.extend(["--", self._text])
-                proc = subprocess.run(cmd, capture_output=True, timeout=120)
-                if proc.returncode != 0:
-                    stderr = proc.stderr.decode("utf-8", errors="replace") if isinstance(proc.stderr, bytes) else str(proc.stderr or "")
-                    self.failed.emit(f"`say` exited {proc.returncode}: {stderr.strip()}")
+                with subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.PIPE) as proc:
+                    self._proc = proc
+                    try:
+                        _, _ = proc.communicate(timeout=120)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.communicate()
+                        self.failed.emit("`say` timed out (>120 s).")
+                        return
+                    finally:
+                        self._proc = None
+                if proc.returncode not in (0, -9, -15):  # 0=ok, -9=SIGKILL, -15=SIGTERM
+                    stderr = proc.stderr
+                    stderr_str = stderr.decode("utf-8", errors="replace").strip() if isinstance(stderr, bytes) else ""
+                    self.failed.emit(f"`say` exited {proc.returncode}: {stderr_str}")
                     return
                 self.spoken.emit(True)
             finally:
                 BROCA_SPEAKING.clear()
-        except subprocess.TimeoutExpired:
-            self.failed.emit("`say` timed out (>120 s).")
         except Exception as exc:
             self.failed.emit(f"TTS crashed: {exc}")
 
@@ -2509,9 +2511,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
 
         # ── 0. NORMALIZE HALLUCINATED TOOL TAGS ────────────────────
-        # If the model invented <execute_bash>cmd</execute_bash> instead of
-        # the canonical <bash>cmd</bash>, rewrite it so the bash extractor
-        # below still runs Alice's intent (kindness over rejection).
+        # Preserve raw text for memory tests, but let the extractor consume
+        # either canonical <bash> or model-invented <execute_bash>.
         raw = _canonicalize_tool_tags(raw)
 
         # ── 1. AGENTIC TOOL EXECUTION (BASH OROBOROS) ──────────────
@@ -2523,7 +2524,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         #   2) <bash>cmd</bash    — closing > dropped (observed in the wild)
         #   3) <bash>cmd          — closing tag entirely missing (EOS)
         import subprocess
-        bash_matches = list(re.finditer(r"<bash>(.*?)(?:</bash>?|$)", raw, re.DOTALL))
+        bash_matches = list(re.finditer(r"<(?:bash|execute_bash)>(.*?)(?:</(?:bash|execute_bash)>?|$)", raw, re.DOTALL | re.IGNORECASE))
         if bash_matches:
             if getattr(self, "_tool_loop_depth", 0) >= 3:
                 self._append_system_line("🛑 Tool depth limit reached.", error=False)
@@ -2906,6 +2907,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._listener = None
         except Exception:
             pass
+        for attr in ("_stt", "_brain", "_tts"):
+            worker = getattr(self, attr, None)
+            try:
+                if worker and worker.isRunning():
+                    worker.requestInterruption()
+                    worker.quit()
+                    if not worker.wait(2000):
+                        worker.terminate()
+                        worker.wait(1000)
+                setattr(self, attr, None)
+            except Exception:
+                pass
         super().closeEvent(ev)
 
     # ── Chat rendering ─────────────────────────────────────────────────────
@@ -2994,7 +3007,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # tool runner consumed them; the user sees the result via
                 # the system-line "🛠️ executing ..." trace).
                 visible = re.sub(
-                    r"<bash>.*?(?:</bash>?|$)", "", canon, flags=re.DOTALL
+                    r"<(?:bash|execute_bash)>.*?(?:</(?:bash|execute_bash)>?|$)", "", canon, flags=re.DOTALL | re.IGNORECASE
                 )
                 visible = _strip_tool_hallucinations(visible).strip()
                 # If everything was tool-tag noise, leave a quiet marker

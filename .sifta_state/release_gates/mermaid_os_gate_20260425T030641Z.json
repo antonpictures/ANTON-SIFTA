@@ -1,0 +1,91 @@
+{
+  "gate_version": "mermaid_os_v1",
+  "timestamp": "20260425T030641Z",
+  "verdict": "GREEN",
+  "total_gates": 9,
+  "passed": 9,
+  "failed": 0,
+  "gates": [
+    {
+      "label": "full_pytest",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python -m pytest tests/ -q --tb=line",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 97.75,
+      "stdout_tail": "............................................................. [ 42%]\n........................................................................ [ 56%]\n........................................................................ [ 70%]\n........................................................................ [ 85%]\n........................................................................ [ 99%]\n....                                                                     [100%]\n508 passed in 96.89s (0:01:36)\n",
+      "stderr_tail": ""
+    },
+    {
+      "label": "manifest_contract",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python -m pytest tests/test_apps_manifest_contract.py -q --tb=short",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 1.14,
+      "stdout_tail": "...                                                                      [100%]\n3 passed in 0.66s\n",
+      "stderr_tail": ""
+    },
+    {
+      "label": "desktop_smoke",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python scripts/smoke_test_desktop.py",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 60.37,
+      "stdout_tail": "[SMOKE] Booting Mermaid OS Desktop...\n[SMOKE] Opening Finance...\n[SMOKE] Opening NLE...\n[SMOKE] Opening File Navigator...\n[SMOKE] Opening Alice...\n[SMOKE] Initiating Clean Teardown...\n[SMOKE] Clean exit.\n",
+      "stderr_tail": "qt.qpa.fonts: Populating font family aliases took 51 ms. Replace uses of missing font family \"Sans Serif\" with one that exists to avoid this cost. \nThis plugin does not support propagateSizeHints()\nThis plugin does not support propagateSizeHints()\nQt::WindowType::Desktop has been deprecated in Qt 6. Ignoring.\nQt::WindowType::Desktop has been deprecated in Qt 6. Ignoring.\nQt::WindowType::Desktop has been deprecated in Qt 6. Ignoring.\nQt::WindowType::Desktop has been deprecated in Qt 6. Ignoring.\n"
+    },
+    {
+      "label": "py_compile_sifta_os_desktop",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python -m py_compile sifta_os_desktop.py",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 0.09,
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "label": "py_compile_sifta_app_catalog",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python -m py_compile System/sifta_app_catalog.py",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 0.07,
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "label": "py_compile_stigmergic_wm",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python -m py_compile System/stigmergic_wm.py",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 0.07,
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "label": "py_compile_app_fitness",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python -m py_compile System/app_fitness.py",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 0.1,
+      "stdout_tail": "",
+      "stderr_tail": ""
+    },
+    {
+      "label": "distro_scrubber_pii_audit",
+      "command": "/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin/python /Users/ioanganton/Music/ANTON_SIFTA/Scripts/distro_scrubber.py --output /var/folders/gv/83jpzrx56z7153vpzrv43vr80000gn/T/mermaid_gate_distro__pxu1qzz",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 4.12,
+      "stdout_tail": "Music/ANTON_SIFTA/Kernel/core_engine.py\nScrubbing: /Users/ioanganton/Music/ANTON_SIFTA/proposals/IDE IDENTITY EXAMPLE REFERENCE.jpg\nScrubbing: /Users/ioanganton/Music/ANTON_SIFTA/proposals/IDE_IDENTITY_EXCHANGE_MHC_EXOSOME.png\nScrubbed 4328 files into /private/var/folders/gv/83jpzrx56z7153vpzrv43vr80000gn/T/mermaid_gate_distro__pxu1qzz.\n\nRunning post-scrub PII audit...\nPII audit clean. /private/var/folders/gv/83jpzrx56z7153vpzrv43vr80000gn/T/mermaid_gate_distro__pxu1qzz is safe for public push.\n",
+      "stderr_tail": ""
+    },
+    {
+      "label": "stale_process_check",
+      "command": "pgrep -f smoke_test_desktop|pytest",
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_s": 0,
+      "stdout_tail": "clean",
+      "stderr_tail": ""
+    }
+  ]
+}

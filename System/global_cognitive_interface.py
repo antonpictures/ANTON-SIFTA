@@ -140,6 +140,44 @@ class _ContextWorker(QThread):
 
 # ── Swarm Mesh Client (Layer 2) ──────────────────────────────────────────────
 
+# Global registry of all live _SwarmMeshClientWorker instances so teardown
+# code outside the widget hierarchy can drain them after app.exec() returns.
+# Strong refs (not weakrefs) so GC cannot collect before drain is done.
+import weakref as _weakref
+_MESH_WORKER_REGISTRY: list = []
+
+def drain_all_mesh_workers(timeout_ms: int = 2000) -> None:
+    """Stop and wait for all live _SwarmMeshClientWorker threads.
+    Call this after QApplication.exec() returns to prevent SIGABRT."""
+    global _MESH_WORKER_REGISTRY
+    workers = list(_MESH_WORKER_REGISTRY)
+    # Phase 1: signal all to stop simultaneously
+    for worker in workers:
+        try:
+            if worker.isRunning():
+                worker.stop()
+        except Exception:
+            pass
+    # Phase 2: wait for clean shutdown with short grace period
+    import time as _time
+    deadline = _time.monotonic() + (timeout_ms / 1000.0)
+    for worker in workers:
+        try:
+            remaining_ms = max(100, int((deadline - _time.monotonic()) * 1000))
+            if worker.isRunning():
+                worker.wait(remaining_ms)
+        except Exception:
+            pass
+    # Phase 3: force-terminate any that refused to stop
+    for worker in workers:
+        try:
+            if worker.isRunning():
+                worker.terminate()
+                worker.wait(500)
+        except Exception:
+            pass
+    _MESH_WORKER_REGISTRY.clear()
+
 class _SwarmMeshClientWorker(QThread):
     """Background asyncio worker maintaining a persistent WebSocket to the Swarm Relay."""
     swarm_message_ready = pyqtSignal(str)
@@ -152,19 +190,48 @@ class _SwarmMeshClientWorker(QThread):
         self._send_queue = Queue()
         self._loop = None
         self._running = True
+        # Register with strong ref so drain can find us even after GC
+        _MESH_WORKER_REGISTRY.append(self)
 
     def send_to_swarm(self, message: dict):
         self._send_queue.put(json.dumps(message))
 
     def run(self):
+        self.setTerminationEnabled(True)  # allow terminate() to work
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._client_loop())
+        try:
+            self._loop.run_until_complete(self._client_loop())
+        except (RuntimeError, asyncio.CancelledError):
+            # Can occur if the loop is stopped while a future is still pending.
+            pass
+        finally:
+            try:
+                if self._loop is not None and not self._loop.is_closed():
+                    # Cancel all remaining tasks before closing
+                    pending = asyncio.all_tasks(self._loop)
+                    for task in pending:
+                        task.cancel()
+                    if pending:
+                        try:
+                            self._loop.run_until_complete(
+                                asyncio.gather(*pending, return_exceptions=True)
+                            )
+                        except Exception:
+                            pass
+                    self._loop.close()
+            except Exception:
+                pass
+            # Remove from global registry now that thread is done
+            try:
+                _MESH_WORKER_REGISTRY.remove(self)
+            except (ValueError, Exception):
+                pass
 
     async def _client_loop(self):
         while self._running:
             try:
-                async with websockets.connect(self.uri) as ws:
+                async with websockets.connect(self.uri, open_timeout=2) as ws:
                     self.connection_status.emit(True)
                     # Announce presence
                     await ws.send(json.dumps({"type": "REGISTER", "sender": self.architect_id}))
@@ -199,13 +266,28 @@ class _SwarmMeshClientWorker(QThread):
                         except (asyncio.CancelledError, websockets.exceptions.ConnectionClosed, Exception):
                             pass
 
-            except Exception as e:
+            except Exception:
                 self.connection_status.emit(False)
-                await asyncio.sleep(2)  # Reconnect backoff
+                # Reconnect backoff: poll _running every 100ms so stop() exits quickly
+                for _ in range(20):  # 20 × 100ms = 2s max backoff
+                    if not self._running:
+                        return
+                    await asyncio.sleep(0.1)
 
     def stop(self):
+        """Signal the asyncio client to exit and wake the loop immediately."""
         self._running = False
-        self.wait()
+        # Wake the asyncio loop so it exits the sleep/wait immediately instead
+        # of blocking for up to 2s (reconnect backoff) or 8s (our old wait).
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except Exception:
+                pass
+        if self.isRunning() and not self.wait(3000):
+            self.terminate()
+            self.wait(1000)
 
 
 
@@ -263,11 +345,16 @@ class GlobalCognitiveInterface(QWidget):
 
         # Build UI first so status labels exist before the mesh thread emits.
         self._mesh_connected = False
-        self._mesh_client = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id=self.architect_id)
-        self._mesh_client.swarm_message_ready.connect(self._on_swarm_message)
-        self._mesh_client.connection_status.connect(self._on_swarm_status)
+        _disable_mesh = os.environ.get("SIFTA_DISABLE_MESH", "").strip().lower() in ("1", "true", "yes")
+        if not _disable_mesh:
+            self._mesh_client = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id=self.architect_id)
+            self._mesh_client.swarm_message_ready.connect(self._on_swarm_message)
+            self._mesh_client.connection_status.connect(self._on_swarm_status)
+        else:
+            self._mesh_client = None
         self._build_ui()
-        self._mesh_client.start()
+        if not _disable_mesh and self._mesh_client is not None:
+            self._mesh_client.start()
         # Top CWMS memory trace_id for this turn → fitness feedback after model returns
         self._outcome_memory_trace_id: Optional[str] = None
 
@@ -275,6 +362,24 @@ class GlobalCognitiveInterface(QWidget):
     def mesh_connected(self) -> bool:
         """True when Layer 2 WebSocket to SWARM_RELAY_URI is up (same source as taskbar)."""
         return getattr(self, "_mesh_connected", False)
+
+    def closeEvent(self, event):
+        for attr in ("_mesh_client", "_worker", "_ctx_worker"):
+            worker = getattr(self, attr, None)
+            if worker is None:
+                continue
+            try:
+                if hasattr(worker, "stop"):
+                    worker.stop()
+                elif worker.isRunning():
+                    worker.requestInterruption()
+                    worker.quit()
+                    if not worker.wait(2000):
+                        worker.terminate()
+                        worker.wait(1000)
+            except Exception:
+                pass
+        super().closeEvent(event)
 
     def set_app_context(self, context: str):
         """Apps call this to inject live state into ALICE's LLM prompt.
@@ -520,12 +625,13 @@ class GlobalCognitiveInterface(QWidget):
                 if mem:
                     memory_context = "\n\n" + mem
                     # ── LAYER 2: Shared Cross-Node Recall ────────────────
-                    self._mesh_client.send_to_swarm({
-                        "type": "MEMORY_HINT",
-                        "sender": self.architect_id,
-                        "target": "ALL",
-                        "text": mem.splitlines()[0][:120] + "..."
-                    })
+                    if self._mesh_client is not None:
+                        self._mesh_client.send_to_swarm({
+                            "type": "MEMORY_HINT",
+                            "sender": self.architect_id,
+                            "target": "ALL",
+                            "text": mem.splitlines()[0][:120] + "..."
+                        })
             except Exception:
                 # Fallback to unconstrained recall if CWMS fails
                 try:
@@ -543,7 +649,8 @@ class GlobalCognitiveInterface(QWidget):
             "text": text,
             "context": self.app_context
         }
-        self._mesh_client.send_to_swarm(mesh_payload)
+        if self._mesh_client is not None:
+            self._mesh_client.send_to_swarm(mesh_payload)
 
         # 4. Dispatch to local Ollama (Parallel Swarm)
         if self._worker and self._worker.isRunning():
@@ -658,12 +765,13 @@ class GlobalCognitiveInterface(QWidget):
 
     def _on_context_finished(self):
         if hasattr(self, "_ctx_worker") and self._ctx_worker.intent_found:
-            self._mesh_client.send_to_swarm({
-                "type": "MEMORY_HINT",
-                "sender": f"SWARM_INTENT_{self.architect_id}",
-                "target": "ALL",
-                "text": f"Subtext: {self._ctx_worker.intent_found}"
-            })
+            if self._mesh_client is not None:
+                self._mesh_client.send_to_swarm({
+                    "type": "MEMORY_HINT",
+                    "sender": f"SWARM_INTENT_{self.architect_id}",
+                    "target": "ALL",
+                    "text": f"Subtext: {self._ctx_worker.intent_found}"
+                })
 
     def _on_response(self, text: str):
         tid = getattr(self, "_outcome_memory_trace_id", None)
