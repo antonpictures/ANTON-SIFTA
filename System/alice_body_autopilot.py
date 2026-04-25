@@ -751,7 +751,8 @@ def _main() -> None:
         print(json.dumps(ensure_autonomic_services(boot_channel=args.boot_channel), indent=2))
         return
     try:
-        hw_kwargs = json.loads(args.hw_args)
+        raw_args = sys.stdin.read() if args.hw_args == "-" else args.hw_args
+        hw_kwargs = json.loads(raw_args)
     except Exception as exc:
         print(json.dumps({"ok": False, "error": f"bad --hw-args: {exc}"}))
         return
