@@ -436,6 +436,66 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "source",               # producer label (cli|daemon|cortex|...)
     },
 
+    # Incoming iMessage rows mapped by the SIFTA background receptor.
+    # Alice natively reads from this inbox if she has the active app context.
+    "imessage_inbox.jsonl": {
+        "schema",
+        "source",
+        "transport",
+        "direction",
+        "ts",
+        "rowid",
+        "source_handle_sha256",
+        "is_from_me",
+        "text",
+        "message_sha256",
+        "processed",
+        "signature",
+    },
+
+    # Incoming WhatsApp rows queued by the HTTP ingestion server.
+    "whatsapp_inbox.jsonl": {
+        "schema",
+        "source",
+        "transport",
+        "direction",
+        "ts",
+        "from_jid",
+        "name",
+        "text",
+        "message_sha256",
+        "processed",
+        "signature",
+    },
+
+    "whatsapp_ingress_receipts.jsonl": {
+        "event_kind",
+        "ts",
+        "schema",
+        "source",
+        "consumer",
+        "from_jid",
+        "message_sha256",
+        "inbox_signature",
+        "dry_run",
+        "accepted",
+        "receipt_hash",
+    },
+
+    "imessage_ingress_receipts.jsonl": {
+        "event_kind",
+        "ts",
+        "schema",
+        "source",
+        "consumer",
+        "rowid",
+        "message_sha256",
+        "inbox_signature",
+        "dry_run",
+        "accepted",
+        "receipt_hash",
+    },
+
     # Self-restart events — written by System/swarm_self_restart.py
     # Every Alice-initiated restart (app scope or full Mac scope) appends one
     # row so the Architect can audit when, why, and at what scope she rebooted.
@@ -478,6 +538,18 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "dry_run",
         "accepted",
         "receipt_hash",
+    },
+
+    # Outbound WhatsApp effectors — written by System/whatsapp_bridge_autopilot.py
+    "whatsapp_bridge_trace.jsonl": {
+        "event_kind",
+        "schema",
+        "ts",
+        "target",
+        "text",
+        "ok",
+        "status",
+        "result",
     },
 
     # Outbound iPhone/Messages.app effectors — written by

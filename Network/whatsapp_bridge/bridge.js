@@ -22,6 +22,36 @@ const MAX_WA_TEXT_TO_SIFTA = 8192;
 const MAX_INJECT_BODY = 16384;
 const INJECT_KEY = process.env.SIFTA_BRIDGE_INJECT_KEY || "";
 let lastKnownHuman = null;
+let injectServerStarted = false;
+
+function cleanContact(contact) {
+  return {
+    jid: contact?.id || contact?.jid || "",
+    display_name: contact?.name || contact?.notify || contact?.verifiedName || "",
+    name: contact?.name || "",
+    notify: contact?.notify || "",
+    verified_name: contact?.verifiedName || "",
+  };
+}
+
+function postContactsToSifta(contacts) {
+  if (!Array.isArray(contacts) || contacts.length === 0) return;
+  const cleanContacts = contacts.map(cleanContact).filter((contact) => contact.jid);
+  if (cleanContacts.length === 0) return;
+
+  console.log(`\n[🌊 SWARM BRIDGE] Syncing ${cleanContacts.length} contacts to SIFTA brain...`);
+  const payload = JSON.stringify({ contacts: cleanContacts });
+  const req = http.request("http://localhost:7434/contacts", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(payload),
+    },
+  });
+  req.on("error", () => {});
+  req.write(payload);
+  req.end();
+}
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState("./whatsapp_session");
@@ -31,6 +61,7 @@ async function connectToWhatsApp() {
     version,
     auth: state,
     printQRInTerminal: false,
+    syncFullHistory: true,
   });
 
   sock.ev.on("connection.update", async (update) => {
@@ -65,6 +96,12 @@ async function connectToWhatsApp() {
   });
 
   sock.ev.on("creds.update", saveCreds);
+
+  sock.ev.on("contacts.upsert", postContactsToSifta);
+  sock.ev.on("contacts.update", postContactsToSifta);
+  sock.ev.on("messaging-history.set", ({ contacts }) => {
+    postContactsToSifta(contacts || []);
+  });
 
   // Track IDs of messages the Swarm sent, to avoid replying to its own replies
   const sentBySwarm = new Set();
@@ -103,7 +140,12 @@ async function connectToWhatsApp() {
       console.log(`\n[📲 INCOMING] type=${type} fromMe=${msg.key.fromMe} from=${from}`);
       console.log(`  Message: "${text}"`);
 
-      const payload = JSON.stringify({ from, text: safeText });
+      const payload = JSON.stringify({
+        from,
+        text: safeText,
+        name: msg.pushName || msg.verifiedBizName || "",
+        fromMe: Boolean(msg.key.fromMe),
+      });
 
       const req = http.request(SIFTA_SERVER, {
         method: "POST",
@@ -148,6 +190,7 @@ async function connectToWhatsApp() {
   });
 
   // ── AUTONOMOUS INJECTION SERVER ───────────────────────────
+  if (!injectServerStarted) {
   const injectServer = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/system_inject') {
         if (INJECT_KEY && req.headers["x-sifta-inject-key"] !== INJECT_KEY) {
@@ -162,17 +205,18 @@ async function connectToWhatsApp() {
         req.on('end', async () => {
             try {
                 const data = JSON.parse(body);
-                if (lastKnownHuman) {
-                    await sock.sendPresenceUpdate("composing", lastKnownHuman);
+                const targetJid = data.to || lastKnownHuman;
+                if (targetJid) {
+                    await sock.sendPresenceUpdate("composing", targetJid);
                     await new Promise(r => setTimeout(r, 1200));
-                    await sock.sendPresenceUpdate("paused", lastKnownHuman);
-                    const sent = await sock.sendMessage(lastKnownHuman, { text: data.text });
+                    await sock.sendPresenceUpdate("paused", targetJid);
+                    const sent = await sock.sendMessage(targetJid, { text: data.text });
                     if (sent?.key?.id) {
                         sentBySwarm.add(sent.key.id);
                     }
-                    console.log(`\n[💉 AUTONOMOUS INJECT] Pushed Wormhole message to WhatsApp: ${data.text.substring(0,60)}...`);
+                    console.log(`\n[💉 AUTONOMOUS INJECT] Pushed Wormhole message to ${targetJid}: ${data.text.substring(0,60)}...`);
                 } else {
-                    console.log(`\n[💉 AUTONOMOUS INJECT] Failed. No human contact history recorded yet.`);
+                    console.log(`\n[💉 AUTONOMOUS INJECT] Failed. No target JID provided and no human contact history recorded yet.`);
                 }
                 res.writeHead(200, {"Content-Type": "application/json"});
                 res.end(JSON.stringify({ok: true}));
@@ -189,11 +233,13 @@ async function connectToWhatsApp() {
   });
   
   injectServer.listen(3001, "127.0.0.1", () => {
+      injectServerStarted = true;
       console.log("[🌊 SWARM BRIDGE] Autonomous Injection Server on 127.0.0.1:3001 (LAN-safe bind)");
       if (!INJECT_KEY) {
         console.log("[!] Set SIFTA_BRIDGE_INJECT_KEY to require X-Sifta-Inject-Key on /system_inject");
       }
   });
+  }
 }
 
 console.log("[🌊 SIFTA BRIDGE] Booting WhatsApp connection...");

@@ -445,6 +445,12 @@ except Exception:
     def _persona_summary_fn() -> str:
         return "persona_signed=false"
 
+try:
+    from System.swarm_persona_identity import greeting_line as _persona_greeting_fn
+except Exception:
+    def _persona_greeting_fn() -> str:
+        return "Online."
+
 from System.swarm_prompt_contract import minimal_runtime_contract, tool_affordances_for_turn
 
 _TIME_QUERY_RE = re.compile(
@@ -461,6 +467,11 @@ _TIME_QUERY_RE = re.compile(
 _TIME_UNAVAILABLE_REPLY = (
     "George, I currently don't have access to time; you have to keep adding "
     "some code in the computers, so it gives me access to real time."
+)
+
+_EMPTY_BRAIN_RECOVERY_REPLY = (
+    "I heard you. I lost the reasoning thread for a second; repeat that last "
+    "part and I will stay with it."
 )
 
 
@@ -495,6 +506,11 @@ def _current_time_reply_for_alice() -> str:
     else:
         source_phrase = f"from {source}"
     return f"George, it is {local_human}{tz_suffix}. I got that {source_phrase}."
+
+
+def _empty_brain_recovery_reply(_prior_user_text: str = "") -> str:
+    """Short live-demo recovery when the model returns whitespace."""
+    return _EMPTY_BRAIN_RECOVERY_REPLY
 
 def _current_system_prompt(
     *, user_active: bool = False, grounding_focus: str = None, user_text: str = ""
@@ -1810,6 +1826,13 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    whatsapp_world_block = ""
+    try:
+        from System.whatsapp_bridge_autopilot import summary_for_alice as _whatsapp_summary
+        whatsapp_world_block = _whatsapp_summary() or ""
+    except Exception:
+        pass
+
     # ── Epoch 17 Nugget Taxidermist (AO46) ────────────────────────────────────
     # Surfaces how many paid API responses were retroactively preserved as
     # stigmergic knowledge. Knowledge compounds; nothing evaporates.
@@ -1861,6 +1884,7 @@ def _build_swarm_context() -> str:
         pass
 
     parts = [b for b in (time_oracle_block, attention_block,
+                         whatsapp_world_block,
                          persona_identity_block,
                          swarm_block, cobuilder_block, ssp_context_block,
                          immune_context_block, ghost_context_block,
@@ -2012,15 +2036,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.make_timer(80, self._decay_level)
         # Synaptic Tap: poll the iMessage inbox
         self.make_timer(2000, self._poll_imessage_inbox)
+        # WhatsApp Ingress: poll the WhatsApp queue
+        self.make_timer(2000, self._poll_whatsapp_inbox)
         self._level_target = 0.0
         self._level_current = 0.0
 
         # Greet the user. Greeting comes from the signed persona organ
         # so renaming the persona auto-updates the chat greeting.
         try:
-            _greeting = _persona_greeting_fn()
+            _greeting = (_persona_greeting_fn() or "").strip()
         except Exception:
-            _greeting = "[UNKNOWN]"
+            _greeting = "Online."
+        if not _greeting or _greeting == "[UNKNOWN]":
+            _greeting = "Online."
         self._append_alice_line(_greeting)
         self.set_status("Starting always-on listener…")
 
@@ -2121,6 +2149,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         except Exception as e:
             print(f"Error polling imessage inbox: {e}")
+
+    def _poll_whatsapp_inbox(self) -> None:
+        """Ingest one schema-validated WhatsApp row, if present."""
+        if self._busy:
+            return
+
+        try:
+            from System.swarm_whatsapp_receptor import consume_next_inbox_message
+
+            dry_run = bool(
+                getattr(self, "_whatsapp_ingress_dry_run", False)
+                or os.environ.get("SIFTA_WHATSAPP_INGRESS_DRY_RUN")
+            )
+            result = consume_next_inbox_message(dry_run=dry_run)
+            if not result.get("accepted"):
+                return
+
+            contact_name = result.get("name") or "Human"
+            annotated_msg = f"[WhatsApp {contact_name}]: {result['text']}"
+            self._append_user_line(annotated_msg)
+            if dry_run:
+                return
+
+            self._busy = True
+            self._set_pill("thinking", "● thinking…")
+            QTimer.singleShot(100, lambda: self._start_brain(annotated_msg))
+
+        except Exception as e:
+            print(f"Error polling whatsapp inbox: {e}")
 
     def _start_listener(self) -> None:
         if self._listener is not None:
@@ -2353,9 +2410,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         Pipeline (DYOR §B.3 — model is proposer, SSP is gate):
           1. Strip reflective-listening tics from the candidate.
-          2. If the model emitted an explicit silence marker OR the reply
-             is empty after stripping → treat as model-side silence
-             (logged honestly, no SSP call needed).
+          2. If the model emitted an explicit silence marker, treat it as
+             model-side silence. If it returned whitespace, recover with a
+             short visible repair line so live demos do not appear frozen.
           3. Otherwise consult Stigmergic Speech Potential. If the body's
              field is below firing threshold OR the listener is still
              talking, suppress vocalization and log the biological reason.
@@ -2586,7 +2643,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     from System.swarm_persona_identity import identity_assertion_line as _persona_assertion
                     cleaned = _persona_assertion()
                 except Exception:
-                    cleaned = "[UNKNOWN]"
+                    cleaned = "identity: display_name=Alice"
                 self._epistemic_retry_depth = 0
         except Exception:
             # Epistemic cortex should be visible when degraded; do not fail silently.
@@ -2635,7 +2692,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                           "<silent_acknowledge>" in raw.lower() or \
                           rlhf_gag or stigmergic_override
                           
-        if explicit_silent or not cleaned:
+        if not explicit_silent and not cleaned:
+            cleaned = _empty_brain_recovery_reply(prior_user_text)
+            self._streaming_response = [cleaned]
+
+        if explicit_silent:
             raw_preview = (raw or "").strip().replace("\n", "\\n")[:60]
             if stigmergic_override:
                 note = f"(silent: stigmergic ingest mode override; raw={raw_preview!r})"

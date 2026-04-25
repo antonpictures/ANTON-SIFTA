@@ -498,6 +498,8 @@ def ensure_autonomic_services(*, boot_channel: str = "manual") -> Dict[str, Any]
         "arch.present", "arch.thresholds", "arch.history",
         # Synaptic Ping (iPhone Effector, Vector C, C47H 2026-04-23)
         "iphone.send_swimmer", "iphone.send_text",
+        # WhatsApp Effector
+        "whatsapp.send",
     ]
     _STATE.mkdir(parents=True, exist_ok=True)
     _STATEFILE.write_text(json.dumps(snap, indent=2))
@@ -661,6 +663,17 @@ def govern(
             iphone_kwargs.setdefault("source", "System.alice_body_autopilot")
             return {"ok": True, "action": action,
                     "result": ie.govern(verb, **iphone_kwargs)}
+        except Exception as exc:
+            return {"ok": False, "action": action,
+                    "error": f"{type(exc).__name__}: {exc}"}
+
+    # WhatsApp Effector (M5 Queen Node Integration)
+    if action.startswith("whatsapp."):
+        verb = "send_whatsapp" if action == "whatsapp.send" else action[9:]
+        try:
+            from System import whatsapp_bridge_autopilot as wa  # type: ignore
+            return {"ok": True, "action": action,
+                    "result": wa.govern(verb, **(hw_kwargs or {}))}
         except Exception as exc:
             return {"ok": False, "action": action,
                     "error": f"{type(exc).__name__}: {exc}"}
