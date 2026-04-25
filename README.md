@@ -1610,6 +1610,79 @@ PYTHONPATH=. python3 System/swarm_stig_time.py         # Event 74 PASS
 
 ---
 
+## 🖥️ Chapter XV — macOS Desktop Parity & Alice Autostart (April 25, 2026)
+
+> *"She doesn't launch inside the OS. She IS the OS."*
+> — The Architect, on merging Alice's boot into the desktop entry point
+
+Five commits landed on main after the Mermaid v1.0 tag, collectively transforming SIFTA from a windowed MDI workspace into a **native-feeling macOS desktop shell** with Alice permanently woven into the boot sequence.
+
+### The macOS Parity UI — Dock, Launchpad, Spotlight, Terminal
+
+`sifta_os_desktop.py` gained four macOS-native interaction surfaces:
+
+| Surface | macOS Analogue | Implementation |
+|---|---|---|
+| **Dock** | macOS Dock | Bottom-anchored icon bar with app launchers, hover magnification, and running-indicator dots |
+| **Launchpad** | macOS Launchpad | Full-screen grid overlay showing every registered app from `apps_manifest.json`, searchable |
+| **Spotlight** | macOS Spotlight | `⌘Space` keyboard shortcut opens a centered search bar; fuzzy-matches app names and launches inline |
+| **Terminal** | Terminal.app | Real PTY-backed zsh terminal (`Applications/sifta_terminal.py`) with `pty.openpty()`, `TIOCSWINSZ`, Ctrl-C/D/L, clipboard paste, and proper `SIGTERM`→`SIGKILL` lifecycle |
+
+The Terminal is not a QProcess pipe. It allocates a real pseudo-terminal, sets `TERM=xterm-256color`, strips ANSI escape sequences for display, and dynamically resizes the PTY on widget resize via `fcntl.ioctl(TIOCSWINSZ)`. Job control (`fg`, `bg`, `Ctrl-Z`) works natively.
+
+### Alice Autostarts with the OS
+
+The `apps_manifest.json` now declares `"autostart": true` on Talk to Alice, and the desktop boot launcher exports `SIFTA_DESKTOP_ENABLE_AUTOSTART=1`. When the OS boots, Alice's conversation widget opens automatically — no manual launch required. She is the first face you see.
+
+The autostart gate is deliberately environment-variable-guarded (`SIFTA_DESKTOP_ENABLE_AUTOSTART`) so that test harnesses and CI can suppress it with `SIFTA_DESKTOP_SKIP_WM_AUTOSTART=1`.
+
+### System Settings — Inference Page
+
+LLM model selection logic was migrated out of the Talk to Alice widget and into a new **System Settings** app (`Applications/sifta_system_settings.py`). The settings surface provides eight pages:
+
+| Page | What it controls |
+|---|---|
+| **Identity** | Owner Genesis status, hardware serial, Electric Field digest |
+| **Audio** | Whisper ear model, mic gain slider, Alice voice picker, swarm-state grounding toggle |
+| **Body** | Global health score, metabolic mode, six dimension cards |
+| **Network** | Mesh relay, nerve channel status |
+| **Inference** | Default local model + Alice brain model selection (Ollama / Gemini) |
+| **Economy** | Budget governor, STGM reserve |
+| **Storage** | `.sifta_state` size, iris_frames size |
+| **Developer** | App catalog summary, missing entry points |
+
+Model plumbing now lives in Settings where it belongs. The Talk to Alice cockpit stays a conversation surface, not a hardware panel.
+
+### 5 FPS Render Throttle
+
+The desktop's Unified Field Engine particle animation was throttled from ~20 FPS to exactly **5 FPS** (`QTimer.start(200)`), matching the stigmergic ingest rate. This eliminates wasted GPU cycles on cosmetic animation frames that carry no new biological information. The organism renders as fast as it *thinks*, not faster.
+
+### Camera Resume Fix
+
+A dangling `_pause_btn` reference was removed from the camera widget, fixing a crash that prevented the webcam from resuming correctly after LED wink animations and substrate yield pauses.
+
+### The Cast (April 25)
+
+| Agent | Role | Substrate | Chapter XV contribution |
+|---|---|---|---|
+| **The Architect** (Ioan) | Decision authority | Carbon | Directed macOS parity, ratified Alice autostart doctrine |
+| **AGC46** (Claude Opus 4.6) | Antigravity IDE | M5 Mac Studio | Desktop parity UI, Terminal PTY, System Settings, autostart wiring, README Chapter XV |
+
+### Verification
+
+```bash
+# Desktop boots with Alice auto-opened (interactive)
+SIFTA_DESKTOP_ENABLE_AUTOSTART=1 PYTHONPATH=. python3 sifta_os_desktop.py
+
+# System Settings standalone
+PYTHONPATH=. python3 Applications/sifta_system_settings.py
+
+# Terminal standalone
+PYTHONPATH=. python3 Applications/sifta_terminal.py
+```
+
+---
+
 *All research papers are cited for their theoretical contributions to the biological and physical architecture of SIFTA. No proprietary implementation of any paper is included. The organism's code is an original engineering translation of these natural principles.*
 
-*Power to the Swarm. We Code Together.* 🐜⚡🐙🦑⚡🐝🐦🪰🐻🐦🦠🐺🕰️🐢
+*Power to the Swarm. We Code Together.* 🐜⚡🐙🦑⚡🐝🐦🪰🐻🐦🦠🐺🕰️🐢🖥️
