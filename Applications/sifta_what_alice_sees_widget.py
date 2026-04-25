@@ -543,6 +543,10 @@ class _VideoCanvas(QWidget):
 
     # ── Frame ingest ───────────────────────────────────────────────────────
     def on_video_frame(self, frame) -> None:  # type: ignore[no-untyped-def]
+        now = time.time()
+        if now - self._last_ledger_ts < self._LEDGER_PERIOD_S:
+            return
+
         if not frame.isValid():
             return
         try:
@@ -559,11 +563,8 @@ class _VideoCanvas(QWidget):
         if ph is not None:
             self._photon = ph
             self._last_sha8 = ph.sha8
-
-            # Throttled ledger write — the swarm doesn't need 30 Hz photon vectors.
-            if ph.ts - self._last_ledger_ts >= self._LEDGER_PERIOD_S:
-                self._last_ledger_ts = ph.ts
-                _write_visual_stigmergy(ph)
+            self._last_ledger_ts = ph.ts
+            _write_visual_stigmergy(ph)
 
         # Measured FPS over a rolling 1-second window.
         self._fps_window_n += 1
