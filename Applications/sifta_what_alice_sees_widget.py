@@ -761,22 +761,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._cam_combo.setMinimumWidth(280)
         self._cam_combo.currentIndexChanged.connect(self._on_cam_changed)
         bar.addWidget(self._cam_combo, 1)
-
-        self._pause_btn = QPushButton("⏸  Pause")
-        self._pause_btn.setCheckable(True)
-        self._pause_btn.toggled.connect(self._on_pause_toggled)
-        bar.addWidget(self._pause_btn)
-
-        self._overlay_btn = QPushButton("👁 stigmergy ON")
-        self._overlay_btn.setCheckable(True)
-        self._overlay_btn.setChecked(True)
-        self._overlay_btn.toggled.connect(self._on_overlay_toggled)
-        bar.addWidget(self._overlay_btn)
-
-        btn_refresh = QPushButton("↻ refresh")
-        btn_refresh.clicked.connect(self._refresh_cameras)
-        bar.addWidget(btn_refresh)
-
+        # Stigmergy overlay is always ON — no toggle needed
+        bar.addStretch()
         layout.addLayout(bar)
 
         # ── Photon Density Slider (Architect 2026-04-20: "she sees big
@@ -859,6 +845,24 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._media_devs = QMediaDevices(self)
         self._media_devs.videoInputsChanged.connect(self._refresh_cameras)
 
+        # ── Oculomotor/body identity state ─────────────────────────────────
+        # These must exist before timers start or _refresh_cameras() selects
+        # a camera. Qt can synchronously fire currentIndexChanged during first
+        # selection, which calls _on_cam_changed() and reads this guard.
+        self._root = Path("/Users/ioanganton/Music/ANTON_SIFTA")
+        self._saccade_target_json_path = (
+            self._root / ".sifta_state" / "active_saccade_target.json"
+        )
+        # Legacy .txt watched only so we still re-poll when something old
+        # touches it; canonical reader auto-heals it into JSON on next read.
+        self._saccade_target_path = (
+            self._root / ".sifta_state" / "active_saccade_target.txt"
+        )
+        self._yield_lock_path = self._root / ".sifta_state" / "camera_yield.lock"
+        self._last_saccade_signature: Optional[str] = None
+        self._applying_saccade_target: bool = False
+        self._yielded = False
+
         # ── Pollers for external state ─────────────────────────────────────
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._poll_ledgers)
@@ -916,18 +920,6 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         # inside "USB Camera VID:1133 PID:2081" and pinned the Logitech.
         # Now reads the canonical JSON target and resolves by
         # unique_id → name → index against the live combobox itemData/text.
-        self._root = Path("/Users/ioanganton/Music/ANTON_SIFTA")
-        self._saccade_target_json_path = (
-            self._root / ".sifta_state" / "active_saccade_target.json"
-        )
-        # Legacy .txt watched only so we still re-poll when something old
-        # touches it; canonical reader auto-heals it into JSON on next read.
-        self._saccade_target_path = (
-            self._root / ".sifta_state" / "active_saccade_target.txt"
-        )
-        self._yield_lock_path = self._root / ".sifta_state" / "camera_yield.lock"
-        self._last_saccade_signature: Optional[str] = None
-        self._yielded = False
         self.make_timer(500, self._poll_saccade_target)
 
     # ── Camera plumbing ────────────────────────────────────────────────────
@@ -1011,9 +1003,11 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._camera.errorOccurred.connect(self._on_camera_error)
         self._session.setCamera(self._camera)
         self._canvas.set_device_label(target.description())
-        if not self._pause_btn.isChecked():
-            self._camera.start()
+        self._camera.start()
         self.set_status(f"Camera: {target.description()}")
+
+        if self._applying_saccade_target:
+            return
 
         # Publish the new selection back to the canonical eye target ledger
         # so swarm_iris and Alice's prompt agree with the visible widget.
@@ -1080,8 +1074,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             pass
 
     def _on_overlay_toggled(self, on: bool) -> None:
-        self._overlay_btn.setText("👁 stigmergy ON" if on else "👁 stigmergy OFF")
-        self._canvas.set_overlay_visible(on)
+        # Kept for compatibility — overlay is always ON
+        self._canvas.set_overlay_visible(True)
 
     def _on_density_changed(self, value: int) -> None:
         """Slider moved — reconfigure Alice's photon density in real-time."""
@@ -1098,18 +1092,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         )
 
     def _on_pause_toggled(self, paused: bool) -> None:
-        self._pause_btn.setText("▶ Resume" if paused else "⏸  Pause")
-        if self._camera is None:
-            return
-        try:
-            if paused:
-                self._camera.stop()
-                self.set_status("Paused.")
-            else:
-                self._camera.start()
-                self.set_status("Live.")
-        except Exception:
-            pass
+        # Buttons removed — camera is always live
+        pass
 
     def _on_frame_meta(self, w: int, h: int, sha8: str) -> None:
         # Cheap status without recreating it every frame; only update if changed.
@@ -1123,9 +1107,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         wink the camera LED. Skipped while the user has manually paused."""
         if self._camera is None:
             return
-        if self._pause_btn.isChecked():
-            return
-        if self._led_blinking:
+        if self._led_blinking:  # never paused — LED wink always allowed
             return
         path = self._motor_pulse_path
         if not path.exists():
@@ -1173,7 +1155,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
     def _unwink_led(self) -> None:
         try:
-            if self._camera is not None and not self._pause_btn.isChecked():
+            if self._camera is not None:
                 self._camera.start()
         except Exception:
             pass
@@ -1215,7 +1197,11 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             )
             return
         if self._cam_combo.currentIndex() != target_idx:
-            self._cam_combo.setCurrentIndex(target_idx)
+            self._applying_saccade_target = True
+            try:
+                self._cam_combo.setCurrentIndex(target_idx)
+            finally:
+                self._applying_saccade_target = False
             chosen = self._cam_combo.itemText(target_idx)
             self._canvas.set_chyron(
                 f"🔥 SACCADE FIRED: Snapping hardware to {chosen}",
@@ -1263,7 +1249,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         elif not should_yield and self._yielded:
             self._yielded = False
             append_ledger_line(_REPAIR_LEDGER, {"event": "CAMERA_YIELD_STOP", "agent": "ALICE_M5", "reason": "Substrate closure protocol complete"})
-            if self._camera is not None and not self._pause_btn.isChecked():
+            if self._camera is not None:
                 self._camera.start()
             self._canvas.update()
 
