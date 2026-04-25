@@ -45,9 +45,19 @@ class TopologyConfig:
     alignment_weight: float = 0.6
     cohesion_weight: float = 0.25
     separation_weight: float = 0.35
+    # Metric falloff for separation (Ballerini-style topology still uses KNN,
+    # but repulsion weakens exponentially beyond this scale length).
+    # Default is huge so unit-square proofs match legacy 1/dist separation.
+    separation_scale: float = 1.0e9
     inertia_weight: float = 0.7
     max_speed: float = 0.05
     eps: float = 1e-8
+
+    def __post_init__(self) -> None:
+        if self.k_neighbors <= 0:
+            raise ValueError("k_neighbors must be positive")
+        if self.separation_scale <= 0:
+            raise ValueError("separation_scale must be positive")
 
 
 class TopologicalSwarmOptimizer:
@@ -67,6 +77,12 @@ class TopologicalSwarmOptimizer:
     def step(self, positions: np.ndarray, velocities: np.ndarray) -> np.ndarray:
         positions = np.asarray(positions, dtype=np.float32)
         velocities = np.asarray(velocities, dtype=np.float32)
+        if positions.ndim != 2 or velocities.ndim != 2:
+            raise ValueError("positions and velocities must be 2D arrays")
+        if positions.shape != velocities.shape:
+            raise ValueError("velocities must match positions shape")
+        if positions.shape[1] != 2:
+            raise ValueError("positions must be Nx2 vectors")
         N = len(positions)
         
         if N <= 1:
@@ -93,8 +109,9 @@ class TopologicalSwarmOptimizer:
             # --- Separation ---
             delta = positions[i] - neigh_pos
             dist = np.linalg.norm(delta, axis=1, keepdims=True) + self.cfg.eps
-            # Bishop's formula: sum of unit vectors
-            separation = np.sum(delta / dist, axis=0)
+            # Unit repulsion damped by distance so far topological partners do not tug.
+            falloff = np.exp(-dist / self.cfg.separation_scale)
+            separation = np.sum((delta / dist) * falloff, axis=0)
 
             # --- Calculate topological force ---
             topological_force = (
@@ -118,6 +135,30 @@ class TopologicalSwarmOptimizer:
             new_vel[i] = v_new
 
         return new_vel.astype(np.float32)
+
+    def blend_with_field(
+        self,
+        positions: np.ndarray,
+        velocities: np.ndarray,
+        gradients: np.ndarray,
+        *,
+        topology_weight: float,
+    ) -> np.ndarray:
+        """
+        Blend topology-smoothed velocity with an external field gradient.
+        topology_weight in [0, 1]: 1 = pure topological step, 0 = pure gradient.
+        """
+        if topology_weight < 0.0 or topology_weight > 1.0:
+            raise ValueError("topology_weight must be in [0, 1]")
+        positions = np.asarray(positions, dtype=np.float32)
+        velocities = np.asarray(velocities, dtype=np.float32)
+        gradients = np.asarray(gradients, dtype=np.float32)
+        if positions.shape != velocities.shape or positions.shape != gradients.shape:
+            raise ValueError("positions, velocities, and gradients must have matching shapes")
+        v_top = self.step(positions, velocities)
+        return (
+            topology_weight * v_top + (1.0 - topology_weight) * gradients
+        ).astype(np.float32)
 
 
 def proof_of_property() -> bool:

@@ -48,10 +48,20 @@ def save_agent_state(state: dict):
         try:
             with open(state_file, "r") as f:
                 old = json.load(f)
-                if "stgm_balance" not in state and "stgm_balance" in old:
-                    state["stgm_balance"] = old["stgm_balance"]
-                if "style" not in state and "style" in old:
-                    state["style"] = old["style"]
+                preserve_keys = (
+                    "stgm_balance",
+                    "style",
+                    "private_key_b64",
+                    "mailbox_private_b64",
+                    "vocation",
+                    "sex",
+                    "raw",
+                    "ttl",
+                    "energy",
+                )
+                for key in preserve_keys:
+                    if key not in state and key in old:
+                        state[key] = old[key]
         except Exception:
             pass
 
@@ -191,6 +201,16 @@ class SwarmBody:
             self.style = saved_state.get("style", "NOMINAL")
             self.private_key_b64 = saved_state.get("private_key_b64")
             self.vocation = saved_state.get("vocation", "DETECTIVE")
+
+            if not self.private_key_b64:
+                priv_key = ed25519.Ed25519PrivateKey.generate()
+                priv_bytes = priv_key.private_bytes(
+                    encoding=serialization.Encoding.Raw,
+                    format=serialization.PrivateFormat.Raw,
+                    encryption_algorithm=serialization.NoEncryption()
+                )
+                self.private_key_b64 = base64.b64encode(priv_bytes).decode('utf-8')
+                saved_state["private_key_b64"] = self.private_key_b64
             
             # Retroactively apply cryptographic sex to the "First Men"
             if "sex" in saved_state:

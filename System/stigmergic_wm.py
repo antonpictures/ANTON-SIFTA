@@ -120,15 +120,58 @@ def neighbors(app_name: str, top_n: int = 5) -> list[tuple[str, float]]:
     return pairs[:top_n]
 
 
-def suggest_position(app_name: str, open_windows: dict[str, tuple[int, int]]) -> tuple[int, int] | None:
-    """Given currently open windows {name: (x,y)}, suggest a position
-    for *app_name* near its strongest neighbor.  Returns (x, y) or None."""
+def suggest_position(
+    app_name: str,
+    open_windows: dict[str, tuple[int, int]],
+    mdi_w: int = 1280,
+    mdi_h: int = 720,
+    win_w: int = 660,
+    win_h: int = 540,
+) -> tuple[int, int]:
+    """Return (x, y) for a new window — never stacked on top of another.
+
+    Strategy (macOS-style):
+      1. If the app has a pheromone-strong neighbour that is open, place
+         30 px right and 30 px down from that neighbour (affinity grouping).
+      2. Otherwise use a cascade: each new window is offset (STEP_X, STEP_Y)
+         from the last-opened window.  When the cascade would push the window
+         off the right or bottom edge it wraps back to the origin lane.
+    """
+    STEP_X, STEP_Y = 60, 40
+    ORIGIN_X, ORIGIN_Y = 60, 40
+
+    def clamp(x: int, y: int) -> tuple[int, int]:
+        max_x = max(0, mdi_w - win_w)
+        max_y = max(0, mdi_h - win_h)
+        return (min(max(0, x), max_x), min(max(0, y), max_y))
+
+    # 1. Pheromone affinity
+    occupied = set(open_windows.values())
     nbrs = neighbors(app_name, top_n=3)
     for nbr_name, _strength in nbrs:
         if nbr_name in open_windows:
             ox, oy = open_windows[nbr_name]
-            return (ox + 30, oy + 30)
-    return None
+            candidate = clamp(ox + 30, oy + 30)
+            if candidate not in occupied:
+                return candidate
+
+    # 2. Cascade fallback — find the last-opened window position
+    if open_windows:
+        # take the window that was opened most recently (last in dict)
+        last_x, last_y = list(open_windows.values())[-1]
+        nx = last_x + STEP_X
+        ny = last_y + STEP_Y
+        # wrap horizontally
+        if nx + win_w > mdi_w:
+            nx = ORIGIN_X
+        # wrap vertically
+        if ny + win_h > mdi_h:
+            ny = ORIGIN_Y
+        return clamp(nx, ny)
+
+    # 3. First window of the session: top-left with a small inset
+    return clamp(ORIGIN_X, ORIGIN_Y)
+
 
 
 def ranked_menu(app_names: list[str], anchor: str | None = None) -> list[str]:

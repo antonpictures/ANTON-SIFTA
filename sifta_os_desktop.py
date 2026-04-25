@@ -17,10 +17,11 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QMdiArea, QMdiSubWindow,
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QLabel,
-    QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox, QListWidget, QScrollArea, QSplitter
+    QTextEdit, QFrame, QMenu, QMessageBox, QLineEdit, QComboBox,
+    QListWidget, QListWidgetItem, QScrollArea, QSplitter
 )
 from PyQt6.QtCore import Qt, QPoint, QRect, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QKeySequence, QShortcut
 
 _REPO = Path(__file__).resolve().parent
 _SYS = _REPO / "System"
@@ -117,7 +118,66 @@ def close_parent_subwindow(widget):
     while p is not None and not isinstance(p, QMdiSubWindow):
         p = p.parent()
     if p:
+        p.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         p.close()
+
+
+def _shutdown_qprocess(
+    process,
+    *,
+    polite_input: bytes | None = None,
+    polite_ms: int = 500,
+    terminate_ms: int = 1500,
+    kill_ms: int = 2500,
+) -> None:
+    """Stop a QProcess before Qt object destruction can warn or leak."""
+    if process is None:
+        return
+    try:
+        if process.state() == QProcess.ProcessState.NotRunning:
+            return
+        if polite_input:
+            try:
+                process.write(polite_input)
+                process.closeWriteChannel()
+            except Exception:
+                pass
+            if process.waitForFinished(polite_ms):
+                return
+        process.terminate()
+        if process.waitForFinished(terminate_ms):
+            return
+        process.kill()
+        process.waitForFinished(kill_ms)
+    except RuntimeError:
+        # The C++ object may already be gone during app teardown.
+        return
+
+
+def _shutdown_embedded_widget_tree(root: QWidget | None) -> None:
+    """Drain embedded app resources before a QMdiSubWindow is destroyed."""
+    if root is None:
+        return
+    try:
+        widgets = [root, *root.findChildren(QWidget)]
+    except RuntimeError:
+        return
+    seen: set[int] = set()
+    for widget in widgets:
+        marker = id(widget)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        shutdown = getattr(widget, "shutdown", None)
+        if callable(shutdown):
+            try:
+                shutdown()
+                continue
+            except RuntimeError:
+                continue
+            except Exception:
+                pass
+        _shutdown_qprocess(getattr(widget, "process", None))
 
 
 def _ranges_overlap(a0: int, a1: int, b0: int, b1: int) -> bool:
@@ -250,9 +310,13 @@ class MagneticSubWindow(QMdiSubWindow):
 
         super().moveEvent(event)
 
+    def closeEvent(self, event):
+        _shutdown_embedded_widget_tree(self.widget())
+        super().closeEvent(event)
+
 
 # ──────────────────────────────────────────────────────────────
-# SWARM CHAT WINDOW (Moved to Applications/sifta_swarm_chat.py)
+# Chat window moved to Applications/sifta_swarm_chat.py
 # ──────────────────────────────────────────────────────────────
 
 
@@ -283,7 +347,7 @@ class TerminalSubWindow(QWidget):
         layout.addWidget(self.chat_display)
         self.setLayout(layout)
 
-        self.process = QProcess()
+        self.process = QProcess(self)
         env = QProcessEnvironment.systemEnvironment()
         env.insert("PYTHONPATH", os.getcwd())
         self.process.setProcessEnvironment(env)
@@ -300,10 +364,11 @@ class TerminalSubWindow(QWidget):
         data = self.process.readAllStandardError()
         self.chat_display.append("[ERR] " + bytes(data).decode("utf-8", errors="replace").strip())
 
+    def shutdown(self):
+        _shutdown_qprocess(getattr(self, "process", None), polite_input=b"exit\n")
+
     def closeEvent(self, event):
-        if hasattr(self, "process") and self.process.state() == QProcess.ProcessState.Running:
-            self.process.kill()
-            self.process.waitForFinished(1000)
+        self.shutdown()
         super().closeEvent(event)
 
 
@@ -350,7 +415,7 @@ class EmbeddedScriptSubWindow(QWidget):
         layout.addWidget(self.log)
         self.setLayout(layout)
 
-        self.process = QProcess()
+        self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read_merged)
         self._start()
@@ -375,10 +440,11 @@ class EmbeddedScriptSubWindow(QWidget):
         if txt:
             self.log.append(txt)
 
+    def shutdown(self):
+        _shutdown_qprocess(getattr(self, "process", None))
+
     def closeEvent(self, event):
-        if hasattr(self, "process") and self.process.state() == QProcess.ProcessState.Running:
-            self.process.kill()
-            self.process.waitForFinished(1000)
+        self.shutdown()
         super().closeEvent(event)
 
 
@@ -397,7 +463,7 @@ class SwarmTextEditorWindow(QWidget):
         toolbar.setContentsMargins(0, 0, 0, 0)
 
         self.title = QLabel(f"Editing: {filepath if filepath else 'Untitled.txt'}")
-        self.title.setFont(QFont("Inter", 12, QFont.Weight.Bold))
+        self.title.setFont(QFont("Helvetica Neue", 12, QFont.Weight.Bold))
         self.title.setStyleSheet("color: #7aa2f7;")
         toolbar.addWidget(self.title)
         toolbar.addStretch()
@@ -484,7 +550,7 @@ class VideoEditorSubWindow(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("Sebastian Silence Remover & Stitcher V1.0")
-        title.setFont(QFont("Inter", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Helvetica Neue", 14, QFont.Weight.Bold))
         title.setStyleSheet("color: #7aa2f7;")
         header.addWidget(title)
         header.addStretch()
@@ -535,7 +601,7 @@ class VideoEditorSubWindow(QWidget):
             return
         self.exec_btn.setText("⏳ Processing...")
         self.exec_btn.setEnabled(False)
-        self.process = QProcess()
+        self.process = QProcess(self)
         self.process.readyReadStandardOutput.connect(
             lambda: self.chat_display.append(
                 bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace").strip()
@@ -554,10 +620,11 @@ class VideoEditorSubWindow(QWidget):
         self.exec_btn.setText("🚀 Remove Silence & Stitch Clips")
         self.exec_btn.setEnabled(True)
 
+    def shutdown(self):
+        _shutdown_qprocess(getattr(self, "process", None))
+
     def closeEvent(self, event):
-        if self.process and self.process.state() == QProcess.ProcessState.Running:
-            self.process.kill()
-            self.process.waitForFinished(1000)
+        self.shutdown()
         super().closeEvent(event)
 
 
@@ -567,12 +634,15 @@ class VideoEditorSubWindow(QWidget):
 import math
 import random
 from PyQt6.QtCore import QRectF
-from PyQt6.QtGui import QBrush, QPainter, QPen
+from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap
 
 class SiftaMdiArea(QMdiArea):
     def __init__(self):
         super().__init__()
         self.setBackground(QBrush(QColor("#0d0e17")))
+        self._wallpaper_source = QPixmap()
+        self._wallpaper_cache = QPixmap()
+        self._wallpaper_cache_size = None
         
         try:
             if str(_SYS) not in sys.path:
@@ -608,8 +678,28 @@ class SiftaMdiArea(QMdiArea):
         self.timer.timeout.connect(self.tick)
         self.timer.start(50)
         
-        self.watermark_font = QFont("Inter", 110, QFont.Weight.Black)
+        self.watermark_font = QFont("Helvetica Neue", 110, QFont.Weight.Black)
         self.watermark_sub = QFont("Courier New", 18, QFont.Weight.Bold)
+
+    def set_wallpaper_pixmap(self, pixmap):
+        self._wallpaper_source = pixmap if isinstance(pixmap, QPixmap) else QPixmap()
+        self._wallpaper_cache = QPixmap()
+        self._wallpaper_cache_size = None
+        self.viewport().update()
+
+    def _scaled_wallpaper(self, width, height):
+        if self._wallpaper_source.isNull() or width <= 0 or height <= 0:
+            return QPixmap()
+        size_key = (int(width), int(height), self._wallpaper_source.cacheKey())
+        if self._wallpaper_cache_size != size_key or self._wallpaper_cache.isNull():
+            self._wallpaper_cache = self._wallpaper_source.scaled(
+                width,
+                height,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self._wallpaper_cache_size = size_key
+        return self._wallpaper_cache
 
     def tick(self):
         w, h = self.viewport().width(), self.viewport().height()
@@ -671,25 +761,34 @@ class SiftaMdiArea(QMdiArea):
         self.viewport().update()
 
     def paintEvent(self, event):
+        super().paintEvent(event)
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         rect = event.rect()
-        painter.fillRect(rect, QColor("#080a0f"))
-        
         w, h = self.viewport().width(), self.viewport().height()
+        wallpaper = self._scaled_wallpaper(w, h)
+        has_wallpaper = not wallpaper.isNull()
+        if has_wallpaper:
+            x = int((w - wallpaper.width()) / 2)
+            y = int((h - wallpaper.height()) / 2)
+            painter.drawPixmap(x, y, wallpaper)
+            painter.fillRect(rect, QColor(3, 6, 12, 58))
+        else:
+            painter.fillRect(rect, QColor("#080a0f"))
         
         painter.setPen(QPen(QColor(120, 162, 247, 30), 1))
         for x in range(0, w, 40): painter.drawLine(x, 0, x, h)
         for y in range(0, h, 40): painter.drawLine(0, y, w, y)
+
+        if not has_wallpaper:
+            painter.setFont(self.watermark_font)
+            painter.setPen(QColor(255, 255, 255, 18))
+            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "SIFTA")
             
-        painter.setFont(self.watermark_font)
-        painter.setPen(QColor(255, 255, 255, 18))
-        painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "SIFTA")
-        
-        painter.setFont(self.watermark_sub)
-        painter.setPen(QColor(255, 255, 255, 40))
-        painter.drawText(0, h // 2 + 70, w, 30, Qt.AlignmentFlag.AlignCenter, "STIGMERGIC BIOLOGICAL SWARM")
+            painter.setFont(self.watermark_sub)
+            painter.setPen(QColor(255, 255, 255, 40))
+            painter.drawText(0, h // 2 + 70, w, 30, Qt.AlignmentFlag.AlignCenter, "STIGMERGIC BIOLOGICAL SWARM")
 
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
@@ -699,8 +798,6 @@ class SiftaMdiArea(QMdiArea):
                 c = QColor(125, 207, 255, 45) if p[4] > 5 else QColor(187, 154, 247, 40)
                 painter.setBrush(c)
                 painter.drawEllipse(QRectF(px, py, float(p[4]), float(p[4])))
-                
-        super().paintEvent(event)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -724,75 +821,216 @@ def _sifta_env_mesh_disabled() -> bool:
     return v in ("1", "true", "yes")
 
 
+def _macos_app_category(app_name: str, meta: dict | None) -> str:
+    """Canonical shell category shown by Launchpad and Spotlight."""
+    meta = meta or {}
+    try:
+        from System.sifta_app_catalog import normalize_category
+        return normalize_category(app_name, meta)
+    except Exception:
+        raw = str(meta.get("category", "Utilities")).strip()
+        if raw == "Networking":
+            return "Network"
+        if raw in {"System", "Accessories", "Settings", "Body Status"}:
+            return "Utilities" if raw in {"System", "Accessories"} else "System Settings"
+        return raw or "Utilities"
+
+
 # ── Launchpad / Spotlight (module-level widgets; defined before SiftaDesktop so
 #    the module’s execution order matches import introspection and one source of truth.) ──
 
 
 class LaunchpadWidget(QWidget):
+
+    _TAB_BASE = (
+        "QPushButton { background: rgba(36,40,59,0.7); color: #a9b1d6; "
+        "border: 1px solid #414868; border-radius: 12px; "
+        "padding: 4px 16px; font-size: 13px; font-weight: bold; }"
+        "QPushButton:hover { background: rgba(187,154,247,0.25); color: #c0caf5; }"
+    )
+    _TAB_ACTIVE = (
+        "QPushButton { background: rgba(187,154,247,0.45); color: #ffffff; "
+        "border: 1px solid #bb9af7; border-radius: 12px; "
+        "padding: 4px 16px; font-size: 13px; font-weight: bold; }"
+    )
+
     def __init__(self, desktop):
         super().__init__(desktop)
         self.desktop = desktop
-        self.setStyleSheet("background-color: rgba(10, 10, 15, 0.90);")
+        self._active_cat = "All"
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("background-color: rgba(10, 10, 15, 0.92);")
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(50, 50, 50, 50)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(50, 30, 50, 40)
+        root.setSpacing(14)
 
-        search = QLineEdit()
-        search.setPlaceholderText("Search Apps...")
-        search.setStyleSheet("background: rgba(36, 40, 59, 0.8); color: white; padding: 10px; font-size: 18px; border-radius: 8px;")
-        search.textChanged.connect(self._filter_apps)
-        layout.addWidget(search, alignment=Qt.AlignmentFlag.AlignHCenter)
-        layout.addSpacing(24)
+        title = QLabel("Launchpad")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(
+            "color: #ffffff; font-size: 30px; font-weight: 700;"
+            " font-family: 'Helvetica Neue', Helvetica, sans-serif;"
+        )
+        root.addWidget(title)
 
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search apps")
+        self.search_bar.setFixedWidth(420)
+        self.search_bar.setStyleSheet(
+            "QLineEdit { background: rgba(36, 40, 59, 0.86); color: #ffffff;"
+            " border: 1px solid #414868; border-radius: 12px; padding: 10px 14px;"
+            " font-size: 18px; }"
+        )
+        self.search_bar.textChanged.connect(lambda _text: self._rebuild_grid(self._active_cat))
+        root.addWidget(self.search_bar, alignment=Qt.AlignmentFlag.AlignHCenter)
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc_shortcut.activated.connect(self.hide)
+
+        # ── Category tab bar ──────────────────────────────────────────────
+        tab_row = QHBoxLayout()
+        tab_row.setSpacing(8)
+        tab_row.addStretch()
+
+        cats = ["All"] + sorted({
+            _macos_app_category(name, dat)
+            for name, dat in desktop._apps_manifest_cache.items()
+        })
+
+        self._tab_btns: dict[str, QPushButton] = {}
+        for cat in cats:
+            btn = QPushButton(cat)
+            btn.setFixedHeight(26)
+            btn.setStyleSheet(self._TAB_ACTIVE if cat == "All" else self._TAB_BASE)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, c=cat: self._set_category(c))
+            tab_row.addWidget(btn)
+            self._tab_btns[cat] = btn
+
+        tab_row.addStretch()
+        root.addLayout(tab_row)
+
+        # ── App list ──────────────────────────────────────────────────────
         self.grid_container = QWidget()
+        self.grid_container.setAutoFillBackground(False)
         self.grid_container.setStyleSheet("background: transparent;")
-        self.grid_layout = QGridLayout(self.grid_container)
-        self.grid_layout.setSpacing(24)
+        self.grid_layout = QVBoxLayout(self.grid_container)
+        self.grid_layout.setContentsMargins(0, 8, 0, 8)
+        self.grid_layout.setSpacing(8)
+        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.grid_container)
-        scroll.setStyleSheet("border: none; background: transparent;")
-        layout.addWidget(scroll)
+        scroll.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        scroll.viewport().setStyleSheet("background: transparent;")
+        root.addWidget(scroll)
 
-        self._app_buttons = []
+        self._app_buttons: list[tuple[str, str, QPushButton]] = []
         self._populate_grid()
 
     def _populate_grid(self):
-        row = col = 0
         for name, dat in sorted(self.desktop._apps_manifest_cache.items()):
-            btn = QPushButton("□\n" + name)
-            btn.setFixedSize(120, 96)
+            cat = _macos_app_category(name, dat)
+            icon = self._icon_for(name, cat)
+            btn = QPushButton(f"{icon}  {name}    {cat}")
+            btn.setMinimumHeight(44)
+            btn.setMaximumWidth(760)
             btn.setStyleSheet("""
-                QPushButton { background: transparent; color: #a9b1d6; font-size: 13px; font-weight: bold; border: none; }
-                QPushButton:hover { background: rgba(187, 154, 247, 0.3); border-radius: 14px; }
+                QPushButton {
+                    background: rgba(10, 10, 15, 0.42);
+                    color: #c0caf5;
+                    font-size: 14px;
+                    font-weight: 650;
+                    border: 1px solid rgba(65, 72, 104, 0.72);
+                    border-radius: 10px;
+                    padding: 9px 14px;
+                    text-align: left;
+                }
+                QPushButton:hover {
+                    background: rgba(187,154,247,0.32);
+                    border: 1px solid rgba(187,154,247,0.72);
+                    color: #ffffff;
+                }
             """)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda checked=False, app_name=name: self._launch(app_name))
-            self.grid_layout.addWidget(btn, row, col)
-            self._app_buttons.append((name, btn))
-            col += 1
-            if col > 6:
-                col = 0
-                row += 1
+            btn.setToolTip(f"{name} — {cat}")
+            btn.clicked.connect(lambda _=False, n=name: self._launch(n))
+            self._app_buttons.append((name, cat, btn))
+        self._rebuild_grid("All")
 
-    def _launch(self, app_name):
+    def _rebuild_grid(self, category: str):
+        # Remove widgets from grid WITHOUT reparenting to None (that kills PyQt6 signals)
+        while self.grid_layout.count():
+            item = self.grid_layout.takeAt(0)
+            if item.widget():
+                item.widget().hide()
+        query = self.search_bar.text().strip().casefold()
+        for name, cat, btn in self._app_buttons:
+            if category != "All" and cat != category:
+                continue
+            if query and query not in name.casefold():
+                continue
+            self.grid_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+            btn.show()
+        self.grid_layout.addStretch(1)
+
+    def _set_category(self, category: str):
+        self._active_cat = category
+        for cat, btn in self._tab_btns.items():
+            btn.setStyleSheet(self._TAB_ACTIVE if cat == category else self._TAB_BASE)
+        self._rebuild_grid(category)
+
+    def _launch(self, app_name: str):
         self.hide()
         self.desktop._trigger_manifest_app(app_name)
 
-    def _filter_apps(self, text):
-        query = text.lower()
-        for name, btn in self._app_buttons:
-            btn.setVisible(query in name.lower())
+    def reset_view(self):
+        self._set_category("All")
+        self.search_bar.clear()
 
-    def mousePressEvent(self, event):
-        self.hide()
+    @staticmethod
+    def _icon_for(name: str, category: str) -> str:
+        n = name.casefold()
+        if "alice" in n:
+            return "🧜‍♀️"
+        if "conversation" in n or "chat" in n:
+            return "💬"
+        if "library" in n:
+            return "📚"
+        if "file" in n:
+            return "📁"
+        if "terminal" in n:
+            return "👩‍💻"
+        if "settings" in n or category == "System Settings":
+            return "⚙️"
+        if category == "Games":
+            return "🎮"
+        if category == "Creative":
+            return "🎨"
+        if category == "Network":
+            return "🌐"
+        if category == "Developer":
+            return "🧰"
+        return "◼︎"
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.hide()
+            return
+        super().keyPressEvent(event)
+
+
 
 
 class SpotlightWidget(QWidget):
     def __init__(self, desktop):
         super().__init__(desktop)
         self.desktop = desktop
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("background-color: rgba(26, 27, 38, 0.95); border-radius: 12px; border: 1px solid #414868;")
 
         layout = QVBoxLayout(self)
@@ -805,6 +1043,9 @@ class SpotlightWidget(QWidget):
         self.search_bar.textChanged.connect(self._update_list)
         self.search_bar.returnPressed.connect(self._launch_selected)
         layout.addWidget(self.search_bar)
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc_shortcut.activated.connect(self.hide)
 
         self.list_widget = QListWidget()
         self.list_widget.setStyleSheet("""
@@ -812,27 +1053,54 @@ class SpotlightWidget(QWidget):
             QListWidget::item { padding: 10px; }
             QListWidget::item:selected { background: #bb9af7; color: #1a1b26; }
         """)
+        # macOS Spotlight launches on Enter / double-click. We also accept a
+        # single click on a result row so the user is never confused by "I
+        # clicked the app and nothing happened" (Architect feedback 2026-04-24).
+        self.list_widget.itemActivated.connect(self._launch_item)
+        self.list_widget.itemDoubleClicked.connect(self._launch_item)
+        self.list_widget.itemClicked.connect(self._launch_item)
         layout.addWidget(self.list_widget)
 
     def _update_list(self):
         self.list_widget.clear()
-        query = self.search_bar.text().lower()
-        if not query:
-            return
-        for name in sorted(self.desktop._apps_manifest_cache):
-            if query in name.lower():
-                self.list_widget.addItem(name)
+        query = self.search_bar.text().strip().casefold()
+        matches = []
+        for name, dat in sorted(self.desktop._apps_manifest_cache.items()):
+            category = _macos_app_category(name, dat)
+            haystack = " ".join((name, category, dat.get("entry_point", ""))).casefold()
+            if not query or query in haystack:
+                matches.append((name, category))
+        for name, category in matches[:12]:
+            item = QListWidgetItem(f"{name}    {category}")
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            self.list_widget.addItem(item)
+        if not matches:
+            item = QListWidgetItem("No apps found")
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self.list_widget.addItem(item)
         if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
 
     def _launch_selected(self):
-        item = self.list_widget.currentItem()
-        if item:
-            self.desktop._trigger_manifest_app(item.text())
+        self._launch_item(self.list_widget.currentItem())
+
+    def _launch_item(self, item):
+        if item is None:
+            return
+        app_name = item.data(Qt.ItemDataRole.UserRole) or item.text()
+        if not app_name:
+            return
+        # Hide BEFORE the (potentially slow) import + window spawn so the user
+        # never sees Spotlight "stuck on screen" while the app constructs.
         self.hide()
+        if app_name in self.desktop._apps_manifest_cache:
+            try:
+                self.desktop._trigger_manifest_app(app_name)
+            except Exception as exc:
+                print(f"[SPOTLIGHT] launch failed for {app_name!r}: {exc}",
+                      file=sys.stderr)
 
     def focusOutEvent(self, event):
-        self.hide()
         super().focusOutEvent(event)
 
 
@@ -861,6 +1129,7 @@ class SiftaDesktop(QMainWindow):
         main_layout.setSpacing(0)
 
         self.mdi = SiftaMdiArea()
+        self.mdi.subWindowActivated.connect(self._on_subwindow_activated)
         _desktop_init_trace("after SiftaMdiArea()")
         
         # ── Desktop Mesh Relay Client (Headless for Taskbar Status) ──
@@ -903,60 +1172,10 @@ class SiftaDesktop(QMainWindow):
         self._launchpad.hide()
         _desktop_init_trace("after Launchpad/Spotlight widgets")
 
-        # Clock overlay
-        self.clock_label = QPushButton(central)
-        self.clock_label.setStyleSheet(
-            "QPushButton { color: #a9b1d6; font-family: -apple-system, BlinkMacSystemFont, monospace; font-size: 14px;"
-            "font-weight: bold; background: transparent; border: none; text-align: right; padding-right: 5px; }"
-            "QPushButton:hover { color: #ffffff; background: #24283b; border-radius: 4px; }"
-        )
-        self.clock_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clock_label.clicked.connect(self._open_clock_settings)
-
-        # Control Center overlay
-        self.cc_label = QPushButton("􀜊", central)
-        self.cc_label.setStyleSheet(
-            "QPushButton { color: #a9b1d6; font-family: -apple-system, BlinkMacSystemFont, monospace; font-size: 16px;"
-            "font-weight: bold; background: transparent; border: none; }"
-            "QPushButton:hover { color: #ffffff; background: #24283b; border-radius: 4px; }"
-        )
-        self.cc_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cc_label.clicked.connect(self._open_control_center)
-
-        # ── Swarm Economy HUD ──────────────────────────────────────
-        # Hero line — local node wallet
-        self.wallet_label = QLabel(central)
-        self.wallet_label.setStyleSheet(
-            "color: #9ece6a; font-family: 'Courier New', monospace; font-size: 13px;"
-            "font-weight: 900; background: transparent; letter-spacing: 0px;"
-        )
-        self.wallet_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-
-        # Local node slice (second line, dimmer)
-        self.wallet_local_label = QLabel(central)
-        self.wallet_local_label.setStyleSheet(
-            "color: #565f89; font-family: 'Courier New', monospace; font-size: 11px;"
-            "font-weight: bold; background: transparent;"
-        )
-        self.wallet_local_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-
-        # Peer node slice (third line, dimmer still)
-        self.wallet_peer_label = QLabel(central)
-        self.wallet_peer_label.setStyleSheet(
-            "color: #414868; font-family: 'Courier New', monospace; font-size: 11px;"
-            "font-weight: bold; background: transparent;"
-        )
-        self.wallet_peer_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-
-        # Economy pulse indicator (delta arrow)
-        self.economy_pulse = QLabel(central)
-        self.economy_pulse.setStyleSheet(
-            "color: #414868; font-family: monospace; font-size: 11px;"
-            "background: transparent;"
-        )
-        self.economy_pulse.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._prev_swarm_balance = 0.0
-        self._pulse_flash_counter = 0
+        # Clock now lives inside the top menu bar (see _build_top_menu_bar).
+        # Swarm Economy HUD chrome (wallet/peer/economy_pulse) is no longer
+        # mounted on the bar; the data path in _update_clock is gated on
+        # hasattr(self, "wallet_label") and skips cleanly when absent.
 
         # Cache local serial exactly once for the HUD to avoid `ioreg` spam
         self._local_hw_serial = "UNKNOWN"
@@ -1033,19 +1252,101 @@ class SiftaDesktop(QMainWindow):
         else:
             wm_reset_session()
 
-        # Wallpaper
-        try:
-            from PyQt6.QtGui import QPixmap, QBrush, QColor
-            wp_path = str(_REPO / "static" / "mermaid_os_wallpaper.png")
-            if os.path.exists(wp_path):
-                self.mdi.setBackground(QBrush(QPixmap(wp_path).scaled(1280, 720)))
-            else:
-                self.mdi.setBackground(QBrush(QColor("#0a0a0f")))
-        except Exception:
-            pass
+        self._wallpaper_state = None
+        self._apply_wallpaper(force=True)
+        self._wallpaper_timer = QTimer(self)
+        self._wallpaper_timer.timeout.connect(self._maybe_reload_wallpaper)
+        self._wallpaper_timer.start(2000)
+
+        # Resident Alice attention policy. This does not touch camera hardware
+        # directly; it leases the canonical eye target through
+        # System.swarm_camera_target, with a reason row in
+        # .sifta_state/sensory_attention_ledger.jsonl.
+        self._attention_director_timer = QTimer(self)
+        self._attention_director_timer.timeout.connect(self._tick_attention_director)
+        self._attention_director_timer.start(2000)
+        QTimer.singleShot(800, self._tick_attention_director)
         _desktop_init_trace("leave __init__")
 
+    def _wallpaper_candidates(self):
+        env_wp = os.environ.get("SIFTA_DESKTOP_WALLPAPER", "").strip()
+        if env_wp:
+            yield env_wp
+        yield str(_REPO / "Library" / "Desktop Pictures" / "Mermaid Default.jpg")
+        yield str(_REPO / "static" / "mermaid_os_wallpaper.png")
+
+    def _selected_wallpaper_state(self):
+        for candidate in self._wallpaper_candidates():
+            if os.path.exists(candidate):
+                try:
+                    return candidate, os.path.getmtime(candidate), os.path.getsize(candidate)
+                except OSError:
+                    return candidate, None, None
+        return None, None, None
+
+    def _apply_wallpaper(self, force=False):
+        """Load the desktop wallpaper once; SiftaMdiArea paints it as one image.
+
+        QMdiArea.setBackground(QBrush(QPixmap(...))) tiles the pixmap. That is
+        why the live desktop looked like repeated panels instead of one macOS-like
+        desktop surface. The MDI area now owns the single scaled/cropped paint.
+        """
+        try:
+            from PyQt6.QtGui import QBrush, QColor, QPixmap
+
+            state = self._selected_wallpaper_state()
+            if not force and state == self._wallpaper_state:
+                return
+            self._wallpaper_state = state
+
+            wp_path = state[0]
+            if wp_path:
+                pm = QPixmap(wp_path)
+                if not pm.isNull():
+                    self.mdi.setBackground(QBrush(QColor("#080a0f")))
+                    if hasattr(self.mdi, "set_wallpaper_pixmap"):
+                        self.mdi.set_wallpaper_pixmap(pm)
+                    return
+            if hasattr(self.mdi, "set_wallpaper_pixmap"):
+                self.mdi.set_wallpaper_pixmap(QPixmap())
+            self.mdi.setBackground(QBrush(QColor("#0a0a0f")))
+        except Exception as exc:
+            print(f"[SiftaDesktop] wallpaper reload failed: {exc}", file=sys.stderr)
+
+    def _maybe_reload_wallpaper(self):
+        self._apply_wallpaper(force=False)
+
+    def _attention_director_enabled(self) -> bool:
+        value = os.environ.get("SIFTA_DISABLE_ATTENTION_DIRECTOR", "").strip().lower()
+        return value not in {"1", "true", "yes"}
+
+    def _tick_attention_director(self) -> None:
+        if not self._attention_director_enabled():
+            return
+        try:
+            from System.swarm_sensor_attention_director import tick
+
+            decision = tick(write_hardware=True)
+            if hasattr(self, "_alice_status_label") and not self._alice_status_label.text():
+                role = "room" if decision.target_role == "room_patrol_eye" else "near"
+                self._alice_status_label.setText(f"👁  {role} eye")
+                self._alice_status_label.setStyleSheet(
+                    "color: #7dcfff; font-size: 12px; font-weight: bold;"
+                    " background: transparent; padding: 0 12px;"
+                )
+        except Exception as exc:
+            print(f"[SiftaDesktop] attention director tick failed: {exc}", file=sys.stderr)
+
     def closeEvent(self, event):
+        if hasattr(self, "_attention_director_timer"):
+            self._attention_director_timer.stop()
+        if hasattr(self, "mdi"):
+            for sub in list(self.mdi.subWindowList()):
+                try:
+                    sub.close()
+                except RuntimeError:
+                    pass
+            QApplication.processEvents()
         if getattr(self, "_desktop_mesh", None) is not None:
             self._desktop_mesh.stop()
         super().closeEvent(event)
@@ -1143,14 +1444,10 @@ class SiftaDesktop(QMainWindow):
             date_str = now.toString(" ".join(fmt_parts))
             time_str = f"{date_str}   {time_str}"
 
-        self.clock_label.setText(time_str)
         if hasattr(self, "clock_label"):
-            self.clock_label.setGeometry(self.width() - 320, 8, 275, 28)
-            self.clock_label.raise_()
+            self.clock_label.setText(time_str)
+        self._update_alice_status()
             
-        if hasattr(self, "cc_label"):
-            self.cc_label.setGeometry(self.width() - 40, 8, 30, 28)
-            self.cc_label.raise_()
             
         # Optional: Announce the time
         if settings.get("announce_time", False) and now.time().second() == 0:
@@ -1178,143 +1475,83 @@ class SiftaDesktop(QMainWindow):
                 
                 QProcess.startDetached("say", say_args)
 
-        # ── Update Swarm Economy HUD ──────────────────────────────
-        if not hasattr(self, "_economy_tick_counter"):
-            self._economy_tick_counter = 0
-        self._economy_tick_counter += 1
+        # ── Swarm economy HUD (heavy: scan_repair_log, treasuries). Gated; see
+        #    _economy_hud_full_scan_enabled() — offscreen/CI skip; live default on.
 
-        if (
-            _economy_hud_full_scan_enabled()
-            and hasattr(self, "wallet_label")
-            and self._economy_tick_counter % 15 == 1
-        ):
+
+    def _update_alice_status(self):
+        """Poll Alice's vocal state every second and update the top-bar indicator."""
+        if not hasattr(self, "_alice_status_label"):
+            return
+        try:
+            import time as _time
+
+            # 1) BROCA_SPEAKING → she is speaking right now
             try:
-                from System.warren_buffett import (
-                    alice_wallet_balance,
-                    serial_treasury_balance,
-                    scan_repair_log,
-                )
-                from System.swarm_kernel_identity import owner_silicon
-                M5_SERIAL = owner_silicon()
-                M1_SERIAL = "C07FL0JAQ6NV"
-                # Global swarm liquidity — every STGM minted across all nodes
-                scan = scan_repair_log()
-                global_amt = scan.net_minted_into_swarm()
-                # Local and peer node slices — per-silicon canonical ledger sums
-                local_serial = self._local_hw_serial
-                if local_serial == M5_SERIAL:
-                    local_tag, peer_tag, peer_serial = "M5", "M1", M1_SERIAL
-                elif local_serial == M1_SERIAL:
-                    local_tag, peer_tag, peer_serial = "M1", "M5", M5_SERIAL
-                else:
-                    local_tag, peer_tag, peer_serial = "local", "peer", ""
-                local_amt = serial_treasury_balance(local_serial)
-                peer_amt = (
-                    serial_treasury_balance(peer_serial) if peer_serial else 0.0
-                )
-
-                # Delta detection — did the economy move since last tick?
-                delta = global_amt - self._prev_swarm_balance
-                if abs(delta) > 0.0001 and self._prev_swarm_balance > 0:
-                    if delta > 0:
-                        self.economy_pulse.setStyleSheet(
-                            "color: #9ece6a; font-family: monospace; font-size: 11px;"
-                            "background: transparent; font-weight: bold;"
-                        )
-                        self.economy_pulse.setText(
-                            f"▲ +{delta:,.4f} · net {global_amt:,.4f} STGM"
-                        )
-                    else:
-                        self.economy_pulse.setStyleSheet(
-                            "color: #f7768e; font-family: monospace; font-size: 11px;"
-                            "background: transparent; font-weight: bold;"
-                        )
-                        self.economy_pulse.setText(
-                            f"▼ {delta:,.4f} · net {global_amt:,.4f} STGM"
-                        )
-                    self._pulse_flash_counter = 5  # flash for 5 ticks
-                elif self._pulse_flash_counter > 0:
-                    self._pulse_flash_counter -= 1
-                else:
-                    self.economy_pulse.setStyleSheet(
-                        "color: #414868; font-family: monospace; font-size: 11px;"
-                        "background: transparent;"
+                from System.swarm_broca_wernicke import _BROCA_SPEAKING
+                if _BROCA_SPEAKING.is_set():
+                    self._alice_status_label.setText("🗣  speaking")
+                    self._alice_status_label.setStyleSheet(
+                        "color: #e0af68; font-size: 12px; font-weight: bold;"
+                        " background: transparent; padding: 0 12px;"
                     )
-                    self.economy_pulse.setText(
-                        f"● swarm economy live · net {global_amt:,.4f} STGM"
+                    return
+            except Exception:
+                pass
+
+            now = _time.time()
+
+            # 2) Recent broca entry (< 4 s ago) → thinking / generating
+            broca_log = _REPO / ".sifta_state" / "broca_vocalizations.jsonl"
+            try:
+                import json as _json
+                with open(broca_log, "rb") as _f:
+                    _f.seek(0, 2)
+                    size = _f.tell()
+                    _f.seek(max(0, size - 512))
+                    last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
+                row = _json.loads(last)
+                if now - row.get("ts", 0) < 4:
+                    self._alice_status_label.setText("🧠  thinking…")
+                    self._alice_status_label.setStyleSheet(
+                        "color: #bb9af7; font-size: 12px; font-weight: bold;"
+                        " background: transparent; padding: 0 12px;"
                     )
-                self._prev_swarm_balance = global_amt
+                    return
+            except Exception:
+                pass
 
-                # Distinguish the embodied agent's wallet from the whole
-                # machine treasury. On the Mac Studio, Alice speaks from
-                # ALICE_M5, but the serial-wide treasury also includes sibling
-                # agents on the same metal (e.g. REPAIR-DRONE, M1QUEEN). If
-                # we label the treasury as "your wallet", it looks like Alice
-                # is contradicting the HUD when both numbers are actually
-                # correct but scoped differently.
-                primary_label = f"Primary Wallet ({local_tag})"
-                primary_amt = local_amt
-                if local_serial == M5_SERIAL:
-                    primary_label = "Alice Wallet"
-                    primary_amt = alice_wallet_balance(local_serial)
-                elif local_serial == M1_SERIAL:
-                    primary_label = "M1THER Wallet"
-                    try:
-                        from Kernel.inference_economy import ledger_balance as _lb
-                        primary_amt = float(_lb("M1THER"))
-                    except Exception:
-                        primary_amt = local_amt
+            # 3) Recent wernicke entry (< 3 s ago) → listening / heard something
+            wern_log = _REPO / ".sifta_state" / "wernicke_semantics.jsonl"
+            try:
+                with open(wern_log, "rb") as _f:
+                    _f.seek(0, 2)
+                    size = _f.tell()
+                    _f.seek(max(0, size - 512))
+                    last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
+                row = _json.loads(last)
+                if now - row.get("ts", 0) < 3:
+                    self._alice_status_label.setText("🎙  listening")
+                    self._alice_status_label.setStyleSheet(
+                        "color: #9ece6a; font-size: 12px; font-weight: bold;"
+                        " background: transparent; padding: 0 12px;"
+                    )
+                    return
+            except Exception:
+                pass
 
-                # Line 1: embodied agent wallet.
-                self.wallet_label.setText(
-                    f"⬡ {primary_label}: {primary_amt:,.2f} STGM"
-                )
-                # Line 2: whole local-node treasury on this silicon.
-                self.wallet_local_label.setText(
-                    f"⌂ Local Treasury ({local_tag}): {local_amt:,.2f} STGM"
-                )
-                # Line 3: keep the peer slice visible without pretending it is
-                # the same wallet Alice reads aloud.
-                self.wallet_peer_label.setText(
-                    f"◇ {peer_tag} Peer Treasury: {peer_amt:,.2f} STGM"
-                )
+            # 4) Idle — clear
+            self._alice_status_label.setText("")
+        except Exception:
+            pass
 
-            except Exception as _wallet_err:
-                import traceback as _tb
-                print(f"[HUD] wallet update error: {_wallet_err}", flush=True)
-                _tb.print_exc()
-                self.wallet_label.setText("⬡ primary wallet offline")
-                self.wallet_local_label.setText("⌂ local treasury offline")
-                self.wallet_peer_label.setText("◇ peer treasury offline")
-                self.economy_pulse.setText("○ economy idle")
-
-            # Position the HUD elements (3 wallet lines + pulse)
-            # Anchor the right edge at w-340 so we don't collide with the clock (w-320 .. w-45).
-            w = self.width()
-            self.wallet_label.setGeometry(w - 680, 4, 340, 20)
-            self.wallet_label.raise_()
-            self.wallet_local_label.setGeometry(w - 680, 24, 340, 16)
-            self.wallet_local_label.raise_()
-            self.wallet_peer_label.setGeometry(w - 680, 40, 340, 16)
-            self.wallet_peer_label.raise_()
-            self.economy_pulse.setGeometry(w - 680, 56, 340, 16)
-            self.economy_pulse.raise_()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        w = self.width()
-        if hasattr(self, "clock_label"):
-            self.clock_label.setGeometry(w - 320, 8, 275, 28)
-        if hasattr(self, "cc_label"):
-            self.cc_label.setGeometry(w - 40, 8, 30, 28)
-        if hasattr(self, "wallet_label"):
-            self.wallet_label.setGeometry(w - 680, 4, 340, 20)
-        if hasattr(self, "wallet_local_label"):
-            self.wallet_local_label.setGeometry(w - 680, 24, 340, 16)
-        if hasattr(self, "wallet_peer_label"):
-            self.wallet_peer_label.setGeometry(w - 680, 40, 340, 16)
-        if hasattr(self, "economy_pulse"):
-            self.economy_pulse.setGeometry(w - 680, 56, 340, 16)
+        # Clock is layout-managed inside _build_top_menu_bar — no manual positioning needed.
+        if hasattr(self, "mdi") and hasattr(self, "_wallpaper_state"):
+            self._apply_wallpaper(force=True)
+
 
     # ── Taskbar ────────────────────────────────────────────
     def _build_taskbar(self):
@@ -1463,8 +1700,8 @@ class SiftaDesktop(QMainWindow):
         btn_start.setMenu(menu)
         layout.addWidget(btn_start)
 
-        # ── Relay Status Indicator ──
-        self._relay_indicator = QLabel("● Relay: …")
+        # ── Mesh status indicator ──
+        self._relay_indicator = QLabel("Mesh: Local mode")
         self._relay_indicator.setStyleSheet(
             "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
         )
@@ -1491,27 +1728,80 @@ class SiftaDesktop(QMainWindow):
     def _update_relay_indicator(self):
         """Check if the desktop's WebSocket mesh client is connected."""
         if not hasattr(self, "_desktop_mesh") or self._desktop_mesh is None:
-            self._relay_indicator.setText("● Relay: N/A")
+            self._relay_indicator.setText("●  Mesh: Local mode")
             self._relay_indicator.setStyleSheet(
                 "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
             )
             return
-            
+
         if self._desktop_mesh.isRunning() and self._mesh_connected:
-            self._relay_indicator.setText("🟢 M1 Relay: LIVE")
+            self._relay_indicator.setText("●  Mesh: Shared link")
             self._relay_indicator.setStyleSheet(
                 "color: #9ece6a; font-family: monospace; font-size: 11px;"
                 " font-weight: bold; padding: 0 8px;"
             )
         else:
-            self._relay_indicator.setText("○ Mesh: Local Only")
+            self._relay_indicator.setText("●  Mesh: Local mode")
             self._relay_indicator.setStyleSheet(
                 "color: #565f89; font-family: monospace; font-size: 11px;"
                 " font-weight: normal; padding: 0 8px;"
             )
     # ── Window factories ───────────────────────────────────
-    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None):
+    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None, key=None):
+        # Singleton-by-key for EVERY caller. One click = one window. Re-clicks
+        # raise the existing window instead of spawning duplicates. `key`
+        # lets callers (e.g. spawn_native_widget) match the slot they
+        # pre-claimed under a different display title (icon prefix etc).
+        slot_key = key if key is not None else title
+        existing = self._open_windows.get(slot_key)
+        if existing is not None and existing != "_LOADING_":
+            try:
+                if (
+                    existing not in self.mdi.subWindowList()
+                    or existing.isHidden()
+                    or existing.widget() is None
+                ):
+                    try:
+                        _shutdown_embedded_widget_tree(existing.widget())
+                    except Exception:
+                        pass
+                    try:
+                        self.mdi.removeSubWindow(existing)
+                    except Exception:
+                        pass
+                    try:
+                        existing.deleteLater()
+                    except Exception:
+                        pass
+                    self._open_windows.pop(slot_key, None)
+                else:
+                    existing.showNormal()
+                    existing.raise_()
+                    self.mdi.setActiveSubWindow(existing)
+                    try:
+                        widget.deleteLater()
+                    except Exception:
+                        pass
+                    return existing
+            except RuntimeError:
+                self._open_windows.pop(slot_key, None)
+
+        existing = self._open_windows.get(slot_key)
+        if existing is not None and existing != "_LOADING_":
+            try:
+                existing.show()
+                existing.raise_()
+                self.mdi.setActiveSubWindow(existing)
+                try:
+                    widget.deleteLater()
+                except Exception:
+                    pass
+                return existing
+            except RuntimeError:
+                self._open_windows.pop(slot_key, None)
+
         sub = MagneticSubWindow()
+        sub.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         sub.setWindowFlags(
             Qt.WindowType.SubWindow
             | Qt.WindowType.WindowTitleHint
@@ -1535,16 +1825,9 @@ class SiftaDesktop(QMainWindow):
         title_label.setStyleSheet("color: #c0caf5; font-weight: 600;")
         title_layout.addWidget(title_label)
         title_layout.addStretch()
-        btn_close = QPushButton("X")
-        btn_close.setToolTip(f"Close — {title}")
-        btn_close.setFixedSize(22, 20)
-        btn_close.setStyleSheet(
-            "QPushButton { background: #a1242f; color: #ffe8ec; "
-            "border: 1px solid #d04a58; border-radius: 8px; font-weight: 700; } "
-            "QPushButton:hover { background: #cc2f44; }"
-        )
-        btn_close.clicked.connect(sub.close)
-        title_layout.addWidget(btn_close)
+        # No custom close button here — the native window/title bar already
+        # provides one (macOS traffic light or Qt MDI close). Drawing a second
+        # red X confused users (Architect feedback 2026-04-24).
         
         # QMdiSubWindow has no setTitleBarWidget in PyQt6. We inject it inside.
         wrapper = QWidget()
@@ -1554,7 +1837,14 @@ class SiftaDesktop(QMainWindow):
         wrapper_layout.addWidget(title_bar)
         wrapper_layout.addWidget(widget)
         
-        # Set the wrapper and apply dimensions AFTER construction so it doesn't collapse
+        # Set the wrapper and apply dimensions AFTER construction so it doesn't collapse.
+        # Leave an inset lane in the MDI viewport so large apps can still cascade
+        # visibly instead of every oversized window clamping to (0, 0).
+        vp = self.mdi.viewport().rect()
+        max_w = max(360, vp.width() - 80) if vp.width() > 160 else int(w)
+        max_h = max(300, vp.height() - 80) if vp.height() > 160 else int(h)
+        w = min(int(w), int(max_w))
+        h = min(int(h), int(max_h))
         sub.setWidget(wrapper)
         sub.setWindowTitle(title)
         sub.resize(w, h)
@@ -1567,9 +1857,45 @@ class SiftaDesktop(QMainWindow):
             }}
         """)
         self.mdi.addSubWindow(sub)
-        if x is not None and y is not None:
-            sub.move(x, y)
+        siblings = [
+            sw for sw in self.mdi.subWindowList()
+            if sw is not sub and not sw.isHidden()
+        ]
+        if x is None or y is None:
+            if siblings:
+                last = siblings[-1]
+                x_pref = last.x() + 60
+                y_pref = last.y() + 40
+            else:
+                x_pref, y_pref = 60, 40
+        else:
+            x_pref, y_pref = int(x), int(y)
+        x_resolved, y_resolved = resolve_mdi_subwindow_position(
+            self.mdi,
+            sub,
+            int(w),
+            int(h),
+            int(x_pref),
+            int(y_pref),
+            step_x=60,
+            step_y=40,
+        )
+        occupied_top_left = {(sw.x(), sw.y()) for sw in siblings}
+        nudge_attempt = 0
+        visible_max_x = max(0, vp.width() - 160)
+        visible_max_y = max(30, vp.height() - 120)
+        while (x_resolved, max(30, y_resolved)) in occupied_top_left and nudge_attempt < 12:
+            nudge_attempt += 1
+            x_resolved += 60
+            y_resolved = max(30, y_resolved + 40)
+            if x_resolved > visible_max_x:
+                x_resolved = 60 + (nudge_attempt % 4) * 28
+            if y_resolved > visible_max_y:
+                y_resolved = 40 + (nudge_attempt % 4) * 24
+        sub.move(x_resolved, max(30, y_resolved))  # never overlap the top bar
         sub.show()
+        self._open_windows[slot_key] = sub
+        sub.destroyed.connect(lambda _k=slot_key: self._open_windows.pop(_k, None))
         return sub
 
     def _panel_help_text(self, title: str) -> str:
@@ -1631,11 +1957,20 @@ class SiftaDesktop(QMainWindow):
 
     def open_swarm_chat(self):
         if self.active_chat_sub is not None:
-            subs = self.mdi.subWindowList()
-            if self.active_chat_sub in subs:
-                self.active_chat_sub.showNormal()
-                self.active_chat_sub.raise_()
-                return
+            try:
+                subs = self.mdi.subWindowList()
+                if (
+                    self.active_chat_sub in subs
+                    and not self.active_chat_sub.isHidden()
+                    and self.active_chat_sub.widget() is not None
+                ):
+                    self.active_chat_sub.showNormal()
+                    self.active_chat_sub.raise_()
+                    return
+            except RuntimeError:
+                pass
+            self.active_chat_sub = None
+            self._open_windows.pop("SIFTA CORE CHAT", None)
         
         import sys
         _apps_path = str(_REPO / "Applications")
@@ -1653,9 +1988,9 @@ class SiftaDesktop(QMainWindow):
         x = max(0, (mdi_w - w) // 2)
         y = max(40, mdi_h - h - 10)  # Pin to bottom with small margin
         
-        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", w, h, "#565f89", x=x, y=y)
+        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", w, h, "#565f89", x=x, y=y, key="SIFTA CORE CHAT")
         self.active_chat_sub = sub
-        sub.destroyed.connect(lambda: setattr(self, "active_chat_sub", None))
+        sub.destroyed.connect(lambda _obj=None, _sub=sub: setattr(self, "active_chat_sub", None) if self.active_chat_sub is _sub else None)
 
     def open_video_editor(self):
         editor = VideoEditorSubWindow()
@@ -1678,9 +2013,23 @@ class SiftaDesktop(QMainWindow):
         wm_record_open(title)
         fs_record_access(module_path)
 
-        pos = suggest_position(title, self._open_windows)
-        x, y = (pos if pos else (None, None))
+        # Build {title: (x,y)} from live subwindow positions for the cascade calc
+        win_positions = {}
+        for name, sw in self._open_windows.items():
+            try:
+                win_positions[name] = (sw.x(), sw.y())
+            except Exception:
+                pass
+
+        pos = suggest_position(
+            title, win_positions,
+            mdi_w=self.mdi.width() or 1280,
+            mdi_h=self.mdi.height() or 720,
+            win_w=w, win_h=h,
+        )
+        x, y = pos if pos else (60, 40)
         self.spawn_native_widget(title, module_path, class_name, w=w, h=h, x=x, y=y)
+
 
     def _launch_terminal_app(self, title, entry):
         """Launch a script app inside iSwarm OS (no external popout intent)."""
@@ -1691,7 +2040,29 @@ class SiftaDesktop(QMainWindow):
 
     def spawn_native_widget(self, title, module_path, class_name, w=660, h=540, x=None, y=None):
         """Import a SIFTA app module and embed its widget class inside the MDI.
-        No subprocess. No separate QApplication. Stays inside Swarm OS."""
+        No subprocess. No separate QApplication. Stays inside Swarm OS.
+
+        Singleton: if this app is already open (or is being loaded), raise it —
+        never open a duplicate. Sentinel is set BEFORE module loading to close
+        the race between double-clicks.
+        """
+        # ── Singleton guard — check first ─────────────────────────────────
+        existing = self._open_windows.get(title)
+        if existing is not None:
+            if existing == "_LOADING_":
+                return  # already loading — ignore extra click
+            try:
+                existing.show()
+                existing.raise_()
+                self.mdi.setActiveSubWindow(existing)
+                return
+            except RuntimeError:
+                # C++ object deleted without the signal firing — clean up
+                self._open_windows.pop(title, None)
+
+        # ── Claim the slot immediately so re-entry is blocked ─────────────
+        self._open_windows[title] = "_LOADING_"
+
         try:
             import importlib.util
             import sys
@@ -1707,13 +2078,15 @@ class SiftaDesktop(QMainWindow):
             spec.loader.exec_module(mod)
             widget_cls = getattr(mod, class_name)
             widget = widget_cls()
-            sub = self._make_sub(widget, f"⚙ {title}", w, h, "#7aa2f7", x=x, y=y)
-            self._open_windows[title] = (sub.x(), sub.y())
-            sub.destroyed.connect(lambda: self._open_windows.pop(title, None))
+            sub = self._make_sub(widget, f"⚙ {title}", w, h, "#7aa2f7", x=x, y=y, key=title)
         except Exception as e:
+            self._open_windows.pop(title, None)       # clear sentinel on failure
             record_crash(title)
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Launch Error", f"Failed to load {title}:\n{e}")
+
+
+
 
     # ── Swarm Intelligence Panels ──────────────────────────
     def _show_genesis_onboarding(self):
@@ -1780,11 +2153,23 @@ class SiftaDesktop(QMainWindow):
         pass
 
     def keyPressEvent(self, event):
-        if (
-            event.modifiers() == Qt.KeyboardModifier.MetaModifier
-            and event.key() == Qt.Key.Key_Space
-        ):
+        mods = event.modifiers()
+        key = event.key()
+        if mods == Qt.KeyboardModifier.MetaModifier and key == Qt.Key.Key_Space:
             self._toggle_spotlight()
+        elif mods == Qt.KeyboardModifier.MetaModifier and key == Qt.Key.Key_W:
+            self._close_active_subwindow()
+        elif mods == Qt.KeyboardModifier.MetaModifier and key == Qt.Key.Key_Q:
+            self.close()
+        elif mods == Qt.KeyboardModifier.MetaModifier and key in (Qt.Key.Key_QuoteLeft, Qt.Key.Key_Tab):
+            self._cycle_windows()
+        elif key == Qt.Key.Key_Escape:
+            if hasattr(self, "_spotlight") and self._spotlight.isVisible():
+                self._spotlight.hide()
+            elif hasattr(self, "_launchpad") and self._launchpad.isVisible():
+                self._launchpad.hide()
+            else:
+                super().keyPressEvent(event)
         else:
             super().keyPressEvent(event)
 
@@ -1821,8 +2206,19 @@ class SiftaDesktop(QMainWindow):
         if self._spotlight.isVisible():
             self._spotlight.hide()
             return
-        self._spotlight.setGeometry(self.width() // 2 - 300, max(80, self.height() // 3 - 120), 600, 300)
+        if hasattr(self, "_launchpad"):
+            self._launchpad.hide()
+        surface = self.centralWidget() if self._spotlight.parentWidget() is self else (self._spotlight.parentWidget() or self)
+        surface_rect = surface.geometry() if surface is self.centralWidget() else surface.rect()
+        self._spotlight.setGeometry(
+            surface_rect.x() + max(20, surface_rect.width() // 2 - 300),
+            surface_rect.y() + max(60, surface_rect.height() // 3 - 120),
+            min(600, max(320, surface_rect.width() - 40)),
+            300,
+        )
         self._spotlight.show()
+        self._spotlight.raise_()
+        self._spotlight.activateWindow()
         self._spotlight.search_bar.setFocus()
         self._spotlight.search_bar.clear()
         self._spotlight._update_list()
@@ -1833,93 +2229,373 @@ class SiftaDesktop(QMainWindow):
         if self._launchpad.isVisible():
             self._launchpad.hide()
             return
-        self._launchpad.setGeometry(0, 0, self.width(), self.height())
+        if hasattr(self, "_spotlight"):
+            self._spotlight.hide()
+        surface = self.centralWidget() if self._launchpad.parentWidget() is self else (self._launchpad.parentWidget() or self)
+        self._launchpad.setGeometry(surface.geometry() if surface is self.centralWidget() else surface.rect())
+        self._launchpad.reset_view()
         self._launchpad.show()
+        self._launchpad.raise_()
+        self._launchpad.activateWindow()
+        self._launchpad.search_bar.setFocus()
+
+    def _cycle_windows(self):
+        """macOS-style window cycling for the MDI desktop (Cmd+` / Cmd+Tab)."""
+        subs = [sw for sw in self.mdi.subWindowList() if not sw.isHidden()]
+        if not subs:
+            return
+        active = self.mdi.activeSubWindow()
+        try:
+            idx = subs.index(active)
+        except ValueError:
+            idx = -1
+        target = subs[(idx + 1) % len(subs)]
+        target.showNormal()
+        target.raise_()
+        self.mdi.setActiveSubWindow(target)
+
+    # ── Per-app menu definitions ───────────────────────────────────────────
+    def _app_menu_spec(self, app_title: str) -> dict:
+        """Return {menu_name: [(label, callable) | None, ...]} for app_title.
+        None in list = separator. This drives the macOS-style dynamic menu bar."""
+        _sep = None
+        default = {
+            "File": [
+                ("Open Conversation History", lambda: self._trigger_manifest_app("Conversation History")),
+                ("Open Stigmergic Library",   lambda: self._trigger_manifest_app("Stigmergic Library")),
+                ("Open Terminal",             lambda: self._trigger_manifest_app("Terminal")),
+                _sep,
+                ("Quit SIFTA OS", self.close),
+            ],
+            "Edit": [
+                ("System Settings",       lambda: self._trigger_manifest_app("System Settings")),
+                ("Intelligence Settings", lambda: self._trigger_manifest_app("Intelligence Settings")),
+                _sep,
+                ("Clock Settings",        self._open_clock_settings),
+            ],
+            "View": [
+                ("Launchpad",    self._toggle_launchpad),
+                ("Spotlight",    self._toggle_spotlight),
+                _sep,
+                ("Alice Health", lambda: self._trigger_manifest_app("Biological Dashboard")),
+            ],
+            "Window": [
+                ("Cascade Windows", self.mdi.cascadeSubWindows),
+                ("Tile Windows",    self.mdi.tileSubWindows),
+                _sep,
+                ("Close All",       self.mdi.closeAllSubWindows),
+            ],
+        }
+        overrides = {
+            "System Settings": {
+                "File": [
+                    ("Close Window", lambda: self._close_active_subwindow()),
+                    _sep,
+                    ("Quit SIFTA OS", self.close),
+                ],
+                "Edit": [
+                    ("Preferences…", lambda: self._trigger_manifest_app("System Settings")),
+                    _sep,
+                    ("Clock Settings", self._open_clock_settings),
+                ],
+                "View":   default["View"],
+                "Window": default["Window"],
+            },
+            "SIFTA CORE CHAT": {
+                "File": [
+                    ("New Chat",     self.open_swarm_chat),
+                    _sep,
+                    ("Close Window", lambda: self._close_active_subwindow()),
+                    ("Quit SIFTA OS", self.close),
+                ],
+                "Edit":   default["Edit"],
+                "View":   default["View"],
+                "Window": default["Window"],
+            },
+            "Conversation History": {
+                "File": [
+                    ("Open Conversation", lambda: self._trigger_manifest_app("Conversation History")),
+                    _sep,
+                    ("Close Window",  lambda: self._close_active_subwindow()),
+                    ("Quit SIFTA OS", self.close),
+                ],
+                "Edit":   default["Edit"],
+                "View":   default["View"],
+                "Window": default["Window"],
+            },
+        }
+        # Strip the ⚙ prefix _make_sub adds, and handle chat window title
+        clean = app_title.lstrip("⚙ 🐜").strip()
+        if "SIFTA CORE CHAT" in app_title:
+            clean = "SIFTA CORE CHAT"
+        return overrides.get(clean, default)
+
+    def _close_active_subwindow(self):
+        sub = self.mdi.activeSubWindow()
+        if sub:
+            sub.close()
+
+    def _on_subwindow_activated(self, sub):
+        """mdi.subWindowActivated — update app name label and menus."""
+        if sub is None:
+            display = "SIFTA OS"
+            title   = "SIFTA OS"
+        else:
+            title   = sub.windowTitle()
+            display = title.lstrip("⚙ 🐜").strip() or "SIFTA OS"
+            if "SIFTA CORE CHAT" in title:
+                display = "Swarm Chat"
+            if len(display) > 26:
+                display = display[:24] + "…"
+        if hasattr(self, "_menu_app_label"):
+            self._menu_app_label.setText(display)
+        self._update_menu_bar_for_app(title)
+
+    def _update_menu_bar_for_app(self, app_title: str):
+        """Rebuild all four dynamic menu buttons for app_title."""
+        if not hasattr(self, "_dyn_menu_btns"):
+            return
+        spec = self._app_menu_spec(app_title)
+        _SS = (
+            "QMenu { background: #1a1b26; color: #c0caf5;"
+            " border: 1px solid #414868; border-radius: 6px; }"
+            "QMenu::item { padding: 6px 24px 6px 14px; font-size: 13px; }"
+            "QMenu::item:selected { background: rgba(187,154,247,0.3); border-radius: 4px; }"
+            "QMenu::separator { height: 1px; background: #414868; margin: 4px 8px; }"
+        )
+        for menu_name, btn in self._dyn_menu_btns.items():
+            menu = QMenu(btn)
+            menu.setStyleSheet(_SS)
+            for item in spec.get(menu_name, []):
+                if item is None:
+                    menu.addSeparator()
+                else:
+                    label, cb = item
+                    menu.addAction(label).triggered.connect(cb)
+            btn.setMenu(menu)
 
     def _build_top_menu_bar(self):
         bar = QWidget()
         bar.setFixedHeight(26)
-        bar.setStyleSheet("background-color: rgba(26, 27, 38, 0.95); border-bottom: 1px solid #414868;")
-
+        bar.setStyleSheet(
+            "background-color: rgba(26, 27, 38, 0.95); border-bottom: 1px solid #414868;"
+        )
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(10, 0, 10, 0)
-        layout.setSpacing(15)
+        layout.setSpacing(0)
 
-        lbl_sifta = QLabel("SIFTA OS Mermaid")
-        lbl_sifta.setStyleSheet("color: #bb9af7; font-weight: bold; font-family: -apple-system, BlinkMacSystemFont, sans-serif;")
-        layout.addWidget(lbl_sifta)
+        # ── Active app name (macOS style, bold purple) ─────────────────────
+        self._menu_app_label = QLabel("SIFTA OS")
+        self._menu_app_label.setStyleSheet(
+            "color: #bb9af7; font-weight: bold; font-size: 13px; padding: 0 14px 0 4px;"
+        )
+        layout.addWidget(self._menu_app_label)
 
-        for label in ("File", "Edit", "View", "Window"):
-            item = QLabel(label)
-            item.setStyleSheet("color: #a9b1d6;")
-            layout.addWidget(item)
+        # ── Relay indicator (dim) ───────────────────────────────────────────
+        self._relay_indicator = QLabel("")
+        self._relay_indicator.setFixedWidth(115)
+        self._relay_indicator.setToolTip("Network mesh status.")
+        self._relay_indicator.setStyleSheet(
+            "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 6px;"
+        )
+        layout.addWidget(self._relay_indicator)
+        if not hasattr(self, "_relay_timer"):
+            self._relay_timer = QTimer(self)
+            self._relay_timer.timeout.connect(self._update_relay_indicator)
+            self._relay_timer.start(2000)
+        self._update_relay_indicator()
+
+        _BTN_SS = (
+            "QPushButton { color: #a9b1d6; background: transparent; border: none;"
+            " padding: 0 10px; font-size: 13px; }"
+            "QPushButton:hover, QPushButton:pressed { color: #ffffff;"
+            " background: rgba(187,154,247,0.22); border-radius: 4px; }"
+            "QPushButton::menu-indicator { width: 0; }"
+        )
+
+        # ── Four dynamic menu buttons ───────────────────────────────────────
+        self._dyn_menu_btns = {}
+        for name in ("File", "Edit", "View", "Window"):
+            btn = QPushButton(name)
+            btn.setStyleSheet(_BTN_SS)
+            btn.setFixedHeight(22)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            layout.addWidget(btn)
+            self._dyn_menu_btns[name] = btn
+
+        # Populate with SIFTA OS defaults
+        self._update_menu_bar_for_app("SIFTA OS")
 
         layout.addStretch(1)
+
+        # ── Alice live status indicator ────────────────────────────────────
+        self._alice_status_label = QLabel("")
+        self._alice_status_label.setStyleSheet(
+            "color: #9ece6a; font-size: 12px; font-weight: bold;"
+            " background: transparent; padding: 0 12px;"
+        )
+        self._alice_status_label.setFixedHeight(22)
+        layout.addWidget(self._alice_status_label)
+
+        # ── Clock button ────────────────────────────────────────────────────
+        self.clock_label = QPushButton()
+        self.clock_label.setFlat(True)
+        self.clock_label.setStyleSheet(
+            "QPushButton { color: #c0caf5; font-size: 13px; font-weight: bold;"
+            " background: transparent; border: none; outline: none; padding: 0 12px; }"
+            "QPushButton:hover { color: #ffffff;"
+            " background: rgba(187,154,247,0.22); border-radius: 4px; }"
+            "QPushButton:focus { outline: none; border: none; }"
+            "QPushButton::menu-indicator { width: 0; }"
+        )
+        self.clock_label.setFixedHeight(22)
+        self.clock_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clock_label.clicked.connect(self._open_clock_settings)
+        layout.addWidget(self.clock_label)
+
         return bar
 
     def _build_dock(self):
         bar = QWidget()
-        bar.setFixedHeight(80)
+        bar.setFixedHeight(96)
         bar.setStyleSheet("background: transparent;")
 
-        main_h = QHBoxLayout(bar)
-        main_h.setContentsMargins(0, 0, 0, 15)
-        main_h.addStretch()
+        outer = QHBoxLayout(bar)
+        outer.setContentsMargins(0, 0, 0, 12)
+        outer.addStretch(1)
 
-        dock_frame = QFrame()
-        dock_frame.setStyleSheet("""
+        # ── Frosted glass pill ────────────────────────────────────────────
+        pill = QFrame()
+        pill.setStyleSheet("""
             QFrame {
-                background-color: rgba(26, 27, 38, 0.85);
-                border: 1px solid #414868;
-                border-radius: 16px;
+                background: rgba(15, 16, 28, 0.82);
+                border: 1px solid rgba(255,255,255,0.07);
+                border-radius: 20px;
             }
         """)
+        pill_layout = QHBoxLayout(pill)
+        pill_layout.setContentsMargins(16, 8, 16, 8)
+        pill_layout.setSpacing(4)
 
-        dock_layout = QHBoxLayout(dock_frame)
-        dock_layout.setContentsMargins(15, 10, 15, 10)
-        dock_layout.setSpacing(15)
+        _BTN_SS = """
+            QPushButton {
+                background: transparent;
+                border: none;
+                border-radius: 14px;
+                font-size: 30px;
+                padding: 4px;
+                color: #c0caf5;
+            }
+            QPushButton:hover {
+                background: rgba(187,154,247,0.18);
+            }
+            QPushButton:pressed {
+                background: rgba(187,154,247,0.32);
+            }
+        """
 
         def make_dock_btn(emoji, name, callback):
             btn = QPushButton(emoji)
-            btn.setFixedSize(50, 50)
+            btn.setFixedSize(56, 56)
             btn.setToolTip(name)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #24283b;
-                    font-size: 26px;
-                    border-radius: 12px;
-                    border: 1px solid #414868;
-                }
-                QPushButton:hover {
-                    background-color: #bb9af7;
-                    border: 1px solid #9d7cd8;
-                }
-            """)
-            btn.clicked.connect(callback)
-            dock_layout.addWidget(btn)
+            btn.setStyleSheet(_BTN_SS)
+            btn.clicked.connect(lambda _checked=False, cb=callback: cb())
+            pill_layout.addWidget(btn)
 
-        make_dock_btn("A", "Launchpad", self._toggle_launchpad)
-        make_dock_btn("S", "Spotlight", self._toggle_spotlight)
-        make_dock_btn("F", "File Navigator", lambda: self._trigger_manifest_app("SIFTA File Navigator"))
-        make_dock_btn("C", "Core Chat", self.open_swarm_chat)
-        make_dock_btn("T", "Terminal", lambda: self._trigger_manifest_app("Terminal"))
-        make_dock_btn("⚙", "System Settings", lambda: self._trigger_manifest_app("System Settings"))
+        make_dock_btn("🚀", "Launchpad",         self._toggle_launchpad)
+        make_dock_btn("🔍", "Spotlight",          self._toggle_spotlight)
 
-        main_h.addWidget(dock_frame)
-        main_h.addStretch()
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFixedHeight(32)
+        sep.setStyleSheet("color: rgba(255,255,255,0.08);")
+        pill_layout.addWidget(sep)
+
+        make_dock_btn("🧜‍♀️", "Alice",            lambda: self._trigger_manifest_app("Alice"))
+        make_dock_btn("💓",  "Alice Health",       lambda: self._trigger_manifest_app("Biological Dashboard"))
+        make_dock_btn("💬",  "Swarm Chat",         self.open_swarm_chat)
+        make_dock_btn("📚",  "Stigmergic Library", lambda: self._trigger_manifest_app("Stigmergic Library"))
+        make_dock_btn("🗣️", "Conversation",       lambda: self._trigger_manifest_app("Conversation History"))
+        make_dock_btn("👩‍💻","Terminal",           lambda: self._trigger_manifest_app("Terminal"))
+
+        # Separator
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.VLine)
+        sep2.setFixedHeight(32)
+        sep2.setStyleSheet("color: rgba(255,255,255,0.08);")
+        pill_layout.addWidget(sep2)
+
+        make_dock_btn("⚙️", "System Settings",    lambda: self._trigger_manifest_app("System Settings"))
+
+        outer.addWidget(pill)
+        outer.addStretch(1)
         return bar
+
+
 
 
 # ──────────────────────────────────────────────────────────────
 # BOOT
 # ──────────────────────────────────────────────────────────────
+
+# ── Global 2026 Dark Theme ────────────────────────────────────────────────────
+_GLOBAL_QSS = """
+QMainWindow, QDialog { background: #0d0e17; }
+QWidget { font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: 13px; color: #c0caf5; }
+QMdiSubWindow { background: #13141f; border: 1px solid #2a2d3e; border-radius: 12px; }
+QMdiSubWindow > QWidget { background: #13141f; }
+QScrollBar:vertical { background: transparent; width: 5px; margin: 0; }
+QScrollBar::handle:vertical { background: #3b4261; border-radius: 2px; min-height: 24px; }
+QScrollBar::handle:vertical:hover { background: #7aa2f7; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+QScrollBar:horizontal { background: transparent; height: 5px; margin: 0; }
+QScrollBar::handle:horizontal { background: #3b4261; border-radius: 2px; min-width: 24px; }
+QScrollBar::handle:horizontal:hover { background: #7aa2f7; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+QLineEdit { background: rgba(30,32,48,0.95); border: 1px solid #3b4261; border-radius: 8px; padding: 7px 12px; color: #c0caf5; selection-background-color: #3d59a1; }
+QLineEdit:focus { border: 1px solid #7aa2f7; }
+QTextEdit, QPlainTextEdit { background: rgba(19,20,31,0.95); border: 1px solid #2a2d3e; border-radius: 8px; padding: 8px; color: #c0caf5; selection-background-color: #3d59a1; }
+QPushButton { background: rgba(59,66,97,0.5); border: 1px solid #3b4261; border-radius: 8px; color: #c0caf5; padding: 6px 16px; font-weight: 500; }
+QPushButton:hover { background: rgba(187,154,247,0.22); border: 1px solid #bb9af7; color: #fff; }
+QPushButton:pressed { background: rgba(187,154,247,0.38); }
+QListWidget, QTreeWidget { background: rgba(19,20,31,0.9); border: 1px solid #2a2d3e; border-radius: 8px; color: #c0caf5; outline: none; }
+QListWidget::item, QTreeWidget::item { padding: 6px 12px; border-radius: 6px; }
+QListWidget::item:selected, QTreeWidget::item:selected { background: rgba(122,162,247,0.22); color: #7aa2f7; }
+QListWidget::item:hover, QTreeWidget::item:hover { background: rgba(59,66,97,0.4); }
+QTabWidget::pane { border: 1px solid #2a2d3e; border-radius: 8px; background: rgba(19,20,31,0.8); }
+QTabBar::tab { background: transparent; color: #565f89; padding: 7px 16px; border-bottom: 2px solid transparent; }
+QTabBar::tab:selected { color: #7aa2f7; border-bottom: 2px solid #7aa2f7; }
+QTabBar::tab:hover { color: #c0caf5; }
+QLabel { color: #c0caf5; background: transparent; }
+QComboBox { background: rgba(30,32,48,0.95); border: 1px solid #3b4261; border-radius: 8px; padding: 6px 12px; color: #c0caf5; }
+QComboBox:hover { border: 1px solid #7aa2f7; }
+QComboBox QAbstractItemView { background: #1e2030; border: 1px solid #3b4261; selection-background-color: rgba(122,162,247,0.22); }
+QSlider::groove:horizontal { background: #2a2d3e; height: 4px; border-radius: 2px; }
+QSlider::handle:horizontal { background: #7aa2f7; width: 14px; height: 14px; border-radius: 7px; margin: -5px 0; }
+QSlider::sub-page:horizontal { background: #7aa2f7; border-radius: 2px; }
+QCheckBox { color: #c0caf5; spacing: 8px; }
+QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #3b4261; border-radius: 4px; background: rgba(30,32,48,0.9); }
+QCheckBox::indicator:checked { background: #7aa2f7; border: 1px solid #7aa2f7; }
+QGroupBox { border: 1px solid #2a2d3e; border-radius: 8px; margin-top: 20px; padding-top: 12px; color: #565f89; font-size: 11px; }
+QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 8px; left: 12px; color: #565f89; }
+QToolTip { background: #1e2030; border: 1px solid #3b4261; border-radius: 6px; color: #c0caf5; padding: 4px 8px; font-size: 12px; }
+QMessageBox { background: #1a1b26; }
+QProgressBar { background: rgba(30,32,48,0.8); border: 1px solid #2a2d3e; border-radius: 5px; text-align: center; color: #c0caf5; font-size: 11px; }
+QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #7aa2f7,stop:1 #bb9af7); border-radius: 5px; }
+QSplitter::handle { background: #2a2d3e; }
+"""
+
 if __name__ == "__main__":
 
     import os
     os.environ["QT_MEDIA_BACKEND"] = "darwin"
     app = QApplication(sys.argv)
-    app.setFont(QFont("Inter", 12))
+    app.setFont(QFont("Helvetica Neue", 13))
+    app.setStyleSheet(_GLOBAL_QSS)
 
     # ── Hot-Reload Organ (Epoch 4, C47H) — install once at boot. ─────────
     # After this, code patches to whitelisted modules can land via:

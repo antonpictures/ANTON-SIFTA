@@ -1,8 +1,9 @@
 {
   "id": "EVIL_MIRROR",
   "hash_chain": [
-    "ab388ea7437dce291b56a95d58ae3690f75743ecc9b6276ed164edb722ca59ca"
+    "ab388ea7437dce291b56a95d58ae3690f75743ecc9b6276ed164edb722ca59ca",
+    "d08d4c61e811cb9ca2bddaad171903c30db8de91159f559bf8c3783ffc08dc6b"
   ],
-  "seq": 1,
+  "seq": 2,
   "style": "NOMINAL"
 }

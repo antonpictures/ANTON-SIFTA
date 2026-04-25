@@ -15,13 +15,18 @@ See: proposals/chorus_web_gateway/CHORUS_WEB_GATEWAY_1776244283.md
 import sys
 import json
 import time
+import traceback
+import urllib.request
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-# Add project root to path so System/ modules are importable
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path so System/ modules are importable even when this
+# file is launched from scripts/, launchd, nginx helpers, or a bare shell.
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 from System.chorus_engine import chorus
 
 app = FastAPI(title="StigmergiCode Swarm Chat")
@@ -35,7 +40,7 @@ app.add_middleware(
 )
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-CHAT_LOGS = Path(".sifta_state/wormhole_cache/web_chats")
+CHAT_LOGS = _REPO / ".sifta_state" / "wormhole_cache" / "web_chats"
 CHAT_LOGS.mkdir(parents=True, exist_ok=True)
 
 SESSIONS = {}
@@ -246,6 +251,23 @@ def query_ollama(prompt: str, history: list) -> str:
             continue
     return "🌊 The Swarm nodes are silent. Signal lost."
 
+def _ollama_alive() -> bool:
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=1.5) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+@app.get("/health")
+async def health_endpoint():
+    return {
+        "ok": True,
+        "service": "stigmergicode_chat_bridge",
+        "repo": str(_REPO),
+        "ollama_alive": _ollama_alive(),
+        "chat_logs": str(CHAT_LOGS),
+    }
+
 @app.post("/api/chat")
 async def chat_endpoint(request: Request):
     """Routes web visitor message through the 7-swimmer Chorus engine."""
@@ -260,7 +282,22 @@ async def chat_endpoint(request: Request):
     hist = SESSIONS[session_id]["history"]
 
     # ── Chorus deliberates ──────────────────────────────────────────
-    result = chorus(message, session_id, hist)
+    try:
+        result = chorus(message, session_id, hist)
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+        print(f"[SIFTA CHAT ERROR] chorus failed: {err}")
+        print(traceback.format_exc())
+        fallback = (
+            "🌊 The web bridge is awake, but the chorus organ failed during this turn. "
+            f"Bridge diagnostic: {err}"
+        )
+        return {
+            "reply": fallback,
+            "chorus_manifest": [{"swimmer_id": "BRIDGE", "face": "[net]", "node": "M1THER"}],
+            "visitor_class": "BRIDGE_ERROR",
+            "latency": 0,
+        }
 
     reply            = result["reply"]
     chorus_manifest  = result.get("chorus_manifest", [])

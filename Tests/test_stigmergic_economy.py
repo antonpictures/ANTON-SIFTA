@@ -148,10 +148,10 @@ class TestStigmergicEconomy(unittest.TestCase):
         end        = self._bal("ANTIALICE_ON_M1")
         net_change = end - start
 
-        print(f"\n  [OK] 3 borrows + 5 rewards: net {net_change:+.4f} STGM "
-              f"(fees={total_fees:.4f}, this is real economy math)")
-        self.assertGreater(net_change, 0,
-            "5 rewards > 3 min-borrows — miners profit from volume of healing")
+        print(f"\n  [OK] 3 borrows + 5 deprecated rewards: net {net_change:+.4f} STGM "
+              f"(fees={total_fees:.4f}, deprecated mint_reward is non-inflationary)")
+        self.assertAlmostEqual(net_change, -total_fees, places=3,
+            msg="Deprecated mint_reward must not inflate STGM; only borrow fees move value")
 
     def test_04_bulk_10_borrows_ledger_consistent(self):
         """10 consecutive borrows — cumulative math holds in ledger."""

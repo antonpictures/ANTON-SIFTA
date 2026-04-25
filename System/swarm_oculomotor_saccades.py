@@ -340,6 +340,8 @@ def live_saccade_loop(agent_id: str = "ALICE_M5", tick_hz: float = 2.0):
                             _write_camera_target(
                                 name=new_cam,
                                 writer="swarm_oculomotor_saccades",
+                                priority=20,
+                                lease_s=2.0,
                             )
                         except Exception as exc:
                             print(f"[👁️ SACCADE] canonical write failed: {exc}")

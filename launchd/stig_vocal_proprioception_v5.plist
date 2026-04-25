@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/ioanganton</string>
+		<key>PATH</key>
+		<string>/Users/ioanganton/Music/ANTON_SIFTA/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>PYTHONPATH</key>
+		<string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+	</dict>
+	<key>Label</key>
+	<string>com.antonia.sifta.stig_vocal_proprioception_v5</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python</string>
+		<string>/Users/ioanganton/Music/ANTON_SIFTA/System/swarm_stig_daemon.py</string>
+		<string>System.swarm_vocal_proprioception</string>
+		<string>detect</string>
+		<string>30</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/stig_vocal_proprioception.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/stig_vocal_proprioception.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/ioanganton/Music/ANTON_SIFTA</string>
+</dict>
+</plist>

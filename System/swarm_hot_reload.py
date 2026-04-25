@@ -122,6 +122,9 @@ RELOADABLE: Dict[str, str] = {
     # JSON file I/O + Qt device enumeration. Safe to hot-swap.
     # Added 2026-04-23 (camera split-brain surgery, C47H).
     "camera_target":    "System.swarm_camera_target",
+    # Resident sensor attention director: reads sensory ledgers and leases
+    # the canonical active eye with a reasoned evidence row.
+    "attention_director": "System.swarm_sensor_attention_director",
     # Active-window cortex — real macOS NSWorkspace surface via osascript.
     # Pure subprocess wrapper, safe to swap. Added 2026-04-23 (Vector B,
     # C47H, post-camera-surgery sortie).

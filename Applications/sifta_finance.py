@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QAbstractItemView,
     QTextEdit,
 )
+from System.sifta_base_widget import SiftaBaseWidget
 from PyQt6.QtCore  import Qt, QTimer
 from PyQt6.QtGui   import QFont, QColor
 
@@ -404,11 +405,12 @@ class InstallAgentDialog(QDialog):
 
 # ─────────────────────────────────────────────────────────────
 
-class FinanceDashboard(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setStyleSheet("""
-            QWidget { background-color: #000000; color: #FFFFFF; font-family: '-apple-system', 'Segoe UI', 'Roboto', sans-serif; }
+class FinanceDashboard(SiftaBaseWidget):
+    APP_NAME = "Swarm Finance"
+
+    def build_ui(self, layout: QVBoxLayout) -> None:
+        # Override the base SIFTA styles with Finance's specialized Robinhood dark theme
+        self.setStyleSheet(self.styleSheet() + """
             QTabWidget::pane { border: none; border-top: 1px solid #1c1c1e; }
             QTabBar::tab { background: transparent; color: #8E8E93; padding: 12px 20px; border: none; font-size: 15px; font-weight: 500; }
             QTabBar::tab:selected { color: #FFFFFF; font-weight: bold; border-bottom: 2px solid #00C805; }
@@ -416,9 +418,6 @@ class FinanceDashboard(QWidget):
             QTableWidget { background: #000000; border: none; gridline-color: #1c1c1e; color: #FFFFFF; selection-background-color: #1c1c1e; outline: 0; }
             QHeaderView::section { background: #000000; color: #8E8E93; padding: 12px 8px; border: none; border-bottom: 1px solid #1c1c1e; font-size: 13px; font-weight: 500; text-transform: uppercase; }
         """)
-        self._main_lay = QVBoxLayout(self)
-        self._main_lay.setContentsMargins(0, 0, 0, 0)
-        self._main_lay.setSpacing(0)
 
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("QTabWidget::tab-bar { alignment: center; }")
@@ -429,13 +428,10 @@ class FinanceDashboard(QWidget):
         self.tabs.addTab(self.market_tab, "Inference Market")
         self.tabs.addTab(self.warren_tab, "Warren Buffett")
         self._build_warren_tab()
-        self._main_lay.addWidget(self.tabs)
+        layout.addWidget(self.tabs)
 
         self._build_portfolio()
-        
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._refresh_all)
-        self._timer.start(5000)
+        self.make_timer(5000, self._refresh_all)
 
     def _build_warren_tab(self):
         wl = QVBoxLayout(self.warren_tab)

@@ -68,6 +68,10 @@ class EfferenceConfig:
     deadzone: float = 1e-4
     eps: float = 1e-8
 
+    def __post_init__(self) -> None:
+        if self.adapt_rate <= 0:
+            raise ValueError("adapt_rate must be positive")
+
 
 class EfferenceCopySystem:
     """
@@ -97,7 +101,12 @@ class EfferenceCopySystem:
         # Expected flow is opposite to camera motion (if camera moves Right, world moves Left)
         # However, we define gain to absorb the sign. We'll use standard linear mapping.
         # Flow = Motor * Gain
-        
+
+        if v_motor.ndim == 1 and v_motor.shape != (2,):
+            raise ValueError("motor_velocities must be a 2-vector")
+        if v_motor.ndim == 2 and v_motor.shape[1] != 2:
+            raise ValueError("motor_velocities must be a 2-vector per row")
+
         # Handle both single vectors and arrays of vectors
         if v_motor.ndim == 1:
             pred = v_motor @ self.gain_matrix
@@ -121,12 +130,18 @@ class EfferenceCopySystem:
         """
         obs = np.asarray(observed_flow, dtype=np.float32)
         pred = np.asarray(predicted_flow, dtype=np.float32)
+        if obs.shape != pred.shape:
+            raise ValueError("observed_flow and predicted_flow must have matching shapes")
         return obs - pred
 
     def filter(self, motor_velocities: np.ndarray, observed_flow: np.ndarray) -> np.ndarray:
         """
         Convenience method: predict expected flow and return the corrected flow.
         """
+        m = np.asarray(motor_velocities, dtype=np.float32)
+        o = np.asarray(observed_flow, dtype=np.float32)
+        if not np.isfinite(m).all() or not np.isfinite(o).all():
+            raise ValueError("motor_velocities and observed_flow must be finite")
         pred = self.predict(motor_velocities)
         return self.correct(observed_flow, pred)
 

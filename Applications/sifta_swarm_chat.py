@@ -10,8 +10,6 @@ import json
 import time
 import datetime
 import hashlib
-import urllib.request
-import urllib.error
 import re
 import math
 import random
@@ -20,7 +18,7 @@ from typing import Dict, List, Any, Optional
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QFrame, QListWidget, QTextEdit, QFileDialog, QComboBox
+    QFrame, QListWidget, QTextEdit, QFileDialog
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QTextCursor, QTextCharFormat, QKeyEvent
@@ -36,7 +34,6 @@ from System.ledger_append import append_jsonl_line
 from sifta_save_defaults import default_sifta_save_path
 
 from System.sifta_inference_defaults import (
-    get_default_ollama_model,
     resolve_ollama_model,
     sanitize_model_name,
 )
@@ -66,6 +63,7 @@ def close_parent_subwindow(widget):
     while p is not None and not isinstance(p, QMdiSubWindow):
         p = p.parent()
     if p:
+        p.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         p.close()
 
 # ── WORKER THREADS ─────────────────────────────────────────────
@@ -200,7 +198,7 @@ class ScreenplayTextEdit(QTextEdit):
 class SwarmChatWindow(QWidget):
     def __init__(self, model: str | None = None):
         super().__init__()
-        self.model = model or get_default_ollama_model()
+        self.model = model or resolve_ollama_model(app_context="swarm_chat")
         self.context_files = []
         self.ollama_worker = None
         self._marrow_bus = None
@@ -272,19 +270,7 @@ class SwarmChatWindow(QWidget):
         title.setStyleSheet("color: #e0af68; font-weight: 800; letter-spacing: 0.5px;")
         header_layout.addWidget(title)
         
-        # Model Selector
-        self.model_selector = QComboBox()
-        self.model_selector.setStyleSheet(
-            "QComboBox { background-color: #1a1b26; color: #a9b1d6; border: 1px solid #414868; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: bold; }"
-            "QComboBox::drop-down { border: none; }"
-            "QComboBox QAbstractItemView { background-color: #1a1b26; color: #c0caf5; selection-background-color: #24283b; }"
-        )
-        self.model_selector.addItems(self._fetch_ollama_models())
-        self.model_selector.setCurrentText(self.model)
-        self.model_selector.currentTextChanged.connect(self._change_model)
-        
         header_layout.addStretch()
-        header_layout.addWidget(self.model_selector)
         
         btn_close = QPushButton("✕")
         btn_close.setFixedSize(28, 28)
@@ -343,6 +329,45 @@ class SwarmChatWindow(QWidget):
         self._drop_timer.setInterval(15000)  # every 15 seconds
         self._drop_timer.timeout.connect(self.poll_dead_drop)
         self._drop_timer.start()
+
+    def shutdown(self):
+        for timer_name in ("_marrow_timer", "_drop_timer"):
+            timer = getattr(self, timer_name, None)
+            if timer is not None:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+
+        editor = getattr(self, "editor", None)
+        idle_timer = getattr(editor, "idle_timer", None)
+        if idle_timer is not None:
+            try:
+                idle_timer.stop()
+            except Exception:
+                pass
+
+        worker = getattr(self, "ollama_worker", None)
+        if worker is not None and worker.isRunning():
+            try:
+                worker.requestInterruption()
+            except Exception:
+                pass
+            try:
+                worker.quit()
+            except Exception:
+                pass
+            try:
+                if not worker.wait(1000):
+                    worker.terminate()
+                    worker.wait(1000)
+            except Exception:
+                pass
+        self.ollama_worker = None
+
+    def closeEvent(self, event):
+        self.shutdown()
+        super().closeEvent(event)
 
     def _seed_page(self):
         """Prepare the document for immediate Screenplay writing."""
@@ -590,28 +615,6 @@ class SwarmChatWindow(QWidget):
         if not path: return
         Path(path).write_text(self.editor.toPlainText(), encoding="utf-8")
         self.status_label.setText(f"💾 Saved {Path(path).name}")
-
-    def _fetch_ollama_models(self):
-        models = []
-        try:
-            req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if "models" in data:
-                    models = [m["name"] for m in data["models"]]
-        except Exception: pass
-        if not models:
-            models = [f"{get_default_ollama_model()} (Offline Fallback)"]
-
-        preferred = [get_default_ollama_model(), "llama3:latest", "phi4-mini-reasoning:latest"]
-        for b in preferred:
-            if b in models:
-                self.model = b
-                break
-        return models
-
-    def _change_model(self, model_name):
-        self.model = model_name
 
     def poll_dead_drop(self):
         """Pull any new cross-node chat rows and surface them as stage directions.

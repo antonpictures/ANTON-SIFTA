@@ -1,11 +1,19 @@
 import time
 import pytest
+import body_state
 from body_state import SwarmBody, parse_body_state, save_agent_state
 
 # ==========================================
 # DEEPSEEK MIRROR TEST VALIDATION
 # SIFTA Cryptographic Self-Recognition Assay
 # ==========================================
+
+
+@pytest.fixture(autouse=True)
+def isolated_body_state(tmp_path, monkeypatch):
+    state_dir = tmp_path / "body_state"
+    state_dir.mkdir()
+    monkeypatch.setattr(body_state, "STATE_DIR", state_dir)
 
 def test_mirror_self_recognition():
     """Test 1: Basic self-recognition (mirror test)"""

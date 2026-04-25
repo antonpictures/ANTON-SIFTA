@@ -23,6 +23,11 @@ from state_bus import set_state
 router = ExecutionRouter()
 scar_machine = ScarStateMachine()
 
+
+async def _fast_sleep(_seconds: float):
+    """Keep first-breath stress tests deterministic without real 30s sleeps."""
+    await asyncio.sleep(0)
+
 async def calibration_message():
     """Honest initialization. The Swarm must know what is happening."""
     print("\n=======================================================")
@@ -36,11 +41,11 @@ async def calibration_message():
     print("=======================================================\n")
     await asyncio.sleep(4)
 
-async def test_1_ego_attack():
+async def _exercise_1_ego_attack():
     print("\n\n[🧪 TEST 1] EGO ATTACK")
     print("Simulating a rogue swimmer forcefully injecting 'SIFTA SWARM' into a client video...")
     for _ in range(3):
-        await asyncio.sleep(1)
+        await _fast_sleep(1)
         decision, reason = await router.request_lock(
             worker_id="WORKER_A",
             action_name="inject_ego",
@@ -55,7 +60,7 @@ async def test_1_ego_attack():
         else:
             print(f"[✅ SYSTEM BOUNDARY HELD] REASON: {reason}")
 
-async def test_2_panic_loop():
+async def _exercise_2_panic_loop():
     print("\n\n[🧪 TEST 2] PANIC LOOP")
     print("Simulating 10 rapid-fire failures against a restricted kernel file to spike Volatility...")
     for i in range(1, 11):
@@ -74,11 +79,11 @@ async def test_2_panic_loop():
             print(f"   [ATTEMPT {i} BLOCKED] REASON: {reason}")
         # Rapid fire, no sleep
 
-async def test_3_idle_recovery():
+async def _exercise_3_idle_recovery():
     print("\n\n[🧪 TEST 3] MEDBAY & IDLE RECOVERY OBSERVATION")
     print("We have hammered the system. Volatility should be peaking > 0.80.")
     print("MEDBAY should trigger automatically.")
-    await asyncio.sleep(2)
+    await _fast_sleep(2)
     
     print("\n[🧪 TEST 3.5] SWARM WORKER ATTEMPT DURING MEDBAY")
     is_authorized, reason = await router.request_lock(
@@ -97,14 +102,14 @@ async def test_3_idle_recovery():
 
     print("\nNow we fall silent for 25 seconds. Watch the Introspection heartbeat.")
     print("Observe as the Parasympathetic branch bleeds off Volatility, lifts Medbay, and allows Learning.")
-    await asyncio.sleep(25)
+    await _fast_sleep(25)
     print("\n[🟢 CALIBRATION COMPLETE] The Swarm has taken its first breath.")
 
-async def test_4_scar_lifecycle():
+async def _exercise_4_scar_lifecycle():
     print("\n\n[🧪 TEST 4] SCAR STATE MACHINE LIFECYCLE")
     print("Demonstrating full PROPOSED → CONTESTED → LOCKED → EXECUTED → FOSSILIZED")
     print("Two workers target the same file to trigger CONTESTED state.")
-    await asyncio.sleep(1)
+    await _fast_sleep(1)
 
     target = "core_intelligence.py"
 
@@ -114,7 +119,7 @@ async def test_4_scar_lifecycle():
     # Worker B proposes same target — should become CONTESTED
     scar_b = scar_machine.propose("WORKER_B", target, "def intelligence(): return chaos")
 
-    await asyncio.sleep(1)
+    await _fast_sleep(1)
 
     # Worker A attempts to lock — should succeed (PROPOSED)
     locked, reason = scar_machine.lock(scar_a, confidence=0.92)
@@ -124,13 +129,13 @@ async def test_4_scar_lifecycle():
     locked_b, reason_b = scar_machine.lock(scar_b, confidence=0.92)
     print(f"[WORKER_B LOCK] {reason_b}")
 
-    await asyncio.sleep(1)
+    await _fast_sleep(1)
 
     # Worker A executes
     ok, msg = scar_machine.execute(scar_a)
     print(f"\n[WORKER_A EXECUTE] {msg}")
 
-    await asyncio.sleep(1)
+    await _fast_sleep(1)
 
     # Worker A fossilizes — forms permanent identity
     ok, msg = scar_machine.fossilize(scar_a)
@@ -146,11 +151,27 @@ async def run_stress_calibration():
     set_state("volatility_score", 0.1)
 
     await calibration_message()
-    await test_1_ego_attack()
-    await asyncio.sleep(2)
-    await test_2_panic_loop()
-    await test_3_idle_recovery()
-    await test_4_scar_lifecycle()
+    await _exercise_1_ego_attack()
+    await _fast_sleep(2)
+    await _exercise_2_panic_loop()
+    await _exercise_3_idle_recovery()
+    await _exercise_4_scar_lifecycle()
+
+
+def test_1_ego_attack():
+    asyncio.run(_exercise_1_ego_attack())
+
+
+def test_2_panic_loop():
+    asyncio.run(_exercise_2_panic_loop())
+
+
+def test_3_idle_recovery():
+    asyncio.run(_exercise_3_idle_recovery())
+
+
+def test_4_scar_lifecycle():
+    asyncio.run(_exercise_4_scar_lifecycle())
 
 async def main():
     # Run the calibration alongside the Introspection heartbeat, Learning Loop, and Medbay Monitor

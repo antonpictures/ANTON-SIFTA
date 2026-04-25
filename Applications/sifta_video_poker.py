@@ -2,8 +2,11 @@
 """
 sifta_video_poker.py - Stigmergic Video Poker
 ═══════════════════════════════════════════════════════════════════════════════
-A native Python port of the STGM Video Poker. 
+A play-money video poker table for Mermaid OS Games.
 ALICE plays with you. 52 chaotic agents determine the deck shuffle.
+
+This app intentionally does not import the real casino vault or write STGM
+ledger rows. It is a toy casino surface using local in-memory credits only.
 """
 from __future__ import annotations
 
@@ -59,6 +62,35 @@ PAY_TABLE = {
     'jacks or better': 1,
     'NO WIN': 0
 }
+
+
+class PlayMoneyVault:
+    """In-memory fun-credit ledger for the poker table.
+
+    Every balance lives only inside this widget instance.
+    """
+
+    def __init__(self, starting_balance: float = 1000.0) -> None:
+        self.player_balance = float(starting_balance)
+        self.casino_balance = 0.0
+
+    def get_play_wallet(self) -> float:
+        return self.player_balance
+
+    def process_bet(self, amount: float) -> bool:
+        amount = float(amount)
+        if amount <= 0 or self.player_balance < amount:
+            return False
+        self.player_balance -= amount
+        self.casino_balance += amount
+        return True
+
+    def process_payout(self, amount: float, reason: str = "") -> None:
+        amount = float(amount)
+        if amount <= 0:
+            return
+        self.player_balance += amount
+        self.casino_balance = max(0.0, self.casino_balance - amount)
 
 def evaluate_hand(hand: List[Card]) -> str:
     if len(hand) != 5:
@@ -291,14 +323,8 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
 
     def build_ui(self, layout: QVBoxLayout) -> None:
         self.set_status("Initializing Biological Luck Engine...")
-        
-        try:
-            from System.casino_vault import CasinoVault
-            self.vault = CasinoVault(architect_id="IOAN_M5")
-        except ImportError:
-            if self._gci:
-                self._gci.chat_display.append("<span style='color:#f7768e;'>[SYSTEM ERROR] Could not locate Casino Vault.</span>")
-            return
+
+        self.vault = PlayMoneyVault(starting_balance=1000.0)
 
         self.bet = 0.1
         self.phase = 'betting' # betting -> dealt -> drawn -> gamble
@@ -435,15 +461,15 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         # Hook GCI (text commands still work too)
         if self._gci:
             self._gci.message_sent.connect(self.on_user_typing)
-            self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: Use the buttons below or type commands. LUCK is decided by PI.]</span>")
+            self._gci.chat_display.append("<span style='color:#7aa2f7;'>[SYSTEM: Fun-credit poker. No real STGM or casino vault access. Use buttons below or type commands.]</span>")
         self.update_hud()
 
     def update_hud(self):
-        player_stgm = round(self.vault.get_real_player_wallet(), 2)
-        casino_stgm = round(self.vault.casino_balance, 2)
+        player_credits = round(self.vault.get_play_wallet(), 2)
+        house_credits = round(self.vault.casino_balance, 2)
         luck = self.deck_engine.luck
-        self.wallet_label.setText(f"Architect Wallet: {player_stgm} STGM | Bet: {self.bet} STGM")
-        self.casino_label.setText(f"Casino Vault: {casino_stgm} STGM")
+        self.wallet_label.setText(f"Play Wallet: {player_credits} credits | Bet: {self.bet} credits")
+        self.casino_label.setText(f"Fun Bank: {house_credits} credits")
         self.luck_label.setText(f"🍀 LUCK: {luck:.2f}% (π)")
     
     def _update_button_states(self):
@@ -470,7 +496,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.btn_black.setEnabled(is_gamble)
         self.btn_cashin.setEnabled(is_gamble)
         if is_gamble:
-            self.gamble_label.setText(f"DOUBLE OR NOTHING — {self.gamble_winnings:.2f} STGM at risk!")
+            self.gamble_label.setText(f"DOUBLE OR NOTHING — {self.gamble_winnings:.2f} credits at risk!")
         else:
             self.gamble_label.setText("")
     
@@ -521,7 +547,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                 return
             hand_str = self._hand_to_string()
             held_str = self._held_to_string()
-            wallet = round(self.vault.get_real_player_wallet(), 2)
+            wallet = round(self.vault.get_play_wallet(), 2)
             luck = self.deck_engine.luck
 
             context = (
@@ -530,10 +556,10 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
                 f"  Held: {held_str}\n"
                 f"  Phase: {self.phase}\n"
                 f"  LUCK: {luck:.2f}% (π)\n"
-                f"  Architect wallet: {wallet} STGM\n"
+                f"  Play wallet: {wallet} credits\n"
             )
             if self.phase == 'gamble':
-                context += f"  GAMBLE: {self.gamble_winnings:.2f} STGM at risk! Advise RED, BLACK, or CASH IN.\n"
+                context += f"  GAMBLE: {self.gamble_winnings:.2f} credits at risk! Advise RED, BLACK, or CASH IN.\n"
 
             self._gci.set_app_context(context)
         except Exception:
@@ -595,7 +621,7 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
     def _do_deal(self):
         # Process financial transaction
         if not self.vault.process_bet(self.bet):
-            if self._gci: self._gci.chat_display.append("<span style='color:#f7768e;'>[SYSTEM: Insufficient STGM. Cut-off protocol engaged. Produce memories to earn more capital.]</span>")
+            if self._gci: self._gci.chat_display.append("<span style='color:#f7768e;'>[SYSTEM: Not enough play credits. Lower the bet or reopen the table for a fresh toy wallet.]</span>")
             return
         
         # LUCK rerolls every hand — PI decides
@@ -611,10 +637,10 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self._update_button_states()
         
         if self._gci:
-            wallet = round(self.vault.get_real_player_wallet(), 2)
+            wallet = round(self.vault.get_play_wallet(), 2)
             luck = self.deck_engine.luck
             hand_str = self._hand_to_string()
-            self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Placed {self.bet} bet. Dealt 5 cards. LUCK: {luck:.2f}% (π). Architect STGM: {wallet}]</span>")
+            self._gci.chat_display.append(f"<span style='color:#7aa2f7;'>[SYSTEM: Placed {self.bet} credit bet. Dealt 5 cards. LUCK: {luck:.2f}% (π). Play wallet: {wallet}]</span>")
             self._gci.chat_display.append(
                 f"<span style='color:#565f89; font-size:10px;'>[POKER VISION] Current hand: {hand_str}. "
                 f"Phase: DEALT. Held: none yet. "
@@ -649,10 +675,10 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             # Don't pay out yet — enter gamble phase
             self.gamble_winnings = win_amount
             self.phase = 'gamble'
-            self.canvas.result_text = f"{result} (+{win_amount:.1f} STGM) — DOUBLE OR CASH IN?"
+            self.canvas.result_text = f"{result} (+{win_amount:.1f} credits) — DOUBLE OR CASH IN?"
             if self._gci:
                 self._gci.chat_display.append(
-                    f"<span style='color:#bb9af7;'>[SYSTEM: 🎰 WON {win_amount:.2f} STGM ({result})! "
+                    f"<span style='color:#bb9af7;'>[SYSTEM: 🎰 WON {win_amount:.2f} play credits ({result})! "
                     f"Guess RED or BLACK to double, or CASH IN to keep it safe.]</span>")
         else:
             self.canvas.result_text = "NO WIN"
@@ -678,12 +704,12 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             self.gamble_winnings *= 2
             self.canvas.result_text = (
                 f"✅ {flip_card} is {'RED' if card_is_red else 'BLACK'}! "
-                f"DOUBLED → {self.gamble_winnings:.2f} STGM — go again?")
+                f"DOUBLED → {self.gamble_winnings:.2f} credits — go again?")
             if self._gci:
                 self._gci.chat_display.append(
                     f"<span style='color:#9ece6a;'>[SYSTEM: ✅ Flipped {flip_card} — "
                     f"{'RED' if card_is_red else 'BLACK'}! Winnings doubled to "
-                    f"{self.gamble_winnings:.2f} STGM. Guess again or CASH IN.]</span>")
+                    f"{self.gamble_winnings:.2f} play credits. Guess again or CASH IN.]</span>")
             # Stay in gamble phase — can keep doubling
         else:
             # BUST — lose everything
@@ -692,11 +718,11 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
             self.phase = 'drawn'  # back to betting
             self.canvas.result_text = (
                 f"💀 {flip_card} is {'RED' if card_is_red else 'BLACK'}! "
-                f"BUST — lost {lost:.2f} STGM")
+                f"BUST — lost {lost:.2f} credits")
             if self._gci:
                 self._gci.chat_display.append(
                     f"<span style='color:#f7768e;'>[SYSTEM: 💀 Flipped {flip_card} — "
-                    f"{'RED' if card_is_red else 'BLACK'}! BUST. Lost {lost:.2f} STGM. "
+                    f"{'RED' if card_is_red else 'BLACK'}! BUST. Lost {lost:.2f} play credits. "
                     f"The house always wins... sometimes.]</span>")
 
         self.canvas.update()
@@ -713,11 +739,11 @@ class StigmergicVideoPokerApp(SiftaBaseWidget):
         self.vault.process_payout(cashed, reason="gamble_cashin")
         self.gamble_winnings = 0
         self.phase = 'drawn'  # back to betting
-        self.canvas.result_text = f"💰 CASHED IN {cashed:.2f} STGM — smart move."
+        self.canvas.result_text = f"💰 CASHED IN {cashed:.2f} credits — smart move."
         if self._gci:
             self._gci.chat_display.append(
-                f"<span style='color:#9ece6a;'>[SYSTEM: 💰 Cashed in {cashed:.2f} STGM. "
-                f"Smart money. Warren Buffett approves.]</span>")
+                f"<span style='color:#9ece6a;'>[SYSTEM: 💰 Cashed in {cashed:.2f} play credits. "
+                f"Smart toy-money discipline.]</span>")
 
         self.canvas.update()
         self.update_hud()

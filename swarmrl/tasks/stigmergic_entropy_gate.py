@@ -52,6 +52,11 @@ class StigmergicEntropyGate:
         ij = np.floor(xy * (g - 1)).astype(int)
         return int(ij[0]), int(ij[1])
 
+    def sense_field(self, xy: np.ndarray) -> float:
+        """Return the current stigmergic field value at a normalized position."""
+        i, j = self._idx(np.asarray(xy, dtype=np.float32))
+        return float(self.field[i, j])
+
     def _diffuse(self) -> None:
         f = self.field
         lap = (

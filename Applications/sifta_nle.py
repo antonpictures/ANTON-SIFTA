@@ -2026,7 +2026,7 @@ class NLEWindow(SiftaBaseWidget):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    window = NLEWindow(architect_id="IOAN_HQ")
+    window = NLEWindow()
     window.show()
     sys.exit(app.exec())
 

@@ -1,6 +1,6 @@
 import asyncio
 
-async def test():
+async def _stream_smoke():
     try:
         cmd = ["python3", "-u", "sifta_arena.py", "--red", "qwen3.5:0.8b", "--blue", "deepseek-coder:1.3b", "--level", "1"]
         process = await asyncio.create_subprocess_exec(
@@ -13,5 +13,8 @@ async def test():
     except Exception as e:
         print("ERROR:", e)
 
+def test():
+    asyncio.run(_stream_smoke())
+
 if __name__ == "__main__":
-    asyncio.run(test())
+    asyncio.run(_stream_smoke())

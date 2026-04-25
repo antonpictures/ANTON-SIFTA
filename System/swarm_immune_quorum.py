@@ -88,6 +88,10 @@ class SwarmImmuneQuorum:
         centers shape: (n_events, 2)
         """
         centers = np.asarray(centers, dtype=np.float32)
+        if centers.ndim != 2 or centers.shape[1] < 2:
+            raise ValueError("centers must have shape (n_events, >=2)")
+        if radius <= 0.0:
+            raise ValueError("radius must be positive")
 
         for x in np.linspace(0, 1, self.cfg.grid_size):
             for y in np.linspace(0, 1, self.cfg.grid_size):
@@ -95,9 +99,16 @@ class SwarmImmuneQuorum:
                 if np.any(np.linalg.norm(centers - p, axis=1) < radius):
                     i, j = self._idx(p)
                     self.danger[i, j] += self.cfg.danger_deposit
+        for center in centers[:, :2]:
+            i, j = self._idx(center)
+            if self.danger[i, j] <= 0.0:
+                self.danger[i, j] += self.cfg.danger_deposit
 
     def sense(self, positions: np.ndarray) -> np.ndarray:
-        positions = np.asarray(positions, dtype=np.float32)[:, :2]
+        positions = np.asarray(positions, dtype=np.float32)
+        if positions.ndim != 2 or positions.shape[1] < 2:
+            raise ValueError("positions must have shape (n_agents, >=2)")
+        positions = positions[:, :2]
         obs = np.zeros((len(positions), 3), dtype=np.float32)
 
         for k, p in enumerate(positions):
@@ -108,9 +119,12 @@ class SwarmImmuneQuorum:
         return obs
 
     def step(self, positions: np.ndarray) -> np.ndarray:
-        positions = np.asarray(positions, dtype=np.float32)[:, :2]
+        positions = np.asarray(positions, dtype=np.float32)
+        if positions.ndim != 2 or positions.shape[1] < 2:
+            raise ValueError("positions must have shape (n_agents, >=2)")
+        positions = positions[:, :2]
 
-        if self.prev_positions is None:
+        if self.prev_positions is None or self.prev_positions.shape[0] != positions.shape[0]:
             self.prev_positions = positions.copy()
             return np.zeros(len(positions), dtype=np.float32)
 

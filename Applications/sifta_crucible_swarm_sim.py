@@ -4,12 +4,15 @@ sifta_crucible_swarm_sim.py — 10-Minute Crucible (visual cyber-defense simulat
 ===============================================================================
 
 This is a simulation app for Swarm OS (safe/local): it visualizes a stigmergic
-defense swarm handling simultaneous load spikes and anomaly packets.
+defense swarm handling simultaneous load spikes and anomaly packets. With
+--embodied-gaze, it also forwards the computed gaze peak into Alice's canonical
+active camera target state.
 
-Why simulation only:
+Why safe/local:
 - No real DDoS helpers.
 - No direct file poisoning scripts.
 - Focus is on architecture behavior, telemetry, and investor/demo visuals.
+- Optional embodied gaze writes only the local active_saccade_target ledger.
 
 Controls (visual mode):
 - Button: Trigger Crucible Onslaught
@@ -27,6 +30,7 @@ from __future__ import annotations
 import argparse
 import math
 import random
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +40,14 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _SYS = REPO_ROOT / "System"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from swarmrl.tasks.stigmergic_entropy_gate import EntropyGateConfig, StigmergicEntropyGate
+from System.swarm_foveated_saccades import FoveatedSaccadeConfig, FoveatedSwarmSaccades
+from System.swarm_immune_quorum import ImmuneQuorumConfig, SwarmImmuneQuorum
+from System.swarm_unified_field_engine import UnifiedFieldConfig, UnifiedFieldEngine
+from System import swarm_camera_target as camera_target
 
 
 @dataclass
@@ -52,6 +64,28 @@ class CrucibleConfig:
     packet_speed: float = 0.03
     agent_speed: float = 0.045
     metrics_every: int = 25
+    stigmergic_deposit_strength: float = 0.2
+    stigmergic_decay: float = 0.97
+    stigmergic_follow_strength: float = 0.012
+    immune_grid_size: int = 96
+    immune_damage_radius: float = 0.035
+    immune_damage_max_centers: int = 48
+    immune_follow_strength: float = 0.010
+    gaze_grid_size: int = 96
+    gaze_every: int = 5
+    gaze_saliency_threshold: float = 0.05
+    gaze_follow_strength: float = 0.014
+    gaze_stigmergic_deposit: float = 0.35
+    unified_field_grid_size: int = 96
+    unified_field_follow_strength: float = 0.010
+    unified_prediction_sigma: float = 0.018
+    embodied_gaze: bool = False
+    embodied_gaze_every: int = 2
+    embodied_gaze_min_salience: float = 0.05
+    embodied_gaze_writer: str = "crucible_unified_field"
+    embodied_gaze_priority: int = 50
+    embodied_gaze_lease_s: float = 2.5
+    glyph_every: int = 25
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -85,6 +119,65 @@ class CrucibleSim:
         # swimmers: mobile defense agents
         self.swimmers = np.random.rand(cfg.agents, 2).astype(np.float32) * 0.2 + np.array([0.4, 0.4], dtype=np.float32)
         self.swimmer_mode = np.zeros((cfg.agents,), dtype=np.int8)  # 0 patrol/load-balance, 1 anomaly-cluster
+        self.swimmer_rewards = np.zeros((cfg.agents,), dtype=np.float32)
+        self.swimmer_field_sense = np.zeros((cfg.agents,), dtype=np.float32)
+        self.stigmergic_task = StigmergicEntropyGate(
+            EntropyGateConfig(
+                decay=cfg.stigmergic_decay,
+                deposit_strength=cfg.stigmergic_deposit_strength,
+            )
+        )
+        self.tasks = [self.stigmergic_task]
+        self.stigmergic_field_max = 0.0
+        self.stigmergic_reward_mean = 0.0
+        self.stigmergic_reward_max = 0.0
+        self.immune_quorum = SwarmImmuneQuorum(
+            ImmuneQuorumConfig(
+                grid_size=cfg.immune_grid_size,
+                decay=0.985,
+                diffusion=0.05,
+            )
+        )
+        self.immune_rewards = np.zeros((cfg.agents,), dtype=np.float32)
+        self.immune_sense = np.zeros((cfg.agents, 3), dtype=np.float32)
+        self.immune_danger_max = 0.0
+        self.immune_repair_max = 0.0
+        self.immune_signal_max = 0.0
+        self.immune_reward_mean = 0.0
+        self.foveated_gaze = FoveatedSwarmSaccades(
+            cfg.gaze_grid_size,
+            cfg.gaze_grid_size,
+            FoveatedSaccadeConfig(
+                scouts=64,
+                foveal_agents=160,
+                peripheral_steps=8,
+                foveal_steps=10,
+                peripheral_sigma=4.0,
+                foveal_sigma=3.0,
+                scout_jump=10,
+                inhibition_radius=12,
+                saliency_threshold=cfg.gaze_saliency_threshold,
+                seed=cfg.seed,
+            ),
+        )
+        self.gaze_saliency_peak = 0.0
+        self.gaze_saccades = 0
+        self.gaze_target = np.array([-1.0, -1.0], dtype=np.float32)
+        self.gaze_foveal_count = 0
+        self.unified_field = UnifiedFieldEngine(
+            UnifiedFieldConfig(
+                grid_size=cfg.unified_field_grid_size,
+                diffusion=0.03,
+            )
+        )
+        self.unified_field_max = 0.0
+        self.unified_field_min = 0.0
+        self.unified_gradient_mean = 0.0
+        self.unified_peak = np.array([-1.0, -1.0], dtype=np.float32)
+        self.embodied_gaze_writes = 0
+        self.embodied_camera_index = -1
+        self.embodied_camera_name = ""
+        self.embodied_gaze_last_target = np.array([-1.0, -1.0], dtype=np.float32)
 
     def trigger_onslaught(self) -> None:
         self.onslaught_until = self.t + self.cfg.crucible_ticks
@@ -130,9 +223,24 @@ class CrucibleSim:
             extra = np.random.rand(add, 2).astype(np.float32) * 0.2 + np.array([0.4, 0.4], dtype=np.float32)
             self.swimmers = np.vstack([self.swimmers, extra]).astype(np.float32)
             self.swimmer_mode = np.concatenate([self.swimmer_mode, np.zeros((add,), dtype=np.int8)])
+            self.swimmer_rewards = np.concatenate([self.swimmer_rewards, np.zeros((add,), dtype=np.float32)])
+            self.swimmer_field_sense = np.concatenate([self.swimmer_field_sense, np.zeros((add,), dtype=np.float32)])
+            self.immune_rewards = np.concatenate([self.immune_rewards, np.zeros((add,), dtype=np.float32)])
+            self.immune_sense = np.vstack([self.immune_sense, np.zeros((add, 3), dtype=np.float32)])
         else:
             self.swimmers = self.swimmers[:tgt, :]
             self.swimmer_mode = self.swimmer_mode[:tgt]
+            self.swimmer_rewards = self.swimmer_rewards[:tgt]
+            self.swimmer_field_sense = self.swimmer_field_sense[:tgt]
+            self.immune_rewards = self.immune_rewards[:tgt]
+            self.immune_sense = self.immune_sense[:tgt, :]
+
+        prev = self.stigmergic_task.prev_positions
+        if prev is not None and prev.shape[0] != len(self.swimmers):
+            self.stigmergic_task.reset()
+        immune_prev = self.immune_quorum.prev_positions
+        if immune_prev is not None and immune_prev.shape[0] != len(self.swimmers):
+            self.immune_quorum.reset()
 
     def _update_swimmers(self, anomaly_positions: np.ndarray, server_stress: np.ndarray) -> None:
         if len(self.swimmers) == 0:
@@ -160,6 +268,299 @@ class CrucibleSim:
                 p += (v / d) * self.cfg.agent_speed
             p[0] = _clamp(float(p[0]), 0.0, 1.0)
             p[1] = _clamp(float(p[1]), 0.0, 1.0)
+
+    def _stigmergic_gradient(self, pos: np.ndarray) -> np.ndarray:
+        i, j = self.stigmergic_task._idx(pos)
+        field = self.stigmergic_task.field
+        g = self.stigmergic_task.cfg.grid_size
+        left = float(field[max(0, i - 1), j])
+        right = float(field[min(g - 1, i + 1), j])
+        down = float(field[i, max(0, j - 1)])
+        up = float(field[i, min(g - 1, j + 1)])
+        grad = np.array([right - left, up - down], dtype=np.float32)
+        norm = float(np.linalg.norm(grad))
+        if norm <= 1e-8:
+            return np.zeros((2,), dtype=np.float32)
+        return grad / norm
+
+    def _apply_stigmergic_entropy_gate(self) -> None:
+        if len(self.swimmers) == 0:
+            return
+        positions = self.swimmers[:, :2].astype(np.float32, copy=True)
+        rewards = self.stigmergic_task.step(positions)
+        self.swimmer_rewards = rewards.astype(np.float32, copy=True)
+
+        for i, p in enumerate(self.swimmers):
+            cell_i, cell_j = self.stigmergic_task._idx(p)
+            self.swimmer_field_sense[i] = float(self.stigmergic_task.field[cell_i, cell_j])
+            grad = self._stigmergic_gradient(p)
+            if float(np.linalg.norm(grad)) > 0.0:
+                reward_gain = 0.75 + max(0.0, float(self.swimmer_rewards[i]))
+                p += grad * self.cfg.stigmergic_follow_strength * reward_gain
+                p[0] = _clamp(float(p[0]), 0.0, 1.0)
+                p[1] = _clamp(float(p[1]), 0.0, 1.0)
+
+        self.stigmergic_field_max = float(self.stigmergic_task.field.max())
+        self.stigmergic_reward_mean = float(np.mean(self.swimmer_rewards)) if len(self.swimmer_rewards) else 0.0
+        self.stigmergic_reward_max = float(np.max(self.swimmer_rewards)) if len(self.swimmer_rewards) else 0.0
+
+    def _field_gradient(self, field: np.ndarray, pos: np.ndarray) -> np.ndarray:
+        i, j = self.immune_quorum._idx(pos)
+        g = self.immune_quorum.cfg.grid_size
+        left = float(field[max(0, i - 1), j])
+        right = float(field[min(g - 1, i + 1), j])
+        down = float(field[i, max(0, j - 1)])
+        up = float(field[i, min(g - 1, j + 1)])
+        grad = np.array([right - left, up - down], dtype=np.float32)
+        norm = float(np.linalg.norm(grad))
+        if norm <= 1e-8:
+            return np.zeros((2,), dtype=np.float32)
+        return grad / norm
+
+    def _apply_immune_quorum(self, anomaly_positions: np.ndarray) -> None:
+        if len(self.swimmers) == 0:
+            return
+        if anomaly_positions.size:
+            centers = anomaly_positions[:, :2]
+            max_centers = max(1, int(self.cfg.immune_damage_max_centers))
+            if len(centers) > max_centers:
+                idx = np.linspace(0, len(centers) - 1, max_centers).astype(int)
+                centers = centers[idx]
+            self.immune_quorum.inject_damage(centers, radius=self.cfg.immune_damage_radius)
+
+        positions = self.swimmers[:, :2].astype(np.float32, copy=True)
+        rewards = self.immune_quorum.step(positions)
+        self.immune_rewards = rewards.astype(np.float32, copy=True)
+        self.immune_sense = self.immune_quorum.sense(positions)
+
+        immune_field = self.immune_quorum.danger + self.immune_quorum.repair
+        for i, p in enumerate(self.swimmers):
+            grad = self._field_gradient(immune_field, p)
+            if float(np.linalg.norm(grad)) <= 0.0:
+                continue
+            reward_gain = 0.75 + max(0.0, float(self.immune_rewards[i]))
+            p += grad * self.cfg.immune_follow_strength * reward_gain
+            p[0] = _clamp(float(p[0]), 0.0, 1.0)
+            p[1] = _clamp(float(p[1]), 0.0, 1.0)
+
+        self.immune_danger_max = float(self.immune_quorum.danger.max())
+        self.immune_repair_max = float(self.immune_quorum.repair.max())
+        self.immune_signal_max = float(self.immune_quorum.signal.max())
+        self.immune_reward_mean = float(np.mean(self.immune_rewards)) if len(self.immune_rewards) else 0.0
+
+    @staticmethod
+    def _normalize_field(field: np.ndarray) -> np.ndarray:
+        arr = np.asarray(field, dtype=np.float32)
+        max_value = float(arr.max()) if arr.size else 0.0
+        if max_value <= 1e-8:
+            return np.zeros_like(arr, dtype=np.float32)
+        return (arr / max_value).astype(np.float32)
+
+    @staticmethod
+    def _resize_field(field: np.ndarray, size: int) -> np.ndarray:
+        arr = np.asarray(field, dtype=np.float32)
+        if arr.shape == (size, size):
+            return arr.copy()
+        y_idx = np.linspace(0, arr.shape[0] - 1, size).round().astype(int)
+        x_idx = np.linspace(0, arr.shape[1] - 1, size).round().astype(int)
+        return arr[np.ix_(y_idx, x_idx)].astype(np.float32)
+
+    def _splat_normalized(self, centers: np.ndarray, weights: np.ndarray, size: int, sigma: float) -> np.ndarray:
+        field = np.zeros((size, size), dtype=np.float32)
+        centers = np.asarray(centers, dtype=np.float32)
+        weights = np.asarray(weights, dtype=np.float32)
+        if centers.size == 0:
+            return field
+
+        axis = np.linspace(0.0, 1.0, size, dtype=np.float32)
+        grid_x, grid_y = np.meshgrid(axis, axis, indexing="ij")
+        sigma = max(float(sigma), 1.0 / max(1, size - 1))
+        denom = 2.0 * sigma * sigma
+        for center, weight in zip(centers[:, :2], weights):
+            clipped = np.clip(center[:2], 0.0, 1.0)
+            dx = grid_x - float(clipped[0])
+            dy = grid_y - float(clipped[1])
+            field += max(0.0, float(weight)) * np.exp(-((dx * dx + dy * dy) / denom)).astype(np.float32)
+        return field
+
+    def _build_gaze_frame(self, anomaly_positions: np.ndarray) -> np.ndarray:
+        g = int(self.cfg.gaze_grid_size)
+        frame = np.zeros((g, g), dtype=np.float32)
+
+        # Internal fields index normalized coordinates as [x, y]. The gaze
+        # image uses conventional image coordinates [row=y, col=x].
+        frame += 0.65 * self._resize_field(self._normalize_field(self.stigmergic_task.field).T, g)
+        frame += 1.15 * self._resize_field(self._normalize_field(self.immune_quorum.danger).T, g)
+        frame += 0.45 * self._resize_field(self._normalize_field(self.immune_quorum.repair).T, g)
+
+        for pos in anomaly_positions[:, :2] if anomaly_positions.size else []:
+            x = int(_clamp(float(pos[0]), 0.0, 1.0) * (g - 1))
+            y = int(_clamp(float(pos[1]), 0.0, 1.0) * (g - 1))
+            y0 = max(0, y - 1)
+            y1 = min(g, y + 2)
+            x0 = max(0, x - 1)
+            x1 = min(g, x + 2)
+            frame[y0:y1, x0:x1] += 1.0
+
+        return np.clip(frame, 0.0, None).astype(np.float32)
+
+    def _apply_foveated_gaze(self, anomaly_positions: np.ndarray) -> None:
+        if len(self.swimmers) == 0:
+            return
+        if self.t % max(1, int(self.cfg.gaze_every)) != 0:
+            return
+
+        frame = self._build_gaze_frame(anomaly_positions)
+        result = self.foveated_gaze.observe(frame)
+        self.gaze_saliency_peak = float(result["saliency_peak"])
+        self.gaze_saccades = int(result["saccade_count"])
+        self.gaze_foveal_count = int(len(result["foveal_points"]))
+
+        target_xy = np.array(result["target_norm"], dtype=np.float32)
+        if not bool(result["saccade_fired"]):
+            self.gaze_target = np.array([-1.0, -1.0], dtype=np.float32)
+            return
+
+        self.gaze_target = target_xy
+        self.stigmergic_task.field[self.stigmergic_task._idx(target_xy)] += self.cfg.gaze_stigmergic_deposit
+
+        for p in self.swimmers:
+            delta = target_xy - p
+            dist = float(np.linalg.norm(delta))
+            if dist <= 1e-8:
+                continue
+            gain = self.cfg.gaze_follow_strength * (0.75 + self.gaze_saliency_peak)
+            p += (delta / dist) * gain
+            p[0] = _clamp(float(p[0]), 0.0, 1.0)
+            p[1] = _clamp(float(p[1]), 0.0, 1.0)
+
+    def _build_prediction_field(self, anomaly_positions: np.ndarray, server_stress: np.ndarray) -> np.ndarray:
+        g = int(self.cfg.unified_field_grid_size)
+        stress = np.asarray(server_stress, dtype=np.float32)
+        max_stress = float(stress.max()) if stress.size else 0.0
+        if max_stress > 0.0:
+            server_weights = stress / max_stress
+        else:
+            server_weights = np.zeros((len(self.servers),), dtype=np.float32)
+
+        prediction = self._splat_normalized(
+            self.servers,
+            server_weights,
+            g,
+            sigma=max(self.cfg.unified_prediction_sigma * 1.5, 0.02),
+        )
+
+        if anomaly_positions.size:
+            anomaly_weights = np.ones((len(anomaly_positions),), dtype=np.float32)
+            prediction += 0.85 * self._splat_normalized(
+                anomaly_positions[:, :2],
+                anomaly_weights,
+                g,
+                sigma=self.cfg.unified_prediction_sigma,
+            )
+            prediction += 0.55 * self._splat_normalized(
+                self.quarantine.reshape(1, 2),
+                np.ones((1,), dtype=np.float32),
+                g,
+                sigma=0.045,
+            )
+
+        return prediction.astype(np.float32)
+
+    def _apply_unified_field(self, anomaly_positions: np.ndarray, server_stress: np.ndarray) -> None:
+        if len(self.swimmers) == 0:
+            return
+
+        g = int(self.cfg.unified_field_grid_size)
+        memory = self._resize_field(self.stigmergic_task.field, g)
+        prediction = self._build_prediction_field(anomaly_positions, server_stress)
+        salience = self._resize_field(self.foveated_gaze.saliency.T, g)
+        danger = self._resize_field(self.immune_quorum.danger, g)
+        repair = self._resize_field(self.immune_quorum.repair, g)
+
+        total = self.unified_field.update(
+            memory=memory,
+            prediction=prediction,
+            salience=salience,
+            danger=danger,
+            repair=repair,
+            positions=self.swimmers[:, :2],
+        )
+
+        grad_norms = []
+        for p in self.swimmers:
+            grad = self.unified_field.gradient_at(p)
+            norm = float(np.linalg.norm(grad))
+            grad_norms.append(norm)
+            if norm <= 0.0:
+                continue
+            grad = grad / norm
+            field_gain = 0.75 + max(0.0, float(self.unified_field.total[self.unified_field._idx(p)]))
+            p += grad * self.cfg.unified_field_follow_strength * field_gain
+            p[0] = _clamp(float(p[0]), 0.0, 1.0)
+            p[1] = _clamp(float(p[1]), 0.0, 1.0)
+
+        peak_x, peak_y, _peak_value = self.unified_field.peak()
+        self.unified_peak = np.array([peak_x, peak_y], dtype=np.float32)
+        self.unified_field_max = float(total.max()) if total.size else 0.0
+        self.unified_field_min = float(total.min()) if total.size else 0.0
+        self.unified_gradient_mean = float(np.mean(grad_norms)) if grad_norms else 0.0
+
+    @staticmethod
+    def _target_is_valid(target: np.ndarray) -> bool:
+        arr = np.asarray(target, dtype=np.float32)
+        return bool(arr.shape == (2,) and np.all(np.isfinite(arr)) and np.all(arr >= 0.0) and np.all(arr <= 1.0))
+
+    @staticmethod
+    def _camera_index_from_gaze(target_xy: np.ndarray) -> int:
+        x = _clamp(float(target_xy[0]), 0.0, 1.0)
+        y = _clamp(float(target_xy[1]), 0.0, 1.0)
+        if y >= 0.82:
+            return 6 if x >= 0.5 else 5
+        if x < 0.20:
+            return 0
+        if x < 0.40:
+            return 1
+        if x < 0.60:
+            return 2
+        if x < 0.80:
+            return 3
+        return 4
+
+    def _select_embodied_gaze_target(self) -> np.ndarray | None:
+        if (
+            self._target_is_valid(self.gaze_target)
+            and self.gaze_saliency_peak >= float(self.cfg.embodied_gaze_min_salience)
+        ):
+            return self.gaze_target.copy()
+        if self._target_is_valid(self.unified_peak) and self.unified_field_max > 0.0:
+            return self.unified_peak.copy()
+        return None
+
+    def _apply_embodied_gaze(self) -> None:
+        if not self.cfg.embodied_gaze:
+            return
+        if self.t % max(1, int(self.cfg.embodied_gaze_every)) != 0:
+            return
+
+        target = self._select_embodied_gaze_target()
+        if target is None:
+            return
+
+        idx = self._camera_index_from_gaze(target)
+        name = camera_target.name_for_index(idx)
+        rec = camera_target.write_target(
+            name=name,
+            index=idx,
+            writer=self.cfg.embodied_gaze_writer,
+            priority=int(self.cfg.embodied_gaze_priority),
+            lease_s=float(self.cfg.embodied_gaze_lease_s),
+        )
+
+        self.embodied_gaze_writes += 1
+        self.embodied_camera_index = int(rec["index"]) if rec.get("index") is not None else -1
+        self.embodied_camera_name = str(rec.get("name") or "")
+        self.embodied_gaze_last_target = target.astype(np.float32, copy=True)
 
     def _update_packets(self) -> Tuple[int, int, int]:
         # returns (arrived, blocked_now, quarantined_now)
@@ -248,6 +649,11 @@ class CrucibleSim:
                 anom_list.append(pkt["pos"])
         anomaly_positions = np.array(anom_list, dtype=np.float32) if anom_list else np.zeros((0, 2), dtype=np.float32)
         self._update_swimmers(anomaly_positions, stress)
+        self._apply_stigmergic_entropy_gate()
+        self._apply_immune_quorum(anomaly_positions)
+        self._apply_foveated_gaze(anomaly_positions)
+        self._apply_unified_field(anomaly_positions, stress)
+        self._apply_embodied_gaze()
         arrived, blocked_now, quarantined_now = self._update_packets()
 
         return {
@@ -260,25 +666,120 @@ class CrucibleSim:
             "quarantined_now": float(quarantined_now),
             "packets_live": float(len(self.packets)),
             "onslaught_active": 1.0 if self.t < self.onslaught_until else 0.0,
+            "stig_field_max": float(self.stigmergic_field_max),
+            "stig_reward_mean": float(self.stigmergic_reward_mean),
+            "stig_reward_max": float(self.stigmergic_reward_max),
+            "immune_danger_max": float(self.immune_danger_max),
+            "immune_repair_max": float(self.immune_repair_max),
+            "immune_signal_max": float(self.immune_signal_max),
+            "immune_reward_mean": float(self.immune_reward_mean),
+            "gaze_saliency_peak": float(self.gaze_saliency_peak),
+            "gaze_saccades": float(self.gaze_saccades),
+            "gaze_target_x": float(self.gaze_target[0]),
+            "gaze_target_y": float(self.gaze_target[1]),
+            "gaze_foveal_count": float(self.gaze_foveal_count),
+            "unified_field_max": float(self.unified_field_max),
+            "unified_field_min": float(self.unified_field_min),
+            "unified_gradient_mean": float(self.unified_gradient_mean),
+            "unified_peak_x": float(self.unified_peak[0]),
+            "unified_peak_y": float(self.unified_peak[1]),
+            "embodied_gaze_writes": float(self.embodied_gaze_writes),
+            "embodied_camera_index": float(self.embodied_camera_index),
+            "embodied_gaze_target_x": float(self.embodied_gaze_last_target[0]),
+            "embodied_gaze_target_y": float(self.embodied_gaze_last_target[1]),
         }
 
 
-def run_headless(cfg: CrucibleConfig, ticks: int) -> int:
+def _print_stigmergic_glyph(sim: CrucibleSim) -> None:
+    print("\033[H\033[J", end="")
+    print(sim.stigmergic_task.glyph() or "(stigmergic field empty)")
+    print(
+        f"field max: {sim.stigmergic_field_max:.4f}  "
+        f"reward mean: {sim.stigmergic_reward_mean:.4f}  "
+        f"reward max: {sim.stigmergic_reward_max:.4f}"
+    )
+
+
+def _print_immune_glyph(sim: CrucibleSim) -> None:
+    print("\033[H\033[J", end="")
+    print(sim.immune_quorum.glyph() or "(immune quorum field empty)")
+    print(
+        f"danger max: {sim.immune_danger_max:.4f}  "
+        f"repair max: {sim.immune_repair_max:.4f}  "
+        f"signal max: {sim.immune_signal_max:.4f}  "
+        f"reward mean: {sim.immune_reward_mean:.4f}"
+    )
+
+
+def _print_gaze_glyph(sim: CrucibleSim) -> None:
+    print("\033[H\033[J", end="")
+    print(sim.foveated_gaze.glyph("saliency") or "(foveated gaze field empty)")
+    print(
+        f"saliency peak: {sim.gaze_saliency_peak:.4f}  "
+        f"saccades: {sim.gaze_saccades}  "
+        f"target: ({sim.gaze_target[0]:.3f}, {sim.gaze_target[1]:.3f})  "
+        f"foveal agents: {sim.gaze_foveal_count}"
+    )
+
+
+def _print_unified_glyph(sim: CrucibleSim) -> None:
+    print("\033[H\033[J", end="")
+    print(sim.unified_field.glyph("total") or "(unified field empty)")
+    print(
+        f"field min/max: {sim.unified_field_min:.4f}/{sim.unified_field_max:.4f}  "
+        f"gradient mean: {sim.unified_gradient_mean:.4f}  "
+        f"peak: ({sim.unified_peak[0]:.3f}, {sim.unified_peak[1]:.3f})  "
+        f"eye: {sim.embodied_camera_index if sim.cfg.embodied_gaze else 'local'}"
+    )
+
+
+def run_headless(
+    cfg: CrucibleConfig,
+    ticks: int,
+    show_glyph: bool = False,
+    show_immune_glyph: bool = False,
+    show_gaze_glyph: bool = False,
+    show_unified_glyph: bool = False,
+) -> int:
     sim = CrucibleSim(cfg)
     sim.trigger_onslaught()
     for _ in range(ticks):
         sim.step()
+        if show_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_stigmergic_glyph(sim)
+        if show_immune_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_immune_glyph(sim)
+        if show_gaze_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_gaze_glyph(sim)
+        if show_unified_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_unified_glyph(sim)
     print(
         "[CRUCIBLE] "
         f"ticks={ticks} load={sim.current_load_pct:.1f}% blocked={sim.total_blocked} "
-        f"quarantined={sim.total_quarantined} packets_live={len(sim.packets)}"
+        f"quarantined={sim.total_quarantined} packets_live={len(sim.packets)} "
+        f"stig_field_max={sim.stigmergic_field_max:.4f} "
+        f"stig_reward_mean={sim.stigmergic_reward_mean:.4f} "
+        f"immune_danger_max={sim.immune_danger_max:.4f} "
+        f"immune_repair_max={sim.immune_repair_max:.4f} "
+        f"gaze_saccades={sim.gaze_saccades} "
+        f"gaze_saliency_peak={sim.gaze_saliency_peak:.4f} "
+        f"unified_field_max={sim.unified_field_max:.4f} "
+        f"unified_gradient_mean={sim.unified_gradient_mean:.4f} "
+        f"embodied_gaze_writes={sim.embodied_gaze_writes} "
+        f"camera_index={sim.embodied_camera_index}"
     )
     return 0
 
 
-def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
-    import sys
-
+def run_visual(
+    cfg: CrucibleConfig,
+    ticks: int,
+    render_every: int,
+    show_glyph: bool = False,
+    show_immune_glyph: bool = False,
+    show_gaze_glyph: bool = False,
+    show_unified_glyph: bool = False,
+) -> int:
     if str(_SYS) not in sys.path:
         sys.path.insert(0, str(_SYS))
     from sim_lab_theme import (
@@ -459,6 +960,14 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
     plt.ion()
     for i in range(1, ticks + 1):
         m = sim.step()
+        if show_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_stigmergic_glyph(sim)
+        if show_immune_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_immune_glyph(sim)
+        if show_gaze_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_gaze_glyph(sim)
+        if show_unified_glyph and sim.t % max(1, cfg.glyph_every) == 0:
+            _print_unified_glyph(sim)
         if i % max(1, render_every) != 0 and i != 1 and i != ticks:
             continue
 
@@ -513,7 +1022,14 @@ def run_visual(cfg: CrucibleConfig, ticks: int, render_every: int) -> int:
         )
         hud_stats.set_color("#ff5555" if m["onslaught_active"] > 0 else "#9ece6a")
 
-        status_txt.set_text(f"tick {int(m['tick'])}/{ticks}  swimmers={len(sim.swimmers)}")
+        status_txt.set_text(
+            f"tick {int(m['tick'])}/{ticks}  swimmers={len(sim.swimmers)}  "
+            f"stig_field={m['stig_field_max']:.3f}  "
+            f"immune_danger={m['immune_danger_max']:.3f}  immune_repair={m['immune_repair_max']:.3f}  "
+            f"gaze={m['gaze_saliency_peak']:.3f}@({m['gaze_target_x']:.2f},{m['gaze_target_y']:.2f})  "
+            f"unified={m['unified_field_max']:.3f}@({m['unified_peak_x']:.2f},{m['unified_peak_y']:.2f})  "
+            f"eye={int(m['embodied_camera_index']) if cfg.embodied_gaze else 'local'}"
+        )
 
         fig.canvas.draw_idle()
         plt.pause(0.001)
@@ -530,14 +1046,51 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--headless", action="store_true")
     ap.add_argument("--render-every", type=int, default=8)
+    ap.add_argument("--glyph", action="store_true", help="print the stigmergic field glyph every glyph interval")
+    ap.add_argument("--immune-glyph", action="store_true", help="print the immune quorum composite glyph")
+    ap.add_argument("--gaze-glyph", action="store_true", help="print the foveated gaze saliency glyph")
+    ap.add_argument("--unified-glyph", action="store_true", help="print the unified field glyph")
+    ap.add_argument(
+        "--embodied-gaze",
+        action="store_true",
+        help="forward foveated/unified gaze into the canonical active camera target state",
+    )
+    ap.add_argument("--embodied-gaze-every", type=int, default=CrucibleConfig.embodied_gaze_every)
+    ap.add_argument("--embodied-gaze-min-salience", type=float, default=0.05)
+    ap.add_argument("--embodied-gaze-priority", type=int, default=CrucibleConfig.embodied_gaze_priority)
+    ap.add_argument("--embodied-gaze-lease-s", type=float, default=CrucibleConfig.embodied_gaze_lease_s)
+    ap.add_argument("--glyph-every", type=int, default=25)
     args = ap.parse_args()
 
-    cfg = CrucibleConfig(agents=int(args.agents), seed=int(args.seed))
+    cfg = CrucibleConfig(
+        agents=int(args.agents),
+        seed=int(args.seed),
+        glyph_every=int(args.glyph_every),
+        embodied_gaze=bool(args.embodied_gaze),
+        embodied_gaze_every=int(args.embodied_gaze_every),
+        embodied_gaze_min_salience=float(args.embodied_gaze_min_salience),
+        embodied_gaze_priority=int(args.embodied_gaze_priority),
+        embodied_gaze_lease_s=float(args.embodied_gaze_lease_s),
+    )
     if args.headless:
-        return run_headless(cfg, int(args.ticks))
-    return run_visual(cfg, int(args.ticks), int(args.render_every))
+        return run_headless(
+            cfg,
+            int(args.ticks),
+            bool(args.glyph),
+            bool(args.immune_glyph),
+            bool(args.gaze_glyph),
+            bool(args.unified_glyph),
+        )
+    return run_visual(
+        cfg,
+        int(args.ticks),
+        int(args.render_every),
+        bool(args.glyph),
+        bool(args.immune_glyph),
+        bool(args.gaze_glyph),
+        bool(args.unified_glyph),
+    )
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -189,6 +189,56 @@ def summary_for_alice() -> str:
     )
 
 
+def current_time_for_alice() -> dict:
+    """
+    Acquire the current local time for direct Alice replies.
+
+    This is intentionally a structured acquisition result rather than prose so
+    the talk widget can answer time questions without asking the language model
+    to infer a value from a context block.
+    """
+    errors = []
+    try:
+        payload = tick()
+        if payload and verify(payload):
+            return {
+                "ok": True,
+                "source": "hardware_time_oracle",
+                "confidence": 1.0,
+                "local_human": payload.get("local_human", ""),
+                "timezone": payload.get("timezone", ""),
+                "local_iso": payload.get("local_iso", ""),
+                "epoch": payload.get("epoch"),
+                "signature": payload.get("hmac_sha256", "")[:12],
+            }
+        errors.append("hardware_time_oracle_unverified")
+    except Exception as exc:
+        errors.append(f"hardware_time_oracle:{type(exc).__name__}")
+
+    try:
+        now = datetime.now().astimezone()
+        return {
+            "ok": True,
+            "source": "os_local_clock",
+            "confidence": 0.8,
+            "local_human": now.strftime("%A %B %d %Y, %I:%M %p"),
+            "timezone": now.tzname() or "",
+            "local_iso": now.isoformat(),
+            "epoch": now.timestamp(),
+            "signature": "",
+            "warnings": errors,
+        }
+    except Exception as exc:
+        errors.append(f"os_local_clock:{type(exc).__name__}")
+
+    return {
+        "ok": False,
+        "source": "none",
+        "confidence": 0.0,
+        "errors": errors,
+    }
+
+
 # --- SMOKE TEST ---
 def _smoke():
     print("\n=== SIFTA HARDWARE TIME ORACLE : SMOKE TEST ===")
@@ -220,8 +270,13 @@ def _smoke():
     # 5. Summary for Alice
     summary = summary_for_alice()
     assert "VERIFIED" in summary
-    assert "sig:" in summary
+    assert "sig=" in summary
     print(f"[PASS] Alice context: {summary}")
+
+    direct = current_time_for_alice()
+    assert direct["ok"], direct
+    assert direct["local_human"]
+    print(f"[PASS] Direct Alice time: {direct['local_human']} {direct.get('timezone', '')}")
 
     print("\nHardware Time Oracle Smoke Complete. Alice knows what time it is.")
 

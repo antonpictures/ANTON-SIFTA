@@ -430,7 +430,13 @@ def _convo_topic_short(state: Dict[str, Any]) -> str:
 def _tool_residue(state: Dict[str, Any]) -> str:
     tools = state.get("tools", []) or []
     if not tools:
-        return "I didn't run any tools."
+        return random.choice((
+            "I haven't run any tools.",
+            "My manipulators have been idle.",
+            "No commands executed recently.",
+            "My terminal history is clear.",
+            "I've been running silent, no tools used."
+        ))
     last = tools[-1]
     rc = last.get("rc")
     cmd = (last.get("cmd") or "")[:40]

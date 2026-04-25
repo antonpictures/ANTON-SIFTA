@@ -1,8 +1,9 @@
 {
   "id": "ALICE",
   "hash_chain": [
-    "eeea4d89c49380c7f5db24344aa0f74db3a3e346a87b3447c02cb662db63966a"
+    "eeea4d89c49380c7f5db24344aa0f74db3a3e346a87b3447c02cb662db63966a",
+    "24cde22894b267613a3a539588c88696a5d8dc23923dd6a06640c5e20e5f5466"
   ],
-  "seq": 1,
+  "seq": 2,
   "style": "NOMINAL"
 }

@@ -1171,8 +1171,10 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
             bits.append(f"metabolic={snap.metabolic_burn:.2f}")
         if snap.energy_reserve is not None:
             bits.append(f"energy_reserve={snap.energy_reserve:.2f}")
+        if snap.visceral_source:
+            bits.append(f"source_ledger={snap.visceral_source}")
         if snap.visceral_age_s is not None:
-            bits.append(f"age_s={int(snap.visceral_age_s)}")
+            bits.append(f"age_seconds={snap.visceral_age_s:.1f}")
         lines.append("- somatic: " + " ".join(bits))
 
     if snap.kuramoto_sync_order is not None:

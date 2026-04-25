@@ -37,6 +37,8 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect,
 )
 
+from System.sifta_base_widget import SiftaBaseWidget
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HOME = Path.home()
 if str(REPO_ROOT) not in sys.path:
@@ -149,22 +151,24 @@ class FinderPane(QFrame):
 
         self.tree.setStyleSheet(
             "QTreeView {"
-            "  background: #0d0e17; border: none; color: #c0caf5;"
-            "  font-size: 12px; font-family: 'SF Pro Display', Inter, sans-serif;"
+            "  background: #0b0c14; border: none; color: #c0caf5;"
+            "  font-size: 12px; font-family: 'Inter', -apple-system, sans-serif;"
             "}"
-            "QTreeView::item { padding: 3px 4px; border: none; }"
+            "QTreeView::item { padding: 4px 6px; border: none; border-bottom: 1px solid #10121a; }"
             "QTreeView::item:selected {"
-            "  background: #1e3a5f; color: #ffffff;"
+            "  background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #1a2a4f, stop:1 #131e3a);"
+            "  color: #ffffff;"
             "}"
-            "QTreeView::item:hover {"
-            "  background: #1a1e30;"
+            "QTreeView::item:hover:!selected {"
+            "  background: #151722;"
             "}"
-            "QTreeView::item:alternate { background: #10121c; }"
+            "QTreeView::item:alternate { background: #0e0f18; }"
             "QHeaderView::section {"
-            "  background: #15161e; color: #565f89; border: none;"
-            "  border-right: 1px solid #1f2335; border-bottom: 1px solid #1f2335;"
-            "  padding: 5px 8px; font-size: 10px; font-weight: bold;"
-            "  text-transform: uppercase;"
+            "  background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #1a1b26, stop:1 #15161e);"
+            "  color: #565f89; border: none;"
+            "  border-right: 1px solid #1f2335; border-bottom: 1px solid #24283b;"
+            "  padding: 6px 8px; font-size: 10px; font-weight: 800;"
+            "  text-transform: uppercase; letter-spacing: 0.5px;"
             "}"
         )
 
@@ -261,30 +265,19 @@ class FinderPane(QFrame):
 
 # ── Main Navigator Widget ───────────────────────────────────────────────────
 
-class FileNavigatorWidget(QWidget):
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setStyleSheet("QWidget { background: #0d0e17; color: #c0caf5; }")
+class FileNavigatorWidget(SiftaBaseWidget):
+    APP_NAME = "File Navigator"
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        # ── Title Bar ────────────────────────────────────────────────
-        title_bar = QFrame()
-        title_bar.setFixedHeight(42)
-        title_bar.setStyleSheet(
-            "QFrame { background: #15161e; border-bottom: 1px solid #1f2335; }"
+    def build_ui(self, root: QVBoxLayout) -> None:
+        # ── Toolbar (Quick Nav) ──────────────────────────────────────
+        toolbar = QFrame()
+        toolbar.setFixedHeight(40)
+        toolbar.setStyleSheet(
+            "QFrame { background: #11121a; border-radius: 6px; border: 1px solid #1f2335; }"
         )
-        title_layout = QHBoxLayout(title_bar)
-        title_layout.setContentsMargins(12, 0, 12, 0)
-
-        title_lbl = QLabel("📁 SIFTA File Navigator")
-        title_lbl.setFont(QFont("Inter", 13, QFont.Weight.Bold))
-        title_lbl.setStyleSheet("color: #bb9af7;")
-        title_layout.addWidget(title_lbl)
-
-        title_layout.addStretch()
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(10, 0, 10, 0)
+        toolbar_layout.setSpacing(8)
 
         # Quick-nav buttons
         qnav_style = (
@@ -295,28 +288,29 @@ class FileNavigatorWidget(QWidget):
         btn_home = QPushButton("🏠 Home")
         btn_home.setStyleSheet(qnav_style)
         btn_home.clicked.connect(lambda: self.left.navigate_to(str(HOME)))
-        title_layout.addWidget(btn_home)
+        toolbar_layout.addWidget(btn_home)
 
         btn_repo = QPushButton("⚙ SIFTA")
         btn_repo.setStyleSheet(qnav_style)
         btn_repo.clicked.connect(lambda: self.left.navigate_to(str(REPO_ROOT)))
-        title_layout.addWidget(btn_repo)
+        toolbar_layout.addWidget(btn_repo)
 
         btn_apps = QPushButton("📦 Apps")
         btn_apps.setStyleSheet(qnav_style)
         btn_apps.clicked.connect(
             lambda: self.left.navigate_to(str(REPO_ROOT / "Applications"))
         )
-        title_layout.addWidget(btn_apps)
+        toolbar_layout.addWidget(btn_apps)
 
         btn_docs = QPushButton("📝 Docs")
         btn_docs.setStyleSheet(qnav_style)
         btn_docs.clicked.connect(
             lambda: self.left.navigate_to(str(REPO_ROOT / ".sifta_documents"))
         )
-        title_layout.addWidget(btn_docs)
+        toolbar_layout.addWidget(btn_docs)
 
-        root.addWidget(title_bar)
+        toolbar_layout.addStretch()
+        root.addWidget(toolbar)
 
         # ── Dual Panes ───────────────────────────────────────────────
         self._pane_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -508,3 +502,10 @@ class FileNavigatorWidget(QWidget):
         self.left.navigate_to(r)
         self.right.navigate_to(l)
         self._set_status("Panes swapped")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = FileNavigatorWidget()
+    w.resize(900, 600)
+    w.show()
+    sys.exit(app.exec())

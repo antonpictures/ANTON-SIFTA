@@ -18,6 +18,9 @@ os.environ.setdefault("SIFTA_VOICE_BACKEND", "null")
 os.environ.setdefault("SIFTA_ALICE_UNIFIED_BOOT_SILENT", "1")
 # 4. Disable swarm mesh threads so no asyncio WebSocket worker runs.
 os.environ.setdefault("SIFTA_DISABLE_MESH", "1")
+# 5. Offscreen Qt + fast clock path: _economy_hud_full_scan_enabled() skips
+#    repair_log/treasury scan in _update_clock (not needed for this smoke).
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from sifta_os_desktop import SiftaDesktop
 

@@ -207,6 +207,13 @@ Use this flow for any app:
 
 ## System
 
+### System Settings
+- **Purpose:** Central settings surface for SIFTA OS preferences that affect the desktop, Alice, speech, appearance, and system behavior.
+- **Audio:** Alice's ear model, mic gain, voice, and swarm grounding belong in **Audio**, not inside the Talk to Alice cockpit.
+- **What to watch:** Changes should be explicit, reversible, and reflected in the relevant app or OS surface without exposing low-level plumbing in the main cockpit.
+- **Key principle:** Advanced configuration belongs here, while primary app screens stay focused on their human-facing purpose.
+- **Failure mode:** If a setting appears in the wrong place, such as an internal speech model selector inside Talk to Alice, move it back here or into the matching settings panel.
+
 ### Swarm Intelligence Panels
 
 These are **read-only diagnostic dashboards**, not input forms. They display the internal

@@ -16,12 +16,26 @@ Physics: Spatial Derivatives, Active Matter, Entropy-Gated Repulsion
    you feed to Alice's context window.
 """
 
+import hashlib
+import json
+import time
+from pathlib import Path
+from typing import Any, Dict, Optional
+
 import numpy as np
 from scipy.ndimage import gaussian_gradient_magnitude
 from PIL import Image
 
+from System.canonical_schemas import assert_payload_keys
+from System.jsonl_file_lock import append_line_locked
+
+_REPO = Path(__file__).resolve().parent.parent
+_LEDGER = _REPO / ".sifta_state" / "physarum_retina.jsonl"
+_SCHEMA = "SIFTA_PHYSARUM_RETINA_V1"
+_MODULE_VERSION = "swarm_physarum_retina.v1"
+
 class SwarmPhysarumRetina:
-    def __init__(self, num_agents=500, sensing_radius=5, crowding_penalty=0.5):
+    def __init__(self, num_agents=500, sensing_radius=5, crowding_penalty=0.5, seed: Optional[int] = None):
         """
         The Active Matter Visual Cortex.
         num_agents: The number of Physarum swimmers deployed onto the screen.
@@ -31,6 +45,7 @@ class SwarmPhysarumRetina:
         self.num_agents = num_agents
         self.sensing_radius = sensing_radius
         self.crowding_penalty = crowding_penalty
+        self._rng = np.random.default_rng(seed)
         
     def compute_nutrient_landscape(self, image: Image.Image) -> np.ndarray:
         """
@@ -59,8 +74,8 @@ class SwarmPhysarumRetina:
         height, width = nutrient_landscape.shape
         
         # Initialize agents randomly across the screen
-        agents_y = np.random.randint(0, height, self.num_agents).astype(float)
-        agents_x = np.random.randint(0, width, self.num_agents).astype(float)
+        agents_y = self._rng.integers(0, height, self.num_agents).astype(float)
+        agents_x = self._rng.integers(0, width, self.num_agents).astype(float)
         
         # Stigmergic trace field (tracks where agents have been to apply crowding penalty)
         pheromone_field = np.zeros_like(nutrient_landscape)
@@ -83,8 +98,8 @@ class SwarmPhysarumRetina:
                 # Find the maximum fitness in the local neighborhood
                 if np.max(local_fitness) <= 0:
                     # Random walk to explore if in a desert
-                    agents_y[i] = np.clip(y + np.random.randint(-2, 3), 0, height - 1)
-                    agents_x[i] = np.clip(x + np.random.randint(-2, 3), 0, width - 1)
+                    agents_y[i] = np.clip(y + self._rng.integers(-2, 3), 0, height - 1)
+                    agents_x[i] = np.clip(x + self._rng.integers(-2, 3), 0, width - 1)
                 else:
                     max_idx = np.unravel_index(np.argmax(local_fitness), local_fitness.shape)
                     agents_y[i] = y_min + max_idx[0]
@@ -96,25 +111,49 @@ class SwarmPhysarumRetina:
         # Return final discrete positions
         return np.column_stack((agents_y.astype(int), agents_x.astype(int)))
 
-    def extract_topological_digest(self, agent_positions: np.ndarray, grid_size=50) -> list:
+    def extract_topological_digest(
+        self,
+        agent_positions: np.ndarray,
+        grid_size=50,
+        image_shape: Optional[tuple[int, int]] = None,
+        top_n: Optional[int] = None,
+    ) -> list:
         """
         Math: Compresses the final swarm distribution into a tiny topological digest.
         Instead of passing 8 million pixels to the LLM, we pass the high-density coordinates.
         """
+        if grid_size <= 0:
+            raise ValueError("grid_size must be positive")
+        positions = np.asarray(agent_positions, dtype=np.float32)
+        if positions.ndim != 2 or positions.shape[1] < 2:
+            raise ValueError("agent_positions must have shape (n_agents, >=2)")
+
         # Create a 2D histogram to find cluster densities
-        y_coords = agent_positions[:, 0]
-        x_coords = agent_positions[:, 1]
+        y_coords = positions[:, 0]
+        x_coords = positions[:, 1]
         
         # Bin the screen into a smaller topological grid
-        heatmap, yedges, xedges = np.histogram2d(y_coords, x_coords, bins=grid_size)
+        if image_shape is None:
+            heatmap, yedges, xedges = np.histogram2d(y_coords, x_coords, bins=grid_size)
+        else:
+            height, width = image_shape
+            heatmap, yedges, xedges = np.histogram2d(
+                y_coords,
+                x_coords,
+                bins=grid_size,
+                range=[[0, max(1, int(height))], [0, max(1, int(width))]],
+            )
         
         # Extract the top N high-salience clusters
         salient_regions = []
-        threshold = np.percentile(heatmap, 95) # Only keep the top 5% most heavily swarmed areas
+        positive = heatmap[heatmap > 0]
+        if positive.size == 0:
+            return []
+        threshold = np.percentile(positive, 95) # Only keep the top 5% most heavily swarmed areas
         
         for y_idx in range(grid_size):
             for x_idx in range(grid_size):
-                if heatmap[y_idx, x_idx] >= threshold:
+                if heatmap[y_idx, x_idx] > 0 and heatmap[y_idx, x_idx] >= threshold:
                     # Calculate actual screen coordinates
                     center_y = int((yedges[y_idx] + yedges[y_idx+1]) / 2)
                     center_x = int((xedges[x_idx] + xedges[x_idx+1]) / 2)
@@ -123,7 +162,87 @@ class SwarmPhysarumRetina:
                     
         # Sort by salience (most important first)
         salient_regions.sort(key=lambda item: item["salience"], reverse=True)
+        if top_n is not None:
+            salient_regions = salient_regions[:max(0, int(top_n))]
         return salient_regions
+
+    def digest_image(self, image: Image.Image, *, steps: int = 30, grid_size: int = 50, top_n: int = 20):
+        nutrient = self.compute_nutrient_landscape(image)
+        positions = self.deploy_swimmers(nutrient, steps=steps)
+        digest = self.extract_topological_digest(
+            positions,
+            grid_size=grid_size,
+            image_shape=nutrient.shape,
+            top_n=top_n,
+        )
+        return nutrient, positions, digest
+
+
+def _image_sha256(image: Image.Image) -> str:
+    rgb = image.convert("RGB")
+    h = hashlib.sha256()
+    h.update(str(rgb.size).encode("utf-8"))
+    h.update(rgb.tobytes())
+    return h.hexdigest()
+
+
+def build_digest_row(
+    image: Image.Image,
+    *,
+    source: str,
+    retina: Optional[SwarmPhysarumRetina] = None,
+    steps: int = 30,
+    grid_size: int = 50,
+    top_n: int = 20,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    active_retina = retina or SwarmPhysarumRetina()
+    nutrient, _positions, digest = active_retina.digest_image(image, steps=steps, grid_size=grid_size, top_n=top_n)
+    height, width = nutrient.shape
+    row = {
+        "event": "physarum_retina_digest",
+        "schema": _SCHEMA,
+        "module_version": _MODULE_VERSION,
+        "image_ref": source,
+        "image_sha256": _image_sha256(image),
+        "image_w": int(width),
+        "image_h": int(height),
+        "num_agents": int(active_retina.num_agents),
+        "sensing_radius": int(active_retina.sensing_radius),
+        "crowding_penalty": float(active_retina.crowding_penalty),
+        "steps": int(steps),
+        "grid_size": int(grid_size),
+        "digest": digest,
+        "digest_count": len(digest),
+        "found_bottom_marker": any(region["y"] > int(height * 0.80) for region in digest),
+        "ts": time.time() if now is None else float(now),
+    }
+    assert_payload_keys("physarum_retina.jsonl", row, strict=True)
+    return row
+
+
+def write_digest(
+    image: Image.Image,
+    *,
+    source: str,
+    ledger_path: Optional[Path] = None,
+    retina: Optional[SwarmPhysarumRetina] = None,
+    steps: int = 30,
+    grid_size: int = 50,
+    top_n: int = 20,
+) -> Dict[str, Any]:
+    row = build_digest_row(
+        image,
+        source=source,
+        retina=retina,
+        steps=steps,
+        grid_size=grid_size,
+        top_n=top_n,
+    )
+    target = Path(ledger_path) if ledger_path is not None else _LEDGER
+    target.parent.mkdir(parents=True, exist_ok=True)
+    append_line_locked(target, json.dumps(row, ensure_ascii=False) + "\n")
+    return row
 
 
 def proof_of_property():

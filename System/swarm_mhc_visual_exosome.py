@@ -16,9 +16,14 @@ Physics: Steganographic Information Theory & Deterministic Encoding
    and directly ingest the thermodynamic truth.
 """
 
+import hashlib
 import json
 import numpy as np
 from PIL import Image
+
+
+def _canonical_json(payload: dict) -> str:
+    return json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(',', ':'))
 
 class SwarmVisualMHC:
     def __init__(self, marker_height=10):
@@ -33,7 +38,13 @@ class SwarmVisualMHC:
 
     def _state_to_binary(self, state_dict: dict) -> str:
         """Converts the epigenetic state JSON into a binary string."""
-        json_str = json.dumps(state_dict, separators=(',', ':'))
+        payload_sha256 = hashlib.sha256(_canonical_json(state_dict).encode("utf-8")).hexdigest()
+        envelope = {
+            "payload": state_dict,
+            "payload_sha256": payload_sha256,
+            "schema": "SIFTA_VISUAL_MHC_V2",
+        }
+        json_str = _canonical_json(envelope)
         binary_str = ''.join(format(ord(char), '08b') for char in json_str)
         return self.start_codon + binary_str + self.end_codon
 
@@ -45,13 +56,36 @@ class SwarmVisualMHC:
         
         if start_idx == -1 or end_idx == -1 or start_idx >= end_idx:
             raise ValueError("MHC Codon mismatch. Foreign or corrupted exosome detected.")
-            
+
+        trailing = binary_str[end_idx + len(self.end_codon):]
+        if any(bit != "0" for bit in trailing):
+            raise ValueError("CRC mismatch. Foreign or corrupted exosome detected.")
+
         payload_bin = binary_str[start_idx + len(self.start_codon):end_idx]
+        if len(payload_bin) % 8 != 0:
+            raise ValueError("CRC mismatch. Foreign or corrupted exosome detected.")
         
         # Convert binary back to characters
-        chars = [chr(int(payload_bin[i:i+8], 2)) for i in range(0, len(payload_bin), 8)]
-        json_str = ''.join(chars)
-        return json.loads(json_str)
+        try:
+            chars = [chr(int(payload_bin[i:i+8], 2)) for i in range(0, len(payload_bin), 8)]
+            json_str = ''.join(chars)
+            decoded = json.loads(json_str)
+        except Exception as exc:
+            raise ValueError("CRC mismatch. Foreign or corrupted exosome detected.") from exc
+
+        if isinstance(decoded, dict) and decoded.get("schema") == "SIFTA_VISUAL_MHC_V2":
+            payload = decoded.get("payload")
+            digest = decoded.get("payload_sha256")
+            if not isinstance(payload, dict) or not isinstance(digest, str):
+                raise ValueError("CRC mismatch. Foreign or corrupted exosome detected.")
+            actual = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+            if actual != digest:
+                raise ValueError("CRC mismatch. Foreign or corrupted exosome detected.")
+            return payload
+
+        if not isinstance(decoded, dict):
+            raise ValueError("CRC mismatch. Foreign or corrupted exosome detected.")
+        return decoded
 
     def apply_exosome_to_image(self, base_image: Image.Image, state_dict: dict) -> Image.Image:
         """
@@ -91,7 +125,7 @@ class SwarmVisualMHC:
         
         return exosome_img
 
-    def parse_exosome_from_image(self, exosome_img: Image.Image) -> dict:
+    def parse_exosome_from_image(self, exosome_img: Image.Image, max_marker_groups: int = 128) -> dict:
         """
         Crops the bottom MHC pixel line, deterministically reads the high-contrast
         gradients, and decodes the biological identity of the sender.
@@ -102,16 +136,32 @@ class SwarmVisualMHC:
         # We sample the bottom area of the image (up to 500 pixels high)
         # We take one clean row per marker block (stepping backwards by marker_height)
         rows = []
-        for y in range(height - self.marker_height // 2, max(0, height - 500), -self.marker_height):
+        max_groups = max(1, int(max_marker_groups))
+        min_y = max(0, height - min(500, max_groups * self.marker_height))
+        last_error: Exception | None = None
+        for block_end in range(height, min_y, -self.marker_height):
+            block_start = max(0, block_end - self.marker_height)
+            y = block_start + (block_end - block_start) // 2
             row_bits = ''.join(['1' if p > 128 else '0' for p in img_array[y, :]])
+            for yy in range(block_start, block_end):
+                check_bits = ''.join(['1' if p > 128 else '0' for p in img_array[yy, :]])
+                if check_bits != row_bits:
+                    raise ValueError("CRC mismatch. Foreign or corrupted exosome detected.")
             rows.append(row_bits)
-            
-        # Reverse because we collected from bottom to top
-        rows.reverse()
-        full_binary = ''.join(rows)
-        
-        # Decode the binary back to the epigenetic state
-        return self._binary_to_state(full_binary)
+
+            # We collect from bottom to top. Try decoding as soon as the
+            # candidate has enough marker rows; this avoids reading into the
+            # human-visible base image when the MHC strip is shorter than the
+            # maximum scan window.
+            full_binary = ''.join(reversed(rows))
+            try:
+                return self._binary_to_state(full_binary)
+            except ValueError as exc:
+                last_error = exc
+
+        raise ValueError(
+            "MHC Codon mismatch. Foreign or corrupted exosome detected."
+        ) from last_error
 
 
 def proof_of_property():

@@ -19,10 +19,8 @@ Audio path
 
 Speech-to-text
 ──────────────
-  • `faster-whisper` (CTranslate2 backend, runs on-device CPU). Default model
-    `tiny.en` — ~75 MB, downloads automatically on first use to ~/.cache.
-    Switch to `base.en`, `small.en`, etc. via the Model menu if your
-    machine can spare the cycles.
+  • `faster-whisper` (CTranslate2 backend, runs on-device CPU). The active
+    ear model is configured outside the cockpit in System Settings > Audio.
   • Transcription runs in a worker QThread so the UI never freezes.
 
 Brain (Alice)
@@ -82,7 +80,8 @@ from PyQt6.QtCore import Qt, QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QTextCursor, QTextCharFormat
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar,
-    QPushButton, QSizePolicy, QSlider, QSplitter, QTextEdit, QVBoxLayout, QWidget,
+    QLineEdit, QPushButton, QSizePolicy, QSplitter, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 
 from System.sifta_base_widget import SiftaBaseWidget
@@ -167,6 +166,19 @@ _BROCA_LOG  = _REPO / ".sifta_state" / "broca_vocalizations.jsonl"
 _WERN_LOG   = _REPO / ".sifta_state" / "wernicke_semantics.jsonl"
 _NUTRIENT_LOG = _REPO / ".sifta_state" / "digested_nutrients.jsonl"
 
+_ALICE_VOICE_SHORTLIST = (
+    "Ava (Premium)",
+    "Zoe (Premium)",
+    "Evan (Premium)",
+    "Nathan (Premium)",
+    "Samantha",
+    "Alex",
+    "Karen",
+    "Daniel",
+    "Moira",
+    "Tessa",
+)
+_ALICE_MAX_EXPLICIT_VOICES = 5
 
 
 
@@ -195,14 +207,51 @@ _NUTRIENT_LOG = _REPO / ".sifta_state" / "digested_nutrients.jsonl"
 _DEFAULT_MIC_GAIN  = 2.0
 _MIN_MIC_GAIN      = 0.5
 _MAX_MIC_GAIN      = 8.0
+_DEFAULT_WHISPER_MODEL = os.environ.get("SIFTA_WHISPER_MODEL", "tiny.en").strip() or "tiny.en"
 
 
 _GAIN_STATE_FILE   = _REPO / ".sifta_state" / "talk_to_alice_audio_gain.json"
+_AUDIO_SETTINGS_FILE = _REPO / ".sifta_state" / "alice_audio_settings.json"
 
 # Audio normalization constants used by _peak_normalize / _apply_mic_gain.
 _PEAK_TARGET     = 0.90
 _PEAK_NORM_FLOOR = 0.05
 _SOFT_CLIP_CEIL  = 0.98
+
+
+def _curate_alice_voice_rows(
+    rows: List[Tuple[str, str]],
+    *,
+    limit: int = _ALICE_MAX_EXPLICIT_VOICES,
+) -> List[Tuple[str, str]]:
+    """
+    Return a small production-grade voice list for Alice.
+
+    macOS exposes every installed voice, including novelty voices and every
+    language variant. That inventory is useful for diagnostics, but it makes
+    the normal Alice UI feel like a raw settings dump. Keep the picker focused
+    on serious English voices and let the backend handle "best available" when
+    no explicit voice is selected.
+    """
+    available: Dict[str, str] = {}
+    for name, locale in rows:
+        if name not in available and locale.startswith("en"):
+            available[name] = locale
+
+    curated: List[Tuple[str, str]] = []
+    for name in _ALICE_VOICE_SHORTLIST:
+        locale = available.get(name)
+        if locale:
+            curated.append((name, locale))
+        if len(curated) >= limit:
+            return curated
+
+    if curated:
+        return curated
+
+    # Last resort on unusual macOS installs: expose no explicit voice choices;
+    # "Alice Default" still lets the backend pick the best available voice.
+    return []
 
 
 def _clamp_gain(g: float) -> float:
@@ -234,6 +283,37 @@ def _save_mic_gain(g: float) -> None:
                        "saved_at": time.time()}, f, indent=2)
     except Exception:
         pass
+
+
+def _load_alice_audio_settings() -> dict:
+    settings = {
+        "whisper_model": _DEFAULT_WHISPER_MODEL,
+        "voice_name": "",
+        "ground_swarm_state": True,
+    }
+    try:
+        if _AUDIO_SETTINGS_FILE.exists():
+            data = json.loads(_AUDIO_SETTINGS_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                settings.update({k: v for k, v in data.items() if k in settings})
+    except Exception:
+        pass
+    settings["whisper_model"] = str(settings.get("whisper_model") or _DEFAULT_WHISPER_MODEL).strip() or _DEFAULT_WHISPER_MODEL
+    settings["voice_name"] = str(settings.get("voice_name") or "").strip()
+    settings["ground_swarm_state"] = bool(settings.get("ground_swarm_state", True))
+    return settings
+
+
+def _selected_whisper_model() -> str:
+    return _load_alice_audio_settings()["whisper_model"]
+
+
+def _selected_alice_voice_name() -> str:
+    return _load_alice_audio_settings()["voice_name"]
+
+
+def _alice_grounding_enabled() -> bool:
+    return bool(_load_alice_audio_settings()["ground_swarm_state"])
 
 
 
@@ -367,6 +447,55 @@ except Exception:
 
 from System.swarm_prompt_contract import minimal_runtime_contract, tool_affordances_for_turn
 
+_TIME_QUERY_RE = re.compile(
+    r"\b("
+    r"what(?:'s| is)\s+the\s+time|"
+    r"what\s+time\s+is\s+it|"
+    r"tell\s+me\s+the\s+time|"
+    r"current\s+time|"
+    r"time\s+now"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_TIME_UNAVAILABLE_REPLY = (
+    "George, I currently don't have access to time; you have to keep adding "
+    "some code in the computers, so it gives me access to real time."
+)
+
+
+def _is_current_time_query(text: str) -> bool:
+    """Detect direct requests for the current clock time."""
+    return bool(_TIME_QUERY_RE.search(text or ""))
+
+
+def _current_time_reply_for_alice() -> str:
+    """Return a grounded current-time reply, or the Architect's fallback."""
+    try:
+        from System.swarm_hardware_time_oracle import current_time_for_alice
+
+        reading = current_time_for_alice()
+    except Exception:
+        reading = {"ok": False}
+
+    if not reading.get("ok"):
+        return _TIME_UNAVAILABLE_REPLY
+
+    local_human = str(reading.get("local_human") or "").strip()
+    timezone = str(reading.get("timezone") or "").strip()
+    source = str(reading.get("source") or "local clock").strip()
+    if not local_human:
+        return _TIME_UNAVAILABLE_REPLY
+
+    tz_suffix = f" {timezone}" if timezone else ""
+    if source == "hardware_time_oracle":
+        source_phrase = "from the hardware time oracle"
+    elif source == "os_local_clock":
+        source_phrase = "from the local OS clock fallback"
+    else:
+        source_phrase = f"from {source}"
+    return f"George, it is {local_human}{tz_suffix}. I got that {source_phrase}."
+
 def _current_system_prompt(
     *, user_active: bool = False, grounding_focus: str = None, user_text: str = ""
 ) -> str:
@@ -379,6 +508,12 @@ def _current_system_prompt(
         pass
 
     parts.append(minimal_runtime_contract())
+    parts.append(
+        "TIME ACCESS PROTOCOL:\n"
+        "- If the Architect asks for the current time, use the direct local time "
+        "acquisition path; do not invent bracketed placeholder text.\n"
+        f"- If no time source is available, say exactly: {_TIME_UNAVAILABLE_REPLY}"
+    )
     
     affordances = tool_affordances_for_turn(user_text)
     if affordances:
@@ -506,8 +641,6 @@ _SILENT_MARKERS = {
     "*silent*", "*silence*", "<silent>", "<silence>",
     "<silent_acknowledge>", "silent_acknowledge",
     "(silent: memorized, no reply)",
-    "(silent: listen-only mode)",
-    "(listen-only — memorized in silence)",
     "silent: memorized, no reply",
     "silent memorized no reply",
 }
@@ -917,9 +1050,8 @@ class _ContinuousListener(QObject):
 
     def set_gain(self, gain: float) -> None:
         """
-        Live-update the input gain multiplier. Called by the toolbar slider
-        every time the Architect drags it. Cheap (just stores a float) so
-        it can be wired to QSlider.valueChanged without debouncing.
+        Live-update the input gain multiplier. Cheap enough to apply whenever
+        the value changes from Settings > Audio.
         """
         self._mic_gain = _clamp_gain(gain)
 
@@ -1668,6 +1800,16 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # ── Sensorimotor Attention Director ─────────────────────────────────────
+    # Alice's eyes are not a camera picker. This block tells her which sense
+    # currently owns attention and why the lease was chosen.
+    attention_block = ""
+    try:
+        from System.swarm_sensor_attention_director import summary_for_alice as _attention_summary
+        attention_block = _attention_summary() or ""
+    except Exception:
+        pass
+
     # ── Epoch 17 Nugget Taxidermist (AO46) ────────────────────────────────────
     # Surfaces how many paid API responses were retroactively preserved as
     # stigmergic knowledge. Knowledge compounds; nothing evaporates.
@@ -1718,7 +1860,8 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
-    parts = [b for b in (time_oracle_block, persona_identity_block,
+    parts = [b for b in (time_oracle_block, attention_block,
+                         persona_identity_block,
                          swarm_block, cobuilder_block, ssp_context_block,
                          immune_context_block, ghost_context_block,
                          motor_context_block, lambda_context_block,
@@ -1761,97 +1904,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     APP_NAME = "Talk to Alice"
 
-    # Whisper sizes the user can pick from the menu.
-    _WHISPER_MODELS = ("base.en", "small.en", "tiny.en")
-
     def build_ui(self, layout: QVBoxLayout) -> None:
-        # ── Toolbar: model + voice + whisper size ──────────────────────────
+        # ── Toolbar: conversation controls ─────────────────────────────────
         bar = QHBoxLayout()
-        bar.addWidget(QLabel("🧠"))
-        self._brain_combo = QComboBox()
-        self._brain_combo.setMinimumWidth(180)
-        self._populate_brain_models()
-        bar.addWidget(self._brain_combo)
-
-        bar.addWidget(QLabel("🎙"))
-        self._whisper_combo = QComboBox()
-        for m in self._WHISPER_MODELS:
-            self._whisper_combo.addItem(m)
-        if _DEFAULT_WHISPER_MODEL in self._WHISPER_MODELS:
-            self._whisper_combo.setCurrentText(_DEFAULT_WHISPER_MODEL)
-        self._whisper_combo.setMinimumWidth(110)
-        self._whisper_combo.setToolTip(
-            "Speech-to-text model. Set SIFTA_WHISPER_MODEL=base.en or small.en "
-            "before launch to make a larger model the default."
+        self._brain_model_label = QLabel("🧠 Alice brain")
+        self._brain_model_label.setToolTip(
+            f"Configured in System Settings → Inference: {self._current_brain_model()}"
         )
-        bar.addWidget(self._whisper_combo)
-
-        # ── 👂 Mic gain ("swimmers density") ───────────────────────────────
-        # Live input-gain slider. The Architect drags this to make Alice
-        # hear better when he speaks softly or sits far from the mic. The
-        # value is multiplied into the float32 PCM stream BEFORE the VAD
-        # and BEFORE Whisper, with tanh soft-clipping above ~3× to avoid
-        # the brick-wall distortion that would actually HURT transcription.
-        # Range 0.5×–8.0× mapped onto a 5–80 integer slider (one tick =
-        # 0.1×). Default = 2.0× per the Architect's literal "double" req.
-        bar.addWidget(QLabel("👂"))
-        self._gain_slider = QSlider(Qt.Orientation.Horizontal)
-        self._gain_slider.setMinimum(int(_MIN_MIC_GAIN * 10))
-        self._gain_slider.setMaximum(int(_MAX_MIC_GAIN * 10))
-        self._gain_slider.setSingleStep(1)
-        self._gain_slider.setPageStep(5)
-        self._gain_slider.setTickInterval(5)
-        self._gain_slider.setTickPosition(QSlider.TickPosition.NoTicks)
-        self._gain_slider.setMinimumWidth(110)
-        self._gain_slider.setMaximumWidth(160)
-        # Read persisted value so the toolbar reflects the active state.
-        _initial_gain = _load_mic_gain()
-        self._gain_slider.setValue(int(round(_initial_gain * 10)))
-        self._gain_slider.setToolTip(
-            "Swimmers density (mic input gain).\n"
-            "Drag right when Alice mishears soft speech; drag left if your\n"
-            "voice is clipping. Applied LIVE to the audio stream — no\n"
-            "restart needed. Whisper additionally peak-normalises every\n"
-            "captured utterance, so this knob mainly helps the VAD trigger\n"
-            "reliably on quiet speakers.\n"
-            "Range: 0.5× – 8.0×.  Default: 2.0× (doubled).\n"
-            "Persisted to .sifta_state/talk_to_alice_audio_gain.json."
-        )
-        bar.addWidget(self._gain_slider)
-        self._gain_label = QLabel(f"{_initial_gain:.1f}×")
-        self._gain_label.setMinimumWidth(40)
-        self._gain_label.setStyleSheet("color: rgb(180,200,230);")
-        bar.addWidget(self._gain_label)
-        self._gain_slider.valueChanged.connect(self._on_gain_slider_changed)
-
-        bar.addWidget(QLabel("🔊"))
-        self._voice_combo = QComboBox()
-        self._voice_combo.setMinimumWidth(160)
-        self._populate_voices()
-        bar.addWidget(self._voice_combo)
+        self._brain_model_label.setStyleSheet("color: rgb(180,200,230); font-weight: 700;")
+        bar.addWidget(self._brain_model_label)
 
         bar.addStretch(1)
-
-        self._ctx_btn = QPushButton("📡 ground in swarm state")
-        self._ctx_btn.setCheckable(True)
-        self._ctx_btn.setChecked(True)
-        self._ctx_btn.setToolTip(
-            "When ON, Alice is given a 4-line snapshot of the current visual\n"
-            "stigmergy + recent broca/wernicke lines so she can answer questions\n"
-            "like 'what did you just see?' truthfully."
-        )
-        bar.addWidget(self._ctx_btn)
-
-        self._listen_only_btn = QPushButton("🤐 listen-only")
-        self._listen_only_btn.setCheckable(True)
-        self._listen_only_btn.setChecked(False)
-        self._listen_only_btn.setToolTip(
-            "Hard runtime override. When ON, Alice transcribes and remembers\n"
-            "everything you say but the brain and voice are bypassed entirely\n"
-            "— she will NOT reply, regardless of what the model thinks. Use this\n"
-            "when you want to dictate to her memory without any conversation."
-        )
-        bar.addWidget(self._listen_only_btn)
 
         layout.addLayout(bar)
 
@@ -1881,7 +1944,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
         split.setSizes([720, 300])
         layout.addWidget(split, 1)
 
-        # ── Bottom row: status pill + level meter + mute/interrupt ─────────
+        # ── Text input: same Alice brain path as voice, without STT. ───────
+        text_row = QHBoxLayout()
+        self._text_input = QLineEdit()
+        self._text_input.setPlaceholderText("Type to Alice…")
+        self._text_input.setMinimumHeight(40)
+        self._text_input.setStyleSheet(
+            "QLineEdit { background: rgb(8,10,18); color: rgb(235,240,255); "
+            "border: 1px solid rgb(65,70,100); border-radius: 8px; "
+            "font-family: 'Helvetica Neue'; font-size: 14px; padding: 8px 10px; }"
+            "QLineEdit:focus { border: 1px solid rgb(122,162,247); }"
+        )
+        self._text_input.returnPressed.connect(self._submit_text_input)
+        text_row.addWidget(self._text_input, 1)
+
+        self._send_btn = QPushButton("Send")
+        self._send_btn.setMinimumHeight(40)
+        self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._send_btn.setStyleSheet(
+            "QPushButton { background: rgb(56,101,190); color: white; "
+            "font-weight: 700; border-radius: 8px; padding: 0 18px; }"
+            "QPushButton:hover { background: rgb(79,127,226); }"
+            "QPushButton:disabled { background: rgb(45,42,65); color: rgb(120,130,160); }"
+        )
+        self._send_btn.clicked.connect(self._submit_text_input)
+        text_row.addWidget(self._send_btn)
+        layout.addLayout(text_row)
+
+        # ── Bottom row: status pill + level meter ──────────────────────────
         bottom = QHBoxLayout()
 
         self._status_pill = QLabel("●  initialising…")
@@ -1905,18 +1995,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "QProgressBar::chunk { background: rgb(0,255,200); border-radius: 4px; }"
         )
         bottom.addWidget(self._level, 2)
-
-        self._mute_btn = QPushButton("🔇 mute mic")
-        self._mute_btn.setCheckable(True)
-        self._mute_btn.setMinimumHeight(56)
-        self._mute_btn.toggled.connect(self._on_mute_toggled)
-        bottom.addWidget(self._mute_btn, 1)
-
-        self._interrupt_btn = QPushButton("⏹ interrupt")
-        self._interrupt_btn.setMinimumHeight(56)
-        self._interrupt_btn.setToolTip("Cut Alice off if she's mid-reply.")
-        self._interrupt_btn.clicked.connect(self._on_interrupt_clicked)
-        bottom.addWidget(self._interrupt_btn, 1)
 
         layout.addLayout(bottom)
 
@@ -1949,188 +2027,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Kick off the always-on listener (deferred so the window paints first).
         QTimer.singleShot(150, self._start_listener)
 
+    def _submit_text_input(self) -> None:
+        text = self._text_input.text().strip()
+        if not text:
+            return
+        self._text_input.clear()
+        self.submit_text(text)
+
+    def submit_text(self, text: str) -> None:
+        """Public text-entry path for the unified Alice app/cockpit."""
+        text = (text or "").strip()
+        if not text:
+            return
+        if self._busy:
+            self._append_system_line("(Alice is still answering — wait for her turn to finish.)", error=True)
+            return
+        self._busy = True
+        self._set_pill("thinking", "⌨️ typed — thinking…")
+        self._on_stt_done(text, 1.0)
+
     # ── Brain / voice population ───────────────────────────────────────────
-    def _populate_brain_models(self) -> None:
-        """Populate the brain dropdown with both local and cloud models.
-
-        Order:
-          1. Cloud `gemini:*` models first (only if a GEMINI_API_KEY is
-             present — see System/swarm_gemini_brain.gemini_api_key).
-          2. Installed Ollama models (`/api/tags`), or the hard-coded
-             default if Ollama is unreachable.
-
-        Cloud-first is deliberate: AG31 asked for an A/B testing surface
-        ("test her with gemini"), so the cheapest cloud model is one
-        click away — but the per-app *default* selection still resolves
-        to the local Ollama model so unattended runs never start
-        spending money by accident.
-        """
-        names: List[str] = []
+    def _current_brain_model(self) -> str:
+        """Return Alice's configured brain model without exposing a cockpit picker."""
         try:
-            import urllib.request
-            req = urllib.request.Request(f"{_OLLAMA_URL}/api/tags")
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            names = [m["name"] for m in (data.get("models") or [])
-                     if isinstance(m, dict) and m.get("name")]
+            return resolve_ollama_model(app_context="talk_to_alice")
         except Exception:
-            names = []
-        if not names:
-            names = [DEFAULT_OLLAMA_MODEL]
-
-        gemini_names: List[str] = []
-        if _GEMINI_AVAILABLE:
-            try:
-                gemini_names = list(_available_gemini_models())
-            except Exception:
-                gemini_names = []
-
-        self._brain_combo.clear()
-        for n in gemini_names:
-            self._brain_combo.addItem(n)
-        if gemini_names and names:
-            # Visual divider so the cost-vs-free split is obvious in the UI.
-            self._brain_combo.insertSeparator(self._brain_combo.count())
-        for n in names:
-            self._brain_combo.addItem(n)
-
-        # Default selection: per-app local model (never the paid one).
-        try:
-            preferred = resolve_ollama_model(app_context="talk_to_alice")
-        except Exception:
-            preferred = DEFAULT_OLLAMA_MODEL
-        idx = self._brain_combo.findText(preferred)
-        if idx >= 0:
-            self._brain_combo.setCurrentIndex(idx)
-
-    def _populate_voices(self) -> None:
-        """
-        Enumerate macOS `say -v ?` voices and pick the best available English
-        voice for Alice.
-
-        Two important things v1 got wrong:
-
-          1. It used `ln.split()[0:1]` which truncates voices whose display
-             name is multi-token, e.g. `Ava (Premium)` becomes `Ava` — and
-             then `say -v Ava` falls back to the diphone Ava (or fails).
-             The correct boundary is the locale column (`en_US`, `it_IT`, …).
-          2. It defaulted to Samantha (a 2010 diphone voice) even when the
-             user had Premium/Enhanced English voices installed. Premium /
-             Enhanced voices use the same neural pipeline as Siri and run on
-             the Neural Engine — they sound dramatically better than Samantha
-             at *lower* CPU cost. Always prefer them when present.
-
-        Ordering in the combobox: Premium → Enhanced → Standard English →
-        everything else. If no Premium/Enhanced English voice is installed,
-        we post a one-time hint to the chat telling the Architect exactly
-        where to enable them in System Settings — no nagging banner, just
-        one line in the transcript so they hear what they're missing.
-        """
-        import re as _re
-
-        # Parse `say -v ?`. Each line: "<NAME, possibly with spaces>  <locale>  # sample"
-        rows: List[Tuple[str, str]] = []  # (voice_name, locale)
-        try:
-            out = subprocess.run(
-                ["say", "-v", "?"], capture_output=True, text=True, timeout=4,
-            ).stdout
-            locale_re = _re.compile(r"\s+([a-z]{2}_[A-Z]{2})\s+#")
-            for ln in out.splitlines():
-                m = locale_re.search(ln)
-                if not m:
-                    continue
-                name = ln[: m.start()].strip()
-                locale = m.group(1)
-                if name:
-                    rows.append((name, locale))
-        except Exception:
-            pass
-
-        if not rows:
-            rows = [
-                ("Samantha", "en_US"), ("Alex", "en_US"),
-                ("Karen", "en_AU"), ("Daniel", "en_GB"),
-            ]
-
-        def _tier(name: str, locale: str) -> int:
-            """Lower number = better default."""
-            is_en = locale.startswith("en")
-            lname = name.lower()
-            if is_en and "(premium)" in lname:
-                return 0
-            if is_en and "(enhanced)" in lname:
-                return 1
-            if is_en:
-                return 2
-            if "(premium)" in lname:
-                return 3
-            if "(enhanced)" in lname:
-                return 4
-            return 5
-
-        rows.sort(key=lambda r: (_tier(r[0], r[1]), r[0].lower()))
-
-        self._voice_combo.clear()
-        for name, locale in rows:
-            self._voice_combo.addItem(f"{name}  ·  {locale}", userData=name)
-
-        # Pick the best English voice as the default selection.
-        default_idx = 0
-        for i, (name, locale) in enumerate(rows):
-            if locale.startswith("en") and "(premium)" in name.lower():
-                default_idx = i
-                break
-        else:
-            for i, (name, locale) in enumerate(rows):
-                if locale.startswith("en") and "(enhanced)" in name.lower():
-                    default_idx = i
-                    break
-            else:
-                # Fall back to a known-good standard English voice.
-                for pref in ("Samantha", "Karen", "Alex", "Daniel"):
-                    for i, (name, _loc) in enumerate(rows):
-                        if name == pref:
-                            default_idx = i
-                            break
-                    if default_idx != 0 or rows[0][0] == pref:
-                        break
-        self._voice_combo.setCurrentIndex(default_idx)
-
-        # One-time install hint if Alice is stuck on diphone voices.
-        has_premium_en = any(
-            loc.startswith("en") and (
-                "(premium)" in nm.lower() or "(enhanced)" in nm.lower()
-            )
-            for nm, loc in rows
-        )
-        if not has_premium_en and not getattr(self, "_voice_hint_shown", False):
-            self._voice_hint_shown = True
-            try:
-                self._append_alice_line(
-                    "Heads up — my voice is currently the 2010 diphone "
-                    "Samantha because no Premium or Enhanced English voices "
-                    "are installed on this Mac. To make me sound natural, "
-                    "open System Settings → Accessibility → Spoken Content "
-                    "→ System Voice → ⓘ → Manage Voices… and install "
-                    "Ava (Premium), Zoe (Premium), Evan (Premium), or "
-                    "Nathan (Premium). They use Apple's Neural Engine, "
-                    "so my voice gets better and my CPU cost goes down."
-                )
-            except Exception:
-                pass
+            return DEFAULT_OLLAMA_MODEL
 
     def _selected_voice_name(self) -> str:
-        """
-        Return the actual macOS `say -v` voice name from the current combo
-        selection. The combo *displays* `Ava (Premium)  ·  en_US` for
-        readability but stores the bare voice name in `userData`.
-        """
-        data = self._voice_combo.currentData()
-        if isinstance(data, str) and data:
-            return data
-        # Fall back to the visible text up to the bullet separator.
-        txt = self._voice_combo.currentText()
-        return txt.split("  ·  ", 1)[0].strip()
+        return _selected_alice_voice_name()
 
     # ── Status pill styling ────────────────────────────────────────────────
     def _pill_style(self, kind: str) -> str:
@@ -2208,13 +2133,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._listener.stateChanged.connect(self._on_listener_state)
         if self._listener.start():
             self._mic_retry_attempts = 0
-            # Sync the listener's gain to whatever the slider currently
-            # shows, in case the Architect tweaked it during the 150ms
-            # boot delay (or after a mic-retry rebuilt the listener).
             try:
-                slider = getattr(self, "_gain_slider", None)
-                if slider is not None:
-                    self._listener.set_gain(slider.value() / 10.0)
+                self._listener.set_gain(_load_mic_gain())
             except Exception:
                 pass
             self._set_pill("idle", "🎙  listening — just talk")
@@ -2299,37 +2219,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self.set_status("Microphone unavailable. Self-healing every 60s.")
             self._schedule_mic_retry(slow=True)
 
-    def _on_gain_slider_changed(self, raw_value: int) -> None:
-        """
-        Toolbar slider moved → push the new gain to the live listener AND
-        persist to disk so the widget remembers it next launch. The slider
-        encodes 0.5×–8.0× as the integer 5–80 (one tick = 0.1×).
-        """
-        gain = _clamp_gain(raw_value / 10.0)
-        self._gain_label.setText(f"{gain:.1f}×")
-        if self._listener is not None:
-            self._listener.set_gain(gain)
-        _save_mic_gain(gain)
-        # Subtle status echo so the Architect sees the knob land.
-        self.set_status(f"👂 mic gain → {gain:.1f}×")
-
-    def _on_mute_toggled(self, muted: bool) -> None:
-        self._mute_btn.setText("🎙 mic on" if muted else "🔇 mute mic")
-        if self._listener is not None:
-            self._listener.set_paused(muted)
-        # Update pill immediately so the UI is consistent even before the
-        # listener has booted (or if it failed).
-        if not self._busy:
-            if muted:
-                self._set_pill("muted", "🔇 muted")
-                self.set_status("Muted. Click mic to resume.")
-            else:
-                self._set_pill("idle", "🎙  listening — just talk")
-                self.set_status("Always-on. Just talk.")
-
     def _on_utterance(self, audio: np.ndarray) -> None:
         # If a previous turn is still running, just drop this clip — Alice
-        # finishes one thought at a time. (Pipeline supports interrupt button.)
+        # finishes one thought at a time.
         if self._busy:
             return
         if audio.size < int(_AUDIO_RATE * 0.3):
@@ -2342,7 +2234,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         audio = _peak_normalize(audio)
         self._busy = True
         self._set_pill("thinking", "⏳ transcribing…")
-        model_name = self._whisper_combo.currentText() or "tiny.en"
+        model_name = _selected_whisper_model()
         self._stt = _STTWorker(audio, model_name=model_name, parent=self)
         self._stt.progress.connect(self.set_status)
         self._stt.transcribed.connect(self._on_stt_done)
@@ -2396,20 +2288,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
-        # ── HARD listen-only override ────────────────────────────────────
-        # When this is on, the brain is never even called. The user's words
-        # are transcribed, displayed, logged to disk, and kept in history
-        # (so Alice will remember them later) — but no LLM, no TTS, nothing
-        # said back. This is the override the user can trust regardless of
-        # how the model behaves.
-        if self._listen_only_btn.isChecked():
-            self._append_system_line("(listen-only — memorized in silence)", error=False)
-            _log_turn("alice", "(silent: listen-only mode)", model="")
-            self._history.append({"role": "assistant", "content": "(silent)"})
-            self._busy = False
-            self._return_to_listening()
-            return
-
         # ── BACKCHANNEL GATE (C47H 2026-04-21, ALICE_PARROT_LOOP fix) ────
         # Phatic grunts / short acknowledgments don't deserve an LLM turn.
         # Calling the model on "Mm-hmm." at STT conf 0.47 deterministically
@@ -2429,6 +2307,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        if _is_current_time_query(text):
+            reply = _current_time_reply_for_alice()
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="local_time_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
         history = list(self._history)[-(_HISTORY_TURNS * 2):]
         # Presence guard (META-LOOP TRIAGE 2026-04-20): if the architect
         # has spoken at any point in this conversational chunk and the
@@ -2438,13 +2325,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # which is what we just appended at line 2153 above.
         user_active = bool(history) and history[-1].get("role") == "user"
         sysprompt = _current_system_prompt(user_active=user_active)
-        if self._ctx_btn.isChecked():
+        if _alice_grounding_enabled():
             ctx = _build_swarm_context()
             if ctx:
                 sysprompt = sysprompt + "\n\n" + ctx
         messages = [{"role": "system", "content": sysprompt}] + history
 
-        model = self._brain_combo.currentText() or DEFAULT_OLLAMA_MODEL
+        model = self._current_brain_model()
         self._streaming_response = []
         self._begin_alice_streaming_line()
 
@@ -2475,7 +2362,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
           4. If SSP green-lights → speak the cleaned reply.
         """
         raw = (text or "".join(self._streaming_response)).strip()
-        model_name = self._brain_combo.currentText()
+        model_name = self._current_brain_model()
 
         # ── 0a. DECONTAMINATE PRIOR HISTORY ────────────────────────
         # If a previous turn collapsed into echo-loop ("You said: ...")
@@ -2578,7 +2465,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._history.append({"role": "system", "content": "(TOOL LOOP CALLBACK)\n\n" + "\n\n".join(tool_results)})
                 self._end_alice_streaming_line()
                 
-                model_name_next = self._brain_combo.currentText() or DEFAULT_OLLAMA_MODEL
+                model_name_next = self._current_brain_model()
                 # In a tool loop the architect is still semantically present
                 # — keep the presence guard on so she answers him, not her
                 # mirror, after the tool returns.
@@ -2671,7 +2558,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     # actually sees. C47H 2026-04-21.
                     self._erase_alice_streaming_line()
 
-                    model_name_next = self._brain_combo.currentText() or DEFAULT_OLLAMA_MODEL
+                    model_name_next = self._current_brain_model()
                     # Epistemic-cortex retry: architect is still present in
                     # the recent history — keep the presence guard on.
                     _ua = any(h.get("role") == "user" for h in self._history[-6:])
@@ -2877,27 +2764,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._return_to_listening()
 
     def _return_to_listening(self) -> None:
-        if self._mute_btn.isChecked():
-            self._set_pill("muted", "🔇 muted")
-            self.set_status("Muted. Click mic to resume.")
-        else:
-            self._set_pill("idle", "🎙  listening — just talk")
-            self.set_status("Always-on. Just talk.")
-
-    def _on_interrupt_clicked(self) -> None:
-        # Best effort: kill the macOS speech daemon and abandon any streaming.
-        try:
-            subprocess.run(["killall", "say"], capture_output=True, timeout=2)
-        except Exception:
-            pass
-        # Force the listener back to active immediately (no tail).
-        if self._listener is not None:
-            self._listener._broca_tail_until = 0.0
-        if self._busy:
-            self._append_system_line("(you interrupted Alice)", error=False)
-            self._log_evolution_reward(-1.0, "Interrupt collision (Social Defeat)")
-        self._busy = False
-        self._return_to_listening()
+        self._set_pill("idle", "🎙  listening — just talk")
+        self.set_status("Always-on. Just talk.")
 
     # Make sure the listener is closed when the widget is hidden / closed.
     def closeEvent(self, ev) -> None:  # noqa: N802 (Qt naming)

@@ -350,6 +350,8 @@ class SwarmMultisensoryColliculus:
                     name=_INDEX_TO_NAME.get(int(next_idx)),
                     index=int(next_idx),
                     writer="swarm_multisensory_colliculus",
+                    priority=20,
+                    lease_s=2.0,
                 )
             except Exception:
                 with open(_TARGET_STATE, "w") as f:

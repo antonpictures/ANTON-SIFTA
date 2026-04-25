@@ -37,7 +37,9 @@ from cognitive_firewall import firewall
 # ─────────────────────────────────────────────────
 LEGAL_TRANSITIONS: dict[str, list[str]] = {
     "PROPOSED":   ["CONTESTED", "LOCKED", "CANCELLED"],
-    "CONTESTED":  ["LOCKED", "CANCELLED"],
+    # MEDBAY recovery may return a cleared collision to PROPOSED so it can be
+    # re-evaluated instead of remaining permanently stuck.
+    "CONTESTED":  ["PROPOSED", "LOCKED", "CANCELLED"],
     "LOCKED":     ["EXECUTED", "CANCELLED"],
     "EXECUTED":   ["FOSSILIZED", "CANCELLED"],
     "FOSSILIZED": [],   # Terminal. Irreversible. No exits.
@@ -307,6 +309,11 @@ class LanaKernel:
     def get_state_of(self, scar_id: str) -> Optional[str]:
         scar = self.spine.get_scar(scar_id)
         return scar["state"] if scar else None
+
+    @property
+    def _scars(self) -> dict[str, dict]:
+        """Compatibility view for older Phase 7 tests."""
+        return self.spine._scars
 
 
 # Module-level singleton

@@ -29,7 +29,7 @@ DESIGN RULES (enforced, not aspirational)
    If a number is printed, it was earned cryptographically.
 
 6. Zero external deps beyond mesa + system venv (cryptography already present).
-   No ecdsa library. No cv2. No numpy required.
+   No ecdsa library. No cv2. NumPy is used only by the optional entropy gate.
 
 REPRODUCIBILITY
 ───────────────
@@ -64,6 +64,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Optional
 
 # ── Repo path bootstrap ───────────────────────────────────────────────────────
 _REPO = Path(__file__).resolve().parent.parent
@@ -71,6 +72,7 @@ sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "System"))
 
 import mesa
+import numpy as np
 
 from System.swimmer_pheromone_identity import (
     ApprovalTrace,
@@ -82,11 +84,16 @@ from System.swimmer_pheromone_identity import (
     APPROVAL_TTL,
 )
 from System.reviewer_registry import ReviewerRegistry
+from swarmrl.tasks.stigmergic_entropy_gate import (
+    EntropyGateConfig,
+    StigmergicEntropyGate,
+)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 DEPOSIT_PROBABILITY = 0.30   # fraction of agents that deposit per tick
 SEED_PREFIX         = "SIFTA-HARNESS-SWIMMER-"
 REVIEWER_SEED       = "C47H_REVIEWER_PRODUCTION_KEY_v1"  # canonical seed
+MOTION_STEP         = 0.035
 
 
 # ── Mesa Agent ────────────────────────────────────────────────────────────────
@@ -102,9 +109,21 @@ class SwimmerAgent(mesa.Agent):
         super().__init__(model)           # Mesa 3.x: no unique_id arg
         self.identity = SwimmerIdentity(seed)
         self.deposits_this_run: int = 0
+        self.pos = np.array(
+            [self.random.random(), self.random.random()],
+            dtype=np.float32,
+        )
+        self.reward: float = 0.0
+
+    def _move(self) -> None:
+        """Bounded random walk in normalized [0, 1] x [0, 1] field space."""
+        theta = self.random.random() * 2.0 * math.pi
+        delta = np.array([math.cos(theta), math.sin(theta)], dtype=np.float32)
+        self.pos = np.clip(self.pos + (MOTION_STEP * delta), 0.0, 1.0)
 
     def step(self) -> None:
         """Deposit a trace with DEPOSIT_PROBABILITY. Model handles approval."""
+        self._move()
         if self.random.random() < DEPOSIT_PROBABILITY:
             target_path = f"System/module_{self.unique_id % 10}.py"
             payload     = f"SWIMMER:{self.identity.id}:tick={self.model.steps}"
@@ -131,6 +150,9 @@ class StigmergicSwarm(mesa.Model):
         log_path: Path,
         *,
         seed: int = 42,
+        enable_entropy_gate: bool = False,
+        entropy_config: Optional[EntropyGateConfig] = None,
+        glyph_every: int = 0,
     ) -> None:
         super().__init__(rng=seed)
 
@@ -157,10 +179,38 @@ class StigmergicSwarm(mesa.Model):
         self._verified_approvals: int = 0
         self._rejected_approvals: int = 0
         self._total_deposits: int = 0
+        self._glyph_every = max(0, int(glyph_every))
+        self._entropy_task = (
+            StigmergicEntropyGate(entropy_config)
+            if enable_entropy_gate
+            else None
+        )
+        self._entropy_reward_total = 0.0
 
         # ── Create agents (Mesa 3.x: just instantiate, auto-registered) ───────
         for i in range(n_agents):
             SwimmerAgent(self, seed=f"{SEED_PREFIX}{i:04d}")
+
+    def _apply_entropy_gate(self) -> None:
+        if self._entropy_task is None:
+            return
+        swimmers = list(self.agents)
+        positions = np.array([agent.pos for agent in swimmers], dtype=np.float32)
+        rewards = self._entropy_task.step(positions)
+        for agent, reward in zip(swimmers, rewards):
+            agent.reward += float(reward)
+        self._entropy_reward_total += float(np.sum(rewards))
+
+        if self._glyph_every and self.steps % self._glyph_every == 0:
+            glyph = self._entropy_task.glyph()
+            if glyph:
+                print("\033[H\033[J", end="")
+                print(glyph)
+
+    def entropy_field_max(self) -> float:
+        if self._entropy_task is None:
+            return 0.0
+        return float(self._entropy_task.field.max())
 
     def receive_trace(self, trace: PheromoneTrace) -> None:
         """Buffer a trace for reviewer approval at end of tick."""
@@ -188,6 +238,7 @@ class StigmergicSwarm(mesa.Model):
     def step(self) -> None:
         """One model tick: shuffle agents, each steps, then process approvals."""
         self.agents.shuffle_do("step")   # Mesa 3.x: replaces deprecated scheduler
+        self._apply_entropy_gate()
         self._process_pending()
 
     @property
@@ -202,7 +253,13 @@ class StigmergicSwarm(mesa.Model):
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
-def run_benchmark(n_agents: int, n_ticks: int) -> dict:
+def run_benchmark(
+    n_agents: int,
+    n_ticks: int,
+    *,
+    enable_entropy_gate: bool = False,
+    glyph_every: int = 0,
+) -> dict:
     """
     Run the benchmark, return result dict.
     Uses a tempdir for the trace log — no side-effects to the main state dir.
@@ -210,7 +267,12 @@ def run_benchmark(n_agents: int, n_ticks: int) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         log_path = Path(tmp) / "harness_traces.jsonl"
 
-        model = StigmergicSwarm(n_agents=n_agents, log_path=log_path)
+        model = StigmergicSwarm(
+            n_agents=n_agents,
+            log_path=log_path,
+            enable_entropy_gate=enable_entropy_gate,
+            glyph_every=glyph_every,
+        )
 
         t0 = time.perf_counter()
         for _ in range(n_ticks):
@@ -231,6 +293,9 @@ def run_benchmark(n_agents: int, n_ticks: int) -> dict:
             "deposits_per_second":   round(model._total_deposits / max(elapsed, 1e-9), 1),
             "reviewer_id":           model._reviewer.id,
             "mesa_version":          mesa.__version__,
+            "entropy_gate_enabled":  enable_entropy_gate,
+            "entropy_reward_total":  round(model._entropy_reward_total, 6),
+            "entropy_field_max":     round(model.entropy_field_max(), 6),
         }
 
 
@@ -256,6 +321,10 @@ def print_report(r: dict) -> None:
     print()
     print(f"  Wall time          : {r['wall_seconds']}s")
     print(f"  Throughput         : {r['deposits_per_second']} deposits/s")
+    if r.get("entropy_gate_enabled"):
+        print()
+        print(f"  Entropy reward     : {r['entropy_reward_total']}")
+        print(f"  Entropy field max  : {r['entropy_field_max']}")
     print()
 
     # Integrity assertion — if log_recheck != verified_approvals, something drifted
@@ -280,8 +349,17 @@ if __name__ == "__main__":
                         help="Number of swimmer agents (default 20)")
     parser.add_argument("--ticks",  type=int, default=5,
                         help="Number of simulation ticks (default 5)")
+    parser.add_argument("--entropy-gate", action="store_true",
+                        help="Enable live StigmergicEntropyGate rewards")
+    parser.add_argument("--glyph-every", type=int, default=0,
+                        help="Print entropy glyph every N ticks (0 disables)")
     args = parser.parse_args()
 
     print(f"\nRunning: {args.agents} agents × {args.ticks} ticks …")
-    result = run_benchmark(n_agents=args.agents, n_ticks=args.ticks)
+    result = run_benchmark(
+        n_agents=args.agents,
+        n_ticks=args.ticks,
+        enable_entropy_gate=args.entropy_gate,
+        glyph_every=args.glyph_every,
+    )
     print_report(result)

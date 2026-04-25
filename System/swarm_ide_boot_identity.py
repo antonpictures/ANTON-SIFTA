@@ -13,8 +13,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import base64
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+import time
 from typing import Dict, Iterable, Mapping, Optional, Sequence
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -63,6 +66,10 @@ class IDEBootIdentity:
         ide_name = IDE_DISPLAY_NAME.get(self.ide_app_id, self.ide_app_id)
         return f"{self.trigger_code}@{self.ide_surface} / {self.model_label} / {ide_name}"
 
+    def signature_line(self, *, now: Optional[float] = None) -> str:
+        """First-line body signature for chat responses."""
+        return f"{self.stigauth_line()} last_known_real_time={real_time_iso(now=now)}"
+
     def stigmergic_boot_glyph(self) -> str:
         """Machine-readable companion to the human identity banner.
 
@@ -78,7 +85,9 @@ class IDEBootIdentity:
             "trigger": self.trigger_code,
             "model": self.model_label.replace(" ", "_"),
             "ground": self.grounding_label,
+            "last_real_time": real_time_iso(),
             "rule": "body_first_no_double_spend",
+            "seal": tripartite_boot_seal(),
         }
         return "SIFTA_IDE_BOOT_GLYPH|" + "|".join(
             f"{key}={value}" for key, value in parts.items()
@@ -91,6 +100,36 @@ def boot_glyph_reference() -> Dict[str, object]:
         "path": str(_BOOT_GLYPH_REFERENCE),
         "sha256": _BOOT_GLYPH_REFERENCE_SHA256,
         "exists": _BOOT_GLYPH_REFERENCE.exists(),
+    }
+
+
+def real_time_iso(*, now: Optional[float] = None) -> str:
+    """Return local wall time as an ISO-8601 timestamp with UTC offset."""
+    t = time.time() if now is None else float(now)
+    return datetime.fromtimestamp(t).astimezone().isoformat(timespec="seconds")
+
+
+def tripartite_boot_seal() -> str:
+    """Return the compact doctor-facing peer identity seal."""
+    return _TRIPARTITE_SEAL.decode("ascii")
+
+
+def decode_tripartite_boot_seal() -> Dict[str, object]:
+    """Decode the compact peer-identity seal into the canonical contract."""
+    raw = json.loads(base64.b64decode(_TRIPARTITE_SEAL).decode("utf-8"))
+    limbs = {
+        ide: str(data.get("trigger", ""))
+        for ide, data in dict(raw.get("ide_tripartite_map", {})).items()
+    }
+    return {
+        "event": raw.get("event"),
+        "timestamp": raw.get("timestamp"),
+        "reference_sha256": _BOOT_GLYPH_REFERENCE_SHA256,
+        "limbs": limbs,
+        "read_layer": "peer_ide_boot_glyph",
+        "rule": "one_writer_per_file_many_readers_per_repo",
+        "security": "doctor-facing compact code, not a secret",
+        "raw_hash": raw.get("hash"),
     }
 
 
@@ -281,6 +320,11 @@ if __name__ == "__main__":
         action="store_true",
         help="print the compact stigmergic boot glyph for peer IDEs",
     )
+    parser.add_argument(
+        "--signature",
+        action="store_true",
+        help="print first-line body signature (stigauth + wall-clock ISO)",
+    )
     args = parser.parse_args()
     ident = (
         resolve_current_boot_identity()
@@ -289,5 +333,7 @@ if __name__ == "__main__":
     )
     if args.glyph:
         print(ident.stigmergic_boot_glyph())
+    elif args.signature:
+        print(ident.signature_line())
     else:
         print(ident.identity_banner() if args.banner or args.ide_app_id == "auto" else ident.stigauth_line())

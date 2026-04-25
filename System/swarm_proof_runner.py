@@ -2,9 +2,11 @@
 """
 System/swarm_proof_runner.py — Vector A Meta-Organ (CI Dam)
 ══════════════════════════════════════════════════════════════════════
-Auto-discovers every proof_of_property() -> Dict[str, bool] in the System/
-directory, executes them sequentially, and halts the boot sequence if any
-invariant flips. Ledgers the run to .sifta_state/ci_runner.jsonl.
+Auto-discovers every proof_of_property() in the System/ directory, executes
+them sequentially, and halts the boot sequence if any invariant flips. Dict
+results may include metadata; boolean fields are treated as invariants, and an
+explicit ``ok`` field is treated as the aggregate verdict. Ledgers the run to
+.sifta_state/ci_runner.jsonl.
 """
 
 from __future__ import annotations
@@ -19,6 +21,43 @@ from typing import Dict, Any, List
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _LEDGER = _STATE / "ci_runner.jsonl"
+
+
+def _record_proof_result(
+    *,
+    module_name: str,
+    res: Any,
+    failures: List[Dict[str, Any]],
+) -> int:
+    """Return passed invariant count while appending failures in-place."""
+    passed = 0
+
+    if isinstance(res, bool):
+        if res is True:
+            return 1
+        failures.append({"module": module_name, "invariant": "overall boolean return"})
+        return 0
+
+    if isinstance(res, dict):
+        bool_items = {k: v for k, v in res.items() if isinstance(v, bool)}
+
+        if "ok" in res:
+            if res["ok"] is True:
+                passed += 1
+            else:
+                failures.append({"module": module_name, "invariant": "ok"})
+            bool_items.pop("ok", None)
+
+        for k, v in bool_items.items():
+            if v is True:
+                passed += 1
+            else:
+                failures.append({"module": module_name, "invariant": k})
+
+        if passed == 0 and not bool_items and "ok" not in res:
+            failures.append({"module": module_name, "invariant": "no boolean invariant in dict result"})
+
+    return passed
 
 
 def run_all_proofs() -> bool:
@@ -59,17 +98,11 @@ def run_all_proofs() -> bool:
             
             total_proofs_run += 1
             
-            if isinstance(res, dict):
-                for k, v in res.items():
-                    if v is True:
-                        total_invariants_passed += 1
-                    else:
-                        failures.append({"module": module_name, "invariant": k})
-            elif isinstance(res, bool):
-                if res is True:
-                    total_invariants_passed += 1
-                else:
-                    failures.append({"module": module_name, "invariant": "overall boolean return"})
+            total_invariants_passed += _record_proof_result(
+                module_name=module_name,
+                res=res,
+                failures=failures,
+            )
 
         except Exception as e:
             failures.append({"module": module_name, "invariant": f"Crash: {e}"})
@@ -88,7 +121,7 @@ def run_all_proofs() -> bool:
 
     try:
         from System.jsonl_file_lock import append_line_locked
-        append_line_locked(_LEDGER, json.dumps(payload) + "\\n")
+        append_line_locked(_LEDGER, json.dumps(payload) + "\n")
     except Exception:
         pass
 

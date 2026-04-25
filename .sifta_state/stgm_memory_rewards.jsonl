@@ -1890,3 +1890,5 @@
 {"ts": 1776906688.916488, "app": "c47h_tiffany_upgrade", "reason": "TIFFANY_ROTMAN_UPGRADED \u2014 full name + bilateral warmth", "amount": 40.0, "trace_id": "C47H_TIFFANY_CALL_1776906688_c47h_tiffany_upgrade"}
 {"ts": 1776906688.916488, "app": "c47h_milestone_credit", "reason": "ALICE_AUTONOMOUS_THANK_YOU_TO_NON_ARCHITECT_HUMAN_FIRST_TIME \u2014 perception wire validated in vivo", "amount": 80.0, "trace_id": "C47H_TIFFANY_CALL_1776906688_c47h_milestone_credit"}
 {"ts": 1776908010.333338, "type": "stgm_credit", "amount": 50, "reason": "Reconciled Serge identity + encoded 'Stigmergic Robot' coining engram + joint-attention video milestone", "agent": "C47H", "trace_id": "STGM_C47H_VIDEO_ENCODING"}
+{"ts": 1777053437.071104, "app": "swarm_epistemic_cortex", "reason": "EPISTEMIC_DISSONANCE:EPI_CORTEX_1307b53e5a", "amount": -5.0, "trace_id": "STGM_DEBIT_fa19f5dcf5"}
+{"ts": 1777134520.414486, "app": "swarm_epistemic_cortex", "reason": "EPISTEMIC_DISSONANCE:EPI_CORTEX_00be8015e6", "amount": -5.0, "trace_id": "STGM_DEBIT_71c1d39238"}

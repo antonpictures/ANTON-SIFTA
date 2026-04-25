@@ -39,12 +39,13 @@ Papers:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -80,16 +81,75 @@ class ElectricAgent:
     individual recognition.
     """
 
-    def __init__(self, agent_id: int, position: np.ndarray, phase: float):
+    def __init__(
+        self,
+        agent_id: int,
+        position: np.ndarray,
+        *,
+        phase: float = 0.0,
+        body_id: str = "",
+        homeworld_serial: str = "",
+    ):
         self.agent_id = agent_id
         self.position = np.asarray(position, dtype=np.float32)[:2]
-        self.phase = float(phase)  # unique identity frequency (radians)
+        self.phase = float(phase)  # broadcast phase (JAR may retune this)
+        self.identity_phase = float(phase)  # stable identity channel
+        self.body_id = str(body_id or "")
+        self.homeworld_serial = str(homeworld_serial or "")
         self.sensed_magnitude: float = 0.0
         self.sensed_phase: float = 0.0
         self.jar_active: bool = False  # is the Jamming Avoidance Response firing?
 
     def __repr__(self) -> str:
         return f"ElectricAgent(id={self.agent_id}, phase={self.phase:.3f})"
+
+
+def _identity_digest(body_id: str, homeworld_serial: str, identity_phase: float) -> str:
+    rec = {
+        "body_id": body_id,
+        "homeworld_serial": homeworld_serial,
+        "identity_phase": round(float(identity_phase), 10),
+    }
+    blob = json.dumps(rec, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def identity_envelope(agent: ElectricAgent, now: float) -> dict[str, Any]:
+    """Signed envelope: stable identity_phase vs carrier phase that JAR may move."""
+    body_id = str(getattr(agent, "body_id", "") or "")
+    hw = str(getattr(agent, "homeworld_serial", "") or "")
+    id_phase = float(getattr(agent, "identity_phase", agent.phase))
+    return {
+        "schema": _SCHEMA,
+        "now": float(now),
+        "agent_id": int(agent.agent_id),
+        "body_id": body_id,
+        "homeworld_serial": hw,
+        "identity_phase": id_phase,
+        "carrier_phase": float(agent.phase),
+        "identity_digest": _identity_digest(body_id, hw, id_phase),
+    }
+
+
+def verify_identity_envelope(row: Mapping[str, Any]) -> bool:
+    body_id = str(row.get("body_id", "") or "")
+    hw = str(row.get("homeworld_serial", "") or "")
+    id_phase = float(row["identity_phase"])
+    expected = _identity_digest(body_id, hw, id_phase)
+    if expected != row.get("identity_digest"):
+        raise ValueError("identity digest mismatch — possible body swap or tampering")
+    return True
+
+
+def emit_identity_trace(
+    agent: ElectricAgent,
+    *,
+    ledger_path: Path,
+    now: float,
+) -> dict[str, Any]:
+    row = identity_envelope(agent, now)
+    append_line_locked(ledger_path, json.dumps(row, sort_keys=True) + "\n")
+    return row
 
 
 class SwarmElectricField:

@@ -293,4 +293,10 @@ class SiftaBaseWidget(QWidget):
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         for t in self._timers:
             t.stop()
+        # Stop the GCI's background WebSocket/QThread so it doesn't SIGABRT on teardown.
+        if self._gci is not None:
+            try:
+                self._gci.close()
+            except Exception:
+                pass
         super().closeEvent(event)

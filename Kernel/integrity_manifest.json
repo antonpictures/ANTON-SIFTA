@@ -14,7 +14,7 @@
   "recovery_reflex.py": "adb58c62d28e73bbc59c9458d77cb371b260f2506067396ba265785468840f70",
   "adaptive_memory.py": "68af2f15ee8f0dac9a131740c2c48ce36c2dd166a25f0bf0ebc85d71c226b064",
   "scar_state_machine.py": "bd08eda3d92732424dda86909b4a3b4ca3e44472c46e9ace69c94f7d30ace916",
-  "inference_economy.py": "7abd13b31e2ac0e2d1cbb2bbe5fb207898a866c9e791cac839e5f46d9a087c52",
+  "inference_economy.py": "87261e0320bfe8a00461bd70bc8980b59403598a2e70b9f62cc623bd61c275c4",
   "language_action_compiler.py": "c0364e0eea27f052d100fd396c2c0da5edf4599026f7ee4bfff6c86079511497",
   "physical_binder.py": "b5a3f92a40bf4407502c49ec0d39ec449328f2dd4b47f7fad1843bbcb7bc64f7",
   "hermes_kernel.py": "06a9cfce91b2d61e44a64bd13b05f370a68cddcb7008245be1b50a74646e15c9",
@@ -48,11 +48,11 @@
   "pheromone.py": "f3f2d55d9e1bbadec37a99e41d9cefc57948dd734ac2c032a2fb976ef44ba849",
   "succession_protocol.py": "6f23f43ac9052cbad37ec0200600b9c1b7c61d442b3657ee98596c8ac33cf632",
   "trigger_inference.py": "0520241c71e43a32ed701f8e23d784aac130488b38f1257f4d9fe6bdc9fc6a38",
-  "lana_kernel.py": "6ff43a0f6b249faa76707b16805a805fcf7a1fb5f1f153beba6b50fb3d1a01d3",
+  "lana_kernel.py": "b2a392f6aa217b6a5c961f708173299c7b7b1eb68305750b6ab1cec83766a65e",
   "sifta_swarm_identity.py": "b1c29fe0b943da4cb62c05c0306995fe7e543f748c3b0554aeb7489d84905c04",
   "signal_ingestion.py": "b56e54b0cbd2bf82eaf61c05bee10be129438ae4cf2025e19a7b992ed3c3550e",
   "introspection_loop.py": "bbc6228eaab8bc3fcb74599fa6e84ae13dd520d59ae16a58b066fc90855bd89a",
   "market_router.py": "615e50fbeb744c46289fc1fd13647100056fdb338bc53a7cb68b6c91ecc8e562",
-  "body_state.py": "0683c153ae07c1e137e94da97d17ff667c92ebbc8d5b1498b67bfb98611b06c7",
+  "body_state.py": "f1d03f60ee2c843297c7e1f8f9db1212b188ea4ecdb6553383d563ba7107bcf3",
   "core_engine.py": "8b1a4d36a89c0ca7ad6b8aeb7dcb10afe6ab3c03cdf781927794d59bad76088b"
 }

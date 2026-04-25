@@ -60,13 +60,51 @@ def load_assignments() -> Dict[str, Any]:
     return _default_assignments_dict()
 
 
+def _write_assignments(data: Dict[str, Any]) -> None:
+    _STATE.mkdir(parents=True, exist_ok=True)
+    _ASSIGNMENTS.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def persist_default_assignments_template() -> None:
     """Write template once if missing (non-destructive)."""
     _STATE.mkdir(parents=True, exist_ok=True)
     if _ASSIGNMENTS.exists():
         return
     data = _default_assignments_dict()
-    _ASSIGNMENTS.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _write_assignments(data)
+
+
+def _clean_model_name(model_name: str) -> str:
+    s = (model_name or "").strip()
+    if "(" in s:
+        s = s.split("(")[0].strip()
+    return s or DEFAULT_OLLAMA_MODEL
+
+
+def set_default_ollama_model(model_name: str) -> str:
+    """Persist the OS-wide default local model used by GUI apps."""
+    persist_default_assignments_template()
+    data = load_assignments()
+    model = _clean_model_name(model_name)
+    data["default_ollama_model"] = model
+    data.setdefault("per_swimmer", {})
+    data.setdefault("per_app", {})
+    _write_assignments(data)
+    return model
+
+
+def set_app_ollama_model(app_context: str, model_name: str) -> str:
+    """Persist a model override for a named app context, e.g. talk_to_alice."""
+    persist_default_assignments_template()
+    data = load_assignments()
+    model = _clean_model_name(model_name)
+    per_app = data.setdefault("per_app", {})
+    if not isinstance(per_app, dict):
+        per_app = {}
+        data["per_app"] = per_app
+    per_app[str(app_context)] = model
+    _write_assignments(data)
+    return model
 
 
 def get_default_ollama_model() -> str:
@@ -101,16 +139,15 @@ def resolve_ollama_model(
 
 def sanitize_model_name(ui_label: str) -> str:
     """Strip UI suffixes like ' (Offline Fallback)'."""
-    s = (ui_label or "").strip()
-    if "(" in s:
-        s = s.split("(")[0].strip()
-    return s or get_default_ollama_model()
+    return _clean_model_name(ui_label) or get_default_ollama_model()
 
 
 __all__ = [
     "DEFAULT_OLLAMA_MODEL",
     "STIGMERGIC_TEST_MODEL_PRESETS",
     "get_default_ollama_model",
+    "set_default_ollama_model",
+    "set_app_ollama_model",
     "resolve_ollama_model",
     "sanitize_model_name",
     "load_assignments",
