@@ -734,7 +734,7 @@ class SimCanvas(QWidget):
 class PredatorSimWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SIFTA Predator v7 — PoUW Fold-Swarm Simulation  🐅")
+        self.setWindowTitle("SIFTA Predator v7 — PoUW Fold-Swarm [AG31]  🐅")
         self.setMinimumSize(1100, 660)
         self.setStyleSheet(f"background: rgb(8,10,18); color: #aaffcc;")
 

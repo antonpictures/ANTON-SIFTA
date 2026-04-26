@@ -400,13 +400,13 @@
     "window_height": 450,
     "autostart": false
   },
-  "PoUW Fold-Swarm Simulation": {
+  "PoUW Fold-Swarm [AG31]": {
     "category": "Science",
     "entry_point": "Applications/fold_swarm_pouw_sim.py",
     "widget_class": "PredatorSimWindow",
     "window_width": 1200,
     "window_height": 720,
-    "signature": "C46S-VERIFIED",
+    "signature": "AG31-VERIFIED",
     "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy"
   }
 }
