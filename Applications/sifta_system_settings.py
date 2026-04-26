@@ -303,7 +303,23 @@ def read_system_settings_snapshot() -> dict[str, Any]:
         hw_serial = "UNKNOWN"
         digest = "N/A"
 
+    hw_chip = "Unknown Chip"
+    hw_memory = "Unknown Memory"
+    hw_os = "Unknown OS"
+    try:
+        import subprocess
+        res = subprocess.run(["system_profiler", "SPHardwareDataType", "SPSoftwareDataType"], capture_output=True, text=True, timeout=2)
+        for line in res.stdout.splitlines():
+            if "Chip:" in line: hw_chip = line.split(":")[-1].strip()
+            if "Memory:" in line: hw_memory = line.split(":")[-1].strip()
+            if "System Version:" in line: hw_os = line.split(":")[-1].strip()
+    except Exception:
+        pass
+
     return {
+        "hw_chip": hw_chip,
+        "hw_memory": hw_memory,
+        "hw_os": hw_os,
         "score": score,
         "grade": "HEALTHY" if score >= 80 else "NOMINAL" if score >= 60 else "DEGRADING" if score >= 40 else "CRITICAL",
         "dimensions": dimensions,
@@ -420,8 +436,12 @@ class SystemSettingsWidget(SiftaBaseWidget):
         page, root = self._page("Identity")
         self.id_genesis = MetricCard("Owner Genesis", "--")
         self.id_serial = MetricCard("Silicon Hardware", "--")
+        self.id_spec = MetricCard("Machine Spec", "--")
+        self.id_os = MetricCard("Operating System", "--")
         self.id_digest = MetricCard("Electric Field Digest", "--")
         root.addWidget(self.id_genesis)
+        root.addWidget(self.id_spec)
+        root.addWidget(self.id_os)
         root.addWidget(self.id_serial)
         root.addWidget(self.id_digest)
         root.addStretch()
@@ -695,6 +715,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         # Identity
         self.id_genesis.set_metric("Completed" if snap["genesis_ok"] else "Pending", "Initial provisioning state")
+        self.id_spec.set_metric(f"{snap.get('hw_chip', 'Unknown')} / {snap.get('hw_memory', 'Unknown')}", "Physical Machine Spec")
+        self.id_os.set_metric(snap.get("hw_os", "Unknown"), "Host Environment")
         self.id_serial.set_metric(snap["hw_serial"], "Tied to specific Apple Metal")
         self.id_digest.set_metric(snap["digest"], "Dynamic Electric Field signature")
 
