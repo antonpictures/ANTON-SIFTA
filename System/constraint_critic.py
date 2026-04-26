@@ -3,7 +3,7 @@
 constraint_critic.py — VECTOR 10B: Learned Constraint Critic
 ════════════════════════════════════════════════════════════════════════
 Cost-to-go estimator in Safe RL.
-Predicts: \hat{C}(s, a) = E[Σ γ^t c_t]
+Predicts: C_hat(s, a) = E[Σ γ^t c_t]
 
 Reads the historical residues log and applies exponential moving averages
 to forecast future constraint boundaries before they rupture.
@@ -53,7 +53,7 @@ class ConstraintCritic:
 
     def forecast_violations(self) -> Dict[str, Any]:
         """
-        Computes the Cost-To-Go \hat{C} using the immediate historical trajectory.
+        Computes the Cost-To-Go C_hat using the immediate historical trajectory.
         """
         history = self._load_residue_history()
         
@@ -80,7 +80,7 @@ class ConstraintCritic:
             "timestamp": time.time(),
             "cost_to_go_C_hat": round(C_hat, 5),
             "trajectory_status": trajectory,
-            "proof": "Cost-to-Go \hat{C} predicted using historical γ-discount."
+            "proof": "Cost-to-Go C_hat predicted using historical gamma-discount."
         }
         
         try:

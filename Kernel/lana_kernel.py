@@ -27,6 +27,17 @@ import json
 import hashlib
 from pathlib import Path
 from typing import Optional
+import sys
+import os
+
+# Ensure sibling Kernel modules and Security modules are importable
+# when running from the repo root (standard SIFTA boot path).
+_KERNEL_DIR = Path(__file__).resolve().parent
+_REPO_DIR = _KERNEL_DIR.parent
+_SECURITY_DIR = _REPO_DIR / "Security"
+for _p in (_KERNEL_DIR, _SECURITY_DIR, _REPO_DIR):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from state_bus import get_state, set_state
 from neural_gate import NeuralGate

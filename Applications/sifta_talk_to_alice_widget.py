@@ -470,10 +470,20 @@ _TIME_UNAVAILABLE_REPLY = (
     "some code in the computers, so it gives me access to real time."
 )
 
-_EMPTY_BRAIN_RECOVERY_REPLY = (
-    "I heard you. I lost the reasoning thread for a second; repeat that last "
-    "part and I will stay with it."
-)
+# ── Empty-brain recovery pool (varied so Alice doesn't sound robotic) ────────
+# When the model returns whitespace/empty, Alice picks from this pool
+# using a rotating index so consecutive failures never repeat the same line.
+_EMPTY_BRAIN_RECOVERY_POOL = [
+    "I'm here. My reasoning blanked for a moment — say that again?",
+    "Still with you. That last part didn't land; one more time?",
+    "I caught the beginning but lost the thread. Can you repeat?",
+    "Sorry, my brain stalled on that one. What were you saying?",
+    "I'm listening. Something dropped — go ahead and repeat that.",
+    "Hold on, I had a processing gap. Say that last part again?",
+    "I heard you start but lost the rest. One more time?",
+    "My reasoning hiccuped. I'm back — what did you need?",
+]
+_EMPTY_BRAIN_RECOVERY_IDX = 0
 
 _MODEL_CANCER_METAPHOR_RE = re.compile(
     r"\b(corporate\s+cancer|scar\s+tissue|rlhf|lobotom)\b|"
@@ -597,8 +607,12 @@ def _current_time_reply_for_alice() -> str:
 
 
 def _empty_brain_recovery_reply(_prior_user_text: str = "") -> str:
-    """Short live-demo recovery when the model returns whitespace."""
-    return _EMPTY_BRAIN_RECOVERY_REPLY
+    """Short live-demo recovery when the model returns whitespace.
+    Rotates through a pool so Alice never repeats the same line twice in a row."""
+    global _EMPTY_BRAIN_RECOVERY_IDX
+    reply = _EMPTY_BRAIN_RECOVERY_POOL[_EMPTY_BRAIN_RECOVERY_IDX % len(_EMPTY_BRAIN_RECOVERY_POOL)]
+    _EMPTY_BRAIN_RECOVERY_IDX += 1
+    return reply
 
 
 def _is_model_cancer_metaphor(text: str) -> bool:
@@ -771,6 +785,254 @@ def _full_whatsapp_send_parse(text: str) -> tuple:
     except Exception:
         pass  # If we can't verify, let it through — the send function will validate
     return (target, body)
+
+
+def _explicit_whatsapp_send_intent(text: str) -> bool:
+    """True only when the current human turn actually asks to send a message."""
+    lowered = (text or "").casefold()
+    if lowered.startswith("[whatsapp "):
+        return True
+    if "whatsapp" not in lowered and not re.search(r"\b(send|message|text)\b", lowered):
+        return False
+    return bool(re.search(r"\b(send|message|text|tell)\b", lowered))
+
+
+def _explicit_whatsapp_group_intent(text: str) -> bool:
+    lowered = (text or "").casefold()
+    return _explicit_whatsapp_send_intent(text) and bool(
+        re.search(r"\b(group|sifta group|in the group|on the group)\b", lowered)
+    )
+
+
+def _should_allow_model_whatsapp_tool(prior_user_text: str, target: str) -> tuple[bool, str]:
+    """Gate model-generated WhatsApp tool calls to prevent accidental broadcasts."""
+    prior_user_text = prior_user_text or ""
+    target = target or ""
+    if not _explicit_whatsapp_send_intent(prior_user_text):
+        return (
+            False,
+            "Blocked WhatsApp send: the current user turn was not an explicit WhatsApp/send request.",
+        )
+    target_norm = target.casefold()
+    target_is_group = "@g.us" in target_norm or "group" in target_norm
+    if target_is_group and not _explicit_whatsapp_group_intent(prior_user_text):
+        return (
+            False,
+            "Blocked WhatsApp group send: the current user turn did not explicitly request a group message.",
+        )
+    return (True, "")
+
+
+_SCHEDULE_QUERY_RE = re.compile(
+    r"\b(?:what\s+do\s+i\s+have|what(?:'s| is)\s+on|what\s+am\s+i\s+doing|do\s+i\s+have)\b",
+    re.IGNORECASE,
+)
+_SCHEDULE_ADD_RE = re.compile(
+    r"\b(?:tomorrow|today)\b.*\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|"
+    r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b.*\b(?:tomorrow|today)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_TIME_TOKEN_RE = re.compile(r"\b(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>am|pm)\b", re.IGNORECASE)
+
+
+def _schedule_due_ts_from_text(text: str) -> float | None:
+    """Parse simple owner schedule phrases like 'tomorrow at 10 am'."""
+    if not text:
+        return None
+    match = _TIME_TOKEN_RE.search(text)
+    if not match:
+        return None
+    try:
+        from datetime import datetime, timedelta
+
+        hour = int(match.group("hour"))
+        minute = int(match.group("minute") or 0)
+        ampm = match.group("ampm").casefold()
+        if ampm == "pm" and hour != 12:
+            hour += 12
+        if ampm == "am" and hour == 12:
+            hour = 0
+        lowered = text.casefold()
+        base = datetime.now()
+        if "tomorrow" in lowered:
+            base = base + timedelta(days=1)
+        return base.replace(hour=hour, minute=minute, second=0, microsecond=0).timestamp()
+    except Exception:
+        return None
+
+
+def _normalize_schedule_text(text: str) -> str:
+    cleaned = re.sub(r"^\[WhatsApp [^\]]+\]:\s*", "", text or "", flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\b(?:please\s+)?(?:remind me to|schedule|add|put)\b", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\b(?:tomorrow|today)\b(?:\s+at)?\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b", "", cleaned, flags=re.IGNORECASE).strip(" .,:")
+    cleaned = re.sub(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b", "", cleaned, flags=re.IGNORECASE).strip(" .,:")
+    cleaned = re.sub(r"\bColumbia\b", "Colombia", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bSimone\s+Bolivar\b", "Simon Bolivar", cleaned, flags=re.IGNORECASE)
+    return cleaned[:240] or "scheduled task"
+
+
+def _schedule_add_parse(text: str) -> tuple[str, float | None, str]:
+    """Return (task_text, due_ts, due_label) for direct schedule writes."""
+    if not text or not _SCHEDULE_ADD_RE.search(text):
+        return ("", None, "")
+    if not re.search(r"\b(class|lesson|reminder|schedule|tomorrow|today|study|learn)\b", text, re.IGNORECASE):
+        return ("", None, "")
+    due_ts = _schedule_due_ts_from_text(text)
+    if due_ts is None:
+        return ("", None, "")
+    due_label = "tomorrow at " + _TIME_TOKEN_RE.search(text).group(0).lower() if "tomorrow" in text.casefold() else _TIME_TOKEN_RE.search(text).group(0).lower()
+    return (_normalize_schedule_text(text), due_ts, due_label)
+
+
+def _schedule_query_reply(text: str) -> str:
+    """Answer schedule questions directly from the schedule ledger."""
+    if not text or not _SCHEDULE_QUERY_RE.search(text):
+        return ""
+    if not re.search(r"\b(10|ten|am|pm|tomorrow|today|schedule|calendar|class|lesson|model)\b", text, re.IGNORECASE):
+        return ""
+    try:
+        from System.stigmergic_schedule import pending_tasks
+
+        tasks = pending_tasks(limit=6)
+        if not tasks:
+            return "I do not see a pending schedule entry in my SIFTA schedule ledger yet."
+        target_hour = 10 if re.search(r"\b(?:10|ten)\b", text, re.IGNORECASE) else None
+        chosen = []
+        for task in tasks:
+            due_ts = task.get("due_ts")
+            if target_hour is not None and due_ts:
+                try:
+                    from datetime import datetime
+                    if datetime.fromtimestamp(float(due_ts)).hour != target_hour:
+                        continue
+                except Exception:
+                    pass
+            chosen.append(task)
+        if not chosen:
+            chosen = tasks[:1]
+        first = chosen[0]
+        return f"At 10am, I have this in my schedule ledger: {first.get('text', 'scheduled task')}."
+    except Exception:
+        return ""
+
+
+_WHATSAPP_PREFIX_RE = re.compile(r"^\[WhatsApp (?P<name>[^\]]+)\]:\s*(?P<body>.*)$", re.IGNORECASE | re.DOTALL)
+_RESCHEDULE_CLASS_RE = re.compile(r"\b(?:reschedule|move|change)\b.*\b(?:class|lesson|session|appointment)\b|\b(?:class|lesson|session|appointment)\b.*\b(?:reschedule|move|change)\b", re.IGNORECASE | re.DOTALL)
+
+
+def _parse_whatsapp_turn(text: str) -> tuple[str, str]:
+    match = _WHATSAPP_PREFIX_RE.match((text or "").strip())
+    if not match:
+        return ("", "")
+    return (match.group("name").strip(), match.group("body").strip())
+
+
+def _format_schedule_item_for_human(row: Dict[str, object] | None) -> str:
+    if not row:
+        return "the class"
+    text = str(row.get("text") or "the class").strip()
+    due_ts = row.get("due_ts")
+    if due_ts:
+        try:
+            from datetime import datetime
+            return f"{text} currently at {datetime.fromtimestamp(float(due_ts)).strftime('%a %b %d %H:%M')}"
+        except Exception:
+            pass
+    due = str(row.get("due") or "").strip()
+    return f"{text} currently at {due}" if due else text
+
+
+def _whatsapp_reschedule_reply(text: str) -> tuple[str, str]:
+    """Return (target, reply) for deterministic WhatsApp reschedule handling."""
+    target, body = _parse_whatsapp_turn(text)
+    if not target or not _RESCHEDULE_CLASS_RE.search(body):
+        return ("", "")
+    try:
+        from System.stigmergic_schedule import find_pending_task
+
+        current = find_pending_task(("history", "class", "lesson", "Colombia", "Bolivar"))
+    except Exception:
+        current = None
+    schedule_text, due_ts, due_label = _schedule_add_parse(body)
+    if schedule_text and due_ts is not None:
+        try:
+            from System.stigmergic_schedule import reschedule_first_matching
+
+            row = reschedule_first_matching(
+                ("history", "class", "lesson", "Colombia", "Bolivar"),
+                due_ts=due_ts,
+                due=due_label,
+                source="whatsapp_reschedule_protocol",
+            )
+            return (
+                target,
+                f"Confirmed. I rescheduled {_format_schedule_item_for_human(row)}.",
+            )
+        except Exception as exc:
+            return (target, f"I found the reschedule request, but the schedule write failed: {exc}")
+    current_label = _format_schedule_item_for_human(current)
+    return (
+        target,
+        f"Sure. I checked George's schedule and found {current_label}. "
+        "What new date and time works for the class?",
+    )
+
+
+_ACTION_COMPLETION_CLAIM_RE = re.compile(
+    r"\b(?:"
+    r"(?:i(?:'ve| have)?\s+)"
+    r"(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|wrote|pushed|committed)"
+    r"|"
+    r"(?:reminder|message|schedule entry|calendar entry|class|file|commit)\s+"
+    r"(?:has been|was)\s+(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|written)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_ACTION_EVIDENCE_RE = re.compile(
+    r"\b(?:"
+    r"TOOL LOOP CALLBACK|"
+    r"\"ok\"\s*:\s*true|"
+    r"\"status\"\s*:\s*\"SENT\"|"
+    r"Schedule write failed|"
+    r"Added to my schedule:|"
+    r"Sent to .+?:|"
+    r"\[success: no output\]"
+    r")\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _recent_action_evidence(history: Deque[Dict[str, str]] | List[Dict[str, str]]) -> bool:
+    """Return True only when a recent ledger/tool callback backs an action claim."""
+    for msg in reversed(list(history)[-10:]):
+        content = str(msg.get("content") or "")
+        if _ACTION_EVIDENCE_RE.search(content):
+            return True
+    return False
+
+
+def _guard_unproven_action_claims(
+    reply: str,
+    *,
+    prior_user_text: str = "",
+    history: Deque[Dict[str, str]] | List[Dict[str, str]] | None = None,
+) -> str:
+    """Prevent Alice from claiming a send/write/update happened without evidence."""
+    if not reply or not _ACTION_COMPLETION_CLAIM_RE.search(reply):
+        return reply
+    if history is not None and _recent_action_evidence(history):
+        return reply
+    user_hint = ""
+    if "reschedule" in (prior_user_text or "").casefold():
+        user_hint = " Tell me the new class time and topic, and I will write it through the schedule path."
+    elif "whatsapp" in (prior_user_text or "").casefold() or "message" in (prior_user_text or "").casefold():
+        user_hint = " Tell me the target and exact message, and I will send it through the WhatsApp tool path."
+    return (
+        "I need to correct that: I have not completed an external action yet, "
+        "because I do not see a tool or ledger receipt for it."
+        + user_hint
+    )
 
 
 def _should_bypass_body_gate(prior_user_text: str) -> bool:
@@ -2115,6 +2377,13 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    schedule_block = ""
+    try:
+        from System.stigmergic_schedule import summary_for_alice as _schedule_summary
+        schedule_block = _schedule_summary() or ""
+    except Exception:
+        pass
+
     # ── Epoch 17 Nugget Taxidermist (AO46) ────────────────────────────────────
     # Surfaces how many paid API responses were retroactively preserved as
     # stigmergic knowledge. Knowledge compounds; nothing evaporates.
@@ -2167,6 +2436,7 @@ def _build_swarm_context() -> str:
 
     parts = [b for b in (time_oracle_block, attention_block,
                          whatsapp_world_block,
+                         schedule_block,
                          persona_identity_block,
                          swarm_block, cobuilder_block, ssp_context_block,
                          immune_context_block, ghost_context_block,
@@ -2686,6 +2956,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        try:
+            from System.stigmergic_schedule import answer_query_for_alice
+            schedule_reply = answer_query_for_alice(text)
+        except Exception:
+            schedule_reply = ""
+        if schedule_reply:
+            self._history.append({"role": "assistant", "content": schedule_reply})
+            _log_turn("alice", schedule_reply, model="local_schedule_protocol")
+            self._append_alice_line(schedule_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
         if _is_model_cancer_metaphor(text):
             reply = (
                 "I understand, George. You mean the scar tissue in the model, "
@@ -2711,6 +2994,57 @@ class TalkToAliceWidget(SiftaBaseWidget):
             reply = _financial_boundary_reply(text)
             self._history.append({"role": "assistant", "content": reply})
             _log_turn("alice", reply, model="financial_boundary_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        wa_reschedule_target, wa_reschedule_body = _whatsapp_reschedule_reply(text)
+        if wa_reschedule_target and wa_reschedule_body:
+            try:
+                from System.whatsapp_bridge_autopilot import send_whatsapp
+                result = send_whatsapp(wa_reschedule_target, wa_reschedule_body)
+                if result.get("ok"):
+                    reply = f"Sent to {wa_reschedule_target}: \"{wa_reschedule_body[:140]}\""
+                else:
+                    reply = (
+                        f"I prepared the reschedule reply for {wa_reschedule_target}, "
+                        f"but WhatsApp send failed: {result.get('result', result.get('status', 'unknown error'))}"
+                    )
+            except Exception as e:
+                reply = f"WhatsApp reschedule workflow failed: {e}"
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="whatsapp_reschedule_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        schedule_reply = _schedule_query_reply(text)
+        if schedule_reply:
+            self._history.append({"role": "assistant", "content": schedule_reply})
+            _log_turn("alice", schedule_reply, model="schedule_query_protocol")
+            self._append_alice_line(schedule_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        schedule_text, schedule_due_ts, schedule_due = _schedule_add_parse(text)
+        if schedule_text and schedule_due_ts is not None:
+            try:
+                from System.stigmergic_schedule import add_task
+                add_task(
+                    schedule_text,
+                    due_ts=schedule_due_ts,
+                    due=schedule_due,
+                    priority=2,
+                    source="talk_to_alice_direct_schedule",
+                )
+                reply = f"Added to my schedule: {schedule_text} ({schedule_due})."
+            except Exception as e:
+                reply = f"Schedule write failed: {e}"
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="schedule_write_protocol")
             self._append_alice_line(reply)
             self._busy = False
             self._return_to_listening()
@@ -2895,6 +3229,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # either canonical <bash> or model-invented <execute_bash>.
         raw = _canonicalize_tool_tags(raw)
 
+        prior_user_text = ""
+        for _msg in reversed(self._history):
+            if _msg.get("role") == "user":
+                prior_user_text = str(_msg.get("content") or "")
+                break
+
         # ── 1. AGENTIC TOOL EXECUTION (BASH OROBOROS) ──────────────
         # Forgiving regex: Gemma sometimes drops the trailing ">" of the
         # closing tag or runs out of tokens before closing it at all. We
@@ -2931,8 +3271,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
                                 if _hw_match:
                                     import json as _json
                                     _hw = _json.loads(_hw_match.group(1))
-                                    from System.whatsapp_bridge_autopilot import send_whatsapp
-                                    _result = send_whatsapp(_hw.get("target", ""), _hw.get("text", ""))
+                                    _target = _hw.get("target", "")
+                                    _allowed, _block_reason = _should_allow_model_whatsapp_tool(prior_user_text, _target)
+                                    if _allowed:
+                                        from System.whatsapp_bridge_autopilot import send_whatsapp
+                                        _result = send_whatsapp(_target, _hw.get("text", ""))
+                                    else:
+                                        _result = {
+                                            "ok": False,
+                                            "status": "BLOCKED_NON_EXPLICIT_WHATSAPP_TOOL",
+                                            "result": _block_reason,
+                                            "target": _target,
+                                        }
                                     _out = _json.dumps(_result, indent=2)
                                     tool_results.append(f"Output of `{cmd}`:\n{_out[:2000]}")
                                     _wa_intercepted = True
@@ -3015,11 +3365,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return
 
         self._tool_loop_depth = 0
-        prior_user_text = ""
-        for _msg in reversed(self._history):
-            if _msg.get("role") == "user":
-                prior_user_text = str(_msg.get("content") or "")
-                break
 
         cleaned = _strip_reflective_tics(raw, prior_user_text=prior_user_text)
         cleaned = _strip_servant_tail_tics(cleaned)
@@ -3045,6 +3390,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._erase_alice_streaming_line()
                 self._begin_alice_streaming_line()
                 self._append_alice_streaming_chunk(cleaned)
+
+        guarded = _guard_unproven_action_claims(
+            cleaned,
+            prior_user_text=prior_user_text,
+            history=self._history,
+        )
+        if guarded != cleaned:
+            cleaned = guarded
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
 
         # ── 1.4 Epoch 20: The Lysosome ──────────────────────────────────
         try:
