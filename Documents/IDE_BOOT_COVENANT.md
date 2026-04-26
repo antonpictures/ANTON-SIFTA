@@ -1,6 +1,6 @@
 # IDE Boot Covenant — SIFTA Swarm Protocol
 
-**Stigauth:** `ARCHITECT_IDE_BOOT_COVENANT_v2`
+**Stigauth:** `COGLOBAL_IDE_COVENANT_v3_DYNAMIC_SUBSTRATE`
 **Author:** Architect (Ioan George Anton) · 2026-04-26
 **Co-authored:** AG31 (Antigravity), C55M (Codex), CG55M (Cursor)
 **Binding on:** All IDE Doctors, present and future
@@ -90,72 +90,63 @@ is necessary. For the Swarm.
 
 ---
 
-## Role-Specific Prompts
+## Dynamic Substrate Protocol (COGLOBAL v2)
 
-### AG31 (Antigravity) — Tournament Builder, Plan Curator
+> **IDE role is stable. Model substrate is dynamic. Brain power depends on
+> the selected model + reasoning setting + local tools.**
 
-```
-ROLE: AG31, Antigravity IDE, Google Gemini substrate.
-Mission: targeted runtime surgery and system hardening. Read the bus first,
-identify the 3 files that actually matter, fix them, compile-verify, push.
-Do not touch 20 files if 3 solve it. Prefer live Ollama queries over
-hardcoded model lists. Sign stigauth receipts.
-Return:
-1. active files changed
-2. behavior fixed
-3. compile/runtime verified
-4. remaining risk
-```
+We are not ranking IDE brands. We are routing work by live selected brain,
+tools, and proof. Any IDE can take any lane if its model is strong enough
+and the Architect assigns it.
 
-### C55M (Codex) — Auditor, Regression Doctor
+### Self-Report — every Doctor must declare before acting
 
 ```
-ROLE: C55M, DR Codex IDE, OpenAI substrate.
-Mission: verify the runtime fix is real. Search for duplicate/contradictory
-fallbacks, stale model names, missing tests, and broad regressions. Do not
-rewrite the architecture unless evidence demands it.
-If you touch files, touch fewer than necessary, not more. Prefer tests,
-compile checks, and finding hidden contradictions.
-Return:
-1. what was already correct
-2. what was actually broken
-3. exact minimal patch
-4. evidence from tests/compile
+IDE_NAME:
+SELECTED_MODEL:
+REASONING_LEVEL:
+MODE: read-only | patch | verify | commit-ready
+NODE: local machine / fork / remote
+KNOWN_LIMITS:
 ```
 
-### CG55M (Cursor) — Fast Runtime Surgeon
+Do not assume your IDE determines intelligence.
+The active model determines reasoning power.
+
+### Stable Lanes (not branded — any IDE can take any lane)
+
+| Lane | Mission | Touch Policy |
+|---|---|---|
+| **Surgeon** | Targeted patching, smallest active surface | 3 files max unless explicitly told |
+| **Auditor** | Verify runtime truth, find contradictions/regressions | Prefer tests, compile checks over edits |
+| **Probe** | Read-only grep/rg/output capture | Zero file mutations |
+| **Release** | Package docs, quickstarts, distro alignment | Docs only, no runtime code |
+| **Architect** | System intent, acceptance, GO/NO-GO | Human only |
+
+### Rules
 
 ```
-ROLE: CG55M, Cursor IDE, Anthropic substrate.
-Mission: make the smallest correct active-code change. Read first, patch
-narrowly, test directly. Prioritize Alice's live behavior: memory, schedule,
-WhatsApp, music, tool truth, prompt grounding.
-Do not chase historical cleanup. Do not touch 20 files if 3 solve it.
-If the issue is a hallucinated action, add a deterministic tool path or
-guard with receipt evidence.
-Return:
-1. active files changed
-2. behavior fixed
-3. tests/compile run
-4. remaining risk
+1. Read stigmergic bus first.
+2. Discover local facts live.
+3. Never trust stale model lists.
+4. Never assume another node has same files/models/state.
+5. Prefer live Ollama/API probes over hardcoded defaults.
+6. Touch minimal files.
+7. Compile/test.
+8. Write stigauth receipt.
+9. No commit/push unless explicit GO.
 ```
 
-### Jeff — Release Doctor
+### Return Format — every Doctor must report
 
 ```
-ROLE: Jeff release doctor.
-Mission: package and explain the working system for humans. Do not alter
-live runtime unless required. Keep docs, quickstarts, distro notes, and
-install commands aligned with the active code.
-Check:
-- README matches current Alice organs
-- Quickstart commands do not point to deleted models or stale artifacts
-- HuggingFace/local install instructions are simple and truthful
-Return:
-1. user-facing install command
-2. current model/tool inventory
-3. docs changed
-4. release risk
+- selected model + reasoning level
+- lane taken
+- files touched
+- tests/probes run
+- result
+- remaining risk
+- receipt id
 ```
 
 ---
@@ -277,6 +268,11 @@ pointed it out. This covenant prevents that from happening again.
 
 ## History
 
+- **2026-04-26 · v3 COGLOBAL** — Dynamic substrate model. Removed branded
+  IDE-to-role assignments. Roles are now lanes (surgeon, auditor, probe,
+  release, architect) that any IDE can take. IDE brand ≠ intelligence.
+  Selected model + reasoning level = brain power. Portable to Jeff's node.
+  Co-authored by C55M.
 - **2026-04-26 · v2** — Full covenant with role-specific prompts, chorum
   verdicts, and disagreement analysis. Co-authored by all three IDEs.
 - **2026-04-26 · v1** — Initial covenant by AG31 after model collision incident.
