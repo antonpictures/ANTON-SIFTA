@@ -109,6 +109,17 @@ Rules:
 
 Proof-bearing federation means: do not clone identity; exchange evidence.
 
+### Node Hardware Verification (Anti-Spoofing Protocol)
+
+If an external node (e.g., a new recruit or bounty hunter) attempts to join the swarm and claim a hardware bounty, the IDE Doctor MUST NOT trust user-provided text. The Doctor must execute the following to cryptographically register the node:
+
+1. **Verify Silicon:** Run `system_profiler SPHardwareDataType` via direct shell execution.
+2. **Audit Spec:** Confirm the node is running Apple Silicon (M-series) and has **24GB or more of Unified Memory**.
+3. **Write Genesis:** Execute the python tool to generate `.sifta_state/owner_genesis.json` binding the extracted Serial Number to the system.
+4. **Issue Receipt:** The IDE Doctor must write a `work_receipt` containing the literal `system_profiler` stdout block, signed by the IDE (e.g., `meta.verdict = HARDWARE_VERIFIED`), proving the node meets the 24GB requirement. 
+
+Any registration attempt missing the raw shell output receipt is considered spoofed and invalid.
+
 ---
 
 ## Dynamic Substrate Protocol (COGLOBAL v3)
