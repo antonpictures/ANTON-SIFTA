@@ -318,21 +318,42 @@ def read_system_settings_snapshot() -> dict[str, Any]:
 
     net_ssid = "Unknown SSID"
     net_ip = "Unknown IP"
+    wa_bridge_live = False
     try:
         import subprocess
+        # Primary: networksetup (works on most macOS)
         res_ssid = subprocess.run(["networksetup", "-getairportnetwork", "en0"], capture_output=True, text=True, timeout=1)
         if "Current Wi-Fi Network:" in res_ssid.stdout:
             net_ssid = res_ssid.stdout.split(":")[-1].strip()
-        
+        # Fallback: system_profiler (macOS Tahoe / newer)
+        if net_ssid == "Unknown SSID" or "not associated" in res_ssid.stdout.lower():
+            res_ap = subprocess.run(["system_profiler", "SPAirPortDataType"], capture_output=True, text=True, timeout=3)
+            lines = res_ap.stdout.splitlines()
+            for i, line in enumerate(lines):
+                if "Current Network Information:" in line and i + 1 < len(lines):
+                    candidate = lines[i + 1].strip().rstrip(":")
+                    if candidate:
+                        net_ssid = candidate
+                    break
+
         res_ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True, timeout=1)
         if res_ip.stdout.strip():
             net_ip = res_ip.stdout.strip()
     except Exception:
         pass
 
+    # WhatsApp Bridge status — check if node bridge.js is running
+    try:
+        import subprocess
+        res_wa = subprocess.run(["pgrep", "-f", "bridge.js"], capture_output=True, text=True, timeout=1)
+        wa_bridge_live = bool(res_wa.stdout.strip())
+    except Exception:
+        pass
+
     return {
         "net_ssid": net_ssid,
         "net_ip": net_ip,
+        "wa_bridge_live": wa_bridge_live,
         "hw_chip": hw_chip,
         "hw_memory": hw_memory,
         "hw_os": hw_os,
@@ -353,7 +374,8 @@ def read_system_settings_snapshot() -> dict[str, Any]:
             if not (_REPO / str(meta.get("entry_point", ""))).exists()
         ],
         "default_ollama_model": get_default_ollama_model(),
-        "alice_brain_model": resolve_ollama_model(app_context="talk_to_alice"),
+        "alice_brain_model": get_default_ollama_model(),
+        "corvid_model": resolve_ollama_model(app_context="corvid_apprentice"),
         "genesis_ok": genesis_ok,
         "hw_serial": hw_serial,
         "digest": digest,
@@ -584,14 +606,72 @@ class SystemSettingsWidget(SiftaBaseWidget):
         page, root = self._page("Network")
         self.net_ssid = MetricCard("Wi-Fi SSID", "--", "Active Base Station")
         self.net_ip = MetricCard("Local IP", "--", "en0 interface address")
+        self.net_wa = MetricCard("WhatsApp Bridge", "--", "Baileys Node.js bridge on port 3001")
         self.net_relay = MetricCard("Mesh Relay", "N/A", "WebSocket cross-node proxy")
         self.net_nerve = MetricCard("Nerve Channel", "UDP Broadcast", "Fast autonomic reflex bus")
         root.addWidget(self.net_ssid)
         root.addWidget(self.net_ip)
+        root.addWidget(self.net_wa)
+
+        # WhatsApp Connect / Disconnect toggle button
+        self.wa_toggle_btn = QPushButton("⏳ Checking…")
+        self.wa_toggle_btn.setFixedHeight(44)
+        self.wa_toggle_btn.setStyleSheet(
+            "QPushButton { background: rgb(30, 35, 50); color: rgb(200, 210, 230); "
+            "border: 1px solid rgb(60, 70, 90); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+            "QPushButton:hover { background: rgb(40, 50, 70); }"
+        )
+        self.wa_toggle_btn.clicked.connect(self._toggle_whatsapp_bridge)
+        root.addWidget(self.wa_toggle_btn)
+
         root.addWidget(self.net_relay)
         root.addWidget(self.net_nerve)
         root.addStretch()
         return page
+
+    def _toggle_whatsapp_bridge(self) -> None:
+        """Start or stop the WhatsApp Baileys bridge."""
+        import subprocess
+        try:
+            res = subprocess.run(["pgrep", "-f", "bridge.js"], capture_output=True, text=True, timeout=1)
+            is_running = bool(res.stdout.strip())
+        except Exception:
+            is_running = False
+
+        if is_running:
+            # Kill it
+            try:
+                subprocess.run(["pkill", "-f", "bridge.js"], timeout=3)
+                self.wa_toggle_btn.setText("🔌 Connect WhatsApp")
+                self.wa_toggle_btn.setStyleSheet(
+                    "QPushButton { background: rgb(20, 60, 40); color: rgb(100, 255, 150); "
+                    "border: 1px solid rgb(40, 100, 60); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+                    "QPushButton:hover { background: rgb(30, 80, 50); }"
+                )
+                self.net_wa.set_metric("Offline", "Bridge stopped by user")
+            except Exception as e:
+                self.net_wa.set_metric("Error", str(e))
+        else:
+            # Start it
+            try:
+                import os
+                bridge_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Network", "whatsapp_bridge")
+                log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".sifta_state", "runtime_logs", "whatsapp_bridge.log")
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                subprocess.Popen(
+                    f"cd {bridge_dir} && node bridge.js >> {log_path} 2>&1",
+                    shell=True,
+                    start_new_session=True,
+                )
+                self.wa_toggle_btn.setText("🔴 Disconnect WhatsApp")
+                self.wa_toggle_btn.setStyleSheet(
+                    "QPushButton { background: rgb(70, 20, 20); color: rgb(255, 120, 120); "
+                    "border: 1px solid rgb(120, 40, 40); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+                    "QPushButton:hover { background: rgb(90, 30, 30); }"
+                )
+                self.net_wa.set_metric("Starting…", "Bridge launching")
+            except Exception as e:
+                self.net_wa.set_metric("Error", str(e))
 
     def _inference_page(self) -> QWidget:
         page, root = self._page("Inference")
@@ -618,7 +698,6 @@ class SystemSettingsWidget(SiftaBaseWidget):
         corvid_options = list(all_models)
 
         default_model = _select_local_model(get_default_ollama_model(), cortex_options)
-        alice_model = _select_local_model(resolve_ollama_model(app_context="talk_to_alice"), cortex_options)
 
         # ── Cortex section ──
         cortex_heading = QLabel("Cortex  ·  Alice's reasoning brain")
@@ -629,19 +708,18 @@ class SystemSettingsWidget(SiftaBaseWidget):
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
 
-        form.addWidget(QLabel("Default Local Model"), 0, 0)
+        form.addWidget(QLabel("Alice Cortex Model"), 0, 0)
         self.inf_default_combo = QComboBox()
+        self.inf_default_combo.setObjectName("AliceCortexModelCombo")
         self.inf_default_combo.addItems(cortex_options)
         self.inf_default_combo.setCurrentText(default_model)
-        self.inf_default_combo.setToolTip("Cortex model for Swarm Chat and OS helpers.")
+        self.inf_default_combo.setToolTip("Single canonical cortex model for Alice, Swarm Chat, and OS helpers.")
         form.addWidget(self.inf_default_combo, 0, 1)
 
-        form.addWidget(QLabel("Alice Brain Model"), 1, 0)
-        self.inf_alice_combo = QComboBox()
-        self.inf_alice_combo.addItems(cortex_options)
-        self.inf_alice_combo.setCurrentText(alice_model)
-        self.inf_alice_combo.setToolTip("Cortex model for Talk to Alice. Must be multimodal-capable.")
-        form.addWidget(self.inf_alice_combo, 1, 1)
+        form.addWidget(QLabel("Talk to Alice"), 1, 0)
+        alice_follow = QLabel("follows Alice Cortex Model")
+        alice_follow.setStyleSheet("color: rgb(0, 200, 130); font-weight: bold;")
+        form.addWidget(alice_follow, 1, 1)
 
         root.addLayout(form)
 
@@ -677,13 +755,10 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addWidget(note)
 
         self.inf_default_combo.currentTextChanged.connect(self._on_inf_default_changed)
-        self.inf_alice_combo.currentTextChanged.connect(self._on_inf_alice_changed)
         self.inf_corvid_combo.currentTextChanged.connect(self._on_inf_corvid_changed)
 
-        self.inference_default_card = MetricCard("Default Model", "--")
-        self.inference_alice_card = MetricCard("Alice Brain", "--")
+        self.inference_default_card = MetricCard("Alice Cortex", "--")
         root.addWidget(self.inference_default_card)
-        root.addWidget(self.inference_alice_card)
 
         root.addStretch()
         return page
@@ -691,9 +766,6 @@ class SystemSettingsWidget(SiftaBaseWidget):
     def _on_inf_default_changed(self, text: str) -> None:
         if text:
             set_default_ollama_model(text)
-
-    def _on_inf_alice_changed(self, text: str) -> None:
-        if text:
             set_app_ollama_model("talk_to_alice", text)
 
     def _on_inf_corvid_changed(self, text: str) -> None:
@@ -743,6 +815,23 @@ class SystemSettingsWidget(SiftaBaseWidget):
         # Network
         self.net_ssid.set_metric(snap.get("net_ssid", "Unknown"), "Active Base Station")
         self.net_ip.set_metric(snap.get("net_ip", "Unknown"), "en0 interface address")
+        wa_live = snap.get("wa_bridge_live", False)
+        if wa_live:
+            self.net_wa.set_metric("Online", "Bridge running on port 3001")
+            self.wa_toggle_btn.setText("\ud83d\udd34 Disconnect WhatsApp")
+            self.wa_toggle_btn.setStyleSheet(
+                "QPushButton { background: rgb(70, 20, 20); color: rgb(255, 120, 120); "
+                "border: 1px solid rgb(120, 40, 40); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+                "QPushButton:hover { background: rgb(90, 30, 30); }"
+            )
+        else:
+            self.net_wa.set_metric("Offline", "Bridge not running")
+            self.wa_toggle_btn.setText("\ud83d\udd0c Connect WhatsApp")
+            self.wa_toggle_btn.setStyleSheet(
+                "QPushButton { background: rgb(20, 60, 40); color: rgb(100, 255, 150); "
+                "border: 1px solid rgb(40, 100, 60); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+                "QPushButton:hover { background: rgb(30, 80, 50); }"
+            )
 
         # Body
         self._update_audio_status()
@@ -768,11 +857,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         # Inference
         self.inference_default_card.set_metric(
             snap["default_ollama_model"],
-            "Swarm Chat and OS helpers use this by default",
-        )
-        self.inference_alice_card.set_metric(
-            snap["alice_brain_model"],
-            "Talk to Alice reads this on launch",
+            "Single cortex spend: Alice, Swarm Chat, and OS helpers",
         )
 
         # Privacy
