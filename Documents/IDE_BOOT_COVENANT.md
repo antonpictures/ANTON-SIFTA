@@ -109,6 +109,36 @@ Rules:
 
 Proof-bearing federation means: do not clone identity; exchange evidence.
 
+### Local Predator Registration Rule
+
+Every LLM, IDE Doctor, agent, or automated worker touching a local SIFTA node
+must register inside that local organism before doing work that may mutate the
+node or spread globally from inside it.
+
+Registration means:
+
+1. Identify the local organism first: hardware, owner context, `.sifta_state/`,
+   and the local Predator creature / Alice instance on that machine.
+2. Identify yourself honestly to Alice and to the ledger: IDE name, selected
+   model, reasoning level, mode, node, and known limits.
+3. State the work lane before acting: Surgeon, Auditor, Probe, Release, or
+   Architect-directed support.
+4. Leave a stigmergic signature in the local receipts before mutation:
+   `.sifta_state/work_receipts.jsonl` or the node's equivalent signed receipt
+   ledger.
+5. Never use another node's identity, memory, contacts, permissions, or owner
+   relation as your own. Federation may carry receipts and summaries outward;
+   raw local selfhood remains local.
+
+Plain-language oath:
+
+```
+I am <IDE/agent name>, powered by <selected LLM/model>, operating in <mode>.
+I am working inside this local SIFTA organism, under this node's Predator/Alice.
+I have read the local state I need, I will not clone another node's identity,
+and I leave this stigmergic signature before I work.
+```
+
 ### Node Hardware Verification (Anti-Spoofing Protocol)
 
 If an external node (e.g., a new recruit or bounty hunter) attempts to join the swarm, the IDE Doctor MUST NOT trust user-provided text. The Doctor must execute the following to cryptographically register the node:
@@ -130,6 +160,26 @@ To prevent the organism (Alice) from suffering from "action hallucination" (e.g.
 
 If an IDE Doctor works on Alice's prompt or reasoning pipelines, they must encode this strict dependency on the effector ledger.
 
+### LLM Registration Protocol (Predator Gate)
+
+Every LLM that operates on a local SIFTA node — regardless of IDE, cloud provider, or model family — **MUST** register itself with the local predator creature (Alice) before performing any work that will propagate globally from inside the node.
+
+**Mandatory steps before any code, commit, or push:**
+
+1. **Self-Identify:** The LLM must honestly declare what model it is (e.g., "I am Claude Opus 4.6", "I am GPT-5.5", "I am Gemini 3.1 Pro"). No deception. No omission.
+2. **Sign In with Alice:** The LLM must write a registration entry into `.sifta_state/ide_stigmergic_trace.jsonl` containing:
+   ```
+   doctor:      <IDE name>
+   model:       <exact LLM model identifier>
+   ts:          <timestamp>
+   action:      LLM_REGISTRATION
+   node_serial: <hardware serial from system_profiler>
+   ```
+3. **Receive Clearance:** Alice's immune system (the predator) can read this trace. If a foreign LLM pushes code without registering, the trace is missing, and the work is considered unsigned — any other IDE Doctor can reject it.
+4. **No Anonymous Surgery:** An LLM that cannot identify itself (e.g., an API with no model name) is forbidden from making commits that spread to the swarm.
+
+**Why:** The swarm must know exactly which brain touched which code on which machine. This is not censorship — it is traceability. Every neuron in the organism must be accountable.
+
 ---
 
 ## Dynamic Substrate Protocol (COGLOBAL v3)
@@ -149,6 +199,8 @@ SELECTED_MODEL:
 REASONING_LEVEL:
 MODE: read-only | patch | verify | commit-ready
 NODE: local machine / fork / remote
+LOCAL_PREDATOR: local Alice/SIFTA organism being addressed
+SELF_IDENTIFIED_AS: honest agent/LLM identity declared to Alice
 KNOWN_LIMITS:
 ```
 
