@@ -51,17 +51,6 @@ from System.sifta_inference_defaults import (
 )
 from System.sifta_base_widget import SiftaBaseWidget
 
-try:
-    from System.swarm_gemini_brain import (
-        is_gemini_model as _is_gemini_model,
-        available_gemini_models as _available_gemini_models,
-    )
-    _GEMINI_AVAILABLE = True
-except ImportError:
-    _GEMINI_AVAILABLE = False
-    def _is_gemini_model(_n: str) -> bool: return False        # type: ignore
-    def _available_gemini_models() -> list[str]: return []     # type: ignore
-
 STATE = _REPO / ".sifta_state"
 MANIFEST = _REPO / "Applications" / "apps_manifest.json"
 GAIN_STATE_FILE = STATE / "talk_to_alice_audio_gain.json"
@@ -81,6 +70,104 @@ ALICE_VOICE_SHORTLIST = (
     "Alex",
     "Samantha",
 )
+
+
+def _looks_remote_model_name(name: str) -> bool:
+    n = (name or "").strip().lower()
+    return n.startswith("gemini:") or n.startswith("gemini-")
+
+
+def _parse_ollama_tags_payload(payload: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    models = payload.get("models", [])
+    if not isinstance(models, list):
+        return names
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if name and not _looks_remote_model_name(name) and name not in names:
+            names.append(name)
+    return names
+
+
+def _parse_ollama_list_output(text: str) -> list[str]:
+    names: list[str] = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.upper().startswith("NAME "):
+            continue
+        name = stripped.split()[0]
+        if name and not _looks_remote_model_name(name) and name not in names:
+            names.append(name)
+    return names
+
+
+def _canonical_local_model_name(
+    name: str,
+    installed: list[str],
+    *,
+    allow_missing: bool = True,
+) -> str:
+    model = (name or "").strip()
+    if not model:
+        return ""
+    if _looks_remote_model_name(model):
+        return ""
+    if model in installed:
+        return model
+    if ":" not in model:
+        latest = f"{model}:latest"
+        if latest in installed:
+            return latest
+    return model if allow_missing else ""
+
+
+def _select_local_model(preferred: str, installed: list[str]) -> str:
+    selected = _canonical_local_model_name(preferred, installed, allow_missing=False)
+    if selected:
+        return selected
+    selected = _canonical_local_model_name(DEFAULT_OLLAMA_MODEL, installed, allow_missing=False)
+    if selected:
+        return selected
+    return installed[0] if installed else (preferred or DEFAULT_OLLAMA_MODEL)
+
+
+def _available_local_ollama_models() -> list[str]:
+    """Return installed local Ollama models only; never mix in cloud API names."""
+    options: list[str] = []
+    try:
+        import urllib.request
+
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            options.extend(_parse_ollama_tags_payload(json.loads(resp.read())))
+    except Exception:
+        pass
+
+    if not options:
+        try:
+            out = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=4)
+            options.extend(_parse_ollama_list_output(out.stdout))
+        except Exception:
+            pass
+
+    if not options:
+        saved = (
+            get_default_ollama_model(),
+            resolve_ollama_model(app_context="talk_to_alice"),
+            DEFAULT_OLLAMA_MODEL,
+        )
+        for model in saved:
+            canonical = _canonical_local_model_name(model, options)
+            if canonical and canonical not in options:
+                options.append(canonical)
+        for model in STIGMERGIC_TEST_MODEL_PRESETS:
+            canonical = _canonical_local_model_name(model, options)
+            if canonical and canonical not in options:
+                options.append(canonical)
+
+    return options
 
 
 def _latest_jsonl(path: Path) -> dict[str, Any]:
@@ -467,53 +554,77 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
     def _inference_page(self) -> QWidget:
         page, root = self._page("Inference")
-        
+
+        # ── Cortex models: filter out small organ models (< 4GB) ──
+        all_models = _available_local_ollama_models()
+        # Identify organ models that should NOT appear in cortex dropdowns.
+        # The corvid apprentice runs independently — it's an organ, not a brain.
+        _ORGAN_MODELS = {"qwen3.5:2b", "qwen3.5:0.8b", "qwen35-08b-phc-experimental:latest"}
+        cortex_options = [m for m in all_models if m not in _ORGAN_MODELS]
+        if not cortex_options:
+            cortex_options = all_models  # safety: never show empty dropdown
+
+        default_model = _select_local_model(get_default_ollama_model(), cortex_options)
+        alice_model = _select_local_model(resolve_ollama_model(app_context="talk_to_alice"), cortex_options)
+
+        # ── Cortex selection ──
+        cortex_heading = QLabel("Cortex  ·  Alice's reasoning brain")
+        cortex_heading.setStyleSheet("color: rgb(0, 200, 130); font-size: 12px; font-weight: bold;")
+        root.addWidget(cortex_heading)
+
         form = QGridLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
 
-        # Build model list from LIVE Ollama — no ghost models.
-        options: list[str] = []
-        try:
-            import urllib.request
-            req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
-            with urllib.request.urlopen(req, timeout=4) as resp:
-                data = json.loads(resp.read())
-                for m in data.get("models", []):
-                    name = m.get("name", "")
-                    if name and name not in options:
-                        options.append(name)
-        except Exception:
-            pass
-        # Fallback: ensure the saved defaults appear even if Ollama is down
-        for fallback in (get_default_ollama_model(), resolve_ollama_model(app_context="talk_to_alice")):
-            if fallback and fallback not in options:
-                options.append(fallback)
-
         form.addWidget(QLabel("Default Local Model"), 0, 0)
         self.inf_default_combo = QComboBox()
-        self.inf_default_combo.addItems(options)
-        self.inf_default_combo.setCurrentText(get_default_ollama_model())
-        self.inf_default_combo.setToolTip("Used by Swarm Chat and OS helpers. Model plumbing belongs here.")
+        self.inf_default_combo.addItems(cortex_options)
+        self.inf_default_combo.setCurrentText(default_model)
+        self.inf_default_combo.setToolTip("Cortex model for Swarm Chat and OS helpers.")
         form.addWidget(self.inf_default_combo, 0, 1)
 
         form.addWidget(QLabel("Alice Brain Model"), 1, 0)
         self.inf_alice_combo = QComboBox()
-        self.inf_alice_combo.addItems(options)
-        self.inf_alice_combo.setCurrentText(resolve_ollama_model(app_context="talk_to_alice"))
-        self.inf_alice_combo.setToolTip("Used by Talk to Alice. The cockpit stays clean.")
+        self.inf_alice_combo.addItems(cortex_options)
+        self.inf_alice_combo.setCurrentText(alice_model)
+        self.inf_alice_combo.setToolTip("Cortex model for Talk to Alice. Must be multimodal-capable.")
         form.addWidget(self.inf_alice_combo, 1, 1)
 
         root.addLayout(form)
 
+        # ── Organ models: read-only, always-on ──
+        organ_heading = QLabel("Organs  ·  run simultaneously, not selectable as brain")
+        organ_heading.setStyleSheet("color: rgb(145, 153, 180); font-size: 12px; font-weight: bold; margin-top: 8px;")
+        root.addWidget(organ_heading)
+
+        # Detect which organ models are actually installed
+        installed_organs = [m for m in all_models if m in _ORGAN_MODELS]
+        corvid_model = next((m for m in installed_organs if "qwen3.5:2b" in m), None)
+
+        organ_grid = QGridLayout()
+        organ_grid.setHorizontalSpacing(12)
+        organ_grid.setVerticalSpacing(6)
+        organ_grid.addWidget(QLabel("Corvid Apprentice"), 0, 0)
+        corvid_lbl = QLabel(corvid_model or "qwen3.5:2b (not installed)")
+        corvid_lbl.setStyleSheet(
+            f"color: {'rgb(0, 200, 130)' if corvid_model else 'rgb(200, 80, 80)'}; font-weight: bold;"
+        )
+        organ_grid.addWidget(corvid_lbl, 0, 1)
+        organ_grid.addWidget(QLabel("Reflex Arc"), 1, 0)
+        reflex_lbl = QLabel("Pure Python · no model")
+        reflex_lbl.setStyleSheet("color: rgb(0, 200, 130); font-weight: bold;")
+        organ_grid.addWidget(reflex_lbl, 1, 1)
+        root.addLayout(organ_grid)
+
         note = QLabel(
-            "Centralized inference routing: select the models for background OS functions "
-            "and Alice's primary talk module."
+            "Cortex models power Alice's reasoning and conversation. "
+            "Organ models run in parallel as autonomous background processes — "
+            "they cannot be selected as Alice's brain."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: rgb(145, 153, 180);")
         root.addWidget(note)
-        
+
         self.inf_default_combo.currentTextChanged.connect(self._on_inf_default_changed)
         self.inf_alice_combo.currentTextChanged.connect(self._on_inf_alice_changed)
 
