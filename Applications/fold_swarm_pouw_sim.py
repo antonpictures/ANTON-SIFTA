@@ -43,17 +43,25 @@ GRID_RES     = 40           # pheromone grid resolution
 # ─────────────────────────────────────────────────────────
 C_BG        = QColor(8,  10, 18)
 C_PANEL     = QColor(12, 14, 24)
-C_GRID      = QColor(20, 24, 42)
-C_BOND      = QColor(60, 200, 255, 180)
+C_GRID      = QColor(40, 50, 80)
+C_BOND      = QColor(80, 220, 255, 220)
 C_BEAD_HOT  = QColor(255, 90, 40)
-C_BEAD_COLD = QColor(40, 200, 120)
-C_SWIMMER   = [QColor(255, 200, 0),  QColor(0, 220, 255),
-               QColor(200, 80, 255), QColor(80, 255, 120),
-               QColor(255, 60, 120), QColor(0, 200, 180)]
-C_RECEIPT   = QColor(0, 255, 160)
-C_STGM      = QColor(255, 210, 0)
-C_DANGER    = QColor(255, 50, 50)
-C_ENERGY    = QColor(80, 160, 255)
+C_BEAD_COLD = QColor(40, 255, 140)
+C_SWIMMER   = [QColor(255, 210, 0),  QColor(0, 230, 255),
+               QColor(220, 80, 255), QColor(80, 255, 120),
+               QColor(255, 60, 140), QColor(0, 255, 200)]
+C_RECEIPT   = QColor(0, 255, 160)      # neon mint
+C_STGM      = QColor(255, 220, 0)      # gold
+C_DANGER    = QColor(255, 60, 60)
+C_ENERGY    = QColor(120, 200, 255)    # bright cyan-blue
+# New bright text palette
+C_TXT_CYAN    = QColor(0,   230, 255)  # MC stats / step counter
+C_TXT_LIME    = QColor(140, 255, 80)   # Rg / accept rate
+C_TXT_ORANGE  = QColor(255, 160, 40)   # energy graph labels
+C_TXT_PINK    = QColor(255, 100, 200)  # best energy
+C_TXT_WHITE   = QColor(240, 240, 255)  # general labels
+C_TXT_PURPLE  = QColor(180, 120, 255)  # footer / attribution
+C_TXT_GOLD    = QColor(255, 220, 0)    # STGM header
 
 
 # ─────────────────────────────────────────────────────────
@@ -454,64 +462,104 @@ class SimCanvas(QWidget):
         for i in range(1, len(pts)):
             p.drawLine(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1])
 
-        # Label
-        p.setPen(QPen(C_ENERGY, 1))
-        f = QFont("Courier New", 8)
+        # Label — bright multicolor 3x
+        f = QFont("Courier New", 27, QFont.Weight.Bold)
         p.setFont(f)
-        p.drawText(gx+4, gy+12, f"E = {hist[-1]:.2f} ε")
-        p.drawText(gx+4, gy+24, f"kT = {self.physics.kT:.2f}")
-        p.drawText(gx+4, gy+36, f"Best = {self.physics.best_energy:.2f}")
+        p.setPen(QPen(C_TXT_ORANGE))
+        p.drawText(gx+6, gy+34, f"E = {hist[-1]:.2f} ε")
+        p.setPen(QPen(C_TXT_CYAN))
+        p.drawText(gx+6, gy+66, f"kT = {self.physics.kT:.3f}")
+        p.setPen(QPen(C_TXT_PINK))
+        p.drawText(gx+6, gy+98, f"Best = {self.physics.best_energy:.2f}")
 
     def _draw_hud(self, p, W, H):
-        f_mono = QFont("Courier New", 9)
-        f_big  = QFont("Courier New", 13, QFont.Weight.Bold)
-        p.setFont(f_mono)
+        f_mono  = QFont("Courier New", 27)
+        f_bold  = QFont("Courier New", 27, QFont.Weight.Bold)
+        f_big   = QFont("Courier New", 42, QFont.Weight.Bold)
+        f_small = QFont("Courier New", 24)
 
-        # STGM total
+        # ── STGM header ─────────────────────────────────────
         flash = self.tick - self.last_mint_flash < 20
-        col = C_STGM if not flash else QColor(255, 255, 100)
-        p.setPen(QPen(col))
+        stgm_col = QColor(255, 255, 80) if flash else C_TXT_GOLD
+        p.setPen(QPen(stgm_col))
         p.setFont(f_big)
-        p.drawText(12, 28, f"STGM  {self.chain.total:.3f}")
+        p.drawText(12, 62, f"STGM  {self.chain.total:.4f} Ξ")
 
-        # Receipts panel
-        p.setFont(f_mono)
-        p.setPen(QPen(C_RECEIPT, 1))
-        rx, ry = W - 320, 12
-        p.fillRect(rx-4, ry-4, 316, min(len(self.chain.chain)*14+20, 240),
-                   QColor(4, 16, 12, 200))
-        p.drawText(rx, ry+10, "━ PoUW Receipts ━")
-        for k, rec in enumerate(reversed(self.chain.chain[-14:])):
-            age_alpha = max(50, 220 - k*15)
-            col = QColor(0, 255, 160, age_alpha)
+        # subtitle
+        p.setFont(f_small)
+        p.setPen(QPen(C_TXT_CYAN))
+        p.drawText(14, 96, "Proof-of-Useful-Work  ·  Lennard-Jones + Metropolis MC + ACO Stigmergy")
+
+        # ── MC Stats row ────────────────────────────────────
+        p.setFont(f_bold)
+        p.setPen(QPen(C_TXT_CYAN))
+        p.drawText(12, H - 130,
+                   f"STEP  {self.physics.step:>7d}")
+        p.setPen(QPen(C_TXT_LIME))
+        p.drawText(340, H - 130,
+                   f"ACCEPT  {self.physics.accept_rate:.2f}")
+        p.setPen(QPen(C_TXT_ORANGE))
+        p.drawText(660, H - 130,
+                   f"kT  {self.physics.kT:.3f}")
+        p.setPen(QPen(C_TXT_PINK))
+        p.drawText(850, H - 130,
+                   f"Rg  {self.physics.radius_of_gyration():.2f} σ")
+        p.setPen(QPen(C_TXT_WHITE))
+        p.drawText(1060, H - 130,
+                   f"MINTS  {len(self.chain.chain)}")
+
+        # ── Receipts panel ───────────────────────────────────
+        rx, ry = W - 580, 110
+        panel_h = min(len(self.chain.chain) * 32 + 55, 520)
+        p.fillRect(rx-6, ry-6, 336, panel_h, QColor(2, 12, 8, 220))
+        p.setPen(QPen(QColor(0, 200, 120, 60), 1))
+        p.drawRect(rx-6, ry-6, 336, panel_h)
+
+        p.setFont(f_bold)
+        p.setPen(QPen(C_RECEIPT))
+        p.drawText(rx, ry + 34, "━━ PoUW RECEIPT CHAIN ━━")
+
+        p.setFont(f_small)
+        # Colour-cycle receipts
+        receipt_colors = [
+            QColor(0, 255, 160),   # mint
+            QColor(255, 220, 0),   # gold
+            QColor(80, 220, 255),  # cyan
+            QColor(220, 80, 255),  # purple
+            QColor(255, 100, 120), # pink
+        ]
+        for k, rec in enumerate(reversed(self.chain.chain[-13:])):
+            age_alpha = max(80, 255 - k * 16)
+            rc = receipt_colors[k % len(receipt_colors)]
+            col = QColor(rc.red(), rc.green(), rc.blue(), age_alpha)
             p.setPen(QPen(col))
-            p.drawText(rx, ry + 24 + k*13,
-                       f"#{rec['swimmer']:2d}  {rec['hash']}  +{rec['score']:.3f}")
+            p.drawText(rx, ry + 58 + k * 32,
+                       f"S{rec['swimmer']:02d}  {rec['hash']}  +{rec['score']:.4f} Ξ")
 
-        # MC stats
-        p.setFont(f_mono)
-        p.setPen(QPen(QColor(140, 180, 255)))
-        p.drawText(12, H - 140,
-                   f"Step  {self.physics.step:>6d}  |  Accept {self.physics.accept_rate:.2f}")
-        p.drawText(12, H - 126,
-                   f"Rg   {self.physics.radius_of_gyration():.2f}σ  |  Mints {len(self.chain.chain)}")
-
-        # Swimmer energy bars
+        # ── Swimmer energy bars ──────────────────────────────
         bx = W - 10
+        p.setFont(f_small)
         for i, sw in enumerate(self.swimmers):
             col = sw.color
-            bw  = int(sw.energy / 100 * 80)
-            by  = H - 12 - i * 14
-            p.fillRect(bx - 80, by - 8, 80, 9, QColor(20, 20, 30))
-            p.fillRect(bx - 80, by - 8, bw, 9, QColor(col.red(), col.green(), col.blue(), 180))
-            p.setPen(QPen(col.lighter(150)))
-            p.drawText(bx - 145, by, f"S{i:02d} {sw.stgm:.2f}Ξ")
+            bw  = int(sw.energy / 100 * 140)
+            by  = H - 160 - i * 32
+            # track bg
+            p.fillRect(bx - 140, by - 18, 140, 18, QColor(15, 15, 25))
+            # fill
+            bar_col = QColor(col.red(), col.green(), col.blue(),
+                             200 if sw.energy > 20 else 100)
+            p.fillRect(bx - 140, by - 18, bw, 18, bar_col)
+            # label — swimmer's own color, always bright
+            bright = col.lighter(180)
+            p.setPen(QPen(bright))
+            p.drawText(bx - 310, by,
+                       f"S{i:02d}  {sw.stgm:5.2f} Ξ  {'▌' * int(sw.energy/25)}")
 
-        # Title badge
-        p.setPen(QPen(QColor(80, 80, 80)))
-        p.setFont(QFont("Courier New", 7))
-        p.drawText(12, H - 12,
-                   "C46S · Lennard-Jones + Metropolis MC + ACO Stigmergy · For the Swarm 🐜⚡")
+        # ── Footer ───────────────────────────────────────────
+        p.setFont(QFont("Courier New", 24, QFont.Weight.Bold))
+        p.setPen(QPen(C_TXT_PURPLE))
+        p.drawText(12, H - 14,
+                   "C46S  ·  Lennard-Jones 12-6  +  Metropolis MC  +  ACO Stigmergy  ·  For the Swarm 🐜⚡")
 
 
 # ─────────────────────────────────────────────────────────

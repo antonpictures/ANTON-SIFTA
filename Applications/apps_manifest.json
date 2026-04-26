@@ -1,403 +1,412 @@
 {
-    "Cartography Dashboard": {
-        "category": "Utilities",
-        "entry_point": "Applications/sifta_cartography_widget.py",
-        "widget_class": "CartographyWidget",
-        "window_width": 1000,
-        "window_height": 600,
-        "signature": "UNVERIFIED"
-    },
-    "Pheromone Symphony (Generative Music)": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_pheromone_symphony.py",
-        "widget_class": "PheromoneSymphonyApp",
-        "window_width": 1000,
-        "window_height": 600,
-        "signature": "UNVERIFIED"
-    },
-    "Stigmergic Video Poker": {
-        "category": "Games",
-        "entry_point": "Applications/sifta_video_poker.py",
-        "widget_class": "StigmergicVideoPokerApp",
-        "window_width": 1000,
-        "window_height": 700,
-        "signature": "UNVERIFIED"
-    },
-    "Network Control Center": {
-        "category": "Network",
-        "entry_point": "Applications/sifta_network_center.py",
-        "widget_class": "NetworkCenterWidget",
-        "window_width": 1120,
-        "window_height": 760,
-        "signature": "UNVERIFIED"
-    },
-    "IoT Swarm Connector": {
-        "category": "Network",
-        "entry_point": "Applications/sifta_iot_connector.py",
-        "widget_class": "IoTConnectorWidget",
-        "window_width": 960,
-        "window_height": 620,
-        "signature": "UNVERIFIED"
-    },
-    "Colloid Simulator": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_colloid_widget.py",
-        "widget_class": "ColloidSimWidget",
-        "window_width": 1180,
-        "window_height": 820,
-        "signature": "UNVERIFIED"
-    },
-    "Physarum Contradiction Lab": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_physarum_contradiction_lab.py",
-        "widget_class": "PhysarumContradictionLabWidget",
-        "window_width": 1280,
-        "window_height": 900,
-        "signature": "UNVERIFIED"
-    },
-    "Slime-Mold Bank: Push to Mint": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_slime_mold_bank.py",
-        "widget_class": "SlimeMoldBankWidget",
-        "window_width": 1240,
-        "window_height": 820,
-        "signature": "UNVERIFIED",
-        "_note": "Carlton's marketing demo — runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts."
-    },
-    "Swarm Arena": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_sim_stream_panels.py",
-        "widget_class": "ArenaPanelWidget",
-        "window_width": 920,
-        "window_height": 640,
-        "signature": "UNVERIFIED"
-    },
-    "Cyborg Organ Simulator": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_sim_stream_panels.py",
-        "widget_class": "CyborgPanelWidget",
-        "window_width": 880,
-        "window_height": 520,
-        "signature": "UNVERIFIED"
-    },
-    "Logistics Swarm (Overnight)": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_sim_stream_panels.py",
-        "widget_class": "LogisticsStreamWidget",
-        "window_width": 920,
-        "window_height": 640,
-        "signature": "UNVERIFIED"
-    },
-    "Warehouse Logistics Test": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_sim_stream_panels.py",
-        "widget_class": "WarehouseStreamWidget",
-        "window_width": 880,
-        "window_height": 560,
-        "signature": "UNVERIFIED"
-    },
-    "Crucible Cyber-Defense (10-min)": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_sim_stream_panels.py",
-        "widget_class": "CrucibleStreamWidget",
-        "window_width": 880,
-        "window_height": 480,
-        "signature": "UNVERIFIED"
-    },
-    "Stigmergic Edge Vision": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_vision_widget.py",
-        "widget_class": "VisionSimWidget",
-        "window_width": 1220,
-        "window_height": 860,
-        "signature": "UNVERIFIED"
-    },
-    "Urban Resilience Simulator": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_sim_stream_panels.py",
-        "widget_class": "UrbanStreamWidget",
-        "window_width": 880,
-        "window_height": 480,
-        "signature": "UNVERIFIED"
-    },
-    "Epistemic Mesh (Anti-Gaslight)": {
-        "category": "Simulations",
-        "entry_point": "Applications/epistemic_mesh_widget.py",
-        "widget_class": "EpistemicMeshWidget",
-        "window_width": 1340,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "Stigmergic Fold Swarm (C\u03b1 / Go)": {
-        "category": "Simulations",
-        "entry_point": "Applications/fold_swarm_widget.py",
-        "widget_class": "FoldSwarmWidget",
-        "window_width": 1280,
-        "window_height": 880,
-        "signature": "UNVERIFIED"
-    },
-    "Agentic Swarm Calibrator": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_calibrator_widget.py",
-        "widget_class": "CalibratorWidget",
-        "window_width": 1340,
-        "window_height": 880,
-        "signature": "UNVERIFIED"
-    },
-    "Swarm Lounge (Cross-Domain Gossip)": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_lounge_widget.py",
-        "widget_class": "LoungeWidget",
-        "window_width": 1300,
-        "window_height": 860,
-        "signature": "UNVERIFIED"
-    },
-    "Swarm Browser": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_swarm_browser.py",
-        "widget_class": "SwarmBrowserWidget",
-        "window_width": 1400,
-        "window_height": 900,
-        "signature": "UNVERIFIED"
-    },
-    "Biological Dashboard": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_biological_dashboard_qt.py",
-        "widget_class": "BiologicalDashboardWidget",
-        "window_width": 960,
-        "window_height": 640,
-        "signature": "UNVERIFIED"
-    },
-    "First Boot Provisioning": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_setup_gui.py",
-        "signature": "UNVERIFIED"
-    },
-    "Finance": {
-        "category": "Utilities",
-        "entry_point": "Applications/sifta_finance.py",
-        "widget_class": "FinanceDashboard",
-        "signature": "UNVERIFIED"
-    },
-    "Circadian Rhythm": {
-        "category": "Utilities",
-        "entry_point": "Applications/circadian_rhythm.py",
-        "signature": "UNVERIFIED"
-    },
-    "System Settings": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_system_settings.py",
-        "widget_class": "SystemSettingsWidget",
-        "window_width": 980,
-        "window_height": 680,
-        "signature": "UNVERIFIED"
-    },
-    "Swarm Adapter Ecology": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_swarm_adapter_ecology.py",
-        "widget_class": "SwarmAdapterEcologyWidget",
-        "window_width": 1180,
-        "window_height": 760,
-        "signature": "UNVERIFIED"
-    },
-    "Intelligence Settings": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_settings.py",
-        "widget_class": "SettingsWindow",
-        "signature": "UNVERIFIED"
-    },
-    "Clock Settings": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_clock_settings.py",
-        "widget_class": "ClockSettingsApp",
-        "window_width": 400,
-        "window_height": 460,
-        "signature": "UNVERIFIED"
-    },
-    "Cardio Metrics": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_cardio.py",
-        "signature": "UNVERIFIED"
-    },
-    "SIFTA NLE": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_nle.py",
-        "widget_class": "NLEWindow",
-        "window_width": 1440,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "SIFTA NLE Panel": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_nle_widget.py",
-        "widget_class": "NLEWidget",
-        "window_width": 1440,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "SIFTA File Navigator": {
-        "category": "Utilities",
-        "entry_point": "Applications/sifta_file_manager_widget.py",
-        "widget_class": "FileNavigatorWidget",
-        "window_width": 1240,
-        "window_height": 820,
-        "signature": "UNVERIFIED"
-    },
-    "Vector 11 Gatekeeper Sim": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_gatekeeper_sim.py",
-        "signature": "UNVERIFIED"
-    },
-    "Territory Is The Law": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_territory_widget.py",
-        "widget_class": "TerritoryWidget",
-        "window_width": 1400,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "Cyborg Body": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_cyborg_body.py",
-        "widget_class": "CyborgWindow",
-        "window_width": 1440,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "Stigmergic Medical Scanner": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_medscan_widget.py",
-        "widget_class": "MedScanWidget",
-        "window_width": 1440,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "Fluid Firmware": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_firmware_widget.py",
-        "widget_class": "FirmwareWidget",
-        "window_width": 1440,
-        "window_height": 860,
-        "signature": "UNVERIFIED"
-    },
-    "Bauwens Regenerative Factory": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_factory_widget.py",
-        "widget_class": "FactoryWidget",
-        "window_width": 1440,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "Quantum Epidemiology": {
-        "category": "Simulations",
-        "entry_point": "Applications/sifta_quantum_epi_sim.py",
-        "widget_class": "QuantumEpiWindow",
-        "window_width": 1440,
-        "window_height": 920,
-        "signature": "UNVERIFIED"
-    },
-    "Stigmergic Swarm Canvas": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_canvas_widget.py",
-        "widget_class": "CanvasWidget",
-        "window_width": 820,
-        "window_height": 660,
-        "signature": "UNVERIFIED"
-    },
-    "App Manager": {
-        "category": "Utilities",
-        "entry_point": "Applications/sifta_app_manager.py",
-        "widget_class": "AppManagerWidget",
-        "window_width": 840,
-        "window_height": 720,
-        "signature": "UNVERIFIED"
-    },
-    "IDE Control Panel": {
-        "category": "Developer",
-        "entry_point": "Applications/sifta_ide_control_panel.py",
-        "widget_class": "IdeControlPanelWidget",
-        "window_width": 1040,
-        "window_height": 700,
-        "signature": "UNVERIFIED"
-    },
-    "Brain Gas-Station Meter": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_gasstation_meter.py",
-        "widget_class": "GasStationMeterWidget",
-        "window_width": 1000,
-        "window_height": 720,
-        "signature": "UNVERIFIED"
-    },
-    "Owner Genesis": {
-        "category": "System Settings",
-        "entry_point": "Applications/sifta_genesis_widget.py",
-        "widget_class": "GenesisWidget",
-        "window_width": 620,
-        "window_height": 720,
-        "signature": "UNVERIFIED"
-    },
-    "Swarm Broadcaster": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_broadcaster_widget.py",
-        "widget_class": "BroadcasterWidget",
-        "window_width": 1100,
-        "window_height": 800,
-        "signature": "UNVERIFIED"
-    },
-    "Swarm Chat": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_swarm_chat.py",
-        "widget_class": "SwarmChatWindow",
-        "window_width": 1200,
-        "window_height": 780,
-        "signature": "UNVERIFIED"
-    },
-    "Stigmergic Writer": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_writer_widget.py",
-        "widget_class": "WriterWidget",
-        "window_width": 1100,
-        "window_height": 850,
-        "signature": "UNVERIFIED"
-    },
-    "What Alice Sees": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_what_alice_sees_widget.py",
-        "widget_class": "WhatAliceSeesWidget",
-        "window_width": 1100,
-        "window_height": 700,
-        "autostart": false,
-        "signature": "UNVERIFIED",
-        "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 What Alice Sees."
-    },
-    "Talk to Alice": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_talk_to_alice_widget.py",
-        "widget_class": "TalkToAliceWidget",
-        "window_width": 960,
-        "window_height": 640,
-        "autostart": false,
-        "signature": "UNVERIFIED",
-        "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 Talk to Alice."
-    },
-    "Alice": {
-        "category": "Creative",
-        "entry_point": "Applications/sifta_alice_widget.py",
-        "widget_class": "AliceWidget",
-        "window_width": 1000,
-        "window_height": 850,
-        "autostart": true,
-        "autostart_order": 1,
-        "autostart_delay_ms": 700,
-        "signature": "UNVERIFIED",
-        "_note": "Alice IS the OS. Autostarts on boot. Camera activates immediately (SIFTA_ALICE_UNIFIED_DEFER_EYE=0 in launcher)."
-    },
-    "Terminal": {
-        "category": "Utilities",
-        "widget_class": "SiftaTerminalApp",
-        "entry_point": "Applications/sifta_terminal.py",
-        "window_width": 700,
-        "window_height": 450,
-        "autostart": false
-    }
+  "Cartography Dashboard": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_cartography_widget.py",
+    "widget_class": "CartographyWidget",
+    "window_width": 1000,
+    "window_height": 600,
+    "signature": "UNVERIFIED"
+  },
+  "Pheromone Symphony (Generative Music)": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_pheromone_symphony.py",
+    "widget_class": "PheromoneSymphonyApp",
+    "window_width": 1000,
+    "window_height": 600,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Video Poker": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_video_poker.py",
+    "widget_class": "StigmergicVideoPokerApp",
+    "window_width": 1000,
+    "window_height": 700,
+    "signature": "UNVERIFIED"
+  },
+  "Network Control Center": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_network_center.py",
+    "widget_class": "NetworkCenterWidget",
+    "window_width": 1120,
+    "window_height": 760,
+    "signature": "UNVERIFIED"
+  },
+  "IoT Swarm Connector": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_iot_connector.py",
+    "widget_class": "IoTConnectorWidget",
+    "window_width": 960,
+    "window_height": 620,
+    "signature": "UNVERIFIED"
+  },
+  "Colloid Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_colloid_widget.py",
+    "widget_class": "ColloidSimWidget",
+    "window_width": 1180,
+    "window_height": 820,
+    "signature": "UNVERIFIED"
+  },
+  "Physarum Contradiction Lab": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_physarum_contradiction_lab.py",
+    "widget_class": "PhysarumContradictionLabWidget",
+    "window_width": 1280,
+    "window_height": 900,
+    "signature": "UNVERIFIED"
+  },
+  "Slime-Mold Bank: Push to Mint": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_slime_mold_bank.py",
+    "widget_class": "SlimeMoldBankWidget",
+    "window_width": 1240,
+    "window_height": 820,
+    "signature": "UNVERIFIED",
+    "_note": "Carlton's marketing demo \u2014 runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts."
+  },
+  "Swarm Arena": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "ArenaPanelWidget",
+    "window_width": 920,
+    "window_height": 640,
+    "signature": "UNVERIFIED"
+  },
+  "Cyborg Organ Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "CyborgPanelWidget",
+    "window_width": 880,
+    "window_height": 520,
+    "signature": "UNVERIFIED"
+  },
+  "Logistics Swarm (Overnight)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "LogisticsStreamWidget",
+    "window_width": 920,
+    "window_height": 640,
+    "signature": "UNVERIFIED"
+  },
+  "Warehouse Logistics Test": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "WarehouseStreamWidget",
+    "window_width": 880,
+    "window_height": 560,
+    "signature": "UNVERIFIED"
+  },
+  "Crucible Cyber-Defense (10-min)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "CrucibleStreamWidget",
+    "window_width": 880,
+    "window_height": 480,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Edge Vision": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_vision_widget.py",
+    "widget_class": "VisionSimWidget",
+    "window_width": 1220,
+    "window_height": 860,
+    "signature": "UNVERIFIED"
+  },
+  "Urban Resilience Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "UrbanStreamWidget",
+    "window_width": 880,
+    "window_height": 480,
+    "signature": "UNVERIFIED"
+  },
+  "Epistemic Mesh (Anti-Gaslight)": {
+    "category": "Simulations",
+    "entry_point": "Applications/epistemic_mesh_widget.py",
+    "widget_class": "EpistemicMeshWidget",
+    "window_width": 1340,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Fold Swarm (C\u03b1 / Go)": {
+    "category": "Simulations",
+    "entry_point": "Applications/fold_swarm_widget.py",
+    "widget_class": "FoldSwarmWidget",
+    "window_width": 1280,
+    "window_height": 880,
+    "signature": "UNVERIFIED"
+  },
+  "Agentic Swarm Calibrator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_calibrator_widget.py",
+    "widget_class": "CalibratorWidget",
+    "window_width": 1340,
+    "window_height": 880,
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Lounge (Cross-Domain Gossip)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_lounge_widget.py",
+    "widget_class": "LoungeWidget",
+    "window_width": 1300,
+    "window_height": 860,
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Browser": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_swarm_browser.py",
+    "widget_class": "SwarmBrowserWidget",
+    "window_width": 1400,
+    "window_height": 900,
+    "signature": "UNVERIFIED"
+  },
+  "Biological Dashboard": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_biological_dashboard_qt.py",
+    "widget_class": "BiologicalDashboardWidget",
+    "window_width": 960,
+    "window_height": 640,
+    "signature": "UNVERIFIED"
+  },
+  "First Boot Provisioning": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_setup_gui.py",
+    "signature": "UNVERIFIED"
+  },
+  "Finance": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_finance.py",
+    "widget_class": "FinanceDashboard",
+    "signature": "UNVERIFIED"
+  },
+  "Circadian Rhythm": {
+    "category": "Utilities",
+    "entry_point": "Applications/circadian_rhythm.py",
+    "signature": "UNVERIFIED"
+  },
+  "System Settings": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_system_settings.py",
+    "widget_class": "SystemSettingsWidget",
+    "window_width": 980,
+    "window_height": 680,
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Adapter Ecology": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_swarm_adapter_ecology.py",
+    "widget_class": "SwarmAdapterEcologyWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "UNVERIFIED"
+  },
+  "Intelligence Settings": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_settings.py",
+    "widget_class": "SettingsWindow",
+    "signature": "UNVERIFIED"
+  },
+  "Clock Settings": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_clock_settings.py",
+    "widget_class": "ClockSettingsApp",
+    "window_width": 400,
+    "window_height": 460,
+    "signature": "UNVERIFIED"
+  },
+  "Cardio Metrics": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_cardio.py",
+    "signature": "UNVERIFIED"
+  },
+  "SIFTA NLE": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_nle.py",
+    "widget_class": "NLEWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "SIFTA NLE Panel": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_nle_widget.py",
+    "widget_class": "NLEWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "SIFTA File Navigator": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_file_manager_widget.py",
+    "widget_class": "FileNavigatorWidget",
+    "window_width": 1240,
+    "window_height": 820,
+    "signature": "UNVERIFIED"
+  },
+  "Vector 11 Gatekeeper Sim": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_gatekeeper_sim.py",
+    "signature": "UNVERIFIED"
+  },
+  "Territory Is The Law": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_territory_widget.py",
+    "widget_class": "TerritoryWidget",
+    "window_width": 1400,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Cyborg Body": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_cyborg_body.py",
+    "widget_class": "CyborgWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Medical Scanner": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_medscan_widget.py",
+    "widget_class": "MedScanWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Fluid Firmware": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_firmware_widget.py",
+    "widget_class": "FirmwareWidget",
+    "window_width": 1440,
+    "window_height": 860,
+    "signature": "UNVERIFIED"
+  },
+  "Bauwens Regenerative Factory": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_factory_widget.py",
+    "widget_class": "FactoryWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Quantum Epidemiology": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_quantum_epi_sim.py",
+    "widget_class": "QuantumEpiWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Swarm Canvas": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_canvas_widget.py",
+    "widget_class": "CanvasWidget",
+    "window_width": 820,
+    "window_height": 660,
+    "signature": "UNVERIFIED"
+  },
+  "App Manager": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_app_manager.py",
+    "widget_class": "AppManagerWidget",
+    "window_width": 840,
+    "window_height": 720,
+    "signature": "UNVERIFIED"
+  },
+  "IDE Control Panel": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_ide_control_panel.py",
+    "widget_class": "IdeControlPanelWidget",
+    "window_width": 1040,
+    "window_height": 700,
+    "signature": "UNVERIFIED"
+  },
+  "Brain Gas-Station Meter": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_gasstation_meter.py",
+    "widget_class": "GasStationMeterWidget",
+    "window_width": 1000,
+    "window_height": 720,
+    "signature": "UNVERIFIED"
+  },
+  "Owner Genesis": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_genesis_widget.py",
+    "widget_class": "GenesisWidget",
+    "window_width": 620,
+    "window_height": 720,
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Broadcaster": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_broadcaster_widget.py",
+    "widget_class": "BroadcasterWidget",
+    "window_width": 1100,
+    "window_height": 800,
+    "signature": "UNVERIFIED"
+  },
+  "Swarm Chat": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_swarm_chat.py",
+    "widget_class": "SwarmChatWindow",
+    "window_width": 1200,
+    "window_height": 780,
+    "signature": "UNVERIFIED"
+  },
+  "Stigmergic Writer": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_writer_widget.py",
+    "widget_class": "WriterWidget",
+    "window_width": 1100,
+    "window_height": 850,
+    "signature": "UNVERIFIED"
+  },
+  "What Alice Sees": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_what_alice_sees_widget.py",
+    "widget_class": "WhatAliceSeesWidget",
+    "window_width": 1100,
+    "window_height": 700,
+    "autostart": false,
+    "signature": "UNVERIFIED",
+    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 What Alice Sees."
+  },
+  "Talk to Alice": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_talk_to_alice_widget.py",
+    "widget_class": "TalkToAliceWidget",
+    "window_width": 960,
+    "window_height": 640,
+    "autostart": false,
+    "signature": "UNVERIFIED",
+    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 Talk to Alice."
+  },
+  "Alice": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_alice_widget.py",
+    "widget_class": "AliceWidget",
+    "window_width": 1000,
+    "window_height": 850,
+    "autostart": true,
+    "autostart_order": 1,
+    "autostart_delay_ms": 700,
+    "signature": "UNVERIFIED",
+    "_note": "Alice IS the OS. Autostarts on boot. Camera activates immediately (SIFTA_ALICE_UNIFIED_DEFER_EYE=0 in launcher)."
+  },
+  "Terminal": {
+    "category": "Utilities",
+    "widget_class": "SiftaTerminalApp",
+    "entry_point": "Applications/sifta_terminal.py",
+    "window_width": 700,
+    "window_height": 450,
+    "autostart": false
+  },
+  "PoUW Fold-Swarm Simulation": {
+    "category": "Science",
+    "entry_point": "Applications/fold_swarm_pouw_sim.py",
+    "widget_class": "PredatorSimWindow",
+    "window_width": 1200,
+    "window_height": 720,
+    "signature": "C46S-VERIFIED",
+    "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy"
+  }
 }
