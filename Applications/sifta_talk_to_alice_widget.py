@@ -63,6 +63,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -2668,6 +2669,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             ctx = _build_swarm_context()
             if ctx:
                 sysprompt = sysprompt + "\n\n" + ctx
+
+        corvid_tag = self._cached_corvid_tag(text)
+        if corvid_tag:
+            sysprompt = sysprompt + f"\n\n[Corvid cached classification: {corvid_tag}]"
+        self._schedule_corvid_enrichment(text)
+
         messages = [{"role": "system", "content": sysprompt}] + history
 
         model = self._current_brain_model()
@@ -2681,6 +2688,55 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._set_pill("thinking", f"💭 thinking — {model}")
         self.set_status(f"Alice is thinking… ({model})")
         self._brain.start()
+
+    def _cached_corvid_tag(self, text: str) -> str:
+        """Return a recent Corvid classification for this exact text, if any."""
+        cache = getattr(self, "_corvid_cache", None)
+        if not isinstance(cache, dict):
+            return ""
+        row = cache.get(text)
+        if not isinstance(row, dict):
+            return ""
+        if time.time() - float(row.get("ts", 0.0) or 0.0) > 300.0:
+            cache.pop(text, None)
+            return ""
+        return str(row.get("tag") or "")[:120]
+
+    def _schedule_corvid_enrichment(self, text: str) -> None:
+        """Launch Qwen-mini classification off the UI/cortex hot path."""
+        text = (text or "").strip()
+        if not text or os.environ.get("SIFTA_CORVID_DISABLE") == "1":
+            return
+        if self._cached_corvid_tag(text):
+            return
+        if getattr(self, "_corvid_inflight_text", None) == text:
+            return
+        self._corvid_inflight_text = text
+
+        def _work() -> None:
+            try:
+                from System.swarm_corvid_apprentice import SwarmCorvidApprentice
+
+                corvid_r = SwarmCorvidApprentice().classify(text)
+                if corvid_r.success and corvid_r.response:
+                    tag = corvid_r.response.split("\n")[0].strip()[:120]
+                    cache = getattr(self, "_corvid_cache", None)
+                    if not isinstance(cache, dict):
+                        cache = {}
+                        self._corvid_cache = cache
+                    cache[text] = {"tag": tag, "ts": time.time(), "latency_s": corvid_r.latency_s}
+                    _log_turn(
+                        "corvid",
+                        f"{tag} ({corvid_r.latency_s:.1f}s async)",
+                        model="corvid_apprentice",
+                    )
+            except Exception as exc:
+                _log_turn("corvid", f"(async miss: {type(exc).__name__})", model="corvid_apprentice")
+            finally:
+                if getattr(self, "_corvid_inflight_text", None) == text:
+                    self._corvid_inflight_text = None
+
+        threading.Thread(target=_work, name="sifta-corvid-apprentice", daemon=True).start()
 
     def _on_token(self, piece: str) -> None:
         self._streaming_response.append(piece)

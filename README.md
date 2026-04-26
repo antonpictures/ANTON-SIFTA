@@ -15,6 +15,8 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 🦐 **Reflex Arc Organ** — A mantis-shrimp-style fast path classifies urgent health, boilerplate, routing, and finance signals in microseconds, writes pheromone traces, and lets Alice's cortex continue reasoning.
 
+🐦 **Corvid Apprentice** — A local Qwen 3.5 2B tool ganglion performs bounded classification, rewrite, summary, and intent tasks asynchronously so Alice stays fast.
+
 👁️ **Multimodal Perception** — USB camera vision, face detection, GPS awareness, acoustic identity, and sensorimotor attention.
 
 💬 **WhatsApp Integration** — Native bidirectional messaging via Baileys bridge with fuzzy contact resolution and local social graph memory.
@@ -982,6 +984,20 @@ Adapter ecology    = immune gate deciding whether a learned reflex is useful
 ```
 
 This means cured Qwen 3.5 minis are not promoted into "little Alice" identities. They are trained, if used at all, as small reflex ganglia: classify boilerplate, compress one ledger nugget, route urgent messages, or draft a one-sentence clean rewrite. Alice/Gemma4 remains the cortex and final voice. Every reflex firing contributes pheromone evidence through `System/swarm_adapter_pheromone_scorer.py`, so the ecology rewards useful low-cost reflex work instead of rewarding training loss theater.
+
+### Event 44 — Corvid Apprentice / Qwen 3.5 2B Tool Ganglion
+
+`System/swarm_corvid_apprentice.py` adds Alice's 12th visible desktop organ: a crow/raven-style bounded tool user backed by local `qwen3.5:2b` through Ollama's `/api/chat` endpoint with `think: false`. The head-to-head experiment kept `qwen3.5:4b` on standby: 2B won the apprentice lane because it was faster, smaller, and less scarred on boilerplate-removal tasks.
+
+The Corvid organ is deliberately slower than Reflex Arc and deliberately smaller than Alice:
+
+```text
+Reflex Arc         = microsecond precomputed release
+Corvid Apprentice  = 1-3 second bounded tool choice / classification
+Alice / Gemma4     = final synthesis, identity, long reasoning, voice
+```
+
+The live Alice widget never waits on Corvid before starting Gemma. Instead, it launches Corvid asynchronously, caches exact-text classifications for five minutes, and writes `.sifta_state/corvid_apprentice_trace.jsonl`. The pheromone scorer reads those traces alongside work receipts, STIGALL traces, reflex fires, and the canonical `repair_log.jsonl`. This preserves the economy: no double-spending claims, no fake STGM minting, and no UI freeze when Ollama cold-loads a small model.
 
 ### Event 24 — Orthogonal Task-Vector Abliteration (Neural Gene Therapy)
 

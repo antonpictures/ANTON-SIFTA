@@ -25,6 +25,7 @@ LEDGERS = [
     _STATE / "work_receipts.jsonl",
     _STATE / "ide_stigmergic_trace.jsonl",
     _STATE / "reflex_arc_trace.jsonl",   # Mantis-shrimp reflex firings
+    _STATE / "corvid_apprentice_trace.jsonl",  # Crow/raven corvid tasks
     _REPO / "repair_log.jsonl" # Canonical STGM ledger
 ]
 

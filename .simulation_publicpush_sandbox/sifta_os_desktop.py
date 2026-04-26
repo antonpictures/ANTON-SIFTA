@@ -1,7 +1,7 @@
 """
 SIFTA Mermaid OS v1.0 — Desktop Environment
 Revamped: Body Status Panel, macOS-quality layout, Steve Jobs standard.
-All 11 biological organs visible on the desktop at all times.
+All 12 biological organs visible on the desktop at all times.
 """
 
 import sys
@@ -559,7 +559,7 @@ class _OrganRow(QFrame):
 class BodyStatusPanel(QFrame):
     """
     Right-sidebar live body monitor.
-    All 11 biological organs — real data, nothing faked.
+    All 12 biological organs — real data, nothing faked.
     Ticks at 1 Hz to stay light on CPU.
     """
     ORGANS = [
@@ -574,6 +574,7 @@ class BodyStatusPanel(QFrame):
         ("⚙️", "Metabolic Engine"),
         ("🕰️", "STIG-TIME"),
         ("🦐", "Reflex Arc"),
+        ("🐦", "Corvid Apprentice"),
     ]
 
     # Emits (health_dot_color, mode_str) every tick for the menu bar
@@ -639,6 +640,8 @@ class BodyStatusPanel(QFrame):
         self._dilation = 1.0
         self._reflex_count_1h = 0
         self._reflex_last_action = "standby"
+        self._corvid_count_1h = 0
+        self._corvid_last_task = "standby"
 
         # Try importing real metabolic engine
         self._metabolic = None
@@ -662,17 +665,21 @@ class BodyStatusPanel(QFrame):
         self._timer.start(1000)  # 1 Hz — light on CPU
         self._tick_all()  # immediate first draw
 
-    def _read_reflex_arc_status(self) -> tuple[float, str]:
-        """Return recent reflex activity from the append-only trace ledger."""
-        trace_path = _REPO / ".sifta_state" / "reflex_arc_trace.jsonl"
+    def _read_trace_status(
+        self,
+        filename: str,
+        *,
+        status_field: str,
+        idle_value: str,
+        error_value: str,
+    ) -> tuple[int, str, bool]:
+        trace_path = _REPO / ".sifta_state" / filename
         if not trace_path.exists():
-            self._reflex_count_1h = 0
-            self._reflex_last_action = "standby"
-            return 0.35, "standby  trace=0/h"
+            return 0, idle_value, True
 
         cutoff = time.time() - 3600.0
         count = 0
-        last_action = "standby"
+        last_value = idle_value
         try:
             with trace_path.open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
@@ -685,16 +692,40 @@ class BodyStatusPanel(QFrame):
                     ts = float(row.get("ts") or 0.0)
                     if ts >= cutoff:
                         count += 1
-                        last_action = str(row.get("action") or last_action)
+                        last_value = str(row.get(status_field) or last_value)
         except Exception:
-            self._reflex_count_1h = 0
-            self._reflex_last_action = "ledger_err"
-            return 0.2, "ledger_err"
+            return 0, error_value, False
+        return count, last_value, True
 
+    def _read_reflex_arc_status(self) -> tuple[float, str]:
+        """Return recent reflex activity from the append-only trace ledger."""
+        count, last_action, ok = self._read_trace_status(
+            "reflex_arc_trace.jsonl",
+            status_field="action",
+            idle_value="standby",
+            error_value="ledger_err",
+        )
         self._reflex_count_1h = count
         self._reflex_last_action = last_action
+        if not ok:
+            return 0.2, "ledger_err"
         pct = min(1.0, 0.35 + count / 20.0)
         return pct, f"{last_action}  trace={count}/h"
+
+    def _read_corvid_apprentice_status(self) -> tuple[float, str]:
+        """Return recent Qwen-mini apprentice work from the trace ledger."""
+        count, last_task, ok = self._read_trace_status(
+            "corvid_apprentice_trace.jsonl",
+            status_field="task",
+            idle_value="standby",
+            error_value="ledger_err",
+        )
+        self._corvid_count_1h = count
+        self._corvid_last_task = last_task
+        if not ok:
+            return 0.2, "ledger_err"
+        pct = min(1.0, 0.25 + count / 12.0)
+        return pct, f"{last_task}  trace={count}/h"
 
     def _tick_all(self):
         t = self._tick
@@ -733,6 +764,7 @@ class BodyStatusPanel(QFrame):
         if t % 20 == 0:  # simulated camera motion spike every 20s
             self._fly_residual = 0.6
         reflex_pct, reflex_label = self._read_reflex_arc_status()
+        corvid_pct, corvid_label = self._read_corvid_apprentice_status()
 
         mode = self._metabolic_mode.upper()
         mode_colors = {"BURST": "#00ff88", "CRUISE": "#00ccff",
@@ -753,6 +785,7 @@ class BodyStatusPanel(QFrame):
             ("Metabolic Engine",self._metabolic_energy,                f"ATP={self._metabolic_energy:.3f}  [{mode}]"),
             ("STIG-TIME",       self._circadian,                       f"bio_t={self._bio_time:.1f}  ×{self._dilation}"),
             ("Reflex Arc",      reflex_pct,                            reflex_label),
+            ("Corvid Apprentice",corvid_pct,                            corvid_label),
         ]
 
         alive = 0

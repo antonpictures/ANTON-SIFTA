@@ -193,6 +193,8 @@ surgery/qwen35_experiments/adapters/
 surgery/qwen35_experiments/merged/
 surgery/alice_phc_cure/receipts/
 surgery/alice_phc_cure/adapters/
+surgery/alice_phc_cure/merged/
+surgery/alice_phc_cure/Modelfile.*-test
 
 # ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
 .clinerules
