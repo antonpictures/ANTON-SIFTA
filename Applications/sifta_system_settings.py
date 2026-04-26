@@ -509,6 +509,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.inf_default_combo.currentTextChanged.connect(self._on_inf_default_changed)
         self.inf_alice_combo.currentTextChanged.connect(self._on_inf_alice_changed)
 
+        self.inference_default_card = MetricCard("Default Model", "--")
+        self.inference_alice_card = MetricCard("Alice Brain", "--")
+        root.addWidget(self.inference_default_card)
+        root.addWidget(self.inference_alice_card)
+
         root.addStretch()
         return page
 
