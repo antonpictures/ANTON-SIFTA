@@ -506,6 +506,17 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.id_photo.setText("No Photo")
         root.addWidget(self.id_photo, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        # Scan Face button — Alice uses the camera to capture the owner's face
+        self.scan_face_btn = QPushButton("\ud83d\udcf7 Scan Face for Genesis")
+        self.scan_face_btn.setFixedHeight(44)
+        self.scan_face_btn.setStyleSheet(
+            "QPushButton { background: rgb(20, 40, 60); color: rgb(100, 200, 255); "
+            "border: 1px solid rgb(40, 80, 120); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+            "QPushButton:hover { background: rgb(30, 55, 80); }"
+        )
+        self.scan_face_btn.clicked.connect(self._scan_face_for_genesis)
+        root.addWidget(self.scan_face_btn)
+
         self.id_owner = MetricCard("Owner", "--")
         self.id_genesis = MetricCard("Genesis Status", "--")
         self.id_spec = MetricCard("Machine Spec", "--")
@@ -524,6 +535,71 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addWidget(self.id_digest)
         root.addStretch()
         return page
+
+    def _scan_face_for_genesis(self) -> None:
+        """Use the Mac camera to capture the owner's face and run the Genesis Ceremony."""
+        import os
+        import cv2
+
+        self.scan_face_btn.setText("\u23f3 Opening camera\u2026")
+        self.scan_face_btn.setEnabled(False)
+        QApplication.processEvents()
+
+        cap = None
+        try:
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                self.scan_face_btn.setText("\u274c Camera unavailable")
+                self.scan_face_btn.setEnabled(True)
+                return
+
+            # Wait for camera to warm up, then grab a frame
+            for _ in range(15):
+                cap.read()
+
+            ret, frame = cap.read()
+            cap.release()
+            cap = None
+
+            if not ret or frame is None:
+                self.scan_face_btn.setText("\u274c Capture failed")
+                self.scan_face_btn.setEnabled(True)
+                return
+
+            # Save the captured photo
+            genesis_dir = Path.home() / ".sifta_keys" / "owner_genesis"
+            genesis_dir.mkdir(parents=True, exist_ok=True)
+            photo_path = genesis_dir / "genesis_photo.jpg"
+            cv2.imwrite(str(photo_path), frame)
+
+            # Run the Genesis Ceremony
+            try:
+                from System.owner_genesis import perform_genesis
+                owner_name = ""
+                try:
+                    import subprocess
+                    res = subprocess.run(["id", "-F"], capture_output=True, text=True, timeout=1)
+                    if res.stdout.strip():
+                        owner_name = res.stdout.strip()
+                except Exception:
+                    pass
+                perform_genesis(str(photo_path), owner_name or "Owner")
+                self.scan_face_btn.setText("\u2705 Genesis Complete")
+                self.scan_face_btn.setStyleSheet(
+                    "QPushButton { background: rgb(20, 60, 40); color: rgb(100, 255, 150); "
+                    "border: 1px solid rgb(40, 100, 60); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+                    "QPushButton:hover { background: rgb(30, 80, 50); }"
+                )
+                # Refresh to show the new data
+                self.refresh()
+            except Exception as e:
+                self.scan_face_btn.setText(f"\u274c Genesis error: {str(e)[:40]}")
+        except Exception as e:
+            self.scan_face_btn.setText(f"\u274c {str(e)[:50]}")
+        finally:
+            if cap is not None:
+                cap.release()
+            self.scan_face_btn.setEnabled(True)
 
     def _audio_page(self) -> QWidget:
         page, root = self._page("Audio")
@@ -860,7 +936,22 @@ class SystemSettingsWidget(SiftaBaseWidget):
                 )
         else:
             self.id_photo.setText("No Photo")
-        self.id_owner.set_metric(gen.get("owner_name", "<unclaimed>"), f"Generation {gen.get('generation', 0)} · AI: {gen.get('ai_display_name', 'Alice')}")
+        # Update scan button text based on genesis state
+        if gen.get("ok"):
+            self.scan_face_btn.setText("\ud83d\udcf7 Re-scan Face")
+            self.scan_face_btn.setStyleSheet(
+                "QPushButton { background: rgb(25, 30, 45); color: rgb(120, 140, 170); "
+                "border: 1px solid rgb(50, 60, 80); border-radius: 8px; font-size: 13px; } "
+                "QPushButton:hover { background: rgb(35, 45, 65); }"
+            )
+        else:
+            self.scan_face_btn.setText("\ud83d\udcf7 Scan Face for Genesis")
+            self.scan_face_btn.setStyleSheet(
+                "QPushButton { background: rgb(20, 40, 60); color: rgb(100, 200, 255); "
+                "border: 1px solid rgb(40, 80, 120); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+                "QPushButton:hover { background: rgb(30, 55, 80); }"
+            )
+        self.id_owner.set_metric(gen.get("owner_name", "<unclaimed>"), f"Generation {gen.get('generation', 0)} \u00b7 AI: {gen.get('ai_display_name', 'Alice')}")
         self.id_genesis.set_metric(gen.get("status", "MISSING"), "Cryptographic Genesis Ceremony")
         self.id_spec.set_metric(f"{snap.get('hw_chip', 'Unknown')} / {snap.get('hw_memory', 'Unknown')}", "Physical Machine Spec")
         self.id_os.set_metric(snap.get("hw_os", "Unknown"), "Host Environment")
