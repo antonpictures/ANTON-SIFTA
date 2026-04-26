@@ -277,26 +277,19 @@ class SimCanvas(QWidget):
     # ── Architect clicks = stigmergic food source ────────────
     def mousePressEvent(self, event):
         """Grassé 1959 / Dorigo 1996: Architect deposits pheromone food at click.
-        Screen luminance at cursor weights the deposit — brighter pixel = richer food.
+        Local pheromone field density is used as the luminance proxy —
+        denser field = more photon-rich region = richer food deposit.
+        (Screen grab removed: causes SIGABRT on macOS PyQt6 during event handler.)
         """
         W, H = self.width(), self.height()
         fx   = event.position().x() / W
         fy   = event.position().y() / H
 
-        # Sample screen luminance at click point (pixel photons → food richness)
-        grab   = self.grab()
-        img    = grab.toImage()
-        px     = int(event.position().x())
-        py     = int(event.position().y())
-        px     = max(0, min(px, img.width()-1))
-        py     = max(0, min(py, img.height()-1))
-        pixel  = img.pixel(px, py)
-        r_ch   = (pixel >> 16) & 0xFF
-        g_ch   = (pixel >> 8)  & 0xFF
-        b_ch   =  pixel        & 0xFF
-        # Perceptual luminance (ITU-R BT.709)
-        lum    = (0.2126 * r_ch + 0.7152 * g_ch + 0.0722 * b_ch) / 255.0
-        food_strength = 6.0 + lum * 14.0   # 6–20 based on screen photon density
+        # Sample local stigmergic field density as luminance proxy
+        # (pheromone density at click = prior swarm activity = photon-rich zone)
+        field_density = self.grid.sample(fx, fy)
+        lum = min(1.0, field_density / 10.0)   # normalise to 0–1
+        food_strength = 6.0 + lum * 14.0       # 6–20 units
 
         # Deposit heavy stigmergic pheromone burst (Dorigo 1996 §3.1)
         for dy in range(-2, 3):
@@ -307,7 +300,7 @@ class SimCanvas(QWidget):
 
         # All swimmers immediately learn of the food (stigmergic broadcast)
         for sw in self.swimmers:
-            sw.energy = min(100, sw.energy + 8)   # Architect fed them
+            sw.energy = min(100, sw.energy + 8)
 
         # Mint a real STGM receipt: Architect input = verifiable useful work
         rh  = hashlib.sha256(
@@ -323,8 +316,8 @@ class SimCanvas(QWidget):
 
         # Visual ripple
         self.click_flash.append([fx, fy, 0.02, 220])
-
         self.update()
+
 
     def step(self):
         self.physics.mc_step(25)
