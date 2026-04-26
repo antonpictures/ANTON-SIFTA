@@ -316,7 +316,23 @@ def read_system_settings_snapshot() -> dict[str, Any]:
     except Exception:
         pass
 
+    net_ssid = "Unknown SSID"
+    net_ip = "Unknown IP"
+    try:
+        import subprocess
+        res_ssid = subprocess.run(["networksetup", "-getairportnetwork", "en0"], capture_output=True, text=True, timeout=1)
+        if "Current Wi-Fi Network:" in res_ssid.stdout:
+            net_ssid = res_ssid.stdout.split(":")[-1].strip()
+        
+        res_ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True, timeout=1)
+        if res_ip.stdout.strip():
+            net_ip = res_ip.stdout.strip()
+    except Exception:
+        pass
+
     return {
+        "net_ssid": net_ssid,
+        "net_ip": net_ip,
         "hw_chip": hw_chip,
         "hw_memory": hw_memory,
         "hw_os": hw_os,
@@ -566,8 +582,12 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
     def _network_page(self) -> QWidget:
         page, root = self._page("Network")
+        self.net_ssid = MetricCard("Wi-Fi SSID", "--", "Active Base Station")
+        self.net_ip = MetricCard("Local IP", "--", "en0 interface address")
         self.net_relay = MetricCard("Mesh Relay", "N/A", "WebSocket cross-node proxy")
         self.net_nerve = MetricCard("Nerve Channel", "UDP Broadcast", "Fast autonomic reflex bus")
+        root.addWidget(self.net_ssid)
+        root.addWidget(self.net_ip)
         root.addWidget(self.net_relay)
         root.addWidget(self.net_nerve)
         root.addStretch()
@@ -719,6 +739,10 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.id_os.set_metric(snap.get("hw_os", "Unknown"), "Host Environment")
         self.id_serial.set_metric(snap["hw_serial"], "Tied to specific Apple Metal")
         self.id_digest.set_metric(snap["digest"], "Dynamic Electric Field signature")
+
+        # Network
+        self.net_ssid.set_metric(snap.get("net_ssid", "Unknown"), "Active Base Station")
+        self.net_ip.set_metric(snap.get("net_ip", "Unknown"), "en0 interface address")
 
         # Body
         self._update_audio_status()
