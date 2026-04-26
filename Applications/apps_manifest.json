@@ -54,7 +54,13 @@
     "window_width": 1280,
     "window_height": 900,
     "signature": "C55M-DR-CODEX",
-    "description": "Codex audit app: live Physarum/PoUW contradiction report and copyable evidence for Claude/Cursor review."
+    "description": "Codex audit app: live Physarum/PoUW contradiction report and copyable evidence for Claude/Cursor review.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "CG55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   },
   "CG55M Dr Cursor - Slime-Mold Bank: Push to Mint": {
     "category": "Simulations",
@@ -64,7 +70,11 @@
     "window_height": 820,
     "signature": "CG55M-DR-CURSOR-OPUS47",
     "description": "Cursor/Opus graphics-forward Carlton demo: real Tero Physarum solver, semantic PoUW gate, mint visuals.",
-    "_note": "Carlton's marketing demo \u2014 runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts."
+    "_note": "Carlton's marketing demo \u2014 runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts.",
+    "doctor": "CG55M",
+    "co_doctors": [],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   },
   "Swarm Arena": {
     "category": "Simulations",
@@ -409,7 +419,13 @@
     "window_width": 1200,
     "window_height": 720,
     "signature": "AG31-C46S-VERIFIED",
-    "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy"
+    "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C46S"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   },
   "Artificial General Intelligence.": {
     "category": "Simulations",
@@ -418,6 +434,15 @@
     "window_width": 1200,
     "window_height": 800,
     "signature": "AG31-C46S-C55M-CG55M-SYNTHESIS",
-    "description": "MATH PHISICS BIOCODE TIME SPACE CONTINUUM ART"
+    "description": "MATH PHISICS BIOCODE TIME SPACE CONTINUUM ART",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C46S",
+      "C55M",
+      "CG55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "_synthesis_note": "Master synthesis app: graphics polish lane is CG55M (Cursor / Opus 4.7) per AG31 commit 68c80b0f."
   }
 }

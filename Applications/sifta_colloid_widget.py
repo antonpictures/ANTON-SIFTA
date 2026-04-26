@@ -22,6 +22,8 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 if str(_REPO / "Applications") not in sys.path:
     sys.path.insert(0, str(_REPO / "Applications"))
+if str(_REPO / "Kernel") not in sys.path:
+    sys.path.insert(0, str(_REPO / "Kernel"))
 
 from sifta_colloid_sim import BG_COLOR, SIFTAColloidSimulation, build_renderer  # noqa: E402
 
