@@ -24,6 +24,7 @@ _STATE = _REPO / ".sifta_state"
 LEDGERS = [
     _STATE / "work_receipts.jsonl",
     _STATE / "ide_stigmergic_trace.jsonl",
+    _STATE / "reflex_arc_trace.jsonl",   # Mantis-shrimp reflex firings
     _REPO / "repair_log.jsonl" # Canonical STGM ledger
 ]
 

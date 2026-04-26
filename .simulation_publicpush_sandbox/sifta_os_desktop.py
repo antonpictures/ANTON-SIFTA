@@ -1,7 +1,7 @@
 """
 SIFTA Mermaid OS v1.0 — Desktop Environment
 Revamped: Body Status Panel, macOS-quality layout, Steve Jobs standard.
-All 10 biological organs visible on the desktop at all times.
+All 11 biological organs visible on the desktop at all times.
 """
 
 import sys
@@ -559,7 +559,7 @@ class _OrganRow(QFrame):
 class BodyStatusPanel(QFrame):
     """
     Right-sidebar live body monitor.
-    All 10 biological organs — real data, nothing faked.
+    All 11 biological organs — real data, nothing faked.
     Ticks at 1 Hz to stay light on CPU.
     """
     ORGANS = [
@@ -573,6 +573,7 @@ class BodyStatusPanel(QFrame):
         ("🪰", "Fly Efference"),
         ("⚙️", "Metabolic Engine"),
         ("🕰️", "STIG-TIME"),
+        ("🦐", "Reflex Arc"),
     ]
 
     # Emits (health_dot_color, mode_str) every tick for the menu bar
@@ -636,6 +637,8 @@ class BodyStatusPanel(QFrame):
         self._metabolic_mode = "burst"
         self._circadian = 0.5
         self._dilation = 1.0
+        self._reflex_count_1h = 0
+        self._reflex_last_action = "standby"
 
         # Try importing real metabolic engine
         self._metabolic = None
@@ -658,6 +661,40 @@ class BodyStatusPanel(QFrame):
         self._timer.timeout.connect(self._tick_all)
         self._timer.start(1000)  # 1 Hz — light on CPU
         self._tick_all()  # immediate first draw
+
+    def _read_reflex_arc_status(self) -> tuple[float, str]:
+        """Return recent reflex activity from the append-only trace ledger."""
+        trace_path = _REPO / ".sifta_state" / "reflex_arc_trace.jsonl"
+        if not trace_path.exists():
+            self._reflex_count_1h = 0
+            self._reflex_last_action = "standby"
+            return 0.35, "standby  trace=0/h"
+
+        cutoff = time.time() - 3600.0
+        count = 0
+        last_action = "standby"
+        try:
+            with trace_path.open("r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except Exception:
+                        continue
+                    ts = float(row.get("ts") or 0.0)
+                    if ts >= cutoff:
+                        count += 1
+                        last_action = str(row.get("action") or last_action)
+        except Exception:
+            self._reflex_count_1h = 0
+            self._reflex_last_action = "ledger_err"
+            return 0.2, "ledger_err"
+
+        self._reflex_count_1h = count
+        self._reflex_last_action = last_action
+        pct = min(1.0, 0.35 + count / 20.0)
+        return pct, f"{last_action}  trace={count}/h"
 
     def _tick_all(self):
         t = self._tick
@@ -695,6 +732,7 @@ class BodyStatusPanel(QFrame):
         self._fly_residual = max(0.0, self._fly_residual * 0.85 - 0.01)
         if t % 20 == 0:  # simulated camera motion spike every 20s
             self._fly_residual = 0.6
+        reflex_pct, reflex_label = self._read_reflex_arc_status()
 
         mode = self._metabolic_mode.upper()
         mode_colors = {"BURST": "#00ff88", "CRUISE": "#00ccff",
@@ -714,6 +752,7 @@ class BodyStatusPanel(QFrame):
             ("Fly Efference",   max(0.0,1.0-self._fly_residual/1.0),  f"residual={self._fly_residual:.3f}"),
             ("Metabolic Engine",self._metabolic_energy,                f"ATP={self._metabolic_energy:.3f}  [{mode}]"),
             ("STIG-TIME",       self._circadian,                       f"bio_t={self._bio_time:.1f}  ×{self._dilation}"),
+            ("Reflex Arc",      reflex_pct,                            reflex_label),
         ]
 
         alive = 0
@@ -728,7 +767,8 @@ class BodyStatusPanel(QFrame):
         )
 
         # Emit health dot color for menu bar
-        dot = "#00ff88" if alive == 10 else ("#ffaa00" if alive >= 7 else "#ff3355")
+        organ_count = len(data)
+        dot = "#00ff88" if alive == organ_count else ("#ffaa00" if alive >= max(1, organ_count - 3) else "#ff3355")
         self.status_changed.emit(dot, mode)
 
 

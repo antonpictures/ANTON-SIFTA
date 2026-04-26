@@ -189,7 +189,10 @@ test_ui_events.py
 swarm_integrity_report.txt
 implementation_plan.md
 surgery/qwen_test/
+surgery/qwen35_experiments/adapters/
+surgery/qwen35_experiments/merged/
 surgery/alice_phc_cure/receipts/
+surgery/alice_phc_cure/adapters/
 
 # ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
 .clinerules

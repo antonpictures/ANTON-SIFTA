@@ -2522,8 +2522,39 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
         self._append_user_line(text, conf)
+        self._start_brain(text, conf=conf, already_displayed=True)
+
+    def _start_brain(self, text: str, conf: float = 0.0, *, already_displayed: bool = False) -> None:
+        """Start Alice's model turn from a user/inbox message.
+
+        Inbox pollers append the visible user line before scheduling this method,
+        while STT/text entry delegates here after its own display path.
+        """
+        text = (text or "").strip()
+        if not text:
+            self._busy = False
+            self._return_to_listening()
+            return
+        if not already_displayed:
+            self._append_user_line(text, conf)
         _log_turn("user", text, stt_conf=conf)
         self._history.append({"role": "user", "content": text})
+
+        # ── Mantis-Shrimp Reflex Arc (fires in ~9μs, no LLM) ──────────
+        # Pure string-match classification that deposits pheromone traces
+        # into .sifta_state/reflex_arc_trace.jsonl.  The cortex (handlers
+        # below) still runs — this just logs the fast classification for
+        # the adapter ecology / pheromone scorer to read.
+        try:
+            from System.swarm_reflex_arc import build_default_sifta_reflexes
+            if not hasattr(self, '_reflex_arc'):
+                self._reflex_arc = build_default_sifta_reflexes()
+            reflex_result = self._reflex_arc.sense(text)
+            if reflex_result:
+                _log_turn("reflex", f"[{reflex_result.category}:{reflex_result.action}] "
+                          f"({reflex_result.latency_ms:.3f}ms)", model="reflex_arc")
+        except Exception:
+            pass
 
         # ── Epoch 8: Health Reflex (Teach & Detect on STT done) ──
         try:

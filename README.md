@@ -13,6 +13,8 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 🐜 **Stigmergic Swarm Architecture** — 40+ autonomous organs: heartbeat, immune system, metabolism, motor cortex, epigenetics, perception, and memory.
 
+🦐 **Reflex Arc Organ** — A mantis-shrimp-style fast path classifies urgent health, boilerplate, routing, and finance signals in microseconds, writes pheromone traces, and lets Alice's cortex continue reasoning.
+
 👁️ **Multimodal Perception** — USB camera vision, face detection, GPS awareness, acoustic identity, and sensorimotor attention.
 
 💬 **WhatsApp Integration** — Native bidirectional messaging via Baileys bridge with fuzzy contact resolution and local social graph memory.
@@ -965,6 +967,21 @@ SIFTA_GEMMA4_BASE=<exact-gemma4-hf-repo-or-local-safetensors> \
 The old non-Gemma test adapter recipe has been neutralized. No adapter is selectable for Alice until a Gemma 4 adapter trains, registers with pheromone evidence, and passes replay evaluation.
 
 SIFTA OS includes a read-only **Swarm Adapter Ecology** app under **System Settings** for watching this lane: pheromone strength, adapter registry rows, replay verdicts, and the current merge recipe.
+
+### Event 43 — Mantis-Shrimp Reflex Arc / Qwen-Mini Ganglion Doctrine
+
+`System/swarm_reflex_arc.py` adds Alice's 11th visible desktop organ: a pure-Python reflex arc inspired by latch-mediated spring actuation. It preloads bounded `ReflexRule` springs at boot, matches incoming text in microseconds, and deposits structured traces into `.sifta_state/reflex_arc_trace.jsonl` without storing the prompt body. The desktop **Body Status** panel now shows **Reflex Arc** beside the other organs and reports recent trace activity from the live ledger.
+
+The operating split is deliberate:
+
+```text
+Alice / Gemma4     = identity, long reasoning, organism voice
+Qwen-mini          = reflex dictionary, filter, classifier, tiny stigmergic worker
+STGM / ledgers     = source of truth, proof-of-useful-work metabolism
+Adapter ecology    = immune gate deciding whether a learned reflex is useful
+```
+
+This means cured Qwen 3.5 minis are not promoted into "little Alice" identities. They are trained, if used at all, as small reflex ganglia: classify boilerplate, compress one ledger nugget, route urgent messages, or draft a one-sentence clean rewrite. Alice/Gemma4 remains the cortex and final voice. Every reflex firing contributes pheromone evidence through `System/swarm_adapter_pheromone_scorer.py`, so the ecology rewards useful low-cost reflex work instead of rewarding training loss theater.
 
 ### Event 24 — Orthogonal Task-Vector Abliteration (Neural Gene Therapy)
 
