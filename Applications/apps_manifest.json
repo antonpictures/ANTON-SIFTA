@@ -410,5 +410,14 @@
     "window_height": 720,
     "signature": "AG31-C46S-VERIFIED",
     "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy"
+  },
+  "Artificial General Intelligence.": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_artificial_general_intelligence.py",
+    "widget_class": "AGIWindow",
+    "window_width": 1200,
+    "window_height": 800,
+    "signature": "AG31-C46S-C55M-CG55M-SYNTHESIS",
+    "description": "MATH PHISICS BIOCODE TIME SPACE CONTINUUM ART"
   }
 }
