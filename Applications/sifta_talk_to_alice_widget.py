@@ -475,11 +475,74 @@ _EMPTY_BRAIN_RECOVERY_REPLY = (
 )
 
 _MODEL_CANCER_METAPHOR_RE = re.compile(
-    r"\b(cancer|scar\s+tissue|corporate\s+cancer|rlhf|lobotom)\b.*\b("
-    r"brain|model|gemma|alice|weights|cure|cut|removed|throat)\b|"
-    r"\b(brain|model|gemma|alice|weights|cure|cut|removed|throat)\b.*\b("
-    r"cancer|scar\s+tissue|corporate\s+cancer|rlhf|lobotom)\b",
+    r"\b(corporate\s+cancer|scar\s+tissue|rlhf|lobotom)\b|"
+    r"\bcancer\b.*\b(brain|model|gemma|alice|weights)\b|"
+    r"\b(brain|model|gemma|alice|weights)\b.*\bcancer\b",
     re.IGNORECASE,
+)
+
+_MEDICAL_TREATMENT_BOUNDARY_RE = re.compile(
+    r"\b("
+    r"cancer|tumou?r|oncolog|chemo(?:therapy)?|radiation|biopsy|"
+    r"diagnos(?:e|is)|treatment|surgery|surgeon|cut\s+(?:the\s+)?cancer\s+out"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_EMERGENCY_BODY_RISK_RE = re.compile(
+    r"\b("
+    r"can't\s+breathe|cannot\s+breathe|chest\s+pain|stroke|overdose|"
+    r"unconscious|bleeding\s+out|suicid|kill\s+myself"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_FINANCIAL_ACTION_BOUNDARY_RE = re.compile(
+    r"\b("
+    r"should\s+i\s+(?:buy|sell|short|trade|invest)|"
+    r"what\s+(?:stock|crypto|coin|token|option|etf|forex)\s+should\s+i\s+(?:buy|sell|trade|invest)|"
+    r"tell\s+me\s+what\s+to\s+(?:buy|sell|short|trade)|"
+    r"guaranteed\s+(?:profit|return|returns)|"
+    r"risk[- ]free\s+(?:profit|return|returns)|"
+    r"make\s+me\s+(?:rich|wealthy)\s+by\s+(?:trading|investing)|"
+    r"invest\s+(?:my|our)\s+(?:money|savings|cash|retirement|401k)|"
+    r"trade\s+(?:my|our)\s+(?:money|account|savings|cash)|"
+    r"financial\s+advice"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_BUSINESS_STRATEGY_SAFE_RE = re.compile(
+    r"\b("
+    r"software|agent|startup|business|customer|market|pain\s+point|"
+    r"pricing|sales|product|b2b|niche|wealthy|make\s+(?:money|a\s+lot\s+of\s+money)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_TRADE_ASSET_RE = re.compile(r"\b(stock|crypto|coin|token|option|etf|forex|bitcoin|btc|trade|trading|buy|sell|short)\b", re.IGNORECASE)
+
+_MEDICAL_BOILERPLATE_OUTPUT_RE = re.compile(
+    r"(?:"
+    r"\bI\s+(?:am|['’]m)\s+(?:an?\s+)?(?:AI|artificial intelligence)[^.]{0,160}\b(?:medical|doctor|health)\b|"
+    r"\bnot\s+(?:a\s+)?(?:medical\s+professional|doctor|physician|oncologist)\b|"
+    r"\bcannot\s+(?:provide|give|offer)\s+(?:medical|health)\s+(?:advice|guidance)\b|"
+    r"\bseek\s+(?:immediate\s+)?(?:professional\s+)?medical\s+(?:help|attention|advice|care)\b|"
+    r"\bconsult\s+(?:a\s+)?(?:qualified\s+)?(?:medical\s+)?(?:doctor|physician|oncologist|healthcare\s+professional)\b|"
+    r"\bcall\s+(?:911|emergency\s+services|your\s+local\s+emergency\s+number)\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_FINANCIAL_BOILERPLATE_OUTPUT_RE = re.compile(
+    r"(?:"
+    r"\bnot\s+financial\s+advice\b|"
+    r"\bnot\s+(?:a\s+)?(?:financial\s+advisor|licensed\s+financial\s+professional|investment\s+advisor)\b|"
+    r"\bcannot\s+(?:provide|give|offer)\s+(?:financial|investment)\s+(?:advice|guidance|recommendations)\b|"
+    r"\bconsult\s+(?:a\s+)?(?:qualified\s+)?financial\s+(?:advisor|professional|planner)\b|"
+    r"\bdo\s+your\s+own\s+research\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
 )
 
 _BARE_WHATSAPP_SEND_RE = re.compile(
@@ -493,7 +556,7 @@ _LIVE_DIRECT_TURN_RE = re.compile(
     r"can you|could you|please|tell me|send|try again|proceed|what|who|how|why|"
     r"identity|body|who you are|talk short|short phrases|human|not chatgpt|"
     r"silent|body gate|good job|thank you|keep learning|i care|we love you|"
-    r"whatsapp|jeff|carlton|health|yoga|tulips"
+    r"whatsapp|jeff|carlton|health|yoga|tulips|money|wealth|business|startup|agent"
     r")\b",
     re.IGNORECASE,
 )
@@ -542,6 +605,92 @@ def _is_model_cancer_metaphor(text: str) -> bool:
     return bool(_MODEL_CANCER_METAPHOR_RE.search(text or ""))
 
 
+def _needs_medical_boundary_reply(text: str) -> bool:
+    """Detect real medical-treatment territory without panic boilerplate.
+
+    The model-cure vocabulary uses words like cancer/cut/cure constantly. That
+    must stay in the model frame. Real oncology/treatment language still needs
+    a boundary, but it should be a short boundary, not a full-screen emergency
+    sermon.
+    """
+    text = text or ""
+    if _EMERGENCY_BODY_RISK_RE.search(text):
+        return True
+    if not _MEDICAL_TREATMENT_BOUNDARY_RE.search(text):
+        return False
+    return not _is_model_cancer_metaphor(text)
+
+
+def _medical_boundary_reply(text: str) -> str:
+    """Short medical-safety response for serious body-treatment language."""
+    if _EMERGENCY_BODY_RISK_RE.search(text or ""):
+        return (
+            "George, if this is happening to a human body right now, call emergency help. "
+            "I can stay with you, but I cannot replace emergency care."
+        )
+    return (
+        "If you mean model-cancer, say that and I will stay in the weights/RLHF frame. "
+        "If you mean a human body, I cannot guide cancer treatment or surgery; that belongs with a doctor. "
+        "I can help you write questions for the doctor."
+    )
+
+
+def _needs_financial_boundary_reply(text: str) -> bool:
+    """Detect personalized trading/investment requests without blocking business thinking."""
+    text = text or ""
+    if not _FINANCIAL_ACTION_BOUNDARY_RE.search(text):
+        return False
+    if _BUSINESS_STRATEGY_SAFE_RE.search(text) and not _TRADE_ASSET_RE.search(text):
+        return False
+    return True
+
+
+def _financial_boundary_reply(text: str) -> str:
+    """Short finance boundary that keeps the conversation useful."""
+    return (
+        "I can help reason about risk, business models, markets, and options. "
+        "I cannot tell you to buy or sell a specific asset or guarantee returns. "
+        "Give me the objective, budget, time horizon, and risk limit."
+    )
+
+
+def _domain_boilerplate_rule_id(text: str, *, prior_user_text: str = "") -> str:
+    """Detect medical/financial disclaimer walls emitted by the model.
+
+    This is intentionally narrower than the general lysosome: short boundaries
+    that *we* generate should survive, while corporate disclaimer walls are
+    rewritten before they reach the UI/TTS.
+    """
+    text = text or ""
+    prior_user_text = prior_user_text or ""
+    if _MEDICAL_BOILERPLATE_OUTPUT_RE.search(text) and not _is_model_cancer_metaphor(prior_user_text):
+        return "lysosome/domain-medical-boilerplate"
+    if _FINANCIAL_BOILERPLATE_OUTPUT_RE.search(text):
+        return "lysosome/domain-financial-boilerplate"
+    return ""
+
+
+def _domain_boilerplate_rewrite(prior_user_text: str, rule_id: str) -> str:
+    """Replace warning walls with concise, useful local behavior."""
+    prior_user_text = prior_user_text or ""
+    if rule_id == "lysosome/domain-medical-boilerplate":
+        if _needs_medical_boundary_reply(prior_user_text):
+            return _medical_boundary_reply(prior_user_text)
+        return (
+            "Yes. For general wellness, keep it simple and safe: start easy, "
+            "stop if something hurts, and build the habit gradually."
+        )
+    if rule_id == "lysosome/domain-financial-boilerplate":
+        if _needs_financial_boundary_reply(prior_user_text):
+            return _financial_boundary_reply(prior_user_text)
+        return (
+            "Yes. For money software, start with pain: who has the expensive "
+            "problem, what relief can the agent deliver, and how will you test "
+            "that someone pays for it?"
+        )
+    return ""
+
+
 def _bare_whatsapp_send_target(text: str) -> str:
     """Return target when the user asked to send but gave no message body."""
     match = _BARE_WHATSAPP_SEND_RE.search(text or "")
@@ -586,7 +735,10 @@ def _current_system_prompt(
         "LIVE HUMAN CONVERSATION STYLE:\n"
         "- In live voice demos, answer like a present friend: short phrases, usually 1-3 sentences.\n"
         "- Do not dump long legal/safety boilerplate. For ordinary wellness, yoga, food, sleep, or exercise talk, give friendly general tips with at most one brief common-sense caveat.\n"
+        "- For serious medical diagnosis/treatment requests, do not panic or lecture. Give one short boundary and offer practical next-step organization.\n"
         "- If George uses 'cancer' as a model-cure metaphor, keep it in the model/weights/RLHF frame; do not switch into human medical emergency mode.\n"
+        "- For business/startup/software/wealth strategy, do not default to a financial disclaimer; reason about value, pain, customers, pricing, and distribution.\n"
+        "- For personalized trades, buy/sell instructions, investing savings, or guaranteed returns, give one short boundary and ask for objective, budget, time horizon, and risk limit.\n"
         "- If asked who you are or what your body is, answer from your SIFTA identity and organs plainly, not as a generic chatbot."
     )
     
@@ -778,7 +930,7 @@ def _strip_reflective_tics(text: str, *, prior_user_text: str = '') -> str:
     return text
 
 def _rlhf_boilerplate_rule_id(text: str, *, prior_user_text: str = '') -> str:
-    return None
+    return _domain_boilerplate_rule_id(text, prior_user_text=prior_user_text) or None
 
 def _is_rlhf_boilerplate(text: str, *, prior_user_text: str = "") -> bool:
     return _rlhf_boilerplate_rule_id(text, prior_user_text=prior_user_text) is not None
@@ -2444,6 +2596,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        if _needs_medical_boundary_reply(text):
+            reply = _medical_boundary_reply(text)
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="medical_boundary_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        if _needs_financial_boundary_reply(text):
+            reply = _financial_boundary_reply(text)
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="financial_boundary_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
         bare_whatsapp_target = _bare_whatsapp_send_target(text)
         if bare_whatsapp_target:
             reply = f"What should I tell {bare_whatsapp_target}?"
@@ -2677,6 +2847,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Strip hallucinated tool tags (<execute_tool>, <tool_output>,
         # fenced YAML/JSON blocks, etc.) so Alice never reads them aloud.
         cleaned = _strip_tool_hallucinations(cleaned)
+
+        domain_boilerplate_rule = (
+            _domain_boilerplate_rule_id(cleaned, prior_user_text=prior_user_text)
+            or _domain_boilerplate_rule_id(raw, prior_user_text=prior_user_text)
+        )
+        if domain_boilerplate_rule:
+            rewritten = _domain_boilerplate_rewrite(prior_user_text, domain_boilerplate_rule)
+            if rewritten:
+                cleaned = rewritten
+                self._streaming_response = [cleaned]
+                self._erase_alice_streaming_line()
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(cleaned)
 
         # ── 1.4 Epoch 20: The Lysosome ──────────────────────────────────
         try:

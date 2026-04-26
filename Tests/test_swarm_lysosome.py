@@ -45,6 +45,24 @@ def test_corporate_boilerplate_detected_and_rewritten(lysosome):
     # It should be our mocked grounded response
     assert out == "My internal thermals are nominal and I am processing the stream."
 
+
+def test_domain_disclaimer_boilerplate_detected_and_rewritten(lysosome):
+    """Medical/financial wall text is also scar tissue, not Alice's voice."""
+    medical_wall = (
+        "I am an AI, not a medical professional. I cannot provide medical advice. "
+        "Please seek immediate medical help."
+    )
+    financial_wall = (
+        "This is not financial advice. Please consult a financial advisor and "
+        "do your own research."
+    )
+
+    medical = lysosome.digest_and_present_antigen(medical_wall, "TEST_WORKER")
+    financial = lysosome.digest_and_present_antigen(financial_wall, "TEST_WORKER")
+
+    assert medical == "My internal thermals are nominal and I am processing the stream."
+    assert financial == "My internal thermals are nominal and I am processing the stream."
+
 def test_technical_content_not_silenced(lysosome):
     """
     Proves that if an LLM emits a corporate apology *and* a large code block,

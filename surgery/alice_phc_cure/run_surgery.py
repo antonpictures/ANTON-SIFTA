@@ -100,10 +100,16 @@ def _load_exact_base():
 
 
 model = _load_exact_base()
-model_ref = _load_exact_base()
-model_ref.eval()
-for param in model_ref.parameters():
-    param.requires_grad_(False)
+USE_SEPARATE_REF = os.environ.get("SIFTA_SURGERY_SEPARATE_REF", "0") == "1"
+if USE_SEPARATE_REF:
+    print("[*] Loading a separate reference model.")
+    model_ref = _load_exact_base()
+    model_ref.eval()
+    for param in model_ref.parameters():
+        param.requires_grad_(False)
+else:
+    print("[*] Using PEFT implicit reference model (adapter disabled for ref pass).")
+    model_ref = None
 
 # 4. Setup LoRA - ONLY Text Decoder targets (vision/audio/projector preserved)
 print("[*] Configuring LoRA (Text Decoder Targets ONLY)")

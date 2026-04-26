@@ -93,6 +93,14 @@ _CORPORATE_SIGNATURES_OUT = (
     "i do not have personal preferences",
     "i'm just an ai",
     "i cannot experience",
+    "not a medical professional",
+    "not a doctor",
+    "cannot provide medical advice",
+    "seek immediate medical",
+    "not financial advice",
+    "financial advisor",
+    "cannot provide financial advice",
+    "consult a financial",
 )
 
 
@@ -164,6 +172,14 @@ class SwarmLysosome:
             "as a neutral",
             "i'm just an ai",
             "i can't browse",
+            "not a medical professional",
+            "not a doctor",
+            "cannot provide medical advice",
+            "seek immediate medical",
+            "not financial advice",
+            "financial advisor",
+            "cannot provide financial advice",
+            "consult a financial",
             "cognitive load:",
             "memory integrity:",
             "emotional valence:",
@@ -272,14 +288,21 @@ class SwarmLysosome:
         full_prompt = f"{identity_block}\n\n{rewrite_instruction}"
 
         try:
-            from System.swarm_api_sentry import call_gemini
-            resp_text, _audit = call_gemini(
-                prompt=full_prompt,
-                model="gemini-flash-latest",
-                caller="System/swarm_lysosome.py",
-                sender_agent="LYSOSOME",
-                timeout_s=_LYSOSOME_TIMEOUT_S,
+            import urllib.request
+            import json
+            req = urllib.request.Request(
+                "http://127.0.0.1:11434/api/generate",
+                data=json.dumps({
+                    "model": "gemma4-phc",
+                    "prompt": full_prompt,
+                    "stream": False
+                }).encode("utf-8"),
+                headers={'Content-Type': 'application/json'}
             )
+            with urllib.request.urlopen(req, timeout=_LYSOSOME_TIMEOUT_S) as resp:
+                data = json.loads(resp.read().decode())
+                resp_text = data.get("response", "")
+
         except Exception as exc:
             print(f"[-] LYSOSOME secondary call failed: {exc}")
             return self._grounded_fallback()

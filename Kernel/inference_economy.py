@@ -182,7 +182,7 @@ def _model_iq_multiplier(model: str) -> float:
     if "rnj" in m: return 2.5
     return 1.0                        # Default 2B-3B
 
-def calculate_fee(tokens: int, model: str = "qwen3.5:2b") -> float:
+def calculate_fee(tokens: int, model: str = "gemma4-phc") -> float:
     """
     Proof of Compute fee in STGM. Scaled by the current Deflationary Era
     AND the Asymmetric Model IQ multiplier.
@@ -193,7 +193,7 @@ def calculate_fee(tokens: int, model: str = "qwen3.5:2b") -> float:
     return round(base_fee * multiplier, 4)
 
 
-def mint_reward(agent_id: str, action: str, file_repaired: str, model: str = "qwen3.5:2b") -> dict:
+def mint_reward(agent_id: str, action: str, file_repaired: str, model: str = "gemma4-phc") -> dict:
     """
     DEPRECATED — non-inflationary shim per Architect-George policy 2026-04-21.
 

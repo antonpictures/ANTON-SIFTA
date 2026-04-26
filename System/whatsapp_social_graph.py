@@ -235,7 +235,15 @@ def resolve_target(target: str, contacts: Optional[Dict[str, Any]] = None) -> st
         if wants_direct and chat_type != "direct":
             continue
         name_norm = _normalized(name)
-        entry = {"jid": jid, "name": name, "chat_type": chat_type, "exact": stripped == name_norm}
+        entry = {
+            "jid": jid,
+            "name": name,
+            "chat_type": chat_type,
+            "exact": stripped == name_norm,
+            "name_locked": bool(row.get("name_locked")),
+            "known_jid": jid in KNOWN_JID_DISPLAY_NAMES,
+            "last_seen": float(row.get("last_seen_ts") or row.get("synced_ts") or 0.0),
+        }
         # Exact or substring match
         if stripped == name_norm or stripped in name_norm or name_norm in stripped:
             candidates.append(entry)
@@ -251,7 +259,14 @@ def resolve_target(target: str, contacts: Optional[Dict[str, Any]] = None) -> st
     if len(pool) == 1:
         return str(pool[0]["jid"])
     if len(pool) > 1:
-        return str(pool[0]["jid"])
+        preferred = [c for c in pool if c["name_locked"] or c["known_jid"]]
+        if len(preferred) == 1:
+            return str(preferred[0]["jid"])
+        if preferred:
+            preferred.sort(key=lambda c: c["last_seen"], reverse=True)
+            if preferred[0]["last_seen"] > preferred[1]["last_seen"]:
+                return str(preferred[0]["jid"])
+        return ""
 
     # Fall through to fuzzy matches
     if fuzzy_candidates:
@@ -270,12 +285,24 @@ def contact_rows_for_alice(limit: int = 12, contacts: Optional[Dict[str, Any]] =
         jid = str(row.get("jid") or "")
         if not name or not jid:
             continue
+        if row.get("send_target_allowed") is False:
+            continue
         chat_type = str(row.get("chat_type") or chat_type_for_jid(jid))
         last_seen = float(row.get("last_seen_ts") or row.get("synced_ts") or 0.0)
         relationship = str(row.get("relationship_to_owner") or "owner social graph")
         rows.append((last_seen, name[:48], chat_type, relationship))
     rows.sort(reverse=True)
-    return [f"{name} ({chat_type}, {relationship})" for _ts, name, chat_type, relationship in rows[:limit]]
+    visible = []
+    seen = set()
+    for _ts, name, chat_type, relationship in rows:
+        key = (_normalized(name), chat_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        visible.append(f"{name} ({chat_type}, {relationship})")
+        if len(visible) >= limit:
+            break
+    return visible
 
 
 def summary_for_alice(limit: int = 12) -> str:

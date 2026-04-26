@@ -102,7 +102,7 @@ def query_ollama(prompt: str, history: list, persona: str = "SIFTA") -> str:
     context += f"Human: {prompt}\nSIFTA:"
     
     data = {
-        "model": "qwen3.5:0.8b",
+        "model": "gemma4-phc:latest",
         "prompt": context,
         "stream": False
     }
