@@ -653,11 +653,21 @@ class MarketplaceTab(QWidget):
         is_offering = self.offer_cb.isChecked()
         listings = self._read_market()
         if is_offering:
+            # Query live Ollama for real model list
+            offer_models = []
+            try:
+                import urllib.request as _ur
+                _req = _ur.Request("http://127.0.0.1:11434/api/tags")
+                with _ur.urlopen(_req, timeout=3) as _resp:
+                    _tags = json.loads(_resp.read())
+                    offer_models = [m["name"] for m in _tags.get("models", [])]
+            except Exception:
+                offer_models = ["gemma4-phc:latest"]
             listings[self.local_serial] = {
                 "timestamp": int(time.time()),
                 "stgm_price": 1.0,
-                "energy": 100,  # Could dynamically read from body state
-                "models": ["llama-4-maverick", "gemma4-phc:latest", "llama3:latest"]
+                "energy": 100,
+                "models": offer_models
             }
         else:
             if self.local_serial in listings:
