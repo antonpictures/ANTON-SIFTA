@@ -135,7 +135,8 @@ def perform_genesis(
     OWNER_DIR.mkdir(parents=True, exist_ok=True)
     ext = photo.suffix or ".jpg"
     local_photo = OWNER_DIR / f"genesis_photo{ext}"
-    shutil.copy2(str(photo), str(local_photo))
+    if photo.resolve() != local_photo.resolve():
+        shutil.copy2(str(photo), str(local_photo))
 
     # Write genesis scar
     STATE_DIR.mkdir(parents=True, exist_ok=True)

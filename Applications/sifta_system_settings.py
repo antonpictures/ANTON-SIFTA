@@ -539,11 +539,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
     def _scan_face_for_genesis(self) -> None:
         """Use the Mac camera to capture the owner's face and run the Genesis Ceremony.
         
-        Alice hunts for cameras like a predator:
-        1. Scans camera indices 0-4
-        2. Prefers the Mac built-in camera (typically highest native resolution)
-        3. Skips cameras that fail to open or return blank frames
-        4. Locks onto the first working source autonomously
+        Camera Priority (per Dr. Cursor's review):
+        1. Index 0 = Mac built-in hardware camera (always tried first)
+        2. Fallback to indices 1-4 only if index 0 fails
+        3. Record every probe failure with reason for Alice to read
+        4. Camera errors and Genesis errors are reported separately
         """
         import cv2
 
@@ -551,97 +551,100 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.scan_face_btn.setEnabled(False)
         QApplication.processEvents()
 
-        # Hunt for the best camera
-        best_cap = None
-        best_idx = -1
-        best_w = 0
-        candidates = []
+        probe_log = []
+        locked_idx = -1
 
         for idx in range(5):
             self.scan_face_btn.setText(f"\u23f3 Probing camera {idx}\u2026")
             QApplication.processEvents()
+            entry = {"index": idx, "status": "unknown", "reason": "", "width": 0}
             try:
                 cap = cv2.VideoCapture(idx)
                 if not cap.isOpened():
+                    entry["status"] = "open_failed"
+                    entry["reason"] = "Device did not open"
+                    probe_log.append(entry)
                     continue
-                # Read a test frame to verify it actually works
                 ret, test_frame = cap.read()
-                if not ret or test_frame is None:
-                    cap.release()
-                    continue
-                w = test_frame.shape[1]
-                candidates.append((idx, w))
                 cap.release()
-            except Exception:
-                continue
+                if not ret or test_frame is None:
+                    entry["status"] = "read_failed"
+                    entry["reason"] = "Opened but returned no frame"
+                    probe_log.append(entry)
+                    continue
+                entry["status"] = "ok"
+                entry["width"] = int(test_frame.shape[1])
+                entry["height"] = int(test_frame.shape[0])
+                probe_log.append(entry)
+                if locked_idx == -1:
+                    locked_idx = idx
+            except Exception as exc:
+                entry["status"] = "exception"
+                entry["reason"] = f"{type(exc).__name__}: {str(exc)[:60]}"
+                probe_log.append(entry)
 
-        if not candidates:
-            self.scan_face_btn.setText("\u274c No cameras found")
+        if locked_idx == -1:
+            fail_summary = "; ".join(f"cam{e['index']}:{e['status']}" for e in probe_log)
+            self.scan_face_btn.setText(f"\u274c No cameras [{fail_summary}]")
             self.scan_face_btn.setEnabled(True)
             return
 
-        # Prefer the widest resolution (Mac built-in is typically 1920px,
-        # iPhone Continuity Camera is often 1280px or lower)
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        best_idx = candidates[0][0]
-
-        self.scan_face_btn.setText(f"\u23f3 Locked on camera {best_idx} ({candidates[0][1]}px)\u2026")
+        locked_entry = next(e for e in probe_log if e["index"] == locked_idx)
+        self.scan_face_btn.setText(f"\u23f3 Locked cam{locked_idx} ({locked_entry['width']}x{locked_entry.get('height', '?')}px)")
         QApplication.processEvents()
 
         cap = None
         try:
-            cap = cv2.VideoCapture(best_idx)
+            cap = cv2.VideoCapture(locked_idx)
             if not cap.isOpened():
-                self.scan_face_btn.setText("\u274c Camera lock failed")
+                self.scan_face_btn.setText(f"\u274c cam{locked_idx} lock failed on re-open")
                 self.scan_face_btn.setEnabled(True)
                 return
-
-            # Warm up the sensor
             for _ in range(20):
                 cap.read()
-
             ret, frame = cap.read()
             cap.release()
             cap = None
-
             if not ret or frame is None:
-                self.scan_face_btn.setText("\u274c Capture failed")
+                self.scan_face_btn.setText(f"\u274c cam{locked_idx} capture returned None")
                 self.scan_face_btn.setEnabled(True)
                 return
-
-            # Save the captured photo
             genesis_dir = Path.home() / ".sifta_keys" / "owner_genesis"
             genesis_dir.mkdir(parents=True, exist_ok=True)
             photo_path = genesis_dir / "genesis_photo.jpg"
             cv2.imwrite(str(photo_path), frame)
-
-            # Run the Genesis Ceremony
-            try:
-                from System.owner_genesis import perform_genesis
-                owner_name = ""
-                try:
-                    import subprocess
-                    res = subprocess.run(["id", "-F"], capture_output=True, text=True, timeout=1)
-                    if res.stdout.strip():
-                        owner_name = res.stdout.strip()
-                except Exception:
-                    pass
-                perform_genesis(str(photo_path), owner_name or "Owner")
-                self.scan_face_btn.setText("\u2705 Genesis Complete")
-                self.scan_face_btn.setStyleSheet(
-                    "QPushButton { background: rgb(20, 60, 40); color: rgb(100, 255, 150); "
-                    "border: 1px solid rgb(40, 100, 60); border-radius: 8px; font-size: 14px; font-weight: bold; } "
-                    "QPushButton:hover { background: rgb(30, 80, 50); }"
-                )
-                self.refresh()
-            except Exception as e:
-                self.scan_face_btn.setText(f"\u274c Genesis error: {str(e)[:40]}")
-        except Exception as e:
-            self.scan_face_btn.setText(f"\u274c {str(e)[:50]}")
-        finally:
+            self.scan_face_btn.setText("\u23f3 Running Genesis Ceremony\u2026")
+            QApplication.processEvents()
+        except Exception as cam_err:
+            self.scan_face_btn.setText(f"\u274c Camera: {type(cam_err).__name__}: {str(cam_err)[:35]}")
+            self.scan_face_btn.setEnabled(True)
             if cap is not None:
                 cap.release()
+            return
+
+        try:
+            from System.owner_genesis import perform_genesis
+            owner_name = ""
+            try:
+                import subprocess
+                res = subprocess.run(["id", "-F"], capture_output=True, text=True, timeout=1)
+                if res.stdout.strip():
+                    owner_name = res.stdout.strip()
+            except Exception:
+                pass
+            perform_genesis(str(photo_path), owner_name or "Owner")
+            self.scan_face_btn.setText("\u2705 Genesis Complete")
+            self.scan_face_btn.setStyleSheet(
+                "QPushButton { background: rgb(20, 60, 40); color: rgb(100, 255, 150); "
+                "border: 1px solid rgb(40, 100, 60); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+                "QPushButton:hover { background: rgb(30, 80, 50); }"
+            )
+            self.refresh()
+        except Exception as gen_err:
+            self.scan_face_btn.setText(f"\u274c Genesis: {type(gen_err).__name__}: {str(gen_err)[:30]}")
+        finally:
             self.scan_face_btn.setEnabled(True)
+
 
     def _audio_page(self) -> QWidget:
         page, root = self._page("Audio")
