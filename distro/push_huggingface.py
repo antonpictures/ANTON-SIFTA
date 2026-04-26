@@ -45,13 +45,6 @@ MODELS = {
         "local_dir": _DISTRO / "sifta-corvid-qwen35",
         "size_hint": "~2.6 GB",
     },
-    "qwen3.5:4b": {
-        "blob_sha": "sha256-81fb60c7daa80fc1123380b98970b320ae233409f0f71a72ed7b9b0d62f40490",
-        "output_name": "qwen35-4b-corvid.gguf",
-        "hf_repo": "georgeanton/sifta-corvid-qwen35",
-        "local_dir": _DISTRO / "sifta-corvid-qwen35",
-        "size_hint": "~3.2 GB",
-    },
 }
 
 

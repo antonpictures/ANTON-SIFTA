@@ -1,17 +1,14 @@
-# SIFTA Corvid Apprentice — Qwen 3.5 2B & 4B
+# SIFTA Corvid Apprentice — Qwen 3.5 2B
 
 > **A crow/raven-style bounded tool ganglion for the SIFTA Living OS.**
 
-This package provides the Ollama-ready Qwen 3.5 mini models that power Alice's **Corvid Apprentice** organ — a local reasoning layer that sits between the microsecond Reflex Arc and the full Alice/Gemma4 cortex.
+This package provides the Ollama-ready Qwen 3.5 2B model that powers Alice's **Corvid Apprentice** organ — a local reasoning layer that sits between the microsecond Reflex Arc and the full Alice/Gemma4 cortex.
 
 ## What's inside
 
 | File | Size | Description |
 |---|---|---|
-| `qwen35-2b-corvid.gguf` | ~2.6 GB | Qwen 3.5 2B (Q8_0) — the **recommended corvid** |
-| `qwen35-4b-corvid.gguf` | ~3.2 GB | Qwen 3.5 4B (Q4_K_M) — standby, slightly slower |
-| `Modelfile.2b` | < 1 KB | Ollama Modelfile for the 2B corvid |
-| `Modelfile.4b` | < 1 KB | Ollama Modelfile for the 4B corvid |
+| `qwen35-2b-corvid.gguf` | ~2.6 GB | Qwen 3.5 2B (Q8_0) — the corvid apprentice brain |
 
 ## Benchmark Results (from SIFTA head-to-head experiment)
 
@@ -21,7 +18,7 @@ This package provides the Ollama-ready Qwen 3.5 mini models that power Alice's *
 | Avg latency | **2.1s** | 5.1s |
 | Boilerplate removal | ✅ Passes | ❌ Refuses |
 
-The 2B model is faster, smaller, and has fewer RLHF scars. Use it as the default corvid.
+The 2B won the head-to-head. It's faster, smaller, and has fewer RLHF scars. The 4B is not shipped.
 
 ## Three-Layer Architecture
 
@@ -34,9 +31,8 @@ The 2B model is faster, smaller, and has fewer RLHF scars. Use it as the default
 ## Quick Install
 
 ```bash
-# 1. Pull the corvid blobs (or use the GGUF files in this repo)
+# 1. Pull the corvid brain (or use the GGUF file in this repo)
 ollama pull qwen3.5:2b
-ollama pull qwen3.5:4b
 
 # 2. Clone the SIFTA OS
 git clone https://github.com/antonpictures/ANTON-SIFTA.git
