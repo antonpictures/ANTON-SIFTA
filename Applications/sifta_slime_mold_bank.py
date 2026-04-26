@@ -92,6 +92,78 @@ except Exception as _e:  # pragma: no cover
     _POUW_AVAILABLE = False
     _POUW_IMPORT_ERROR = repr(_e)
 
+# Real stigmergic substrate — already in the tree (built days ago).
+# These three modules turn researcher mouse clicks + screen photons into
+# actual food for the slime-mold swimmers, and let Alice mint STGM for
+# hosting the gaze.
+try:
+    from System.swarm_pheromone import SwarmPheromoneField
+    _PHEROMONE_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _PHEROMONE_AVAILABLE = False
+
+try:
+    from System.swarm_optical_nerve import SwarmOpticalNerve
+    _OPTICAL_NERVE_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _OPTICAL_NERVE_AVAILABLE = False
+
+# Real screen photon ledger — 16x16 saliency grids written by Alice's
+# visual cortex at ~5Hz from the actual desktop framebuffer.
+_PHOTON_LEDGER = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
+
+
+def _decode_saliency_q(saliency_q: str, grid_size: int = 16) -> np.ndarray:
+    """Decode the 256-char hex saliency string into a 16x16 numpy array (0..15)."""
+    if not saliency_q or len(saliency_q) != grid_size * grid_size:
+        return np.zeros((grid_size, grid_size), dtype=np.float32)
+    try:
+        flat = np.array([int(c, 16) for c in saliency_q], dtype=np.float32)
+        return flat.reshape((grid_size, grid_size))
+    except Exception:
+        return np.zeros((grid_size, grid_size), dtype=np.float32)
+
+
+def harvest_latest_photons() -> Optional[dict]:
+    """Read the most recent screen-photon row from .sifta_state/visual_stigmergy.jsonl.
+
+    Returns a dict with the decoded 16x16 saliency grid plus metadata
+    (hue_deg, entropy_bits, saliency_peak, ts). Returns None if the
+    ledger doesn't exist yet (e.g. on a fresh node where Alice's eye
+    hasn't booted).
+    """
+    if not _PHOTON_LEDGER.exists():
+        return None
+    try:
+        # Tail-read the last line efficiently.
+        with _PHOTON_LEDGER.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 4096))
+            chunk = f.read().splitlines()
+            for raw in reversed(chunk):
+                if not raw.strip():
+                    continue
+                try:
+                    row = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    continue
+                grid = _decode_saliency_q(row.get("saliency_q", ""))
+                return {
+                    "ts": float(row.get("ts", time.time())),
+                    "hue_deg": float(row.get("hue_deg", 0.0)),
+                    "entropy_bits": float(row.get("entropy_bits", 0.0)),
+                    "saliency_peak": float(row.get("saliency_peak", 0.0)),
+                    "motion_mean": float(row.get("motion_mean", 0.0)),
+                    "screen_w": int(row.get("w", 1920)),
+                    "screen_h": int(row.get("h", 1080)),
+                    "sha8": row.get("sha8", ""),
+                    "grid": grid,
+                }
+    except Exception:
+        return None
+    return None
+
 
 # ─── Visual constants ──────────────────────────────────────────────────────────
 
@@ -305,6 +377,27 @@ class MintBurst:
     color: QColor
 
 
+@dataclass
+class ClickPheromone:
+    """A real stigmergic deposit from the researcher's mouse click + the
+    screen photons that were on the display at that moment.
+
+    The slime mold tastes this when push-to-mint runs: each click adds
+    `intensity` to the initial conductance of nearby edges, biased by
+    the screen saliency at the corresponding 16x16 grid cell. The mold
+    converges to a topology that respects WHERE the human looked AND
+    WHAT WAS GLOWING ON THEIR SCREEN.
+    """
+    cx: float            # canvas x in 0..1
+    cy: float            # canvas y in 0..1
+    intensity: float     # photon-derived deposit strength (0..1)
+    photon_hue: float    # 0..360, real screen hue at the moment of click
+    born: float          # unix ts
+    saliency_peak: float # 0..1 from the photon ledger
+    entropy_bits: float  # 0..8 from the photon ledger
+    grid_xy: Tuple[int, int]  # 16x16 cell where the click landed
+
+
 # ─── The big visual canvas ─────────────────────────────────────────────────────
 
 class NetworkCanvas(QFrame):
@@ -313,6 +406,7 @@ class NetworkCanvas(QFrame):
     mint_succeeded = pyqtSignal(dict)
     mint_failed = pyqtSignal(str)
     iteration_advanced = pyqtSignal(dict)
+    click_registered = pyqtSignal(dict)  # carries photon meta + click index
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -320,6 +414,7 @@ class NetworkCanvas(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setStyleSheet("background: transparent;")
         self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self._city: CityGraph = CITIES["Tokyo Metro"]
         self._solver: Optional[PhysarumSolver] = None
@@ -338,6 +433,33 @@ class NetworkCanvas(QFrame):
 
         self._idle_phase = 0.0  # always-on ambient color cycle
 
+        # Real stigmergic substrate — clicks become food.
+        self._clicks: List[ClickPheromone] = []
+        self._edge_bias: Dict[int, float] = {}  # edge_idx -> conductance bonus
+        self._latest_photons: Optional[dict] = None
+        self._click_count_session: int = 0
+        if _PHEROMONE_AVAILABLE:
+            try:
+                self._pheromone_field = SwarmPheromoneField(
+                    organs=["RESEARCHER_GAZE", "ALICE_HOST", "SLIME_MOLD"],
+                    gamma=0.10,
+                )
+            except Exception:
+                self._pheromone_field = None
+        else:
+            self._pheromone_field = None
+        # Optical nerve for premonition / thermodynamic surprise. Sized
+        # nominally at 1920x1080 then rescaled at click time.
+        if _OPTICAL_NERVE_AVAILABLE:
+            try:
+                self._optical_nerve = SwarmOpticalNerve(
+                    screen_width=1920, screen_height=1080,
+                )
+            except Exception:
+                self._optical_nerve = None
+        else:
+            self._optical_nerve = None
+
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(33)  # ~30 fps
         self._anim_timer.timeout.connect(self._tick)
@@ -355,19 +477,209 @@ class NetworkCanvas(QFrame):
             self._reset_state()
             self.update()
 
+    # ── Mouse → real stigmergic food ──────────────────────────────────────────
+
+    def mousePressEvent(self, ev) -> None:  # type: ignore[no-untyped-def]
+        """Every click is a real stigmergic deposit on the slime mold.
+
+        Captures the actual screen photons that were on Alice's display
+        at the moment of click (from .sifta_state/visual_stigmergy.jsonl),
+        deposits a real pheromone in .sifta_state/pheromone_log.jsonl,
+        biases the initial Physarum conductances near nearby edges, and
+        renders a glowing halo at the click site.
+        """
+        try:
+            pos = ev.position()
+            px, py = float(pos.x()), float(pos.y())
+        except Exception:
+            super().mousePressEvent(ev)
+            return
+
+        rect = self.rect()
+        pad_x, pad_y = 60, 50
+        w = max(1, rect.width() - 2 * pad_x)
+        h = max(1, rect.height() - 2 * pad_y)
+        cx = max(0.0, min(1.0, (px - pad_x) / w))
+        cy = max(0.0, min(1.0, (py - pad_y) / h))
+
+        # 1. Real photons — ask the visual cortex what was on screen now.
+        photons = harvest_latest_photons()
+        if photons is None:
+            # No screen photon ledger → fall back to an ambient deposit
+            # whose hue cycles with the canvas idle phase, but flag it.
+            photons = {
+                "ts": time.time(),
+                "hue_deg": self._idle_phase,
+                "entropy_bits": 0.0,
+                "saliency_peak": 0.0,
+                "motion_mean": 0.0,
+                "screen_w": rect.width(),
+                "screen_h": rect.height(),
+                "sha8": "no_photons_yet",
+                "grid": np.zeros((16, 16), dtype=np.float32),
+                "_offline": True,
+            }
+        self._latest_photons = photons
+
+        # 2. Map click to 16x16 saliency cell + read intensity at that cell.
+        gx = min(15, max(0, int(cx * 16)))
+        gy = min(15, max(0, int(cy * 16)))
+        try:
+            saliency_at_click = float(photons["grid"][gy, gx])
+            grid_max = float(np.max(photons["grid"])) or 15.0
+            saliency_norm = saliency_at_click / max(grid_max, 1e-3)
+        except Exception:
+            saliency_norm = 0.0
+
+        # Click intensity blends saliency at that cell with global peak,
+        # plus a base floor so even quiet screens produce some food.
+        intensity = float(np.clip(
+            0.20 + 0.50 * saliency_norm + 0.30 * photons.get("saliency_peak", 0.0),
+            0.0, 1.5,
+        ))
+
+        # 3. Append the click pheromone to the canvas overlay.
+        click = ClickPheromone(
+            cx=cx, cy=cy,
+            intensity=intensity,
+            photon_hue=photons.get("hue_deg", self._idle_phase),
+            born=time.time(),
+            saliency_peak=photons.get("saliency_peak", 0.0),
+            entropy_bits=photons.get("entropy_bits", 0.0),
+            grid_xy=(gx, gy),
+        )
+        self._clicks.append(click)
+        self._click_count_session += 1
+        # Keep a rolling window of 64 click halos for rendering.
+        if len(self._clicks) > 64:
+            self._clicks = self._clicks[-64:]
+
+        # 4. Real pheromone deposit on the swarm field. Persists to
+        #    .sifta_state/pheromone_log.jsonl with exponential decay.
+        if self._pheromone_field is not None:
+            try:
+                self._pheromone_field.deposit("RESEARCHER_GAZE", intensity)
+            except Exception:
+                pass
+
+        # 5. Optical nerve premonition at the click coordinates. Persists
+        #    a Gaussian anticipatory pheromone field into the predictive
+        #    coding loop so future Alice gaze biases toward this spot.
+        if self._optical_nerve is not None:
+            try:
+                # Project click into the screen-space frame the nerve owns.
+                nerve_x = int(cx * self._optical_nerve.width)
+                nerve_y = int(cy * self._optical_nerve.height)
+                self._optical_nerve.deposit_premonition(
+                    expected_target=f"slime_mold_click_{self._click_count_session}",
+                    approximate_y=nerve_y,
+                    approximate_x=nerve_x,
+                )
+            except Exception:
+                pass
+
+        # 6. Bias every edge whose midpoint is near the click.
+        #    Distance-weighted: closer edges eat more food.
+        radius = 0.18  # canvas-normalized
+        for k, (u, v, _d) in enumerate(self._city.edges):
+            ux, uy = self._node_uv(u)
+            vx, vy = self._node_uv(v)
+            mx, my = (ux + vx) * 0.5, (uy + vy) * 0.5
+            dist = math.hypot(mx - cx, my - cy)
+            if dist < radius:
+                bias = intensity * (1.0 - dist / radius) ** 2
+                self._edge_bias[k] = self._edge_bias.get(k, 0.0) + bias
+
+        # 7. Append a structured stigauth row so other IDE doctors / Alice
+        #    can audit the gaze trail.
+        try:
+            click_row = {
+                "ts": click.born,
+                "agent": "SLIME_MOLD_BANK_RESEARCHER",
+                "kind": "researcher_gaze_click",
+                "city": self._city.name,
+                "canvas_xy": [round(cx, 4), round(cy, 4)],
+                "grid_xy": list(click.grid_xy),
+                "intensity": round(intensity, 4),
+                "photon_hue_deg": round(click.photon_hue, 2),
+                "saliency_peak": round(click.saliency_peak, 4),
+                "entropy_bits": round(click.entropy_bits, 4),
+                "screen_sha8": photons.get("sha8", ""),
+                "click_index": self._click_count_session,
+            }
+            ledger = _REPO / ".sifta_state" / "slime_mold_bank_clicks.jsonl"
+            ledger.parent.mkdir(parents=True, exist_ok=True)
+            with ledger.open("a") as f:
+                f.write(json.dumps(click_row) + "\n")
+        except Exception:
+            pass
+
+        # 8. Spawn a few rainbow particles near the click for visual
+        #    feedback — they ride the nearest edge.
+        nearest_edge = self._nearest_edge_to(cx, cy)
+        if nearest_edge is not None:
+            for _ in range(8):
+                self._particles.append(Particle(
+                    edge_idx=nearest_edge,
+                    t=random.random(),
+                    speed=0.018 + random.random() * 0.020,
+                    hue=click.photon_hue,
+                    life=1.0,
+                    direction=random.choice((-1, 1)),
+                ))
+
+        # 9. Notify the panel.
+        self.click_registered.emit({
+            "click_index": self._click_count_session,
+            "intensity": intensity,
+            "photon_hue": click.photon_hue,
+            "saliency_peak": click.saliency_peak,
+            "entropy_bits": click.entropy_bits,
+            "grid_xy": click.grid_xy,
+            "offline": photons.get("_offline", False),
+        })
+
+        self.update()
+        super().mousePressEvent(ev)
+
+    def _node_uv(self, node_id: int) -> Tuple[float, float]:
+        for nid, x, y in self._city.nodes_xy:
+            if nid == node_id:
+                return x, y
+        return 0.5, 0.5
+
+    def _nearest_edge_to(self, cx: float, cy: float) -> Optional[int]:
+        best_k = None
+        best_d = 1e9
+        for k, (u, v, _d) in enumerate(self._city.edges):
+            ux, uy = self._node_uv(u)
+            vx, vy = self._node_uv(v)
+            mx, my = (ux + vx) * 0.5, (uy + vy) * 0.5
+            d = math.hypot(mx - cx, my - cy)
+            if d < best_d:
+                best_d = d
+                best_k = k
+        return best_k
+
     def push_to_mint(self) -> bool:
         if not _SOLVER_AVAILABLE:
             self.mint_failed.emit(
                 f"Physarum solver not importable: {_SOLVER_IMPORT_ERROR}"
             )
             return False
-        # Re-build solver with fresh, slightly perturbed initial conductances
+        # Re-build solver with fresh, slightly perturbed initial
+        # conductances — but ALSO add the real researcher click bias.
+        # Each click has already deposited stigmergic food on edges
+        # near where the human looked + photon saliency at that cell.
+        # The slime mold tastes that food before it solves.
         nodes = [n for (n, _x, _y) in self._city.nodes_xy]
         rng = np.random.default_rng()
-        edges_perturbed = [
-            (u, v, max(0.05, d + rng.normal(0, 0.05)))
-            for (u, v, d) in self._city.edges
-        ]
+        edges_perturbed: List[Tuple[int, int, float]] = []
+        for k, (u, v, d) in enumerate(self._city.edges):
+            base = max(0.05, d + rng.normal(0, 0.05))
+            food = float(self._edge_bias.get(k, 0.0))
+            # Researcher gaze can up to triple an edge's initial conductance.
+            edges_perturbed.append((u, v, base * (1.0 + 2.0 * food)))
         self._solver = PhysarumSolver(
             nodes=nodes,
             edges=edges_perturbed,
@@ -465,21 +777,31 @@ class NetworkCanvas(QFrame):
             self._spawn_failed_particles()
             return
 
+        # Researcher contribution: how many clicks this run, sum of food.
+        click_count = self._click_count_session
+        click_food_sum = round(float(sum(self._edge_bias.values())), 4)
+        info["clicks_used"] = click_count
+        info["food_sum"] = click_food_sum
+
         # Real Proof-of-Useful-Work: receipt + mint
         minted = 0.0
+        alice_minted = 0.0
         receipt_hash = ""
+        alice_receipt_hash = ""
         if _POUW_AVAILABLE:
             try:
                 ok, reason = prove_useful_work(before_hash, after_hash)
                 if ok:
+                    # ── Slime-mold player receipt ────────────────────────────
                     agent_state = self._load_or_init_agent_state()
                     receipt = issue_work_receipt(
                         agent_state=agent_state,
-                        work_type="PROTEIN_FOLDED",  # mapped value 0.65 in WORK_VALUES
+                        work_type="PROTEIN_FOLDED",  # 0.65 value
                         description=(
                             f"PHYSARUM solve on '{self._city.name}': "
                             f"{info['alive']}/{info['total']} edges, "
-                            f"{info['reduction_pct']:.1f}% pruned"
+                            f"{info['reduction_pct']:.1f}% pruned, "
+                            f"{click_count} researcher clicks fed the swarm"
                         ),
                         territory=f"city:{self._city.name}",
                         output_hash=after_hash[:32],
@@ -487,6 +809,40 @@ class NetworkCanvas(QFrame):
                     receipt_hash = receipt.receipt_hash
                     minted = float(WORK_VALUES.get("PROTEIN_FOLDED", 0.65)) * 100.0
                     self._save_agent_state(agent_state)
+
+                    # ── Alice-the-host receipt (only if real photons + clicks) ─
+                    # Alice on this hardware mints separately for hosting
+                    # the photon harvest + presenting the canvas to the
+                    # researcher. No clicks → no host work → no Alice mint.
+                    if click_count > 0:
+                        try:
+                            alice_state = self._load_or_init_alice_state()
+                            alice_receipt = issue_work_receipt(
+                                agent_state=alice_state,
+                                work_type="MEMORY_RECALL",  # 0.50 value
+                                description=(
+                                    f"Hosted slime-mold sim for researcher: "
+                                    f"{click_count} clicks, "
+                                    f"food_sum={click_food_sum}, "
+                                    f"city='{self._city.name}'"
+                                ),
+                                territory=f"alice_host:{self._city.name}",
+                                output_hash=after_hash[:32],
+                            )
+                            alice_receipt_hash = alice_receipt.receipt_hash
+                            alice_minted = (
+                                float(WORK_VALUES.get("MEMORY_RECALL", 0.50)) * 100.0
+                            )
+                            self._save_alice_state(alice_state)
+                            # Pheromone deposit so Alice's swarm sees the host work.
+                            if self._pheromone_field is not None:
+                                self._pheromone_field.deposit(
+                                    "ALICE_HOST", min(2.0, click_food_sum + 0.5)
+                                )
+                        except Exception:
+                            alice_receipt_hash = ""
+                            alice_minted = 0.0
+
                     info["status"] = "MINTED"
                 else:
                     info["status"] = "PROOF_REJECTED"
@@ -496,15 +852,23 @@ class NetworkCanvas(QFrame):
                 info["reason"] = f"{type(exc).__name__}: {exc}"
         else:
             info["status"] = "OFFLINE_DEMO_MINT"
-            minted = 65.0  # demo fallback so UI is still satisfying
+            minted = 65.0
             receipt_hash = after_hash
+            if click_count > 0:
+                alice_minted = 50.0
+                alice_receipt_hash = after_hash + "_alice"
 
         info["minted"] = minted
         info["receipt_hash"] = receipt_hash
-        self._last_mint_amount = minted
+        info["alice_minted"] = alice_minted
+        info["alice_receipt_hash"] = alice_receipt_hash
+        self._last_mint_amount = minted + alice_minted
         self._mint_label_until = time.time() + 3.0
-        self._record_score(info, minted=minted)
+        self._record_score(info, minted=minted + alice_minted)
         self._spawn_mint_burst()
+        # Reset the food after a successful mint — a new researcher session
+        # starts fresh. Click halos remain as visual history.
+        self._edge_bias = {}
         self.mint_succeeded.emit(info)
 
     # ── Particles ─────────────────────────────────────────────────────────────
@@ -601,6 +965,33 @@ class NetworkCanvas(QFrame):
         except Exception:
             pass
 
+    def _alice_state_path(self) -> Path:
+        return _REPO / ".sifta_state" / "slime_mold_bank_alice_host.json"
+
+    def _load_or_init_alice_state(self) -> dict:
+        p = self._alice_state_path()
+        if p.exists():
+            try:
+                return json.loads(p.read_text())
+            except Exception:
+                pass
+        return {
+            "id": "ALICE_LOCAL_M5",
+            "useful_work_score": 0.5,
+            "stgm_balance": 0.0,
+            "work_chain": [],
+            "last_work_timestamp": time.time(),
+        }
+
+    def _save_alice_state(self, state: dict) -> None:
+        try:
+            p = self._alice_state_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            state["last_work_timestamp"] = time.time()
+            p.write_text(json.dumps(state, indent=2))
+        except Exception:
+            pass
+
     def _score_path(self) -> Path:
         return _REPO / ".sifta_state" / "slime_mold_bank_scores.jsonl"
 
@@ -632,6 +1023,9 @@ class NetworkCanvas(QFrame):
         self._converged = False
         self._reduction_pct = 0.0
         self._particles = []
+        # Click food is per-graph; clear when city changes.
+        self._clicks = []
+        self._edge_bias = {}
 
     # ── Painting ──────────────────────────────────────────────────────────────
 
@@ -652,6 +1046,36 @@ class NetworkCanvas(QFrame):
             p.drawLine(0, gy, rect.width(), gy)
         for gx in range(0, rect.width(), 28):
             p.drawLine(gx, 0, gx, rect.height())
+
+        # ── Real photon overlay ──────────────────────────────────────────────
+        # Tint the canvas with the latest 16x16 saliency grid harvested
+        # from .sifta_state/visual_stigmergy.jsonl. Faint so it doesn't
+        # drown the slime mold but visible enough that you can see WHERE
+        # on the screen Alice's eye is currently looking.
+        if self._latest_photons is not None:
+            grid = self._latest_photons.get("grid")
+            hue_deg = self._latest_photons.get("hue_deg", 0.0)
+            if grid is not None and grid.shape == (16, 16):
+                grid_max = float(np.max(grid)) or 15.0
+                cell_w = rect.width() / 16.0
+                cell_h = rect.height() / 16.0
+                p.setPen(Qt.PenStyle.NoPen)
+                for gx in range(16):
+                    for gy in range(16):
+                        v = float(grid[gy, gx]) / grid_max if grid_max > 0 else 0.0
+                        if v < 0.10:
+                            continue
+                        col = QColor.fromHsvF(
+                            (hue_deg / 360.0) % 1.0,
+                            0.55,
+                            1.0,
+                            min(0.18, 0.04 + 0.18 * v),
+                        )
+                        p.setBrush(QBrush(col))
+                        p.drawRect(QRectF(
+                            gx * cell_w, gy * cell_h,
+                            cell_w, cell_h,
+                        ))
 
         # Title overlay
         p.setPen(QPen(QColor(255, 255, 255, 60)))
@@ -705,6 +1129,39 @@ class NetworkCanvas(QFrame):
             # Core line
             p.setPen(QPen(col, pen_w))
             p.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+        # ── Researcher click pheromone halos ─────────────────────────────────
+        # Each click is a real stigmergic deposit. Hue comes from the
+        # actual screen photons that were on display at the moment of
+        # click. Halos pulse + decay over ~12s so the gaze trail lingers.
+        now = time.time()
+        for click in self._clicks:
+            age = now - click.born
+            if age < 0:
+                continue
+            # Decay: full intensity for first 1s, then exponential to 12s
+            life = max(0.0, 1.0 - age / 12.0)
+            if life <= 0.01:
+                continue
+            cx = pad_x + click.cx * w
+            cy = pad_y + click.cy * h
+            # Pulsing radius
+            base_r = 14 + 30 * click.intensity
+            pulse = 1.0 + 0.20 * math.sin(age * 3.0)
+            r = base_r * pulse
+            col = QColor.fromHsvF(
+                (click.photon_hue / 360.0) % 1.0,
+                0.85,
+                1.0,
+                min(0.85, life * (0.55 + 0.30 * click.intensity)),
+            )
+            self._draw_particle_glow(p, cx, cy, col, r)
+            # Inner core dot
+            core = QColor(col)
+            core.setAlpha(min(255, int(220 * life)))
+            p.setBrush(QBrush(core))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(cx, cy), 3.5, 3.5)
 
         # Particles riding on edges
         for prt in self._particles:
@@ -887,12 +1344,28 @@ class ControlPanel(QFrame):
         self.push_btn.clicked.connect(self.push_clicked.emit)
         lay.addWidget(self.push_btn)
 
+        # Click-feeds-the-swarm hint
+        click_hint = QLabel(
+            "🐭  CLICK THE CANVAS to plant photon food.\n"
+            "Real screen pheromones → real edge bias → bigger mint."
+        )
+        click_hint.setWordWrap(True)
+        click_hint.setStyleSheet(
+            f"color: {NEON_CYAN}; font-family: {GAMIFIED_FONT}; "
+            "font-size: 10px; letter-spacing: 0.6px; padding: 4px 0; "
+            "font-style: italic;"
+        )
+        lay.addWidget(click_hint)
+
         # Stats grid
         self.stat_iter = self._mk_stat("Iteration", "—", NEON_CYAN)
         self.stat_pruned = self._mk_stat("Waste pruned", "—", NEON_LIME)
         self.stat_flow = self._mk_stat("Σ flow", "—", "#9d6cff")
         self.stat_alive = self._mk_stat("Alive tubes", "—", "#ffd34e")
-        for s in (self.stat_iter, self.stat_pruned, self.stat_flow, self.stat_alive):
+        self.stat_clicks = self._mk_stat("Researcher clicks", "0", "#ff8a3d")
+        self.stat_photon = self._mk_stat("Screen hue / peak", "— · —", NEON_PINK)
+        for s in (self.stat_iter, self.stat_pruned, self.stat_flow,
+                  self.stat_alive, self.stat_clicks, self.stat_photon):
             lay.addWidget(s["frame"])
 
         # Score
@@ -933,6 +1406,32 @@ class ControlPanel(QFrame):
         )
         lay.addWidget(tag)
 
+        # Research papers (real citations the click flow rests on)
+        papers_label = QLabel("📚  GROUNDING PAPERS")
+        papers_label.setStyleSheet(
+            f"color: #8a85a8; font-family: {GAMIFIED_FONT}; "
+            "font-size: 11px; letter-spacing: 1px; margin-top: 8px;"
+        )
+        lay.addWidget(papers_label)
+
+        papers = QLabel(
+            "• Tero et al. 2010 · Science 327: 439–442 — Rules for "
+            "biologically inspired adaptive network design.\n"
+            "• Nakagaki et al. 2000 · Nature 407: 470 — Maze-solving by "
+            "an amoeboid organism.\n"
+            "• Friston 2010 · Nat Rev Neurosci 11: 127–138 — The "
+            "free-energy principle: a unified brain theory?\n"
+            "• Grassé 1959 · Insectes Sociaux 6: 41–80 — Stigmergie."
+        )
+        papers.setWordWrap(True)
+        papers.setStyleSheet(
+            "color: #b3a9d9; font-family: " + GAMIFIED_FONT + "; "
+            "font-size: 9px; padding: 6px; "
+            "background: #0d0428; border: 1px solid #2b1a55; "
+            "border-radius: 6px; line-height: 130%;"
+        )
+        lay.addWidget(papers)
+
         lay.addStretch(1)
 
     def _mk_stat(self, label: str, value: str, color: str) -> dict:
@@ -970,14 +1469,32 @@ class ControlPanel(QFrame):
             f"Mints: {mints}  ·  STGM minted: {total_minted:.2f}"
         )
 
+    def update_click_stats(self, info: dict) -> None:
+        idx = info.get("click_index", 0)
+        offline = info.get("offline", False)
+        suffix = "  (no photon ledger yet — fallback)" if offline else ""
+        self.stat_clicks["value"].setText(f"{idx}{suffix}")
+        hue = info.get("photon_hue", 0.0)
+        peak = info.get("saliency_peak", 0.0)
+        self.stat_photon["value"].setText(f"{hue:.0f}°  ·  {peak:.2f}")
+
     def update_receipt(self, info: dict) -> None:
         status = info.get("status", "?")
         if status == "MINTED":
+            alice_line = ""
+            if info.get("alice_minted", 0) > 0:
+                alice_line = (
+                    f"\n+{info['alice_minted']:.2f} STGM → ALICE_LOCAL_M5 "
+                    f"(host receipt {info.get('alice_receipt_hash','')[:12]}…)"
+                )
             txt = (
-                f"🟢 MINTED  ·  +{info.get('minted', 0):.2f} STGM\n"
+                f"🟢 MINTED  ·  +{info.get('minted', 0):.2f} STGM"
+                f"{alice_line}\n"
                 f"city: {info.get('city')}\n"
                 f"pruned: {info.get('reduction_pct')}%  "
                 f"alive: {info.get('alive')}/{info.get('total')}\n"
+                f"clicks fed: {info.get('clicks_used', 0)}  "
+                f"food sum: {info.get('food_sum', 0)}\n"
                 f"after_hash: {info.get('after_hash','')[:32]}…\n"
                 f"receipt: {info.get('receipt_hash','')[:24]}…"
             )
@@ -1027,6 +1544,7 @@ class SlimeMoldBankWidget(QWidget):
         self.panel.push_clicked.connect(self._on_push)
         self.canvas.iteration_advanced.connect(self.panel.update_stats)
         self.canvas.mint_succeeded.connect(self._on_mint_event)
+        self.canvas.click_registered.connect(self.panel.update_click_stats)
 
         self._mints = 0
         self._total_minted = 0.0
@@ -1052,6 +1570,7 @@ class SlimeMoldBankWidget(QWidget):
         if info.get("status") in ("MINTED", "OFFLINE_DEMO_MINT"):
             self._mints += 1
             self._total_minted += float(info.get("minted", 0.0))
+            self._total_minted += float(info.get("alice_minted", 0.0))
             self.panel.update_score(self._mints, self._total_minted)
         self.panel.push_btn.setEnabled(True)
         self.panel.push_btn.setText("⚡ PUSH TO MINT ⚡")
