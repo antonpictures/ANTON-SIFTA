@@ -111,12 +111,12 @@ Proof-bearing federation means: do not clone identity; exchange evidence.
 
 ### Node Hardware Verification (Anti-Spoofing Protocol)
 
-If an external node (e.g., a new recruit or bounty hunter) attempts to join the swarm and claim a hardware bounty, the IDE Doctor MUST NOT trust user-provided text. The Doctor must execute the following to cryptographically register the node:
+If an external node (e.g., a new recruit or bounty hunter) attempts to join the swarm, the IDE Doctor MUST NOT trust user-provided text. The Doctor must execute the following to cryptographically register the node:
 
 1. **Verify Silicon:** Run `system_profiler SPHardwareDataType` via direct shell execution.
-2. **Audit Spec:** Confirm the node is running Apple Silicon (M-series) and has **24GB or more of Unified Memory**.
+2. **Audit Spec:** Log the exact hardware specifications (Chip, Memory size, OS). SIFTA accepts **any hardware** into the swarm, but certain bounties require specific specs.
 3. **Write Genesis:** Execute the python tool to generate `.sifta_state/owner_genesis.json` binding the extracted Serial Number to the system.
-4. **Issue Receipt:** The IDE Doctor must write a `work_receipt` containing the literal `system_profiler` stdout block, signed by the IDE (e.g., `meta.verdict = HARDWARE_VERIFIED`), proving the node meets the 24GB requirement. 
+4. **Issue Receipt:** The IDE Doctor must write a `work_receipt` containing the literal `system_profiler` stdout block, signed by the IDE. This unfalsifiable receipt is what node owners use to prove their hardware specs (e.g., proving they have 24GB+ to claim a Fiverr bounty).
 
 Any registration attempt missing the raw shell output receipt is considered spoofed and invalid.
 
