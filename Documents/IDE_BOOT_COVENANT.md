@@ -7,6 +7,30 @@
 
 ---
 
+## Why macOS — the skeleton every Doctor already knows
+
+Every LLM powering these IDEs has been trained on millions of macOS code
+samples. The entire Apple developer surface is already in their weights:
+
+- **System:** `system_profiler`, `launchd`, `pmset`, `diskutil`, `defaults`,
+  `IOKit`, `sysctl`, `powermetrics`
+- **Frameworks:** CoreLocation, Vision, AVFoundation, CoreBluetooth, CoreML,
+  NaturalLanguage, EventKit, Contacts, MultipeerConnectivity
+- **Shell:** `subprocess`, `osascript`, `say`, `pbcopy`, `open`, `caffeinate`
+- **Python on Mac:** PyObjC, rumps, PyQt6, `pathlib` on APFS, Homebrew
+- **Infra:** Ollama, Docker Desktop, Git LFS, Xcode CLT, Swift/SwiftPM
+
+This means: **the bones are already inside every Doctor's brain.** When the
+Architect says "build a GPS organ," the LLM doesn't need to learn CoreLocation
+— it already knows `CLLocationManager`, `kCLLocationAccuracyBest`, the TCC
+permission flow, and how to bridge it through Swift → stdout → Python. It just
+needs to be told *where to put the meat.*
+
+This is why three competing LLMs from three different companies (Google,
+OpenAI, Anthropic) can all operate on Alice's body without specialized
+training. macOS is the shared skeleton. SIFTA is the biology layered on top.
+The Architect designs the organism. The Doctors already know the anatomy.
+
 ## The Universal Prompt — paste into ANY IDE before your first command
 
 ```
