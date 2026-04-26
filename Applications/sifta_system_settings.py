@@ -337,42 +337,59 @@ def read_system_settings_snapshot() -> dict[str, Any]:
     except Exception:
         pass
 
-    # Network — use alice_hardware_body.wifi() which is Tahoe-aware
-    net_ssid = "Unknown SSID"
+    # Network — detect active interface, distinguish Wi-Fi vs Ethernet
+    net_ssid = "Unknown"
     net_ip = "Unknown IP"
     wa_bridge_live = False
     try:
-        from System.alice_hardware_body import wifi as _hw_wifi, network as _hw_net
-        _wf = _hw_wifi()
-        if _wf.get("associated") and _wf.get("ssid"):
-            net_ssid = _wf["ssid"]
-        elif _wf.get("powered_on") is False:
-            net_ssid = "Wi-Fi Off"
-        else:
-            net_ssid = "Not Associated"
-        _nf = _hw_net()
-        if _nf.get("ipv4"):
-            net_ip = _nf["ipv4"]
-        else:
+        import subprocess as _sp
+        # Find the interface carrying the default route
+        _rt = _sp.run(["route", "get", "default"], capture_output=True, text=True, timeout=2)
+        _default_iface = None
+        for _ln in _rt.stdout.splitlines():
+            if "interface:" in _ln:
+                _default_iface = _ln.split(":")[-1].strip()
+                break
+        # Discover what hardware type that interface is
+        _hw_ports = _sp.run(["networksetup", "-listallhardwareports"], capture_output=True, text=True, timeout=2).stdout
+        _iface_type = "Unknown"
+        _is_wifi = False
+        if _default_iface:
+            _blocks = _hw_ports.split("Hardware Port:")
+            for _blk in _blocks:
+                if f"Device: {_default_iface}" in _blk:
+                    if "Wi-Fi" in _blk or "AirPort" in _blk:
+                        _iface_type = "Wi-Fi"
+                        _is_wifi = True
+                    elif "Thunderbolt" in _blk:
+                        _iface_type = "Thunderbolt"
+                    elif "Ethernet" in _blk:
+                        _iface_type = "Ethernet"
+                    else:
+                        _iface_type = _blk.strip().split("\n")[0].strip()
+                    break
+        # Get the IP
+        if _default_iface:
+            _ip_r = _sp.run(["ipconfig", "getifaddr", _default_iface], capture_output=True, text=True, timeout=1)
+            if _ip_r.stdout.strip():
+                net_ip = _ip_r.stdout.strip()
+        # SSID only makes sense for Wi-Fi
+        if _is_wifi:
             try:
-                res_ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True, timeout=1)
-                if res_ip.stdout.strip():
-                    net_ip = res_ip.stdout.strip()
+                from System.alice_hardware_body import wifi as _hw_wifi
+                _wf = _hw_wifi()
+                if _wf.get("associated") and _wf.get("ssid"):
+                    net_ssid = _wf["ssid"]
+                elif _wf.get("powered_on") is False:
+                    net_ssid = "Wi-Fi Off"
+                else:
+                    net_ssid = "Wi-Fi (SSID hidden by macOS)"
             except Exception:
-                pass
+                net_ssid = "Wi-Fi (SSID hidden by macOS)"
+        else:
+            net_ssid = f"{_iface_type} ({_default_iface})"
     except Exception:
-        try:
-            res_ssid = subprocess.run(["networksetup", "-getairportnetwork", "en0"], capture_output=True, text=True, timeout=1)
-            if "Current Wi-Fi Network:" in res_ssid.stdout:
-                net_ssid = res_ssid.stdout.split(":")[-1].strip()
-        except Exception:
-            pass
-        try:
-            res_ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True, timeout=1)
-            if res_ip.stdout.strip():
-                net_ip = res_ip.stdout.strip()
-        except Exception:
-            pass
+        pass
 
     # WhatsApp Bridge status — check if node bridge.js is running
     try:
@@ -776,8 +793,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
     def _network_page(self) -> QWidget:
         page, root = self._page("Network")
-        self.net_ssid = MetricCard("Wi-Fi SSID", "--", "Active Base Station")
-        self.net_ip = MetricCard("Local IP", "--", "en0 interface address")
+        self.net_ssid = MetricCard("Connection", "--", "Default route interface")
+        self.net_ip = MetricCard("Local IP", "--", "Default route interface address")
         self.net_wa = MetricCard("WhatsApp Bridge", "--", "Baileys Node.js bridge on port 3001")
         self.net_relay = MetricCard("Mesh Relay", "N/A", "WebSocket cross-node proxy")
         self.net_nerve = MetricCard("Nerve Channel", "UDP Broadcast", "Fast autonomic reflex bus")
