@@ -337,31 +337,42 @@ def read_system_settings_snapshot() -> dict[str, Any]:
     except Exception:
         pass
 
+    # Network — use alice_hardware_body.wifi() which is Tahoe-aware
     net_ssid = "Unknown SSID"
     net_ip = "Unknown IP"
     wa_bridge_live = False
     try:
-        import subprocess
-        # Primary: networksetup (works on most macOS)
-        res_ssid = subprocess.run(["networksetup", "-getairportnetwork", "en0"], capture_output=True, text=True, timeout=1)
-        if "Current Wi-Fi Network:" in res_ssid.stdout:
-            net_ssid = res_ssid.stdout.split(":")[-1].strip()
-        # Fallback: system_profiler (macOS Tahoe / newer)
-        if net_ssid == "Unknown SSID" or "not associated" in res_ssid.stdout.lower():
-            res_ap = subprocess.run(["system_profiler", "SPAirPortDataType"], capture_output=True, text=True, timeout=3)
-            lines = res_ap.stdout.splitlines()
-            for i, line in enumerate(lines):
-                if "Current Network Information:" in line and i + 1 < len(lines):
-                    candidate = lines[i + 1].strip().rstrip(":")
-                    if candidate:
-                        net_ssid = candidate
-                    break
-
-        res_ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True, timeout=1)
-        if res_ip.stdout.strip():
-            net_ip = res_ip.stdout.strip()
+        from System.alice_hardware_body import wifi as _hw_wifi, network as _hw_net
+        _wf = _hw_wifi()
+        if _wf.get("associated") and _wf.get("ssid"):
+            net_ssid = _wf["ssid"]
+        elif _wf.get("powered_on") is False:
+            net_ssid = "Wi-Fi Off"
+        else:
+            net_ssid = "Not Associated"
+        _nf = _hw_net()
+        if _nf.get("ipv4"):
+            net_ip = _nf["ipv4"]
+        else:
+            try:
+                res_ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True, timeout=1)
+                if res_ip.stdout.strip():
+                    net_ip = res_ip.stdout.strip()
+            except Exception:
+                pass
     except Exception:
-        pass
+        try:
+            res_ssid = subprocess.run(["networksetup", "-getairportnetwork", "en0"], capture_output=True, text=True, timeout=1)
+            if "Current Wi-Fi Network:" in res_ssid.stdout:
+                net_ssid = res_ssid.stdout.split(":")[-1].strip()
+        except Exception:
+            pass
+        try:
+            res_ip = subprocess.run(["ipconfig", "getifaddr", "en0"], capture_output=True, text=True, timeout=1)
+            if res_ip.stdout.strip():
+                net_ip = res_ip.stdout.strip()
+        except Exception:
+            pass
 
     # WhatsApp Bridge status — check if node bridge.js is running
     try:
