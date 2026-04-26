@@ -48,12 +48,27 @@ sifta_session_log/
 # Scratch / large archives
 scratch.py
 *.zip
+*.gguf
+Archive/Ledger_Rotation/
+Archive/State_Archives/
+Archive/COLD_STORAGE/
+Archive/ollama_validation/
+.sifta_state/*.jsonl.*
 .sifta_state/*.pre_smoke_cleanup_backup
 .sifta_state/iris_frames/
 .sifta_state/acoustic_fields/
 .sifta_state/archive/
+.sifta_state/castle/
+.sifta_state/cleanup_manifests/
+.sifta_state/m1_recovered/
+.sifta_state/release_gates/
 .sifta_state/quarantine/
 .sifta_state/_ssp_smoke/
+.sifta_state/wallet_attic/
+.sifta_state/warp9_spool/
+.sifta_state/warp9_sync.err
+.sifta_state/sifta_gps_sensor
+.sifta_state/gps_src.swift
 
 # Migration artifacts
 .sifta_state/*_MIGRATED.json
@@ -102,12 +117,15 @@ docs/wormhole_*
 # ── Dev/test noise ────────────────────────────────────────────────────────────
 test_environment/benchmark_100/
 test_environment/requests_broken/
+Archive/test_environment/requests_broken/
 benchmark_results.py
 cron_backup.txt
 static/
 
 # ── WhatsApp Bridge runtime ───────────────────────────────────────────────────
 whatsapp_bridge/whatsapp_session/
+Network/whatsapp_bridge/whatsapp_session/
+Network/whatsapp_bridge/whatsapp_session.bad_prekey.*/
 whatsapp_bridge/node_modules/
 wormhole.log
 
@@ -141,12 +159,26 @@ stigauth.txt
 scratch
 scratch_*.py
 old_*.py
+AG31VANGUARD.jpg
+append_*.py
+clean_ast.py
+finish_*.py
+fix_*.py
+full_reconstruct.py
+make_noop.py
+orig_*.py
+patch_*.py
+refactor.py
+run_cursor_jobs.py
+v2_evaluator.py
 *.patch
 log_alice.patch
 log_desktop.patch
 test_ui_events.py
 swarm_integrity_report.txt
 implementation_plan.md
+surgery/qwen_test/
+surgery/alice_phc_cure/receipts/
 
 # ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
 .clinerules
