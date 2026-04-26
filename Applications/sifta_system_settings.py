@@ -537,24 +537,67 @@ class SystemSettingsWidget(SiftaBaseWidget):
         return page
 
     def _scan_face_for_genesis(self) -> None:
-        """Use the Mac camera to capture the owner's face and run the Genesis Ceremony."""
-        import os
+        """Use the Mac camera to capture the owner's face and run the Genesis Ceremony.
+        
+        Alice hunts for cameras like a predator:
+        1. Scans camera indices 0-4
+        2. Prefers the Mac built-in camera (typically highest native resolution)
+        3. Skips cameras that fail to open or return blank frames
+        4. Locks onto the first working source autonomously
+        """
         import cv2
 
-        self.scan_face_btn.setText("\u23f3 Opening camera\u2026")
+        self.scan_face_btn.setText("\u23f3 Scanning cameras\u2026")
         self.scan_face_btn.setEnabled(False)
+        QApplication.processEvents()
+
+        # Hunt for the best camera
+        best_cap = None
+        best_idx = -1
+        best_w = 0
+        candidates = []
+
+        for idx in range(5):
+            self.scan_face_btn.setText(f"\u23f3 Probing camera {idx}\u2026")
+            QApplication.processEvents()
+            try:
+                cap = cv2.VideoCapture(idx)
+                if not cap.isOpened():
+                    continue
+                # Read a test frame to verify it actually works
+                ret, test_frame = cap.read()
+                if not ret or test_frame is None:
+                    cap.release()
+                    continue
+                w = test_frame.shape[1]
+                candidates.append((idx, w))
+                cap.release()
+            except Exception:
+                continue
+
+        if not candidates:
+            self.scan_face_btn.setText("\u274c No cameras found")
+            self.scan_face_btn.setEnabled(True)
+            return
+
+        # Prefer the widest resolution (Mac built-in is typically 1920px,
+        # iPhone Continuity Camera is often 1280px or lower)
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        best_idx = candidates[0][0]
+
+        self.scan_face_btn.setText(f"\u23f3 Locked on camera {best_idx} ({candidates[0][1]}px)\u2026")
         QApplication.processEvents()
 
         cap = None
         try:
-            cap = cv2.VideoCapture(0)
+            cap = cv2.VideoCapture(best_idx)
             if not cap.isOpened():
-                self.scan_face_btn.setText("\u274c Camera unavailable")
+                self.scan_face_btn.setText("\u274c Camera lock failed")
                 self.scan_face_btn.setEnabled(True)
                 return
 
-            # Wait for camera to warm up, then grab a frame
-            for _ in range(15):
+            # Warm up the sensor
+            for _ in range(20):
                 cap.read()
 
             ret, frame = cap.read()
@@ -590,7 +633,6 @@ class SystemSettingsWidget(SiftaBaseWidget):
                     "border: 1px solid rgb(40, 100, 60); border-radius: 8px; font-size: 14px; font-weight: bold; } "
                     "QPushButton:hover { background: rgb(30, 80, 50); }"
                 )
-                # Refresh to show the new data
                 self.refresh()
             except Exception as e:
                 self.scan_face_btn.setText(f"\u274c Genesis error: {str(e)[:40]}")
