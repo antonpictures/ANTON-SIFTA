@@ -22,7 +22,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -288,11 +288,32 @@ def read_system_settings_snapshot() -> dict[str, Any]:
     iris_mb = _dir_mb(STATE / "iris_frames")
 
     # Add identity and network proxies (for now using defaults/placeholders if modules are un-init)
+    genesis_data = {"ok": False, "owner_name": "<unclaimed>", "status": "MISSING", "anchor": "N/A", "sig": "N/A", "generation": 0, "photo_present": False, "photo_path": "", "ai_display_name": "Alice"}
     try:
-        from System.owner_genesis import is_genesis_complete
-        genesis_ok = is_genesis_complete()
+        from System.owner_genesis import verify_genesis, OWNER_DIR
+        v = verify_genesis()
+        genesis_data["ok"] = v.get("exists", False) and v.get("valid", False) and v.get("status") == "ACTIVE"
+        genesis_data["owner_name"] = v.get("owner_name", "<unclaimed>") or "<unclaimed>"
+        genesis_data["status"] = v.get("status", "MISSING")
+        genesis_data["generation"] = v.get("generation", 0)
+        genesis_data["ai_display_name"] = v.get("ai_display_name", "Alice")
+        genesis_data["photo_present"] = v.get("photo_present", False)
+        # Read anchor and sig from the raw scar
+        import json as _json
+        _gf = STATE / "owner_genesis.json"
+        if _gf.exists():
+            _scar = _json.loads(_gf.read_text())
+            genesis_data["anchor"] = _scar.get("genesis_anchor", "N/A")[:16] + "…"
+            genesis_data["sig"] = _scar.get("sig", "N/A")[:16] + "…"
+        # Find photo path
+        for ext in [".jpg", ".jpeg", ".png", ".heic", ".webp"]:
+            p = OWNER_DIR / f"genesis_photo{ext}"
+            if p.exists():
+                genesis_data["photo_path"] = str(p)
+                break
     except Exception:
-        genesis_ok = False
+        pass
+    genesis_ok = genesis_data["ok"]
 
     try:
         from System.swarm_kernel_identity import owner_silicon
@@ -357,6 +378,7 @@ def read_system_settings_snapshot() -> dict[str, Any]:
         "hw_chip": hw_chip,
         "hw_memory": hw_memory,
         "hw_os": hw_os,
+        "genesis": genesis_data,
         "score": score,
         "grade": "HEALTHY" if score >= 80 else "NOMINAL" if score >= 60 else "DEGRADING" if score >= 40 else "CRITICAL",
         "dimensions": dimensions,
@@ -472,15 +494,33 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
     def _identity_page(self) -> QWidget:
         page, root = self._page("Identity")
-        self.id_genesis = MetricCard("Owner Genesis", "--")
-        self.id_serial = MetricCard("Silicon Hardware", "--")
+
+        # Owner photo thumbnail
+        self.id_photo = QLabel()
+        self.id_photo.setFixedSize(120, 120)
+        self.id_photo.setStyleSheet(
+            "background: rgb(20, 24, 36); border: 2px solid rgb(60, 200, 160); "
+            "border-radius: 60px;"
+        )
+        self.id_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.id_photo.setText("No Photo")
+        root.addWidget(self.id_photo, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.id_owner = MetricCard("Owner", "--")
+        self.id_genesis = MetricCard("Genesis Status", "--")
         self.id_spec = MetricCard("Machine Spec", "--")
         self.id_os = MetricCard("Operating System", "--")
+        self.id_serial = MetricCard("Silicon Hardware", "--")
+        self.id_anchor = MetricCard("Genesis Anchor", "--")
+        self.id_sig = MetricCard("Signature", "--")
         self.id_digest = MetricCard("Electric Field Digest", "--")
+        root.addWidget(self.id_owner)
         root.addWidget(self.id_genesis)
         root.addWidget(self.id_spec)
         root.addWidget(self.id_os)
         root.addWidget(self.id_serial)
+        root.addWidget(self.id_anchor)
+        root.addWidget(self.id_sig)
         root.addWidget(self.id_digest)
         root.addStretch()
         return page
@@ -806,10 +846,27 @@ class SystemSettingsWidget(SiftaBaseWidget):
         snap = read_system_settings_snapshot()
 
         # Identity
-        self.id_genesis.set_metric("Completed" if snap["genesis_ok"] else "Pending", "Initial provisioning state")
+        gen = snap.get("genesis", {})
+        # Owner photo
+        photo_path = gen.get("photo_path", "")
+        if photo_path:
+            pix = QPixmap(photo_path)
+            if not pix.isNull():
+                pix = pix.scaled(120, 120, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+                self.id_photo.setPixmap(pix)
+                self.id_photo.setStyleSheet(
+                    "background: rgb(20, 24, 36); border: 2px solid rgb(60, 200, 160); "
+                    "border-radius: 60px;"
+                )
+        else:
+            self.id_photo.setText("No Photo")
+        self.id_owner.set_metric(gen.get("owner_name", "<unclaimed>"), f"Generation {gen.get('generation', 0)} · AI: {gen.get('ai_display_name', 'Alice')}")
+        self.id_genesis.set_metric(gen.get("status", "MISSING"), "Cryptographic Genesis Ceremony")
         self.id_spec.set_metric(f"{snap.get('hw_chip', 'Unknown')} / {snap.get('hw_memory', 'Unknown')}", "Physical Machine Spec")
         self.id_os.set_metric(snap.get("hw_os", "Unknown"), "Host Environment")
         self.id_serial.set_metric(snap["hw_serial"], "Tied to specific Apple Metal")
+        self.id_anchor.set_metric(gen.get("anchor", "N/A"), "SHA-256(photo_hash + silicon_serial)")
+        self.id_sig.set_metric(gen.get("sig", "N/A"), "Ed25519 hardware signature")
         self.id_digest.set_metric(snap["digest"], "Dynamic Electric Field signature")
 
         # Network
