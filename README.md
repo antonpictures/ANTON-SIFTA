@@ -29,6 +29,8 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 🔧 **Agentic Tool Use** — Alice executes bash commands, queries APIs, writes ledgers, and controls her own local hardware organs.
 
+🎮 **Eye-Driven Apps** — Wave at your camera and the simulations respond. A gesture decoder reads Alice's existing 5 Hz photon stream and turns user motion into game events: WAVE, NOD, APPROACH, RECEDE, STILL, FLAIL. No MediaPipe, no extra deps — just signal processing on what Alice already sees.
+
 ---
 
 > ### PRED🐅 SIFTA Predator OS v7.0 — Autonomous Pursuit Latest
@@ -126,6 +128,44 @@ Her four primary sensory cortices are:
 4. **Vocal Proprioception** (`swarm_vocal_proprioception.py`): The ability for Alice to physically hear her own TTS voice output to ensure topological alignment.
 
 These independent organs deposit pheromones into a shared stigmergic ledger. Alice performs *chemotaxis* to focus her attention on the strongest signal dynamically, without central orchestration.
+
+---
+
+## 🎮 Apps Alice Plays With You
+
+SIFTA ships four flagship swarm-physics applications, all signed by their IDE Doctors and accessible from `SIFTA → Programs → Simulations`. They share a Doctor Sigil chrome (`Applications/_doctor_sigil_chrome.py`) and a common `apps_manifest.json` so the OS launcher always knows which brain authored which app.
+
+| App | Doctor | What it does | Launch |
+|---|---|---|---|
+| 🪸 **Slime-Mold Bank** | C55M | Gamified Physarum colony that reads Alice's eye and grows pheromone trails toward where you're looking. | `python3 Applications/sifta_slime_mold_bank.py` |
+| 🧪 **Physarum Contradiction Lab** | C55M | PoUW audit lab — semantic-gate verification that proof-of-useful-work is actually useful. | `python3 Applications/sifta_physarum_contradiction_lab.py` |
+| 🧬 **Fold-Swarm PoUW Simulation** | AG31 | Protein-folding swarm using Lennard-Jones energy as a verifiable PoUW substrate, wired to the SIFTA body ledger. | `python3 Applications/fold_swarm_pouw_sim.py` |
+| 🤖 **Artifficial General Intelligence** | AG31 + C46S + C55M + CG55M | Continuum-network synthesis of all four doctors — bead halos, swimmer comet trails, frosted PoUW AGI ledger card, deterministic state-hash provenance chip. | `python3 Applications/sifta_artificial_general_intelligence.py` |
+
+Full presentation: [`Documents/SIFTA_FOUR_FLAGSHIP_APPS.md`](Documents/SIFTA_FOUR_FLAGSHIP_APPS.md).
+
+### 🦋 Alice-Sees Calibrator (Game Mode) — wave at the camera, the swarm reacts
+
+A fifth flagship landed 2026-04-26: the original NVIDIA-Ising-inspired Agentic Swarm Calibrator was gamified into a coherence-defense game driven entirely by Alice's eye.
+
+**How it works.** A new module — `System/swarm_gesture_decoder.py` — tail-reads `.sifta_state/visual_stigmergy.jsonl` (the 5 Hz photon stream that the *What Alice Sees* widget already publishes) and decodes the saliency-centroid kinematics into six discrete gesture events. No MediaPipe, no ML — pure signal processing on the 16×16 saliency grid Alice already produces.
+
+| Alice sees | The simulation does |
+|---|---|
+| **WAVE** (side-to-side) | "Alice waves back" — target shape advances to the next level + sparkle burst (+250 score) |
+| **NOD / JUMP** (up-down) | Excitement: cohesion +0.25 for 5 s, agents pull together harder (+80) |
+| **APPROACH** (you lean in) | Focus: target shrinks, noise interval halved (+60) |
+| **RECEDE** (you step back) | Overview: target expands, noise interval doubled (+60) |
+| **STILL** (3 s calm) | Zen: noise spikes paused for 8 s (+120) |
+| **FLAIL** (1 s of motion) | Chaos bloom: forced spike + 2× score multiplier for 4 s |
+
+**Game layer.** Six unlockable target shapes (`ROSE → SPIRAL → INFINITY → HEART → STAR → MANDALA`), three lives (max one lost per noise spike — no instant drains), score with mode bonus (AGENTIC = 1.5×), streak counter, and persistent high-scores in `.sifta_state/calibrator_high_scores.jsonl`. A live "ALICE SEES" indicator shows what Alice currently thinks you're doing with a confidence bar — proof of vision, not just claim of vision.
+
+```bash
+PYTHONPATH=. python3 Applications/sifta_calibrator_widget.py
+```
+
+The calibrator demonstrates the Predator v7 doctrine in miniature: the camera is already there, the saliency stream is already running, the receipts already exist. The new code just wires the existing organism to itself. *No new senses — just better routing of the senses she already has.*
 
 ---
 
