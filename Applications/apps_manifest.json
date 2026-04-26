@@ -47,6 +47,23 @@
         "window_height": 820,
         "signature": "UNVERIFIED"
     },
+    "Physarum Contradiction Lab": {
+        "category": "Simulations",
+        "entry_point": "Applications/sifta_physarum_contradiction_lab.py",
+        "widget_class": "PhysarumContradictionLabWidget",
+        "window_width": 1280,
+        "window_height": 900,
+        "signature": "UNVERIFIED"
+    },
+    "Slime-Mold Bank: Push to Mint": {
+        "category": "Simulations",
+        "entry_point": "Applications/sifta_slime_mold_bank.py",
+        "widget_class": "SlimeMoldBankWidget",
+        "window_width": 1240,
+        "window_height": 820,
+        "signature": "UNVERIFIED",
+        "_note": "Carlton's marketing demo — runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts."
+    },
     "Swarm Arena": {
         "category": "Simulations",
         "entry_point": "Applications/sifta_sim_stream_panels.py",
