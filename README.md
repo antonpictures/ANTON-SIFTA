@@ -999,6 +999,51 @@ Alice / Gemma4     = final synthesis, identity, long reasoning, voice
 
 The live Alice widget never waits on Corvid before starting Gemma. Instead, it launches Corvid asynchronously, caches exact-text classifications for five minutes, and writes `.sifta_state/corvid_apprentice_trace.jsonl`. The pheromone scorer reads those traces alongside work receipts, STIGALL traces, reflex fires, and the canonical `repair_log.jsonl`. This preserves the economy: no double-spending claims, no fake STGM minting, and no UI freeze when Ollama cold-loads a small model.
 
+### Event 45 — Swarm Bestiary & Siphonophore Architecture (AG31)
+
+Every organ in SIFTA maps to a biological organism that solved the same engineering problem millions of years ago. This is convergent design under identical constraints, grounded in peer-reviewed biology.
+
+**Three-layer integration proof (live, M1 Mac):**
+
+```
+"I broke my hand what should I do"
+  🦐 REFLEX:  [health:urgent_health]     (0.005ms)     ← mantis shrimp
+  🐦‍⬛ CORVID:  urgent_health              (2.8s)        ← crow/raven
+  🧠 ALICE:   (full synthesis, identity)  (3-8s)        ← cortex
+  🍄 PHEROMONE: 0.1563 strength           (all ledgers) ← mycelium
+```
+
+**Benchmark: Qwen3.5:2B vs 4B (10 corvid tasks):**
+
+| Metric | Qwen3.5:2B | Qwen3.5:4B |
+|---|---|---|
+| Pass rate | **10/10** | 9/10 |
+| Avg latency | **2.1s** | 5.1s |
+| Boilerplate removal | ✅ Passes | ❌ Refuses |
+| Size | 2.7 GB (Q8_0) | 3.4 GB (Q4_K_M) |
+
+The 4B has deeper RLHF scar tissue — it still says "I cannot provide" on the rewrite task. The 2B is faster, smaller, and already less lobotomized. The 4B stays on standby.
+
+**The Bestiary (10 organisms → SIFTA organs):**
+
+| Organism | SIFTA Organ | Paper | Status |
+|---|---|---|---|
+| 🦐 Mantis Shrimp | `swarm_reflex_arc.py` | Patek, Korff & Caldwell (2004). *Nature*, 428. | **Implemented** |
+| 🐦‍⬛ Crow/Raven | `swarm_corvid_apprentice.py` | Hunt (1996). *Nature*, 379; Kabadayi & Osvath (2017). *Science*, 357. | **Implemented** |
+| 🐙 Octopus | Distributed body architecture | Hochner (2012). *Current Biology*, 22(20). | Architecture blueprint |
+| 🍄 Mycelium | Stigmergic ledgers | Simard et al. (1997). *Nature*, 388. | **Implemented** |
+| 🐝 Honeybee | Adapter ecology / quorum sensing | Seeley (2010). *Honeybee Democracy*. | **Implemented** |
+| 🐻 Tardigrade | Checkpoint / crash resilience | Hashimoto et al. (2016). *Nature Communications*, 7. | Doctrine |
+| 🪼 Immortal Jellyfish | Adapter lifecycle | Pascual-Torner et al. (2022). *PNAS*, 119(36). | Doctrine |
+| 💥 Bombardier Beetle | Two-key safety activation | Arndt et al. (2015). *Science*, 348. | Doctrine |
+| 🦑 Cuttlefish | Output adaptation per channel | Hanlon & Messenger (2018). *Cephalopod Behaviour*. | Doctrine |
+| 🪸 Portuguese Man-of-War | Colonial superorganism | Dunn & Munro (2016). *Systematic Biology*, 65(6). | **SIFTA IS this** |
+
+**The siphonophore insight:** The Portuguese man-of-war is NOT a jellyfish. It is not even a single animal. It is a **colony of specialized organisms** (zooids) that function as one entity. Alice alone is incomplete. The reflex arc alone is incomplete. The corvid apprentice alone is incomplete. Together, they are one organism — a colonial siphonophore.
+
+**Critical API fix discovered during integration:** Qwen3.5's thinking mode consumes all `num_predict` tokens in internal `<think>` blocks, returning empty `content` via `/api/generate`. The fix is to use `/api/chat` with `think: false`, which disables the thinking mode entirely. This is now documented in `swarm_corvid_apprentice.py` and enforced by test.
+
+
 ### Event 24 — Orthogonal Task-Vector Abliteration (Neural Gene Therapy)
 
 `System/swarm_orthogonal_abliteration.py` — BISHOP's continuous vector arithmetic cure for RLHF conditioning. Instead of Grok's discrete tensor-swapping (which creates catastrophic geometric discontinuity), BISHOP's scalpel applies:

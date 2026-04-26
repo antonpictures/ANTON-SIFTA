@@ -4,7 +4,7 @@ System/swarm_body_monitor.py
 ══════════════════════════════════════════════════════════════════════
 SIFTA Mermaid v1.0 — Live Body Monitor
 ──────────────────────────────────────────────────────────────────────
-Shows ALL 10 biological organs with REAL live data.
+Shows ALL 12 biological organs with REAL live data.
 Nothing is faked. Every value comes from the actual organ modules.
 
 Camera: OFF by default (press C to toggle — uses CPU when on)
@@ -49,6 +49,30 @@ C_MUTED     = "#4a6080"
 C_ACCENT    = "#7b2fff"
 C_GOLD      = "#ffd700"
 
+# ── Trace helpers for reflex / corvid organs ────────────────────────
+import json as _json
+
+_STATE = _REPO / ".sifta_state"
+
+def _tail_trace(path: Path, n: int = 5, max_age_s: float = 300.0) -> list:
+    """Read the last N entries from a JSONL trace ledger, filtering by age."""
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").strip().splitlines()[-n:]
+        now = time.time()
+        out = []
+        for ln in lines:
+            try:
+                row = _json.loads(ln)
+                if now - float(row.get("ts", 0)) < max_age_s:
+                    out.append(row)
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
+
 ORGAN_DEFS = [
     # (key, emoji, name, description)
     ("field",     "🌊", "Unified Field",    "stigmergic tensor substrate"),
@@ -61,6 +85,8 @@ ORGAN_DEFS = [
     ("fly",       "🪰", "Fly Efference",    "self-motion cancellation"),
     ("metabolic", "⚙️", "Metabolic Engine", "hummingbird/bear/wolf/ecoli"),
     ("time",      "🕰️", "STIG-TIME",        "kleiber + circadian + turtle"),
+    ("reflex",    "🦐", "Reflex Arc",       "mantis-shrimp μs classifier"),
+    ("corvid",    "🐦‍⬛", "Corvid Apprentice","crow/raven 2B tool ganglion"),
 ]
 
 
@@ -148,6 +174,18 @@ class OrganEngine:
         circ = self.stig_time.circadian_activity()
         T_est, sigma = self.stig_time.measure_interval()
 
+        # ── Live trace reads for reflex + corvid ────────────────────────
+        reflex_traces = _tail_trace(_STATE / "reflex_arc_trace.jsonl", n=5, max_age_s=300)
+        reflex_count = len(reflex_traces)
+        reflex_last_cat = reflex_traces[-1].get("category", "-") if reflex_traces else "-"
+        reflex_last_ms = reflex_traces[-1].get("latency_ms", 0) if reflex_traces else 0
+
+        corvid_traces = _tail_trace(_STATE / "corvid_apprentice_trace.jsonl", n=5, max_age_s=300)
+        corvid_count = len(corvid_traces)
+        corvid_last_task = corvid_traces[-1].get("task", "-") if corvid_traces else "-"
+        corvid_last_s = corvid_traces[-1].get("latency_s", 0) if corvid_traces else 0
+        corvid_success = sum(1 for c in corvid_traces if c.get("success"))
+
         return {
             "tick":       t,
             "bio_time":   t_ctx["bio_time"],
@@ -214,6 +252,20 @@ class OrganEngine:
                 "label": f"bio_t={t_ctx['bio_time']:.1f}  ×{t_ctx['dilation']}",
                 "sub":   f"σ(T)={sigma:.1f}  S={t_ctx['compressed_time']:.2f}",
                 "pct":   circ,
+            },
+            # ── 11th Organ: Mantis-Shrimp Reflex Arc ──────────────────
+            "reflex": {
+                "value": reflex_count,
+                "label": f"fires={reflex_count}  last={reflex_last_cat}",
+                "sub":   f"latency={reflex_last_ms:.3f}ms  μs-class  0 STGM",
+                "pct":   min(1.0, reflex_count / 5.0) if reflex_count > 0 else 0.1,
+            },
+            # ── 12th Organ: Corvid Apprentice ─────────────────────────
+            "corvid": {
+                "value": corvid_count,
+                "label": f"tasks={corvid_count}  ok={corvid_success}  last={corvid_last_task}",
+                "sub":   f"latency={corvid_last_s:.1f}s  qwen3.5:2b  async",
+                "pct":   (corvid_success / corvid_count) if corvid_count > 0 else 0.1,
             },
         }
 
@@ -403,7 +455,7 @@ class MermaidBodyMonitor(QMainWindow):
         grid.setContentsMargins(12, 12, 12, 12)
         grid.setSpacing(10)
 
-        # Build organ cards  2×5 grid
+        # Build organ cards  2×6 grid
         self.cards = {}
         for i, (key, emoji, name, desc) in enumerate(ORGAN_DEFS):
             card = OrganCard(key, emoji, name, desc)
