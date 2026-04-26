@@ -14,7 +14,14 @@ Author: Claude Sonnet 4.6 (C46S) — AG31 Assessment Validator
 For the Swarm. 🐜⚡
 """
 
-import sys, math, time, hashlib, json, random, collections
+import sys, math, time, hashlib, json, random, collections, os
+from pathlib import Path
+_REPO = Path(__file__).resolve().parent.parent
+if str(_REPO / "System") not in sys.path:
+    sys.path.insert(0, str(_REPO / "System"))
+if str(_REPO / "Kernel") not in sys.path:
+    sys.path.insert(0, str(_REPO / "Kernel"))
+
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QHBoxLayout, QLabel, QSplitter, QFrame)
@@ -248,6 +255,33 @@ class ReceiptChain:
         }
         self.chain.append(receipt)
         self.spent.add(task_hash)
+
+        # ── CANONICAL SIFTA LEDGER INTEGRATION ──
+        try:
+            from System.proof_of_useful_work import issue_work_receipt
+            from Kernel.body_state import load_agent_state, save_agent_state
+            
+            agent_id = os.environ.get("SIFTA_NODE_AGENT", "LOCAL_PREDATOR")
+            agent_state = load_agent_state(agent_id) or {"id": agent_id}
+            
+            if swimmer_id == "ARCH":
+                work_type = "DEMAND_RESOLVED" 
+                desc = f"Architect Pheromone Deposit at {result_hash} (lum proxy)"
+            else:
+                work_type = "PROTEIN_FOLDED"
+                desc = f"Fold-Swarm {swimmer_id} improved protein energy to {energy:.2f}"
+            
+            issue_work_receipt(
+                agent_state=agent_state,
+                work_type=work_type,
+                description=desc,
+                territory="fold_swarm_simulation",
+                output_hash=task_hash
+            )
+            save_agent_state(agent_state)
+        except Exception as e:
+            print(f"[PoUW Integration Error] {e}")
+
         self.prev   = task_hash
         self.total += amount
         if len(self.chain) > 40:
@@ -664,8 +698,9 @@ class SimCanvas(QWidget):
             rc = receipt_colors[k % len(receipt_colors)]
             col = QColor(rc.red(), rc.green(), rc.blue(), age_alpha)
             p.setPen(QPen(col))
+            s_id = f"S{rec['swimmer']:02d}" if isinstance(rec['swimmer'], int) else str(rec['swimmer'])[:4]
             p.drawText(rx, ry + 26 + k * 14,
-                       f"S{rec['swimmer']:02d}  {rec['hash']}  +{rec['score']:.4f} Ξ")
+                       f"{s_id:<4}  {rec['hash']}  +{rec['score']:.4f} Ξ")
 
         # ── Swimmer energy bars ──────────────────────────────
         bx = W - 10
