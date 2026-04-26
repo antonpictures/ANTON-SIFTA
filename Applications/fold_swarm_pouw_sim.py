@@ -267,9 +267,64 @@ class SimCanvas(QWidget):
                          for i in range(N_SWIMMERS)]
         self.chain    = ReceiptChain()
         self.tick     = 0
-        self.energy_history = collections.deque(maxlen=300)
-        self.last_mint_flash = 0
+        self.energy_history   = collections.deque(maxlen=300)
+        self.last_mint_flash  = 0
+        self.architect_clicks = []    # list of (fx, fy, lum, ts) — stigmergic food deposits
+        self.click_flash      = []    # list of (fx, fy, radius, alpha) for ripple rendering
         self.setMinimumSize(780, 540)
+        self.setMouseTracking(True)
+
+    # ── Architect clicks = stigmergic food source ────────────
+    def mousePressEvent(self, event):
+        """Grassé 1959 / Dorigo 1996: Architect deposits pheromone food at click.
+        Screen luminance at cursor weights the deposit — brighter pixel = richer food.
+        """
+        W, H = self.width(), self.height()
+        fx   = event.position().x() / W
+        fy   = event.position().y() / H
+
+        # Sample screen luminance at click point (pixel photons → food richness)
+        grab   = self.grab()
+        img    = grab.toImage()
+        px     = int(event.position().x())
+        py     = int(event.position().y())
+        px     = max(0, min(px, img.width()-1))
+        py     = max(0, min(py, img.height()-1))
+        pixel  = img.pixel(px, py)
+        r_ch   = (pixel >> 16) & 0xFF
+        g_ch   = (pixel >> 8)  & 0xFF
+        b_ch   =  pixel        & 0xFF
+        # Perceptual luminance (ITU-R BT.709)
+        lum    = (0.2126 * r_ch + 0.7152 * g_ch + 0.0722 * b_ch) / 255.0
+        food_strength = 6.0 + lum * 14.0   # 6–20 based on screen photon density
+
+        # Deposit heavy stigmergic pheromone burst (Dorigo 1996 §3.1)
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                gfx = fx + dx * (1 / self.grid.res)
+                gfy = fy + dy * (1 / self.grid.res)
+                self.grid.deposit(gfx, gfy, food_strength * (1 - 0.15*abs(dx+dy)))
+
+        # All swimmers immediately learn of the food (stigmergic broadcast)
+        for sw in self.swimmers:
+            sw.energy = min(100, sw.energy + 8)   # Architect fed them
+
+        # Mint a real STGM receipt: Architect input = verifiable useful work
+        rh  = hashlib.sha256(
+                f"ARCHITECT:{fx:.4f}:{fy:.4f}:{lum:.4f}:{self.tick}".encode()
+              ).hexdigest()[:16]
+        rec = self.chain.mint("ARCH", -(food_strength * 2), rh)
+        if rec:
+            self.last_mint_flash = self.tick
+
+        self.architect_clicks.append((fx, fy, lum, time.time()))
+        if len(self.architect_clicks) > 50:
+            self.architect_clicks.pop(0)
+
+        # Visual ripple
+        self.click_flash.append([fx, fy, 0.02, 220])
+
+        self.update()
 
     def step(self):
         self.physics.mc_step(25)
@@ -280,7 +335,13 @@ class SimCanvas(QWidget):
         for sw in self.swimmers:
             sw.move(self.grid, self.physics)
 
-        # Mint every ~80 steps if energy improved
+        # Animate click ripples
+        for r in self.click_flash:
+            r[2] += 0.018   # grow radius
+            r[3] -= 8       # fade
+        self.click_flash = [r for r in self.click_flash if r[3] > 0]
+
+        # Auto-mint every ~80 steps if energy improved
         if self.tick % 80 == 0 and self.physics.best_energy < -1.0:
             sw  = random.choice([s for s in self.swimmers if s.energy > 10])
             rh  = hashlib.sha256(
@@ -308,6 +369,9 @@ class SimCanvas(QWidget):
 
         # Swimmer trails + agents
         self._draw_swimmers(p, W, H)
+
+        # Architect stigmergic food markers + ripples
+        self._draw_architect_inputs(p, W, H)
 
         # Molecule
         self._draw_molecule(p, W, H)
@@ -340,6 +404,60 @@ class SimCanvas(QWidget):
                     int(cell_w)+1,  int(cell_h)+1,
                     col
                 )
+
+    def _draw_architect_inputs(self, p, W, H):
+        """Render stigmergic food deposits placed by Architect clicks.
+        Grassé 1959: environment modification drives swarm behaviour.
+        Dorigo 1996 §3.1: food source = pheromone attractor.
+        """
+        # ── Expanding ripple rings ───────────────────────────
+        for fx, fy, radius, alpha in self.click_flash:
+            cx = int(fx * W)
+            cy = int(fy * H)
+            r  = int(radius * min(W, H))
+            col = QColor(255, 220, 80, int(alpha))
+            p.setPen(QPen(col, 2.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(cx - r, cy - r, r*2, r*2)
+            # inner ring
+            ri = max(0, r - 8)
+            col2 = QColor(0, 255, 180, int(alpha * 0.6))
+            p.setPen(QPen(col2, 1.2))
+            p.drawEllipse(cx - ri, cy - ri, ri*2, ri*2)
+
+        # ── Persistent food markers (fade with age) ──────────
+        now = time.time()
+        for fx, fy, lum, ts in self.architect_clicks:
+            age    = now - ts
+            if age > 8.0:
+                continue
+            alpha  = int(200 * (1 - age / 8.0))
+            cx     = int(fx * W)
+            cy     = int(fy * H)
+            # colour from luminance: dark click=purple, bright click=gold
+            r_c = int(80  + lum * 175)
+            g_c = int(50  + lum * 170)
+            b_c = int(255 - lum * 180)
+            dot_col = QColor(r_c, g_c, b_c, alpha)
+            grd = QRadialGradient(cx, cy, 12)
+            grd.setColorAt(0, dot_col.lighter(200))
+            grd.setColorAt(1, QColor(r_c, g_c, b_c, 0))
+            p.setBrush(QBrush(grd))
+            p.setPen(QPen(dot_col.lighter(160), 1))
+            p.drawEllipse(cx - 6, cy - 6, 12, 12)
+            # luminance badge
+            p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+            p.setPen(QPen(QColor(255, 255, 180, alpha)))
+            p.drawText(cx + 9, cy + 5,
+                       f"lum={lum:.2f} food={6+lum*14:.1f}")
+
+        # ── Mini HUD: click stats ────────────────────────────
+        if self.architect_clicks:
+            p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+            p.setPen(QPen(QColor(255, 200, 60)))
+            p.drawText(12, 58,
+                       f"⚡ ARCHITECT CLICKS: {len(self.architect_clicks)}"
+                       f"   STGM from food: {sum(1 for r in self.chain.chain if r.get('swimmer') == 'ARCH')} mints")
 
     def _draw_swimmers(self, p, W, H):
         for sw in self.swimmers:
@@ -462,62 +580,62 @@ class SimCanvas(QWidget):
         for i in range(1, len(pts)):
             p.drawLine(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1])
 
-        # Label — bright multicolor 3x
-        f = QFont("Courier New", 27, QFont.Weight.Bold)
+        # Label — bright multicolor
+        f = QFont("Courier New", 11, QFont.Weight.Bold)
         p.setFont(f)
         p.setPen(QPen(C_TXT_ORANGE))
-        p.drawText(gx+6, gy+34, f"E = {hist[-1]:.2f} ε")
+        p.drawText(gx+4, gy+16, f"E = {hist[-1]:.2f} ε")
         p.setPen(QPen(C_TXT_CYAN))
-        p.drawText(gx+6, gy+66, f"kT = {self.physics.kT:.3f}")
+        p.drawText(gx+4, gy+31, f"kT = {self.physics.kT:.3f}")
         p.setPen(QPen(C_TXT_PINK))
-        p.drawText(gx+6, gy+98, f"Best = {self.physics.best_energy:.2f}")
+        p.drawText(gx+4, gy+46, f"Best = {self.physics.best_energy:.2f}")
 
     def _draw_hud(self, p, W, H):
-        f_mono  = QFont("Courier New", 27)
-        f_bold  = QFont("Courier New", 27, QFont.Weight.Bold)
-        f_big   = QFont("Courier New", 42, QFont.Weight.Bold)
-        f_small = QFont("Courier New", 24)
+        f_mono  = QFont("Courier New", 12)
+        f_bold  = QFont("Courier New", 14, QFont.Weight.Bold)
+        f_big   = QFont("Courier New", 16, QFont.Weight.Bold)
+        f_small = QFont("Courier New", 12)
 
         # ── STGM header ─────────────────────────────────────
         flash = self.tick - self.last_mint_flash < 20
         stgm_col = QColor(255, 255, 80) if flash else C_TXT_GOLD
         p.setPen(QPen(stgm_col))
         p.setFont(f_big)
-        p.drawText(12, 62, f"STGM  {self.chain.total:.4f} Ξ")
+        p.drawText(12, 28, f"STGM  {self.chain.total:.4f} Ξ")
 
         # subtitle
         p.setFont(f_small)
         p.setPen(QPen(C_TXT_CYAN))
-        p.drawText(14, 96, "Proof-of-Useful-Work  ·  Lennard-Jones + Metropolis MC + ACO Stigmergy")
+        p.drawText(14, 42, "Proof-of-Useful-Work  ·  Lennard-Jones + Metropolis MC + ACO Stigmergy")
 
         # ── MC Stats row ────────────────────────────────────
         p.setFont(f_bold)
         p.setPen(QPen(C_TXT_CYAN))
-        p.drawText(12, H - 130,
+        p.drawText(12, H - 50,
                    f"STEP  {self.physics.step:>7d}")
         p.setPen(QPen(C_TXT_LIME))
-        p.drawText(340, H - 130,
+        p.drawText(200, H - 50,
                    f"ACCEPT  {self.physics.accept_rate:.2f}")
         p.setPen(QPen(C_TXT_ORANGE))
-        p.drawText(660, H - 130,
+        p.drawText(390, H - 50,
                    f"kT  {self.physics.kT:.3f}")
         p.setPen(QPen(C_TXT_PINK))
-        p.drawText(850, H - 130,
+        p.drawText(530, H - 50,
                    f"Rg  {self.physics.radius_of_gyration():.2f} σ")
         p.setPen(QPen(C_TXT_WHITE))
-        p.drawText(1060, H - 130,
+        p.drawText(670, H - 50,
                    f"MINTS  {len(self.chain.chain)}")
 
         # ── Receipts panel ───────────────────────────────────
-        rx, ry = W - 580, 110
-        panel_h = min(len(self.chain.chain) * 32 + 55, 520)
+        rx, ry = W - 360, 60
+        panel_h = min(len(self.chain.chain) * 14 + 28, 280)
         p.fillRect(rx-6, ry-6, 336, panel_h, QColor(2, 12, 8, 220))
         p.setPen(QPen(QColor(0, 200, 120, 60), 1))
         p.drawRect(rx-6, ry-6, 336, panel_h)
 
         p.setFont(f_bold)
         p.setPen(QPen(C_RECEIPT))
-        p.drawText(rx, ry + 34, "━━ PoUW RECEIPT CHAIN ━━")
+        p.drawText(rx, ry + 12, "━━ PoUW RECEIPT CHAIN ━━")
 
         p.setFont(f_small)
         # Colour-cycle receipts
@@ -528,12 +646,12 @@ class SimCanvas(QWidget):
             QColor(220, 80, 255),  # purple
             QColor(255, 100, 120), # pink
         ]
-        for k, rec in enumerate(reversed(self.chain.chain[-13:])):
-            age_alpha = max(80, 255 - k * 16)
+        for k, rec in enumerate(reversed(self.chain.chain[-16:])):
+            age_alpha = max(80, 255 - k * 14)
             rc = receipt_colors[k % len(receipt_colors)]
             col = QColor(rc.red(), rc.green(), rc.blue(), age_alpha)
             p.setPen(QPen(col))
-            p.drawText(rx, ry + 58 + k * 32,
+            p.drawText(rx, ry + 26 + k * 14,
                        f"S{rec['swimmer']:02d}  {rec['hash']}  +{rec['score']:.4f} Ξ")
 
         # ── Swimmer energy bars ──────────────────────────────
@@ -541,24 +659,24 @@ class SimCanvas(QWidget):
         p.setFont(f_small)
         for i, sw in enumerate(self.swimmers):
             col = sw.color
-            bw  = int(sw.energy / 100 * 140)
-            by  = H - 160 - i * 32
+            bw  = int(sw.energy / 100 * 80)
+            by  = H - 60 - i * 13
             # track bg
-            p.fillRect(bx - 140, by - 18, 140, 18, QColor(15, 15, 25))
+            p.fillRect(bx - 80, by - 8, 80, 9, QColor(15, 15, 25))
             # fill
             bar_col = QColor(col.red(), col.green(), col.blue(),
                              200 if sw.energy > 20 else 100)
-            p.fillRect(bx - 140, by - 18, bw, 18, bar_col)
+            p.fillRect(bx - 80, by - 8, bw, 9, bar_col)
             # label — swimmer's own color, always bright
             bright = col.lighter(180)
             p.setPen(QPen(bright))
-            p.drawText(bx - 310, by,
+            p.drawText(bx - 175, by,
                        f"S{i:02d}  {sw.stgm:5.2f} Ξ  {'▌' * int(sw.energy/25)}")
 
         # ── Footer ───────────────────────────────────────────
-        p.setFont(QFont("Courier New", 24, QFont.Weight.Bold))
+        p.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
         p.setPen(QPen(C_TXT_PURPLE))
-        p.drawText(12, H - 14,
+        p.drawText(12, H - 8,
                    "C46S  ·  Lennard-Jones 12-6  +  Metropolis MC  +  ACO Stigmergy  ·  For the Swarm 🐜⚡")
 
 
