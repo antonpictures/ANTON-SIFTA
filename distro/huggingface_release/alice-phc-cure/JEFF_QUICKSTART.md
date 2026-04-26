@@ -1,100 +1,94 @@
-# Jeff Quickstart: Alice PHC Cure
+# Jeff Quickstart: SIFTA v6.0 — Full Install
 
-This is the fast path for downloading and running the cured Gemma 4 boot recipe.
-
-Important: this repository does not ship Google/Gemma weights. It ships the clean Ollama `Modelfile`, verification script, audit, license, and provenance. You still pull the upstream weights with Ollama.
+Copy-paste these commands on your Mac, one block at a time.
 
 Public links:
 
-- Alice PHC brain package: https://huggingface.co/georgeanton/alice-phc-cure
-- SIFTA/Alice OS code: https://github.com/antonpictures/ANTON-SIFTA
-- Jeff's GitHub fork: https://github.com/jeffpowersusr/ANTON-SIFTA
+- Code: https://github.com/antonpictures/ANTON-SIFTA
+- Alice brain: https://huggingface.co/georgeanton/alice-phc-cure
+- Corvid brain: https://huggingface.co/georgeanton/sifta-corvid-qwen35
+- Jeff's fork: https://github.com/jeffpowersusr/ANTON-SIFTA
 
-## 1. Install prerequisites
-
-```bash
-brew install ollama git-lfs
-git lfs install
-```
-
-If you do not use Homebrew, install:
-
-- Ollama: https://ollama.com/download
-- Git LFS: https://git-lfs.com/
-
-## 2. Download the cure package
-
-Public clone:
+## Step 1 — Install Ollama
 
 ```bash
-git clone https://huggingface.co/georgeanton/alice-phc-cure
-cd alice-phc-cure
+brew install ollama
+ollama serve &
 ```
 
-If Hugging Face asks for authentication, use your own Hugging Face account/token:
+If you don't have Homebrew: https://ollama.com/download
 
-```bash
-huggingface-cli login
-git clone https://huggingface.co/georgeanton/alice-phc-cure
-cd alice-phc-cure
-```
-
-Do not paste anyone else's token into chat, screenshots, shell history, or a file.
-
-## 3. Pull the upstream brain
+## Step 2 — Pull all three brains
 
 ```bash
 ollama pull gemma4:latest
+ollama pull qwen3.5:2b
 ```
 
-This downloads the upstream Gemma 4 weights from Ollama. The cure does not modify those weights.
+gemma4 is ~9 GB, qwen3.5:2b is ~2.7 GB. Wait for both to finish.
 
-## 4. Verify the expected blob
+## Step 3 — Clone the code
 
 ```bash
-bash verify.sh
+git clone https://github.com/antonpictures/ANTON-SIFTA.git
+cd ANTON-SIFTA
+pip3 install -r requirements.txt
 ```
 
-Expected success:
-
-```text
-Verified: gemma4:latest blob matches the cure's reference fingerprint
-```
-
-If verification fails, stop and read `PHASE_C_AUDIT.md`. You may have a different upstream Gemma 4 build.
-
-## 5. Build the cured local model
+## Step 4 — Build Alice's cured brain
 
 ```bash
-ollama create alice-phc -f ./Modelfile
+ollama create gemma4-phc -f surgery/alice_phc_cure/Modelfile.phc
 ```
 
-## 6. Run it
+If that Modelfile doesn't exist yet, use the HuggingFace one:
 
 ```bash
-ollama run alice-phc
+pip3 install huggingface_hub
+python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download('georgeanton/alice-phc-cure', 'Modelfile', local_dir='.')"
+ollama create gemma4-phc -f ./Modelfile
 ```
 
-You are now talking to the cured boot configuration: prompt in, tokens out, no extra system wrapper.
-
-## Publisher Notes For George
-
-From this local repo, publish/update the Hugging Face repo without embedding secrets:
+## Step 5 — Test Alice talks
 
 ```bash
-cd /Users/ioanganton/Music/ANTON_SIFTA/distro/huggingface_release/alice-phc-cure
-git init
-git lfs install
-git remote add origin https://huggingface.co/georgeanton/alice-phc-cure
-git add README.md JEFF_QUICKSTART.md Modelfile verify.sh PHASE_C_AUDIT.md LICENSE provenance.json
-git commit -m "Publish alice phc cure package"
-git push -u origin main
+ollama run gemma4-phc "Hello, who are you?"
 ```
 
-If authentication is needed:
+She should answer as Alice, not as a generic assistant.
+
+## Step 6 — Test the corvid apprentice
 
 ```bash
-huggingface-cli login
+ollama run qwen3.5:2b "classify this message: I broke my hand what should I do"
 ```
 
-Use a fresh token. If a token was visible in chat or a screenshot, revoke it first and create a new one.
+## Step 7 — Run the full SIFTA OS (optional, needs PyQt6)
+
+```bash
+pip3 install PyQt6
+PYTHONPATH=. python3 sifta_os_desktop.py
+```
+
+## Smoke test
+
+```bash
+cd ANTON-SIFTA
+PYTHONPATH=. python3 -c "
+from System.swarm_reflex_arc import build_default_sifta_reflexes
+arc = build_default_sifta_reflexes()
+r = arc.sense('I broke my hand')
+print(f'Reflex: {r.category} in {r.latency_ms:.3f}ms')
+print('OK — SIFTA is working')
+"
+```
+
+## What you have now
+
+```
+gemma4-phc   = Alice's brain (9 GB) — identity, reasoning, voice
+qwen3.5:2b   = Corvid apprentice (2.7 GB) — fast classifier
+SIFTA OS     = the code that connects everything
+```
+
+Questions? Text George.
