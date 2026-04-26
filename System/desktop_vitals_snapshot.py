@@ -51,7 +51,7 @@ def read_desktop_vitals(repo_root: Path) -> Mapping[str, Any]:
         iris_mb = _dir_mb(state / "iris_frames")
         mode = str(metabolic.get("mode", "UNKNOWN"))
         budget = float(metabolic.get("budget_multiplier", 0.0) or 0.0)
-        net = float(econ.get("net_stgm", 0.0) or 0.0)
+        net = float(econ.get("canonical_wallet_sum", econ.get("net_stgm", 0.0)) or 0.0)
         if score >= 60:
             color = "#9ece6a"
         elif score >= 40:

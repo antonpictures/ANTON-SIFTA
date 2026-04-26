@@ -142,7 +142,7 @@ Append to `.sifta_state/replay_eval_ledger.jsonl`:
   "ts": 1777005000.0,
   "adapter_id": "alice_dialogue_m5_v1",
   "adapter_sha256": "...",
-  "base_model": "Qwen/Qwen1.5-0.5B-Chat",
+  "base_model": "google/gemma-4",
   "k_candidates": 32,
   "perturbations_per_candidate": 5,
   "replay_score": 0.71,

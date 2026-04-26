@@ -53,14 +53,14 @@ def test_bridge_promote_path_satisfies_canonical_schema():
     row = bridge_foreign_replay_report(
         foreign,
         adapter_id="alice_epigenetic_adapter_v77",
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         now=1_777_700_010.0,
     )
     assert row["event_kind"] == "STIGMERGIC_REPLAY_EVAL"
     assert row["verdict"] == "PROMOTE"
     assert row["passed"] is True
     assert row["adapter_id"] == "alice_epigenetic_adapter_v77"
-    assert row["base_model"] == "Qwen/Qwen1.5-0.5B-Chat"
+    assert row["base_model"] == "google/gemma-4"
     assert row["replay_score"] == row["invariant_score"] == 0.72
     assert row["counter_score"] == 0.55
     assert row["margin"] == pytest.approx(0.17, abs=1e-6)
@@ -75,7 +75,7 @@ def test_bridge_quarantine_path_preserves_reason():
     row = bridge_foreign_replay_report(
         foreign,
         adapter_id="alice_v78",
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         now=1_777_700_010.0,
     )
     assert row["verdict"] == "QUARANTINE"
@@ -92,7 +92,7 @@ def test_bridge_does_not_overwrite_adapter_id_with_recipe_id():
     row = bridge_foreign_replay_report(
         foreign,
         adapter_id="alice_v79_real",
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         now=1_777_700_010.0,
     )
     assert row["adapter_id"] == "alice_v79_real"
@@ -121,7 +121,7 @@ def test_bridge_accepts_dict_input():
     row = bridge_foreign_replay_report(
         foreign_dict,
         adapter_id="alice_v80",
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         now=1_777_700_010.0,
     )
     assert row["verdict"] == "PROMOTE"
@@ -222,7 +222,7 @@ def test_evaluate_with_foreign_invariants_persists_canonical_row(tmp_path, monke
 
     row = evaluate_with_foreign_invariants(
         adapter_id="alice_e2e",
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         traces=traces,
         candidate=good,
         counter=bad,
@@ -257,7 +257,7 @@ def test_planner_consumes_bridged_row_to_quarantine(tmp_path):
         register_adapter_signal(AdapterSignal(
             adapter_id=aid,
             adapter_path=str(tmp_path / f"{aid}.bin"),
-            base_model="Qwen/Qwen1.5-0.5B-Chat",
+            base_model="google/gemma-4",
             homeworld="M5",
             task="bridge_test",
             conflict_group=group,
@@ -274,13 +274,13 @@ def test_planner_consumes_bridged_row_to_quarantine(tmp_path):
     quarantine_row = bridge_foreign_replay_report(
         _foreign(accepted=False, reason="candidate_below_min_score"),
         adapter_id="alice_quar_target",
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         now=1_777_700_010.0,
     )
     promote_row = bridge_foreign_replay_report(
         _foreign(accepted=True),
         adapter_id="alice_promote_target",
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         now=1_777_700_010.0,
     )
     import json as _json
@@ -293,7 +293,7 @@ def test_planner_consumes_bridged_row_to_quarantine(tmp_path):
         registry_path=registry,
         ledger_path=plan_ledger,
         recipe_path=recipe_path,
-        base_model="Qwen/Qwen1.5-0.5B-Chat",
+        base_model="google/gemma-4",
         replay_ledger_path=replay_ledger,
         require_replay=True,
     )

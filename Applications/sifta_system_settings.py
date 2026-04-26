@@ -221,7 +221,7 @@ def read_system_settings_snapshot() -> dict[str, Any]:
         "dimensions": dimensions,
         "state_mb": state_mb,
         "iris_mb": iris_mb,
-        "net_stgm": float(economics.get("net_stgm", 0.0) or 0.0),
+        "net_stgm": float(economics.get("canonical_wallet_sum", economics.get("net_stgm", 0.0)) or 0.0),
         "spend_stgm": float(economics.get("spend", 0.0) or 0.0),
         "metabolic_mode": metabolic.get("mode", "UNKNOWN"),
         "budget_multiplier": float(metabolic.get("budget_multiplier", 0.0) or 0.0),

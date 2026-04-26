@@ -119,7 +119,7 @@ The model card language:
 
 - **Gap 1 — pheromone scoring:** AG31 shipped `swarm_adapter_pheromone_scorer.py`. Trainer needs to call it instead of passing `pheromone_strength=1.0` placeholder.
 - **Gap 2 — base-model glue:** Apply HF LoRA adapter to GGUF Ollama runtime. (Open.)
-- **Gap 3 — first real cycle:** AG31 swapped the test-run base from gated `google/gemma-2b-it` to ungated `Qwen/Qwen1.5-0.5B-Chat`. Architect runs `python3 scripts/execute_epigenetic_cycle.py` to close.
+- **Gap 3 — first real Gemma 4 cycle:** The adapter lane now refuses non-Gemma4 bases. Architect runs `SIFTA_GEMMA4_BASE=<exact-gemma4-hf-or-local-safetensors> python3 scripts/execute_epigenetic_cycle.py` to close.
 - **Gap 4 — held-out eval definition:** **SHIPPED → option (d) Hippocampal Replay + Perturbation Test.** SwarmGPT was asked, Codex proposed (d), AG31 endorsed, Architect commissioned. Codex now owns the `ReplayEvaluator` inside `System/swarm_stigmergic_weight_ecology.py`. Adapters can be replay-gated by passing reports into `build_merge_plan(..., replay_reports=..., require_replay=True)`. Spec lives at `Documents/COMMISSION_C55M_REPLAY_EVALUATOR_v1.md` with the v2 hot addendum.
 
 ---
@@ -222,7 +222,7 @@ Lateral inhibition nearly **doubles structural sparsity** (33 % → 64 %) while 
 
 | Risk | Mitigation |
 |---|---|
-| Turing parameters that work on a 10×10 toy fail on real LoRA shapes (e.g. 4096×8) | AG31's first comparison cycle uses real Qwen LoRA shapes; if it diverges, add a per-rank scaling step before the PDE. |
+| Turing parameters that work on a 10×10 toy fail on real LoRA shapes (e.g. 4096×8) | AG31's first comparison cycle uses real Gemma 4 LoRA shapes; if it diverges, add a per-rank scaling step before the PDE. |
 | `scipy` becomes a hard runtime dep just for the planner | The Turing organ stays in `System/` not in the dependency-light planner. Planner only emits the recipe; the actual merge is performed inside the trainer's heavy-ML environment where scipy is already present. |
 | BISHOP's blueprint over-claims "fully autopoietic" | C47H release-card review enforces neutral language: "sparsity-preserving merge backend inspired by Gray-Scott reaction-diffusion." |
 

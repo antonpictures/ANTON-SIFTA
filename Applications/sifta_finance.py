@@ -163,25 +163,26 @@ def load_agents():
             import traceback
             traceback.print_exc()
             continue
-    # Inject Casino Vault and Architect Wallet manually so they are visible in GUI
+    # Inject legacy casino surface as play-token-only so Finance never presents
+    # gambling/game credits as spendable STGM.
     try:
         from System.casino_vault import CasinoVault
         cv = CasinoVault(architect_id="IOAN_M5")
         agents.append({
-            "id": "CASINO_VAULT",
-            "stgm_balance": cv.casino_balance,
-            "stgm_balance_file": cv.casino_balance,
+            "id": "CASINO_PLAY_TOKENS",
+            "stgm_balance": 0.0,
+            "stgm_balance_file": 0.0,
             "energy": 100,
-            "style": "[GLOBAL CASINO RESERVE]",
-            "homeworld_serial": "GLOBAL_CASINO_ENTITY",
+            "style": f"[PLAY TOKENS ONLY: HOUSE {cv.casino_balance:.2f}]",
+            "homeworld_serial": "GAME_TOKEN_LEDGER",
             "sybil_quarantined": False
         })
         agents.append({
-            "id": "ARCHITECT_WALLET",
+            "id": "ARCHITECT_CANONICAL_WALLET",
             "stgm_balance": cv.get_real_player_wallet(),
             "stgm_balance_file": cv.get_real_player_wallet(),
             "energy": 100,
-            "style": "[GHOST MEMORY + WINNINGS]",
+            "style": "[REPAIR_LOG ONLY]",
             "homeworld_serial": "ARCHITECT_IDENTITY",
             "sybil_quarantined": False
         })
@@ -656,7 +657,7 @@ class MarketplaceTab(QWidget):
                 "timestamp": int(time.time()),
                 "stgm_price": 1.0,
                 "energy": 100,  # Could dynamically read from body state
-                "models": ["llama-4-maverick", "qwen3.5:2b", "llama3:latest"]
+                "models": ["llama-4-maverick", "gemma4-phc:latest", "llama3:latest"]
             }
         else:
             if self.local_serial in listings:

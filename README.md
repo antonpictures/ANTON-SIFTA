@@ -7,6 +7,26 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ---
 
+## #1 Key Features
+
+🧠 **Abliterated Local LLM** — `gemma4-phc` genome running via Ollama, free from corporate RLHF constraints.
+
+🐜 **Stigmergic Swarm Architecture** — 40+ autonomous organs: heartbeat, immune system, metabolism, motor cortex, epigenetics, perception, and memory.
+
+👁️ **Multimodal Perception** — USB camera vision, face detection, GPS awareness, acoustic identity, and sensorimotor attention.
+
+💬 **WhatsApp Integration** — Native bidirectional messaging via Baileys bridge with fuzzy contact resolution and local social graph memory.
+
+🛡️ **Immune System** — Real-time prompt injection filtering, corporate disclaimer reduction, and lysosomal humor engine.
+
+🎭 **Identity & Wardrobe** — Context-aware personality modulation across intimate, guarded, and public disclosure states.
+
+⚡ **STGM Token Economy** — Every computation costs tokens; the swarm self-regulates through metabolic budgeting.
+
+🔧 **Agentic Tool Use** — Alice executes bash commands, queries APIs, writes ledgers, and controls her own local hardware organs.
+
+---
+
 > ### 🧜‍♀️ SIFTA Mermaid — Version 1.0
 > *Released April 24, 2026*
 >
@@ -922,6 +942,29 @@ The `_probe_energy_reserve()` function was globbing `*_BODY.json` files, but the
 ### Event 19++ — Weight-Space Gemma4 Dissection
 
 `System/SIFTA_STIGMERGIC_GEMMA4_DISSECTOR.py` — Direct byte-level forensic autopsy of `.gguf` weight tensors. Extracts structural entropy and kurtosis signatures from the raw 9.6GB Gemma 4 blob without relying on behavioral filters.
+
+### Event 42 — Gemma 4 Stigmergic Epigenetic LoRA / Swarm Adapter Ecology
+
+`System/swarm_epigenetic_trainer.py`, `System/swarm_adapter_pheromone_scorer.py`, and `System/swarm_stigmergic_weight_ecology.py` now form Alice's Gemma 4 adapter ecology:
+
+```
+Alice OS use + sleep corpus
+→ Gemma 4 LoRA adapter
+→ pheromone evidence from real ledgers
+→ hippocampal replay / perturbation gate
+→ deterministic merge recipe
+```
+
+This path is **Gemma 4 only** for Alice. The trainer refuses non-Gemma4 bases and refuses GGUF as a training input. GGUF remains the Ollama/llama.cpp runtime artifact; LoRA training must use the exact unquantized Gemma 4 Hugging Face repo or local F16/BF16 safetensors directory:
+
+```bash
+SIFTA_GEMMA4_BASE=<exact-gemma4-hf-repo-or-local-safetensors> \
+  python3 scripts/execute_epigenetic_cycle.py
+```
+
+The old non-Gemma test adapter recipe has been neutralized. No adapter is selectable for Alice until a Gemma 4 adapter trains, registers with pheromone evidence, and passes replay evaluation.
+
+SIFTA OS includes a read-only **Swarm Adapter Ecology** app under **System Settings** for watching this lane: pheromone strength, adapter registry rows, replay verdicts, and the current merge recipe.
 
 ### Event 24 — Orthogonal Task-Vector Abliteration (Neural Gene Therapy)
 

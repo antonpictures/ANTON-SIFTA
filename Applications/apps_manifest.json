@@ -175,6 +175,14 @@
         "window_height": 680,
         "signature": "UNVERIFIED"
     },
+    "Swarm Adapter Ecology": {
+        "category": "System Settings",
+        "entry_point": "Applications/sifta_swarm_adapter_ecology.py",
+        "widget_class": "SwarmAdapterEcologyWidget",
+        "window_width": 1180,
+        "window_height": 760,
+        "signature": "UNVERIFIED"
+    },
     "Intelligence Settings": {
         "category": "System Settings",
         "entry_point": "Applications/sifta_settings.py",

@@ -121,29 +121,19 @@ class HealthScore:
 
     def _measure_economic(self) -> float:
         """
-        Warren Buffett's verdict, translated to 0.0-1.0.
-        Net STGM > 0 and power cost sustainable = healthy.
+        Canonical STGM economy health, translated to 0.0-1.0.
+        Wallet money is repair_log.jsonl only; reputation/game ledgers are
+        reported as separate non-spendable signals.
         """
         try:
-            from warren_buffett import scan_repair_log
-            scan = scan_repair_log()
-            net = scan.net_minted_into_swarm()
-            self.raw["economic"] = {
-                "net_stgm": round(net, 4),
-                "spend": round(scan.stgm_spend, 4),
-                "lines": scan.lines_total,
-            }
+            try:
+                from System.stgm_economy import scan_economy
+            except ImportError:
+                from stgm_economy import scan_economy  # type: ignore
 
-            if scan.lines_total == 0:
-                return 0.5  # no data yet
-
-            # Simple: positive net = healthy, negative = parasitic
-            if net > 1.0:
-                return 1.0
-            elif net > 0:
-                return 0.5 + (net / 2.0)
-            else:
-                return max(0.0, 0.5 + net)  # goes to 0 at -0.5 net
+            scan = scan_economy()
+            self.raw["economic"] = scan.as_dict()
+            return scan.health_score
         except Exception:
             return 0.5
 

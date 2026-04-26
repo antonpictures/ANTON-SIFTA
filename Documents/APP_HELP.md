@@ -237,6 +237,23 @@ Use this flow for any app:
   $-per-token rates live at the top of `System/swarm_gemini_brain.py` —
   treat the console bill as ground truth.
 
+### Swarm Adapter Ecology
+- **Purpose:** Read-only dashboard for Alice's Gemma 4 Stigmergic Epigenetic
+  LoRA lane.
+- **State:** Reads `.sifta_state/stigmergic_adapter_registry.jsonl`,
+  `.sifta_state/stigmergic_replay_evals.jsonl`,
+  `.sifta_state/stigmergic_adapter_merge_recipe.json`, and the pheromone
+  scorer over real work/IDE/repair ledgers.
+- **What you see:** Gemma 4 base status, current merge status, pheromone
+  strength, adapter registry rows, hippocampal replay verdicts, and the exact
+  command for running a real Gemma 4 epigenetic cycle.
+- **Key principle:** This app does not train or merge weights by itself. It
+  shows whether an adapter is healthy enough to be selected. Heavy surgery
+  still runs explicitly from the terminal with `SIFTA_GEMMA4_BASE=...`.
+- **Failure mode:** `WAITING_FOR_GEMMA4_ADAPTER` is safe. It means stale
+  non-Gemma adapters are not selected and Alice is waiting for a true Gemma 4
+  adapter to pass replay evaluation.
+
 ### Swarm Intelligence Panels
 
 These are **read-only diagnostic dashboards**, not input forms. They display the internal

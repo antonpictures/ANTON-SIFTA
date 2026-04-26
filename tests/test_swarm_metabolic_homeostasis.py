@@ -103,8 +103,8 @@ def test_invalid_metabolic_config_and_state_are_rejected():
 
 def test_sample_live_reads_existing_metabolism_apis(monkeypatch):
     import System.metabolic_budget as metabolic_budget
+    import System.stgm_economy as stgm_economy
     import System.swarm_api_metabolism as api_metabolism
-    import System.warren_buffett as warren_buffett
 
     class FakeApiMetabolism:
         def __init__(self, daily_usd_limit: float) -> None:
@@ -113,15 +113,19 @@ def test_sample_live_reads_existing_metabolism_apis(monkeypatch):
         def daily_burn(self) -> float:
             return 1.25
 
+    class FakeEconomySnapshot:
+        def as_dict(self) -> dict:
+            return {"canonical_wallet_sum": 8.5, "net_stgm": -7.5}
+
     monkeypatch.setattr(api_metabolism, "SwarmApiMetabolism", FakeApiMetabolism)
     monkeypatch.setattr(metabolic_budget, "ledger_total", lambda *, since_ts=None: {"cpu": 2.0, "gpu": 3.0})
-    monkeypatch.setattr(warren_buffett, "profit_report", lambda: {"net_minted_estimate": -7.5})
+    monkeypatch.setattr(stgm_economy, "scan_economy", lambda: FakeEconomySnapshot())
 
     state = MetabolicHomeostat.sample_live()
 
     assert state.usd_burn_24h == pytest.approx(1.25)
     assert state.local_units_24h == pytest.approx(5.0)
-    assert state.stgm_balance == pytest.approx(-7.5)
+    assert state.stgm_balance == pytest.approx(8.5)
 
 
 def test_metabolic_homeostasis_proof_passes():

@@ -148,8 +148,10 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "source_excerpt",     # str[:120] — first 120 chars of the source turn
     },
 
-    # STGM rewards (the canonical economic ledger) — written by many producers
-    # All STGM-emitting modules MUST use exactly these keys.
+    # Memory/reputation rewards — not spendable wallet STGM.
+    # Canonical wallet STGM lives in repo-root repair_log.jsonl; these rows
+    # are useful-work reputation/training signals and must not be displayed as
+    # cash balance.
     "stgm_memory_rewards.jsonl": {
         "ts",                 # epoch seconds
         "app",                # producer module short name

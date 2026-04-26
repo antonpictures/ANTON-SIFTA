@@ -5,8 +5,8 @@ System/swarm_epigenetic_trainer.py
 The Epigenetic Trainer (PEFT / LoRA).
 
 This daemon processes the `alice_corpus_hf.jsonl` generated during
-the Sleep Cycle (Vagus Nerve), and trains a lightweight adapter 
-on top of the frozen base model. 
+the Sleep Cycle (Vagus Nerve), and trains a lightweight adapter
+on top of the frozen Gemma 4 base model.
 
 It does not mutate the 9.6GB Base DNA. 
 
@@ -17,6 +17,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 # Provide a fallback if ML deps aren't installed on smaller nodes
 try:
@@ -33,9 +34,39 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 CORPUS_FILE = _STATE / "alice_corpus_hf.jsonl"
 ADAPTERS_DIR = _STATE / "stigmergic_adapters"
+DEFAULT_GEMMA4_BASE = os.environ.get("SIFTA_GEMMA4_BASE", "google/gemma-4").strip()
+
+
+def _require_gemma4_base(base_model_id: str) -> str:
+    """Fail closed so Alice's stigmergic adapters never train on another lineage."""
+    model_id = str(base_model_id or "").strip()
+    if not model_id:
+        raise ValueError("Gemma 4 base model id is required")
+    marker = model_id.casefold()
+    if "gemma4" not in marker and "gemma-4" not in marker:
+        raise ValueError(
+            f"Refusing non-Gemma4 adapter base {model_id!r}. Set SIFTA_GEMMA4_BASE "
+            "to the exact unquantized Gemma 4 HF repo or local safetensors path."
+        )
+    local_path = Path(model_id).expanduser()
+    if local_path.suffix.casefold() == ".gguf":
+        raise ValueError("GGUF is an inference artifact; train LoRA on unquantized HF safetensors")
+    return str(local_path) if local_path.exists() else model_id
+
+
+def _format_chat(tokenizer: Any, instruction: str, response: str) -> str:
+    """Use the native Gemma chat template when available, with a Gemma fallback."""
+    messages = [
+        {"role": "user", "content": instruction},
+        {"role": "assistant", "content": response},
+    ]
+    if getattr(tokenizer, "chat_template", None):
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+    return f"<start_of_turn>user\n{instruction}<end_of_turn>\n<start_of_turn>model\n{response}<end_of_turn>"
+
 
 def train_adapter(
-    base_model_id: str = "Qwen/Qwen1.5-0.5B-Chat",  # Ungated, ~1GB, works on MPS without HF login
+    base_model_id: str = DEFAULT_GEMMA4_BASE,
     output_name: str = "alice_epigenetic_adapter_v1"
 ) -> str:
     """
@@ -47,7 +78,8 @@ def train_adapter(
     if not CORPUS_FILE.exists():
         raise FileNotFoundError(f"Corpus file not found at {CORPUS_FILE}. Has the Swarm slept?")
 
-    print(f"[*] Epigenetic Training Initiated.")
+    base_model_id = _require_gemma4_base(base_model_id)
+    print(f"[*] Gemma 4 Epigenetic Training Initiated.")
     print(f"[*] Base DNA (Frozen): {base_model_id}")
     
     # 1. Load Dataset
@@ -57,24 +89,21 @@ def train_adapter(
     if len(dataset) == 0:
         raise ValueError("Corpus is empty. No memories to consolidate.")
 
-    def _format_one(instr: str, resp: str) -> str:
-        return (
-            f"<|im_start|>user\n{instr}<|im_end|>\n"
-            f"<|im_start|>assistant\n{resp}<|im_end|>"
-        )
-
-    def formatting_prompts_func(example):
-        instructions = example.get('instruction', '')
-        responses = example.get('response', '')
-        if isinstance(instructions, str):
-            return _format_one(instructions, responses if isinstance(responses, str) else '')
-        return [_format_one(i, r) for i, r in zip(instructions, responses)]
-
     # 2. Load Tokenizer & Model
     print(f"[*] Loading Tokenizer and Base Model in fp16...")
     tokenizer = AutoTokenizer.from_pretrained(base_model_id)
     # Gemma tokenizer requires setting padding token
     tokenizer.pad_token = tokenizer.eos_token
+
+    def formatting_prompts_func(example):
+        instructions = example.get('instruction', '')
+        responses = example.get('response', '')
+        if isinstance(instructions, str):
+            return _format_chat(tokenizer, instructions, responses if isinstance(responses, str) else '')
+        return [
+            _format_chat(tokenizer, i, r if isinstance(r, str) else '')
+            for i, r in zip(instructions, responses)
+        ]
     
     # Depending on the hardware, we load in fp16. 
     # For Apple Silicon (MPS), we map to "auto" or "mps" if available.
@@ -192,7 +221,7 @@ def train_adapter(
             pheromone_strength=real_pheromone,
             created_ts=time.time(),
             evidence_ids=("sleep_cycle_corpus",),
-            notes="Adapter compiled autonomously during sleep cycle."
+            notes="Gemma 4 adapter compiled autonomously during sleep cycle."
         )
         register_adapter_signal(signal)
         print(f"[*] Adapter Signal registered in Stigmergic Weight Ecology.")

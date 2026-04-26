@@ -1,7 +1,8 @@
 """
-casino_vault.py - Real STGM Economy for SIFTA Games
-═══════════════════════════════════════════════════════════════════════════════
-Implements the verified cryptographic ledger for the Swarm Global Casino Vault.
+casino_vault.py - Quarantined play-token ledger for SIFTA games.
+
+This module is intentionally NOT a STGM wallet. Gambling/game outcomes cannot
+mint spendable STGM. Canonical wallet money comes only from repair_log.jsonl.
 """
 
 import json
@@ -48,14 +49,14 @@ class CasinoVault:
                     pass
 
     def _ensure_genesis(self):
-        """If the vault is completely empty, accept the 1000.0 STGM Warren Buffet loan."""
+        """Seed a local play-token house balance for old game surfaces."""
         if not LEDGER_FILE.exists() or self.casino_balance == 0.0:
             tx = CasinoTransaction(
                 ts=time.time(),
-                action="WARREN_BUFFET_LOAN",
+                action="PLAY_TOKEN_GENESIS",
                 casino_delta=1000.0,
-                player_delta=0.0, # The angel investment was minted externally, so we don't dock the player's personal wallet
-                memo="Initial 1000 STGM Genesis Injection by Architect."
+                player_delta=0.0,
+                memo="Initial play-token house balance; not spendable STGM."
             )
             self._write_tx(tx)
 
@@ -66,18 +67,21 @@ class CasinoVault:
         self.player_net += tx.player_delta
 
     def get_real_player_wallet(self) -> float:
-        """
-        The player's absolute STGM balance.
-        = Total Memory STGM Minted + Net Casino Winnings
-        """
-        from System.stigmergic_memory_bus import StigmergicMemoryBus
-        bus = StigmergicMemoryBus(architect_id=self.architect_id)
-        minted = bus.total_stgm_earned()
-        return minted + self.player_net
+        """Return canonical STGM for compatibility; casino winnings are excluded."""
+        try:
+            from System.stgm_economy import canonical_wallet_balance
+
+            return canonical_wallet_balance(self.architect_id)
+        except Exception:
+            return 0.0
+
+    def get_play_wallet(self) -> float:
+        """Game-only play-token balance, separate from STGM."""
+        return max(0.0, 1000.0 + self.player_net)
 
     def process_bet(self, amount: float) -> bool:
-        """Deducts from player, adds to Casino Vault. Returns True if enough funds."""
-        wallet = self.get_real_player_wallet()
+        """Deduct from the play-token wallet. Returns True if enough credits."""
+        wallet = self.get_play_wallet()
         if wallet < amount:
             return False # Cut off
             
@@ -92,7 +96,7 @@ class CasinoVault:
         return True
 
     def process_payout(self, amount: float, reason: str):
-        """Deducts from Casino Vault, adds to player."""
+        """Deduct from play-token house balance, adds to player play credits."""
         tx = CasinoTransaction(
             ts=time.time(),
             action="PAYOUT",

@@ -6,12 +6,13 @@ Gap 3: End-to-end first cycle (proof in production)
 
 This script manually forces the epigenetic consolidation cycle:
 1. Compiles the corpus (swarm_corpus_builder)
-2. Trains the LoRA adapter (swarm_epigenetic_trainer)
+2. Trains the Gemma 4 LoRA adapter (swarm_epigenetic_trainer)
 3. Computes pheromone strength (swarm_adapter_pheromone_scorer) - this is done automatically inside the trainer now.
 4. Registers the adapter (swarm_stigmergic_weight_ecology) - this is done automatically inside the trainer now.
 5. Builds the merge recipe (swarm_stigmergic_weight_ecology plan)
 """
 
+import os
 import time
 import json
 from pathlib import Path
@@ -46,9 +47,7 @@ def main():
     adapter_name = f"alice_epigenetic_adapter_{ts}"
     
     try:
-        # Defaulting to an ungated Qwen model for the test run so it doesn't crash on auth or memory
-        # In actual production, this would be the specific model deployed on the node
-        base_model_id = "Qwen/Qwen1.5-0.5B-Chat" 
+        base_model_id = os.environ.get("SIFTA_GEMMA4_BASE", "google/gemma-4").strip()
         output_dir = train_adapter(base_model_id=base_model_id, output_name=adapter_name)
     except Exception as e:
         print(f"\n[!] Training failed: {e}")

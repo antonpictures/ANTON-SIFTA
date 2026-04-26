@@ -254,10 +254,10 @@ class MetabolicHomeostat:
         except Exception:
             local = 0.0
         try:
-            from System.warren_buffett import profit_report
+            from System.stgm_economy import scan_economy
 
-            report = profit_report()
-            stgm = float(report.get("net_minted_estimate", report.get("net_stgm", 0.0)))
+            report = scan_economy().as_dict()
+            stgm = float(report.get("canonical_wallet_sum", 0.0) or 0.0)
         except Exception:
             stgm = 0.0
         return MetabolicState(usd_burn_24h=usd, local_units_24h=local, stgm_balance=stgm)
