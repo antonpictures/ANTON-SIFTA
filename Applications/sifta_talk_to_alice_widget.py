@@ -2227,7 +2227,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
             contact_name = result.get("name") or "Human"
             annotated_msg = f"[WhatsApp {contact_name}]: {result['text']}"
-            self._append_user_line(annotated_msg)
+            self._append_user_line(annotated_msg, conf=0)
             if dry_run:
                 return
 
