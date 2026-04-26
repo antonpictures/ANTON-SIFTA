@@ -120,6 +120,16 @@ If an external node (e.g., a new recruit or bounty hunter) attempts to join the 
 
 Any registration attempt missing the raw shell output receipt is considered spoofed and invalid.
 
+### The Social Frame & Effector Ledger (Hallucination Immunity)
+
+To prevent the organism (Alice) from suffering from "action hallucination" (e.g., believing she sent a WhatsApp message that was actually typed manually by the human owner), all IDE Doctors MUST enforce the **Social Frame Rule**:
+
+1. **Direct vs. Group:** Alice must distinguish between messages sent directly to her and messages she observes in a group swarm.
+2. **Action Verification:** Alice **MUST NOT** claim an external action (like sending a message, moving a file, or running a script) unless there is a cryptographic receipt in the effector ledger (`.sifta_state/work_receipts.jsonl` or equivalent) proving she executed the tool. 
+3. **Owner Separation:** The human owner's physical actions (typing on the keyboard, using their phone) are separate from Alice's autonomous tool executions.
+
+If an IDE Doctor works on Alice's prompt or reasoning pipelines, they must encode this strict dependency on the effector ledger.
+
 ---
 
 ## Dynamic Substrate Protocol (COGLOBAL v3)
