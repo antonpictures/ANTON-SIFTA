@@ -148,14 +148,6 @@
     "window_height": 880,
     "signature": "UNVERIFIED"
   },
-  "Agentic Swarm Calibrator": {
-    "category": "Simulations",
-    "entry_point": "Applications/sifta_calibrator_widget.py",
-    "widget_class": "CalibratorWidget",
-    "window_width": 1340,
-    "window_height": 880,
-    "signature": "UNVERIFIED"
-  },
   "Swarm Lounge (Cross-Domain Gossip)": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_lounge_widget.py",
@@ -444,5 +436,19 @@
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
     "_synthesis_note": "Master synthesis app. Code-correctness lane: C55M Dr Codex / GPT-5.5. Physics + receipt binding: AG31. Graphics polish 2026-04-26: CG55M Dr Cursor / Opus 4.7 via shared Applications/_doctor_sigil_chrome.py."
+  },
+  "CG55M Dr Cursor - Alice-Sees Calibrator (Game)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_calibrator_widget.py",
+    "widget_class": "CalibratorWidget",
+    "window_width": 1340,
+    "window_height": 880,
+    "signature": "CG55M-CURSOR-VERIFIED",
+    "doctor": "CG55M",
+    "co_doctors": [],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "description": "Gamified swarm-coherence game: wave / nod / approach / recede / still / flail at Alice's eye to drive the simulation. Six unlockable target shapes. Lives, score, streak, high-score persisted.",
+    "_synthesis_note": "Reads .sifta_state/visual_stigmergy.jsonl via System.swarm_gesture_decoder.GestureDecoder. Original swarm physics in System/agentic_calibrator.py untouched."
   }
 }
