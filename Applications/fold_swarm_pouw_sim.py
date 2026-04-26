@@ -267,7 +267,7 @@ class ReceiptChain:
             from System.proof_of_useful_work import issue_work_receipt
             from Kernel.body_state import load_agent_state, save_agent_state
             
-            agent_id = os.environ.get("SIFTA_NODE_AGENT", "LOCAL_PREDATOR")
+            agent_id = os.environ.get("SIFTA_NODE_AGENT", "ALICE")
             agent_state = load_agent_state(agent_id) or {"id": agent_id}
             
             if swimmer_id == "ARCH":

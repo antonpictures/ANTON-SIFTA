@@ -178,7 +178,7 @@ class GrandUnifiedModel:
             
         # Ledger integration
         try:
-            agent_id = os.environ.get("SIFTA_NODE_AGENT", "LOCAL_PREDATOR")
+            agent_id = os.environ.get("SIFTA_NODE_AGENT", "ALICE")
             agent_state = load_agent_state(agent_id) or {"id": agent_id}
             wt = "DEMAND_RESOLVED" if is_architect else "PROTEIN_FOLDED"
             desc = "Architect coordinate intervention" if is_architect else "AGI fold-energy improvement"
