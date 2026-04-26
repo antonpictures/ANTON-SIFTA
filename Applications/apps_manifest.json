@@ -308,13 +308,23 @@
     "window_height": 660,
     "signature": "UNVERIFIED"
   },
-  "App Manager": {
-    "category": "Utilities",
+  "Alice Shell": {
+    "category": "System",
     "entry_point": "Applications/sifta_app_manager.py",
     "widget_class": "AppManagerWidget",
     "window_width": 840,
     "window_height": 720,
-    "signature": "UNVERIFIED"
+    "signature": "AG31"
+  },
+  "Primordial Field": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_primordial_field.py",
+    "widget_class": "PrimordialFieldWidget",
+    "window_width": 680,
+    "window_height": 760,
+    "signature": "AG31",
+    "doctors": ["AG31"],
+    "description": "Gray-Scott reaction-diffusion chemistry + Physarum slime-mold agents. Turing patterns emerge, agents chemotax the gradient, STGM minted by pattern entropy."
   },
   "IDE Control Panel": {
     "category": "Developer",

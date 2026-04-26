@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 """
-sifta_app_manager.py — Conversational App Manager
+sifta_app_manager.py — Alice Shell
 ═══════════════════════════════════════════════════
-Windows had Add/Remove Programs. SIFTA has a living conversation.
-
-You don't click checkboxes. You type natural language commands to the OS:
-    > install fold swarm
-    > uninstall warehouse
-    > list all
-    > info territory
-    > reinstall browser
-
-The OS understands. It talks back.
+Alice's voice-and-text command interface for the Swarm OS.
+Speak naturally or type. She understands. She talks back.
 """
 from __future__ import annotations
 
@@ -80,7 +72,7 @@ def _fuzzy_match(query: str, names: List[str]) -> Optional[str]:
 class AppManagerWidget(SiftaBaseWidget):
     """Conversational Install / Uninstall — speak to the OS."""
 
-    APP_NAME = "App Manager"
+    APP_NAME = "Alice Shell"
 
     def build_ui(self, layout: QVBoxLayout) -> None:
 
@@ -113,7 +105,7 @@ class AppManagerWidget(SiftaBaseWidget):
         layout.addLayout(inp_row)
 
         self._refresh_list()
-        self._say("SIFTA App Manager online. Type 'help' for available commands.")
+        self._say("Alice Shell online. Speak naturally or type a command — try: list, info <app>, install <app>, uninstall <app>.")
 
     # ── Commands ───────────────────────────────────────────────
 
@@ -327,6 +319,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = AppManagerWidget()
     w.resize(800, 700)
-    w.setWindowTitle("App Manager — SIFTA OS")
+    w.setWindowTitle("Alice Shell — SIFTA OS")
     w.show()
     sys.exit(app.exec())
