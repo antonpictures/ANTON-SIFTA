@@ -555,19 +555,31 @@ class SystemSettingsWidget(SiftaBaseWidget):
     def _inference_page(self) -> QWidget:
         page, root = self._page("Inference")
 
-        # ── Cortex models: filter out small organ models (< 4GB) ──
+        # ── Pull LIVE model list from Ollama — zero hardcoded names ──
         all_models = _available_local_ollama_models()
-        # Identify organ models that should NOT appear in cortex dropdowns.
-        # The corvid apprentice runs independently — it's an organ, not a brain.
-        _ORGAN_MODELS = {"qwen3.5:2b", "qwen3.5:0.8b", "qwen35-08b-phc-experimental:latest"}
-        cortex_options = [m for m in all_models if m not in _ORGAN_MODELS]
+
+        # Read the corvid organ model dynamically from its own module.
+        try:
+            from System.swarm_corvid_apprentice import SwarmCorvidApprentice
+            import inspect
+            sig = inspect.signature(SwarmCorvidApprentice.__init__)
+            self._corvid_default = str(sig.parameters["model"].default)
+        except Exception:
+            self._corvid_default = ""
+
+        # Cortex options = everything except the current corvid model.
+        cortex_options = [m for m in all_models if m != self._corvid_default]
         if not cortex_options:
             cortex_options = all_models  # safety: never show empty dropdown
+
+        # Corvid options = everything except the current cortex models.
+        # (small models AND big models — the architect decides)
+        corvid_options = list(all_models)
 
         default_model = _select_local_model(get_default_ollama_model(), cortex_options)
         alice_model = _select_local_model(resolve_ollama_model(app_context="talk_to_alice"), cortex_options)
 
-        # ── Cortex selection ──
+        # ── Cortex section ──
         cortex_heading = QLabel("Cortex  ·  Alice's reasoning brain")
         cortex_heading.setStyleSheet("color: rgb(0, 200, 130); font-size: 12px; font-weight: bold;")
         root.addWidget(cortex_heading)
@@ -592,24 +604,23 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         root.addLayout(form)
 
-        # ── Organ models: read-only, always-on ──
-        organ_heading = QLabel("Organs  ·  run simultaneously, not selectable as brain")
+        # ── Organ section ──
+        organ_heading = QLabel("Organs  ·  run simultaneously alongside the cortex")
         organ_heading.setStyleSheet("color: rgb(145, 153, 180); font-size: 12px; font-weight: bold; margin-top: 8px;")
         root.addWidget(organ_heading)
-
-        # Detect which organ models are actually installed
-        installed_organs = [m for m in all_models if m in _ORGAN_MODELS]
-        corvid_model = next((m for m in installed_organs if "qwen3.5:2b" in m), None)
 
         organ_grid = QGridLayout()
         organ_grid.setHorizontalSpacing(12)
         organ_grid.setVerticalSpacing(6)
+
         organ_grid.addWidget(QLabel("Corvid Apprentice"), 0, 0)
-        corvid_lbl = QLabel(corvid_model or "qwen3.5:2b (not installed)")
-        corvid_lbl.setStyleSheet(
-            f"color: {'rgb(0, 200, 130)' if corvid_model else 'rgb(200, 80, 80)'}; font-weight: bold;"
-        )
-        organ_grid.addWidget(corvid_lbl, 0, 1)
+        self.inf_corvid_combo = QComboBox()
+        self.inf_corvid_combo.addItems(corvid_options)
+        if self._corvid_default in corvid_options:
+            self.inf_corvid_combo.setCurrentText(self._corvid_default)
+        self.inf_corvid_combo.setToolTip("Fast classifier organ. Runs in parallel with the cortex.")
+        organ_grid.addWidget(self.inf_corvid_combo, 0, 1)
+
         organ_grid.addWidget(QLabel("Reflex Arc"), 1, 0)
         reflex_lbl = QLabel("Pure Python · no model")
         reflex_lbl.setStyleSheet("color: rgb(0, 200, 130); font-weight: bold;")
@@ -618,8 +629,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         note = QLabel(
             "Cortex models power Alice's reasoning and conversation. "
-            "Organ models run in parallel as autonomous background processes — "
-            "they cannot be selected as Alice's brain."
+            "Organ models run in parallel as autonomous background processes."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: rgb(145, 153, 180);")
@@ -627,6 +637,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         self.inf_default_combo.currentTextChanged.connect(self._on_inf_default_changed)
         self.inf_alice_combo.currentTextChanged.connect(self._on_inf_alice_changed)
+        self.inf_corvid_combo.currentTextChanged.connect(self._on_inf_corvid_changed)
 
         self.inference_default_card = MetricCard("Default Model", "--")
         self.inference_alice_card = MetricCard("Alice Brain", "--")
@@ -643,6 +654,10 @@ class SystemSettingsWidget(SiftaBaseWidget):
     def _on_inf_alice_changed(self, text: str) -> None:
         if text:
             set_app_ollama_model("talk_to_alice", text)
+
+    def _on_inf_corvid_changed(self, text: str) -> None:
+        if text:
+            set_app_ollama_model("corvid_apprentice", text)
 
     def _economy_page(self) -> QWidget:
         page, root = self._page("Swarm Economy")
