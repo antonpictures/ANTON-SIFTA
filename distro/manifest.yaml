@@ -1,0 +1,23 @@
+version: "1.0.0"
+name: "SIFTA Living OS"
+description: "A stigmergic, biologically-inspired operating system substrate"
+components:
+  - name: "swarm_pheromone"
+    type: "engine"
+    autostart: true
+  - name: "stig_ble_radar"
+    type: "cortex"
+    autostart: true
+  - name: "stig_awdl_mesh"
+    type: "cortex"
+    autostart: true
+  - name: "stig_unified_log"
+    type: "cortex"
+    autostart: true
+  - name: "stig_vocal_proprioception"
+    type: "cortex"
+    autostart: true
+  - name: "stig_thermal_helper"
+    type: "daemon"
+    autostart: false
+    optional: true

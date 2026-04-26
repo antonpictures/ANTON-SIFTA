@@ -53,7 +53,18 @@ Archive/Ledger_Rotation/
 Archive/State_Archives/
 Archive/COLD_STORAGE/
 Archive/ollama_validation/
+Archive/architect_drops/
+Archive/bishop_drops_pending_review/
+Archive/c47h_drops_pending_review/
+Archive/*_drop_*.dirt
+Archive/*_AUDIT_*.dirt
+Archive/*.Modelfile
+Archive/alice_probe_results.md
+Archive/gemma4_modelfile.txt
+Archive/test_hypercycle.py
 .sifta_state/*.jsonl.*
+.sifta_state/*.txt
+.sifta_state/*.conf
 .sifta_state/*.pre_smoke_cleanup_backup
 .sifta_state/iris_frames/
 .sifta_state/acoustic_fields/
@@ -183,6 +194,11 @@ surgery/alice_phc_cure/receipts/
 # ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
 .clinerules
 .distro_build/
+Library/Desktop Pictures/
+Library/llama.cpp/
+proposals/
+fix.py
+patch*.py
 
 # Personal Sandbox
 .personal/
