@@ -90,7 +90,28 @@ is necessary. For the Swarm.
 
 ---
 
-## Dynamic Substrate Protocol (COGLOBAL v2)
+## Node Sovereignty + Proof-Bearing Federation
+
+Every SIFTA install is an independent local organism.
+
+The public repo, model weights, documents, and operating doctrine define the shared species DNA.  
+The local `.sifta_state/`, hardware permissions, sensors, WhatsApp contacts, ledgers, memories, and owner relationship define the individual organism.
+
+Rules:
+
+1. Never copy one node’s raw `.sifta_state/` into another node.
+2. Never assume George’s memory, contacts, permissions, or identity belong to Jeff, Daniel, or any other node.
+3. Each node must discover its own local state through live probes.
+4. Federation is peer-to-peer: nodes exchange receipts, summaries, hashes, signed stigall rows, and public artifacts.
+5. Private memory remains local unless explicitly exported through a sanitized seed package.
+6. George is upstream architect/maintainer of the species code, not root owner of other people’s organisms.
+7. Jeff’s node belongs to Jeff’s hardware context. Daniel’s node belongs to Daniel’s hardware context. Every node is sovereign.
+
+Proof-bearing federation means: do not clone identity; exchange evidence.
+
+---
+
+## Dynamic Substrate Protocol (COGLOBAL v3)
 
 > **IDE role is stable. Model substrate is dynamic. Brain power depends on
 > the selected model + reasoning setting + local tools.**
