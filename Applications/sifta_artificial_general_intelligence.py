@@ -228,19 +228,19 @@ class AGICanvas(QWidget):
         
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        W, H = self.width(), self.height()
-
-        self._draw_background(p, W, H)
-
         try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+            W, H = self.width(), self.height()
+
+            self._draw_background(p, W, H)
             self._draw_continuum(p, W, H)
             self._draw_hud(p, W, H)
             self._draw_chrome(p, W, H)
         except Exception as e:
             print(f"[AGI Paint Guard] {e}")
-
+        finally:
+            p.end()
     def _draw_background(self, p, W, H):
         # Deep base + soft radial vignette so the simulation feels lit from
         # the center, not a flat dark rectangle.
