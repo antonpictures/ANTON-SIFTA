@@ -815,7 +815,6 @@ class CalibrationCanvas(QWidget):
     def _draw_alice_indicator(self, p: QPainter, w: int, h: int, hud_top: int):
         s = self.alice_state or {}
         alive = bool(s.get("alive", 0.0) > 0.5)
-        # Pick the dominant gesture confidence to show as the live read.
         confs = [
             ("WAVE_HORIZONTAL", float(s.get("wave_h_conf", 0.0))),
             ("WAVE_VERTICAL",   float(s.get("wave_v_conf", 0.0))),
@@ -826,36 +825,56 @@ class CalibrationCanvas(QWidget):
         ]
         confs.sort(key=lambda kv: kv[1], reverse=True)
         top_kind, top_conf = confs[0]
-        x = w // 2 - 140
+        
+        fw, fh = 420, 94
+        x = w // 2 - fw // 2
         y = hud_top
         p.save()
-        # Frame
+        
         p.setBrush(QBrush(QColor(13, 13, 31, 200)))
         p.setPen(QPen(QColor(120, 100, 200, 120), 1.0))
-        p.drawRoundedRect(QRectF(x, y, 280, 46), 8, 8)
-        # Eye dot
+        p.drawRoundedRect(QRectF(x, y, fw, fh), 8, 8)
+        
         eye_col = NEON_CYAN if alive else QColor(120, 80, 90)
         p.setBrush(QBrush(eye_col))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(QPointF(x + 16, y + 23), 6, 6)
-        # Label
-        p.setFont(QFont("Menlo", 9, QFont.Weight.Bold))
+        
+        p.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
         p.setPen(QPen(QColor(170, 175, 215)))
-        p.drawText(QPointF(x + 32, y + 18),
-                   "ALICE SEES" if alive else "ALICE: no user")
-        # Gesture name + confidence bar
+        p.drawText(QPointF(x + 32, y + 20), "ALICE SEES" if alive else "ALICE: no user")
+        
         if alive:
             p.setPen(QPen(_gesture_color(top_kind)))
-            p.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
+            p.setFont(QFont("Menlo", 33, QFont.Weight.Bold))
             short = top_kind.replace("_HORIZONTAL", "").replace("_VERTICAL", "")
-            p.drawText(QPointF(x + 32, y + 36), short)
-            # Confidence bar
+            p.drawText(QPointF(x + 30, y + 66), short)
+            
+            cb_y = y + fh - 14
+            cb_x = x + 30
+            cb_w = 260
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(QColor(40, 40, 60)))
-            p.drawRoundedRect(QRectF(x + 130, y + 26, 130, 6), 3, 3)
-            cw = max(0.0, min(1.0, top_conf)) * 130.0
+            p.drawRoundedRect(QRectF(cb_x, cb_y, cb_w, 4), 2, 2)
+            cw = max(0.0, min(1.0, top_conf)) * cb_w
             p.setBrush(QBrush(_gesture_color(top_kind)))
-            p.drawRoundedRect(QRectF(x + 130, y + 26, cw, 6), 3, 3)
+            p.drawRoundedRect(QRectF(cb_x, cb_y, cw, 4), 2, 2)
+            
+        grid = s.get("grid")
+        if grid:
+            cx, cy = x + fw - 86, y + 15
+            cs = 4
+            p.setPen(Qt.PenStyle.NoPen)
+            for r in range(16):
+                for c in range(16):
+                    v = grid[r][c]
+                    if v > 0:
+                        p.setBrush(QBrush(QColor(0, 255, 200, min(255, v * 16))))
+                        p.drawRect(int(cx + c*cs), int(cy + r*cs), cs, cs)
+            p.setPen(QPen(QColor(120, 100, 200, 80), 1.0))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(int(cx), int(cy), 16*cs, 16*cs)
+            
         p.restore()
 
     def _draw_gesture_toast(self, p: QPainter, w: int, h: int):

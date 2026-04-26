@@ -84,6 +84,7 @@ class _Frame:
     mass: float        # total saliency (proxy for "user fills frame")
     motion_mean: float
     sha8: str = ""
+    grid: Optional[List[List[int]]] = None
 
 
 def _decode_saliency_q(saliency_q: str) -> Optional[List[List[int]]]:
@@ -157,7 +158,7 @@ class GestureDecoder:
                 "motion_mean": 0.0, "frames": 0,
                 "alive": 0.0, "wave_h_conf": 0.0, "wave_v_conf": 0.0,
                 "approach_conf": 0.0, "recede_conf": 0.0,
-                "still_conf": 0.0, "flail_conf": 0.0,
+                "still_conf": 0.0, "flail_conf": 0.0, "grid": None,
             }
         f = self._buf[-1]
         wh = self._wave_confidence(axis="x")
@@ -175,6 +176,7 @@ class GestureDecoder:
             "recede_conf":   max(0.0, -ms / 30.0),
             "still_conf":    min(1.0, st / _STILL_DURATION_S),
             "flail_conf":    min(1.0, fl / _FLAIL_DURATION_S),
+            "grid":          f.grid,
         }
 
     def last_event(self) -> Optional[GestureEvent]:
@@ -225,6 +227,7 @@ class GestureDecoder:
                         cx=cx, cy=cy, mass=mass,
                         motion_mean=float(row.get("motion_mean", 0.0)),
                         sha8=str(row.get("sha8", "")),
+                        grid=grid,
                     ))
         except OSError:
             return
