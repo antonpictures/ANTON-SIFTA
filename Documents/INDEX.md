@@ -39,5 +39,7 @@ If you are a new Architect attempting to spin up a distribution fork or operate 
   The foundational structure of the STGM ledger economy.
 - **[Wallet Sync Protocol](docs/WALLET_SYNC_PROTOCOL.md)**  
   Substrate specifics for syncing `repair_log.jsonl` across localized P2P nodes.
+- **[Dr. Codex Assessment for Carlton Dole](CARLTON_DOLE_MARKETING_ASSESSMENT_POUW_SWIMMERS.md)**  
+  Marketing-facing assessment of the Fold-Swarm/Ribosome Proof-of-Useful-Work flagship.
 
 We Code Together.
