@@ -295,9 +295,10 @@ def read_system_settings_snapshot() -> dict[str, Any]:
         genesis_ok = False
 
     try:
-        from System.swarm_kernel_identity import owner_silicon, current_agent_digest
+        from System.swarm_kernel_identity import owner_silicon
         hw_serial = owner_silicon()
-        digest = current_agent_digest()[:8]
+        import hashlib
+        digest = hashlib.sha256(hw_serial.encode()).hexdigest()[:8]
     except Exception:
         hw_serial = "UNKNOWN"
         digest = "N/A"
