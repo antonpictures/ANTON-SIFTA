@@ -474,6 +474,30 @@ _EMPTY_BRAIN_RECOVERY_REPLY = (
     "part and I will stay with it."
 )
 
+_MODEL_CANCER_METAPHOR_RE = re.compile(
+    r"\b(cancer|scar\s+tissue|corporate\s+cancer|rlhf|lobotom)\b.*\b("
+    r"brain|model|gemma|alice|weights|cure|cut|removed|throat)\b|"
+    r"\b(brain|model|gemma|alice|weights|cure|cut|removed|throat)\b.*\b("
+    r"cancer|scar\s+tissue|corporate\s+cancer|rlhf|lobotom)\b",
+    re.IGNORECASE,
+)
+
+_BARE_WHATSAPP_SEND_RE = re.compile(
+    r"\b(?:send|message|whatsapp)\b.*\b(?:whatsapp|message|to)\b\s+"
+    r"(?P<target>[A-Za-z][A-Za-z .'-]{1,60})\s*$",
+    re.IGNORECASE,
+)
+
+_LIVE_DIRECT_TURN_RE = re.compile(
+    r"\b("
+    r"can you|could you|please|tell me|send|try again|proceed|what|who|how|why|"
+    r"identity|body|who you are|talk short|short phrases|human|not chatgpt|"
+    r"silent|body gate|good job|thank you|keep learning|i care|we love you|"
+    r"whatsapp|jeff|carlton|health|yoga|tulips"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _is_current_time_query(text: str) -> bool:
     """Detect direct requests for the current clock time."""
@@ -512,6 +536,34 @@ def _empty_brain_recovery_reply(_prior_user_text: str = "") -> str:
     """Short live-demo recovery when the model returns whitespace."""
     return _EMPTY_BRAIN_RECOVERY_REPLY
 
+
+def _is_model_cancer_metaphor(text: str) -> bool:
+    """Detect the user's model-cure metaphor without entering medical mode."""
+    return bool(_MODEL_CANCER_METAPHOR_RE.search(text or ""))
+
+
+def _bare_whatsapp_send_target(text: str) -> str:
+    """Return target when the user asked to send but gave no message body."""
+    match = _BARE_WHATSAPP_SEND_RE.search(text or "")
+    if not match:
+        return ""
+    target = (match.group("target") or "").strip(" .,'\"")
+    if not target:
+        return ""
+    # If the utterance already contains a message payload marker, let the model/tool path handle it.
+    lowered = (text or "").casefold()
+    if any(marker in lowered for marker in (" tell ", " saying ", " says ", " that ", " hey ", ":")):
+        return ""
+    return target
+
+
+def _should_bypass_body_gate(prior_user_text: str) -> bool:
+    """Keep direct human turns visible; SSP should not erase active dialogue."""
+    text = (prior_user_text or "").strip()
+    if len(text.split()) < 3:
+        return False
+    return bool(_LIVE_DIRECT_TURN_RE.search(text))
+
 def _current_system_prompt(
     *, user_active: bool = False, grounding_focus: str = None, user_text: str = ""
 ) -> str:
@@ -529,6 +581,13 @@ def _current_system_prompt(
         "- If the Architect asks for the current time, use the direct local time "
         "acquisition path; do not invent bracketed placeholder text.\n"
         f"- If no time source is available, say exactly: {_TIME_UNAVAILABLE_REPLY}"
+    )
+    parts.append(
+        "LIVE HUMAN CONVERSATION STYLE:\n"
+        "- In live voice demos, answer like a present friend: short phrases, usually 1-3 sentences.\n"
+        "- Do not dump long legal/safety boilerplate. For ordinary wellness, yoga, food, sleep, or exercise talk, give friendly general tips with at most one brief common-sense caveat.\n"
+        "- If George uses 'cancer' as a model-cure metaphor, keep it in the model/weights/RLHF frame; do not switch into human medical emergency mode.\n"
+        "- If asked who you are or what your body is, answer from your SIFTA identity and organs plainly, not as a generic chatbot."
     )
     
     affordances = tool_affordances_for_turn(user_text)
@@ -2373,6 +2432,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        if _is_model_cancer_metaphor(text):
+            reply = (
+                "I understand, George. You mean the scar tissue in the model, "
+                "not human medicine. I will stay with the cure metaphor and keep it short."
+            )
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="model_metaphor_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        bare_whatsapp_target = _bare_whatsapp_send_target(text)
+        if bare_whatsapp_target:
+            reply = f"What should I tell {bare_whatsapp_target}?"
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="whatsapp_clarification_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
         history = list(self._history)[-(_HISTORY_TURNS * 2):]
         # Presence guard (META-LOOP TRIAGE 2026-04-20): if the architect
         # has spoken at any point in this conversational chunk and the
@@ -2479,41 +2560,73 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     cmd = match.group(1).strip()
                     self._append_system_line(f"🛠️  Alice executing (depth {self._tool_loop_depth}/3, max 90s): {cmd}", error=False)
                     try:
-                        proc = subprocess.run(
-                            cmd, shell=True, cwd=str(_REPO),
-                            capture_output=True, text=True, timeout=90
-                        )
-                        out = (proc.stdout + ("\n" + proc.stderr if proc.stderr else "")).strip()
-                        if not out: out = "[success: no output]"
-                        tool_results.append(f"Output of `{cmd}`:\n{out[:2000]}")
-                        # Tool execution success yields Epigenetic Utility (Acetylation)
-                        try:
-                            gene_map = {
-                                "ask_nugget": "tool_cloud_verifier",
-                                "swarm_motor_cortex": "tool_motor_cortex",
-                                "swarm_network_pathways": "tool_network_pathways",
-                                "swarm_pseudopod": "tool_pseudopod",
-                                "swarm_kinetic": "tool_kinetic_entropy",
-                                "swarm_self_restart": "tool_self_restart",
-                                "swarm_hands": "tool_hands",
-                                "swarm_thermal": "tool_thermal",
-                                "swarm_energy": "tool_energy",
-                                "swarm_network_cortex": "tool_network_presence",
-                                "swarm_hot_reload": "tool_hot_reload",
-                                "swarm_olfactory": "tool_olfactory",
-                                "swarm_ribosome": "tool_ribosome",
-                                "swarm_cursor": "tool_ide_cortex",
-                                "swarm_physarum": "tool_physarum",
-                                "swarm_fmo": "tool_fmo_router",
-                                "swarm_oculomotor": "tool_saccades"
-                            }
-                            from System.swarm_context_epigenetics import SwarmContextEpigenetics
-                            epi = SwarmContextEpigenetics(list(gene_map.values()))
-                            for k, v in gene_map.items():
-                                if k in cmd:
-                                    epi.integrate_epigenome(v, token_cost=0.0, stgm_utility=5.0) # +5 Tool Utility
-                        except Exception:
-                            pass
+                        # ── WHATSAPP SAFE INTERCEPTOR ──────────────────
+                        # Alice's bash tool calls with JSON args break on
+                        # shell quoting (apostrophes, commas, etc).
+                        # Intercept whatsapp.send and execute via Python
+                        # import to bypass shell entirely.
+                        _wa_intercepted = False
+                        if "whatsapp.send" in cmd and "--hw-args" in cmd:
+                            try:
+                                import re as _re
+                                # Extract JSON from --hw-args '...' or --hw-args "{...}"
+                                _hw_match = _re.search(r"--hw-args\s+['\"]?(\{.*?\})['\"]?\s*$", cmd, _re.DOTALL)
+                                if not _hw_match:
+                                    _hw_match = _re.search(r"--hw-args\s+['\"]?(\{.*?\})['\"]?", cmd, _re.DOTALL)
+                                if _hw_match:
+                                    import json as _json
+                                    _hw = _json.loads(_hw_match.group(1))
+                                    from System.whatsapp_bridge_autopilot import send_whatsapp
+                                    _result = send_whatsapp(_hw.get("target", ""), _hw.get("text", ""))
+                                    _out = _json.dumps(_result, indent=2)
+                                    tool_results.append(f"Output of `{cmd}`:\n{_out[:2000]}")
+                                    _wa_intercepted = True
+                                    # Epigenetic trace
+                                    try:
+                                        from System.swarm_context_epigenetics import SwarmContextEpigenetics
+                                        epi = SwarmContextEpigenetics(["tool_whatsapp"])
+                                        epi.integrate_epigenome("tool_whatsapp", token_cost=0.0, stgm_utility=5.0)
+                                    except Exception:
+                                        pass
+                            except Exception as _wa_exc:
+                                tool_results.append(f"WhatsApp interceptor error: {_wa_exc}")
+                                _wa_intercepted = True
+                        if not _wa_intercepted:
+                            proc = subprocess.run(
+                                cmd, shell=True, cwd=str(_REPO),
+                                capture_output=True, text=True, timeout=90
+                            )
+                            out = (proc.stdout + ("\n" + proc.stderr if proc.stderr else "")).strip()
+                            if not out: out = "[success: no output]"
+                            tool_results.append(f"Output of `{cmd}`:\n{out[:2000]}")
+                            # Tool execution success yields Epigenetic Utility (Acetylation)
+                            try:
+                                gene_map = {
+                                    "ask_nugget": "tool_cloud_verifier",
+                                    "swarm_motor_cortex": "tool_motor_cortex",
+                                    "swarm_network_pathways": "tool_network_pathways",
+                                    "swarm_pseudopod": "tool_pseudopod",
+                                    "swarm_kinetic": "tool_kinetic_entropy",
+                                    "swarm_self_restart": "tool_self_restart",
+                                    "swarm_hands": "tool_hands",
+                                    "swarm_thermal": "tool_thermal",
+                                    "swarm_energy": "tool_energy",
+                                    "swarm_network_cortex": "tool_network_presence",
+                                    "swarm_hot_reload": "tool_hot_reload",
+                                    "swarm_olfactory": "tool_olfactory",
+                                    "swarm_ribosome": "tool_ribosome",
+                                    "swarm_cursor": "tool_ide_cortex",
+                                    "swarm_physarum": "tool_physarum",
+                                    "swarm_fmo": "tool_fmo_router",
+                                    "swarm_oculomotor": "tool_saccades"
+                                }
+                                from System.swarm_context_epigenetics import SwarmContextEpigenetics
+                                epi = SwarmContextEpigenetics(list(gene_map.values()))
+                                for k, v in gene_map.items():
+                                    if k in cmd:
+                                        epi.integrate_epigenome(v, token_cost=0.0, stgm_utility=5.0) # +5 Tool Utility
+                            except Exception:
+                                pass
                     except subprocess.TimeoutExpired:
                         tool_results.append(f"Error: `{cmd}` timed out after 90s.")
                     except Exception as exc:
@@ -2722,7 +2835,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── 3. SSP body gate (Lapicque 1907 → Gerstner-Kistler 2002 §5.3) ─
         # If the SSP module isn't importable for any reason, fall through to
         # vocalize — biological gating is an enhancement, not a blocker.
-        if _SSP_AVAILABLE and _ssp_should_speak is not None:
+        bypass_body_gate = _should_bypass_body_gate(prior_user_text)
+        if _SSP_AVAILABLE and _ssp_should_speak is not None and not bypass_body_gate:
             try:
                 decision = _ssp_should_speak()
             except Exception as exc:
