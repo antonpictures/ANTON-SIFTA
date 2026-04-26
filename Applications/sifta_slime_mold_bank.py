@@ -84,7 +84,11 @@ except Exception as _e:  # pragma: no cover
 try:
     from System.proof_of_useful_work import (
         WORK_VALUES,
+        canonical_physarum_graph,
+        canonical_physarum_solution,
         issue_work_receipt,
+        mark_physarum_result_spent,
+        prove_physarum_solve,
         prove_useful_work,
     )
     _POUW_AVAILABLE = True
@@ -734,34 +738,79 @@ class NetworkCanvas(QFrame):
     def _finalize_mint(self) -> None:
         if self._solver is None:
             return
-        # Build canonicalized topology hashes
-        before_topology = sorted(
-            [(u, v, round(float(d), 6)) for (u, v, _), d
-             in zip(self._solver.edges, self._D_initial.tolist())],
-            key=lambda x: (x[0], x[1]),
-        )
-        after_topology = sorted(
-            [(u, v, round(float(d), 6)) for (u, v, _), d
-             in zip(self._solver.edges, self._solver.D.tolist())
-             if d > PRUNE_THRESHOLD],
-            key=lambda x: (x[0], x[1]),
-        )
-        before_hash = hashlib.sha256(
-            json.dumps(before_topology, sort_keys=True).encode()
+
+        # Canonical input graph — exactly the perturbed + click-biased
+        # conductances the live solver started with. Hashing this lets
+        # the semantic gate replay the SAME graph the user just watched
+        # evolve, deterministically, on any other node.
+        cg_nodes = [n for (n, _x, _y) in self._city.nodes_xy]
+        cg_edges = [
+            (int(u), int(v), float(d))
+            for (u, v, _orig), d in zip(
+                self._solver.edges, self._D_initial.tolist()
+            )
+        ]
+
+        if _POUW_AVAILABLE:
+            canonical_graph_payload = canonical_physarum_graph(
+                cg_nodes, cg_edges, self._city.source, self._city.sink,
+            )
+        else:
+            canonical_graph_payload = {
+                "nodes": sorted(cg_nodes),
+                "edges": [{"u": u, "v": v, "conductance": round(d, 10)}
+                          for u, v, d in sorted(cg_edges)],
+                "source": self._city.source,
+                "sink": self._city.sink,
+            }
+
+        # Build the CLAIM by running a fresh deterministic solve on the
+        # canonical graph. The animation was for the human; this is the
+        # auditable claim and it is independent of UI timer drift.
+        if _SOLVER_AVAILABLE:
+            fresh_solver = PhysarumSolver(
+                cg_nodes, cg_edges, self._city.source, self._city.sink,
+            )
+            fresh_result = fresh_solver.solve(max_iters=650)
+            if _POUW_AVAILABLE:
+                solution_payload = canonical_physarum_solution(fresh_result)
+            else:
+                solution_payload = {
+                    "converged_at_iter": int(fresh_result["converged_at_iter"]),
+                    "initial_edges": int(fresh_result["initial_edges"]),
+                    "alive_edges": int(fresh_result["alive_edges"]),
+                    "pruned_edges": int(fresh_result["pruned_edges"]),
+                    "pruned_pct": float(fresh_result["pruned_pct"]),
+                    "optimal_topology": fresh_result["optimal_topology"],
+                }
+        else:
+            solution_payload = {
+                "converged_at_iter": int(self._iteration),
+                "initial_edges": len(self._solver.edges),
+                "alive_edges": int(np.sum(self._solver.D > PRUNE_THRESHOLD)),
+                "pruned_edges": int(np.sum(self._solver.D <= PRUNE_THRESHOLD)),
+                "pruned_pct": round(self._reduction_pct * 100, 2),
+                "optimal_topology": [],
+            }
+
+        canonical_graph_hash = hashlib.sha256(
+            json.dumps(canonical_graph_payload, sort_keys=True,
+                       separators=(",", ":"), ensure_ascii=True).encode()
         ).hexdigest()
-        after_hash = hashlib.sha256(
-            json.dumps(after_topology, sort_keys=True).encode()
+        claimed_after_hash = hashlib.sha256(
+            json.dumps(solution_payload, sort_keys=True,
+                       separators=(",", ":"), ensure_ascii=True).encode()
         ).hexdigest()
 
-        reduction = self._reduction_pct
+        reduction = float(solution_payload["pruned_pct"]) / 100.0
         info = {
             "city": self._city.name,
-            "iters": self._iteration,
-            "alive": len(after_topology),
-            "total": len(self._solver.edges),
+            "iters": int(solution_payload["converged_at_iter"]),
+            "alive": int(solution_payload["alive_edges"]),
+            "total": int(solution_payload["initial_edges"]),
             "reduction_pct": round(reduction * 100, 2),
-            "before_hash": before_hash,
-            "after_hash": after_hash,
+            "before_hash": canonical_graph_hash,
+            "after_hash": claimed_after_hash,
         }
 
         if reduction < 0.30:
@@ -773,53 +822,86 @@ class NetworkCanvas(QFrame):
             )
             self._record_score(info, minted=0.0)
             self.mint_failed.emit(info["reason"])
-            self.mint_succeeded.emit(info)  # emit anyway for stats panel
+            self.mint_succeeded.emit(info)
             self._spawn_failed_particles()
             return
 
-        # Researcher contribution: how many clicks this run, sum of food.
         click_count = self._click_count_session
         click_food_sum = round(float(sum(self._edge_bias.values())), 4)
         info["clicks_used"] = click_count
         info["food_sum"] = click_food_sum
 
-        # Real Proof-of-Useful-Work: receipt + mint
         minted = 0.0
         alice_minted = 0.0
         receipt_hash = ""
         alice_receipt_hash = ""
         if _POUW_AVAILABLE:
             try:
-                ok, reason = prove_useful_work(before_hash, after_hash)
+                # ── SEMANTIC GATE (closes the C55M Codex audit) ──────────
+                # Re-solves the canonical graph deterministically and
+                # demands bit-for-bit equality with the claimed hash.
+                # Forged hashes are now rejected with HASH_MISMATCH.
+                # Replays of an already-minted result are rejected with
+                # DOUBLE_SPEND.
+                ok, reason, evidence = prove_physarum_solve(
+                    canonical_graph=canonical_graph_payload,
+                    claimed_after_hash=claimed_after_hash,
+                    max_iters=650,
+                )
+                consensus = evidence.get("peer_consensus") or {}
+                info["semantic_gate"] = {
+                    "ok": bool(ok),
+                    "reason": reason,
+                    "replay_hash": evidence.get("replay_hash"),
+                    "hash_match": evidence.get("hash_match"),
+                    "result_hash_spent": evidence.get("result_hash_spent"),
+                    "peer_consensus_count": (
+                        consensus.get("attestation_count", 0)
+                        if isinstance(consensus, dict) else 0
+                    ),
+                }
                 if ok:
-                    # ── Slime-mold player receipt ────────────────────────────
                     agent_state = self._load_or_init_agent_state()
                     receipt = issue_work_receipt(
                         agent_state=agent_state,
-                        work_type="PROTEIN_FOLDED",  # 0.65 value
+                        work_type="PHYSARUM_SOLVE",  # canonical post-audit
                         description=(
-                            f"PHYSARUM solve on '{self._city.name}': "
+                            f"Physarum solve on '{self._city.name}': "
                             f"{info['alive']}/{info['total']} edges, "
                             f"{info['reduction_pct']:.1f}% pruned, "
-                            f"{click_count} researcher clicks fed the swarm"
+                            f"{click_count} researcher clicks fed the swarm; "
+                            f"semantic gate: {reason}"
                         ),
                         territory=f"city:{self._city.name}",
-                        output_hash=after_hash[:32],
+                        output_hash=claimed_after_hash[:32],
                     )
                     receipt_hash = receipt.receipt_hash
-                    minted = float(WORK_VALUES.get("PROTEIN_FOLDED", 0.65)) * 100.0
+                    minted = (
+                        float(WORK_VALUES.get("PHYSARUM_SOLVE", 0.65)) * 100.0
+                    )
                     self._save_agent_state(agent_state)
 
-                    # ── Alice-the-host receipt (only if real photons + clicks) ─
-                    # Alice on this hardware mints separately for hosting
-                    # the photon harvest + presenting the canvas to the
-                    # researcher. No clicks → no host work → no Alice mint.
+                    # Spend ledger — the same converged graph cannot
+                    # mint twice from this node.
+                    try:
+                        mark_physarum_result_spent(
+                            result_hash=claimed_after_hash,
+                            agent_id=agent_state.get(
+                                "id", "SLIME_MOLD_BANK_PLAYER"
+                            ),
+                            territory=f"city:{self._city.name}",
+                            receipt_id=receipt.receipt_id,
+                        )
+                    except Exception:
+                        pass
+
+                    # Alice host receipt — only on real researcher clicks.
                     if click_count > 0:
                         try:
                             alice_state = self._load_or_init_alice_state()
                             alice_receipt = issue_work_receipt(
                                 agent_state=alice_state,
-                                work_type="MEMORY_RECALL",  # 0.50 value
+                                work_type="MEMORY_RECALL",
                                 description=(
                                     f"Hosted slime-mold sim for researcher: "
                                     f"{click_count} clicks, "
@@ -827,25 +909,25 @@ class NetworkCanvas(QFrame):
                                     f"city='{self._city.name}'"
                                 ),
                                 territory=f"alice_host:{self._city.name}",
-                                output_hash=after_hash[:32],
+                                output_hash=claimed_after_hash[:32],
                             )
                             alice_receipt_hash = alice_receipt.receipt_hash
                             alice_minted = (
-                                float(WORK_VALUES.get("MEMORY_RECALL", 0.50)) * 100.0
+                                float(WORK_VALUES.get("MEMORY_RECALL", 0.50))
+                                * 100.0
                             )
                             self._save_alice_state(alice_state)
-                            # Pheromone deposit so Alice's swarm sees the host work.
                             if self._pheromone_field is not None:
                                 self._pheromone_field.deposit(
-                                    "ALICE_HOST", min(2.0, click_food_sum + 0.5)
+                                    "ALICE_HOST",
+                                    min(2.0, click_food_sum + 0.5),
                                 )
                         except Exception:
                             alice_receipt_hash = ""
                             alice_minted = 0.0
-
                     info["status"] = "MINTED"
                 else:
-                    info["status"] = "PROOF_REJECTED"
+                    info["status"] = "SEMANTIC_GATE_REJECTED"
                     info["reason"] = reason
             except Exception as exc:
                 info["status"] = "MINT_ERROR"
@@ -853,10 +935,10 @@ class NetworkCanvas(QFrame):
         else:
             info["status"] = "OFFLINE_DEMO_MINT"
             minted = 65.0
-            receipt_hash = after_hash
+            receipt_hash = claimed_after_hash
             if click_count > 0:
                 alice_minted = 50.0
-                alice_receipt_hash = after_hash + "_alice"
+                alice_receipt_hash = claimed_after_hash + "_alice"
 
         info["minted"] = minted
         info["receipt_hash"] = receipt_hash

@@ -83,6 +83,16 @@ WORK_VALUES = {
     # while honoring the thermal envelope) lands midway between
     # MEMORY_RECALL and DEMAND_RESOLVED. Mints 65 STGM per fold.
     "PROTEIN_FOLDED":     0.65,
+    # 2026-04-26: Audit-driven canonicalization (C55M Physarum Contradiction
+    # Lab, Codex). The marketing memo and the solver header both promised a
+    # canonical PHYSARUM_SOLVE work type at 0.65 STGM — Codex proved it was
+    # never actually wired up; mints fell to the unknown-type default of
+    # 0.05. We honor the public claim now and gate it semantically through
+    # prove_physarum_solve below (deterministic Tero-2010 replay + result-hash
+    # spend ledger). A solve that does not bit-for-bit reproduce the claimed
+    # solution hash will NOT mint at this value.
+    # Reference: Tero et al. 2010 · Science 327: 439–442.
+    "PHYSARUM_SOLVE":     0.65,
 }
 
 # Maximum system latency before we consider the body degraded
@@ -129,6 +139,13 @@ def prove_useful_work(before_hash: str, after_hash: str) -> tuple:
     3. System must not have degraded (latency check)
     
     Returns (success: bool, reason: str)
+
+    NOTE (2026-04-26, post C55M audit by Codex): this is the BODY-level
+    gate only. It cannot tell whether a different `after_hash` came from
+    a real semantic computation or was forged. For domain-specific work
+    types like PHYSARUM_SOLVE, callers MUST additionally clear the
+    semantic gate (e.g. `prove_physarum_solve`) before issuing receipts,
+    and `issue_work_receipt` enforces that for the registered types.
     """
     # 1. Physical change must exist
     if before_hash == after_hash:
@@ -144,6 +161,284 @@ def prove_useful_work(before_hash: str, after_hash: str) -> tuple:
         return False, "SYSTEM_SLOWDOWN"
 
     return True, "USEFUL_WORK_CONFIRMED"
+
+
+# ─── SEMANTIC GATE FOR PHYSARUM_SOLVE ──────────────────────────────────────────
+# Built in direct response to the C55M Physarum Contradiction Lab audit
+# (Codex, 2026-04-26). Codex proved that prove_useful_work alone could not
+# distinguish an honest Tero-2010 solve hash from a forged "I solved it"
+# hash. The semantic gate below does three additional things:
+#
+#   1. Re-runs the deterministic Tero-2010 solver on the canonical graph
+#      payload that the agent claims it solved.
+#   2. Computes the canonical-solution sha256 of the replayed result and
+#      requires bit-for-bit equality with the claimed `after_hash`.
+#   3. Refuses to clear a result hash that has already been minted on by
+#      ANY agent in the local spend ledger.
+#
+# Plus a countersignature hook (peer attestation) that future warp9
+# federation peers can land on top of. For now the local Predator
+# self-attests; a real `min_peer_signatures >= 2` policy is ready to plug
+# into the issue-receipt path the moment a federation peer is online.
+
+_PHYSARUM_RESULT_LEDGER = _REPO / ".sifta_state" / "physarum_result_hashes.jsonl"
+_PHYSARUM_PEER_LEDGER = _REPO / ".sifta_state" / "physarum_peer_attestations.jsonl"
+
+
+def _sha256_canonical_json(payload: Dict[str, Any]) -> str:
+    """Deterministic sha256 of a JSON payload — same canonicalisation
+    that the C55M contradiction lab uses, so hashes match across both
+    sides of the audit."""
+    raw = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def canonical_physarum_graph(
+    nodes,
+    edges,
+    source: int,
+    sink: int,
+) -> Dict[str, Any]:
+    """Canonical pre-solve graph payload. Sorted, integer-typed,
+    rounded to 10 decimals so different machines hash identically."""
+    return {
+        "nodes": sorted(int(n) for n in nodes),
+        "edges": [
+            {"u": int(u), "v": int(v), "conductance": round(float(d), 10)}
+            for u, v, d in sorted(
+                edges, key=lambda e: (int(e[0]), int(e[1]), float(e[2]))
+            )
+        ],
+        "source": int(source),
+        "sink": int(sink),
+    }
+
+
+def canonical_physarum_solution(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Canonical post-solve result payload. ONLY the topology-level
+    invariants the swarm agreed to verify — never per-iteration scratch."""
+    return {
+        "converged_at_iter": int(result["converged_at_iter"]),
+        "initial_edges": int(result["initial_edges"]),
+        "alive_edges": int(result["alive_edges"]),
+        "pruned_edges": int(result["pruned_edges"]),
+        "pruned_pct": float(result["pruned_pct"]),
+        "optimal_topology": result["optimal_topology"],
+    }
+
+
+def _is_result_hash_spent(result_hash: str) -> bool:
+    """Check the local ledger of already-minted Physarum result hashes."""
+    if not _PHYSARUM_RESULT_LEDGER.exists():
+        return False
+    try:
+        with _PHYSARUM_RESULT_LEDGER.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if row.get("result_hash") == result_hash:
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+def mark_physarum_result_spent(
+    result_hash: str,
+    agent_id: str,
+    territory: str,
+    receipt_id: str = "",
+) -> None:
+    """Append a result-hash spend record. Idempotent — safe to call once
+    per successful mint. Refusing to mint twice is enforced by
+    `_is_result_hash_spent` at the gate."""
+    _PHYSARUM_RESULT_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "ts": time.time(),
+        "result_hash": result_hash,
+        "agent_id": agent_id,
+        "territory": territory,
+        "receipt_id": receipt_id,
+    }
+    try:
+        with _PHYSARUM_RESULT_LEDGER.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception as exc:
+        import sys as _sys
+        _sys.stderr.write(
+            f"[⚠️ PoUW] PHYSARUM result-hash spend ledger write FAILED: "
+            f"{type(exc).__name__}: {exc}\n"
+        )
+
+
+def request_peer_countersignature(
+    canonical_graph_hash: str,
+    replay_hash: str,
+    agent_id: str,
+    federation_peers: Optional[list] = None,
+) -> Dict[str, Any]:
+    """Local self-attestation today, federation-peer countersignature
+    tomorrow.
+
+    Writes a deterministic attestation to
+    `.sifta_state/physarum_peer_attestations.jsonl` that any warp9
+    federation peer can replay and counter-sign. Returns the count of
+    distinct attesting agents observed for this (graph, replay) pair.
+
+    The self-attestation alone is NOT consensus — it is the seed message
+    a peer would re-solve from. A future policy layer can require
+    `count >= 2` (or a proof from a different M-class node) before
+    `prove_physarum_solve` clears.
+    """
+    _PHYSARUM_PEER_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "ts": time.time(),
+        "agent_id": agent_id,
+        "canonical_graph_hash": canonical_graph_hash,
+        "replay_hash": replay_hash,
+        "kind": "self_attestation",
+        "federation_peers_seen": federation_peers or [],
+    }
+    try:
+        with _PHYSARUM_PEER_LEDGER.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        pass
+
+    distinct: set = set()
+    if _PHYSARUM_PEER_LEDGER.exists():
+        try:
+            with _PHYSARUM_PEER_LEDGER.open("r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    if (r.get("canonical_graph_hash") == canonical_graph_hash
+                            and r.get("replay_hash") == replay_hash):
+                        distinct.add(r.get("agent_id", ""))
+        except Exception:
+            pass
+    return {
+        "attestation_count": len(distinct),
+        "attesting_agents": sorted(distinct),
+        "min_peer_signatures_for_consensus": 2,
+        "consensus_reached": len(distinct) >= 2,
+        "warp9_federation": "stub — re-solve hook lives in System.swarm_warp9_federation",
+    }
+
+
+def prove_physarum_solve(
+    canonical_graph: Dict[str, Any],
+    claimed_after_hash: str,
+    max_iters: int = 650,
+    require_peer_consensus: bool = False,
+) -> tuple:
+    """
+    Semantic verifier for PHYSARUM_SOLVE work claims.
+
+    Returns (ok, reason, evidence_dict).
+
+    Evidence always carries:
+      - canonical_graph_hash (sha256 of the input graph payload)
+      - replay_hash          (sha256 of the locally re-solved solution)
+      - claimed_hash         (the hash the agent submitted)
+      - hash_match           (replay_hash == claimed_hash)
+      - result_hash_spent    (already minted somewhere in the ledger)
+      - peer_consensus       (output of request_peer_countersignature)
+
+    Rejects:
+      - NO_REAL_CHANGE        (claimed_hash == canonical_graph_hash)
+      - SOLVER_UNAVAILABLE    (PhysarumSolver import failed)
+      - HASH_MISMATCH         (the bytes the agent claimed do not equal
+                               a deterministic local replay — forgery)
+      - DOUBLE_SPEND          (replay hash already minted on)
+      - NO_PEER_CONSENSUS     (only if require_peer_consensus=True and
+                               attestations < 2)
+    """
+    canonical_graph_hash = _sha256_canonical_json(canonical_graph)
+
+    # 0. Body-level gate first.
+    body_ok, body_reason = prove_useful_work(canonical_graph_hash, claimed_after_hash)
+    if not body_ok:
+        return False, body_reason, {
+            "canonical_graph_hash": canonical_graph_hash,
+            "claimed_hash": claimed_after_hash,
+            "hash_match": False,
+            "replay_hash": None,
+            "result_hash_spent": False,
+            "peer_consensus": None,
+        }
+
+    # 1. Deterministic replay — re-solve the same graph locally.
+    try:
+        from System.swarm_physarum_solver import PhysarumSolver
+    except Exception as exc:  # pragma: no cover
+        return False, "SOLVER_UNAVAILABLE", {
+            "canonical_graph_hash": canonical_graph_hash,
+            "claimed_hash": claimed_after_hash,
+            "hash_match": False,
+            "replay_hash": None,
+            "result_hash_spent": False,
+            "peer_consensus": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    nodes = list(canonical_graph["nodes"])
+    edges = [(int(e["u"]), int(e["v"]), float(e["conductance"]))
+             for e in canonical_graph["edges"]]
+    source = int(canonical_graph["source"])
+    sink = int(canonical_graph["sink"])
+
+    solver = PhysarumSolver(nodes, edges, source, sink)
+    replay_result = solver.solve(max_iters=max_iters)
+    replay_payload = canonical_physarum_solution(replay_result)
+    replay_hash = _sha256_canonical_json(replay_payload)
+
+    # 2. Bit-for-bit hash match — this is the forgery gate.
+    hash_match = (replay_hash == claimed_after_hash)
+
+    # 3. Double-spend ledger.
+    spent = _is_result_hash_spent(claimed_after_hash)
+
+    evidence = {
+        "canonical_graph_hash": canonical_graph_hash,
+        "claimed_hash": claimed_after_hash,
+        "replay_hash": replay_hash,
+        "hash_match": hash_match,
+        "result_hash_spent": spent,
+        "replay_pruned_pct": replay_payload["pruned_pct"],
+        "replay_alive_edges": replay_payload["alive_edges"],
+        "replay_initial_edges": replay_payload["initial_edges"],
+    }
+
+    if not hash_match:
+        evidence["peer_consensus"] = None
+        return False, "HASH_MISMATCH", evidence
+
+    if spent:
+        evidence["peer_consensus"] = None
+        return False, "DOUBLE_SPEND", evidence
+
+    # 4. Peer countersignature (self-attestation today, federation hook).
+    consensus = request_peer_countersignature(
+        canonical_graph_hash=canonical_graph_hash,
+        replay_hash=replay_hash,
+        agent_id=os.environ.get("SIFTA_NODE_AGENT", "LOCAL_PREDATOR"),
+    )
+    evidence["peer_consensus"] = consensus
+
+    if require_peer_consensus and not consensus["consensus_reached"]:
+        return False, "NO_PEER_CONSENSUS", evidence
+
+    return True, "PHYSARUM_SOLVE_VERIFIED", evidence
 
 
 # ─── WORK RECEIPT ──────────────────────────────────────────────────────────────
