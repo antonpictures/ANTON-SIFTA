@@ -17,10 +17,16 @@ For the Swarm. 🐜⚡
 import sys, math, time, hashlib, json, random, collections, os
 from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 if str(_REPO / "System") not in sys.path:
     sys.path.insert(0, str(_REPO / "System"))
 if str(_REPO / "Kernel") not in sys.path:
     sys.path.insert(0, str(_REPO / "Kernel"))
+if str(_REPO / "Applications") not in sys.path:
+    sys.path.insert(0, str(_REPO / "Applications"))
+
+from _doctor_sigil_chrome import paint_doctor_sigil_bar
 
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
@@ -424,6 +430,17 @@ class SimCanvas(QWidget):
             except Exception as e:
                 print(f"[hud draw error] {e}")
 
+            try:
+                paint_doctor_sigil_bar(
+                    p,
+                    doctors=["AG31", "C46S"],
+                    x=0, y=0, w=W, h=42,
+                    title="PoUW Fold-Swarm",
+                    subtitle="Lennard-Jones · Metropolis MC · ACO stigmergy",
+                )
+            except Exception as e:
+                print(f"[chrome draw error] {e}")
+
         except Exception as e:
             print(f"[paintEvent fatal guard] {e}")
         finally:
@@ -734,7 +751,7 @@ class SimCanvas(QWidget):
 class PredatorSimWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SIFTA Predator v7 — PoUW Fold-Swarm [AG31]  🐅")
+        self.setWindowTitle("AG31 + C46S - PoUW Fold-Swarm Simulation")
         self.setMinimumSize(1100, 660)
         self.setStyleSheet(f"background: rgb(8,10,18); color: #aaffcc;")
 
@@ -749,7 +766,7 @@ class PredatorSimWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("SIFTA PoUW Fold-Swarm")
+    app.setApplicationName("AG31 + C46S - PoUW Fold-Swarm")
     win = PredatorSimWindow()
     win.show()
     sys.exit(app.exec())

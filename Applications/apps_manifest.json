@@ -427,14 +427,14 @@
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   },
-  "Artificial General Intelligence.": {
+  "AG31 + C46S + C55M + CG55M - ARTIFFICIAL GENERAL INTELLIGENCE.": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_artificial_general_intelligence.py",
     "widget_class": "AGIWindow",
     "window_width": 1200,
     "window_height": 800,
     "signature": "AG31-C46S-C55M-CG55M-SYNTHESIS",
-    "description": "MATH PHISICS BIOCODE TIME SPACE CONTINUUM ART",
+    "description": "MATH PHYSICS BIOCODE TIME SPACE CONTINUUM ART",
     "doctor": "AG31",
     "co_doctors": [
       "C46S",
@@ -443,6 +443,6 @@
     ],
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
-    "_synthesis_note": "Master synthesis app: graphics polish lane is CG55M (Cursor / Opus 4.7) per AG31 commit 68c80b0f."
+    "_synthesis_note": "Master synthesis app. Code-correctness lane: C55M Dr Codex / GPT-5.5. Physics + receipt binding: AG31. Graphics polish 2026-04-26: CG55M Dr Cursor / Opus 4.7 via shared Applications/_doctor_sigil_chrome.py."
   }
 }

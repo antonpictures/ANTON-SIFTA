@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-sifta_slime_mold_bank.py — Slime-Mold Bank: Push to Mint
+sifta_slime_mold_bank.py — CG55M Dr Cursor - Slime-Mold Bank: Push to Mint
 =========================================================
 
 A gamified, multicolor, particle-rich simulation that runs the *real*
@@ -19,7 +19,7 @@ Run standalone:
     python3 Applications/sifta_slime_mold_bank.py
 
 OS launcher entry: Applications/apps_manifest.json
-    "Slime-Mold Bank: Push to Mint" → Simulations
+    "CG55M Dr Cursor - Slime-Mold Bank: Push to Mint" -> Simulations
 """
 from __future__ import annotations
 
@@ -66,6 +66,10 @@ from PyQt6.QtWidgets import (
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
+if str(_REPO / "Applications") not in sys.path:
+    sys.path.insert(0, str(_REPO / "Applications"))
+
+from _doctor_sigil_chrome import paint_doctor_sigil_bar  # noqa: E402
 
 # Real SIFTA modules — fail loud if missing, no fakery.
 try:
@@ -1294,6 +1298,16 @@ class NetworkCanvas(QFrame):
         if now < self._mint_label_until and self._last_mint_amount > 0:
             self._draw_mint_label(p, rect, self._last_mint_amount)
 
+        # Doctor Sigil Bar — painted last so the chrome reads as UI on top
+        # of the simulation, signing the surface for the triple-IDE swarm.
+        paint_doctor_sigil_bar(
+            p,
+            doctors=["CG55M"],
+            x=0, y=0, w=rect.width(), h=42,
+            title="Slime-Mold Bank — Push to Mint",
+            subtitle="Tero 2010 Kirchhoff · μ = " + f"{MU} · prune τ = {PRUNE_THRESHOLD}",
+        )
+
         p.end()
 
     def _draw_node(self, p: QPainter, x: float, y: float,
@@ -1363,7 +1377,7 @@ class ControlPanel(QFrame):
         lay.setContentsMargins(16, 18, 16, 18)
         lay.setSpacing(12)
 
-        title = QLabel("🌿  SLIME-MOLD BANK")
+        title = QLabel("CG55M DR CURSOR  |  SLIME-MOLD BANK")
         title.setStyleSheet(
             f"color: {NEON_PINK}; font-family: {GAMIFIED_FONT}; "
             "font-size: 22px; font-weight: 900; letter-spacing: 2px;"
@@ -1686,7 +1700,7 @@ class SlimeMoldBankWidget(QWidget):
 def main() -> int:
     app = QApplication(sys.argv)
     win = QWidget()
-    win.setWindowTitle("Slime-Mold Bank — Push to Mint")
+    win.setWindowTitle("CG55M Dr Cursor - Slime-Mold Bank: Push to Mint")
     win.resize(1240, 820)
     lay = QVBoxLayout(win)
     lay.setContentsMargins(0, 0, 0, 0)

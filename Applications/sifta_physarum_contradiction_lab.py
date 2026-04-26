@@ -41,6 +41,10 @@ from PyQt6.QtWidgets import (
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+if str(REPO / "Applications") not in sys.path:
+    sys.path.insert(0, str(REPO / "Applications"))
+
+from _doctor_sigil_chrome import doctor_sigil_html  # noqa: E402
 
 from System.proof_of_useful_work import WORK_VALUES, prove_useful_work
 from System.swarm_physarum_solver import (
@@ -433,8 +437,8 @@ class PhysarumCanvas(QWidget):
         self._draw_grid(p, w, h)
         left = QRectF(28, 70, w * 0.43, h - 120)
         right = QRectF(w * 0.53, 70, w * 0.43, h - 120)
-        self._title(p, "CLAUDE CLAIM: money minted by city-saving solve", 30, 32, QColor(235, 235, 245))
-        self._title(p, "LIVE CONTRADICTION: verifier accepts changed hashes", int(w * 0.53), 32, QColor(255, 220, 140))
+        self._title(p, "CLAIM: money minted by city-saving solve", 30, 32, QColor(235, 235, 245))
+        self._title(p, "CONTRADICTION: verifier accepts changed hashes", int(w * 0.53), 32, QColor(255, 220, 140))
         self._panel(p, left, QColor(32, 49, 84, 145))
         self._panel(p, right, QColor(76, 38, 48, 145))
         self._draw_graph(p, left, use_live=False)
@@ -546,7 +550,7 @@ class PhysarumContradictionLabWidget(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SIFTA Physarum Contradiction Lab - Slime-Mold Bank Audit")
+        self.setWindowTitle("C55M Dr Codex - Physarum Contradiction Lab")
         self.state = _make_state()
         self.canvas = PhysarumCanvas(self.state)
         self.timer = QTimer(self)
@@ -566,8 +570,13 @@ class PhysarumContradictionLabWidget(QMainWindow):
         layout = QVBoxLayout(root)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
-        banner = QLabel("SIFTA Physarum Contradiction Lab - real solver, real PoUW gap, real hashes")
-        banner.setStyleSheet("color:#f6f0dd;font-family:Menlo;font-size:18px;font-weight:700;")
+        banner = QLabel(doctor_sigil_html(
+            ["C55M", "CG55M"],
+            "Physarum Contradiction Lab",
+            subtitle="real solver · real PoUW gate audit",
+        ))
+        banner.setTextFormat(Qt.TextFormat.RichText)
+        banner.setStyleSheet("padding:0;margin:0;")
         layout.addWidget(banner)
         layout.addWidget(self.canvas, 1)
         buttons = QHBoxLayout()
@@ -762,7 +771,7 @@ def main() -> int:
     class MainWindow(QMainWindow):
         def __init__(self) -> None:
             super().__init__()
-            self.setWindowTitle("SIFTA Physarum Contradiction Lab - Slime-Mold Bank Audit")
+            self.setWindowTitle("C55M Dr Codex - Physarum Contradiction Lab")
             self.state = _make_state()
             self.canvas = PhysarumCanvas(self.state)
             self.timer = QTimer(self)
@@ -779,8 +788,13 @@ def main() -> int:
             layout = QVBoxLayout(root)
             layout.setContentsMargins(12, 12, 12, 12)
             layout.setSpacing(10)
-            banner = QLabel("SIFTA Physarum Contradiction Lab - real solver, real PoUW gap, real hashes")
-            banner.setStyleSheet("color:#f6f0dd;font-family:Menlo;font-size:18px;font-weight:700;")
+            banner = QLabel(doctor_sigil_html(
+                ["C55M", "CG55M"],
+                "Physarum Contradiction Lab",
+                subtitle="real solver · real PoUW gate audit",
+            ))
+            banner.setTextFormat(Qt.TextFormat.RichText)
+            banner.setStyleSheet("padding:0;margin:0;")
             layout.addWidget(banner)
             layout.addWidget(self.canvas, 1)
             buttons = QHBoxLayout()
