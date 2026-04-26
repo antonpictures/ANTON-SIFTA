@@ -175,21 +175,37 @@ def consume_next_inbox_message(
             result["invalid_count"] += 1
         parsed.append((line, row if isinstance(row, dict) else None, ok, reason))
 
+    # Build a set of recently-consumed text hashes (within 30s window)
+    # to catch the same message arriving from both personal JID and group JID.
+    _TEXT_DEDUP_WINDOW_S = 30.0
+    _now = time.time() if now is None else float(now)
+    consumed_text_hashes: set[str] = set()
+    for _line, row, ok, _reason in parsed:
+        if row and ok and row.get("processed"):
+            row_ts = float(row.get("ts", 0))
+            if _now - row_ts < _TEXT_DEDUP_WINDOW_S:
+                consumed_text_hashes.add(str(row.get("message_sha256", "")))
+
     selected_index: Optional[int] = None
     selected_row: Optional[Dict[str, Any]] = None
     for idx, (_line, row, ok, reason) in enumerate(parsed):
         if not ok or row is None or row.get("processed"):
             continue
         sig = str(row.get("signature"))
-        if sig in consumed_signatures:
+        text_hash = str(row.get("message_sha256", ""))
+        # Dedup: same signature OR same text within 30s window
+        if sig in consumed_signatures or text_hash in consumed_text_hashes:
             result["duplicate_count"] += 1
             row["processed"] = True
             row["processed_ts"] = now or time.time()
             row["processed_by"] = INBOX_CONSUMER
             row["processed_status"] = "duplicate"
+            consumed_text_hashes.add(text_hash)
             continue
         selected_index = idx
         selected_row = row
+        # Mark this text as consumed so subsequent identical rows are also deduped
+        consumed_text_hashes.add(text_hash)
         break
 
     if selected_row is None or selected_index is None:
