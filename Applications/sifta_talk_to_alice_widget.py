@@ -700,11 +700,77 @@ def _bare_whatsapp_send_target(text: str) -> str:
     target = (match.group("target") or "").strip(" .,'\"")
     if not target:
         return ""
-    # If the utterance already contains a message payload marker, let the model/tool path handle it.
+    # If the utterance already contains a message payload marker,
+    # try the full send parser first (which extracts target + body).
     lowered = (text or "").casefold()
     if any(marker in lowered for marker in (" tell ", " saying ", " says ", " that ", " hey ", ":")):
         return ""
     return target
+
+
+# ── Full WhatsApp send parser (target + body in one utterance) ──────────────
+# Catches: "send a message to Carlton and say hello Carlton I'll talk to you tomorrow"
+#          "tell Carlton hello Carlton I'll talk to you tomorrow"
+#          "message Carlton on whatsapp saying hey what's up"
+#          "send Carlton hello"
+_FULL_WHATSAPP_SEND_RE = re.compile(
+    r"(?:"
+    r"(?:send\s+(?:a\s+)?(?:message|whatsapp)\s+to|message|send\s+to|send)\s+"
+    r"(?P<target1>[A-Za-z][A-Za-z .'-]{1,40}?)\s+"
+    r"(?:on\s+whatsapp\s+)?(?:(?:and\s+)?(?:say|tell(?:\s+(?:him|her|them))?|saying)\s+(?P<body1>.+))"
+    r"|"
+    r"(?:tell|message)\s+"
+    r"(?P<target2>[A-Za-z][A-Za-z .'-]{1,40}?)\s+"
+    r"(?:(?:on\s+whatsapp\s+)?(?:that\s+|saying\s+)?(?P<body2>.+))"
+    r"|"
+    r"(?:send\s+(?:a\s+)?(?:message\s+)?(?:on\s+whatsapp\s+)?to)\s+"
+    r"(?P<target3>[A-Za-z][A-Za-z .'-]{1,40}?)\s*[,:]\s*(?P<body3>.+)"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _full_whatsapp_send_parse(text: str) -> tuple:
+    """Parse a complete WhatsApp send command with target AND message body.
+    Returns (target, body) or ('', '') if no match."""
+    if not text:
+        return ("", "")
+    match = _FULL_WHATSAPP_SEND_RE.search(text)
+    if not match:
+        return ("", "")
+    target = (match.group("target1") or match.group("target2") or match.group("target3") or "").strip(" .,'\"")
+    body = (match.group("body1") or match.group("body2") or match.group("body3") or "").strip(" .,'\"")
+    if not target or not body:
+        return ("", "")
+    # Validate target is a known contact name (case-insensitive, first-name fuzzy)
+    try:
+        from System.whatsapp_social_graph import load_contacts
+        contacts = load_contacts(_REPO / ".sifta_state" / "whatsapp_contacts.json")
+        target_lower = target.casefold()
+        # Try exact match first
+        exact = False
+        for v in contacts.values():
+            dn = (v.get("display_name") or "").strip()
+            if dn.casefold() == target_lower:
+                exact = True
+                target = dn  # Use canonical case
+                break
+        if not exact:
+            # Try first-name match (first word of display_name)
+            first_match = None
+            for v in contacts.values():
+                dn = (v.get("display_name") or "").strip()
+                first_word = dn.split()[0].casefold() if dn else ""
+                if first_word == target_lower:
+                    first_match = dn
+                    break
+            if first_match:
+                target = first_match
+            else:
+                return ("", "")
+    except Exception:
+        pass  # If we can't verify, let it through — the send function will validate
+    return (target, body)
 
 
 def _should_bypass_body_gate(prior_user_text: str) -> bool:
@@ -1483,13 +1549,15 @@ class _BrainWorker(QThread):
                 self.failed.emit(f"Gemini brain crashed: {exc}")
                 return
 
-        # Local branch — Ollama. Original code path, unchanged below.
+        # Local branch — Ollama. Keep thinking disabled at the API layer so
+        # local reasoning models do not leak internal traces into Alice's body.
         import urllib.request
         import urllib.error
         payload = {
             "model": self._model,
             "messages": self._history,
             "stream": True,
+            "think": False,
             "options": {
                 "temperature": 0.7,
                 "top_p": 0.9,
@@ -1537,6 +1605,8 @@ class _BrainWorker(QThread):
                         except json.JSONDecodeError:
                             continue
                         msg = chunk.get("message") or {}
+                        if msg.get("thinking"):
+                            continue
                         piece = msg.get("content") or ""
                         if piece:
                             full.append(piece)
@@ -2642,6 +2712,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._history.append({"role": "assistant", "content": reply})
             _log_turn("alice", reply, model="financial_boundary_protocol")
             self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── FULL WHATSAPP SEND (target + body in one utterance) ──────────
+        # "Send a message to Carlton and say hello Carlton, I'll talk to you tomorrow"
+        # "Tell Carlton hello"
+        # Dispatches directly without LLM involvement.
+        wa_target, wa_body = _full_whatsapp_send_parse(text)
+        if wa_target and wa_body:
+            try:
+                from System.whatsapp_bridge_autopilot import send_whatsapp
+                result = send_whatsapp(wa_target, wa_body)
+                if result.get("ok"):
+                    reply = f"Sent to {wa_target}: \"{wa_body[:100]}\""
+                else:
+                    reply = f"Could not send to {wa_target}: {result.get('error', 'unknown error')}"
+            except Exception as e:
+                reply = f"WhatsApp send failed: {e}"
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="whatsapp_full_send_protocol")
+            self._append_alice_line(reply)
+            try:
+                from System.swarm_context_epigenetics import SwarmContextEpigenetics
+                epi = SwarmContextEpigenetics(["tool_whatsapp"])
+                epi.integrate_epigenome("tool_whatsapp", token_cost=0.0, stgm_utility=5.0)
+            except Exception:
+                pass
             self._busy = False
             self._return_to_listening()
             return
