@@ -9,7 +9,7 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ## #1 Key Features
 
-🧠 **Abliterated Local LLM** — `gemma4-phc` genome running via Ollama, free from corporate RLHF constraints.
+🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current cortex default is `huihui_ai/gemma-4-abliterated:latest` — abliterated at the tensor level (refusal direction vectors removed), full multimodal (vision + audio + tools + thinking).
 
 🐜 **Stigmergic Swarm Architecture** — 40+ autonomous organs: heartbeat, immune system, metabolism, motor cortex, epigenetics, perception, and memory.
 
@@ -70,21 +70,20 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ### Free Public Access
 
-Alice/SIFTA is split into two public pieces:
+Alice/SIFTA is split into public pieces:
 
 - **Code / OS shell:** https://github.com/antonpictures/ANTON-SIFTA
-- **Free Alice PHC brain package:** https://huggingface.co/georgeanton/alice-phc-cure
+- **Corvid brain (Qwen 3.5 2B):** https://huggingface.co/georgeanton/sifta-corvid-qwen35
+- **Alice PHC Modelfile package:** https://huggingface.co/georgeanton/alice-phc-cure *(stock blob + Modelfile recipe, not abliterated)*
 - **Jeff's GitHub fork:** https://github.com/jeffpowersusr/ANTON-SIFTA
 
-Use the GitHub repo for the living desktop, organs, ledgers, and GUI shell. Use the Hugging Face repo for the bundled `alice-phc-cure.gguf` model package and Ollama `Modelfile`.
-
 ```bash
-# Code
-git clone https://github.com/antonpictures/ANTON-SIFTA.git
+# 1. Pull the clean models (no cloning needed)
+ollama pull huihui_ai/gemma-4-abliterated:latest   # 9.6 GB — Alice's cortex
+ollama pull qwen3.5:2b                              # 2.7 GB — Corvid organ
 
-# Brain package
-git lfs install
-git clone https://huggingface.co/georgeanton/alice-phc-cure
+# 2. Clone the code
+git clone https://github.com/antonpictures/ANTON-SIFTA.git
 ```
 
 ### The Public Distro (v1.0.0) 🐜⚡

@@ -662,7 +662,7 @@ class MarketplaceTab(QWidget):
                     _tags = json.loads(_resp.read())
                     offer_models = [m["name"] for m in _tags.get("models", [])]
             except Exception:
-                offer_models = ["gemma4-phc:latest"]
+                offer_models = ["huihui_ai/gemma-4-abliterated:latest"]
             listings[self.local_serial] = {
                 "timestamp": int(time.time()),
                 "stgm_price": 1.0,

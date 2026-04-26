@@ -37,7 +37,7 @@ def load_settings():
     except Exception:
         return {
             "active_engine":     "ollama",
-            "ollama_model":      "gemma4-phc:latest",
+            "ollama_model":      "huihui_ai/gemma-4-abliterated:latest",
             "openrouter_key":    "",
             "openrouter_model":  "meta-llama/llama-4-maverick",
         }
