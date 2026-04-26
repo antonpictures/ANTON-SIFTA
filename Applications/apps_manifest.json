@@ -47,21 +47,23 @@
     "window_height": 820,
     "signature": "UNVERIFIED"
   },
-  "Physarum Contradiction Lab": {
+  "C55M Dr Codex - Physarum Contradiction Lab": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_physarum_contradiction_lab.py",
     "widget_class": "PhysarumContradictionLabWidget",
     "window_width": 1280,
     "window_height": 900,
-    "signature": "UNVERIFIED"
+    "signature": "C55M-DR-CODEX",
+    "description": "Codex audit app: live Physarum/PoUW contradiction report and copyable evidence for Claude/Cursor review."
   },
-  "Slime-Mold Bank: Push to Mint": {
+  "CG55M Dr Cursor - Slime-Mold Bank: Push to Mint": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_slime_mold_bank.py",
     "widget_class": "SlimeMoldBankWidget",
     "window_width": 1240,
     "window_height": 820,
-    "signature": "UNVERIFIED",
+    "signature": "CG55M-DR-CURSOR-OPUS47",
+    "description": "Cursor/Opus graphics-forward Carlton demo: real Tero Physarum solver, semantic PoUW gate, mint visuals.",
     "_note": "Carlton's marketing demo \u2014 runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts."
   },
   "Swarm Arena": {
@@ -400,13 +402,13 @@
     "window_height": 450,
     "autostart": false
   },
-  "PoUW Fold-Swarm [AG31]": {
-    "category": "Science",
+  "AG31 + C46S - PoUW Fold-Swarm Simulation": {
+    "category": "Simulations",
     "entry_point": "Applications/fold_swarm_pouw_sim.py",
     "widget_class": "PredatorSimWindow",
     "window_width": 1200,
     "window_height": 720,
-    "signature": "AG31-VERIFIED",
+    "signature": "AG31-C46S-VERIFIED",
     "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy"
   }
 }
