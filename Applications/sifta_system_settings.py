@@ -472,15 +472,23 @@ class SystemSettingsWidget(SiftaBaseWidget):
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
 
-        options = []
-        options.append(DEFAULT_OLLAMA_MODEL)
-        for m in STIGMERGIC_TEST_MODEL_PRESETS:
-            if m not in options:
-                options.append(m)
-        if _GEMINI_AVAILABLE:
-            for m in _available_gemini_models():
-                if m not in options:
-                    options.append(m)
+        # Build model list from LIVE Ollama — no ghost models.
+        options: list[str] = []
+        try:
+            import urllib.request
+            req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read())
+                for m in data.get("models", []):
+                    name = m.get("name", "")
+                    if name and name not in options:
+                        options.append(name)
+        except Exception:
+            pass
+        # Fallback: ensure the saved defaults appear even if Ollama is down
+        for fallback in (get_default_ollama_model(), resolve_ollama_model(app_context="talk_to_alice")):
+            if fallback and fallback not in options:
+                options.append(fallback)
 
         form.addWidget(QLabel("Default Local Model"), 0, 0)
         self.inf_default_combo = QComboBox()
