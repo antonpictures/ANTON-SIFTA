@@ -350,30 +350,50 @@ class SimCanvas(QWidget):
 
     # ── Render ───────────────────────────────────────────────
     def paintEvent(self, _):
+        # CRITICAL: On macOS ARM64 PyQt6, any uncaught Python exception inside
+        # paintEvent propagates to sipQWidget::paintEvent → pyqt6_err_print()
+        # → QMessageLogger::fatal() → abort(). Must catch ALL exceptions here.
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        W, H = self.width(), self.height()
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            W, H = self.width(), self.height()
 
-        # Background
-        p.fillRect(0, 0, W, H, C_BG)
+            p.fillRect(0, 0, W, H, C_BG)
 
-        # Pheromone heatmap
-        self._draw_pheromone(p, W, H)
+            try:
+                self._draw_pheromone(p, W, H)
+            except Exception as e:
+                print(f"[pheromone draw error] {e}")
 
-        # Swimmer trails + agents
-        self._draw_swimmers(p, W, H)
+            try:
+                self._draw_swimmers(p, W, H)
+            except Exception as e:
+                print(f"[swimmers draw error] {e}")
 
-        # Architect stigmergic food markers + ripples
-        self._draw_architect_inputs(p, W, H)
+            try:
+                self._draw_architect_inputs(p, W, H)
+            except Exception as e:
+                print(f"[architect draw error] {e}")
 
-        # Molecule
-        self._draw_molecule(p, W, H)
+            try:
+                self._draw_molecule(p, W, H)
+            except Exception as e:
+                print(f"[molecule draw error] {e}")
 
-        # Energy graph
-        self._draw_energy_graph(p, W, H)
+            try:
+                self._draw_energy_graph(p, W, H)
+            except Exception as e:
+                print(f"[graph draw error] {e}")
 
-        # HUD
-        self._draw_hud(p, W, H)
+            try:
+                self._draw_hud(p, W, H)
+            except Exception as e:
+                print(f"[hud draw error] {e}")
+
+        except Exception as e:
+            print(f"[paintEvent fatal guard] {e}")
+        finally:
+            p.end()
 
     def _draw_pheromone(self, p, W, H):
         res = self.grid.res
