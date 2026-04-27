@@ -165,7 +165,14 @@
     "widget_class": "FoldSwarmWidget",
     "window_width": 1280,
     "window_height": 880,
-    "signature": "UNVERIFIED"
+    "signature": "C55M-AUDITED-PROTEIN-FOLDING-PROOF",
+    "description": "C-alpha Go-model folding proof: harmonic backbone, WCA sterics, obstacles, native-contact funnel, pheromone-biased Monte Carlo, Ed25519 checkpoints.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "FoldSwarm lineage"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   },
   "Swarm Lounge (Cross-Domain Gossip)": {
     "category": "Simulations",
@@ -464,7 +471,7 @@
     "window_width": 1200,
     "window_height": 720,
     "signature": "AG31-C46S-VERIFIED",
-    "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy",
+    "description": "Protein folding proof-of-useful-work: Lennard-Jones 12-6, harmonic bonds, Metropolis annealing, ACO stigmergy, and canonical work receipts.",
     "doctor": "AG31",
     "co_doctors": [
       "C46S"
@@ -557,7 +564,7 @@
     "window_width": 1000,
     "window_height": 700,
     "signature": "C55M-GEORGE-COSIGNED",
-    "description": "Deterministic HP lattice beam-search protein folder. Co-signed by C55M-DR-CODEX and George Anton; runs batch folds and writes PDB/meta artifacts for the SIFTA referee.",
+    "description": "Co-signed deterministic HP lattice beam-search protein proof engine. Folds batches, writes PDB/meta artifacts, and gives the SIFTA referee another independent structure source.",
     "doctor": "C55M",
     "co_doctors": [
       "George Anton"
