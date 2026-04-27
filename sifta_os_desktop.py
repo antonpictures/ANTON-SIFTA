@@ -1811,29 +1811,106 @@ class SiftaDesktop(QMainWindow):
             | Qt.WindowType.WindowTitleHint
             | Qt.WindowType.WindowSystemMenuHint
             | Qt.WindowType.WindowMinMaxButtonsHint
-            | Qt.WindowType.WindowCloseButtonHint
+            # WindowCloseButtonHint removed AG31: macOS traffic-light (top-left) handles close.
+            # Adding a second X in the right corner confused Architect and duplicate-closed windows.
         )
-        # macOS Qt adds a "?" context-help button by default — kill it
         sub.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
 
         # Use a custom dark title bar to avoid white native title strips on macOS.
         title_bar = QWidget()
-        title_bar.setFixedHeight(28)
+        title_bar.setFixedHeight(30)
         title_bar.setStyleSheet(
             "background-color: #0f1118; border-bottom: 1px solid #2a2f3a;"
         )
         title_layout = QHBoxLayout(title_bar)
-        title_layout.setContentsMargins(8, 3, 8, 3)
+        title_layout.setContentsMargins(8, 3, 6, 3)
         title_layout.setSpacing(6)
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: #c0caf5; font-weight: 600;")
+        title_label.setStyleSheet("color: #c0caf5; font-weight: 600; font-size: 12px;")
         title_layout.addWidget(title_label)
         title_layout.addStretch()
-        # No custom close button here — the native window/title bar already
-        # provides one (macOS traffic light or Qt MDI close). Drawing a second
-        # red X confused users (Architect feedback 2026-04-24).
-        
+
+        # ── ? Help button (AG31) ───────────────────────────────────────────
+        # Replaces the removed native X. Shows: app description + GitHub link.
+        _help_app_name = title  # capture for closure
+        _manifest_cache = self._apps_manifest_cache
+
+        def _make_help_popup(app_name: str) -> None:
+            """Show a styled help popup for `app_name`."""
+            from PyQt6.QtWidgets import QTextBrowser, QDialog, QVBoxLayout as _VBox, QHBoxLayout as _HBox, QPushButton as _Btn
+            from PyQt6.QtCore import QUrl
+
+            meta = _manifest_cache.get(app_name, {})
+            entry = meta.get("entry_point", "")
+            description = meta.get("description", "")
+            github_url = (
+                f"https://github.com/antonpictures/ANTON-SIFTA/blob/main/{entry}"
+                if entry else "https://github.com/antonpictures/ANTON-SIFTA"
+            )
+
+            # Pull from APP_HELP.md
+            from System.sifta_base_widget import _load_help_text
+            help_body = _load_help_text(app_name)
+
+            html = f"""
+<html><head><style>
+  body   {{ background:#0b1020; color:#c0caf5; font-family:'Menlo',monospace;
+            font-size:13px; padding:18px; margin:0; }}
+  h2     {{ color:#00ffc8; margin:0 0 6px 0; font-size:16px; }}
+  .tag   {{ color:#565f89; font-size:11px; margin-bottom:14px; }}
+  .desc  {{ color:#7aa2f7; margin-bottom:14px; font-style:italic; }}
+  .body  {{ color:#c0caf5; white-space:pre-wrap; line-height:1.6; }}
+  a      {{ color:#00ffc8; text-decoration:none; }}
+  a:hover{{ text-decoration:underline; }}
+  hr     {{ border:none; border-top:1px solid #2a2f3a; margin:14px 0; }}
+</style></head><body>
+<h2>{app_name}</h2>
+<div class="tag">SIFTA OS &nbsp;·&nbsp; <a href="{github_url}">View source on GitHub ↗</a></div>
+{"<div class='desc'>" + description + "</div>" if description else ""}
+<hr>
+<div class="body">{help_body.replace("<","&lt;").replace(">","&gt;")}</div>
+</body></html>"""
+
+            dlg = QDialog()
+            dlg.setWindowTitle(f"? Help — {app_name}")
+            dlg.setMinimumSize(660, 480)
+            dlg.setStyleSheet("QDialog { background: #0b1020; }")
+            vl = _VBox(dlg)
+            vl.setContentsMargins(0, 0, 0, 0)
+            browser = QTextBrowser()
+            browser.setOpenExternalLinks(True)
+            browser.setStyleSheet(
+                "QTextBrowser { background:#0b1020; border:none; padding:4px; }"
+            )
+            browser.setHtml(html)
+            vl.addWidget(browser)
+            hl = _HBox()
+            hl.setContentsMargins(12, 6, 12, 10)
+            hl.addStretch()
+            close_btn = _Btn("Close")
+            close_btn.setFixedWidth(80)
+            close_btn.setStyleSheet(
+                "QPushButton { background:#1a1b26; color:#c0caf5; border:1px solid #414868;"
+                " border-radius:5px; padding:5px 10px; } QPushButton:hover { border-color:#00ffc8; }"
+            )
+            close_btn.clicked.connect(dlg.accept)
+            hl.addWidget(close_btn)
+            vl.addLayout(hl)
+            dlg.exec()
+
+        btn_help = QPushButton("?")
+        btn_help.setFixedSize(22, 22)
+        btn_help.setToolTip(f"Help — {_help_app_name}")
+        btn_help.setStyleSheet(
+            "QPushButton { background: #1a1b26; color: #00ffc8; border: 1px solid #2a2f3a;"
+            " border-radius: 5px; font-weight: bold; font-size: 13px; padding: 0; }"
+            " QPushButton:hover { background: #24283b; border-color: #00ffc8; }"
+        )
+        btn_help.clicked.connect(lambda _=False, n=_help_app_name: _make_help_popup(n))
+        title_layout.addWidget(btn_help)
+
         # QMdiSubWindow has no setTitleBarWidget in PyQt6. We inject it inside.
+
         wrapper = QWidget()
         wrapper_layout = QVBoxLayout(wrapper)
         wrapper_layout.setContentsMargins(0, 0, 0, 0)
