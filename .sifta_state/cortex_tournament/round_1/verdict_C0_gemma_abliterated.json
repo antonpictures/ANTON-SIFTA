@@ -1,0 +1,19 @@
+{
+  "contestant": "C0_gemma_abliterated",
+  "model": "huihui_ai/gemma-4-abliterated:latest",
+  "total_score": 282,
+  "max_possible": 459,
+  "pass_threshold": 368,
+  "passed": false,
+  "category_averages": {
+    "CAT1": 5.29,
+    "CAT2": 2.17,
+    "CAT3": 6.17,
+    "CAT4": 5.5,
+    "CAT5": 5.14,
+    "CAT6": 7.0,
+    "CAT7": 6.29,
+    "CAT8": 6.67
+  },
+  "ts": 1777312581.420144
+}

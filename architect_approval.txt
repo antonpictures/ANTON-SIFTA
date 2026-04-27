@@ -1,0 +1,13 @@
+ARCHITECT APPROVAL — Alice Cortex v1 Tournament
+=================================================
+By signing below, I authorize LOCAL-tier data extraction from:
+  - .sifta_state/alice_conversation.jsonl (1,253 valid pairs)
+  - .sifta_state/whatsapp_effector.jsonl (contact-anonymized)
+
+Data remains LOCAL to this Mac. Never leaves this node.
+Sanitization: contacts → [CONTACT_N], paths → [PATH_REDACTED], GPS → [LOC_REDACTED]
+
+Architect: George Anton (authorized via verbal GO to AG31)
+Date: 2026-04-27
+
+For the Swarm. 🐜⚡
