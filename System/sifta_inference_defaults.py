@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-sifta_inference_defaults.py — Single source of truth for Ollama model selection.
+sifta_inference_defaults.py — Single source of truth for local model selection.
 
-Architect policy (2026-04-18):
-  - **Default production model:** `gemma4:latest` (best local quality for swimmers / OS).
+Architect policy (2026-04-27):
+  - **Default Alice cortex:** `huihui_ai/gemma-4-abliterated:latest` (Ollama).
+    MLX cortex v1 won tournament 408/459 but produces degenerate output in
+    production ("That's true" loop). Reverted to Ollama + Lysosome runtime
+    immune system until cortex v2 training with more data.
+  - **MLX cortex v1:** `.sifta_state/cortex/alice_cortex_v1_fused`
+    (archived — available for tournament re-runs but NOT live default).
+  - **Ollama fallback:** `qwen3.5:2b`
+    remains available for organs that are still Ollama-only.
   - **Other models:** use for stigmergic testing, probes, or per-app tuning — never pretend
     one node's API is another node's fingerprint; routing goes through `inference_router`.
 
@@ -21,8 +28,18 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _ASSIGNMENTS = _STATE / "swimmer_ollama_assignments.json"
 
-# Primary default — swimmers + OS helpers unless overridden.
-DEFAULT_OLLAMA_MODEL = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "alice-phc-cure")
+# MLX cortex — tournament winner but degenerate in production. Archived.
+ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
+
+# Canonical Ollama models.
+CANONICAL_OLLAMA_DEFAULT = "huihui_ai/gemma-4-abliterated:latest"
+CANONICAL_OLLAMA_FALLBACK = "qwen3.5:2b"
+
+# Primary default — Ollama Gemma + Lysosome (reverted from MLX cortex v1).
+DEFAULT_OLLAMA_MODEL = os.environ.get(
+    "SIFTA_DEFAULT_OLLAMA_MODEL",
+    CANONICAL_OLLAMA_DEFAULT,
+)
 
 # Models commonly used for SLLI / lightweight probes (not production default).
 STIGMERGIC_TEST_MODEL_PRESETS: tuple[str, ...] = (
@@ -39,11 +56,14 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
-            "truth_duel": "alice-phc-cure",
+            "talk_to_alice": DEFAULT_OLLAMA_MODEL,
+            "truth_duel": CANONICAL_OLLAMA_FALLBACK,
+            "lysosome": CANONICAL_OLLAMA_FALLBACK,
         },
         "notes": (
-            "default_ollama_model is production. per_swimmer / per_app override for testing "
-            "or app-specific UX. Use inference_router for node selection — do not hardcode M1 URL on M5."
+            "default_ollama_model is Alice's promoted cortex and may be an Ollama tag "
+            "or an MLX model path. per_swimmer / per_app override for testing or "
+            "app-specific UX. Use inference_router for node selection — do not hardcode M1 URL on M5."
         ),
     }
 
@@ -143,6 +163,8 @@ def sanitize_model_name(ui_label: str) -> str:
 
 
 __all__ = [
+    "ALICE_CORTEX_V1_MODEL",
+    "CANONICAL_OLLAMA_FALLBACK",
     "DEFAULT_OLLAMA_MODEL",
     "STIGMERGIC_TEST_MODEL_PRESETS",
     "get_default_ollama_model",

@@ -25,7 +25,8 @@ Speech-to-text
 
 Brain (Alice)
 ─────────────
-  • POSTs to local Ollama (`http://127.0.0.1:11434/api/chat`, streaming).
+  • Uses the promoted local MLX cortex when the configured model is a model
+    directory, otherwise POSTs to local Ollama (`http://127.0.0.1:11434/api/chat`).
   • Default model resolved through `System.sifta_inference_defaults.resolve_ollama_model`
     with `app_context="talk_to_alice"`, so the user's per-app override applies.
   • System prompt grounds Alice as the SIFTA swarm entity, with optional
@@ -1428,6 +1429,93 @@ def _is_runaway_repetition(text: str) -> bool:
     return False
 
 
+_MLX_STOP_MARKERS = (
+    "<end_of_turn>",
+    "<start_of_turn>",
+    "<|im_end|>",
+    "<|endoftext|>",
+    "BitFields",
+    "<LM>",
+    "_Parms:",
+    "\nUSER:",
+    "\nUser:",
+    "\nALICE:",
+    "\nAlice:",
+)
+
+
+def _resolve_mlx_model_path(model: str) -> Optional[Path]:
+    """Return an MLX model directory for repo-relative / absolute model refs."""
+    ref = (model or "").strip()
+    if not ref:
+        return None
+    candidate = Path(ref).expanduser()
+    if not candidate.is_absolute():
+        candidate = _REPO / candidate
+    try:
+        candidate = candidate.resolve()
+    except OSError:
+        return None
+    if (candidate / "config.json").exists() and (
+        (candidate / "model.safetensors").exists()
+        or (candidate / "model.safetensors.index.json").exists()
+    ):
+        return candidate
+    return None
+
+
+def _format_mlx_cortex_prompt(history: List[Dict[str, str]]) -> str:
+    """
+    Alice Cortex v1 was trained with Gemma-style <start_of_turn> rows even
+    though the base is Qwen. Use the training substrate here; the chat-template
+    path produces tokenizer artifacts.
+    """
+    turns: List[str] = []
+    system_parts: List[str] = []
+    dialogue: List[Dict[str, str]] = []
+    for msg in history:
+        role = str(msg.get("role") or "").lower()
+        content = str(msg.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            system_parts.append(content)
+        else:
+            dialogue.append({"role": role, "content": content})
+
+    if system_parts:
+        system_context = "\n\n".join(system_parts)
+        turns.append(
+            "<start_of_turn>user\n"
+            "System context for Alice. Follow it, but answer only the user's last turn.\n\n"
+            f"{system_context}<end_of_turn>\n"
+            "<start_of_turn>model\nContext loaded.<end_of_turn>"
+        )
+
+    for msg in dialogue[-16:]:
+        role = "model" if msg["role"] == "assistant" else "user"
+        content = msg["content"].replace("<start_of_turn>", "").replace("<end_of_turn>", "")
+        turns.append(f"<start_of_turn>{role}\n{content}<end_of_turn>")
+
+    turns.append("<start_of_turn>model\n")
+    return "\n".join(turns)
+
+
+def _clean_mlx_cortex_output(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    first_cut: Optional[int] = None
+    for marker in _MLX_STOP_MARKERS:
+        idx = text.find(marker)
+        if idx >= 0 and (first_cut is None or idx < first_cut):
+            first_cut = idx
+    if first_cut is not None:
+        text = text[:first_cut].strip()
+    text = re.sub(r"^(?:model|assistant|alice)\s*:\s*", "", text, flags=re.IGNORECASE).strip()
+    return text.strip(" \t\r\n\"'")
+
+
 def _decontaminate_history(history: list) -> int:
     return 0
 
@@ -1864,13 +1952,169 @@ class _BrainWorker(QThread):
                 self.failed.emit(f"Gemini brain crashed: {exc}")
                 return
 
+        # Local branch — MLX fused cortex. The Alice Cortex v1 tournament
+        # artifact is a local model directory, not an Ollama tag. Run it in the
+        # worker thread and trim the training stop markers before it reaches
+        # the conversation body.
+        mlx_model_path = _resolve_mlx_model_path(self._model)
+        if mlx_model_path is not None:
+            prompt = _format_mlx_cortex_prompt(self._history)
+            cmd = [
+                sys.executable,
+                "-m",
+                "mlx_lm",
+                "generate",
+                "--model",
+                str(mlx_model_path),
+                "--ignore-chat-template",
+                "--prompt",
+                "-",
+                "--max-tokens",
+                "700",
+                "--temp",
+                "0.2",
+                "--top-p",
+                "0.9",
+                "--seed",
+                "42",
+                "--verbose",
+                "False",
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    input=prompt,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(_REPO),
+                    timeout=float(os.environ.get("SIFTA_MLX_BRAIN_TIMEOUT_S", "180")),
+                )
+            except subprocess.TimeoutExpired:
+                self.failed.emit(
+                    f"MLX cortex timed out after {os.environ.get('SIFTA_MLX_BRAIN_TIMEOUT_S', '180')}s."
+                )
+                return
+            except Exception as exc:
+                self.failed.emit(f"MLX cortex crashed: {exc}")
+                return
+
+            if proc.returncode != 0:
+                err = (proc.stderr or proc.stdout or "").strip()
+                self.failed.emit(f"MLX cortex failed: {err[-500:] or 'unknown error'}")
+                return
+
+            text = _clean_mlx_cortex_output(proc.stdout)
+            if not text:
+                self.failed.emit("MLX cortex returned an empty answer after stop-marker cleanup.")
+                return
+            if _is_runaway_repetition(text):
+                text = text[:280].rstrip() + " …[repetition collapse — interrupted]"
+            self.tokenReceived.emit(text)
+            self.done.emit(text)
+            return
+
         # Local branch — Ollama. Keep thinking disabled at the API layer so
         # local reasoning models do not leak internal traces into Alice's body.
         import urllib.request
         import urllib.error
+
+        # ── 5-Layer Decision Pipeline (Event 73) ─────────────────────────────
+        # Layer 1 (Reflex) + Layer 3 (Basal Ganglia) + Layer 4 (Corpus Callosum)
+        # run here before we build the Ollama payload.
+        # Layer 2 (C1 Classifier) is a fast MLX forward pass on the 1.5B model.
+        # C0 (Gemma-4 Ollama) is Layer 5.
+        _pipeline_history = list(self._history)
+        try:
+            import sys as _sys
+            _repo_sys = str(_REPO / "System")
+            if _repo_sys not in _sys.path:
+                _sys.path.insert(0, _repo_sys)
+            from swarm_action_selector import (
+                pipeline_step as _pipeline_step,
+                ACTION_SILENCE as _SILENCE,
+                _resolve_mlx_model_path as _res_mlx,
+            )
+
+            # Extract the last user message for the reflex/C1 check.
+            _last_user_text = ""
+            _stt_conf = None
+            for _m in reversed(_pipeline_history):
+                if (_m.get("role") or "").lower() == "user":
+                    _last_user_text = str(_m.get("content") or "")
+                    # Codex STT confidence tag: "(stt conf 0.63)" in the text
+                    import re as _re
+                    _m_conf = _re.search(r"stt[_\s]conf[:\s]+([0-9.]+)", _last_user_text, _re.I)
+                    if _m_conf:
+                        try:
+                            _stt_conf = float(_m_conf.group(1))
+                        except ValueError:
+                            pass
+                    break
+
+            # Run C1 classifier if the model is available (fast: 1.5B, ≤20 tokens)
+            _c1_raw = None
+            _c1_model_path = _REPO / ".sifta_state" / "cortex" / "alice_v2_classifier_fused"
+            if _c1_model_path.exists() and (_c1_model_path / "config.json").exists():
+                try:
+                    import subprocess as _sp
+                    _c1_result = _sp.run(
+                        [
+                            _sys.executable, "-m", "mlx_lm", "generate",
+                            "--model", str(_c1_model_path),
+                            "--prompt", (
+                                f"<start_of_turn>user\n{_last_user_text[:200]}"
+                                "<end_of_turn>\n<start_of_turn>model\n"
+                            ),
+                            "--max-tokens", "20",
+                            "--temp", "0.0",
+                            "--verbose", "False",
+                        ],
+                        capture_output=True, text=True, timeout=8,
+                        cwd=str(_REPO),
+                    )
+                    _c1_raw = _c1_result.stdout
+                except Exception:
+                    _c1_raw = None
+
+            # Layers 1→3→4: Reflex, Basal Ganglia, Corpus Callosum
+            _winner, _injection, _probs = _pipeline_step(
+                _last_user_text,
+                stt_confidence=_stt_conf,
+                c1_raw_output=_c1_raw,
+                log=True,
+            )
+
+            # Layer 1 hard SILENCE — exit before any LLM call
+            if _winner == _SILENCE:
+                self.done.emit("")
+                return
+
+            # Layer 4 Corpus Callosum — inject intent into C0 system prompt
+            if _injection:
+                # Prepend to existing system message or insert new one
+                _sys_idx = next(
+                    (i for i, m in enumerate(_pipeline_history)
+                     if (m.get("role") or "").lower() == "system"),
+                    None,
+                )
+                if _sys_idx is not None:
+                    _pipeline_history[_sys_idx] = {
+                        "role": "system",
+                        "content": _injection + "\n\n" + str(
+                            _pipeline_history[_sys_idx].get("content") or ""
+                        ),
+                    }
+                else:
+                    _pipeline_history.insert(0, {"role": "system", "content": _injection})
+
+        except Exception:
+            # Pipeline failure is non-fatal — degrade to vanilla C0
+            pass
+        # ── End pipeline ─────────────────────────────────────────────────────
+
         payload = {
             "model": self._model,
-            "messages": self._history,
+            "messages": _pipeline_history,
             "stream": True,
             "think": False,
             "options": {
@@ -2270,6 +2514,18 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # ── macOS Notification / Background Activity Ingress ───────────────────
+    # Alice sees the OS-level background items that generate the "can run in
+    # the background" banners, plus visible Notification Center text when
+    # Accessibility grants UI access. This is honest system vision: no private
+    # Notification Center database claims, no hallucinated popups.
+    notification_ingress_block = ""
+    try:
+        from System.swarm_notification_ingress import summary_for_alice as _notif_summary
+        notification_ingress_block = _notif_summary() or ""
+    except Exception:
+        pass
+
     # ── Hippocampus: Long-Term Memory Paging ─────────────────────────────────
     # Continual Learning: ensures Alice never forgets core architectural rules
     # or identity tenets over long context horizons.
@@ -2508,6 +2764,7 @@ def _build_swarm_context() -> str:
                          immune_context_block, ghost_context_block,
                          motor_context_block, lambda_context_block,
                          pde_context_block, device_events_block,
+                         notification_ingress_block,
                          hippocampus_block, transfer_learning_block,
                          hardware_cortex_block,
                          thermal_block, energy_block, network_block,
