@@ -154,23 +154,6 @@
     "window_height": 900,
     "signature": "UNVERIFIED"
   },
-  "Biological Dashboard": {
-    "category": "System Settings",
-    "entry_point": "Applications/sifta_biological_dashboard_qt.py",
-    "widget_class": "BiologicalDashboardWidget",
-    "window_width": 960,
-    "window_height": 640,
-    "signature": "UNVERIFIED",
-    "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
-  },
-  "First Boot Provisioning": {
-    "category": "System Settings",
-    "entry_point": "Applications/sifta_setup_gui.py",
-    "signature": "UNVERIFIED",
-    "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
-  },
   "Finance": {
     "category": "Utilities",
     "entry_point": "Applications/sifta_finance.py",
@@ -246,13 +229,6 @@
     "window_width": 1240,
     "window_height": 820,
     "signature": "UNVERIFIED"
-  },
-  "Vector 11 Gatekeeper Sim": {
-    "category": "Simulations",
-    "entry_point": "Applications/sifta_gatekeeper_sim.py",
-    "signature": "UNVERIFIED",
-    "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "Territory Is The Law": {
     "category": "Simulations",
@@ -478,12 +454,19 @@
     "signature": "UNVERIFIED"
   },
   "Alice Safety Tracker": {
-    "category": "System",
+    "category": "Network",
     "entry_point": "Applications/sifta_cartography_widget.py",
     "widget_class": "CartographyWidget",
     "window_width": 900,
     "window_height": 700,
-    "signature": "AG31",
-    "description": "Live GPS safety tracker. Alice watches where the Architect is via iPhone GPS relay. OpenStreetMap tile map, location trail, trip mode, home detection."
+    "signature": "AG31-C55M-SAFETY-MATH",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "_graphics_final_say": "CG55M Dr Cursor / Opus 4.7",
+    "description": "Live GPS safety tracker. Alice watches where the Architect is via iPhone GPS relay. OpenStreetMap tile map, accuracy-aware location trail, persisted home anchor, trip mode, and arrival detection."
   }
 }
