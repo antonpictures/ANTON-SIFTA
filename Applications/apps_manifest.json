@@ -82,7 +82,9 @@
     "widget_class": "ArenaPanelWidget",
     "window_width": 920,
     "window_height": 640,
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "Cyborg Organ Simulator": {
     "category": "Simulations",
@@ -92,21 +94,15 @@
     "window_height": 520,
     "signature": "UNVERIFIED"
   },
-  "Logistics Swarm (Overnight)": {
-    "category": "Simulations",
-    "entry_point": "Applications/sifta_sim_stream_panels.py",
-    "widget_class": "LogisticsStreamWidget",
-    "window_width": 920,
-    "window_height": 640,
-    "signature": "UNVERIFIED"
-  },
   "Warehouse Logistics Test": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_sim_stream_panels.py",
     "widget_class": "WarehouseStreamWidget",
     "window_width": 880,
     "window_height": 560,
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit: merged into Swarm Logistics Lab"
   },
   "Crucible Cyber-Defense (10-min)": {
     "category": "Simulations",
@@ -114,7 +110,9 @@
     "widget_class": "CrucibleStreamWidget",
     "window_width": 880,
     "window_height": 480,
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "Stigmergic Edge Vision": {
     "category": "Simulations",
@@ -170,12 +168,16 @@
     "widget_class": "BiologicalDashboardWidget",
     "window_width": 960,
     "window_height": 640,
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "First Boot Provisioning": {
     "category": "System Settings",
     "entry_point": "Applications/sifta_setup_gui.py",
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "Finance": {
     "category": "Utilities",
@@ -208,7 +210,9 @@
     "category": "System Settings",
     "entry_point": "Applications/sifta_settings.py",
     "widget_class": "SettingsWindow",
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "Clock Settings": {
     "category": "System Settings",
@@ -221,7 +225,9 @@
   "Cardio Metrics": {
     "category": "System Settings",
     "entry_point": "Applications/sifta_cardio.py",
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "SIFTA NLE": {
     "category": "Creative",
@@ -237,7 +243,9 @@
     "widget_class": "NLEWidget",
     "window_width": 1440,
     "window_height": 920,
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "SIFTA File Navigator": {
     "category": "Utilities",
@@ -250,7 +258,9 @@
   "Vector 11 Gatekeeper Sim": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_gatekeeper_sim.py",
-    "signature": "UNVERIFIED"
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk."
   },
   "Territory Is The Law": {
     "category": "Simulations",
@@ -466,5 +476,13 @@
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
     "description": "Gamified swarm-coherence game: wave / nod / approach / recede / still / flail at Alice's eye to drive the simulation. Six unlockable target shapes. Lives, score, streak, high-score persisted.",
     "_synthesis_note": "Reads .sifta_state/visual_stigmergy.jsonl via System.swarm_gesture_decoder.GestureDecoder. Original swarm physics in System/agentic_calibrator.py untouched."
+  },
+  "Swarm Logistics Lab": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "LogisticsStreamWidget",
+    "window_width": 920,
+    "window_height": 640,
+    "signature": "UNVERIFIED"
   }
 }

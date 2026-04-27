@@ -934,6 +934,8 @@ class LaunchpadWidget(QWidget):
 
     def _populate_grid(self):
         for name, dat in sorted(self.desktop._apps_manifest_cache.items()):
+            if dat.get("_retired"):   # AG31: skip retired apps in Launchpad
+                continue
             cat = _macos_app_category(name, dat)
             icon = self._icon_for(name, cat)
             btn = QPushButton(f"{icon}  {name}    {cat}")
@@ -1607,6 +1609,8 @@ class SiftaDesktop(QMainWindow):
                     entry = app_data.get("entry_point", "")
                     widget_class = app_data.get("widget_class", "")
                     if not entry:
+                        continue
+                    if app_data.get("_retired"):  # AG31: skip retired apps in Programs menu
                         continue
 
                     target_menu = acc
