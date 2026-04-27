@@ -550,5 +550,19 @@
     "window_height": 920,
     "signature": "UNVERIFIED",
     "description": "Two honest simulations: 1) Quantum Surface Code Error Correction (d=7 lattice with bit/phase flip tracking). 2) SIR Epidemiological Containment with decentralized stigmergic contact tracing."
+  },
+  "C55M + George - Protein Fold Colosseum": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_protein_folder_widget.py",
+    "window_width": 1000,
+    "window_height": 700,
+    "signature": "C55M-GEORGE-COSIGNED",
+    "description": "Deterministic HP lattice beam-search protein folder. Co-signed by C55M-DR-CODEX and George Anton; runs batch folds and writes PDB/meta artifacts for the SIFTA referee.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "George Anton"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   }
 }

@@ -8,8 +8,10 @@ It generates a 3D animated HTML visualization with glassmorphism UI and particle
 import sys
 import json
 import os
+import argparse
 import webbrowser
 from pathlib import Path
+import numpy as np
 
 # Add project root to path
 _REPO = Path(__file__).resolve().parent.parent
@@ -21,7 +23,17 @@ except ImportError:
     print("Error: Could not import System.sifta_peptide_backbone_demo")
     sys.exit(1)
 
-def build_html_viewer(seq: str, trajectory: list, final_e: float, output_path: Path):
+def build_html_viewer(
+    seq: str,
+    trajectory: list,
+    final_e: float,
+    output_path: Path,
+    *,
+    title: str = "SIFTA Protein Folder",
+    event_label: str = "Event 78 Vanguard",
+    engine_label: str = "toy_CA_backbone_monte_carlo",
+    signature_line: str = "SIFTA folding engine",
+):
     # Prepare data for JS
     js_traj = json.dumps(trajectory)
     
@@ -30,7 +42,7 @@ def build_html_viewer(seq: str, trajectory: list, final_e: float, output_path: P
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIFTA Protein Folder</title>
+    <title>{title}</title>
     <style>
         body {{
             margin: 0;
@@ -159,8 +171,8 @@ def build_html_viewer(seq: str, trajectory: list, final_e: float, output_path: P
     <div id="canvas-container"></div>
     
     <div class="ui-overlay">
-        <h1>SIFTA Peptide Fold</h1>
-        <h2>Event 78 Vanguard</h2>
+        <h1>{title}</h1>
+        <h2>{event_label}</h2>
         
         <div class="metric">
             <span class="label">Sequence</span>
@@ -172,6 +184,11 @@ def build_html_viewer(seq: str, trajectory: list, final_e: float, output_path: P
         <div class="metric">
             <span class="label">Residues</span>
             <span class="value">{len(seq)}</span>
+        </div>
+
+        <div class="metric">
+            <span class="label">Engine</span>
+            <span class="value">{engine_label}</span>
         </div>
         
         <div class="metric">
@@ -191,9 +208,12 @@ def build_html_viewer(seq: str, trajectory: list, final_e: float, output_path: P
     </div>
     
     <div class="paper-cite">
+        <strong>{signature_line}</strong><br>
         <strong>Thermodynamic Hypothesis</strong><br>
         Anfinsen (1973) Science 181:223<br>
-        <strong>Highly accurate prediction</strong><br>
+        <strong>HP lattice abstraction</strong><br>
+        Dill (1985) Biochemistry 24:1501<br>
+        <strong>Modern neural predictor comparison</strong><br>
         Jumper et al. (2021) Nature 596:583
     </div>
 
@@ -408,25 +428,138 @@ def build_html_viewer(seq: str, trajectory: list, final_e: float, output_path: P
         f.write(html)
     return output_path
 
+
+def _parse_pdb_ca(pdb_path: Path) -> np.ndarray:
+    coords = []
+    with pdb_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("ATOM") and " CA " in line:
+                coords.append([
+                    float(line[30:38]),
+                    float(line[38:46]),
+                    float(line[46:54]),
+                ])
+    if not coords:
+        raise ValueError(f"No CA atoms found in {pdb_path}")
+    arr = np.array(coords, dtype=float)
+    return arr - arr.mean(axis=0, keepdims=True)
+
+
+def _morph_trajectory(final_xyz: np.ndarray, frames: int = 90) -> list:
+    n = final_xyz.shape[0]
+    start = np.zeros_like(final_xyz)
+    start[:, 0] = np.arange(n, dtype=float) * 3.8
+    start -= start.mean(axis=0, keepdims=True)
+    out = []
+    for k in range(frames):
+        t = k / max(1, frames - 1)
+        smooth = t * t * (3.0 - 2.0 * t)
+        xyz = (1.0 - smooth) * start + smooth * final_xyz
+        out.append(xyz.tolist())
+    return out
+
+
+def run_c55m_george_batch(limit: int = 0, beam: int = 512) -> dict:
+    from System.sifta_hp_lattice_folder import DEFAULT_PROTEIN_PANEL
+    from System.sifta_protein_folding_broker import FoldingJob, ProteinFoldingBroker
+
+    os.environ["SIFTA_HP_LATTICE_BEAM"] = str(int(beam))
+    out_dir = _REPO / ".sifta_state" / "protein_folds"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    broker = ProteinFoldingBroker()
+    panel = DEFAULT_PROTEIN_PANEL[:limit] if limit and limit > 0 else DEFAULT_PROTEIN_PANEL
+    folds = []
+    for name, seq in panel:
+        meta = broker.run(
+            FoldingJob(
+                sequence=seq,
+                name=f"C55M + George :: {name}",
+                engine="c55m_hp_lattice",
+                out_dir=str(out_dir),
+            )
+        )
+        folds.append(meta)
+
+    summary = {
+        "title": "C55M + George Protein Fold Colosseum",
+        "engine": "c55m_hp_lattice",
+        "beam_width": int(beam),
+        "fold_count": len(folds),
+        "folds": folds,
+    }
+    summary_path = out_dir / "c55m_george_batch_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    summary["summary_path"] = str(summary_path)
+    return summary
+
+
 if __name__ == "__main__":
-    print("🧬 SIFTA Protein Folding Visualizer")
-    seq = "ACFLIVGPGKTYL"
-    if len(sys.argv) > 1:
-        seq = sys.argv[1].upper()
-        
-    print(f"Folding sequence: {seq} (Length: {len(seq)})")
-    print("Running Monte Carlo simulation...")
-    
-    # Run the folding engine
-    best_xyz, final_e, trajectory = fold(seq, steps=8000, temp=1.2, save_trajectory=True)
-    
-    print(f"Folding complete. Final energy: {final_e:.2f}")
+    parser = argparse.ArgumentParser(description="SIFTA protein folding visualizer")
+    parser.add_argument("sequence", nargs="?", default="ACFLIVGPGKTYL")
+    parser.add_argument("--engine", default="c55m_hp_lattice",
+                        choices=["toy", "c55m_hp_lattice"])
+    parser.add_argument("--beam", type=int, default=1024)
+    parser.add_argument("--batch", action="store_true",
+                        help="Fold the default C55M + George protein panel first.")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="Limit batch fold count; 0 means all defaults.")
+    args = parser.parse_args()
+
+    print("SIFTA Protein Folding Visualizer")
+
+    if args.batch:
+        summary = run_c55m_george_batch(limit=args.limit, beam=args.beam)
+        print(f"Batch folded {summary['fold_count']} proteins")
+        print(f"Summary: {summary['summary_path']}")
+        # Show the lowest-energy fold after the batch finishes.
+        best = min(summary["folds"], key=lambda row: row.get("energy", 0))
+        seq = best["sequence"]
+        final_e = float(best["energy"])
+        pdb_path = Path(best["pdb_path"])
+        trajectory = _morph_trajectory(_parse_pdb_ca(pdb_path))
+        engine_label = "c55m_hp_lattice_batch_best"
+    elif args.engine == "toy":
+        seq = args.sequence.upper()
+        print(f"Folding sequence: {seq} (Length: {len(seq)})")
+        print("Running Monte Carlo simulation...")
+        best_xyz, final_e, trajectory = fold(seq, steps=8000, temp=1.2, save_trajectory=True)
+        print(f"Folding complete. Final energy: {final_e:.2f}")
+        engine_label = "toy_CA_backbone_monte_carlo"
+    else:
+        from System.sifta_protein_folding_broker import FoldingJob, ProteinFoldingBroker
+
+        seq = args.sequence.upper()
+        os.environ["SIFTA_HP_LATTICE_BEAM"] = str(int(args.beam))
+        print(f"Folding sequence: {seq} (Length: {len(seq)})")
+        print(f"Running C55M + George HP lattice beam search (beam={args.beam})...")
+        broker = ProteinFoldingBroker()
+        meta = broker.run(
+            FoldingJob(
+                sequence=seq,
+                name="C55M + George co-signed fold",
+                engine="c55m_hp_lattice",
+            )
+        )
+        final_e = float(meta["energy"])
+        trajectory = _morph_trajectory(_parse_pdb_ca(Path(meta["pdb_path"])))
+        print(f"Folding complete. Energy: {final_e:.2f}")
+        print(f"PDB: {meta['pdb_path']}")
+        engine_label = "c55m_hp_lattice_beam_search"
     
     # Save widget HTML
     html_path = _REPO / ".sifta_state" / "protein_viewer.html"
     html_path.parent.mkdir(exist_ok=True)
     
-    build_html_viewer(seq, trajectory, final_e, html_path)
+    build_html_viewer(
+        seq,
+        trajectory,
+        final_e,
+        html_path,
+        title="C55M + George Protein Fold Colosseum",
+        event_label="Event 80: HP Lattice Batch Folder",
+        engine_label=engine_label,
+        signature_line="Co-signed: C55M-DR-CODEX + George Anton",
+    )
     
     print(f"Opening visualizer: {html_path}")
     webbrowser.open("file://" + str(html_path))

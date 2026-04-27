@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 import hashlib
+import os
 import subprocess
 import sys
 
@@ -16,7 +17,7 @@ AA20 = set("ACDEFGHIKLMNPQRSTVWY")
 class FoldingJob:
     sequence: str
     name: str = "sifta_protein"
-    engine: str = "toy"  # toy | esmfold_cli | external_pdb
+    engine: str = "toy"  # toy | c55m_hp_lattice | esmfold_cli | external_pdb
     out_dir: str = ".sifta_state/protein_folds"
 
 
@@ -26,6 +27,7 @@ class ProteinFoldingBroker:
 
     Honest modes:
       toy          = local Monte Carlo CA-backbone demo
+      c55m_hp_lattice = deterministic HP lattice beam-search baseline
       esmfold_cli  = calls a local ESMFold/OpenFold-style command if installed
       external_pdb = registers an already-produced PDB from AlphaFold/ESMFold/etc.
 
@@ -62,6 +64,8 @@ class ProteinFoldingBroker:
 
         if job.engine == "toy":
             result = self._run_toy(seq, pdb_path)
+        elif job.engine == "c55m_hp_lattice":
+            result = self._run_c55m_hp_lattice(seq, pdb_path)
         elif job.engine == "esmfold_cli":
             result = self._run_esmfold_cli(seq, pdb_path)
         else:
@@ -93,6 +97,26 @@ class ProteinFoldingBroker:
             "truth_label": "toy_CA_backbone_monte_carlo",
             "energy": float(energy),
             "confidence": "demo_only",
+        }
+
+    def _run_c55m_hp_lattice(self, seq: str, pdb_path: Path) -> dict:
+        from System.sifta_hp_lattice_folder import fold_to_pdb
+
+        beam_width = int(os.environ.get("SIFTA_HP_LATTICE_BEAM", "1024"))
+        result = fold_to_pdb(seq, pdb_path, beam_width=beam_width)
+
+        return {
+            "status": "ok",
+            "truth_label": result["truth_label"],
+            "confidence": "deterministic_lattice_baseline",
+            "energy": int(result["energy"]),
+            "hydrophobic_contacts": int(result["hydrophobic_contacts"]),
+            "radius_gyration_angstrom": float(result["radius_gyration_angstrom"]),
+            "beam_width": int(result["beam_width"]),
+            "states_expanded": int(result["states_expanded"]),
+            "pruned_self_collisions": int(result["pruned_self_collisions"]),
+            "structure_hash": result["structure_hash"],
+            "cosigned_by": result["cosigned_by"],
         }
 
     def _run_esmfold_cli(self, seq: str, pdb_path: Path) -> dict:
