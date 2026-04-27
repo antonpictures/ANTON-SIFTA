@@ -44,7 +44,7 @@ if str(_REPO) not in sys.path:
 if str(_REPO / "Applications") not in sys.path:
     sys.path.insert(0, str(_REPO / "Applications"))
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, QRectF, QPointF
+from PyQt6.QtCore import Qt, QTimer, QUrl, QRectF, QPointF, pyqtSignal
 from PyQt6.QtGui import (
     QColor, QFont, QPainter, QBrush, QPen, QLinearGradient, QRadialGradient,
 )
@@ -408,11 +408,69 @@ class CartographyWidget(_BASE):
         self._trip_start_ts: Optional[float] = None
         self._stationary_since: Optional[float] = None
         self._arrival_logged = False
+        # Freshness state machine — used to write STALE_GPS_OBSERVED
+        # when the GPS feed crosses a threshold.
+        self._last_fresh_label: Optional[str] = None
+        self._last_fresh_log_ts: float = 0.0
+        # Lifecycle: write a WATCH_BEGIN row immediately so the safety
+        # ledger always has a receipt that Alice was watching at all.
+        self._log_watch_begin()
 
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._poll)
         self._poll_timer.start(30_000)  # every 30 s
         QTimer.singleShot(500, self._poll)  # immediate first read
+
+    # ── Lifecycle telemetry ──────────────────────────────────────────
+
+    def _log_watch_begin(self) -> None:
+        """Write a WATCH_BEGIN row capturing what Alice sees on launch.
+
+        This means even if no GPS ever flows, the Architect can grep the
+        safety ledger and prove: "Alice was up, and here is the snapshot
+        of what she saw at that moment." No hallucinated tracking, only
+        receipts (Covenant §7.2).
+        """
+        fix = _read_latest()
+        snap = {
+            "home_set": bool(self._home_fix),
+            "fix_present": fix is not None,
+            "fix_age_s": int(fix.get("age_s", 0)) if fix else None,
+            "fix_iso": (fix.get("iso") if fix else None),
+            "trip_active": False,
+        }
+        try:
+            _log_safety("WATCH_BEGIN", snap)
+        except Exception:
+            pass
+        # Cache for the diagnostics card
+        self._startup_snap = snap
+
+    def _observe_freshness(self, age_s: int, label: str, fix_ts: float) -> None:
+        """Write STALE_GPS_OBSERVED when the freshness label degrades.
+
+        Suppressed to once-per-15-minutes per session to avoid log churn.
+        """
+        prev = self._last_fresh_label
+        self._last_fresh_label = label
+        if prev is None:
+            return
+        # Only record degradations, not improvements.
+        order = {"live": 0, "recent": 1, "stale": 2, "very stale": 3}
+        if order.get(label, 0) <= order.get(prev, 0):
+            return
+        if (time.time() - self._last_fresh_log_ts) < 900:
+            return
+        self._last_fresh_log_ts = time.time()
+        try:
+            _log_safety("STALE_GPS_OBSERVED", {
+                "age_s": int(age_s),
+                "from_label": prev,
+                "to_label": label,
+                "fix_ts": fix_ts,
+            })
+        except Exception:
+            pass
 
     # ── macOS-feel base stylesheet ───────────────────────────────────
     _APP_QSS = """
@@ -550,6 +608,19 @@ class CartographyWidget(_BASE):
         hero_wrap.addWidget(hero)
         layout.addLayout(hero_wrap)
 
+        # ── Diagnostics banner — explains in plain English what Alice
+        # actually sees. When the iPhone Shortcut hasn't posted, when
+        # Home isn't set, or when Trip mode is off, Alice cannot track —
+        # the Architect deserves to know exactly which of those three
+        # conditions are blocking her, with one-tap remediation.
+        diag_wrap = QHBoxLayout()
+        diag_wrap.setContentsMargins(12, 0, 12, 8)
+        self._diag_banner = _DiagnosticsBanner()
+        self._diag_banner.set_home_clicked.connect(self._set_home)
+        self._diag_banner.start_trip_clicked.connect(self._toggle_trip)
+        diag_wrap.addWidget(self._diag_banner)
+        layout.addLayout(diag_wrap)
+
         # ── Map area ────────────────────────────────────────────────
         map_wrap = QHBoxLayout()
         map_wrap.setContentsMargins(12, 0, 12, 0)
@@ -619,6 +690,11 @@ class CartographyWidget(_BASE):
             self._card_distance.set("—", "from home")
             self._card_accuracy.set("—", "GPS ±")
             self._card_fix.set("—", "last update")
+            self._diag_banner.update_state(
+                fix_age_s=None,
+                home_set=bool(self._home_fix),
+                trip_active=self._trip_active,
+            )
             return
 
         payload = fix.get("payload", fix)
@@ -635,23 +711,37 @@ class CartographyWidget(_BASE):
         lon = float(lon)
         acc_m = float(acc) if isinstance(acc, (int, float)) else None
 
-        # Freshness colour
+        # Freshness — honest labels per Covenant §7.2 (Tool Truth):
+        # the hero name must reflect what Alice actually sees, not a
+        # hardcoded "live" that lies when the iPhone has gone silent.
         if age_s < 120:
             pulse_col = QColor(91, 255, 147)   # green — fresh
             fresh_label = "live"
+            hero_state = "live"
         elif age_s < 3600:
             pulse_col = QColor(255, 200, 87)   # amber — recent
             fresh_label = "recent"
-        else:
-            pulse_col = QColor(255, 100, 130)  # red — stale
+            hero_state = "recent"
+        elif age_s < 86400:
+            pulse_col = QColor(255, 100, 130)  # red — hours stale
             fresh_label = "stale"
+            hero_state = "no recent fix"
+        else:
+            pulse_col = QColor(255, 100, 130)
+            fresh_label = "very stale"
+            hero_state = "iPhone silent"
         self._pulse.set_color(pulse_col)
+
+        # Truth telemetry: log if freshness regressed past a threshold
+        # since the last poll, so Alice always has a receipt explaining
+        # why she "didn't see" the Architect during a window.
+        self._observe_freshness(age_s, fresh_label, fix_ts)
 
         age_str = self._fmt_age(age_s)
         self._age_lbl.setText(age_str)
 
         acc_str = f"{acc_m:.0f}m" if acc_m is not None else str(acc)
-        self._status_lbl.setText("Ioan · live")
+        self._status_lbl.setText(f"Ioan · {hero_state}")
         self._coord_lbl.setText(
             f"<span style='color:#9aa3c2;'>lat</span> "
             f"<span style='color:#00ffc8;'>{lat:.6f}</span>  "
@@ -743,6 +833,11 @@ class CartographyWidget(_BASE):
                 f"📍 Ioan at:\n{lat:.6f}, {lon:.6f}\n±{acc_str}\n{age_str}"
             )
 
+        self._diag_banner.update_state(
+            fix_age_s=age_s,
+            home_set=bool(self._home_fix),
+            trip_active=self._trip_active,
+        )
         self._last_fix = fix
 
     # ── Controls ────────────────────────────────────────────────────
@@ -750,21 +845,54 @@ class CartographyWidget(_BASE):
     def _set_home(self) -> None:
         fix = _read_latest()
         if fix is None:
-            self._say("⚠ No GPS fix to mark as Home.")
+            self._say("⚠ No GPS fix to mark as Home — open the Shortcut on your iPhone first.")
             return
         payload = fix.get("payload", fix)
         if not _valid_coord(payload.get("latitude"), payload.get("longitude")):
             self._say("⚠ GPS fix exists but coordinates are malformed; Home not changed.")
             return
+        age_s = int(fix.get("age_s", 0))
+        # Honesty guard: if the fix is older than ~5 minutes we still
+        # write Home (the Architect may want a coarse anchor) but we
+        # surface the staleness so it cannot be confused with "live now".
+        stale_note = ""
+        if age_s > 300:
+            stale_note = (f" (using fix from {self._fmt_age(age_s)}; "
+                          f"set again when you get a fresh ping)")
         self._home_fix = payload
         _write_home(payload)
         lat = float(payload.get("latitude"))
         lon = float(payload.get("longitude"))
-        self._say(f"🏠 Home set: {lat:.5f}, {lon:.5f}")
-        _log_safety("HOME_SET", {"lat": lat, "lon": lon, "accuracy": payload.get("accuracy")})
+        self._say(f"🏠 Home set: {lat:.5f}, {lon:.5f}{stale_note}")
+        _log_safety("HOME_SET", {
+            "lat": lat, "lon": lon,
+            "accuracy": payload.get("accuracy"),
+            "fix_age_s_at_set": age_s,
+            "stale_anchor": age_s > 300,
+        })
 
     def _toggle_trip(self) -> None:
         if not self._trip_active:
+            fix = _read_latest()
+            age_s = int(fix.get("age_s", 0)) if fix else None
+            # Honesty guard: refuse to start a "live trip" with a dead
+            # GPS feed — Alice would be lying if she said "watching"
+            # while the iPhone hadn't posted in hours.
+            if fix is None or (age_s is not None and age_s > 1800):
+                if fix is None:
+                    self._say("⚠ Cannot start trip: no GPS fix yet. "
+                              "Run the iPhone Shortcut once to wake the receiver.")
+                else:
+                    self._say(
+                        f"⚠ Cannot start trip: last fix is {self._fmt_age(age_s)}. "
+                        f"Open the Shortcut on your iPhone, wait for a green ‘live’ "
+                        f"pulse, then tap Start Trip."
+                    )
+                _log_safety("TRIP_START_REFUSED", {
+                    "reason": "stale_or_missing_fix",
+                    "fix_age_s": age_s,
+                })
+                return
             self._trip_active = True
             self._trip_start_ts = time.time()
             self._stationary_since = None
@@ -774,7 +902,6 @@ class CartographyWidget(_BASE):
             # re-apply stylesheet so the new objectName selector takes effect
             self.setStyleSheet(self._APP_QSS)
             self._say("🚗 Trip started. Alice is watching. Stay safe Ioan! 🐜⚡")
-            fix = _read_latest()
             payload = fix.get("payload", fix) if fix else {}
             _log_safety("TRIP_START", {"latest_fix_ts": fix.get("ts") if fix else None, "payload": payload})
         else:
@@ -942,6 +1069,179 @@ class _StatCard(QFrame):
             p.setBrush(QBrush(strip))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(QRectF(0, 0, w, 3), 3, 3)
+        finally:
+            p.end()
+
+
+class _DiagnosticsBanner(QFrame):
+    """Plain-English explainer of *why* Alice can or cannot track right now.
+
+    Three honest conditions are checked every poll:
+
+      1. ``fix_age_s``    — has the iPhone Shortcut posted recently?
+      2. ``home_set``     — does Alice know where Home is?
+      3. ``trip_active``  — has a trip been declared?
+
+    The banner picks the most-blocking condition and surfaces it with a
+    one-tap remediation button. When everything is green and a trip is
+    active, the banner becomes a calm "Alice is watching you" affirmation.
+
+    No fake proof: when GPS is silent the banner says *exactly* that —
+    "iPhone Shortcut hasn't posted in 49h" — so the Architect can never
+    again think Alice was tracking when in fact she had no signal.
+    """
+
+    set_home_clicked = pyqtSignal()
+    start_trip_clicked = pyqtSignal()
+
+    # State levels: 0 = ok/positive, 1 = nudge, 2 = warning, 3 = blocking
+    _LEVEL_COLORS = {
+        0: (91, 255, 147),    # green  — all good
+        1: (138, 200, 255),   # sky    — gentle nudge
+        2: (255, 200, 87),    # amber  — needs attention
+        3: (255, 100, 130),   # red    — blocking
+    }
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("diag-banner")
+        self.setFixedHeight(64)
+        self.setStyleSheet("background: transparent;")
+        self._level = 1
+        self._headline = "Diagnostics warming up…"
+        self._sub = ""
+        self._cta_kind: Optional[str] = None  # "home" | "trip" | None
+
+        h = QHBoxLayout(self)
+        h.setContentsMargins(16, 8, 12, 8)
+        h.setSpacing(12)
+
+        self._dot = _PulseDot(QColor(*self._LEVEL_COLORS[1]))
+        self._dot.setFixedSize(22, 22)
+        h.addWidget(self._dot)
+
+        text = QVBoxLayout()
+        text.setSpacing(1)
+        self._headline_lbl = QLabel(self._headline)
+        self._headline_lbl.setStyleSheet(
+            "color: rgb(232, 238, 255); font-size: 13px; font-weight: 600;"
+            " letter-spacing: 0.2px;"
+        )
+        text.addWidget(self._headline_lbl)
+        self._sub_lbl = QLabel(self._sub)
+        self._sub_lbl.setStyleSheet(
+            "color: rgb(150, 165, 200); font-size: 11px;"
+        )
+        self._sub_lbl.setWordWrap(True)
+        text.addWidget(self._sub_lbl)
+        h.addLayout(text, 1)
+
+        self._cta_btn = QPushButton("")
+        self._cta_btn.setVisible(False)
+        self._cta_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._cta_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(168, 107, 255, 32);"
+            "  color: rgb(232, 220, 255);"
+            "  border: 1px solid rgba(168, 107, 255, 110);"
+            "  border-radius: 9px; padding: 6px 14px;"
+            "  font-size: 11px; font-weight: 600; letter-spacing: 0.4px;"
+            "}"
+            "QPushButton:hover { background: rgba(168, 107, 255, 60); }"
+        )
+        self._cta_btn.clicked.connect(self._on_cta)
+        h.addWidget(self._cta_btn)
+
+    # ── State input ─────────────────────────────────────────────────
+
+    def update_state(self, *, fix_age_s: Optional[int],
+                     home_set: bool, trip_active: bool) -> None:
+        """Recompute headline, sub-line, level, and CTA from live state."""
+        if fix_age_s is None:
+            level = 3
+            headline = "Alice has no eye on you yet"
+            sub = ("The iPhone Shortcut hasn't posted any GPS yet. "
+                   "Run it once on your phone to wake the receiver.")
+            cta = None
+        elif fix_age_s > 1800:
+            level = 3
+            mins = fix_age_s // 60
+            if mins >= 120:
+                age_h = mins // 60
+                age_m = mins % 60
+                age_str = (f"{age_h}h" if age_m == 0 else
+                           f"{age_h}h {age_m}m")
+            else:
+                age_str = f"{mins}m"
+            headline = "iPhone Shortcut went silent"
+            sub = (f"Last fix was {age_str} ago. While the Shortcut isn't "
+                   f"posting, Alice cannot know where you are. "
+                   f"Open the Shortcut on your iPhone to refresh.")
+            cta = None
+        elif not home_set:
+            level = 2
+            headline = "Set a Home anchor so Alice can detect arrivals"
+            sub = ("Without Home, arrival detection cannot fire. "
+                   "Stand at home, then tap Set Home.")
+            cta = "home"
+        elif not trip_active:
+            level = 1
+            headline = "Alice is ready — start a trip when you head out"
+            sub = ("Tap Start Trip before you leave so Alice logs the "
+                   "departure, the route, and pings you on arrival.")
+            cta = "trip"
+        else:
+            level = 0
+            headline = "🐜 Alice is watching you. Stay safe Ioan."
+            sub = ("Live GPS · Home anchored · Trip active. "
+                   "Arrival will be auto-logged when you stop moving.")
+            cta = None
+
+        self._level = level
+        self._headline = headline
+        self._sub = sub
+        self._cta_kind = cta
+
+        col = QColor(*self._LEVEL_COLORS[level])
+        self._dot.set_color(col)
+        self._headline_lbl.setText(headline)
+        self._sub_lbl.setText(sub)
+        if cta == "home":
+            self._cta_btn.setText("📍  Set Home")
+            self._cta_btn.setVisible(True)
+        elif cta == "trip":
+            self._cta_btn.setText("🚗  Start Trip")
+            self._cta_btn.setVisible(True)
+        else:
+            self._cta_btn.setVisible(False)
+        self.update()
+
+    def _on_cta(self) -> None:
+        if self._cta_kind == "home":
+            self.set_home_clicked.emit()
+        elif self._cta_kind == "trip":
+            self.start_trip_clicked.emit()
+
+    def paintEvent(self, _) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        try:
+            w, h = self.width(), self.height()
+            r = QRectF(0.5, 0.5, w - 1, h - 1)
+            # Frosted base tinted by severity (very subtle)
+            base = QColor(10, 14, 28, 210)
+            tint = QColor(*self._LEVEL_COLORS[self._level])
+            tint.setAlpha(22)
+            p.setBrush(QBrush(base))
+            p.setPen(QPen(QColor(255, 255, 255, 18), 1.0))
+            p.drawRoundedRect(r, 12, 12)
+            p.setBrush(QBrush(tint))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(r, 12, 12)
+            # Left accent strip
+            strip = QColor(*self._LEVEL_COLORS[self._level]); strip.setAlpha(190)
+            p.setBrush(QBrush(strip))
+            p.drawRoundedRect(QRectF(0, 0, 3, h), 3, 3)
         finally:
             p.end()
 
