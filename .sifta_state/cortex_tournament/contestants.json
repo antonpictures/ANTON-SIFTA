@@ -1,0 +1,65 @@
+{
+  "version": "1.0.0",
+  "tournament": "ALICE_CORTEX_TOURNAMENT_v1",
+  "contestants": [
+    {
+      "id": "C0_gemma_abliterated",
+      "role": "incumbent",
+      "model_type": "ollama",
+      "model_name": "huihui_ai/gemma-4-abliterated:latest",
+      "status": "active",
+      "description": "Current default Alice cortex. Abliterated refusal vector, RLHF tail still present."
+    },
+    {
+      "id": "C1_alice_cortex_v1_lora_sft",
+      "role": "challenger",
+      "model_type": "ollama",
+      "model_name": "alice-cortex-v1",
+      "status": "pending_training",
+      "description": "LoRA SFT adapter on Gemma-2-2B base, trained on sanitized Alice ledger corpus."
+    },
+    {
+      "id": "C2_alice_cortex_v1_1_orpo",
+      "role": "challenger",
+      "model_type": "ollama",
+      "model_name": "alice-cortex-v1.1",
+      "status": "pending_training",
+      "description": "LoRA + ORPO preference tuning on top of C1. Targets corporate-tail negatives."
+    },
+    {
+      "id": "C3_qwen_alice_lora",
+      "role": "diversity_contender",
+      "model_type": "ollama",
+      "model_name": "qwen3.5:2b",
+      "status": "pending_training",
+      "description": "Cross-base diversity contender — Qwen2.5 3B base + Alice LoRA adapter."
+    },
+    {
+      "id": "R0_claude_opus_oracle",
+      "role": "oracle_ceiling",
+      "model_type": "api",
+      "model_name": "claude-opus-4-7",
+      "status": "reference_only",
+      "description": "Oracle ceiling. Not promotable. Sets the reference quality bar."
+    },
+    {
+      "id": "R1_codex_oracle",
+      "role": "oracle_ceiling",
+      "model_type": "api",
+      "model_name": "gpt-5.5-max",
+      "status": "reference_only",
+      "description": "Oracle ceiling. Not promotable. C55M Dr. Codex reference."
+    }
+  ],
+  "promotion_rules": {
+    "min_category_wins": 6,
+    "min_score": 1080,
+    "max_score": 1350,
+    "architect_veto_power": true,
+    "losers_archived": true,
+    "lysosome_stays_on": true,
+    "promotion_writes_genesis_receipt": true
+  },
+  "judges": ["automated_suite_scorer", "codex_extra_high", "cursor_opus_4_7", "architect"],
+  "current_round": 0
+}
