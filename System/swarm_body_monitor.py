@@ -123,6 +123,12 @@ ORGAN_DEFS = [
     ("time",      "🕰️", "STIG-TIME",        "kleiber + circadian + turtle"),
     ("reflex",    "🦐", "Reflex Arc",       "mantis-shrimp μs classifier"),
     ("corvid",    "🐦‍⬛", "Corvid Apprentice","crow/raven 2B tool ganglion"),
+    # ── Predator v7 Organs (Event 76-79) ─────────────────────────────
+    ("td_learner", "🧠", "TD Q-Learner",    "Bellman RL — Schultz 1997"),
+    ("dopamine",   "💊", "Dopamine Loop",   "credit assignment — Schultz 1997"),
+    ("hippocampus","🐎", "Hippocampus",     "episodic memory ledger"),
+    ("sensor_gate","🚪", "Sensor Gate",     "attention filter — Koch 2011"),
+    ("bg_selector","⚖️", "Basal Ganglia",  "action selection — Redgrave 1999"),
 ]
 
 
@@ -226,6 +232,64 @@ class OrganEngine:
         corvid_last_s = corvid_traces[-1].get("latency_s", 0) if corvid_traces else 0
         corvid_success = sum(1 for c in corvid_traces if c.get("success"))
 
+        # ── Predator v7 live ledger reads ────────────────────────────────
+        td_path       = _STATE / "td_q_table.json"
+        td_ledger     = _STATE / "td_receipts.jsonl"
+        dopamine_path = _STATE / "dopamine_reward_ledger.jsonl"
+        last_action   = _STATE / "last_action_register.json"
+        hipp_path     = _STATE / "hippocampus_events.jsonl"
+        sgate_path    = _STATE / "sensor_gate_lock.json"
+        bg_path       = _STATE / "swarm_action_selector_trace.jsonl"
+
+        # TD Q-Learner: read Q-table entry count and last receipt
+        td_q_count = 0
+        td_last_error = 0.0
+        if td_path.exists():
+            try:
+                q = _json.loads(td_path.read_text())
+                td_q_count = len(q)
+            except Exception:
+                pass
+        td_receipts = _tail_trace(td_ledger, n=3, max_age_s=600)
+        if td_receipts:
+            td_last_error = td_receipts[-1].get("td_error", 0.0)
+
+        # Dopamine: last δ and total reward events
+        dopa_traces = _tail_trace(dopamine_path, n=5, max_age_s=600)
+        dopa_count = len(dopa_traces)
+        dopa_last_delta = dopa_traces[-1].get("delta", 0.0) if dopa_traces else 0.0
+        dopa_marker = dopa_traces[-1].get("marker", "-") if dopa_traces else "-"
+
+        # Last action register (credit assignment pipeline)
+        last_action_data = {}
+        if last_action.exists():
+            try:
+                last_action_data = _json.loads(last_action.read_text())
+            except Exception:
+                pass
+        last_action_name = last_action_data.get("action", "-")
+
+        # Hippocampus: event count
+        hipp_traces = _tail_trace(hipp_path, n=5, max_age_s=600)
+        hipp_count = len(hipp_traces)
+        hipp_last_type = hipp_traces[-1].get("event_type", "-") if hipp_traces else "-"
+
+        # Sensor gate: current lock state
+        sgate_locked = False
+        sgate_reason = "-"
+        if sgate_path.exists():
+            try:
+                sg = _json.loads(sgate_path.read_text())
+                sgate_locked = sg.get("locked", False)
+                sgate_reason = sg.get("reason", "-")
+            except Exception:
+                pass
+
+        # Basal Ganglia: recent action selections
+        bg_traces = _tail_trace(bg_path, n=5, max_age_s=300)
+        bg_count = len(bg_traces)
+        bg_last_winner = bg_traces[-1].get("winner", "-") if bg_traces else "-"
+
         state = {
             "tick":       t,
             "bio_time":   t_ctx["bio_time"],
@@ -318,6 +382,42 @@ class OrganEngine:
                 "sub":   f"latency={corvid_last_s:.1f}s  qwen3.5:2b  async",
                 "pct":   (corvid_success / corvid_count) if corvid_count > 0 else 0.1,
                 **_live_ledger_truth(corvid_path, "corvid_apprentice_trace.jsonl recent tasks"),
+            },
+            # ── Predator v7 Organs (Event 76-79) ─────────────────────
+            "td_learner": {
+                "value": td_q_count,
+                "label": f"Q-states={td_q_count}  δ={td_last_error:.4f}",
+                "sub":   f"last_action={last_action_name}  Bellman update",
+                "pct":   min(1.0, td_q_count / 20.0) if td_q_count > 0 else 0.05,
+                **_live_ledger_truth(td_path, "td_q_table.json live state-action values"),
+            },
+            "dopamine": {
+                "value": round(dopa_last_delta, 3),
+                "label": f"δ={dopa_last_delta:+.3f}  marker={dopa_marker}",
+                "sub":   f"reward_events={dopa_count}  credit assignment live",
+                "pct":   (dopa_last_delta + 1.0) / 2.0,
+                **_live_ledger_truth(dopamine_path, "dopamine_reward_ledger.jsonl live rewards"),
+            },
+            "hippocampus": {
+                "value": hipp_count,
+                "label": f"events={hipp_count}  last={hipp_last_type}",
+                "sub":   f"episodic memory  ledger-backed",
+                "pct":   min(1.0, hipp_count / 10.0) if hipp_count > 0 else 0.05,
+                **_live_ledger_truth(hipp_path, "hippocampus_events.jsonl episode log"),
+            },
+            "sensor_gate": {
+                "value": 1 if sgate_locked else 0,
+                "label": f"locked={sgate_locked}  reason={sgate_reason}",
+                "sub":   f"attention filter  Koch 2011",
+                "pct":   0.2 if sgate_locked else 0.9,
+                **_live_ledger_truth(sgate_path, "sensor_gate_lock.json attention state"),
+            },
+            "bg_selector": {
+                "value": bg_count,
+                "label": f"selections={bg_count}  winner={bg_last_winner}",
+                "sub":   f"action competition  Redgrave 1999",
+                "pct":   min(1.0, bg_count / 5.0) if bg_count > 0 else 0.1,
+                **_live_ledger_truth(bg_path, "swarm_action_selector_trace.jsonl selections"),
             },
         }
         counts = {TRUTH_REAL: 0, TRUTH_DEMO: 0, TRUTH_BROKEN: 0, TRUTH_UNKNOWN: 0}
