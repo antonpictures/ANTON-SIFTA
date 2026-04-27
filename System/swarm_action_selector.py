@@ -321,6 +321,16 @@ def pipeline_step(
     # Layer 4: Corpus Callosum injection
     system_injection = build_c0_system_injection(winner, c1_label, probs)
 
+    # Layer 5 pre-step: register (state, action) for credit assignment
+    # When Architect reacts next turn, process_architect_reaction() reads this
+    # and fires the TD update automatically — closing the Schultz 1997 loop.
+    if winner != ACTION_SILENCE and state_key is not None:
+        try:
+            from System.dopamine_reward_loop import register_last_action
+            register_last_action(state_key, winner, text_preview=text[:80])
+        except Exception:
+            pass  # non-blocking — never fail the pipeline for a register write
+
     if log:
         log_selection(winner, probs, text)
 

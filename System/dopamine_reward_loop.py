@@ -299,6 +299,118 @@ def format_reward_for_prompt(history: Optional[dict] = None) -> str:
     return "\n".join(lines)
 
 
+# ── Last-Action Register (credit assignment) ──────────────────────────────────
+# When Alice selects an action, the pipeline writes a tiny JSON record here.
+# When the Architect reacts, process_architect_reaction() reads that record
+# and fires the TD update.  This closes the loop automatically.
+_LAST_ACTION_FILE = _STATE / "last_action_register.json"
+
+
+def register_last_action(
+    state: tuple,
+    action: str,
+    text_preview: str = "",
+) -> None:
+    """
+    Store (state, action) so the next Architect reaction can credit it.
+
+    Called by pipeline_step() after every non-SILENCE action.
+    """
+    record = {
+        "ts":           time.time(),
+        "state":        list(state),
+        "action":       action,
+        "text_preview": text_preview[:80],
+    }
+    _LAST_ACTION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(_LAST_ACTION_FILE, "w") as f:
+            json.dump(record, f)
+    except OSError:
+        pass
+
+
+def load_last_action() -> Optional[dict]:
+    """Read the last-action register. Returns None if missing or stale (> 5 min)."""
+    if not _LAST_ACTION_FILE.exists():
+        return None
+    try:
+        with open(_LAST_ACTION_FILE) as f:
+            record = json.load(f)
+        # Discard if older than 5 minutes — reaction window
+        if time.time() - record.get("ts", 0) > 300:
+            return None
+        return record
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def process_architect_reaction(
+    user_text: str,
+    alice_preceding_text: str = "",
+) -> Optional[dict]:
+    """
+    Full closed loop: detect reward → log dopamine → TD update.
+
+    Called on EVERY user message inside the talk widget.
+    Does nothing if no reward signal is detected.
+
+    Flow
+    ----
+    1. detect_reward(user_text) → δ
+    2. If δ == 0: return None (neutral input, skip)
+    3. log_reward() → dopamine ledger
+    4. load_last_action() → (s, a) from last Alice turn
+    5. update_from_reward(s, a, δ) → TD update + receipt
+    6. Return summary dict for audit logging
+
+    Biology
+    -------
+    This is the complete Schultz 1997 loop:
+        cue (user text) → dopamine signal δ
+        → credit assigned to last (state, action) pair
+        → Q(s,a) updated
+
+    Parameters
+    ----------
+    user_text             : the Architect's latest message
+    alice_preceding_text  : Alice's previous response (for context logging)
+
+    Returns
+    -------
+    dict with delta, td_error, action, receipt_id — or None if no signal
+    """
+    delta, marker = detect_reward(user_text)
+    if delta == 0.0:
+        return None  # neutral — nothing to update
+
+    # 1. Log to dopamine ledger
+    last = load_last_action()
+    action_category = last["action"] if last else "ENGAGE"
+    dopamine_trace = log_reward(delta, marker, user_text,
+                                alice_preceding_text, action_category)
+
+    # 2. TD update if we have a last-action record
+    td_result = None
+    if last is not None:
+        try:
+            from System.swarm_td_learning import update_from_reward
+            state = tuple(last["state"])
+            # next_state: we don't know it yet, use state as terminal approximation
+            td_result = update_from_reward(state, last["action"],
+                                           reward=delta, next_state=state)
+        except Exception:
+            pass  # TD module unavailable — dopamine still logged
+
+    return {
+        "delta":          delta,
+        "marker":         marker,
+        "dopamine_trace": dopamine_trace,
+        "last_action":    last,
+        "td_result":      td_result,
+    }
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import argparse
