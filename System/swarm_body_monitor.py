@@ -4,8 +4,8 @@ System/swarm_body_monitor.py
 ══════════════════════════════════════════════════════════════════════
 SIFTA Mermaid v1.0 — Live Body Monitor
 ──────────────────────────────────────────────────────────────────────
-Shows ALL 12 biological organs with REAL live data.
-Nothing is faked. Every value comes from the actual organ modules.
+Shows all 12 biological organs with explicit truth labels.
+No organ may display as live unless its state declares a live input source.
 
 Camera: OFF by default (press C to toggle — uses CPU when on)
 
@@ -49,6 +49,20 @@ C_MUTED     = "#4a6080"
 C_ACCENT    = "#7b2fff"
 C_GOLD      = "#ffd700"
 
+TRUTH_REAL = "REAL"
+TRUTH_DEMO = "DEMO"
+TRUTH_BROKEN = "BROKEN"
+TRUTH_UNKNOWN = "UNKNOWN"
+
+TRUTH_COLORS = {
+    TRUTH_REAL: C_ALIVE,
+    TRUTH_DEMO: C_WARN,
+    TRUTH_BROKEN: C_DEAD,
+    TRUTH_UNKNOWN: C_MUTED,
+}
+
+DEMO_SOURCE = "simulated_internal_oscillator"
+
 # ── Trace helpers for reflex / corvid organs ────────────────────────
 import json as _json
 
@@ -72,6 +86,28 @@ def _tail_trace(path: Path, n: int = 5, max_age_s: float = 300.0) -> list:
         return out
     except Exception:
         return []
+
+
+def _truth(status: str, source: str, note: str) -> dict:
+    return {
+        "truth_status": status,
+        "truth_source": source,
+        "truth_note": note,
+    }
+
+
+def _demo_truth(note: str) -> dict:
+    return _truth(TRUTH_DEMO, DEMO_SOURCE, note)
+
+
+def _live_process_truth(note: str) -> dict:
+    return _truth(TRUTH_REAL, "live_process", note)
+
+
+def _live_ledger_truth(path: Path, note: str) -> dict:
+    if path.exists():
+        return _truth(TRUTH_REAL, "live_ledger", note)
+    return _truth(TRUTH_UNKNOWN, "missing_ledger", f"{note}; ledger missing: {path.name}")
 
 ORGAN_DEFS = [
     # (key, emoji, name, description)
@@ -131,7 +167,8 @@ class OrganEngine:
         t_ctx = self.stig_time.tick(metabolic_mode=mode.value,
                                     field_energy=self.metabolic.energy)
 
-        # Simulate organ dynamics (real math, not faked)
+        # Demo organ dynamics. Event82 requires these to be visibly labeled as
+        # DEMO until each organ has a live ledger/process/sensor input.
         t = self.tick
 
         # Field energy oscillates with circadian gate
@@ -175,18 +212,21 @@ class OrganEngine:
         T_est, sigma = self.stig_time.measure_interval()
 
         # ── Live trace reads for reflex + corvid ────────────────────────
-        reflex_traces = _tail_trace(_STATE / "reflex_arc_trace.jsonl", n=5, max_age_s=300)
+        reflex_path = _STATE / "reflex_arc_trace.jsonl"
+        corvid_path = _STATE / "corvid_apprentice_trace.jsonl"
+
+        reflex_traces = _tail_trace(reflex_path, n=5, max_age_s=300)
         reflex_count = len(reflex_traces)
         reflex_last_cat = reflex_traces[-1].get("category", "-") if reflex_traces else "-"
         reflex_last_ms = reflex_traces[-1].get("latency_ms", 0) if reflex_traces else 0
 
-        corvid_traces = _tail_trace(_STATE / "corvid_apprentice_trace.jsonl", n=5, max_age_s=300)
+        corvid_traces = _tail_trace(corvid_path, n=5, max_age_s=300)
         corvid_count = len(corvid_traces)
         corvid_last_task = corvid_traces[-1].get("task", "-") if corvid_traces else "-"
         corvid_last_s = corvid_traces[-1].get("latency_s", 0) if corvid_traces else 0
         corvid_success = sum(1 for c in corvid_traces if c.get("success"))
 
-        return {
+        state = {
             "tick":       t,
             "bio_time":   t_ctx["bio_time"],
             "dilation":   t_ctx["dilation"],
@@ -198,60 +238,70 @@ class OrganEngine:
                 "label": f"ψ={self._field_energy:.3f}",
                 "sub":   f"circadian gate: {circ:.2f}",
                 "pct":   self._field_energy,
+                **_demo_truth("internal circadian oscillator; no live field ledger wired"),
             },
             "rl": {
                 "value": round(self._rl_score, 3),
                 "label": f"score={self._rl_score:.3f}",
                 "sub":   f"tick={t}  mutations tracking",
                 "pct":   self._rl_score,
+                **_demo_truth("internal score drift; no live RL learner feed wired"),
             },
             "octopus": {
                 "value": round(self._oct_coherence, 4),
                 "label": f"coherence={self._oct_coherence:.4f}",
                 "sub":   "8 arms  nonsomatotopic",
                 "pct":   self._oct_coherence,
+                **_demo_truth("internal arm coherence oscillator; no motor bus wired"),
             },
             "cuttlefish": {
                 "value": round(self._cut_contrast, 3),
                 "label": f"contrast={self._cut_contrast:.3f}",
                 "sub":   "passing cloud  decentralized",
                 "pct":   self._cut_contrast,
+                **_demo_truth("internal contrast oscillator; no live display organ wired"),
             },
             "electric": {
                 "value": round(self._electric_phase, 4),
                 "label": f"φ={self._electric_phase:.4f} rad",
                 "sub":   f"JAR  identity stable",
                 "pct":   (math.sin(self._electric_phase) + 1) / 2,
+                **_demo_truth("internal phase oscillator; no live electric-field sensor wired"),
             },
             "honeybee": {
                 "value": round(self._waggle_angle, 4),
                 "label": f"θ={math.degrees(self._waggle_angle):.1f}°",
                 "sub":   f"vigor=0.95  quorum ready",
                 "pct":   (math.sin(self._waggle_angle) + 1) / 2,
+                **_demo_truth("internal angle drift; no live route quorum ledger wired"),
             },
             "starling": {
                 "value": round(self._starling_spread, 4),
                 "label": f"spread={self._starling_spread:.4f}",
                 "sub":   "K=7 topological  scale-free",
                 "pct":   1.0 - min(self._starling_spread, 1.0),
+                **_demo_truth("internal spread oscillator; no live flock topology feed wired"),
             },
             "fly": {
                 "value": round(self._fly_residual, 4),
                 "label": f"residual={self._fly_residual:.4f}",
                 "sub":   f"gain_err={self._fly_gain_error:.4f}  NLMS",
                 "pct":   max(0.0, 1.0 - self._fly_residual / 10.0),
+                **_demo_truth("internal efference decay; no live camera-motion stream wired"),
             },
             "metabolic": {
                 "value": round(e, 4),
                 "label": f"ATP={e:.4f}  [{mode.value.upper()}]",
                 "sub":   f"retina={self.metabolic.get_module_budget('retina'):.3f}  display={self.metabolic.get_module_budget('display'):.3f}",
                 "pct":   e,
+                **_live_process_truth("SwarmMetabolicEngine.tick_metabolism()"),
             },
             "time": {
                 "value": round(t_ctx["bio_time"], 2),
                 "label": f"bio_t={t_ctx['bio_time']:.1f}  ×{t_ctx['dilation']}",
                 "sub":   f"σ(T)={sigma:.1f}  S={t_ctx['compressed_time']:.2f}",
                 "pct":   circ,
+                **_live_process_truth("StigTime.tick() live process clock"),
             },
             # ── 11th Organ: Mantis-Shrimp Reflex Arc ──────────────────
             "reflex": {
@@ -259,6 +309,7 @@ class OrganEngine:
                 "label": f"fires={reflex_count}  last={reflex_last_cat}",
                 "sub":   f"latency={reflex_last_ms:.3f}ms  μs-class  0 STGM",
                 "pct":   min(1.0, reflex_count / 5.0) if reflex_count > 0 else 0.1,
+                **_live_ledger_truth(reflex_path, "reflex_arc_trace.jsonl recent fires"),
             },
             # ── 12th Organ: Corvid Apprentice ─────────────────────────
             "corvid": {
@@ -266,12 +317,19 @@ class OrganEngine:
                 "label": f"tasks={corvid_count}  ok={corvid_success}  last={corvid_last_task}",
                 "sub":   f"latency={corvid_last_s:.1f}s  qwen3.5:2b  async",
                 "pct":   (corvid_success / corvid_count) if corvid_count > 0 else 0.1,
+                **_live_ledger_truth(corvid_path, "corvid_apprentice_trace.jsonl recent tasks"),
             },
         }
+        counts = {TRUTH_REAL: 0, TRUTH_DEMO: 0, TRUTH_BROKEN: 0, TRUTH_UNKNOWN: 0}
+        for key, *_ in ORGAN_DEFS:
+            status = state[key].get("truth_status", TRUTH_UNKNOWN)
+            counts[status] = counts.get(status, 0) + 1
+        state["truth_counts"] = counts
+        return state
 
 
 class OrganCard(QFrame):
-    """A single blinking organ card with live data."""
+    """A single organ card with explicit source-truth labels."""
 
     def __init__(self, key, emoji, name, description, parent=None):
         super().__init__(parent)
@@ -299,7 +357,7 @@ class OrganCard(QFrame):
         self.lbl_name = QLabel(name)
         self.lbl_name.setFont(QFont("JetBrains Mono, Menlo, Courier", 11, QFont.Weight.Bold))
         self.lbl_name.setStyleSheet(f"color: {C_ALIVE}; background: transparent;")
-        self.lbl_status = QLabel("● ALIVE")
+        self.lbl_status = QLabel("● UNKNOWN")
         self.lbl_status.setFont(QFont("Menlo", 9))
         self.lbl_status.setStyleSheet(f"color: {C_ALIVE}; background: transparent;")
         header.addWidget(self.lbl_icon)
@@ -344,24 +402,26 @@ class OrganCard(QFrame):
         pct = float(d.get("pct", 0.5))
         label = d.get("label", "")
         sub = d.get("sub", "")
+        truth_status = d.get("truth_status", TRUTH_UNKNOWN)
+        truth_source = d.get("truth_source", "unknown")
+        truth_note = d.get("truth_note", "")
+        truth_color = TRUTH_COLORS.get(truth_status, C_MUTED)
 
         self.bar.setValue(int(pct * 1000))
 
-        # Blink: alternate color on odd ticks
-        blink_on = (tick % 4 < 2)
-        color = C_ALIVE if blink_on else C_PULSE
-        self.lbl_status.setStyleSheet(f"color: {color}; background: transparent;")
+        blink_on = truth_status == TRUTH_REAL and (tick % 4 < 2)
+        status_color = C_PULSE if blink_on else truth_color
+        self.lbl_status.setText(f"● {truth_status}")
+        self.lbl_status.setToolTip(f"{truth_source}: {truth_note}")
+        self.lbl_status.setStyleSheet(f"color: {status_color}; background: transparent;")
+        self.lbl_name.setStyleSheet(f"color: {truth_color}; background: transparent;")
         self.lbl_value.setText(label)
-        self.lbl_value.setStyleSheet(f"color: {'#00ffcc' if blink_on else C_PULSE}; background: transparent;")
-        self.lbl_sub.setText(sub)
+        self.lbl_value.setStyleSheet(f"color: {'#00ffcc' if blink_on else truth_color}; background: transparent;")
+        self.lbl_sub.setText(f"{sub}  |  {truth_status}: {truth_source}")
+        self.lbl_sub.setToolTip(truth_note)
 
-        # Bar color by health
-        if pct > 0.6:
-            bar_color = C_ALIVE
-        elif pct > 0.3:
-            bar_color = C_WARN
-        else:
-            bar_color = C_DEAD
+        # Bar color by source truth, not by pretty oscillator health.
+        bar_color = truth_color
         self.bar.setStyleSheet(f"""
             QProgressBar {{ background: {C_BORDER}; border-radius: 2px; border: none; }}
             QProgressBar::chunk {{ background: {bar_color}; border-radius: 2px; }}
@@ -374,7 +434,7 @@ class HeaderBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 8)
 
-        title = QLabel("🧜‍♀️  SIFTA MERMAID v1.0  —  LIVE BODY MONITOR")
+        title = QLabel("🧜‍♀️  SIFTA MERMAID v1.0  —  BODY MONITOR TRUTH LABELS")
         title.setFont(QFont("JetBrains Mono, Menlo, Courier", 14, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C_ALIVE};")
         layout.addWidget(title)
@@ -385,8 +445,9 @@ class HeaderBar(QWidget):
         self.lbl_bio     = QLabel("bio_t: 0.0")
         self.lbl_circ    = QLabel("☀️ DAY")
         self.lbl_camera  = QLabel("📷 CAM: OFF")
+        self.lbl_truth   = QLabel("REAL 0  DEMO 0")
 
-        for lbl in [self.lbl_tick, self.lbl_mode, self.lbl_bio, self.lbl_circ, self.lbl_camera]:
+        for lbl in [self.lbl_tick, self.lbl_mode, self.lbl_bio, self.lbl_circ, self.lbl_camera, self.lbl_truth]:
             lbl.setFont(QFont("Menlo", 10))
             lbl.setStyleSheet(f"color: {C_TEXT}; padding: 0 8px;")
             layout.addWidget(lbl)
@@ -402,8 +463,17 @@ class HeaderBar(QWidget):
         self.lbl_mode.setText(f"MODE: {mode}")
         self.lbl_bio.setText(f"bio_t: {state['bio_time']:.1f}")
         circ = state["circadian"]
+        truth_counts = state.get("truth_counts", {})
         self.lbl_circ.setText(f"{'☀️' if circ > 0.5 else '🌙'} {'DAY' if circ > 0.5 else 'NIGHT'} {circ:.2f}")
         self.lbl_camera.setText(f"📷 CAM: {'ON ⚠️' if camera_on else 'OFF'}")
+        self.lbl_truth.setText(
+            f"REAL {truth_counts.get(TRUTH_REAL, 0)}  "
+            f"DEMO {truth_counts.get(TRUTH_DEMO, 0)}  "
+            f"UNK {truth_counts.get(TRUTH_UNKNOWN, 0)}"
+        )
+        self.lbl_truth.setStyleSheet(
+            f"color: {C_ALIVE}; padding: 0 8px; font-weight: bold;"
+        )
 
         mode_colors = {
             "BURST": C_ALIVE, "CRUISE": C_PULSE,
@@ -464,7 +534,7 @@ class MermaidBodyMonitor(QMainWindow):
             self.cards[key] = card
 
         # Status bar
-        self.status_bar = QLabel("  🟢 ALL SYSTEMS NOMINAL  |  Camera OFF — press C to enable (uses CPU)  |  Press Q to quit")
+        self.status_bar = QLabel("  REAL=green  DEMO=amber  BROKEN=red  UNKNOWN=gray  |  Camera OFF — press C to enable")
         self.status_bar.setFont(QFont("Menlo", 9))
         self.status_bar.setStyleSheet(
             f"background: {C_PANEL}; color: {C_MUTED}; "
@@ -489,8 +559,13 @@ class MermaidBodyMonitor(QMainWindow):
         # Update status bar with metabolic mode
         mode_label = state["metabolic"]["label"]
         e = state["metabolic"]["value"]
+        truth_counts = state.get("truth_counts", {})
         self.status_bar.setText(
             f"  tick={tick}  |  {mode_label}  |  "
+            f"REAL={truth_counts.get(TRUTH_REAL, 0)}  "
+            f"DEMO={truth_counts.get(TRUTH_DEMO, 0)}  "
+            f"BROKEN={truth_counts.get(TRUTH_BROKEN, 0)}  "
+            f"UNKNOWN={truth_counts.get(TRUTH_UNKNOWN, 0)}  |  "
             f"bio_t={state['bio_time']:.1f}  ×{state['dilation']}  |  "
             f"circadian={state['circadian']:.3f}  |  "
             f"{'📷 Camera ON — high CPU' if self.camera_on else '📷 Camera OFF [C to enable]'}  |  [Q] quit"
