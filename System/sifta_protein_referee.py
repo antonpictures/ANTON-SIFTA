@@ -2,18 +2,15 @@
 """
 System/sifta_protein_referee.py
 
-Predator v7.0 — Event 79: The Scientific Referee
-Cross-engine consistency checker.
+Predator v7.0 — Event 81: Multi-Axis Structural Referee
+Upgraded from naïve RMSD to length-normalized, domain-motion robust metrics.
 
-SIFTA doesn't just run tools; it acts as an epistemic referee.
-This module compares the outputs of different protein folding engines
-(e.g., Toy vs ESMFold vs AlphaFold) using the Kabsch algorithm to
-compute the Root Mean Square Deviation (RMSD) of their CA backbones.
+Scientific Anchors:
+1. TM-score (Zhang & Skolnick, 2004)
+2. Contact Map Overlap (CASP standards)
 
-Biology: 
-RMSD < 2.0 Å  → High confidence (Engines agree on the fold)
-RMSD < 5.0 Å  → Medium confidence (Broad topological agreement)
-RMSD > 5.0 Å  → Contradiction (Engines disagree, epistemic uncertainty)
+SIFTA judges fold topological equivalence via length-independent TM-scores
+and interaction-preserving contact maps, not just rigid-body RMSD.
 """
 
 from __future__ import annotations
@@ -37,48 +34,93 @@ def parse_pdb_ca_coords(pdb_path: str) -> np.ndarray:
     return np.array(coords)
 
 
-def kabsch_rmsd(P: np.ndarray, Q: np.ndarray) -> float:
+def kabsch_align(P: np.ndarray, Q: np.ndarray) -> np.ndarray:
     """
-    Compute the optimal RMSD between two sets of 3D points
-    using the Kabsch algorithm.
+    Superimposes P onto Q using the Kabsch algorithm.
+    Returns the rotated and translated P' that minimizes RMSD to Q.
     """
-    if P.shape != Q.shape:
-        raise ValueError("Coordinate arrays must have the same shape for RMSD.")
-    
-    n = P.shape[0]
-
-    # 1. Translate both to centroids
     P_centered = P - np.mean(P, axis=0)
     Q_centered = Q - np.mean(Q, axis=0)
-
-    # 2. Computation of the covariance matrix
     C = np.dot(np.transpose(P_centered), Q_centered)
-
-    # 3. SVD
     V, S, W = np.linalg.svd(C)
-    
-    # 4. Handle reflection case (ensure a right-handed coordinate system)
-    d = (np.linalg.det(V) * np.linalg.det(W)) < 0.0
-    if d:
+    if (np.linalg.det(V) * np.linalg.det(W)) < 0.0:
         S[-1] = -S[-1]
         V[:, -1] = -V[:, -1]
-
-    # 5. Compute rotation matrix
     U = np.dot(V, W)
-
-    # 6. Rotate P
     P_rotated = np.dot(P_centered, U)
+    return P_rotated + np.mean(Q, axis=0)
 
-    # 7. Compute RMSD
-    diff = P_rotated - Q_centered
-    rmsd = np.sqrt((diff * diff).sum() / n)
-    return float(rmsd)
+
+def tm_score_approx(P_aligned: np.ndarray, Q: np.ndarray) -> float:
+    """
+    Calculates an approximate TM-score (Zhang & Skolnick, 2004)
+    using pre-aligned coordinates. TM-score is robust to local loops
+    and length-independent.
+    """
+    n = len(P_aligned)
+    if n <= 15:
+        d0 = 0.5
+    else:
+        d0 = 1.24 * (n - 15) ** (1/3) - 1.8
+        d0 = max(d0, 0.5)
+
+    dist = np.linalg.norm(P_aligned - Q, axis=1)
+    score = np.mean(1 / (1 + (dist / d0) ** 2))
+    return float(score)
+
+
+def contact_map(xyz: np.ndarray, cutoff: float = 8.0) -> np.ndarray:
+    """
+    Binary contact map. Residues i and j interact if their CA distance < 8.0A.
+    """
+    n = len(xyz)
+    C = np.zeros((n, n), dtype=int)
+    for i in range(n):
+        for j in range(i + 3, n):  # Exclude immediate sequence neighbors
+            if np.linalg.norm(xyz[i] - xyz[j]) < cutoff:
+                C[i, j] = C[j, i] = 1
+    return C
+
+
+def contact_overlap(c1: np.ndarray, c2: np.ndarray) -> tuple[float, float]:
+    """Returns Precision and Recall of contact preservation."""
+    tp = np.sum((c1 == 1) & (c2 == 1))
+    fp = np.sum((c1 == 1) & (c2 == 0))
+    fn = np.sum((c1 == 0) & (c2 == 1))
+
+    precision = tp / (tp + fp + 1e-8)
+    recall = tp / (tp + fn + 1e-8)
+    return float(precision), float(recall)
+
+
+def multi_metric_compare(P: np.ndarray, Q: np.ndarray) -> dict:
+    """
+    Execute the multi-axis structural referee pipeline.
+    """
+    if P.shape != Q.shape:
+        raise ValueError("Coordinate arrays must have the same shape.")
+
+    # Structural alignment
+    P_aligned = kabsch_align(P, Q)
+
+    # Metrics
+    tm = tm_score_approx(P_aligned, Q)
+    rmsd = np.sqrt(np.mean(np.sum((P_aligned - Q) ** 2, axis=1)))
+    
+    c1 = contact_map(P)
+    c2 = contact_map(Q)
+    precision, recall = contact_overlap(c1, c2)
+
+    return {
+        "tm_score": round(tm, 3),
+        "rmsd_angstroms": round(float(rmsd), 3),
+        "contact_precision": round(precision, 3),
+        "contact_recall": round(recall, 3),
+    }
 
 
 def referee_judgment(meta1_path: str, meta2_path: str) -> dict:
-    """
-    Compare two folding jobs and return an epistemic judgment.
-    """
+    """Compare two folding jobs using multi-metric biology truth."""
     with open(meta1_path) as f:
         job1 = json.load(f)
     with open(meta2_path) as f:
@@ -87,54 +129,48 @@ def referee_judgment(meta1_path: str, meta2_path: str) -> dict:
     if job1["sequence"] != job2["sequence"]:
         return {
             "status": "rejected",
-            "reason": "sequences do not match",
-            "epistemic_flag": "invalid_comparison"
+            "epistemic_flag": "invalid_comparison",
+            "reason": "sequences do not match"
         }
-
-    # Ensure both jobs successfully produced a PDB
     if job1.get("status") != "ok" or job2.get("status") != "ok":
         return {
             "status": "rejected",
-            "reason": "one or both jobs failed or lack backend",
-            "epistemic_flag": "insufficient_evidence"
+            "epistemic_flag": "insufficient_evidence",
+            "reason": "one or both jobs lack coordinates"
         }
 
     coords1 = parse_pdb_ca_coords(job1["pdb_path"])
     coords2 = parse_pdb_ca_coords(job2["pdb_path"])
 
-    rmsd = kabsch_rmsd(coords1, coords2)
+    metrics = multi_metric_compare(coords1, coords2)
+    tm = metrics["tm_score"]
+    cp = metrics["contact_precision"]
 
-    # Epistemic judgment thresholds
-    if rmsd <= 2.0:
-        flag = "HIGH_CONFIDENCE_AGREEMENT"
-        verdict = "Engines independently converged on identical topology."
-    elif rmsd <= 5.0:
-        flag = "MEDIUM_CONFIDENCE_AGREEMENT"
-        verdict = "Broad topological agreement, but localized discrepancies."
+    # Smarter Classification Thresholds (TM-score normalized)
+    if tm > 0.7 and cp > 0.7:
+        flag = "TRUE_CONSENSUS"
+        verdict = "Identical fold geometry and high interaction preservation."
+    elif tm > 0.5:
+        flag = "SAME_FOLD"
+        verdict = "Shared global topology. Discrepancies likely flexible loops or domain motion."
     else:
-        flag = "EPISTEMIC_CONTRADICTION"
-        verdict = "Engines disagree on fundamental folding pathway. Trust external experimental data."
+        flag = "STRUCTURAL_CONTRADICTION"
+        verdict = "Fundamentally distinct topological folding pathways."
 
-    judgment = {
+    return {
         "status": "completed",
         "sequence": job1["sequence"],
         "comparison": f"{job1['engine']} vs {job2['engine']}",
-        "rmsd_angstroms": round(rmsd, 3),
+        "metrics": metrics,
         "epistemic_flag": flag,
         "referee_verdict": verdict,
-        "truth_labels_compared": [job1["truth_label"], job2["truth_label"]]
     }
-    
-    return judgment
 
 
 def referee_triangulate(meta_paths: list[str]) -> dict:
     """
-    N-way consensus triangulation (Triangulate 3+ folding engines).
-    Computes an all-to-all RMSD matrix to find consensus clusters and detect outliers.
-    
-    Biology: If 2 engines agree (RMSD < 3.0) and 1 disagrees (RMSD > 5.0),
-    the disagreeing engine is flagged as an epistemic outlier.
+    N-way consensus triangulation using TM-scores.
+    A TM-score > 0.5 designates two models as belonging to the same fold cluster.
     """
     if len(meta_paths) < 3:
         raise ValueError("Triangulation requires at least 3 models.")
@@ -144,73 +180,60 @@ def referee_triangulate(meta_paths: list[str]) -> dict:
         with open(p) as f:
             jobs.append(json.load(f))
 
-    # Reject if sequences mismatch
     seqs = {j["sequence"] for j in jobs}
     if len(seqs) > 1:
         return {
             "status": "rejected",
             "epistemic_flag": "invalid_comparison",
-            "reason": "Mismatched sequences in triangulation pool."
+            "reason": "Mismatched sequences."
         }
-
-    # Reject if missing backends
     if any(j.get("status") != "ok" for j in jobs):
         return {
             "status": "rejected",
-            "epistemic_flag": "insufficient_evidence",
-            "reason": "One or more engines failed to produce coordinates."
+            "epistemic_flag": "insufficient_evidence"
         }
 
     coords = [parse_pdb_ca_coords(j["pdb_path"]) for j in jobs]
     n = len(jobs)
     
-    # Compute all-to-all RMSD matrix
-    rmsd_matrix = np.zeros((n, n))
+    # Compute all-to-all TM-score matrix
+    tm_matrix = np.zeros((n, n))
     for i in range(n):
+        tm_matrix[i, i] = 1.0
         for j in range(i + 1, n):
-            val = kabsch_rmsd(coords[i], coords[j])
-            rmsd_matrix[i, j] = val
-            rmsd_matrix[j, i] = val
+            # TM-score is generally symmetric for same-length alignments
+            m = multi_metric_compare(coords[i], coords[j])
+            tm = m["tm_score"]
+            tm_matrix[i, j] = tm
+            tm_matrix[j, i] = tm
 
     # Consensus cluster detection
-    # A model is in consensus if it agrees (RMSD < 3.0A) with at least one other model
+    # A model is in consensus if it shares the SAME FOLD (TM > 0.5) with at least one other
     consensus_idx = set()
     for i in range(n):
         for j in range(i + 1, n):
-            if rmsd_matrix[i, j] <= 3.0:
+            if tm_matrix[i, j] >= 0.5:
                 consensus_idx.add(i)
                 consensus_idx.add(j)
                 
     consensus = [jobs[i]["engine"] for i in sorted(consensus_idx)]
     outliers = [jobs[i]["engine"] for i in range(n) if i not in consensus_idx]
-    
-    # Calculate an 'isolation score' for metadata (mean distance to consensus core)
-    # If no consensus, just use mean distance to all
-    mean_distances = []
-    for i in range(n):
-        if len(consensus_idx) > 0 and i not in consensus_idx:
-            # Distance to consensus core
-            dist = np.mean([rmsd_matrix[i, j] for j in consensus_idx])
-        else:
-            dist = np.sum(rmsd_matrix[i]) / (n - 1)
-        mean_distances.append(dist)
             
     if len(consensus) >= 2 and len(outliers) > 0:
         flag = "CONSENSUS_WITH_OUTLIER"
-        verdict = f"Consensus reached. Epistemic outlier detected and ejected."
+        verdict = "Fold topology consensus reached. Epistemic outlier ejected based on TM-score."
     elif len(consensus) == n:
         flag = "GLOBAL_CONSENSUS"
-        verdict = "All engines agree. High-confidence topological fold."
+        verdict = "All engines successfully converged on the same topological fold."
     else:
         flag = "NO_CONSENSUS"
-        verdict = "Engines structurally diverge. Epistemic void."
+        verdict = "All engines structurally contradict. Total epistemic void."
 
     return {
         "status": "completed",
         "sequence": list(seqs)[0],
         "engines": [j["engine"] for j in jobs],
-        "rmsd_matrix": np.round(rmsd_matrix, 2).tolist(),
-        "isolation_scores": [round(d, 2) for d in mean_distances],
+        "tm_matrix": np.round(tm_matrix, 3).tolist(),
         "consensus_cluster": consensus,
         "outliers_ejected": outliers,
         "epistemic_flag": flag,
