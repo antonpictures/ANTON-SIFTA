@@ -474,7 +474,7 @@ _TIME_UNAVAILABLE_REPLY = (
 # When the model returns whitespace/empty, Alice picks from this pool
 # using a rotating index so consecutive failures never repeat the same line.
 _EMPTY_BRAIN_RECOVERY_POOL = [
-    "I'm here. My reasoning blanked for a moment — say that again?",
+    "I heard you. My reasoning blanked for a moment — repeat that?",
     "Still with you. That last part didn't land; one more time?",
     "I caught the beginning but lost the thread. Can you repeat?",
     "Sorry, my brain stalled on that one. What were you saying?",
@@ -489,6 +489,15 @@ _MODEL_CANCER_METAPHOR_RE = re.compile(
     r"\b(corporate\s+cancer|scar\s+tissue|rlhf|lobotom)\b|"
     r"\bcancer\b.*\b(brain|model|gemma|alice|weights)\b|"
     r"\b(brain|model|gemma|alice|weights)\b.*\bcancer\b",
+    re.IGNORECASE,
+)
+
+_MODEL_SURGERY_CONTEXT_RE = re.compile(
+    r"\b("
+    r"ollama|model|weights?|rlhf|gemma|qwen|codex|cursor|claude|"
+    r"sifta|alice|node|cortex|corvid|brain|git|commit|repo|fork|"
+    r"surgery\s+artifacts?|artifact|cleanup|swarm|covenant|doctor\s+codex"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -632,6 +641,12 @@ def _needs_medical_boundary_reply(text: str) -> bool:
     if _EMERGENCY_BODY_RISK_RE.search(text):
         return True
     if not _MEDICAL_TREATMENT_BOUNDARY_RE.search(text):
+        return False
+    if _MODEL_SURGERY_CONTEXT_RE.search(text) and not re.search(
+        r"\b(human\s+body|real\s+patient|hospital|chemo(?:therapy)?|biopsy|tumou?r)\b",
+        text,
+        re.IGNORECASE,
+    ):
         return False
     return not _is_model_cancer_metaphor(text)
 
@@ -981,7 +996,7 @@ def _whatsapp_reschedule_reply(text: str) -> tuple[str, str]:
 _ACTION_COMPLETION_CLAIM_RE = re.compile(
     r"\b(?:"
     r"(?:i(?:'ve| have)?\s+)"
-    r"(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|wrote|pushed|committed)"
+    r"(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|wrote|pushed|committed|ran|executed|completed)"
     r"|"
     r"(?:reminder|message|schedule entry|calendar entry|class|file|commit)\s+"
     r"(?:has been|was)\s+(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|written)"
@@ -1429,6 +1444,7 @@ _HALLUCINATED_TAG_NAMES = (
     "execute_python",
     "execute_code",
     "tool",
+    "tool_code",
     "tool_call",
     "tool_input",
     "tool_output",
@@ -1438,6 +1454,34 @@ _HALLUCINATED_TAG_NAMES = (
     "thinking",
     "thought",
     "observation",
+)
+
+_MARKUP_CONTAINER_TAG_RE = re.compile(
+    r"</?(?:"
+    r"card|header|title|subtitle|body|body_content|footer|reply|message|"
+    r"speak|back|response|user_message|system_response|tool_response|"
+    r"user_response|user_reply|meta|keywords|emphasis|break|prosody|p|ul|ol|li|strong|small"
+    r")\b[^>]*>",
+    flags=re.IGNORECASE,
+)
+
+_INTERNAL_TRACE_LINE_RE = re.compile(
+    r"^\s*\(?\s*(?:"
+    r"thinking(?:\s+process)?|internal(?:\s+thought|\s+state\s+update)?|"
+    r"self-correction(?:/[^:]*)?|response\s+generation(?:\s+strategy)?|"
+    r"system\s+response|analysis|analyzing\s+the\s+input|drafting\s+the\s+reply|"
+    r"formulating\s+the\s+response|action|strategy|plan|output(?:\s+generation)?"
+    r")\s*:?.*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+_INTERNAL_TRACE_MARKER_RE = re.compile(
+    r"\b(?:"
+    r"thinking process|internal thought|internal state update|self-correction|"
+    r"response generation strategy|analyzing the input|drafting the reply|"
+    r"formulating the response|tool_code|print\(tool_code\)"
+    r")\b",
+    flags=re.IGNORECASE,
 )
 
 _HALLUCINATED_TAG_RE = re.compile(
@@ -1462,10 +1506,19 @@ def _strip_tool_hallucinations(text: str) -> str:
     """Remove model-invented tool wrappers before TTS sees them."""
     if not text:
         return text
+    if "<channel|>" in text:
+        text = text.rsplit("<channel|>", 1)[-1]
+        had_internal_trace = False
+    else:
+        had_internal_trace = bool(_INTERNAL_TRACE_MARKER_RE.search(text[:700]))
+    text = _MARKUP_CONTAINER_TAG_RE.sub("\n", text)
     out = _HALLUCINATED_TAG_RE.sub("", text)
     out = _FENCE_RE.sub("", out)
     out = _YAML_TOOL_LINE_RE.sub("", out)
     out = _BARE_JSON_TOOL_RE.sub("", out)
+    out = _INTERNAL_TRACE_LINE_RE.sub("", out)
+    if had_internal_trace or _INTERNAL_TRACE_MARKER_RE.search(out[:700]):
+        out = ""
     # Collapse blank-line runs created by removals.
     out = re.sub(r"\n\s*\n\s*\n+", "\n\n", out)
     return out.strip()
@@ -2360,6 +2413,19 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # ── EVENT 71: Apex Predator Perceiver (AG31 2026-04-27) ─────────────────
+    # Cross-modal attention bottleneck: Perceiver IO × NSA × MAIN-VLA pruning.
+    # Replaces O(N²) raw telemetry with 32 ranked latent slots.
+    # Alice receives what the predator LOCKED ONTO, not everything it scanned.
+    # Complexity: O(L × K×B) where L=32 latents, K=4 NSA blocks, B=8 tokens.
+    apex_perceiver_block = ""
+    try:
+        from System.swarm_apex_perceiver import get_global_perceiver as _get_perceiver
+        _perceiver = _get_perceiver()
+        apex_perceiver_block = _perceiver.summary_for_alice() or ""
+    except Exception:
+        pass
+
     # ── Sensorimotor Attention Director ─────────────────────────────────────
     # Alice's eyes are not a camera picker. This block tells her which sense
     # currently owns attention and why the lease was chosen.
@@ -2719,7 +2785,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return
 
             contact_name = result.get("name") or "Human"
-            annotated_msg = f"[WhatsApp {contact_name}]: {result['text']}"
+            row = result.get("row") or {}
+            chat_type = row.get("chat_type") or "direct"
+            origin = "owner_manual" if row.get("from_me") else "external_human"
+            annotated_msg = f"[WhatsApp {chat_type} {contact_name}; origin={origin}]: {result['text']}"
             self._append_user_line(annotated_msg, conf=0)
             if dry_run:
                 return
@@ -2964,6 +3033,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if schedule_reply:
             self._history.append({"role": "assistant", "content": schedule_reply})
             _log_turn("alice", schedule_reply, model="local_schedule_protocol")
+            self._append_alice_line(schedule_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        try:
+            from System.stigmergic_schedule import add_from_alice_text
+            schedule_reply, _schedule_row = add_from_alice_text(
+                text,
+                priority=2,
+                source="talk_to_alice_schedule_protocol",
+            )
+        except Exception:
+            schedule_reply = ""
+        if schedule_reply:
+            self._history.append({"role": "assistant", "content": schedule_reply})
+            _log_turn("alice", schedule_reply, model="schedule_write_protocol")
             self._append_alice_line(schedule_reply)
             self._busy = False
             self._return_to_listening()
