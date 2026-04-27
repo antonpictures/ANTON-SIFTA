@@ -176,17 +176,29 @@ def test_neutral_input_no_update(isolated_state):
     state = tuple(last["state"]) if last else ("owner", "high", "ENGAGE", "none", "owner", "neutral")
     q_before = tdl.get_qtable().get(state, "ENGAGE")
 
-    # Use text with zero overlap against any POSITIVE or NEGATIVE marker.
-    # Note: short markers like 'no' match substrings ('now', 'know') —
-    # word-boundary fix for markers is tracked as a separate surgery.
+    # Short markers like "no" must not match inside ordinary words.
+    # Otherwise "now" / "know" would poison the TD table as false punishment.
     result = drl.process_architect_reaction(
-        user_text="tell me about the capital of France",
+        user_text="now tell me what you know about the capital of France",
         alice_preceding_text="It looks sunny.",
     )
 
     assert result is None, "Neutral text should produce no reward signal"
     q_after = tdl.get_qtable().get(state, "ENGAGE")
     assert q_after == q_before, "Q must not change on neutral input"
+
+
+# ── Test 6: reward markers are phrase-safe ───────────────────────────────────
+
+def test_reward_markers_are_phrase_safe(isolated_state):
+    import System.dopamine_reward_loop as drl
+
+    assert drl.detect_reward("now tell me what you know") == (0.0, "")
+    assert drl.detect_reward("no") == (-0.5, "no")
+
+    delta, marker = drl.detect_reward("no thanks")
+    assert delta < 0
+    assert marker == "no thanks"
 
 
 if __name__ == "__main__":

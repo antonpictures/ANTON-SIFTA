@@ -3220,6 +3220,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
         _log_turn("user", text, stt_conf=conf)
         self._history.append({"role": "user", "content": text})
 
+        # Event 77: automatic TD credit assignment.
+        # A reaction like "perfect" or "wrong" now reinforces/suppresses the
+        # previous (state, action) pair that pipeline_step() registered.
+        try:
+            prior_alice = ""
+            for turn in reversed(self._history[:-1]):
+                if turn.get("role") == "assistant":
+                    prior_alice = str(turn.get("content") or "")
+                    break
+            from System.dopamine_reward_loop import process_architect_reaction
+            process_architect_reaction(text, alice_preceding_text=prior_alice)
+        except Exception:
+            pass
+
         # ── Mantis-Shrimp Reflex Arc (fires in ~9μs, no LLM) ──────────
         # Pure string-match classification that deposits pheromone traces
         # into .sifta_state/reflex_arc_trace.jsonl.  The cortex (handlers

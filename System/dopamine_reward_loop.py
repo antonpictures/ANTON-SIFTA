@@ -62,11 +62,17 @@ NEGATIVE_MARKERS = {
     "wrong": -1.0, "no that's wrong": -1.0, "stop": -0.8,
     "shut up": -1.0, "cancer": -0.8,
     # Medium negative (δ = -0.5)
+    "no thank you": -0.6, "no thanks": -0.6,
     "no": -0.5, "not what i asked": -0.7, "not helpful": -0.7,
     "fix it": -0.5, "try again": -0.5,
     # Mild negative (δ = -0.3)
     "hmm": -0.2, "not sure": -0.2, "whatever": -0.3,
 }
+
+
+def _marker_present(text: str, marker: str) -> bool:
+    """Match reward markers as words/phrases, not substrings inside words."""
+    return re.search(r"(?<!\w)" + re.escape(marker) + r"(?!\w)", text) is not None
 
 
 def detect_reward(text: str) -> tuple[float, str]:
@@ -84,7 +90,7 @@ def detect_reward(text: str) -> tuple[float, str]:
     best_pos = 0.0
     best_pos_marker = ""
     for marker, delta in sorted(POSITIVE_MARKERS.items(), key=lambda x: -len(x[0])):
-        if marker in lower:
+        if _marker_present(lower, marker):
             if abs(delta) > abs(best_pos):
                 best_pos = delta
                 best_pos_marker = marker
@@ -94,7 +100,7 @@ def detect_reward(text: str) -> tuple[float, str]:
     best_neg = 0.0
     best_neg_marker = ""
     for marker, delta in sorted(NEGATIVE_MARKERS.items(), key=lambda x: -len(x[0])):
-        if marker in lower:
+        if _marker_present(lower, marker):
             if abs(delta) > abs(best_neg):
                 best_neg = delta
                 best_neg_marker = marker
