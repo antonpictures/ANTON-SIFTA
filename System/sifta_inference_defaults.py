@@ -32,10 +32,10 @@ _ASSIGNMENTS = _STATE / "swimmer_ollama_assignments.json"
 ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
 # Canonical Ollama models.
-CANONICAL_OLLAMA_DEFAULT = "huihui_ai/gemma-4-abliterated:latest"
+CANONICAL_OLLAMA_DEFAULT = "qwen3.5:2b"
 CANONICAL_OLLAMA_FALLBACK = "qwen3.5:2b"
 
-# Primary default — Ollama Gemma + Lysosome (reverted from MLX cortex v1).
+# Primary default — Ollama Qwen (gemma-4-abliterated evicted, re-pull pending).
 DEFAULT_OLLAMA_MODEL = os.environ.get(
     "SIFTA_DEFAULT_OLLAMA_MODEL",
     CANONICAL_OLLAMA_DEFAULT,
