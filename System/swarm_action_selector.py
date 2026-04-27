@@ -246,6 +246,10 @@ def pipeline_step(
     """
     Run one full decision step through Layers 1–4.
 
+    The Basal Ganglia temperature is now adapted by the Dopamine Reward Loop
+    (Schultz, Dayan & Montague 1997). High positive reward → lower T (sharper,
+    more exploitative). High negative reward → higher T (softer, more exploratory).
+
     Parameters
     ----------
     text             : input text
@@ -281,8 +285,17 @@ def pipeline_step(
     except (json.JSONDecodeError, ValueError):
         c1_label = {}
 
-    # Layer 3: Basal Ganglia Gate
-    selector = SwarmActionSelector()
+    # Layer 3: Basal Ganglia Gate — temperature adapted by Dopamine Reward Loop
+    # (Schultz, Dayan & Montague 1997: δ(t) = R(t) + γ·V(s') − V(s))
+    bg_temperature = DEFAULT_TEMPERATURE
+    try:
+        from System.dopamine_reward_loop import scan_reward_history
+        reward_history = scan_reward_history(lookback_hours=168.0)
+        bg_temperature = reward_history.get("suggested_temperature", DEFAULT_TEMPERATURE)
+    except Exception:
+        pass  # dopamine module unavailable — use default T=0.3
+
+    selector = SwarmActionSelector(temperature=bg_temperature)
     winner, probs = selector.select(c1_scores)
 
     # Layer 4: Corpus Callosum injection
