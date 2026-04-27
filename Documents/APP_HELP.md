@@ -818,3 +818,16 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 **Control:** speak to her, look at the camera, be present.
 **Failure mode:** if Ollama is not running, Alice speaks from cached responses. She is still alive.
 
+
+### Alice Safety Tracker
+**What it does:** Alice's eye on you when you leave home. Your iPhone sends GPS coordinates to the Mac via an iOS Shortcut → the Safety Tracker shows your live position on an OpenStreetMap map with a history trail.
+**State:** reads `.sifta_state/iphone_gps_latest.json` (written by `System/swarm_iphone_gps_receiver.py`) every 30 seconds.
+**Control:**
+- 📍 Set Home — marks your current location as the home anchor
+- 🚗 Start Trip — tells Alice you're going out; she watches for your arrival
+- Map shows pulsing red dot = your current location, cyan trail = where you've been
+**Setup:** iPhone Shortcut must POST to `http://<Mac-IP>:8765/gps` every few minutes. Start the receiver: `python3 System/swarm_iphone_gps_receiver.py --daemon`
+**Failure mode:** "No GPS fix" means the iPhone receiver is not running or the iOS Shortcut has not fired yet.
+
+### Cartography Dashboard
+**What it does:** (Renamed to Alice Safety Tracker — see above.)

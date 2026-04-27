@@ -1,12 +1,4 @@
 {
-  "Cartography Dashboard": {
-    "category": "Utilities",
-    "entry_point": "Applications/sifta_cartography_widget.py",
-    "widget_class": "CartographyWidget",
-    "window_width": 1000,
-    "window_height": 600,
-    "signature": "UNVERIFIED"
-  },
   "Pheromone Symphony (Generative Music)": {
     "category": "Creative",
     "entry_point": "Applications/sifta_pheromone_symphony.py",
@@ -484,5 +476,14 @@
     "window_width": 920,
     "window_height": 640,
     "signature": "UNVERIFIED"
+  },
+  "Alice Safety Tracker": {
+    "category": "System",
+    "entry_point": "Applications/sifta_cartography_widget.py",
+    "widget_class": "CartographyWidget",
+    "window_width": 900,
+    "window_height": 700,
+    "signature": "AG31",
+    "description": "Live GPS safety tracker. Alice watches where the Architect is via iPhone GPS relay. OpenStreetMap tile map, location trail, trip mode, home detection."
   }
 }
