@@ -2784,10 +2784,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if not result.get("accepted"):
                 return
 
+            from System.whatsapp_social_graph import load_contacts, contact_hash
             contact_name = result.get("name") or "Human"
             row = result.get("row") or {}
-            chat_type = row.get("chat_type") or "direct"
-            origin = "owner_manual" if row.get("from_me") else "external_human"
+            
+            from_jid = row.get("from_jid", "")
+            contacts = load_contacts()
+            contact_record = contacts.get(contact_hash(from_jid), {})
+            
+            chat_type = row.get("chat_type") or contact_record.get("chat_type") or "direct"
+            
+            # Map owner correctly based on either the node bridge flag or the social graph graph
+            is_owner = row.get("from_me") or contact_record.get("relationship_to_owner") == "owner_self"
+            origin = "owner_manual" if is_owner else "external_human"
+            
+            if is_owner and contact_name == "Human":
+                contact_name = "George"
+                
             annotated_msg = f"[WhatsApp {chat_type} {contact_name}; origin={origin}]: {result['text']}"
             self._append_user_line(annotated_msg, conf=0)
             if dry_run:
