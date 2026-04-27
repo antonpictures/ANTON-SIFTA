@@ -128,11 +128,105 @@ def referee_judgment(meta1_path: str, meta2_path: str) -> dict:
     return judgment
 
 
+def referee_triangulate(meta_paths: list[str]) -> dict:
+    """
+    N-way consensus triangulation (Triangulate 3+ folding engines).
+    Computes an all-to-all RMSD matrix to find consensus clusters and detect outliers.
+    
+    Biology: If 2 engines agree (RMSD < 3.0) and 1 disagrees (RMSD > 5.0),
+    the disagreeing engine is flagged as an epistemic outlier.
+    """
+    if len(meta_paths) < 3:
+        raise ValueError("Triangulation requires at least 3 models.")
+
+    jobs = []
+    for p in meta_paths:
+        with open(p) as f:
+            jobs.append(json.load(f))
+
+    # Reject if sequences mismatch
+    seqs = {j["sequence"] for j in jobs}
+    if len(seqs) > 1:
+        return {
+            "status": "rejected",
+            "epistemic_flag": "invalid_comparison",
+            "reason": "Mismatched sequences in triangulation pool."
+        }
+
+    # Reject if missing backends
+    if any(j.get("status") != "ok" for j in jobs):
+        return {
+            "status": "rejected",
+            "epistemic_flag": "insufficient_evidence",
+            "reason": "One or more engines failed to produce coordinates."
+        }
+
+    coords = [parse_pdb_ca_coords(j["pdb_path"]) for j in jobs]
+    n = len(jobs)
+    
+    # Compute all-to-all RMSD matrix
+    rmsd_matrix = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i + 1, n):
+            val = kabsch_rmsd(coords[i], coords[j])
+            rmsd_matrix[i, j] = val
+            rmsd_matrix[j, i] = val
+
+    # Consensus cluster detection
+    # A model is in consensus if it agrees (RMSD < 3.0A) with at least one other model
+    consensus_idx = set()
+    for i in range(n):
+        for j in range(i + 1, n):
+            if rmsd_matrix[i, j] <= 3.0:
+                consensus_idx.add(i)
+                consensus_idx.add(j)
+                
+    consensus = [jobs[i]["engine"] for i in sorted(consensus_idx)]
+    outliers = [jobs[i]["engine"] for i in range(n) if i not in consensus_idx]
+    
+    # Calculate an 'isolation score' for metadata (mean distance to consensus core)
+    # If no consensus, just use mean distance to all
+    mean_distances = []
+    for i in range(n):
+        if len(consensus_idx) > 0 and i not in consensus_idx:
+            # Distance to consensus core
+            dist = np.mean([rmsd_matrix[i, j] for j in consensus_idx])
+        else:
+            dist = np.sum(rmsd_matrix[i]) / (n - 1)
+        mean_distances.append(dist)
+            
+    if len(consensus) >= 2 and len(outliers) > 0:
+        flag = "CONSENSUS_WITH_OUTLIER"
+        verdict = f"Consensus reached. Epistemic outlier detected and ejected."
+    elif len(consensus) == n:
+        flag = "GLOBAL_CONSENSUS"
+        verdict = "All engines agree. High-confidence topological fold."
+    else:
+        flag = "NO_CONSENSUS"
+        verdict = "Engines structurally diverge. Epistemic void."
+
+    return {
+        "status": "completed",
+        "sequence": list(seqs)[0],
+        "engines": [j["engine"] for j in jobs],
+        "rmsd_matrix": np.round(rmsd_matrix, 2).tolist(),
+        "isolation_scores": [round(d, 2) for d in mean_distances],
+        "consensus_cluster": consensus,
+        "outliers_ejected": outliers,
+        "epistemic_flag": flag,
+        "referee_verdict": verdict
+    }
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 3:
-        print("Usage: python sifta_protein_referee.py <meta1.json> <meta2.json>")
+        print("Usage: python sifta_protein_referee.py <meta1.json> <meta2.json> [meta3.json ...]")
         sys.exit(1)
         
-    judgment = referee_judgment(sys.argv[1], sys.argv[2])
+    if len(sys.argv) == 3:
+        judgment = referee_judgment(sys.argv[1], sys.argv[2])
+    else:
+        judgment = referee_triangulate(sys.argv[1:])
+        
     print(json.dumps(judgment, indent=2))
