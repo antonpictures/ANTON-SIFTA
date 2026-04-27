@@ -285,15 +285,35 @@ def pipeline_step(
     except (json.JSONDecodeError, ValueError):
         c1_label = {}
 
-    # Layer 3: Basal Ganglia Gate — temperature adapted by Dopamine Reward Loop
-    # (Schultz, Dayan & Montague 1997: δ(t) = R(t) + γ·V(s') − V(s))
+    # Layer 3: Basal Ganglia Gate
+    # 3a — temperature adapted by global Dopamine Reward Loop
+    #       (Schultz, Dayan & Montague 1997: δ(t) = R(t) + γ·V(s') − V(s))
     bg_temperature = DEFAULT_TEMPERATURE
+    recent_reward  = 0.0
     try:
         from System.dopamine_reward_loop import scan_reward_history
         reward_history = scan_reward_history(lookback_hours=168.0)
         bg_temperature = reward_history.get("suggested_temperature", DEFAULT_TEMPERATURE)
+        recent_reward  = reward_history.get("net_reward", 0.0)
     except Exception:
         pass  # dopamine module unavailable — use default T=0.3
+
+    # 3b — inject state-conditioned Q-values into C1 scores
+    #       (striatal dopamine modulation: score'(a) = c1(a) + λ_q·Q(s,a))
+    try:
+        from System.swarm_td_learning import extract_state, q_inject_scores
+        state_key = extract_state(
+            text=text,
+            stt_confidence=stt_confidence,
+            c1_action=c1_label.get("action", "ENGAGE"),
+            tool=c1_label.get("tool", "none"),
+            source="owner",       # caller can override via c1_label
+            social_frame=c1_label.get("social_frame", "owner"),
+            recent_reward=recent_reward,
+        )
+        c1_scores = q_inject_scores(state_key, c1_scores)
+    except Exception:
+        state_key = None  # TD module unavailable — use raw C1 scores
 
     selector = SwarmActionSelector(temperature=bg_temperature)
     winner, probs = selector.select(c1_scores)
