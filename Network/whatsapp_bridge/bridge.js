@@ -21,8 +21,14 @@ const SIFTA_SERVER = "http://localhost:7434/swarm_message";
 const MAX_WA_TEXT_TO_SIFTA = 8192;
 const MAX_INJECT_BODY = 16384;
 const INJECT_KEY = process.env.SIFTA_BRIDGE_INJECT_KEY || "";
+// AG31: group JID / name env-var — survives renames without a code change.
+// Set: SIFTA_WA_GROUP_JID=120363xxxxxxxx@g.us  (or leave blank = accept all groups)
+const ALLOWED_GROUP_JID = (process.env.SIFTA_WA_GROUP_JID || "").trim();
 let lastKnownHuman = null;
 let injectServerStarted = false;
+// AG31: offline notice cooldown — never spam WhatsApp with error messages.
+let _lastOfflineNoticeSent = 0;
+const OFFLINE_NOTICE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes minimum between notices
 
 function cleanContact(contact) {
   return {
@@ -133,18 +139,31 @@ async function connectToWhatsApp() {
       }
       
       // Infinite loop prevention for offline kernel errors and multi-node echoing
-      if (text.includes("🔴 SIFTA kernel is offline")) continue;
+      if (text.includes("🔴 SIFTA")) continue;           // AG31: never echo our own error notices
       if (text.startsWith("[M1THER]") || text.startsWith("[M5QUEEN]") || text.startsWith("[SIFTA]")) continue;
       if (text.startsWith("🌊") || text.startsWith("🧠📡")) continue;
+
+      // AG31: Group JID filter — if SIFTA_WA_GROUP_JID is set, only process
+      // messages from that specific group (JIDs never change on rename) + all DMs.
+      // To find your group JID: check the console log "[📲 INCOMING] from=..." line.
+      const isGroup = String(from || "").endsWith("@g.us");
+      if (ALLOWED_GROUP_JID && isGroup && from !== ALLOWED_GROUP_JID) {
+        console.log(`  [BRIDGE] Skipping group ${from} (not the SIFTA group)`);
+        continue;
+      }
 
       console.log(`\n[📲 INCOMING] type=${type} fromMe=${msg.key.fromMe} from=${from}`);
       console.log(`  Message: "${text}"`);
 
+
+      const chatType = String(from || "").endsWith("@g.us") ? "group" : "direct";
       const payload = JSON.stringify({
         from,
         text: safeText,
         name: msg.pushName || msg.verifiedBizName || "",
         fromMe: Boolean(msg.key.fromMe),
+        chatType,
+        participant: msg.key.participant || "",
       });
 
       const req = http.request(SIFTA_SERVER, {
@@ -179,9 +198,16 @@ async function connectToWhatsApp() {
       });
 
       req.on("error", () => {
-        sock.sendMessage(from, {
-          text: "🔴 SIFTA WhatsApp ingest is offline. Restart: PYTHONPATH=. python3 scripts/whatsapp_alice_server.py",
-        });
+        // AG31 FIX: DO NOT send the offline error back to WhatsApp.
+        // When the Python kernel is down, sending to WA creates an infinite
+        // flood loop: message in → kernel offline → error message → message in → ...
+        // Log to console only. A human or launchd will restart the kernel.
+        const now = Date.now();
+        if (now - _lastOfflineNoticeSent > OFFLINE_NOTICE_COOLDOWN_MS) {
+          _lastOfflineNoticeSent = now;
+          console.error("[BRIDGE] ⚠ Python SIFTA kernel offline (port 7434). " +
+            "Restart: PYTHONPATH=. python3 scripts/whatsapp_alice_server.py");
+        }
       });
 
       req.write(payload);
