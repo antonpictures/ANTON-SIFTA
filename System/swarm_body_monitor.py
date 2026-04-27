@@ -237,7 +237,7 @@ class OrganEngine:
         td_ledger     = _STATE / "td_receipts.jsonl"
         dopamine_path = _STATE / "dopamine_reward_ledger.jsonl"
         last_action   = _STATE / "last_action_register.json"
-        hipp_path     = _STATE / "hippocampus_events.jsonl"
+        hipp_path     = _STATE / "hippocampus" / "events.jsonl"
         sgate_path    = _STATE / "sensor_gate_lock.json"
         bg_path       = _STATE / "swarm_action_selector_trace.jsonl"
 
@@ -403,7 +403,7 @@ class OrganEngine:
                 "label": f"events={hipp_count}  last={hipp_last_type}",
                 "sub":   f"episodic memory  ledger-backed",
                 "pct":   min(1.0, hipp_count / 10.0) if hipp_count > 0 else 0.05,
-                **_live_ledger_truth(hipp_path, "hippocampus_events.jsonl episode log"),
+                **_live_ledger_truth(hipp_path, "hippocampus/events.jsonl episode log"),
             },
             "sensor_gate": {
                 "value": 1 if sgate_locked else 0,

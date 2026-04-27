@@ -74,3 +74,32 @@ def test_live_ledger_organs_are_unknown_when_ledgers_are_missing(tmp_path, monke
     assert state["reflex"]["truth_status"] == body.TRUTH_UNKNOWN
     assert state["corvid"]["truth_status"] == body.TRUTH_UNKNOWN
 
+
+def test_predator_v7_organs_use_real_ledger_paths_when_sources_exist(tmp_path, monkeypatch):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "td_q_table.json").write_text('{"s||ENGAGE": 0.15}', encoding="utf-8")
+    (state_dir / "dopamine_reward_ledger.jsonl").write_text(
+        '{"ts": 9999999999, "delta": 0.7, "marker": "nice"}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "hippocampus").mkdir()
+    (state_dir / "hippocampus" / "events.jsonl").write_text(
+        '{"ts": 9999999999, "type": "episode", "event_type": "episode"}\n',
+        encoding="utf-8",
+    )
+    (state_dir / "sensor_gate_lock.json").write_text(
+        '{"ts": 9999999999, "locked": false, "reason": "not_attempted"}',
+        encoding="utf-8",
+    )
+    (state_dir / "swarm_action_selector_trace.jsonl").write_text(
+        '{"ts": 9999999999, "winner": "ENGAGE"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(body, "_STATE", state_dir)
+
+    state = body.OrganEngine().tick_all()
+
+    for key in ["td_learner", "dopamine", "hippocampus", "sensor_gate", "bg_selector"]:
+        assert state[key]["truth_status"] == body.TRUTH_REAL
+        assert state[key]["truth_source"] == "live_ledger"

@@ -218,11 +218,13 @@ def log_selection(
 ) -> str:
     """Write a stigmergic work receipt for the action selection event."""
     receipt_path = receipt_path or (_REPO / ".sifta_state" / "work_receipts.jsonl")
+    trace_path = _REPO / ".sifta_state" / "swarm_action_selector_trace.jsonl"
     trace_id = str(uuid.uuid4())
     row = {
         "ts": time.time(),
         "trace_id": trace_id,
         "kind": "basal_ganglia_selection",
+        "winner": winner,
         "action_winner": winner,
         "competition": probs,
         "input_preview": input_text[:80],
@@ -230,6 +232,9 @@ def log_selection(
     try:
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         with open(receipt_path, "a") as f:
+            f.write(json.dumps(row) + "\n")
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(trace_path, "a") as f:
             f.write(json.dumps(row) + "\n")
     except OSError:
         pass

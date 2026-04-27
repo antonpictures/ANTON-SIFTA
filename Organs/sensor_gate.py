@@ -15,6 +15,7 @@ from typing import List, Tuple, Optional
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _TRACE = _STATE / "ide_stigmergic_trace.jsonl"
+_LOCK_STATE = _STATE / "sensor_gate_lock.json"
 
 _TRACE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -26,6 +27,50 @@ def _log_trace(event: dict) -> None:
     event.setdefault("trace_id", str(uuid.uuid4()))
     with open(_TRACE, "a") as f:
         f.write(json.dumps(event) + "\n")
+
+
+def _write_lock_state(
+    *,
+    locked: bool,
+    reason: str,
+    description: str,
+    device_index: Optional[int] = None,
+    logs: Optional[List[str]] = None,
+) -> None:
+    """Persist current Sensor Gate truth for the Body Monitor."""
+    row = {
+        "ts": time.time(),
+        "locked": bool(locked),
+        "reason": reason,
+        "description": description,
+        "device_index": device_index,
+        "logs": logs or [],
+    }
+    _LOCK_STATE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_LOCK_STATE, "w") as f:
+        json.dump(row, f, indent=2)
+
+
+def ensure_lock_state(description: str = "Sensor Gate") -> dict:
+    """Return current lock state, creating an honest not-attempted state if absent."""
+    if not _LOCK_STATE.exists():
+        _write_lock_state(
+            locked=False,
+            reason="not_attempted",
+            description=description,
+            logs=["Sensor gate has not attempted a lock-on in this runtime yet."],
+        )
+    try:
+        return json.loads(_LOCK_STATE.read_text())
+    except (OSError, json.JSONDecodeError):
+        _write_lock_state(
+            locked=False,
+            reason="state_corrupt_reset",
+            description=description,
+            logs=["Sensor gate state was unreadable and was reset."],
+        )
+        return json.loads(_LOCK_STATE.read_text())
+
 
 def lock_on_devices(device_cmd: List[str], description: str) -> Tuple[Optional[int], List[str]]:
     """Iterate over a series of shell commands that attempt to open a device.
@@ -65,6 +110,13 @@ def lock_on_devices(device_cmd: List[str], description: str) -> Tuple[Optional[i
                     "device_index": idx,
                     "stdout": result.stdout.strip(),
                 })
+                _write_lock_state(
+                    locked=True,
+                    reason="lock_success",
+                    description=description,
+                    device_index=idx,
+                    logs=logs,
+                )
                 return idx, logs
             else:
                 logs.append(
@@ -87,6 +139,12 @@ def lock_on_devices(device_cmd: List[str], description: str) -> Tuple[Optional[i
         "description": description,
         "error": "All candidates failed",
     })
+    _write_lock_state(
+        locked=False,
+        reason="lock_all_failed",
+        description=description,
+        logs=logs,
+    )
     return None, logs
 
 # Example usage (not executed automatically):
