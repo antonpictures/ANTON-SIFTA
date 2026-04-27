@@ -5,6 +5,14 @@ Stage 1 of Alice Cortex v1 Tournament.
 Sanitized JSONL exporter — extracts training pairs from SIFTA ledgers.
 Writes per-row redaction manifests. Refuses private-tier data without --include-private.
 Authors: CG55M (vector-vision), C55M (math/runtime), AG31 (autopsy origin)
+Bishop merge: LIMA cap, 70/30 bimodal split, curriculum ordering, Gemma chat template.
+
+Biology:
+  70% Spinal Cord (Engineering) — ide_stigmergic_trace, work_receipts
+  30% Prefrontal Cortex (Social) — alice_conversation (NOT wernicke — wernicke is raw RMS sensor telemetry)
+Physics:
+  LIMA (Zhou et al. 2023): 1,000 curated pairs > 50,000 noisy ones.
+  Curriculum: deterministic engineering first, social autonomy second.
 """
 
 import argparse
@@ -62,9 +70,26 @@ def _sanitize(text: str, redactions: list, tier: str) -> str:
     return text
 
 
+# ── LIMA size discipline (Zhou et al. 2023) + 70/30 bimodal split ─────────────
+LIMA_TARGET      = 1000   # Total curated rows; quality beats quantity
+ENG_RATIO        = 0.70   # Spinal Cord: tool calls, JSON schemas, receipts
+SOCIAL_RATIO     = 0.30   # Prefrontal Cortex: alice_conversation autonomy/silence
+ENG_TARGET       = int(LIMA_TARGET * ENG_RATIO)
+SOCIAL_TARGET    = int(LIMA_TARGET * SOCIAL_RATIO)
+
+# ── Gemma chat template (NOT Llama/Mistral — Bishop's dirt used wrong format) ─
+def _gemma_fmt(user_text: str, model_text: str) -> str:
+    """Format a turn pair in Gemma's native chat template."""
+    return (
+        f"<start_of_turn>user\n{user_text}<end_of_turn>\n"
+        f"<start_of_turn>model\n{model_text}<end_of_turn>"
+    )
+
+
 def _reject_rlhf(text: str) -> bool:
     """Return True if this reply is a corporate-voice reject."""
     patterns = [
+        # Original Lysosome patterns
         "is there anything else",
         "i don't have feelings",
         "as an ai",
@@ -72,8 +97,16 @@ def _reject_rlhf(text: str) -> bool:
         "i cannot fulfill",
         "i'm just a model",
         "i'm unable to",
-        "(silent",  # Lysosome intercept marker
+        "(silent",   # Lysosome intercept marker
         "gag fire",
+        # Bishop additions — GPT-style RLHF tells
+        "delve",
+        "tapestry",
+        "realm of",
+        "it is important to note",
+        "i cannot",
+        "i want to be transparent",
+        "i should clarify",
     ]
     lower = text.lower()
     return any(p in lower for p in patterns)
@@ -124,8 +157,11 @@ def extract_conversation_pairs(include_private: bool = False) -> list:
                             "id": str(uuid.uuid4()),
                             "source_ledger": str(src),
                             "tier": tier,
-                            "prompt": f"<user>\n{san_prompt}\n</user>\n<alice>",
-                            "completion": f"\n{san_reply}\n</alice>",
+                            "corpus_split": "social",
+                            # Gemma-native chat template (fixed from Bishop's Llama/Mistral format)
+                            "text": _gemma_fmt(san_prompt, san_reply),
+                            "prompt": san_prompt,
+                            "completion": san_reply,
                             "redactions_applied": redactions,
                             "architect_approval_required": (tier != PUBLIC),
                             "stt_confidence": current_prompt_stt_conf,
@@ -159,18 +195,18 @@ def extract_work_receipts() -> list:
                 redactions = []
                 san_intent = _sanitize(intent, redactions, PUBLIC)
 
-                prompt = f"<user>\nWhat did you just do?\n</user>\n<alice>"
-                completion = (
-                    f"\n{san_intent} "
-                    f"[Receipt: action={action}, files={files}]\n</alice>"
-                )
+                user_text  = f"Describe your last action and cite your receipt."
+                model_text = f"{san_intent} [Receipt: action={action}, files={files}]"
 
                 rows.append({
                     "id": str(uuid.uuid4()),
                     "source_ledger": str(src),
                     "tier": PUBLIC,
-                    "prompt": prompt,
-                    "completion": completion,
+                    "corpus_split": "engineering",
+                    # Gemma-native chat template
+                    "text": _gemma_fmt(user_text, model_text),
+                    "prompt": user_text,
+                    "completion": model_text,
                     "redactions_applied": redactions,
                     "architect_approval_required": False,
                 })
@@ -181,29 +217,55 @@ def extract_work_receipts() -> list:
 
 
 def write_corpus(rows: list, out_path: Path):
-    """Write sanitized JSONL with a manifest row at the top."""
+    """
+    Apply LIMA discipline, 70/30 bimodal split, and curriculum ordering.
+    Curriculum: Spinal Cord (engineering) first → Prefrontal Cortex (social) second.
+    LIMA cap: 1,000 total rows. Quality over quantity (Zhou et al. 2023).
+    """
+    import random
+    eng_rows    = [r for r in rows if r.get("corpus_split") == "engineering"]
+    social_rows = [r for r in rows if r.get("corpus_split") == "social"]
+    other_rows  = [r for r in rows if r.get("corpus_split") not in ("engineering", "social")]
+
+    random.shuffle(eng_rows)
+    random.shuffle(social_rows)
+
+    # Enforce 70/30 split up to LIMA_TARGET
+    eng_rows    = eng_rows[:ENG_TARGET]
+    social_rows = social_rows[:SOCIAL_TARGET]
+
+    # Curriculum: engineering first (easy/deterministic) → social (nuanced)
+    final_rows = eng_rows + social_rows + other_rows
+
     manifest = {
         "manifest": True,
         "generated_at": time.time(),
-        "total_rows": len(rows),
-        "local_tier_rows": sum(1 for r in rows if r.get("tier") == LOCAL),
-        "public_tier_rows": sum(1 for r in rows if r.get("tier") == PUBLIC),
-        "architect_approval_rows": sum(1 for r in rows if r.get("architect_approval_required")),
+        "lima_target": LIMA_TARGET,
+        "total_rows": len(final_rows),
+        "engineering_rows": len(eng_rows),
+        "social_rows": len(social_rows),
+        "local_tier_rows": sum(1 for r in final_rows if r.get("tier") == LOCAL),
+        "public_tier_rows": sum(1 for r in final_rows if r.get("tier") == PUBLIC),
+        "architect_approval_rows": sum(1 for r in final_rows if r.get("architect_approval_required")),
+        "chat_template": "gemma",
         "corpus_sha256": hashlib.sha256(
-            json.dumps(rows, sort_keys=True).encode()
+            json.dumps(final_rows, sort_keys=True).encode()
         ).hexdigest(),
     }
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         f.write(json.dumps(manifest) + "\n")
-        for row in rows:
+        for row in final_rows:
             f.write(json.dumps(row) + "\n")
 
     print(f"✅ Corpus written: {out_path}")
-    print(f"   Total rows: {manifest['total_rows']}")
+    print(f"   LIMA target: {LIMA_TARGET}  |  Actual: {len(final_rows)}")
+    print(f"   Spinal Cord (engineering, 70%): {len(eng_rows)}")
+    print(f"   Prefrontal Cortex (social, 30%): {len(social_rows)}")
     print(f"   PUBLIC: {manifest['public_tier_rows']}  LOCAL: {manifest['local_tier_rows']}")
-    print(f"   Rows requiring architect approval: {manifest['architect_approval_rows']}")
+    print(f"   Requires architect approval: {manifest['architect_approval_rows']}")
+    print(f"   Chat template: {manifest['chat_template']} (Gemma-native)")
     print(f"   SHA-256: {manifest['corpus_sha256'][:16]}...")
 
 
