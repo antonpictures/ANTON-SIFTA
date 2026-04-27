@@ -3136,43 +3136,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # ── FULL WHATSAPP SEND (target + body in one utterance) ──────────
-        # "Send a message to Carlton and say hello Carlton, I'll talk to you tomorrow"
-        # "Tell Carlton hello"
-        # Dispatches directly without LLM involvement.
-        wa_target, wa_body = _full_whatsapp_send_parse(text)
-        if wa_target and wa_body:
-            try:
-                from System.whatsapp_bridge_autopilot import send_whatsapp
-                result = send_whatsapp(wa_target, wa_body)
-                if result.get("ok"):
-                    reply = f"Sent to {wa_target}: \"{wa_body[:100]}\""
-                else:
-                    reply = f"Could not send to {wa_target}: {result.get('error', 'unknown error')}"
-            except Exception as e:
-                reply = f"WhatsApp send failed: {e}"
-            self._history.append({"role": "assistant", "content": reply})
-            _log_turn("alice", reply, model="whatsapp_full_send_protocol")
-            self._append_alice_line(reply)
-            try:
-                from System.swarm_context_epigenetics import SwarmContextEpigenetics
-                epi = SwarmContextEpigenetics(["tool_whatsapp"])
-                epi.integrate_epigenome("tool_whatsapp", token_cost=0.0, stgm_utility=5.0)
-            except Exception:
-                pass
-            self._busy = False
-            self._return_to_listening()
-            return
+        # AG31 2026-04-27: Removed whatsapp_full_send_parse and bare_whatsapp_send_target interception.
+        # Let Alice handle WhatsApp messages dynamically via her LLM rather than hardcoded logic.
 
-        bare_whatsapp_target = _bare_whatsapp_send_target(text)
-        if bare_whatsapp_target:
-            reply = f"What should I tell {bare_whatsapp_target}?"
-            self._history.append({"role": "assistant", "content": reply})
-            _log_turn("alice", reply, model="whatsapp_clarification_protocol")
-            self._append_alice_line(reply)
-            self._busy = False
-            self._return_to_listening()
-            return
 
         history = list(self._history)[-(_HISTORY_TURNS * 2):]
         # Presence guard (META-LOOP TRIAGE 2026-04-20): if the architect
