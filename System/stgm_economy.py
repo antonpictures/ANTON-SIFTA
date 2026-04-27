@@ -142,6 +142,9 @@ def canonical_wallet_balance(agent_id: str) -> float:
         return 0.0
 
 
+_CACHE_LAST_SCAN = None
+_CACHE_FILES_MTIME = {}
+
 def scan_economy(
     repair_log: Optional[Path] = None,
     state_dir: Optional[Path] = None,
@@ -149,10 +152,26 @@ def scan_economy(
     casino_ledger: Optional[Path] = None,
 ) -> EconomySnapshot:
     """Build a separated STGM/reputation/play-token audit snapshot."""
+    global _CACHE_LAST_SCAN, _CACHE_FILES_MTIME
+    
     repair_log = repair_log or REPAIR_LOG
     state_dir = state_dir or STATE_DIR
     memory_rewards = memory_rewards or (state_dir / "stgm_memory_rewards.jsonl")
     casino_ledger = casino_ledger or (state_dir / "casino_vault.jsonl")
+
+    # Fast cache check based on file mtime and size
+    files_to_check = [repair_log, memory_rewards, casino_ledger]
+    current_mtimes = {}
+    for f in files_to_check:
+        try:
+            stat = f.stat()
+            current_mtimes[str(f)] = (stat.st_mtime, stat.st_size)
+        except OSError:
+            current_mtimes[str(f)] = (0.0, 0)
+            
+    if _CACHE_LAST_SCAN is not None and current_mtimes == _CACHE_FILES_MTIME:
+        import copy
+        return copy.deepcopy(_CACHE_LAST_SCAN)
 
     out = EconomySnapshot()
     balances: Dict[str, float] = {}
@@ -231,7 +250,11 @@ def scan_economy(
         out.warnings.append("casino_rows_are_play_tokens_not_stgm")
     if out.deprecated_mint_attempts:
         out.warnings.append("deprecated_mint_attempts_logged_zero_minted")
-    return out
+        
+    _CACHE_LAST_SCAN = out
+    _CACHE_FILES_MTIME = current_mtimes
+    import copy
+    return copy.deepcopy(out)
 
 
 def investor_safe_summary(snapshot: Optional[EconomySnapshot] = None) -> str:
