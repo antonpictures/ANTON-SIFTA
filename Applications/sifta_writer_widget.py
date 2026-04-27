@@ -33,12 +33,51 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import (
-    QFont, QTextCursor, QColor, QTextCharFormat, QKeyEvent,
+    QFont, QFontDatabase, QTextCursor, QColor, QTextCharFormat, QKeyEvent,
 )
 from PyQt6.QtPrintSupport import QPrinter
 
 from System.sifta_base_widget import SiftaBaseWidget
 from System.sifta_save_defaults import default_sifta_save_path
+
+# Doctor Sigil chrome (canonical Applications/_doctor_sigil_chrome).
+_APP_DIR = Path(__file__).resolve().parent
+if str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
+try:
+    from _doctor_sigil_chrome import doctor_sigil_html
+    _HAS_SIGIL = True
+except Exception:
+    _HAS_SIGIL = False
+
+
+def _pick_serif_family() -> str:
+    """Return a serif font that's actually installed on this Mac.
+
+    iA Writer / Ulysses / Bear all use a real book-typeface for body
+    copy. We prefer Iowan Old Style → New York → Charter → Georgia,
+    falling back to the system serif if none of those are present.
+    """
+    try:
+        families = set(QFontDatabase.families())
+    except Exception:
+        families = set()
+    for candidate in (
+        "Iowan Old Style", "New York", "Charter", "Georgia",
+        "Times New Roman", "Cambria",
+    ):
+        if candidate in families:
+            return candidate
+    return "serif"
+
+
+# Cinematic paper palette (kept here so the editor and the chrome
+# always agree on color values).
+_PAGE_BG  = "#0e0f18"     # the "deep desk" behind the page
+_INK      = "#dde2f3"     # body ink — warm bone, easier on the eyes
+_INK_DIM  = "#7a83a8"     # secondary ink (line numbers, status)
+_ACCENT   = "#a86bff"     # doctor accent (matches OS palette)
+_ACCENT2  = "#7aa2f7"
 
 DOCS_DIR = _REPO / ".sifta_documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
@@ -58,7 +97,7 @@ class GhostWorker(QThread):
     ghost_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, context: str, model: str = "gemma4:latest"):
+    def __init__(self, context: str, model: str = "huihui_ai/gemma-4-abliterated:latest"):
         super().__init__()
         self.context = context
         self.model = model
@@ -119,7 +158,7 @@ class SwarmAssistWorker(QThread):
     result_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, selected_text: str, full_context: str, model: str = "gemma4:latest"):
+    def __init__(self, selected_text: str, full_context: str, model: str = "huihui_ai/gemma-4-abliterated:latest"):
         super().__init__()
         self.selected_text = selected_text
         self.full_context = full_context
@@ -190,14 +229,33 @@ class StigmergicTextEdit(QTextEdit):
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setInterval(3000)
 
-        self.setFont(QFont("Inter", 15))
+        # Pick an actually-installed book serif for body copy.
+        serif = _pick_serif_family()
+        self.setFont(QFont(serif, 15))
         self.setStyleSheet(
             "QTextEdit {"
-            "  background-color: #0a0b14;"
-            "  color: #c8d0f0;"
+            f"  background-color: {_PAGE_BG};"
+            f"  color: {_INK};"
             "  border: none;"
-            "  padding: 30px 50px;"
-            "  selection-background-color: #1e3a5f;"
+            "  padding: 36px 64px;"
+            "  selection-background-color: rgba(168, 107, 255, 90);"
+            "  selection-color: #ffffff;"
+            f"  font-family: '{serif}', Georgia, serif;"
+            "  font-size: 15.5px;"
+            "  line-height: 1.7;"
+            "}"
+            "QScrollBar:vertical {"
+            "  background: transparent; width: 10px; margin: 6px 2px;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            "  background: rgba(168, 107, 255, 70); border-radius: 5px;"
+            "  min-height: 24px;"
+            "}"
+            "QScrollBar::handle:vertical:hover {"
+            "  background: rgba(168, 107, 255, 140);"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+            "  height: 0; background: transparent;"
             "}"
         )
         self.setAcceptRichText(True)
@@ -343,66 +401,147 @@ class WriterWidget(SiftaBaseWidget):
         self.ghost_worker: GhostWorker | None = None
         self.assist_worker: SwarmAssistWorker | None = None
 
+        # Make the entire root background match the page so the editor
+        # feels like a real document on a deep desk, not a window with a
+        # mismatched chrome.
+        self.setStyleSheet(
+            f"QWidget#WriterRoot {{ background: {_PAGE_BG}; }}"
+        )
+        self.setObjectName("WriterRoot")
+
+        # ── Doctor Sigil Header ──────────────────────────────────────
+        if _HAS_SIGIL:
+            try:
+                sigil = QLabel(doctor_sigil_html(
+                    title="Stigmergic Writer",
+                    subtitle="A living page · Tab to accept ghost text",
+                    doctor="CG55M",
+                    co_doctors=("AG31",),
+                    signature="CG55M-CURSOR-OPUS47",
+                ))
+                sigil.setTextFormat(Qt.TextFormat.RichText)
+                sigil.setStyleSheet(
+                    "QLabel { padding: 12px 22px 6px 22px; }"
+                )
+                layout.addWidget(sigil)
+            except Exception:
+                pass
+
         # ── The Page ─────────────────────────────────────────────────
         self.editor = StigmergicTextEdit()
         self.editor.idle_timer.timeout.connect(self._on_idle)
         layout.addWidget(self.editor, 1)
 
-        # ── Bottom Toolbar ───────────────────────────────────────────
+        # ── Bottom Toolbar (frosted, macOS-feel) ─────────────────────
         toolbar = QFrame()
-        toolbar.setFixedHeight(52)
+        toolbar.setFixedHeight(56)
         toolbar.setStyleSheet(
-            "QFrame { background: #12131e; border-top: 1px solid #1f2335; }"
+            "QFrame {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 rgba(22, 24, 36, 230),"
+            "    stop:1 rgba(14, 16, 28, 240));"
+            "  border-top: 1px solid rgba(168, 107, 255, 50);"
+            "}"
         )
         tb_layout = QHBoxLayout(toolbar)
-        tb_layout.setContentsMargins(15, 0, 15, 0)
+        tb_layout.setContentsMargins(22, 0, 18, 0)
+        tb_layout.setSpacing(14)
 
-        # Word count
+        # Word count.
         self.word_label = QLabel("0 words")
-        self.word_label.setStyleSheet("color: #565f89; font-size: 11px;")
+        self.word_label.setStyleSheet(
+            f"color: {_INK_DIM}; font-size: 11.5px;"
+            " font-family: 'SF Pro Text', 'Helvetica Neue', system-ui;"
+            " letter-spacing: 0.4px;"
+        )
         tb_layout.addWidget(self.word_label)
 
-        # File path
+        # Soft accent dot separating word-count from file path.
+        sep = QLabel("·")
+        sep.setStyleSheet(f"color: {_ACCENT}; font-size: 14px;")
+        tb_layout.addWidget(sep)
+
+        # File path.
         self.path_label = QLabel("Untitled")
-        self.path_label.setStyleSheet("color: #414868; font-size: 11px;")
+        self.path_label.setStyleSheet(
+            "color: #5b6595; font-size: 11.5px;"
+            " font-family: 'SF Pro Text', 'Helvetica Neue', system-ui;"
+            " letter-spacing: 0.3px;"
+        )
         tb_layout.addWidget(self.path_label)
 
         tb_layout.addStretch()
 
         btn_style = (
             "QPushButton {"
-            "  background: #1a1b26; color: #c0caf5; border: 1px solid #24283b;"
-            "  border-radius: 6px; padding: 6px 16px; font-size: 12px; font-weight: bold;"
+            "  background: rgba(28, 32, 50, 230);"
+            "  color: #d4dbef;"
+            "  border: 1px solid rgba(120, 130, 180, 60);"
+            "  border-radius: 9px;"
+            "  padding: 7px 14px;"
+            "  font-family: 'SF Pro Text', 'Helvetica Neue', system-ui;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  letter-spacing: 0.3px;"
             "}"
-            "QPushButton:hover { background: #24283b; border-color: #7aa2f7; }"
-            "QPushButton:disabled { color: #414868; }"
+            "QPushButton:hover {"
+            "  background: rgba(40, 46, 70, 240);"
+            f"  border-color: {_ACCENT2};"
+            "  color: #ffffff;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(20, 24, 38, 255);"
+            "}"
+            "QPushButton:disabled {"
+            "  color: rgba(150, 160, 195, 90);"
+            "  border-color: rgba(80, 90, 130, 50);"
+            "}"
         )
 
-        btn_open = QPushButton("📂 Open")
+        btn_open = QPushButton("Open")
         btn_open.setStyleSheet(btn_style)
+        btn_open.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_open.clicked.connect(self._open_doc)
         tb_layout.addWidget(btn_open)
 
-        btn_save = QPushButton("💾 Save")
+        btn_save = QPushButton("Save")
         btn_save.setStyleSheet(btn_style)
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._save_doc)
         tb_layout.addWidget(btn_save)
 
-        self.btn_swarm = QPushButton("🧠 Ask Swarm")
+        self.btn_swarm = QPushButton("✦ Ask Swarm")
         self.btn_swarm.setStyleSheet(
             "QPushButton {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #7c3aed, stop:1 #5b21b6);"
-            "  color: white; border: none; border-radius: 6px; padding: 6px 16px;"
-            "  font-size: 12px; font-weight: bold;"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 rgba(168, 107, 255, 250),"
+            "    stop:1 rgba(110, 60, 220, 250));"
+            "  color: #ffffff; border: 1px solid rgba(220, 200, 255, 90);"
+            "  border-radius: 9px; padding: 7px 16px;"
+            "  font-family: 'SF Pro Text', 'Helvetica Neue', system-ui;"
+            "  font-size: 12px; font-weight: 700; letter-spacing: 0.4px;"
             "}"
-            "QPushButton:hover { background: #8b5cf6; }"
-            "QPushButton:disabled { background: #374151; color: #9ca3af; }"
+            "QPushButton:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "    stop:0 rgba(190, 130, 255, 255),"
+            "    stop:1 rgba(130, 80, 240, 255));"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(95, 50, 200, 255);"
+            "}"
+            "QPushButton:disabled {"
+            "  background: rgba(70, 75, 100, 180);"
+            "  color: rgba(220, 220, 240, 130);"
+            "  border-color: rgba(120, 120, 160, 80);"
+            "}"
         )
+        self.btn_swarm.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_swarm.clicked.connect(self._ask_swarm)
         tb_layout.addWidget(self.btn_swarm)
 
-        btn_pdf = QPushButton("📄 Export PDF")
+        btn_pdf = QPushButton("Export PDF")
         btn_pdf.setStyleSheet(btn_style)
+        btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_pdf.clicked.connect(self._export_pdf)
         tb_layout.addWidget(btn_pdf)
 
