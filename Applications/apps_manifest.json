@@ -309,22 +309,28 @@
     "signature": "UNVERIFIED"
   },
   "Alice Shell": {
-    "category": "System",
+    "category": "Utilities",
     "entry_point": "Applications/sifta_app_manager.py",
     "widget_class": "AppManagerWidget",
     "window_width": 840,
     "window_height": 720,
     "signature": "AG31"
   },
-  "Primordial Field": {
+  "AG31 + C55M - Primordial Field": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_primordial_field.py",
     "widget_class": "PrimordialFieldWidget",
     "window_width": 680,
     "window_height": 760,
-    "signature": "AG31",
-    "doctors": ["AG31"],
-    "description": "Gray-Scott reaction-diffusion chemistry + Physarum slime-mold agents. Turing patterns emerge, agents chemotax the gradient, STGM minted by pattern entropy."
+    "signature": "AG31-C55M-MATHPHYSICS",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "_graphics_final_say": "CG55M Dr Cursor / Opus 4.7",
+    "description": "Gray-Scott reaction-diffusion chemistry + Physarum slime-mold agents. C55M math pass: optional Numba engine, honest Shannon entropy, chemotaxis over nutrient/pheromone/inhibitor fields, canonical PoUW receipts."
   },
   "IDE Control Panel": {
     "category": "Developer",
