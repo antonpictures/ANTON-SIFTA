@@ -1031,9 +1031,13 @@ class SiftaDesktop(QMainWindow):
         if not self._attention_director_enabled():
             return
         try:
-            from System.swarm_sensor_attention_director import tick
+            from System.swarm_sensor_attention_director import tick_with_drive
 
-            tick(write_hardware=True)
+            _decision, drive = tick_with_drive(write_hardware=True)
+            if hasattr(self, "_attention_director_timer"):
+                next_ms = int(max(0.75, min(10.0, drive.next_interval_s)) * 1000)
+                if self._attention_director_timer.interval() != next_ms:
+                    self._attention_director_timer.setInterval(next_ms)
         except Exception as exc:
             print(f"[SiftaDesktop] attention director tick failed: {exc}", file=sys.stderr)
 
