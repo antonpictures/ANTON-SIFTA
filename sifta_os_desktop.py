@@ -1400,7 +1400,9 @@ class SiftaDesktop(QMainWindow):
             traceback.print_exc()
 
         # ── Predator v7.0 animated background + organ panel ──────────────────
-        QTimer.singleShot(300, self._embed_predator_visuals)
+        # DISABLED: moved to Pac-Man game app (Programs → Games).
+        # Desktop stays clean. Uncomment to re-enable.
+        # QTimer.singleShot(300, self._embed_predator_visuals)
 
     def _embed_predator_visuals(self) -> None:
         """Spawn Predator animated bg on MDI viewport + right organ panel."""
