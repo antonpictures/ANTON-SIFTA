@@ -118,19 +118,42 @@ def _ledger_row_valid(row: Dict[str, Any]) -> bool:
         return True
 
 
-def _canonical_agent_ids(state_dir: Path = STATE_DIR) -> set[str]:
+def _agent_inventory(state_dir: Path = STATE_DIR) -> tuple[set[str], tuple[tuple[str, str, int, int], ...]]:
+    """Return canonical wallet agent ids plus a cache signature.
+
+    The economy total depends on two inputs: the repair ledger and the set of
+    local wallet/agent files. A ledger-only cache can go stale when a new agent
+    JSON appears without repair_log.jsonl changing.
+    """
     agent_ids: set[str] = set()
     if not state_dir.is_dir():
-        return agent_ids
+        return agent_ids, ()
+    signature: list[tuple[str, str, int, int]] = []
     for fp in state_dir.glob("*.json"):
         try:
             data = json.loads(fp.read_text(encoding="utf-8", errors="replace"))
         except Exception:
             continue
         if isinstance(data, dict):
-            aid = str(data.get("id") or fp.stem).strip().upper()
+            # Treat explicit ids as canonical. Preserve legacy no-id wallet
+            # files only when they look like agent state, not fast-changing
+            # telemetry JSON such as active_saccade_target.json.
+            raw_id = data.get("id")
+            if raw_id is None and not any(k in data for k in ("stgm_balance", "energy")):
+                continue
+            aid = str(raw_id or fp.stem).strip().upper()
             if aid:
                 agent_ids.add(aid)
+                try:
+                    stat = fp.stat()
+                    signature.append((fp.name, aid, int(stat.st_mtime_ns), int(stat.st_size)))
+                except OSError:
+                    signature.append((fp.name, aid, 0, 0))
+    return agent_ids, tuple(sorted(signature))
+
+
+def _canonical_agent_ids(state_dir: Path = STATE_DIR) -> set[str]:
+    agent_ids, _signature = _agent_inventory(state_dir)
     return agent_ids
 
 
@@ -161,7 +184,7 @@ def scan_economy(
     memory_rewards = memory_rewards or (state_dir / "stgm_memory_rewards.jsonl")
     casino_ledger = casino_ledger or (state_dir / "casino_vault.jsonl")
 
-    # Fast cache check based on file mtime and size
+    # Fast cache check based on file mtime, size, and local agent inventory.
     files_to_check = [repair_log, memory_rewards, casino_ledger]
     current_mtimes = {}
     for f in files_to_check:
@@ -170,6 +193,8 @@ def scan_economy(
             current_mtimes[str(f)] = (stat.st_mtime, stat.st_size)
         except OSError:
             current_mtimes[str(f)] = (0.0, 0)
+    canonical_agent_ids, agent_inventory_sig = _agent_inventory(state_dir)
+    current_mtimes[str(state_dir / "__agent_inventory__")] = agent_inventory_sig
             
     if _CACHE_LAST_SCAN is not None and current_mtimes == _CACHE_FILES_MTIME:
         import copy
@@ -243,7 +268,7 @@ def scan_economy(
         out.casino_lines += 1
         out.casino_player_net += _float(row.get("player_delta"))
 
-    for aid in _canonical_agent_ids(state_dir):
+    for aid in canonical_agent_ids:
         key = aid.upper()
         bal = balances.get(key, 0.0)
         out.canonical_wallet_sum += bal

@@ -2195,7 +2195,8 @@ class _BrainWorker(QThread):
                     continue
                 self.failed.emit(
                     f"Ollama returned {last_exc_msg} after {attempt + 1} "
-                    f"attempt(s). Is gemma4 loaded? Check `ollama ps`."
+                    f"attempt(s) for model `{self._model}`. Check `ollama list` "
+                    "or update System Settings → Inference."
                 )
                 return
             except urllib.error.URLError as exc:
