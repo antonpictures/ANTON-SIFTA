@@ -1,7 +1,9 @@
 """
-SIFTA Mermaid OS v1.0 — Desktop Environment
-Revamped: Body Status Panel, macOS-quality layout, Steve Jobs standard.
-All 12 biological organs visible on the desktop at all times.
+SIFTA Mermaid OS v6.0 — sandbox desktop compatibility copy.
+
+This file is a stale public-push sandbox copy. When launched directly, it
+delegates to the canonical repo-root `sifta_os_desktop.py` so the boot banner,
+theme version, organ registry count, and Alice OS body cannot drift here.
 """
 
 import sys
@@ -27,6 +29,17 @@ from PyQt6.QtGui import QFont, QColor, QKeySequence, QShortcut
 
 _REPO = Path(__file__).resolve().parent.parent  # sandbox lives one level inside the repo
 _SYS = _REPO / "System"
+
+if __name__ == "__main__" and os.environ.get("SIFTA_ALLOW_SANDBOX_DESKTOP") != "1":
+    import runpy
+
+    canonical = _REPO / "sifta_os_desktop.py"
+    sys.stderr.write(
+        "[BOOT] sandbox desktop requested; delegating to canonical "
+        f"{canonical}\n"
+    )
+    runpy.run_path(str(canonical), run_name="__main__")
+    raise SystemExit
 
 # ── Swarm Intelligence Subsystems ────────────────────────────
 for _path in (str(_SYS), str(_REPO)):
@@ -558,9 +571,9 @@ class _OrganRow(QFrame):
 
 class BodyStatusPanel(QFrame):
     """
-    Right-sidebar live body monitor.
-    All 12 biological organs — real data, nothing faked.
-    Ticks at 1 Hz to stay light on CPU.
+    Legacy sandbox right-sidebar body monitor.
+    Canonical organ truth now lives in System.swarm_body_monitor.ORGAN_DEFS.
+    Direct sandbox launches delegate to the repo-root desktop by default.
     """
     ORGANS = [
         ("🌊", "Unified Field"),
