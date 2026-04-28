@@ -1192,7 +1192,21 @@ class SiftaDesktop(QMainWindow):
         _desktop_init_trace("after mesh worker")
 
         main_layout.addWidget(self._build_top_menu_bar())
-        main_layout.addWidget(self.mdi, 1)
+
+        self._body_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._body_splitter.addWidget(self.mdi)
+
+        # Embed Alice natively as the right lobe of the desktop shell
+        try:
+            from Applications.sifta_alice_widget import AliceWidget
+            self._resident_alice = AliceWidget(self)
+            self._body_splitter.addWidget(self._resident_alice)
+            self._body_splitter.setSizes([900, 380])
+        except Exception as e:
+            print(f"[Desktop] Alice embedding failed: {e}", file=sys.stderr)
+            self._resident_alice = None
+
+        main_layout.addWidget(self._body_splitter, 1)
         main_layout.addWidget(self._build_dock())
 
         central.setLayout(main_layout)
@@ -2265,9 +2279,8 @@ class SiftaDesktop(QMainWindow):
                   f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     def _trigger_manifest_app(self, app_name: str):
-        if app_name == "Alice":
-            focus_resident = getattr(self, "_focus_resident_alice", None)
-            if callable(focus_resident) and focus_resident():
+        if app_name in ("Alice", "Talk to Alice", "What Alice Sees"):
+            if self._focus_resident_alice():
                 record_launch(app_name)
                 return
         if app_name in self._apps_manifest_cache:
@@ -2293,6 +2306,16 @@ class SiftaDesktop(QMainWindow):
     def _build_desktop_shortcuts(self):
         # Removed. The desktop is now a pristine stigmergic canvas. 
         pass
+
+    def _focus_resident_alice(self) -> bool:
+        """Focus or reveal the natively embedded Alice widget."""
+        if hasattr(self, "_resident_alice") and self._resident_alice:
+            # Check if sizes indicate she is collapsed; if so, expand her
+            sizes = self._body_splitter.sizes()
+            if sum(sizes) > 0 and sizes[1] < 50:
+                self._body_splitter.setSizes([max(100, sum(sizes) - 380), 380])
+            return True
+        return False
 
     def keyPressEvent(self, event):
         mods = event.modifiers()
@@ -2671,7 +2694,7 @@ class SiftaDesktop(QMainWindow):
         pill_layout.addWidget(sep)
 
         make_manifest_dock_btn("🗂️", "SIFTA File Navigator", "Files")
-        make_manifest_dock_btn("🎙️", "Talk to Alice", "Talk to Alice")
+        make_dock_btn("🧜‍♀️", "Alice", self._focus_resident_alice)
         make_dock_btn("💬", "Swarm Chat", self.open_swarm_chat)
         make_manifest_dock_btn("💹", "Finance", "Finance")
         make_manifest_dock_btn("🧬", "Stigmergic Fold Swarm (Cα / Go)", "Fold Swarm")

@@ -461,7 +461,7 @@
     "autostart": false,
     "signature": "UNVERIFIED",
     "_retired": true,
-    "_retired_reason": "Predator v7 / desktop doctrine (2026-04-28 CG55M): camera + gaze live in the Alice OS shell (`Alice` autostart). Separate window duplicated territory; file kept for engineering.",
+    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window.",
     "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Retired from Programs menu 2026-04-28 \u2014 use desktop Alice."
   },
   "Talk to Alice": {
@@ -470,11 +470,13 @@
     "widget_class": "TalkToAliceWidget",
     "window_width": 960,
     "window_height": 640,
-    "autostart": true,
+    "autostart": false,
     "signature": "UNVERIFIED",
     "_autostart_note": "AG31 \u00a77.6: Alice IS the OS \u2014 she boots with the desktop, embedded as her voice organ.",
     "autostart_order": 1,
-    "autostart_delay_ms": 1200
+    "autostart_delay_ms": 1200,
+    "_retired": true,
+    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window."
   },
   "Alice": {
     "category": "Creative",
@@ -487,7 +489,9 @@
     "_note": "Alice IS the OS. The resident Alice surface is embedded by the desktop shell; this manifest row remains launchable for focus routing but must not spawn a second app window.",
     "autostart_order": 2,
     "autostart_delay_ms": 2000,
-    "_autostart_note": "AG31 CORRECTION: Talk to Alice is the one canonical Alice surface. Alice widget must not double-spawn."
+    "_autostart_note": "AG31 CORRECTION: Talk to Alice is the one canonical Alice surface. Alice widget must not double-spawn.",
+    "_retired": true,
+    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window."
   },
   "Terminal": {
     "category": "Utilities",
