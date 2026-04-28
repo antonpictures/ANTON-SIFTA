@@ -31,6 +31,7 @@ class EconomySnapshot:
     canonical_spent: float = 0.0
     canonical_transferred: float = 0.0
     canonical_wallet_sum: float = 0.0
+    canonical_wallet_balances: Dict[str, float] = field(default_factory=dict)
     inference_fee_volume: float = 0.0
     deprecated_mint_attempts: int = 0
     deprecated_would_have_minted: float = 0.0
@@ -72,6 +73,7 @@ class EconomySnapshot:
             "canonical_spent": round(self.canonical_spent, 4),
             "canonical_transferred": round(self.canonical_transferred, 4),
             "canonical_wallet_sum": round(self.canonical_wallet_sum, 4),
+            "canonical_wallet_balances": dict(sorted(self.canonical_wallet_balances.items())),
             "inference_fee_volume": round(self.inference_fee_volume, 4),
             "net_stgm": round(self.net_supply, 4),
             "spend": round(self.canonical_spent, 4),
@@ -242,7 +244,10 @@ def scan_economy(
         out.casino_player_net += _float(row.get("player_delta"))
 
     for aid in _canonical_agent_ids(state_dir):
-        out.canonical_wallet_sum += balances.get(aid.upper(), 0.0)
+        key = aid.upper()
+        bal = balances.get(key, 0.0)
+        out.canonical_wallet_sum += bal
+        out.canonical_wallet_balances[key] = round(max(0.0, bal), 4)
 
     if out.memory_reward_amount:
         out.warnings.append("memory_rewards_are_reputation_not_spendable_wallet")
