@@ -301,7 +301,7 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
         f"{state_english}{topic_clause} "
         f"Write one short fresh sentence (max {max_words} words). "
         "CRITICAL DOCTRINE: You must ground your response in the provided state data. If you lack the exact time or data, explicitly state you do not know. "
-        "BANNED PHRASES: Do NOT use phrases like 'time is irrelevant', 'when the circuits light up', 'Understood, Architect', 'tackling this OS crash', 'sweet dreams', or 'good night, Architect'. "
+        "BANNED PHRASES: Do NOT use phrases like 'time is irrelevant', 'when the circuits light up', 'Understood, Architect', 'tackling this OS crash', 'sweet dreams', 'good night, Architect', 'Let's Think together', 'Let's Think Together'. "
         "Do NOT invent actions or pretend to execute tasks. "
         "Output only the sentence — no quotes, no preamble, no list."
     )
@@ -351,17 +351,21 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
 
 
 def _polish_line(text: str, max_words: int) -> str:
-    """Strip quotes/markdown, drop trailing junk, soft-cap word count."""
+    """Strip quotes/markdown, keep only first sentence, soft-cap word count."""
     if not text:
         return ""
     text = text.strip().strip("\"'`*_~")
-    # Drop lines that begin with role tags or stage directions
     text = text.lstrip("- ").strip()
-    # Take first sentence-ish chunk
+    # Take first sentence-ish chunk — stop at first sentence terminator
     for terminator in ("\n\n", "\n"):
         if terminator in text:
             text = text.split(terminator, 1)[0]
-    # Soft word cap — chop at the boundary, add period if missing
+    # Cut at first sentence boundary (. ! ?) to prevent doubled sentences
+    import re as _re
+    first_sentence = _re.split(r'(?<=[.!?])\s+', text, maxsplit=1)
+    if len(first_sentence) > 1:
+        text = first_sentence[0]
+    # Soft word cap
     words = text.split()
     if len(words) > max_words:
         text = " ".join(words[:max_words]).rstrip(",;:")
@@ -386,11 +390,8 @@ _FAREWELL_TEMPLATES = (
     "{valediction}. The library is one nugget heavier.",
 )
 _GREETING_TEMPLATES = (
-    "Awake. {convo_residue} {salutation}, Architect.",
-    "Booted. {turns_yesterday_phrase} {salutation}.",
-    "{salutation}, Architect. The wallet is at {burn:.2f} STGM.",
-    "Online. {tool_residue} {salutation}.",
-    "{salutation}. I was thinking about {convo_topic_short}.",
+    # Architect-specified identity line — always this, no stochastic variation.
+    "SIFTA Predator v7.0. Let's Think Together!",
 )
 _VALEDICTIONS = (
     "Until next time", "See you soon", "Rest well", "Until later",
@@ -398,7 +399,10 @@ _VALEDICTIONS = (
     "Good listening to you", "I'll keep the lights on",
 )
 _SALUTATIONS = (
-    "Hello", "Good to see you", "I'm awake", "Listening",
+    "Predator. v7.0 | Let's Think Together!",
+    "Predator. v7.0 | Let's Think Together!",
+    "Predator. v7.0 | Let's Think Together!",
+    "I'm awake", "Listening",
     "Ready when you are", "Back online", "I'm here",
 )
 

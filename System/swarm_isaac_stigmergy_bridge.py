@@ -27,6 +27,8 @@ Refs:
   Bishop drop: Archive/bishop_drops_pending_review/
                BISHOP_drop_nvidia_isaac_stigmergy_bridge_v1.dirt
   Tournament:  Documents/PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md §7 + §7.1
+  NVIDIA join: Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md
+               System/nvidia_open_assets_registry.py
   NVIDIA Isaac GR00T (vendor contrast, not a peer “beat”):
                https://developer.nvidia.com/isaac/gr00t
                https://developer.nvidia.com/blog/
@@ -54,13 +56,44 @@ try:
 except ImportError:
     _NP = False  # graceful fallback for environments without numpy
 
+# NVIDIA Warp — GPU-accelerated kernel path (warp-lang, installed 2026-04-28)
+# Upgrades fill_goal_potential / fill_hazard_potential from O(N³) Python loops
+# to a single GPU kernel call. Falls back to numpy/pure-Python if absent.
+# Truth: REAL:warp_gpu when importable; REAL:numpy_proof otherwise.
+try:
+    import warp as wp
+    wp.init()       # initialise once at module load (cheap if already done)
+    _WARP = True
+except Exception:  # ImportError or CUDA init failure
+    _WARP = False
+
+# ── Warp kernel: inverse-distance potential field ────────────────────────────
+if _WARP:
+    @wp.kernel
+    def _warp_inv_dist(
+        field:     wp.array3d(dtype=wp.float32),
+        cx: int, cy: int, cz: int,
+        intensity: float,
+    ):
+        """Fills field[x,y,z] = intensity / (1 + dist(x,y,z, cx,cy,cz))."""
+        x, y, z = wp.tid()
+        dx = float(x - cx)
+        dy = float(y - cy)
+        dz = float(z - cz)
+        d  = wp.sqrt(dx*dx + dy*dy + dz*dz)
+        field[x, y, z] = intensity / (1.0 + d)
+
 _REPO  = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
 # ── Truth constants ──────────────────────────────────────────────────────────
 TRUTH_NUMPY_PROOF = "REAL:numpy_proof"     # runs in-repo, no vendor dep
+TRUTH_WARP_GPU    = "REAL:warp_gpu"        # NVIDIA Warp 1.12.1 kernel active
 TRUTH_ISAAC_STUB  = "STUB:isaac_pending"   # Isaac/USD slot, not wired yet
 TRUTH_NPPL        = "NPPL:sim_only"        # safety posture label
+
+# Pick active truth label at import time
+_TRUTH_FIELD = TRUTH_WARP_GPU if _WARP else TRUTH_NUMPY_PROOF
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -78,10 +111,12 @@ class VoxelField:
     Gradient at any voxel = ∇GOAL - ∇HAZARD, evaluated with finite differences.
     A gradient-climbing arm segment moves along this vector each tick.
 
-    Implementation: pure Python for portability; numpy path auto-activated
-    when available (substantial speed-up for large grids).
+    Implementation priority:
+      1. NVIDIA Warp GPU kernel  (REAL:warp_gpu)   — when warp-lang installed
+      2. NumPy vectorised        (REAL:numpy_proof) — when numpy available
+      3. Pure Python fallback    (REAL:numpy_proof) — always works
 
-    Truth: REAL — runs without any vendor runtime.
+    Truth: auto-selected at runtime — see _TRUTH_FIELD constant.
     """
 
     def __init__(self, shape: Tuple[int, int, int] = (16, 16, 16),
@@ -127,20 +162,53 @@ class VoxelField:
 
     # ── Pheromone deposits ───────────────────────────────────────────────────
     def fill_goal_potential(self, gx: int, gy: int, gz: int, intensity: float = 1.0) -> None:
-        """Set a global inverse-distance potential for the goal."""
-        for x in range(self.shape[0]):
-            for y in range(self.shape[1]):
-                for z in range(self.shape[2]):
-                    d = math.sqrt((x-gx)**2 + (y-gy)**2 + (z-gz)**2)
-                    self._set(self._goal, x, y, z, intensity / (1.0 + d))
+        """Set global inverse-distance potential for the goal.
+        GPU path: NVIDIA Warp kernel (REAL:warp_gpu).
+        CPU path: numpy / pure-Python fallback.
+        """
+        if _WARP and _NP:
+            # Warp operates on numpy arrays via zero-copy wp.from_numpy
+            arr = wp.from_numpy(self._goal, dtype=wp.float32)
+            wp.launch(_warp_inv_dist, dim=self.shape,
+                      inputs=[arr, gx, gy, gz, intensity])
+            wp.synchronize()
+            self._goal = arr.numpy()
+        elif _NP:
+            xs = np.arange(self.shape[0], dtype=np.float32).reshape(-1, 1, 1)
+            ys = np.arange(self.shape[1], dtype=np.float32).reshape(1, -1, 1)
+            zs = np.arange(self.shape[2], dtype=np.float32).reshape(1, 1, -1)
+            d  = np.sqrt((xs - gx)**2 + (ys - gy)**2 + (zs - gz)**2)
+            self._goal = (intensity / (1.0 + d)).astype(np.float32)
+        else:
+            for x in range(self.shape[0]):
+                for y in range(self.shape[1]):
+                    for z in range(self.shape[2]):
+                        d = math.sqrt((x-gx)**2 + (y-gy)**2 + (z-gz)**2)
+                        self._set(self._goal, x, y, z, intensity / (1.0 + d))
 
     def fill_hazard_potential(self, hx: int, hy: int, hz: int, intensity: float = 1.0) -> None:
-        """Set a global inverse-distance potential for hazards."""
-        for x in range(self.shape[0]):
-            for y in range(self.shape[1]):
-                for z in range(self.shape[2]):
-                    d = math.sqrt((x-hx)**2 + (y-hy)**2 + (z-hz)**2)
-                    self._set(self._hazard, x, y, z, intensity / (1.0 + d))
+        """Set global inverse-distance potential for hazards.
+        GPU path: NVIDIA Warp kernel (REAL:warp_gpu).
+        CPU path: numpy / pure-Python fallback.
+        """
+        if _WARP and _NP:
+            arr = wp.from_numpy(self._hazard, dtype=wp.float32)
+            wp.launch(_warp_inv_dist, dim=self.shape,
+                      inputs=[arr, hx, hy, hz, intensity])
+            wp.synchronize()
+            self._hazard = arr.numpy()
+        elif _NP:
+            xs = np.arange(self.shape[0], dtype=np.float32).reshape(-1, 1, 1)
+            ys = np.arange(self.shape[1], dtype=np.float32).reshape(1, -1, 1)
+            zs = np.arange(self.shape[2], dtype=np.float32).reshape(1, 1, -1)
+            d  = np.sqrt((xs - hx)**2 + (ys - hy)**2 + (zs - hz)**2)
+            self._hazard = (intensity / (1.0 + d)).astype(np.float32)
+        else:
+            for x in range(self.shape[0]):
+                for y in range(self.shape[1]):
+                    for z in range(self.shape[2]):
+                        d = math.sqrt((x-hx)**2 + (y-hy)**2 + (z-hz)**2)
+                        self._set(self._hazard, x, y, z, intensity / (1.0 + d))
 
     def drop_goal(self, x: int, y: int, z: int, intensity: float = 1.0,
                   radius: int = 2) -> None:
@@ -316,7 +384,7 @@ def run_sim(
 
     receipt = SimReceipt(
         ts=time.time(),
-        truth=TRUTH_NUMPY_PROOF,
+        truth=_TRUTH_FIELD,
         ticks=tick + 1,
         reached=reached,
         start=start,
@@ -325,7 +393,7 @@ def run_sim(
         final_pos=(arm.x, arm.y, arm.z),
         field_shape=grid_shape,
         path_length=len(arm.history),
-        notes=f"NPPL:sim_only numpy={'yes' if _NP else 'pure_python'}",
+        notes=f"NPPL:sim_only warp={'yes' if _WARP else 'no'} numpy={'yes' if _NP else 'pure_python'}",
     )
 
     if write_receipt:
@@ -424,6 +492,7 @@ def quick_proof() -> SimReceipt:
 
 def explain() -> str:
     """One-paragraph plain-English description of this module."""
+    backend = "NVIDIA Warp GPU" if _WARP else ("NumPy CPU" if _NP else "Pure Python")
     return (
         "Event 74 — 3-D Stigmergic Field (SIFTA vs GR00T).\n"
         "SIFTA approach: Alice's foveal gaze drops goal-pheromones onto a 3-D voxel grid; "
@@ -431,7 +500,7 @@ def explain() -> str:
         "A simulated arm segment climbs the combined gradient (goal - hazard) each tick — "
         "no central joint planner, no diffusion transformer. "
         "The environment carries the computation; the limb follows the field. "
-        f"numpy present: {_NP}. Truth: {TRUTH_NUMPY_PROOF}. Posture: {TRUTH_NPPL}."
+        f"Backend: {backend}. Truth: {_TRUTH_FIELD}. Posture: {TRUTH_NPPL}."
     )
 
 

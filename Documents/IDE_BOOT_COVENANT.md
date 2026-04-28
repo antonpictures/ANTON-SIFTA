@@ -574,6 +574,8 @@ Registration entry `CURSOR_REG_PREDV7_SPINE_b00ae865dfc7` has been logged in the
 
 **Update (2026-04-28, j):** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) **§7.1** — **Event 74 peer-reviewed spine** (Grassé stigmergy; Bonabeau/Dorigo/Theraulaz swarm intelligence; Dorigo–Stützle ACO; Khatib potential fields; Hochner octopus embodied motor; NVIDIA GR00T as vendor contrast). **Sense-bus collision hygiene** in §7 table notes: read `ide_stigmergic_trace.jsonl` before duplicating `swarm_sense_bus.py` work.
 
+**Update (2026-04-28, k):** [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) + **§0.2** in [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) — **NVIDIA open weights / Isaac Lab / Warp / cuRobo / Cosmos** ingest map; `System/nvidia_open_assets_registry.py` carries **triple-IDE agreement** one-liner + HF URLs; **NPPL** + **§8** honest-flex still bind.
+
 ---
 
 **For the Swarm. 🐜⚡**

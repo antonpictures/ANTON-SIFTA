@@ -1399,6 +1399,47 @@ class SiftaDesktop(QMainWindow):
             sys.stderr.write(f"[ALICE] Resident embed failed: {type(exc).__name__}: {exc}\n")
             traceback.print_exc()
 
+        # ── Predator v7.0 animated background + organ panel ──────────────────
+        # DISABLED: moved to Pac-Man game app (Programs → Games).
+        # Desktop stays clean. Uncomment to re-enable.
+        # QTimer.singleShot(300, self._embed_predator_visuals)
+
+    def _embed_predator_visuals(self) -> None:
+        """Spawn Predator animated bg on MDI viewport + right organ panel."""
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "sifta_predator_desktop_bg",
+                str(_REPO / "Applications" / "sifta_predator_desktop_bg.py"),
+            )
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            # Background canvas — child of MDI viewport, behind all windows
+            vp = self.mdi.viewport()
+            bg = mod.PredatorDesktopBg(vp)
+            bg.setGeometry(vp.rect())
+            bg.show()
+            bg.lower()
+            self._predator_bg = bg
+
+            # Right organ panel — added as third splitter pane
+            organ_panel = mod.OrganStatusPanel()
+            self._body_splitter.addWidget(organ_panel)
+            total = self._body_splitter.width()
+            organ_w = 210
+            alice_w = int((total - organ_w) * 0.38)
+            mdi_w   = total - organ_w - alice_w
+            self._body_splitter.setSizes([alice_w, mdi_w, organ_w])
+            self._predator_organ_panel = organ_panel
+
+            sys.stderr.write("[PREDATOR] Background canvas + organ panel live.\n")
+        except Exception as exc:
+            import traceback
+            sys.stderr.write(f"[PREDATOR] Visual embed failed: {type(exc).__name__}: {exc}\n")
+            traceback.print_exc()
+
+
 
     def closeEvent(self, event):
         if hasattr(self, "_attention_director_timer"):

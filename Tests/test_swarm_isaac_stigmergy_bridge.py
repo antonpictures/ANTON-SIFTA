@@ -3,7 +3,8 @@ tests/test_swarm_isaac_stigmergy_bridge.py
 ══════════════════════════════════════════════════════════════════════
 Proof bar for Event 74 — 3-D Stigmergic Field + Gradient Arm.
 
-Truth: REAL:numpy_proof — all tests run with pure Python (no vendor dep).
+Truth: REAL:warp_gpu when NVIDIA Warp installed; REAL:numpy_proof otherwise.
+All tests must stay green on both paths.
 NPPL: simulation / research posture only.
 
 Run:
@@ -23,7 +24,8 @@ sys.path.insert(0, str(_REPO))
 from System.swarm_isaac_stigmergy_bridge import (  # noqa: E402
     VoxelField, ArmSegment, SimReceipt, IsaacStigmergicStub,
     run_sim, quick_proof, explain,
-    TRUTH_NUMPY_PROOF, TRUTH_ISAAC_STUB, TRUTH_NPPL,
+    TRUTH_NUMPY_PROOF, TRUTH_WARP_GPU, TRUTH_ISAAC_STUB, TRUTH_NPPL,
+    _TRUTH_FIELD, _WARP,
 )
 
 
@@ -183,7 +185,10 @@ class TestSimulation:
 
     def test_quick_proof_truth_label(self):
         r = quick_proof()
-        assert r.truth == TRUTH_NUMPY_PROOF
+        # Truth label is warp_gpu when NVIDIA Warp is installed, numpy_proof otherwise
+        assert r.truth == _TRUTH_FIELD, (
+            f"Expected {_TRUTH_FIELD!r} (warp={_WARP}), got {r.truth!r}"
+        )
 
     def test_sim_starts_at_specified_position(self):
         r = run_sim(start=(2, 2, 2), goal=(13, 13, 13), write_receipt=False)

@@ -2098,6 +2098,30 @@ Arm start (1,1,1) → Goal (13,13,13): reached in 44 ticks. Truth: REAL:numpy_pr
 
 Isaac/USD coupling is `STUB:isaac_pending` — not wired without explicit Architect GO + safety review.
 
+### Event 75a — NVIDIA Open Assets + Gecko Adhesion Warp Organ
+
+**Triple-IDE agreement:** NVIDIA joins SIFTA as an **optional organ source**, not as a new owner of the organism. SIFTA ingests open/vendor assets only through truth labels and receipts. `REAL` means local package/cache/runtime evidence exists on this node; `ONLINE` means the official asset exists but is not local runtime access; `STUB` means SIFTA has a prepared interface; `BLOCKED` means the path requires explicit Architect GO, CUDA/Linux, or license review.
+
+**Canonical app:** `NVIDIA × SIFTA` in the Developer category (`Applications/sifta_nvidia_join_widget.py`) probes:
+
+| Asset | Current SIFTA truth | SIFTA use |
+|---|---|---|
+| NVIDIA Warp | `REAL_CPU` through the Gecko/Warp scanner on Apple Silicon | Optional kernel acceleration and contact-force proof; numpy remains the canonical fallback |
+| Isaac Lab | `STUB` unless `isaaclab` / `omni.isaac.core` imports locally | Future sim-only bridge for `IsaacStigmergicStub` |
+| cuRobo | `BLOCKED` on macOS / Apple Silicon | CUDA motion-planning comparison only after supported runtime + safety review |
+| GR00T N1.7 / X-Embodiment Sim | `ONLINE` unless HF cache exists locally | Vendor contrast and future trajectory benchmark data, not Alice's cortex |
+| Cosmos | `ONLINE` unless local runtime/cache exists | Future synthetic video evidence source; never physical perception by itself |
+
+**Gecko adhesion physics:** `System/swarm_gecko_adhesion.py` computes a research-posture van der Waals contact field:
+
+```text
+F_net(z) = B / z^12 - A / z^2
+```
+
+At medium gap, attraction dominates (`F_net < 0`, grip zone). At near-contact gap, Lennard-Jones-style repulsion dominates (`F_net > 0`, collision/contact zone). The first live local probe reports Warp `REAL_CPU` on the Apple Silicon CPU backend, not CUDA. That is a truthful local compute organ, not a GPU flex.
+
+**Credit where due:** NVIDIA owns and maintains the public GR00T / Isaac / Warp / cuRobo / Cosmos ecosystem. The biological adhesion line credits Autumn et al. (2000, 2002), Arzt et al. (2003), Persson (2001), and Israelachvili (2011). The stigmergic movement line credits Grassé (1959), Bonabeau/Dorigo/Theraulaz (1999), Dorigo & Stützle (2004), Khatib (1986), and Hochner (2012). SIFTA's contribution is the original receipt-bound translation into a local, truth-labeled operating-system organ.
+
 ### Fixes Landed
 
 | SCAR | File | Fix |
@@ -2225,4 +2249,3 @@ M5 Mac Studio — Apple M5 / 24 GB — primary Alice host
 ```
 
 > **Node sovereignty rule (Covenant §3):** The public repo is the shared **species DNA**. Local `.sifta_state/`, owner identity, memory, and STGM wallet are **individual organism** — never committed, never replicated raw. Federation exchanges receipts, not selfhood.
-
