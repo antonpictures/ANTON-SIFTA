@@ -29,6 +29,19 @@ _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
 _PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
 
+
+def _resolve_repo_script(entry_path: str) -> str:
+    """Resolve a manifest entry_point script to an absolute path under _REPO.
+
+    Embedded QProcess must not depend on os.getcwd() (e.g. runs from
+    `.simulation_publicpush_sandbox/` would otherwise break `Applications/...`).
+    """
+    p = Path(entry_path)
+    if p.is_absolute():
+        return str(p)
+    return str((_REPO / entry_path).resolve())
+
+
 # ── Swarm Intelligence Subsystems ────────────────────────────
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
@@ -350,8 +363,9 @@ class TerminalSubWindow(QWidget):
 
         self.process = QProcess(self)
         env = QProcessEnvironment.systemEnvironment()
-        env.insert("PYTHONPATH", os.getcwd())
+        env.insert("PYTHONPATH", str(_REPO))
         self.process.setProcessEnvironment(env)
+        self.process.setWorkingDirectory(str(_REPO))
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
         self.process.readyReadStandardError.connect(self.handle_stderr)
         self.process.start(cmd, args)
@@ -386,6 +400,7 @@ class EmbeddedScriptSubWindow(QWidget):
         super().__init__()
         self.app_title = app_title
         self.script_path = script_path
+        self._abs_script = _resolve_repo_script(script_path)
         layout = QVBoxLayout()
         self.setStyleSheet("background-color: #0c0c11; color: #9ece6a; font-family: monospace;")
 
@@ -426,13 +441,14 @@ class EmbeddedScriptSubWindow(QWidget):
             self.process.kill()
             self.process.waitForFinished(1000)
         env = QProcessEnvironment.systemEnvironment()
-        env.insert("PYTHONPATH", os.getcwd())
+        env.insert("PYTHONPATH", str(_REPO))
         env.insert("PYTHONUNBUFFERED", "1")
         env.insert("SIFTA_EMBEDDED", "1")
         env.insert("MPLBACKEND", "Agg")
         self.process.setProcessEnvironment(env)
-        self.process.start(_PYTHON_BIN, [self.script_path])
-        self.log.append(f"> {_PYTHON_BIN} {self.script_path}")
+        self.process.setWorkingDirectory(str(_REPO))
+        self.process.start(_PYTHON_BIN, [self._abs_script])
+        self.log.append(f"> {_PYTHON_BIN} {self._abs_script}")
         self.log.append("[iSwarm] Embedded mode forced (MPLBACKEND=Agg)")
 
     def _read_merged(self):
@@ -2223,41 +2239,16 @@ class SiftaDesktop(QMainWindow):
             print(f"[AUTOSTART] {app_name!r} failed: "
                   f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
-    def _ensure_apps_manifest_cache(self) -> dict:
-        """Load the app manifest once for dock/menu launchers."""
-        if self._apps_manifest_cache:
-            return self._apps_manifest_cache
-        manifest_path = _REPO / "Applications" / "apps_manifest.json"
-        if not manifest_path.exists():
-            return self._apps_manifest_cache
-        try:
-            self._apps_manifest_cache = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            print(f"[Boot Error] Failed to load apps manifest: {exc}")
-            self._apps_manifest_cache = {}
-        return self._apps_manifest_cache
-
     def _trigger_manifest_app(self, app_name: str):
-        apps = self._ensure_apps_manifest_cache()
-        if app_name in apps:
-            dat = apps[app_name]
-            entry = dat.get("entry_point")
-            widget_class = dat.get("widget_class")
-            if not entry:
-                QMessageBox.warning(self, "Launch Error", f"{app_name} has no entry point.")
-                return
-            if not widget_class:
-                self._launch_terminal_app(app_name, entry)
-                return
+        if app_name in self._apps_manifest_cache:
+            dat = self._apps_manifest_cache[app_name]
             self._launch_app(
                 app_name,
-                entry,
-                widget_class,
+                dat.get("entry_point"),
+                dat.get("widget_class"),
                 w=int(dat.get("window_width", 920)),
                 h=int(dat.get("window_height", 640))
             )
-        else:
-            QMessageBox.warning(self, "Launch Error", f"{app_name} is not installed in apps_manifest.json.")
 
     def _build_desktop_shortcuts(self):
         # Removed. The desktop is now a pristine stigmergic canvas. 
@@ -2372,8 +2363,8 @@ class SiftaDesktop(QMainWindow):
         _sep = None
         default = {
             "File": [
-                ("Open Files",                lambda: self._trigger_manifest_app("SIFTA File Navigator")),
-                ("Open Alice Shell",          lambda: self._trigger_manifest_app("Alice Shell")),
+                ("Open Conversation History", lambda: self._trigger_manifest_app("Conversation History")),
+                ("Open Stigmergic Library",   lambda: self._trigger_manifest_app("Stigmergic Library")),
                 ("Open Terminal",             lambda: self._trigger_manifest_app("Terminal")),
                 _sep,
                 ("Quit SIFTA OS", self.close),
@@ -2388,9 +2379,7 @@ class SiftaDesktop(QMainWindow):
                 ("Launchpad",    self._toggle_launchpad),
                 ("Spotlight",    self._toggle_spotlight),
                 _sep,
-                ("What Alice Sees",       lambda: self._trigger_manifest_app("What Alice Sees")),
-                ("Alice Safety Tracker",  lambda: self._trigger_manifest_app("Alice Safety Tracker")),
-                ("Apex Predator",         lambda: self._trigger_manifest_app("Apex Predator Perceiver")),
+                ("Alice Health", lambda: self._trigger_manifest_app("Biological Dashboard")),
             ],
             "Window": [
                 ("Cascade Windows", self.mdi.cascadeSubWindows),
@@ -2616,46 +2605,33 @@ class SiftaDesktop(QMainWindow):
             btn.clicked.connect(lambda _checked=False, cb=callback: cb())
             pill_layout.addWidget(btn)
 
-        def make_separator():
-            sep = QFrame()
-            sep.setFrameShape(QFrame.Shape.VLine)
-            sep.setFixedHeight(32)
-            sep.setStyleSheet("color: rgba(255,255,255,0.08);")
-            pill_layout.addWidget(sep)
-
-        def make_manifest_dock_btn(emoji: str, manifest_name: str, label: str = ""):
-            apps = self._ensure_apps_manifest_cache()
-            if manifest_name not in apps:
-                return
-            make_dock_btn(
-                emoji,
-                label or manifest_name,
-                lambda app_name=manifest_name: self._trigger_manifest_app(app_name),
-            )
-
         make_dock_btn("🚀", "Launchpad",         self._toggle_launchpad)
         make_dock_btn("🔍", "Spotlight",          self._toggle_spotlight)
 
-        make_separator()
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFixedHeight(32)
+        sep.setStyleSheet("color: rgba(255,255,255,0.08);")
+        pill_layout.addWidget(sep)
 
-        # macOS-style core dock: files, resident Alice, chat, money, science,
-        # map/senses, terminal, settings. Every app here is manifest-backed;
-        # missing or retired manifest entries are skipped instead of becoming
-        # dead dock buttons.
-        make_manifest_dock_btn("🗂️", "SIFTA File Navigator", "Files")
-        make_manifest_dock_btn("🎙️", "Talk to Alice", "Talk to Alice")
-        make_manifest_dock_btn("💬", "Swarm Chat", "Swarm Chat")
-        make_manifest_dock_btn("💹", "Finance", "Finance")
-        make_manifest_dock_btn("🧬", "Stigmergic Fold Swarm (Cα / Go)", "Fold Swarm")
-        make_manifest_dock_btn("🧪", "C55M + George - Protein Fold Colosseum", "Protein Colosseum")
-        make_manifest_dock_btn("🗺️", "Alice Safety Tracker", "Alice Safety Tracker")
-        make_manifest_dock_btn("👁️", "What Alice Sees", "What Alice Sees")
-        make_manifest_dock_btn("🧠", "Apex Predator Perceiver", "Apex Predator")
-        make_manifest_dock_btn("👩‍💻", "Terminal", "Terminal")
+        make_dock_btn("🧜‍♀️", "Alice",            lambda: self._trigger_manifest_app("Alice"))
+        make_dock_btn("💬",  "Swarm Chat",         self.open_swarm_chat)
+        make_dock_btn("🧬",  "Fold Swarm",         lambda: self._launch_app("Fold Swarm", "Applications/fold_swarm_widget.py", "FoldSwarmWidget", 1200, 800))
+        make_dock_btn("🧪",  "Protein Colosseum",  lambda: self._trigger_manifest_app("C55M + George - Protein Fold Colosseum"))
+        make_dock_btn("⚡",  "PoUW Sim",           lambda: self._trigger_manifest_app("AG31 + C46S - PoUW Fold-Swarm Simulation"))
+        make_dock_btn("🔬",  "Assembly Theory",    lambda: self._trigger_manifest_app("Sara Imari Walker — Assembly Theory Lab"))
+        make_dock_btn("💓",  "Alice Health",       lambda: self._trigger_manifest_app("Biological Dashboard"))
+        make_dock_btn("👩‍💻","Terminal",           lambda: self._trigger_manifest_app("Terminal"))
 
-        make_separator()
+        # Separator
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.VLine)
+        sep2.setFixedHeight(32)
+        sep2.setStyleSheet("color: rgba(255,255,255,0.08);")
+        pill_layout.addWidget(sep2)
 
-        make_manifest_dock_btn("⚙️", "System Settings", "System Settings")
+        make_dock_btn("⚙️", "System Settings",    lambda: self._trigger_manifest_app("System Settings"))
 
         outer.addWidget(pill)
         outer.addStretch(1)

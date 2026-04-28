@@ -24,8 +24,14 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO / "Applications") not in sys.path:
     sys.path.insert(0, str(_REPO / "Applications"))
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 from fold_swarm_sim import FoldSwarmConfig, FoldSwarmSim  # noqa: E402
+try:
+    from System.swarm_app_focus import publish_focus as _publish_focus
+except Exception:
+    def _publish_focus(*a, **kw): pass
 
 BG = "#0a0b12"
 PANEL = "#12142a"
@@ -75,6 +81,13 @@ class FoldSwarmWidget(QWidget):
         self._timer.timeout.connect(self._tick)
         self._timer.start(28)
 
+        # Publish initial focus so Alice knows the swarm launched
+        _publish_focus(
+            "Stigmergic Fold Swarm",
+            "Protein folding simulation started — Go-model + WCA + pheromone ACO",
+            tab="Swarm View",
+        )
+
     def _world_bounds(self):
         lo = self.sim.world_lo
         hi = self.sim.world_hi
@@ -86,6 +99,19 @@ class FoldSwarmWidget(QWidget):
         self._frame += 1
         if self._frame % 2 == 0 or self.sim.tick <= 4:
             self._render()
+        # Publish focus every ~2s so Alice can see live fold metrics
+        if self._frame % 60 == 0:
+            try:
+                q = self.sim._fraction_native_contacts(self.sim.r)
+                _publish_focus(
+                    "Stigmergic Fold Swarm",
+                    f"Folding in progress — tick {self.sim.tick}, Q={q:.2f}, E={self.sim.E:.1f}",
+                    tab="Swarm View",
+                    metadata={"tick": self.sim.tick, "Q_score": round(q, 3),
+                              "energy": round(self.sim.E, 1), "frame": self._frame},
+                )
+            except Exception:
+                pass
 
     def _render(self) -> None:
         m = {

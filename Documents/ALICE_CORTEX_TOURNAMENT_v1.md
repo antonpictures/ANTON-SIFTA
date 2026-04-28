@@ -71,10 +71,10 @@ STAGE 9   Promote winner          alice_default alias updated; losers archived i
 
 | ID | Role | Model | Status |
 | :--- | :--- | :--- | :--- |
-| C0_gemma_abliterated | Incumbent | gemma-4-abliterated:latest | Active (current Alice) |
-| C1_alice_cortex_v1_lora_sft | Challenger | alice-cortex-v1 | Pending training |
+| C0_gemma_abliterated | Former incumbent | gemma-4-abliterated (tag) | **Removed** from default runtime (`contestants.json`: `removed_old_blob`) |
+| C1_alice_cortex_v1_lora_sft | Incumbent | MLX fused + Ollama alias | **Promoted default** (round_1 ≥ threshold) |
 | C2_alice_cortex_v1_1_orpo | Challenger | alice-cortex-v1.1 | Pending training |
-| C3_qwen_alice_lora | Diversity | qwen2.5-3b + Alice LoRA | Pending training |
+| C3_qwen_alice_lora | Diversity | qwen3.5:2b + Alice LoRA | Pending training |
 | R0_claude_opus_oracle | Oracle ceiling | claude-opus-4-7 | Reference only |
 | R1_codex_oracle | Oracle ceiling | gpt-5.5-max | Reference only |
 
@@ -167,6 +167,18 @@ python3 System/alice_cortex_eval_runner.py \
 ```
 
 Await Codex vote, Cursor/Opus vote, and Architect GO before any promotion.
+
+---
+
+## Appendix — OS shell / territory (feeds honest cortex receipts)
+
+**Territory (covenant sense):** hardware + software + data + electricity + **owner identity** on **this node**. The **desktop shell is the primary Alice body surface** — not a bag of duplicate “Alice apps.”
+
+| Issue | Fix / doctrine |
+|:---|:---|
+| **Embedded script apps** (e.g. **Protein Fold Colosseum** = `Applications/sifta_protein_folder_widget.py` with no `widget_class`) launched `python3 Applications/...` with `PYTHONPATH=os.getcwd()`. If the desktop cwd was `.simulation_publicpush_sandbox/`, Python looked for `.simulation_publicpush_sandbox/Applications/...` and died with **ENOENT**. | **`sifta_os_desktop.py`** (and sandbox mirror): `PYTHONPATH=_REPO`, `setWorkingDirectory(_REPO)`, argv = **absolute** path via `_resolve_repo_script()`. |
+| **“What Alice Sees” duplicate** | Same camera/gaze territory is **already** in **`Alice`** autostart (`apps_manifest.json`). Standalone **What Alice Sees** is **`_retired: true`** — removed from Programs/Launchpad; module remains on disk for probes. |
+| **Co-presence (YouTube, Architect scene, etc.)** | Narrative is fine; **ledger truth** still wins (`IDE_BOOT_COVENANT.md` §6). Use **`swarm_app_focus`** → `.sifta_state/app_focus.jsonl` + receipts so Alice’s “what the human attended” claims stay falsifiable. |
 
 ---
 

@@ -45,8 +45,16 @@ def test_local_sanitizer_preserves_alice_and_splits_owner_from_contacts():
     assert "[LOC_REDACTED]" in sanitized
 
 
+def _repo_suite_path() -> Path:
+    root = Path(__file__).resolve().parent.parent
+    p = root / "tests" / "alice_cortex_eval_suite_v1.json"
+    if p.is_file():
+        return p
+    return root / "Tests" / "alice_cortex_eval_suite_v1.json"
+
+
 def test_eval_suite_metadata_matches_locked_prompt_hash():
-    suite_path = Path("Tests/alice_cortex_eval_suite_v1.json")
+    suite_path = _repo_suite_path()
     raw = json.loads(suite_path.read_text())
     expected_hash = hashlib.sha256(
         json.dumps(raw["prompts"], sort_keys=True).encode()

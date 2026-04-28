@@ -46,7 +46,7 @@
     "window_height": 820,
     "signature": "UNVERIFIED",
     "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine A \u2014 Lennard-Jones / Langevin)."
+    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine A — Lennard-Jones / Langevin)."
   },
   "C55M Dr Codex - Physarum Contradiction Lab": {
     "category": "Simulations",
@@ -71,7 +71,7 @@
     "window_height": 820,
     "signature": "CG55M-DR-CURSOR-OPUS47",
     "description": "Cursor/Opus graphics-forward Carlton demo: real Tero Physarum solver, semantic PoUW gate, mint visuals.",
-    "_note": "Carlton's marketing demo \u2014 runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts.",
+    "_note": "Carlton's marketing demo — runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts.",
     "doctor": "CG55M",
     "co_doctors": [],
     "doctor_protocol_version": 1,
@@ -159,7 +159,7 @@
     "window_height": 920,
     "signature": "UNVERIFIED"
   },
-  "Stigmergic Fold Swarm (C\u03b1 / Go)": {
+  "Stigmergic Fold Swarm (Cα / Go)": {
     "category": "Simulations",
     "entry_point": "Applications/fold_swarm_widget.py",
     "widget_class": "FoldSwarmWidget",
@@ -325,7 +325,7 @@
     "window_height": 860,
     "signature": "UNVERIFIED",
     "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine B \u2014 Lattice-Boltzmann). Routing metaphor replaced with real Navier-Stokes."
+    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine B — Lattice-Boltzmann). Routing metaphor replaced with real Navier-Stokes."
   },
   "Bauwens Regenerative Factory": {
     "category": "Simulations",
@@ -421,8 +421,8 @@
       "AG31"
     ],
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Living-page writing app. Pause 3 seconds and the swarm suggests a continuation in faded ghost text \u2014 Tab accepts. Ask Swarm rewrites a selection. Full territory history and PDF export.",
-    "_synthesis_note": "Backend (real): Ollama-driven ghost text + Ask Swarm worker, memory bus recall, .territory.jsonl history per document. Graphics polish (CG55M / Opus 4.7): paper feel with installed serif body font (Iowan Old Style \u2192 New York \u2192 Charter \u2192 Georgia), warmer ink on a deep desk background, frosted macOS-feel toolbar with a purple-accent Ask Swarm button, Doctor Sigil header at the top, polished scrollbar, accent selection color."
+    "description": "Living-page writing app. Pause 3 seconds and the swarm suggests a continuation in faded ghost text — Tab accepts. Ask Swarm rewrites a selection. Full territory history and PDF export.",
+    "_synthesis_note": "Backend (real): Ollama-driven ghost text + Ask Swarm worker, memory bus recall, .territory.jsonl history per document. Graphics polish (CG55M / Opus 4.7): paper feel with installed serif body font (Iowan Old Style → New York → Charter → Georgia), warmer ink on a deep desk background, frosted macOS-feel toolbar with a purple-accent Ask Swarm button, Doctor Sigil header at the top, polished scrollbar, accent selection color."
   },
   "What Alice Sees": {
     "category": "Creative",
@@ -432,7 +432,9 @@
     "window_height": 700,
     "autostart": false,
     "signature": "UNVERIFIED",
-    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 What Alice Sees."
+    "_retired": true,
+    "_retired_reason": "Predator v7 / desktop doctrine (2026-04-28 CG55M): camera + gaze live in the Alice OS shell (`Alice` autostart). Separate window duplicated territory; file kept for engineering.",
+    "_autostart_note": "Disabled 2026-04-19 by C47H — autostart unified into 'Alice'. Retired from Programs menu 2026-04-28 — use desktop Alice."
   },
   "Talk to Alice": {
     "category": "Creative",
@@ -442,7 +444,7 @@
     "window_height": 640,
     "autostart": false,
     "signature": "UNVERIFIED",
-    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 Talk to Alice."
+    "_autostart_note": "Disabled 2026-04-19 by C47H — autostart unified into 'Alice'. Still launchable standalone from Programs → Creative → Talk to Alice."
   },
   "Alice": {
     "category": "Creative",
@@ -547,7 +549,7 @@
     "doctor": "AG31",
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
-    "description": "Engine A: Lennard-Jones colloidal thermodynamics \u2014 V_LJ=4\u03b5[(\u03c3/r)\u00b9\u00b2\u2212(\u03c3/r)\u2076], Langevin, phase transitions, live T [K] / P [Pa] / S [J/mol\u00b7K] / g(r).  Engine B: D2Q9 Lattice-Boltzmann fluid dynamics \u2014 BGK collision-streaming, live Re, Ma, vorticity \u03c9_z, drag C_D. PoUW STGM minting via swarm_atp_synthase."
+    "description": "Engine A: Lennard-Jones colloidal thermodynamics — V_LJ=4ε[(σ/r)¹²−(σ/r)⁶], Langevin, phase transitions, live T [K] / P [Pa] / S [J/mol·K] / g(r).  Engine B: D2Q9 Lattice-Boltzmann fluid dynamics — BGK collision-streaming, live Re, Ma, vorticity ω_z, drag C_D. PoUW STGM minting via swarm_atp_synthase."
   },
   "Research Simulators (Quantum & Epi)": {
     "category": "Simulations",
@@ -571,5 +573,23 @@
     ],
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
+  },
+  "Sara Imari Walker — Assembly Theory Lab": {
+    "entry_point": "Applications/sara_imari_walker_widget.py",
+    "widget_class": "SaraImariWalkerWidget",
+    "category": "Science",
+    "window_width": 1100,
+    "window_height": 720,
+    "description": "Proves Assembly Theory live: Assembly Index threshold, pheromone memory analogue, phase transition simulation, and Question Wall with honest truth labels.",
+    "signature": "AG31_2026-04-28",
+    "autostart": false,
+    "co_authors": [
+      "AG31-Antigravity (Claude Opus 4.6)",
+      "Ioan George Anton"
+    ],
+    "references": [
+      "Walker/Cronin Nature 2023",
+      "Sara Imari Walker — Life as No One Knows It (2024)"
+    ]
   }
 }
