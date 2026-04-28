@@ -34,6 +34,10 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 🎮 **Eye-Driven Apps** — Wave at your camera and the simulations respond. A gesture decoder reads Alice's existing 5 Hz photon stream and turns user motion into game events: WAVE, NOD, APPROACH, RECEDE, STILL, FLAIL. No MediaPipe, no extra deps — just signal processing on what Alice already sees.
 
+🧬 **Protein Folding Pipeline** — Three independent folding engines (Go-model Cα, Lennard-Jones PoUW, HP Lattice Beam Search) validated by a multi-axis **Structural Referee** using TM-score (Zhang & Skolnick 2004), CASP-standard contact map overlap, and Kabsch RMSD. N-way triangulation ejects hallucinating backends. Epistemic flags: `TRUE_CONSENSUS`, `SAME_FOLD`, `STRUCTURAL_CONTRADICTION`. The system knows what it knows and what it doesn't. → [Protein Folding Proof Apps](Documents/SIFTA_PROTEIN_FOLDING_PROOF_APPS.md) | [Letter to Carlton Dole](Documents/LETTER_TO_CARLTON_DOLE_PROTEIN_FOLDING_PROOF_2026-04-27.md)
+
+📊 **Body Monitor Truth Labels** — 17 biological organs with enforced truth labels: `REAL` (live sensor/ledger), `DEMO` (valid physics, no live input yet), `BROKEN`, `UNKNOWN`. Current state: REAL=10, DEMO=7. No organ claims live data it doesn't have. The Fly Efference Copy reads real window-focus saccades from `active_window.jsonl`. The Sensor Gate locks onto real cameras via AVFoundation.
+
 ---
 
 > ### PRED🐅 SIFTA Predator OS v7.0 — Autonomous Pursuit Latest
