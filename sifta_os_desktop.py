@@ -29,6 +29,18 @@ _SYS = _REPO / "System"
 _VENV_PYTHON = _REPO / ".venv" / "bin" / "python"
 _PYTHON_BIN = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else (sys.executable or "python3")
 
+# ── Theme engine — palette-driven visuals ────────────────────────────────
+try:
+    from System.sifta_desktop_themes import (
+        active_palette, wallpaper_path as _theme_wallpaper_path,
+        generate_global_qss, load_active_theme_id, save_active_theme_id,
+        THEMES, DesktopPalette,
+    )
+    _HAS_THEME_ENGINE = True
+except Exception as _te:
+    print(f"[BOOT] theme engine import failed: {_te}", file=sys.stderr)
+    _HAS_THEME_ENGINE = False
+
 
 def _resolve_repo_script(entry_path: str) -> str:
     """Resolve a manifest entry_point script to an absolute path under _REPO.
@@ -656,7 +668,9 @@ from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap
 class SiftaMdiArea(QMdiArea):
     def __init__(self):
         super().__init__()
-        self.setBackground(QBrush(QColor("#0d0e17")))
+        _p = active_palette() if _HAS_THEME_ENGINE else None
+        self._palette = _p
+        self.setBackground(QBrush(QColor(_p.bg_deep if _p else "#0d0e17")))
         self._wallpaper_source = QPixmap()
         self._wallpaper_cache = QPixmap()
         self._wallpaper_cache_size = None
@@ -792,27 +806,34 @@ class SiftaMdiArea(QMdiArea):
             painter.drawPixmap(x, y, wallpaper)
             painter.fillRect(rect, QColor(3, 6, 12, 58))
         else:
-            painter.fillRect(rect, QColor("#080a0f"))
-        
-        painter.setPen(QPen(QColor(120, 162, 247, 30), 1))
+            painter.fillRect(rect, QColor(self._palette.bg_deep if self._palette else "#080a0f"))
+
+        _gp = self._palette
+        _gc = QColor(_gp.grid_color if _gp else "#7aa2f7")
+        _gc.setAlpha(_gp.grid_alpha if _gp else 30)
+        painter.setPen(QPen(_gc, 1))
         for x in range(0, w, 40): painter.drawLine(x, 0, x, h)
         for y in range(0, h, 40): painter.drawLine(0, y, w, y)
 
         if not has_wallpaper:
             painter.setFont(self.watermark_font)
-            painter.setPen(QColor(255, 255, 255, 18))
-            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "SIFTA")
-            
+            painter.setPen(QColor(255, 255, 255, _gp.watermark_alpha if _gp else 18))
+            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, _gp.watermark_text if _gp else "SIFTA")
+
             painter.setFont(self.watermark_sub)
             painter.setPen(QColor(255, 255, 255, 40))
-            painter.drawText(0, h // 2 + 70, w, 30, Qt.AlignmentFlag.AlignCenter, "STIGMERGIC BIOLOGICAL SWARM")
+            painter.drawText(0, h // 2 + 70, w, 30, Qt.AlignmentFlag.AlignCenter, _gp.watermark_sub if _gp else "STIGMERGIC BIOLOGICAL SWARM")
 
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
             px = float(p[0] * w) if self.use_engine else float(p[0])
             py = float(p[1] * h) if self.use_engine else float(p[1])
             if 0 <= px <= w and 0 <= py <= h:
-                c = QColor(125, 207, 255, 45) if p[4] > 5 else QColor(187, 154, 247, 40)
+                if self._palette:
+                    c = QColor(self._palette.particle_color_a) if p[4] > 5 else QColor(self._palette.particle_color_b)
+                    c.setAlpha(self._palette.particle_alpha_a if p[4] > 5 else self._palette.particle_alpha_b)
+                else:
+                    c = QColor(125, 207, 255, 45) if p[4] > 5 else QColor(187, 154, 247, 40)
                 painter.setBrush(c)
                 painter.drawEllipse(QRectF(px, py, float(p[4]), float(p[4])))
 
@@ -1291,6 +1312,10 @@ class SiftaDesktop(QMainWindow):
         env_wp = os.environ.get("SIFTA_DESKTOP_WALLPAPER", "").strip()
         if env_wp:
             yield env_wp
+        if _HAS_THEME_ENGINE:
+            themed = _theme_wallpaper_path()
+            if themed:
+                yield themed
         yield str(_REPO / "Library" / "Desktop Pictures" / "Mermaid Default.jpg")
         yield str(_REPO / "static" / "mermaid_os_wallpaper.png")
 
@@ -2240,15 +2265,30 @@ class SiftaDesktop(QMainWindow):
                   f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     def _trigger_manifest_app(self, app_name: str):
+        if app_name == "Alice":
+            focus_resident = getattr(self, "_focus_resident_alice", None)
+            if callable(focus_resident) and focus_resident():
+                record_launch(app_name)
+                return
         if app_name in self._apps_manifest_cache:
             dat = self._apps_manifest_cache[app_name]
+            entry = dat.get("entry_point")
+            widget_class = dat.get("widget_class")
+            if not entry:
+                QMessageBox.warning(self, "Launch Error", f"{app_name} has no entry point.")
+                return
+            if not widget_class:
+                self._launch_terminal_app(app_name, entry)
+                return
             self._launch_app(
                 app_name,
-                dat.get("entry_point"),
-                dat.get("widget_class"),
+                entry,
+                widget_class,
                 w=int(dat.get("window_width", 920)),
                 h=int(dat.get("window_height", 640))
             )
+        else:
+            QMessageBox.warning(self, "Launch Error", f"{app_name} is not installed in apps_manifest.json.")
 
     def _build_desktop_shortcuts(self):
         # Removed. The desktop is now a pristine stigmergic canvas. 
@@ -2605,6 +2645,21 @@ class SiftaDesktop(QMainWindow):
             btn.clicked.connect(lambda _checked=False, cb=callback: cb())
             pill_layout.addWidget(btn)
 
+        def make_manifest_dock_btn(emoji: str, manifest_name: str, label: str = ""):
+            if not self._apps_manifest_cache:
+                manifest_path = _REPO / "Applications" / "apps_manifest.json"
+                try:
+                    self._apps_manifest_cache = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except Exception:
+                    self._apps_manifest_cache = {}
+            if manifest_name not in self._apps_manifest_cache:
+                return
+            make_dock_btn(
+                emoji,
+                label or manifest_name,
+                lambda app_name=manifest_name: self._trigger_manifest_app(app_name),
+            )
+
         make_dock_btn("🚀", "Launchpad",         self._toggle_launchpad)
         make_dock_btn("🔍", "Spotlight",          self._toggle_spotlight)
 
@@ -2615,14 +2670,15 @@ class SiftaDesktop(QMainWindow):
         sep.setStyleSheet("color: rgba(255,255,255,0.08);")
         pill_layout.addWidget(sep)
 
-        make_dock_btn("🧜‍♀️", "Alice",            lambda: self._trigger_manifest_app("Alice"))
-        make_dock_btn("💬",  "Swarm Chat",         self.open_swarm_chat)
-        make_dock_btn("🧬",  "Fold Swarm",         lambda: self._launch_app("Fold Swarm", "Applications/fold_swarm_widget.py", "FoldSwarmWidget", 1200, 800))
-        make_dock_btn("🧪",  "Protein Colosseum",  lambda: self._trigger_manifest_app("C55M + George - Protein Fold Colosseum"))
-        make_dock_btn("⚡",  "PoUW Sim",           lambda: self._trigger_manifest_app("AG31 + C46S - PoUW Fold-Swarm Simulation"))
-        make_dock_btn("🔬",  "Assembly Theory",    lambda: self._trigger_manifest_app("Sara Imari Walker — Assembly Theory Lab"))
-        make_dock_btn("💓",  "Alice Health",       lambda: self._trigger_manifest_app("Biological Dashboard"))
-        make_dock_btn("👩‍💻","Terminal",           lambda: self._trigger_manifest_app("Terminal"))
+        make_manifest_dock_btn("🗂️", "SIFTA File Navigator", "Files")
+        make_manifest_dock_btn("🎙️", "Talk to Alice", "Talk to Alice")
+        make_dock_btn("💬", "Swarm Chat", self.open_swarm_chat)
+        make_manifest_dock_btn("💹", "Finance", "Finance")
+        make_manifest_dock_btn("🧬", "Stigmergic Fold Swarm (Cα / Go)", "Fold Swarm")
+        make_manifest_dock_btn("🧪", "C55M + George - Protein Fold Colosseum", "Protein Colosseum")
+        make_manifest_dock_btn("⚡", "AG31 + C46S - PoUW Fold-Swarm Simulation", "PoUW Sim")
+        make_manifest_dock_btn("🔬", "Sara Imari Walker — Assembly Theory Lab", "Assembly Theory")
+        make_manifest_dock_btn("👩‍💻", "Terminal", "Terminal")
 
         # Separator
         sep2 = QFrame()
@@ -2631,7 +2687,7 @@ class SiftaDesktop(QMainWindow):
         sep2.setStyleSheet("color: rgba(255,255,255,0.08);")
         pill_layout.addWidget(sep2)
 
-        make_dock_btn("⚙️", "System Settings",    lambda: self._trigger_manifest_app("System Settings"))
+        make_manifest_dock_btn("⚙️", "System Settings", "System Settings")
 
         outer.addWidget(pill)
         outer.addStretch(1)
@@ -2644,8 +2700,12 @@ class SiftaDesktop(QMainWindow):
 # BOOT
 # ──────────────────────────────────────────────────────────────
 
-# ── Global 2026 Dark Theme ────────────────────────────────────────────────────
-_GLOBAL_QSS = """
+# ── Global 2026 Dark Theme (palette-driven) ──────────────────────────────────
+if _HAS_THEME_ENGINE:
+    _GLOBAL_QSS = generate_global_qss()
+else:
+    # Fallback: hardcoded Mermaid palette if theme engine failed to import
+    _GLOBAL_QSS = """
 QMainWindow, QDialog { background: #0d0e17; }
 QWidget { font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: 13px; color: #c0caf5; }
 QMdiSubWindow { background: #13141f; border: 1px solid #2a2d3e; border-radius: 12px; }

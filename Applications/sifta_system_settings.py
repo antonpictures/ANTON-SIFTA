@@ -490,6 +490,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         shell.addWidget(self.stack, 1)
 
         self._pages = {
+            "Appearance": self._appearance_page(),
             "Identity": self._identity_page(),
             "Audio": self._audio_page(),
             "Body": self._body_page(),
@@ -539,6 +540,123 @@ class SystemSettingsWidget(SiftaBaseWidget):
         heading.setStyleSheet("color: rgb(238, 244, 255);")
         root.addWidget(heading)
         return page, root
+
+    def _appearance_page(self) -> QWidget:
+        """Desktop theme switcher — like macOS Appearance in System Preferences."""
+        page, root = self._page("Appearance")
+
+        note = QLabel(
+            "Choose the visual identity for SIFTA OS. Under the hood, Alice is the same organism. "
+            "Theme changes take effect on next desktop restart."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: rgb(145, 153, 180); font-size: 12px; margin-bottom: 8px;")
+        root.addWidget(note)
+
+        # Load current theme
+        try:
+            from System.sifta_desktop_themes import (
+                load_active_theme_id, save_active_theme_id, THEMES
+            )
+            current = load_active_theme_id()
+            self._has_theme_engine = True
+        except Exception:
+            current = "mermaid"
+            self._has_theme_engine = False
+
+        themes_layout = QHBoxLayout()
+        themes_layout.setSpacing(16)
+        self._theme_cards: dict[str, QFrame] = {}
+
+        theme_info = [
+            ("mermaid", "🧜‍♀️ Mermaid OS", "Oceanic indigo · Purple accents · Serene",
+             "#0d0e17", "#bb9af7", "#7aa2f7"),
+            ("predator", "🐾 Predator v7", "Blood-red neural mesh · Amber · Hunting stance",
+             "#050508", "#ff4444", "#ff8c1a"),
+        ]
+
+        for tid, name, desc, bg, accent, secondary in theme_info:
+            card = QFrame()
+            card.setFixedSize(260, 200)
+            is_active = (tid == current)
+            border_color = accent if is_active else "rgb(47, 52, 68)"
+            border_width = "2px" if is_active else "1px"
+            card.setStyleSheet(
+                f"QFrame {{ background: {bg}; border: {border_width} solid {border_color}; "
+                f"border-radius: 12px; }}"
+                f"QFrame QLabel {{ background: transparent; border: none; }}"
+            )
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(16, 16, 16, 16)
+            cl.setSpacing(6)
+
+            # Color preview strip
+            strip = QFrame()
+            strip.setFixedHeight(40)
+            strip.setStyleSheet(
+                f"background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                f"stop:0 {accent}, stop:1 {secondary}); border-radius: 6px;"
+            )
+            cl.addWidget(strip)
+
+            title = QLabel(name)
+            title.setFont(QFont("Menlo", 14, QFont.Weight.Bold))
+            title.setStyleSheet(f"color: {accent};")
+            cl.addWidget(title)
+
+            detail = QLabel(desc)
+            detail.setWordWrap(True)
+            detail.setStyleSheet("color: rgb(145, 153, 180); font-size: 11px;")
+            cl.addWidget(detail)
+
+            # Active badge or Apply button
+            if is_active:
+                badge = QLabel("✓ Active")
+                badge.setStyleSheet(
+                    f"color: {accent}; font-weight: bold; font-size: 12px;"
+                )
+                cl.addWidget(badge)
+            else:
+                apply_btn = QPushButton("Apply Theme")
+                apply_btn.setStyleSheet(
+                    f"QPushButton {{ background: {accent}; color: white; "
+                    f"border: none; border-radius: 6px; padding: 6px 12px; font-weight: bold; }}"
+                    f"QPushButton:hover {{ background: {secondary}; }}"
+                )
+                apply_btn.clicked.connect(lambda _checked=False, t=tid: self._apply_theme(t))
+                cl.addWidget(apply_btn)
+
+            cl.addStretch()
+            self._theme_cards[tid] = card
+            themes_layout.addWidget(card)
+
+        themes_layout.addStretch()
+        root.addLayout(themes_layout)
+
+        if not self._has_theme_engine:
+            warn = QLabel("⚠️ Theme engine not available. Check System/sifta_desktop_themes.py.")
+            warn.setStyleSheet("color: rgb(255, 90, 90); font-size: 12px;")
+            root.addWidget(warn)
+
+        root.addStretch()
+        return page
+
+    def _apply_theme(self, theme_id: str) -> None:
+        try:
+            from System.sifta_desktop_themes import save_active_theme_id
+            save_active_theme_id(theme_id)
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Theme Applied",
+                f"Theme set to '{theme_id}'. Restart the desktop to see full changes.\n\n"
+                "Run: pkill -f sifta_os_desktop && python3 sifta_os_desktop.py"
+            )
+            # Refresh the appearance page to show the new active state
+            self.refresh()
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Theme Error", str(e))
 
     def _identity_page(self) -> QWidget:
         page, root = self._page("Identity")
