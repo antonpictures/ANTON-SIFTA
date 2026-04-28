@@ -215,6 +215,11 @@ class FinderPane(QFrame):
         self.path_edit.setText(path)
         self._update_nav_buttons()
         self._update_info()
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus("SIFTA File Navigator", f"Viewing folder: {path}", tab=self.objectName())
+        except Exception:
+            pass
 
     def _go_back(self):
         if self._history_idx > 0:

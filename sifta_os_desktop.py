@@ -332,13 +332,6 @@ class TerminalSubWindow(QWidget):
 
         header = QHBoxLayout()
         header.addStretch()
-        btn_close = QPushButton("✕  CLOSE")
-        btn_close.setStyleSheet(
-            "background-color: #f7768e; color: #15161e; font-weight: bold;"
-            "border-radius: 4px; padding: 2px 8px;"
-        )
-        btn_close.clicked.connect(lambda: close_parent_subwindow(self))
-        header.addWidget(btn_close)
         layout.addLayout(header)
 
         self.chat_display = QTextEdit()
@@ -400,13 +393,6 @@ class EmbeddedScriptSubWindow(QWidget):
         )
         btn_restart.clicked.connect(self._start)
         header.addWidget(btn_restart)
-        btn_close = QPushButton("✕  CLOSE")
-        btn_close.setStyleSheet(
-            "background-color: #f7768e; color: #15161e; font-weight: bold;"
-            "border-radius: 4px; padding: 2px 8px;"
-        )
-        btn_close.clicked.connect(lambda: close_parent_subwindow(self))
-        header.addWidget(btn_close)
         layout.addLayout(header)
 
         self.log = QTextEdit()
@@ -477,15 +463,6 @@ class SwarmTextEditorWindow(QWidget):
         self.save_btn.clicked.connect(self.save_file)
         toolbar.addWidget(self.save_btn)
 
-        btn_close = QPushButton("✕")
-        btn_close.setFixedSize(24, 24)
-        btn_close.setStyleSheet(
-            "QPushButton { background: #f7768e; color: #15161e; font-weight: bold; border-radius: 12px; }"
-            "QPushButton:hover { background: #db4b4b; }"
-        )
-        btn_close.clicked.connect(lambda: close_parent_subwindow(self))
-        toolbar.addWidget(btn_close)
-
         layout.addLayout(toolbar)
 
         self.editor_field = QTextEdit()
@@ -554,13 +531,6 @@ class VideoEditorSubWindow(QWidget):
         title.setStyleSheet("color: #7aa2f7;")
         header.addWidget(title)
         header.addStretch()
-        btn_close = QPushButton("✕")
-        btn_close.setFixedSize(24, 24)
-        btn_close.setStyleSheet(
-            "QPushButton { background: #f7768e; color: #15161e; font-weight: bold; border-radius: 12px; }"
-        )
-        btn_close.clicked.connect(lambda: close_parent_subwindow(self))
-        header.addWidget(btn_close)
         layout.addLayout(header)
 
         timeline = QFrame()

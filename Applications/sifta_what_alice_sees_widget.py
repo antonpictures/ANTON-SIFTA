@@ -959,11 +959,22 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         if not ranked:
             self._cam_combo.addItem("(no cameras detected — check macOS Camera permission)", None)
             self._cam_combo.blockSignals(False)
-            self._canvas.set_error(
+            err_text = (
                 "No cameras detected.\n\n"
                 "Open System Settings → Privacy & Security → Camera "
                 "and enable Python (or your terminal app), then click ↻ refresh."
             )
+            self._canvas.set_error(err_text)
+            try:
+                from System.ledger_append import append_jsonl_line
+                append_jsonl_line(_REPO / ".sifta_state" / "ide_stigmergic_trace.jsonl", {
+                    "system": "what_alice_sees",
+                    "event": "camera_error",
+                    "reason": "open_failed: no_cameras_detected",
+                    "ts": time.time()
+                })
+            except Exception:
+                pass
             return
         for d in ranked:
             self._cam_combo.addItem(d.description(), d.id())
@@ -1032,8 +1043,28 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             pass
 
     def _on_camera_error(self, _err, msg: str) -> None:  # type: ignore[no-untyped-def]
-        self._canvas.set_error(f"Camera error: {msg or _err}")
-        self.set_status(f"Camera error: {msg}")
+        err_str = f"{msg or _err}"
+        self._canvas.set_error(f"Camera error: {err_str}")
+        self.set_status(f"Camera error: {err_str}")
+        
+        try:
+            from System.ledger_append import append_jsonl_line
+            dev_name = self._cam_combo.currentText()
+            append_jsonl_line(_REPO / ".sifta_state" / "ide_stigmergic_trace.jsonl", {
+                "system": "what_alice_sees",
+                "event": "camera_error",
+                "reason": f"open_failed: {err_str}",
+                "device": dev_name,
+                "ts": time.time()
+            })
+        except Exception:
+            pass
+
+        # Try next candidate per Covenant 7.1
+        curr_idx = self._cam_combo.currentIndex()
+        if curr_idx < self._cam_combo.count() - 1:
+            self._canvas.set_chyron(f"⚠️ {dev_name} failed. Trying next candidate...", QColor(255, 100, 100))
+            self._cam_combo.setCurrentIndex(curr_idx + 1)
 
     def _on_camera_hotplug(self, kind: str, camera_name: str) -> None:
         """Called when a camera is attached or detached.
@@ -1101,6 +1132,25 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         new = f"{w}×{h} · sha={sha8}"
         if self._status.text() != new:
             self.set_status(new)
+
+        # One-time lock log per device selection when first valid frame arrives
+        curr_dev = self._cam_combo.currentText()
+        if getattr(self, "_current_lock_device", None) != curr_dev:
+            self._current_lock_device = curr_dev
+            try:
+                from System.ledger_append import append_jsonl_line
+                append_jsonl_line(_REPO / ".sifta_state" / "ide_stigmergic_trace.jsonl", {
+                    "system": "what_alice_sees",
+                    "event": "camera_lock",
+                    "device": curr_dev,
+                    "reason": "frame_receipt",
+                    "resolution": f"{w}x{h}",
+                    "ts": time.time()
+                })
+                # Line of truth on UI
+                self._canvas.set_chyron(f"🔒 SENSOR LOCKED: Receiving live {w}x{h} frames from {curr_dev}", QColor(100, 255, 100))
+            except Exception:
+                pass
 
     # ── Motor Cortex LED-wink subscriber ───────────────────────────────────
     def _poll_motor_pulses(self) -> None:

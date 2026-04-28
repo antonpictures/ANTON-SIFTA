@@ -165,7 +165,14 @@
     "widget_class": "FoldSwarmWidget",
     "window_width": 1280,
     "window_height": 880,
-    "signature": "UNVERIFIED"
+    "signature": "C55M-AUDITED-PROTEIN-FOLDING-PROOF",
+    "description": "C-alpha Go-model folding proof: harmonic backbone, WCA sterics, obstacles, native-contact funnel, pheromone-biased Monte Carlo, Ed25519 checkpoints.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "FoldSwarm lineage"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   },
   "Swarm Lounge (Cross-Domain Gossip)": {
     "category": "Simulations",
@@ -178,7 +185,7 @@
     "_retired_reason": "AG31 audit 2026-04-27: no real math or data. File kept on disk."
   },
   "Swarm Browser": {
-    "category": "Creative",
+    "category": "Network",
     "entry_point": "Applications/sifta_swarm_browser.py",
     "widget_class": "SwarmBrowserWidget",
     "window_width": 1400,
@@ -344,6 +351,16 @@
     "window_height": 720,
     "signature": "AG31"
   },
+  "App Manager": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_app_manager.py",
+    "widget_class": "AppManagerWidget",
+    "window_width": 840,
+    "window_height": 720,
+    "signature": "AG31",
+    "_retired": true,
+    "_retired_reason": "Renamed to Alice Shell. Alias kept for manifest compatibility and older tests."
+  },
   "AG31 + C55M - Primordial Field": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_primordial_field.py",
@@ -367,6 +384,24 @@
     "window_width": 1040,
     "window_height": 700,
     "signature": "UNVERIFIED"
+  },
+  "Conversation History": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_conversation_browser.py",
+    "widget_class": "ConversationBrowserApp",
+    "window_width": 1100,
+    "window_height": 760,
+    "signature": "MANIFEST-CANONICAL",
+    "description": "Browse Alice conversation ledger with search, timestamps, and STT confidence badges."
+  },
+  "Stigmergic Library": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_library_reader.py",
+    "widget_class": "LibraryReaderApp",
+    "window_width": 1100,
+    "window_height": 760,
+    "signature": "MANIFEST-CANONICAL",
+    "description": "GUI reader for curated SIFTA library nuggets in .sifta_state/stigmergic_library.jsonl."
   },
   "Brain Gas-Station Meter": {
     "category": "System Settings",
@@ -393,7 +428,7 @@
     "signature": "UNVERIFIED"
   },
   "Swarm Chat": {
-    "category": "Creative",
+    "category": "Network",
     "entry_point": "Applications/sifta_swarm_chat.py",
     "widget_class": "SwarmChatWindow",
     "window_width": 1200,
@@ -425,7 +460,9 @@
     "window_height": 700,
     "autostart": false,
     "signature": "UNVERIFIED",
-    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 What Alice Sees."
+    "_retired": true,
+    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window.",
+    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Retired from Programs menu 2026-04-28 \u2014 use desktop Alice."
   },
   "Talk to Alice": {
     "category": "Creative",
@@ -435,7 +472,11 @@
     "window_height": 640,
     "autostart": false,
     "signature": "UNVERIFIED",
-    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Still launchable standalone from Programs \u2192 Creative \u2192 Talk to Alice."
+    "_autostart_note": "AG31 \u00a77.6: Alice IS the OS \u2014 she boots with the desktop, embedded as her voice organ.",
+    "autostart_order": 1,
+    "autostart_delay_ms": 1200,
+    "_retired": true,
+    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window."
   },
   "Alice": {
     "category": "Creative",
@@ -443,11 +484,14 @@
     "widget_class": "AliceWidget",
     "window_width": 1000,
     "window_height": 850,
-    "autostart": true,
-    "autostart_order": 1,
-    "autostart_delay_ms": 700,
+    "autostart": false,
     "signature": "UNVERIFIED",
-    "_note": "Alice IS the OS. Autostarts on boot. Camera activates immediately (SIFTA_ALICE_UNIFIED_DEFER_EYE=0 in launcher)."
+    "_note": "Alice IS the OS. The resident Alice surface is embedded by the desktop shell; this manifest row remains launchable for focus routing but must not spawn a second app window.",
+    "autostart_order": 2,
+    "autostart_delay_ms": 2000,
+    "_autostart_note": "AG31 CORRECTION: Talk to Alice is the one canonical Alice surface. Alice widget must not double-spawn.",
+    "_retired": true,
+    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window."
   },
   "Terminal": {
     "category": "Utilities",
@@ -464,7 +508,7 @@
     "window_width": 1200,
     "window_height": 720,
     "signature": "AG31-C46S-VERIFIED",
-    "description": "Proof-of-Useful-Work: Lennard-Jones + Metropolis MC + ACO Stigmergy",
+    "description": "Protein folding proof-of-useful-work: Lennard-Jones 12-6, harmonic bonds, Metropolis annealing, ACO stigmergy, and canonical work receipts.",
     "doctor": "AG31",
     "co_doctors": [
       "C46S"
@@ -550,5 +594,51 @@
     "window_height": 920,
     "signature": "UNVERIFIED",
     "description": "Two honest simulations: 1) Quantum Surface Code Error Correction (d=7 lattice with bit/phase flip tracking). 2) SIR Epidemiological Containment with decentralized stigmergic contact tracing."
+  },
+  "C55M + George - Protein Fold Colosseum": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_protein_folder_widget.py",
+    "window_width": 1000,
+    "window_height": 700,
+    "signature": "C55M-GEORGE-COSIGNED",
+    "description": "Co-signed deterministic HP lattice beam-search protein proof engine. Folds batches, writes PDB/meta artifacts, and gives the SIFTA referee another independent structure source.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "George Anton"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
+  },
+  "Sara Imari Walker \u2014 Assembly Theory Lab": {
+    "entry_point": "Applications/sara_imari_walker_widget.py",
+    "widget_class": "SaraImariWalkerWidget",
+    "category": "Simulations",
+    "window_width": 1100,
+    "window_height": 720,
+    "description": "Assembly-theory lab: curated DOI spine (Nature 2023 metrology, Entropy math, chemputation), honest SIFTA solvable map, BIOCODE Olympiad cross-links, illustrative AI bars + pheromone analogue + Question Wall.",
+    "signature": "AG31_2026-04-28",
+    "autostart": false,
+    "co_authors": [
+      "AG31-Antigravity (Claude Opus 4.6)",
+      "Ioan George Anton"
+    ],
+    "references": [
+      "Sharma et al. Nature 2023 doi:10.1038/s41586-023-06600-9",
+      "Marshall et al. Entropy 2022 doi:10.3390/e24070884",
+      "Cronin & Walker arXiv:2206.02279",
+      "Chemputation arXiv:2408.09171",
+      "Sara Imari Walker \u2014 Life as No One Knows It (2024) ISBN 9780593191897",
+      "Documents/SARA_IMARI_WALKER_ASSEMBLY_THEORY_RESEARCH.md",
+      "Documents/PREDATOR_V7_RESEARCH_SPINE.md"
+    ]
+  },
+  "Biological Dashboard": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_biological_dashboard_qt.py",
+    "widget_class": "BiologicalDashboardWidget",
+    "window_width": 960,
+    "window_height": 720,
+    "signature": "QT-CONTRACT-VERIFIED",
+    "description": "Qt biological body dashboard for Alice's organ status. Kept as the canonical System Settings health surface; no Tk import path."
   }
 }

@@ -180,6 +180,14 @@ class ConversationBrowserApp(QWidget):
         self._reload_timer.timeout.connect(self._load_turns)
         self._reload_timer.start(8000)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus("Conversation History", "Reviewing previous dialogue")
+        except Exception:
+            pass
+
     def _load_turns(self):
         turns = _load_turns(limit=300)
 

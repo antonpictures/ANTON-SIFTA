@@ -311,6 +311,12 @@ class LibraryReaderApp(QWidget):
         source = n.get("source_api", "")
         self.detail_source.setText(f"Source: {source}  •  Curator: {curator}")
 
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus("Stigmergic Library", f"Reading nugget: {text[:40]}...", tab=n_cat)
+        except Exception:
+            pass
+
     def _show_random(self):
         if not self._filtered:
             return

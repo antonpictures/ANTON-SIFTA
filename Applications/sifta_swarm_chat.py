@@ -249,8 +249,25 @@ class SwarmChatWindow(QWidget):
         )
         self.sidebar_list.addItems(["GROUP (Both)", "MESH (Global Hivemind)", "SWARM (Local Brain)"])
         self.sidebar_list.setCurrentRow(0)
+
+        # Publish focus when channel changes
+        self.sidebar_list.currentItemChanged.connect(
+            lambda current, previous: self._publish_current_focus()
+        )
         sidebar_layout.addWidget(self.sidebar_list)
         main_layout.addWidget(sidebar_frame)
+
+        # Initial focus publish
+        QTimer.singleShot(100, self._publish_current_focus)
+
+    def _publish_current_focus(self):
+        try:
+            from System.swarm_app_focus import publish_focus
+            current = self.sidebar_list.currentItem()
+            channel = current.text() if current else "Unknown"
+            publish_focus("Swarm Chat", f"Active channel: {channel}", tab=channel)
+        except Exception:
+            pass
 
         # ── Right Side ────────────────────
         chat_container = QWidget()
@@ -271,12 +288,6 @@ class SwarmChatWindow(QWidget):
         header_layout.addWidget(title)
         
         header_layout.addStretch()
-        
-        btn_close = QPushButton("✕")
-        btn_close.setFixedSize(28, 28)
-        btn_close.setStyleSheet("QPushButton { background: #f7768e; color: #15161e; font-weight: bold; border-radius: 14px; margin-left: 10px; } QPushButton:hover { background: #db4b4b; }")
-        btn_close.clicked.connect(lambda: close_parent_subwindow(self))
-        header_layout.addWidget(btn_close)
         chat_layout.addWidget(header)
 
         # ── Screenplay Editor ──
