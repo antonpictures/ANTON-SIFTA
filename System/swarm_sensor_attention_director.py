@@ -101,6 +101,7 @@ class AttentionDrive:
     desire: float
     next_interval_s: float
     reasons: list[str]
+    field: Optional[dict[str, Any]] = None
 
 
 def _state_path(state_dir: Path | str, name: str) -> Path:
@@ -354,6 +355,7 @@ def compute_attention_drive(
     world: WorldState,
     *,
     last_attention_ts: Optional[float] = None,
+    desire_context: Optional[Any] = None,
 ) -> AttentionDrive:
     """Convert sensory uncertainty into a bounded periodic-loop drive.
 
@@ -401,6 +403,40 @@ def compute_attention_drive(
         desire += 0.10
         reasons.append("eye_lease_expired")
 
+    desire_field: Optional[dict[str, Any]] = None
+    if desire_context is not None:
+        try:
+            from System.swarm_desire_field import compute_sensor_desire
+
+            owner_detected = 1.0 if faces_fresh and world.owner_visible else 0.0
+            unknown_signal = 0.0
+            if faces_fresh:
+                unknown_signal = min(1.0, world.unknown_faces / 2.0)
+            audio_signal = min(1.0, (world.audio_rms or 0.0) / max(_AUDIO_SPIKE_RMS, 1e-6)) if audio_fresh else 0.0
+            motion_signal = min(1.0, (world.visual_motion_mean or 0.0) / max(_MOTION_SPIKE, 1e-6)) if visual_fresh else 0.0
+            low_entropy_signal = 0.0
+            if visual_fresh and world.visual_entropy_bits is not None:
+                low_entropy_signal = max(0.0, (_LOW_ENTROPY_BITS - world.visual_entropy_bits) / _LOW_ENTROPY_BITS)
+            environment_signal = max(audio_signal, motion_signal, low_entropy_signal)
+            attention_stale = 0.0 if _fresh(last_attention_ts, world.now, 30.0) else 1.0
+
+            field = compute_sensor_desire(
+                owner_detected=owner_detected,
+                unknown_signal=unknown_signal,
+                environment_signal=environment_signal,
+                attention_stale=attention_stale,
+                context=desire_context,
+            )
+            desire_field = field.as_dict()
+            if field.desire > desire:
+                desire = field.desire
+                reasons.append("desire_field")
+            for reason in field.reasons:
+                if reason not in reasons:
+                    reasons.append(reason)
+        except Exception:
+            desire_field = None
+
     desire = max(0.0, min(1.0, desire))
     # High desire → faster loop. Calm owner lock → slower loop.
     next_interval_s = round(0.75 + (1.0 - desire) * 5.25, 3)
@@ -408,6 +444,7 @@ def compute_attention_drive(
         desire=round(desire, 4),
         next_interval_s=next_interval_s,
         reasons=reasons,
+        field=desire_field,
     )
 
 
@@ -427,6 +464,7 @@ def decide_attention(
     world: WorldState,
     *,
     registry: Optional[dict[str, SenseCandidate]] = None,
+    desire_field: Optional[dict[str, Any]] = None,
 ) -> AttentionDecision:
     """Choose the next active eye from world state and policy thresholds."""
     reg = registry or default_sensor_registry()
@@ -466,6 +504,15 @@ def decide_attention(
 
     if ide_fresh and world.ide_x is not None and world.ide_x < 1728:
         return _decision(close_eye, world, "primary_ide_focus_close_eye")
+
+    if isinstance(desire_field, dict):
+        preferred = str(desire_field.get("preferred_role") or "")
+        close_drive = _coerce_float(desire_field.get("close_owner_drive")) or 0.0
+        room_drive = _coerce_float(desire_field.get("room_patrol_drive")) or 0.0
+        if preferred == "close_owner_eye" and close_drive >= room_drive + 0.12:
+            return _decision(close_eye, world, "desire_field_close_owner_eye")
+        if preferred == "room_patrol_eye" and room_drive >= close_drive + 0.12:
+            return _decision(room_eye, world, "desire_field_room_patrol_eye")
 
     if world.current_target_name:
         role = "room_patrol_eye" if world.current_target_index == _ROOM_EYE_INDEX else "close_owner_eye"
@@ -546,11 +593,19 @@ def tick_with_drive(
 ) -> tuple[AttentionDecision, AttentionDrive]:
     state = Path(state_dir)
     world = collect_world_state(state_dir=state, now=now)
+    desire_context = None
+    try:
+        from System.swarm_desire_field import load_live_desire_context
+
+        desire_context = load_live_desire_context(state)
+    except Exception:
+        desire_context = None
     drive = compute_attention_drive(
         world,
         last_attention_ts=_last_attention_ts(state),
+        desire_context=desire_context,
     )
-    decision = decide_attention(world)
+    decision = decide_attention(world, desire_field=drive.field)
     apply_attention_decision(
         decision,
         state_dir=state,

@@ -2,6 +2,7 @@ import json
 import time
 
 from System import swarm_camera_target
+from System.swarm_desire_field import DesireContext, compute_sensor_desire
 from System.swarm_sensor_attention_director import (
     apply_attention_decision,
     compute_attention_drive,
@@ -171,3 +172,57 @@ def test_tick_with_drive_writes_desire_status(tmp_path, monkeypatch):
     assert drive.desire == status["desire"]
     assert status["active_sense"] == "room_patrol_eye"
     assert "audio_spike" in status["desire_reasons"]
+
+
+def test_desire_field_binds_owner_reward_energy_without_forcing_owner():
+    hungry = DesireContext(
+        stgm_balance=5.0,
+        metabolic_pressure=0.8,
+        reward_net=4.0,
+        reward_events=12,
+        source="test",
+    )
+
+    owner = compute_sensor_desire(
+        owner_detected=1.0,
+        unknown_signal=0.0,
+        environment_signal=0.0,
+        attention_stale=0.0,
+        context=hungry,
+    )
+    novel = compute_sensor_desire(
+        owner_detected=0.0,
+        unknown_signal=0.8,
+        environment_signal=0.8,
+        attention_stale=1.0,
+        context=hungry,
+    )
+
+    assert owner.preferred_role == "close_owner_eye"
+    assert "owner_reward_cue" in owner.reasons
+    assert novel.preferred_role == "room_patrol_eye"
+    assert "exploration_pressure" in novel.reasons
+    assert novel.room_patrol_drive > novel.close_owner_drive
+
+
+def test_desire_field_can_switch_camera_when_no_hard_rule(tmp_path, monkeypatch):
+    _patch_camera_target(monkeypatch, tmp_path)
+    now = time.time()
+    world = collect_world_state(state_dir=tmp_path, now=now)
+    drive = compute_attention_drive(
+        world,
+        last_attention_ts=None,
+        desire_context=DesireContext(
+            stgm_balance=10.0,
+            metabolic_pressure=0.75,
+            reward_net=0.0,
+            reward_events=3,
+            source="test",
+        ),
+    )
+    decision = decide_attention(world, desire_field=drive.field)
+
+    assert drive.field is not None
+    assert drive.field["preferred_role"] == "room_patrol_eye"
+    assert decision.target_role == "room_patrol_eye"
+    assert decision.reason == "desire_field_room_patrol_eye"
