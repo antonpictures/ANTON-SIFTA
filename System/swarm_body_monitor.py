@@ -2,10 +2,10 @@
 """
 System/swarm_body_monitor.py
 ══════════════════════════════════════════════════════════════════════
-SIFTA Mermaid v1.0 — Live Body Monitor
+SIFTA Mermaid v6.0 — Live Body Monitor
 ──────────────────────────────────────────────────────────────────────
-Shows ALL 12 biological organs with REAL live data.
-Nothing is faked. Every value comes from the actual organ modules.
+Shows all 12 biological organs with explicit truth labels.
+No organ may display as live unless its state declares a live input source.
 
 Camera: OFF by default (press C to toggle — uses CPU when on)
 
@@ -49,6 +49,20 @@ C_MUTED     = "#4a6080"
 C_ACCENT    = "#7b2fff"
 C_GOLD      = "#ffd700"
 
+TRUTH_REAL = "REAL"
+TRUTH_DEMO = "DEMO"
+TRUTH_BROKEN = "BROKEN"
+TRUTH_UNKNOWN = "UNKNOWN"
+
+TRUTH_COLORS = {
+    TRUTH_REAL: C_ALIVE,
+    TRUTH_DEMO: C_WARN,
+    TRUTH_BROKEN: C_DEAD,
+    TRUTH_UNKNOWN: C_MUTED,
+}
+
+DEMO_SOURCE = "simulated_internal_oscillator"
+
 # ── Trace helpers for reflex / corvid organs ────────────────────────
 import json as _json
 
@@ -73,6 +87,54 @@ def _tail_trace(path: Path, n: int = 5, max_age_s: float = 300.0) -> list:
     except Exception:
         return []
 
+
+def _truth(status: str, source: str, note: str) -> dict:
+    return {
+        "truth_status": status,
+        "truth_source": source,
+        "truth_note": note,
+    }
+
+
+def _demo_truth(note: str) -> dict:
+    return _truth(TRUTH_DEMO, DEMO_SOURCE, note)
+
+
+def _live_process_truth(note: str) -> dict:
+    return _truth(TRUTH_REAL, "live_process", note)
+
+
+def _live_ledger_truth(path: Path, note: str) -> dict:
+    if path.exists():
+        return _truth(TRUTH_REAL, "live_ledger", note)
+    return _truth(TRUTH_UNKNOWN, "missing_ledger", f"{note}; ledger missing: {path.name}")
+
+
+def _topology_truth(rows: list, path: Path) -> dict:
+    if rows:
+        return _truth(
+            TRUTH_REAL,
+            "live_ledger",
+            f"{path.name} fresh daemon topology rows",
+        )
+    return _demo_truth(f"no fresh {path.name} rows; using internal spread oscillator")
+
+
+def _sensor_gate_truth(path: Path, reason: str) -> dict:
+    if not path.exists():
+        return _truth(
+            TRUTH_UNKNOWN,
+            "missing_ledger",
+            "sensor_gate_lock.json missing; no lock/unlock attempt has run",
+        )
+    if reason in {"lock_success", "lock_all_failed", "unlock_success", "unlock"}:
+        return _truth(TRUTH_REAL, "live_ledger", "sensor_gate_lock.json real lock/unlock attempt")
+    return _truth(
+        TRUTH_UNKNOWN,
+        "no_runtime_attempt",
+        f"sensor_gate_lock.json exists but reason={reason}; waiting for real lock/unlock attempt",
+    )
+
 ORGAN_DEFS = [
     # (key, emoji, name, description)
     ("field",     "🌊", "Unified Field",    "stigmergic tensor substrate"),
@@ -87,6 +149,12 @@ ORGAN_DEFS = [
     ("time",      "🕰️", "STIG-TIME",        "kleiber + circadian + turtle"),
     ("reflex",    "🦐", "Reflex Arc",       "mantis-shrimp μs classifier"),
     ("corvid",    "🐦‍⬛", "Corvid Apprentice","crow/raven 2B tool ganglion"),
+    # ── Predator v7 Organs (Event 76-79) ─────────────────────────────
+    ("td_learner", "🧠", "TD Q-Learner",    "Bellman RL — Schultz 1997"),
+    ("dopamine",   "💊", "Dopamine Loop",   "credit assignment — Schultz 1997"),
+    ("hippocampus","🐎", "Hippocampus",     "episodic memory ledger"),
+    ("sensor_gate","🚪", "Sensor Gate",     "attention filter — Koch 2011"),
+    ("bg_selector","⚖️", "Basal Ganglia",  "action selection — Redgrave 1999"),
 ]
 
 
@@ -110,6 +178,8 @@ class OrganEngine:
         self._starling_spread = 0.5
         self._fly_residual    = 0.0
         self._fly_gain_error  = 1.0
+        self._fly_live        = False
+        self._aw_traces       = []
         self._waggle_angle    = 0.0
         self._rl_score        = 0.5
         self._field_energy    = 0.85
@@ -131,7 +201,8 @@ class OrganEngine:
         t_ctx = self.stig_time.tick(metabolic_mode=mode.value,
                                     field_energy=self.metabolic.energy)
 
-        # Simulate organ dynamics (real math, not faked)
+        # Demo organ dynamics. Event82 requires these to be visibly labeled as
+        # DEMO until each organ has a live ledger/process/sensor input.
         t = self.tick
 
         # Field energy oscillates with circadian gate
@@ -148,10 +219,35 @@ class OrganEngine:
         # Starling: topological spread oscillates (predator scatter sim)
         self._starling_spread = 0.35 + 0.2 * abs(math.sin(t * 0.03))
 
-        # Fly efference: residual approaches zero when stable, spikes on motion
-        if random.random() < 0.04:
-            self._fly_residual = random.uniform(3.0, 8.0)  # simulated camera move
-        self._fly_residual *= 0.88  # self-cancellation decay
+        # Fly efference: reads from live active_window.jsonl saccade stream
+        # A window focus change = a "saccade". Rapid switches = high residual.
+        aw_path = _STATE / "active_window.jsonl"
+        aw_traces = _tail_trace(aw_path, n=10, max_age_s=120)
+        self._aw_traces = aw_traces
+        if len(aw_traces) >= 2:
+            # Compute inter-saccade intervals from real timestamps
+            intervals = []
+            for i in range(1, len(aw_traces)):
+                dt = aw_traces[i].get("ts", 0) - aw_traces[i-1].get("ts", 0)
+                if 0 < dt < 120:
+                    intervals.append(dt)
+            if intervals:
+                mean_interval = sum(intervals) / len(intervals)
+                # Fast switching (< 5s) = high residual (attention scatter)
+                # Slow switching (> 30s) = low residual (locked-on focus)
+                self._fly_residual = max(0.0, 10.0 - mean_interval) * 0.8
+            else:
+                self._fly_residual *= 0.88
+            # Count distinct apps in the window as a measure of saccade breadth
+            apps = set(t.get("app", "") for t in aw_traces)
+            self._fly_gain_error = max(0.0, min(1.0, len(apps) / 8.0))
+            self._fly_live = True
+        else:
+            # Fallback: internal decay (still labeled DEMO if no live data)
+            if random.random() < 0.04:
+                self._fly_residual = random.uniform(3.0, 8.0)
+            self._fly_residual *= 0.88
+            self._fly_live = False
 
         # Waggle dance angle drifts toward detected resource direction
         self._waggle_angle = (self._waggle_angle + 0.02 + random.gauss(0, 0.005)) % (2 * math.pi)
@@ -175,18 +271,104 @@ class OrganEngine:
         T_est, sigma = self.stig_time.measure_interval()
 
         # ── Live trace reads for reflex + corvid ────────────────────────
-        reflex_traces = _tail_trace(_STATE / "reflex_arc_trace.jsonl", n=5, max_age_s=300)
+        reflex_path = _STATE / "reflex_arc_trace.jsonl"
+        corvid_path = _STATE / "corvid_apprentice_trace.jsonl"
+        topology_path = _STATE / "network_topology.jsonl"
+
+        reflex_traces = _tail_trace(reflex_path, n=5, max_age_s=300)
         reflex_count = len(reflex_traces)
         reflex_last_cat = reflex_traces[-1].get("category", "-") if reflex_traces else "-"
         reflex_last_ms = reflex_traces[-1].get("latency_ms", 0) if reflex_traces else 0
 
-        corvid_traces = _tail_trace(_STATE / "corvid_apprentice_trace.jsonl", n=5, max_age_s=300)
+        corvid_traces = _tail_trace(corvid_path, n=5, max_age_s=300)
         corvid_count = len(corvid_traces)
         corvid_last_task = corvid_traces[-1].get("task", "-") if corvid_traces else "-"
         corvid_last_s = corvid_traces[-1].get("latency_s", 0) if corvid_traces else 0
         corvid_success = sum(1 for c in corvid_traces if c.get("success"))
 
-        return {
+        topology_traces = _tail_trace(topology_path, n=24, max_age_s=120)
+        topology_nodes = {str(r.get("node")) for r in topology_traces if r.get("node")}
+        topology_edges = sum(len(r.get("peers") or []) for r in topology_traces)
+        topology_strengths = [
+            float(r.get("signal_strength"))
+            for r in topology_traces
+            if isinstance(r.get("signal_strength"), (int, float))
+        ]
+        topology_age = (
+            max(0.0, time.time() - float(topology_traces[-1].get("ts", 0)))
+            if topology_traces else None
+        )
+        if topology_traces:
+            target_edges = max(1, len(topology_nodes) * 7)
+            starling_alignment = min(1.0, topology_edges / target_edges)
+            self._starling_spread = max(0.0, min(1.0, 1.0 - starling_alignment))
+        avg_signal = (
+            sum(topology_strengths) / len(topology_strengths)
+            if topology_strengths else None
+        )
+
+        # ── Predator v7 live ledger reads ────────────────────────────────
+        td_path       = _STATE / "td_q_table.json"
+        td_ledger     = _STATE / "td_receipts.jsonl"
+        dopamine_path = _STATE / "dopamine_reward_ledger.jsonl"
+        last_action   = _STATE / "last_action_register.json"
+        hipp_path     = _STATE / "hippocampus" / "events.jsonl"
+        sgate_path    = _STATE / "sensor_gate_lock.json"
+        bg_path       = _STATE / "swarm_action_selector_trace.jsonl"
+
+        # TD Q-Learner: read Q-table entry count and last receipt
+        td_q_count = 0
+        td_last_error = 0.0
+        if td_path.exists():
+            try:
+                q = _json.loads(td_path.read_text())
+                td_q_count = len(q)
+            except Exception:
+                pass
+        td_receipts = _tail_trace(td_ledger, n=3, max_age_s=600)
+        if td_receipts:
+            td_last_error = td_receipts[-1].get("td_error", 0.0)
+
+        # Dopamine: last δ and total reward events
+        dopa_traces = _tail_trace(dopamine_path, n=5, max_age_s=600)
+        dopa_count = len(dopa_traces)
+        dopa_last_delta = dopa_traces[-1].get("delta", 0.0) if dopa_traces else 0.0
+        dopa_marker = dopa_traces[-1].get("marker", "-") if dopa_traces else "-"
+
+        # Last action register (credit assignment pipeline)
+        last_action_data = {}
+        if last_action.exists():
+            try:
+                last_action_data = _json.loads(last_action.read_text())
+            except Exception:
+                pass
+        last_action_name = last_action_data.get("action", "-")
+
+        # Hippocampus: event count
+        hipp_traces = _tail_trace(hipp_path, n=5, max_age_s=600)
+        hipp_count = len(hipp_traces)
+        hipp_last_type = (
+            hipp_traces[-1].get("event_type") or hipp_traces[-1].get("type", "-")
+            if hipp_traces else "-"
+        )
+
+        # Sensor gate: current lock state
+        sgate_locked = False
+        sgate_reason = "-"
+        if sgate_path.exists():
+            try:
+                sg = _json.loads(sgate_path.read_text())
+                sgate_locked = sg.get("locked", False)
+                sgate_reason = sg.get("reason", "-")
+            except Exception:
+                pass
+
+        # Basal Ganglia: recent action selections
+        bg_traces = _tail_trace(bg_path, n=5, max_age_s=300)
+        bg_count = len(bg_traces)
+        bg_last_winner = bg_traces[-1].get("winner", "-") if bg_traces else "-"
+
+        state = {
             "tick":       t,
             "bio_time":   t_ctx["bio_time"],
             "dilation":   t_ctx["dilation"],
@@ -198,60 +380,80 @@ class OrganEngine:
                 "label": f"ψ={self._field_energy:.3f}",
                 "sub":   f"circadian gate: {circ:.2f}",
                 "pct":   self._field_energy,
+                **_demo_truth("internal circadian oscillator; no live field ledger wired"),
             },
             "rl": {
                 "value": round(self._rl_score, 3),
                 "label": f"score={self._rl_score:.3f}",
                 "sub":   f"tick={t}  mutations tracking",
                 "pct":   self._rl_score,
+                **_demo_truth("internal score drift; no live RL learner feed wired"),
             },
             "octopus": {
                 "value": round(self._oct_coherence, 4),
                 "label": f"coherence={self._oct_coherence:.4f}",
                 "sub":   "8 arms  nonsomatotopic",
                 "pct":   self._oct_coherence,
+                **_demo_truth("internal arm coherence oscillator; no motor bus wired"),
             },
             "cuttlefish": {
                 "value": round(self._cut_contrast, 3),
                 "label": f"contrast={self._cut_contrast:.3f}",
                 "sub":   "passing cloud  decentralized",
                 "pct":   self._cut_contrast,
+                **_demo_truth("internal contrast oscillator; no live display organ wired"),
             },
             "electric": {
                 "value": round(self._electric_phase, 4),
                 "label": f"φ={self._electric_phase:.4f} rad",
                 "sub":   f"JAR  identity stable",
                 "pct":   (math.sin(self._electric_phase) + 1) / 2,
+                **_demo_truth("internal phase oscillator; no live electric-field sensor wired"),
             },
             "honeybee": {
                 "value": round(self._waggle_angle, 4),
                 "label": f"θ={math.degrees(self._waggle_angle):.1f}°",
                 "sub":   f"vigor=0.95  quorum ready",
                 "pct":   (math.sin(self._waggle_angle) + 1) / 2,
+                **_demo_truth("internal angle drift; no live route quorum ledger wired"),
             },
             "starling": {
                 "value": round(self._starling_spread, 4),
-                "label": f"spread={self._starling_spread:.4f}",
-                "sub":   "K=7 topological  scale-free",
+                "label": (
+                    f"nodes={len(topology_nodes)} links={topology_edges}"
+                    if topology_traces else f"spread={self._starling_spread:.4f}"
+                ),
+                "sub": (
+                    f"K=7 live topology  age={topology_age:.0f}s  "
+                    f"sig={avg_signal:.1f}dBm"
+                    if topology_traces and avg_signal is not None
+                    else "K=7 topological  scale-free"
+                ),
                 "pct":   1.0 - min(self._starling_spread, 1.0),
+                **_topology_truth(topology_traces, topology_path),
             },
             "fly": {
                 "value": round(self._fly_residual, 4),
-                "label": f"residual={self._fly_residual:.4f}",
-                "sub":   f"gain_err={self._fly_gain_error:.4f}  NLMS",
+                "label": f"residual={self._fly_residual:.4f}  saccades={len(self._aw_traces)}",
+                "sub":   f"gain_err={self._fly_gain_error:.4f}  NLMS  {'LIVE' if self._fly_live else 'DEMO'}",
                 "pct":   max(0.0, 1.0 - self._fly_residual / 10.0),
+                **(_live_ledger_truth(_STATE / "active_window.jsonl", "active_window.jsonl saccade stream")
+                   if self._fly_live
+                   else _demo_truth("no recent active_window data; using internal decay")),
             },
             "metabolic": {
                 "value": round(e, 4),
                 "label": f"ATP={e:.4f}  [{mode.value.upper()}]",
                 "sub":   f"retina={self.metabolic.get_module_budget('retina'):.3f}  display={self.metabolic.get_module_budget('display'):.3f}",
                 "pct":   e,
+                **_live_process_truth("SwarmMetabolicEngine.tick_metabolism()"),
             },
             "time": {
                 "value": round(t_ctx["bio_time"], 2),
                 "label": f"bio_t={t_ctx['bio_time']:.1f}  ×{t_ctx['dilation']}",
                 "sub":   f"σ(T)={sigma:.1f}  S={t_ctx['compressed_time']:.2f}",
                 "pct":   circ,
+                **_live_process_truth("StigTime.tick() live process clock"),
             },
             # ── 11th Organ: Mantis-Shrimp Reflex Arc ──────────────────
             "reflex": {
@@ -259,6 +461,7 @@ class OrganEngine:
                 "label": f"fires={reflex_count}  last={reflex_last_cat}",
                 "sub":   f"latency={reflex_last_ms:.3f}ms  μs-class  0 STGM",
                 "pct":   min(1.0, reflex_count / 5.0) if reflex_count > 0 else 0.1,
+                **_live_ledger_truth(reflex_path, "reflex_arc_trace.jsonl recent fires"),
             },
             # ── 12th Organ: Corvid Apprentice ─────────────────────────
             "corvid": {
@@ -266,12 +469,55 @@ class OrganEngine:
                 "label": f"tasks={corvid_count}  ok={corvid_success}  last={corvid_last_task}",
                 "sub":   f"latency={corvid_last_s:.1f}s  qwen3.5:2b  async",
                 "pct":   (corvid_success / corvid_count) if corvid_count > 0 else 0.1,
+                **_live_ledger_truth(corvid_path, "corvid_apprentice_trace.jsonl recent tasks"),
+            },
+            # ── Predator v7 Organs (Event 76-79) ─────────────────────
+            "td_learner": {
+                "value": td_q_count,
+                "label": f"Q-states={td_q_count}  δ={td_last_error:.4f}",
+                "sub":   f"last_action={last_action_name}  Bellman update",
+                "pct":   min(1.0, td_q_count / 20.0) if td_q_count > 0 else 0.05,
+                **_live_ledger_truth(td_path, "td_q_table.json live state-action values"),
+            },
+            "dopamine": {
+                "value": round(dopa_last_delta, 3),
+                "label": f"δ={dopa_last_delta:+.3f}  marker={dopa_marker}",
+                "sub":   f"reward_events={dopa_count}  credit assignment live",
+                "pct":   (dopa_last_delta + 1.0) / 2.0,
+                **_live_ledger_truth(dopamine_path, "dopamine_reward_ledger.jsonl live rewards"),
+            },
+            "hippocampus": {
+                "value": hipp_count,
+                "label": f"events={hipp_count}  last={hipp_last_type}",
+                "sub":   f"episodic memory  ledger-backed",
+                "pct":   min(1.0, hipp_count / 10.0) if hipp_count > 0 else 0.05,
+                **_live_ledger_truth(hipp_path, "hippocampus/events.jsonl episode log"),
+            },
+            "sensor_gate": {
+                "value": 1 if sgate_locked else 0,
+                "label": f"locked={sgate_locked}  reason={sgate_reason}",
+                "sub":   f"attention filter  Koch 2011",
+                "pct":   0.2 if sgate_locked else 0.9,
+                **_sensor_gate_truth(sgate_path, sgate_reason),
+            },
+            "bg_selector": {
+                "value": bg_count,
+                "label": f"selections={bg_count}  winner={bg_last_winner}",
+                "sub":   f"action competition  Redgrave 1999",
+                "pct":   min(1.0, bg_count / 5.0) if bg_count > 0 else 0.1,
+                **_live_ledger_truth(bg_path, "swarm_action_selector_trace.jsonl selections"),
             },
         }
+        counts = {TRUTH_REAL: 0, TRUTH_DEMO: 0, TRUTH_BROKEN: 0, TRUTH_UNKNOWN: 0}
+        for key, *_ in ORGAN_DEFS:
+            status = state[key].get("truth_status", TRUTH_UNKNOWN)
+            counts[status] = counts.get(status, 0) + 1
+        state["truth_counts"] = counts
+        return state
 
 
 class OrganCard(QFrame):
-    """A single blinking organ card with live data."""
+    """A single organ card with explicit source-truth labels."""
 
     def __init__(self, key, emoji, name, description, parent=None):
         super().__init__(parent)
@@ -299,7 +545,7 @@ class OrganCard(QFrame):
         self.lbl_name = QLabel(name)
         self.lbl_name.setFont(QFont("JetBrains Mono, Menlo, Courier", 11, QFont.Weight.Bold))
         self.lbl_name.setStyleSheet(f"color: {C_ALIVE}; background: transparent;")
-        self.lbl_status = QLabel("● ALIVE")
+        self.lbl_status = QLabel("● UNKNOWN")
         self.lbl_status.setFont(QFont("Menlo", 9))
         self.lbl_status.setStyleSheet(f"color: {C_ALIVE}; background: transparent;")
         header.addWidget(self.lbl_icon)
@@ -344,24 +590,26 @@ class OrganCard(QFrame):
         pct = float(d.get("pct", 0.5))
         label = d.get("label", "")
         sub = d.get("sub", "")
+        truth_status = d.get("truth_status", TRUTH_UNKNOWN)
+        truth_source = d.get("truth_source", "unknown")
+        truth_note = d.get("truth_note", "")
+        truth_color = TRUTH_COLORS.get(truth_status, C_MUTED)
 
         self.bar.setValue(int(pct * 1000))
 
-        # Blink: alternate color on odd ticks
-        blink_on = (tick % 4 < 2)
-        color = C_ALIVE if blink_on else C_PULSE
-        self.lbl_status.setStyleSheet(f"color: {color}; background: transparent;")
+        blink_on = truth_status == TRUTH_REAL and (tick % 4 < 2)
+        status_color = C_PULSE if blink_on else truth_color
+        self.lbl_status.setText(f"● {truth_status}")
+        self.lbl_status.setToolTip(f"{truth_source}: {truth_note}")
+        self.lbl_status.setStyleSheet(f"color: {status_color}; background: transparent;")
+        self.lbl_name.setStyleSheet(f"color: {truth_color}; background: transparent;")
         self.lbl_value.setText(label)
-        self.lbl_value.setStyleSheet(f"color: {'#00ffcc' if blink_on else C_PULSE}; background: transparent;")
-        self.lbl_sub.setText(sub)
+        self.lbl_value.setStyleSheet(f"color: {'#00ffcc' if blink_on else truth_color}; background: transparent;")
+        self.lbl_sub.setText(f"{sub}  |  {truth_status}: {truth_source}")
+        self.lbl_sub.setToolTip(truth_note)
 
-        # Bar color by health
-        if pct > 0.6:
-            bar_color = C_ALIVE
-        elif pct > 0.3:
-            bar_color = C_WARN
-        else:
-            bar_color = C_DEAD
+        # Bar color by source truth, not by pretty oscillator health.
+        bar_color = truth_color
         self.bar.setStyleSheet(f"""
             QProgressBar {{ background: {C_BORDER}; border-radius: 2px; border: none; }}
             QProgressBar::chunk {{ background: {bar_color}; border-radius: 2px; }}
@@ -374,7 +622,7 @@ class HeaderBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 8)
 
-        title = QLabel("🧜‍♀️  SIFTA MERMAID v1.0  —  LIVE BODY MONITOR")
+        title = QLabel("🧜‍♀️  SIFTA MERMAID v6.0  —  BODY MONITOR TRUTH LABELS")
         title.setFont(QFont("JetBrains Mono, Menlo, Courier", 14, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C_ALIVE};")
         layout.addWidget(title)
@@ -385,8 +633,9 @@ class HeaderBar(QWidget):
         self.lbl_bio     = QLabel("bio_t: 0.0")
         self.lbl_circ    = QLabel("☀️ DAY")
         self.lbl_camera  = QLabel("📷 CAM: OFF")
+        self.lbl_truth   = QLabel("REAL 0  DEMO 0")
 
-        for lbl in [self.lbl_tick, self.lbl_mode, self.lbl_bio, self.lbl_circ, self.lbl_camera]:
+        for lbl in [self.lbl_tick, self.lbl_mode, self.lbl_bio, self.lbl_circ, self.lbl_camera, self.lbl_truth]:
             lbl.setFont(QFont("Menlo", 10))
             lbl.setStyleSheet(f"color: {C_TEXT}; padding: 0 8px;")
             layout.addWidget(lbl)
@@ -402,8 +651,17 @@ class HeaderBar(QWidget):
         self.lbl_mode.setText(f"MODE: {mode}")
         self.lbl_bio.setText(f"bio_t: {state['bio_time']:.1f}")
         circ = state["circadian"]
+        truth_counts = state.get("truth_counts", {})
         self.lbl_circ.setText(f"{'☀️' if circ > 0.5 else '🌙'} {'DAY' if circ > 0.5 else 'NIGHT'} {circ:.2f}")
         self.lbl_camera.setText(f"📷 CAM: {'ON ⚠️' if camera_on else 'OFF'}")
+        self.lbl_truth.setText(
+            f"REAL {truth_counts.get(TRUTH_REAL, 0)}  "
+            f"DEMO {truth_counts.get(TRUTH_DEMO, 0)}  "
+            f"UNK {truth_counts.get(TRUTH_UNKNOWN, 0)}"
+        )
+        self.lbl_truth.setStyleSheet(
+            f"color: {C_ALIVE}; padding: 0 8px; font-weight: bold;"
+        )
 
         mode_colors = {
             "BURST": C_ALIVE, "CRUISE": C_PULSE,
@@ -417,7 +675,7 @@ class HeaderBar(QWidget):
 class MermaidBodyMonitor(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SIFTA Mermaid v1.0 — Body Monitor")
+        self.setWindowTitle("SIFTA Mermaid v6.0 — Body Monitor")
         self.setMinimumSize(1000, 720)
         self.camera_on = False
         self._cap = None
@@ -464,7 +722,7 @@ class MermaidBodyMonitor(QMainWindow):
             self.cards[key] = card
 
         # Status bar
-        self.status_bar = QLabel("  🟢 ALL SYSTEMS NOMINAL  |  Camera OFF — press C to enable (uses CPU)  |  Press Q to quit")
+        self.status_bar = QLabel("  REAL=green  DEMO=amber  BROKEN=red  UNKNOWN=gray  |  Camera OFF — press C to enable")
         self.status_bar.setFont(QFont("Menlo", 9))
         self.status_bar.setStyleSheet(
             f"background: {C_PANEL}; color: {C_MUTED}; "
@@ -489,8 +747,13 @@ class MermaidBodyMonitor(QMainWindow):
         # Update status bar with metabolic mode
         mode_label = state["metabolic"]["label"]
         e = state["metabolic"]["value"]
+        truth_counts = state.get("truth_counts", {})
         self.status_bar.setText(
             f"  tick={tick}  |  {mode_label}  |  "
+            f"REAL={truth_counts.get(TRUTH_REAL, 0)}  "
+            f"DEMO={truth_counts.get(TRUTH_DEMO, 0)}  "
+            f"BROKEN={truth_counts.get(TRUTH_BROKEN, 0)}  "
+            f"UNKNOWN={truth_counts.get(TRUTH_UNKNOWN, 0)}  |  "
             f"bio_t={state['bio_time']:.1f}  ×{state['dilation']}  |  "
             f"circadian={state['circadian']:.3f}  |  "
             f"{'📷 Camera ON — high CPU' if self.camera_on else '📷 Camera OFF [C to enable]'}  |  [Q] quit"

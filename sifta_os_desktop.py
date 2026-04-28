@@ -2644,6 +2644,34 @@ if __name__ == "__main__":
 
     import os
     os.environ["QT_MEDIA_BACKEND"] = "darwin"
+
+    # ── Boot banner — dynamic from theme engine + organ registry ──────
+    try:
+        from System.sifta_desktop_themes import active_palette
+        from System.swarm_body_monitor import ORGAN_DEFS
+        _pal = active_palette()
+        _n_organs = len(ORGAN_DEFS)
+        _n_swimmers = int(os.environ.get("SIFTA_VISION_SWIMMERS", "1800"))
+        _n_photons = int(os.environ.get("SIFTA_DESKTOP_PHOTONS", "200"))
+    except Exception:
+        class _pal:
+            os_line = "SIFTA Mermaid OS v6.0"
+        _n_organs = 17
+        _n_swimmers = 1800
+        _n_photons = 200
+
+    sys.stderr.write("\n")
+    sys.stderr.write("  ╔══════════════════════════════════════════╗\n")
+    sys.stderr.write(f"  ║  {_pal.os_line:<40s}║\n")
+    sys.stderr.write(f"  ║   🧜‍♀️  {_n_organs} organs  |  Body Panel live    ║\n")
+    sys.stderr.write("  ╚══════════════════════════════════════════╝\n")
+    sys.stderr.write("\n")
+    sys.stderr.write(f"  [BOOT] python : {sys.executable}\n")
+    sys.stderr.write(f"  [BOOT] app    : {os.path.abspath(__file__)}\n")
+    sys.stderr.write(f"  [BOOT] vision swimmers : {_n_swimmers}\n")
+    sys.stderr.write(f"  [BOOT] desktop photons : {_n_photons}\n")
+    sys.stderr.flush()
+
     app = QApplication(sys.argv)
     app.setFont(QFont("Helvetica Neue", 13))
     app.setStyleSheet(_GLOBAL_QSS)
