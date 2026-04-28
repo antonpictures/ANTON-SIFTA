@@ -640,5 +640,26 @@
     ],
     "autostart": false,
     "_retired": false
+  },
+  "NVIDIA \u00d7 SIFTA": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_nvidia_join_widget.py",
+    "widget_class": "NvidiaJoinWidget",
+    "window_width": 1240,
+    "window_height": 780,
+    "description": "One canonical NVIDIA join console: truth-labeled local readiness for GR00T, Isaac Lab, cuRobo, Warp, and Cosmos. REAL only when local package/cache exists; ONLINE is not runtime access.",
+    "emoji": "\ud83d\udfe2",
+    "signature": "TRIPLE-IDE-NVIDIA-JOIN-20260428",
+    "doctor": "C55M-CODEX-GPT55",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "co_authors": [
+      "C55M Codex",
+      "AG31 Antigravity",
+      "CG55M Cursor",
+      "Ioan George Anton"
+    ],
+    "autostart": false,
+    "_retired": false,
+    "nppl": "sim_only"
   }
 }
