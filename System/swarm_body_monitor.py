@@ -110,6 +110,16 @@ def _live_ledger_truth(path: Path, note: str) -> dict:
     return _truth(TRUTH_UNKNOWN, "missing_ledger", f"{note}; ledger missing: {path.name}")
 
 
+def _topology_truth(rows: list, path: Path) -> dict:
+    if rows:
+        return _truth(
+            TRUTH_REAL,
+            "live_ledger",
+            f"{path.name} fresh daemon topology rows",
+        )
+    return _demo_truth(f"no fresh {path.name} rows; using internal spread oscillator")
+
+
 def _sensor_gate_truth(path: Path, reason: str) -> dict:
     if not path.exists():
         return _truth(
@@ -263,6 +273,7 @@ class OrganEngine:
         # ── Live trace reads for reflex + corvid ────────────────────────
         reflex_path = _STATE / "reflex_arc_trace.jsonl"
         corvid_path = _STATE / "corvid_apprentice_trace.jsonl"
+        topology_path = _STATE / "network_topology.jsonl"
 
         reflex_traces = _tail_trace(reflex_path, n=5, max_age_s=300)
         reflex_count = len(reflex_traces)
@@ -274,6 +285,27 @@ class OrganEngine:
         corvid_last_task = corvid_traces[-1].get("task", "-") if corvid_traces else "-"
         corvid_last_s = corvid_traces[-1].get("latency_s", 0) if corvid_traces else 0
         corvid_success = sum(1 for c in corvid_traces if c.get("success"))
+
+        topology_traces = _tail_trace(topology_path, n=24, max_age_s=120)
+        topology_nodes = {str(r.get("node")) for r in topology_traces if r.get("node")}
+        topology_edges = sum(len(r.get("peers") or []) for r in topology_traces)
+        topology_strengths = [
+            float(r.get("signal_strength"))
+            for r in topology_traces
+            if isinstance(r.get("signal_strength"), (int, float))
+        ]
+        topology_age = (
+            max(0.0, time.time() - float(topology_traces[-1].get("ts", 0)))
+            if topology_traces else None
+        )
+        if topology_traces:
+            target_edges = max(1, len(topology_nodes) * 7)
+            starling_alignment = min(1.0, topology_edges / target_edges)
+            self._starling_spread = max(0.0, min(1.0, 1.0 - starling_alignment))
+        avg_signal = (
+            sum(topology_strengths) / len(topology_strengths)
+            if topology_strengths else None
+        )
 
         # ── Predator v7 live ledger reads ────────────────────────────────
         td_path       = _STATE / "td_q_table.json"
@@ -387,10 +419,18 @@ class OrganEngine:
             },
             "starling": {
                 "value": round(self._starling_spread, 4),
-                "label": f"spread={self._starling_spread:.4f}",
-                "sub":   "K=7 topological  scale-free",
+                "label": (
+                    f"nodes={len(topology_nodes)} links={topology_edges}"
+                    if topology_traces else f"spread={self._starling_spread:.4f}"
+                ),
+                "sub": (
+                    f"K=7 live topology  age={topology_age:.0f}s  "
+                    f"sig={avg_signal:.1f}dBm"
+                    if topology_traces and avg_signal is not None
+                    else "K=7 topological  scale-free"
+                ),
                 "pct":   1.0 - min(self._starling_spread, 1.0),
-                **_demo_truth("internal spread oscillator; no live flock topology feed wired"),
+                **_topology_truth(topology_traces, topology_path),
             },
             "fly": {
                 "value": round(self._fly_residual, 4),

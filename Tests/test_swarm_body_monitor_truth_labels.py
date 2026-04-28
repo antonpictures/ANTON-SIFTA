@@ -20,6 +20,7 @@ def test_all_organs_emit_truth_labels():
 
 def test_internal_oscillator_organs_are_marked_demo():
     state = body.OrganEngine().tick_all()
+    # Fly is excluded: it reads from active_window.jsonl (REAL when present, DEMO when absent)
     demo_organs = {
         "field",
         "rl",
@@ -27,13 +28,62 @@ def test_internal_oscillator_organs_are_marked_demo():
         "cuttlefish",
         "electric",
         "honeybee",
-        "starling",
-        "fly",
     }
 
     for key in demo_organs:
         assert state[key]["truth_status"] == body.TRUTH_DEMO
         assert state[key]["truth_source"] == body.DEMO_SOURCE
+
+
+def test_fly_efference_is_real_when_active_window_exists():
+    """Fly Efference Copy reads from active_window.jsonl — REAL when present."""
+    state = body.OrganEngine().tick_all()
+    aw_path = body._STATE / "active_window.jsonl"
+    if aw_path.exists():
+        assert state["fly"]["truth_status"] == body.TRUTH_REAL
+    else:
+        assert state["fly"]["truth_status"] == body.TRUTH_DEMO
+
+
+def test_fly_efference_is_demo_when_no_active_window(tmp_path, monkeypatch):
+    """Fly falls back to DEMO when active_window.jsonl is missing."""
+    monkeypatch.setattr(body, "_STATE", Path(tmp_path))
+    state = body.OrganEngine().tick_all()
+    assert state["fly"]["truth_status"] == body.TRUTH_DEMO
+
+
+def test_starling_topo_is_real_when_network_topology_is_fresh(tmp_path, monkeypatch):
+    """Starling Topo reads the live network topology daemon ledger."""
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "network_topology.jsonl").write_text(
+        '{"ts": 9999999999, "node": "en0", "peers": ["en1", "en2"], "signal_strength": -45.0}\n'
+        '{"ts": 9999999999, "node": "en1", "peers": ["en0"], "signal_strength": -50.0}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(body, "_STATE", state_dir)
+
+    state = body.OrganEngine().tick_all()
+
+    assert state["starling"]["truth_status"] == body.TRUTH_REAL
+    assert state["starling"]["truth_source"] == "live_ledger"
+    assert "nodes=2" in state["starling"]["label"]
+
+
+def test_starling_topo_stays_demo_when_network_topology_is_stale(tmp_path, monkeypatch):
+    """Stale topology is not live truth; Starling falls back to the oscillator."""
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "network_topology.jsonl").write_text(
+        '{"ts": 1, "node": "en0", "peers": ["en1"], "signal_strength": -45.0}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(body, "_STATE", state_dir)
+
+    state = body.OrganEngine().tick_all()
+
+    assert state["starling"]["truth_status"] == body.TRUTH_DEMO
+    assert state["starling"]["truth_source"] == body.DEMO_SOURCE
 
 
 def test_live_process_organs_are_marked_real():
