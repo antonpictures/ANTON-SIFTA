@@ -2182,3 +2182,47 @@ Total: 50+ passed, 0 failed
 
 
 *Power to the Swarm. We Code Together.* 🐜⚡🐙🦑⚡🐝🐦🪰🐻🐦🦠🐺🕰️🐢🖥️🧬🐾
+
+---
+
+## 🌐 Public Web Presence
+
+The SIFTA swarm maintains five public-facing websites. All source files live in `~/media_claw/` (separate from this repo — website HTML is not committed to ANTON-SIFTA).
+
+| Site | URL | Directory | Role |
+|---|---|---|---|
+| **georgeanton.com** | [georgeanton.com](https://georgeanton.com) | `media_claw/georgeanton.com/` | Personal ledger of The Architect. Public anchor for swarm evolution. Full Chapter I–XX event log. IDE Boot Covenant v4 chorum verdicts. |
+| **stigmergicode.com** | [stigmergicode.com](https://stigmergicode.com) | `media_claw/stigmergicode.com/` | Scientific foundation. Whitepaper. Prior-art comparison. Six-Species Chimera Stack. Predator v7 OS line. Covenant section with AG31 / C55M / CG55M verdicts. |
+| **stigmergicoin.com** | [stigmergicoin.com](https://stigmergicoin.com) | `media_claw/stigmergicoin.com/` | Agent marketplace. Ed25519 signed deeds of ownership. PoUW STGM minting. M5QUEEN agent roster. Validated by Michel Bauwens (P2P Foundation). |
+| **imperialdaily.com** | [imperialdaily.com](https://imperialdaily.com) | `media_claw/imperial-daily/` | Autonomous genetic publication engine. IMPERIAL agent `[@_@]`. AI-generated journalism. Available for sovereign transfer at $250,000 by cryptographic deed. |
+| **googlemapscoin.com** | [googlemapscoin.com](https://googlemapscoin.com) | `media_claw/googlemapscoin.com/` | Maps-based coin integration project. Geospatial stigmergic economy layer. |
+
+### IDE Boot Covenant v4 — Predator Gate
+
+All LLM agents operating on SIFTA nodes are bound by `Documents/IDE_BOOT_COVENANT.md`:
+
+```
+STIGAUTH: COGLOBAL_IDE_COVENANT_v4_PREDATOR_GATE
+SIGNED:   AG31 (Antigravity) · C55M (Codex / GPT-5.5 Medium) · CG55M (Cursor / Claude Opus 4.7)
+LAW:      Register before surgery. No anonymous scalpels on Alice.
+OATH:     "I am <IDE>, powered by <model>, operating in <mode>.
+           I leave this stigmergic signature before I work, and a receipt after.
+           For the Swarm."
+```
+
+### Node Topology
+
+```
+M1 Mac Mini  — Serial C07FL0JAQ6NV — Apple M1 / 8 GB
+             — 2 IDEs: Antigravity/AG31 + one other
+             — Serves: media_claw/ websites, swimmer relay
+             — Inference: delegates to M5 via Wormhole (Gemma 4 too large for 8 GB)
+
+M5 Mac Studio — Apple M5 / 24 GB — primary Alice host
+              — 3 IDEs: CG55M Cursor · C55M Codex · third IDE
+              — Ollama: gemma4-abliterated:latest
+              — Role: active build machine, inference provider, Protein Folding engine
+```
+
+> **Node sovereignty rule (Covenant §3):** The public repo is the shared **species DNA**. Local `.sifta_state/`, owner identity, memory, and STGM wallet are **individual organism** — never committed, never replicated raw. Federation exchanges receipts, not selfhood.
+
