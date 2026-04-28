@@ -89,7 +89,7 @@ def test_predator_v7_organs_use_real_ledger_paths_when_sources_exist(tmp_path, m
         encoding="utf-8",
     )
     (state_dir / "sensor_gate_lock.json").write_text(
-        '{"ts": 9999999999, "locked": false, "reason": "not_attempted"}',
+        '{"ts": 9999999999, "locked": true, "reason": "lock_success"}',
         encoding="utf-8",
     )
     (state_dir / "swarm_action_selector_trace.jsonl").write_text(
@@ -103,3 +103,30 @@ def test_predator_v7_organs_use_real_ledger_paths_when_sources_exist(tmp_path, m
     for key in ["td_learner", "dopamine", "hippocampus", "sensor_gate", "bg_selector"]:
         assert state[key]["truth_status"] == body.TRUTH_REAL
         assert state[key]["truth_source"] == "live_ledger"
+
+
+def test_sensor_gate_not_attempted_is_unknown_even_if_file_exists(tmp_path, monkeypatch):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "sensor_gate_lock.json").write_text(
+        '{"ts": 9999999999, "locked": false, "reason": "not_attempted"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(body, "_STATE", state_dir)
+
+    state = body.OrganEngine().tick_all()
+
+    assert state["sensor_gate"]["truth_status"] == body.TRUTH_UNKNOWN
+    assert state["sensor_gate"]["truth_source"] == "no_runtime_attempt"
+
+
+def test_sensor_gate_ensure_lock_state_does_not_create_ledger(tmp_path, monkeypatch):
+    import Organs.sensor_gate as sensor_gate
+
+    lock_path = tmp_path / "sensor_gate_lock.json"
+    monkeypatch.setattr(sensor_gate, "_LOCK_STATE", lock_path)
+
+    state = sensor_gate.ensure_lock_state()
+
+    assert state["reason"] == "not_attempted"
+    assert not lock_path.exists()

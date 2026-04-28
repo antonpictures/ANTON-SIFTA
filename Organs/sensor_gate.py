@@ -52,24 +52,27 @@ def _write_lock_state(
 
 
 def ensure_lock_state(description: str = "Sensor Gate") -> dict:
-    """Return current lock state, creating an honest not-attempted state if absent."""
+    """Return current lock state without creating a fake lock-attempt ledger."""
     if not _LOCK_STATE.exists():
-        _write_lock_state(
-            locked=False,
-            reason="not_attempted",
-            description=description,
-            logs=["Sensor gate has not attempted a lock-on in this runtime yet."],
-        )
+        return {
+            "ts": time.time(),
+            "locked": False,
+            "reason": "not_attempted",
+            "description": description,
+            "device_index": None,
+            "logs": ["Sensor gate has not attempted a lock-on in this runtime yet."],
+        }
     try:
         return json.loads(_LOCK_STATE.read_text())
     except (OSError, json.JSONDecodeError):
-        _write_lock_state(
-            locked=False,
-            reason="state_corrupt_reset",
-            description=description,
-            logs=["Sensor gate state was unreadable and was reset."],
-        )
-        return json.loads(_LOCK_STATE.read_text())
+        return {
+            "ts": time.time(),
+            "locked": False,
+            "reason": "state_corrupt",
+            "description": description,
+            "device_index": None,
+            "logs": ["Sensor gate state was unreadable."],
+        }
 
 
 def lock_on_devices(device_cmd: List[str], description: str) -> Tuple[Optional[int], List[str]]:

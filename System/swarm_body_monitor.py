@@ -109,6 +109,22 @@ def _live_ledger_truth(path: Path, note: str) -> dict:
         return _truth(TRUTH_REAL, "live_ledger", note)
     return _truth(TRUTH_UNKNOWN, "missing_ledger", f"{note}; ledger missing: {path.name}")
 
+
+def _sensor_gate_truth(path: Path, reason: str) -> dict:
+    if not path.exists():
+        return _truth(
+            TRUTH_UNKNOWN,
+            "missing_ledger",
+            "sensor_gate_lock.json missing; no lock/unlock attempt has run",
+        )
+    if reason in {"lock_success", "lock_all_failed", "unlock_success", "unlock"}:
+        return _truth(TRUTH_REAL, "live_ledger", "sensor_gate_lock.json real lock/unlock attempt")
+    return _truth(
+        TRUTH_UNKNOWN,
+        "no_runtime_attempt",
+        f"sensor_gate_lock.json exists but reason={reason}; waiting for real lock/unlock attempt",
+    )
+
 ORGAN_DEFS = [
     # (key, emoji, name, description)
     ("field",     "🌊", "Unified Field",    "stigmergic tensor substrate"),
@@ -272,7 +288,10 @@ class OrganEngine:
         # Hippocampus: event count
         hipp_traces = _tail_trace(hipp_path, n=5, max_age_s=600)
         hipp_count = len(hipp_traces)
-        hipp_last_type = hipp_traces[-1].get("event_type", "-") if hipp_traces else "-"
+        hipp_last_type = (
+            hipp_traces[-1].get("event_type") or hipp_traces[-1].get("type", "-")
+            if hipp_traces else "-"
+        )
 
         # Sensor gate: current lock state
         sgate_locked = False
@@ -410,7 +429,7 @@ class OrganEngine:
                 "label": f"locked={sgate_locked}  reason={sgate_reason}",
                 "sub":   f"attention filter  Koch 2011",
                 "pct":   0.2 if sgate_locked else 0.9,
-                **_live_ledger_truth(sgate_path, "sensor_gate_lock.json attention state"),
+                **_sensor_gate_truth(sgate_path, sgate_reason),
             },
             "bg_selector": {
                 "value": bg_count,
