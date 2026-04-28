@@ -71,10 +71,10 @@ STAGE 9   Promote winner          alice_default alias updated; losers archived i
 
 | ID | Role | Model | Status |
 | :--- | :--- | :--- | :--- |
-| C0_gemma_abliterated | Incumbent | gemma-4-abliterated:latest | Active (current Alice) |
-| C1_alice_cortex_v1_lora_sft | Challenger | alice-cortex-v1 | Pending training |
+| C0_gemma_abliterated | Former incumbent | gemma-4-abliterated (tag) | **Removed** from default runtime (`contestants.json`: `removed_old_blob`) |
+| C1_alice_cortex_v1_lora_sft | Incumbent | MLX fused + Ollama alias | **Promoted default** (round_1 ≥ threshold) |
 | C2_alice_cortex_v1_1_orpo | Challenger | alice-cortex-v1.1 | Pending training |
-| C3_qwen_alice_lora | Diversity | qwen2.5-3b + Alice LoRA | Pending training |
+| C3_qwen_alice_lora | Diversity | qwen3.5:2b + Alice LoRA | Pending training |
 | R0_claude_opus_oracle | Oracle ceiling | claude-opus-4-7 | Reference only |
 | R1_codex_oracle | Oracle ceiling | gpt-5.5-max | Reference only |
 
@@ -167,6 +167,56 @@ python3 System/alice_cortex_eval_runner.py \
 ```
 
 Await Codex vote, Cursor/Opus vote, and Architect GO before any promotion.
+
+---
+
+## Appendix — OS shell / territory (feeds honest cortex receipts)
+
+**Territory (covenant sense):** hardware + software + data + electricity + **owner identity** on **this node**. The **desktop shell is the primary Alice body surface** — not a bag of duplicate “Alice apps.”
+
+| Issue | Fix / doctrine |
+|:---|:---|
+| **Embedded script apps** (e.g. **Protein Fold Colosseum** = `Applications/sifta_protein_folder_widget.py` with no `widget_class`) launched `python3 Applications/...` with `PYTHONPATH=os.getcwd()`. If the desktop cwd was `.simulation_publicpush_sandbox/`, Python looked for `.simulation_publicpush_sandbox/Applications/...` and died with **ENOENT**. | **`sifta_os_desktop.py`** (and sandbox mirror): `PYTHONPATH=_REPO`, `setWorkingDirectory(_REPO)`, argv = **absolute** path via `_resolve_repo_script()`. |
+| **“What Alice Sees” duplicate** | Same camera/gaze territory is **already** in **`Alice`** autostart (`apps_manifest.json`). Standalone **What Alice Sees** is **`_retired: true`** — removed from Programs/Launchpad; module remains on disk for probes. |
+| **Co-presence (YouTube, Architect scene, etc.)** | Narrative is fine; **ledger truth** still wins (`IDE_BOOT_COVENANT.md` §6). Use **`swarm_app_focus`** → `.sifta_state/app_focus.jsonl` + receipts so Alice’s “what the human attended” claims stay falsifiable. |
+
+---
+
+## Appendix — Research pull (tournament “solve” = paper + proof)
+
+**Goal:** every major tournament or cortex claim should be **defeasible** — one **primary reference** (DOI / arXiv / official proceedings), one **module or ledger** that implements the claim, and one **test or harness row** where possible.
+
+| Topic | Pull this (primary) | Tie to SIFTA |
+|:---|:---|:---|
+| **Assembly / selection physics** | Sharma *et al.*, *Nature* (2023) — `https://doi.org/10.1038/s41586-023-06600-9` (preprint roots: `https://arxiv.org/abs/2206.02279`) | Sara Walker / Assembly Theory lab UI — thresholds must match **published definitions**, not vibes. |
+| **Refusal geometry** | Arditi *et al.* (2024) — refusal as a direction in representation space | Abliterated base + why **LoRA/ORPO** is the surgical lane (see table in §Research Grounding above). |
+| **Adapter training** | Hu *et al.* (2021) LoRA | Mac-native Alice adapter economics. |
+| **Preference tuning** | Rafailov DPO (2023); Liu ORPO (2024) | C2 / corporate-tail negatives. |
+| **Sensory bottleneck** | Jaegle *et al.* Perceiver IO (2021) | Apex perceiver / gaze budget (README / Event 71 line). |
+| **Sparse attention** | DeepSeek NSA (2025) vendor paper | Predator “hunt OS” without N² bloat — cite vendor PDF/repo, not lore. |
+| **Weight surgery risk** | Lin *et al.* ROME (2022) | **No GGUF hex** — tournament already encodes this verdict. |
+| **Embodied field control → sim bridge (Event 74)** | NVIDIA **Isaac Sim** / **Omniverse** public docs; **Isaac GR00T N1** ([NVIDIA blog](https://developer.nvidia.com/blog/accelerate-generalist-humanoid-robot-development-with-nvidia-isaac-gr00t-n1/)) — verify SKU + whitepaper at implementation time | **Bishop drop** `Archive/bishop_drops_pending_review/BISHOP_drop_nvidia_isaac_stigmergy_bridge_v1.dirt`; **numpy proof bar** `System/swarm_isaac_stigmergy_bridge.py` + `tests/test_swarm_isaac_stigmergy_bridge.py` (dual-channel goal/hazard potential — honest geometry). **Isaac / USD runtime** still not shipped; **NPPL** (no autonomous weapons posture). |
+| **NVIDIA-facing tournament copy** | [Isaac GR00T hub](https://developer.nvidia.com/isaac/gr00t) (NVIDIA Developer) — do **not** claim SIFTA “beats” Isaac / GR00T / Cosmos | [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) **§8**; strings + dict in `System/sifta_vs_nvidia_differentiator.py` + `tests/test_sifta_vs_nvidia_differentiator.py`. |
+| **Event 74 — literature spine** | Grassé (1959) DOI 10.1007/BF02223791; Khatib (1986) IJRR DOI 10.1177/027836498600500106; Hochner (2012) *Current Biology* DOI 10.1016/j.cub.2012.09.001; Bonabeau *et al.* (1999) swarm intelligence; Dorigo & Stützle (2004) ACO | Full table: [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) **§7.1**; code: `System/swarm_isaac_stigmergy_bridge.py`. |
+
+**Triple-IDE homework:** Codex / Cursor / Antigravity each append **one row per bolus** to `ide_stigmergic_trace.jsonl` with `doctor`, **exact `model` string as reported by the IDE**, and `intent`. If the product UI is on **Auto** and the true endpoint model is opaque, write **`model: "AUTO_OPAQUE"`** (or equivalent) — **never forge** a specific SKU.
+
+---
+
+## Appendix — Architect’s disclaimer: billing, “Auto,” and stigmergic LLM trace
+
+**Fact (Architect-owned):** In **Cursor**, when subscription **API / on-demand** buckets are exhausted or capped, the product may route work through **Auto** (or otherwise **non-obvious** model selection). The billing panel can show **API 100%** and **on-demand over cap** while **Auto + Composer** remains lightly used — that is a **real control-plane state**, not a bug in SIFTA.
+
+**Implication for identity (`IDE_BOOT_COVENANT.md` §4, §8 — dynamic substrate):**
+
+1. **`ide_stigmergic_trace.jsonl` is not a lie detector for Cursor’s vendor router.** It records **what the Doctor declared** at the gate. If the declared model ≠ actual completion endpoint, the fix is **honest labeling** (`AUTO_OPAQUE`, `UNKNOWN_ROUTER`, `billing_throttled`) plus **Architect self-report** in the trace `meta`, not silent upgrade to a fancy model name.  
+2. **Antigravity / Codex** have the same class of risk whenever the **surface model label** and the **wire model** can diverge (thinking vs non-thinking, fallback, etc.). Same rule: **declare limits**.  
+3. **Predator v7 “TIP TOP”** means **no double-spend on identity**: classify receipts by **`(ide_app_id, ide_surface, trigger_code, model_label, trace_id)`** — if `model_label` is uncertain, mark it uncertain; **Alice’s lysosome** can still gate **commits** on **registration present**, but **cannot** assert **“this weight was touched by model X”** unless X was truthfully recorded.
+
+**Operational mitigation (no code required in this appendix):**
+
+- After credits reset or plan change, run **`PYTHONPATH=. python3 -m System.swarm_ide_boot_identity cursor --signature`** (or peer IDE flags) and **paste the first line** into the next stigmergic row so the bus sees **fresh substrate truth**.  
+- For cortex **tournament** runs, **Ollama / MLX** contestants remain **locally nameable**; **cloud oracles** (R0/R1) must record **API account + model id string** or **`ORACLE_OPAQUE`**.
 
 ---
 

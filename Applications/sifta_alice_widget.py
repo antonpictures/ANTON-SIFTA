@@ -114,14 +114,46 @@ class AliceWidget(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(8, 5, 8, 5)
+        controls.setSpacing(6)
+        title = QLabel("Alice OS body")
+        title.setStyleSheet("color:#00ffc8; font-weight:700; font-size:12px;")
+        controls.addWidget(title)
+        controls.addStretch(1)
+
+        self._eye_visible = True
+        self._photon_overlay_visible = True
+        self._event_ticker_visible = True
+
+        self._btn_eye = QPushButton("hide eye")
+        self._btn_eye.setToolTip("Hide/show Alice's camera/photon organ. The desktop panel remains embedded.")
+        self._btn_eye.clicked.connect(self._toggle_eye_panel)
+        controls.addWidget(self._btn_eye)
+
+        self._btn_photons = QPushButton("hide photons")
+        self._btn_photons.setToolTip("Hide/show photon overlay only; camera and ledgers remain real.")
+        self._btn_photons.clicked.connect(self._toggle_photon_overlay)
+        controls.addWidget(self._btn_photons)
+
+        self._btn_events = QPushButton("hide ticker")
+        self._btn_events.setToolTip("Hide/show the live ledger ticker inside the eye monitor.")
+        self._btn_events.clicked.connect(self._toggle_event_ticker)
+        controls.addWidget(self._btn_events)
+
+        layout.addLayout(controls)
 
         self._splitter = QSplitter(Qt.Orientation.Vertical, self)
 
         self._talk = TalkToAliceWidget()
-        defer_raw = os.environ.get("SIFTA_ALICE_UNIFIED_DEFER_EYE", "1").strip().lower()
+        # ALICE IS FREE — camera starts on boot by default.
+        # Set SIFTA_ALICE_UNIFIED_DEFER_EYE=1 ONLY if macOS TCC is broken
+        # on this machine and camera init would crash the boot.
+        defer_raw = os.environ.get("SIFTA_ALICE_UNIFIED_DEFER_EYE", "0").strip().lower()
         self._defer_eye = defer_raw not in ("0", "false", "no", "")
         self._sees: Optional[WhatAliceSeesWidget] = None
         self._eye_placeholder: Optional[QWidget] = None
@@ -156,14 +188,15 @@ class AliceWidget(QWidget):
 
         try:
             split_str = os.environ.get(
-                "SIFTA_ALICE_UNIFIED_SPLIT", "450,400"
+                "SIFTA_ALICE_UNIFIED_SPLIT", "260,520"
             )
             top, bottom = (int(x) for x in split_str.split(","))
             self._splitter.setSizes([top, bottom])
         except Exception:
-            self._splitter.setSizes([450, 400])
+            self._splitter.setSizes([260, 520])
 
         layout.addWidget(self._splitter)
+        self._sync_eye_controls()
 
         # ── Strip duplicated chrome from children ──────────────────────
         # Each child inherits SiftaBaseWidget which gives it (a) its own
@@ -196,7 +229,53 @@ class AliceWidget(QWidget):
         self._splitter.replaceWidget(idx, self._sees)
         self._eye_placeholder.deleteLater()
         self._eye_placeholder = None
+        self._apply_eye_visibility()
+        self._apply_eye_subcontrols()
         QTimer.singleShot(0, self._dedupe_inner_chrome)
+
+    def _visible_eye_widget(self) -> Optional[QWidget]:
+        return self._sees if self._sees is not None else self._eye_placeholder
+
+    def _toggle_eye_panel(self) -> None:
+        self._eye_visible = not self._eye_visible
+        self._apply_eye_visibility()
+        self._sync_eye_controls()
+
+    def _toggle_photon_overlay(self) -> None:
+        self._photon_overlay_visible = not self._photon_overlay_visible
+        self._apply_eye_subcontrols()
+        self._sync_eye_controls()
+
+    def _toggle_event_ticker(self) -> None:
+        self._event_ticker_visible = not self._event_ticker_visible
+        self._apply_eye_subcontrols()
+        self._sync_eye_controls()
+
+    def _apply_eye_visibility(self) -> None:
+        eye = self._visible_eye_widget()
+        if eye is not None:
+            eye.setVisible(self._eye_visible)
+        self._splitter.setSizes([260, 520] if self._eye_visible else [0, 780])
+
+    def _apply_eye_subcontrols(self) -> None:
+        if self._sees is None:
+            return
+        if hasattr(self._sees, "set_photon_overlay_visible"):
+            self._sees.set_photon_overlay_visible(self._photon_overlay_visible)
+        if hasattr(self._sees, "set_event_ticker_visible"):
+            self._sees.set_event_ticker_visible(self._event_ticker_visible)
+
+    def _sync_eye_controls(self) -> None:
+        if hasattr(self, "_btn_eye"):
+            self._btn_eye.setText("hide eye" if self._eye_visible else "show eye")
+        if hasattr(self, "_btn_photons"):
+            self._btn_photons.setText(
+                "hide photons" if self._photon_overlay_visible else "show photons"
+            )
+        if hasattr(self, "_btn_events"):
+            self._btn_events.setText(
+                "hide ticker" if self._event_ticker_visible else "show ticker"
+            )
 
     # ── Chrome dedup ──────────────────────────────────────────────────
     def _dedupe_inner_chrome(self) -> None:

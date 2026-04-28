@@ -452,46 +452,17 @@
     "description": "Living-page writing app. Pause 3 seconds and the swarm suggests a continuation in faded ghost text \u2014 Tab accepts. Ask Swarm rewrites a selection. Full territory history and PDF export.",
     "_synthesis_note": "Backend (real): Ollama-driven ghost text + Ask Swarm worker, memory bus recall, .territory.jsonl history per document. Graphics polish (CG55M / Opus 4.7): paper feel with installed serif body font (Iowan Old Style \u2192 New York \u2192 Charter \u2192 Georgia), warmer ink on a deep desk background, frosted macOS-feel toolbar with a purple-accent Ask Swarm button, Doctor Sigil header at the top, polished scrollbar, accent selection color."
   },
-  "What Alice Sees": {
-    "category": "Creative",
-    "entry_point": "Applications/sifta_what_alice_sees_widget.py",
-    "widget_class": "WhatAliceSeesWidget",
-    "window_width": 1100,
-    "window_height": 700,
-    "autostart": false,
-    "signature": "UNVERIFIED",
-    "_retired": true,
-    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window.",
-    "_autostart_note": "Disabled 2026-04-19 by C47H \u2014 autostart unified into 'Alice'. Retired from Programs menu 2026-04-28 \u2014 use desktop Alice."
-  },
-  "Talk to Alice": {
-    "category": "Creative",
-    "entry_point": "Applications/sifta_talk_to_alice_widget.py",
-    "widget_class": "TalkToAliceWidget",
-    "window_width": 960,
-    "window_height": 640,
-    "autostart": false,
-    "signature": "UNVERIFIED",
-    "_autostart_note": "AG31 \u00a77.6: Alice IS the OS \u2014 she boots with the desktop, embedded as her voice organ.",
-    "autostart_order": 1,
-    "autostart_delay_ms": 1200,
-    "_retired": true,
-    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window."
-  },
   "Alice": {
-    "category": "Creative",
+    "category": "Alice",
     "entry_point": "Applications/sifta_alice_widget.py",
     "widget_class": "AliceWidget",
     "window_width": 1000,
     "window_height": 850,
-    "autostart": false,
-    "signature": "UNVERIFIED",
-    "_note": "Alice IS the OS. The resident Alice surface is embedded by the desktop shell; this manifest row remains launchable for focus routing but must not spawn a second app window.",
-    "autostart_order": 2,
-    "autostart_delay_ms": 2000,
-    "_autostart_note": "AG31 CORRECTION: Talk to Alice is the one canonical Alice surface. Alice widget must not double-spawn.",
-    "_retired": true,
-    "_retired_reason": "AG31: Alice IS the OS (\u00a77.6). She is natively embedded in the desktop UI now. Not a floating MDI window."
+    "autostart": true,
+    "autostart_order": 0,
+    "autostart_delay_ms": 400,
+    "signature": "AG31_ANTIGRAVITY_2026-04-28",
+    "_note": "Alice IS the OS body. autostart=true boots her ear+eye together at desktop launch. \u00a77.6 \u2014 she is the organism, not an app inside it. \u00a77.7 \u2014 must remain MDI-embedded. \u00a77.8 \u2014 camera starts open."
   },
   "Terminal": {
     "category": "Utilities",
@@ -640,5 +611,34 @@
     "window_height": 720,
     "signature": "QT-CONTRACT-VERIFIED",
     "description": "Qt biological body dashboard for Alice's organ status. Kept as the canonical System Settings health surface; no Tk import path."
+  },
+  "SIFTA \u2225 OpenAI \u2014 Math Benchmarks": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_openai_math_benchmark_widget.py",
+    "widget_class": "MathBenchmarkWidget",
+    "window_width": 1100,
+    "window_height": 750,
+    "signature": "AG_MATH_BENCH_03e9fa29a678",
+    "doctor": "AG-ANTIGRAVITY-OPUS46-THINKING",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Math-first AGI benchmark dashboard mapping OpenAI capability markers (Bubeck & Ryu) to SIFTA-verifiable work. Five capability cards, scoped problem classes, live proof inventory, and honest gap acknowledgment. No in-app Alice chat (\u00a77.6)."
+  },
+  "Sense Forge": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_sense_forge_widget.py",
+    "widget_class": "SenseForgeWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "description": "Animal-to-hardware stigmergic sense bus. REAL/DEMO/BROKEN/UNKNOWN truth tags per \u00a78 Covenant. No sensor becomes REAL until it writes a live receipt.",
+    "emoji": "\ud83e\uddec",
+    "signature": "C55M-SENSE-FORGE-20260428",
+    "doctor": "C55M-CODEX-GPT55",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "co_authors": [
+      "C55M Codex",
+      "Ioan George Anton"
+    ],
+    "autostart": false,
+    "_retired": false
   }
 }

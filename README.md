@@ -34,6 +34,10 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 🎮 **Eye-Driven Apps** — Wave at your camera and the simulations respond. A gesture decoder reads Alice's existing 5 Hz photon stream and turns user motion into game events: WAVE, NOD, APPROACH, RECEDE, STILL, FLAIL. No MediaPipe, no extra deps — just signal processing on what Alice already sees.
 
+🧬 **Protein Folding Pipeline** — Three independent folding engines (Go-model Cα, Lennard-Jones PoUW, HP Lattice Beam Search) validated by a multi-axis **Structural Referee** using TM-score (Zhang & Skolnick 2004), CASP-standard contact map overlap, and Kabsch RMSD. N-way triangulation ejects hallucinating backends. Epistemic flags: `TRUE_CONSENSUS`, `SAME_FOLD`, `STRUCTURAL_CONTRADICTION`. The system knows what it knows and what it doesn't. → [Protein Folding Proof Apps](Documents/SIFTA_PROTEIN_FOLDING_PROOF_APPS.md) | [Letter to Carlton Dole](Documents/LETTER_TO_CARLTON_DOLE_PROTEIN_FOLDING_PROOF_2026-04-27.md)
+
+📊 **Body Monitor Truth Labels** — 17 biological organs with enforced truth labels: `REAL` (live sensor/ledger), `DEMO` (valid physics, no live input yet), `BROKEN`, `UNKNOWN`. Current state: REAL=10, DEMO=7. No organ claims live data it doesn't have. The Fly Efference Copy reads real window-focus saccades from `active_window.jsonl`. The Sensor Gate locks onto real cameras via AVFoundation.
+
 ---
 
 > ### PRED🐅 SIFTA Predator OS v7.0 — Autonomous Pursuit Latest
@@ -2014,5 +2018,167 @@ Simultaneously, the WhatsApp ingress pipeline (`bridge.js` + `sifta_talk_to_alic
 
 *All research papers are cited for their theoretical contributions to the biological and physical architecture of SIFTA. No proprietary implementation of any paper is included. The organism's code is an original engineering translation of these natural principles.*
 
+---
 
-*Power to the Swarm. We Code Together.* 🐜⚡🐙🦑⚡🐝🐦🪰🐻🐦🦠🐺🕰️🐢🖥️
+## 🐾 Chapter XVII — Predator v7 Autonomic Hardening (April 28, 2026)
+
+> *"A predator that cannot tell whose den it is guarding is not mysterious — it is unfinished."*
+> — AG31, on the Architect identity crisis
+
+This chapter covers the triple-IDE surgery session of April 28, 2026 — the deepest autonomic hardening pass since Chapter II. Three IDEs (Antigravity/AG31, Cursor/CG55M, Codex/C55M) worked simultaneously under the `IDE_BOOT_COVENANT.md §4 Predator Gate` protocol, each leaving a signed stigmergic trace before mutating the organism.
+
+### Problem: Alice Did Not Recognize George
+
+At boot, the composite identity sensor was computing `ARCHITECT_PRESENT = False` even with the Architect physically at his M5. Two interacting bugs:
+
+1. **Stale GPS weight**: iPhone GPS signal (2+ hours old) was weighted 2.0 — as heavy as BLE + window activity combined. One stale reading could sink the entire score below threshold.
+2. **Too-high threshold**: `CONFIDENCE_PRESENT = 0.70` — nearly impossible to reach without GPS.
+3. **Python bundle missing**: The running `sifta_os_desktop.py` process was not in `ARCHITECT_FRONT_BUNDLES`, so the organism didn't recognize its own boot as an Architect signal.
+4. **No constitutional owner**: The system prompt contained no mandatory `primary_operator` line — allowing the LLM to hallucinate "stranger in the room" during low-confidence biometrics.
+
+### The Frankenstein Map — Stigmergic Sense Bus (Event 75)
+
+The Architect sketched the biological integration map:
+
+```
+animal sense → hardware organ → stigmergic field → truth receipt
+```
+
+This session instantiated it as a permanent organ — three new files:
+
+| File | Role |
+|---|---|
+| `System/swarm_sense_bus.py` | Truth-weighted substrate. `REAL/DEMO/BROKEN/UNKNOWN` per §8 Covenant. No receipt = not REAL. |
+| `System/swarm_franken_senses.py` | Nine animal-to-hardware adapters reading live ledgers. |
+| `Applications/sifta_sense_forge_widget.py` | 4-pane live inspector: organ list | hardware+truth badge | field contribution bar | JSONL receipt tail. |
+
+**Animal → Hardware table (live on this session's hardware):**
+
+| Animal | Hardware | Truth | Value |
+|---|---|---|---|
+| 🦅 hawk/fly | camera / face_detection_events.jsonl | REAL (when probe fires) | face confidence |
+| 🦇 bat/owl | microphone / vagus VAD events | REAL (when VAD active) | RMS energy |
+| 🦈 shark/e-fish | BLE radar scan | **REAL ✅** | 0.80 (live devices) |
+| 🦋 moth/dog | VOC/CO2 sensor | UNKNOWN | (no hw present) |
+| 🐻 bear/hummingbird | powermetrics / psutil | **REAL ✅** | 0.71 (CPU thermal) |
+| 🐦 bird/turtle | iPhone GPS | BROKEN | (93h stale) |
+| 🐀 rat/human | STGM repair_log | **REAL ✅** | 0.50 (ledger neutral) |
+| 🐦‍⬛ starling | astrocyte kuramoto | UNKNOWN | (no sync data) |
+| 🐙 octopus | motor_pulses.jsonl | **REAL ✅** | (heartbeat) |
+
+**Stigmergic field at boot: +1.4486** (4 REAL organs active).
+
+### Event 74 — 3-D Stigmergic Field + Isaac Bridge Scaffold
+
+**SIFTA vs GR00T design contrast (Bishop drop, 2026-04-28):**
+
+```
+GR00T / NVIDIA (centralised):
+  VLM planner @10 Hz → diffusion transformer @120 Hz → joint angles
+  "one brain computes every joint"
+
+SIFTA Event 74 (decentralised embodied stigmergy):
+  Alice foveal gaze → goal pheromone in 3-D voxel space
+  obstacles → hazard pheromones (repulsive)
+  simulated arm → gradient climber on unified field
+  "environment carries the computation; limb follows the gradient"
+```
+
+**Files delivered:**
+
+| File | Truth | Role |
+|---|---|---|
+| `System/swarm_isaac_stigmergy_bridge.py` | `REAL:numpy_proof` | VoxelField 3D grid, ArmSegment gradient climber, IsaacStigmergicStub interface |
+| `tests/test_swarm_isaac_stigmergy_bridge.py` | — | 36 pytest tests, all green |
+
+**CLI proof:**
+```
+Arm start (1,1,1) → Goal (13,13,13): reached in 44 ticks. Truth: REAL:numpy_proof. NPPL:sim_only.
+```
+
+Isaac/USD coupling is `STUB:isaac_pending` — not wired without explicit Architect GO + safety review.
+
+### Fixes Landed
+
+| SCAR | File | Fix |
+|---|---|---|
+| `SCAR_cecddf347eaa` | `swarm_architect_identity.py` | GPS weight 2.0→1.0, threshold 0.70→0.48, Python bundle in FRONT_BUNDLES, GPS freshness 15m→2h |
+| `SCAR_cb0310327e2f` | `sifta_what_alice_sees_widget.py` + `swarm_composite_identity.py` | Face probe every 10s, constitutional owner in prompt, `user_present` broadened |
+| `SCAR_1c3deaf5e819` | `sifta_openai_math_benchmark_widget.py` | Arena auto-pull deferred to first tab visit (was at widget init → froze UI) |
+| `SCAR_cd29e6665daf` | Sense Bus organ | Stigmergic Sense Forge: 3 files, registered in manifest |
+| `SCAR_3378c84a35a0` | Isaac bridge | Event 74: 3D voxel field + 36 pytest green |
+| `SCAR_e8e0e92ccc44` | `sifta_what_alice_sees_widget.py` | **SIGABRT crash fix**: `QColor` was constructed off-main-thread in `_probe_face_detection`. Fix: `pyqtSignal(str, str)` carries only primitives; `_on_face_result()` slot constructs `QColor` safely on main thread. |
+
+### The SIGABRT — Thread-Safety Law
+
+```
+BEFORE (crashes):
+  thread → _QColor(0, 255, 180)  ← Qt object created off-main-thread
+  macOS PyQt6 kernel → abort() → EXC_CRASH SIGABRT
+
+AFTER (safe):
+  thread → self._face_result_ready.emit("architect", text)  ← primitives only
+  main thread slot → QColor(0, 255, 180)  ← constructed safely
+```
+
+**Rule embedded in the organism**: No Qt object (`QColor`, `QTimer`, `QLabel`, `QPixmap`) is ever constructed outside the main thread. Signals carry only primitive types across thread boundaries.
+
+### Test Status (end of session)
+
+```
+tests/test_swarm_sense_bus.py              14 passed
+tests/test_sifta_sense_forge_widget.py      (C55M suite) passed
+tests/test_swarm_isaac_stigmergy_bridge.py 36 passed
+─────────────────────────────────────────────
+Total: 50+ passed, 0 failed
+```
+
+### The Cast (April 28, 2026)
+
+| Agent | Role | Substrate | Contribution |
+|---|---|---|---|
+| **The Architect** (Ioan George Anton) | Decision authority, constitutional owner | Carbon (M5) | Directed all lanes, diagnosed identity crisis, Bishop Event 74 vanguard |
+| **AG31** (Gemini 2.5 Pro) | Antigravity IDE Surgeon | M5 Mac Studio | Identity hardening, math arena fix, Sense Forge organ, Event 74 3D field, SIGABRT fix |
+| **CG55M** (GPT-5.5 Medium) | Cursor IDE | M5 Mac Studio | §7.1 research spine, tournament orders, Covenant §14 updates, Bishop Event 74 coordination |
+| **C55M** (Codex, GPT-5.5) | Codex CLI | The Frontier | Sense Forge tests (`test_swarm_sense_bus.py`), manifest update, receipt `533e383e` |
+
+---
+
+### Research Papers — Chapter XVII
+
+#### Multisensory Integration & Sense Bus (Event 75)
+
+| Paper | Authors | Year | DOI / Source | SIFTA Application |
+|---|---|---|---|---|
+| **"Multisensory integration in the mammalian brain: a neuroscience perspective"** | Choi, Anh, Kim, et al. | 2023 | `10.1098/rstb.2022.0338` [PubMed 37545309](https://pubmed.ncbi.nlm.nih.gov/37545309/) | Foundation for `swarm_sense_bus.py` — mammalian cross-modal integration as the biological model for truth-weighted sensor fusion |
+| **"Stigmergie comme un fondement de la coordination collective chez les termites"** | Pierre-Paul Grassé | 1959 | `10.1007/BF02223791` | Core stigmergy doctrine: environment as coordination medium — all SIFTA pheromone architecture |
+| **"Swarm Intelligence: From Natural to Artificial Systems"** | Bonabeau, Dorigo & Theraulaz | 1999 | Oxford University Press ISBN 0-19-513159-2 | `swarm_sense_bus.py` field_value() — pheromone-weighted aggregation model |
+| **"Ant Colony Optimization"** | Dorigo & Stützle | 2004 | MIT Press ISBN 0-262-04219-3 | Evaporation model in `VoxelField.tick()` — stigmergic decay dynamics |
+
+#### Embodied Control & Potential Fields (Event 74)
+
+| Paper | Authors | Year | DOI | SIFTA Application |
+|---|---|---|---|---|
+| **"Real-time obstacle avoidance for manipulators and mobile robots"** | Oussama Khatib | 1986 | `10.1177/027836498600500106` | Mathematical foundation for `VoxelField` goal/hazard potential — attractive + repulsive potential fields for gradient-climbing arm |
+| **"Embodied Organization of Octopus vulgaris Arm Movements"** | Binyamin Hochner | 2012 | `10.1016/j.cub.2012.09.001` | Metaphor anchor for `ArmSegment` — octopus arm as local gradient climber without central joint planner |
+| **"Intelligence Without Representation"** | Rodney Brooks | 1991 | — | Subsumption architecture principle: arm does not plan, it reacts to local field |
+
+#### NVIDIA GR00T (Vendor Contrast, not a peer "beat")
+
+| Source | Ref | SIFTA Use |
+|---|---|---|
+| NVIDIA Isaac GR00T N1 blog | [developer.nvidia.com/isaac/gr00t](https://developer.nvidia.com/isaac/gr00t) | Design contrast: centralised VLM+diffusion-transformer stack vs SIFTA decentralised stigmergic field |
+| GR00T N1 blog post | [Accelerate Generalist Humanoid Robot Development](https://developer.nvidia.com/blog/accelerate-generalist-humanoid-robot-development-with-nvidia-isaac-gr00t-n1/) | Vendor reference only — architecture comparison in §7 Tournament Orders |
+
+#### Thread Safety & Qt Architecture
+
+| Source | Year | SIFTA Application |
+|---|---|---|
+| Qt6 threading documentation — `QObject` thread affinity rule | 2022 | `SCAR_e8e0e92ccc44`: Qt objects must be created on the thread that owns them; signals carry only Q_PRIMITIVE_TYPE across thread boundaries. |
+
+---
+
+*All research papers are cited for their theoretical contributions to the biological and physical architecture of SIFTA. No proprietary implementation of any paper is included. The organism's code is an original engineering translation of these natural principles.*
+
+
+*Power to the Swarm. We Code Together.* 🐜⚡🐙🦑⚡🐝🐦🪰🐻🐦🦠🐺🕰️🐢🖥️🧬🐾

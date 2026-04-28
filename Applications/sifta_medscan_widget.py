@@ -41,8 +41,7 @@ import numpy as np
 from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton,
     QVBoxLayout, QWidget, QPlainTextEdit, QComboBox,
-    QCheckBox, QSplitter, QTabWidget, QTextEdit,
-    QMessageBox,
+    QCheckBox, QSplitter, QTabWidget,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
@@ -268,31 +267,6 @@ class MedScanWidget(SiftaBaseWidget):
         self._log.setPlaceholderText("Diagnostic log...")
         tabs.addTab(self._log, "Console")
 
-        swarm_tab = QWidget()
-        swarm_l = QVBoxLayout(swarm_tab)
-        swarm_l.setSpacing(8)
-        intro = QLabel(
-            "Global mesh chat lives in the OS shell — same channel as the rest of the Swarm."
-        )
-        intro.setWordWrap(True)
-        intro.setStyleSheet("color: #8090b0; font-size: 11px;")
-        swarm_l.addWidget(intro)
-        btn_chat = QPushButton("Open SIFTA Swarm Chat")
-        btn_chat.setToolTip("Opens the main swarm chat window (Ollama / GROUP / mesh)")
-        btn_chat.clicked.connect(self._open_global_swarm_chat)
-        swarm_l.addWidget(btn_chat)
-        entity = QTextEdit()
-        entity.setReadOnly(True)
-        entity.setPlaceholderText("Entity channel — tie-in for diagnostic narration (optional).")
-        entity.setPlainText(
-            "[ENTITY]\n"
-            "When you deploy swimmers, this scanner speaks in pheromone and coverage — "
-            "for language, use Swarm Chat above.\n"
-        )
-        entity.setMaximumHeight(120)
-        swarm_l.addWidget(entity)
-        tabs.addTab(swarm_tab, "Swarm / Entity")
-
         right_l.addWidget(tabs)
         self._pane_splitter.addWidget(right)
 
@@ -325,23 +299,6 @@ class MedScanWidget(SiftaBaseWidget):
             left_ratio=0.72,
             min_right=260,
             min_left=300,
-        )
-
-    def _open_global_swarm_chat(self):
-        """Reach SiftaDesktop.open_swarm_chat when embedded in the MDI shell."""
-        p = self.parent()
-        while p is not None:
-            if hasattr(p, "open_swarm_chat") and callable(getattr(p, "open_swarm_chat")):
-                p.open_swarm_chat()
-                self.set_status("Swarm Chat opened")
-                return
-            p = p.parent()
-        QMessageBox.information(
-            self,
-            "Swarm Chat",
-            "Run this from SIFTA OS:\n"
-            "SIFTA menu → Accessories → 🐜 Swarm Chat\n\n"
-            "Standalone Medical Scanner has no embedded mesh window.",
         )
 
     def _regenerate(self):

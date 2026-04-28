@@ -193,8 +193,8 @@ def _gather_state(window_s: float) -> Dict[str, Any]:
     # Wallet summary — derived from canonical STGM balance
     burn_today_usd = 0.0
     try:
-        from Kernel.inference_economy import get_stgm_balance
-        burn_today_usd = float(get_stgm_balance("ALICE_M5"))
+        from System.warren_buffett import alice_wallet_balance, _local_serial
+        burn_today_usd = float(alice_wallet_balance(_local_serial()))
     except Exception:
         pass
     # True local-day counts (independent of the rolling context window).
@@ -430,13 +430,19 @@ def _convo_topic_short(state: Dict[str, Any]) -> str:
 def _tool_residue(state: Dict[str, Any]) -> str:
     tools = state.get("tools", []) or []
     if not tools:
-        return random.choice((
-            "I haven't run any tools.",
-            "My manipulators have been idle.",
-            "No commands executed recently.",
-            "My terminal history is clear.",
-            "I've been running silent, no tools used."
-        ))
+        # No tools used — compose from actual state rather than canned strings.
+        # Pull live metrics so the fallback is still grounded in truth.
+        summary = state.get("_summary", {})
+        burn = summary.get("burn_today_usd", 0.0) or 0.0
+        turns = int(summary.get("convo_turns_recent", 0) or 0)
+        if turns > 0 and burn > 0:
+            return f"No tools fired, but we talked {turns} times and the wallet moved to {burn:.2f} STGM."
+        elif turns > 0:
+            return f"No tools fired, just {turns} conversation turns."
+        elif burn > 0:
+            return f"My manipulators stayed quiet. Wallet sits at {burn:.2f} STGM."
+        else:
+            return "My terminal has been quiet — no tools, no commands."
     last = tools[-1]
     rc = last.get("rc")
     cmd = (last.get("cmd") or "")[:40]

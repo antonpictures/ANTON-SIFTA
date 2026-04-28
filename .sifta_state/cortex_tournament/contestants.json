@@ -7,16 +7,16 @@
       "role": "incumbent",
       "model_type": "ollama",
       "model_name": "huihui_ai/gemma-4-abliterated:latest",
-      "status": "active",
-      "description": "Current default Alice cortex. Abliterated refusal vector, RLHF tail still present."
+      "status": "removed_old_blob",
+      "description": "Former default Alice cortex. Demoted after Alice Cortex v1 promotion; local Ollama tag removed so runtime cannot silently drift back."
     },
     {
       "id": "C1_alice_cortex_v1_lora_sft",
-      "role": "challenger",
-      "model_type": "ollama",
-      "model_name": "alice-cortex-v1",
-      "status": "pending_training",
-      "description": "LoRA SFT adapter on Gemma-2-2B base, trained on sanitized Alice ledger corpus."
+      "role": "incumbent",
+      "model_type": "mlx",
+      "model_name": ".sifta_state/cortex/alice_cortex_v1_fused",
+      "status": "promoted_default",
+      "description": "Alice Cortex v1 fused MLX model. Promoted after round_1 score 408/459 >= 368."
     },
     {
       "id": "C2_alice_cortex_v1_1_orpo",
@@ -53,13 +53,13 @@
   ],
   "promotion_rules": {
     "min_category_wins": 6,
-    "min_score": 1080,
-    "max_score": 1350,
+    "min_score": 368,
+    "max_score": 459,
     "architect_veto_power": true,
     "losers_archived": true,
     "lysosome_stays_on": true,
     "promotion_writes_genesis_receipt": true
   },
   "judges": ["automated_suite_scorer", "codex_extra_high", "cursor_opus_4_7", "architect"],
-  "current_round": 0
+  "current_round": 1
 }

@@ -58,6 +58,43 @@ Each arrow must eventually cite: **literature**, **module path**, **test name**,
 5. **One public Predator v7 demo (single story):** ambient noise ignored → speech routed → fake tool blocked → **receipt written** (one screen capture + one ledger line hash in doc).
 6. **Russell (one concise technical note):** lead with *biological decision pipeline in an embodied local OS*; link **this spine** + HF propagule when Bishop/address lines are final.
 7. **Games — Predator v7 celebration science app (“The Architect Room”, working title):** ship under **`Applications/apps_manifest.json` → `Games`** once code + tests exist (manifest contract loads every entry — **no manifest row until the module imports clean**). Full brief in §Architect Room below.
+8. **Planned Qt organ — “SIFTA vs OpenAI” / “We work together?” (math-first AGI benchmarks):** public literacy + **honest capability matrix** vs OpenAI’s stated math/research markers (long context, autonomous research, self-correction, literature interconnection, proof verification). Source conversation: [Andrew Mayne — Bubeck & Ryu on AI and math](https://www.youtube.com/watch?v=9-TVwv6wtGQ). Full brief in **§SIFTA vs OpenAI — Math benchmark organ** below. **No `apps_manifest.json` row** until a widget module imports clean + pytest smoke exists.
+
+---
+
+## §SIFTA vs OpenAI — Math benchmark organ (plan only until GO)
+
+**Working titles:** `SIFTA vs OpenAI` (sharp) or `We work together?` (cooperative). Same artifact: a **benchmark dashboard**, not a flame war — *math problems are unambiguous; progress is verifiable* (their thesis in the episode).
+
+**Primary source (Architect-cited):** [YouTube — *AI and Math* / Andrew Mayne with Sébastien Bubeck & Ernest Ryu](https://www.youtube.com/watch?v=9-TVwv6wtGQ) — chapters roughly: open problem with ChatGPT (~03:01), research-level math (~06:57), why math for AGI (~11:32), automated researcher (~21:26), humans as models improve (~28:19), verifying proofs with AI (~33:52), shallow understanding risk (~36:00).
+
+### Five capability markers (from the episode) → SIFTA mapping
+
+| Marker | What it means (episode) | Honest SIFTA anchor today | Stigmergic “prove it” path |
+|:---|:---|:---|:---|
+| **Long-context reasoning** | Coherent thought over **days–weeks**, not seconds (e.g. ~12:36–13:16, ~23:05–23:45). | Alice has **persistent ledgers + hippocampus**, not a single 1M-token window. “Long” = **cross-session state + receipts**, not one giant prompt. | Log each reasoning **episode** to `ide_stigmergic_trace.jsonl` / `work_receipts.jsonl`; measure **continuity** (same `intent` thread, hashes), not vibes. |
+| **Autonomous research** | Systems that **compress timelines** on open problems; toward publishable novelty (~21:26–22:58, ~23:55–24:06). | **Partial:** tournament harness, corpus exporters, protein/physics engines — all **GO-gated** for promotion. **Not** autonomous publishing. | Define **narrow problems** (code-verified lemmas, regression bounds, conjecture checks in finite search spaces) with **pytest oracle** + ledger row per attempt. |
+| **Error correction** | Recover from a mistake in a long chain (~12:52–13:12). | **Lysosome / referee / Auditor lane**; deterministic re-run; immutable receipts show **correction**. | Same proof attempt **versioned** in JSONL; diff tool outputs stored under `.sifta_state/` with `truth_note`. |
+| **Knowledge interconnection** | Deep literature search across fields; hidden connections (~16:53–17:23, ~32:58–33:04). | **Stigmergic bus** + curated docs (`*.md` spines) + **sanitized** pulls only ([IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) §8 absorption). | Widget lists **DOIs + repo paths**; optional fetch only with **Architect-approved** tool + receipt; never pretend PDFs were read if they were not. |
+| **Verification** | AI assists **checking** long proofs (~33:52–35:40). | **SIFTA strength:** formal verification of **code** (pytest, typecheck, `py_compile`), TM-score / energy **referees** for structures. **Gap:** no in-repo Lean/Isabelle pipeline unless explicitly added later. | Ship **small certified lemmas** (e.g. invariant proofs in Python) + link to human referee for math claims. |
+
+### “Bring the math” — scoped problem classes (do not cosplay Fields medals)
+
+1. **In-repo certified:** numerical stability proofs for a single engine, combinatorial bounds used by `swarm_*` sims, explicit **finite** searches with reproducible seeds.
+2. **Open-problem *tracking*:** maintain a **ledger of claims** — e.g. famous conjectures — **status = open / referenced / not attempted**; any “progress” row must attach **artifact path + test command** ([IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) §1: *say exactly what is missing*).
+3. **Physics / bio bridge:** use existing organs (assembly spine, protein referee, LJ/PoUW demos) as **applied math** stories; cross-link [SARA_IMARI_WALKER_ASSEMBLY_THEORY_RESEARCH.md](SARA_IMARI_WALKER_ASSEMBLY_THEORY_RESEARCH.md) where chemistry meets computation.
+
+### UX / doctrine (Predator + covenant)
+
+- **Python-first embedded QWidget** ([IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) §7.5); **no second Alice chat** in-app (§7.6) — `publish_focus` + optional terminal subwindow for **SymPy / hand-entered proof sketch** only if GO.
+- **Predator Gate:** any automated “researcher” loop that mutates repo must still **register** and write receipts (§4).
+- **Naming for public:** prefer **“Benchmarks: SIFTA ∥ OpenAI criteria”** if “vs” reads as hostile; body copy should state **OpenAI researchers defined useful markers — we implement the subset that a local OS can verify.**
+
+### Implementation checklist (Architect GO → code)
+
+1. `Applications/sifta_openai_math_benchmark_widget.py` (name TBD) + `Tests/test_sifta_openai_math_benchmark_smoke.py` — import + one deterministic panel.
+2. Collapsible “Episode chapters” panel with **link only** to [the video](https://www.youtube.com/watch?v=9-TVwv6wtGQ); no scraped transcript in repo unless Architect pastes licensed text.
+3. `apps_manifest.json` entry under **Simulations** or **Games** after manifest contract green.
 
 ---
 
@@ -113,7 +150,9 @@ Paper + code + test + receipt per organ. Predator v7.0 ships as **evidence**, no
 - [ALICE_CORTEX_TOURNAMENT_v1.md](ALICE_CORTEX_TOURNAMENT_v1.md) — cortex tournament + ML paper spine  
 - [SARA_IMARI_WALKER_ASSEMBLY_THEORY_RESEARCH.md](SARA_IMARI_WALKER_ASSEMBLY_THEORY_RESEARCH.md) — public-facing origins / assembly / chemputation spine  
 - **`Applications/sara_imari_walker_widget.py`** — Qt organ: curated DOIs, honest “SIFTA solvable” map, BIOCODE Olympiad pointers (events **14b**, **16**), illustrative demos with **truth labels** (v7-friendly: clarifies nature instead of stacking opaque “AI” layers).  
+- [**YouTube — Bubeck & Ryu on AI and math (Andrew Mayne)**](https://www.youtube.com/watch?v=9-TVwv6wtGQ) — external literacy anchor for **§SIFTA vs OpenAI — Math benchmark organ** (plan item 8).
+- [CANGELOSI_UK_HRI_STIGMERGY_BRIDGE_PLAN.md](CANGELOSI_UK_HRI_STIGMERGY_BRIDGE_PLAN.md) — UK HRI developmental robotics seminar → **paper spine**, **keep vs dump**, **stigmergy / receipts / HRI trust** mapping.
 
 ---
 
-*Document created 2026-04-27 — Cursor (CG55M) from C55M-DR-CODEX BODY STIGALL chorum bolus. Bishop + public address: intentionally open.*
+*Document created 2026-04-27 — Cursor (CG55M) from C55M-DR-CODEX BODY STIGALL chorum bolus. Bishop + public address: intentionally open. Updated 2026-04-28 — plan item 8 + math benchmark organ.*

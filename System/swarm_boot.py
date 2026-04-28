@@ -214,8 +214,17 @@ class SiftaBrainstem:
         # 1. Boot Broca's Area (so the organism can scream if it hurts booting)
         broca = get_broca()
         broca.start_listening()
-        broca._speak("Swarm OS booting. Sensory organs initializing.")
-        time.sleep(2.5) # Give Broca time to speak 
+        
+        # 1.5 Synchronous STGM Ledger Sync before speech
+        try:
+            from System.warren_buffett import alice_wallet_balance, _local_serial
+            bal = float(alice_wallet_balance(_local_serial()))
+            stgm_text = f" Metabolic reserve is {bal:.2f} STGM."
+        except Exception:
+            stgm_text = ""
+            
+        broca._speak(f"Swarm OS booting. Sensory organs initializing.{stgm_text}")
+        time.sleep(3.5) # Give Broca time to speak the extended line
 
         # 2. Boot Cross-Modal Binder
         self.binder = get_crossmodal_binder()

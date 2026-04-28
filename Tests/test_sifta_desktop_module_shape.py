@@ -95,7 +95,7 @@ def test_desktop_wallpaper_does_not_depend_on_antigravity_cache():
         assert "antigravity/brain" not in source
 
 
-def test_desktop_selects_tracked_mermaid_wallpaper(monkeypatch):
+def test_desktop_selects_tracked_predator_wallpaper(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
@@ -111,7 +111,7 @@ def test_desktop_selects_tracked_mermaid_wallpaper(monkeypatch):
     desktop = SiftaDesktop()
     try:
         selected, _mtime, size = desktop._selected_wallpaper_state()
-        assert selected == str(REPO / "Library" / "Desktop Pictures" / "Mermaid Default.jpg")
+        assert selected == str(REPO / "Library" / "Desktop Pictures" / "Predator Default.png")
         assert size and size > 0
         assert desktop._wallpaper_state[0] == selected
     finally:
@@ -305,6 +305,20 @@ def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
         assert terminal_widget is not None
         assert terminal_widget.terminal.is_running()
 
+        script_launch = {}
+        original_script_launcher = desktop._launch_terminal_app
+        desktop._launch_terminal_app = lambda title, entry: script_launch.update(
+            {"title": title, "entry": entry}
+        )
+        try:
+            desktop._trigger_manifest_app("C55M + George - Protein Fold Colosseum")
+        finally:
+            desktop._launch_terminal_app = original_script_launcher
+        assert script_launch == {
+            "title": "C55M + George - Protein Fold Colosseum",
+            "entry": "Applications/sifta_protein_folder_widget.py",
+        }
+
         terminal_sub.close()
         for _ in range(20):
             app.processEvents()
@@ -434,7 +448,24 @@ def test_sandbox_desktop_launchpad_loads_manifest_before_render(monkeypatch):
             for btn in desktop.findChildren(QPushButton)
             if btn.toolTip()
         }
-        assert {"Launchpad", "Spotlight", "Alice", "Terminal", "System Settings"} <= tooltips
+        assert {
+            "Launchpad",
+            "Spotlight",
+            "Files",
+            "Talk to Alice",
+            "Swarm Chat",
+            "Finance",
+            "Fold Swarm",
+            "Protein Colosseum",
+            "PoUW Sim",
+            "Assembly Theory",
+            "Terminal",
+            "System Settings",
+        } <= tooltips
+        assert "Alice" not in tooltips
+        assert "Alice Health" not in tooltips
+        assert "What Alice Sees" not in tooltips
+        assert "Alice Safety Tracker" not in tooltips
         assert getattr(desktop, "_clock_layout_managed", False) is True
 
         desktop._toggle_launchpad()

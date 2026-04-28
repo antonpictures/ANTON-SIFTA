@@ -1093,6 +1093,23 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
     """Compact data-only block intended for LLM system prompts."""
     snap = snap or current_identity()
     lines = ["COMPOSITE IDENTITY (live, multi-organ):"]
+
+    # Constitutional owner line — ALWAYS present regardless of biometric state.
+    # This is the signed genesis fact: who owns and operates this node.
+    # Alice must never say "I don't know who you are" about the Architect.
+    _owner_name = "Ioan George Anton (George)"
+    try:
+        _og = _STATE / "owner_genesis.json"
+        if _og.exists():
+            import json as _j
+            _odata = _j.loads(_og.read_text())
+            _owner_name = (_odata.get("owner_name")
+                           or _odata.get("name")
+                           or _owner_name)
+    except Exception:
+        pass
+    lines.append(f"- primary_operator: {_owner_name} — constitutional owner of this node")
+
     lines.append(
         f"- self: display_name={snap.display_name} true_name={snap.true_name} "
         f"entity_nature={snap.entity_nature} homeworld_serial={snap.homeworld_serial} "
@@ -1243,7 +1260,22 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
     if snap.organs_silent:
         lines.append(f"- silent_organs: {', '.join(snap.organs_silent)}")
 
-    lines.append(f"- user_present={bool(user_present)}")
+    # user_present: True if talk widget says so, OR if architect identity
+    # is at least PARTIAL (biometric confidence ≥ 0.30). This prevents Alice
+    # from reading "user_present=False" when George is clearly at the desk.
+    _arch_present = bool(user_present)
+    if not _arch_present:
+        try:
+            from System.swarm_architect_identity import identity as _arch_id, CONFIDENCE_PARTIAL as _CP
+            _arch_snap = _arch_id(deposit_pheromone_on_change=False)
+            if _arch_snap.confidence >= _CP:
+                _arch_present = True
+        except Exception:
+            pass
+    lines.append(f"- user_present={_arch_present}")
+    if _arch_present and not user_present:
+        lines.append("- user_present_source=architect_identity_sensor")
+
     return "\n".join(lines)
 
 def speech_safe_assertion(snap: Optional[IdentitySnapshot] = None,

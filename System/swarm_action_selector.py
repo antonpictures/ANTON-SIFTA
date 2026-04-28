@@ -218,11 +218,13 @@ def log_selection(
 ) -> str:
     """Write a stigmergic work receipt for the action selection event."""
     receipt_path = receipt_path or (_REPO / ".sifta_state" / "work_receipts.jsonl")
+    trace_path = _REPO / ".sifta_state" / "swarm_action_selector_trace.jsonl"
     trace_id = str(uuid.uuid4())
     row = {
         "ts": time.time(),
         "trace_id": trace_id,
         "kind": "basal_ganglia_selection",
+        "winner": winner,
         "action_winner": winner,
         "competition": probs,
         "input_preview": input_text[:80],
@@ -230,6 +232,9 @@ def log_selection(
     try:
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         with open(receipt_path, "a") as f:
+            f.write(json.dumps(row) + "\n")
+        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(trace_path, "a") as f:
             f.write(json.dumps(row) + "\n")
     except OSError:
         pass
@@ -245,6 +250,10 @@ def pipeline_step(
 ) -> tuple[str, str, dict]:
     """
     Run one full decision step through Layers 1–4.
+
+    The Basal Ganglia temperature is now adapted by the Dopamine Reward Loop
+    (Schultz, Dayan & Montague 1997). High positive reward → lower T (sharper,
+    more exploitative). High negative reward → higher T (softer, more exploratory).
 
     Parameters
     ----------
@@ -282,11 +291,50 @@ def pipeline_step(
         c1_label = {}
 
     # Layer 3: Basal Ganglia Gate
-    selector = SwarmActionSelector()
+    # 3a — temperature adapted by global Dopamine Reward Loop
+    #       (Schultz, Dayan & Montague 1997: δ(t) = R(t) + γ·V(s') − V(s))
+    bg_temperature = DEFAULT_TEMPERATURE
+    recent_reward  = 0.0
+    try:
+        from System.dopamine_reward_loop import scan_reward_history
+        reward_history = scan_reward_history(lookback_hours=168.0)
+        bg_temperature = reward_history.get("suggested_temperature", DEFAULT_TEMPERATURE)
+        recent_reward  = reward_history.get("net_reward", 0.0)
+    except Exception:
+        pass  # dopamine module unavailable — use default T=0.3
+
+    # 3b — inject state-conditioned Q-values into C1 scores
+    #       (striatal dopamine modulation: score'(a) = c1(a) + λ_q·Q(s,a))
+    try:
+        from System.swarm_td_learning import extract_state, q_inject_scores
+        state_key = extract_state(
+            text=text,
+            stt_confidence=stt_confidence,
+            c1_action=c1_label.get("action", "ENGAGE"),
+            tool=c1_label.get("tool", "none"),
+            source="owner",       # caller can override via c1_label
+            social_frame=c1_label.get("social_frame", "owner"),
+            recent_reward=recent_reward,
+        )
+        c1_scores = q_inject_scores(state_key, c1_scores)
+    except Exception:
+        state_key = None  # TD module unavailable — use raw C1 scores
+
+    selector = SwarmActionSelector(temperature=bg_temperature)
     winner, probs = selector.select(c1_scores)
 
     # Layer 4: Corpus Callosum injection
     system_injection = build_c0_system_injection(winner, c1_label, probs)
+
+    # Layer 5 pre-step: register (state, action) for credit assignment
+    # When Architect reacts next turn, process_architect_reaction() reads this
+    # and fires the TD update automatically — closing the Schultz 1997 loop.
+    if winner != ACTION_SILENCE and state_key is not None:
+        try:
+            from System.dopamine_reward_loop import register_last_action
+            register_last_action(state_key, winner, text_preview=text[:80])
+        except Exception:
+            pass  # non-blocking — never fail the pipeline for a register write
 
     if log:
         log_selection(winner, probs, text)

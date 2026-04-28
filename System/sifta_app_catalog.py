@@ -97,8 +97,19 @@ def pinned_desktop_apps(manifest: Mapping[str, Mapping[str, object]]) -> list[st
     preferred = [
         "Alice",
         "System Settings",
-        "What Alice Sees",
         "App Manager",
         "SIFTA File Navigator",
     ]
-    return [name for name in preferred if name in manifest]
+    pins: list[str] = []
+    for name in preferred:
+        if name not in manifest:
+            continue
+        # Alice remains an identity anchor even when her floating app row is
+        # retired/hidden. The desktop body owns the visible surface.
+        if name == "Alice":
+            pins.append(name)
+            continue
+        if manifest[name].get("_retired") or manifest[name].get("hidden"):
+            continue
+        pins.append(name)
+    return pins

@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QPushButton,
     QPlainTextEdit, QVBoxLayout, QWidget, QFrame, QSplitter,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 
 # ── Global SIFTA Palette (reusable constants) ────────────────────
@@ -138,6 +138,55 @@ def _load_help_text(app_name: str) -> str:
     return block.strip()
 
 
+_APP_LOCAL_CHAT_ALLOWLIST = {
+    # The writer is intentionally a shared page where Alice can write beside
+    # the Architect. Other apps use the desktop-level Alice chat.
+    "Stigmergic Writer",
+}
+
+
+class _NoOpChatDisplay:
+    """Compatibility object for apps that previously wrote into `_gci.chat_display`."""
+
+    def append(self, *_args, **_kwargs) -> None:
+        return
+
+    def toPlainText(self) -> str:
+        return ""
+
+    def setPlainText(self, *_args, **_kwargs) -> None:
+        return
+
+
+class _DisabledAppChatBridge(QObject):
+    """
+    Non-visual bridge preserving the old `_gci` API without app-local chat UI.
+
+    A few legacy apps still emit context/status through `_gci`. Keeping this
+    small bridge prevents crashes while ensuring normal apps do not spawn a
+    second Alice conversation panel.
+    """
+
+    message_sent = pyqtSignal(str)
+    response_received = pyqtSignal(str)
+
+    def __init__(self, app_context: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.app_context = app_context
+        self._app_context_injection = ""
+        self._bus = None
+        self.chat_display = _NoOpChatDisplay()
+
+    def set_app_context(self, context: str) -> None:
+        self._app_context_injection = context
+
+    def set_model(self, _model: str) -> None:
+        return
+
+    def close(self) -> None:
+        return
+
+
 class SiftaBaseWidget(QWidget):
     """
     Universal base for all iSwarm OS apps.
@@ -187,30 +236,39 @@ class SiftaBaseWidget(QWidget):
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         self._splitter.addWidget(self._content_widget)
 
-        # ── Global Cognitive Interface (chat panel) ──────────────
+        # ── App-local cognitive interface ────────────────────────
+        # Desktop Alice is now the canonical OS chat. Normal apps receive a
+        # compatibility bridge only; Stigmergic Writer keeps the living page.
         self._gci = None
-        try:
-            from System.global_cognitive_interface import GlobalCognitiveInterface
-            self._gci = GlobalCognitiveInterface(
-                app_context=self.APP_NAME.lower().replace(" ", "_"),
-                entity_name="ALICE_M5",
-                architect_id="IOAN_M5",
-            )
-            self._gci.setMinimumWidth(280)
-            self._gci.setMaximumWidth(420)
-            self._splitter.addWidget(self._gci)
-            QTimer.singleShot(0, self._balance_gci_splitter)
-        except Exception:
-            pass  # GCI is optional; app works without it
+        self._gci_visible = self._should_enable_app_local_chat()
+        app_context = self.APP_NAME.lower().replace(" ", "_")
+        if self._gci_visible:
+            try:
+                from System.global_cognitive_interface import GlobalCognitiveInterface
+                self._gci = GlobalCognitiveInterface(
+                    app_context=app_context,
+                    entity_name="ALICE_M5",
+                    architect_id="IOAN_M5",
+                )
+                self._gci.setMinimumWidth(280)
+                self._gci.setMaximumWidth(420)
+                self._splitter.addWidget(self._gci)
+                QTimer.singleShot(0, self._balance_gci_splitter)
+            except Exception:
+                self._gci = _DisabledAppChatBridge(app_context, self)
+                self._gci_visible = False
+        else:
+            self._gci = _DisabledAppChatBridge(app_context, self)
 
         root.addWidget(self._splitter, 1)
 
         # ── Toggle chat button in the title bar ───────────────────
-        btn_chat = QPushButton("💬")
-        btn_chat.setObjectName("btnHelp")  # reuse the same compact style
-        btn_chat.setToolTip("Toggle Entity Chat")
-        btn_chat.clicked.connect(self._toggle_gci)
-        title_row.insertWidget(title_row.count() - 1, btn_chat)  # before the ? button
+        if self._gci_visible:
+            btn_chat = QPushButton("💬")
+            btn_chat.setObjectName("btnHelp")  # reuse the same compact style
+            btn_chat.setToolTip("Toggle Entity Chat")
+            btn_chat.clicked.connect(self._toggle_gci)
+            title_row.insertWidget(title_row.count() - 1, btn_chat)  # before the ? button
 
         self.build_ui(self._content_layout)
 
@@ -233,6 +291,18 @@ class SiftaBaseWidget(QWidget):
         self._timers.append(t)
         return t
 
+    def _should_enable_app_local_chat(self) -> bool:
+        if self.APP_NAME in _APP_LOCAL_CHAT_ALLOWLIST:
+            return True
+        import os
+
+        return os.environ.get("SIFTA_ENABLE_APP_LOCAL_CHAT", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
     @staticmethod
     def separator() -> QFrame:
         s = QFrame()
@@ -242,7 +312,7 @@ class SiftaBaseWidget(QWidget):
 
     def _balance_gci_splitter(self) -> None:
         """Give GCI a usable initial width (Qt often leaves the right pane at 0)."""
-        if not self._gci:
+        if not self._gci or not self._gci_visible:
             return
         from System.splitter_utils import balance_horizontal_splitter
 
@@ -257,7 +327,7 @@ class SiftaBaseWidget(QWidget):
 
     def _toggle_gci(self) -> None:
         """Show/hide the Global Cognitive Interface chat panel."""
-        if not self._gci:
+        if not self._gci or not self._gci_visible:
             return
         sizes = self._splitter.sizes()
         if sizes[1] < 10:  # collapsed—open it

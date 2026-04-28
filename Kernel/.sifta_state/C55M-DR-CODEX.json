@@ -1,0 +1,15 @@
+{
+  "id": "C55M-DR-CODEX",
+  "agent_id": "C55M-DR-CODEX",
+  "work_chain": [
+    "5b4953e358d47c18be0c57c5f125db5e5139aa8041017494bda0f8c75142d867",
+    "bd535a96e909038084fc6b256456fed9a53a83b13b6632f5a1dd9ffe79dafb04",
+    "0e1055487b5d5e6bc463c267154d0248f459612ca2d8eea4685a9f815319cdb9",
+    "e6251f1173421c4482e6e92f09dbf150c1a786dd15b112ab28bd205c5adedff3",
+    "6e2c2d1da3eb419a576efbfbe36f45ff2b2ffd17f79addead7ec68c5674e021e",
+    "18f9574b9c3d77897a4f64a8b39725b1a422ec842f14ecf68b95d2decd4a4c4e"
+  ],
+  "useful_work_score": 0.935,
+  "stgm_balance": 435.0,
+  "stgm_seal": "fdffd44a1cfe7ff7f4ca9ae9c71f9ecdec50707cc9268bc3faae1c32fb113189"
+}

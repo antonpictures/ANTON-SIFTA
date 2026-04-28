@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QSizePolicy,
 )
 from System.sifta_base_widget import SiftaBaseWidget
+from System.swarm_app_focus import publish_focus
 from PyQt6.QtCore  import Qt, QTimer, QRectF, QSize
 from PyQt6.QtGui   import (
     QFont, QColor, QPainter, QBrush, QPen,
@@ -252,6 +253,19 @@ def _fmt_stgm(value: float, precision: int = 4) -> str:
     return f"{_float(value):,.{precision}f} STGM"
 
 
+def _ledger_balance_map() -> dict[str, float]:
+    """Return canonical per-agent balances using the cached economy scan."""
+    try:
+        from System.stgm_economy import scan_economy
+
+        balances = scan_economy().as_dict().get("canonical_wallet_balances") or {}
+        if isinstance(balances, dict):
+            return {str(k).upper(): _float(v) for k, v in balances.items()}
+    except Exception:
+        pass
+    return {}
+
+
 def finance_truth_snapshot() -> dict:
     """Live, investor-safe STGM view for Finance and tests.
 
@@ -415,6 +429,7 @@ def load_agents():
             print(f"Genesis verification error: {e}")
 
     agents = []
+    quorum_balances = _ledger_balance_map()
     skip = {"circadian_m1","circadian_m5","identity_stats","intelligence_settings",
             "m1queen_identity_anchor","physical_registry","scheduler_m5",
             "state_bus","territory_manifest","m1queen_memory"}
@@ -458,7 +473,7 @@ def load_agents():
 
             data["sybil_quarantined"] = not is_valid
             # Canonical display: repair_log quorum (same as server / spend guards).
-            quorum_bal = _float(ledger_balance(agent_id))
+            quorum_bal = _float(quorum_balances.get(str(agent_id).upper(), 0.0))
             data["stgm_balance"] = quorum_bal
             data["stgm_cache_drift"] = round(file_bal - quorum_bal, 6)
             data["stgm_truth_source"] = "repair_log.jsonl quorum"
@@ -1086,6 +1101,8 @@ class FinanceDashboard(SiftaBaseWidget):
                 pass
 
         # ── Tabs ────────────────────────────────────────────────────
+        self.details_loaded = False
+        self._detail_refresh_tick = 0
         self.tabs = QTabWidget()
         self.tabs.setObjectName("FinanceTabs")
         self.tabs.setStyleSheet("QTabWidget::tab-bar { alignment: left; }")
@@ -1095,11 +1112,23 @@ class FinanceDashboard(SiftaBaseWidget):
         self.tabs.addTab(self.portfolio_tab, "Portfolio")
         self.tabs.addTab(self.market_tab, "Inference Market")
         self.tabs.addTab(self.warren_tab, "Warren Buffett")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         self._build_warren_tab()
         layout.addWidget(self.tabs)
 
         self._build_portfolio()
         self.make_timer(5000, self._refresh_all)
+
+    def _on_tab_changed(self, index: int) -> None:
+        tab_name = ["Portfolio", "Inference Market", "Warren Buffett"][index] if 0 <= index <= 2 else "Unknown"
+        try:
+            publish_focus(
+                self.APP_NAME,
+                f"Viewing Swarm Finance - {tab_name}",
+                tab=tab_name
+            )
+        except Exception:
+            pass
 
     def _build_warren_tab(self):
         wl = QVBoxLayout(self.warren_tab)
@@ -1220,6 +1249,18 @@ class FinanceDashboard(SiftaBaseWidget):
         sub_header.addWidget(agents_lbl)
         sub_header.addStretch()
 
+        self.details_status_lbl = QLabel("Basics loaded first · expanded stream paused")
+        self.details_status_lbl.setStyleSheet(
+            f"color: {_FIN_INK_SOFT}; border: none; background: transparent;"
+        )
+        sub_header.addWidget(self.details_status_lbl)
+
+        self.more_data_btn = QPushButton("More Financial Data")
+        self.more_data_btn.setObjectName("FinPillBtn")
+        self.more_data_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.more_data_btn.clicked.connect(self._load_more_financial_data)
+        sub_header.addWidget(self.more_data_btn)
+
         self.hide_inactive_cb = QCheckBox("Hide inactive")
         self.hide_inactive_cb.setObjectName("FinCheck")
         self.hide_inactive_cb.setChecked(True)
@@ -1255,25 +1296,31 @@ class FinanceDashboard(SiftaBaseWidget):
         scroll.setWidget(self.card_container)
         lay.addWidget(scroll, 1)
 
-        self._populate_portfolio()
+        self._refresh_basics()
+        self._show_details_placeholder()
 
-    def _populate_portfolio(self):
+    def _clear_cards(self):
         while self.card_lay.count():
             item = self.card_lay.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        agents = load_agents()
-        hide_inactive = self.hide_inactive_cb.isChecked()
-        if hide_inactive:
-            agents = [a for a in agents if int(a.get("energy") or 0) > 0
-                      or a.get("display_only")]
+    def _show_details_placeholder(self):
+        self._clear_cards()
+        empty = QLabel("Click More Financial Data to load vaults, agents, market, and Warren reports.")
+        empty.setStyleSheet(
+            f"color: {_FIN_INK_DIM}; font-size: 13px; "
+            "padding: 24px; background: transparent; border: none;"
+        )
+        empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.card_lay.addWidget(empty)
+        self.card_lay.addStretch()
 
+    def _refresh_basics(self):
         truth = finance_truth_snapshot()
         metabolic = truth["metabolic"]
         total = truth["canonical_wallet_sum"]
 
-        # Drive the visual widgets — never touch the numbers.
         self.hero_balance.set_value(total)
         self.tile_minted.set_value(truth["minted"], precision=4)
         self.tile_spent.set_value(truth["spend"], precision=4,
@@ -1285,17 +1332,15 @@ class FinanceDashboard(SiftaBaseWidget):
         self.tile_play.set_value(truth["casino_play_tokens"],
                                  precision=4, suffix="PLAY")
 
-        # Truth-source italic line.
         warns = truth.get("warnings") or []
         warn_str = ""
         if warns:
             warn_str = " · ⚠ " + ", ".join(str(w) for w in warns[:3])
         self.truth_lbl.setText(
-            f"Source: repair_log.jsonl quorum via inference_economy.ledger_balance"
+            "Source: repair_log.jsonl quorum via cached scan_economy()"
             f"{warn_str}"
         )
 
-        # Metabolic pill.
         mode = str(metabolic.get("mode", "UNKNOWN"))
         self.metabolic_pill.set_state(
             mode=mode,
@@ -1303,6 +1348,22 @@ class FinanceDashboard(SiftaBaseWidget):
             budget_mult=_float(metabolic.get("budget_multiplier")),
             recommendation=str(metabolic.get("recommendation", "")),
         )
+
+    def _load_more_financial_data(self):
+        self.details_loaded = True
+        self.more_data_btn.setText("Financial Data Loaded")
+        self.details_status_lbl.setText("Expanded stream active · throttled")
+        self._populate_portfolio()
+
+    def _populate_portfolio(self):
+        self._clear_cards()
+        self._refresh_basics()
+
+        agents = load_agents()
+        hide_inactive = self.hide_inactive_cb.isChecked()
+        if hide_inactive:
+            agents = [a for a in agents if int(a.get("energy") or 0) > 0
+                      or a.get("display_only")]
 
         if not agents:
             empty = QLabel(
@@ -1444,14 +1505,22 @@ class FinanceDashboard(SiftaBaseWidget):
 
         return f
 
-    def _refresh_all(self):
-        self._populate_portfolio()
-        self.market_tab.load_market()
-        self._refresh_warren()
+    def _refresh_all(self, *_):
+        self._detail_refresh_tick += 1
+        if not self.details_loaded:
+            self._refresh_basics()
+            return
+        if self._detail_refresh_tick % 3 == 0:
+            self._populate_portfolio()
+            self.market_tab.load_market()
+            self._refresh_warren()
+        else:
+            self._refresh_basics()
 
     def _install(self):
         dlg = InstallAgentDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.details_loaded = True
             self._refresh_all()
 
 # ─────────────────────────────────────────────────────────────
@@ -1531,7 +1600,7 @@ class MarketplaceTab(QWidget):
                     _tags = json.loads(_resp.read())
                     offer_models = [m["name"] for m in _tags.get("models", [])]
             except Exception:
-                offer_models = ["huihui_ai/gemma-4-abliterated:latest"]
+                offer_models = ["qwen3.5:2b"]
             listings[self.local_serial] = {
                 "timestamp": int(time.time()),
                 "stgm_price": 1.0,

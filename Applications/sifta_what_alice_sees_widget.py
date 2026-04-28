@@ -278,6 +278,17 @@ def _format_row(label: str, row: Dict) -> Optional[str]:
             if all(isinstance(v, (int, float)) for v in (ent, sal, mot, hue))
             else None
         )
+    if label == "FACE":
+        # face_detection_events.jsonl — canonical Vision.framework face organ.
+        audience = row.get("audience") or "unknown"
+        faces = row.get("faces_detected", 0)
+        conf = row.get("confidence", 0.0)
+        err = row.get("error")
+        if err:
+            return f"{audience}  faces={faces}  error={str(err)[:44]}"
+        if isinstance(conf, (int, float)):
+            return f"{audience}  faces={faces}  conf={conf:.2f}"
+        return f"{audience}  faces={faces}"
     return None
 
 
@@ -514,6 +525,9 @@ class _VideoCanvas(QWidget):
         self._chyron_color: QColor = QColor(180, 200, 240)
         self._error: Optional[str] = None
         self._show_overlay: bool = True   # toggled by the parent toolbar
+        # Ticker overlay: latest 3 ledger rows painted transparently ON the video
+        self._ticker_lines: list = []    # list of (text_str, QColor) tuples, max 3
+        self._show_ticker: bool = True
 
     # ── Public mutators (called by parent widget) ──────────────────────────
     def set_device_label(self, text: str) -> None:
@@ -533,6 +547,15 @@ class _VideoCanvas(QWidget):
 
     def set_overlay_visible(self, visible: bool) -> None:
         self._show_overlay = visible
+        self.update()
+
+    def set_ticker_lines(self, lines: list) -> None:
+        """Update the transparent ticker overlay. lines = list of (text, QColor)."""
+        self._ticker_lines = lines[-3:]   # last 3 only
+        self.update()
+
+    def set_ticker_visible(self, visible: bool) -> None:
+        self._show_ticker = bool(visible)
         self.update()
 
     def set_density(self, grid_size: int) -> None:
@@ -628,11 +651,39 @@ class _VideoCanvas(QWidget):
     def _paint_yield_overlay(self, p: QPainter, rect: QRectF) -> None:
         if not self._yield_lock_path.exists():
             return
-        # Dim the screen and show a high-contrast 'YIELDING' message
         p.fillRect(rect, QColor(0, 0, 0, 180))
         p.setPen(QColor(255, 50, 50))
         p.setFont(QFont("Menlo", 24, QFont.Weight.Bold))
         p.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), "⚠️  YIELDING CAMERA\nTO SUBSTRATE CLOSURE")
+
+    def _paint_ticker_overlay(self, p: QPainter, rect) -> None:
+        """Paint last 3 ledger rows transparently on the camera frame.
+        Position: bottom-right corner, above the chyron strip.
+        Each row: dim dark pill + colored text.
+        """
+        f = QFont("Menlo", 10)
+        fm = QFontMetrics(f)
+        row_h = fm.height() + 4
+        pad_x, pad_y = 10, 8
+        chyron_h = 56  # leave room for bottom chyron
+        n = len(self._ticker_lines)
+        block_h = n * row_h + pad_y * 2
+        # Position: bottom-right, above chyron
+        bx = rect.x() + rect.width() - 460
+        by = rect.y() + rect.height() - chyron_h - block_h - 4
+        # Draw translucent background pill
+        p.save()
+        p.setOpacity(0.78)
+        p.fillRect(QRectF(bx, by, 450, block_h), QColor(6, 8, 18, 195))
+        p.setOpacity(1.0)
+        p.setFont(f)
+        for i, (text, color) in enumerate(self._ticker_lines):
+            ty = by + pad_y + i * row_h
+            p.setPen(color)
+            p.drawText(QRectF(bx + pad_x, ty, 430, row_h),
+                       int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                       text)
+        p.restore()
 
     def _paint_message(self, p: QPainter, text: str, color: QColor) -> None:
         p.setPen(color)
@@ -752,17 +803,24 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         ("swarm_pain.jsonl",           "PAIN",  "🩸", (255, 90, 110)),
         ("acoustic_pheromones.jsonl",  "SOUND", "🔊", (160, 175, 210)),
         ("visual_stigmergy.jsonl",     "PHOTON","👁",  (255, 200, 90)),
+        ("face_detection_events.jsonl", "FACE", "🐾",  (0, 255, 180)),
     ]
 
+    # Signal emitted from face-detect thread → received on main thread.
+    # Carries (audience: str, chyron_text: str) — primitives only, no Qt objects.
+    _face_result_ready = pyqtSignal(str, str)
+
     def build_ui(self, layout: QVBoxLayout) -> None:
-        # ── Top toolbar (camera selector + pause + status pill) ────────────
+        # ── Top toolbar (camera selector only — buttons are on parent AliceWidget) ──
         bar = QHBoxLayout()
+
         bar.addWidget(QLabel("📷"))
         self._cam_combo = QComboBox()
         self._cam_combo.setMinimumWidth(280)
         self._cam_combo.currentIndexChanged.connect(self._on_cam_changed)
         bar.addWidget(self._cam_combo, 1)
-        # Stigmergy overlay is always ON — no toggle needed
+        # NOTE: hide photons / hide ticker buttons live on the parent AliceWidget.
+        # Do NOT add duplicate buttons here.
         bar.addStretch()
         layout.addLayout(bar)
 
@@ -814,24 +872,20 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
         layout.addLayout(density_bar)
 
-        # ── Splitter: video canvas (left, big) + event ticker (right) ──────
+        # ── Video canvas (full width — ticker overlay is ON the canvas) ─────
         split = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter = split
 
         self._canvas = _VideoCanvas()
         split.addWidget(self._canvas)
 
+        # Legacy _events QPlainTextEdit kept hidden (for internal writes)
+        # but the visual ticker is now an overlay on the canvas via set_ticker_lines().
         self._events = QPlainTextEdit()
         self._events.setReadOnly(True)
         self._events.setMaximumBlockCount(400)
-        self._events.setStyleSheet(
-            "QPlainTextEdit { background: rgb(8,10,18); color: rgb(200,210,240); "
-            "border: 1px solid rgb(45,42,65); border-radius: 6px; "
-            "font-family: 'Menlo'; font-size: 11px; padding: 6px; }"
-        )
-        split.addWidget(self._events)
-        split.setStretchFactor(0, 4)
-        split.setStretchFactor(1, 1)
-        split.setSizes([720, 280])
+        self._events.hide()           # hidden — ticker is painted on canvas
+        # Do NOT add _events to the splitter — canvas is full-width.
 
         layout.addWidget(split, 1)
 
@@ -914,6 +968,18 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             self._motor_pulse_offset = 0
         self._led_blinking: bool = False
         self.make_timer(250, self._poll_motor_pulses)
+
+        # ── Stigmergic Face Detection — every 10s via canonical organ ───────
+        # System.swarm_face_detection owns the Vision.framework schema and
+        # writes face_detection_events.jsonl. Photon math stays in
+        # visual_stigmergy.jsonl; never mix face rows into photon rows.
+        # We call it in a daemon thread so it never blocks the UI.
+        self._face_probe_running: bool = False
+        self.make_timer(10_000, self._probe_face_detection)
+        # Wire face-result signal → main-thread chyron update (NO Qt objects in thread)
+        self._face_result_ready.connect(self._on_face_result)
+        # First probe 3s after startup (let camera warm up first)
+        QTimer.singleShot(3000, self._probe_face_detection)
 
         # ── Oculomotor Saccade target subscriber ───────────────────────────
         # 2026-04-23 C47H surgery: was reading `.txt` and doing
@@ -1107,7 +1173,27 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
     def _on_overlay_toggled(self, on: bool) -> None:
         # Kept for compatibility — overlay is always ON
-        self._canvas.set_overlay_visible(True)
+        self.set_photon_overlay_visible(on)
+
+    def _toggle_overlay_from_button(self, on: bool) -> None:
+        self.set_photon_overlay_visible(on)
+
+    def _toggle_events_from_button(self, on: bool) -> None:
+        self.set_event_ticker_visible(on)
+
+    def set_photon_overlay_visible(self, visible: bool) -> None:
+        """Show/hide only the photon overlay; no synthetic fallback data."""
+        self._canvas.set_overlay_visible(bool(visible))
+        if hasattr(self, "_overlay_btn"):
+            self._overlay_btn.setChecked(bool(visible))
+            self._overlay_btn.setText("hide photons" if visible else "show photons")
+
+    def set_event_ticker_visible(self, visible: bool) -> None:
+        """Show/hide the live ledger ticker overlay on the camera feed."""
+        visible = bool(visible)
+        if hasattr(self, "_canvas"):
+            self._canvas.set_ticker_visible(visible)
+
 
     def _on_density_changed(self, value: int) -> None:
         """Slider moved — reconfigure Alice's photon density in real-time."""
@@ -1152,8 +1238,61 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             except Exception:
                 pass
 
+    # ── Stigmergic Face Detection ───────────────────────────────────────────
+    def _probe_face_detection(self) -> None:
+        """Probe the canonical face organ in a background thread.
+
+        The thread ONLY reads ledgers and emits a plain-string signal.
+        No Qt objects (QColor, QTimer, QLabel) are ever constructed off
+        the main thread — that causes SIGABRT on macOS with PyQt6.
+        The _face_result_ready signal carries (audience, text) and is
+        received by _on_face_result() on the main thread.
+        """
+        if self._face_probe_running:
+            return
+        self._face_probe_running = True
+
+        def _run():
+            try:
+                from System.swarm_face_detection import current_presence  # type: ignore
+                presence = current_presence(timeout_s=8.0)
+                audience = presence.audience
+                faces    = presence.faces_detected
+                conf     = presence.max_confidence
+                if audience == "architect":
+                    text = f"🐾 ARCHITECT RECOGNISED — {faces} face @ {conf:.0%}"
+                elif audience == "unknown_face":
+                    text = f"👤 UNKNOWN FACE — {faces} face(s) detected"
+                else:
+                    text = "👁 No face in frame"
+                # emit() is thread-safe in PyQt6 — it posts an event to the main loop
+                self._face_result_ready.emit(audience, text)
+            except Exception:
+                pass
+            finally:
+                self._face_probe_running = False
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_face_result(self, audience: str, text: str) -> None:
+        """Main-thread slot: update chyron with face detection result.
+        QColor is constructed here, safely on the main thread.
+        """
+        from PyQt6.QtGui import QColor  # already imported at module level; explicit for clarity
+        if audience == "architect":
+            color = QColor(0, 255, 180)
+        elif audience == "unknown_face":
+            color = QColor(255, 200, 50)
+        else:
+            color = QColor(120, 130, 160)
+        try:
+            self._canvas.set_chyron(text, color)
+        except Exception:
+            pass
+
     # ── Motor Cortex LED-wink subscriber ───────────────────────────────────
     def _poll_motor_pulses(self) -> None:
+
         """Tail motor_pulses.jsonl; on each new pulse with led_blink_ms > 0,
         wink the camera LED. Skipped while the user has manually paused."""
         if self._camera is None:
@@ -1320,6 +1459,13 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             # Show the freshest line on the chyron immediately too.
             ts, _label, formatted, color = self._recent[-1]
             self._canvas.set_chyron(formatted, color)
+            # Push last 3 rows to the transparent ticker overlay on the video
+            ticker = []
+            for ts_r, _lbl, fmt_r, col_r in list(self._recent)[-3:]:
+                clk = time.strftime("%H:%M:%S", time.localtime(ts_r))
+                ticker.append((f"{clk}  {fmt_r}", col_r))
+            self._canvas.set_ticker_lines(ticker)
+
 
     def _append_event_line(self, ts: float, spec: _LedgerSpec, msg: str) -> None:
         clk = time.strftime("%H:%M:%S", time.localtime(ts))

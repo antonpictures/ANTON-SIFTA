@@ -2,14 +2,17 @@
 """
 System/global_cognitive_interface.py — Global Cognitive Interface (GCI)
 ═══════════════════════════════════════════════════════════════════════════════
-The universal human ↔ entity interface layer of SIFTA Living OS.
+The shared-document human ↔ entity interface layer of SIFTA Living OS.
 
-Every app gets the same brain interface:
-  - Chat box (user ↔ entity, powered by local Ollama)
+Historically this was injected into every app. Alice chat now lives at the
+desktop/OS layer, so this widget is reserved for apps that are explicitly
+about co-writing with Alice, especially Stigmergic Writer:
+  - Shared page (user ↔ entity, powered by local Ollama)
   - Memory hook (auto-remember / auto-recall via StigmergicMemoryBus)
   - Document save/load (shared .sifta_documents/ folder)
 
-Not optional. Not per-app. Injected everywhere through SiftaBaseWidget.
+Normal apps receive a non-visual compatibility bridge from SiftaBaseWidget
+instead of this panel.
 
 Claude mapped the architecture. Gemini built it. The Architect owns it.
 """

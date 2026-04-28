@@ -2642,6 +2642,17 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # ── Visual context truth bridge ──────────────────────────────────────────
+    # Alice has live camera photons, but a photon grid is not the same as a
+    # semantic glasses/identity classifier. This block is the contract that
+    # prevents both failures: "I can see everything" and "I only process text."
+    visual_context_block = ""
+    try:
+        from System.swarm_visual_context import summary_for_alice as _visual_summary
+        visual_context_block = _visual_summary() or ""
+    except Exception:
+        pass
+
     # ── macOS Notification / Background Activity Ingress ───────────────────
     # Alice sees the OS-level background items that generate the "can run in
     # the background" banners, plus visible Notification Center text when
@@ -2888,6 +2899,7 @@ def _build_swarm_context() -> str:
                          whatsapp_world_block,
                          schedule_block,
                          persona_identity_block,
+                         visual_context_block,
                          swarm_block, cobuilder_block, ssp_context_block,
                          immune_context_block, ghost_context_block,
                          motor_context_block, lambda_context_block,
@@ -3056,7 +3068,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.set_status("Starting always-on listener…")
 
         # Kick off the always-on listener (deferred so the window paints first).
-        QTimer.singleShot(150, self._start_listener)
+        # Headless/offscreen tests must not open CoreAudio/PortAudio; doing so
+        # can leave native audio callbacks alive after Qt teardown. Interactive
+        # desktop boots remain always-listening unless explicitly disabled.
+        mic_disabled = (
+            os.environ.get("SIFTA_DISABLE_MIC_LISTENER", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        )
+        if mic_disabled:
+            self._set_pill("muted", "🎙  mic disabled for headless run")
+            self.set_status("Mic listener disabled by environment.")
+        else:
+            QTimer.singleShot(150, self._start_listener)
 
     def _submit_text_input(self) -> None:
         text = self._text_input.text().strip()

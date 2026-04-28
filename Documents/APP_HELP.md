@@ -63,6 +63,8 @@ Use this flow for any app:
 - **Purpose:** Protein-like fold search with Go contacts, WCA sterics, obstacles.
 - **What to watch:** Total energy, native-contact fraction Q, radius of gyration, acceptance rate.
 - **Key principle:** Decentralized low-energy search with constrained geometry.
+- **OS path:** Programs -> Simulations -> Stigmergic Fold Swarm (Cα / Go).
+- **Proof boundary:** folding mechanics and structural telemetry; not AlphaFold-grade biological prediction.
 
 ### Swarm Lounge (Cross-Domain Gossip)
 - **Purpose:** The digital subconscious. When the OS idles, swimmers from 6 domains (Network, Video, Browser, Cyborg, Finance, Calibrator) migrate to The Lounge and cross-pollinate their physics parameters via federated gossip. Based on real research in Federated Gossip Protocols and Transfer Learning.
@@ -797,8 +799,14 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 ### AG31 + C46S - PoUW Fold-Swarm Simulation
 **What it does:** Protein folding simulation using three physics engines simultaneously: Lennard-Jones potential (Van der Waals forces), Metropolis Monte Carlo (thermal sampling), and Ant Colony Optimization stigmergy (path finding). Verified folds mint real STGM via Proof-of-Useful-Work.
 **State:** fold results logged to `.sifta_state/work_receipts.jsonl`.
-**Control:** fold target, temperature, ACO pheromone rate.
+**Control:** Programs -> Simulations -> AG31 + C46S - PoUW Fold-Swarm Simulation; fold target, temperature, ACO pheromone rate.
 **Failure mode:** no STGM minted if fold fails verification gate.
+
+### C55M + George - Protein Fold Colosseum
+**What it does:** Co-signed deterministic protein folding baseline. It uses a 3D hydrophobic-polar lattice beam search, not the existing Lennard-Jones, Monte Carlo, ACO, Physarum, or Kabsch engines. The output is a real PDB plus JSON metadata that the SIFTA structural referee can compare against other engines.
+**State:** fold artifacts are written to `.sifta_state/protein_folds/`; the browser visualizer is `.sifta_state/protein_viewer.html`.
+**Control:** Programs -> Simulations -> C55M + George - Protein Fold Colosseum, or run `PYTHONPATH=. python3 Applications/sifta_protein_folder_widget.py --batch --beam 1024`.
+**Failure mode:** this is an HP-lattice baseline, not AlphaFold truth. Treat it as a fast falsifiable baseline and disagreement generator.
 
 ### AG31 + C46S + C55M + CG55M - ARTIFFICIAL GENERAL INTELLIGENCE.
 **What it does:** Master synthesis application. Math + Physics + Biocode + Time + Space + Art. Combines all simulation engines into one window. Every organ of the swarm rendered simultaneously. The OS looking at itself.

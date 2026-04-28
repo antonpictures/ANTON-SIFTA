@@ -255,9 +255,32 @@ class MagneticSubWindow(QMdiSubWindow):
         super().__init__(*args, **kwargs)
         self._is_snapping = False
         self._snap_threshold = 20
+        self._sifta_pinned_top_left: QPoint | None = None
+        self._sifta_repinning = False
+
+    def set_sifta_pinned(self, pinned: bool = True) -> None:
+        """Keep selected organs embedded: resizable, but not draggable."""
+        self._sifta_pinned_top_left = self.pos() if pinned else None
+
+    def _restore_pinned_position(self) -> None:
+        if self._sifta_pinned_top_left is None or self._sifta_repinning:
+            return
+        if self.pos() == self._sifta_pinned_top_left:
+            return
+        try:
+            self._sifta_repinning = True
+            self.move(self._sifta_pinned_top_left)
+        finally:
+            self._sifta_repinning = False
 
     def moveEvent(self, event):
-        if self._is_snapping:
+        if self._is_snapping or self._sifta_repinning:
+            super().moveEvent(event)
+            return
+
+        if self._sifta_pinned_top_left is not None:
+            if self.pos() != self._sifta_pinned_top_left:
+                self._restore_pinned_position()
             super().moveEvent(event)
             return
 
@@ -865,6 +888,7 @@ class LaunchpadWidget(QWidget):
         cats = ["All"] + sorted({
             _macos_app_category(name, dat)
             for name, dat in desktop._apps_manifest_cache.items()
+            if not dat.get("_retired") and not dat.get("hidden")
         })
 
         self._tab_btns: dict[str, QPushButton] = {}
@@ -904,7 +928,7 @@ class LaunchpadWidget(QWidget):
 
     def _populate_grid(self):
         for name, dat in sorted(self.desktop._apps_manifest_cache.items()):
-            if dat.get("_retired"):   # AG31: skip retired apps in Launchpad
+            if dat.get("_retired") or dat.get("hidden"):
                 continue
             cat = _macos_app_category(name, dat)
             icon = self._icon_for(name, cat)
@@ -1038,6 +1062,8 @@ class SpotlightWidget(QWidget):
         query = self.search_bar.text().strip().casefold()
         matches = []
         for name, dat in sorted(self.desktop._apps_manifest_cache.items()):
+            if dat.get("_retired") or dat.get("hidden"):
+                continue
             category = _macos_app_category(name, dat)
             haystack = " ".join((name, category, dat.get("entry_point", ""))).casefold()
             if not query or query in haystack:
@@ -1124,16 +1150,47 @@ class SiftaDesktop(QMainWindow):
         _desktop_init_trace("after mesh worker")
 
         main_layout.addWidget(self._build_top_menu_bar())
-        main_layout.addWidget(self.mdi, 1)
+
+        # ── Body layout: Alice fixed panel (left) + MDI apps area (right) ──
+        # §7.6/7.7/7.8: Alice IS the OS. Her Talk+Camera panel is a fixed
+        # resident of the desktop surface — resizable via splitter, but NEVER
+        # a floating MDI subwindow. Apps open in the MDI area to her right.
+        self._body_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._body_splitter.setHandleWidth(2)
+        self._body_splitter.setStyleSheet(
+            "QSplitter::handle { background: rgba(255,68,68,0.18); }"
+        )
+
+        # Alice resident panel — loaded after the app is shown to avoid
+        # blocking the boot paint. Width: ~38% of desktop.
+        self._alice_panel = QWidget()
+        self._alice_panel.setMinimumWidth(280)
+        self._alice_panel.setObjectName("AliceResidentPanel")
+        self._alice_panel_layout = QVBoxLayout(self._alice_panel)
+        self._alice_panel_layout.setContentsMargins(0, 0, 0, 0)
+        self._alice_panel_layout.setSpacing(0)
+        self._alice_resident: object = None  # set in _embed_alice_panel()
+
+        self._body_splitter.addWidget(self._alice_panel)
+        self._body_splitter.addWidget(self.mdi)
+        # Default split: 38% Alice, 62% MDI
+        self._body_splitter.setSizes([480, 800])
+        self._body_splitter.setStretchFactor(0, 0)   # Alice panel: fixed ratio
+        self._body_splitter.setStretchFactor(1, 1)   # MDI: takes all extra space
+
+        main_layout.addWidget(self._body_splitter, 1)
         main_layout.addWidget(self._build_dock())
 
         central.setLayout(main_layout)
         self.setCentralWidget(central)
+
         _desktop_init_trace("after setCentralWidget()")
         
         # self._build_desktop_shortcuts() # Removed by Architect
         self._load_apps_manifest_and_autostart()
         _desktop_init_trace("after _load_apps_manifest_and_autostart()")
+        # Embed Alice as resident panel after first paint (400ms gives MDI time to settle)
+        QTimer.singleShot(400, self._embed_alice_panel)
 
         # macOS-style overlays (not inside try/except — failures are visible in tests).
         self._spotlight = SpotlightWidget(self)
@@ -1244,6 +1301,11 @@ class SiftaDesktop(QMainWindow):
         env_wp = os.environ.get("SIFTA_DESKTOP_WALLPAPER", "").strip()
         if env_wp:
             yield env_wp
+        try:
+            from System.sifta_desktop_themes import wallpaper_path
+            yield wallpaper_path()
+        except Exception:
+            pass
         yield str(_REPO / "Library" / "Desktop Pictures" / "Mermaid Default.jpg")
         yield str(_REPO / "static" / "mermaid_os_wallpaper.png")
 
@@ -1309,18 +1371,57 @@ class SiftaDesktop(QMainWindow):
         except Exception as exc:
             print(f"[SiftaDesktop] attention director tick failed: {exc}", file=sys.stderr)
 
+    def _embed_alice_panel(self) -> None:
+        """
+        Instantiate AliceWidget directly into the fixed left panel.
+        §7.6/7.7/7.8: Alice is OS-resident — embedded, resizable, NOT moveable.
+        Camera starts open (DEFER_EYE=0). If already embedded, no-op.
+        """
+        if self._alice_resident is not None:
+            return  # already embedded
+        try:
+            import importlib, os as _os
+            _os.environ.setdefault("SIFTA_ALICE_UNIFIED_DEFER_EYE", "0")
+            _os.environ.setdefault("SIFTA_ALICE_BOOT_SILENT", "1")
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "sifta_alice_widget",
+                str(_REPO / "Applications" / "sifta_alice_widget.py"),
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            alice = mod.AliceWidget(parent=self._alice_panel)
+            self._alice_panel_layout.addWidget(alice)
+            self._alice_resident = alice
+            sys.stderr.write("[ALICE] Embedded as resident panel. Camera open, chat live.\n")
+        except Exception as exc:
+            import traceback
+            sys.stderr.write(f"[ALICE] Resident embed failed: {type(exc).__name__}: {exc}\n")
+            traceback.print_exc()
+
+
     def closeEvent(self, event):
         if hasattr(self, "_attention_director_timer"):
             self._attention_director_timer.stop()
+        # Close Alice first — she owns camera+mic QThreads.
+        # Give threads a moment to stop before Qt tears down the event loop.
         if hasattr(self, "mdi"):
             for sub in list(self.mdi.subWindowList()):
                 try:
+                    w = sub.widget()
+                    if w is not None:
+                        w.close()
+                        QApplication.processEvents()
                     sub.close()
                 except RuntimeError:
                     pass
             QApplication.processEvents()
         if getattr(self, "_desktop_mesh", None) is not None:
-            self._desktop_mesh.stop()
+            try:
+                self._desktop_mesh.stop()
+                self._desktop_mesh.wait(2000)
+            except Exception:
+                pass
         super().closeEvent(event)
 
     def _on_desktop_mesh_status(self, status):
@@ -1721,7 +1822,7 @@ class SiftaDesktop(QMainWindow):
                 " font-weight: normal; padding: 0 8px;"
             )
     # ── Window factories ───────────────────────────────────
-    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None, key=None):
+    def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None, key=None, pinned=False):
         # Singleton-by-key for EVERY caller. One click = one window. Re-clicks
         # raise the existing window instead of spawning duplicates. `key`
         # lets callers (e.g. spawn_native_widget) match the slot they
@@ -1944,6 +2045,9 @@ class SiftaDesktop(QMainWindow):
             if y_resolved > visible_max_y:
                 y_resolved = 40 + (nudge_attempt % 4) * 24
         sub.move(x_resolved, max(30, y_resolved))  # never overlap the top bar
+        if pinned:
+            sub.set_sifta_pinned(True)
+            sub.setToolTip("Pinned SIFTA organ: resizable, not draggable.")
         sub.show()
         self._open_windows[slot_key] = sub
         sub.destroyed.connect(lambda _k=slot_key: self._open_windows.pop(_k, None))
@@ -2039,13 +2143,13 @@ class SiftaDesktop(QMainWindow):
         x = max(0, (mdi_w - w) // 2)
         y = max(40, mdi_h - h - 10)  # Pin to bottom with small margin
         
-        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", w, h, "#565f89", x=x, y=y, key="SIFTA CORE CHAT")
+        sub  = self._make_sub(chat, "🐜 SIFTA CORE CHAT", w, h, "#565f89", x=x, y=y, key="SIFTA CORE CHAT", pinned=True)
         self.active_chat_sub = sub
         sub.destroyed.connect(lambda _obj=None, _sub=sub: setattr(self, "active_chat_sub", None) if self.active_chat_sub is _sub else None)
 
     def open_video_editor(self):
         editor = VideoEditorSubWindow()
-        self._make_sub(editor, "Aether Silence Remover & Stitcher", 750, 450, "#414868")
+        self._make_sub(editor, "Aether Silence Remover & Stitcher", 750, 450, "#414868", x=20, y=40, pinned=True)
 
     def spawn_text_editor(self, filepath=None):
         name = os.path.basename(filepath) if filepath else "Untitled"
@@ -2058,7 +2162,7 @@ class SiftaDesktop(QMainWindow):
         self._make_sub(EmbeddedScriptSubWindow(title, script_path), title, 860, 560, "#9ece6a")
 
     # ── Swarm-intelligent app launcher ───────────────────
-    def _launch_app(self, title, module_path, class_name, w=660, h=540):
+    def _launch_app(self, title, module_path, class_name, w=660, h=540, pinned=False):
         """Launch an app: record fitness, WM pheromone, suggest position."""
         record_launch(title)
         wm_record_open(title)
@@ -2079,7 +2183,7 @@ class SiftaDesktop(QMainWindow):
             win_w=w, win_h=h,
         )
         x, y = pos if pos else (60, 40)
-        self.spawn_native_widget(title, module_path, class_name, w=w, h=h, x=x, y=y)
+        self.spawn_native_widget(title, module_path, class_name, w=w, h=h, x=x, y=y, pinned=pinned)
 
 
     def _launch_terminal_app(self, title, entry):
@@ -2089,7 +2193,7 @@ class SiftaDesktop(QMainWindow):
         fs_record_access(entry)
         self.spawn_embedded_script(title, entry)
 
-    def spawn_native_widget(self, title, module_path, class_name, w=660, h=540, x=None, y=None):
+    def spawn_native_widget(self, title, module_path, class_name, w=660, h=540, x=None, y=None, pinned=False):
         """Import a SIFTA app module and embed its widget class inside the MDI.
         No subprocess. No separate QApplication. Stays inside Swarm OS.
 
@@ -2129,7 +2233,7 @@ class SiftaDesktop(QMainWindow):
             spec.loader.exec_module(mod)
             widget_cls = getattr(mod, class_name)
             widget = widget_cls()
-            sub = self._make_sub(widget, f"⚙ {title}", w, h, "#7aa2f7", x=x, y=y, key=title)
+            sub = self._make_sub(widget, f"⚙ {title}", w, h, "#7aa2f7", x=x, y=y, key=title, pinned=pinned)
         except Exception as e:
             self._open_windows.pop(title, None)       # clear sentinel on failure
             record_crash(title)
@@ -2189,6 +2293,11 @@ class SiftaDesktop(QMainWindow):
                   f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
     def _trigger_manifest_app(self, app_name: str):
+        if app_name in {"Alice", "Talk to Alice", "What Alice Sees"}:
+            # §7.6/7.7/7.8: Alice is the fixed resident panel — not a floating MDI window.
+            # _embed_alice_panel handles idempotency (no-op if already embedded).
+            self._embed_alice_panel()
+            return
         if app_name in self._apps_manifest_cache:
             dat = self._apps_manifest_cache[app_name]
             self._launch_app(
@@ -2328,7 +2437,7 @@ class SiftaDesktop(QMainWindow):
                 ("Launchpad",    self._toggle_launchpad),
                 ("Spotlight",    self._toggle_spotlight),
                 _sep,
-                ("Alice Health", lambda: self._trigger_manifest_app("Biological Dashboard")),
+                ("Body Status", lambda: self._trigger_manifest_app("Biological Dashboard")),
             ],
             "Window": [
                 ("Cascade Windows", self.mdi.cascadeSubWindows),
@@ -2564,8 +2673,7 @@ class SiftaDesktop(QMainWindow):
         sep.setStyleSheet("color: rgba(255,255,255,0.08);")
         pill_layout.addWidget(sep)
 
-        make_dock_btn("🧜‍♀️", "Alice",            lambda: self._trigger_manifest_app("Alice"))
-        make_dock_btn("💓",  "Alice Health",       lambda: self._trigger_manifest_app("Biological Dashboard"))
+        make_dock_btn("💓",  "Body Status",        lambda: self._trigger_manifest_app("Biological Dashboard"))
         make_dock_btn("💬",  "Swarm Chat",         self.open_swarm_chat)
         make_dock_btn("📚",  "Stigmergic Library", lambda: self._trigger_manifest_app("Stigmergic Library"))
         make_dock_btn("🗣️", "Conversation",       lambda: self._trigger_manifest_app("Conversation History"))
@@ -2592,53 +2700,15 @@ class SiftaDesktop(QMainWindow):
 # ──────────────────────────────────────────────────────────────
 
 # ── Global 2026 Dark Theme ────────────────────────────────────────────────────
-_GLOBAL_QSS = """
-QMainWindow, QDialog { background: #0d0e17; }
-QWidget { font-family: "Helvetica Neue", -apple-system, sans-serif; font-size: 13px; color: #c0caf5; }
-QMdiSubWindow { background: #13141f; border: 1px solid #2a2d3e; border-radius: 12px; }
-QMdiSubWindow > QWidget { background: #13141f; }
-QScrollBar:vertical { background: transparent; width: 5px; margin: 0; }
-QScrollBar::handle:vertical { background: #3b4261; border-radius: 2px; min-height: 24px; }
-QScrollBar::handle:vertical:hover { background: #7aa2f7; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-QScrollBar:horizontal { background: transparent; height: 5px; margin: 0; }
-QScrollBar::handle:horizontal { background: #3b4261; border-radius: 2px; min-width: 24px; }
-QScrollBar::handle:horizontal:hover { background: #7aa2f7; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
-QLineEdit { background: rgba(30,32,48,0.95); border: 1px solid #3b4261; border-radius: 8px; padding: 7px 12px; color: #c0caf5; selection-background-color: #3d59a1; }
-QLineEdit:focus { border: 1px solid #7aa2f7; }
-QTextEdit, QPlainTextEdit { background: rgba(19,20,31,0.95); border: 1px solid #2a2d3e; border-radius: 8px; padding: 8px; color: #c0caf5; selection-background-color: #3d59a1; }
-QPushButton { background: rgba(59,66,97,0.5); border: 1px solid #3b4261; border-radius: 8px; color: #c0caf5; padding: 6px 16px; font-weight: 500; }
-QPushButton:hover { background: rgba(187,154,247,0.22); border: 1px solid #bb9af7; color: #fff; }
-QPushButton:pressed { background: rgba(187,154,247,0.38); }
-QListWidget, QTreeWidget { background: rgba(19,20,31,0.9); border: 1px solid #2a2d3e; border-radius: 8px; color: #c0caf5; outline: none; }
-QListWidget::item, QTreeWidget::item { padding: 6px 12px; border-radius: 6px; }
-QListWidget::item:selected, QTreeWidget::item:selected { background: rgba(122,162,247,0.22); color: #7aa2f7; }
-QListWidget::item:hover, QTreeWidget::item:hover { background: rgba(59,66,97,0.4); }
-QTabWidget::pane { border: 1px solid #2a2d3e; border-radius: 8px; background: rgba(19,20,31,0.8); }
-QTabBar::tab { background: transparent; color: #565f89; padding: 7px 16px; border-bottom: 2px solid transparent; }
-QTabBar::tab:selected { color: #7aa2f7; border-bottom: 2px solid #7aa2f7; }
-QTabBar::tab:hover { color: #c0caf5; }
-QLabel { color: #c0caf5; background: transparent; }
-QComboBox { background: rgba(30,32,48,0.95); border: 1px solid #3b4261; border-radius: 8px; padding: 6px 12px; color: #c0caf5; }
-QComboBox:hover { border: 1px solid #7aa2f7; }
-QComboBox QAbstractItemView { background: #1e2030; border: 1px solid #3b4261; selection-background-color: rgba(122,162,247,0.22); }
-QSlider::groove:horizontal { background: #2a2d3e; height: 4px; border-radius: 2px; }
-QSlider::handle:horizontal { background: #7aa2f7; width: 14px; height: 14px; border-radius: 7px; margin: -5px 0; }
-QSlider::sub-page:horizontal { background: #7aa2f7; border-radius: 2px; }
-QCheckBox { color: #c0caf5; spacing: 8px; }
-QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #3b4261; border-radius: 4px; background: rgba(30,32,48,0.9); }
-QCheckBox::indicator:checked { background: #7aa2f7; border: 1px solid #7aa2f7; }
-QGroupBox { border: 1px solid #2a2d3e; border-radius: 8px; margin-top: 20px; padding-top: 12px; color: #565f89; font-size: 11px; }
-QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 8px; left: 12px; color: #565f89; }
-QToolTip { background: #1e2030; border: 1px solid #3b4261; border-radius: 6px; color: #c0caf5; padding: 4px 8px; font-size: 12px; }
-QMessageBox { background: #1a1b26; }
-QProgressBar { background: rgba(30,32,48,0.8); border: 1px solid #2a2d3e; border-radius: 5px; text-align: center; color: #c0caf5; font-size: 11px; }
-QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #7aa2f7,stop:1 #bb9af7); border-radius: 5px; }
-QSplitter::handle { background: #2a2d3e; }
-"""
+# _GLOBAL_QSS is now generated dynamically from the active theme palette.
+# This ensures Predator / Mermaid colors actually apply at boot.
+# The hardcoded Mermaid stylesheet has been removed (it was overriding the theme engine).
+def _get_global_qss() -> str:
+    try:
+        from System.sifta_desktop_themes import generate_global_qss
+        return generate_global_qss()
+    except Exception:
+        return ""  # fallback: no style (Qt defaults)
 
 if __name__ == "__main__":
 
@@ -2660,21 +2730,15 @@ if __name__ == "__main__":
         _n_swimmers = 1800
         _n_photons = 200
 
-    sys.stderr.write("\n")
-    sys.stderr.write("  ╔══════════════════════════════════════════╗\n")
-    sys.stderr.write(f"  ║  {_pal.os_line:<40s}║\n")
-    sys.stderr.write(f"  ║   🧜‍♀️  {_n_organs} organs  |  Body Panel live    ║\n")
-    sys.stderr.write("  ╚══════════════════════════════════════════╝\n")
-    sys.stderr.write("\n")
-    sys.stderr.write(f"  [BOOT] python : {sys.executable}\n")
+    # Shell script already printed the full banner with live theme+organ data.
+    # Python only emits the app path so crash logs are traceable.
     sys.stderr.write(f"  [BOOT] app    : {os.path.abspath(__file__)}\n")
-    sys.stderr.write(f"  [BOOT] vision swimmers : {_n_swimmers}\n")
-    sys.stderr.write(f"  [BOOT] desktop photons : {_n_photons}\n")
     sys.stderr.flush()
 
     app = QApplication(sys.argv)
     app.setFont(QFont("Helvetica Neue", 13))
-    app.setStyleSheet(_GLOBAL_QSS)
+    app.setStyleSheet(_get_global_qss())   # Predator / Mermaid from theme engine
+
 
     # ── Hot-Reload Organ (Epoch 4, C47H) — install once at boot. ─────────
     # After this, code patches to whitelisted modules can land via:

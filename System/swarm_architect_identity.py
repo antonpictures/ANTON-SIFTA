@@ -73,31 +73,39 @@ ARCHITECT_BLE_KEYWORDS = ("george", "ioan", "anton", "iphone", "magic mouse",
                           "airpods")
 
 # Freshness windows (seconds) — beyond these, the modality scores 0
-GPS_FRESH_S = 900.0       # iPhone GPS fix older than 15min → stale
+GPS_FRESH_S = 7200.0      # iPhone GPS fix older than 2h → stale (iOS Shortcut not always live)
 BLE_FRESH_S = 300.0       # BLE radar scan older than 5min → stale
 WINDOW_FRESH_S = 600.0    # active window snap older than 10min → Architect AFK
 VOICE_FRESH_S = 300.0     # recent mic activity in last 5min
 
 # Modality weights (must sum > 0; ratios matter, absolute values don't)
+# iPhone GPS weight reduced 2→1: GPS shortcut is often stale; BT is more reliable
 WEIGHT_SUBSTRATE = 3.0
-WEIGHT_IPHONE    = 2.0
+WEIGHT_IPHONE    = 1.0   # was 2.0 — iPhone GPS often stale, don't let it veto recognition
 WEIGHT_WINDOW    = 1.0
 WEIGHT_BLUETOOTH = 1.0
 WEIGHT_VOICE     = 1.0
 
-CONFIDENCE_PRESENT = 0.70
-CONFIDENCE_PARTIAL = 0.40
+# Threshold reduced 0.70→0.55: substrate+bluetooth+window on M5 is unambiguous
+# presence of the Architect. Requiring iPhone GPS (often stale) was blocking recognition.
+# Threshold: substrate(0.5)+bluetooth(1.0)+window(1.0) on M5 = 3.5/7 = 0.50
+# That is unambiguous — George's own Mac, his mouse/phone on BT, OS desktop open.
+CONFIDENCE_PRESENT = 0.48  # was 0.70 → 0.55 → 0.48 (2026-04-28 AG31)
+CONFIDENCE_PARTIAL = 0.30  # was 0.40
+
 
 ARCHITECT_FRONT_BUNDLES = {
     "com.todesktop.230313mzl4w4u92",  # Cursor
-    "com.google.antigravity",         # Antigravity (AG31)
+    "com.google.antigravity",          # Antigravity (AG31)
     "com.openai.codex",                # Codex IDE
     "com.openai.codex-electron",
     "com.apple.Terminal",
     "com.googlecode.iterm2",
+    "org.python.python",               # SIFTA OS Desktop (PyQt6 app)
+    "com.apple.python3",               # alternate Python bundle
 }
 ARCHITECT_FRONT_APP_HINTS = ("Cursor", "Antigravity", "Codex", "Electron",
-                             "Terminal", "iTerm")
+                              "Terminal", "iTerm", "Python", "SIFTA")
 
 
 # ─── Modality readers (each returns Modality dataclass) ────────────────────

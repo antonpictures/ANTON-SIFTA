@@ -48,6 +48,7 @@ import os
 import subprocess
 import sys
 import time
+from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -80,6 +81,17 @@ _OSA_FRONT_WINDOW = (
     '(first application process whose frontmost is true)'
 )
 
+_CHROMIUM_BROWSER_APPS = {
+    "Arc",
+    "Brave Browser",
+    "Chromium",
+    "Google Chrome",
+    "Microsoft Edge",
+    "Opera",
+    "Vivaldi",
+}
+_BROWSER_APPS = _CHROMIUM_BROWSER_APPS | {"Safari"}
+
 
 def _run_osascript(script: str, timeout_s: float = 1.5) -> Optional[str]:
     """One-shot osascript invocation; returns stdout stripped, or None
@@ -95,6 +107,169 @@ def _run_osascript(script: str, timeout_s: float = 1.5) -> Optional[str]:
         return text or None
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None
+
+
+def _applescript_string(value: str) -> str:
+    """Return a double-quoted AppleScript string literal."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _browser_tab_snapshot(app: Optional[str]) -> Dict[str, Any]:
+    """Return current tab URL/title for the frontmost browser, if scriptable."""
+    if not app or app not in _BROWSER_APPS:
+        return {}
+    app_lit = _applescript_string(app)
+    if app == "Safari":
+        script = (
+            f"tell application {app_lit}\n"
+            "  if not (exists front window) then return \"\"\n"
+            "  set tabUrl to URL of current tab of front window\n"
+            "  set tabTitle to name of current tab of front window\n"
+            "  return tabUrl & linefeed & tabTitle\n"
+            "end tell"
+        )
+    else:
+        script = (
+            f"tell application {app_lit}\n"
+            "  if not (exists front window) then return \"\"\n"
+            "  set tabUrl to URL of active tab of front window\n"
+            "  set tabTitle to title of active tab of front window\n"
+            "  return tabUrl & linefeed & tabTitle\n"
+            "end tell"
+        )
+    raw = _run_osascript(script, timeout_s=1.5)
+    if not raw:
+        return {}
+    lines = raw.splitlines()
+    url = lines[0].strip() if lines else ""
+    title = lines[1].strip() if len(lines) > 1 else ""
+    if not url:
+        return {}
+    video_id = _youtube_video_id(url)
+    return {
+        "url": url,
+        "title": title,
+        "is_youtube": bool(video_id),
+        "youtube_video_id": video_id or "",
+        "source": "frontmost_browser_tab",
+    }
+
+
+def _youtube_video_id(url: str) -> Optional[str]:
+    """Extract a YouTube video id from watch, youtu.be, shorts, or embed URLs."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return None
+    host = (parsed.netloc or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    path = (parsed.path or "").strip("/")
+    if host in {"youtube.com", "m.youtube.com"}:
+        if path == "watch":
+            video_id = parse_qs(parsed.query).get("v", [""])[0]
+            return video_id or None
+        parts = path.split("/")
+        if len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"}:
+            return parts[1] or None
+    if host == "youtu.be":
+        return path.split("/")[0] or None
+    return None
+
+
+def _youtube_title_from_window(window: Optional[str]) -> Optional[str]:
+    """Best-effort YouTube title from the actual frontmost macOS window title."""
+    if not window or "youtube" not in window.lower():
+        return None
+    title = window.strip()
+    if " — " in title:
+        # Safari profile/window prefix, e.g. "Personal — The video - YouTube".
+        title = title.split(" — ", 1)[1].strip()
+    for suffix in (" - YouTube", " — YouTube", " | YouTube"):
+        if title.endswith(suffix):
+            title = title[: -len(suffix)].strip()
+            break
+    return title or window
+
+
+def _focus_payload_from_snapshot(snap: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Convert a frontmost-window snapshot into a prompt-ready app-focus row."""
+    if not snap.get("ok"):
+        return None
+    app = snap.get("app") or "Unknown App"
+    window = snap.get("window") or "no front window"
+    browser = snap.get("browser") or {}
+    youtube_window_title = _youtube_title_from_window(window)
+    if browser.get("is_youtube") or youtube_window_title:
+        title = browser.get("title") if browser.get("is_youtube") else youtube_window_title
+        title = title or window
+        video_id = browser.get("youtube_video_id") or ""
+        detail = (
+            "The Architect is physically at this Mac, watching the frontmost "
+            f"YouTube video in {app}: {title}"
+        )
+        return {
+            "app_name": "YouTube",
+            "detail": detail,
+            "tab": app,
+            "selection": title,
+            "metadata": {
+                "url": browser.get("url", "") if browser.get("is_youtube") else "",
+                "youtube_video_id": video_id,
+                "frontmost_app": app,
+                "frontmost_window": window,
+                "source": "swarm_active_window",
+                "truth_note": "macOS frontmost browser/window observed by osascript",
+            },
+        }
+    if browser.get("url"):
+        title = browser.get("title") or window
+        return {
+            "app_name": app,
+            "detail": f"The Architect is browsing the frontmost tab: {title}",
+            "tab": "Browser",
+            "selection": title,
+            "metadata": {
+                "url": browser.get("url", ""),
+                "frontmost_window": window,
+                "source": "swarm_active_window",
+                "truth_note": "macOS frontmost browser tab observed by osascript",
+            },
+        }
+    return {
+        "app_name": app,
+        "detail": f"The Architect's frontmost macOS window is: {window}",
+        "tab": "",
+        "selection": window if window != "no front window" else "",
+        "metadata": {
+            "bundle_id": snap.get("bundle_id") or "",
+            "source": "swarm_active_window",
+            "truth_note": "macOS frontmost application observed by osascript",
+        },
+    }
+
+
+def _publish_app_focus_from_window(snap: Dict[str, Any]) -> None:
+    """Publish frontmost-window state to Alice's app-focus prompt ledger."""
+    payload = _focus_payload_from_snapshot(snap)
+    if not payload:
+        return
+    if (
+        payload.get("app_name") == "YouTube"
+        and (payload.get("metadata") or {}).get("youtube_video_id")
+    ):
+        try:
+            from System.swarm_youtube_context import observe_snapshot
+
+            if observe_snapshot(snap):
+                return
+        except Exception:
+            pass
+    try:
+        from System.swarm_app_focus import publish_focus
+
+        publish_focus(**payload)
+    except Exception:
+        pass
 
 
 def _lsappinfo_counts() -> Dict[str, Any]:
@@ -152,6 +327,7 @@ def read(*, force_refresh: bool = False) -> Dict[str, Any]:
         "app": app,
         "bundle_id": bundle,
         "window": window,
+        "browser": _browser_tab_snapshot(app),
         "counts": counts,
         "ok": bool(app and bundle),
         "writer": "swarm_active_window",
@@ -186,6 +362,7 @@ def write_snapshot(snap: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         deposit_pheromone(PHEROMONE_KEY, intensity)
     except Exception:
         pass
+    _publish_app_focus_from_window(snap)
 
     return snap
 
@@ -229,6 +406,15 @@ def prompt_line() -> Optional[str]:
         )
     app = snap["app"] or "(unknown app)"
     window = snap["window"]
+    browser = snap.get("browser") or {}
+    youtube_window_title = _youtube_title_from_window(window)
+    if browser.get("is_youtube") or youtube_window_title:
+        title = browser.get("title") if browser.get("is_youtube") else youtube_window_title
+        title = title or window or browser.get("youtube_video_id")
+        return f"current focus: {app} watching YouTube ({title})"
+    if browser.get("url"):
+        title = browser.get("title") or window or browser.get("url")
+        return f"current focus: {app} browser tab ({title})"
     if window:
         return f"current focus: {app} ({window})"
     return f"current focus: {app} (no front window)"
