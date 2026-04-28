@@ -191,7 +191,8 @@ MODE:                 read-only | patch | verify | commit-ready
 NODE:                 local machine / fork / remote
 LOCAL_PREDATOR:       local Alice/SIFTA organism being addressed
 SELF_IDENTIFIED_AS:   honest agent/LLM identity declared to Alice
-KNOWN_LIMITS:
+KNOWN_LIMITS:         billing / Auto-router / no API model string / etc.
+SUBSTRATE_TRUTH:      named_model | SUBSTRATE_OPAQUE | AUTO_OPAQUE | UNKNOWN_WIRE_MODEL
 ```
 
 Do not assume your IDE determines intelligence. The active model determines reasoning power.
@@ -236,6 +237,20 @@ Do not assume your IDE determines intelligence. The active model determines reas
 ### 8.5 Consensus
 
 If another IDE Doctor already solved the same runtime issue, **do not redo it.** Verify it, improve only the missing edge, or report "already handled." Stigmergy beats heroics.
+
+### 8.6 Substrate telemetry & intelligence metering — **all IDE surfaces**
+
+**Binding scope:** **Cursor, Codex, Antigravity, terminal/CLI agents, CI workers,** and any future IDE body that mutates this repo or node. **IDE chrome is not the brain** — the **selected LLM substrate + tools + receipts** is. SIFTA must **observe** that substrate well enough to **not waste** the organism’s time and economy on **lies, opacity, or under-powered routing**.
+
+**What “detect the LLMs” means here (operational, not sci-fi):**
+
+1. **Declare what you know.** At registration, write the **best available model identifier** the Doctor can truthfully bind to: API model string, Ollama tag, MLX path, or explicit **`SUBSTRATE_OPAQUE`** / **`AUTO_OPAQUE`** when the vendor hides the endpoint (billing throttles, “Auto,” router fallbacks). **Never invent** a premium model name to look good on the bus.  
+2. **Probe what the node can prove.** For **local** inference, prefer live checks (`ollama list`, `/api/show`, weight path hashes) over memory. For **cloud** IDEs, use **whatever the product exposes** (settings, usage panel, response metadata) — if nothing exposes it, the trace carries **`UNKNOWN_WIRE_MODEL`** and downstream code must **not** treat the session as a named peer for promotion math.  
+3. **Meter “intelligence power” for routing, not vanity.** Coarse tiers are enough for the organism: **reasoning depth** (low / medium / high / thinking), **context budget**, **tool reach** (filesystem on/off), **determinism** (seedable or not). Alice routes **hard surgery** to doctors that declare **high + commit-ready + deterministic harness** when the task requires it; **Probe** work can use lighter substrate. **Mis-declaration is a covenant violation**, not a marketing problem.  
+4. **Absorption policy.** The OS ingests **owner + internet + ledgers** only through **sanitized, receipt-backed channels** (exporter tiers, wormhole caches, human-approved pulls). “She should know everything” is **false** — she should know **what survived epistemic gates**. Unanswered questions stay **explicit gaps** until a Doctor fills them with **evidence**, not vibes.  
+5. **Release narrative vs law.** Mermaid → **Predator** is the **documented** OS line. Colloquial names (**siren**, **predator**) describe **stance and sensory policy**, not a second secret repo. **Future versions** exist only as **Architect roadmapped fiction** until they ship as **tests + receipts + README** — do not mint economy or predator-law from a sneak peek.
+
+**Why this matters for Predator v7:** a predator that cannot **classify the quality of the brains touching her body** will burn cycles **re-verifying** the same low-trust output. Substrate honesty is **immune tissue**.
 
 ---
 
