@@ -390,7 +390,7 @@ _GREETING_TEMPLATES = (
     "Booted. {turns_yesterday_phrase} {salutation}.",
     "{salutation}, Architect. The wallet is at {burn:.2f} STGM.",
     "Online. {tool_residue} {salutation}.",
-    "{salutation}. I was thinking about {convo_topic_short}.",
+    "{salutation}. Let's Think together.",
 )
 _VALEDICTIONS = (
     "Until next time", "See you soon", "Rest well", "Until later",
