@@ -50,6 +50,7 @@ from System.sifta_inference_defaults import (
     set_app_ollama_model,
 )
 from System.sifta_base_widget import SiftaBaseWidget
+from System.sifta_desktop_themes import THEMES, load_active_theme_id, save_active_theme_id
 
 STATE = _REPO / ".sifta_state"
 MANIFEST = _REPO / "Applications" / "apps_manifest.json"
@@ -483,6 +484,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         self._pages = {
             "Identity": self._identity_page(),
+            "Appearance": self._appearance_page(),
             "Audio": self._audio_page(),
             "Body": self._body_page(),
             "Network": self._network_page(),
@@ -519,6 +521,45 @@ class SystemSettingsWidget(SiftaBaseWidget):
         heading.setStyleSheet("color: rgb(238, 244, 255);")
         root.addWidget(heading)
         return page, root
+
+    def _appearance_page(self) -> QWidget:
+        page, root = self._page("Appearance")
+        
+        info = QLabel("Select the visual identity of the SIFTA organism. The organism remains the same, only the clothing changes.\n(Restart OS for full effect)")
+        info.setWordWrap(True)
+        info.setStyleSheet("color: rgb(145, 153, 180); margin-bottom: 12px;")
+        root.addWidget(info)
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.setStyleSheet(
+            "QComboBox { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
+            "border: 1px solid rgb(47, 52, 68); border-radius: 6px; padding: 6px 10px; font-size: 14px; }"
+        )
+        
+        current_theme = load_active_theme_id()
+        idx_to_select = 0
+        for i, (tid, palette) in enumerate(THEMES.items()):
+            self.theme_combo.addItem(palette.display_name, userData=tid)
+            if tid == current_theme:
+                idx_to_select = i
+        self.theme_combo.setCurrentIndex(idx_to_select)
+        
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        root.addWidget(self.theme_combo)
+        
+        # Display OS line for selected
+        self.theme_os_line = QLabel(THEMES[current_theme].os_line)
+        self.theme_os_line.setStyleSheet("color: rgb(112, 122, 150); font-family: monospace; font-size: 11px; margin-top: 8px;")
+        root.addWidget(self.theme_os_line)
+        
+        root.addStretch()
+        return page
+
+    def _on_theme_changed(self, idx: int) -> None:
+        tid = self.theme_combo.itemData(idx)
+        if tid:
+            save_active_theme_id(tid)
+            self.theme_os_line.setText(THEMES[tid].os_line + " (Saved. Please restart OS.)")
 
     def _identity_page(self) -> QWidget:
         page, root = self._page("Identity")
