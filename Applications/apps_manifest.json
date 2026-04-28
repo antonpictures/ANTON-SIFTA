@@ -482,12 +482,12 @@
     "widget_class": "AliceWidget",
     "window_width": 1000,
     "window_height": 850,
-    "autostart": true,
+    "autostart": false,
     "signature": "UNVERIFIED",
     "_note": "Alice IS the OS. The resident Alice surface is embedded by the desktop shell; this manifest row remains launchable for focus routing but must not spawn a second app window.",
     "autostart_order": 2,
     "autostart_delay_ms": 2000,
-    "_autostart_note": "AG31 \u00a77.6: Alice brain strip \u2014 visual cortex on desktop boot."
+    "_autostart_note": "AG31 CORRECTION: Talk to Alice is the one canonical Alice surface. Alice widget must not double-spawn."
   },
   "Terminal": {
     "category": "Utilities",
