@@ -3,6 +3,7 @@ SIFTA Python OS Simulator
 Desktop Environment Manager — Stabilized Build
 Claude/Anthropic audit pass: syntax errors patched, SwarmChatWindow wired to Ollama.
 """
+from __future__ import annotations
 
 import sys
 import os
@@ -1326,12 +1327,16 @@ class SiftaDesktop(QMainWindow):
         if not self._attention_director_enabled():
             return
         try:
-            from System.swarm_sensor_attention_director import tick
+            from System.swarm_sensor_attention_director import tick_with_drive
 
-            decision = tick(write_hardware=True)
+            decision, drive = tick_with_drive(write_hardware=True)
+            if hasattr(self, "_attention_director_timer"):
+                next_ms = int(max(0.75, min(10.0, drive.next_interval_s)) * 1000)
+                if self._attention_director_timer.interval() != next_ms:
+                    self._attention_director_timer.setInterval(next_ms)
             if hasattr(self, "_alice_status_label") and not self._alice_status_label.text():
                 role = "room" if decision.target_role == "room_patrol_eye" else "near"
-                self._alice_status_label.setText(f"👁  {role} eye")
+                self._alice_status_label.setText(f"👁  {role} eye · desire {drive.desire:.2f}")
                 self._alice_status_label.setStyleSheet(
                     "color: #7dcfff; font-size: 12px; font-weight: bold;"
                     " background: transparent; padding: 0 12px;"
