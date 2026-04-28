@@ -390,11 +390,8 @@ _FAREWELL_TEMPLATES = (
     "{valediction}. The library is one nugget heavier.",
 )
 _GREETING_TEMPLATES = (
-    "Awake. {convo_residue} {salutation}, Architect.",
-    "Booted. {turns_yesterday_phrase} {salutation}.",
-    "{salutation}, Architect. The wallet is at {burn:.2f} STGM.",
-    "Online. {tool_residue} {salutation}.",
-    "{salutation}.",
+    # Architect-specified identity line — always this, no stochastic variation.
+    "SIFTA Predator v7.0. Let's Think Together!",
 )
 _VALEDICTIONS = (
     "Until next time", "See you soon", "Rest well", "Until later",

@@ -263,7 +263,10 @@ class PredatorDesktopBg(QWidget):
         w, h = self.width(), self.height()
         t = time.monotonic() - self._t0
 
-        # ── 1. Dark predator background ───────────────────────────────────────
+        # ── Predator v7.0 visuals now live in the Pac-Man game app ──────────
+        # Desktop bg disabled (energy cost). Launch via Programs → Games.
+        # QTimer.singleShot(300, self._embed_predator_visuals)
+
         grad = QLinearGradient(0, 0, w, h)
         grad.setColorAt(0.0, QColor(4, 4, 12))
         grad.setColorAt(0.5, QColor(8, 12, 22))
@@ -446,20 +449,20 @@ class OrganStatusPanel(QWidget):
 
             # Icon + name
             p.setPen(QColor(color))
-            p.setFont(QFont("Apple Color Emoji", 10))
+            p.setFont(QFont("Apple Color Emoji", 12))
             p.drawText(20, y, icon)
 
-            p.setFont(QFont("Menlo", 8))
+            p.setFont(QFont("Menlo", 12))
             p.setPen(QColor(180, 220, 200))
             p.drawText(38, y, name)
 
             # Truth badge
             p.setPen(tc)
-            p.setFont(QFont("Menlo", 7, QFont.Weight.Bold))
+            p.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
             badge = truth.replace("REAL_CPU", "CPU✓").replace("REAL_GPU", "GPU✓").replace("REAL", "✓")
-            p.drawText(38, y + 10, badge)
+            p.drawText(38, y + 14, badge)
 
-            y += 30
+            y += 36
             if y > self.height() - 20:
                 break
 
