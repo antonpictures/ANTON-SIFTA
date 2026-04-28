@@ -99,7 +99,11 @@ class ProteinFoldingBroker:
         return f"{engine}_{h}"
 
     def run(self, job: FoldingJob) -> dict:
-        seq = self.validate_sequence(job.sequence)
+        # alphafold_db uses UniProt ID, proteinmpnn uses existing PDB — no sequence needed
+        if job.engine in ("alphafold_db", "proteinmpnn"):
+            seq = job.sequence or "A"
+        else:
+            seq = self.validate_sequence(job.sequence)
         out = Path(job.out_dir)
         out.mkdir(parents=True, exist_ok=True)
 
