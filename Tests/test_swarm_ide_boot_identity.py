@@ -6,9 +6,12 @@ from pathlib import Path
 import pytest
 
 from System.swarm_ide_boot_identity import (
+    OPAQUE_MODEL_LABEL,
     boot_glyph_reference,
+    classify_model_claim,
     decode_tripartite_boot_seal,
     detect_ide_app_id,
+    is_opaque_model_label,
     real_time_iso,
     resolve_boot_identity,
     resolve_current_boot_identity,
@@ -63,6 +66,8 @@ def test_resolves_latest_active_cursor_identity(tmp_path: Path):
 
     assert ident.trigger_code == "CG55M"
     assert ident.model_label == "GPT-5.5 Medium"
+    assert ident.declared_model_label == "GPT-5.5 Medium"
+    assert ident.model_claim().router_visible is True
     assert ident.stigauth_line() == "CG55M@cursor: GPT-5.5 Medium [ARCHITECT_UI_TRUTH]"
     assert ident.signature_line(now=1_777_057_500.0).startswith(
         "CG55M@cursor: GPT-5.5 Medium [ARCHITECT_UI_TRUTH] "
@@ -73,6 +78,7 @@ def test_resolves_latest_active_cursor_identity(tmp_path: Path):
     assert glyph.startswith("SIFTA_IDE_BOOT_GLYPH|v=1|")
     assert "trigger=CG55M" in glyph
     assert "ide=cursor" in glyph
+    assert "confidence=declared_exact" in glyph
     assert "last_real_time=" in glyph
     assert "rule=body_first_no_double_spend" in glyph
     assert f"seal={tripartite_boot_seal()}" in glyph
@@ -143,6 +149,82 @@ def test_resolves_antigravity_identity_with_ag_prefix(tmp_path: Path):
 
     assert ident.trigger_code == "AG31"
     assert ident.stigauth_line() == "AG31@antigravity: Gemini 3.1 Pro [ARCHITECT_STATEMENT]"
+
+
+def test_model_claim_marks_auto_and_unknown_as_opaque_for_all_ide_surfaces(tmp_path: Path):
+    reg = tmp_path / "ide_model_registry.jsonl"
+    _write_rows(
+        reg,
+        [
+            {
+                "ide_app_id": "cursor",
+                "ide_surface": "cursor_ide_m5",
+                "currently_active": True,
+                "trigger_code": "CG55M",
+                "model_label": "Auto",
+                "grounding_label": "ARCHITECT_UI_TRUTH",
+                "seen_at_ts": 1.0,
+            },
+            {
+                "ide_app_id": "codex",
+                "ide_surface": "codex_app_m5",
+                "currently_active": True,
+                "trigger_code": "C55M",
+                "model_label": "billing fallback",
+                "grounding_label": "CODEX_APP_UI_OBSERVED",
+                "seen_at_ts": 1.0,
+            },
+            {
+                "ide_app_id": "antigravity",
+                "ide_surface": "antigravity_ide_tab",
+                "currently_active": True,
+                "trigger_code": "AG31",
+                "model_label": "unknown router",
+                "grounding_label": "ARCHITECT_STATEMENT",
+                "seen_at_ts": 1.0,
+            },
+        ],
+    )
+
+    cursor = resolve_boot_identity("cursor", registry_path=reg)
+    codex = resolve_boot_identity("codex", registry_path=reg)
+    antigravity = resolve_boot_identity("antigravity", registry_path=reg)
+
+    assert cursor.model_label == "Auto"
+    assert cursor.declared_model_label == OPAQUE_MODEL_LABEL
+    assert cursor.model_claim().router_visible is False
+    assert cursor.model_claim().grounding_label == "CURSOR_AUTO_ROUTER_OPAQUE"
+    assert cursor.stigauth_line() == "CG55M@cursor: AUTO_OPAQUE [CURSOR_AUTO_ROUTER_OPAQUE]"
+    assert cursor.identity_banner() == "CG55M@cursor_ide_m5 / AUTO_OPAQUE / Cursor IDE"
+
+    assert codex.declared_model_label == OPAQUE_MODEL_LABEL
+    assert codex.model_claim().grounding_label == "CODEX_AUTO_ROUTER_OPAQUE"
+    assert "not cryptographic vendor-router attestation" in codex.model_claim().known_limits
+
+    assert antigravity.declared_model_label == OPAQUE_MODEL_LABEL
+    assert antigravity.model_claim().grounding_label == "ANTIGRAVITY_AUTO_ROUTER_OPAQUE"
+
+
+def test_model_claim_helper_keeps_exact_models_exact():
+    claim = classify_model_claim(
+        "codex",
+        "GPT-5.5 Extra High",
+        grounding_label="CODEX_APP_UI_OBSERVED",
+    )
+
+    assert claim.declared_model == "GPT-5.5 Extra High"
+    assert claim.router_visible is True
+    assert claim.model_confidence == "declared_exact"
+    assert claim.grounding_label == "CODEX_APP_UI_OBSERVED"
+    assert claim.known_limits == ""
+
+
+def test_opaque_model_label_detection_is_conservative():
+    assert is_opaque_model_label("Auto")
+    assert is_opaque_model_label("hidden-router")
+    assert is_opaque_model_label("")
+    assert not is_opaque_model_label("Gemini 3.1 Pro Extra High")
+    assert not is_opaque_model_label("Claude Opus 4.7")
 
 
 def test_detect_ide_app_id_honors_explicit_env_override():

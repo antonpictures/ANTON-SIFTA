@@ -253,6 +253,17 @@ def _publish_app_focus_from_window(snap: Dict[str, Any]) -> None:
     payload = _focus_payload_from_snapshot(snap)
     if not payload:
         return
+    if (
+        payload.get("app_name") == "YouTube"
+        and (payload.get("metadata") or {}).get("youtube_video_id")
+    ):
+        try:
+            from System.swarm_youtube_context import observe_snapshot
+
+            if observe_snapshot(snap):
+                return
+        except Exception:
+            pass
     try:
         from System.swarm_app_focus import publish_focus
 
