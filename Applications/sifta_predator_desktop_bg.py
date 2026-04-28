@@ -252,6 +252,11 @@ class PredatorDesktopBg(QWidget):
             self._swimmers.append(Swimmer(w, h))
         self.update()
 
+    def closeEvent(self, event):
+        self._timer.stop()
+        self._ledger_timer.stop()
+        super().closeEvent(event)
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -463,6 +468,10 @@ class OrganStatusPanel(QWidget):
         p.setFont(QFont("Menlo", 7))
         p.drawText(8, self.height() - 8, "🐜 For the Swarm")
         p.end()
+
+    def closeEvent(self, event):
+        self._timer.stop()
+        super().closeEvent(event)
 
 
 # ── Entry point (standalone test) ─────────────────────────────────────────────

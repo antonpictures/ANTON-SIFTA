@@ -580,9 +580,16 @@ def _write_status(state_dir: Path, row: dict[str, Any], drive: AttentionDrive) -
     }
     path = _state_path(state_dir, _STATUS_JSON)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp.write_text(json.dumps(status, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(status, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:
+        # Non-fatal: status file is read-only convenience; ledger is the truth.
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def tick_with_drive(
