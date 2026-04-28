@@ -502,7 +502,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         for name, page in self._pages.items():
             self.sidebar.addItem(QListWidgetItem(name))
             self.stack.addWidget(page)
-        self.sidebar.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.sidebar.currentRowChanged.connect(self._on_sidebar_changed)
         self.sidebar.setCurrentRow(0)
 
         row = QHBoxLayout()
@@ -513,6 +513,18 @@ class SystemSettingsWidget(SiftaBaseWidget):
         layout.addLayout(row)
         self.refresh()
         QTimer.singleShot(0, self._collapse_entity_chat)
+
+    def _on_sidebar_changed(self, index: int) -> None:
+        self.stack.setCurrentIndex(index)
+        page_name = list(self._pages.keys())[index] if 0 <= index < len(self._pages) else "Unknown"
+        try:
+            publish_focus(
+                self.APP_NAME,
+                f"Configuring {page_name} settings",
+                tab=page_name
+            )
+        except Exception:
+            pass
 
     def _collapse_entity_chat(self) -> None:
         if getattr(self, "_gci", None):

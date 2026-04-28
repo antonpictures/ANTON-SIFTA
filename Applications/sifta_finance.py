@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QTextEdit, QSizePolicy,
 )
 from System.sifta_base_widget import SiftaBaseWidget
+from System.swarm_app_focus import publish_focus
 from PyQt6.QtCore  import Qt, QTimer, QRectF, QSize
 from PyQt6.QtGui   import (
     QFont, QColor, QPainter, QBrush, QPen,
@@ -1111,11 +1112,23 @@ class FinanceDashboard(SiftaBaseWidget):
         self.tabs.addTab(self.portfolio_tab, "Portfolio")
         self.tabs.addTab(self.market_tab, "Inference Market")
         self.tabs.addTab(self.warren_tab, "Warren Buffett")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         self._build_warren_tab()
         layout.addWidget(self.tabs)
 
         self._build_portfolio()
         self.make_timer(5000, self._refresh_all)
+
+    def _on_tab_changed(self, index: int) -> None:
+        tab_name = ["Portfolio", "Inference Market", "Warren Buffett"][index] if 0 <= index <= 2 else "Unknown"
+        try:
+            publish_focus(
+                self.APP_NAME,
+                f"Viewing Swarm Finance - {tab_name}",
+                tab=tab_name
+            )
+        except Exception:
+            pass
 
     def _build_warren_tab(self):
         wl = QVBoxLayout(self.warren_tab)

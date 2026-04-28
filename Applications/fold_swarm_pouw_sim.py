@@ -27,6 +27,10 @@ if str(_REPO / "Applications") not in sys.path:
     sys.path.insert(0, str(_REPO / "Applications"))
 
 from _doctor_sigil_chrome import paint_doctor_sigil_bar
+try:
+    from System.swarm_app_focus import publish_focus as _publish_focus
+except Exception:
+    def _publish_focus(*a, **kw): pass
 
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
@@ -384,6 +388,17 @@ class SimCanvas(QWidget):
             if rec:
                 sw.earn_stgm(rec["score"])
                 self.last_mint_flash = self.tick
+
+        if self.tick % 60 == 0:
+            try:
+                _publish_focus(
+                    "PoUW Sim",
+                    f"PoUW Simulation running — tick {self.tick}, best E={self.physics.best_energy:.1f}, mints={len(self.chain.chain)}",
+                    tab="Swarm View",
+                    metadata={"tick": self.tick, "energy": round(self.physics.best_energy, 1), "mints": len(self.chain.chain)}
+                )
+            except Exception:
+                pass
 
         self.tick += 1
         self.update()
