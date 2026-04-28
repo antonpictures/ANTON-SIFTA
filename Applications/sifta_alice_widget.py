@@ -121,7 +121,7 @@ class AliceWidget(QWidget):
         self._splitter = QSplitter(Qt.Orientation.Vertical, self)
 
         self._talk = TalkToAliceWidget()
-        defer_raw = os.environ.get("SIFTA_ALICE_UNIFIED_DEFER_EYE", "1").strip().lower()
+        defer_raw = os.environ.get("SIFTA_ALICE_UNIFIED_DEFER_EYE", "0").strip().lower()
         self._defer_eye = defer_raw not in ("0", "false", "no", "")
         self._sees: Optional[WhatAliceSeesWidget] = None
         self._eye_placeholder: Optional[QWidget] = None

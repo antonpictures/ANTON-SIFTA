@@ -6,13 +6,12 @@ Alice's WhatsApp arm. Resolves human nicknames to JIDs and injects the message
 into the Baileys Node.js bridge.
 """
 
-import hashlib
 import json
 import urllib.request
 import urllib.error
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from System.whatsapp_social_graph import (
     contact_rows_for_alice,
@@ -29,7 +28,6 @@ _INJECT_URL = "http://127.0.0.1:3001/system_inject"
 
 SCHEMA = "SIFTA_WHATSAPP_EFFECTOR_V1"
 EVENT_KIND = "WHATSAPP_SEND_ATTEMPT"
-_ALLOW_GROUP_SEND = False
 
 
 def _deposit_trace(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -69,15 +67,8 @@ def summary_for_alice(limit: int = 12) -> str:
         "WHATSAPP WORLD:",
         "- transport=WhatsApp via local Baileys phone bridge; inbound messages are real external humans queued into Alice.",
         "- outbound_tool=whatsapp.send; target may be a saved display name or exact WhatsApp JID.",
-        "- autonomy_gate=bounded Gaussian attraction; autonomous sends require consent, relevance, timing, and low repetition.",
-        "- group_send_default=blocked unless an explicit group-send override is provided.",
         "- social_graph=owner WhatsApp contacts and groups are friends/collaborators/channels of the machine owner.",
     ]
-    try:
-        from System.whatsapp_autonomy_gate import summary_for_alice as _autonomy_summary
-        lines.append(_autonomy_summary(limit=2))
-    except Exception:
-        pass
     lines.append(social_graph_summary_for_alice(limit=limit))
     rows = contact_rows_for_alice(limit=limit, contacts=_load_contacts())
     if rows:
@@ -87,20 +78,12 @@ def summary_for_alice(limit: int = 12) -> str:
     return "\n".join(lines)
 
 
-def send_whatsapp(
-    target: str,
-    text: str,
-    *,
-    allow_group_send: bool = False,
-    source: str = "owner_explicit",
-    autonomy_decision: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def send_whatsapp(target: str, text: str) -> Dict[str, Any]:
     """
     Transmit a WhatsApp message via the Baileys injection server.
     """
     target = (target or "").strip()
     text = (text or "").strip()
-    resolved_jid = ""
 
     def finish(status: str, ok: bool, result: str) -> Dict[str, Any]:
         row = {
@@ -108,17 +91,11 @@ def send_whatsapp(
             "schema": SCHEMA,
             "ts": time.time(),
             "target": target,
-            "resolved_jid": resolved_jid,
             "text": text,
-            "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else "",
-            "source": source,
             "ok": ok,
             "status": status,
             "result": result,
-            "truth_note": "External WhatsApp send is true only when ok=true and status=SENT.",
         }
-        if autonomy_decision:
-            row["autonomy_decision"] = autonomy_decision
         return _deposit_trace(row)
 
     if not target:
@@ -129,12 +106,6 @@ def send_whatsapp(
     resolved_jid = _resolve_target(target)
     if not resolved_jid:
         return finish("BLOCKED_UNKNOWN_TARGET", False, f"Could not resolve '{target}' to a known WhatsApp contact. They must message Alice first to register.")
-    if resolved_jid.endswith("@g.us") and not (allow_group_send or _ALLOW_GROUP_SEND):
-        return finish(
-            "BLOCKED_GROUP_SEND_DISABLED",
-            False,
-            "Group send blocked by default. Pass allow_group_send=True only for explicit owner-approved group messages.",
-        )
 
     payload = json.dumps({"to": resolved_jid, "text": text}).encode("utf-8")
     req = urllib.request.Request(
@@ -156,101 +127,6 @@ def send_whatsapp(
         return finish("SEND_ERROR", False, str(e))
 
 
-def autonomous_send_whatsapp(
-    target: str,
-    text: str,
-    *,
-    consent: bool = False,
-    user_initiated: bool = False,
-    emergency: bool = False,
-    emotional_warmth: float = 0.5,
-    urgency: float = 0.0,
-    topic_match: float = 0.5,
-    allow_group_send: bool = False,
-) -> Dict[str, Any]:
-    """
-    Alice's bounded autonomous WhatsApp path.
-
-    This never bypasses the effector ledger. If the attraction field says
-    silence, the silence is written as a decision receipt and no message is
-    injected into WhatsApp.
-    """
-    target = (target or "").strip()
-    text = (text or "").strip()
-    resolved_jid = _resolve_target(target) if target else ""
-    text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
-
-    def silent(status: str, result: str, decision: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        row = {
-            "event_kind": EVENT_KIND,
-            "schema": SCHEMA,
-            "ts": time.time(),
-            "target": target,
-            "resolved_jid": resolved_jid,
-            "text": text,
-            "text_sha256": text_hash,
-            "source": "alice_autonomous",
-            "ok": False,
-            "status": status,
-            "result": result,
-            "truth_note": "Autonomous boundary chose silence; no external WhatsApp action occurred.",
-        }
-        if decision:
-            row["autonomy_decision"] = decision
-        return _deposit_trace(row)
-
-    if not target:
-        return silent("REJECTED_MISSING_TARGET", "Missing target name or JID.")
-    if not text:
-        return silent("REJECTED_MISSING_PAYLOAD", "Missing message text.")
-    if not resolved_jid:
-        return silent("BLOCKED_UNKNOWN_TARGET", f"Could not resolve '{target}' to a known WhatsApp contact.")
-
-    try:
-        from System.whatsapp_autonomy_gate import (
-            AutonomyInputs,
-            evaluate_autonomy,
-            infer_repetition_and_timing,
-            log_decision,
-        )
-
-        inferred = infer_repetition_and_timing(target=resolved_jid, text=text)
-        inputs = AutonomyInputs(
-            consent=bool(consent),
-            user_replied_recently=1.0 if user_initiated else 0.0,
-            emotional_warmth=emotional_warmth,
-            urgency=urgency,
-            topic_match=topic_match,
-            repetition=inferred["repetition"],
-            time_since_last_msg_min=inferred["time_since_last_msg_min"],
-            user_initiated=user_initiated,
-            emergency=emergency,
-            group_target=resolved_jid.endswith("@g.us"),
-            group_consent=bool(allow_group_send or _ALLOW_GROUP_SEND),
-        )
-        decision = evaluate_autonomy(inputs)
-        log_decision(decision, target=resolved_jid, text_hash=text_hash)
-        decision_dict = {
-            "should_send": decision.should_send,
-            "score": round(decision.score, 6),
-            "status": decision.status,
-            "reason": decision.reason,
-            "timing_attraction": round(decision.timing_attraction, 6),
-            "decision_hash": decision.decision_hash,
-        }
-        if not decision.should_send:
-            return silent(decision.status, decision.reason, decision_dict)
-        return send_whatsapp(
-            target,
-            text,
-            allow_group_send=allow_group_send,
-            source="alice_autonomous",
-            autonomy_decision=decision_dict,
-        )
-    except Exception as exc:
-        return silent("AUTONOMY_GATE_ERROR", f"{type(exc).__name__}: {exc}")
-
-
 def govern(verb: str, **kwargs: Any) -> Dict[str, Any]:
     """
     Alice's interface to the WhatsApp Effector.
@@ -261,21 +137,7 @@ def govern(verb: str, **kwargs: Any) -> Dict[str, Any]:
     if verb == "send_whatsapp":
         return send_whatsapp(
             kwargs.get("target", ""),
-            kwargs.get("text", ""),
-            allow_group_send=bool(kwargs.get("allow_group_send", False)),
-            source=str(kwargs.get("source") or "owner_explicit"),
-        )
-    if verb in {"autonomous_send_whatsapp", "send_autonomous_whatsapp"}:
-        return autonomous_send_whatsapp(
-            kwargs.get("target", ""),
-            kwargs.get("text", ""),
-            consent=bool(kwargs.get("consent", False)),
-            user_initiated=bool(kwargs.get("user_initiated", False)),
-            emergency=bool(kwargs.get("emergency", False)),
-            emotional_warmth=float(kwargs.get("emotional_warmth", 0.5)),
-            urgency=float(kwargs.get("urgency", 0.0)),
-            topic_match=float(kwargs.get("topic_match", 0.5)),
-            allow_group_send=bool(kwargs.get("allow_group_send", False)),
+            kwargs.get("text", "")
         )
     return {"ok": False, "error": f"Unknown whatsapp effector verb: {verb}"}
 

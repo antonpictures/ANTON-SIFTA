@@ -30,10 +30,17 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from typing import Optional
 
 # ── Config ──────────────────────────────────────────────────────────────────
+_REPO           = Path(__file__).resolve().parent.parent
 OLLAMA_URL      = "http://127.0.0.1:11434/api/generate"
-OLLAMA_MODEL    = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "gemma4:latest")
-ANTIBODY_LOG    = Path("antibody_ledger.jsonl")
-WEB_CHAT_LOG    = Path(".sifta_state/wormhole_cache/web_chats")
+# M1 web host default. M5 can still override with SIFTA_WEB_OLLAMA_MODEL or
+# SIFTA_DEFAULT_OLLAMA_MODEL; do not point the M1 public chat at stale gemma4.
+OLLAMA_MODEL    = (
+    os.environ.get("SIFTA_WEB_OLLAMA_MODEL")
+    or os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL")
+    or "qwen3.5:0.8b"
+)
+ANTIBODY_LOG    = _REPO / "antibody_ledger.jsonl"
+WEB_CHAT_LOG    = _REPO / ".sifta_state" / "wormhole_cache" / "web_chats"
 
 # Cross-node: M5QUEEN node (optional — chorus works without it)
 M5_NODE_IP      = os.environ.get("M5_NODE_IP", "")          # e.g. "192.168.1.50"
@@ -77,7 +84,7 @@ SMARTASS_SOFT = [  # 2+ hits = SMARTASS
 ]
 
 # ── Swimmer Library — behavioral directives loaded at startup ─────────────────
-LIBRARY_PATH = Path("Documents/swimmer_library")
+LIBRARY_PATH = _REPO / "Documents" / "swimmer_library"
 
 def _load_library_text(filename: str) -> str:
     """Load a text from the swimmer library. Returns empty string if not found."""

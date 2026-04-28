@@ -24,14 +24,8 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO / "Applications") not in sys.path:
     sys.path.insert(0, str(_REPO / "Applications"))
-if str(_REPO) not in sys.path:
-    sys.path.insert(0, str(_REPO))
 
 from fold_swarm_sim import FoldSwarmConfig, FoldSwarmSim  # noqa: E402
-try:
-    from System.swarm_app_focus import publish_focus as _publish_focus
-except Exception:
-    def _publish_focus(*a, **kw): pass
 
 BG = "#0a0b12"
 PANEL = "#12142a"
@@ -52,7 +46,7 @@ class FoldSwarmWidget(QWidget):
         lay.addWidget(self._canvas)
 
         gs = self._figure.add_gridspec(
-            2, 2, hspace=0.35, wspace=0.30, left=0.06, right=0.94, top=0.89, bottom=0.06
+            2, 2, hspace=0.26, wspace=0.22, left=0.05, right=0.98, top=0.9, bottom=0.05
         )
         self.ax_main = self._figure.add_subplot(gs[0, 0])
         self.ax_pher = self._figure.add_subplot(gs[0, 1])
@@ -81,13 +75,6 @@ class FoldSwarmWidget(QWidget):
         self._timer.timeout.connect(self._tick)
         self._timer.start(28)
 
-        # Publish initial focus so Alice knows the swarm launched
-        _publish_focus(
-            "Stigmergic Fold Swarm",
-            "Protein folding simulation started — Go-model + WCA + pheromone ACO",
-            tab="Swarm View",
-        )
-
     def _world_bounds(self):
         lo = self.sim.world_lo
         hi = self.sim.world_hi
@@ -99,19 +86,6 @@ class FoldSwarmWidget(QWidget):
         self._frame += 1
         if self._frame % 2 == 0 or self.sim.tick <= 4:
             self._render()
-        # Publish focus every ~2s so Alice can see live fold metrics
-        if self._frame % 60 == 0:
-            try:
-                q = self.sim._fraction_native_contacts(self.sim.r)
-                _publish_focus(
-                    "Stigmergic Fold Swarm",
-                    f"Folding in progress — tick {self.sim.tick}, Q={q:.2f}, E={self.sim.E:.1f}",
-                    tab="Swarm View",
-                    metadata={"tick": self.sim.tick, "Q_score": round(q, 3),
-                              "energy": round(self.sim.E, 1), "frame": self._frame},
-                )
-            except Exception:
-                pass
 
     def _render(self) -> None:
         m = {
@@ -216,9 +190,9 @@ class FoldSwarmWidget(QWidget):
             lines.append(f"    S{sw.sid:03d} hinge={sw.hinge}  {sw.body_hash}")
 
         ah.text(
-            0.02, 0.98, "\n".join(lines), transform=ah.transAxes, va="top", ha="left",
-            fontsize=7.5, family="monospace", color="#c0caf5",
-            bbox={"facecolor": "#0b1020", "edgecolor": "#24283b", "pad": 6},
+            0.04, 0.96, "\n".join(lines), transform=ah.transAxes, va="top", ha="left",
+            fontsize=9, family="monospace", color="#c0caf5",
+            bbox={"facecolor": "#0b1020", "edgecolor": "#24283b", "pad": 8},
         )
 
         self._canvas.draw_idle()
@@ -226,13 +200,3 @@ class FoldSwarmWidget(QWidget):
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self._timer.stop()
         super().closeEvent(event)
-
-
-if __name__ == "__main__":
-    from PyQt6.QtWidgets import QApplication
-    app = QApplication(sys.argv)
-    w = FoldSwarmWidget()
-    w.setWindowTitle("SIFTA — Stigmergic Fold Swarm (Cα / Go-Model)")
-    w.resize(1200, 800)
-    w.show()
-    sys.exit(app.exec())

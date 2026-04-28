@@ -31,7 +31,6 @@ class EconomySnapshot:
     canonical_spent: float = 0.0
     canonical_transferred: float = 0.0
     canonical_wallet_sum: float = 0.0
-    canonical_wallet_balances: Dict[str, float] = field(default_factory=dict)
     inference_fee_volume: float = 0.0
     deprecated_mint_attempts: int = 0
     deprecated_would_have_minted: float = 0.0
@@ -73,7 +72,6 @@ class EconomySnapshot:
             "canonical_spent": round(self.canonical_spent, 4),
             "canonical_transferred": round(self.canonical_transferred, 4),
             "canonical_wallet_sum": round(self.canonical_wallet_sum, 4),
-            "canonical_wallet_balances": dict(sorted(self.canonical_wallet_balances.items())),
             "inference_fee_volume": round(self.inference_fee_volume, 4),
             "net_stgm": round(self.net_supply, 4),
             "spend": round(self.canonical_spent, 4),
@@ -118,42 +116,19 @@ def _ledger_row_valid(row: Dict[str, Any]) -> bool:
         return True
 
 
-def _agent_inventory(state_dir: Path = STATE_DIR) -> tuple[set[str], tuple[tuple[str, str, int, int], ...]]:
-    """Return canonical wallet agent ids plus a cache signature.
-
-    The economy total depends on two inputs: the repair ledger and the set of
-    local wallet/agent files. A ledger-only cache can go stale when a new agent
-    JSON appears without repair_log.jsonl changing.
-    """
+def _canonical_agent_ids(state_dir: Path = STATE_DIR) -> set[str]:
     agent_ids: set[str] = set()
     if not state_dir.is_dir():
-        return agent_ids, ()
-    signature: list[tuple[str, str, int, int]] = []
+        return agent_ids
     for fp in state_dir.glob("*.json"):
         try:
             data = json.loads(fp.read_text(encoding="utf-8", errors="replace"))
         except Exception:
             continue
         if isinstance(data, dict):
-            # Treat explicit ids as canonical. Preserve legacy no-id wallet
-            # files only when they look like agent state, not fast-changing
-            # telemetry JSON such as active_saccade_target.json.
-            raw_id = data.get("id")
-            if raw_id is None and not any(k in data for k in ("stgm_balance", "energy")):
-                continue
-            aid = str(raw_id or fp.stem).strip().upper()
+            aid = str(data.get("id") or fp.stem).strip().upper()
             if aid:
                 agent_ids.add(aid)
-                try:
-                    stat = fp.stat()
-                    signature.append((fp.name, aid, int(stat.st_mtime_ns), int(stat.st_size)))
-                except OSError:
-                    signature.append((fp.name, aid, 0, 0))
-    return agent_ids, tuple(sorted(signature))
-
-
-def _canonical_agent_ids(state_dir: Path = STATE_DIR) -> set[str]:
-    agent_ids, _signature = _agent_inventory(state_dir)
     return agent_ids
 
 
@@ -184,7 +159,7 @@ def scan_economy(
     memory_rewards = memory_rewards or (state_dir / "stgm_memory_rewards.jsonl")
     casino_ledger = casino_ledger or (state_dir / "casino_vault.jsonl")
 
-    # Fast cache check based on file mtime, size, and local agent inventory.
+    # Fast cache check based on file mtime and size
     files_to_check = [repair_log, memory_rewards, casino_ledger]
     current_mtimes = {}
     for f in files_to_check:
@@ -193,8 +168,6 @@ def scan_economy(
             current_mtimes[str(f)] = (stat.st_mtime, stat.st_size)
         except OSError:
             current_mtimes[str(f)] = (0.0, 0)
-    canonical_agent_ids, agent_inventory_sig = _agent_inventory(state_dir)
-    current_mtimes[str(state_dir / "__agent_inventory__")] = agent_inventory_sig
             
     if _CACHE_LAST_SCAN is not None and current_mtimes == _CACHE_FILES_MTIME:
         import copy
@@ -268,11 +241,8 @@ def scan_economy(
         out.casino_lines += 1
         out.casino_player_net += _float(row.get("player_delta"))
 
-    for aid in canonical_agent_ids:
-        key = aid.upper()
-        bal = balances.get(key, 0.0)
-        out.canonical_wallet_sum += bal
-        out.canonical_wallet_balances[key] = round(max(0.0, bal), 4)
+    for aid in _canonical_agent_ids(state_dir):
+        out.canonical_wallet_sum += balances.get(aid.upper(), 0.0)
 
     if out.memory_reward_amount:
         out.warnings.append("memory_rewards_are_reputation_not_spendable_wallet")

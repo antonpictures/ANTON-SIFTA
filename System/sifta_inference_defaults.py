@@ -3,16 +3,14 @@
 sifta_inference_defaults.py — Single source of truth for local model selection.
 
 Architect policy (2026-04-27):
-  - **Default Alice cortex:** `qwen3.5:2b` (Ollama), unless
-    `SIFTA_DEFAULT_OLLAMA_MODEL` or `.sifta_state/swimmer_ollama_assignments.json`
-    explicitly overrides it. This executable default is the source of truth.
+  - **Default Alice cortex:** `huihui_ai/gemma-4-abliterated:latest` (Ollama).
+    MLX cortex v1 won tournament 408/459 but produces degenerate output in
+    production ("That's true" loop). Reverted to Ollama + Lysosome runtime
+    immune system until cortex v2 training with more data.
   - **MLX cortex v1:** `.sifta_state/cortex/alice_cortex_v1_fused`
-    won tournament 408/459 but produced degenerate output in production
-    ("That's true" loop). It is archived for tournament re-runs, not live default.
-  - **Gemma line:** `huihui_ai/gemma-4-abliterated:latest` is not the live
-    default here. It may be repulled only for controlled probes/tournaments.
-  - **Ollama fallback:** `qwen3.5:2b` remains the stable local fallback for
-    organs that are still Ollama-only.
+    (archived — available for tournament re-runs but NOT live default).
+  - **Ollama fallback:** `qwen3.5:2b`
+    remains available for organs that are still Ollama-only.
   - **Other models:** use for stigmergic testing, probes, or per-app tuning — never pretend
     one node's API is another node's fingerprint; routing goes through `inference_router`.
 
@@ -37,7 +35,7 @@ ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 CANONICAL_OLLAMA_DEFAULT = "qwen3.5:2b"
 CANONICAL_OLLAMA_FALLBACK = "qwen3.5:2b"
 
-# Primary default — Ollama Qwen. Keep this synchronized with the policy above.
+# Primary default — Ollama Qwen (gemma-4-abliterated evicted, re-pull pending).
 DEFAULT_OLLAMA_MODEL = os.environ.get(
     "SIFTA_DEFAULT_OLLAMA_MODEL",
     CANONICAL_OLLAMA_DEFAULT,
@@ -58,7 +56,7 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
-            "talk_to_alice": "huihui_ai/gemma-4-abliterated:latest",
+            "talk_to_alice": DEFAULT_OLLAMA_MODEL,
             "truth_duel": CANONICAL_OLLAMA_FALLBACK,
             "lysosome": CANONICAL_OLLAMA_FALLBACK,
         },

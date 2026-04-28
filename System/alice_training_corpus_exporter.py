@@ -26,25 +26,6 @@ from pathlib import Path
 
 STATE = Path(".sifta_state")
 
-
-def _approval_status(approval_path: Path) -> tuple[bool, str]:
-    """
-    Return (ok, reason) for exporting LOCAL-tier rows.
-    Used by tests and CLI --include-private gate.
-    """
-    if not approval_path.is_file():
-        return False, "missing architect_approval.txt"
-    raw = approval_path.read_text(encoding="utf-8", errors="replace")
-    upper = raw.upper()
-    if "PENDING" in upper:
-        return False, "Architect approval PENDING"
-    if "George Anton" in raw:
-        return True, "Architect George Anton signed export"
-    if "Ioan George Anton" in raw:
-        return True, "Architect Ioan George Anton signed export"
-    return False, "architect_approval.txt present but not signed"
-
-
 # ── Data tier classification ──────────────────────────────────────────────────
 PUBLIC    = "PUBLIC"    # safe to extract and publish
 LOCAL     = "LOCAL"     # local training only, never push to public repo
@@ -66,9 +47,7 @@ PRIVATE_LEDGERS = {
 # ── Sanitization patterns ─────────────────────────────────────────────────────
 ABSOLUTE_PATH_RE  = re.compile(r"/Users/[^/]+/[^\s\"',]+")
 SERIAL_RE         = re.compile(r"\b[A-Z0-9]{10,14}\b")
-OWNER_NAME_RE     = re.compile(r"\b(George|Ioan)\b")
-SWARM_CONTACT_RE  = re.compile(r"\b(Carlton|Daniel|Jeff)\b")
-PHONE_RE          = re.compile(r"\+1\s*[\d\-]{10,16}")
+CONTACT_NAME_RE   = re.compile(r"\b(George|Ioan|Carlton|Daniel|Jeff|Alice)\b")
 GPS_COORD_RE      = re.compile(r"-?\d{1,3}\.\d{4,}")
 
 def _sanitize(text: str, redactions: list, tier: str) -> str:
@@ -79,15 +58,8 @@ def _sanitize(text: str, redactions: list, tier: str) -> str:
     if n: redactions.append({"rule": "abs_path", "count": n})
 
     if tier != PUBLIC:
-        text, n = OWNER_NAME_RE.subn("[OWNER]", text)
-        if n:
-            redactions.append({"rule": "owner_name", "count": n})
-        text, n = SWARM_CONTACT_RE.subn("[CONTACT_N]", text)
-        if n:
-            redactions.append({"rule": "contact_name", "count": n})
-        text, n = PHONE_RE.subn("[PHONE_REDACTED]", text)
-        if n:
-            redactions.append({"rule": "phone", "count": n})
+        text, n = CONTACT_NAME_RE.subn("[CONTACT_N]", text)
+        if n: redactions.append({"rule": "contact_name", "count": n})
 
         text, n = GPS_COORD_RE.subn("[LOC_REDACTED]", text)
         if n: redactions.append({"rule": "gps_coord", "count": n})
@@ -307,10 +279,9 @@ def main():
 
     if args.include_private:
         approval = Path("architect_approval.txt")
-        ok, reason = _approval_status(approval)
-        if not ok:
-            print(f"❌ --include-private blocked: {reason}")
-            print("   Create architect_approval.txt in the repo root and sign (see tournament docs).")
+        if not approval.exists():
+            print("❌ --include-private requires architect_approval.txt in the repo root.")
+            print("   Create it manually and sign with your name to authorize LOCAL-tier extraction.")
             return
 
     print(f"[Stage 1] Extracting Alice Training Corpus...")

@@ -35,15 +35,7 @@ def read_desktop_vitals(repo_root: Path) -> Mapping[str, Any]:
     state = repo_root / ".sifta_state"
     try:
         health = _tail_jsonl(state / "health_scores.jsonl")
-        try:
-            from System.swarm_metabolic_homeostasis import MetabolicHomeostat
-            from System.swarm_metabolic_engine import SwarmMetabolicEngine
-            # Covenant 7.3: trigger live recompute instead of displaying museum data.
-            _ = MetabolicHomeostat.sample_live()
-            live_status = SwarmMetabolicEngine().status()
-            metabolic = {"mode": str(live_status.get("mode", "UNKNOWN")).upper(), "budget_multiplier": 1.0, "rest_seconds": 0.0}
-        except Exception:
-            metabolic = _tail_jsonl(state / "metabolic_homeostasis.jsonl")
+        metabolic = _tail_jsonl(state / "metabolic_homeostasis.jsonl")
         raw = health.get("raw", {}) if isinstance(health.get("raw"), dict) else {}
         econ = raw.get("economic", {}) if isinstance(raw.get("economic"), dict) else {}
         score = int(health.get("score", 0) or 0)

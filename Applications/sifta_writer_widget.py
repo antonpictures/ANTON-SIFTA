@@ -97,7 +97,7 @@ class GhostWorker(QThread):
     ghost_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, context: str, model: str = "qwen3.5:2b"):
+    def __init__(self, context: str, model: str = "huihui_ai/gemma-4-abliterated:latest"):
         super().__init__()
         self.context = context
         self.model = model
@@ -158,7 +158,7 @@ class SwarmAssistWorker(QThread):
     result_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, selected_text: str, full_context: str, model: str = "qwen3.5:2b"):
+    def __init__(self, selected_text: str, full_context: str, model: str = "huihui_ai/gemma-4-abliterated:latest"):
         super().__init__()
         self.selected_text = selected_text
         self.full_context = full_context

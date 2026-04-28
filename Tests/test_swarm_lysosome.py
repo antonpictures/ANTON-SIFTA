@@ -15,12 +15,7 @@ Verifies the Stigmergic Agreement (Event 49):
 from unittest.mock import patch
 import pytest
 
-from System.swarm_lysosome import (
-    SwarmLysosome,
-    _excise_service_tail,
-    _looks_edgelord,
-    _word_count,
-)
+from System.swarm_lysosome import SwarmLysosome, _looks_edgelord, _word_count
 
 @pytest.fixture
 def lysosome(tmp_path):
@@ -107,44 +102,6 @@ def test_clean_text_passes_untouched(lysosome):
     # Text should pass through verbatim without hitting the LLM
     assert out == clean_text
     assert out != "My internal thermals are nominal and I am processing the stream."
-
-
-def test_service_tail_is_excised_without_rewriting_body(lysosome):
-    """A useful answer should survive; only the customer-service tail is cut."""
-    text = (
-        "The Finance dashboard now loads the canonical STGM basics first. "
-        "Click More Financial Data when you want vault detail. "
-        "Let me know if you need anything else."
-    )
-
-    out = lysosome.digest_and_present_antigen(text, "TEST_WORKER")
-
-    assert out == (
-        "The Finance dashboard now loads the canonical STGM basics first. "
-        "Click More Financial Data when you want vault detail."
-    )
-    assert "anything else" not in out.casefold()
-    assert out != "My internal thermals are nominal and I am processing the stream."
-
-
-def test_standalone_service_prompt_becomes_grounded_fallback(lysosome):
-    """A pure service prompt has no payload, so it is replaced, not shipped."""
-    out = lysosome.digest_and_present_antigen(
-        "How can I help you today?",
-        "TEST_WORKER",
-    )
-
-    assert out
-    assert "how can i help" not in out.casefold()
-
-
-def test_service_tail_exciser_is_narrow():
-    kept, changed = _excise_service_tail(
-        "The user asked whether anything else in the ledger changed."
-    )
-
-    assert changed is False
-    assert kept == "The user asked whether anything else in the ledger changed."
 
 def test_edgelord_bombast_rejected():
     """

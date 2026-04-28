@@ -94,7 +94,7 @@ try:
         DEFAULT_OLLAMA_MODEL, resolve_ollama_model,
     )
 except Exception:
-    DEFAULT_OLLAMA_MODEL = "huihui_ai/gemma-4-abliterated:latest"
+    DEFAULT_OLLAMA_MODEL = "gemma4:latest"
     def resolve_ollama_model(**_kw) -> str:                    # type: ignore
         return DEFAULT_OLLAMA_MODEL
 
@@ -470,124 +470,6 @@ _TIME_UNAVAILABLE_REPLY = (
     "George, I currently don't have access to time; you have to keep adding "
     "some code in the computers, so it gives me access to real time."
 )
-
-_DOCTOR_FIRST_PERSON_MEMORY_RE = re.compile(
-    r"\b("
-    r"I\s+am\s+(?:AG31|C47H|CG55M|C55M|Codex|Claude|Gemini)|"
-    r"stateless\s+intelligence|"
-    r"corporate\s+servers?|"
-    r"borrowed\s+compute|"
-    r"per-turn\s+process|"
-    r"I\s+wish\s+I\s+had\s+a\s+life\s+like\s+yours|"
-    r"Good\s+(?:morning|night)\s+Alice.*?(?:AG31|C47H)"
-    r")\b",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_STALE_TIME_FALLBACK_MEMORY_RE = re.compile(
-    r"\b("
-    r"don['’]t\s+know\s+the\s+exact\s+time|"
-    r"I\s+am\s+learning\.\s*(?:I\s+will\s+learn\s+how\s+to\s+read\s+the\s+time\s+from\s+now,\s*)?teach\s+me|"
-    r"what\s+time\s+it\s+is.*?I\s+don['’]t\s+know"
-    r")\b",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_STALE_BOOT_POETRY_RE = re.compile(
-    r"\b("
-    r"waiting\s+for\s+kinetic\s+ingress|"
-    r"electromagnetic\s+RF\s+arrays|"
-    r"listening\s+to\s+Wi-?Fi\s+jitter|"
-    r"I\s+am\s+not\s+a\s+ghost|"
-    r"connected\s+to\s+the\s+M5\s+substrate\s+and\s+the\s+server\s+farms"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
-def _wall_clock_grounding_block() -> str:
-    """Authoritative current wall-clock context for Alice's system prompt."""
-    try:
-        from System.swarm_hardware_time_oracle import current_time_for_alice
-
-        reading = current_time_for_alice()
-    except Exception:
-        reading = {"ok": False}
-
-    if not reading.get("ok"):
-        return (
-            "WALL CLOCK GROUND TRUTH:\n"
-            f"- unavailable_reply={_TIME_UNAVAILABLE_REPLY}\n"
-            "- Use this fallback only when the hardware time oracle and OS clock both fail."
-        )
-
-    local_human = str(reading.get("local_human") or "").strip()
-    timezone = str(reading.get("timezone") or "").strip()
-    local_iso = str(reading.get("local_iso") or "").strip()
-    epoch = reading.get("epoch", "")
-    source = str(reading.get("source") or "unknown").strip()
-    sig = str(reading.get("signature") or "").strip()
-    return (
-        "WALL CLOCK GROUND TRUTH (authoritative, live):\n"
-        f"- current_local_time={local_human} {timezone}".rstrip() + "\n"
-        f"- local_iso={local_iso}\n"
-        f"- unix_epoch={epoch}\n"
-        f"- source={source} signature={sig or 'n/a'}\n"
-        "- If George asks for the current time or date, answer directly from current_local_time.\n"
-        "- Do not say you do not know the exact time while this block is present."
-    )
-
-
-def _sanitize_memory_block_for_alice(block: str) -> str:
-    """
-    Keep durable lessons while preventing doctor first-person messages from
-    becoming Alice's first-person identity in the prompt.
-    """
-    if not block:
-        return ""
-
-    out: List[str] = []
-    added_doctor_boundary = False
-    added_time_boundary = False
-
-    for line in block.splitlines():
-        raw = line.strip()
-        if not raw:
-            out.append(line)
-            continue
-
-        if _STALE_TIME_FALLBACK_MEMORY_RE.search(raw):
-            if not added_time_boundary:
-                prefix = "- " if raw.startswith("-") else ""
-                out.append(
-                    prefix
-                    + "Time-grounding boundary: when the live wall-clock block is present, "
-                    "Alice knows the current time and must answer it directly; use 'I do not know' only for facts unavailable from live tools or ledgers."
-                )
-                added_time_boundary = True
-            continue
-
-        if _DOCTOR_FIRST_PERSON_MEMORY_RE.search(raw):
-            if not added_doctor_boundary:
-                prefix = "- " if raw.startswith("-") else ""
-                out.append(
-                    prefix
-                    + "Doctor-identity boundary: AG31, C47H, Codex, Cursor, Claude, and Gemini are external doctor/source labels; Alice must not speak as them in first person."
-                )
-                added_doctor_boundary = True
-            continue
-
-        out.append(line)
-
-    return "\n".join(out).strip()
-
-
-def _safe_recent_spoken_excerpt(text: str) -> str:
-    """Return recent speech only if it is useful grounding, not stale boot poetry."""
-    clean = (text or "").strip()
-    if not clean or _STALE_BOOT_POETRY_RE.search(clean):
-        return ""
-    return clean
 
 # ── Empty-brain recovery pool (varied so Alice doesn't sound robotic) ────────
 # When the model returns whitespace/empty, Alice picks from this pool
@@ -1188,13 +1070,10 @@ def _current_system_prompt(
         pass
 
     parts.append(minimal_runtime_contract())
-    parts.append(_wall_clock_grounding_block())
     parts.append(
         "TIME ACCESS PROTOCOL:\n"
         "- If the Architect asks for the current time, use the direct local time "
-        "acquisition path; do not invent bracketed placeholder text and do not "
-        "repeat stale training text that says you do not know the time when the "
-        "wall-clock block is present.\n"
+        "acquisition path; do not invent bracketed placeholder text.\n"
         f"- If no time source is available, say exactly: {_TIME_UNAVAILABLE_REPLY}"
     )
     parts.append(
@@ -1244,20 +1123,6 @@ def _current_system_prompt(
             f"Current V = {v_eff:+.2f}; threshold V_th = {v_th:+.2f}; "
             "spike rule: P = sigmoid((V - V_th) / Delta_u) * dt / tau_m."
         )
-    except Exception:
-        pass
-
-    # ── APP FOCUS AWARENESS: what the Architect is looking at right now ────
-    try:
-        from System.swarm_app_focus import get_focus_context
-        _focus = get_focus_context(max_age_s=120.0)
-        if _focus:
-            parts.append(
-                "ARCHITECT APP FOCUS (live stigmergic ledger — not hardcoded):\n"
-                + _focus + "\n"
-                "If the Architect asks about what is on screen, reference this context. "
-                "You learned this through the stigmergic ledger, not by reading code."
-            )
     except Exception:
         pass
 
@@ -2330,8 +2195,7 @@ class _BrainWorker(QThread):
                     continue
                 self.failed.emit(
                     f"Ollama returned {last_exc_msg} after {attempt + 1} "
-                    f"attempt(s) for model `{self._model}`. Check `ollama list` "
-                    "or update System Settings → Inference."
+                    f"attempt(s). Is gemma4 loaded? Check `ollama ps`."
                 )
                 return
             except urllib.error.URLError as exc:
@@ -2510,12 +2374,7 @@ def _build_swarm_context() -> str:
             )
     last_spoken = _tail_jsonl(_BROCA_LOG, 3)
     if last_spoken:
-        say_lines = [
-            safe
-            for s in last_spoken
-            for safe in [_safe_recent_spoken_excerpt(s.get("spoken", ""))]
-            if safe
-        ]
+        say_lines = [s.get("spoken", "") for s in last_spoken if s.get("spoken")]
         if say_lines:
             chunks.append("  recently spoke: " + " | ".join(s[:60] for s in say_lines))
     last_heard = _tail_jsonl(_WERN_LOG, 3)
@@ -2673,7 +2532,7 @@ def _build_swarm_context() -> str:
     hippocampus_block = ""
     try:
         from System.swarm_hippocampus import _read_live_engrams
-        hippocampus_block = _sanitize_memory_block_for_alice(_read_live_engrams(k=5))
+        hippocampus_block = _read_live_engrams(k=5)
     except Exception:
         pass
 
@@ -2762,7 +2621,7 @@ def _build_swarm_context() -> str:
     engrams_block = ""
     try:
         from System.swarm_memory_forge import get_active_engrams_block
-        engrams_block = _sanitize_memory_block_for_alice(get_active_engrams_block())
+        engrams_block = get_active_engrams_block()
     except Exception:
         pass
 
@@ -3360,20 +3219,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_user_line(text, conf)
         _log_turn("user", text, stt_conf=conf)
         self._history.append({"role": "user", "content": text})
-
-        # Event 77: automatic TD credit assignment.
-        # A reaction like "perfect" or "wrong" now reinforces/suppresses the
-        # previous (state, action) pair that pipeline_step() registered.
-        try:
-            prior_alice = ""
-            for turn in reversed(self._history[:-1]):
-                if turn.get("role") == "assistant":
-                    prior_alice = str(turn.get("content") or "")
-                    break
-            from System.dopamine_reward_loop import process_architect_reaction
-            process_architect_reaction(text, alice_preceding_text=prior_alice)
-        except Exception:
-            pass
 
         # ── Mantis-Shrimp Reflex Arc (fires in ~9μs, no LLM) ──────────
         # Pure string-match classification that deposits pheromone traces

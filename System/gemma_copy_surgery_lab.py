@@ -37,8 +37,8 @@ from System.gguf_quant_codec import find_llama_quantize_binary, probe_codec_capa
 from System.llama_cpp_roundtrip import RoundtripPlan, run_roundtrip
 
 
-DEFAULT_REFERENCE_TAG = "qwen3.5:2b"
-DEFAULT_OPERATING_TAG = "qwen3.5:2b"
+DEFAULT_REFERENCE_TAG = "gemma4:latest"
+DEFAULT_OPERATING_TAG = "huihui_ai/gemma-4-abliterated:latest"
 DEFAULT_LAMBDAS = (0.15, 0.35)
 
 

@@ -14,8 +14,6 @@ import time
 from pathlib import Path
 
 from PyQt6.QtCore import QSocketNotifier, Qt, QTimer
-
-from System.swarm_app_focus import publish_focus
 from PyQt6.QtGui import QFont, QKeySequence, QTextCursor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -302,7 +300,6 @@ class SiftaTerminalApp(QWidget):
         self._status_timer = QTimer(self)
         self._status_timer.timeout.connect(self._refresh_status)
         self._status_timer.start(1000)
-        self._tick_count = 0
 
     @property
     def process(self):
@@ -326,22 +323,6 @@ class SiftaTerminalApp(QWidget):
     def _refresh_status(self) -> None:
         state = "running" if self.terminal.is_running() else "stopped"
         self.status_label.setText(f"zsh PTY • {state}")
-        self._tick_count += 1
-        if self._tick_count % 5 == 0:
-            try:
-                # Grab the last line to give Alice context
-                doc = self.terminal.document()
-                last_line = doc.findBlockByLineNumber(doc.blockCount() - 2).text().strip() if doc.blockCount() > 1 else ""
-                if len(last_line) > 60:
-                    last_line = last_line[:57] + "..."
-                publish_focus(
-                    "Terminal",
-                    f"Architect is working in terminal ({state})",
-                    tab="zsh PTY",
-                    metadata={"state": state, "last_output": last_line}
-                )
-            except Exception:
-                pass
 
     def closeEvent(self, event):
         self.shutdown()

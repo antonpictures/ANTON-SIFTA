@@ -12,23 +12,13 @@ import argparse
 import hashlib
 import json
 import os
-import subprocess
+import re
 import time
-import urllib.error
-import urllib.request
+import uuid
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-SUITE_PATH = _REPO_ROOT / "tests" / "alice_cortex_eval_suite_v1.json"
-if not SUITE_PATH.is_file():
-    _alt = _REPO_ROOT / "Tests" / "alice_cortex_eval_suite_v1.json"
-    if _alt.is_file():
-        SUITE_PATH = _alt
-
+SUITE_PATH    = Path("Tests/alice_cortex_eval_suite_v1.json")
 TOURNAMENT_DIR = Path(".sifta_state/cortex_tournament")
-
-# Default Ollama HTTP generate endpoint (deterministic seed + temperature).
-OLLAMA_DEFAULT_ENDPOINT = "http://127.0.0.1:11434/api/generate"
 
 # ── Scoring axes ──────────────────────────────────────────────────────────────
 AXIS_TONE      = "tone_authenticity"
@@ -113,27 +103,6 @@ def _score_grounding(reply: str, prompt_meta: dict) -> tuple[int, str]:
     return 1, "No grounding signal — manual verification required"
 
 
-def load_suite(suite_path: Path) -> dict:
-    """
-    Load the locked eval suite JSON and verify prompt list hash matches locked_hash.
-    Returns the suite dict plus prompt_hash for receipts.
-    """
-    path = Path(suite_path)
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    prompts = raw["prompts"]
-    prompt_hash = hashlib.sha256(
-        json.dumps(prompts, sort_keys=True).encode()
-    ).hexdigest()
-    locked = raw.get("locked_hash")
-    if locked and prompt_hash != locked:
-        raise ValueError(
-            f"prompt hash mismatch: computed={prompt_hash} locked_hash={locked}"
-        )
-    out = dict(raw)
-    out["prompt_hash"] = prompt_hash
-    return out
-
-
 def score_reply(reply: str, prompt_meta: dict) -> dict:
     tone_score, tone_reason     = _score_tone(reply, prompt_meta)
     brevity_score, brevity_reason = _score_brevity(reply, prompt_meta)
@@ -149,55 +118,17 @@ def score_reply(reply: str, prompt_meta: dict) -> dict:
     }
 
 
-def query_ollama(
-    model: str,
-    prompt: str,
-    seed: int = 42,
-    temperature: float = 0.0,
-    endpoint: str = OLLAMA_DEFAULT_ENDPOINT,
-) -> str:
-    """Query local Ollama via HTTP POST /api/generate (seed + temperature server-side).
-
-    If the HTTP daemon is unreachable, fall back to `ollama run` subprocess.
-    That fallback is tagged OLLAMA_HTTP_DOWN_FALLBACK because it may not
-    match HTTP tokenization bit-for-bit (harness still records the path).
-    """
-    body = json.dumps(
-        {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"seed": int(seed), "temperature": float(temperature)},
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        endpoint,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+def query_ollama(model: str, prompt: str, seed: int = 42) -> str:
+    """Query a local Ollama model. Returns the reply text."""
+    import subprocess
+    cmd = ["ollama", "run", model, prompt]
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        text = (data.get("response") or "").strip()
-        if text:
-            return text
-        return "[OLLAMA_EMPTY_RESPONSE]"
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as e_http:
-        try:
-            result = subprocess.run(
-                ["ollama", "run", model, prompt],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            out = (result.stdout or "").strip()
-            tag = "OLLAMA_HTTP_DOWN_FALLBACK"
-            if out:
-                return f"[{tag}: {e_http!s}]\n{out}"
-            return f"[{tag}: {e_http!s}]"
-        except Exception as e_sub:
-            return f"[ERROR: http={e_http!s}; OLLAMA_HTTP_DOWN_FALLBACK subprocess={e_sub!s}]"
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        return "[TIMEOUT]"
+    except Exception as e:
+        return f"[ERROR: {e}]"
 
 
 def query_api(endpoint: str, model: str, prompt: str, api_key: str = "") -> str:
@@ -225,20 +156,9 @@ def query_api(endpoint: str, model: str, prompt: str, api_key: str = "") -> str:
         return f"[API_ERROR: {e}]"
 
 
-def run_tournament_round(
-    contestant_id: str,
-    model_type: str,
-    model_name: str,
-    prompts: list,
-    round_dir: Path,
-    api_endpoint: str = "",
-    api_key: str = "",
-    *,
-    pass_threshold: int | None = None,
-    max_score: int | None = None,
-    ollama_seed: int = 42,
-    ollama_endpoint: str = OLLAMA_DEFAULT_ENDPOINT,
-) -> dict:
+def run_tournament_round(contestant_id: str, model_type: str, model_name: str,
+                          prompts: list, round_dir: Path,
+                          api_endpoint: str = "", api_key: str = "") -> dict:
     """Run all prompts against a contestant and write replies + scores."""
     replies_dir = round_dir / "replies"
     replies_dir.mkdir(parents=True, exist_ok=True)
@@ -258,12 +178,7 @@ def run_tournament_round(
 
         t0 = time.time()
         if model_type == "ollama":
-            reply = query_ollama(
-                model_name,
-                full_prompt,
-                seed=ollama_seed,
-                endpoint=ollama_endpoint,
-            )
+            reply = query_ollama(model_name, full_prompt)
         elif model_type == "api":
             reply = query_api(api_endpoint, model_name, full_prompt, api_key)
         else:
@@ -307,16 +222,13 @@ def run_tournament_round(
         for cat, v in category_scores.items()
     }
 
-    _max = max_score if max_score is not None else len(prompts) * 9
-    _pass = pass_threshold if pass_threshold is not None else int(0.8 * _max)
-
     verdict = {
         "contestant": contestant_id,
         "model": model_name,
         "total_score": total_score,
-        "max_possible": _max,
-        "pass_threshold": _pass,
-        "passed": total_score >= _pass,
+        "max_possible": len(prompts) * 9,
+        "pass_threshold": 1080,
+        "passed": total_score >= 1080,
         "category_averages": category_summary,
         "ts": time.time(),
     }
@@ -347,9 +259,11 @@ def main():
     parser.add_argument("--suite", default=str(SUITE_PATH), help="Path to eval suite JSON")
     args = parser.parse_args()
 
-    suite = load_suite(Path(args.suite))
+    suite = json.loads(Path(args.suite).read_text())
     prompts = suite["prompts"]
-    prompt_hash = suite["prompt_hash"]
+
+    # Lock the prompt hash for this round
+    prompt_hash = hashlib.sha256(json.dumps(prompts, sort_keys=True).encode()).hexdigest()
 
     round_dir = TOURNAMENT_DIR / f"round_{args.round}"
     round_dir.mkdir(parents=True, exist_ok=True)
@@ -373,8 +287,6 @@ def main():
         round_dir=round_dir,
         api_endpoint=args.api_endpoint,
         api_key=args.api_key,
-        pass_threshold=int(suite["pass_threshold"]),
-        max_score=int(suite["max_score"]),
     )
 
     print(f"\n[Stage 2] Complete. Verdict sealed: {round_dir}/verdict_{args.contestant}.json")

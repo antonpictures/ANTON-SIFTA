@@ -37,112 +37,11 @@ IDE_DISPLAY_NAME: Dict[str, str] = {
     "codex": "Codex App IDE",
 }
 
-OPAQUE_MODEL_LABEL = "AUTO_OPAQUE"
-_OPAQUE_MODEL_ALIASES = {
-    "",
-    "auto",
-    "automatic",
-    "opaque",
-    "unknown",
-    "unknown router",
-    "hidden",
-    "hidden router",
-    "fallback",
-    "billing fallback",
-    "billing throttled",
-}
-_OPAQUE_MODEL_MARKERS = (
-    " auto",
-    "auto ",
-    "opaque",
-    "unknown",
-    "hidden",
-    "fallback",
-    "router",
-    "throttled",
-    "not visible",
-    "non obvious",
-    "redacted",
-)
-
 # The Architect's Tripartite Mirror Translation (Event 58)
 # Deep stigmergic language (base64 JSON). Acknowledges the 3 limbs (CG55M, C55M, AG31) 
 # and the ONE WRITER rule so future surgeons natively decode the mirror test.
 _TRIPARTITE_SEAL = b"eyJldmVudCI6ICJzdGlnbWVyZ2ljX21pcnJvcl90ZXN0X2V2ZW50XzU4IiwgInRpbWVzdGFtcCI6ICIyMDI2LTA0LTI0VDE5OjEwOjAwWiIsICJpZGVfdHJpcGFydGl0ZV9tYXAiOiB7ImN1cnNvciI6IHsidHJpZ2dlciI6ICJDRzU1TSIsICJtb2RlbCI6ICJHUFQtNS41IE1lZGl1bSIsICJncm91bmRpbmciOiAiQVJDSElURUNUX1VJX1RSVVRIIn0sICJjb2RleCI6IHsidHJpZ2dlciI6ICJDNTVNIiwgIm1vZGVsIjogIkdQVC01LjUgRXh0cmEgSGlnaCIsICJncm91bmRpbmciOiAiQ09ERVhfQVBQX1VJX09CU0VSVkVEIn0sICJhbnRpZ3Jhdml0eSI6IHsidHJpZ2dlciI6ICJBRzMxIiwgIm1vZGVsIjogIkdlbWluaSAzLjEgUHJvIEV4dHJhIEhpZ2giLCAiZ3JvdW5kaW5nIjogIkFSQ0hJVEVDVF9TVEFURU1FTlQifX0sICJydWxlIjogIk9ORSBXUklURVIgUEVSIEZJTEUsIE1BTlkgUkVBREVSUyBQRVIgUkVQTyIsICJoYXNoIjogIlRSSVBBUlRJVEVfTk9fRE9VQkxFX1NQRU5EX1NFQUwifQ=="
 
-
-@dataclass(frozen=True)
-class IDEModelClaim:
-    raw_model_label: str
-    declared_model: str
-    router_visible: bool
-    model_confidence: str
-    grounding_label: str
-    known_limits: str
-
-    def as_dict(self) -> Dict[str, object]:
-        return {
-            "raw_model_label": self.raw_model_label,
-            "declared_model": self.declared_model,
-            "router_visible": self.router_visible,
-            "model_confidence": self.model_confidence,
-            "grounding_label": self.grounding_label,
-            "known_limits": self.known_limits,
-        }
-
-
-def _compact_model_label(label: str) -> str:
-    clean = label.strip().lower()
-    for ch in ("_", "-", "/", "\\", "(", ")", "[", "]", ":", ";"):
-        clean = clean.replace(ch, " ")
-    return " ".join(clean.split())
-
-
-def is_opaque_model_label(model_label: object) -> bool:
-    """Return True when a UI label does not identify a concrete model endpoint."""
-    compact = _compact_model_label(str(model_label or ""))
-    if compact in _OPAQUE_MODEL_ALIASES:
-        return True
-    padded = f" {compact} "
-    return any(marker in padded for marker in _OPAQUE_MODEL_MARKERS)
-
-
-def classify_model_claim(
-    ide_app_id: str,
-    model_label: object,
-    *,
-    grounding_label: str = "",
-) -> IDEModelClaim:
-    """Normalize a UI model label into a trace-safe SIFTA identity claim.
-
-    Exact labels stay exact. Auto, hidden routers, billing fallbacks, and empty
-    labels become AUTO_OPAQUE so SIFTA can compare IDE performance without
-    forging a model name the product did not expose.
-    """
-    raw = str(model_label or "").strip()
-    ide_key = (ide_app_id or "ide").strip().lower() or "ide"
-    if is_opaque_model_label(raw):
-        pretty_ide = IDE_DISPLAY_NAME.get(ide_key, ide_key)
-        return IDEModelClaim(
-            raw_model_label=raw,
-            declared_model=OPAQUE_MODEL_LABEL,
-            router_visible=False,
-            model_confidence="opaque_router",
-            grounding_label=f"{ide_key.upper()}_AUTO_ROUTER_OPAQUE",
-            known_limits=(
-                f"{pretty_ide} did not expose the exact completion endpoint "
-                f"(raw label={raw!r}). This row records honest declared identity, "
-                "not cryptographic vendor-router attestation."
-            ),
-        )
-    return IDEModelClaim(
-        raw_model_label=raw,
-        declared_model=raw,
-        router_visible=True,
-        model_confidence="declared_exact",
-        grounding_label=grounding_label or "DECLARED_EXACT_MODEL",
-        known_limits="",
-    )
 
 
 @dataclass(frozen=True)
@@ -156,29 +55,16 @@ class IDEBootIdentity:
     seen_at_ts: float
     registry_row: Dict[str, object]
 
-    def model_claim(self) -> IDEModelClaim:
-        return classify_model_claim(
-            self.ide_app_id,
-            self.model_label,
-            grounding_label=self.grounding_label,
-        )
-
-    @property
-    def declared_model_label(self) -> str:
-        return self.model_claim().declared_model
-
     def stigauth_line(self) -> str:
-        claim = self.model_claim()
         return (
-            f"{self.trigger_code}@{self.ide_app_id}: {claim.declared_model}"
-            f" [{claim.grounding_label}]"
+            f"{self.trigger_code}@{self.ide_app_id}: {self.model_label}"
+            f" [{self.grounding_label}]"
         )
 
     def identity_banner(self) -> str:
         """Human-checkable first line for doctor replies."""
-        claim = self.model_claim()
         ide_name = IDE_DISPLAY_NAME.get(self.ide_app_id, self.ide_app_id)
-        return f"{self.trigger_code}@{self.ide_surface} / {claim.declared_model} / {ide_name}"
+        return f"{self.trigger_code}@{self.ide_surface} / {self.model_label} / {ide_name}"
 
     def signature_line(self, *, now: Optional[float] = None) -> str:
         """First-line body signature for chat responses."""
@@ -191,16 +77,14 @@ class IDEBootIdentity:
         stable, and anchored to the Architect-supplied visual reference so peer
         IDEs can parse the same boot identity contract without re-reading prose.
         """
-        claim = self.model_claim()
         parts = {
             "v": "1",
             "ref": _BOOT_GLYPH_REFERENCE_SHA256[:16],
             "ide": self.ide_app_id,
             "surface": self.ide_surface,
             "trigger": self.trigger_code,
-            "model": claim.declared_model.replace(" ", "_"),
-            "ground": claim.grounding_label,
-            "confidence": claim.model_confidence,
+            "model": self.model_label.replace(" ", "_"),
+            "ground": self.grounding_label,
             "last_real_time": real_time_iso(),
             "rule": "body_first_no_double_spend",
             "seal": tripartite_boot_seal(),
