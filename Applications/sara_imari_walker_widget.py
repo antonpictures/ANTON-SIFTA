@@ -30,6 +30,10 @@ _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+from System.swarm_app_focus import publish_focus
+
+_APP_NAME = "Sara Imari Walker — Assembly Theory Lab"
+
 BG      = "#0a0b12"
 PANEL   = "#12142a"
 TEAL    = "#73daca"
@@ -166,6 +170,11 @@ class AssemblyIndexPanel(QWidget):
                 f"Truth label: hypothesis metric (Walker/Cronin 2023)"
             )
             self._detail.setText(txt)
+            publish_focus(
+                _APP_NAME, f"Clicked molecule: {name} — AI={m['ai']} — {status}",
+                tab="Assembly Index", selection=name,
+                metadata={"assembly_index": m["ai"], "alive": m["alive"], "note": m["note"]},
+            )
 
 
 class MemoryTracePanel(QWidget):
@@ -232,7 +241,7 @@ class MemoryTracePanel(QWidget):
 
     def _render(self):
         self._fig.clear()
-        gs = self._fig.add_gridspec(1, 2, wspace=0.3, left=0.07, right=0.96, top=0.88, bottom=0.1)
+        gs = self._fig.add_gridspec(1, 2, wspace=0.35, left=0.07, right=0.96, top=0.82, bottom=0.14)
         ax_ph = self._fig.add_subplot(gs[0])
         ax_ai = self._fig.add_subplot(gs[1])
 
@@ -259,10 +268,7 @@ class MemoryTracePanel(QWidget):
         ax_ai.legend(fontsize=8, facecolor=PANEL, edgecolor="#24283b", labelcolor="#c0caf5")
         ax_ai.grid(color="#1a1b2e", lw=0.6)
 
-        self._fig.suptitle(
-            "SIFTA Pheromone = software analogue of Assembly Theory memory  |  NOT wet-lab validated",
-            color=DIM, fontsize=8
-        )
+        # truth label already shown in Qt widget above — no suptitle needed
         self._canvas.draw_idle()
 
     def closeEvent(self, e):
@@ -447,6 +453,11 @@ class QuestionWallPanel(QWidget):
         for q, ans in QUESTIONS:
             if q == question:
                 self._ans.setText(f"Q: {q}\n\n{ans}")
+                publish_focus(
+                    _APP_NAME, f"Exploring question: {q}",
+                    tab="Question Wall", selection=q,
+                    metadata={"answer_preview": ans[:120]},
+                )
                 return
 
 
@@ -506,6 +517,12 @@ class SaraImariWalkerWidget(QWidget):
         tabs.addTab(MemoryTracePanel(),      "🧠  Memory Trace")
         tabs.addTab(PhaseTransitionPanel(),  "🌊  Phase Transition")
         tabs.addTab(QuestionWallPanel(),     "❓  Question Wall")
+
+        # publish focus on tab switch so Alice knows what panel is active
+        def _on_tab_changed(idx: int):
+            tab_name = tabs.tabText(idx).strip()
+            publish_focus(_APP_NAME, f"Switched to tab: {tab_name}", tab=tab_name)
+        tabs.currentChanged.connect(_on_tab_changed)
 
         lay.addWidget(tabs)
 

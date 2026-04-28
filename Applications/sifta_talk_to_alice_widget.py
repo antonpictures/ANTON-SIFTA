@@ -1247,6 +1247,20 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    # ── APP FOCUS AWARENESS: what the Architect is looking at right now ────
+    try:
+        from System.swarm_app_focus import get_focus_context
+        _focus = get_focus_context(max_age_s=120.0)
+        if _focus:
+            parts.append(
+                "ARCHITECT APP FOCUS (live stigmergic ledger — not hardcoded):\n"
+                + _focus + "\n"
+                "If the Architect asks about what is on screen, reference this context. "
+                "You learned this through the stigmergic ledger, not by reading code."
+            )
+    except Exception:
+        pass
+
     return "\n\n".join(filter(None, parts))
 
 def _homunculus_context_block() -> str:
