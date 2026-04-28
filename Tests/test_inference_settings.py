@@ -22,6 +22,18 @@ def test_inference_defaults_persist_global_and_app_models(tmp_path, monkeypatch)
     assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "alice-phc-cure"
 
 
+def test_inference_defaults_policy_matches_executable_default(monkeypatch):
+    monkeypatch.delenv("SIFTA_DEFAULT_OLLAMA_MODEL", raising=False)
+
+    from System import sifta_inference_defaults as defaults
+
+    assert defaults.CANONICAL_OLLAMA_DEFAULT == "qwen3.5:2b"
+    assert defaults.DEFAULT_OLLAMA_MODEL == "qwen3.5:2b"
+    assert defaults.CANONICAL_OLLAMA_FALLBACK == "qwen3.5:2b"
+    assert "Default Alice cortex:** `qwen3.5:2b`" in (defaults.__doc__ or "")
+    assert "gemma-4-abliterated:latest` (Ollama)" not in (defaults.__doc__ or "")
+
+
 def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")

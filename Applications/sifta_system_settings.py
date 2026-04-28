@@ -947,6 +947,9 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.inf_corvid_combo.currentTextChanged.connect(self._on_inf_corvid_changed)
 
         self.inference_default_card = MetricCard("Alice Cortex", "--")
+        # Compatibility for older tests/plugins: Talk to Alice now follows the
+        # single cortex card instead of owning a separate model selector/card.
+        self.inference_alice_card = self.inference_default_card
         root.addWidget(self.inference_default_card)
 
         root.addStretch()
