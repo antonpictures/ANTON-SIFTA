@@ -4,9 +4,11 @@ import time
 from System import swarm_camera_target
 from System.swarm_sensor_attention_director import (
     apply_attention_decision,
+    compute_attention_drive,
     collect_world_state,
     decide_attention,
     summary_for_alice,
+    tick_with_drive,
 )
 
 
@@ -118,4 +120,54 @@ def test_attention_summary_surfaces_reason_and_evidence(tmp_path, monkeypatch):
     assert "SENSORIMOTOR ATTENTION:" in summary
     assert "active_sense=room_patrol_eye" in summary
     assert "reason=room_patrol_" in summary
+    assert "desire=" in summary
     assert "visual_motion_mean=0.3" in summary
+
+
+def test_attention_desire_rises_when_owner_is_lost(tmp_path, monkeypatch):
+    _patch_camera_target(monkeypatch, tmp_path)
+    now = time.time()
+    _append(
+        tmp_path / "face_detection_events.jsonl",
+        {"ts": now, "faces_detected": 0, "audience": "nobody"},
+    )
+
+    world = collect_world_state(state_dir=tmp_path, now=now)
+    drive = compute_attention_drive(world, last_attention_ts=None)
+
+    assert drive.desire > 0.55
+    assert drive.next_interval_s < 3.2
+    assert "owner_lost" in drive.reasons
+
+
+def test_attention_desire_slows_down_when_owner_is_locked(tmp_path, monkeypatch):
+    _patch_camera_target(monkeypatch, tmp_path)
+    now = time.time()
+    _append(
+        tmp_path / "face_detection_events.jsonl",
+        {"ts": now, "faces_detected": 1, "audience": "architect"},
+    )
+
+    world = collect_world_state(state_dir=tmp_path, now=now)
+    drive = compute_attention_drive(world, last_attention_ts=now)
+
+    assert drive.desire < 0.2
+    assert drive.next_interval_s > 5.0
+    assert "owner_locked" in drive.reasons
+
+
+def test_tick_with_drive_writes_desire_status(tmp_path, monkeypatch):
+    _patch_camera_target(monkeypatch, tmp_path)
+    now = time.time()
+    _append(
+        tmp_path / "audio_ingress_log.jsonl",
+        {"ts_captured": now, "rms_amplitude": 0.22},
+    )
+
+    decision, drive = tick_with_drive(state_dir=tmp_path, write_hardware=True, now=now)
+
+    status = json.loads((tmp_path / "sensory_attention_status.json").read_text())
+    assert decision.target_role == "room_patrol_eye"
+    assert drive.desire == status["desire"]
+    assert status["active_sense"] == "room_patrol_eye"
+    assert "audio_spike" in status["desire_reasons"]

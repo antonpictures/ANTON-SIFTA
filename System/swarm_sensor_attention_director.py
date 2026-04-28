@@ -41,6 +41,7 @@ _IDE_FRESH_WINDOW_S = 15.0
 _AUDIO_SPIKE_RMS = 0.075
 _MOTION_SPIKE = 0.18
 _LOW_ENTROPY_BITS = 4.0
+_STATUS_JSON = "sensory_attention_status.json"
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,20 @@ class AttentionDecision:
     reason: str
     evidence: dict[str, Any]
     write_hardware: bool = True
+
+
+@dataclass(frozen=True)
+class AttentionDrive:
+    """Bounded motivation signal for the resident attention loop.
+
+    This is not a claim of consciousness. It is an auditable control signal:
+    higher desire means Alice has stronger evidence that looking again may
+    reduce uncertainty, so the daemon ticks sooner.
+    """
+
+    desire: float
+    next_interval_s: float
+    reasons: list[str]
 
 
 def _state_path(state_dir: Path | str, name: str) -> Path:
@@ -148,6 +163,11 @@ def _tail_json_rows(path: Path, *, keep_bytes: int = 65536) -> list[dict[str, An
 def _latest_json(path: Path) -> Optional[dict[str, Any]]:
     rows = _tail_json_rows(path)
     return rows[-1] if rows else None
+
+
+def _last_attention_ts(state_dir: Path | str) -> Optional[float]:
+    row = _latest_json(_state_path(state_dir, _LEDGER))
+    return _event_ts(row) if row else None
 
 
 def _truthy(value: Any) -> bool:
@@ -330,6 +350,67 @@ def _evidence(world: WorldState) -> dict[str, Any]:
     }
 
 
+def compute_attention_drive(
+    world: WorldState,
+    *,
+    last_attention_ts: Optional[float] = None,
+) -> AttentionDrive:
+    """Convert sensory uncertainty into a bounded periodic-loop drive.
+
+    Desire rises when useful evidence is missing or alarming, and falls when
+    owner lock is fresh. The interval is the operational effect of that drive.
+    """
+    desire = 0.18
+    reasons: list[str] = ["baseline_watch"]
+
+    if not _fresh(last_attention_ts, world.now, 30.0):
+        desire += 0.22
+        reasons.append("attention_stale")
+
+    faces_fresh = _fresh(world.faces_ts, world.now)
+    visual_fresh = _fresh(world.visual_ts, world.now)
+    audio_fresh = _fresh(world.audio_ts, world.now)
+    ide_fresh = _fresh(world.ide_ts, world.now, _IDE_FRESH_WINDOW_S)
+
+    if faces_fresh and world.owner_visible:
+        desire -= 0.12
+        reasons.append("owner_locked")
+    if faces_fresh and world.faces_detected == 0 and not world.owner_visible:
+        desire += 0.30
+        reasons.append("owner_lost")
+    if faces_fresh and world.unknown_faces > 0:
+        desire += 0.35
+        reasons.append("unknown_face")
+    if audio_fresh and (world.audio_rms or 0.0) >= _AUDIO_SPIKE_RMS:
+        desire += 0.20
+        reasons.append("audio_spike")
+    if visual_fresh and (world.visual_motion_mean or 0.0) >= _MOTION_SPIKE:
+        desire += 0.18
+        reasons.append("motion_spike")
+    if (
+        visual_fresh
+        and world.visual_entropy_bits is not None
+        and world.visual_entropy_bits <= _LOW_ENTROPY_BITS
+    ):
+        desire += 0.12
+        reasons.append("low_visual_entropy")
+    if ide_fresh and world.ide_x is not None:
+        desire += 0.08
+        reasons.append("ide_focus")
+    if world.current_target_lease_until is not None and world.current_target_lease_until < world.now:
+        desire += 0.10
+        reasons.append("eye_lease_expired")
+
+    desire = max(0.0, min(1.0, desire))
+    # High desire → faster loop. Calm owner lock → slower loop.
+    next_interval_s = round(0.75 + (1.0 - desire) * 5.25, 3)
+    return AttentionDrive(
+        desire=round(desire, 4),
+        next_interval_s=next_interval_s,
+        reasons=reasons,
+    )
+
+
 def _decision(candidate: SenseCandidate, world: WorldState, reason: str) -> AttentionDecision:
     return AttentionDecision(
         target_role=candidate.role,
@@ -405,6 +486,7 @@ def apply_attention_decision(
     *,
     state_dir: Path | str = _STATE,
     write_hardware: bool = True,
+    drive: Optional[AttentionDrive] = None,
 ) -> dict[str, Any]:
     """Write the active camera lease and append a reasoned evidence row."""
     written: Optional[dict[str, Any]] = None
@@ -429,8 +511,53 @@ def apply_attention_decision(
         "decision": asdict(decision),
         "camera_target": written,
     }
+    if drive is not None:
+        row["drive"] = asdict(drive)
     _append_jsonl(_state_path(Path(state_dir), _LEDGER), row)
+    if drive is not None:
+        _write_status(Path(state_dir), row, drive)
     return row
+
+
+def _write_status(state_dir: Path, row: dict[str, Any], drive: AttentionDrive) -> None:
+    status = {
+        "ts": row.get("ts", time.time()),
+        "organ": "swarm_sensor_attention_director",
+        "active_sense": row.get("decision", {}).get("target_role"),
+        "target_name": row.get("decision", {}).get("target_name"),
+        "reason": row.get("decision", {}).get("reason"),
+        "desire": drive.desire,
+        "next_interval_s": drive.next_interval_s,
+        "desire_reasons": drive.reasons,
+        "camera_target": row.get("camera_target"),
+    }
+    path = _state_path(state_dir, _STATUS_JSON)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_text(json.dumps(status, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def tick_with_drive(
+    *,
+    state_dir: Path | str = _STATE,
+    write_hardware: bool = True,
+    now: Optional[float] = None,
+) -> tuple[AttentionDecision, AttentionDrive]:
+    state = Path(state_dir)
+    world = collect_world_state(state_dir=state, now=now)
+    drive = compute_attention_drive(
+        world,
+        last_attention_ts=_last_attention_ts(state),
+    )
+    decision = decide_attention(world)
+    apply_attention_decision(
+        decision,
+        state_dir=state,
+        write_hardware=write_hardware,
+        drive=drive,
+    )
+    return decision, drive
 
 
 def tick(
@@ -439,10 +566,41 @@ def tick(
     write_hardware: bool = True,
     now: Optional[float] = None,
 ) -> AttentionDecision:
-    world = collect_world_state(state_dir=state_dir, now=now)
-    decision = decide_attention(world)
-    apply_attention_decision(decision, state_dir=state_dir, write_hardware=write_hardware)
+    decision, _drive = tick_with_drive(
+        state_dir=state_dir,
+        write_hardware=write_hardware,
+        now=now,
+    )
     return decision
+
+
+def run_periodic_loop(
+    *,
+    state_dir: Path | str = _STATE,
+    write_hardware: bool = True,
+    max_ticks: Optional[int] = None,
+    interval_override_s: Optional[float] = None,
+) -> None:
+    """Run the resident attention loop with desire-adapted sleep intervals."""
+    ticks = 0
+    while True:
+        decision, drive = tick_with_drive(
+            state_dir=state_dir,
+            write_hardware=write_hardware,
+        )
+        print(
+            "[attention_director]",
+            _format_decision(decision),
+            f"desire={drive.desire:.2f}",
+            f"next={drive.next_interval_s:.2f}s",
+            "reasons=" + "+".join(drive.reasons),
+            flush=True,
+        )
+        ticks += 1
+        if max_ticks is not None and ticks >= max_ticks:
+            return
+        sleep_s = interval_override_s if interval_override_s is not None else drive.next_interval_s
+        time.sleep(max(0.25, sleep_s))
 
 
 def _format_decision(decision: AttentionDecision) -> str:
@@ -472,6 +630,7 @@ def summary_for_alice(
     reason = str(decision.get("reason") or "unknown")
     role = str(decision.get("target_role") or "unknown_sense")
     name = str(decision.get("target_name") or camera_target.get("name") or "unknown")
+    drive = row.get("drive") if isinstance(row.get("drive"), dict) else {}
     evidence = decision.get("evidence") if isinstance(decision.get("evidence"), dict) else {}
     bits = []
     for key in ("owner_visible", "unknown_faces", "audio_rms", "visual_motion_mean", "visual_entropy_bits", "ide_name"):
@@ -483,6 +642,7 @@ def summary_for_alice(
         "SENSORIMOTOR ATTENTION:\n"
         f"- active_sense={role} target={name}\n"
         f"- reason={reason}\n"
+        f"- desire={drive.get('desire', 'unknown')} next_tick_s={drive.get('next_interval_s', 'unknown')}\n"
         f"- evidence={evidence_text}\n"
         "- policy=choose the sense that best reduces uncertainty; every shift is ledgered"
     )
@@ -492,18 +652,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Alice resident sensor attention director")
     parser.add_argument("--once", action="store_true", help="Run one attention tick and exit")
     parser.add_argument("--daemon", action="store_true", help="Run continuously")
-    parser.add_argument("--interval", type=float, default=2.0, help="Daemon tick interval seconds")
+    parser.add_argument("--interval", type=float, default=None, help="Override desire-driven daemon tick interval seconds")
     parser.add_argument("--dry-run", action="store_true", help="Do not write the active camera target")
     args = parser.parse_args(argv)
 
     if args.daemon:
         print("[attention_director] online")
-        while True:
-            decision = tick(write_hardware=not args.dry_run)
-            print("[attention_director]", _format_decision(decision), flush=True)
-            time.sleep(max(0.25, args.interval))
-    decision = tick(write_hardware=not args.dry_run)
-    print(_format_decision(decision))
+        run_periodic_loop(write_hardware=not args.dry_run, interval_override_s=args.interval)
+    decision, drive = tick_with_drive(write_hardware=not args.dry_run)
+    print(
+        _format_decision(decision),
+        f"desire={drive.desire:.2f}",
+        f"next={drive.next_interval_s:.2f}s",
+    )
     return 0
 
 
