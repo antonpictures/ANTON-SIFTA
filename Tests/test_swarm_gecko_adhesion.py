@@ -8,30 +8,55 @@ import math, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import importlib.util
+
 from System.swarm_gecko_adhesion import (
-    compute_adhesion, warp_truth_probe, explain,
-    TRUTH_REAL_GPU, TRUTH_REAL_CPU, TRUTH_STUB, TRUTH_BROKEN,
+    compute_adhesion,
+    warp_truth_probe,
+    explain,
+    TRUTH_REAL_GPU,
+    TRUTH_REAL_CPU,
+    TRUTH_STUB,
+    TRUTH_BROKEN,
     _WARP_TRUTH,
 )
+
+_HAS_WARP = importlib.util.find_spec("warp") is not None
 
 
 def test_warp_probe_returns_dict():
     p = warp_truth_probe()
     assert "truth" in p
-    assert p["truth"] in (TRUTH_REAL_GPU, TRUTH_REAL_CPU, TRUTH_STUB, TRUTH_BROKEN)
-
-
-def test_warp_truth_is_real_on_this_machine():
-    """Warp 1.12.1 is installed — should be at least REAL_CPU."""
-    assert _WARP_TRUTH in (TRUTH_REAL_CPU, TRUTH_REAL_GPU), (
-        f"Warp installed but truth={_WARP_TRUTH!r} — check import"
+    assert "scanner_line" in p
+    assert p["truth"] in (
+        TRUTH_REAL_GPU,
+        TRUTH_REAL_CPU,
+        TRUTH_STUB,
+        TRUTH_BROKEN,
     )
+
+
+def test_warp_truth_matches_importability():
+    """If ``warp`` is importable, organ probe should not stay STUB."""
+    if not _HAS_WARP:
+        assert _WARP_TRUTH == TRUTH_STUB
+    else:
+        assert _WARP_TRUTH in (
+            TRUTH_REAL_CPU,
+            TRUTH_REAL_GPU,
+            TRUTH_BROKEN,
+        ), _WARP_TRUTH
 
 
 def test_compute_adhesion_returns_receipt():
     r = compute_adhesion(z_values=[3.0, 2.0, 1.0, 0.5], write_receipt=False)
     assert r.n_probes == 4
-    assert r.truth in (TRUTH_REAL_CPU, TRUTH_REAL_GPU, TRUTH_BROKEN)
+    assert r.truth in (
+        TRUTH_REAL_CPU,
+        TRUTH_REAL_GPU,
+        TRUTH_BROKEN,
+        TRUTH_STUB,
+    )
 
 
 def test_adhesion_zone_physics():

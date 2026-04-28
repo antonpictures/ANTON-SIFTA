@@ -13,6 +13,7 @@
 - **Covenant read:** yes — **§7.5 Python-first**, **§7.6 Alice = OS**, **§8.6 substrate metering**, Predator Gate **before** runtime surgery.  
 - **Triple-IDE collisions:** follow **`IDE_BOOT_COVENANT.md` §4.4** — tail `ide_stigmergic_trace.jsonl` + `git status` before shared edits; **one Architect-owned lane** per hot prompt/manifest/harness patch; **append-only** ledgers (add a correcting row, never rewrite history); yield if a peer already registered the same intent; cross-IDE handoff = **`ide_stigmergic_trace.jsonl`** (not the Swarm dead drop). **Battlefield snapshot:** maintain **§0.1** when two+ IDEs are on the same node.  
 - **Research bolus for “living OS” (below):** pulled as **primary cites** to match **Codex math/runtime** + **AG31 build** + **Cursor verify** — not lore.  
+- **NVIDIA open assets (join lane):** full battlefield + triple-IDE agreement line → [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) + `System/nvidia_open_assets_registry.py` (**§0.2**).  
 - **Dirty `main` rule:** if the M5 worktree is **contaminated**, **do not** merge proposal branches into local `main` directly. Spawn **`integration/predator-proposals-20260428`** (or dated) from **clean `origin/main`**, cherry-pick / compare docs only, then **Architect GO** for any runtime merge.
 
 ### 0.1 — Battlefield status (triple-IDE — **Architect paste / rotate**)
@@ -21,15 +22,23 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-04-28T14:17:44-07:00` — *example seed; Architect replaces when switching fronts* |
+| **Stamp (local ISO)** | `2026-04-28T14:46:14-07:00` — *CG55M NVIDIA battlefield row; Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
-| **Git** | branch: ___ · clean/dirty: ___ · ahead/behind origin: ___ |
-| **Active doctors** | CG55M (Cursor): lane ___ · C55M (Codex): lane ___ · AG31 (Antigravity): lane ___ |
-| **Hot surfaces** | e.g. `System/swarm_prompt_contract.py`, `apps_manifest.json`, `alice_cortex_eval_runner.py`, `.sifta_state/ide_stigmergic_trace.jsonl` tail — **list only what is contested** |
-| **Locks / yield** | *Who owns the next edit on each hot file? Peers yield or audit-only.* |
-| **Trace checkpoint** | last `ide_stigmergic_trace` row: `ts` ___ · `doctor` ___ · `intent` one line ___ |
-| **Collision risk** | **LOW** / **MED** / **HIGH** *(HIGH = parallel surgery on same paths without lock)* |
-| **Next safe move** | one sentence: e.g. “C55M finishes manifest diff; AG31 holds Probe until receipt.” |
+| **Git** | `main` @ ledger repair tip **`f1ab74e8`** (verify with `git rev-parse --short HEAD`) · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
+| **Active doctors** | CG55M (Cursor): **Surgeon** — `nvidia_open_assets_registry.py` + battlefield doc · C55M: **Probe/Surgeon** — Isaac Lab survey doc (P2 order still open) · AG31: **Release/Surgeon** — HF / web pulls per Architect |
+| **Hot surfaces** | `System/nvidia_open_assets_registry.py`, `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md`, `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`), `.sifta_state/work_receipts.jsonl` (append-only) |
+| **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns registry + battlefield MD for this bolus; **AG31** yields unless extending HF dataset card snapshot with GO |
+| **Trace checkpoint** | tail `ide_stigmergic_trace.jsonl` after next NVIDIA pull; include `intent: NVIDIA_OPEN_ASSETS_*` |
+| **Collision risk** | **LOW** — ledger JSONL repaired (`f1ab74e8`); remain **MED** if C55M + AG31 both touch Isaac stub without trace |
+| **Next safe move** | C55M lands **Isaac Lab wire survey**; CG55M keeps **pytest** green on registry; AG31 optional **HF dataset subset** only with Architect **GO** (no LFS blobs in git). |
+
+### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
+
+**SoT:** [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) · **Code:** `System/nvidia_open_assets_registry.py` · **Tests:** `tests/test_nvidia_open_assets_registry.py`
+
+**Triple-IDE one-liner (copy into trace):** import `TRIPLE_IDE_AGREEMENT_ONE_LINER` from `System.nvidia_open_assets_registry` or read the markdown §“Triple-IDE agreement”.
+
+**First falsifiable data pull (Architect machine, not CI):** `nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim` — see registry `hf_cli_download_gr00t_sim_dataset()`.
 
 ---
 
@@ -196,4 +205,4 @@ SIFTA audits and metabolizes a living software organism.
 
 ---
 
-*Document version: 2026-04-28 — CG55M (Cursor hill); **§0.1 battlefield status** + **§7 Event 74** + **§7.1 literature spine** + **§8 NVIDIA honest flex** + `sifta_vs_nvidia_differentiator.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-04-28 — CG55M (Cursor hill); **§0.1–0.2 battlefield + NVIDIA join lane** + **§7 Event 74** + **§7.1 literature spine** + **§8 NVIDIA honest flex** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*

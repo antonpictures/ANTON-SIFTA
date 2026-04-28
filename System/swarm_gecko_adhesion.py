@@ -29,8 +29,10 @@ NPPL: simulation / research posture only.
 Authors: AG31 (Antigravity/Gemini 2.5 Pro), Architect Ioan George Anton
 Date: 2026-04-28
 Refs:
-  Autumn et al. (2000) Nature 405:681 — gecko van der Waals adhesion
-  Autumn et al. (2002) PNAS 99:12252 — direction-dependent adhesion
+  Autumn et al. (2000) Nature 405:681 — gecko van der Waals adhesion (doi:10.1038/35073974)
+  Autumn et al. (2002) PNAS 99:12252 — direction-dependent adhesion (doi:10.1073/pnas.252462899)
+  Arzt et al. (2003) PNAS 100:10603 — micro–nano contact in biological attachment (doi:10.1073/pnas.1534701100)
+  Persson (2001) PRL 87:116101 — rough-surface contact mechanics (doi:10.1103/PhysRevLett.87.116101)
   Israelachvili (2011) Intermolecular and Surface Forces, 3rd ed.
   NVIDIA Warp: https://developer.nvidia.com/warp-python
 """
@@ -43,32 +45,26 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List, Tuple
 
+from System.nvidia_warp_scanner import (
+    TRUTH_REAL_GPU,
+    TRUTH_REAL_CPU,
+    TRUTH_STUB,
+    TRUTH_BROKEN,
+    get_cached_warp_scan,
+    warp_truth_probe_dict,
+)
+
 _REPO  = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
-# ── Truth constants ───────────────────────────────────────────────────────────
-TRUTH_REAL_GPU = "REAL_GPU"   # Warp + CUDA device
-TRUTH_REAL_CPU = "REAL_CPU"   # Warp + CPU/ARM only
-TRUTH_STUB     = "STUB"       # Warp not installed
-TRUTH_BROKEN   = "BROKEN"     # runtime error
-TRUTH_NPPL     = "NPPL:sim_only"
+TRUTH_NPPL = "NPPL:sim_only"
 
-# ── Warp bootstrap ────────────────────────────────────────────────────────────
-_WARP_TRUTH = TRUTH_STUB
-_WARP_VERSION = None
-_WARP_DEVICE  = "cpu"
-_WARP_ERROR   = None
-
-try:
-    import warp as wp
-    wp.init()
-    _WARP_VERSION = wp.__version__
-    devs = wp.get_devices()
-    has_cuda = any("cuda" in str(d).lower() for d in devs)
-    _WARP_TRUTH   = TRUTH_REAL_GPU if has_cuda else TRUTH_REAL_CPU
-    _WARP_DEVICE  = "cuda:0" if has_cuda else "cpu"
-except Exception as e:
-    _WARP_ERROR = str(e)
+# ── Warp bootstrap (kernel smoke → REAL_CPU / REAL_GPU; else STUB / BROKEN) ──
+_scan = get_cached_warp_scan(run_kernel=True)
+_WARP_TRUTH = _scan.truth
+_WARP_VERSION = _scan.version
+_WARP_DEVICE = "cuda:0" if _scan.cuda_reported else "cpu"
+_WARP_ERROR = _scan.error
 
 # ── Physical constants ────────────────────────────────────────────────────────
 # Hamaker constant for gecko setae / substrate (approx, SI units scaled)
@@ -84,6 +80,8 @@ B_SIM = 0.01  # repulsive prefactor (keeps particles off z=0)
 
 # ── Warp kernel ───────────────────────────────────────────────────────────────
 if _WARP_TRUTH in (TRUTH_REAL_CPU, TRUTH_REAL_GPU):
+    import warp as wp
+
     @wp.kernel
     def gecko_contact_kernel(
         pos_z:   wp.array(dtype=wp.float32),   # probe heights above surface
@@ -208,12 +206,9 @@ def _write_receipt(r: GeckoReceipt) -> None:
 
 def warp_truth_probe() -> dict:
     """Return Warp installation truth — used by Asset Scanner."""
-    return {
-        "truth":   _WARP_TRUTH,
-        "version": _WARP_VERSION,
-        "device":  _WARP_DEVICE,
-        "error":   _WARP_ERROR,
-    }
+    d = warp_truth_probe_dict()
+    d["device"] = _WARP_DEVICE
+    return d
 
 
 def explain() -> str:
@@ -222,8 +217,8 @@ def explain() -> str:
         f"Biology: gecko setae produce van der Waals adhesion (~10 N per toe).\n"
         f"NVIDIA Warp kernel computes F_net = LJ_repulsion - vdW_attraction "
         f"per probe point against a flat surface.\n"
-        f"Warp {_WARP_VERSION} | Device: {_WARP_DEVICE} | Truth: {_WARP_TRUTH} | {TRUTH_NPPL}\n"
-        f"Refs: Autumn et al. (2000) Nature 405:681; Israelachvili (2011)."
+        f"Warp {_WARP_VERSION or 'N/A'} | Device: {_WARP_DEVICE} | Truth: {_WARP_TRUTH} | {TRUTH_NPPL}\n"
+        f"Refs: Autumn et al. (2000, 2002); Arzt et al. (2003); Persson (2001); Israelachvili (2011)."
     )
 
 
