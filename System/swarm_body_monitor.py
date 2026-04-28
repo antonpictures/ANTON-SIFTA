@@ -168,6 +168,8 @@ class OrganEngine:
         self._starling_spread = 0.5
         self._fly_residual    = 0.0
         self._fly_gain_error  = 1.0
+        self._fly_live        = False
+        self._aw_traces       = []
         self._waggle_angle    = 0.0
         self._rl_score        = 0.5
         self._field_energy    = 0.85
@@ -207,10 +209,35 @@ class OrganEngine:
         # Starling: topological spread oscillates (predator scatter sim)
         self._starling_spread = 0.35 + 0.2 * abs(math.sin(t * 0.03))
 
-        # Fly efference: residual approaches zero when stable, spikes on motion
-        if random.random() < 0.04:
-            self._fly_residual = random.uniform(3.0, 8.0)  # simulated camera move
-        self._fly_residual *= 0.88  # self-cancellation decay
+        # Fly efference: reads from live active_window.jsonl saccade stream
+        # A window focus change = a "saccade". Rapid switches = high residual.
+        aw_path = _STATE / "active_window.jsonl"
+        aw_traces = _tail_trace(aw_path, n=10, max_age_s=120)
+        self._aw_traces = aw_traces
+        if len(aw_traces) >= 2:
+            # Compute inter-saccade intervals from real timestamps
+            intervals = []
+            for i in range(1, len(aw_traces)):
+                dt = aw_traces[i].get("ts", 0) - aw_traces[i-1].get("ts", 0)
+                if 0 < dt < 120:
+                    intervals.append(dt)
+            if intervals:
+                mean_interval = sum(intervals) / len(intervals)
+                # Fast switching (< 5s) = high residual (attention scatter)
+                # Slow switching (> 30s) = low residual (locked-on focus)
+                self._fly_residual = max(0.0, 10.0 - mean_interval) * 0.8
+            else:
+                self._fly_residual *= 0.88
+            # Count distinct apps in the window as a measure of saccade breadth
+            apps = set(t.get("app", "") for t in aw_traces)
+            self._fly_gain_error = max(0.0, min(1.0, len(apps) / 8.0))
+            self._fly_live = True
+        else:
+            # Fallback: internal decay (still labeled DEMO if no live data)
+            if random.random() < 0.04:
+                self._fly_residual = random.uniform(3.0, 8.0)
+            self._fly_residual *= 0.88
+            self._fly_live = False
 
         # Waggle dance angle drifts toward detected resource direction
         self._waggle_angle = (self._waggle_angle + 0.02 + random.gauss(0, 0.005)) % (2 * math.pi)
@@ -367,10 +394,12 @@ class OrganEngine:
             },
             "fly": {
                 "value": round(self._fly_residual, 4),
-                "label": f"residual={self._fly_residual:.4f}",
-                "sub":   f"gain_err={self._fly_gain_error:.4f}  NLMS",
+                "label": f"residual={self._fly_residual:.4f}  saccades={len(self._aw_traces)}",
+                "sub":   f"gain_err={self._fly_gain_error:.4f}  NLMS  {'LIVE' if self._fly_live else 'DEMO'}",
                 "pct":   max(0.0, 1.0 - self._fly_residual / 10.0),
-                **_demo_truth("internal efference decay; no live camera-motion stream wired"),
+                **(_live_ledger_truth(_STATE / "active_window.jsonl", "active_window.jsonl saccade stream")
+                   if self._fly_live
+                   else _demo_truth("no recent active_window data; using internal decay")),
             },
             "metabolic": {
                 "value": round(e, 4),
