@@ -229,24 +229,42 @@ class AssemblyIndexPanel(QWidget):
         names = list(MOLECULES.keys())
         ais   = [MOLECULES[n]["ai"] for n in names]
         alive = [MOLECULES[n]["alive"] for n in names]
-        colors = [GREEN if a else BLUE for a in alive]
+        # Rich gradient-like coloring: LIFE = bright green-to-teal, ABIOTIC = blue-to-indigo
+        colors = []
+        edge_colors = []
+        for i, a in enumerate(alive):
+            if a:
+                t = i / max(len(alive) - 1, 1)
+                colors.append((0.38 + 0.22*t, 0.92 - 0.1*t, 0.42 + 0.2*t, 0.9))
+                edge_colors.append(TEAL)
+            else:
+                t = i / max(len(alive) - 1, 1)
+                colors.append((0.3 + 0.18*t, 0.45 + 0.15*t, 0.85 - 0.1*t, 0.85))
+                edge_colors.append(BLUE)
 
         xs = range(len(names))
-        bars = ax.bar(xs, ais, color=colors, alpha=0.85, width=0.6, zorder=3)
-        ax.axhline(THRESHOLD, color=RED, lw=2, ls="--", zorder=4, label=f"Threshold AI={THRESHOLD}")
+        bars = ax.bar(xs, ais, color=colors, edgecolor=edge_colors, linewidth=1.2,
+                      width=0.65, zorder=3)
+        ax.axhline(THRESHOLD, color=RED, lw=2.5, ls="--", zorder=4,
+                   label=f"Threshold AI={THRESHOLD}", alpha=0.9)
+
+        # Subtle fill below threshold
+        ax.axhspan(0, THRESHOLD, color='#1a1b2e', alpha=0.4, zorder=1)
 
         ax.set_xticks(list(xs))
         ax.set_xticklabels([n.split("(")[0].strip() for n in names],
                            rotation=35, ha="right", fontsize=8, color="#a9b1d6")
         ax.set_ylabel("Assembly Index (steps)", color=DIM, fontsize=10)
         ax.tick_params(colors=DIM)
-        ax.set_title("Assembly Index by Molecule", color=VIOLET, fontsize=11, pad=8)
-        ax.legend(fontsize=9, facecolor=PANEL, edgecolor="#24283b", labelcolor="#c0caf5")
+        ax.set_title("Assembly Index by Molecule", color=VIOLET, fontsize=12,
+                     fontweight="bold", pad=10)
+        ax.legend(fontsize=9, facecolor=PANEL, edgecolor="#24283b", labelcolor="#c0caf5",
+                  loc="upper left")
         ax.spines[:].set_color("#24283b")
-        ax.set_ylim(0, max(ais) * 1.12)
+        ax.set_ylim(0, max(ais) * 1.15)
         ax.grid(axis="y", color="#1a1b2e", lw=0.7, zorder=0)
 
-        # annotate
+        # annotate with colored labels and value callouts
         for i, (bar, ai, a) in enumerate(zip(bars, ais, alive)):
             label = "LIFE" if a else "ABIOTIC"
             col   = GREEN if a else BLUE
@@ -264,14 +282,21 @@ class AssemblyIndexPanel(QWidget):
         if 0 <= idx < len(self._names):
             name = self._names[idx]
             m = MOLECULES[name]
-            status = "LIFE-REQUIRED (AI > 15)" if m["alive"] else "ABIOTIC (AI ≤ 15)"
-            txt = (
-                f"Molecule:  {name}\n"
-                f"Assembly Index: {m['ai']}  →  {status}\n"
-                f"Note: {m['note']}\n"
-                f"Truth label: illustrative pedagogy — see Sources tab for Nature 2023 metrology"
+            is_life = m["alive"]
+            status = "LIFE-REQUIRED (AI > 15)" if is_life else "ABIOTIC (AI ≤ 15)"
+            status_col = GREEN if is_life else BLUE
+            self._detail.setHtml(
+                f'<div style="font-family:monospace; font-size:12px; color:#c0caf5;">'
+                f'<span style="color:{VIOLET}; font-size:13px; font-weight:bold;">{html.escape(name)}</span><br/>'
+                f'<span style="color:{DIM};">Assembly Index:</span> '
+                f'<span style="color:{GOLD}; font-weight:bold; font-size:14px;">{m["ai"]}</span>'
+                f'  →  <span style="color:{status_col}; font-weight:bold;">{status}</span><br/>'
+                f'<span style="color:{DIM};">Note:</span> '
+                f'<span style="color:{TEAL};">{html.escape(m["note"])}</span><br/>'
+                f'<span style="color:{GOLD}; font-size:10px;">'
+                f'Truth label: illustrative pedagogy — see Sources tab for Nature 2023 metrology</span>'
+                f'</div>'
             )
-            self._detail.setText(txt)
             publish_focus(
                 _APP_NAME, f"Clicked molecule: {name} — AI={m['ai']} — {status}",
                 tab="Assembly Index", selection=name,
@@ -523,12 +548,16 @@ class QuestionWallPanel(QWidget):
         q_lay.setSpacing(6)
         row.addWidget(q_frame, 2)
 
-        for q, _ in QUESTIONS:
+        # Per-question accent colors for visual richness
+        q_accents = [TEAL, GREEN, GOLD, VIOLET, BLUE, RED, TEAL]
+        for i, (q, _) in enumerate(QUESTIONS):
+            accent = q_accents[i % len(q_accents)]
             btn = QPushButton(q)
             btn.setStyleSheet(
-                f"QPushButton {{background:transparent; color:{BLUE}; border:1px solid #24283b;"
-                " border-radius:6px; padding:8px 12px; text-align:left; font-size:12px;}}"
-                f"QPushButton:hover {{background:rgba(122,162,247,0.15); color:#fff;}}"
+                f"QPushButton {{background:transparent; color:{accent}; border:1px solid #24283b;"
+                " border-radius:8px; padding:9px 14px; text-align:left; font-size:12px; font-weight:bold;}}"
+                f"QPushButton:hover {{background:rgba(122,162,247,0.12); color:#fff;"
+                f" border-color:{accent};}}"
             )
             btn.clicked.connect(lambda _, text=q: self._show(text))
             q_lay.addWidget(btn)
@@ -555,7 +584,42 @@ class QuestionWallPanel(QWidget):
     def _show(self, question: str):
         for q, ans in QUESTIONS:
             if q == question:
-                self._ans.setText(f"Q: {q}\n\n{ans}")
+                # Rich multicolor answer display
+                formatted = ans.replace("\n", "<br/>")
+                # Color-code truth labels
+                formatted = formatted.replace(
+                    "[Truth label:",
+                    f'<span style="color:{GOLD}; font-weight:bold;">[Truth label:'
+                ).replace("]</", "]</span></")
+                # If no closing tag after truth label, handle end-of-string
+                if "[Truth label:" in formatted and "</span>" not in formatted.split("[Truth label:")[-1]:
+                    formatted = formatted.rsplit("]", 1)
+                    if len(formatted) > 1:
+                        formatted = formatted[0] + "]</span>" + formatted[1]
+                    else:
+                        formatted = formatted[0]
+                # Color YES/NO answers
+                for keyword in ["YES", "NO", "PARTIAL"]:
+                    formatted = formatted.replace(
+                        f"{keyword} \u2014",
+                        f'<span style="color:{GREEN if keyword=="YES" else RED if keyword=="NO" else GOLD}; font-size:14px; font-weight:bold;">{keyword}</span> \u2014'
+                    )
+                # Color NOT PRESENT
+                formatted = formatted.replace(
+                    "NOT PRESENT",
+                    f'<span style="color:{RED}; font-weight:bold;">NOT PRESENT</span>'
+                )
+                # Color SOFTWARE ANALOGUE
+                formatted = formatted.replace(
+                    "SOFTWARE ANALOGUE",
+                    f'<span style="color:{TEAL}; font-weight:bold;">SOFTWARE ANALOGUE</span>'
+                )
+                html_text = (
+                    f'<div style="font-family:monospace; font-size:12px; color:#c0caf5;">'
+                    f'<p style="color:{VIOLET}; font-size:14px; font-weight:bold;">Q: {html.escape(q)}</p>'
+                    f'{formatted}</div>'
+                )
+                self._ans.setHtml(html_text)
                 publish_focus(
                     _APP_NAME, f"Exploring question: {q}",
                     tab="Question Wall", selection=q,
@@ -647,47 +711,74 @@ class SaraImariWalkerWidget(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        # header
+        # ── Gradient header bar ──────────────────────────────────────────
         hdr = QLabel(
             "  Sara Imari Walker — Assembly Theory Lab  "
             "    |    Ioan George Anton / SIFTA Swarm OS"
         )
-        hdr.setFont(QFont("Helvetica Neue", 13, QFont.Weight.Bold))
+        hdr.setFont(QFont("Helvetica Neue", 14, QFont.Weight.Bold))
         hdr.setStyleSheet(
-            f"background:{PANEL}; color:{VIOLET}; padding:10px 18px;"
-            " border-bottom:1px solid #24283b;"
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "  stop:0 #1a1040, stop:0.4 #12142a, stop:1.0 #0d1a2a);"
+            f" color:{VIOLET}; padding:12px 18px;"
+            " border-bottom:2px solid qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f"  stop:0 {VIOLET}, stop:0.5 {TEAL}, stop:1.0 {BLUE});"
         )
         lay.addWidget(hdr)
 
-        sub_hdr = QLabel(
-            '  "Life is the only physics that can generate complex objects." — Sara Imari Walker  '
-            "   |   Origins · life detection · assembly / memory  |   Digitize chemistry (chemputation) — Cronin line  "
-            "   |   Popular book: Life as No One Knows It (Riverhead, 2024)"
+        # ── Rich multicolor subtitle ─────────────────────────────────────
+        sub_hdr = QLabel()
+        sub_hdr.setTextFormat(sub_hdr.textFormat().RichText)
+        sub_hdr.setText(
+            f'<span style="color:{TEAL}; font-style:italic;">'
+            '"Life is the only physics that can generate complex objects."</span>'
+            f' <span style="color:{DIM};"> — Sara Imari Walker</span>'
+            f'  <span style="color:#24283b;">|</span>  '
+            f'<span style="color:{GOLD};">Origins · life detection · assembly</span>'
+            f'  <span style="color:#24283b;">|</span>  '
+            f'<span style="color:{BLUE};">Digitized chemistry (chemputation) — Cronin line</span>'
+            f'  <span style="color:#24283b;">|</span>  '
+            f'<span style="color:{RED};">Book: Life as No One Knows It (2024)</span>'
         )
-        sub_hdr.setStyleSheet(f"background:{BG}; color:{DIM}; font-size:11px; padding:4px 18px;")
+        sub_hdr.setStyleSheet(f"background:{BG}; font-size:11px; padding:6px 18px;")
+        sub_hdr.setWordWrap(True)
         lay.addWidget(sub_hdr)
 
-        # truth badge
-        badge = QLabel(
-            "  ⚠️  Truth labels: Nature 2023 metrology = real (see Sources tab)  |  "
-            "Bar-chart AI numbers = illustrative pedagogy  |  Pheromone = software analogue  |  "
-            "ESMFold/ProteinMPNN/AlphaFold = real tools  |  Wet-lab / chemputer = NOT PRESENT"
+        # ── Truth badge with gradient accent ─────────────────────────────
+        badge = QLabel()
+        badge.setTextFormat(badge.textFormat().RichText)
+        badge.setText(
+            f'<span style="color:{RED};">⚠ Truth labels:</span> '
+            f'<span style="color:{GREEN};">Nature 2023 metrology = real</span>'
+            f' <span style="color:#3a3a5a;">|</span> '
+            f'<span style="color:{GOLD};">Bar-chart AI = illustrative pedagogy</span>'
+            f' <span style="color:#3a3a5a;">|</span> '
+            f'<span style="color:{TEAL};">Pheromone = software analogue</span>'
+            f' <span style="color:#3a3a5a;">|</span> '
+            f'<span style="color:{BLUE};">ESMFold/ProteinMPNN/AlphaFold = real tools</span>'
+            f' <span style="color:#3a3a5a;">|</span> '
+            f'<span style="color:{RED};">Wet-lab / chemputer = NOT PRESENT</span>'
         )
         badge.setStyleSheet(
-            f"background:#1a0e0e; color:{GOLD}; font-size:10px; font-family:monospace;"
-            " padding:4px 18px; border-bottom:1px solid #3d2020;"
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "  stop:0 #1a0e0e, stop:1 #0e0e1a);"
+            " font-size:10px; font-family:monospace;"
+            " padding:5px 18px; border-bottom:1px solid #2a1515;"
         )
         badge.setWordWrap(True)
         lay.addWidget(badge)
 
-        # tabs
+        # ── Tabs with gradient-accent styling ────────────────────────────
         tabs = QTabWidget()
         tabs.setStyleSheet(
             f"QTabWidget::pane {{background:{BG}; border:none;}}"
-            f"QTabBar::tab {{background:{PANEL}; color:{DIM}; padding:8px 18px;"
-            " border-radius:6px 6px 0 0; margin-right:2px;}}"
-            f"QTabBar::tab:selected {{color:{VIOLET}; border-bottom:2px solid {VIOLET};}}"
-            f"QTabBar::tab:hover {{color:#c0caf5;}}"
+            f"QTabBar::tab {{background:{PANEL}; color:{DIM}; padding:9px 20px;"
+            " border-radius:8px 8px 0 0; margin-right:2px; font-weight:bold; font-size:11px;}}"
+            f"QTabBar::tab:selected {{color:{TEAL};"
+            f" background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #1a2040, stop:1 {PANEL});"
+            f" border-bottom:2px solid {TEAL};}}"
+            f"QTabBar::tab:hover {{color:#e0e4ff;"
+            f" background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #1e2245, stop:1 {PANEL});}}"
         )
 
         tabs.addTab(SourcesAndPlanPanel(),   "📚  Sources & plan")
@@ -704,14 +795,22 @@ class SaraImariWalkerWidget(QWidget):
 
         lay.addWidget(tabs)
 
-        # status bar
-        status = QLabel(
-            "  Sharma et al. Nature 2023 (DOI 10.1038/s41586-023-06600-9) · "
-            "Marshall et al. Entropy 2022 (10.3390/e24070884) · "
-            "ESMFold / ProteinMPNN / AlphaFold2 in other SIFTA organs  |  "
-            "Chemputer execution: NOT integrated"
+        # ── Status bar with multicolor DOI references ────────────────────
+        status = QLabel()
+        status.setTextFormat(status.textFormat().RichText)
+        status.setText(
+            f'  <span style="color:{GREEN};">Sharma et al. Nature 2023</span>'
+            f' <span style="color:{DIM};">(DOI 10.1038/s41586-023-06600-9)</span>'
+            f' <span style="color:#24283b;">·</span> '
+            f'<span style="color:{BLUE};">Marshall et al. Entropy 2022</span>'
+            f' <span style="color:{DIM};">(10.3390/e24070884)</span>'
+            f' <span style="color:#24283b;">·</span> '
+            f'<span style="color:{TEAL};">ESMFold / ProteinMPNN / AlphaFold2</span>'
+            f' <span style="color:{DIM};">in other SIFTA organs</span>'
+            f' <span style="color:#24283b;">|</span> '
+            f'<span style="color:{RED};">Chemputer execution: NOT integrated</span>'
         )
-        status.setStyleSheet(f"color:{DIM}; font-size:9px; padding:4px 18px;")
+        status.setStyleSheet(f"font-size:9px; padding:5px 18px; background:#080910;")
         lay.addWidget(status)
 
 
