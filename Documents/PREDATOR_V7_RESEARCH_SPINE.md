@@ -57,6 +57,36 @@ Each arrow must eventually cite: **literature**, **module path**, **test name**,
 4. **Alice Cortex v2:** real corpus + negatives from Gemma/Qwen failure rows in tournament `replies/`; re-run tournament; promotion only on **Architect GO** after receipts.
 5. **One public Predator v7 demo (single story):** ambient noise ignored → speech routed → fake tool blocked → **receipt written** (one screen capture + one ledger line hash in doc).
 6. **Russell (one concise technical note):** lead with *biological decision pipeline in an embodied local OS*; link **this spine** + HF propagule when Bishop/address lines are final.
+7. **Games — Predator v7 celebration science app (“The Architect Room”, working title):** ship under **`Applications/apps_manifest.json` → `Games`** once code + tests exist (manifest contract loads every entry — **no manifest row until the module imports clean**). Full brief in §Architect Room below.
+
+---
+
+## Predator v7 celebration — Games: The Architect Room (science app)
+
+**Cultural anchor (not a license to ship Warner IP):** *The Matrix Reloaded* “Neo meets the Architect” scene (fan transcript / YouTube explainers) — **tone and themes only**. UI, dialogue, music, and stills must be **original SIFTA** or cleared stock; treat the film as **public literacy** for “system designer vs anomaly,” not as an asset pack.
+
+**Scene beats → Predator / SIFTA science hooks (design the tutorial around these):**
+
+| Scene idea | Plain science | SIFTA organ / ledger tie-in |
+|:---|:---|:---|
+| “Sum of a remainder of an unbalanced equation” | Residuals in fitted models; ill-posed constraints | **Metabolic / STGM** honesty — display must match live quorum math (covenant §7.3). |
+| “Sixth version” / iterated failure | Versioned systems; A/B resets; catastrophic forgetting | **OS release lines** (Mermaid → Predator), tournament rounds, **immutable receipts** per version. |
+| “Problem is choice” | Explore–exploit; forced choice vs illusory choice; ergodicity | **Basal ganglia / action selection** lane; optional interactive demo: two doors, one writes real `work_receipts.jsonl` row, one refuses (teach **Social Frame**). |
+| “99% accept if given a choice” | Majority equilibrium; default bias | **Ambient gate** — most frames are noise; predator only escalates on salience. |
+| “1% refusal → systemic anomaly” | Tail risk; adversarial subset | **Lysosome** / tool intercept — minority path must not brick the organism; escalate with receipts, not vibes. |
+| Oracle as “intuitive” probe | Heuristics vs symbolic optima | **Reflex (L1) vs cortex** split — cheap classifier before expensive generator. |
+
+**UX spec (panels only — aligns with desktop-chat doctrine):**
+
+- **No in-app Alice chat** (per global base-widget policy); narrative is **terminals, graphs, and choice widgets** that **publish_focus** / append **JSONL receipts** like other Games.
+- **Primary deliverable:** one short “run” the Architect can replay for demos (deterministic seed + pytest).
+- **Optional:** pull 1–3 **real citations** (e.g. rational inattention, prospect theory, ergodic economics) into a collapsible “Science drawer” — same discipline as the research table above.
+
+**Implementation checklist (when Architect gives GO to code):**
+
+1. New module e.g. `Applications/sifta_architect_room_game.py` + widget class; **Games** manifest entry; `pytest` smoke + manifest contract green.
+2. Stigmergic hooks: read `System/swarm_app_focus.py` / `.sifta_state/app_focus.jsonl` for “what window the anomaly attends” during the run (Predator gaze, not chat).
+3. Receipt: one new `event_kind` or reuse existing ledger with `truth_note` explaining the pedagogical outcome.
 
 ---
 

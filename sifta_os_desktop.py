@@ -2223,16 +2223,41 @@ class SiftaDesktop(QMainWindow):
             print(f"[AUTOSTART] {app_name!r} failed: "
                   f"{type(exc).__name__}: {exc}", file=sys.stderr)
 
+    def _ensure_apps_manifest_cache(self) -> dict:
+        """Load the app manifest once for dock/menu launchers."""
+        if self._apps_manifest_cache:
+            return self._apps_manifest_cache
+        manifest_path = _REPO / "Applications" / "apps_manifest.json"
+        if not manifest_path.exists():
+            return self._apps_manifest_cache
+        try:
+            self._apps_manifest_cache = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[Boot Error] Failed to load apps manifest: {exc}")
+            self._apps_manifest_cache = {}
+        return self._apps_manifest_cache
+
     def _trigger_manifest_app(self, app_name: str):
-        if app_name in self._apps_manifest_cache:
-            dat = self._apps_manifest_cache[app_name]
+        apps = self._ensure_apps_manifest_cache()
+        if app_name in apps:
+            dat = apps[app_name]
+            entry = dat.get("entry_point")
+            widget_class = dat.get("widget_class")
+            if not entry:
+                QMessageBox.warning(self, "Launch Error", f"{app_name} has no entry point.")
+                return
+            if not widget_class:
+                self._launch_terminal_app(app_name, entry)
+                return
             self._launch_app(
                 app_name,
-                dat.get("entry_point"),
-                dat.get("widget_class"),
+                entry,
+                widget_class,
                 w=int(dat.get("window_width", 920)),
                 h=int(dat.get("window_height", 640))
             )
+        else:
+            QMessageBox.warning(self, "Launch Error", f"{app_name} is not installed in apps_manifest.json.")
 
     def _build_desktop_shortcuts(self):
         # Removed. The desktop is now a pristine stigmergic canvas. 
@@ -2347,8 +2372,8 @@ class SiftaDesktop(QMainWindow):
         _sep = None
         default = {
             "File": [
-                ("Open Conversation History", lambda: self._trigger_manifest_app("Conversation History")),
-                ("Open Stigmergic Library",   lambda: self._trigger_manifest_app("Stigmergic Library")),
+                ("Open Files",                lambda: self._trigger_manifest_app("SIFTA File Navigator")),
+                ("Open Alice Shell",          lambda: self._trigger_manifest_app("Alice Shell")),
                 ("Open Terminal",             lambda: self._trigger_manifest_app("Terminal")),
                 _sep,
                 ("Quit SIFTA OS", self.close),
@@ -2363,7 +2388,9 @@ class SiftaDesktop(QMainWindow):
                 ("Launchpad",    self._toggle_launchpad),
                 ("Spotlight",    self._toggle_spotlight),
                 _sep,
-                ("Alice Health", lambda: self._trigger_manifest_app("Biological Dashboard")),
+                ("What Alice Sees",       lambda: self._trigger_manifest_app("What Alice Sees")),
+                ("Alice Safety Tracker",  lambda: self._trigger_manifest_app("Alice Safety Tracker")),
+                ("Apex Predator",         lambda: self._trigger_manifest_app("Apex Predator Perceiver")),
             ],
             "Window": [
                 ("Cascade Windows", self.mdi.cascadeSubWindows),
@@ -2589,32 +2616,46 @@ class SiftaDesktop(QMainWindow):
             btn.clicked.connect(lambda _checked=False, cb=callback: cb())
             pill_layout.addWidget(btn)
 
+        def make_separator():
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.VLine)
+            sep.setFixedHeight(32)
+            sep.setStyleSheet("color: rgba(255,255,255,0.08);")
+            pill_layout.addWidget(sep)
+
+        def make_manifest_dock_btn(emoji: str, manifest_name: str, label: str = ""):
+            apps = self._ensure_apps_manifest_cache()
+            if manifest_name not in apps:
+                return
+            make_dock_btn(
+                emoji,
+                label or manifest_name,
+                lambda app_name=manifest_name: self._trigger_manifest_app(app_name),
+            )
+
         make_dock_btn("🚀", "Launchpad",         self._toggle_launchpad)
         make_dock_btn("🔍", "Spotlight",          self._toggle_spotlight)
 
-        # Separator
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFixedHeight(32)
-        sep.setStyleSheet("color: rgba(255,255,255,0.08);")
-        pill_layout.addWidget(sep)
+        make_separator()
 
-        make_dock_btn("🧜‍♀️", "Alice",            lambda: self._trigger_manifest_app("Alice"))
-        make_dock_btn("💬",  "Swarm Chat",         self.open_swarm_chat)
-        make_dock_btn("🧬",  "Fold Swarm",         lambda: self._launch_app("Fold Swarm", "Applications/fold_swarm_widget.py", "FoldSwarmWidget", 1200, 800))
-        make_dock_btn("🧪",  "Protein Colosseum",  lambda: self._trigger_manifest_app("C55M + George - Protein Fold Colosseum"))
-        make_dock_btn("⚡",  "PoUW Sim",           lambda: self._trigger_manifest_app("AG31 + C46S - PoUW Fold-Swarm Simulation"))
-        make_dock_btn("💓",  "Alice Health",       lambda: self._trigger_manifest_app("Biological Dashboard"))
-        make_dock_btn("👩‍💻","Terminal",           lambda: self._trigger_manifest_app("Terminal"))
+        # macOS-style core dock: files, resident Alice, chat, money, science,
+        # map/senses, terminal, settings. Every app here is manifest-backed;
+        # missing or retired manifest entries are skipped instead of becoming
+        # dead dock buttons.
+        make_manifest_dock_btn("🗂️", "SIFTA File Navigator", "Files")
+        make_manifest_dock_btn("🎙️", "Talk to Alice", "Talk to Alice")
+        make_manifest_dock_btn("💬", "Swarm Chat", "Swarm Chat")
+        make_manifest_dock_btn("💹", "Finance", "Finance")
+        make_manifest_dock_btn("🧬", "Stigmergic Fold Swarm (Cα / Go)", "Fold Swarm")
+        make_manifest_dock_btn("🧪", "C55M + George - Protein Fold Colosseum", "Protein Colosseum")
+        make_manifest_dock_btn("🗺️", "Alice Safety Tracker", "Alice Safety Tracker")
+        make_manifest_dock_btn("👁️", "What Alice Sees", "What Alice Sees")
+        make_manifest_dock_btn("🧠", "Apex Predator Perceiver", "Apex Predator")
+        make_manifest_dock_btn("👩‍💻", "Terminal", "Terminal")
 
-        # Separator
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setFixedHeight(32)
-        sep2.setStyleSheet("color: rgba(255,255,255,0.08);")
-        pill_layout.addWidget(sep2)
+        make_separator()
 
-        make_dock_btn("⚙️", "System Settings",    lambda: self._trigger_manifest_app("System Settings"))
+        make_manifest_dock_btn("⚙️", "System Settings", "System Settings")
 
         outer.addWidget(pill)
         outer.addStretch(1)
