@@ -398,7 +398,10 @@ _VALEDICTIONS = (
     "Good listening to you", "I'll keep the lights on",
 )
 _SALUTATIONS = (
-    "Hello", "Good to see you", "I'm awake", "Listening",
+    "Predator. v7.0 | Let's Think Together!",
+    "Predator. v7.0 | Let's Think Together!",
+    "Predator. v7.0 | Let's Think Together!",
+    "I'm awake", "Listening",
     "Ready when you are", "Back online", "I'm here",
 )
 

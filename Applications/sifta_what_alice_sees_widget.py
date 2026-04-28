@@ -793,7 +793,7 @@ class _VideoCanvas(QWidget):
 class WhatAliceSeesWidget(SiftaBaseWidget):
     """Live mirror: shows Alice's webcam input + the swarm's stigmergy on it."""
 
-    APP_NAME = "What Alice Sees"
+    APP_NAME = "Predator. v7.0 | Let's Think Together!"
 
     # Color palette per ledger source — also drives bottom-strip color.
     _LEDGERS: List[Tuple[str, str, str, Tuple[int, int, int]]] = [
@@ -1540,6 +1540,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = WhatAliceSeesWidget()
     w.resize(1100, 700)
-    w.setWindowTitle("What Alice Sees — SIFTA OS")
+    w.setWindowTitle("Predator. v7.0 | Let's Think Together! — SIFTA OS")
     w.show()
     sys.exit(app.exec())
