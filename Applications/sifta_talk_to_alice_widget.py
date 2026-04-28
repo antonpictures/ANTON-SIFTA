@@ -94,7 +94,7 @@ try:
         DEFAULT_OLLAMA_MODEL, resolve_ollama_model,
     )
 except Exception:
-    DEFAULT_OLLAMA_MODEL = "gemma4:latest"
+    DEFAULT_OLLAMA_MODEL = "huihui_ai/gemma-4-abliterated:latest"
     def resolve_ollama_model(**_kw) -> str:                    # type: ignore
         return DEFAULT_OLLAMA_MODEL
 

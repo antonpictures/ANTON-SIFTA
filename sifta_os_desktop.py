@@ -2600,10 +2600,11 @@ class SiftaDesktop(QMainWindow):
         pill_layout.addWidget(sep)
 
         make_dock_btn("🧜‍♀️", "Alice",            lambda: self._trigger_manifest_app("Alice"))
-        make_dock_btn("💓",  "Alice Health",       lambda: self._trigger_manifest_app("Biological Dashboard"))
         make_dock_btn("💬",  "Swarm Chat",         self.open_swarm_chat)
-        make_dock_btn("📚",  "Stigmergic Library", lambda: self._trigger_manifest_app("Stigmergic Library"))
-        make_dock_btn("🗣️", "Conversation",       lambda: self._trigger_manifest_app("Conversation History"))
+        make_dock_btn("🧬",  "Fold Swarm",         lambda: self._launch_app("Fold Swarm", "Applications/fold_swarm_widget.py", "FoldSwarmWidget", 1200, 800))
+        make_dock_btn("🧪",  "Protein Colosseum",  lambda: self._trigger_manifest_app("C55M + George - Protein Fold Colosseum"))
+        make_dock_btn("⚡",  "PoUW Sim",           lambda: self._trigger_manifest_app("AG31 + C46S - PoUW Fold-Swarm Simulation"))
+        make_dock_btn("💓",  "Alice Health",       lambda: self._trigger_manifest_app("Biological Dashboard"))
         make_dock_btn("👩‍💻","Terminal",           lambda: self._trigger_manifest_app("Terminal"))
 
         # Separator

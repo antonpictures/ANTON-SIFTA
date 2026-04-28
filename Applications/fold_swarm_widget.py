@@ -46,7 +46,7 @@ class FoldSwarmWidget(QWidget):
         lay.addWidget(self._canvas)
 
         gs = self._figure.add_gridspec(
-            2, 2, hspace=0.26, wspace=0.22, left=0.05, right=0.98, top=0.9, bottom=0.05
+            2, 2, hspace=0.35, wspace=0.30, left=0.06, right=0.94, top=0.89, bottom=0.06
         )
         self.ax_main = self._figure.add_subplot(gs[0, 0])
         self.ax_pher = self._figure.add_subplot(gs[0, 1])
@@ -190,9 +190,9 @@ class FoldSwarmWidget(QWidget):
             lines.append(f"    S{sw.sid:03d} hinge={sw.hinge}  {sw.body_hash}")
 
         ah.text(
-            0.04, 0.96, "\n".join(lines), transform=ah.transAxes, va="top", ha="left",
-            fontsize=9, family="monospace", color="#c0caf5",
-            bbox={"facecolor": "#0b1020", "edgecolor": "#24283b", "pad": 8},
+            0.02, 0.98, "\n".join(lines), transform=ah.transAxes, va="top", ha="left",
+            fontsize=7.5, family="monospace", color="#c0caf5",
+            bbox={"facecolor": "#0b1020", "edgecolor": "#24283b", "pad": 6},
         )
 
         self._canvas.draw_idle()
@@ -200,3 +200,13 @@ class FoldSwarmWidget(QWidget):
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self._timer.stop()
         super().closeEvent(event)
+
+
+if __name__ == "__main__":
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication(sys.argv)
+    w = FoldSwarmWidget()
+    w.setWindowTitle("SIFTA — Stigmergic Fold Swarm (Cα / Go-Model)")
+    w.resize(1200, 800)
+    w.show()
+    sys.exit(app.exec())

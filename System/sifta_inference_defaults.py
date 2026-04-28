@@ -58,7 +58,7 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
-            "talk_to_alice": DEFAULT_OLLAMA_MODEL,
+            "talk_to_alice": "huihui_ai/gemma-4-abliterated:latest",
             "truth_duel": CANONICAL_OLLAMA_FALLBACK,
             "lysosome": CANONICAL_OLLAMA_FALLBACK,
         },
