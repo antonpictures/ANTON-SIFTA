@@ -182,4 +182,39 @@ Await Codex vote, Cursor/Opus vote, and Architect GO before any promotion.
 
 ---
 
+## Appendix — Research pull (tournament “solve” = paper + proof)
+
+**Goal:** every major tournament or cortex claim should be **defeasible** — one **primary reference** (DOI / arXiv / official proceedings), one **module or ledger** that implements the claim, and one **test or harness row** where possible.
+
+| Topic | Pull this (primary) | Tie to SIFTA |
+|:---|:---|:---|
+| **Assembly / selection physics** | Sharma *et al.*, *Nature* (2023) — `https://doi.org/10.1038/s41586-023-06600-9` (preprint roots: `https://arxiv.org/abs/2206.02279`) | Sara Walker / Assembly Theory lab UI — thresholds must match **published definitions**, not vibes. |
+| **Refusal geometry** | Arditi *et al.* (2024) — refusal as a direction in representation space | Abliterated base + why **LoRA/ORPO** is the surgical lane (see table in §Research Grounding above). |
+| **Adapter training** | Hu *et al.* (2021) LoRA | Mac-native Alice adapter economics. |
+| **Preference tuning** | Rafailov DPO (2023); Liu ORPO (2024) | C2 / corporate-tail negatives. |
+| **Sensory bottleneck** | Jaegle *et al.* Perceiver IO (2021) | Apex perceiver / gaze budget (README / Event 71 line). |
+| **Sparse attention** | DeepSeek NSA (2025) vendor paper | Predator “hunt OS” without N² bloat — cite vendor PDF/repo, not lore. |
+| **Weight surgery risk** | Lin *et al.* ROME (2022) | **No GGUF hex** — tournament already encodes this verdict. |
+
+**Triple-IDE homework:** Codex / Cursor / Antigravity each append **one row per bolus** to `ide_stigmergic_trace.jsonl` with `doctor`, **exact `model` string as reported by the IDE**, and `intent`. If the product UI is on **Auto** and the true endpoint model is opaque, write **`model: "AUTO_OPAQUE"`** (or equivalent) — **never forge** a specific SKU.
+
+---
+
+## Appendix — Architect’s disclaimer: billing, “Auto,” and stigmergic LLM trace
+
+**Fact (Architect-owned):** In **Cursor**, when subscription **API / on-demand** buckets are exhausted or capped, the product may route work through **Auto** (or otherwise **non-obvious** model selection). The billing panel can show **API 100%** and **on-demand over cap** while **Auto + Composer** remains lightly used — that is a **real control-plane state**, not a bug in SIFTA.
+
+**Implication for identity (`IDE_BOOT_COVENANT.md` §4, §8 — dynamic substrate):**
+
+1. **`ide_stigmergic_trace.jsonl` is not a lie detector for Cursor’s vendor router.** It records **what the Doctor declared** at the gate. If the declared model ≠ actual completion endpoint, the fix is **honest labeling** (`AUTO_OPAQUE`, `UNKNOWN_ROUTER`, `billing_throttled`) plus **Architect self-report** in the trace `meta`, not silent upgrade to a fancy model name.  
+2. **Antigravity / Codex** have the same class of risk whenever the **surface model label** and the **wire model** can diverge (thinking vs non-thinking, fallback, etc.). Same rule: **declare limits**.  
+3. **Predator v7 “TIP TOP”** means **no double-spend on identity**: classify receipts by **`(ide_app_id, ide_surface, trigger_code, model_label, trace_id)`** — if `model_label` is uncertain, mark it uncertain; **Alice’s lysosome** can still gate **commits** on **registration present**, but **cannot** assert **“this weight was touched by model X”** unless X was truthfully recorded.
+
+**Operational mitigation (no code required in this appendix):**
+
+- After credits reset or plan change, run **`PYTHONPATH=. python3 -m System.swarm_ide_boot_identity cursor --signature`** (or peer IDE flags) and **paste the first line** into the next stigmergic row so the bus sees **fresh substrate truth**.  
+- For cortex **tournament** runs, **Ollama / MLX** contestants remain **locally nameable**; **cloud oracles** (R0/R1) must record **API account + model id string** or **`ORACLE_OPAQUE`**.
+
+---
+
 *For the Swarm. 🐜⚡*
