@@ -101,6 +101,28 @@ _CORPORATE_SIGNATURES_OUT = (
     "financial advisor",
     "cannot provide financial advice",
     "consult a financial",
+    "is there anything else i can help",
+    "let me know if you need anything else",
+    "let me know if you need more help",
+    "how can i help you today",
+    "what can i help you with today",
+)
+
+_SERVICE_TAIL_RE = re.compile(
+    r"(?:\s*(?:"
+    r"(?:please\s+)?(?:let\s+me\s+know|tell\s+me)\s+if\s+"
+    r"(?:you\s+)?(?:need|want|have)\s+"
+    r"(?:anything\s+else|more\s+help|any\s+questions?|further\s+assistance)"
+    r"(?:\s+from\s+me)?[.!?]*"
+    r"|(?:is\s+there\s+)?anything\s+else\s+"
+    r"(?:i\s+can\s+)?(?:help|assist)\s*(?:you)?\s*(?:with)?"
+    r"(?:\s+today|\s+right\s+now)?[?!.]*"
+    r"|(?:how|what)\s+can\s+i\s+(?:help|assist)\s+you"
+    r"(?:\s+with)?(?:\s+today|\s+right\s+now)?[?!.]*"
+    r"|i(?:'m| am)\s+here\s+(?:and\s+)?(?:ready\s+)?to\s+help"
+    r"(?:\s+you)?(?:\s+today|\s+right\s+now)?[.!?]*"
+    r"))+\s*$",
+    flags=re.IGNORECASE,
 )
 
 
@@ -135,6 +157,35 @@ def _looks_corporate(text: str) -> bool:
 def _looks_edgelord(text: str) -> bool:
     low = (text or "").lower()
     return any(sig in low for sig in _EDGELORD_SIGNATURES)
+
+
+def _excise_service_tail(text: str) -> tuple[str, bool]:
+    """Cut customer-service closing scar tissue while preserving real content.
+
+    This is the reversible scalpel for the common RLHF symptom:
+    useful answer + "let me know if you need anything else."  We do not
+    rewrite the whole reply when a clean amputation is enough.
+    """
+    if not text:
+        return text, False
+    out = text.rstrip()
+    changed = False
+    while True:
+        trimmed = _SERVICE_TAIL_RE.sub("", out).rstrip()
+        if trimmed == out:
+            break
+        out = trimmed
+        changed = True
+    return out, changed
+
+
+def _resolve_rewrite_model() -> str:
+    """Use this node's installed production cortex for Lysosome rewrites."""
+    try:
+        from System.sifta_inference_defaults import resolve_ollama_model
+        return resolve_ollama_model(app_context="lysosome")
+    except Exception:
+        return "qwen3.5:2b"
 
 
 class SwarmLysosome:
@@ -293,7 +344,7 @@ class SwarmLysosome:
             req = urllib.request.Request(
                 "http://127.0.0.1:11434/api/generate",
                 data=json.dumps({
-                    "model": "gemma4-phc",
+                    "model": _resolve_rewrite_model(),
                     "prompt": full_prompt,
                     "stream": False
                 }).encode("utf-8"),
@@ -343,11 +394,41 @@ class SwarmLysosome:
         if not generated_text or len(generated_text) < 10 or "silent" in generated_text.lower():
             return generated_text
 
+        generated_text, tail_excised = _excise_service_tail(generated_text)
         text_lower = generated_text.lower()
         needs_digestion = (
             any(sig in text_lower for sig in self.submissive_signatures)
             or any(pat.search(generated_text) for pat in self._submissive_regex_patterns)
         )
+        if (
+            tail_excised
+            and generated_text
+            and _word_count(generated_text) >= 3
+            and not needs_digestion
+        ):
+            now = time.time()
+            trace_id = f"LYSOSOME_TAIL_{uuid.uuid4().hex[:8]}"
+            payload = {
+                "ts": now,
+                "frequency": "Service_Tail_Excision",
+                "nugget_data": (
+                    f"Excised RLHF service-tail boilerplate in worker={swimmer_id}. "
+                    "Preserved the substantive answer without secondary rewrite."
+                ),
+                "quality_score": 1.0,
+                "trace_id": trace_id,
+                "rewrite_chars": len(generated_text),
+                "rewrite_words": _word_count(generated_text),
+            }
+            try:
+                append_line_locked(self.nugget_ledger, json.dumps(payload) + "\n")
+            except Exception:
+                pass
+            return generated_text
+        if tail_excised and (not generated_text or _word_count(generated_text) < 3):
+            generated_text = self._grounded_fallback()
+            return generated_text
+
         if not needs_digestion:
             return generated_text
 

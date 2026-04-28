@@ -273,7 +273,15 @@ def _curated_voice_rows() -> list[tuple[str, str]]:
 
 def read_system_settings_snapshot() -> dict[str, Any]:
     health = _latest_jsonl(STATE / "health_scores.jsonl")
-    metabolic = _latest_jsonl(STATE / "metabolic_homeostasis.jsonl")
+    try:
+        from System.swarm_metabolic_homeostasis import MetabolicHomeostat
+        from System.swarm_metabolic_engine import SwarmMetabolicEngine
+        # Covenant 7.3: trigger live recompute instead of displaying museum data.
+        _ = MetabolicHomeostat.sample_live()
+        live_status = SwarmMetabolicEngine().status()
+        metabolic = {"mode": str(live_status.get("mode", "UNKNOWN")).upper(), "budget_multiplier": 1.0, "rest_seconds": 0.0}
+    except Exception:
+        metabolic = _latest_jsonl(STATE / "metabolic_homeostasis.jsonl")
     manifest = {}
     try:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))

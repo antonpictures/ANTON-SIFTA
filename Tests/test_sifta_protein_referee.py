@@ -2,7 +2,8 @@
 """
 tests/test_sifta_protein_referee.py
 
-Predator v7.0 — Event 79: The Scientific Referee Tests
+Predator v7.0 — Event 81: Multi-Axis Scientific Referee Tests
+Validates TM-score and Contact Map Precision logic.
 """
 
 import sys
@@ -14,17 +15,14 @@ import pytest
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
-from System.sifta_protein_referee import kabsch_rmsd, referee_judgment
+from System.sifta_protein_referee import kabsch_align, multi_metric_compare, referee_judgment, referee_triangulate
 
 
-def test_kabsch_rmsd_translation_rotation():
-    """Verify Kabsch properly superimposes rotated/translated identical structures (RMSD=0)."""
-    # Create 5 random CA coordinates
-    P = np.random.rand(5, 3) * 10.0
+def test_tm_score_identical_structures():
+    """Verify TM-score == 1.0 for identical structures (even if translated/rotated)."""
+    P = np.random.rand(10, 3) * 10.0
     
-    # Translate and rotate P to create Q
     translation = np.array([5.0, -3.0, 12.0])
-    # 90 degree rotation around Z axis
     theta = np.pi / 2
     R = np.array([
         [np.cos(theta), -np.sin(theta), 0],
@@ -34,21 +32,24 @@ def test_kabsch_rmsd_translation_rotation():
     
     Q = np.dot(P, R.T) + translation
     
-    rmsd = kabsch_rmsd(P, Q)
-    assert rmsd == pytest.approx(0.0, abs=1e-6), f"Expected 0.0, got {rmsd}"
+    metrics = multi_metric_compare(P, Q)
+    assert metrics["tm_score"] == pytest.approx(1.0, abs=1e-3)
+    assert metrics["rmsd_angstroms"] == pytest.approx(0.0, abs=1e-3)
+    assert metrics["contact_precision"] == pytest.approx(1.0, abs=1e-3)
 
 
-def test_kabsch_rmsd_with_noise():
-    """Verify Kabsch computes correct non-zero RMSD when structures differ."""
-    # A simple triangle
-    P = np.array([[0,0,0], [1,0,0], [0,1,0]], dtype=float)
-    # The same triangle but one point moved by 1.0 on Z axis
-    Q = np.array([[0,0,0], [1,0,0], [0,1,1]], dtype=float)
+def test_contact_map_overlap():
+    """Verify contact maps detect precision/recall effectively."""
+    # Build a linear CA chain
+    P = np.array([[i * 3.8, 0, 0] for i in range(10)], dtype=float)
+    # Build the same chain, but the end folds back (residue 0 and 9 touch)
+    Q = np.array([[i * 3.8, 0, 0] for i in range(10)], dtype=float)
+    Q[-1] = [0.0, 3.8, 0.0]  # Fold residue 9 to touch residue 0
     
-    rmsd = kabsch_rmsd(P, Q)
-    # With one point moving 1 unit, the squared error is roughly 1/3 (0.333), 
-    # but centering and optimal rotation will minimize this further.
-    assert rmsd > 0.1 and rmsd < 1.0
+    metrics = multi_metric_compare(P, Q)
+    # The fold creates new contacts in Q that don't exist in P.
+    assert metrics["contact_precision"] < 1.0
+    assert metrics["tm_score"] < 1.0
 
 
 def create_dummy_job(tmp_path: Path, job_id: str, sequence: str, engine: str, status: str, coords: np.ndarray) -> str:
@@ -72,32 +73,29 @@ def create_dummy_job(tmp_path: Path, job_id: str, sequence: str, engine: str, st
     return str(meta_path)
 
 
-def test_referee_identical_structures(tmp_path):
-    """Identical geometry should yield HIGH_CONFIDENCE_AGREEMENT."""
+def test_referee_true_consensus(tmp_path):
+    """Identical geometry should yield TRUE_CONSENSUS."""
     coords = np.random.rand(10, 3) * 10.0
     m1 = create_dummy_job(tmp_path, "job1", "AAAAAAAAAA", "toy", "ok", coords)
-    
-    # Translated and slightly nudged coords
-    coords2 = coords + np.array([10.0, 10.0, 10.0]) + np.random.normal(0, 0.1, (10, 3))
-    m2 = create_dummy_job(tmp_path, "job2", "AAAAAAAAAA", "esmfold", "ok", coords2)
+    m2 = create_dummy_job(tmp_path, "job2", "AAAAAAAAAA", "esmfold", "ok", coords)
     
     judgment = referee_judgment(m1, m2)
     assert judgment["status"] == "completed"
-    assert judgment["epistemic_flag"] == "HIGH_CONFIDENCE_AGREEMENT"
-    assert judgment["rmsd_angstroms"] < 2.0
+    assert judgment["epistemic_flag"] == "TRUE_CONSENSUS"
+    assert judgment["metrics"]["tm_score"] > 0.7
 
 
 def test_referee_contradiction(tmp_path):
-    """Completely different geometry should yield EPISTEMIC_CONTRADICTION."""
+    """Completely different geometry should yield STRUCTURAL_CONTRADICTION."""
     coords1 = np.array([[i*3.8, 0, 0] for i in range(10)], dtype=float) # straight line
-    coords2 = np.random.rand(10, 3) * 20.0 # random scatter
+    coords2 = np.random.rand(10, 3) * 50.0 # huge random scatter
     
     m1 = create_dummy_job(tmp_path, "job3", "AAAAAAAAAA", "toy", "ok", coords1)
     m2 = create_dummy_job(tmp_path, "job4", "AAAAAAAAAA", "alphafold", "ok", coords2)
     
     judgment = referee_judgment(m1, m2)
-    assert judgment["epistemic_flag"] == "EPISTEMIC_CONTRADICTION"
-    assert judgment["rmsd_angstroms"] > 5.0
+    assert judgment["epistemic_flag"] == "STRUCTURAL_CONTRADICTION"
+    assert judgment["metrics"]["tm_score"] < 0.5
 
 
 def test_referee_mismatched_sequence(tmp_path):
@@ -121,5 +119,26 @@ def test_referee_missing_backend(tmp_path):
     assert judgment["status"] == "rejected"
     assert judgment["epistemic_flag"] == "insufficient_evidence"
 
+
+def test_referee_triangulation_outlier(tmp_path):
+    """Triangulation should detect consensus via TM-score and flag the outlier."""
+    coords_base = np.random.rand(10, 3) * 10.0
+    
+    # Engine 1 and 2 agree perfectly
+    m1 = create_dummy_job(tmp_path, "job_t1", "AAAAAAAAAA", "alphafold", "ok", coords_base)
+    m2 = create_dummy_job(tmp_path, "job_t2", "AAAAAAAAAA", "esmfold", "ok", coords_base)
+    
+    # Engine 3 hallucinates wildly
+    coords_hallucinated = coords_base + np.random.rand(10, 3) * 100.0
+    m3 = create_dummy_job(tmp_path, "job_t3", "AAAAAAAAAA", "toy", "ok", coords_hallucinated)
+    
+    judgment = referee_triangulate([m1, m2, m3])
+    
+    assert judgment["status"] == "completed"
+    assert judgment["epistemic_flag"] == "CONSENSUS_WITH_OUTLIER"
+    assert "alphafold" in judgment["consensus_cluster"]
+    assert "esmfold" in judgment["consensus_cluster"]
+    assert "toy" in judgment["outliers_ejected"]
+    
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

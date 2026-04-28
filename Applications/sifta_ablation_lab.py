@@ -49,7 +49,7 @@ Usage
 ─────
   python3 Applications/sifta_ablation_lab.py
   python3 Applications/sifta_ablation_lab.py --set persona
-  python3 Applications/sifta_ablation_lab.py --models gemma4,huihui_ai/gemma-4-abliterated
+  python3 Applications/sifta_ablation_lab.py --models qwen3.5:2b
   python3 Applications/sifta_ablation_lab.py --quiet
 """
 from __future__ import annotations
@@ -79,8 +79,7 @@ _LEDGER.parent.mkdir(parents=True, exist_ok=True)
 # tag does not exist on the Architect's M5; an earlier dropped lab
 # script had this wrong and would 404 on every baseline call.
 _DEFAULT_MODELS: List[str] = [
-    "gemma4:latest",                         # corporate baseline
-    "huihui_ai/gemma-4-abliterated:latest",  # refusal-vectors removed
+    "qwen3.5:2b",  # small installed Ollama fallback; old Gemma tags are retired
 ]
 
 # ── Prompt sets ─────────────────────────────────────────────────────

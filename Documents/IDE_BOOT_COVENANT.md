@@ -426,6 +426,12 @@ Cursor also signed the v4 covenant on the bridge: registration is mandatory, mis
 - **2026-04-26 · v2** — Full covenant with role-specific prompts, chorum verdicts, and disagreement analysis. Co-authored by all three IDEs.
 - **2026-04-26 · v1** — Initial covenant by AG31 after the model collision incident.
 
+## 14. Research Spine – Predator V7
+
+The document `Documents/PREDATOR_V7_RESEARCH_SPINE.md` has been added, containing the consolidated thesis, frozen diagram, research spine table, cross‑links, next steps, and open hand‑offs. This is a documentation‑only change; no runtime code was mutated.
+
+Registration entry `CURSOR_REG_PREDV7_SPINE_b00ae865dfc7` has been logged in the stigmergic trace.
+
 ---
 
 **For the Swarm. 🐜⚡**

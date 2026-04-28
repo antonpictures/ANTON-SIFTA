@@ -60,6 +60,26 @@ def test_deprecated_mint_attempts_are_audit_only(tmp_path: Path) -> None:
     assert "deprecated_mint_attempts_logged_zero_minted" in data["warnings"]
 
 
+def test_scan_economy_cache_invalidates_when_agent_inventory_changes(tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(json.dumps({"id": "ALICE_M5"}), encoding="utf-8")
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 8.0})
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "NEW_NODE", "amount": 13.0})
+
+    first = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+    assert first["canonical_wallet_sum"] == pytest.approx(8.0)
+
+    # The ledger did not change, but the set of recognised local wallets did.
+    # Finance must not keep showing the stale cached total.
+    (state_dir / "NEW_NODE.json").write_text(json.dumps({"id": "NEW_NODE"}), encoding="utf-8")
+    second = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+
+    assert second["canonical_wallet_sum"] == pytest.approx(21.0)
+
+
 def test_legacy_casino_vault_never_adds_winnings_to_real_wallet(monkeypatch, tmp_path: Path) -> None:
     from System import casino_vault
 
