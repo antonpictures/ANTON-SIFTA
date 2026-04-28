@@ -42,4 +42,9 @@ If you are a new Architect attempting to spin up a distribution fork or operate 
 - **[Dr. Codex Assessment for Carlton Dole](CARLTON_DOLE_MARKETING_ASSESSMENT_POUW_SWIMMERS.md)**  
   Marketing-facing assessment of the Fold-Swarm/Ribosome Proof-of-Useful-Work flagship.
 
+## Part V: External research clippings (links)
+
+- **[AI-designed protein bioswitches — C&EN + *Nat. Biotechnol.* DOI (2026)](research_clippings/2026-04-27_AI_designed_protein_bioswitches_CEN.md)**  
+  News summary + canonical `doi.org` link for GitHub / citation handoff.
+
 We Code Together.
