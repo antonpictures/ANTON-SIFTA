@@ -208,3 +208,4 @@ patch*.py
 # Personal Sandbox
 .personal/
 
+Vendor/ProteinMPNN
