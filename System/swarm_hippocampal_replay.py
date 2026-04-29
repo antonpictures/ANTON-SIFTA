@@ -1,251 +1,164 @@
 #!/usr/bin/env python3
 """
-swarm_hippocampal_replay.py — The DeepMind Dreamer Engine
-══════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+swarm_hippocampal_replay.py — Hippocampal Replay / Sleep Cycle
+══════════════════════════════════════════════════════════════════════
 
-Implements offline Hippocampal Replay (World Model simulation).
-While the Architect rests, the Swarm enters REM sleep, taking 
-daytime ratifications and mutating them across simulated scenarios
-to pre-train the value network (Inferior Olive/Prediction Cache)
-off-policy at 10,000x speed.
+Memory consolidation organ (Defrag for living silicon).
+Biology requires offline replay to consolidate learning and prevent catastrophic interference.
+
+Purpose:
+  - Take the day's raw receipts (work, network, agency, timing, drives).
+  - Compress them into high-level patterns (success rate, error rate, dominant intent).
+  - Forget the noise (trim/truncate raw ledgers).
+  - Preserve identity (store cohesive narrative to long-term memory).
+
+See: Documents/IDE_BOOT_COVENANT.md
 """
+from __future__ import annotations
 
+import hashlib
 import json
 import time
-import random
-from dataclasses import dataclass
-from typing import List, Dict, Tuple
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, Dict, List
 
-_REPO = Path(__file__).resolve().parent.parent
-_STATE = _REPO / ".sifta_state"
-_STATE.mkdir(parents=True, exist_ok=True)
-
-RATIFIED_LOG = _STATE / "warp9_concierge_ratified.jsonl"
-REJECTED_LOG = _STATE / "warp9_concierge_rejected.jsonl"
-REPLAY_LOG = _STATE / "hippocampal_replay_history.jsonl"
-
-try:
-    from System.swarm_latent_world_model import LatentWorldModel
-except ImportError:
-    class LatentWorldModel:
-        def encode_state(self, s): return s
-        def _hash_sa(self, s, a): return f"{s}::{a}"
-        def sample_policy(self, s): return "idle"
-        def observe_reality(self, s, a, ns, r): pass
-        def td_update(self, s, ns, r): pass
-        def save(self): pass
-        transitions = {}
 
 @dataclass
-class ReplayMemory:
-    original_state: str
-    original_action: str
-    original_reward: float
-    timestamp: float
+class ConsolidatedMemory:
+    ts: float
+    epoch_id: str
+    event_count_compressed: int
+    extracted_patterns: Dict[str, Any]
+    narrative_summary: str
+    memory_hash: str
 
-class Hippocampus:
-    def __init__(self):
-        self.world_model = LatentWorldModel()
-        self.memories: List[ReplayMemory] = []
+
+class HippocampalReplay:
+    """
+    Hippocampal Replay / Sleep Cycle.
+    Reads raw short-term ledgers, compresses them, and stores abstract long-term memories.
+    """
+
+    def __init__(self, root: str = ".sifta_state"):
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.long_term_memory = self.root / "long_term_memory.jsonl"
         
-    def _ingest_daytime_experience(self):
-        """Pulls both Ratified (+1) and Rejected (-1) events securely."""
-        self.memories = []
-        all_events = []
+        # Raw sensory and motor ledgers that get cleared during sleep
+        self.ledgers_to_compress = [
+            self.root / "agency_verdicts.jsonl",
+            self.root / "work_receipts.jsonl",
+            self.root / "network_receipts.jsonl",
+            self.root / "hypothalamus_drive_snapshots.jsonl",
+            self.root / "cerebellum_timing.jsonl",
+            self.root / "intent_provenance.jsonl"
+        ]
+
+    def _read_and_clear_ledger(self, path: Path) -> List[Dict[str, Any]]:
+        """
+        Atomically rotates the ledger, reads its events, and unlinks the backup.
+        This effectively "forgets the noise" while keeping SIFTA running.
+        """
+        if not path.exists() or path.stat().st_size == 0:
+            return []
+            
+        events = []
+        backup_path = path.with_suffix(".jsonl.bak")
         
-        # Load Ratified
-        if RATIFIED_LOG.exists():
-            try:
-                for line in RATIFIED_LOG.read_text("utf-8").splitlines():
-                    if not line.strip(): continue
-                    row = json.loads(line)
-                    reward = float(row.get("reward", 1.0))
-                    all_events.append(row | {"reward": reward})
-            except Exception: pass
-            
-        # Load Rejected
-        if REJECTED_LOG.exists():
-            try:
-                for line in REJECTED_LOG.read_text("utf-8").splitlines():
-                    if not line.strip(): continue
-                    row = json.loads(line)
-                    reward = float(row.get("reward", -1.0))
-                    if reward > 0: reward = -1.0 # Force negative feedback constraint
-                    all_events.append(row | {"reward": reward})
-            except Exception: pass
-            
-        if not all_events:
-            return
-            
-        # Chronological sort (The physics of time in the SIFTA environment)
-        all_events.sort(key=lambda x: x.get("timestamp", 0))
-
-        # Chain chronological transitions
-        for i in range(len(all_events)):
-            row = all_events[i]
-            state = row.get("state_context", "unknown_state")
-            action = row.get("action_kind", "unknown_action")
-            reward = row.get("reward", 1.0)
-            ts = row.get("timestamp", time.time())
-            
-            # Predict next_state from the literal next chronological event on the hardware
-            if i + 1 < len(all_events):
-                next_state = all_events[i+1].get("state_context", f"{state}_terminal")
-            else:
-                next_state = f"{state}_terminal"
-                
-            self.world_model.observe_reality(state, action, next_state, reward)
-            self.memories.append(ReplayMemory(state, action, reward, ts))
-
-        self.world_model.save()
-
-    def _dream_rollout(self, start_state: str, horizon: int) -> Tuple[List[str], float]:
-        """
-        The Imagination Engine. 
-        Rolls forward in the Latent World Model, chaining predictions to simulate trajectories.
-        Returns the chained states and total compounded reward.
-        """
-        latent_state = self.world_model.encode_state(start_state)
-        trajectory = [latent_state]
-        total_dream_reward = 0.0
-
-        for _ in range(horizon):
-            action = self.world_model.sample_policy(latent_state)
-            transition_key = self.world_model._hash_sa(latent_state, action)
-            
-            if transition_key not in self.world_model.transitions:
-                break # Reached the edge of known imagination
-                
-            t_data = self.world_model.transitions[transition_key]
-            next_state = t_data["next_state"]
-            reward = t_data["reward"]
-            
-            # Apply TD Value Backprop inside the dream
-            self.world_model.td_update(latent_state, next_state, reward)
-            
-            latent_state = next_state
-            total_dream_reward += reward
-            trajectory.append(latent_state)
-            
-        return trajectory, total_dream_reward
-
-    def enter_rem_sleep(self, simulation_cycles: int = 100):
-        """
-        The True World Model RL Loop.
-        Samples experiences and runs full imagination rollouts updating specific policies.
-        """
-        self._ingest_daytime_experience()
-        if not self.memories:
-            return 0
-            
-        dreams_processed = 0
-        cycle_logs = []
-        
-        for _ in range(simulation_cycles):
-            # Sample starting point (Hippocampal Sharp-Wave Ripple)
-            base_memory = random.choice(self.memories)
-            
-            # Form latent trajectory via Bellman imagination
-            trajectory, dream_reward = self._dream_rollout(base_memory.original_state, horizon=5)
-            dreams_processed += 1
-            
-            if len(cycle_logs) < 5: 
-                cycle_logs.append({
-                    "start_state_raw": base_memory.original_state,
-                    "latent_trajectory_len": len(trajectory),
-                    "compounded_reward": dream_reward
-                })
-
-        self.world_model.save()
-
-        # Persist the dream log for Architect review
         try:
-            with open(REPLAY_LOG, "a") as f:
-                f.write(json.dumps({
-                    "ts": time.time(),
-                    "total_dreams": dreams_processed,
-                    "sample_logs": cycle_logs
-                }) + "\n")
-        except OSError: pass
+            path.rename(backup_path)
+            path.touch() # Immediately recreate empty file for other organs
+        except OSError:
+            return []
+
+        try:
+            with backup_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            events.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+            # Forget the raw noise
+            backup_path.unlink()
+        except Exception:
+            pass
+            
+        return events
+
+    def enter_sleep_cycle(self, epoch_narrative: str = "Automated sleep consolidation") -> ConsolidatedMemory:
+        """
+        Triggers the SIFTA Sleep Phase.
+        Extracts all recent receipts, computes pattern summaries, clears the raw ledgers,
+        and saves a dense ConsolidatedMemory representation to long-term storage.
+        """
+        all_events = []
+        patterns = {
+            "total_actions": 0,
+            "success_rate": 1.0,
+            "dominant_intent": "none",
+            "frequent_errors": 0
+        }
         
-        return dreams_processed
-
-if __name__ == "__main__":
-    # ─────────────────────────────────────────────────────────────────
-    # C47H 2026-04-18 daughter-safe patch:
-    # The original smoke wrote mock rows DIRECTLY to permanent
-    # .sifta_state/warp9_concierge_ratified.jsonl, polluting the
-    # Architect's ground-truth signal by 2 phantom rows on every run.
-    # We now redirect RATIFIED_LOG to a tempfile for the duration of
-    # the smoke (algorithm untouched). For real runs (no mock-write),
-    # behaviour is unchanged.
-    # ─────────────────────────────────────────────────────────────────
-    import tempfile
-
-    print("═" * 58)
-    print("  SIFTA — HIPPOCAMPAL REPLAY ENGINE (REM SLEEP)")
-    print("═" * 58 + "\n")
-
-    _real_ratified_log = RATIFIED_LOG
-    _real_rejected_log = REJECTED_LOG
-    _tmp_dir = tempfile.mkdtemp(prefix="sifta_hippocampal_smoke_")
-    _smoke_ratified = Path(_tmp_dir) / "warp9_concierge_ratified.smoke.jsonl"
-    _smoke_rejected = Path(_tmp_dir) / "warp9_concierge_rejected.smoke.jsonl"
-    
-    # Copy real ledger contents in (so the dreamer sees real history during the smoke)
-    if _real_ratified_log.exists():
-        try: _smoke_ratified.write_text(_real_ratified_log.read_text("utf-8"))
-        except OSError: pass
-    if _real_rejected_log.exists():
-        try: _smoke_rejected.write_text(_real_rejected_log.read_text("utf-8"))
-        except OSError: pass
+        source_counts: Dict[str, int] = {}
+        success_count = 0
+        error_count = 0
         
-    # Redirect for the smoke
-    RATIFIED_LOG = _smoke_ratified
-    REJECTED_LOG = _smoke_rejected
+        # 1. Gather and clear raw experiences (Forget Noise)
+        for ledger_path in self.ledgers_to_compress:
+            events = self._read_and_clear_ledger(ledger_path)
+            all_events.extend(events)
+            
+            for event in events:
+                patterns["total_actions"] += 1
+                
+                # Deduce success/failure from agnostic ledger schemas
+                if event.get("ok") is True or event.get("effector_ok") is True or event.get("status") in {"ok", "COMMITTED"}:
+                    success_count += 1
+                elif event.get("ok") is False or event.get("effector_ok") is False or event.get("status") == "error":
+                    error_count += 1
+                    
+                # Track intent/agency source to understand whose will was executed most
+                source = event.get("intent_source") or event.get("social_label")
+                if source:
+                    source_counts[source] = source_counts.get(source, 0) + 1
 
-    try:
-        with open(RATIFIED_LOG, "a") as f:
-            f.write(json.dumps({
-                "SCHEMA_VERSION": 2,
-                "state_context": "idle_GTH4921YP3",
-                "action_kind": "spawn_compiler_swimmer",
-                "reward": 1.0,
-                "timestamp": time.time()
-            }) + "\n")
-            f.write(json.dumps({
-                "SCHEMA_VERSION": 2,
-                "state_context": "coding_GTH4921YP3",
-                "action_kind": "notify_architect_chrome",
-                "reward": 1.0,
-                "timestamp": time.time() + 1
-            }) + "\n")
-        with open(REJECTED_LOG, "a") as f:
-            f.write(json.dumps({
-                "SCHEMA_VERSION": 2,
-                "state_context": "coding_GTH4921YP3_chrome_open",
-                "action_kind": "spawn_unverified_swimmer",
-                "reward": -1.0,
-                "timestamp": time.time() + 2
-            }) + "\n")
-    except OSError:
-        pass
+        # 2. Extract Patterns (Consolidation)
+        if patterns["total_actions"] > 0:
+            if (success_count + error_count) > 0:
+                patterns["success_rate"] = success_count / (success_count + error_count)
+            patterns["frequent_errors"] = error_count
+            
+        if source_counts:
+            patterns["dominant_intent"] = max(source_counts.items(), key=lambda x: x[1])[0]
 
-    brain = Hippocampus()
-    print("Initiating REM Sleep cycle (100x permutations)...")
-    dreams_count = brain.enter_rem_sleep(simulation_cycles=100)
-
-    print(f"Awake. Simulated {dreams_count} MDP Rollout trajectories.")
-    print("Result: Transition Matrix updated and Bellman Values mathematically locked.")
-    print(f"[C47H-PATCH] smoke ran against tempfile {_smoke_ratified.name}; "
-          f"permanent ledger untouched.")
-    # Cleanup
-    try:
-        import shutil
-        shutil.rmtree(_tmp_dir, ignore_errors=True)
-    except Exception:
-        pass
-    RATIFIED_LOG = _real_ratified_log
-    REJECTED_LOG = _real_rejected_log
+        # 3. Hash and Store Narrative
+        epoch_id = f"epoch_{int(time.time())}"
+        
+        payload = {
+            "epoch_id": epoch_id,
+            "patterns": patterns,
+            "narrative": epoch_narrative
+        }
+        memory_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+        
+        memory = ConsolidatedMemory(
+            ts=time.time(),
+            epoch_id=epoch_id,
+            event_count_compressed=len(all_events),
+            extracted_patterns=patterns,
+            narrative_summary=epoch_narrative,
+            memory_hash=memory_hash
+        )
+        
+        # 4. Save to Long Term Memory (Identity Preservation)
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            append_line_locked(self.long_term_memory, json.dumps(asdict(memory)) + "\n")
+        except ImportError:
+            with self.long_term_memory.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(asdict(memory)) + "\n")
+                
+        return memory
