@@ -38,6 +38,7 @@ import importlib
 import json
 import time
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict
 
@@ -278,6 +279,20 @@ def autonomic_heartbeat_cycle() -> Dict[str, Any]:
         system_status["observability_audit"] = safety_scan.to_dict()
     else:
         system_status["observability_audit"] = str(safety_scan)
+
+    # 8b. Endocrine Clock + Parasympathetic Recovery
+    # The standalone autonomic cycle should exercise the same quiet hormone
+    # decay/downshift path as the desktop heartbeat.
+    try:
+        from System.swarm_endocrine_system import EndocrineSystem
+
+        endocrine_state = EndocrineSystem(root=str(_STATE_DIR)).tick({
+            "compute_load": 0.5,
+            "_now": cycle_time,
+        })
+        system_status["endocrine_system"] = asdict(endocrine_state)
+    except Exception as e:
+        system_status["endocrine_system"] = f"ORGAN_FAILURE: {e}"
 
     # 9. Log Rotation — bounded segments with retention (solves file bloat structurally)
     system_status["log_rotation"] = _try_execute("swarm_log_rotation", "run_log_rotation")

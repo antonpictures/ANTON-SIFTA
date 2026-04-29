@@ -39,6 +39,17 @@ except ImportError:
     record_inference_fee = None
     calculate_fee = None
 
+try:
+    from Kernel.inference_economy import (
+        LOG_PATH as _INFERENCE_LOG_PATH,
+        append_ledger_line as _append_inference_ledger_line,
+        validate_inference_transfer_receipt,
+    )
+except ImportError:
+    _INFERENCE_LOG_PATH = None
+    _append_inference_ledger_line = None
+    validate_inference_transfer_receipt = None
+
 # ── Thermal Cortex import (the BISHOP closed-loop sensor) ────────────
 try:
     from System.swarm_thermal_cortex import is_overheating as _is_overheating
@@ -279,12 +290,19 @@ def route_inference(payload_dict: dict, prefer_local: bool = False, timeout: int
             res = receipt.get("ollama_response", {})
             text = res.get("response", "").strip()
             
-            # Record the signed receipt from the provider
-            if record_inference_fee and "fee_stgm" in receipt:
-                from Kernel.inference_economy import append_ledger_line, LOG_PATH
+            # Record only provider receipts that validate locally.
+            if "fee_stgm" in receipt:
+                if validate_inference_transfer_receipt is None or _append_inference_ledger_line is None or _INFERENCE_LOG_PATH is None:
+                    raise RuntimeError("inference receipt validator unavailable; refusing ledger append")
+                ok, reason, details = validate_inference_transfer_receipt(receipt)
+                if not ok:
+                    raise RuntimeError(f"remote inference receipt rejected: {reason} {details}")
                 try:
-                    append_ledger_line(LOG_PATH, receipt)
-                    print(f"  [STGM] Transfer Received: {receipt.get('fee_stgm')} STGM signed by {receipt.get('signing_node')}")
+                    _append_inference_ledger_line(_INFERENCE_LOG_PATH, receipt)
+                    print(
+                        f"  [STGM] Transfer Received: {receipt.get('fee_stgm')} STGM "
+                        f"signed by {receipt.get('signing_node')} verified={reason}"
+                    )
                 except Exception as e:
                     print(f"  [ECONOMY] Failed to record signed transfer receipt: {e}")
                     

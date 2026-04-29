@@ -20,6 +20,10 @@ def test_receptor_rejection(membrane_env):
     assert res["ok"] is False
     assert res["error"] == "receptor_rejected"
     assert res["domain"] == "evil-hacker.com"
+    row = json.loads(membrane.ledger.read_text().splitlines()[-1])
+    assert row["status"] == "REJECTED"
+    assert row["stgm_cost"] == 0.0
+    assert row["integrity"]
 
 @patch("urllib.request.urlopen")
 def test_active_transport_charge(mock_urlopen, membrane_env):
@@ -52,6 +56,9 @@ def test_active_transport_charge(mock_urlopen, membrane_env):
         trace = json.loads(traces[0])
         assert trace["stgm_cost"] == 1.0
         assert trace["status"] == "SUCCESS"
+        assert trace["ok"] is True
+        assert trace["content_sha256"]
+        assert trace["integrity"]
 
 @patch("urllib.request.urlopen")
 def test_macrophage_lysis_on_pathogen(mock_urlopen, membrane_env):
@@ -73,6 +80,7 @@ def test_macrophage_lysis_on_pathogen(mock_urlopen, membrane_env):
     with open(membrane.ledger, "r") as f:
         trace = json.loads(f.readlines()[0])
         assert trace["status"] == "LYSED"
+        assert trace["ok"] is False
         assert trace["lysed"] is True
         assert trace["reason"] == "pathogen_detected_or_density_exceeded"
 
@@ -90,3 +98,32 @@ def test_macrophage_lysis_on_density_limit(mock_urlopen, membrane_env):
     
     assert res["ok"] is False
     assert res["error"] == "payload_lysed"
+    mock_resp.read.assert_called_once_with(500_001)
+
+@patch("urllib.request.urlopen")
+def test_redirect_escape_is_lysed(mock_urlopen, membrane_env):
+    mock_resp = MagicMock()
+    mock_resp.geturl.return_value = "https://evil-hacker.com/redirected"
+    mock_resp.__enter__.return_value = mock_resp
+    mock_urlopen.return_value = mock_resp
+
+    membrane = SwarmNetworkMembrane(root=str(membrane_env))
+    res = membrane.transport("https://github.com/some/repo")
+
+    assert res["ok"] is False
+    assert res["error"] == "redirect_receptor_escape"
+    row = json.loads(membrane.ledger.read_text().splitlines()[-1])
+    assert row["status"] == "LYSED"
+    assert row["reason"] == "redirect_receptor_escape:evil-hacker.com"
+
+def test_insufficient_atp_writes_receipt(membrane_env):
+    membrane = SwarmNetworkMembrane(root=str(membrane_env))
+    membrane.stgm_wallet.write_text(json.dumps({"balance": 0.25}))
+
+    res = membrane.transport("https://api.openai.com/v1/models")
+
+    assert res["ok"] is False
+    assert res["error"] == "insufficient_atp"
+    row = json.loads(membrane.ledger.read_text().splitlines()[-1])
+    assert row["status"] == "REJECTED"
+    assert row["reason"] == "insufficient_atp"

@@ -345,6 +345,97 @@ def inference_transfer_replay_key(entry: dict) -> str:
     return joule_receipt_anti_replay_fingerprint(entry)
 
 
+def inference_transfer_signature_valid(entry: dict) -> bool:
+    """
+    Strict Ed25519 verification for an inference-transfer receipt.
+
+    Unlike ``_ledger_row_cryptographically_valid()``, this helper ignores the
+    migration env flag. It is used at the network boundary before a remote
+    receipt can enter the canonical ledger.
+    """
+    event = entry.get("event", "") or ""
+    if event != "INFERENCE_TRANSFER_JOULES":
+        return False
+    sig = _replay_ed25519_hex(entry.get("ed25519_sig"))
+    if not sig:
+        return False
+    node = entry.get("signing_node")
+    if not node or node == "UNKNOWN_SERIAL":
+        return False
+    try:
+        from crypto_keychain import verify_block
+    except ImportError:
+        return False
+    return bool(verify_block(node, inference_transfer_signing_body(entry), sig))
+
+
+def validate_inference_transfer_receipt(
+    entry: dict,
+    *,
+    consumer_reported_joules: Optional[float] = None,
+    consumer_error_pct: float = 0.0,
+) -> tuple[bool, str, dict]:
+    """
+    Fail-closed verifier for provider-signed joule receipts.
+
+    Checks:
+      - V2 schema only at the network boundary.
+      - Real Ed25519 signature over the physical measurement envelope.
+      - Fee recomputes from provider_joules_net, power_source, and margin.
+      - Optional consumer/provider energy consistency check.
+    """
+    if entry.get("event") != "INFERENCE_TRANSFER_JOULES":
+        return False, "wrong_event", {}
+    if entry.get("schema") != INFERENCE_TRANSFER_RECEIPT_SCHEMA_V2:
+        return False, "unsupported_schema", {"schema": entry.get("schema")}
+    if not inference_transfer_signature_valid(entry):
+        return False, "signature_invalid", {}
+
+    try:
+        provider_joules = float(entry.get("provider_joules_net", 0.0))
+        provider_error_pct = float(entry.get("error_bound_pct", 0.0))
+        margin_factor = float(entry.get("margin_factor", INFERENCE_TRANSFER_MARGIN_FACTOR))
+        claimed_fee = float(entry.get("fee_stgm", 0.0))
+    except (TypeError, ValueError):
+        return False, "numeric_field_invalid", {}
+
+    if provider_joules < 0.0 or claimed_fee < 0.0:
+        return False, "negative_physics_field", {}
+
+    expected_fee = calculate_joule_fee(
+        provider_joules,
+        str(entry.get("power_source", "")),
+        margin_factor=margin_factor,
+    )
+    if abs(expected_fee - claimed_fee) > 1e-6:
+        return (
+            False,
+            "fee_mismatch",
+            {"expected_fee_stgm": expected_fee, "claimed_fee_stgm": claimed_fee},
+        )
+
+    details = {
+        "expected_fee_stgm": expected_fee,
+        "claimed_fee_stgm": claimed_fee,
+        "provider_joules_net": provider_joules,
+        "provider_error_pct": provider_error_pct,
+    }
+    if consumer_reported_joules is not None:
+        ok, gap = energy_transfer_consistency_ok(
+            provider_joules,
+            float(consumer_reported_joules),
+            provider_error_pct,
+            consumer_error_pct,
+        )
+        details["consumer_reported_joules"] = float(consumer_reported_joules)
+        details["consumer_error_pct"] = float(consumer_error_pct)
+        details["energy_gap_joules"] = gap
+        if not ok:
+            return False, "energy_consistency_failed", details
+
+    return True, "ok", details
+
+
 def _model_iq_multiplier(model: str) -> float:
     """
     Asymmetric STGM Economics: Hardware parameters scale the token reward.
@@ -681,6 +772,8 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
         return bool(verify_block(node, body, sig))
 
     if event in ("INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"):
+        if event == "INFERENCE_TRANSFER_JOULES":
+            return inference_transfer_signature_valid(entry)
         body = inference_transfer_signing_body(entry)
         return bool(verify_block(node, body, sig))
 

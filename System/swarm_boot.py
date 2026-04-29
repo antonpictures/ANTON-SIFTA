@@ -145,6 +145,7 @@ class SiftaBrainstem:
         self.identity_attest_enabled = False
         self.microbiome = None        # [Epoch-19] microbiome digestion lobe
         self.microbiome_enabled = False
+        self.endocrine_system = None  # [Epoch-24] slow hormone clock + parasympathetic recovery
 
     def _unlock_hardware(self):
         """
@@ -253,6 +254,7 @@ class SiftaBrainstem:
             from System.swarm_apple_silicon_cortex import AppleSiliconCortex
             from System.swarm_parasympathetic_healing import SwarmParasympatheticSystem
             from System.swarm_sympathetic_cortex import SwarmSympatheticCortex
+            from System.swarm_endocrine_system import EndocrineSystem
             
             self.proprioception = SwarmProprioception()
             self.trash = SwarmStigmergicTrash()
@@ -264,6 +266,7 @@ class SiftaBrainstem:
             self.telomeres = CellularAging(degradation_rate=1.0)
             self.parasympathetic = SwarmParasympatheticSystem()
             self.sympathetic = SwarmSympatheticCortex()
+            self.endocrine_system = EndocrineSystem()
             
             # C47H Epoch 3 Peer Review Fix: Refresh Apple Silicon cache once at boot
             AppleSiliconCortex().refresh_silicon_topography()
@@ -460,6 +463,7 @@ class SiftaBrainstem:
         last_empathic_at = 0.0      # [AO46 Epoch 8] Empathic Resonance — behavioral conditioning
         last_healing_at = 0.0       # [AG31 Epoch 9] Parasympathetic Healing 
         last_sympathetic_at = 0.0   # [C47H Epoch 10] Sympathetic Cortex Flow
+        last_endocrine_at = 0.0     # [Epoch 24] Endocrine clock + recovery tick
         last_rem_sleep_at = 0.0     # [AO46 Epoch 13] REM Sleep neuroplasticity
         MOTOR_INTERVAL_S = 5.0       # 12 BPM resting; motor_cortex reads clinical file for live rate
         BASE_FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
@@ -484,6 +488,7 @@ class SiftaBrainstem:
         EMPATHIC_INTERVAL_S = 300.0  # [Epoch 8] Empathic resonance scan — teaching moments + care signals
         HEALING_INTERVAL_S = 30.0    # [Epoch 9] Parasympathetic checking for distress
         SYMPATHETIC_INTERVAL_S = 30.0 # [Epoch 10] Sympathetic monitoring
+        ENDOCRINE_INTERVAL_S = 30.0  # [Epoch 24] Slow hormone decay + parasympathetic downshift
         REM_SLEEP_INTERVAL_S = 21600.0 # [Epoch 13] REM Sleep pruning every 6 hours
         MERKLE_INTERVAL_S = 1800.0   # [Epoch 14] Merkle re-anchor every 30 min
         last_merkle_at = 0.0         # [C53M Epoch 14] Merkle attestor
@@ -631,6 +636,20 @@ class SiftaBrainstem:
                     last_sympathetic_at = tick_start
                     try:
                         self.sympathetic.scan_for_flow_state()
+                    except Exception:
+                        pass
+
+                # 1g4. Endocrine Clock + Parasympathetic Recovery (Epoch 24)
+                # Sympathetic spikes enter through SwarmEndocrineSystem; this
+                # quiet heartbeat lets hormone state decay and lets the vagal
+                # brake fire after threat/error clocks have aged.
+                if self.endocrine_system and (tick_start - last_endocrine_at) > ENDOCRINE_INTERVAL_S:
+                    last_endocrine_at = tick_start
+                    try:
+                        self.endocrine_system.tick({
+                            "compute_load": max(0.0, min(1.0, mood_multiplier / 2.0)),
+                            "_now": tick_start,
+                        })
                     except Exception:
                         pass
 

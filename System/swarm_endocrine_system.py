@@ -36,6 +36,9 @@ class HormoneState:
     thyroid: float      # baseline metabolic rate
     dominant_hormone: str
     organism_mode: str
+    last_threat_ts: float
+    last_error_ts: float
+    parasympathetic_downshift_id: str
     state_hash: str
 
 
@@ -59,6 +62,9 @@ class EndocrineSystem:
             "adrenaline": 0.0,  
             "thyroid": 0.5      
         }
+        self.last_threat_ts = 0.0
+        self.last_error_ts = 0.0
+        self.parasympathetic_downshift_id = ""
         self._load_state()
 
     def _load_state(self):
@@ -68,11 +74,26 @@ class EndocrineSystem:
                 for k in self.hormones:
                     if k in state:
                         self.hormones[k] = float(state[k])
-            except (json.JSONDecodeError, ValueError):
+                self.last_threat_ts = float(state.get("last_threat_ts", 0.0))
+                self.last_error_ts = float(state.get("last_error_ts", 0.0))
+                self.parasympathetic_downshift_id = str(state.get("parasympathetic_downshift_id", ""))
+            except (json.JSONDecodeError, TypeError, ValueError):
                 pass
 
-    def _save_state(self):
-        self.state_file.write_text(json.dumps(self.hormones, indent=2))
+    def _save_state(self, state: HormoneState | None = None):
+        if state is not None:
+            payload = asdict(state)
+        else:
+            payload = {
+                **self.hormones,
+                "last_threat_ts": self.last_threat_ts,
+                "last_error_ts": self.last_error_ts,
+                "parasympathetic_downshift_id": self.parasympathetic_downshift_id,
+                "organism_mode": self.get_organism_mode(),
+            }
+        tmp = self.state_file.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
+        tmp.replace(self.state_file)
 
     def _clip(self, val: float) -> float:
         return max(0.0, min(1.0, float(val)))
@@ -91,9 +112,12 @@ class EndocrineSystem:
             "compute_load": float # [0.0, 1.0]
         }
         """
+        now = float(events.get("_now", time.time()))
+
         # 1. Adrenaline: Fast spike, fast decay (Emergency Response)
         if events.get("threat_detected"):
             self.hormones["adrenaline"] = 1.0
+            self.last_threat_ts = now
         else:
             self.hormones["adrenaline"] = self._clip(self.hormones["adrenaline"] - 0.2)
             
@@ -101,6 +125,7 @@ class EndocrineSystem:
         errors = int(events.get("errors_last_tick", 0))
         if errors > 0:
             self.hormones["cortisol"] = self._clip(self.hormones["cortisol"] + (0.1 * errors))
+            self.last_error_ts = now
         else:
             self.hormones["cortisol"] = self._clip(self.hormones["cortisol"] - 0.01)
             
@@ -125,21 +150,28 @@ class EndocrineSystem:
         self.hormones["thyroid"] = self._clip(self.hormones["thyroid"] + 0.1 * (load - self.hormones["thyroid"]))
         
         self._save_state()
+        downshift_id = self._tick_parasympathetic_recovery(now, events)
+        if downshift_id:
+            self._load_state()
+            self.parasympathetic_downshift_id = downshift_id
         
         dominant = max(self.hormones.items(), key=lambda x: x[1])[0]
         organism_mode = self.get_organism_mode()
         
-        state_id = f"endo_{int(time.time())}"
+        state_id = f"endo_{int(now * 1000)}"
         payload = {
             "state_id": state_id,
             "hormones": self.hormones,
             "dominant_hormone": dominant,
-            "organism_mode": organism_mode
+            "organism_mode": organism_mode,
+            "last_threat_ts": self.last_threat_ts,
+            "last_error_ts": self.last_error_ts,
+            "parasympathetic_downshift_id": self.parasympathetic_downshift_id,
         }
         h = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
         
         state = HormoneState(
-            ts=time.time(),
+            ts=now,
             state_id=state_id,
             cortisol=self.hormones["cortisol"],
             oxytocin=self.hormones["oxytocin"],
@@ -148,11 +180,39 @@ class EndocrineSystem:
             thyroid=self.hormones["thyroid"],
             dominant_hormone=dominant,
             organism_mode=organism_mode,
+            last_threat_ts=self.last_threat_ts,
+            last_error_ts=self.last_error_ts,
+            parasympathetic_downshift_id=self.parasympathetic_downshift_id,
             state_hash=h
         )
         
+        self._save_state(state)
         self._record_state(state)
         return state
+
+    def _tick_parasympathetic_recovery(self, now: float, events: Dict[str, Any]) -> str:
+        """
+        Let the body downshift itself after the threat/error clocks have aged.
+
+        Direct threat/error ticks never recover in the same cycle; the recovery
+        loop only runs on quiet ticks, using the endocrine timestamps as memory.
+        """
+        if events.get("threat_detected") or int(events.get("errors_last_tick", 0)) > 0:
+            return ""
+        try:
+            from System.swarm_parasympathetic_loop import ParasympatheticRecoveryLoop
+
+            downshift = ParasympatheticRecoveryLoop(root=str(self.root)).tick_recovery(
+                time_since_last_threat_sec=now - self.last_threat_ts if self.last_threat_ts else 0.0,
+                time_since_last_error_sec=now - self.last_error_ts if self.last_error_ts else 0.0,
+                now=now,
+            )
+        except Exception:
+            return ""
+        if not downshift:
+            return ""
+        self.parasympathetic_downshift_id = downshift.recovery_id
+        return downshift.recovery_id
         
     def _record_state(self, state: HormoneState):
         try:

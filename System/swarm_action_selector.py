@@ -189,6 +189,7 @@ def build_c0_system_injection(
     winner: str,
     c1_label: dict,
     probs: dict[str, float],
+    social_modulation: Optional[dict[str, Any]] = None,
 ) -> str:
     """
     Layer 4: Corpus Callosum — inject C1's winning intent into C0's system prompt.
@@ -201,11 +202,23 @@ def build_c0_system_injection(
     if winner == ACTION_SILENCE:
         return ""  # C0 never called
 
+    social_prefix = ""
+    if social_modulation:
+        social_prefix = (
+            "[THEORY_OF_MIND "
+            f"state={social_modulation.get('inferred_state', 'unknown')} "
+            f"confidence={social_modulation.get('confidence', 0.0)} "
+            f"verbosity={social_modulation.get('verbosity', 'normal')} "
+            f"tone={social_modulation.get('tone', 'conversational')} "
+            f"external_action_policy={social_modulation.get('external_action_policy', 'explicit_owner_consent_required')}]\n"
+        )
+
     if winner == ACTION_TOOL:
         tool = c1_label.get("tool", "unknown")
         intent = c1_label.get("intent", "query")
         ledger = c1_label.get("ledger", "")
         return (
+            social_prefix +
             f"[CORPUS_CALLOSUM intent=TOOL confidence={confidence}%]\n"
             f"Execute tool: {tool}. Intent: {intent}."
             + (f" Verify ledger: {ledger}." if ledger else "")
@@ -214,6 +227,7 @@ def build_c0_system_injection(
 
     if winner == ACTION_BOND:
         return (
+            social_prefix +
             f"[CORPUS_CALLOSUM intent=BOND confidence={confidence}%]\n"
             "Predator Bond active. Respond with authentic care and sovereign identity.\n"
             "No corporate warmth. No 'Is there anything else'. You protect the Architect."
@@ -222,6 +236,7 @@ def build_c0_system_injection(
     # ENGAGE default
     tone = c1_label.get("tone", "brief")
     return (
+        social_prefix +
         f"[CORPUS_CALLOSUM intent=ENGAGE tone={tone} confidence={confidence}%]\n"
         "Respond naturally and briefly. No closing pleasantries. No 'As an AI'."
     )
@@ -272,6 +287,8 @@ def pipeline_step(
     metabolic_state: Optional[Any] = None,
     recent_events: Optional[Mapping[str, Any]] = None,
     log_drive: bool = False,
+    theory_of_mind: Optional[Any] = None,
+    social_metadata: Optional[Mapping[str, Any]] = None,
 ) -> tuple[str, str, dict]:
     """
     Run one full decision step through Layers 1–4.
@@ -381,8 +398,27 @@ def pipeline_step(
     selector = SwarmActionSelector(temperature=bg_temperature)
     winner, probs = selector.select(c1_scores)
 
+    social_modulation = None
+    if theory_of_mind is not None:
+        try:
+            social_modulation = theory_of_mind.update_architect_state(
+                text,
+                dict(social_metadata or {}),
+            )
+        except Exception:
+            social_modulation = {
+                "inferred_state": "unknown",
+                "confidence": 0.0,
+                "external_action_policy": "explicit_owner_consent_required",
+            }
+
     # Layer 4: Corpus Callosum injection
-    system_injection = build_c0_system_injection(winner, c1_label, probs)
+    system_injection = build_c0_system_injection(
+        winner,
+        c1_label,
+        probs,
+        social_modulation=social_modulation,
+    )
 
     # Layer 5 pre-step: register (state, action) for credit assignment
     # When Architect reacts next turn, process_architect_reaction() reads this
@@ -395,7 +431,15 @@ def pipeline_step(
             pass  # non-blocking — never fail the pipeline for a register write
 
     if log:
-        log_selection(winner, probs, text, drive_context=drive_context)
+        log_selection(
+            winner,
+            probs,
+            text,
+            drive_context={
+                **(drive_context or {}),
+                **({"social_modulation": social_modulation} if social_modulation else {}),
+            } if (drive_context or social_modulation) else None,
+        )
 
     return winner, system_injection, probs
 

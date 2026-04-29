@@ -338,6 +338,49 @@ class TestJouleTransferSignature(unittest.TestCase):
             else:
                 os.environ["SIFTA_LEDGER_VERIFY"] = old_verify
 
+    def test_validate_inference_transfer_receipt_recomputes_fee_and_signature(self):
+        row = self._signed_v2_row()
+        row["fee_stgm"] = ie.calculate_joule_fee(
+            row["provider_joules_net"],
+            row["power_source"],
+            margin_factor=row["margin_factor"] if "margin_factor" in row else 1.0,
+        )
+        # Re-sign because fee is in the signed body.
+        from System.crypto_keychain import sign_block
+
+        body = ie.inference_transfer_signing_body(row)
+        row["receipt_hash"] = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        row["ed25519_sig"] = sign_block(body)
+
+        ok, reason, details = ie.validate_inference_transfer_receipt(row)
+        self.assertTrue(ok, (reason, details))
+        self.assertEqual(reason, "ok")
+        self.assertEqual(details["expected_fee_stgm"], row["fee_stgm"])
+
+        tampered = dict(row, fee_stgm=row["fee_stgm"] + 0.25)
+        bad, bad_reason, _ = ie.validate_inference_transfer_receipt(tampered)
+        self.assertFalse(bad)
+        self.assertEqual(bad_reason, "signature_invalid")
+
+    def test_validate_inference_transfer_receipt_blocks_unsigned_v1_boundary_rows(self):
+        row = {
+            "event": "INFERENCE_TRANSFER_JOULES",
+            "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+            "borrower_id": "M1THER_EDGE",
+            "lender_node_id": "GTH4921YP3",
+            "fee_stgm": 0.125,
+        }
+        ok, reason, _ = ie.validate_inference_transfer_receipt(row)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "unsupported_schema")
+
+    def test_router_validates_receipt_before_ledger_append(self):
+        router_path = Path(__file__).resolve().parents[1] / "System" / "inference_router.py"
+        source = router_path.read_text(encoding="utf-8")
+        self.assertIn("validate_inference_transfer_receipt", source)
+        self.assertIn("remote inference receipt rejected", source)
+        self.assertIn("_append_inference_ledger_line", source)
+
 
 class TestNormalizeLender(unittest.TestCase):
     def test_ollama_url_to_hostname(self):

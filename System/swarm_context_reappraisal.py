@@ -20,6 +20,48 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+CALIFORNIA_CANNABIS_LEGAL_CONTEXT = (
+    "California Department of Cannabis Control: cannabis is legal in California "
+    "for adult use by people 21 or older, with private-property, local, driving, "
+    "federal-land, and smoke-location restrictions."
+)
+
+BENIGN_COUGH_CONTEXT_TERMS = {
+    "weed",
+    "cannabis",
+    "marijuana",
+    "smoked",
+    "smoking",
+    "took a hit",
+    "bong",
+    "joint",
+    "water too fast",
+    "drank water",
+    "laughing",
+    "joke",
+    "fine",
+    "i'm ok",
+    "im ok",
+    "i am ok",
+    "don't worry",
+    "do not worry",
+}
+
+RED_FLAG_MEDICAL_TERMS = {
+    "can't breathe",
+    "cant breathe",
+    "cannot breathe",
+    "shortness of breath",
+    "chest pain",
+    "blue lips",
+    "passing out",
+    "fainting",
+    "choking",
+    "blood",
+    "call 911",
+    "emergency",
+}
+
 
 @dataclass
 class ContextHypothesis:
@@ -30,6 +72,8 @@ class ContextHypothesis:
     created_at: float
     last_updated: float
     status: str  # "active", "downgraded", "confirmed"
+    reappraisal_reason: str = ""
+    legal_context: str = ""
 
 
 class ContextReappraisal:
@@ -92,13 +136,19 @@ class ContextReappraisal:
         downgraded_any = False
         for h_id, hyp in list(self.active_hypotheses.items()):
             if hyp.status == "active":
-                # Heuristic mapping for reappraisal
+                # Heuristic mapping for reappraisal. Reflex stays fast, but
+                # context can downgrade only when it is explicit and non-red-flag.
                 if hyp.hypothesis_type == "medical_emergency":
-                    if any(w in signal_lower for w in ["weed", "smoke", "joke", "fine", "ok", "water"]):
+                    benign_context = any(w in signal_lower for w in BENIGN_COUGH_CONTEXT_TERMS)
+                    red_flag_context = any(w in signal_lower for w in RED_FLAG_MEDICAL_TERMS)
+                    if benign_context and not red_flag_context:
                         hyp.hypothesis_type = "non_emergency_reappraised"
                         hyp.severity = 1
                         hyp.status = "downgraded"
                         hyp.last_updated = now
+                        hyp.reappraisal_reason = "benign_owner_context_after_body_signal"
+                        if any(w in signal_lower for w in {"weed", "cannabis", "marijuana", "smoked", "smoking"}):
+                            hyp.legal_context = CALIFORNIA_CANNABIS_LEGAL_CONTEXT
                         self._save_hypothesis(hyp)
                         self._trigger_parasympathetic_calm(reason="context_downgrade_medical")
                         downgraded_any = True
@@ -118,11 +168,12 @@ class ContextReappraisal:
 
         # 2. Fast Reflex: Spawn a new hypothesis if no downgrade happened and we detect a trigger
         if any(w in signal_lower for w in ["cough", "pain", "choking", "hurt"]):
+            severity = 10 if any(w in signal_lower for w in RED_FLAG_MEDICAL_TERMS) else 8
             new_hyp = ContextHypothesis(
                 hypothesis_id=f"hyp_{int(now * 1000)}",
                 trigger_signal=signal_text,
                 hypothesis_type="medical_emergency",
-                severity=8,
+                severity=severity,
                 created_at=now,
                 last_updated=now,
                 status="active"

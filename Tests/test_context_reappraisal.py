@@ -39,6 +39,7 @@ def test_slow_correction_downgrades_hypothesis_and_triggers_calm(reappraisal_env
     assert updated_hyp.hypothesis_type == "non_emergency_reappraised"
     assert updated_hyp.severity == 1
     assert updated_hyp.status == "downgraded"
+    assert "California Department of Cannabis Control" in updated_hyp.legal_context
 
 def test_security_reappraisal(reappraisal_env):
     pfc = ContextReappraisal(state_dir=str(reappraisal_env))
@@ -77,3 +78,17 @@ def test_reappraisal_triggers_parasympathetic_brake(reappraisal_env):
     state_after = json.loads(endocrine_file.read_text())
     assert state_after["adrenaline"] == 0.0
     assert state_after["organism_mode"] == "BASELINE_MAINTENANCE"
+
+def test_red_flag_context_does_not_downgrade_on_weed_phrase(reappraisal_env):
+    pfc = ContextReappraisal(state_dir=str(reappraisal_env))
+
+    hyp = pfc.process_signal("I am coughing and cannot breathe")
+    assert hyp is not None
+    assert hyp.severity == 10
+
+    pfc.process_signal("I smoked weed but still have chest pain and cannot breathe")
+
+    updated = pfc.active_hypotheses[hyp.hypothesis_id]
+    assert updated.hypothesis_type == "medical_emergency"
+    assert updated.status == "active"
+    assert updated.severity == 10
