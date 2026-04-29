@@ -157,7 +157,7 @@ def test_joule_transfer_receipts_are_zero_sum_wallet_movements(tmp_path: Path) -
     assert data["inference_fee_volume"] == pytest.approx(0.125)
 
 
-def test_legacy_unsigned_utility_mint_can_be_voided_without_wallet_credit(tmp_path: Path) -> None:
+def test_legacy_unsigned_utility_mint_is_retired_without_wallet_credit(tmp_path: Path) -> None:
     repair_log = tmp_path / "repair_log.jsonl"
     state_dir = tmp_path / ".sifta_state"
     state_dir.mkdir()
@@ -190,10 +190,59 @@ def test_legacy_unsigned_utility_mint_can_be_voided_without_wallet_credit(tmp_pa
 
     snap = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir)
 
-    assert snap.canonical_minted == pytest.approx(3.72977)
-    assert snap.canonical_spent == pytest.approx(3.72977)
+    assert snap.canonical_minted == pytest.approx(0.0)
+    assert snap.canonical_spent == pytest.approx(0.0)
     assert snap.net_supply == pytest.approx(0.0)
     assert snap.canonical_wallet_sum == pytest.approx(0.0)
+    assert snap.retired_utility_mint_lines == 1
+    assert snap.retired_utility_mint_amount == pytest.approx(3.72977)
+
+
+def test_arbitrary_useful_work_utility_mint_is_ignored(monkeypatch, tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "AG31.json").write_text(json.dumps({"id": "AG31"}), encoding="utf-8")
+
+    _append(
+        repair_log,
+        {
+            "event_kind": "UTILITY_MINT",
+            "event_id": "USEFUL_WORK_MINT_UNIT",
+            "ts": 1.0,
+            "agent_id": "AG31",
+            "miner_id": "AG31",
+            "amount_stgm": 65.0,
+            "reason": "proof_of_useful_work_documentation",
+            "policy": "STGM_POLICY_USEFUL_WORK_v1",
+            "engine": "PROOF_OF_USEFUL_WORK_v1",
+            "rate": "2.6 STGM per KB of canonical documentation",
+        },
+    )
+    _append(
+        repair_log,
+        {
+            "timestamp": 2,
+            "agent": "SEBASTIAN",
+            "amount_stgm": 6.5,
+            "reason": "PROOF_OF_USEFUL_WORK_VIDEO_EDIT",
+            "hash": "legacy",
+        },
+    )
+
+    data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+
+    assert data["canonical_minted"] == pytest.approx(0.0)
+    assert data["canonical_wallet_sum"] == pytest.approx(0.0)
+    assert data["retired_utility_mint_lines"] == 2
+    assert data["retired_utility_mint_amount"] == pytest.approx(71.5)
+    assert "retired_utility_mint_rows_ignored" in data["warnings"]
+
+    from Kernel import inference_economy
+
+    monkeypatch.setenv("SIFTA_LEDGER_VERIFY", "0")
+    monkeypatch.setattr(inference_economy, "LOG_PATH", repair_log)
+    assert inference_economy.ledger_balance("AG31") == pytest.approx(0.0)
 
 
 def test_retired_electricity_mint_routes_to_atp_and_keeps_beneficiary_gate(monkeypatch) -> None:

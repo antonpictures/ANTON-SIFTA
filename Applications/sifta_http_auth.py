@@ -34,7 +34,8 @@ Related (server / wormhole — see server.py):
   Finance GUI uses the same quorum for STGM; genesis mismatch flags swimmers without zeroing ledger truth.
 
   SIFTA_MAX_STGM_LEDGER_CREDIT — max single-line STGM *credit* appended to repair_log.jsonl
-    (STGM_MINT, MINING_REWARD, FOUNDATION_GRANT, UTILITY_MINT, positive legacy amount_stgm).
+    (STGM_MINT, MINING_REWARD, FOUNDATION_GRANT, UTILITY_MINT_ATP).
+    Retired UTILITY_MINT and unstructured positive amount_stgm rows are refused.
     Default 25000. Set 0/off/false/none/unlimited to disable (e.g. intentional whale grants).
   SIFTA_MAX_DEFRAG_BOUNTY_STGM — cap payout from memory_defrag_worker bounty rewards (default 50).
 

@@ -36,6 +36,8 @@ class EconomySnapshot:
     atp_minted: float = 0.0
     deprecated_mint_attempts: int = 0
     deprecated_would_have_minted: float = 0.0
+    retired_utility_mint_lines: int = 0
+    retired_utility_mint_amount: float = 0.0
     memory_reward_lines: int = 0
     memory_reward_amount: float = 0.0
     casino_lines: int = 0
@@ -97,6 +99,8 @@ class EconomySnapshot:
             "next_halving_in_rows": self.next_halving_in_rows,
             "deprecated_mint_attempts": self.deprecated_mint_attempts,
             "deprecated_would_have_minted": round(self.deprecated_would_have_minted, 4),
+            "retired_utility_mint_lines": self.retired_utility_mint_lines,
+            "retired_utility_mint_amount": round(self.retired_utility_mint_amount, 4),
             "memory_reward_lines": self.memory_reward_lines,
             "memory_reward_amount": round(self.memory_reward_amount, 4),
             "casino_lines": 0,
@@ -112,6 +116,12 @@ def _float(value: Any) -> float:
         return float(value or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _retire_utility_mint(out: EconomySnapshot, row: Dict[str, Any]) -> None:
+    """Track retired arbitrary mint rows without crediting supply or wallets."""
+    out.retired_utility_mint_lines += 1
+    out.retired_utility_mint_amount += max(0.0, _float(row.get("amount_stgm")))
 
 
 def _iter_jsonl(path: Path):
@@ -237,12 +247,16 @@ def scan_economy(
         tx_type = str(row.get("tx_type") or "")
         event_kind = str(row.get("event_kind") or "")
 
-        if event in {"MINING_REWARD", "FOUNDATION_GRANT", "UTILITY_MINT"}:
+        if event in {"MINING_REWARD", "FOUNDATION_GRANT"}:
             amt = _float(row.get("amount_stgm"))
             out.canonical_minted += amt
             aid = str(row.get("miner_id") or "").upper()
             if aid:
                 balances[aid] = balances.get(aid, 0.0) + amt
+        elif event == "UTILITY_MINT" or event_kind == "UTILITY_MINT":
+            # Retired: old utility/documentation/passive mints used symbolic
+            # rates. Only UTILITY_MINT_ATP below is thermodynamic canonical.
+            _retire_utility_mint(out, row)
         elif event_kind == "UTILITY_MINT_ATP":
             amt = _float(row.get("amount_stgm"))
             out.canonical_minted += amt
@@ -311,15 +325,22 @@ def scan_economy(
             aid = str(row.get("agent_id") or "").upper()
             if aid:
                 balances[aid] = balances.get(aid, 0.0) - amt
+        elif event_kind == "VOID_CORRECTION":
+            # A void is an audit correction, not a new spend event. Rows that
+            # needed voiding are either already ignored here or replayed by
+            # their own canonical event type.
+            continue
         elif "amount_stgm" in row and not event and not tx_type:
             amt = _float(row.get("amount_stgm"))
-            if amt >= 0:
-                out.canonical_minted += amt
-            else:
+            if amt > 0:
+                # Retired: unstructured positive amount_stgm rows are not a
+                # physics/maths/biology mint policy.
+                _retire_utility_mint(out, row)
+            elif amt < 0:
                 out.canonical_spent += abs(amt)
-            aid = str(row.get("agent") or "").upper()
-            if aid:
-                balances[aid] = balances.get(aid, 0.0) + amt
+                aid = str(row.get("agent") or "").upper()
+                if aid:
+                    balances[aid] = balances.get(aid, 0.0) + amt
         elif row.get("event_kind") == "DEPRECATED_MINT_ATTEMPT":
             out.deprecated_mint_attempts += 1
             out.deprecated_would_have_minted += _float(row.get("would_have_minted_stgm"))
@@ -338,6 +359,8 @@ def scan_economy(
 
     if out.memory_reward_amount:
         out.warnings.append("memory_rewards_are_reputation_not_spendable_wallet")
+    if out.retired_utility_mint_lines:
+        out.warnings.append("retired_utility_mint_rows_ignored")
     if out.deprecated_mint_attempts:
         out.warnings.append("deprecated_mint_attempts_logged_zero_minted")
     if out.net_supply < -0.0001:

@@ -836,7 +836,7 @@ def ledger_balance(agent_id: str) -> float:
     Dialect A — inference_economy.py (event-keyed):
         event: "MINING_REWARD"    → amount_stgm credited to miner_id
         event: "FOUNDATION_GRANT" → amount_stgm credited to miner_id
-        event: "UTILITY_MINT"     → signed passive mint (miner_id)
+        event: "UTILITY_MINT"     → retired; ignored by canonical replay
         event_kind: "UTILITY_MINT_ATP" → Landauer/ATP mint credited to miner_id
         event: "INFERENCE_BORROW" → fee_stgm debited from borrower_id,
                                      credited to lender_ip
@@ -893,9 +893,11 @@ def ledger_balance(agent_id: str) -> float:
                     if entry.get("miner_id", "").upper() == uid:
                         balance += float(entry.get("amount_stgm", 0.0))
 
-                elif event == "UTILITY_MINT":
-                    if entry.get("miner_id", "").upper() == uid:
-                        balance += float(entry.get("amount_stgm", 0.0))
+                elif event == "UTILITY_MINT" or event_kind == "UTILITY_MINT":
+                    # Retired: symbolic/passive/documentation utility mints
+                    # are not physics-grounded wallet credit. The only live
+                    # utility mint path is UTILITY_MINT_ATP below.
+                    continue
 
                 elif event_kind == "UTILITY_MINT_ATP":
                     if entry.get("miner_id", "").upper() == uid:
@@ -947,9 +949,13 @@ def ledger_balance(agent_id: str) -> float:
 
                 # ── MCP / ANTIGRAVITY_CREATOR_NODE overhead ────────────────────
                 # amount_stgm < 0 means a debit (legacy MCP SCAR entries)
+                elif event_kind == "VOID_CORRECTION":
+                    continue
+
                 elif "amount_stgm" in entry and not event and not tx_type:
-                    if entry.get("agent", "").upper() == uid:
-                        balance += float(entry.get("amount_stgm", 0.0))
+                    amt = float(entry.get("amount_stgm", 0.0))
+                    if amt < 0 and entry.get("agent", "").upper() == uid:
+                        balance += amt
 
     except Exception as e:
         print(f"  [LEDGER] Read error for {uid}: {e}")

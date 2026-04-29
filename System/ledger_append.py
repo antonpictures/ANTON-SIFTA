@@ -49,15 +49,34 @@ def _single_line_stgm_credit(ev: dict) -> float | None:
     if event_kind == "UTILITY_MINT_ATP":
         a = float(ev.get("amount_stgm", 0) or 0)
         return a if a > 0 else None
-    if "amount_stgm" in ev and not evn and not tx:
+    if "amount_stgm" in ev and not evn and not tx and not event_kind:
         a = float(ev.get("amount_stgm", 0) or 0)
         return a if a > 0 else None
+    return None
+
+
+def _retired_credit_policy_error(ev: dict) -> str | None:
+    """Reject old positive credit shapes that are not physics-grounded."""
+    tx = (ev.get("tx_type") or "").strip()
+    evn = (ev.get("event") or "").strip()
+    event_kind = (ev.get("event_kind") or "").strip()
+    if evn == "UTILITY_MINT" or event_kind == "UTILITY_MINT":
+        a = float(ev.get("amount_stgm", 0) or 0)
+        if a > 0:
+            return "UTILITY_MINT is retired; use UTILITY_MINT_ATP or a reviewed zero-sum transfer"
+    if "amount_stgm" in ev and not evn and not tx and not event_kind:
+        a = float(ev.get("amount_stgm", 0) or 0)
+        if a > 0:
+            return "unstructured positive amount_stgm rows are retired; use a canonical signed policy"
     return None
 
 
 def _enforce_stgm_credit_ceiling(path: Path, event: JsonDict) -> None:
     if not _repair_ledger_path(path):
         return
+    retired_error = _retired_credit_policy_error(dict(event))
+    if retired_error:
+        raise ValueError(f"Refused repair_log credit: {retired_error}.")
     cap = _max_stgm_ledger_credit()
     if cap is None:
         return

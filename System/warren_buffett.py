@@ -128,11 +128,9 @@ def scan_repair_log(path: Optional[Path] = None) -> LedgerScan:
                     out.per_agent_credit[mid] = out.per_agent_credit.get(mid, 0.0) + amt
 
             elif event == "UTILITY_MINT":
-                amt = float(entry.get("amount_stgm", 0) or 0)
-                mid = str(entry.get("miner_id", "")).upper()
-                out.stgm_utility += amt
-                if mid:
-                    out.per_agent_credit[mid] = out.per_agent_credit.get(mid, 0.0) + amt
+                # Retired symbolic/passive utility mints are not canonical
+                # STGM. Warren reports must match Finance replay truth.
+                continue
 
             elif event == "INFERENCE_BORROW":
                 fee = float(entry.get("fee_stgm", 0) or 0)

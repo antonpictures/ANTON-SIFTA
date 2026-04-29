@@ -23,6 +23,7 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 LEDGER = STATE_DIR / "media_ingress_gate.jsonl"
+AMBIENT_CONTEXT_FILE = STATE_DIR / "ambient_media_context.json"
 
 DIRECT_ADDRESS_RE = re.compile(r"\b(?:alice|george|architect)\b", re.IGNORECASE)
 DIRECT_REQUEST_RE = re.compile(
@@ -35,7 +36,12 @@ DIRECT_REQUEST_RE = re.compile(
 )
 MEDIA_FOCUS_RE = re.compile(
     r"\b(?:youtube|caption_status|caption_excerpt|watching this youtube|"
-    r"frontmost.*youtube|video_id|the architect is physically.*watching)\b",
+    r"frontmost.*youtube|video_id|the architect is physically.*watching|"
+    r"background_tv|bedroom.*tv|tv.*bedroom|television.*youtube|tv.*youtube)\b",
+    re.IGNORECASE,
+)
+AMBIENT_TV_RE = re.compile(
+    r"\b(?:background_tv|bedroom.*tv|tv.*bedroom|television.*youtube|tv.*youtube)\b",
     re.IGNORECASE,
 )
 NARRATION_RE = re.compile(
@@ -71,6 +77,24 @@ def _load_recent_youtube_context(max_age_s: float = 900.0) -> str:
     return f"YouTube video: {title} caption_status={status}".strip()
 
 
+def _load_recent_ambient_context(max_age_s: float = 6 * 3600.0) -> str:
+    """Best-effort owner-provided room-media context; no network calls."""
+    if not AMBIENT_CONTEXT_FILE.exists():
+        return ""
+    try:
+        row = json.loads(AMBIENT_CONTEXT_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    try:
+        if time.time() - float(row.get("ts", 0.0)) > float(row.get("ttl_s", max_age_s)):
+            return ""
+    except Exception:
+        return ""
+    source = str(row.get("source") or "")
+    note = str(row.get("note") or "")
+    return f"ambient_media_context source={source} note={note}".strip()
+
+
 def classify_spoken_ingress(
     text: str,
     *,
@@ -93,10 +117,19 @@ def classify_spoken_ingress(
     if DIRECT_ADDRESS_RE.search(clean) or DIRECT_REQUEST_RE.search(clean):
         return {"route": "direct", "reason": "direct_address_or_request", "confidence": 1.0}
 
-    context = focus_context or ""
+    context = "\n".join(
+        x for x in (focus_context or "", _load_recent_youtube_context(), _load_recent_ambient_context()) if x
+    )
     has_media_focus = bool(MEDIA_FOCUS_RE.search(context))
     if not has_media_focus:
         return {"route": "direct", "reason": "no_recent_media_focus", "confidence": 0.0}
+
+    if AMBIENT_TV_RE.search(context):
+        return {
+            "route": "ambient_media",
+            "reason": "owner_declared_background_tv_youtube",
+            "confidence": 0.9,
+        }
 
     words = _word_count(clean)
     narration_score = 0.0
@@ -146,7 +179,36 @@ def write_gate_receipt(
     return row
 
 
+def record_ambient_media_context(
+    *,
+    source: str = "background_tv_youtube",
+    note: str = "Bedroom TV is playing YouTube; voices are ambient media unless they directly address Alice or request action.",
+    ttl_s: float = 6 * 3600.0,
+) -> dict[str, Any]:
+    """Persist an owner-declared ambient media context for the STT gate."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    row = {
+        "ts": time.time(),
+        "source": source,
+        "note": note,
+        "ttl_s": float(ttl_s),
+        "truth_note": (
+            "Owner-declared context for self/other separation: background media "
+            "voices are environmental, not direct owner commands."
+        ),
+    }
+    AMBIENT_CONTEXT_FILE.write_text(json.dumps(row, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    write_gate_receipt(
+        {"route": "ambient_media", "reason": "owner_declared_background_tv_youtube", "confidence": 1.0},
+        text=note,
+        stt_conf=1.0,
+        focus_context=f"background_tv_youtube source={source}",
+    )
+    return row
+
+
 __all__ = [
     "classify_spoken_ingress",
+    "record_ambient_media_context",
     "write_gate_receipt",
 ]

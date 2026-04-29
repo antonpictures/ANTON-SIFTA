@@ -91,6 +91,37 @@ class TestLedgerCreditCeiling(unittest.TestCase):
             )
         self.assertIn("25000", str(ctx.exception))
 
+    def test_rejects_retired_utility_mint_even_under_cap(self):
+        os.environ.pop("SIFTA_MAX_STGM_LEDGER_CREDIT", None)
+        with self.assertRaises(ValueError) as ctx:
+            append_ledger_line(
+                self.log,
+                {
+                    "event_kind": "UTILITY_MINT",
+                    "event_id": "USEFUL_WORK_MINT_ATTACK",
+                    "agent_id": "AG31",
+                    "miner_id": "AG31",
+                    "amount_stgm": 65.0,
+                    "reason": "proof_of_useful_work_documentation",
+                    "rate": "2.6 STGM per KB",
+                },
+            )
+        self.assertIn("UTILITY_MINT is retired", str(ctx.exception))
+
+    def test_rejects_unstructured_positive_amount_stgm(self):
+        os.environ.pop("SIFTA_MAX_STGM_LEDGER_CREDIT", None)
+        with self.assertRaises(ValueError) as ctx:
+            append_ledger_line(
+                self.log,
+                {
+                    "timestamp": 1,
+                    "agent": "SEBASTIAN",
+                    "amount_stgm": 6.5,
+                    "reason": "PROOF_OF_USEFUL_WORK_VIDEO_EDIT",
+                },
+            )
+        self.assertIn("unstructured positive amount_stgm", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
