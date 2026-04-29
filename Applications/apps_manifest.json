@@ -673,5 +673,20 @@
     "autostart": false,
     "_retired": false,
     "nppl": "sim_only"
+  },
+  "Cosmos-Reason1-7B Organ": {
+    "category": "Developer",
+    "entry_point": "System/swarm_cosmos_reason1.py",
+    "widget_class": null,
+    "window_width": null,
+    "window_height": null,
+    "signature": "AG31_COSMOS_REASON1_2026-04-28",
+    "doctor": "AG31",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "NVIDIA Cosmos-Reason1-7B probe organ. Truth=ONLINE from HF metadata now. Truth=REAL only after: local cache present + live Alice camera frame inference runs + receipt written. CLI: python System/swarm_cosmos_reason1.py --mode online|infer",
+    "_note": "Dr. Codex audit 2026-04-28: Reason1-7B is ungated, image-text-to-text, CPU-runnable on Apple Silicon. Do NOT use Predict2.5-2B first (gated, GPU-heavy). First real proof: huggingface-cli download nvidia/Cosmos-Reason1-7B, then --mode infer with an Alice frame.",
+    "autostart": false,
+    "_retired": false,
+    "nppl": "online_to_real_upgrade_path"
   }
 }
