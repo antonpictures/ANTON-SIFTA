@@ -590,6 +590,16 @@ class _VideoCanvas(QWidget):
             self._last_sha8 = ph.sha8
             self._last_ledger_ts = ph.ts
             _write_visual_stigmergy(ph)
+            # Save last frame as JPEG every 30 s for Cosmos-Reason1 inference.
+            # Zero cost on most ticks (30 s period vs 200 ms ledger period).
+            _now = time.time()
+            if _now - getattr(self, "_last_frame_save_ts", 0.0) >= 30.0:
+                self._last_frame_save_ts = _now
+                try:
+                    _frame_path = _REPO / ".sifta_state" / "visual_stigmergy_last_frame.jpg"
+                    img.save(str(_frame_path), "JPEG", quality=85)
+                except Exception:
+                    pass
 
         # Measured FPS over a rolling 1-second window.
         self._fps_window_n += 1
