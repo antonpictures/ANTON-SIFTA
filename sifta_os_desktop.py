@@ -650,7 +650,9 @@ class SiftaMdiArea(QMdiArea):
             
         self.particles = []
         import os as _os
-        _n_particles = int(_os.environ.get("SIFTA_DESKTOP_PHOTONS", "200"))
+        # Default 30 particles — barely visible drift, near-zero GPU cost.
+        # Override with SIFTA_DESKTOP_PHOTONS env var for more.
+        _n_particles = int(_os.environ.get("SIFTA_DESKTOP_PHOTONS", "30"))
         
         import random
         for _ in range(_n_particles):
@@ -669,7 +671,8 @@ class SiftaMdiArea(QMdiArea):
             
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
-        self.timer.start(50)
+        # 500 ms = 2 fps — subtle drift, not animation. Saves ~90% repaint CPU.
+        self.timer.start(500)
 
         self.watermark_font = QFont("Helvetica Neue", 110, QFont.Weight.Black)
         self.watermark_sub = QFont("Courier New", 18, QFont.Weight.Bold)
@@ -747,101 +750,34 @@ class SiftaMdiArea(QMdiArea):
                 
                 p[0] = float(np.clip(p[0] + grad[0] * 0.012 + eta_x, 0.0, 1.0))
                 p[1] = float(np.clip(p[1] + grad[1] * 0.012 + eta_y, 0.0, 1.0))
-                
-        else:
-            for p in self.particles:
-                p[0] += p[2]
-                p[1] += p[3]
-                if p[0] < 0: p[0] = w
-                elif p[0] > w: p[0] = 0
-                if p[1] < 0: p[1] = h
-                elif p[1] > h: p[1] = 0
-                
-        self.viewport().update()
-
-    # ── Predator sigil helpers ────────────────────────────────────────────────
-    def _refresh_pred_data(self) -> None:
-        """Read real organ data at most every 30 s using mtime gating.
-        Zero new daemons / timers — called lazily from paintEvent only.
-        """
-        import time as _t
-        now = _t.time()
-        if now - self._pred_last_read < 30.0:
-            return   # 30 s TTL — skip on most frames (50 ms tick = 600 skips)
-        self._pred_last_read = now
-
-        state = Path(__file__).resolve().parent / ".sifta_state"
-        # Read gecko receipt (smallest, most reliable) for STGM-like value
-        receipts = {
-            "gecko": state / "gecko_adhesion_receipts.jsonl",
-            "bat":   state / "bat_echo_receipts.jsonl",
-            "spider": state / "spider_web_receipts.jsonl",
-            "api":   state / "api_metabolism.jsonl",
-        }
-        alive, stgm = 0, 0.0
-        for key, path in receipts.items():
-            if path.exists():
-                alive += 1
-                try:
-                    lines = path.read_text(errors="ignore").splitlines()
-                    if lines:
-                        row = __import__("json").loads(lines[-1])
-                        stgm += float(row.get("stgm_balance") or
-                                      row.get("total_energy") or
-                                      row.get("amount") or 0)
-                except Exception:
-                    pass
-        self._pred_data = {"alive": alive, "stgm": round(stgm, 2)}
-
     def _draw_predator_sigil(self, painter: "QPainter", w: int, h: int) -> None:
-        """Draw friendly Predator ant sigil — mind-blowing but near-zero cost.
-        Data changes at most every 30 s. Repaint cost = a few drawText calls.
+        """Single whisper line + ghost PREDATOR text. Human predator: you feel it.
+        Data refresh every 30 s, paint cost = 2 drawText calls.
         """
         import math as _m, time as _t
         self._refresh_pred_data()
         t = _t.monotonic()
 
-        # Giant ant ASCII art (friendly Predator-ant, center of screen)
-        # Drawn at very low opacity — ghost watermark, not dominant.
-        ANT = [
-            "     /\\_/\\",
-            " ___( ᐛ )___",
-            "/  🐾PRED🐾  \\",
-            "\\ v7.0  CPU /",
-            " \\_______/",
-            "  |     |",
-            " /|\\   /|\\",
-        ]
-        painter.setFont(QFont("Menlo", 22, QFont.Weight.Black))
-        painter.setPen(QColor(0, 255, 136, 14))  # near-invisible green
-        line_h = 28
-        total_h = len(ANT) * line_h
-        y0 = (h - total_h) // 2 - 30
-        for i, line in enumerate(ANT):
-            painter.drawText(
-                0, y0 + i * line_h, w, line_h,
-                Qt.AlignmentFlag.AlignHCenter, line,
-            )
-
-        # Big PREDATOR text (very faint, centered)
+        # Ghost PREDATOR — large, ultra-faint (opacity 8/255)
         painter.setFont(QFont("Helvetica Neue", 96, QFont.Weight.Black))
-        painter.setPen(QColor(0, 255, 136, 10))
+        painter.setPen(QColor(0, 255, 100, 8))
         painter.drawText(
             self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "PREDATOR"
         )
 
-        # Sub-line: real data (updates every 30 s — barely changes)
-        alive  = self._pred_data.get("alive", 0)
-        stgm   = self._pred_data.get("stgm", 0.0)
-        sub = f"v7.0  ·  {alive} organs live  ·  STGM {stgm:.1f}  ·  Let's Think Together!"
-        painter.setFont(QFont("Menlo", 13, QFont.Weight.Bold))
-        # Pulse opacity very slowly (period ~40 s) — imperceptible to fast eye
-        pulse = 0.5 + 0.5 * _m.sin(t * 0.15)
-        painter.setPen(QColor(0, 200, 100, int(30 + 18 * pulse)))
+        # One whisper line with real data — 40s pulse between 20 and 35 alpha
+        alive = self._pred_data.get("alive", 0)
+        stgm  = self._pred_data.get("stgm", 0.0)
+        sub = f"SIFTA Predator v7.0  ·  {alive} organs  ·  STGM {stgm:.0f}  ·  Let’s Think Together!"
+        pulse = 0.5 + 0.5 * _m.sin(t * 0.16)  # 40 s period
+        painter.setFont(QFont("Menlo", 11))
+        painter.setPen(QColor(0, 180, 80, int(20 + 15 * pulse)))
         painter.drawText(
-            0, h // 2 + 80, w, 26,
+            0, h // 2 + 76, w, 22,
             Qt.AlignmentFlag.AlignHCenter, sub,
         )
+
+
 
     def paintEvent(self, event):
 
@@ -861,9 +797,7 @@ class SiftaMdiArea(QMdiArea):
         else:
             painter.fillRect(rect, QColor("#080a0f"))
         
-        painter.setPen(QPen(QColor(120, 162, 247, 30), 1))
-        for x in range(0, w, 40): painter.drawLine(x, 0, x, h)
-        for y in range(0, h, 40): painter.drawLine(0, y, w, y)
+        # No grid — clean desktop.
 
         if not has_wallpaper:
             self._draw_predator_sigil(painter, w, h)
