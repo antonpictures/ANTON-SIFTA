@@ -1149,24 +1149,28 @@ class SiftaDesktop(QMainWindow):
         self.mdi.subWindowActivated.connect(self._on_subwindow_activated)
         _desktop_init_trace("after SiftaMdiArea()")
         
-        # ── Desktop Mesh Relay Client (Headless for Taskbar Status) ──
+        # ── Desktop Mesh Relay Client — deferred 5 s after boot ──────────────
+        # P0 fix (Dr. Codex 2026-04-28): starting the mesh thread synchronously
+        # in __init__ blocks the shell from becoming interactive. Deferring by
+        # 5 s costs nothing visible (top-bar shows 'Local' briefly) but the
+        # shell, Alice panel, and camera all paint before the socket opens.
         self._mesh_connected = False
-        if _sifta_env_mesh_disabled():
-            self._desktop_mesh = None
-        else:
-            try:
-                if str(_SYS) not in sys.path:
-                    sys.path.insert(0, str(_SYS))
-                from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
+        self._desktop_mesh = None
+        if not _sifta_env_mesh_disabled():
+            QTimer.singleShot(5000, self._start_mesh_lazy)
+        _desktop_init_trace("after mesh worker (deferred)")
 
-                self._desktop_mesh = _SwarmMeshClientWorker(
-                    uri=SWARM_RELAY_URI, architect_id="DESKTOP_HUD"
-                )
-                self._desktop_mesh.connection_status.connect(self._on_desktop_mesh_status)
-                self._desktop_mesh.start()
-            except Exception:
-                self._desktop_mesh = None
-        _desktop_init_trace("after mesh worker")
+    def _start_mesh_lazy(self) -> None:
+        """Start the swarm mesh relay worker ~5 s after boot (P0 perf fix)."""
+        try:
+            from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
+            self._desktop_mesh = _SwarmMeshClientWorker(
+                uri=SWARM_RELAY_URI, architect_id="DESKTOP_HUD"
+            )
+            self._desktop_mesh.connection_status.connect(self._on_desktop_mesh_status)
+            self._desktop_mesh.start()
+        except Exception:
+            self._desktop_mesh = None
 
         main_layout.addWidget(self._build_top_menu_bar())
 
@@ -1613,13 +1617,17 @@ class SiftaDesktop(QMainWindow):
 
 
     def _update_alice_status(self):
-        """Poll Alice's vocal state every second and update the top-bar indicator."""
+        """Poll Alice's vocal state and update the top-bar indicator.
+        P0 fix (Dr. Codex 2026-04-28): mtime-gated — disk reads only when
+        either JSONL file has changed since last check. On idle seconds
+        (no speech, no transcription) this is a pure stat() call — ~0.01 ms.
+        """
         if not hasattr(self, "_alice_status_label"):
             return
         try:
             import time as _time
 
-            # 1) BROCA_SPEAKING → she is speaking right now
+            # 1) BROCA_SPEAKING — in-memory flag, zero disk cost
             try:
                 from System.swarm_broca_wernicke import _BROCA_SPEAKING
                 if _BROCA_SPEAKING.is_set():
@@ -1633,17 +1641,19 @@ class SiftaDesktop(QMainWindow):
                 pass
 
             now = _time.time()
+            import json as _json
 
-            # 2) Recent broca entry (< 4 s ago) → thinking / generating
+            # 2) Broca log — stat() first; only open if mtime changed
             broca_log = _REPO / ".sifta_state" / "broca_vocalizations.jsonl"
             try:
-                import json as _json
-                with open(broca_log, "rb") as _f:
-                    _f.seek(0, 2)
-                    size = _f.tell()
-                    _f.seek(max(0, size - 512))
-                    last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
-                row = _json.loads(last)
+                mtime = broca_log.stat().st_mtime
+                if mtime != getattr(self, "_broca_mtime", None):
+                    self._broca_mtime = mtime
+                    with open(broca_log, "rb") as _f:
+                        _f.seek(max(0, _f.seek(0, 2) - 512) or 0)
+                        last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
+                    self._broca_last_row = _json.loads(last)
+                row = getattr(self, "_broca_last_row", {})
                 if now - row.get("ts", 0) < 4:
                     self._alice_status_label.setText("🧠  thinking…")
                     self._alice_status_label.setStyleSheet(
@@ -1654,15 +1664,17 @@ class SiftaDesktop(QMainWindow):
             except Exception:
                 pass
 
-            # 3) Recent wernicke entry (< 3 s ago) → listening / heard something
+            # 3) Wernicke log — same mtime gate
             wern_log = _REPO / ".sifta_state" / "wernicke_semantics.jsonl"
             try:
-                with open(wern_log, "rb") as _f:
-                    _f.seek(0, 2)
-                    size = _f.tell()
-                    _f.seek(max(0, size - 512))
-                    last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
-                row = _json.loads(last)
+                mtime = wern_log.stat().st_mtime
+                if mtime != getattr(self, "_wern_mtime", None):
+                    self._wern_mtime = mtime
+                    with open(wern_log, "rb") as _f:
+                        _f.seek(max(0, _f.seek(0, 2) - 512) or 0)
+                        last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
+                    self._wern_last_row = _json.loads(last)
+                row = getattr(self, "_wern_last_row", {})
                 if now - row.get("ts", 0) < 3:
                     self._alice_status_label.setText("🎙  listening")
                     self._alice_status_label.setStyleSheet(
