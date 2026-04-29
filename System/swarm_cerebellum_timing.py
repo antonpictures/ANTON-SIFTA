@@ -98,7 +98,11 @@ class CerebellumTiming:
         t = time.time() if now is None else float(now)
         exp_lat = self.predict(action)
         obs_lat = max(0.0, float(observed_latency))
+        
         err = obs_lat - exp_lat
+        if not ok:
+            err += (exp_lat * 0.5)
+            
         new_lat = exp_lat + self.correction_gain * err
         new_lat = max(0.05, min(60.0, new_lat))
         self.expected_latency[action] = new_lat
@@ -154,20 +158,15 @@ class CerebellumTiming:
             return 0.0
 
         expected = self.predict(action)
-        base = min(expected * 0.25, 2.0)
-        streak = int(self.failure_streak.get(action, 0))
-        caution = 1.0 + min(streak * 0.2, 2.0)
-        delay = base * caution
-
-        last = self._last_end_ts.get(action)
-        if last is not None:
-            min_gap = expected * (0.15 + 0.1 * float(streak))
-            min_gap = max(0.0, min(min_gap, 4.0))
-            elapsed = t - last
-            burst = max(0.0, min_gap - elapsed)
-            delay = delay + burst
-
-        return float(min(delay, 5.0))
+        last_fired = self._last_end_ts.get(action, 0.0)
+        time_since_last = t - last_fired
+        
+        if time_since_last < expected:
+            delay_needed = expected - time_since_last
+            return float(min(delay_needed, expected * 1.5))
+            
+        self._last_end_ts[action] = t
+        return 0.0
 
     def _append_receipt(self, result: TimingUpdateResult, *, ts: float) -> None:
         self._state.mkdir(parents=True, exist_ok=True)
