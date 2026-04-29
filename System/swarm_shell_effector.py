@@ -71,7 +71,7 @@ def is_command_whitelisted(command: List[str]) -> tuple[bool, Optional[str]]:
             if any(arg.startswith("--ext-diff") for arg in command):
                 return False, None
             # read-only git commands don't specify a single strictly-bound file we must jail,
-            # but we can enforce no path traversal visually if we wanted. 
+            # but we can enforce no path traversal visually if we wanted.
             # For now, git is scoped to cwd=root by subprocess.run.
             return True, None
 
@@ -202,7 +202,7 @@ class ShellEffectorRuntime:
         caller_id = self._resolve_caller_id(action)
         if action.get("kind") != KIND_SHELL_EXEC:
             raise ValueError(f"unsupported_kind:{action.get('kind')}")
-        
+
         command = action.get("command")
         if not isinstance(command, list) or not all(isinstance(c, str) for c in command):
             raise ValueError("command_must_be_list_of_strings")
@@ -210,7 +210,7 @@ class ShellEffectorRuntime:
         is_wl, target_path = is_command_whitelisted(command)
         if not is_wl:
             raise ValueError("command_not_whitelisted")
-            
+
         if target_path:
             from System.swarm_effector_runtime import _safe_rel_path
             _safe_rel_path(self.root, target_path)
@@ -233,11 +233,11 @@ class ShellEffectorRuntime:
         p = self._pending.get(action_id)
         if not p:
             return {"ok": False, "reason": "unknown_action_id"}
-        
+
         is_wl, target_path = is_command_whitelisted(p.command)
         if not is_wl:
             return {"ok": False, "reason": "command_not_whitelisted"}
-            
+
         if target_path:
             from System.swarm_effector_runtime import _safe_rel_path
             try:
@@ -357,8 +357,8 @@ class ShellEffectorRuntime:
             }
         )
         return {
-            "ok": True, 
-            "action_id": action_id, 
+            "ok": True,
+            "action_id": action_id,
             "exit_code": result.returncode,
             "stdout": result.stdout.decode("utf-8", errors="replace"),
             "stderr": result.stderr.decode("utf-8", errors="replace"),
