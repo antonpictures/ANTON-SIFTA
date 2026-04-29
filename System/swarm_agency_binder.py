@@ -18,7 +18,9 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+_REPO = Path(__file__).resolve().parents[1]
 
 
 @dataclass
@@ -34,6 +36,27 @@ class AgencyVerdict:
     verdict_hash: str
 
 
+def _verify_integrity_block(block: Dict[str, Any]) -> None:
+    if "integrity" not in block:
+        return
+    stripped = {k: v for k, v in block.items() if k != "integrity"}
+    expect = hashlib.sha256(
+        json.dumps(stripped, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    if block.get("integrity") != expect:
+        raise ValueError("intent_receipt_tampered")
+
+
+def _flatten_intent(intent_receipt: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge ``intent_provenance`` into a single dict for classification."""
+    out = dict(intent_receipt)
+    prov = intent_receipt.get("intent_provenance")
+    if isinstance(prov, dict):
+        for k, v in prov.items():
+            out.setdefault(k, v)
+    return out
+
+
 class AgencyBinder:
     """
     Biological agency binding (Agency Cortex).
@@ -47,8 +70,11 @@ class AgencyBinder:
       "Alice sent it" when only the owner/tool-router/reflex caused it.
     """
 
-    def __init__(self, root: str = ".sifta_state"):
-        self.root = Path(root)
+    def __init__(self, root: Optional[Any] = None):
+        if root is None:
+            self.root = _REPO / ".sifta_state"
+        else:
+            self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.ledger = self.root / "agency_verdicts.jsonl"
 
@@ -59,33 +85,41 @@ class AgencyBinder:
         effector_receipt: Dict[str, Any],
         observed_outcome: str,
     ) -> AgencyVerdict:
-        
-        # 1. Validate intent hash
-        intent_hash = intent_receipt.get("provenance_hash")
-        if not intent_hash:
-            raise ValueError("intent_receipt_missing_hash")
-            
-        # Optional: check if intent_receipt is tampered by recalculating hash
-        payload = {
-            "action_id": intent_receipt.get("action_id"),
-            "source": intent_receipt.get("intent_source"),
-            "consent": intent_receipt.get("consent"),
-            "authorized": intent_receipt.get("authorized"),
-        }
-        recalc_hash = hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-        
-        if recalc_hash != intent_hash:
-            raise ValueError("intent_receipt_tampered")
+        flat = _flatten_intent(intent_receipt)
+        prov = intent_receipt.get("intent_provenance")
+        prov_sealed = isinstance(prov, dict) and "integrity" in prov
+        if prov_sealed:
+            _verify_integrity_block(prov)
 
-        source = intent_receipt.get("intent_source", "unknown")
-        consent = intent_receipt.get("consent", "none")
-        decision_path = intent_receipt.get("decision_path", [])
+        intent_hash = flat.get("provenance_hash")
+        if intent_hash:
+            payload = {
+                "action_id": flat.get("action_id"),
+                "source": flat.get("intent_source"),
+                "consent": flat.get("consent"),
+                "authorized": flat.get("authorized"),
+            }
+            recalc_hash = hashlib.sha256(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            if recalc_hash != intent_hash:
+                raise ValueError("intent_receipt_tampered")
+        elif prov_sealed:
+            pass
+        elif "integrity" in flat:
+            _verify_integrity_block(flat)
+        else:
+            raise ValueError("intent_receipt_missing_hash")
+
+        source = str(flat.get("intent_source", "unknown"))
+        consent = str(flat.get("consent", "none"))
+        decision_path = list(flat.get("decision_path") or [])
 
         effector_ok = bool(effector_receipt.get("ok", False)) or (
             effector_receipt.get("status") in {"COMMITTED", "SENT", "ok", "committed"}
         )
+        if effector_receipt.get("phase") == "COMMIT" and effector_receipt.get("ok") is True:
+            effector_ok = True
 
         # Alice owns the action only if:
         # 1. model/reflex/scheduler generated the intent,
@@ -99,14 +133,18 @@ class AgencyBinder:
             and len(decision_path) > 0
         )
 
-        if source == "owner":
+        if not effector_ok:
+            social_label = "attempt_failed_not_owned"
+        elif source == "owner":
             social_label = "owner_authorized_action"
+        elif owned_by_alice and source == "reflex":
+            social_label = "alice_reflex_action"
         elif owned_by_alice:
             social_label = "alice_owned_action"
-        elif not effector_ok:
-            social_label = "attempt_failed_not_owned"
         else:
             social_label = "observed_or_routed_not_owned"
+
+        owned_flag = bool(owned_by_alice and source != "owner")
 
         verdict_payload = {
             "action_id": action_id,
@@ -114,9 +152,9 @@ class AgencyBinder:
             "consent": consent,
             "effector_ok": effector_ok,
             "observed_outcome": observed_outcome,
-            "owned_by_alice": owned_by_alice,
+            "owned_by_alice": owned_flag,
             "social_label": social_label,
-            "intent_hash": intent_hash
+            "intent_hash": intent_hash or flat.get("integrity"),
         }
 
         h = hashlib.sha256(
@@ -130,7 +168,7 @@ class AgencyBinder:
             consent=consent,
             effector_ok=effector_ok,
             observed_outcome=observed_outcome,
-            owned_by_alice=owned_by_alice,
+            owned_by_alice=owned_flag,
             social_label=social_label,
             verdict_hash=h,
         )

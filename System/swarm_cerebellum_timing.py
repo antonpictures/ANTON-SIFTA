@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 """
-System/swarm_cerebellum_timing.py — Cerebellar coordination / timing
+System/swarm_cerebellum_timing.py — Cerebellar forward model (Event 77)
 
-Hypothalamus proposes *that* she should move; basal ganglia pick *which* action;
-this organ smooths *how* it unfolds: expected latency, prediction error,
-correction, and polite spacing so tool and social channels do not jitter.
+Biocode Olympiad — **Event 77: Cerebellar Forward Model (Smith Predictor)**.
 
-Complements ``swarm_cerebellar_mcts.py`` (forward lookahead) and
-``swarm_inferior_olive.py`` (slow value / climbing-fiber learning).
+Biology: Purkinje / forward motor prediction; prevents ataxic over-correction when
+sensory feedback is delayed (Basal Ganglia must not spam "retry" while the motor
+loop is still in flight).
 
-See: Documents/IDE_BOOT_COVENANT.md (append-only receipts, proof-bearing state).
+Physics / control: **Smith predictor** — hold an internal model of loop latency so
+the organism can wait out the delay shadow instead of oscillating.
+
+Wiring (Bishop / C55M / AG31):
+  1. After Basal Ganglia selects an action, call ``should_delay(action, urgency)``.
+  2. If return value > 0, yield the compute cycle (do not re-issue the command).
+  3. After physical execution completes, call ``update(action, observed_latency, ok)``
+     with wall-clock latency so the forward model tracks the host machine.
+
+Complements ``swarm_cerebellar_mcts.py`` (lookahead) and
+``swarm_inferior_olive.py`` (slow climbing-fiber value learning).
+
+See: Documents/IDE_BOOT_COVENANT.md (append-only receipts).
 """
 from __future__ import annotations
 
@@ -54,8 +65,11 @@ class TimingUpdateResult:
 
 class CerebellumTiming:
     """
-    Fast forward model for per-action latency and success rate, with
-    rate-aware ``should_delay`` for graceful pacing.
+    Biological Smith predictor + optional success EMA for audit.
+
+    ``timing_error`` on receipts is the **learning error** (includes failure
+    inflation per Bishop v1: failed outcomes push the model toward longer
+    expected latency).
     """
 
     def __init__(
@@ -71,7 +85,7 @@ class CerebellumTiming:
         self.expected_latency: Dict[str, float] = {}
         self.expected_success: Dict[str, float] = {}
         self.failure_streak: Dict[str, int] = {}
-        self._last_end_ts: Dict[str, float] = {}
+        self.last_fired_timestamp: Dict[str, float] = {}
         self.correction_gain = float(correction_gain)
         self.success_alpha = float(success_alpha)
         self._default_lat = float(default_expected_latency)
@@ -98,13 +112,10 @@ class CerebellumTiming:
         t = time.time() if now is None else float(now)
         exp_lat = self.predict(action)
         obs_lat = max(0.0, float(observed_latency))
-        
-        err = obs_lat - exp_lat
-        if not ok:
-            err += (exp_lat * 0.5)
-            
-        new_lat = exp_lat + self.correction_gain * err
-        new_lat = max(0.05, min(60.0, new_lat))
+        err_base = obs_lat - exp_lat
+        err_learn = err_base + (exp_lat * 0.5 if not ok else 0.0)
+        new_lat = exp_lat + self.correction_gain * err_learn
+        new_lat = max(0.1, min(60.0, new_lat))
         self.expected_latency[action] = new_lat
 
         prev_s = self.predict_success(action)
@@ -119,13 +130,11 @@ class CerebellumTiming:
         else:
             self.failure_streak[action] = int(self.failure_streak.get(action, 0)) + 1
 
-        self._last_end_ts[action] = t
-
         result = TimingUpdateResult(
             action=action,
             expected_latency_before=exp_lat,
             observed_latency=obs_lat,
-            timing_error=err,
+            timing_error=err_learn,
             next_expected_latency=new_lat,
             expected_success_before=prev_s,
             observed_success=obs_s,
@@ -148,30 +157,36 @@ class CerebellumTiming:
         now: Optional[float] = None,
     ) -> float:
         """
-        Seconds to wait before starting the next instance of ``action``.
+        Delay shadow for the Smith predictor.
 
-        High ``urgency`` (>0.8) bypasses delay (emergency / owner override path).
-        Failures widen spacing; recent completions enforce a minimum gap.
+        If ``now - last_fired < expected``, the command is treated as still **in
+        flight**; return remaining wait (capped) unless ``urgency > 0.8``
+        (sympathetic bypass). When the shadow has cleared, stamp
+        ``last_fired_timestamp`` and return ``0.0`` (cleared to fire).
+
+        Note: use wall-clock ``now`` in tests; at ``t=0`` the default missing
+        last-fire reads as 0 and the first query sits in the shadow until
+        ``now >= expected`` unless urgency bypasses.
         """
         t = time.time() if now is None else float(now)
-        if float(urgency) > 0.8:
-            return 0.0
-
+        last_fired = float(self.last_fired_timestamp.get(action, 0.0))
         expected = self.predict(action)
-        last_fired = self._last_end_ts.get(action, 0.0)
         time_since_last = t - last_fired
-        
+
         if time_since_last < expected:
+            if float(urgency) > 0.8:
+                return 0.0
             delay_needed = expected - time_since_last
             return float(min(delay_needed, expected * 1.5))
-            
-        self._last_end_ts[action] = t
+
+        self.last_fired_timestamp[action] = t
         return 0.0
 
     def _append_receipt(self, result: TimingUpdateResult, *, ts: float) -> None:
         self._state.mkdir(parents=True, exist_ok=True)
         row = {
             "kind": "cerebellum_timing_correction",
+            "event": "BISHOP_EVENT_77",
             "ts": ts,
             **result.as_dict(),
         }
@@ -195,14 +210,61 @@ class CerebellumTiming:
         fs = snap.get("failure_streak")
         if isinstance(fs, dict):
             self.failure_streak = {str(k): int(v) for k, v in fs.items()}
-        le = snap.get("last_end_ts")
-        if isinstance(le, dict):
-            self._last_end_ts = {str(k): float(v) for k, v in le.items()}
+        lf = snap.get("last_fired_timestamp")
+        if isinstance(lf, dict):
+            self.last_fired_timestamp = {str(k): float(v) for k, v in lf.items()}
 
     def snapshot(self) -> Dict[str, Any]:
         return {
             "expected_latency": dict(self.expected_latency),
             "expected_success": dict(self.expected_success),
             "failure_streak": dict(self.failure_streak),
-            "last_end_ts": dict(self._last_end_ts),
+            "last_fired_timestamp": dict(self.last_fired_timestamp),
         }
+
+
+SwarmCerebellumTiming = CerebellumTiming
+
+
+def proof_of_property() -> bool:
+    """
+    Bishop mandate verification — numerically checks Smith shadow + urgency.
+    Uses wall-clock time for Phase 3 (small sleep) like the .dirt reference.
+    """
+    print("\n=== SIFTA CEREBELLAR FORWARD MODEL (Event 77) : JUDGE VERIFICATION ===")
+    cerebellum = CerebellumTiming(
+        correction_gain=0.5,
+        default_expected_latency=1.0,
+        persist_receipts=False,
+    )
+    action = "execute_terminal_command"
+
+    print("\n[*] Phase 1: Initial Impulse (No prior history)")
+    delay_1 = cerebellum.should_delay(action, urgency=0.1)
+    print(f"    Delay required: {delay_1:.2f}s")
+    assert delay_1 == 0.0, "[FAIL] Cerebellum unnecessarily blocked a fresh action."
+
+    print("\n[*] Phase 2: Simulating OS Lag & Prediction Error Update")
+    update_receipt = cerebellum.update(action, observed_latency=3.0, ok=True, write_receipt=False)
+    print(f"    Timing Error Detected: {update_receipt.timing_error:.2f}s")
+    print(f"    New Expected Latency Adjusted to: {update_receipt.next_expected_latency:.2f}s")
+
+    print("\n[*] Phase 3: Immediate Spastic Re-fire Attempt (Ataxia simulation)")
+    time.sleep(0.5)
+    delay_2 = cerebellum.should_delay(action, urgency=0.1)
+    print(f"    Delay required by Cerebellum: {delay_2:.2f}s")
+    assert delay_2 > 0.0, "[FAIL] Cerebellum failed to dampen the spastic overcorrection."
+
+    print("\n[*] Phase 4: Extreme Urgency Override")
+    delay_3 = cerebellum.should_delay(action, urgency=0.95)
+    print(f"    Delay required under high urgency: {delay_3:.2f}s")
+    assert delay_3 == 0.0, "[FAIL] Cerebellum failed to yield to high-urgency sympathetic drive."
+
+    print("\n[+] BIOLOGICAL PROOF: The Smith Predictor is functional.")
+    print("    Alice can now predict the physical latency of her own body.")
+    print("[+] EVENT 77 PASSED.")
+    return True
+
+
+if __name__ == "__main__":
+    proof_of_property()

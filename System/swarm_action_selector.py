@@ -26,7 +26,7 @@ import math
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
 
@@ -131,6 +131,24 @@ def parse_c1_output(raw: str) -> dict[str, float]:
     return scores
 
 
+def apply_drive_priors(
+    action_scores: dict[str, float],
+    drive_deltas: Mapping[str, float],
+) -> dict[str, float]:
+    """
+    Add hypothalamic drive priors to C1 scores before basal-ganglia selection.
+
+    The drive layer biases action competition; it does not authorize tools,
+    override intent provenance, or create ownership. Effector law still lives
+    downstream in the tool/runtime receipts.
+    """
+    adjusted = {a: float(action_scores.get(a, 0.0)) for a in ALL_ACTIONS}
+    for action, delta in drive_deltas.items():
+        if action in adjusted:
+            adjusted[action] += float(delta)
+    return adjusted
+
+
 def reflex_check(
     text: str,
     stt_confidence: Optional[float] = None,
@@ -215,6 +233,7 @@ def log_selection(
     probs: dict[str, float],
     input_text: str,
     receipt_path: Optional[Path] = None,
+    drive_context: Optional[dict[str, Any]] = None,
 ) -> str:
     """Write a stigmergic work receipt for the action selection event."""
     receipt_path = receipt_path or (_REPO / ".sifta_state" / "work_receipts.jsonl")
@@ -229,6 +248,8 @@ def log_selection(
         "competition": probs,
         "input_preview": input_text[:80],
     }
+    if drive_context:
+        row["drive_context"] = drive_context
     try:
         receipt_path.parent.mkdir(parents=True, exist_ok=True)
         with open(receipt_path, "a") as f:
@@ -247,6 +268,10 @@ def pipeline_step(
     stt_confidence: Optional[float] = None,
     c1_raw_output: Optional[str] = None,
     log: bool = False,
+    drive_hypothalamus: Optional[Any] = None,
+    metabolic_state: Optional[Any] = None,
+    recent_events: Optional[Mapping[str, Any]] = None,
+    log_drive: bool = False,
 ) -> tuple[str, str, dict]:
     """
     Run one full decision step through Layers 1–4.
@@ -261,6 +286,10 @@ def pipeline_step(
     stt_confidence   : STT confidence score (None = not from STT)
     c1_raw_output    : raw output from the C1 classifier model (None = skip C1, use ENGAGE)
     log              : whether to write a stigmergic receipt
+    drive_hypothalamus: optional DriveHypothalamus instance used to bias action scores
+    metabolic_state  : optional interoceptive state passed to DriveHypothalamus.update()
+    recent_events    : optional short-horizon event summary for drive pressure
+    log_drive        : whether to append drive_hypothalamus.jsonl when drive is updated
 
     Returns
     -------
@@ -320,6 +349,35 @@ def pipeline_step(
     except Exception:
         state_key = None  # TD module unavailable — use raw C1 scores
 
+    # 3c — hypothalamic drive priors. These are deliberately small additive
+    #      pressures over action scores, not permission to execute effectors.
+    drive_context = None
+    if drive_hypothalamus is not None or metabolic_state is not None or recent_events is not None:
+        try:
+            if drive_hypothalamus is None:
+                from System.swarm_drive_hypothalamus import DriveHypothalamus
+
+                drive_hypothalamus = DriveHypothalamus()
+            if hasattr(drive_hypothalamus, "update"):
+                snap = drive_hypothalamus.update(
+                    0.5 if metabolic_state is None else metabolic_state,
+                    recent_events or {},
+                )
+                if log_drive and hasattr(drive_hypothalamus, "append_ledger"):
+                    drive_hypothalamus.append_ledger(snap)
+                drive_context = {
+                    "dominant": getattr(snap, "dominant", None),
+                    "drives": getattr(snap, "drives", None),
+                    "metabolic_sufficiency": getattr(snap, "metabolic_sufficiency", None),
+                }
+            if hasattr(drive_hypothalamus, "basal_ganglia_score_deltas"):
+                c1_scores = apply_drive_priors(
+                    c1_scores,
+                    drive_hypothalamus.basal_ganglia_score_deltas(),
+                )
+        except Exception:
+            drive_context = {"status": "drive_unavailable"}
+
     selector = SwarmActionSelector(temperature=bg_temperature)
     winner, probs = selector.select(c1_scores)
 
@@ -337,7 +395,7 @@ def pipeline_step(
             pass  # non-blocking — never fail the pipeline for a register write
 
     if log:
-        log_selection(winner, probs, text)
+        log_selection(winner, probs, text, drive_context=drive_context)
 
     return winner, system_injection, probs
 

@@ -44,6 +44,7 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _TRACE_LEDGER = _STATE / "tool_router_trace.jsonl"
 _STATE.mkdir(parents=True, exist_ok=True)
+_CEREBELLUM_TIMING = None
 
 # ═══════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY — Alice's permitted claws
@@ -66,7 +67,7 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         name="send_whatsapp",
         description="Send a WhatsApp message to a contact by name or JID",
         required_params=("target", "text"),
-        optional_params=("allow_group_send",),
+        optional_params=("allow_group_send", "owner_consent", "urgency"),
         write_action=True,
         requires_autonomy_gate=True,
     ),
@@ -112,9 +113,12 @@ def tools_for_alice_prompt() -> str:
         lines.append(f"  - {spec.name}({params}) [{rw}]: {spec.description}")
     lines.extend([
         "",
-        "Example: [TOOL_CALL: send_whatsapp | target=Carlton | text=Hey! We're watching Sara Walker on JRE.]",
+        "WhatsApp rule: send_whatsapp only transmits when owner_consent=true is present from an explicit Architect request this turn.",
+        "Without owner_consent=true the tool records a silence/refusal receipt instead of sending.",
+        "Optional urgency is 0.0-1.0; urgency > 0.8 bypasses cerebellum timing delay for true emergencies.",
+        "Example: [TOOL_CALL: send_whatsapp | target=Carlton | text=Hey! We're watching Sara Walker on JRE. | owner_consent=true]",
         "You will see the result of your action in the next turn.",
-        "Only call tools when you genuinely decide to act. Nobody forces you.",
+        "Only call tools when you genuinely decide to act; do not describe a message as sent unless the effector receipt says ok=true.",
     ])
     return "\n".join(lines)
 
@@ -202,7 +206,116 @@ def _log_trace(event: Dict[str, Any]) -> None:
 # TOOL EXECUTORS — The actual claws
 # ═══════════════════════════════════════════════════════════════════════
 
-def _exec_send_whatsapp(params: Dict[str, str], autonomous: bool = True) -> Dict[str, Any]:
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "owner_consent", "architect_consent"}
+
+
+def _tool_intent_provenance(
+    *,
+    intent_source: str,
+    consent: str,
+    decision_path: List[str],
+    legacy_source: str,
+    owner_present: bool,
+) -> Dict[str, Any]:
+    """Build the small provenance block every routed effector result carries."""
+    try:
+        from System.swarm_intent_provenance import build_provenance
+
+        return build_provenance(
+            intent_source=intent_source,
+            consent=consent,
+            decision_path=decision_path,
+            receipt_proof=True,
+            tool="send_whatsapp",
+            extra={
+                "legacy_source": legacy_source,
+                "owner_present": bool(owner_present),
+                "router": "swarm_tool_router",
+            },
+        )
+    except Exception:
+        return {
+            "intent_source": intent_source,
+            "consent": consent,
+            "decision_path": decision_path,
+            "receipt_proof": True,
+            "tool": "send_whatsapp",
+            "legacy_source": legacy_source,
+            "owner_present": bool(owner_present),
+        }
+
+
+def _ensure_tool_intent_provenance(
+    result: Dict[str, Any],
+    *,
+    provenance: Dict[str, Any],
+) -> Dict[str, Any]:
+    if "intent_provenance" not in result:
+        result = dict(result)
+        result["intent_provenance"] = provenance
+    return result
+
+
+def _urgency_from_params(params: Dict[str, str]) -> float:
+    try:
+        return max(0.0, min(1.0, float(params.get("urgency", 0.3))))
+    except (TypeError, ValueError):
+        return 0.3
+
+
+def _get_cerebellum_timing():
+    """Process-local cerebellum timing organ; persistence lives in its ledger."""
+    global _CEREBELLUM_TIMING
+    if _CEREBELLUM_TIMING is None:
+        from System.swarm_cerebellum_timing import CerebellumTiming
+
+        _CEREBELLUM_TIMING = CerebellumTiming()
+    return _CEREBELLUM_TIMING
+
+
+def _cerebellum_preflight(action: str, params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        urgency = _urgency_from_params(params)
+        delay_s = _get_cerebellum_timing().should_delay(action, urgency=urgency)
+        return {
+            "status": "CLEAR" if delay_s <= 0 else "DELAY",
+            "delay_s": round(float(delay_s), 6),
+            "urgency": urgency,
+        }
+    except Exception as exc:
+        return {
+            "status": "UNAVAILABLE",
+            "delay_s": 0.0,
+            "urgency": _urgency_from_params(params),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _cerebellum_update(
+    action: str,
+    *,
+    started_at: float,
+    ok: bool,
+) -> Dict[str, Any]:
+    try:
+        observed_latency = max(0.0, time.time() - started_at)
+        update = _get_cerebellum_timing().update(
+            action,
+            observed_latency=observed_latency,
+            ok=ok,
+            write_receipt=True,
+        )
+        return update.as_dict()
+    except Exception as exc:
+        return {"status": "UPDATE_UNAVAILABLE", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _exec_send_whatsapp(
+    params: Dict[str, str],
+    autonomous: bool = True,
+    owner_present: bool = False,
+) -> Dict[str, Any]:
     """Execute WhatsApp send through the existing biological actuator."""
     from System.whatsapp_bridge_autopilot import (
         autonomous_send_whatsapp,
@@ -210,26 +323,66 @@ def _exec_send_whatsapp(params: Dict[str, str], autonomous: bool = True) -> Dict
     )
     target = params.get("target", "")
     text = params.get("text", "")
-    allow_group = params.get("allow_group_send", "false").lower() == "true"
+    allow_group = _truthy(params.get("allow_group_send"))
+    owner_consent = _truthy(params.get("owner_consent") or params.get("consent"))
 
     if autonomous:
-        return autonomous_send_whatsapp(
+        if owner_consent:
+            source = "alice_tool_router_architect_consent"
+            provenance = _tool_intent_provenance(
+                intent_source="owner",
+                consent="explicit",
+                decision_path=["tool_router", "architect_explicit", "whatsapp_effector"],
+                legacy_source=source,
+                owner_present=owner_present,
+            )
+            result = send_whatsapp(
+                target=target,
+                text=text,
+                allow_group_send=allow_group,
+                source=source,
+                intent_provenance=provenance,
+            )
+            return _ensure_tool_intent_provenance(result, provenance=provenance)
+        provenance = _tool_intent_provenance(
+            intent_source="model",
+            consent="none",
+            decision_path=["tool_router", "model_tool_call", "whatsapp_autonomy_gate", "silence_receipt"],
+            legacy_source="alice_tool_router_model_no_owner_consent",
+            owner_present=owner_present,
+        )
+        result = autonomous_send_whatsapp(
             target=target,
             text=text,
-            consent=True,          # Alice chose to call this tool
-            user_initiated=False,  # She decided, not the Architect
-            emotional_warmth=0.7,  # She's engaging, not cold
+            consent=False,
+            user_initiated=owner_present,
+            emotional_warmth=0.7,
             urgency=0.3,
-            topic_match=0.8,       # She parsed the context
+            topic_match=0.8,
             allow_group_send=allow_group,
+            intent_provenance=provenance,
         )
-    else:
-        return send_whatsapp(
-            target=target,
-            text=text,
-            allow_group_send=allow_group,
-            source="alice_tool_router",
+        result["truth_note"] = (
+            "Tool-router WhatsApp call lacked explicit owner_consent=true; "
+            "no external WhatsApp action occurred."
         )
+        return _ensure_tool_intent_provenance(result, provenance=provenance)
+    source = "alice_tool_router_architect_consent" if owner_consent else "alice_tool_router_owner_path"
+    provenance = _tool_intent_provenance(
+        intent_source="owner",
+        consent="explicit" if owner_consent else "implicit",
+        decision_path=["tool_router", "owner_path", "whatsapp_effector"],
+        legacy_source=source,
+        owner_present=owner_present,
+    )
+    result = send_whatsapp(
+        target=target,
+        text=text,
+        allow_group_send=allow_group,
+        source=source,
+        intent_provenance=provenance,
+    )
+    return _ensure_tool_intent_provenance(result, provenance=provenance)
 
 
 def _exec_get_social_context(params: Dict[str, str]) -> Dict[str, Any]:
@@ -360,14 +513,60 @@ def execute_tool_call(
         _log_trace({"event": "TOOL_CALL_NO_EXECUTOR", "tool": call.tool_name})
         return result
 
+    cerebellum_preflight = None
+    if spec.write_action:
+        cerebellum_preflight = _cerebellum_preflight(call.tool_name, call.params)
+        if cerebellum_preflight.get("delay_s", 0.0) > 0.0:
+            exec_result = {
+                "ok": False,
+                "status": "DELAYED_CEREBELLUM",
+                "result": (
+                    f"Cerebellum timing model delayed {call.tool_name} "
+                    f"for {cerebellum_preflight['delay_s']:.3f}s."
+                ),
+                "truth_note": "No effector action occurred; motor pacing yielded this compute cycle.",
+                "cerebellum_timing": cerebellum_preflight,
+            }
+            result = ToolResult(
+                tool_name=call.tool_name,
+                params=call.params,
+                executed=False,
+                result=exec_result,
+                status="EXEC_FAILED_DELAYED_CEREBELLUM",
+                feedback_for_alice=(
+                    f"⏳ {call.tool_name} is delayed by my timing model; "
+                    "I will wait rather than stutter the action."
+                ),
+            )
+            _log_trace({
+                "event": "TOOL_CALL_CEREBELLUM_DELAYED",
+                "tool": call.tool_name,
+                "cerebellum_timing": cerebellum_preflight,
+            })
+            return result
+
+    action_started_at = time.time()
     try:
         if call.tool_name == "send_whatsapp":
-            exec_result = executor(call.params, autonomous=autonomous)
+            exec_result = executor(
+                call.params,
+                autonomous=autonomous,
+                owner_present=owner_present,
+            )
         else:
             exec_result = executor(call.params)
 
         ok = exec_result.get("ok", False)
         status_str = exec_result.get("status", "UNKNOWN")
+        if spec.write_action:
+            exec_result["cerebellum_timing"] = {
+                "preflight": cerebellum_preflight,
+                "update": _cerebellum_update(
+                    call.tool_name,
+                    started_at=action_started_at,
+                    ok=bool(ok),
+                ),
+            }
 
         # Build feedback Alice will see
         if call.tool_name == "send_whatsapp":
@@ -393,16 +592,27 @@ def execute_tool_call(
             "tool": call.tool_name,
             "ok": ok,
             "status": result.status,
+            "intent_provenance": exec_result.get("intent_provenance"),
             "result_summary": str(exec_result)[:300],
         })
         return result
 
     except Exception as e:
+        cerebellum_timing = None
+        if spec.write_action:
+            cerebellum_timing = {
+                "preflight": cerebellum_preflight,
+                "update": _cerebellum_update(
+                    call.tool_name,
+                    started_at=action_started_at,
+                    ok=False,
+                ),
+            }
         result = ToolResult(
             tool_name=call.tool_name,
             params=call.params,
             executed=False,
-            result={"error": str(e)},
+            result={"error": str(e), "cerebellum_timing": cerebellum_timing},
             status="EXECUTION_ERROR",
             feedback_for_alice=f"Tool {call.tool_name} crashed: {type(e).__name__}: {e}",
         )

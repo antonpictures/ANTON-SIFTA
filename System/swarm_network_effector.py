@@ -428,3 +428,20 @@ class NetworkEffectorRuntime:
                 if row.get("action_id") == action_id:
                     last = row
         return last
+
+    def propose_domain_hint(self, domain: str, *, note: str = "", caller_id: Optional[str] = None) -> None:
+        """
+        Append-only owner queue: suggest a hostname for future trust review.
+
+        Does not grant trust; only records intent (stigmergic handoff).
+        """
+        host = extract_domain(f"https://{domain.lstrip('/')}") if "://" not in domain else extract_domain(domain)
+        row = {
+            "ts": time.time(),
+            "kind": "DOMAIN_HINT",
+            "domain": host,
+            "note": (note or "")[:4000],
+            "caller_id": (caller_id or self.default_caller_id or "")[:256],
+        }
+        path = self.trust_file.parent / "network_domain_proposals.jsonl"
+        append_line_locked(path, json.dumps(row, separators=(",", ":")) + "\n")

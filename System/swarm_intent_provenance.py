@@ -55,6 +55,9 @@ class ProvenanceReceipt:
     provenance_hash: str
 
 
+_REPO = Path(__file__).resolve().parents[1]
+
+
 class IntentProvenanceLaw:
     """
     Enforces the Intent Provenance Law.
@@ -62,8 +65,11 @@ class IntentProvenanceLaw:
     Prevents the system from mislabeling a routed action as "Alice autonomous" 
     when it was actually a scheduler or user reflex.
     """
-    def __init__(self, ledger_path: str = ".sifta_state/intent_provenance.jsonl"):
-        self.ledger_path = Path(ledger_path)
+    def __init__(self, ledger_path: Optional[Any] = None):
+        if ledger_path is None:
+            self.ledger_path = _REPO / ".sifta_state" / "intent_provenance.jsonl"
+        else:
+            self.ledger_path = Path(ledger_path)
         
     def classify_intent(self, 
                         action_id: str,
@@ -158,3 +164,119 @@ class IntentProvenanceLaw:
         except ImportError:
             with open(self.ledger_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(asdict(receipt)) + "\n")
+
+
+# ── Pure helpers (no ledger side effects) for merging into effector receipts ──
+
+
+def normalize_legacy_source(
+    legacy_source: Optional[str],
+    *,
+    routed_via_tool_router: bool = False,
+) -> Tuple[str, str, str]:
+    """
+    Map historical ``source`` strings to (intent_source, consent, note).
+
+    ``intent_source`` / ``consent`` are lowercase strings matching
+    :class:`IntentSource` / :class:`ConsentType` values.
+    """
+    s = (legacy_source or "").strip().lower()
+    note = ""
+
+    if s in ("owner_explicit", "architect", "human", "owner"):
+        return IntentSource.OWNER.value, ConsentType.EXPLICIT.value, note
+    if "alice_tool_router_architect_consent" in s or "architect_consent" in s:
+        return IntentSource.OWNER.value, ConsentType.EXPLICIT.value, note
+    if s == "alice_tool_router_owner_path":
+        return IntentSource.OWNER.value, ConsentType.IMPLICIT.value, note
+    if "alice_autonomous" in s:
+        if routed_via_tool_router:
+            return (
+                IntentSource.MODEL.value,
+                ConsentType.IMPLICIT.value,
+                "legacy_tag_alice_autonomous_via_router",
+            )
+        return (
+            IntentSource.REFLEX.value,
+            ConsentType.IMPLICIT.value,
+            "legacy_tag_alice_autonomous_gate_or_reflex",
+        )
+    if "tool_router" in s or "router" in s:
+        return IntentSource.MODEL.value, ConsentType.IMPLICIT.value, note
+    if "scheduler" in s or "cron" in s:
+        return IntentSource.SCHEDULER.value, ConsentType.IMPLICIT.value, note
+    if not s:
+        return "unknown", ConsentType.NONE.value, "missing_source"
+
+    note = f"unmapped_legacy_source:{s}"
+    return "unknown", ConsentType.NONE.value, note
+
+
+def build_provenance(
+    *,
+    intent_source: str,
+    consent: str,
+    decision_path: Iterable[str],
+    receipt_proof: bool,
+    tool: Optional[str] = None,
+    extra: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    row: Dict[str, Any] = {
+        "intent_source": intent_source,
+        "consent": consent,
+        "decision_path": [str(x) for x in decision_path],
+        "receipt_proof": bool(receipt_proof),
+    }
+    if tool:
+        row["tool"] = str(tool)[:256]
+    if extra:
+        for k, v in list(extra.items())[:32]:
+            row[str(k)[:64]] = v
+    return row
+
+
+def merge_into_receipt(
+    receipt_row: Dict[str, Any],
+    *,
+    legacy_source: Optional[str] = None,
+    routed_via_tool_router: bool = False,
+    decision_path: Optional[List[str]] = None,
+    receipt_proof: bool = True,
+) -> Dict[str, Any]:
+    """Shallow copy of ``receipt_row`` with ``intent_provenance`` attached."""
+    out = dict(receipt_row)
+    src, con, note = normalize_legacy_source(
+        legacy_source or out.get("source"),
+        routed_via_tool_router=routed_via_tool_router,
+    )
+    extra: Dict[str, Any] = {"legacy_source": legacy_source or out.get("source")}
+    if note:
+        extra["normalization_note"] = note
+    out["intent_provenance"] = build_provenance(
+        intent_source=src,
+        consent=con,
+        decision_path=decision_path or [],
+        receipt_proof=receipt_proof,
+        tool=out.get("tool") or out.get("verb"),
+        extra=extra,
+    )
+    return out
+
+
+class IntentProvenance:
+    """Thin façade for callers that want a class API without a ledger."""
+
+    @staticmethod
+    def classify(
+        *,
+        legacy_source: Optional[str] = None,
+        routed_via_tool_router: bool = False,
+    ) -> Dict[str, Any]:
+        src, con, note = normalize_legacy_source(
+            legacy_source, routed_via_tool_router=routed_via_tool_router
+        )
+        return {
+            "intent_source": src,
+            "consent": con,
+            "normalization_note": note,
+        }

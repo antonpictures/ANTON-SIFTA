@@ -32,6 +32,43 @@ EVENT_KIND = "WHATSAPP_SEND_ATTEMPT"
 _ALLOW_GROUP_SEND = False
 
 
+def _attach_intent_provenance(
+    row: Dict[str, Any],
+    *,
+    intent_provenance: Optional[Dict[str, Any]] = None,
+    decision_path: Optional[list[str]] = None,
+) -> Dict[str, Any]:
+    """Attach self/other intent metadata without blocking the effector path."""
+    if intent_provenance:
+        row["intent_provenance"] = dict(intent_provenance)
+        return row
+    try:
+        from System.swarm_intent_provenance import build_provenance, normalize_legacy_source
+
+        source = str(row.get("source") or "")
+        routed = "tool_router" in source.lower()
+        intent_source, consent, note = normalize_legacy_source(
+            source,
+            routed_via_tool_router=routed,
+        )
+        if row.get("status") == "SILENCE_NO_CONSENT":
+            consent = "none"
+        extra = {"legacy_source": source}
+        if note:
+            extra["normalization_note"] = note
+        row["intent_provenance"] = build_provenance(
+            intent_source=intent_source,
+            consent=consent,
+            decision_path=decision_path or ["whatsapp_effector"],
+            receipt_proof=True,
+            tool="send_whatsapp",
+            extra=extra,
+        )
+    except Exception:
+        pass
+    return row
+
+
 def _deposit_trace(row: Dict[str, Any]) -> Dict[str, Any]:
     """Record Alice's outgoing WhatsApp messages to the immutable ledger."""
     _LEDGER.parent.mkdir(parents=True, exist_ok=True)
@@ -94,6 +131,7 @@ def send_whatsapp(
     allow_group_send: bool = False,
     source: str = "owner_explicit",
     autonomy_decision: Optional[Dict[str, Any]] = None,
+    intent_provenance: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Transmit a WhatsApp message via the Baileys injection server.
@@ -119,6 +157,11 @@ def send_whatsapp(
         }
         if autonomy_decision:
             row["autonomy_decision"] = autonomy_decision
+        _attach_intent_provenance(
+            row,
+            intent_provenance=intent_provenance,
+            decision_path=["whatsapp_effector", status.lower()],
+        )
         return _deposit_trace(row)
 
     if not target:
@@ -167,6 +210,7 @@ def autonomous_send_whatsapp(
     urgency: float = 0.0,
     topic_match: float = 0.5,
     allow_group_send: bool = False,
+    intent_provenance: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Alice's bounded autonomous WhatsApp path.
@@ -197,6 +241,11 @@ def autonomous_send_whatsapp(
         }
         if decision:
             row["autonomy_decision"] = decision
+        _attach_intent_provenance(
+            row,
+            intent_provenance=intent_provenance,
+            decision_path=["whatsapp_autonomy_gate", status.lower(), "silence_receipt"],
+        )
         return _deposit_trace(row)
 
     if not target:
@@ -246,6 +295,7 @@ def autonomous_send_whatsapp(
             allow_group_send=allow_group_send,
             source="alice_autonomous",
             autonomy_decision=decision_dict,
+            intent_provenance=intent_provenance,
         )
     except Exception as exc:
         return silent("AUTONOMY_GATE_ERROR", f"{type(exc).__name__}: {exc}")

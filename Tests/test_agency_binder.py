@@ -63,7 +63,7 @@ def test_reflex_emergency_fires_is_alice_owned(binder):
     effector = {"ok": True}
     
     verdict = binder.bind("a4", intent, effector, "battery_saver_on")
-    assert verdict.social_label == "alice_owned_action"
+    assert verdict.social_label == "alice_reflex_action"
     assert verdict.owned_by_alice is True
     assert verdict.intent_source == "reflex"
 

@@ -16,7 +16,7 @@ def create_mock_ledger(root: Path, filename: str, events: list):
         for ev in events:
             f.write(json.dumps(ev) + "\n")
 
-def test_sleep_cycle_clears_noise_and_consolidates_memory(sleep_env):
+def test_sleep_cycle_checkpoints_noise_and_consolidates_memory(sleep_env):
     hr = HippocampalReplay(root=str(sleep_env))
     
     # Create raw experiences
@@ -48,9 +48,13 @@ def test_sleep_cycle_clears_noise_and_consolidates_memory(sleep_env):
     # max() returns first key encountered if tied, but let's just assert it's one of them
     assert patterns["dominant_intent"] in {"alice_owned_action", "owner"}
     
-    # 3. Assert raw ledgers are cleared (forgotten)
-    assert (sleep_env / "agency_verdicts.jsonl").stat().st_size == 0
-    assert (sleep_env / "work_receipts.jsonl").stat().st_size == 0
+    # 3. Assert proof ledgers are preserved and sleep advances checkpoints.
+    # Covenant law: sleep may compress memory, but must not erase receipts.
+    assert (sleep_env / "agency_verdicts.jsonl").stat().st_size > 0
+    assert (sleep_env / "work_receipts.jsonl").stat().st_size > 0
+    checkpoints = json.loads((sleep_env / "hippocampal_replay_checkpoint.json").read_text())
+    assert checkpoints["agency_verdicts.jsonl"] == (sleep_env / "agency_verdicts.jsonl").stat().st_size
+    assert checkpoints["work_receipts.jsonl"] == (sleep_env / "work_receipts.jsonl").stat().st_size
     
     # 4. Assert long_term_memory has the compressed memory
     ltm_path = sleep_env / "long_term_memory.jsonl"
@@ -60,6 +64,12 @@ def test_sleep_cycle_clears_noise_and_consolidates_memory(sleep_env):
         saved_memory = json.loads(lines[0])
         assert saved_memory["epoch_id"] == memory.epoch_id
         assert saved_memory["event_count_compressed"] == 5
+
+    engram_path = sleep_env / "engram_store.jsonl"
+    with engram_path.open("r") as f:
+        engram = json.loads(f.readline())
+    assert engram["content_hash"] == memory.memory_hash
+    assert "sleep_consolidation" in engram["facts"]
 
 def test_sleep_cycle_with_empty_ledgers(sleep_env):
     hr = HippocampalReplay(root=str(sleep_env))

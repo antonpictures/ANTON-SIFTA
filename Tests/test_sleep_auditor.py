@@ -39,16 +39,19 @@ def test_sleep_auditor_proves_consolidation(neuro_env):
     report = auditor.audit_post_sleep(pre_metrics, consolidated_memory)
     
     # Audit assertions
-    assert report.glymphatic_cleanup_ok is True, "Failed to delete metabolic noise"
+    assert report.glymphatic_cleanup_ok is True, "Failed to compress metabolic noise"
     assert report.synaptic_homeostasis_ok is True, "Failed to prune events"
-    assert report.noise_deleted == pre_metrics["total_bytes"], "Ledgers were not fully cleared"
+    assert report.noise_deleted == pre_metrics["total_bytes"], "Ledger bytes were not accounted as consolidated"
     
     # Identity preservation (from 100 events, it should extract a few core patterns)
     assert report.identity_facts_preserved > 0, "No identity facts extracted"
     
     # Compression ratio (100 raw JSON objects compressed into 1 dense narrative object should yield a high ratio)
     assert report.receipt_compression_ratio > 1.0, "Sleep did not compress data effectively"
-    assert report.post_sleep_bytes == 0, "Raw ledgers should be empty post-sleep"
+    assert report.post_sleep_bytes == pre_metrics["total_bytes"], "Append-only proof ledgers should remain post-sleep"
+    assert (neuro_env / "work_receipts.jsonl").stat().st_size > 0, "Sleep must not erase proof receipts"
+    assert (neuro_env / "agency_verdicts.jsonl").stat().st_size > 0, "Sleep must not erase agency receipts"
+    assert (neuro_env / "hippocampal_replay_checkpoint.json").exists(), "Sleep checkpoint missing"
     
     # Long Term Memory Integrity
     assert report.post_sleep_integrity_hash != "", "LTM hash missing"

@@ -90,6 +90,8 @@ def test_bridge_autonomous_send_silences_no_consent(monkeypatch, tmp_path: Path)
     assert result["ok"] is False
     assert result["status"] == "SILENCE_NO_CONSENT"
     assert "no external WhatsApp action" in result["truth_note"]
+    assert result["intent_provenance"]["intent_source"] == "reflex"
+    assert result["intent_provenance"]["consent"] == "none"
 
 
 def test_bridge_blocks_group_send_by_default(monkeypatch, tmp_path: Path) -> None:
@@ -101,3 +103,5 @@ def test_bridge_blocks_group_send_by_default(monkeypatch, tmp_path: Path) -> Non
 
     assert result["ok"] is False
     assert result["status"] == "BLOCKED_GROUP_SEND_DISABLED"
+    assert result["intent_provenance"]["intent_source"] == "owner"
+    assert result["intent_provenance"]["consent"] == "explicit"
