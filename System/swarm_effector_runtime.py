@@ -32,6 +32,8 @@ PHASE_COMMIT = "COMMIT"
 PHASE_UNDO = "UNDO"
 PHASE_BROKEN = "BROKEN"
 _MAX_B64_PAYLOAD = 65_536  # bytes before base64; keeps JSONL bounded for v1
+_DEFAULT_REGISTRATION_TRACE = Path(__file__).resolve().parents[1] / ".sifta_state" / "ide_stigmergic_trace.jsonl"
+_ANONYMOUS_CALLERS = {"", "anonymous", "unknown", "none", "null"}
 
 
 def _canonical_dumps(obj: Dict[str, Any]) -> str:
@@ -55,6 +57,8 @@ def verify_receipt_row(row: Dict[str, Any]) -> bool:
 
 def _safe_rel_path(root: Path, rel: str) -> Path:
     rel = (rel or "").strip().replace("\\", "/").lstrip("/")
+    if not rel:
+        raise ValueError("empty_rel_path")
     if ".." in rel.split("/"):
         raise ValueError("path_escape")
     target = (root / rel).resolve()
@@ -79,6 +83,7 @@ class ProposedAction:
     rel_path: str
     content: str
     mode: str
+    caller_id: str
 
 
 class EffectorRuntime:
@@ -90,23 +95,105 @@ class EffectorRuntime:
         *,
         receipt_path: Path,
         undo_dir: Path,
+        registration_trace_path: Optional[Path] = None,
+        default_caller_id: Optional[str] = None,
+        require_registered_caller: bool = True,
     ) -> None:
         self.root = root.resolve()
         self.receipt_path = receipt_path
         self.undo_dir = undo_dir
+        self.registration_trace_path = registration_trace_path or _DEFAULT_REGISTRATION_TRACE
+        self.default_caller_id = default_caller_id
+        self.require_registered_caller = require_registered_caller
         self._pending: Dict[str, ProposedAction] = {}
-        self._committed_ids: set[str] = set()
         self.root.mkdir(parents=True, exist_ok=True)
         self.undo_dir.mkdir(parents=True, exist_ok=True)
+        self.receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        self._committed_ids: set[str] = self._load_committed_ids()
+
+    def _load_committed_ids(self) -> set[str]:
+        committed: set[str] = set()
+        if not self.receipt_path.is_file():
+            return committed
+        with open(self.receipt_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not verify_receipt_row(row) or row.get("kind") != KIND_FS_WRITE:
+                    continue
+                aid = str(row.get("action_id") or "")
+                if not aid:
+                    continue
+                if row.get("phase") == PHASE_COMMIT and row.get("ok") is True:
+                    committed.add(aid)
+                elif row.get("phase") == PHASE_UNDO and row.get("ok") is True:
+                    committed.discard(aid)
+        return committed
+
+    def _registered_caller_tokens(self) -> set[str]:
+        tokens: set[str] = set()
+        if not self.registration_trace_path.is_file():
+            return tokens
+        with open(self.registration_trace_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                for key in ("doctor", "trace_id", "agent_id", "caller_id"):
+                    value = row.get(key)
+                    if value is not None:
+                        tokens.add(str(value).strip())
+        return tokens
+
+    def _validate_caller_id(self, caller_id: Optional[str]) -> str:
+        caller_id = str(caller_id or "").strip()
+        if caller_id.lower() in _ANONYMOUS_CALLERS:
+            raise ValueError("anonymous_caller_refused")
+        if self.require_registered_caller and caller_id not in self._registered_caller_tokens():
+            raise ValueError("unregistered_caller_refused")
+        return caller_id
+
+    def _resolve_caller_id(self, action: Dict[str, Any]) -> str:
+        return self._validate_caller_id(action.get("caller_id") or self.default_caller_id)
+
+    def _resolve_method_caller_id(self, caller_id: Optional[str]) -> str:
+        return self._validate_caller_id(caller_id or self.default_caller_id)
+
+    def _caller_for_action(self, action_id: str) -> Optional[str]:
+        p = self._pending.get(action_id)
+        if p:
+            return p.caller_id
+        row = self.receipt(action_id)
+        if row and row.get("caller_id"):
+            return str(row.get("caller_id"))
+        return self.default_caller_id
 
     def _append_receipt(self, row: Dict[str, Any]) -> Dict[str, Any]:
         row = dict(row)
         row.setdefault("schema", SCHEMA_V1)
+        row.setdefault("status", "ok" if row.get("ok") is True else "error")
+        if "truth_note" not in row:
+            phase = row.get("phase", "UNKNOWN")
+            if row.get("ok") is True:
+                row["truth_note"] = f"{phase} recorded by deterministic filesystem effector runtime."
+            else:
+                row["truth_note"] = f"{phase} recorded failure before or during deterministic filesystem effector runtime."
         row["integrity"] = receipt_integrity(row)
+        self.receipt_path.parent.mkdir(parents=True, exist_ok=True)
         append_line_locked(self.receipt_path, json.dumps(row, separators=(",", ":")) + "\n")
         return row
 
     def propose(self, action: Dict[str, Any]) -> ProposedAction:
+        caller_id = self._resolve_caller_id(action)
         if action.get("kind") != KIND_FS_WRITE:
             raise ValueError(f"unsupported_kind:{action.get('kind')}")
         rel = str(action.get("rel_path", ""))
@@ -124,6 +211,7 @@ class EffectorRuntime:
             rel_path=rel,
             content=content,
             mode=mode,
+            caller_id=caller_id,
         )
         self._pending[aid] = p
         return p
@@ -160,6 +248,9 @@ class EffectorRuntime:
                     "ts": time.time(),
                     "ok": False,
                     "error": "double_commit",
+                    "caller_id": self._caller_for_action(action_id),
+                    "status": "rejected",
+                    "truth_note": "Rejected duplicate COMMIT for an action already committed in this runtime or receipt ledger.",
                 }
             )
             return {"ok": False, "error": "double_commit", "action_id": action_id}
@@ -174,6 +265,9 @@ class EffectorRuntime:
                     "ts": time.time(),
                     "ok": False,
                     "error": "unknown_or_expired_action",
+                    "caller_id": self._caller_for_action(action_id),
+                    "status": "rejected",
+                    "truth_note": "Rejected COMMIT because no pending proposed action exists for this action_id.",
                 }
             )
             return {"ok": False, "error": "unknown_or_expired_action", "action_id": action_id}
@@ -191,6 +285,9 @@ class EffectorRuntime:
                     "ts": time.time(),
                     "ok": False,
                     "error": str(e),
+                    "caller_id": p.caller_id,
+                    "status": "rejected",
+                    "truth_note": "Rejected COMMIT because the target path escaped the effector root.",
                 }
             )
             return {"ok": False, "error": str(e), "action_id": action_id}
@@ -208,6 +305,9 @@ class EffectorRuntime:
                     "ts": time.time(),
                     "ok": False,
                     "error": err,
+                    "caller_id": p.caller_id,
+                    "status": "rejected",
+                    "truth_note": f"Rejected COMMIT in sandbox before filesystem mutation: {err}.",
                 }
             )
             return {"ok": False, "error": err, "action_id": action_id}
@@ -223,6 +323,9 @@ class EffectorRuntime:
                     "ts": time.time(),
                     "ok": False,
                     "error": "payload_too_large_for_receipt_v1",
+                    "caller_id": p.caller_id,
+                    "status": "rejected",
+                    "truth_note": "Rejected COMMIT because v1 receipt would exceed bounded payload size.",
                 }
             )
             return {"ok": False, "error": "payload_too_large_for_receipt_v1", "action_id": action_id}
@@ -245,6 +348,9 @@ class EffectorRuntime:
                     "ts": time.time(),
                     "ok": False,
                     "error": f"os_error:{e}",
+                    "caller_id": p.caller_id,
+                    "status": "error",
+                    "truth_note": "Filesystem mutation failed with an OS error; BROKEN receipt records the failure.",
                 }
             )
             return {"ok": False, "error": str(e), "action_id": action_id}
@@ -265,13 +371,34 @@ class EffectorRuntime:
                 "mode": p.mode,
                 "ts": time.time(),
                 "ok": True,
+                "caller_id": p.caller_id,
+                "status": "committed",
+                "truth_note": "Filesystem write committed after registered-caller validation and sandbox check.",
                 "content_b64": _b64(raw),
                 "content_sha256": hashlib.sha256(raw).hexdigest(),
             }
         )
         return {"ok": True, "action_id": action_id, "path": str(path)}
 
-    def undo(self, action_id: str) -> Dict[str, Any]:
+    def undo(self, action_id: str, *, caller_id: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            undo_caller_id = self._resolve_method_caller_id(caller_id)
+        except ValueError as e:
+            self._append_receipt(
+                {
+                    "phase": PHASE_BROKEN,
+                    "action_id": action_id,
+                    "kind": KIND_FS_WRITE,
+                    "ts": time.time(),
+                    "ok": False,
+                    "error": str(e),
+                    "caller_id": caller_id or self.default_caller_id,
+                    "status": "rejected",
+                    "truth_note": "Rejected UNDO because the calling agent is not present in the registration trace.",
+                }
+            )
+            return {"ok": False, "error": str(e), "action_id": action_id}
+
         meta_path = self.undo_dir / f"{action_id}.undo.json"
         prior_path = self.undo_dir / f"{action_id}.prior.bin"
         if not meta_path.is_file() or not prior_path.is_file():
@@ -283,6 +410,9 @@ class EffectorRuntime:
                     "ts": time.time(),
                     "ok": False,
                     "error": "no_undo_snapshot",
+                    "caller_id": self._caller_for_action(action_id),
+                    "status": "rejected",
+                    "truth_note": "Rejected UNDO because no local undo snapshot exists for this action_id.",
                 }
             )
             return {"ok": False, "error": "no_undo_snapshot", "action_id": action_id}
@@ -311,6 +441,10 @@ class EffectorRuntime:
             "rel_path": rel_path,
             "ts": time.time(),
             "ok": True,
+            "caller_id": undo_caller_id,
+            "original_caller_id": self._caller_for_action(action_id),
+            "status": "undone",
+            "truth_note": "Filesystem write undone from deterministic undo snapshot.",
             "restored_created": created,
         }
         if not created:
