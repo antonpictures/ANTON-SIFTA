@@ -58,29 +58,38 @@ def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
-def is_command_whitelisted(command: List[str]) -> bool:
+def is_command_whitelisted(command: List[str]) -> tuple[bool, Optional[str]]:
+    """Returns (is_whitelisted, target_rel_path_to_check)"""
     if not command:
-        return False
+        return False, None
     cmd0 = command[0]
 
     # whitelist: git diff, git status
     if cmd0 == "git" and len(command) >= 2:
         if command[1] in ("diff", "status"):
-            # Block potentially dangerous git flags like config or ext-diff
+            # Block potentially dangerous git flags
             if any(arg.startswith("--ext-diff") for arg in command):
-                return False
-            return True
+                return False, None
+            # read-only git commands don't specify a single strictly-bound file we must jail,
+            # but we can enforce no path traversal visually if we wanted. 
+            # For now, git is scoped to cwd=root by subprocess.run.
+            return True, None
 
     # whitelist: pytest <file>
-    if cmd0 == "pytest":
-        return True
+    if cmd0 == "pytest" and len(command) == 2:
+        # Disallow flags starting with '-' to prevent flag injection
+        if command[1].startswith("-"):
+            return False, None
+        return True, command[1]
 
     # whitelist: python3 -m pytest <file>, python3 -m py_compile <file>
-    if cmd0 == "python3" and len(command) >= 3:
+    if cmd0 == "python3" and len(command) == 4:
         if command[1] == "-m" and command[2] in ("pytest", "py_compile"):
-            return True
+            if command[3].startswith("-"):
+                return False, None
+            return True, command[3]
 
-    return False
+    return False, None
 
 
 @dataclass
@@ -198,8 +207,13 @@ class ShellEffectorRuntime:
         if not isinstance(command, list) or not all(isinstance(c, str) for c in command):
             raise ValueError("command_must_be_list_of_strings")
 
-        if not is_command_whitelisted(command):
+        is_wl, target_path = is_command_whitelisted(command)
+        if not is_wl:
             raise ValueError("command_not_whitelisted")
+            
+        if target_path:
+            from System.swarm_effector_runtime import _safe_rel_path
+            _safe_rel_path(self.root, target_path)
 
         aid = str(action.get("action_id") or uuid.uuid4())
         if aid in self._committed_ids:
@@ -220,8 +234,16 @@ class ShellEffectorRuntime:
         if not p:
             return {"ok": False, "reason": "unknown_action_id"}
         
-        if not is_command_whitelisted(p.command):
+        is_wl, target_path = is_command_whitelisted(p.command)
+        if not is_wl:
             return {"ok": False, "reason": "command_not_whitelisted"}
+            
+        if target_path:
+            from System.swarm_effector_runtime import _safe_rel_path
+            try:
+                _safe_rel_path(self.root, target_path)
+            except ValueError:
+                return {"ok": False, "reason": "path_escape"}
 
         return {"ok": True, "resolved_command": " ".join(p.command)}
 
