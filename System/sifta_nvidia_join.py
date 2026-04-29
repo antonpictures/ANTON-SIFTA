@@ -126,12 +126,14 @@ NVIDIA_ASSETS: tuple[NvidiaAsset, ...] = (
     NvidiaAsset(
         key="cosmos",
         name="NVIDIA Cosmos",
-        asset_type="world foundation model platform",
+        asset_type="world foundation / reasoning model platform",
         official_url="https://developer.nvidia.com/cosmos",
-        local_probe="hf_or_package_cache:nvidia/cosmos",
-        sifta_hook="future synthetic video source for sensor/referee tests",
-        next_step="document only; do not wire generated video as REAL sensor input",
-        risk_note="synthetic world model output is evidence, not physical perception",
+        local_probe="hf_model_cache:nvidia/Cosmos-Reason1-7B|hf_model_cache:nvidia/Cosmos-Predict2.5-2B",
+        sifta_hook="feed Alice camera frame to Cosmos-Reason1-7B for physical-world Q&A; write receipt",
+        next_step="First proof: download nvidia/Cosmos-Reason1-7B (ungated, CPU-runnable). "
+                  "Do NOT start with Predict2.5-2B (gated, video-gen, GPU-heavy).",
+        risk_note="Cosmos-Reason1 output is evidence, not sensor. "
+                  "Predict2.5 synthetic video must never be labeled as real perception.",
     ),
 )
 
@@ -250,13 +252,23 @@ def _probe_asset(
             detail = "warp import missing; keep numpy proof canonical"
 
     elif asset.key == "cosmos":
-        model_root = _hf_cache_path("nvidia/Cosmos", kind="model", cache_root=cache_root)
-        if model_root.exists() or _has_import("cosmos", import_checker):
+        # Dr. Codex audit 2026-04-28: split Reason1 (ungated, CPU) vs Predict2.5 (gated, GPU)
+        reason1_path = _hf_cache_path("nvidia/Cosmos-Reason1-7B", kind="model", cache_root=cache_root)
+        predict_path = _hf_cache_path("nvidia/Cosmos-Predict2.5-2B", kind="model", cache_root=cache_root)
+        has_cosmos_pkg = _has_import("cosmos", import_checker) or _has_import("nvidia_cosmos", import_checker)
+        if reason1_path.exists() or predict_path.exists() or has_cosmos_pkg:
             truth = "REAL"
-            detail = "Cosmos package/cache detected locally"
+            parts = []
+            if reason1_path.exists(): parts.append("Reason1-7B cached")
+            if predict_path.exists(): parts.append("Predict2.5-2B cached")
+            if has_cosmos_pkg: parts.append("cosmos pkg")
+            detail = f"Cosmos local: {', '.join(parts)}"
         else:
             truth = "ONLINE"
-            detail = "Cosmos is online-only for this node; no local runtime"
+            detail = (
+                "Cosmos-Reason1-7B available ungated at hf:nvidia/Cosmos-Reason1-7B (not downloaded). "
+                "Cosmos-Predict2.5-2B gated (license required). No local runtime."
+            )
 
     return NvidiaProbe(
         key=asset.key,
@@ -341,11 +353,16 @@ def probe_and_write_receipt(
 
 def recommended_next_step(probes: Iterable[NvidiaProbe]) -> str:
     by_key = {probe.key: probe for probe in probes}
+    if by_key.get("cosmos") and by_key["cosmos"].local_truth == "REAL":
+        return "Cosmos-Reason1-7B is local — wire it to an Alice camera frame and write a receipt."
     if by_key.get("warp") and by_key["warp"].local_truth == "REAL":
-        return "Wire Warp as optional VoxelField acceleration behind numpy fallback."
+        return (
+            "Warp is REAL_CPU. Next: download nvidia/Cosmos-Reason1-7B (ungated) and "
+            "feed an Alice frame for physical-world Q&A. That moves Cosmos ONLINE → REAL."
+        )
     if by_key.get("isaac_lab") and by_key["isaac_lab"].local_truth == "REAL":
         return "Run IsaacStigmergicStub in a sandboxed sim-only scene."
-    return "Keep NVIDIA lane as documented optional organs; next safe code is tiny fixture benchmarks, not installs."
+    return "Keep NVIDIA lane as documented optional organs; next safe step: huggingface-cli download nvidia/Cosmos-Reason1-7B."
 
 
 def _print_main() -> None:

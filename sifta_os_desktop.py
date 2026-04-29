@@ -1650,7 +1650,8 @@ class SiftaDesktop(QMainWindow):
                 if mtime != getattr(self, "_broca_mtime", None):
                     self._broca_mtime = mtime
                     with open(broca_log, "rb") as _f:
-                        _f.seek(max(0, _f.seek(0, 2) - 512) or 0)
+                        size = _f.seek(0, 2)
+                        _f.seek(max(0, size - 512))
                         last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
                     self._broca_last_row = _json.loads(last)
                 row = getattr(self, "_broca_last_row", {})
@@ -1671,7 +1672,8 @@ class SiftaDesktop(QMainWindow):
                 if mtime != getattr(self, "_wern_mtime", None):
                     self._wern_mtime = mtime
                     with open(wern_log, "rb") as _f:
-                        _f.seek(max(0, _f.seek(0, 2) - 512) or 0)
+                        size = _f.seek(0, 2)
+                        _f.seek(max(0, size - 512))
                         last = _f.read().decode("utf-8", "replace").strip().split("\n")[-1]
                     self._wern_last_row = _json.loads(last)
                 row = getattr(self, "_wern_last_row", {})
