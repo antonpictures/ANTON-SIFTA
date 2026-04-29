@@ -223,6 +223,7 @@ def scan_economy(
 
     out = EconomySnapshot()
     balances: Dict[str, float] = {}
+    seen_inference_receipts: set[str] = set()
     for row in _iter_jsonl(repair_log):
         out.repair_lines += 1
         if not isinstance(row, dict):
@@ -278,6 +279,16 @@ def scan_economy(
                 balances[receiver] = balances.get(receiver, 0.0) + amt
 
         elif event in {"INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"}:
+            try:
+                from Kernel.inference_economy import inference_transfer_replay_key
+
+                replay_key = inference_transfer_replay_key(row)
+            except Exception:
+                replay_key = ""
+            if replay_key:
+                if replay_key in seen_inference_receipts:
+                    continue
+                seen_inference_receipts.add(replay_key)
             fee = _float(row.get("fee_stgm"))
             out.inference_fee_volume += fee
             borrower = str(row.get("borrower_id") or "").upper()

@@ -41,7 +41,7 @@ from typing import Optional
 
 # ─── Config ────────────────────────────────────────────────────────────────────
 
-HEARTBEAT_DIR   = Path(".sifta_state/heartbeats")
+HEARTBEAT_DIR   = Path(__file__).resolve().parent.parent / ".sifta_state" / "heartbeats"
 ANCHOR_LOG      = HEARTBEAT_DIR / "web_anchors.jsonl"
 HEARTBEAT_LOG   = HEARTBEAT_DIR / "tab_pulses.jsonl"
 

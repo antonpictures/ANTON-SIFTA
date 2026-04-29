@@ -443,6 +443,38 @@ async def inference_joule_receipt(req: Request):
         return JSONResponse({"error": "Invalid JSON"}, status_code=400)
         
     model = payload_dict.get("model", "unknown")
+
+    try:
+        from Kernel.inference_economy import (
+            INFERENCE_TRANSFER_IDLE_WATTS,
+            INFERENCE_TRANSFER_RECEIPT_SCHEMA_V2,
+            INFERENCE_TRANSFER_STGM_PER_JOULE,
+            calculate_joule_fee,
+            inference_power_quality_factor,
+            inference_transfer_margin_from_environment,
+            inference_transfer_signing_body,
+            joule_measurement_error_bound_pct,
+        )
+        from System.crypto_keychain import get_silicon_identity, sign_block
+    except Exception as e:
+        return JSONResponse(
+            {
+                "error": "Inference receipt dependencies unavailable",
+                "detail": str(e),
+                "receipt_refused": True,
+            },
+            status_code=503,
+        )
+
+    hw_serial = get_silicon_identity()
+    if not hw_serial or hw_serial == "UNKNOWN_SERIAL":
+        return JSONResponse(
+            {
+                "error": "Silicon identity unavailable; refusing unsigned inference receipt",
+                "receipt_refused": True,
+            },
+            status_code=503,
+        )
     
     # 1. Start measurement
     t0 = time.monotonic()
@@ -450,8 +482,25 @@ async def inference_joule_receipt(req: Request):
         import System.swarm_atp_synthase as atp
         p0 = atp.read_power_now()
         p0_power, p0_source = float(p0.watts), str(p0.source)
-    except Exception:
-        p0_power, p0_source = 0.0, "missing"
+    except Exception as e:
+        return JSONResponse(
+            {
+                "error": "Provider power meter unavailable before inference",
+                "detail": str(e),
+                "receipt_refused": True,
+            },
+            status_code=503,
+        )
+
+    if inference_power_quality_factor(p0_source) <= 0.0:
+        return JSONResponse(
+            {
+                "error": "Provider power meter source is not trusted",
+                "power_source": p0_source,
+                "receipt_refused": True,
+            },
+            status_code=503,
+        )
 
     # 2. Execute local Ollama inference
     import urllib.request
@@ -474,40 +523,70 @@ async def inference_joule_receipt(req: Request):
     try:
         p1 = atp.read_power_now()
         p1_power, p1_source = float(p1.watts), str(p1.source)
-    except Exception:
-        p1_power, p1_source = 0.0, "missing"
+    except Exception as e:
+        return JSONResponse(
+            {
+                "error": "Provider power meter unavailable after inference",
+                "detail": str(e),
+                "receipt_refused": True,
+                "ollama_response": res,
+            },
+            status_code=503,
+        )
         
     elapsed_s = t1 - t0
     avg_watts = (p0_power + p1_power) / 2.0
     power_source = p0_source if p0_source == p1_source else f"{p0_source}+{p1_source}"
-    from Kernel.inference_economy import (
-        INFERENCE_TRANSFER_IDLE_WATTS,
-        INFERENCE_TRANSFER_MARGIN_FACTOR,
-        INFERENCE_TRANSFER_STGM_PER_JOULE,
-        calculate_joule_fee,
-        inference_power_quality_factor,
-    )
+    if inference_power_quality_factor(power_source) <= 0.0:
+        return JSONResponse(
+            {
+                "error": "Provider power meter source is not trusted after inference",
+                "power_source": power_source,
+                "receipt_refused": True,
+                "ollama_response": res,
+            },
+            status_code=503,
+        )
+
     idle_watts = INFERENCE_TRANSFER_IDLE_WATTS
     provider_joules_gross = avg_watts * elapsed_s
     provider_joules_idle_baseline = idle_watts * elapsed_s
     provider_joules_net = max(0.0, provider_joules_gross - provider_joules_idle_baseline)
-    
+    error_bound_pct = joule_measurement_error_bound_pct(p0_power, p1_power)
+    power_sigma_watts = abs(p1_power - p0_power) / 2.0
+    provider_joules_error_bound = provider_joules_net * (error_bound_pct / 100.0)
+
+    def _hdr_norm(name: str) -> float:
+        raw = (req.headers.get(name) or "").strip()
+        if not raw:
+            return 0.0
+        try:
+            v = float(raw)
+        except ValueError:
+            return 0.0
+        return max(0.0, min(1.0, v))
+
+    thermal_norm = _hdr_norm("x-sifta-thermal-delta-norm")
+    queue_norm = _hdr_norm("x-sifta-queue-depth-norm")
+    latency_ms = elapsed_s * 1000.0
+    margin_factor = inference_transfer_margin_from_environment(
+        latency_ms, thermal_norm, queue_norm
+    )
+
     prompt_eval_count = res.get("prompt_eval_count", 0)
     eval_count = res.get("eval_count", 0)
-    
+
+    if "estimated" in power_source.lower():
+        measurement_method = "cpu_load_estimated"
+    else:
+        measurement_method = "endpoint_trapezoid_watts"
+
     # 4. Calculate fee & sign
-    try:
-        from System.crypto_keychain import get_silicon_identity, sign_block
-        fee_stgm = calculate_joule_fee(
-            provider_joules_net,
-            power_source,
-            margin_factor=INFERENCE_TRANSFER_MARGIN_FACTOR,
-        )
-        hw_serial = get_silicon_identity()
-    except Exception:
-        fee_stgm = 0.0
-        hw_serial = "UNKNOWN_SERIAL"
-        sign_block = lambda x: "NO_KEYCHAIN"
+    fee_stgm = calculate_joule_fee(
+        provider_joules_net,
+        power_source,
+        margin_factor=margin_factor,
+    )
 
     borrower_id = req.headers.get("x-sifta-borrower", "UNKNOWN_BORROWER")
     from datetime import datetime, timezone
@@ -519,18 +598,12 @@ async def inference_joule_receipt(req: Request):
     except Exception:
         lender_host = socket.gethostname()
     lender_node_id = hw_serial
-    
-    receipt_body = (
-        f"INFERENCE_BORROW::{borrower_id}::FROM[{lender_node_id}]::"
-        f"MODEL[{model}]::TOKENS[{prompt_eval_count+eval_count}]::FEE[{fee_stgm}]::TS[{ts}]::NODE[{hw_serial}]"
-    )
-    ed25519_signature = sign_block(receipt_body)
-    import hashlib
-    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()
-    
+
+    import uuid
     receipt = {
         "event": "INFERENCE_TRANSFER_JOULES",
-        "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+        "schema": INFERENCE_TRANSFER_RECEIPT_SCHEMA_V2,
+        "receipt_nonce": str(uuid.uuid4()),
         "ts": ts,
         "borrower_id": borrower_id,
         "lender_node_id": hw_serial,
@@ -543,18 +616,53 @@ async def inference_joule_receipt(req: Request):
         "elapsed_s": round(elapsed_s, 4),
         "avg_watts": round(avg_watts, 2),
         "idle_watts": idle_watts,
+        "power_sigma_watts": round(power_sigma_watts, 4),
         "provider_joules_gross": round(provider_joules_gross, 4),
         "provider_joules_net": round(provider_joules_net, 4),
+        "provider_joules_error_bound": round(provider_joules_error_bound, 6),
+        "provider_joules_net_low": round(max(0.0, provider_joules_net - provider_joules_error_bound), 6),
+        "provider_joules_net_high": round(provider_joules_net + provider_joules_error_bound, 6),
+        "measurement_method": measurement_method,
+        "error_bound_pct": error_bound_pct,
         "power_source": power_source,
         "stgm_per_joule": INFERENCE_TRANSFER_STGM_PER_JOULE,
         "quality_factor": inference_power_quality_factor(power_source),
-        "margin_factor": INFERENCE_TRANSFER_MARGIN_FACTOR,
+        "margin_factor": round(margin_factor, 6),
+        "margin_latency_ms": round(latency_ms, 3),
+        "margin_thermal_norm": thermal_norm,
+        "margin_queue_norm": queue_norm,
         "fee_stgm": fee_stgm,
-        "receipt_hash": receipt_hash,
-        "ed25519_sig": ed25519_signature,
         "signing_node": hw_serial,
-        "ollama_response": res
     }
+
+    receipt_body = inference_transfer_signing_body(receipt)
+    try:
+        ed25519_signature = sign_block(receipt_body)
+    except Exception as e:
+        return JSONResponse(
+            {
+                "error": "Silicon signing failed; refusing inference receipt",
+                "detail": str(e),
+                "receipt_refused": True,
+                "ollama_response": res,
+            },
+            status_code=503,
+        )
+    if not ed25519_signature or str(ed25519_signature).startswith("NO_KEYCHAIN"):
+        return JSONResponse(
+            {
+                "error": "Silicon signing returned non-cryptographic signature; refusing inference receipt",
+                "signing_node": hw_serial,
+                "receipt_refused": True,
+                "ollama_response": res,
+            },
+            status_code=503,
+        )
+    import hashlib
+    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()
+    receipt["receipt_hash"] = receipt_hash
+    receipt["ed25519_sig"] = ed25519_signature
+    receipt["ollama_response"] = res
     
     return JSONResponse(receipt)
 
@@ -2414,4 +2522,3 @@ if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=7433)
     finally:
         release_lock()
-

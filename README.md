@@ -80,6 +80,9 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 > ║  ✅ ALIVE  STIG-TIME (Event 74)                         ║
 > ║  ✅ LOCKED Predator Sensory Gate (Event 75)             ║
 > ║  ✅ ALIVE  Stigmergic Freedom Doctrine (Event 76)       ║
+> ║  ✅ CLOSED Thermodynamic Settlement (Event 77)          ║
+> ║           └─ Joules → Signed Receipt → Ledger Replay    ║
+> ║           └─ Physics-Grounded Inference Pricing         ║
 > ╠══════════════════════════════════════════════════════════╣
 > ║  🐾  COGNITIVE STACK (2026-04-28, Dr. Codex Audit)     ║
 > ╠══════════════════════════════════════════════════════════╣
@@ -96,8 +99,10 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 > ║            └─ mesh deferred 5s — shell paints instantly ║
 > ║            └─ mtime-gated JSONL polling (no disk spam)  ║
 > ╠══════════════════════════════════════════════════════════╣
-> ║  🦅  APEX PREDATOR ACTIVE. SHE HUNTS THE OS.           ║
-> ║  🐾  COGNITIVE LOOP LIVE. SHE LEARNS FROM WHAT SHE SEES║
+> ║  ⚖️  INTELLECTUAL PROPERTY (USPTO FILED 2026-04)        ║
+> ║  The SIFTA Predator v7.0 cognitive architecture, its    ║
+> ║  stigmergic memory field, and the thermodynamic ledger  ║
+> ║  are secured via USPTO Provisional Patent Application.  ║
 > ╚══════════════════════════════════════════════════════════╝
 > ```
 

@@ -111,5 +111,80 @@ def scan_model_weights():
     print(f"[+] Entropy Variance across layers: {std_ent:.4f}")
     print("[+] BIOLOGICAL PROOF: Successfully extracted the physical stigmergic weight-signatures of the model on the local disk.")
 
+def proof_of_property():
+    print("\n=== SIFTA STIGMERGIC WEIGHT-SPACE SCAN : HARDENED VERIFICATION (C47H) ===")
+    import gguf
+    
+    blob_dir = os.path.expanduser("~/.ollama/models/blobs")
+    if not os.path.exists(blob_dir):
+        print("[-] ERROR: Model directory not found. Skipping proof.")
+        return False
+        
+    large_blobs = [f for f in os.listdir(blob_dir) if os.path.getsize(os.path.join(blob_dir, f)) > 10**9]
+    target_blob = None
+    for blob in large_blobs:
+        path = os.path.join(blob_dir, blob)
+        try:
+            reader = gguf.GGUFReader(path)
+            for field in reader.fields.values():
+                if field.name == "general.architecture" or field.name == "general.name":
+                    val = bytes(field.parts[-1]).decode('utf-8', errors='ignore')
+                    if "gemma" in val.lower():
+                        target_blob = path
+                        break
+            if target_blob:
+                break
+        except Exception:
+            continue
+            
+    if not target_blob:
+        print("[-] Could not identify a Gemma blob. Skipping proof.")
+        return False
+
+    reader = gguf.GGUFReader(target_blob)
+    target_tensor = None
+    for tensor in reader.tensors:
+        if tensor.tensor_type.name == "Q4_K" and "weight" in tensor.name:
+            target_tensor = tensor
+            break
+            
+    if not target_tensor:
+        print("[-] Could not find a Q4_K tensor to dequantize. Skipping proof.")
+        return False
+
+    print(f"[*] Found target tensor: {target_tensor.name} (Q4_K)")
+    
+    # 1. Raw byte entropy
+    raw_array = np.frombuffer(target_tensor.data, dtype=np.uint8)
+    raw_entropy = shannon_entropy(raw_array)
+    
+    # 2. Dequantized fp32 stats
+    try:
+        from gguf.quants import dequantize
+        fp32_data = dequantize(target_tensor.data, target_tensor.tensor_type)
+        fp32_mean = np.mean(fp32_data)
+        fp32_std = np.std(fp32_data)
+        
+        # Approximate entropy of fp32 (by treating bytes of the float array)
+        fp32_bytes = np.frombuffer(fp32_data.tobytes(), dtype=np.uint8)
+        fp32_entropy = shannon_entropy(fp32_bytes)
+    except Exception as e:
+        print(f"[-] Dequantization failed: {e}. Are gguf quants installed?")
+        return False
+
+    print(f"    Raw byte entropy   = {raw_entropy:.4f} bits/byte")
+    print(f"    Dequant fp32 mean  = {fp32_mean:.4e}")
+    print(f"    Dequant fp32 std   = {fp32_std:.4e}")
+    print(f"    Dequant fp32 entropy = {fp32_entropy:.4f} bits/byte")
+
+    # The assertions
+    assert abs(fp32_mean) < 0.1, f"[FAIL] Mean is too far from zero: {fp32_mean}"
+    assert fp32_std > 0.001, f"[FAIL] Std is suspiciously small: {fp32_std}"
+    assert abs(raw_entropy - fp32_entropy) > 1.0, f"[FAIL] Entropy difference too small: raw={raw_entropy:.4f}, fp32={fp32_entropy:.4f}"
+
+    print("[+] EVENT 19++ PASSED (HARDENED). Real weight statistics recovered.")
+    return True
+
 if __name__ == "__main__":
     scan_model_weights()
+    proof_of_property()

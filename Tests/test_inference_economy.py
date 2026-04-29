@@ -9,6 +9,7 @@ Run:
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import tempfile
@@ -120,6 +121,34 @@ class TestLedgerBalanceDialects(unittest.TestCase):
         self.assertAlmostEqual(ie.ledger_balance("M1THER_EDGE"), 9.875, places=6)
         self.assertAlmostEqual(ie.ledger_balance("GTH4921YP3"), 0.125, places=6)
 
+    def test_replayed_joule_transfer_receipt_counts_once(self):
+        self._append(
+            {
+                "timestamp": 1,
+                "agent_id": "M1THER_EDGE",
+                "tx_type": "STGM_MINT",
+                "amount": 10.0,
+                "hash": "SEAL_seed",
+            }
+        )
+        receipt = {
+            "event": "INFERENCE_TRANSFER_JOULES",
+            "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+            "borrower_id": "M1THER_EDGE",
+            "lender_node_id": "GTH4921YP3",
+            "lender_ip": "GTH4921YP3",
+            "model": "gemma4",
+            "tokens_used": 12,
+            "fee_stgm": 0.125,
+            "ts": "t2",
+            "receipt_hash": "receipt-replay-test",
+        }
+        self._append(receipt)
+        self._append(dict(receipt))
+
+        self.assertAlmostEqual(ie.ledger_balance("M1THER_EDGE"), 9.875, places=6)
+        self.assertAlmostEqual(ie.ledger_balance("GTH4921YP3"), 0.125, places=6)
+
     def test_legacy_compute_drip_agent_field(self):
         self._append(
             {
@@ -225,6 +254,89 @@ class TestFeeFormula(unittest.TestCase):
         self.assertGreater(high, low)
         self.assertGreater(high, estimated)
         self.assertEqual(missing, 0.0)
+
+
+class TestJouleTransferSignature(unittest.TestCase):
+    def _signed_v2_row(self):
+        try:
+            from System.crypto_keychain import get_silicon_identity, sign_block
+        except Exception as exc:
+            self.skipTest(f"crypto keychain unavailable: {exc}")
+
+        node = get_silicon_identity()
+        if not node or node == "UNKNOWN_SERIAL":
+            self.skipTest("silicon identity unavailable")
+
+        row = {
+            "event": "INFERENCE_TRANSFER_JOULES",
+            "schema": ie.INFERENCE_TRANSFER_RECEIPT_SCHEMA_V2,
+            "receipt_nonce": "nonce-test",
+            "borrower_id": "M1THER_EDGE",
+            "lender_node_id": node,
+            "lender_ip": node,
+            "model": "gemma4",
+            "tokens_used": 12,
+            "fee_stgm": 0.125,
+            "ts": "2026-04-29T18:00:00+00:00",
+            "signing_node": node,
+            "provider_joules_net": 12.5,
+            "provider_joules_error_bound": 1.25,
+            "power_source": "battery_real",
+            "measurement_method": "endpoint_trapezoid_watts",
+            "error_bound_pct": 10.0,
+        }
+        body = ie.inference_transfer_signing_body(row)
+        row["receipt_hash"] = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        row["ed25519_sig"] = sign_block(body)
+        return row
+
+    def test_provider_receipt_endpoint_fails_closed_without_real_signing(self):
+        server_path = Path(__file__).resolve().parents[1] / "Network" / "server.py"
+        endpoint = server_path.read_text(encoding="utf-8").split(
+            '@app.post("/api/inference_joule_receipt")', 1
+        )[1].split("class OverrideRequest", 1)[0]
+
+        self.assertIn("from System.crypto_keychain import get_silicon_identity, sign_block", endpoint)
+        self.assertIn("Silicon identity unavailable", endpoint)
+        self.assertIn("receipt_refused", endpoint)
+        self.assertIn("status_code=503", endpoint)
+        self.assertIn("joule_measurement_error_bound_pct", endpoint)
+        self.assertIn("inference_transfer_margin_from_environment", endpoint)
+        self.assertIn("inference_transfer_signing_body", endpoint)
+        self.assertNotIn("sign_block = lambda", endpoint)
+
+    def test_signed_joule_transfer_receipt_validates(self):
+        row = self._signed_v2_row()
+
+        old_verify = os.environ.get("SIFTA_LEDGER_VERIFY")
+        os.environ["SIFTA_LEDGER_VERIFY"] = "1"
+        try:
+            self.assertTrue(ie._ledger_row_cryptographically_valid(row))
+        finally:
+            if old_verify is None:
+                os.environ.pop("SIFTA_LEDGER_VERIFY", None)
+            else:
+                os.environ["SIFTA_LEDGER_VERIFY"] = old_verify
+
+    def test_adversarial_joule_receipts_are_rejected(self):
+        row = self._signed_v2_row()
+
+        old_verify = os.environ.get("SIFTA_LEDGER_VERIFY")
+        os.environ["SIFTA_LEDGER_VERIFY"] = "1"
+        try:
+            forged = dict(row, ed25519_sig="forged")
+            self.assertFalse(ie._ledger_row_cryptographically_valid(forged))
+
+            tampered_joules = dict(row, provider_joules_net=9999.0)
+            self.assertFalse(ie._ledger_row_cryptographically_valid(tampered_joules))
+
+            wrong_node = dict(row, signing_node="FAKE_NODE")
+            self.assertFalse(ie._ledger_row_cryptographically_valid(wrong_node))
+        finally:
+            if old_verify is None:
+                os.environ.pop("SIFTA_LEDGER_VERIFY", None)
+            else:
+                os.environ["SIFTA_LEDGER_VERIFY"] = old_verify
 
 
 class TestNormalizeLender(unittest.TestCase):

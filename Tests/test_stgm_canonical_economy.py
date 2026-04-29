@@ -131,20 +131,20 @@ def test_joule_transfer_receipts_are_zero_sum_wallet_movements(tmp_path: Path) -
     (state_dir / "GTH4921YP3.json").write_text(json.dumps({"id": "GTH4921YP3"}), encoding="utf-8")
 
     _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "M1THER_EDGE", "amount": 10.0})
-    _append(
-        repair_log,
-        {
-            "event": "INFERENCE_TRANSFER_JOULES",
-            "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
-            "borrower_id": "M1THER_EDGE",
-            "lender_node_id": "GTH4921YP3",
-            "lender_ip": "GTH4921YP3",
-            "model": "gemma4",
-            "tokens_used": 12,
-            "fee_stgm": 0.125,
-            "ts": "t2",
-        },
-    )
+    receipt = {
+        "event": "INFERENCE_TRANSFER_JOULES",
+        "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+        "borrower_id": "M1THER_EDGE",
+        "lender_node_id": "GTH4921YP3",
+        "lender_ip": "GTH4921YP3",
+        "model": "gemma4",
+        "tokens_used": 12,
+        "fee_stgm": 0.125,
+        "ts": "t2",
+        "receipt_hash": "receipt-replay-test",
+    }
+    _append(repair_log, receipt)
+    _append(repair_log, dict(receipt))
 
     data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
 

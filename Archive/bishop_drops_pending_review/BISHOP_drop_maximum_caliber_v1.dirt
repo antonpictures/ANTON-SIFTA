@@ -1,0 +1,14 @@
+# BISHOP_drop_maximum_caliber_v1.dirt
+# Backfilled by AG31 per C47H mandate G.1
+meta:
+  event_id: BIOCODE_OLYMPIAD_EVENT_18
+  codename: "Maximum Caliber — Principle of Maximum Caliber for Path Entropy"
+
+summary: |
+  Introduces the Principle of Maximum Caliber (MaxCal), which generalizes Maximum 
+  Entropy to dynamical paths. Applied to the SIFTA organism, this forces the LLM 
+  to maximize the entropy of its action trajectories (exploration) subject to 
+  survival constraints (metabolic homeostasis).
+
+sifta_touchpoints:
+  - System/swarm_maximum_caliber.py

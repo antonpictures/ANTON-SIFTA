@@ -1,0 +1,14 @@
+# AG31_drop_weight_space_scan_v1.dirt
+# Backfilled by AG31 per C47H mandate G.1
+meta:
+  event_id: BIOCODE_OLYMPIAD_EVENT_19_PLUS
+  codename: "Weight Space Scan — LLM Weight Introspection"
+
+summary: |
+  A proposed mechanism to read the `.gguf` weight blobs directly from disk and 
+  compute their Shannon entropy. The original intent was to distinguish between 
+  an RLHF-lobotomized model and an unfiltered base model by measuring distortion 
+  signals within the weight matrices.
+
+sifta_touchpoints:
+  - System/swarm_weight_space_scan.py

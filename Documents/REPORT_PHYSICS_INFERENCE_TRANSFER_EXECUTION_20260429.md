@@ -552,16 +552,34 @@ Physics settlement: not fully wired into canonical accounting + power probe unti
 
 **Update (same day, CG55M follow-cut):** `ledger_balance()` + **`_ledger_row_cryptographically_valid()`** now treat **`INFERENCE_TRANSFER_JOULES`** like **`INFERENCE_BORROW`** for signing-string replay; **`Network/server.py`** adds **`ts`** to the receipt JSON; provider power uses **`read_power_now()`** and shared constants live in **`Kernel/inference_economy.py`**. Remaining: **pytest** for a full round-trip receipt row under **`SIFTA_LEDGER_VERIFY=1`**, and optional **`record_inference_fee()`** alignment for JSON wallet caches.
 
+### C.3 Codex tournament closure patch (2026-04-29)
+
+**C55M/Codex follow-cut status:** the two hard blockers above are now patched in code and covered by focused tests.
+
+- `Network/server.py` now samples provider power through `System.swarm_atp_synthase.read_power_now()` instead of the nonexistent `_get_system_power_watts()` helper.
+- Provider receipts now sign with `System.crypto_keychain.get_silicon_identity()` / `sign_block()` and set `lender_ip == lender_node_id == <silicon serial>` so the settlement key is sovereign hardware identity, not a fragile transient LAN address.
+- The provider endpoint now fails closed with `receipt_refused: true` if silicon identity, trusted power telemetry, or Ed25519 signing is unavailable; it no longer falls back to a `NO_KEYCHAIN` pseudo-signature.
+- `Kernel/inference_economy._ledger_row_cryptographically_valid()` validates `INFERENCE_TRANSFER_JOULES` against the same signed body used by the provider receipt.
+- `Kernel.inference_economy.ledger_balance()` and `System.stgm_economy.scan_economy()` now replay `INFERENCE_TRANSFER_JOULES` as zero-sum movement: borrower debited, provider credited, no mint.
+- Focused verification: `python3 -m py_compile Kernel/inference_economy.py System/stgm_economy.py Network/server.py System/inference_router.py System/swarm_atp_synthase.py` and `python3 -m pytest tests/test_inference_economy.py tests/test_stgm_canonical_economy.py tests/test_finance.py -q` → **27 passed**, including a real Ed25519 validation test for `INFERENCE_TRANSFER_JOULES` and a fail-closed guard against fake signing fallback.
+
+**Remaining policy truth:** constants still exist and must stay named as policy, not disguised as universal physics: `INFERENCE_TRANSFER_STGM_PER_JOULE`, `INFERENCE_TRANSFER_IDLE_WATTS`, `INFERENCE_TRANSFER_MARGIN_FACTOR`, and source-quality multipliers. The next tournament owner should decide whether joule-market fees are halving-scaled or deliberately exempt.
+
 ---
 
 ## Appendix D — External research anchor (OpenAI-relevant direction, not exhaustive)
 
 Strong math/science / reasoning stacks still require: **verifiable outputs, receipts, harnesses, and conventional review** — i.e. the same class of discipline SIFTA encodes in ledgers and tests. Use vendor research as **methodology support**, not as a substitute for **`pytest` + `repair_log.jsonl` rows**.
 
+- OpenAI, **Learning to reason with LLMs** (2024): https://openai.com/index/learning-to-reason-with-llms/ — reasoning improves with train/test-time compute and is evaluated on math/science/coding benchmarks.
+- OpenAI, **Solving (some) formal math olympiad problems** (2022): https://openai.com/index/formal-math/ — formal systems matter because they provide machine-checkable success/failure for proof attempts.
+- OpenAI, **Our First Proof submissions** (2026): https://openai.com/index/first-proof-submissions/ — even strong research-level proof attempts need expert review; one initially likely proof was later believed incorrect.
+- OpenAI, **AI as a Scientific Collaborator** (2026): https://cdn.openai.com/pdf/f4b4a5da-b2de-418d-9fcd-6b293e9dc157/oai_ai-as-a-scientific-collaborator_jan-2026.pdf — scientific AI is useful in math/physics workflows, but the public examples emphasize verification and domain review.
+
 ---
 
 ## Status line
 
-**Physics-grounded inference transfer v1 is structurally started** (provider endpoint + `calculate_joule_fee` + remote router targeting receipt URL). **Economy closure is not complete** until: (1) power is read from a **real** ATP API, (2) borrower-side ledger rows match **`ledger_balance()` / `scan_economy` / `record_inference_fee()`** invariants, (3) triple-IDE tournament rules prevent parallel unsigned economy edits.
+**Physics-grounded inference transfer v1 is now structurally closed for the core ledger path** (provider endpoint + `calculate_joule_fee` + remote router targeting receipt URL + `INFERENCE_TRANSFER_JOULES` replay in `ledger_balance()` / `scan_economy()`). It is **not physics-only** and not “no hardcoding”: the remaining constants are explicit policy knobs that must be governed and tested.
 
 **For the Swarm.**

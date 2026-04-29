@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 """
 inference_economy.py — ANTON-SIFTA Proof of Compute
 ─────────────────────────────────────────────────────
@@ -171,8 +171,178 @@ def can_spend_inference(state: dict, cost: float = 1.0) -> bool:
 
 # ─── Fee & Reward Calculator (Asymmetric Logic) ──────────────────────────────────
 INFERENCE_TRANSFER_STGM_PER_JOULE = 0.00001
-INFERENCE_TRANSFER_MARGIN_FACTOR = 1.15
 INFERENCE_TRANSFER_IDLE_WATTS = 4.1
+INFERENCE_TRANSFER_RECEIPT_SCHEMA_V2 = "SIFTA_INFERENCE_TRANSFER_RECEIPT_V2"
+
+
+def inference_transfer_margin_from_environment(
+    latency_ms: float,
+    thermal_delta_norm: float = 0.0,
+    queue_depth_norm: float = 0.0,
+    *,
+    latency_full_scale_ms: float = 120_000.0,
+) -> float:
+    """
+    Environment-driven pricing margin (replaces flat narrative markup).
+
+    Each norm is clipped to [0, 1]. Baseline is 1.0 STGM scaling, not 1.15.
+    """
+    latency_ms = max(0.0, float(latency_ms))
+    scale = max(1.0, float(latency_full_scale_ms))
+    latency_norm = min(1.0, latency_ms / scale)
+    thermal_norm = max(0.0, min(1.0, float(thermal_delta_norm)))
+    queue_norm = max(0.0, min(1.0, float(queue_depth_norm)))
+    return 1.0 + (
+        0.1 * latency_norm
+        + 0.1 * thermal_norm
+        + 0.1 * queue_norm
+    )
+
+
+# Back-compat: neutral environment ⇒ baseline margin (no flat 1.15 leak).
+INFERENCE_TRANSFER_MARGIN_FACTOR = inference_transfer_margin_from_environment(
+    0.0, 0.0, 0.0
+)
+
+
+def joule_measurement_error_bound_pct(p0_watts: float, p1_watts: float) -> float:
+    """
+    Explicit uncertainty for two-endpoint average-power joule estimates.
+
+    Uses relative half-spread of the watt samples vs their mean (auditable proxy).
+    """
+    p0 = float(p0_watts)
+    p1 = float(p1_watts)
+    mean_w = (p0 + p1) / 2.0
+    if mean_w <= 1e-9:
+        return 100.0
+    rel = 100.0 * abs(p1 - p0) / (2.0 * mean_w)
+    return round(min(99.9, max(0.05, rel)), 2)
+
+
+def swarm_trust_weight(
+    signature_valid: bool,
+    energy_consistent: bool,
+    historical_accuracy: float,
+) -> float:
+    """
+    Scalar trust (0..1) from explicit booleans and a bounded history prior.
+
+    ``historical_accuracy`` is clipped to [0, 1]; missing history ⇒ 0.
+    """
+    ha = max(0.0, min(1.0, float(historical_accuracy)))
+    sig = 1.0 if signature_valid else 0.0
+    eng = 1.0 if energy_consistent else 0.0
+    return round(sig * eng * ha, 6)
+
+
+def energy_transfer_consistency_ok(
+    provider_joules: float,
+    consumer_reported_joules: float,
+    provider_error_pct: float,
+    consumer_error_pct: float,
+) -> Tuple[bool, float]:
+    """
+    Cross-node conservation check: values should agree within combined error bars.
+
+    Returns (ok, absolute_gap_joules).
+    """
+    pj = max(0.0, float(provider_joules))
+    cj = max(0.0, float(consumer_reported_joules))
+    tol_pct = max(0.0, float(provider_error_pct) + float(consumer_error_pct))
+    tolerance = max(1e-9, pj * (tol_pct / 100.0))
+    gap = abs(pj - cj)
+    return gap <= tolerance, gap
+
+
+def joule_receipt_anti_replay_fingerprint(entry: dict) -> str:
+    """Stable id for replay detection (economic identity, not full Ollama payload)."""
+    parts = [
+        str(entry.get("borrower_id", "")),
+        str(entry.get("lender_node_id") or entry.get("lender_ip") or ""),
+        str(entry.get("fee_stgm", "")),
+        str(entry.get("provider_joules_net", "")),
+        str(entry.get("ts", "")),
+        str(entry.get("signing_node", "")),
+        str(entry.get("model", "")),
+        str(entry.get("tokens_used", "")),
+        str(entry.get("receipt_hash", "")),
+    ]
+    body = "::".join(parts)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _inference_transfer_tokens(entry: dict) -> int:
+    tokens = entry.get("tokens_used")
+    if tokens is None or tokens == "":
+        return int(entry.get("prompt_eval_count") or 0) + int(entry.get("eval_count") or 0)
+    return int(float(tokens))
+
+
+def _canonical_float(value, places: int = 6) -> str:
+    return f"{float(value or 0.0):.{places}f}"
+
+
+def inference_transfer_signing_body(entry: dict) -> str:
+    """
+    Canonical signed body for inference-transfer receipts.
+
+    V1 receipts signed identity/model/tokens/fee. V2 additionally signs the
+    physical measurement envelope so joules, method, source, and error bounds
+    cannot be edited after the provider signs the receipt.
+    """
+    node = entry.get("signing_node") or entry.get("lender_node_id") or entry.get("lender_ip") or ""
+    lender = entry.get("lender_ip") or entry.get("lender_node_id") or ""
+    tokens = _inference_transfer_tokens(entry)
+    base = (
+        f"INFERENCE_BORROW::{entry.get('borrower_id', '')}::FROM[{lender}]::"
+        f"MODEL[{entry.get('model', '')}]::TOKENS[{tokens}]::FEE[{entry.get('fee_stgm', 0)}]::"
+        f"TS[{entry.get('ts', '')}]::NODE[{node}]"
+    )
+    if entry.get("schema") != INFERENCE_TRANSFER_RECEIPT_SCHEMA_V2:
+        return base
+    return (
+        f"INFERENCE_TRANSFER_JOULES_V2::{base}::"
+        f"JOULES_NET[{_canonical_float(entry.get('provider_joules_net'))}]::"
+        f"JOULES_ERR[{_canonical_float(entry.get('provider_joules_error_bound'))}]::"
+        f"POWER_SOURCE[{entry.get('power_source', '')}]::"
+        f"METHOD[{entry.get('measurement_method', '')}]::"
+        f"ERR_PCT[{_canonical_float(entry.get('error_bound_pct'), 3)}]::"
+        f"NONCE[{entry.get('receipt_nonce', '')}]"
+    )
+
+
+def _replay_ed25519_hex(sig: object) -> str:
+    """Return sig if it looks like a raw Ed25519 hex signature (64 bytes)."""
+    if not isinstance(sig, str):
+        return ""
+    s = sig.strip()
+    if len(s) != 128 or any(c not in "0123456789abcdefABCDEF" for c in s):
+        return ""
+    if s.startswith(("NO_KEYCHAIN_", "SEAL_", "MARKET_", "MINED_")):
+        return ""
+    return s
+
+
+def inference_transfer_replay_key(entry: dict) -> str:
+    """
+    Stable replay key for zero-sum inference receipts.
+
+    Replaying the same signed receipt must not debit/credit wallets twice.
+    Prefer **ed25519_sig** (cryptographically bound) over self-reported
+    ``receipt_hash`` so two JSON rows cannot double-count with the same
+    valid signature and two different hash fields.
+    """
+    event = entry.get("event", "") or ""
+    if event not in ("INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"):
+        return ""
+    sig_key = _replay_ed25519_hex(entry.get("ed25519_sig"))
+    if sig_key:
+        return sig_key
+    key = entry.get("receipt_hash") or ""
+    if key:
+        return str(key)
+    return joule_receipt_anti_replay_fingerprint(entry)
 
 
 def _model_iq_multiplier(model: str) -> float:
@@ -212,14 +382,24 @@ def inference_power_quality_factor(power_source: str) -> float:
 def calculate_joule_fee(
     joules_net: float,
     power_source: str,
-    margin_factor: float = INFERENCE_TRANSFER_MARGIN_FACTOR,
+    margin_factor: Optional[float] = None,
 ) -> float:
     """
     Physics-Grounded Inference Transfer Pricing (v1).
     Converts actual inference joules to STGM.
     """
+    mf = (
+        float(margin_factor)
+        if margin_factor is not None
+        else INFERENCE_TRANSFER_MARGIN_FACTOR
+    )
     quality_factor = inference_power_quality_factor(power_source)
-    fee_stgm = max(0.0, float(joules_net or 0.0)) * INFERENCE_TRANSFER_STGM_PER_JOULE * quality_factor * margin_factor
+    fee_stgm = (
+        max(0.0, float(joules_net or 0.0))
+        * INFERENCE_TRANSFER_STGM_PER_JOULE
+        * quality_factor
+        * mf
+    )
     return round(fee_stgm, 6)
 
 
@@ -470,24 +650,27 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
     flag = os.environ.get("SIFTA_LEDGER_VERIFY", "1").strip().lower()
     if flag in ("0", "false", "no", "off"):
         return True
+    event = entry.get("event", "") or ""
+    tx_type = entry.get("tx_type", "") or ""
+    event_kind = entry.get("event_kind", "") or ""
+    strict_signed_receipt = (
+        event == "INFERENCE_TRANSFER_JOULES"
+        and entry.get("schema") == INFERENCE_TRANSFER_RECEIPT_SCHEMA_V2
+    )
     sig = entry.get("ed25519_sig")
     if not sig or not isinstance(sig, str):
-        return True
+        return not strict_signed_receipt
     if sig.startswith(("NO_KEYCHAIN_", "SEAL_", "MARKET_", "MINED_")):
-        return True
+        return not strict_signed_receipt
     if len(sig) != 128 or any(c not in "0123456789abcdefABCDEF" for c in sig):
-        return True
+        return not strict_signed_receipt
     node = entry.get("signing_node")
     if not node or node == "UNKNOWN_SERIAL":
         return False
     try:
         from crypto_keychain import verify_block
     except ImportError:
-        return True
-
-    event = entry.get("event", "") or ""
-    tx_type = entry.get("tx_type", "") or ""
-    event_kind = entry.get("event_kind", "") or ""
+        return not strict_signed_receipt
 
     if event in ("MINING_REWARD", "FOUNDATION_GRANT"):
         body = (
@@ -498,17 +681,7 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
         return bool(verify_block(node, body, sig))
 
     if event in ("INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"):
-        lender = entry.get("lender_ip") or entry.get("lender_node_id") or ""
-        tokens = entry.get("tokens_used")
-        if tokens is None or tokens == "":
-            tokens = int(entry.get("prompt_eval_count") or 0) + int(entry.get("eval_count") or 0)
-        else:
-            tokens = int(float(tokens))
-        body = (
-            f"INFERENCE_BORROW::{entry.get('borrower_id', '')}::FROM[{lender}]::"
-            f"MODEL[{entry.get('model', '')}]::TOKENS[{tokens}]::FEE[{entry.get('fee_stgm', 0)}]::"
-            f"TS[{entry.get('ts', '')}]::NODE[{node}]"
-        )
+        body = inference_transfer_signing_body(entry)
         return bool(verify_block(node, body, sig))
 
     if event == "UTILITY_MINT" or event_kind == "UTILITY_MINT_ATP":
@@ -594,6 +767,8 @@ def ledger_balance(agent_id: str) -> float:
 
     uid = agent_id.upper()
     balance = 0.0
+    seen_inference_receipts: set[str] = set()
+    seen_fingerprints = set()
 
     try:
         with open(LOG_PATH, "r") as f:
@@ -612,6 +787,13 @@ def ledger_balance(agent_id: str) -> float:
                 event   = entry.get("event", "")
                 tx_type = entry.get("tx_type", "")
                 event_kind = entry.get("event_kind", "")
+
+                # ── Anti-Replay Guard ──────────────────────────────────────────
+                if event in ("INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"):
+                    fingerprint = joule_receipt_anti_replay_fingerprint(entry)
+                    if fingerprint in seen_fingerprints:
+                        continue
+                    seen_fingerprints.add(fingerprint)
 
                 # ── Dialect A ──────────────────────────────────────────────────
                 if event == "MINING_REWARD" or event == "FOUNDATION_GRANT":
@@ -650,6 +832,11 @@ def ledger_balance(agent_id: str) -> float:
                         balance += amt
 
                 elif event in ("INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"):
+                    replay_key = inference_transfer_replay_key(entry)
+                    if replay_key:
+                        if replay_key in seen_inference_receipts:
+                            continue
+                        seen_inference_receipts.add(replay_key)
                     if entry.get("borrower_id", "").upper() == uid:
                         balance -= float(entry.get("fee_stgm", 0.0))
                     lender = str(entry.get("lender_ip") or entry.get("lender_node_id") or "").upper()
