@@ -627,10 +627,10 @@ def ledger_balance(agent_id: str) -> float:
                     if receiver == uid:
                         balance += amt
 
-                elif event == "INFERENCE_BORROW":
+                elif event in ("INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"):
                     if entry.get("borrower_id", "").upper() == uid:
                         balance -= float(entry.get("fee_stgm", 0.0))
-                    lender = str(entry.get("lender_ip", "")).upper()
+                    lender = str(entry.get("lender_ip") or entry.get("lender_node_id") or "").upper()
                     if lender == uid:
                         balance += float(entry.get("fee_stgm", 0.0))
 
