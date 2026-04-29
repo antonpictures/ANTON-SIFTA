@@ -530,6 +530,9 @@ class _HeroBalance(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._value = 0.0
+        self.setAccessibleName("Real STGM reserve")
+        self.setAccessibleDescription("0.0000 STGM")
+        self.setToolTip("Real STGM reserve: 0.0000 STGM")
         # Allocate enough height for an SF-Pro 64pt number with breathing room.
         self.setMinimumHeight(96)
         self.setSizePolicy(QSizePolicy.Policy.Expanding,
@@ -537,6 +540,9 @@ class _HeroBalance(QWidget):
 
     def set_value(self, value: float) -> None:
         self._value = _float(value)
+        formatted = _fmt_stgm(self._value)
+        self.setAccessibleDescription(formatted)
+        self.setToolTip(f"Real STGM reserve: {formatted}")
         self.update()
 
     def paintEvent(self, _ev) -> None:
@@ -1285,7 +1291,7 @@ class FinanceDashboard(SiftaBaseWidget):
         lay.setSpacing(12)
 
         # ── Hero balance ────────────────────────────────────────────
-        hero_label = QLabel("Spendable canonical wallet sum".upper())
+        hero_label = QLabel("Real STGM reserve".upper())
         hero_label.setStyleSheet(
             f"color: {_FIN_INK_SOFT}; "
             "font-family: 'SF Pro Text', 'Helvetica Neue', system-ui; "
@@ -1427,7 +1433,7 @@ class FinanceDashboard(SiftaBaseWidget):
         if warns:
             warn_str = " · ⚠ " + ", ".join(str(w) for w in warns[:3])
         self.truth_lbl.setText(
-            "Source: repair_log.jsonl quorum via cached scan_economy()"
+            f"Real reserve: {_fmt_stgm(total)} · repair_log.jsonl quorum via live scan_economy()"
             f"{warn_str}"
         )
 

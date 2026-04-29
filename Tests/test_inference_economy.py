@@ -93,6 +93,33 @@ class TestLedgerBalanceDialects(unittest.TestCase):
         self.assertAlmostEqual(ie.ledger_balance("BORROWER_X"), 460.0, places=2)
         self.assertAlmostEqual(ie.ledger_balance("LENDER_Y"), 40.0, places=2)
 
+    def test_joule_transfer_receipt_debits_borrower_and_credits_lender(self):
+        self._append(
+            {
+                "timestamp": 1,
+                "agent_id": "M1THER_EDGE",
+                "tx_type": "STGM_MINT",
+                "amount": 10.0,
+                "hash": "SEAL_seed",
+            }
+        )
+        self._append(
+            {
+                "event": "INFERENCE_TRANSFER_JOULES",
+                "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+                "borrower_id": "M1THER_EDGE",
+                "lender_node_id": "GTH4921YP3",
+                "lender_ip": "GTH4921YP3",
+                "model": "gemma4",
+                "tokens_used": 12,
+                "fee_stgm": 0.125,
+                "ts": "t2",
+            }
+        )
+
+        self.assertAlmostEqual(ie.ledger_balance("M1THER_EDGE"), 9.875, places=6)
+        self.assertAlmostEqual(ie.ledger_balance("GTH4921YP3"), 0.125, places=6)
+
     def test_legacy_compute_drip_agent_field(self):
         self._append(
             {
@@ -188,6 +215,16 @@ class TestFeeFormula(unittest.TestCase):
     def test_calculate_fee_positive(self):
         f = ie.calculate_fee(tokens=100)
         self.assertGreater(f, 0.0)
+
+    def test_calculate_joule_fee_is_monotonic_and_refuses_missing_power(self):
+        low = ie.calculate_joule_fee(10.0, "battery_real")
+        high = ie.calculate_joule_fee(20.0, "battery_real")
+        estimated = ie.calculate_joule_fee(20.0, "cpu_load_estimated")
+        missing = ie.calculate_joule_fee(20.0, "missing")
+
+        self.assertGreater(high, low)
+        self.assertGreater(high, estimated)
+        self.assertEqual(missing, 0.0)
 
 
 class TestNormalizeLender(unittest.TestCase):

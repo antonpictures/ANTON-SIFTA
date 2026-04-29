@@ -448,7 +448,8 @@ async def inference_joule_receipt(req: Request):
     t0 = time.monotonic()
     try:
         import System.swarm_atp_synthase as atp
-        p0_power, p0_source = atp._get_system_power_watts()
+        p0 = atp.read_power_now()
+        p0_power, p0_source = float(p0.watts), str(p0.source)
     except Exception:
         p0_power, p0_source = 0.0, "missing"
 
@@ -471,13 +472,22 @@ async def inference_joule_receipt(req: Request):
     # 3. End measurement
     t1 = time.monotonic()
     try:
-        p1_power, _ = atp._get_system_power_watts()
+        p1 = atp.read_power_now()
+        p1_power, p1_source = float(p1.watts), str(p1.source)
     except Exception:
-        p1_power = 0.0
+        p1_power, p1_source = 0.0, "missing"
         
     elapsed_s = t1 - t0
     avg_watts = (p0_power + p1_power) / 2.0
-    idle_watts = 4.1  # Idle baseline
+    power_source = p0_source if p0_source == p1_source else f"{p0_source}+{p1_source}"
+    from Kernel.inference_economy import (
+        INFERENCE_TRANSFER_IDLE_WATTS,
+        INFERENCE_TRANSFER_MARGIN_FACTOR,
+        INFERENCE_TRANSFER_STGM_PER_JOULE,
+        calculate_joule_fee,
+        inference_power_quality_factor,
+    )
+    idle_watts = INFERENCE_TRANSFER_IDLE_WATTS
     provider_joules_gross = avg_watts * elapsed_s
     provider_joules_idle_baseline = idle_watts * elapsed_s
     provider_joules_net = max(0.0, provider_joules_gross - provider_joules_idle_baseline)
@@ -487,9 +497,13 @@ async def inference_joule_receipt(req: Request):
     
     # 4. Calculate fee & sign
     try:
-        from Kernel.inference_economy import calculate_joule_fee, sign_block
-        fee_stgm = calculate_joule_fee(provider_joules_net, p0_source, margin_factor=1.15)
-        hw_serial = atp._get_serial() if hasattr(atp, "_get_serial") else "UNKNOWN_SERIAL"
+        from System.crypto_keychain import get_silicon_identity, sign_block
+        fee_stgm = calculate_joule_fee(
+            provider_joules_net,
+            power_source,
+            margin_factor=INFERENCE_TRANSFER_MARGIN_FACTOR,
+        )
+        hw_serial = get_silicon_identity()
     except Exception:
         fee_stgm = 0.0
         hw_serial = "UNKNOWN_SERIAL"
@@ -500,10 +514,14 @@ async def inference_joule_receipt(req: Request):
     ts = datetime.now(timezone.utc).isoformat()
     
     import socket
-    lender_node_ip = socket.gethostbyname(socket.gethostname())
+    try:
+        lender_host = socket.gethostbyname(socket.gethostname())
+    except Exception:
+        lender_host = socket.gethostname()
+    lender_node_id = hw_serial
     
     receipt_body = (
-        f"INFERENCE_BORROW::{borrower_id}::FROM[{lender_node_ip}]::"
+        f"INFERENCE_BORROW::{borrower_id}::FROM[{lender_node_id}]::"
         f"MODEL[{model}]::TOKENS[{prompt_eval_count+eval_count}]::FEE[{fee_stgm}]::TS[{ts}]::NODE[{hw_serial}]"
     )
     ed25519_signature = sign_block(receipt_body)
@@ -513,9 +531,13 @@ async def inference_joule_receipt(req: Request):
     receipt = {
         "event": "INFERENCE_TRANSFER_JOULES",
         "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+        "ts": ts,
         "borrower_id": borrower_id,
         "lender_node_id": hw_serial,
+        "lender_ip": lender_node_id,
+        "lender_host": lender_host,
         "model": model,
+        "tokens_used": prompt_eval_count + eval_count,
         "prompt_eval_count": prompt_eval_count,
         "eval_count": eval_count,
         "elapsed_s": round(elapsed_s, 4),
@@ -523,10 +545,10 @@ async def inference_joule_receipt(req: Request):
         "idle_watts": idle_watts,
         "provider_joules_gross": round(provider_joules_gross, 4),
         "provider_joules_net": round(provider_joules_net, 4),
-        "power_source": p0_source,
-        "stgm_per_joule": 0.00001,
-        "quality_factor": 1.0 if p0_source in ("powermetrics_real", "battery_real") else 0.75 if "estimated" in p0_source else 0.0,
-        "margin_factor": 1.15,
+        "power_source": power_source,
+        "stgm_per_joule": INFERENCE_TRANSFER_STGM_PER_JOULE,
+        "quality_factor": inference_power_quality_factor(power_source),
+        "margin_factor": INFERENCE_TRANSFER_MARGIN_FACTOR,
         "fee_stgm": fee_stgm,
         "receipt_hash": receipt_hash,
         "ed25519_sig": ed25519_signature,
@@ -2392,5 +2414,4 @@ if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=7433)
     finally:
         release_lock()
-
 

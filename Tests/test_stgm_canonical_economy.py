@@ -123,6 +123,39 @@ def test_atp_mint_receipts_count_as_canonical_wallet_and_balance(monkeypatch, tm
         monkeypatch.setattr(inference_economy, "LOG_PATH", old_log)
 
 
+def test_joule_transfer_receipts_are_zero_sum_wallet_movements(tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "M1THER_EDGE.json").write_text(json.dumps({"id": "M1THER_EDGE"}), encoding="utf-8")
+    (state_dir / "GTH4921YP3.json").write_text(json.dumps({"id": "GTH4921YP3"}), encoding="utf-8")
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "M1THER_EDGE", "amount": 10.0})
+    _append(
+        repair_log,
+        {
+            "event": "INFERENCE_TRANSFER_JOULES",
+            "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+            "borrower_id": "M1THER_EDGE",
+            "lender_node_id": "GTH4921YP3",
+            "lender_ip": "GTH4921YP3",
+            "model": "gemma4",
+            "tokens_used": 12,
+            "fee_stgm": 0.125,
+            "ts": "t2",
+        },
+    )
+
+    data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+
+    assert data["canonical_wallet_sum"] == pytest.approx(10.0)
+    assert data["canonical_wallet_balances"]["M1THER_EDGE"] == pytest.approx(9.875)
+    assert data["canonical_wallet_balances"]["GTH4921YP3"] == pytest.approx(0.125)
+    assert data["canonical_minted"] == pytest.approx(10.0)
+    assert data["net_stgm"] == pytest.approx(10.0)
+    assert data["inference_fee_volume"] == pytest.approx(0.125)
+
+
 def test_legacy_unsigned_utility_mint_can_be_voided_without_wallet_credit(tmp_path: Path) -> None:
     repair_log = tmp_path / "repair_log.jsonl"
     state_dir = tmp_path / ".sifta_state"

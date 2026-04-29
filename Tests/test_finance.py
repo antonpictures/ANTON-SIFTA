@@ -57,6 +57,9 @@ def test_finance_dashboard_loads_basics_before_agent_details(monkeypatch):
 
     assert widget.details_loaded is False
     assert widget.details_status_lbl.text() == "Basics loaded first · expanded stream paused"
+    assert widget.hero_balance.accessibleName() == "Real STGM reserve"
+    assert widget.hero_balance.accessibleDescription() == "12.5000 STGM"
+    assert "Real reserve: 12.5000 STGM" in widget.truth_lbl.text()
 
 
 def test_lazy_market_and_warren_tabs_replace_placeholders(monkeypatch):

@@ -277,11 +277,11 @@ def scan_economy(
             if receiver:
                 balances[receiver] = balances.get(receiver, 0.0) + amt
 
-        elif event == "INFERENCE_BORROW":
+        elif event in {"INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"}:
             fee = _float(row.get("fee_stgm"))
             out.inference_fee_volume += fee
             borrower = str(row.get("borrower_id") or "").upper()
-            lender = str(row.get("lender_ip") or "").upper()
+            lender = str(row.get("lender_ip") or row.get("lender_node_id") or "").upper()
             if borrower:
                 balances[borrower] = balances.get(borrower, 0.0) - fee
             if lender:

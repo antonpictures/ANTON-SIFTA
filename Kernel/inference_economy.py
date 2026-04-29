@@ -170,6 +170,11 @@ def can_spend_inference(state: dict, cost: float = 1.0) -> bool:
 
 
 # ─── Fee & Reward Calculator (Asymmetric Logic) ──────────────────────────────────
+INFERENCE_TRANSFER_STGM_PER_JOULE = 0.00001
+INFERENCE_TRANSFER_MARGIN_FACTOR = 1.15
+INFERENCE_TRANSFER_IDLE_WATTS = 4.1
+
+
 def _model_iq_multiplier(model: str) -> float:
     """
     Asymmetric STGM Economics: Hardware parameters scale the token reward.
@@ -192,21 +197,29 @@ def calculate_fee(tokens: int, model: str = "gemma4-phc") -> float:
     base_fee = (tokens / 100) + iq_bonus
     return round(base_fee * multiplier, 4)
 
-def calculate_joule_fee(joules_net: float, power_source: str, margin_factor: float = 1.15) -> float:
+def inference_power_quality_factor(power_source: str) -> float:
+    """Trust multiplier for the power measurement modality."""
+    source = str(power_source or "").lower()
+    if not source or "missing" in source or "refused" in source:
+        return 0.0
+    if source in ("powermetrics_real", "battery_real"):
+        return 1.0
+    if "estimated" in source:
+        return 0.75
+    return 0.0
+
+
+def calculate_joule_fee(
+    joules_net: float,
+    power_source: str,
+    margin_factor: float = INFERENCE_TRANSFER_MARGIN_FACTOR,
+) -> float:
     """
     Physics-Grounded Inference Transfer Pricing (v1).
     Converts actual inference joules to STGM.
     """
-    STGM_PER_JOULE = 0.00001
-    
-    if power_source in ("powermetrics_real", "battery_real"):
-        quality_factor = 1.0
-    elif "estimated" in power_source:
-        quality_factor = 0.75
-    else:
-        quality_factor = 0.0  # missing/refused
-        
-    fee_stgm = joules_net * STGM_PER_JOULE * quality_factor * margin_factor
+    quality_factor = inference_power_quality_factor(power_source)
+    fee_stgm = max(0.0, float(joules_net or 0.0)) * INFERENCE_TRANSFER_STGM_PER_JOULE * quality_factor * margin_factor
     return round(fee_stgm, 6)
 
 
@@ -484,10 +497,16 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
         )
         return bool(verify_block(node, body, sig))
 
-    if event == "INFERENCE_BORROW":
+    if event in ("INFERENCE_BORROW", "INFERENCE_TRANSFER_JOULES"):
+        lender = entry.get("lender_ip") or entry.get("lender_node_id") or ""
+        tokens = entry.get("tokens_used")
+        if tokens is None or tokens == "":
+            tokens = int(entry.get("prompt_eval_count") or 0) + int(entry.get("eval_count") or 0)
+        else:
+            tokens = int(float(tokens))
         body = (
-            f"INFERENCE_BORROW::{entry.get('borrower_id', '')}::FROM[{entry.get('lender_ip', '')}]::"
-            f"MODEL[{entry.get('model', '')}]::TOKENS[{entry.get('tokens_used', 0)}]::FEE[{entry.get('fee_stgm', 0)}]::"
+            f"INFERENCE_BORROW::{entry.get('borrower_id', '')}::FROM[{lender}]::"
+            f"MODEL[{entry.get('model', '')}]::TOKENS[{tokens}]::FEE[{entry.get('fee_stgm', 0)}]::"
             f"TS[{entry.get('ts', '')}]::NODE[{node}]"
         )
         return bool(verify_block(node, body, sig))
@@ -555,6 +574,9 @@ def ledger_balance(agent_id: str) -> float:
         event_kind: "UTILITY_MINT_ATP" → Landauer/ATP mint credited to miner_id
         event: "INFERENCE_BORROW" → fee_stgm debited from borrower_id,
                                      credited to lender_ip
+        event: "INFERENCE_TRANSFER_JOULES" → same as INFERENCE_BORROW; lender
+                                     may be keyed as lender_ip or lender_node_id
+                                     (hardware serial) per receipt v1
 
     Dialect B — marketplace / swarm_brain (tx_type-keyed):
         tx_type: "STGM_MINT"  → amount credited to agent_id
