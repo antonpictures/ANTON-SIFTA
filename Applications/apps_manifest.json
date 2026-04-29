@@ -581,10 +581,11 @@
   "C55M + George - Protein Fold Colosseum": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_protein_folder_widget.py",
-    "window_width": 1000,
-    "window_height": 700,
+    "widget_class": "ProteinFolderWidget",
+    "window_width": 1180,
+    "window_height": 760,
     "signature": "C55M-GEORGE-COSIGNED",
-    "description": "Co-signed deterministic HP lattice beam-search protein proof engine. Folds batches, writes PDB/meta artifacts, and gives the SIFTA referee another independent structure source.",
+    "description": "Co-signed deterministic HP lattice beam-search protein proof engine. Embedded Python/Qt viewer renders local fold coordinates inside SIFTA OS; no browser/HTML escape. Folds batches, writes PDB/meta artifacts, and gives the SIFTA referee another independent structure source.",
     "doctor": "C55M",
     "co_doctors": [
       "George Anton"

@@ -1,432 +1,86 @@
 #!/usr/bin/env python3
 """
 Applications/sifta_protein_folder_widget.py
-A SIFTA OS widget to visually demonstrate the peptide folding engine.
-It generates a 3D animated HTML visualization with glassmorphism UI and particle effects.
+
+Embedded Python/Qt protein folding viewer for SIFTA OS.
+
+This used to generate an HTML/Three.js file and open it in a browser. That
+breaks the Covenant's Python-first app surface: a core SIFTA organ must live
+inside the desktop as a QWidget, not escape into Safari/Chrome.
 """
 
-import sys
+from __future__ import annotations
+
+import argparse
 import json
 import os
-import argparse
-import webbrowser
+import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+import matplotlib
 import numpy as np
 
-# Add project root to path
+matplotlib.use("QtAgg")
+
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from PyQt6.QtCore import QObject, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO))
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+if str(_REPO / "System") not in sys.path:
+    sys.path.insert(0, str(_REPO / "System"))
 
 try:
-    from System.sifta_peptide_backbone_demo import fold, AA
-except ImportError:
-    print("Error: Could not import System.sifta_peptide_backbone_demo")
-    sys.exit(1)
+    from System.sifta_peptide_backbone_demo import AA, fold
+except ImportError as exc:  # pragma: no cover - import failure is fatal in app mode
+    raise SystemExit(f"Could not import System.sifta_peptide_backbone_demo: {exc}") from exc
 
-def build_html_viewer(
-    seq: str,
-    trajectory: list,
-    final_e: float,
-    output_path: Path,
-    *,
-    title: str = "SIFTA Protein Folder",
-    event_label: str = "Event 78 Vanguard",
-    engine_label: str = "toy_CA_backbone_monte_carlo",
-    signature_line: str = "SIFTA folding engine",
-):
-    # Prepare data for JS
-    js_traj = json.dumps(trajectory)
-    
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        body {{
-            margin: 0;
-            overflow: hidden;
-            background-color: #050505;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: #fff;
-        }}
-        #canvas-container {{
-            width: 100vw;
-            height: 100vh;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
-        }}
-        .ui-overlay {{
-            position: absolute;
-            top: 30px;
-            left: 30px;
-            z-index: 10;
-            background: rgba(20, 20, 25, 0.6);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
-            padding: 24px;
-            width: 320px;
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-            transition: all 0.3s ease;
-        }}
-        .ui-overlay:hover {{
-            background: rgba(30, 30, 35, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }}
-        h1 {{
-            margin: 0 0 8px 0;
-            font-size: 20px;
-            font-weight: 600;
-            background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: 0.5px;
-        }}
-        h2 {{
-            margin: 0 0 16px 0;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: #888;
-            font-weight: 500;
-        }}
-        .metric {{
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 12px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }}
-        .metric:last-child {{
-            margin-bottom: 0;
-            padding-bottom: 0;
-            border-bottom: none;
-        }}
-        .label {{
-            color: #aaa;
-            font-size: 13px;
-        }}
-        .value {{
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-            font-size: 14px;
-            font-weight: 600;
-            color: #4facfe;
-        }}
-        .seq-container {{
-            word-wrap: break-word;
-            font-family: "SFMono-Regular", Consolas, monospace;
-            font-size: 12px;
-            color: #00f2fe;
-            margin-top: 4px;
-            line-height: 1.5;
-            letter-spacing: 1px;
-        }}
-        
-        .controls {{
-            margin-top: 20px;
-            display: flex;
-            gap: 10px;
-        }}
-        button {{
-            flex: 1;
-            background: rgba(79, 172, 254, 0.1);
-            border: 1px solid rgba(79, 172, 254, 0.3);
-            color: #4facfe;
-            padding: 8px 12px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 12px;
-            transition: all 0.2s;
-        }}
-        button:hover {{
-            background: rgba(79, 172, 254, 0.2);
-            box-shadow: 0 0 15px rgba(79, 172, 254, 0.4);
-        }}
-        
-        .paper-cite {{
-            position: absolute;
-            bottom: 30px;
-            right: 30px;
-            z-index: 10;
-            font-size: 11px;
-            color: rgba(255,255,255,0.4);
-            text-align: right;
-            line-height: 1.6;
-        }}
-        .paper-cite strong {{
-            color: rgba(255,255,255,0.6);
-        }}
-    </style>
-    <!-- Use Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-</head>
-<body>
-    <div id="canvas-container"></div>
-    
-    <div class="ui-overlay">
-        <h1>{title}</h1>
-        <h2>{event_label}</h2>
-        
-        <div class="metric">
-            <span class="label">Sequence</span>
-        </div>
-        <div class="seq-container">{seq}</div>
-        
-        <div style="height: 16px;"></div>
-        
-        <div class="metric">
-            <span class="label">Residues</span>
-            <span class="value">{len(seq)}</span>
-        </div>
+try:
+    from System.swarm_app_focus import publish_focus as _publish_focus
+except Exception:  # pragma: no cover - desktop focus bus is optional in tests
+    def _publish_focus(*_: Any, **__: Any) -> None:
+        return None
 
-        <div class="metric">
-            <span class="label">Engine</span>
-            <span class="value">{engine_label}</span>
-        </div>
-        
-        <div class="metric">
-            <span class="label">Energy State</span>
-            <span class="value" id="energy-val">Folding...</span>
-        </div>
-        
-        <div class="metric">
-            <span class="label">Step</span>
-            <span class="value" id="step-val">0</span>
-        </div>
-        
-        <div class="controls">
-            <button id="btn-replay">Replay Fold</button>
-            <button id="btn-auto">Auto-Rotate</button>
-        </div>
-    </div>
-    
-    <div class="paper-cite">
-        <strong>{signature_line}</strong><br>
-        <strong>Thermodynamic Hypothesis</strong><br>
-        Anfinsen (1973) Science 181:223<br>
-        <strong>HP lattice abstraction</strong><br>
-        Dill (1985) Biochemistry 24:1501<br>
-        <strong>Modern neural predictor comparison</strong><br>
-        Jumper et al. (2021) Nature 596:583
-    </div>
 
-    <script>
-        const trajectory = {js_traj};
-        const finalEnergy = {final_e};
-        
-        // Scene Setup
-        const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x050505, 0.02);
-        
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 0, 40);
-        
-        const renderer = new THREE.WebGLRenderer({{ antialias: true, alpha: true }});
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
-        
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 2.0;
-        
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-        scene.add(ambientLight);
-        
-        const dirLight1 = new THREE.DirectionalLight(0x00f2fe, 1.5);
-        dirLight1.position.set(10, 20, 10);
-        scene.add(dirLight1);
-        
-        const dirLight2 = new THREE.DirectionalLight(0x4facfe, 1.0);
-        dirLight2.position.set(-10, -20, -10);
-        scene.add(dirLight2);
-        
-        // Materials
-        // Atoms
-        const atomGeometry = new THREE.SphereGeometry(0.8, 32, 32);
-        const atomMaterial = new THREE.MeshPhysicalMaterial({{
-            color: 0x00f2fe,
-            metalness: 0.2,
-            roughness: 0.2,
-            clearcoat: 1.0,
-            clearcoatRoughness: 0.1,
-            emissive: 0x004488,
-            emissiveIntensity: 0.4
-        }});
-        
-        // Bonds
-        const bondMaterial = new THREE.MeshPhysicalMaterial({{
-            color: 0xffffff,
-            metalness: 0.5,
-            roughness: 0.2,
-            transparent: true,
-            opacity: 0.6
-        }});
-        
-        // Group to hold current frame
-        const proteinGroup = new THREE.Group();
-        scene.add(proteinGroup);
-        
-        // Background particles
-        const particlesGeometry = new THREE.BufferGeometry();
-        const particlesCount = 1000;
-        const posArray = new Float32Array(particlesCount * 3);
-        
-        for(let i=0; i<particlesCount * 3; i++) {{
-            posArray[i] = (Math.random() - 0.5) * 100;
-        }}
-        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        const particlesMaterial = new THREE.PointsMaterial({{
-            size: 0.2,
-            color: 0x4facfe,
-            transparent: true,
-            opacity: 0.4,
-            blending: THREE.AdditiveBlending
-        }});
-        const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
-        scene.add(particlesMesh);
-        
-        // Animation State
-        let currentFrame = 0;
-        let isAnimating = true;
-        let lastTime = 0;
-        const frameRate = 1000 / 30; // 30 FPS
-        
-        // Build protein meshes
-        let atoms = [];
-        let bonds = [];
-        
-        function initProteinMeshes() {{
-            // Clear existing
-            while(proteinGroup.children.length > 0){{ 
-                proteinGroup.remove(proteinGroup.children[0]); 
-            }}
-            atoms = [];
-            bonds = [];
-            
-            const numAtoms = trajectory[0].length;
-            
-            // Create spheres
-            for(let i=0; i<numAtoms; i++) {{
-                const mesh = new THREE.Mesh(atomGeometry, atomMaterial);
-                proteinGroup.add(mesh);
-                atoms.push(mesh);
-            }}
-            
-            // Create cylinders for bonds
-            for(let i=0; i<numAtoms-1; i++) {{
-                const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1, 16), bondMaterial);
-                proteinGroup.add(cylinder);
-                bonds.push(cylinder);
-            }}
-        }}
-        
-        function updateProteinFrame(frameIdx) {{
-            const coords = trajectory[frameIdx];
-            if(!coords) return;
-            
-            // Update atom positions
-            for(let i=0; i<coords.length; i++) {{
-                atoms[i].position.set(coords[i][0], coords[i][1], coords[i][2]);
-            }}
-            
-            // Update bond positions and rotations
-            for(let i=0; i<coords.length-1; i++) {{
-                const start = new THREE.Vector3(coords[i][0], coords[i][1], coords[i][2]);
-                const end = new THREE.Vector3(coords[i+1][0], coords[i+1][1], coords[i+1][2]);
-                
-                const distance = start.distanceTo(end);
-                bonds[i].scale.set(1, distance, 1);
-                
-                const position = start.clone().lerp(end, 0.5);
-                bonds[i].position.copy(position);
-                
-                bonds[i].quaternion.setFromUnitVectors(
-                    new THREE.Vector3(0, 1, 0),
-                    end.clone().sub(start).normalize()
-                );
-            }}
-            
-            // Update UI
-            document.getElementById('step-val').innerText = frameIdx * 50;
-            // Interpolate energy visually (fake curve for effect, we only have final)
-            if(frameIdx === trajectory.length - 1) {{
-                document.getElementById('energy-val').innerText = finalEnergy.toFixed(2);
-                document.getElementById('energy-val').style.color = '#00ff88';
-            }} else {{
-                const progress = frameIdx / trajectory.length;
-                const fakeE = 2000 - (2000 - finalEnergy) * Math.pow(progress, 0.5);
-                document.getElementById('energy-val').innerText = fakeE.toFixed(1);
-                document.getElementById('energy-val').style.color = '#4facfe';
-            }}
-        }}
-        
-        // Init
-        initProteinMeshes();
-        
-        // Loop
-        function animate(time) {{
-            requestAnimationFrame(animate);
-            
-            controls.update();
-            
-            // Rotate background particles slowly
-            particlesMesh.rotation.y = time * 0.0001;
-            particlesMesh.rotation.x = time * 0.00005;
-            
-            // Update fold animation
-            if(isAnimating && time - lastTime > frameRate) {{
-                lastTime = time;
-                updateProteinFrame(currentFrame);
-                
-                currentFrame++;
-                if(currentFrame >= trajectory.length) {{
-                    currentFrame = trajectory.length - 1;
-                    isAnimating = false; // Stop at end
-                }}
-            }}
-            
-            renderer.render(scene, camera);
-        }}
-        
-        animate(0);
-        
-        // Window Resize
-        window.addEventListener('resize', () => {{
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }});
-        
-        // Buttons
-        document.getElementById('btn-replay').addEventListener('click', () => {{
-            currentFrame = 0;
-            isAnimating = true;
-            document.getElementById('energy-val').style.color = '#4facfe';
-        }});
-        
-        document.getElementById('btn-auto').addEventListener('click', () => {{
-            controls.autoRotate = !controls.autoRotate;
-            document.getElementById('btn-auto').style.background = controls.autoRotate ? 'rgba(79, 172, 254, 0.2)' : 'rgba(79, 172, 254, 0.1)';
-        }});
-    </script>
-</body>
-</html>
-"""
-    
-    with open(output_path, "w") as f:
-        f.write(html)
-    return output_path
+BG = "#050713"
+PANEL = "#0d1020"
+PANEL_2 = "#12172b"
+CYAN = "#35e7ff"
+BLUE = "#6aa7ff"
+GREEN = "#5cff9d"
+AMBER = "#ffcc66"
+RED = "#ff5c7a"
+TEXT = "#e8ecff"
+MUTED = "#8790b8"
+
+
+@dataclass
+class FoldViewResult:
+    sequence: str
+    trajectory: list[list[list[float]]]
+    final_energy: float
+    engine_label: str
+    pdb_path: str = ""
+    summary_path: str = ""
 
 
 def _parse_pdb_ca(pdb_path: Path) -> np.ndarray:
@@ -434,18 +88,20 @@ def _parse_pdb_ca(pdb_path: Path) -> np.ndarray:
     with pdb_path.open("r", encoding="utf-8") as f:
         for line in f:
             if line.startswith("ATOM") and " CA " in line:
-                coords.append([
-                    float(line[30:38]),
-                    float(line[38:46]),
-                    float(line[46:54]),
-                ])
+                coords.append(
+                    [
+                        float(line[30:38]),
+                        float(line[38:46]),
+                        float(line[46:54]),
+                    ]
+                )
     if not coords:
         raise ValueError(f"No CA atoms found in {pdb_path}")
     arr = np.array(coords, dtype=float)
     return arr - arr.mean(axis=0, keepdims=True)
 
 
-def _morph_trajectory(final_xyz: np.ndarray, frames: int = 90) -> list:
+def _morph_trajectory(final_xyz: np.ndarray, frames: int = 90) -> list[list[list[float]]]:
     n = final_xyz.shape[0]
     start = np.zeros_like(final_xyz)
     start[:, 0] = np.arange(n, dtype=float) * 3.8
@@ -459,7 +115,19 @@ def _morph_trajectory(final_xyz: np.ndarray, frames: int = 90) -> list:
     return out
 
 
-def run_c55m_george_batch(limit: int = 0, beam: int = 512) -> dict:
+def _validate_sequence(seq: str) -> str:
+    clean = "".join(ch for ch in seq.upper().strip() if ch.isalpha())
+    if not clean:
+        raise ValueError("Sequence is empty.")
+    bad = sorted(set(clean) - set(AA))
+    if bad:
+        raise ValueError(f"Unsupported residue(s): {''.join(bad)}")
+    if len(clean) < 3:
+        raise ValueError("Use at least 3 residues for a visible backbone.")
+    return clean
+
+
+def run_c55m_george_batch(limit: int = 0, beam: int = 512) -> dict[str, Any]:
     from System.sifta_hp_lattice_folder import DEFAULT_PROTEIN_PANEL
     from System.sifta_protein_folding_broker import FoldingJob, ProteinFoldingBroker
 
@@ -493,73 +161,397 @@ def run_c55m_george_batch(limit: int = 0, beam: int = 512) -> dict:
     return summary
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="SIFTA protein folding visualizer")
+def fold_for_view(
+    sequence: str,
+    *,
+    engine: str = "c55m_hp_lattice",
+    beam: int = 1024,
+    batch: bool = False,
+    limit: int = 0,
+) -> FoldViewResult:
+    if batch:
+        summary = run_c55m_george_batch(limit=limit, beam=beam)
+        best = min(summary["folds"], key=lambda row: row.get("energy", 0))
+        pdb_path = Path(best["pdb_path"])
+        return FoldViewResult(
+            sequence=str(best["sequence"]),
+            trajectory=_morph_trajectory(_parse_pdb_ca(pdb_path)),
+            final_energy=float(best["energy"]),
+            engine_label="c55m_hp_lattice_batch_best",
+            pdb_path=str(pdb_path),
+            summary_path=str(summary["summary_path"]),
+        )
+
+    seq = _validate_sequence(sequence)
+    if engine == "toy":
+        _xyz, final_e, trajectory = fold(seq, steps=8000, temp=1.2, save_trajectory=True)
+        return FoldViewResult(
+            sequence=seq,
+            trajectory=trajectory,
+            final_energy=float(final_e),
+            engine_label="toy_CA_backbone_monte_carlo",
+        )
+
+    from System.sifta_protein_folding_broker import FoldingJob, ProteinFoldingBroker
+
+    os.environ["SIFTA_HP_LATTICE_BEAM"] = str(int(beam))
+    broker = ProteinFoldingBroker()
+    meta = broker.run(
+        FoldingJob(
+            sequence=seq,
+            name="C55M + George co-signed fold",
+            engine="c55m_hp_lattice",
+        )
+    )
+    pdb_path = Path(meta["pdb_path"])
+    return FoldViewResult(
+        sequence=seq,
+        trajectory=_morph_trajectory(_parse_pdb_ca(pdb_path)),
+        final_energy=float(meta["energy"]),
+        engine_label="c55m_hp_lattice_beam_search",
+        pdb_path=str(pdb_path),
+    )
+
+
+class _FoldWorker(QObject):
+    finished = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, sequence: str, engine: str, beam: int, batch: bool, limit: int) -> None:
+        super().__init__()
+        self.sequence = sequence
+        self.engine = engine
+        self.beam = beam
+        self.batch = batch
+        self.limit = limit
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(
+                fold_for_view(
+                    self.sequence,
+                    engine=self.engine,
+                    beam=self.beam,
+                    batch=self.batch,
+                    limit=self.limit,
+                )
+            )
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class ProteinFolderWidget(QWidget):
+    """Python/Qt protein fold colosseum. No browser, no generated HTML."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ProteinFolderWidget")
+        self._result: FoldViewResult | None = None
+        self._frame = 0
+        self._auto_rotate = True
+        self._worker_thread: QThread | None = None
+        self._worker: _FoldWorker | None = None
+
+        self._build_ui()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(45)
+        QTimer.singleShot(100, self._run_fold)
+
+    def _build_ui(self) -> None:
+        self.setStyleSheet(
+            f"""
+            QWidget {{ background:{BG}; color:{TEXT}; font-family: Menlo, Monaco, monospace; }}
+            QFrame#panel {{ background:{PANEL_2}; border:1px solid #26304e; border-radius:8px; }}
+            QLabel#title {{ color:{CYAN}; font-size:18px; font-weight:700; }}
+            QLabel#subtitle {{ color:{MUTED}; font-size:11px; }}
+            QLabel#metricLabel {{ color:{MUTED}; font-size:11px; }}
+            QLabel#metricValue {{ color:{GREEN}; font-size:13px; font-weight:700; }}
+            QLineEdit, QComboBox, QSpinBox {{
+                background:#080b18; border:1px solid #26304e; border-radius:6px;
+                padding:6px; color:{TEXT};
+            }}
+            QPushButton {{
+                background:#18213c; border:1px solid #314268; border-radius:7px;
+                color:{TEXT}; padding:8px 10px; font-weight:700;
+            }}
+            QPushButton:hover {{ border-color:{CYAN}; color:{CYAN}; }}
+            QPushButton:disabled {{ color:#536078; border-color:#1c2438; }}
+            """
+        )
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(10)
+
+        header = QFrame()
+        header.setObjectName("panel")
+        header_lay = QGridLayout(header)
+        header_lay.setContentsMargins(12, 10, 12, 10)
+        header_lay.setHorizontalSpacing(12)
+        header_lay.setVerticalSpacing(8)
+
+        title = QLabel("C55M + George Protein Fold Colosseum")
+        title.setObjectName("title")
+        subtitle = QLabel("Embedded Python/Qt viewer - HP lattice / toy CA backbone - no browser escape")
+        subtitle.setObjectName("subtitle")
+        header_lay.addWidget(title, 0, 0, 1, 5)
+        header_lay.addWidget(subtitle, 1, 0, 1, 5)
+
+        self.seq_input = QLineEdit("ACFLIVGPGKTYL")
+        self.engine_combo = QComboBox()
+        self.engine_combo.addItems(["c55m_hp_lattice", "toy"])
+        self.beam_spin = QSpinBox()
+        self.beam_spin.setRange(16, 4096)
+        self.beam_spin.setSingleStep(128)
+        self.beam_spin.setValue(1024)
+        self.run_btn = QPushButton("Run Fold")
+        self.run_btn.clicked.connect(self._run_fold)
+        self.replay_btn = QPushButton("Replay")
+        self.replay_btn.clicked.connect(self._replay)
+        self.auto_btn = QPushButton("Auto Rotate: ON")
+        self.auto_btn.clicked.connect(self._toggle_auto_rotate)
+
+        header_lay.addWidget(QLabel("sequence"), 2, 0)
+        header_lay.addWidget(self.seq_input, 3, 0)
+        header_lay.addWidget(QLabel("engine"), 2, 1)
+        header_lay.addWidget(self.engine_combo, 3, 1)
+        header_lay.addWidget(QLabel("beam"), 2, 2)
+        header_lay.addWidget(self.beam_spin, 3, 2)
+        header_lay.addWidget(self.run_btn, 3, 3)
+        header_lay.addWidget(self.replay_btn, 3, 4)
+        header_lay.addWidget(self.auto_btn, 3, 5)
+        root.addWidget(header)
+
+        body = QHBoxLayout()
+        body.setSpacing(10)
+        root.addLayout(body, 1)
+
+        self.figure = Figure(figsize=(8.5, 6.0), facecolor=BG)
+        self.canvas = FigureCanvas(self.figure)
+        self.canvas.setMinimumSize(720, 520)
+        self.ax = self.figure.add_subplot(111, projection="3d")
+        body.addWidget(self.canvas, 1)
+
+        side = QFrame()
+        side.setObjectName("panel")
+        side.setMinimumWidth(300)
+        side_lay = QVBoxLayout(side)
+        side_lay.setContentsMargins(12, 12, 12, 12)
+        side_lay.setSpacing(10)
+        body.addWidget(side)
+
+        self.metrics: dict[str, QLabel] = {}
+        for key in ["truth", "residues", "engine", "energy", "step", "pdb"]:
+            side_lay.addWidget(self._metric_row(key))
+
+        cite = QLabel(
+            "Research credit\\n"
+            "Anfinsen 1973: thermodynamic hypothesis\\n"
+            "Dill 1985: HP lattice abstraction\\n"
+            "Jumper et al. 2021: AlphaFold comparison\\n\\n"
+            "Truth label: REAL_LOCAL when the displayed fold is produced by "
+            "the local Python engine or broker in this process."
+        )
+        cite.setWordWrap(True)
+        cite.setStyleSheet(f"color:{MUTED}; line-height:1.35;")
+        side_lay.addWidget(cite)
+        side_lay.addStretch(1)
+
+        self.status = QLabel("booting protein fold organ...")
+        self.status.setStyleSheet(f"color:{AMBER};")
+        root.addWidget(self.status)
+        self._blank_plot("waiting for first fold")
+
+    def _metric_row(self, key: str) -> QWidget:
+        box = QFrame()
+        box.setObjectName("panel")
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(9, 7, 9, 7)
+        label = QLabel(key.upper())
+        label.setObjectName("metricLabel")
+        value = QLabel("-")
+        value.setObjectName("metricValue")
+        value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(label)
+        lay.addWidget(value, 1)
+        self.metrics[key] = value
+        return box
+
+    def _set_running(self, running: bool) -> None:
+        self.run_btn.setDisabled(running)
+        self.seq_input.setDisabled(running)
+        self.engine_combo.setDisabled(running)
+        self.beam_spin.setDisabled(running)
+        self.status.setText("folding..." if running else "ready")
+
+    def _run_fold(self) -> None:
+        if self._worker_thread is not None:
+            return
+        seq = self.seq_input.text()
+        engine = self.engine_combo.currentText()
+        beam = int(self.beam_spin.value())
+        self._set_running(True)
+        self._blank_plot("folding in worker thread")
+
+        self._worker_thread = QThread(self)
+        self._worker = _FoldWorker(seq, engine, beam, False, 0)
+        self._worker.moveToThread(self._worker_thread)
+        self._worker_thread.started.connect(self._worker.run)
+        self._worker.finished.connect(self._on_fold_finished)
+        self._worker.failed.connect(self._on_fold_failed)
+        self._worker.finished.connect(self._worker_thread.quit)
+        self._worker.failed.connect(self._worker_thread.quit)
+        self._worker_thread.finished.connect(self._worker.deleteLater)
+        self._worker_thread.finished.connect(self._clear_worker)
+        self._worker_thread.start()
+
+    def _clear_worker(self) -> None:
+        if self._worker_thread is not None:
+            self._worker_thread.deleteLater()
+        self._worker_thread = None
+        self._worker = None
+        self._set_running(False)
+
+    def _on_fold_failed(self, message: str) -> None:
+        self.status.setText(f"fold failed: {message}")
+        QMessageBox.warning(self, "Protein fold failed", message)
+
+    def _on_fold_finished(self, result: FoldViewResult) -> None:
+        self._result = result
+        self._frame = 0
+        self._update_metrics()
+        self._render_frame()
+        self.status.setText("REAL_LOCAL fold rendered inside SIFTA OS")
+        _publish_focus(
+            "C55M + George Protein Fold Colosseum",
+            f"Rendered {result.engine_label}: {len(result.sequence)} residues, E={result.final_energy:.3f}",
+            tab="Python Qt Viewer",
+            metadata={
+                "truth": "REAL_LOCAL",
+                "engine": result.engine_label,
+                "residues": len(result.sequence),
+                "energy": round(result.final_energy, 6),
+                "pdb_path": result.pdb_path,
+            },
+        )
+
+    def _update_metrics(self) -> None:
+        if not self._result:
+            return
+        self.metrics["truth"].setText("REAL_LOCAL")
+        self.metrics["residues"].setText(str(len(self._result.sequence)))
+        self.metrics["engine"].setText(self._result.engine_label)
+        self.metrics["energy"].setText(f"{self._result.final_energy:.4f}")
+        self.metrics["step"].setText(str(self._frame))
+        self.metrics["pdb"].setText(Path(self._result.pdb_path).name if self._result.pdb_path else "in-memory")
+
+    def _blank_plot(self, message: str) -> None:
+        self.ax.clear()
+        self.ax.set_facecolor(BG)
+        self.ax.text2D(0.5, 0.5, message, transform=self.ax.transAxes, ha="center", color=MUTED)
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        self.ax.set_zticks([])
+        self.canvas.draw_idle()
+
+    def _tick(self) -> None:
+        if not self._result or not self._result.trajectory:
+            return
+        self._frame = min(self._frame + 1, len(self._result.trajectory) - 1)
+        if self._frame % 2 == 0 or self._frame == len(self._result.trajectory) - 1:
+            self._render_frame()
+
+    def _replay(self) -> None:
+        self._frame = 0
+        self._render_frame()
+
+    def _toggle_auto_rotate(self) -> None:
+        self._auto_rotate = not self._auto_rotate
+        self.auto_btn.setText(f"Auto Rotate: {'ON' if self._auto_rotate else 'OFF'}")
+
+    def _render_frame(self) -> None:
+        if not self._result or not self._result.trajectory:
+            return
+
+        coords = np.array(self._result.trajectory[self._frame], dtype=float)
+        self.ax.clear()
+        self.ax.set_facecolor(BG)
+        self.figure.patch.set_facecolor(BG)
+
+        span = max(8.0, float(np.max(np.ptp(coords, axis=0))) * 0.65)
+        center = coords.mean(axis=0)
+        for setter, c in [
+            (self.ax.set_xlim, center[0]),
+            (self.ax.set_ylim, center[1]),
+            (self.ax.set_zlim, center[2]),
+        ]:
+            setter(c - span, c + span)
+
+        colors = [GREEN if aa in "AILMFWV" else CYAN if aa in "STNQYC" else AMBER for aa in self._result.sequence]
+        self.ax.plot(coords[:, 0], coords[:, 1], coords[:, 2], color=BLUE, linewidth=2.2, alpha=0.8)
+        self.ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=82, c=colors, edgecolors="#d9f7ff", linewidths=0.7)
+
+        if self._auto_rotate:
+            self.ax.view_init(elev=22, azim=(self._frame * 3) % 360)
+        else:
+            self.ax.view_init(elev=22, azim=42)
+
+        self.ax.set_title("Python Qt fold view - shape rendered from local coordinates", color=CYAN, pad=14)
+        self.ax.set_xticklabels([])
+        self.ax.set_yticklabels([])
+        self.ax.set_zticklabels([])
+        self.ax.grid(color="#1b2440", linewidth=0.5)
+        self.metrics["step"].setText(f"{self._frame}/{len(self._result.trajectory) - 1}")
+        self.canvas.draw_idle()
+
+
+def _run_cli(args: argparse.Namespace) -> FoldViewResult:
+    return fold_for_view(
+        args.sequence,
+        engine=args.engine,
+        beam=args.beam,
+        batch=args.batch,
+        limit=args.limit,
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="SIFTA Python/Qt protein folding visualizer")
     parser.add_argument("sequence", nargs="?", default="ACFLIVGPGKTYL")
-    parser.add_argument("--engine", default="c55m_hp_lattice",
-                        choices=["toy", "c55m_hp_lattice"])
+    parser.add_argument("--engine", default="c55m_hp_lattice", choices=["toy", "c55m_hp_lattice"])
     parser.add_argument("--beam", type=int, default=1024)
-    parser.add_argument("--batch", action="store_true",
-                        help="Fold the default C55M + George protein panel first.")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="Limit batch fold count; 0 means all defaults.")
+    parser.add_argument("--batch", action="store_true", help="Fold the default C55M + George protein panel first.")
+    parser.add_argument("--limit", type=int, default=0, help="Limit batch fold count; 0 means all defaults.")
+    parser.add_argument("--cli", action="store_true", help="Run the fold and print JSON without opening a window.")
     args = parser.parse_args()
 
-    print("SIFTA Protein Folding Visualizer")
-
-    if args.batch:
-        summary = run_c55m_george_batch(limit=args.limit, beam=args.beam)
-        print(f"Batch folded {summary['fold_count']} proteins")
-        print(f"Summary: {summary['summary_path']}")
-        # Show the lowest-energy fold after the batch finishes.
-        best = min(summary["folds"], key=lambda row: row.get("energy", 0))
-        seq = best["sequence"]
-        final_e = float(best["energy"])
-        pdb_path = Path(best["pdb_path"])
-        trajectory = _morph_trajectory(_parse_pdb_ca(pdb_path))
-        engine_label = "c55m_hp_lattice_batch_best"
-    elif args.engine == "toy":
-        seq = args.sequence.upper()
-        print(f"Folding sequence: {seq} (Length: {len(seq)})")
-        print("Running Monte Carlo simulation...")
-        best_xyz, final_e, trajectory = fold(seq, steps=8000, temp=1.2, save_trajectory=True)
-        print(f"Folding complete. Final energy: {final_e:.2f}")
-        engine_label = "toy_CA_backbone_monte_carlo"
-    else:
-        from System.sifta_protein_folding_broker import FoldingJob, ProteinFoldingBroker
-
-        seq = args.sequence.upper()
-        os.environ["SIFTA_HP_LATTICE_BEAM"] = str(int(args.beam))
-        print(f"Folding sequence: {seq} (Length: {len(seq)})")
-        print(f"Running C55M + George HP lattice beam search (beam={args.beam})...")
-        broker = ProteinFoldingBroker()
-        meta = broker.run(
-            FoldingJob(
-                sequence=seq,
-                name="C55M + George co-signed fold",
-                engine="c55m_hp_lattice",
+    if args.cli:
+        result = _run_cli(args)
+        print(
+            json.dumps(
+                {
+                    "truth": "REAL_LOCAL",
+                    "sequence": result.sequence,
+                    "residues": len(result.sequence),
+                    "engine": result.engine_label,
+                    "energy": result.final_energy,
+                    "pdb_path": result.pdb_path,
+                    "frames": len(result.trajectory),
+                },
+                indent=2,
             )
         )
-        final_e = float(meta["energy"])
-        trajectory = _morph_trajectory(_parse_pdb_ca(Path(meta["pdb_path"])))
-        print(f"Folding complete. Energy: {final_e:.2f}")
-        print(f"PDB: {meta['pdb_path']}")
-        engine_label = "c55m_hp_lattice_beam_search"
-    
-    # Save widget HTML
-    html_path = _REPO / ".sifta_state" / "protein_viewer.html"
-    html_path.parent.mkdir(exist_ok=True)
-    
-    build_html_viewer(
-        seq,
-        trajectory,
-        final_e,
-        html_path,
-        title="C55M + George Protein Fold Colosseum",
-        event_label="Event 80: HP Lattice Batch Folder",
-        engine_label=engine_label,
-        signature_line="Co-signed: C55M-DR-CODEX + George Anton",
-    )
-    
-    print(f"Opening visualizer: {html_path}")
-    webbrowser.open("file://" + str(html_path))
+        return 0
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    widget = ProteinFolderWidget()
+    widget.resize(1180, 760)
+    widget.setWindowTitle("C55M + George - Protein Fold Colosseum")
+    widget.show()
+    return int(app.exec())
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
