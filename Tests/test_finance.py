@@ -258,6 +258,6 @@ def test_finance_truth_snapshot_uses_canonical_wallet_sum(monkeypatch):
 
     assert snap["canonical_wallet_sum"] == 12.5
     assert snap["memory_rewards_reputation"] == 99.0
-    assert snap["casino_play_tokens"] == 42.0
+    assert snap["casino_play_tokens"] == 0.0
     assert snap["metabolic"]["stgm_balance"] == 12.5
     assert "unit_test_warning" in snap["warnings"]

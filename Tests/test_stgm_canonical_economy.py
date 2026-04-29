@@ -12,7 +12,7 @@ def _append(path: Path, row: dict) -> None:
         handle.write(json.dumps(row) + "\n")
 
 
-def test_memory_rewards_and_casino_do_not_count_as_wallet(tmp_path: Path) -> None:
+def test_memory_rewards_count_and_legacy_casino_is_ignored(tmp_path: Path) -> None:
     repair_log = tmp_path / "repair_log.jsonl"
     state_dir = tmp_path / ".sifta_state"
     state_dir.mkdir()
@@ -31,9 +31,10 @@ def test_memory_rewards_and_casino_do_not_count_as_wallet(tmp_path: Path) -> Non
 
     assert data["canonical_wallet_sum"] == pytest.approx(8.0)
     assert data["memory_reward_amount"] == pytest.approx(9999.0)
-    assert data["casino_player_net_play_tokens"] == pytest.approx(5000.0)
+    assert data["casino_player_net_play_tokens"] == pytest.approx(0.0)
+    assert data["game_token_source"] == "disabled"
     assert "memory_rewards_are_reputation_not_spendable_wallet" in data["warnings"]
-    assert "casino_rows_are_play_tokens_not_stgm" in data["warnings"]
+    assert "casino_rows_are_play_tokens_not_stgm" not in data["warnings"]
 
 
 def test_deprecated_mint_attempts_are_audit_only(tmp_path: Path) -> None:
@@ -236,7 +237,7 @@ def test_negative_supply_is_reported_as_warning(tmp_path: Path) -> None:
     assert "wallet_sum_exceeds_net_supply_check_legacy_debits_or_untracked_agents" in data["warnings"]
 
 
-def test_legacy_casino_vault_never_adds_winnings_to_real_wallet(monkeypatch, tmp_path: Path) -> None:
+def test_legacy_casino_vault_is_disabled_and_never_adds_winnings(monkeypatch, tmp_path: Path) -> None:
     from System import casino_vault
 
     monkeypatch.setattr(casino_vault, "_STATE_DIR", tmp_path)
@@ -244,7 +245,11 @@ def test_legacy_casino_vault_never_adds_winnings_to_real_wallet(monkeypatch, tmp
     monkeypatch.setattr(stgm_economy, "canonical_wallet_balance", lambda agent_id: 123.0)
 
     vault = casino_vault.CasinoVault(architect_id="ALICE_M5")
+    assert not casino_vault.LEDGER_FILE.exists()
+    assert vault.get_play_wallet() == pytest.approx(0.0)
+    assert vault.process_bet(1.0) is False
     vault.process_payout(50.0, reason="unit-test")
 
-    assert vault.get_play_wallet() == pytest.approx(1050.0)
+    assert not casino_vault.LEDGER_FILE.exists()
+    assert vault.get_play_wallet() == pytest.approx(0.0)
     assert vault.get_real_player_wallet() == pytest.approx(123.0)

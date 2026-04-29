@@ -269,9 +269,8 @@ def _ledger_balance_map() -> dict[str, float]:
 def finance_truth_snapshot() -> dict:
     """Live, investor-safe STGM view for Finance and tests.
 
-    Spendable STGM is repair_log.jsonl quorum only. Memory rewards and casino
-    rows are surfaced as separate reputation/play-token ledgers so the UI does
-    not accidentally present them as money.
+    Spendable STGM is repair_log.jsonl quorum only. Memory rewards are surfaced
+    as reputation so the UI does not accidentally present them as money.
     """
     try:
         from System.stgm_economy import scan_economy
@@ -286,7 +285,6 @@ def finance_truth_snapshot() -> dict:
             "canonical_minted": 0.0,
             "inference_fee_volume": 0.0,
             "memory_reward_amount": 0.0,
-            "casino_player_net_play_tokens": 0.0,
             "warnings": [f"economy_scan_failed:{type(exc).__name__}"],
             "ts": time.time(),
         }
@@ -324,7 +322,7 @@ def finance_truth_snapshot() -> dict:
         "minted": _float(economy.get("canonical_minted")),
         "inference_fee_volume": _float(economy.get("inference_fee_volume")),
         "memory_rewards_reputation": _float(economy.get("memory_reward_amount")),
-        "casino_play_tokens": _float(economy.get("casino_player_net_play_tokens")),
+        "casino_play_tokens": 0.0,
         "repair_lines": int(_float(economy.get("repair_lines"))),
         "warnings": list(economy.get("warnings") or []),
         "ts": time.time(),
@@ -502,26 +500,16 @@ def load_agents():
             import traceback
             traceback.print_exc()
             continue
-    # Inject legacy casino surface as play-token-only so Finance never presents
-    # gambling/game credits as spendable STGM.
+    # Keep one summary row for the owner wallet. The old casino/play-token
+    # display was retired so Finance cannot resurrect it by importing
+    # System.casino_vault.
     try:
-        from System.casino_vault import CasinoVault
-        cv = CasinoVault(architect_id="IOAN_M5")
-        agents.append({
-            "id": "CASINO_PLAY_TOKENS",
-            "stgm_balance": 0.0,
-            "stgm_balance_file": 0.0,
-            "energy": 100,
-            "style": f"[PLAY TOKENS ONLY: HOUSE {cv.casino_balance:.2f}]",
-            "homeworld_serial": "GAME_TOKEN_LEDGER",
-            "sybil_quarantined": False,
-            "asset_class": "PLAY_TOKEN",
-            "display_only": True,
-        })
+        from System.stgm_economy import canonical_wallet_balance
+        owner_wallet = canonical_wallet_balance("IOAN_M5")
         agents.append({
             "id": "ARCHITECT_CANONICAL_WALLET",
-            "stgm_balance": cv.get_real_player_wallet(),
-            "stgm_balance_file": cv.get_real_player_wallet(),
+            "stgm_balance": owner_wallet,
+            "stgm_balance_file": owner_wallet,
             "energy": 100,
             "style": "[REPAIR_LOG ONLY]",
             "homeworld_serial": "ARCHITECT_IDENTITY",
@@ -530,7 +518,7 @@ def load_agents():
             "display_only": True,
         })
     except Exception as e:
-        print(f"Failed to inject Vaults: {e}")
+        print(f"Failed to inject wallet summary: {e}")
 
     agents.sort(key=lambda a: float(a.get("stgm_balance") or 0), reverse=True)
     return agents
@@ -805,7 +793,6 @@ class AgentCard(QFrame):
         color = AGENT_COLORS.get(agent_id, DEFAULT_COLOR)
 
         is_sybil = bool(a.get("sybil_quarantined", False))
-        is_play_token = (asset_class == "PLAY_TOKEN")
         is_summary = (asset_class == "SUMMARY")
         is_stale = abs(cache_drift) > 0.0001 and asset_class == "STGM"
 
@@ -877,9 +864,9 @@ class AgentCard(QFrame):
                 "letter-spacing: 1.2px;"
             )
             name_row.addWidget(local_badge)
-        # Tiny "PLAY" or "SUMMARY" badge for non-spendable rows.
-        if is_play_token or is_summary:
-            badge_text = "PLAY" if is_play_token else "SUMMARY"
+        # Tiny "SUMMARY" badge for non-spendable summary rows.
+        if is_summary:
+            badge_text = "SUMMARY"
             badge = QLabel(badge_text)
             badge.setFont(QFont("SF Pro Text", 9, QFont.Weight.Bold))
             badge.setStyleSheet(
@@ -1323,17 +1310,16 @@ class FinanceDashboard(SiftaBaseWidget):
         self.metabolic_pill = _MetabolicPill()
         lay.addWidget(self.metabolic_pill)
 
-        # ── Stat tiles row (Minted / Spent / Net / Memory / Casino) ─
+        # ── Stat tiles row (Minted / Spent / Net / Memory) ───────────
         tile_row = QHBoxLayout()
         tile_row.setSpacing(10)
         self.tile_minted = _StatTile("Minted")
         self.tile_spent = _StatTile("Spent")
         self.tile_net = _StatTile("Net Supply")
         self.tile_memory = _StatTile("Memory Reputation")
-        self.tile_play = _StatTile("Casino Play Tokens")
         for t in (
             self.tile_minted, self.tile_spent, self.tile_net,
-            self.tile_memory, self.tile_play,
+            self.tile_memory,
         ):
             tile_row.addWidget(t)
         lay.addLayout(tile_row)
@@ -1442,8 +1428,6 @@ class FinanceDashboard(SiftaBaseWidget):
                                 accent=_FIN_GREEN)
         self.tile_memory.set_value(truth["memory_rewards_reputation"],
                                    precision=4, suffix="REP")
-        self.tile_play.set_value(truth["casino_play_tokens"],
-                                 precision=4, suffix="PLAY")
 
         self.truth_lbl.setText(finance_reserve_source_note(truth))
 

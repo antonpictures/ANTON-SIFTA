@@ -4,7 +4,7 @@
 Rules:
   - Spendable wallet STGM comes only from repair_log.jsonl.
   - Proof-of-use / memory reward ledgers are reputation and training signal.
-  - Casino/game ledgers are play money and never count as STGM.
+  - Legacy casino/game play-token ledgers are retired and ignored.
 """
 from __future__ import annotations
 
@@ -18,12 +18,11 @@ _REPO = Path(__file__).resolve().parent.parent
 REPAIR_LOG = _REPO / "repair_log.jsonl"
 STATE_DIR = _REPO / ".sifta_state"
 MEMORY_REWARDS = STATE_DIR / "stgm_memory_rewards.jsonl"
-CASINO_LEDGER = STATE_DIR / "casino_vault.jsonl"
 
 
 @dataclass
 class EconomySnapshot:
-    """Investor-safe separation of money, reputation, and quarantined game rows."""
+    """Investor-safe separation of money and reputation."""
 
     repair_lines: int = 0
     repair_parse_ok: int = 0
@@ -71,8 +70,6 @@ class EconomySnapshot:
             score += 0.10
         else:
             score -= min(0.20, self.deprecated_mint_attempts / 100.0)
-        if self.casino_player_net:
-            score -= 0.05
         return max(0.0, min(1.0, score))
 
     def as_dict(self) -> Dict[str, Any]:
@@ -81,7 +78,7 @@ class EconomySnapshot:
             "canonical_ledger": "repair_log.jsonl",
             "spendable_wallet_source": "repair_log.jsonl",
             "reputation_source": ".sifta_state/stgm_memory_rewards.jsonl",
-            "game_token_source": ".sifta_state/casino_vault.jsonl",
+            "game_token_source": "disabled",
             "repair_lines": self.repair_lines,
             "repair_parse_ok": self.repair_parse_ok,
             "canonical_minted": round(self.canonical_minted, 4),
@@ -102,8 +99,8 @@ class EconomySnapshot:
             "deprecated_would_have_minted": round(self.deprecated_would_have_minted, 4),
             "memory_reward_lines": self.memory_reward_lines,
             "memory_reward_amount": round(self.memory_reward_amount, 4),
-            "casino_lines": self.casino_lines,
-            "casino_player_net_play_tokens": round(self.casino_player_net, 4),
+            "casino_lines": 0,
+            "casino_player_net_play_tokens": 0.0,
             "health_score": round(self.health_score, 4),
             "warnings": list(self.warnings),
             "ts": time.time(),
@@ -197,16 +194,19 @@ def scan_economy(
     memory_rewards: Optional[Path] = None,
     casino_ledger: Optional[Path] = None,
 ) -> EconomySnapshot:
-    """Build a separated STGM/reputation/play-token audit snapshot."""
+    """Build a separated STGM/reputation audit snapshot.
+
+    ``casino_ledger`` is accepted for backward compatibility but intentionally
+    ignored because legacy play-token accounting has been decommissioned.
+    """
     global _CACHE_LAST_SCAN, _CACHE_FILES_MTIME
     
     repair_log = repair_log or REPAIR_LOG
     state_dir = state_dir or STATE_DIR
     memory_rewards = memory_rewards or (state_dir / "stgm_memory_rewards.jsonl")
-    casino_ledger = casino_ledger or (state_dir / "casino_vault.jsonl")
 
     # Fast cache check based on file mtime, size, and local agent inventory.
-    files_to_check = [repair_log, memory_rewards, casino_ledger]
+    files_to_check = [repair_log, memory_rewards]
     current_mtimes = {}
     for f in files_to_check:
         try:
@@ -330,12 +330,6 @@ def scan_economy(
         out.memory_reward_lines += 1
         out.memory_reward_amount += _float(row.get("amount"))
 
-    for row in _iter_jsonl(casino_ledger):
-        if not isinstance(row, dict):
-            continue
-        out.casino_lines += 1
-        out.casino_player_net += _float(row.get("player_delta"))
-
     for aid in canonical_agent_ids:
         key = aid.upper()
         bal = balances.get(key, 0.0)
@@ -344,8 +338,6 @@ def scan_economy(
 
     if out.memory_reward_amount:
         out.warnings.append("memory_rewards_are_reputation_not_spendable_wallet")
-    if out.casino_lines:
-        out.warnings.append("casino_rows_are_play_tokens_not_stgm")
     if out.deprecated_mint_attempts:
         out.warnings.append("deprecated_mint_attempts_logged_zero_minted")
     if out.net_supply < -0.0001:
@@ -367,8 +359,8 @@ def investor_safe_summary(snapshot: Optional[EconomySnapshot] = None) -> str:
         f"Wallet sum {d['canonical_wallet_sum']:.4f} STGM; "
         f"net supply {d['net_stgm']:.4f} STGM; "
         f"inference fee volume {d['inference_fee_volume']:.4f} STGM. "
-        f"Memory rewards are reputation ({d['memory_reward_amount']:.4f}), "
-        f"casino is play tokens ({d['casino_player_net_play_tokens']:.4f})."
+        f"Memory rewards are reputation ({d['memory_reward_amount']:.4f}); "
+        "legacy casino play tokens are disabled."
     )
 
 
