@@ -67,10 +67,13 @@ def build_inbox_row(
     *,
     from_jid: str,
     name: Optional[str] = None,
+    from_me: bool = False,
+    chat_type: Optional[str] = None,
     ts: Optional[float] = None,
     secret: Optional[str] = None,
 ) -> Dict[str, Any]:
     text = (text or "").strip()
+    inferred_chat_type = (chat_type or ("group" if str(from_jid).endswith("@g.us") else "direct")).strip().lower()
     row: Dict[str, Any] = {
         "schema": INBOX_SCHEMA,
         "source": INBOX_SOURCE,
@@ -79,6 +82,8 @@ def build_inbox_row(
         "ts": time.time() if ts is None else float(ts),
         "from_jid": from_jid,
         "name": name or "",
+        "from_me": bool(from_me),
+        "chat_type": inferred_chat_type,
         "text": text,
         "message_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "processed": False,
@@ -96,6 +101,10 @@ def validate_inbox_row(row: Any, *, secret: Optional[str] = None) -> tuple[bool,
         return False, "source_mismatch"
     if row.get("transport") != "whatsapp" or row.get("direction") != "incoming":
         return False, "transport_mismatch"
+    if row.get("chat_type") not in {"direct", "group"}:
+        return False, "chat_type_mismatch"
+    if not isinstance(row.get("from_me"), bool):
+        return False, "from_me_mismatch"
     text = row.get("text")
     if not isinstance(text, str) or not text.strip():
         return False, "empty_text"

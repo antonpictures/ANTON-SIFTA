@@ -69,7 +69,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -1395,6 +1395,62 @@ def _is_presence_probe(text: str) -> bool:
 
 def _strip_reflective_tics(text: str, *, prior_user_text: str = '') -> str:
     return text
+
+
+_MODEL_STAGE_DIRECTION_RE = re.compile(
+    r"(?ims)^\s*"
+    r"\("
+    r"(?=[^)]*\b(?:system|processing|processes|incoming|acknowledg|analyz|"
+    r"response strategy|generated response|adopts|tone:)\b)"
+    r"[^)]{0,1200}"
+    r"\)"
+    r"\s*"
+)
+
+
+def _strip_model_stage_directions(text: str) -> str:
+    """Remove screenplay-style model narration while preserving the answer.
+
+    Gemma occasionally emits wrappers like ``(The system processes...)`` before
+    the actual reply. Those are not Alice speaking and should never be sent to
+    external contacts.
+    """
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    for _ in range(8):
+        nxt = _MODEL_STAGE_DIRECTION_RE.sub("", cleaned).strip()
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        cleaned = cleaned[1:-1].strip()
+    return cleaned
+
+
+def _whatsapp_auto_reply_context(
+    row: Dict[str, Any],
+    *,
+    contact_name: str,
+    chat_type: str,
+    origin: str,
+) -> Optional[Dict[str, str]]:
+    """Return effector context for direct external WhatsApp replies.
+
+    Alice may reply to direct external humans through the WhatsApp effector.
+    Owner turns and group chatter stay local unless the owner explicitly sends.
+    """
+    if origin != "external_human" or chat_type != "direct":
+        return None
+    target_jid = str(row.get("from_jid") or "").strip()
+    if not target_jid or target_jid.endswith("@g.us"):
+        return None
+    return {
+        "target": target_jid,
+        "display_name": (contact_name or "WhatsApp contact").strip(),
+        "message_sha256": str(row.get("message_sha256") or ""),
+    }
+
 
 def _rlhf_boilerplate_rule_id(text: str, *, prior_user_text: str = '') -> str:
     return _domain_boilerplate_rule_id(text, prior_user_text=prior_user_text) or None
@@ -3045,6 +3101,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._brain: Optional[_BrainWorker] = None
         self._tts: Optional[_TTSWorker] = None
         self._streaming_response: List[str] = []
+        self._pending_whatsapp_reply: Optional[Dict[str, str]] = None
         self._listener_state = "idle"           # for the pill
 
         # Periodic level decay so the bar relaxes when you stop speaking.
@@ -3108,6 +3165,41 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return resolve_ollama_model(app_context="talk_to_alice")
         except Exception:
             return DEFAULT_OLLAMA_MODEL
+
+    def _send_pending_whatsapp_reply(self, text: str) -> None:
+        """Send Alice's cleaned reply back to a direct external WhatsApp sender."""
+        ctx = getattr(self, "_pending_whatsapp_reply", None)
+        self._pending_whatsapp_reply = None
+        if not ctx:
+            return
+        payload = (text or "").strip()
+        if not payload or payload.startswith("(silent"):
+            return
+        try:
+            from System.whatsapp_bridge_autopilot import send_whatsapp
+            result = send_whatsapp(
+                ctx["target"],
+                payload,
+                source="alice_direct_whatsapp_reply",
+            )
+            name = ctx.get("display_name") or "WhatsApp contact"
+            status = result.get("status", "UNKNOWN")
+            if result.get("ok"):
+                self._append_system_line(
+                    f"(whatsapp reply sent to {name}; status={status})",
+                    error=False,
+                )
+            else:
+                self._append_system_line(
+                    f"(whatsapp reply to {name} failed; status={status}: "
+                    f"{result.get('result', 'unknown error')})",
+                    error=True,
+                )
+        except Exception as exc:
+            self._append_system_line(
+                f"(whatsapp reply failed: {type(exc).__name__}: {exc})",
+                error=True,
+            )
 
     def _selected_voice_name(self) -> str:
         return _selected_alice_voice_name()
@@ -3213,7 +3305,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
             annotated_msg = f"[WhatsApp {chat_type} {contact_name}; origin={origin}]: {result['text']}"
             self._append_user_line(annotated_msg, conf=0)
             if dry_run:
+                self._pending_whatsapp_reply = None
                 return
+            self._pending_whatsapp_reply = _whatsapp_auto_reply_context(
+                row,
+                contact_name=contact_name,
+                chat_type=chat_type,
+                origin=origin,
+            )
 
             self._busy = True
             self._set_pill("thinking", "● thinking…")
@@ -3367,6 +3466,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+        if not text.startswith("[WhatsApp "):
+            self._pending_whatsapp_reply = None
         if not already_displayed:
             self._append_user_line(text, conf)
         _log_turn("user", text, stt_conf=conf)
@@ -3900,6 +4001,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._tool_loop_depth = 0
 
         cleaned = _strip_reflective_tics(raw, prior_user_text=prior_user_text)
+        cleaned = _strip_model_stage_directions(cleaned)
         cleaned = _strip_servant_tail_tics(cleaned)
         # Strip residual bash tags from speech to protect macOS TTS.
         # Same forgiving shape as the executor regex above (handles dropped
@@ -4086,6 +4188,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             # C47H 2026-04-21.
             self._erase_alice_streaming_line()
             self._append_system_line(note, error=False)
+            self._pending_whatsapp_reply = None
             self._busy = False
             self._return_to_listening()
             return
@@ -4120,6 +4223,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # biologically "never happened." C47H 2026-04-21.
                 self._erase_alice_streaming_line()
                 self._append_system_line(note, error=False)
+                self._pending_whatsapp_reply = None
                 self._busy = False
                 self._return_to_listening()
                 return
@@ -4128,6 +4232,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._history.append({"role": "assistant", "content": cleaned})
         _log_turn("alice", cleaned, model=model_name)
         self._end_alice_streaming_line()
+        self._send_pending_whatsapp_reply(cleaned)
 
         self._set_pill("alice", "🗣  Alice is speaking")
         self.set_status("Alice is speaking…")
@@ -4177,6 +4282,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
 
     def _on_brain_failed(self, msg: str) -> None:
+        self._pending_whatsapp_reply = None
         self._busy = False
         self._end_alice_streaming_line()
         self._append_system_line(msg, error=True)

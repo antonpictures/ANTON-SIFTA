@@ -257,6 +257,47 @@ def test_bare_whatsapp_send_asks_for_message_body():
     assert mod._bare_whatsapp_send_target("send to Carlton tell him hello") == ""
 
 
+def test_external_direct_whatsapp_gets_auto_reply_context():
+    mod = _load_widget_module()
+    ctx = mod._whatsapp_auto_reply_context(
+        {
+            "from_jid": "147235790663690@lid",
+            "message_sha256": "abc123",
+        },
+        contact_name="Jeff Powers Ocean VIllas",
+        chat_type="direct",
+        origin="external_human",
+    )
+    assert ctx["target"] == "147235790663690@lid"
+    assert ctx["display_name"] == "Jeff Powers Ocean VIllas"
+
+
+def test_whatsapp_auto_reply_context_blocks_owner_and_groups():
+    mod = _load_widget_module()
+    assert mod._whatsapp_auto_reply_context(
+        {"from_jid": "110411378614437@lid"},
+        contact_name="George",
+        chat_type="direct",
+        origin="owner_manual",
+    ) is None
+    assert mod._whatsapp_auto_reply_context(
+        {"from_jid": "120363045641065911@g.us"},
+        contact_name="SIFTA Group",
+        chat_type="group",
+        origin="external_human",
+    ) is None
+
+
+def test_model_stage_directions_are_removed_before_external_reply():
+    mod = _load_widget_module()
+    cleaned = mod._strip_model_stage_directions(
+        "(The system processes the incoming message from 'Jeff'.)\n\n"
+        "\"Jeff, yes. Alice has filesystem access through approved tools.\""
+    )
+    assert cleaned == "Jeff, yes. Alice has filesystem access through approved tools."
+    assert "system processes" not in cleaned.casefold()
+
+
 def test_direct_human_turns_bypass_body_gate():
     mod = _load_widget_module()
     assert mod._should_bypass_body_gate("I would like you to talk about your identity and your body")
