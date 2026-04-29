@@ -157,8 +157,10 @@ class NvidiaJoinWidget(SiftaBaseWidget):
             publish_focus(
                 APP_NAME,
                 "NVIDIA optional organ readiness probe",
-                summary=self._latest.get("summary"),
-                truth_note=self._latest.get("truth_note"),
+                metadata={
+                    "summary":    self._latest.get("summary"),
+                    "truth_note": self._latest.get("truth_note"),
+                },
             )
         except Exception as exc:
             self._summary.setText("probe failed")
