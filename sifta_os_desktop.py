@@ -1160,18 +1160,6 @@ class SiftaDesktop(QMainWindow):
             QTimer.singleShot(5000, self._start_mesh_lazy)
         _desktop_init_trace("after mesh worker (deferred)")
 
-    def _start_mesh_lazy(self) -> None:
-        """Start the swarm mesh relay worker ~5 s after boot (P0 perf fix)."""
-        try:
-            from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
-            self._desktop_mesh = _SwarmMeshClientWorker(
-                uri=SWARM_RELAY_URI, architect_id="DESKTOP_HUD"
-            )
-            self._desktop_mesh.connection_status.connect(self._on_desktop_mesh_status)
-            self._desktop_mesh.start()
-        except Exception:
-            self._desktop_mesh = None
-
         main_layout.addWidget(self._build_top_menu_bar())
 
         # ── Body layout: Alice fixed panel (left) + MDI apps area (right) ──
@@ -1320,7 +1308,20 @@ class SiftaDesktop(QMainWindow):
         QTimer.singleShot(800, self._tick_attention_director)
         _desktop_init_trace("leave __init__")
 
+    def _start_mesh_lazy(self) -> None:
+        """Start the swarm mesh relay worker ~5 s after boot (P0 perf fix)."""
+        try:
+            from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
+            self._desktop_mesh = _SwarmMeshClientWorker(
+                uri=SWARM_RELAY_URI, architect_id="DESKTOP_HUD"
+            )
+            self._desktop_mesh.connection_status.connect(self._on_desktop_mesh_status)
+            self._desktop_mesh.start()
+        except Exception:
+            self._desktop_mesh = None
+
     def _wallpaper_candidates(self):
+
         env_wp = os.environ.get("SIFTA_DESKTOP_WALLPAPER", "").strip()
         if env_wp:
             yield env_wp
