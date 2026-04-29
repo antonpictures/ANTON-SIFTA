@@ -325,9 +325,26 @@ def finance_truth_snapshot() -> dict:
         "inference_fee_volume": _float(economy.get("inference_fee_volume")),
         "memory_rewards_reputation": _float(economy.get("memory_reward_amount")),
         "casino_play_tokens": _float(economy.get("casino_player_net_play_tokens")),
+        "repair_lines": int(_float(economy.get("repair_lines"))),
         "warnings": list(economy.get("warnings") or []),
         "ts": time.time(),
     }
+
+
+def finance_reserve_source_note(truth: dict) -> str:
+    """Describe the live reserve source without echoing the reserve value."""
+    economy = truth.get("economy") if isinstance(truth.get("economy"), dict) else {}
+    rows = int(_float(truth.get("repair_lines", economy.get("repair_lines", 0))))
+
+    parts = ["Real reserve source: repair_log.jsonl quorum via live scan_economy()"]
+    if rows:
+        parts.append(f"ledger rows {rows:,}")
+
+    warns = truth.get("warnings") or []
+    if warns:
+        parts.append("WARN " + ", ".join(str(w) for w in warns[:3]))
+
+    return " · ".join(parts)
 
 
 def local_spend_agent_id(serial: str, state_dir: str = STATE_DIR) -> str:
@@ -1428,14 +1445,7 @@ class FinanceDashboard(SiftaBaseWidget):
         self.tile_play.set_value(truth["casino_play_tokens"],
                                  precision=4, suffix="PLAY")
 
-        warns = truth.get("warnings") or []
-        warn_str = ""
-        if warns:
-            warn_str = " · ⚠ " + ", ".join(str(w) for w in warns[:3])
-        self.truth_lbl.setText(
-            f"Real reserve: {_fmt_stgm(total)} · repair_log.jsonl quorum via live scan_economy()"
-            f"{warn_str}"
-        )
+        self.truth_lbl.setText(finance_reserve_source_note(truth))
 
         mode = str(metabolic.get("mode", "UNKNOWN"))
         self.metabolic_pill.set_state(

@@ -59,7 +59,26 @@ def test_finance_dashboard_loads_basics_before_agent_details(monkeypatch):
     assert widget.details_status_lbl.text() == "Basics loaded first · expanded stream paused"
     assert widget.hero_balance.accessibleName() == "Real STGM reserve"
     assert widget.hero_balance.accessibleDescription() == "12.5000 STGM"
-    assert "Real reserve: 12.5000 STGM" in widget.truth_lbl.text()
+    assert "Real reserve source:" in widget.truth_lbl.text()
+    assert "12.5000 STGM" not in widget.truth_lbl.text()
+
+
+def test_finance_reserve_source_note_never_embeds_wallet_amount():
+    """The footer must describe provenance, not repeat stale-looking balances."""
+    from Applications import sifta_finance as finance
+
+    note = finance.finance_reserve_source_note(
+        {
+            "canonical_wallet_sum": 123.4567,
+            "repair_lines": 25989,
+            "warnings": [],
+        }
+    )
+
+    assert "Real reserve source:" in note
+    assert "ledger rows 25,989" in note
+    assert "123.4567" not in note
+    assert "123.4567 STGM" not in note
 
 
 def test_lazy_market_and_warren_tabs_replace_placeholders(monkeypatch):
