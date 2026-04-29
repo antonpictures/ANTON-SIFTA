@@ -39,6 +39,19 @@ _SIFTA_PROBE_QUESTION = (
 )
 
 
+def _auto_device() -> str:
+    """Pick best available device: MPS (Apple Silicon) > CUDA > CPU."""
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Receipt helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -91,22 +104,25 @@ def probe_and_infer(
     image_path: str | Path | None = None,
     *,
     writer: str = "cosmos_reason1_infer",
-    max_new_tokens: int = 128,
-    device: str = "cpu",
+    max_new_tokens: int = 256,
+    device: str | None = None,
 ) -> dict:
     """Run Cosmos-Reason1-7B on an Alice camera frame.
 
+    Architecture: Qwen2.5-VL (image-text-to-text, transformers 5.6.2+)
+    Memory:  ~14 GB bfloat16. Fits in 24 GB Apple Silicon unified memory.
+    Device:  auto-selects MPS (M-series GPU) > CUDA > CPU.
+
     Args:
         image_path: path to a JPEG/PNG frame from the Alice camera.
-                    If None, uses the latest frame from .sifta_state/
-                    visual_stigmergy_last_frame.jpg if available.
-        writer:     receipt writer tag
-        max_new_tokens: generation cap (keep small for CPU)
-        device:     'cpu' (default, works on Apple Silicon)
+                    Defaults to .sifta_state/visual_stigmergy_last_frame.jpg
+        max_new_tokens: generation cap (256 default; ~2 sentences on M5 in ~15s)
+        device:     None = auto (MPS on Apple Silicon)
 
     Returns receipt dict. truth='REAL' only on success.
     """
     ts_start = time.time()
+    device = device or _auto_device()
 
     # 1. Check local cache
     if not MODEL_CACHE.exists():
@@ -115,7 +131,7 @@ def probe_and_infer(
             writer=writer,
             detail=f"Model cache not found at {MODEL_CACHE}. Run: "
                    f"huggingface-cli download {HF_REPO_ID}",
-            next_step="huggingface-cli download nvidia/Cosmos-Reason1-7B",
+            next_step=f"huggingface-cli download {HF_REPO_ID}",
         ))
 
     # 2. Resolve frame
@@ -132,26 +148,29 @@ def probe_and_infer(
 
     frame_sha8 = hashlib.sha256(frame.read_bytes()).hexdigest()[:8]
 
-    # 3. Load model (lazy — only imports transformers when cache is present)
+    # 3. Load model — Qwen2.5-VL, bfloat16 (~14 GB on 24 GB M5)
     try:
-        from transformers import AutoProcessor, AutoModelForImageTextToText  # type: ignore
+        import torch
+        from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor  # type: ignore
         from PIL import Image  # type: ignore
     except ImportError as exc:
         return _write_receipt(_base_receipt(
             "BROKEN",
             writer=writer,
-            detail=f"Missing dependency: {exc}. "
-                   "Run: pip install transformers pillow",
+            detail=f"Missing dependency: {exc}. Run: pip install torch transformers pillow",
         ))
 
+    dtype = torch.bfloat16  # 14 GB on 24 GB M5 — safe
     try:
-        processor = AutoProcessor.from_pretrained(
-            MODEL_CACHE, local_files_only=True
-        )
-        model = AutoModelForImageTextToText.from_pretrained(
-            MODEL_CACHE, local_files_only=True
+        print(f"[Cosmos-Reason1] Loading model on {device} (bfloat16)…")
+        processor = AutoProcessor.from_pretrained(str(MODEL_CACHE), local_files_only=True)
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            str(MODEL_CACHE),
+            torch_dtype=dtype,
+            local_files_only=True,
         ).to(device)
         model.eval()
+        print(f"[Cosmos-Reason1] Model loaded. Running inference…")
     except Exception as exc:
         return _write_receipt(_base_receipt(
             "BROKEN",
@@ -159,13 +178,19 @@ def probe_and_infer(
             detail=f"Model load failed: {type(exc).__name__}: {exc}",
         ))
 
-    # 4. Inference
+    # 4. Inference — Qwen2.5-VL multimodal chat format
     try:
-        import torch  # type: ignore
         pil_img = Image.open(frame).convert("RGB")
+        messages = [{"role": "user", "content": [
+            {"type": "image", "image": pil_img},
+            {"type": "text",  "text":  _SIFTA_PROBE_QUESTION},
+        ]}]
+        text = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
         inputs = processor(
-            images=pil_img,
-            text=_SIFTA_PROBE_QUESTION,
+            text=[text],
+            images=[pil_img],
             return_tensors="pt",
         ).to(device)
 
@@ -175,8 +200,12 @@ def probe_and_infer(
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
             )
-        response = processor.decode(out_ids[0], skip_special_tokens=True).strip()
+        # Trim input tokens from output
+        trimmed = out_ids[:, inputs["input_ids"].shape[1]:]
+        response = processor.decode(trimmed[0], skip_special_tokens=True).strip()
         elapsed = round(time.time() - ts_start, 2)
+        print(f"[Cosmos-Reason1] ✅ REAL — {elapsed}s on {device}")
+        print(f"[Cosmos-Reason1] Response: {response}")
 
         return _write_receipt(_base_receipt(
             "REAL",
@@ -188,6 +217,7 @@ def probe_and_infer(
             response=response,
             elapsed_s=elapsed,
             device=device,
+            architecture="Qwen2.5-VL",
         ))
 
     except Exception as exc:
@@ -196,6 +226,7 @@ def probe_and_infer(
             writer=writer,
             detail=f"Inference failed: {type(exc).__name__}: {exc}",
             frame_sha8=frame_sha8,
+            device=device,
         ))
 
 
