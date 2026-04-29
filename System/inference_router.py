@@ -82,6 +82,70 @@ else:
 LOCAL_M5_URL = LOCAL_URL
 REMOTE_M1_URL = REMOTE_URL
 
+# ── Model sovereignty table ───────────────────────────────────────────
+# Models that require the REMOTE node (too large for local RAM).
+# Key: model name fragment (lowercase). Value: preferred endpoint.
+# This is the ONLY place you need to update when adding new models.
+_REMOTE_ONLY_MODELS: dict[str, str] = {
+    # M1 (8 GB) → M5 (24 GB) delegations
+    "gemma4":           REMOTE_URL if _THIS_NODE == "M1" else LOCAL_URL,
+    "gemma3":           REMOTE_URL if _THIS_NODE == "M1" else LOCAL_URL,
+    "llama4":           REMOTE_URL if _THIS_NODE == "M1" else LOCAL_URL,
+    "llama3.3":         REMOTE_URL if _THIS_NODE == "M1" else LOCAL_URL,
+    "deepseek-coder:6": REMOTE_URL if _THIS_NODE == "M1" else LOCAL_URL,
+    "maverick":         REMOTE_URL if _THIS_NODE == "M1" else LOCAL_URL,
+}
+
+# Replacement model: if remote is down and the requested model can't run
+# locally, fall back to this local model rather than crashing.
+_LOCAL_FALLBACK_MODEL = (
+    "alice-phc-0.8b-cure:latest" if _THIS_NODE == "M1"
+    else "gemma4:latest"
+)
+
+
+def _get_local_model_names() -> list[str]:
+    """Live probe of local Ollama — returns list of installed model names."""
+    try:
+        tags_url = LOCAL_URL.replace("/api/generate", "/api/tags")
+        req = urllib.request.Request(tags_url, method="GET")
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            data = json.loads(resp.read())
+            return [m["name"].lower() for m in data.get("models", [])]
+    except Exception:
+        return []
+
+
+def _resolve_endpoint_for_model(model: str) -> str | None:
+    """Return the correct Ollama endpoint for the requested model.
+
+    Priority:
+      1. Model is in _REMOTE_ONLY_MODELS → use that endpoint directly.
+      2. Model is available locally (live probe) → use LOCAL_URL.
+      3. Model name not recognized locally → use REMOTE_URL.
+      4. Returns None only if model fragment cannot be matched anywhere
+         (caller should fall back to _LOCAL_FALLBACK_MODEL).
+    """
+    model_lower = model.lower()
+
+    # Check sovereign routing table first (large models)
+    for fragment, endpoint in _REMOTE_ONLY_MODELS.items():
+        if fragment in model_lower:
+            _log_thermal_reroute(
+                f"MODEL_SOVEREIGNTY: {model} requires {endpoint}",
+                LOCAL_URL, endpoint,
+            )
+            return endpoint
+
+    # Model not in sovereignty table — check if it's installed locally
+    local_models = _get_local_model_names()
+    for lm in local_models:
+        if model_lower in lm or lm in model_lower:
+            return LOCAL_URL  # installed here, run locally
+
+    # Not found locally → route to remote (it might be there)
+    return REMOTE_URL
+
 # ── Thermal routing log (silent, append-only) ────────────────────────
 _THERMAL_LOG = _REPO / ".sifta_state" / "thermal_routing_decisions.jsonl"
 
@@ -165,8 +229,33 @@ def route_inference(payload_dict: dict, prefer_local: bool = False, timeout: int
     """
     Core function for organs to call instead of raw urllib.
     Returns the parsed text response from Ollama.
+
+    Model-aware routing (automatic, no human involvement):
+      - If payload contains a model that doesn't fit locally, auto-routes
+        to the remote node and charges STGM via inference_economy.
+      - prefer_local=True bypasses model routing (emergency override only).
     """
-    target_url = LOCAL_URL if prefer_local else get_best_endpoint()
+    requested_model = payload_dict.get("model", "")
+
+    if prefer_local:
+        target_url = LOCAL_URL
+    elif requested_model:
+        # Let the swarm decide based on model identity
+        target_url = _resolve_endpoint_for_model(requested_model) or get_best_endpoint()
+    else:
+        target_url = get_best_endpoint()
+
+    # If model is remote-only and remote is down, substitute local fallback
+    if target_url == REMOTE_URL:
+        _, remote_time, _ = ping_endpoint(REMOTE_URL, timeout=1.5)
+        if remote_time == float('inf'):  # remote unreachable
+            _log_thermal_reroute(
+                f"REMOTE_DOWN: substituting {_LOCAL_FALLBACK_MODEL} for {requested_model}",
+                REMOTE_URL, LOCAL_URL,
+            )
+            target_url = LOCAL_URL
+            payload_dict = {**payload_dict, "model": _LOCAL_FALLBACK_MODEL}
+
     payload_bytes = json.dumps(payload_dict).encode("utf-8")
 
     try:
