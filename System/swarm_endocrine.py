@@ -42,6 +42,15 @@ class SwarmEndocrineSystem:
         try:
             append_line_locked(self.bloodstream_ledger, json.dumps(hormone_trace) + "\n")
             print(f"[!] SYSTEMIC OVERRIDE: Adrenaline flooded into the bloodstream for '{swimmer_id}' (Potency: {potency}).")
+            
+            # Bridge to the new slow global Endocrine System
+            try:
+                from System.swarm_endocrine_system import EndocrineSystem
+                new_endo = EndocrineSystem()
+                new_endo.tick({"threat_detected": True})
+            except Exception as e:
+                pass
+
             return True
         except Exception:
             return False

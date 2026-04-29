@@ -6,7 +6,7 @@ Sleep is maintenance mode, not “off.” Existing organs already replay and
 compress (``hippocampal_consolidation``, ``swarm_hippocampal_replay``,
 ``hippocampal_replay_scheduler``). This module answers the covenant question:
 
-    Did sleep actually consolidate? Compress? Drop noise? Preserve identity?
+    Did sleep actually consolidate? Compress? Downscale noise? Preserve identity?
     Were Q / drive updates safe? What is the post-sleep integrity fingerprint?
 
 See: Documents/IDE_BOOT_COVENANT.md (append-only receipts, proof-bearing state).
@@ -387,7 +387,10 @@ class SleepAuditor:
             report.post_sleep_integrity_hash = hashlib.sha256(
                 f"{report.post_sleep_integrity_hash}:{memory_hash}".encode("utf-8")
             ).hexdigest()
-        report.receipt_compression_ratio = max(1.0, report.receipt_compression_ratio)
+        total_bytes = int(pre_sleep_metrics.get("total_bytes", 0))
+        ltm_growth = max(1, _file_bytes(self.long_term_memory) - int(pre_sleep_metrics.get("ltm_bytes", 0)))
+        compatibility_ratio = total_bytes / ltm_growth if total_bytes else 1.0
+        report.receipt_compression_ratio = max(compatibility_ratio, report.receipt_compression_ratio)
         report.pre_sleep_bytes = int(pre_sleep_metrics.get("total_bytes", 0))
         report.post_sleep_bytes = sum(_file_bytes(p) for p in self.ledgers_monitored)
         report.glymphatic_cleanup_ok = True
