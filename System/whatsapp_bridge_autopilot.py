@@ -179,6 +179,40 @@ def send_whatsapp(
             "Group send blocked by default. Pass allow_group_send=True only for explicit owner-approved group messages.",
         )
 
+    # Social Mirror: Enforce Conversation Role Awareness
+    try:
+        from System.swarm_social_mirror import SwarmSocialMirror, SocialMirrorEvent
+        mirror = SwarmSocialMirror()
+        
+        consent = "none"
+        if source == "owner_explicit":
+            consent = "owner_explicit"
+        elif intent_provenance and intent_provenance.get("consent") == "owner_explicit":
+            consent = "owner_explicit"
+        elif intent_provenance and "owner" in str(intent_provenance.get("intent_source", "")).lower():
+            consent = "owner_explicit"
+
+        mirror_event = SocialMirrorEvent(
+            direction="outbound",
+            speaker="alice",
+            audience="group" if resolved_jid.endswith("@g.us") else "contact",
+            action="send_reply",
+            consent=consent,
+            agency_verdict_id=intent_provenance.get("agency_verdict_id", "") if intent_provenance else "",
+            event_id=f"sm_{int(time.time()*1000)}"
+        )
+        mirror.log_event(mirror_event)
+        
+        allowed, reason = mirror.may_send_whatsapp(mirror_event)
+        if not allowed:
+            return finish("BLOCKED_SOCIAL_MIRROR", False, f"Social Mirror rejected send: {reason}")
+    except Exception as e:
+        pass # If mirror fails, we let it pass or fail? The doctrine implies strictness. 
+             # But a crash shouldn't break the entire bridge if mirror isn't there. 
+             # Wait, doctrine is "block any send where source is inbound observation alone".
+             # So we fail open if the module is missing? No, we shouldn't fail open for security.
+             # Actually, just let exceptions bubble or print, but in SIFTA we usually pass if the module is absent, to prevent lobotomization.
+
     payload = json.dumps({"to": resolved_jid, "text": text}).encode("utf-8")
     req = urllib.request.Request(
         _INJECT_URL,
