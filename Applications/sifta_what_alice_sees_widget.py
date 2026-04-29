@@ -526,6 +526,7 @@ class _VideoCanvas(QWidget):
         self._chyron_color: QColor = QColor(180, 200, 240)
         self._error: Optional[str] = None
         self._show_overlay: bool = True   # toggled by the parent toolbar
+        self._show_raw_video: bool = True  # False = stigmergic-only (dark canvas)
         # Ticker overlay: latest 3 ledger rows painted transparently ON the video
         self._ticker_lines: list = []    # list of (text_str, QColor) tuples, max 3
         self._show_ticker: bool = True
@@ -626,14 +627,28 @@ class _VideoCanvas(QWidget):
             )
             return
 
-        # Draw the frame letterboxed inside the widget.
-        scaled = self._image.scaled(
-            rect.size(), Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        x = (rect.width() - scaled.width()) // 2
-        y = (rect.height() - scaled.height()) // 2
-        p.drawImage(x, y, scaled)
+        # Draw the frame — raw or stigmergic-only.
+        if self._show_raw_video:
+            # Full raw camera frame (letterboxed, smooth scale)
+            scaled = self._image.scaled(
+                rect.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            x = (rect.width() - scaled.width()) // 2
+            y = (rect.height() - scaled.height()) // 2
+            p.drawImage(x, y, scaled)
+        else:
+            # Stigmergic-only: skip the expensive scale+drawImage.
+            # Use fast thumbnail scale just for photon math geometry.
+            scaled = self._image.scaled(
+                rect.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation,  # cheaper
+            )
+            x = (rect.width() - scaled.width()) // 2
+            y = (rect.height() - scaled.height()) // 2
+            # Dark canvas in place of raw video
+            p.fillRect(QRectF(x, y, scaled.width(), scaled.height()),
+                       QColor(3, 5, 10))
 
         # ── Photon-stigmergy overlay drawn ON the video, inside frame rect ─
         if self._show_overlay and self._photon is not None:
@@ -1194,6 +1209,17 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         visible = bool(visible)
         if hasattr(self, "_canvas"):
             self._canvas.set_ticker_visible(visible)
+
+    def set_raw_video_visible(self, visible: bool) -> None:
+        """Toggle raw camera vs stigmergic-only mode.
+        False = dark canvas, photon overlay only. Real photons still hashed.
+        """
+        if hasattr(self, "_canvas"):
+            self._canvas._show_raw_video = bool(visible)
+            self._canvas.update()
+        if hasattr(self, "_raw_video_btn"):
+            self._raw_video_btn.setText("hide raw" if visible else "show raw")
+            self._raw_video_btn.setChecked(bool(visible))
 
 
     def _on_density_changed(self, value: int) -> None:

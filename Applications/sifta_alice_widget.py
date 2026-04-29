@@ -129,6 +129,7 @@ class AliceWidget(QWidget):
         self._eye_visible = True
         self._photon_overlay_visible = True
         self._event_ticker_visible = True
+        self._raw_video_visible = True   # False = stigmergic-only (dark canvas)
 
         self._btn_eye = QPushButton("hide eye")
         self._btn_eye.setToolTip("Hide/show Alice's camera/photon organ. The desktop panel remains embedded.")
@@ -144,6 +145,14 @@ class AliceWidget(QWidget):
         self._btn_events.setToolTip("Hide/show the live ledger ticker inside the eye monitor.")
         self._btn_events.clicked.connect(self._toggle_event_ticker)
         controls.addWidget(self._btn_events)
+
+        self._btn_raw = QPushButton("hide raw")
+        self._btn_raw.setToolTip(
+            "Stigmergic-only mode: hide raw camera, show only the entropy/saliency overlay.\n"
+            "Real photons are still hashed. Just no mirror."
+        )
+        self._btn_raw.clicked.connect(self._toggle_raw_video)
+        controls.addWidget(self._btn_raw)
 
         layout.addLayout(controls)
 
@@ -251,6 +260,11 @@ class AliceWidget(QWidget):
         self._apply_eye_subcontrols()
         self._sync_eye_controls()
 
+    def _toggle_raw_video(self) -> None:
+        self._raw_video_visible = not self._raw_video_visible
+        self._apply_eye_subcontrols()
+        self._sync_eye_controls()
+
     def _apply_eye_visibility(self) -> None:
         eye = self._visible_eye_widget()
         if eye is not None:
@@ -264,6 +278,8 @@ class AliceWidget(QWidget):
             self._sees.set_photon_overlay_visible(self._photon_overlay_visible)
         if hasattr(self._sees, "set_event_ticker_visible"):
             self._sees.set_event_ticker_visible(self._event_ticker_visible)
+        if hasattr(self._sees, "set_raw_video_visible"):
+            self._sees.set_raw_video_visible(self._raw_video_visible)
 
     def _sync_eye_controls(self) -> None:
         if hasattr(self, "_btn_eye"):
@@ -275,6 +291,10 @@ class AliceWidget(QWidget):
         if hasattr(self, "_btn_events"):
             self._btn_events.setText(
                 "hide ticker" if self._event_ticker_visible else "show ticker"
+            )
+        if hasattr(self, "_btn_raw"):
+            self._btn_raw.setText(
+                "hide raw" if self._raw_video_visible else "show raw"
             )
 
     # ── Chrome dedup ──────────────────────────────────────────────────
