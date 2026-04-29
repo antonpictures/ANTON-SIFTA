@@ -25,9 +25,9 @@ from Kernel.inference_economy import record_inference_fee, get_stgm_balance
 CURSOR_BIN = "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
 
 # Thermodynamic Costs
-COST_OPEN_FILE = 0.25
-COST_FORCE_LINE = 0.50
-COST_WORKSPACE = 1.00
+COST_OPEN_FILE = 0.025
+COST_FORCE_LINE = 0.05
+COST_WORKSPACE = 0.10
 
 
 class CursorMotorCortex:

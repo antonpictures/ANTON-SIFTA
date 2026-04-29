@@ -49,7 +49,7 @@ try:
 except ImportError:
     pass
 
-STGM_SACCADE_COST = 0.50
+STGM_SACCADE_COST = 0.05
 
 _STATE = _REPO / ".sifta_state"
 _VS_LOG = _STATE / "visual_stigmergy.jsonl"

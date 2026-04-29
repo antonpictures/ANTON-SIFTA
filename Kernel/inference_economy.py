@@ -59,7 +59,7 @@ def transfer_stgm(sender: str, receiver: str, amount: float, memo: str = ""):
         raise NegativeBalanceException(str(e)) from e
 
 # ─── Ed25519 Crypto Bridge ─────────────────────────────────────────────────────
-_SYSTEM_DIR = Path(__file__).parent / "System"
+_SYSTEM_DIR = Path(__file__).resolve().parent.parent / "System"
 if str(_SYSTEM_DIR) not in sys.path:
     sys.path.insert(0, str(_SYSTEM_DIR))
 try:
@@ -456,6 +456,7 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
 
     event = entry.get("event", "") or ""
     tx_type = entry.get("tx_type", "") or ""
+    event_kind = entry.get("event_kind", "") or ""
 
     if event in ("MINING_REWARD", "FOUNDATION_GRANT"):
         body = (
@@ -473,10 +474,17 @@ def _ledger_row_cryptographically_valid(entry: dict) -> bool:
         )
         return bool(verify_block(node, body, sig))
 
-    if event == "UTILITY_MINT":
+    if event == "UTILITY_MINT" or event_kind == "UTILITY_MINT_ATP":
         body = (
             f"UTILITY_MINT::{entry.get('miner_id', '')}::{entry.get('amount_stgm', 0)}::"
             f"{entry.get('ts', '')}::{entry.get('reason', '')}::NODE[{node}]"
+        )
+        return bool(verify_block(node, body, sig))
+
+    if event_kind == "VOID_CORRECTION":
+        body = (
+            f"VOID_CORRECTION::{entry.get('agent_id', '')}::{entry.get('amount_stgm', 0)}::"
+            f"{entry.get('ts', '')}::NODE[{node}]"
         )
         return bool(verify_block(node, body, sig))
 
@@ -526,6 +534,7 @@ def ledger_balance(agent_id: str) -> float:
         event: "MINING_REWARD"    → amount_stgm credited to miner_id
         event: "FOUNDATION_GRANT" → amount_stgm credited to miner_id
         event: "UTILITY_MINT"     → signed passive mint (miner_id)
+        event_kind: "UTILITY_MINT_ATP" → Landauer/ATP mint credited to miner_id
         event: "INFERENCE_BORROW" → fee_stgm debited from borrower_id,
                                      credited to lender_ip
 
@@ -562,6 +571,7 @@ def ledger_balance(agent_id: str) -> float:
 
                 event   = entry.get("event", "")
                 tx_type = entry.get("tx_type", "")
+                event_kind = entry.get("event_kind", "")
 
                 # ── Dialect A ──────────────────────────────────────────────────
                 if event == "MINING_REWARD" or event == "FOUNDATION_GRANT":
@@ -571,6 +581,33 @@ def ledger_balance(agent_id: str) -> float:
                 elif event == "UTILITY_MINT":
                     if entry.get("miner_id", "").upper() == uid:
                         balance += float(entry.get("amount_stgm", 0.0))
+
+                elif event_kind == "UTILITY_MINT_ATP":
+                    if entry.get("miner_id", "").upper() == uid:
+                        balance += float(entry.get("amount_stgm", 0.0))
+
+                # ── Legacy earned rewards (SCAR_STGM_RECONCILIATION_2026-04-29) ──
+                # Real work events that used non-canonical event names.
+                # Counted as canonical mints — they have receipts in the ledger.
+                elif event == "TOP_CODER_REWARD":
+                    if entry.get("miner_id", "").upper() == uid:
+                        balance += float(entry.get("amount_stgm", 0.0))
+
+                elif event == "VRF_BOUNTY_PAID":
+                    # Bounty paid TO the target agent
+                    to_agent = str(entry.get("to") or entry.get("from") or "").upper()
+                    if to_agent == uid:
+                        balance += float(entry.get("amount_stgm", 0.0))
+
+                # ── TRANSFER: zero-sum movement, not new supply ──────────────
+                elif event == "TRANSFER":
+                    amt = float(entry.get("amount", 0.0))
+                    sender = str(entry.get("sender_id") or "").upper()
+                    receiver = str(entry.get("receiver_id") or "").upper()
+                    if sender == uid:
+                        balance -= amt
+                    if receiver == uid:
+                        balance += amt
 
                 elif event == "INFERENCE_BORROW":
                     if entry.get("borrower_id", "").upper() == uid:

@@ -1103,21 +1103,107 @@ class FinanceDashboard(SiftaBaseWidget):
         # ── Tabs ────────────────────────────────────────────────────
         self.details_loaded = False
         self._detail_refresh_tick = 0
+        self._market_loaded = False
+        self._warren_loaded = False
         self.tabs = QTabWidget()
         self.tabs.setObjectName("FinanceTabs")
         self.tabs.setStyleSheet("QTabWidget::tab-bar { alignment: left; }")
         self.portfolio_tab = QWidget()
-        self.market_tab = MarketplaceTab()
+        self.market_tab = QWidget()  # lazy — built on first visit
         self.warren_tab = QWidget()
         self.tabs.addTab(self.portfolio_tab, "Portfolio")
-        self.tabs.addTab(self.market_tab, "Inference Market")
-        self.tabs.addTab(self.warren_tab, "Warren Buffett")
+        self.tabs.addTab(self.market_tab, "⏳ Inference Market")
+        self.tabs.addTab(self.warren_tab, "⏳ Warren Buffett")
         self.tabs.currentChanged.connect(self._on_tab_changed)
-        self._build_warren_tab()
+        self._build_market_placeholder()
+        self._build_warren_placeholder()
         layout.addWidget(self.tabs)
 
         self._build_portfolio()
-        self.make_timer(5000, self._refresh_all)
+        self.make_timer(8000, self._refresh_all)
+
+    def _clear_tab_layout(self, layout) -> None:
+        """Remove all widgets/layouts from a tab before swapping in real data."""
+        while layout.count():
+            item = layout.takeAt(0)
+            child_layout = item.layout()
+            if child_layout is not None:
+                self._clear_tab_layout(child_layout)
+                child_layout.deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def _build_market_placeholder(self):
+        """Lightweight placeholder — real MarketplaceTab built on pull."""
+        lay = QVBoxLayout(self.market_tab)
+        lay.setContentsMargins(24, 40, 24, 24)
+        lay.setSpacing(16)
+        lbl = QLabel("Inference Market data is not loaded yet.\n"
+                     "Press Pull Data to scan the mesh.")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet(
+            f"color: {_FIN_INK_DIM}; font-size: 14px; "
+            "border: none; background: transparent;"
+        )
+        lay.addWidget(lbl)
+        btn = QPushButton("⟳  Pull Data")
+        btn.setObjectName("FinPillBtn")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFixedWidth(200)
+        btn.clicked.connect(self._pull_market_data)
+        lay.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        lay.addStretch()
+
+    def _pull_market_data(self):
+        """Replace placeholder with the real MarketplaceTab."""
+        if self._market_loaded and hasattr(self, "_real_market"):
+            self._real_market.load_market()
+            return
+
+        new_lay = self.market_tab.layout()
+        if new_lay is None:
+            new_lay = QVBoxLayout(self.market_tab)
+        else:
+            self._clear_tab_layout(new_lay)
+        new_lay.setContentsMargins(0, 0, 0, 0)
+        new_lay.setSpacing(0)
+        real_market = MarketplaceTab()
+        new_lay.addWidget(real_market)
+        self._real_market = real_market
+        self._market_loaded = True
+        self.tabs.setTabText(1, "Inference Market")
+
+    def _build_warren_placeholder(self):
+        """Lightweight placeholder — Warren report built on pull."""
+        lay = QVBoxLayout(self.warren_tab)
+        lay.setContentsMargins(24, 40, 24, 24)
+        lay.setSpacing(16)
+        lbl = QLabel("Warren Buffett report is not loaded yet.\n"
+                     "Press Pull Data to generate the report.")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet(
+            f"color: {_FIN_INK_DIM}; font-size: 14px; "
+            "border: none; background: transparent;"
+        )
+        lay.addWidget(lbl)
+        btn = QPushButton("⟳  Pull Data")
+        btn.setObjectName("FinPillBtn")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFixedWidth(200)
+        btn.clicked.connect(self._pull_warren_data)
+        lay.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        lay.addStretch()
+
+    def _pull_warren_data(self):
+        """Replace placeholder with the real Warren tab."""
+        if self._warren_loaded:
+            self._refresh_warren()
+            return
+        self._build_warren_tab()
+        self._warren_loaded = True
+        self.tabs.setTabText(2, "Warren Buffett")
 
     def _on_tab_changed(self, index: int) -> None:
         tab_name = ["Portfolio", "Inference Market", "Warren Buffett"][index] if 0 <= index <= 2 else "Unknown"
@@ -1131,7 +1217,11 @@ class FinanceDashboard(SiftaBaseWidget):
             pass
 
     def _build_warren_tab(self):
-        wl = QVBoxLayout(self.warren_tab)
+        wl = self.warren_tab.layout()
+        if wl is None:
+            wl = QVBoxLayout(self.warren_tab)
+        else:
+            self._clear_tab_layout(wl)
         wl.setContentsMargins(18, 18, 18, 18)
         wl.setSpacing(10)
 
@@ -1512,8 +1602,17 @@ class FinanceDashboard(SiftaBaseWidget):
             return
         if self._detail_refresh_tick % 3 == 0:
             self._populate_portfolio()
-            self.market_tab.load_market()
-            self._refresh_warren()
+            # Only refresh Market/Warren if user already pulled them
+            if self._market_loaded and hasattr(self, '_real_market'):
+                try:
+                    self._real_market.load_market()
+                except Exception:
+                    pass
+            if self._warren_loaded:
+                try:
+                    self._refresh_warren()
+                except Exception:
+                    pass
         else:
             self._refresh_basics()
 

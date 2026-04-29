@@ -39,10 +39,14 @@ def _single_line_stgm_credit(ev: dict) -> float | None:
     """Positive STGM credited by this one JSON line, or None if not a credit row."""
     tx = (ev.get("tx_type") or "").strip()
     evn = (ev.get("event") or "").strip()
+    event_kind = (ev.get("event_kind") or "").strip()
     if tx == "STGM_MINT":
         a = float(ev.get("amount", 0) or 0)
         return a if a > 0 else None
     if evn in ("MINING_REWARD", "FOUNDATION_GRANT", "UTILITY_MINT"):
+        a = float(ev.get("amount_stgm", 0) or 0)
+        return a if a > 0 else None
+    if event_kind == "UTILITY_MINT_ATP":
         a = float(ev.get("amount_stgm", 0) or 0)
         return a if a > 0 else None
     if "amount_stgm" in ev and not evn and not tx:

@@ -23,7 +23,7 @@ def generate_scar(action_description, target_file=None):
     ledger_entry = {
         "timestamp": timestamp,
         "agent": "ANTIGRAVITY_CREATOR_NODE",
-        "amount_stgm": -15.0, # Heavy toll for MCP Cloud interventions
+        "amount_stgm": -0.001, # Physics-derived: 1 SHA256 hash + ~227 bytes = 0.001 STGM (same rate as Event Clock)
         "reason": action_description,
         "hash": f"SCAR_{scar_hash}"
     }

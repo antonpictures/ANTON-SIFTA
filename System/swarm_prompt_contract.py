@@ -69,5 +69,9 @@ def grounding_block(focus: str) -> str:
     return ""
 
 def tool_affordances_for_turn(user_text: str) -> str:
-    """No scripted affordance narratives; leave tool choice to the model."""
-    return ""
+    """Inject the structured tool-calling catalog into Alice's prompt."""
+    try:
+        from System.swarm_tool_router import tools_for_alice_prompt
+        return tools_for_alice_prompt()
+    except Exception:
+        return ""

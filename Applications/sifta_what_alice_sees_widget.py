@@ -840,10 +840,13 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         # ── Top toolbar (camera selector only — buttons are on parent AliceWidget) ──
         bar = QHBoxLayout()
 
-        bar.addWidget(QLabel("📷"))
+        self._cam_label = QLabel("📷")
+        self._cam_label.hide()  # Predator mode: Alice switches cams autonomously
+        bar.addWidget(self._cam_label)
         self._cam_combo = QComboBox()
         self._cam_combo.setMinimumWidth(280)
         self._cam_combo.currentIndexChanged.connect(self._on_cam_changed)
+        self._cam_combo.hide()  # Predator mode: no manual camera selection
         bar.addWidget(self._cam_combo, 1)
         # NOTE: hide photons / hide ticker buttons live on the parent AliceWidget.
         # Do NOT add duplicate buttons here.

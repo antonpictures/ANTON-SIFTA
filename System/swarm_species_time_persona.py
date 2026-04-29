@@ -69,7 +69,7 @@ try:
 except ImportError:
     SCALAR_CV = 0.20
 
-SPECIES_SWITCH_STGM_COST = 1.0  # "dressing up as a hummingbird for an hour"
+SPECIES_SWITCH_STGM_COST = 0.10  # "dressing up as a hummingbird for an hour"
 
 
 def _current_species() -> str:

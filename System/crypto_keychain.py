@@ -10,7 +10,10 @@
 import os
 import json
 
-from silicon_serial import read_apple_serial
+try:
+    from silicon_serial import read_apple_serial
+except ImportError:  # Package import path, e.g. `from System.crypto_keychain`.
+    from System.silicon_serial import read_apple_serial
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature

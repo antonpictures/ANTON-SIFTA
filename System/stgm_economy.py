@@ -33,6 +33,8 @@ class EconomySnapshot:
     canonical_wallet_sum: float = 0.0
     canonical_wallet_balances: Dict[str, float] = field(default_factory=dict)
     inference_fee_volume: float = 0.0
+    atp_mint_lines: int = 0
+    atp_minted: float = 0.0
     deprecated_mint_attempts: int = 0
     deprecated_would_have_minted: float = 0.0
     memory_reward_lines: int = 0
@@ -44,6 +46,19 @@ class EconomySnapshot:
     @property
     def net_supply(self) -> float:
         return self.canonical_minted - self.canonical_spent
+
+    @property
+    def halving_era(self) -> int:
+        return self.repair_lines // 10000
+
+    @property
+    def halving_multiplier(self) -> float:
+        return 0.5 ** min(self.halving_era, 10)
+
+    @property
+    def next_halving_in_rows(self) -> int:
+        remaining = 10000 - (self.repair_lines % 10000)
+        return remaining if remaining != 0 else 10000
 
     @property
     def health_score(self) -> float:
@@ -75,8 +90,14 @@ class EconomySnapshot:
             "canonical_wallet_sum": round(self.canonical_wallet_sum, 4),
             "canonical_wallet_balances": dict(sorted(self.canonical_wallet_balances.items())),
             "inference_fee_volume": round(self.inference_fee_volume, 4),
+            "atp_mint_lines": self.atp_mint_lines,
+            "atp_minted": round(self.atp_minted, 9),
             "net_stgm": round(self.net_supply, 4),
             "spend": round(self.canonical_spent, 4),
+            "halving_interval_rows": 10000,
+            "halving_era": self.halving_era,
+            "halving_multiplier": round(self.halving_multiplier, 10),
+            "next_halving_in_rows": self.next_halving_in_rows,
             "deprecated_mint_attempts": self.deprecated_mint_attempts,
             "deprecated_would_have_minted": round(self.deprecated_would_have_minted, 4),
             "memory_reward_lines": self.memory_reward_lines,
@@ -213,6 +234,7 @@ def scan_economy(
         out.repair_parse_ok += 1
         event = str(row.get("event") or "")
         tx_type = str(row.get("tx_type") or "")
+        event_kind = str(row.get("event_kind") or "")
 
         if event in {"MINING_REWARD", "FOUNDATION_GRANT", "UTILITY_MINT"}:
             amt = _float(row.get("amount_stgm"))
@@ -220,6 +242,41 @@ def scan_economy(
             aid = str(row.get("miner_id") or "").upper()
             if aid:
                 balances[aid] = balances.get(aid, 0.0) + amt
+        elif event_kind == "UTILITY_MINT_ATP":
+            amt = _float(row.get("amount_stgm"))
+            out.canonical_minted += amt
+            out.atp_minted += amt
+            out.atp_mint_lines += 1
+            aid = str(row.get("miner_id") or row.get("agent_id") or "").upper()
+            if aid:
+                balances[aid] = balances.get(aid, 0.0) + amt
+
+        # ── Legacy earned rewards (SCAR_STGM_RECONCILIATION_2026-04-29) ──
+        # Real work events that used non-canonical event names.
+        # Counted as canonical mints — they have receipts in the ledger.
+        elif event == "TOP_CODER_REWARD":
+            amt = _float(row.get("amount_stgm"))
+            out.canonical_minted += amt
+            aid = str(row.get("miner_id") or "").upper()
+            if aid:
+                balances[aid] = balances.get(aid, 0.0) + amt
+        elif event == "VRF_BOUNTY_PAID":
+            amt = _float(row.get("amount_stgm"))
+            out.canonical_minted += amt
+            to_agent = str(row.get("to") or row.get("from") or "").upper()
+            if to_agent:
+                balances[to_agent] = balances.get(to_agent, 0.0) + amt
+
+        # ── TRANSFER: zero-sum movement, NOT new supply ──────────────
+        elif event == "TRANSFER":
+            amt = _float(row.get("amount"))
+            sender = str(row.get("sender_id") or "").upper()
+            receiver = str(row.get("receiver_id") or "").upper()
+            if sender:
+                balances[sender] = balances.get(sender, 0.0) - amt
+            if receiver:
+                balances[receiver] = balances.get(receiver, 0.0) + amt
+
         elif event == "INFERENCE_BORROW":
             fee = _float(row.get("fee_stgm"))
             out.inference_fee_volume += fee
@@ -280,6 +337,10 @@ def scan_economy(
         out.warnings.append("casino_rows_are_play_tokens_not_stgm")
     if out.deprecated_mint_attempts:
         out.warnings.append("deprecated_mint_attempts_logged_zero_minted")
+    if out.net_supply < -0.0001:
+        out.warnings.append("canonical_supply_negative_debits_exceed_counted_mints")
+    if out.canonical_wallet_sum > max(out.net_supply, 0.0) + 0.0001:
+        out.warnings.append("wallet_sum_exceeds_net_supply_check_legacy_debits_or_untracked_agents")
         
     _CACHE_LAST_SCAN = out
     _CACHE_FILES_MTIME = current_mtimes

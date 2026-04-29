@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QPushButton
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
@@ -57,6 +57,39 @@ def test_finance_dashboard_loads_basics_before_agent_details(monkeypatch):
 
     assert widget.details_loaded is False
     assert widget.details_status_lbl.text() == "Basics loaded first · expanded stream paused"
+
+
+def test_lazy_market_and_warren_tabs_replace_placeholders(monkeypatch):
+    """Pulling lazy tabs should swap placeholders without leaving stale children."""
+    from Applications import sifta_finance as finance
+
+    monkeypatch.setattr(finance.MarketplaceTab, "load_market", lambda self: None)
+    monkeypatch.setattr(finance.FinanceDashboard, "_refresh_warren", lambda self: None)
+
+    widget = finance.FinanceDashboard()
+
+    assert widget.tabs.tabText(1) == "⏳ Inference Market"
+    assert widget.tabs.tabText(2) == "⏳ Warren Buffett"
+
+    widget._pull_market_data()
+    widget._pull_warren_data()
+
+    assert widget._market_loaded is True
+    assert isinstance(widget._real_market, finance.MarketplaceTab)
+    assert widget.market_tab.layout().count() == 1
+    assert not [
+        btn for btn in widget.market_tab.findChildren(QPushButton)
+        if "Pull Data" in btn.text()
+    ]
+
+    assert widget._warren_loaded is True
+    assert widget.tabs.tabText(1) == "Inference Market"
+    assert widget.tabs.tabText(2) == "Warren Buffett"
+    assert hasattr(widget, "warren_view")
+    assert not [
+        btn for btn in widget.warren_tab.findChildren(QPushButton)
+        if "Pull Data" in btn.text()
+    ]
 
 
 def test_load_agents_reads_quorum_without_mutating_state_cache(monkeypatch, tmp_path):

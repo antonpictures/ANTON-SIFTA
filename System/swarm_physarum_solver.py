@@ -58,7 +58,7 @@ DT = 0.01             # Iteration timestep
 MAX_ITERS = 2000      # Max convergence cycles
 PRUNE_THRESHOLD = 1e-4  # Conductance below this → edge considered dead
 
-STGM_SOLVE_COST = 0.5
+STGM_SOLVE_COST = 0.05
 STGM_PRUNE_BONUS = 1.0
 PRUNE_BONUS_THRESHOLD = 0.30  # >30% waste reduction = bonus triggered
 

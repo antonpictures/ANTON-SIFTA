@@ -80,6 +80,129 @@ def test_scan_economy_cache_invalidates_when_agent_inventory_changes(tmp_path: P
     assert second["canonical_wallet_sum"] == pytest.approx(21.0)
 
 
+def test_atp_mint_receipts_count_as_canonical_wallet_and_balance(monkeypatch, tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(json.dumps({"id": "ALICE_M5"}), encoding="utf-8")
+
+    _append(
+        repair_log,
+        {
+            "event_kind": "UTILITY_MINT_ATP",
+            "event_id": "ATP_MINT_UNIT",
+            "ts": 1.0,
+            "agent_id": "ALICE_M5",
+            "miner_id": "ALICE_M5",
+            "amount_stgm": 0.125,
+            "reason": "atp_synthase_landauer",
+            "policy": "STGM_POLICY_ELECTRICITY_ONLY_v1",
+            "engine": "ATP_SYNTHASE_v1",
+            "joules_source": "cpu_load_estimated",
+            "mint_sha256": "unit",
+        },
+    )
+
+    data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+    assert data["canonical_wallet_sum"] == pytest.approx(0.125)
+    assert data["canonical_minted"] == pytest.approx(0.125)
+    assert data["atp_mint_lines"] == 1
+    assert data["atp_minted"] == pytest.approx(0.125)
+    assert data["halving_interval_rows"] == 10000
+    assert data["halving_era"] == 0
+    assert data["next_halving_in_rows"] == 9999
+
+    from Kernel import inference_economy
+
+    old_log = inference_economy.LOG_PATH
+    monkeypatch.setenv("SIFTA_LEDGER_VERIFY", "0")
+    monkeypatch.setattr(inference_economy, "LOG_PATH", repair_log)
+    try:
+        assert inference_economy.ledger_balance("ALICE_M5") == pytest.approx(0.125)
+    finally:
+        monkeypatch.setattr(inference_economy, "LOG_PATH", old_log)
+
+
+def test_legacy_unsigned_utility_mint_can_be_voided_without_wallet_credit(tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(json.dumps({"id": "ALICE_M5"}), encoding="utf-8")
+
+    _append(
+        repair_log,
+        {
+            "event_kind": "UTILITY_MINT",
+            "event_id": "ELEC_MINT_ORPHAN",
+            "agent_id": "ALICE_M5",
+            "miner_id": "ALICE_M5",
+            "amount_stgm": 3.72977,
+            "reason": "electricity_metabolism",
+            "policy": "STGM_POLICY_ELECTRICITY_ONLY_v1",
+        },
+    )
+    _append(
+        repair_log,
+        {
+            "event_kind": "VOID_CORRECTION",
+            "event_id": "VOID_ELEC_MINT_ORPHAN",
+            "agent_id": "ALICE_M5",
+            "amount_stgm": -3.72977,
+            "reason": "void_unsigned_UTILITY_MINT_orphan",
+            "voided_event_id": "ELEC_MINT_ORPHAN",
+            "policy": "STGM_POLICY_ELECTRICITY_ONLY_v1",
+        },
+    )
+
+    snap = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir)
+
+    assert snap.canonical_minted == pytest.approx(3.72977)
+    assert snap.canonical_spent == pytest.approx(3.72977)
+    assert snap.net_supply == pytest.approx(0.0)
+    assert snap.canonical_wallet_sum == pytest.approx(0.0)
+
+
+def test_retired_electricity_mint_routes_to_atp_and_keeps_beneficiary_gate(monkeypatch) -> None:
+    from System import swarm_electricity_metabolism as electricity
+    from System import swarm_atp_synthase as atp
+
+    calls = []
+
+    def fake_atp_mint(*, beneficiary: str, advance_epoch: bool = True):
+        calls.append({"beneficiary": beneficiary, "advance_epoch": advance_epoch})
+        return {
+            "minted_stgm": 0.125,
+            "beneficiary": beneficiary,
+            "ledger_event_id": "ATP_MINT_TEST",
+        }
+
+    monkeypatch.setattr(atp, "mint_for_epoch", fake_atp_mint)
+
+    result = electricity.mint_for_epoch(advance_epoch=False)
+
+    assert result["ledger_event_id"] == "ATP_MINT_TEST"
+    assert calls == [{"beneficiary": "ALICE_M5", "advance_epoch": False}]
+
+    with pytest.raises(electricity.CeremonialMintRefused):
+        electricity.mint_for_epoch(beneficiary="SIFTA_QUEEN")
+
+
+def test_negative_supply_is_reported_as_warning(tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(json.dumps({"id": "ALICE_M5"}), encoding="utf-8")
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 5.0})
+    _append(repair_log, {"agent": "UNTRACKED_SURGERY", "amount_stgm": -10.0})
+
+    data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+
+    assert data["net_stgm"] == pytest.approx(-5.0)
+    assert "canonical_supply_negative_debits_exceed_counted_mints" in data["warnings"]
+    assert "wallet_sum_exceeds_net_supply_check_legacy_debits_or_untracked_agents" in data["warnings"]
+
+
 def test_legacy_casino_vault_never_adds_winnings_to_real_wallet(monkeypatch, tmp_path: Path) -> None:
     from System import casino_vault
 

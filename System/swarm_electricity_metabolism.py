@@ -236,55 +236,27 @@ def _validate_beneficiary(beneficiary: str) -> None:
 
 def mint_for_epoch(beneficiary: str = CANONICAL_OS_BENEFICIARY,
                    advance_epoch: bool = True) -> Dict[str, Any]:
-    """The ONE legitimate STGM mint API. Single-consumption per epoch."""
+    """RETIRED — routes through the hardened ATP synthase path.
+
+    The old path wrote unsigned UTILITY_MINT events. The canonical path is
+    now swarm_atp_synthase.mint_for_epoch() which produces hardware-signed
+    UTILITY_MINT_ATP events with Ed25519 signatures and silicon identity.
+
+    Retirement date: 2026-04-29 (Architect George directive).
+    """
     _validate_beneficiary(beneficiary)
-    delta = measure_epoch_delta()
-    stgm, breakdown = delta.to_stgm()
-
-    # Always advance epoch (even if mint==0) so the next call measures
-    # only NEW work. This is the single-consumption guarantee.
-    if advance_epoch or delta.elapsed_s > 0:
-        cu, cs = _cpu_times()
-        _write_epoch(EpochState(
-            last_ts=time.time(),
-            last_cpu_user=cu,
-            last_cpu_system=cs,
-            last_byte_sizes=_current_byte_sizes(),
-        ))
-
-    # Append the mint to the canonical ledger as a UTILITY_MINT event,
-    # signed lightly with our own SHA256 of the body (no global key here
-    # — we lean on the canonical chain for tamper-evidence).
-    import hashlib
-    event = {
-        "event_kind": "UTILITY_MINT",
-        "event_id": f"ELEC_MINT_{int(time.time()*1000)}",
-        "ts": time.time(),
-        "agent_id": beneficiary,
-        "miner_id": beneficiary,
-        "amount_stgm": stgm,
-        "reason": "electricity_metabolism",
-        "policy": "STGM_POLICY_ELECTRICITY_ONLY_v1",
-        "breakdown": breakdown,
-        "work_delta": asdict(delta),
-    }
-    event_str = json.dumps(event, sort_keys=True, separators=(",", ":"))
-    event["mint_sha256"] = hashlib.sha256(event_str.encode()).hexdigest()
-
-    if stgm > 0.0:
-        try:
-            with _CANONICAL_LEDGER.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(event, separators=(",", ":")) + "\n")
-        except Exception:
-            pass
-
-    return {
-        "minted_stgm": stgm,
-        "beneficiary": beneficiary,
-        "breakdown": breakdown,
-        "delta": asdict(delta),
-        "ledger_event_id": event["event_id"],
-    }
+    try:
+        from System.swarm_atp_synthase import mint_for_epoch as _atp_mint
+        return _atp_mint(beneficiary=beneficiary, advance_epoch=advance_epoch)
+    except Exception as e:
+        # If ATP synthase is unavailable, return zero — never write unsigned
+        return {
+            "minted_stgm": 0.0,
+            "beneficiary": beneficiary,
+            "error": f"ATP synthase unavailable: {e}",
+            "note": "Old unsigned UTILITY_MINT path is retired. Use System.swarm_atp_synthase.mint_for_epoch() directly.",
+            "ledger_event_id": "RETIRED_PATH",
+        }
 
 
 def reset_epoch_for_test() -> None:

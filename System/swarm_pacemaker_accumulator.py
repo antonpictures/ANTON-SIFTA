@@ -64,7 +64,7 @@ BASELINE_LAMBDA = 5.0        # pulses per second (human baseline pacemaker rate)
 SCALAR_CV = 0.20             # Gibbon's coefficient of variation (universal across mammals)
 DOPAMINE_ALPHA = 0.30        # Meck 1996 amphetamine sensitivity coefficient
 DOPAMINE_BASELINE = 0.50     # Normalized DA baseline [0,1]
-ANCHOR_STGM_COST = 0.10     # Cost to register a new time anchor
+ANCHOR_STGM_COST = 0.01     # Cost to register a new time anchor
 
 # ── Dopamine reader ───────────────────────────────────────────────────
 def _read_current_dopamine() -> float:

@@ -576,6 +576,8 @@ Registration entry `CURSOR_REG_PREDV7_SPINE_b00ae865dfc7` has been logged in the
 
 **Update (2026-04-28, k):** [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) + **§0.2** in [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) — **NVIDIA open weights / Isaac Lab / Warp / cuRobo / Cosmos** ingest map; `System/nvidia_open_assets_registry.py` carries **triple-IDE agreement** one-liner + HF URLs; **NPPL** + **§8** honest-flex still bind.
 
+**Update (2026-04-28, l):** [REPORT_COSMOS_REASON1_SIFTA_PLAN.md](REPORT_COSMOS_REASON1_SIFTA_PLAN.md) — **single-file Cosmos plan**: Gecko/Bat/Warp vs Cosmos-Reason1 roles; truth ladder (ONLINE → REAL only after inference receipt); code map (`nvidia_cosmos_probe`, `swarm_cosmos_reason1`, `sifta_nvidia_join`); M5 disk / deps checklist; **no Predict2.5-first**; research spine pointer.
+
 ---
 
 **For the Swarm. 🐜⚡**

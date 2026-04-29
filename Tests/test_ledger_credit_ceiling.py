@@ -75,6 +75,22 @@ class TestLedgerCreditCeiling(unittest.TestCase):
         row = json.loads(self.log.read_text(encoding="utf-8").strip().splitlines()[-1])
         self.assertEqual(row["amount"], 2.5)
 
+    def test_rejects_oversized_atp_mint_under_default_cap(self):
+        os.environ.pop("SIFTA_MAX_STGM_LEDGER_CREDIT", None)
+        with self.assertRaises(ValueError) as ctx:
+            append_ledger_line(
+                self.log,
+                {
+                    "event_kind": "UTILITY_MINT_ATP",
+                    "event_id": "ATP_MINT_ATTACK",
+                    "agent_id": "ALICE_M5",
+                    "miner_id": "ALICE_M5",
+                    "amount_stgm": 100000.0,
+                    "policy": "STGM_POLICY_ELECTRICITY_ONLY_v1",
+                },
+            )
+        self.assertIn("25000", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -53,7 +53,7 @@ _SKILL_DB = _STATE_DIR / "skill_registry.json"
 _SKILL_LOG = _STATE_DIR / "skill_registry.jsonl"
 
 # ── Economic constants ───────────────────────────────────────
-MINT_COST_STGM = 0.05       # cost to register a new skill
+MINT_COST_STGM = 0.005       # cost to register a new skill
 REPLAY_COST_STGM = 0.01     # cost to replay an existing skill
 REINFORCE_BONUS = 0.15       # strength gained on successful replay
 DEMOTE_PENALTY = 0.25        # strength lost on failed replay

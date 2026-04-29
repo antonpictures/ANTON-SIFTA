@@ -65,7 +65,7 @@ except ImportError:
     def register_reloadable(name):
         return True
 
-STGM_SPORE_COST = 5.0
+STGM_SPORE_COST = 0.50
 STGM_BIRTH_BONUS = 10.0
 
 _STATE = _REPO / ".sifta_state"

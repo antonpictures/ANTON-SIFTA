@@ -14,6 +14,11 @@ from System.sifta_nvidia_join import (
 )
 
 
+def _cosmos_rcpt(tmp_path: Path) -> Path:
+    """Isolated ledger so tests never read the Architect's real inference receipts."""
+    return tmp_path / "cosmos_test_receipts.jsonl"
+
+
 def test_nvidia_asset_catalog_has_required_public_surfaces():
     keys = {asset.key for asset in NVIDIA_ASSETS}
     assert keys == {
@@ -34,6 +39,7 @@ def test_probe_assets_does_not_fake_real_on_clean_macos_cache(tmp_path):
         import_checker=lambda _module: False,
         platform_name="Darwin",
         gecko_probe=lambda: {"truth": "STUB", "version": None, "device": "cpu", "error": None},
+        cosmos_receipts_path=_cosmos_rcpt(tmp_path),
     )
     by_key = {probe.key: probe for probe in probes}
 
@@ -49,12 +55,15 @@ def test_probe_assets_does_not_fake_real_on_clean_macos_cache(tmp_path):
 def test_probe_assets_marks_local_cache_and_imports_real(tmp_path):
     (tmp_path / "hub" / "models--nvidia--GR00T-N1.7-3B").mkdir(parents=True)
     (tmp_path / "hub" / "datasets--nvidia--PhysicalAI-Robotics-GR00T-X-Embodiment-Sim").mkdir(parents=True)
+    # Cosmos-Reason1 weights alone do not promote to REAL without inference receipt.
+    (tmp_path / "hub" / "models--nvidia--Cosmos-Reason1-7B").mkdir(parents=True)
 
     probes = probe_assets(
         cache_root=tmp_path,
         import_checker=lambda module: module in {"warp", "curobo", "isaaclab"},
         platform_name="Linux",
         gecko_probe=lambda: {"truth": "STUB", "version": None, "device": "cpu", "error": None},
+        cosmos_receipts_path=_cosmos_rcpt(tmp_path),
     )
     by_key = {probe.key: probe for probe in probes}
 
@@ -63,6 +72,8 @@ def test_probe_assets_marks_local_cache_and_imports_real(tmp_path):
     assert by_key["isaac_lab"].local_truth == "REAL"
     assert by_key["curobo"].local_truth == "REAL"
     assert by_key["warp"].local_truth == "REAL"
+    assert by_key["cosmos"].local_truth == "ONLINE"
+    assert "inference" in by_key["cosmos"].local_detail.lower()
     assert readiness_summary(probes)["REAL"] == 5
 
 
@@ -78,6 +89,7 @@ def test_probe_assets_uses_gecko_warp_truth_when_available(tmp_path):
             "cuda_reported": False,
             "error": None,
         },
+        cosmos_receipts_path=_cosmos_rcpt(tmp_path),
     )
     warp = {probe.key: probe for probe in probes}["warp"]
 
@@ -92,6 +104,7 @@ def test_probe_assets_marks_broken_gecko_probe_blocked(tmp_path):
         import_checker=lambda _module: False,
         platform_name="Darwin",
         gecko_probe=lambda: {"truth": "BROKEN", "error": "kernel smoke failed"},
+        cosmos_receipts_path=_cosmos_rcpt(tmp_path),
     )
     warp = {probe.key: probe for probe in probes}["warp"]
 
@@ -105,6 +118,7 @@ def test_write_probe_receipt_is_jsonl_and_explains_truth(tmp_path):
         import_checker=lambda _module: False,
         platform_name="Darwin",
         gecko_probe=lambda: {"truth": "STUB", "version": None, "device": "cpu", "error": None},
+        cosmos_receipts_path=_cosmos_rcpt(tmp_path),
     )
     receipt = write_probe_receipt(probes, path=tmp_path / "nvidia_join_receipts.jsonl", writer="pytest")
 
@@ -122,8 +136,10 @@ def test_recommended_next_step_prefers_local_warp(tmp_path):
         import_checker=lambda module: module == "warp",
         platform_name="Darwin",
         gecko_probe=lambda: {"truth": "STUB", "version": None, "device": "cpu", "error": None},
+        cosmos_receipts_path=_cosmos_rcpt(tmp_path),
     )
-    assert recommended_next_step(probes).startswith("Wire Warp")
+    msg = recommended_next_step(probes)
+    assert msg.startswith("Warp is REAL") and "Cosmos" in msg
 
 
 _QT_APP: QApplication | None = None

@@ -4000,6 +4000,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         self._tool_loop_depth = 0
 
+        # ── 1.1 STRUCTURED TOOL ROUTER (GoEX/ORCA — Bishop doctrine) ──
+        # Scan Alice's output for [TOOL_CALL: ...] intents and execute
+        # them through the autonomy-gated router. This is her bridge
+        # from thinking to acting — she can now invoke tools by including
+        # structured calls in her natural language output.
+        try:
+            from System.swarm_tool_router import route_alice_output
+            tool_cleaned, tool_results = route_alice_output(
+                raw,
+                owner_present=any(
+                    h.get("role") == "user" for h in self._history[-6:]
+                ),
+                autonomous=True,
+            )
+            if tool_results:
+                # Replace raw with cleaned text (tool markers stripped)
+                raw = tool_cleaned
+                # Show feedback for each tool call
+                for tr in tool_results:
+                    self._append_system_line(
+                        f"🔧 Tool [{tr.tool_name}]: {tr.feedback_for_alice}",
+                        error=not tr.executed,
+                    )
+                # If any write tool executed, append feedback to history
+                # so Alice knows the result on her next turn
+                feedbacks = [tr.feedback_for_alice for tr in tool_results]
+                if feedbacks:
+                    self._history.append({
+                        "role": "system",
+                        "content": "(TOOL ROUTER CALLBACK)\n" + "\n".join(feedbacks),
+                    })
+        except Exception as _tr_exc:
+            print(f"[!] Tool router error: {_tr_exc}")
+
         cleaned = _strip_reflective_tics(raw, prior_user_text=prior_user_text)
         cleaned = _strip_model_stage_directions(cleaned)
         cleaned = _strip_servant_tail_tics(cleaned)

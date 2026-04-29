@@ -73,7 +73,7 @@ _BEAT_STATE = _STATE / "striatal_beat_state.json"
 N_OSCILLATORS = 64                       # number of cortical oscillators
 FREQ_LO = 8.0                           # Hz (theta band lower bound)
 FREQ_HI = 13.0                          # Hz (alpha band upper bound)
-TRAINING_STGM_COST = 0.25               # STGM cost per criterion learned
+TRAINING_STGM_COST = 0.025               # STGM cost per criterion learned
 WEBER_FRACTION = 0.10                    # temporal resolution limit
 
 

@@ -94,6 +94,17 @@ from System.swarm_electricity_metabolism import (
     _current_byte_sizes,
     _cpu_times,
 )
+from System.ledger_append import append_ledger_line
+
+try:
+    from System.crypto_keychain import get_silicon_identity, sign_block
+except Exception:  # pragma: no cover - fallback only for broken local keychains
+    def get_silicon_identity() -> str:
+        return "UNKNOWN_SERIAL"
+
+    def sign_block(payload: str) -> str:
+        import hashlib
+        return "NO_KEYCHAIN_" + hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 _STATE = _REPO / ".sifta_state"
 _STATE.mkdir(parents=True, exist_ok=True)
@@ -370,13 +381,19 @@ def mint_for_epoch(beneficiary: str = CANONICAL_OS_BENEFICIARY,
             },
         },
     }
+    signing_node = get_silicon_identity()
+    signature_body = (
+        f"UTILITY_MINT::{event['miner_id']}::{event['amount_stgm']}::"
+        f"{event['ts']}::{event['reason']}::NODE[{signing_node}]"
+    )
+    event["ed25519_sig"] = sign_block(signature_body)
+    event["signing_node"] = signing_node
     event_str = json.dumps(event, sort_keys=True, separators=(",", ":"), default=float)
     event["mint_sha256"] = hashlib.sha256(event_str.encode()).hexdigest()
 
     if total_stgm > 0.0:
         try:
-            with _CANONICAL_LEDGER.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(event, separators=(",", ":"), default=float) + "\n")
+            append_ledger_line(_CANONICAL_LEDGER, event)
         except Exception:
             pass
 

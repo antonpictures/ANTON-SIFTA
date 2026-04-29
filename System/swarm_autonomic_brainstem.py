@@ -282,6 +282,23 @@ def autonomic_heartbeat_cycle() -> Dict[str, Any]:
     # 9. Log Rotation — bounded segments with retention (solves file bloat structurally)
     system_status["log_rotation"] = _try_execute("swarm_log_rotation", "run_log_rotation")
 
+    # 10. MITOCHONDRIA: ATP Synthase — Convert accumulated byte work into STGM
+    # This is what makes the wallet number GROW. Every heartbeat tick, we check
+    # if bytes have been processed since last epoch and mint accordingly.
+    # Physics: real bytes + real joules → Ed25519-signed UTILITY_MINT_ATP.
+    try:
+        from System.swarm_atp_synthase import mint_for_epoch as _atp_mint
+        atp_receipt = _atp_mint()
+        minted = atp_receipt.get("minted_stgm", 0)
+        system_status["atp_synthase"] = {
+            "minted_stgm": minted,
+            "joules_source": atp_receipt.get("joules_source", "unknown"),
+            "ledger_event_id": atp_receipt.get("ledger_event_id", ""),
+            "status": "MINTED" if minted > 0 else "NO_NEW_WORK",
+        }
+    except Exception as e:
+        system_status["atp_synthase"] = f"ORGAN_FAILURE: {e}"
+
     system_status["brainstem_action"] = "BIOLOGICAL_CYCLE_COMPLETE_ORGANISM_HEALTHY"
     return _log_and_return(system_status)
 

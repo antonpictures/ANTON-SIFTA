@@ -57,7 +57,7 @@ except ImportError:
         return True
 
 # ── Economy constants (Bishop Vanguard) ─────────────────────────────────────
-STGM_ROUTE_COST = 0.25
+STGM_ROUTE_COST = 0.025
 STGM_ENAQT_BONUS = 0.50
 ENAQT_BONUS_THRESHOLD = 0.08   # yield > 8% = noise actively helped
 
