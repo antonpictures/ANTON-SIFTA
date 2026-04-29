@@ -259,27 +259,39 @@ def route_inference(payload_dict: dict, prefer_local: bool = False, timeout: int
     payload_bytes = json.dumps(payload_dict).encode("utf-8")
 
     try:
-        res = execute_query(target_url, payload_bytes, timeout=timeout)
-        text = res.get("response", "").strip()
-
-        # Stigmergic Economy tie-in — charge for cross-node inference
         is_remote = ("127.0.0.1" not in target_url)
-        if is_remote and record_inference_fee and text:
-            model = payload_dict.get("model", "unknown")
-            tokens_used = res.get("eval_count", 0) + res.get("prompt_eval_count", 0)
-            if tokens_used <= 0:
-                tokens_used = len(text.split()) * 2
-
-            fee = calculate_fee(tokens_used, model) if calculate_fee else 0.0
-            if fee > 0:
-                record_inference_fee(
-                    borrower_id=BORROWER_ID,
-                    lender_node_ip=target_url.split("//")[1].split(":")[0],
-                    fee_stgm=fee,
-                    model=model,
-                    tokens_used=tokens_used,
-                    file_repaired="inference_router.py"
-                )
+        
+        # If remote, we must call the SIFTA server's joule receipt wrapper (port 8000)
+        # to get a physically signed receipt, NOT the raw Ollama port (11434).
+        if is_remote:
+            receipt_target_url = target_url.replace(":11434/api/generate", ":8000/api/inference_joule_receipt")
+            
+            # Send payload with x-sifta-borrower header
+            req = urllib.request.Request(
+                receipt_target_url,
+                data=payload_bytes,
+                headers={"Content-Type": "application/json", "x-sifta-borrower": BORROWER_ID},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                receipt = json.loads(resp.read().decode("utf-8"))
+                
+            res = receipt.get("ollama_response", {})
+            text = res.get("response", "").strip()
+            
+            # Record the signed receipt from the provider
+            if record_inference_fee and "fee_stgm" in receipt:
+                from Kernel.inference_economy import append_ledger_line, LOG_PATH
+                try:
+                    append_ledger_line(LOG_PATH, receipt)
+                    print(f"  [STGM] Transfer Received: {receipt.get('fee_stgm')} STGM signed by {receipt.get('signing_node')}")
+                except Exception as e:
+                    print(f"  [ECONOMY] Failed to record signed transfer receipt: {e}")
+                    
+        else:
+            # Local: execute normally
+            res = execute_query(target_url, payload_bytes, timeout=timeout)
+            text = res.get("response", "").strip()
 
         return text
     except Exception as e:

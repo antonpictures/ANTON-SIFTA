@@ -426,6 +426,117 @@ async def post_messenger_send(req: MessengerRequest):
     conn.close()
     return {"status": "ok"}
 
+class InferenceRequest(BaseModel):
+    # Pass the actual Ollama POST payload here
+    payload: dict
+
+@app.post("/api/inference_joule_receipt")
+async def inference_joule_receipt(req: Request):
+    """
+    SIFTA Inference Transfer Receipt v1.
+    Wraps Ollama inference, measures Joules via swarm_atp_synthase, and returns a signed receipt.
+    """
+    try:
+        body_bytes = await req.body()
+        payload_dict = json.loads(body_bytes)
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        
+    model = payload_dict.get("model", "unknown")
+    
+    # 1. Start measurement
+    t0 = time.monotonic()
+    try:
+        import System.swarm_atp_synthase as atp
+        p0_power, p0_source = atp._get_system_power_watts()
+    except Exception:
+        p0_power, p0_source = 0.0, "missing"
+
+    # 2. Execute local Ollama inference
+    import urllib.request
+    ollama_url = "http://127.0.0.1:11434/api/generate"
+    try:
+        req_ollama = urllib.request.Request(
+            ollama_url,
+            data=body_bytes,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_ollama, timeout=120) as resp:
+            res_str = resp.read().decode("utf-8")
+            res = json.loads(res_str)
+    except Exception as e:
+        return JSONResponse({"error": f"Ollama failed: {str(e)}"}, status_code=500)
+
+    # 3. End measurement
+    t1 = time.monotonic()
+    try:
+        p1_power, _ = atp._get_system_power_watts()
+    except Exception:
+        p1_power = 0.0
+        
+    elapsed_s = t1 - t0
+    avg_watts = (p0_power + p1_power) / 2.0
+    idle_watts = 4.1  # Idle baseline
+    provider_joules_gross = avg_watts * elapsed_s
+    provider_joules_idle_baseline = idle_watts * elapsed_s
+    provider_joules_net = max(0.0, provider_joules_gross - provider_joules_idle_baseline)
+    
+    prompt_eval_count = res.get("prompt_eval_count", 0)
+    eval_count = res.get("eval_count", 0)
+    
+    # 4. Calculate fee & sign
+    try:
+        from Kernel.inference_economy import calculate_joule_fee, sign_block
+        fee_stgm = calculate_joule_fee(provider_joules_net, p0_source, margin_factor=1.15)
+        hw_serial = atp._get_serial() if hasattr(atp, "_get_serial") else "UNKNOWN_SERIAL"
+    except Exception:
+        fee_stgm = 0.0
+        hw_serial = "UNKNOWN_SERIAL"
+        sign_block = lambda x: "NO_KEYCHAIN"
+
+    borrower_id = req.headers.get("x-sifta-borrower", "UNKNOWN_BORROWER")
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).isoformat()
+    
+    import socket
+    lender_node_ip = socket.gethostbyname(socket.gethostname())
+    
+    receipt_body = (
+        f"INFERENCE_BORROW::{borrower_id}::FROM[{lender_node_ip}]::"
+        f"MODEL[{model}]::TOKENS[{prompt_eval_count+eval_count}]::FEE[{fee_stgm}]::TS[{ts}]::NODE[{hw_serial}]"
+    )
+    ed25519_signature = sign_block(receipt_body)
+    import hashlib
+    receipt_hash = hashlib.sha256(receipt_body.encode()).hexdigest()
+    
+    receipt = {
+        "event": "INFERENCE_TRANSFER_JOULES",
+        "schema": "SIFTA_INFERENCE_TRANSFER_RECEIPT_V1",
+        "borrower_id": borrower_id,
+        "lender_node_id": hw_serial,
+        "model": model,
+        "prompt_eval_count": prompt_eval_count,
+        "eval_count": eval_count,
+        "elapsed_s": round(elapsed_s, 4),
+        "avg_watts": round(avg_watts, 2),
+        "idle_watts": idle_watts,
+        "provider_joules_gross": round(provider_joules_gross, 4),
+        "provider_joules_net": round(provider_joules_net, 4),
+        "power_source": p0_source,
+        "stgm_per_joule": 0.00001,
+        "quality_factor": 1.0 if p0_source in ("powermetrics_real", "battery_real") else 0.75 if "estimated" in p0_source else 0.0,
+        "margin_factor": 1.15,
+        "fee_stgm": fee_stgm,
+        "receipt_hash": receipt_hash,
+        "ed25519_sig": ed25519_signature,
+        "signing_node": hw_serial,
+        "ollama_response": res
+    }
+    
+    return JSONResponse(receipt)
+
+
 class OverrideRequest(BaseModel):
     target_binary: str
 

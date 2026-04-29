@@ -184,13 +184,31 @@ def _model_iq_multiplier(model: str) -> float:
 
 def calculate_fee(tokens: int, model: str = "gemma4-phc") -> float:
     """
-    Proof of Compute fee in STGM. Scaled by the current Deflationary Era
-    AND the Asymmetric Model IQ multiplier.
+    DEPRECATED. Proof of Compute fee in STGM based on token counts.
+    Use calculate_joule_fee instead for physical accounting.
     """
     multiplier = get_current_halving_multiplier()
     iq_bonus = _model_iq_multiplier(model)
     base_fee = (tokens / 100) + iq_bonus
     return round(base_fee * multiplier, 4)
+
+def calculate_joule_fee(joules_net: float, power_source: str, margin_factor: float = 1.15) -> float:
+    """
+    Physics-Grounded Inference Transfer Pricing (v1).
+    Converts actual inference joules to STGM.
+    """
+    STGM_PER_JOULE = 0.00001
+    
+    if power_source in ("powermetrics_real", "battery_real"):
+        quality_factor = 1.0
+    elif "estimated" in power_source:
+        quality_factor = 0.75
+    else:
+        quality_factor = 0.0  # missing/refused
+        
+    fee_stgm = joules_net * STGM_PER_JOULE * quality_factor * margin_factor
+    return round(fee_stgm, 6)
+
 
 
 def mint_reward(agent_id: str, action: str, file_repaired: str, model: str = "gemma4-phc") -> dict:
