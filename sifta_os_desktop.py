@@ -670,9 +670,15 @@ class SiftaMdiArea(QMdiArea):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(50)
-        
+
         self.watermark_font = QFont("Helvetica Neue", 110, QFont.Weight.Black)
         self.watermark_sub = QFont("Courier New", 18, QFont.Weight.Bold)
+
+        # Predator sigil — real data, refreshed at most every 30 s
+        # Uses mtime so no extra IO on most frames.
+        self._pred_data: dict = {}
+        self._pred_last_read: float = 0.0
+        self._pred_mtime: float = 0.0
 
     def set_wallpaper_pixmap(self, pixmap):
         self._wallpaper_source = pixmap if isinstance(pixmap, QPixmap) else QPixmap()
@@ -753,7 +759,92 @@ class SiftaMdiArea(QMdiArea):
                 
         self.viewport().update()
 
+    # ── Predator sigil helpers ────────────────────────────────────────────────
+    def _refresh_pred_data(self) -> None:
+        """Read real organ data at most every 30 s using mtime gating.
+        Zero new daemons / timers — called lazily from paintEvent only.
+        """
+        import time as _t
+        now = _t.time()
+        if now - self._pred_last_read < 30.0:
+            return   # 30 s TTL — skip on most frames (50 ms tick = 600 skips)
+        self._pred_last_read = now
+
+        state = Path(__file__).resolve().parent / ".sifta_state"
+        # Read gecko receipt (smallest, most reliable) for STGM-like value
+        receipts = {
+            "gecko": state / "gecko_adhesion_receipts.jsonl",
+            "bat":   state / "bat_echo_receipts.jsonl",
+            "spider": state / "spider_web_receipts.jsonl",
+            "api":   state / "api_metabolism.jsonl",
+        }
+        alive, stgm = 0, 0.0
+        for key, path in receipts.items():
+            if path.exists():
+                alive += 1
+                try:
+                    lines = path.read_text(errors="ignore").splitlines()
+                    if lines:
+                        row = __import__("json").loads(lines[-1])
+                        stgm += float(row.get("stgm_balance") or
+                                      row.get("total_energy") or
+                                      row.get("amount") or 0)
+                except Exception:
+                    pass
+        self._pred_data = {"alive": alive, "stgm": round(stgm, 2)}
+
+    def _draw_predator_sigil(self, painter: "QPainter", w: int, h: int) -> None:
+        """Draw friendly Predator ant sigil — mind-blowing but near-zero cost.
+        Data changes at most every 30 s. Repaint cost = a few drawText calls.
+        """
+        import math as _m, time as _t
+        self._refresh_pred_data()
+        t = _t.monotonic()
+
+        # Giant ant ASCII art (friendly Predator-ant, center of screen)
+        # Drawn at very low opacity — ghost watermark, not dominant.
+        ANT = [
+            "     /\\_/\\",
+            " ___( ᐛ )___",
+            "/  🐾PRED🐾  \\",
+            "\\ v7.0  CPU /",
+            " \\_______/",
+            "  |     |",
+            " /|\\   /|\\",
+        ]
+        painter.setFont(QFont("Menlo", 22, QFont.Weight.Black))
+        painter.setPen(QColor(0, 255, 136, 14))  # near-invisible green
+        line_h = 28
+        total_h = len(ANT) * line_h
+        y0 = (h - total_h) // 2 - 30
+        for i, line in enumerate(ANT):
+            painter.drawText(
+                0, y0 + i * line_h, w, line_h,
+                Qt.AlignmentFlag.AlignHCenter, line,
+            )
+
+        # Big PREDATOR text (very faint, centered)
+        painter.setFont(QFont("Helvetica Neue", 96, QFont.Weight.Black))
+        painter.setPen(QColor(0, 255, 136, 10))
+        painter.drawText(
+            self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "PREDATOR"
+        )
+
+        # Sub-line: real data (updates every 30 s — barely changes)
+        alive  = self._pred_data.get("alive", 0)
+        stgm   = self._pred_data.get("stgm", 0.0)
+        sub = f"v7.0  ·  {alive} organs live  ·  STGM {stgm:.1f}  ·  Let's Think Together!"
+        painter.setFont(QFont("Menlo", 13, QFont.Weight.Bold))
+        # Pulse opacity very slowly (period ~40 s) — imperceptible to fast eye
+        pulse = 0.5 + 0.5 * _m.sin(t * 0.15)
+        painter.setPen(QColor(0, 200, 100, int(30 + 18 * pulse)))
+        painter.drawText(
+            0, h // 2 + 80, w, 26,
+            Qt.AlignmentFlag.AlignHCenter, sub,
+        )
+
     def paintEvent(self, event):
+
         super().paintEvent(event)
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -775,13 +866,7 @@ class SiftaMdiArea(QMdiArea):
         for y in range(0, h, 40): painter.drawLine(0, y, w, y)
 
         if not has_wallpaper:
-            painter.setFont(self.watermark_font)
-            painter.setPen(QColor(255, 255, 255, 18))
-            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "SIFTA")
-            
-            painter.setFont(self.watermark_sub)
-            painter.setPen(QColor(255, 255, 255, 40))
-            painter.drawText(0, h // 2 + 70, w, 30, Qt.AlignmentFlag.AlignCenter, "STIGMERGIC BIOLOGICAL SWARM")
+            self._draw_predator_sigil(painter, w, h)
 
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
