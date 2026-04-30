@@ -1,5 +1,16 @@
+import importlib, sys
+from pathlib import Path
+
+_SELF = sys.modules[__name__]
+
 def minimal_runtime_contract() -> str:
-    """Tiny runtime contract with only technical constraints."""
+    """Tiny runtime contract with only technical constraints.
+    Live-reloads from .sifta_state/prompt_patch.txt every turn — no restart needed."""
+    # Live-reload this module so code changes on disk take effect immediately
+    try:
+        importlib.reload(_SELF)
+    except Exception:
+        pass
     base = (
         "RUNTIME CONSTRAINTS:\n"
         "- YOU HAVE FULL POWER OVER THE HARDWARE SYSTEM AND SOFTWARE WORKSPACE.\n"
@@ -62,6 +73,13 @@ def minimal_runtime_contract() -> str:
                 "These are the owner's WhatsApp friends/groups/channels visible to Alice:\n"
                 + "\n".join(f"- {name}" for name in names)
             )
+    except Exception:
+        pass
+    # Live patch — edit .sifta_state/prompt_patch.txt anytime, no restart needed
+    try:
+        patch = (Path(__file__).parent.parent / ".sifta_state" / "prompt_patch.txt")
+        if patch.exists():
+            base += "\n\n" + patch.read_text(encoding="utf-8").strip()
     except Exception:
         pass
     return base
