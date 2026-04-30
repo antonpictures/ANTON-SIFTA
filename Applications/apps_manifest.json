@@ -484,6 +484,15 @@
     "window_height": 450,
     "autostart": false
   },
+  "Matrix Terminal": {
+    "category": "Simulations",
+    "widget_class": "MatrixTerminalApp",
+    "entry_point": "Applications/sifta_matrix_terminal.py",
+    "window_width": 900,
+    "window_height": 600,
+    "description": "Terminal yes, but Matrix themed ;)))",
+    "autostart": false
+  },
   "AG31 + C46S - PoUW Fold-Swarm Simulation": {
     "category": "Simulations",
     "entry_point": "Applications/fold_swarm_pouw_sim.py",
