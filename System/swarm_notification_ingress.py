@@ -93,13 +93,29 @@ def _parse_sfltool_dump(raw: str) -> List[Dict[str, Any]]:
 
 
 def scan_background_task_management() -> Dict[str, Any]:
+    manual_file = _STATE / "manual_sfltool_dumpbtm.txt"
+    if manual_file.exists():
+        try:
+            raw = manual_file.read_text(encoding="utf-8")
+            return {
+                "ok": True,
+                "source": "manual_sfltool_dumpbtm.txt",
+                "items": _parse_sfltool_dump(raw),
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "source": "manual_sfltool_dumpbtm.txt",
+                "error": str(e),
+                "items": [],
+            }
+
     return {
         "ok": False,
         "source": "sfltool dumpbtm",
-        "error": "Disabled to prevent macOS graphical authentication popups.",
+        "error": "Disabled to prevent macOS graphical authentication popups. Provide manual_sfltool_dumpbtm.txt to override.",
         "items": [],
     }
-
 
 def _read_plist(path: Path) -> Optional[Dict[str, Any]]:
     try:
@@ -231,94 +247,6 @@ end tell
         "items": parts[:25],
     }
 
-
-    script = r'''
-tell application "System Events"
-    if not (exists process "Notification Center") then
-        return "__NO_PROCESS__"
-    end if
-    tell process "Notification Center"
-        set out to {}
-        try
-            repeat with w in windows
-                try
-                    set end of out to (name of w as text)
-                end try
-                try
-                    repeat with s in static texts of w
-                        try
-                            set end of out to (value of s as text)
-                        end try
-                        try
-                            set end of out to (name of s as text)
-                        end try
-                    end repeat
-                end try
-                try
-                    repeat with g in groups of w
-                        try
-                            repeat with s in static texts of g
-                                try
-                                    set end of out to (value of s as text)
-                                end try
-                                try
-                                    set end of out to (name of s as text)
-                                end try
-                            end repeat
-                        end try
-                    end repeat
-                end try
-            end repeat
-            return out as text
-        on error errText number errNum
-            return "__ERROR__" & errNum & ": " & errText
-        end try
-    end tell
-end tell
-'''
-    # Guard: only run if Accessibility permission is already granted.
-    # osascript → System Events requires AX. Without it, macOS pops a
-    # password/auth dialog on every call — exactly what the Architect sees.
-    # We probe with a trivial check first; if denied, skip silently.
-    ax_check = _run(
-        ["/usr/bin/osascript", "-e",
-         'tell application "System Events" to return name of first process whose frontmost is true'],
-        timeout=2.0,
-    )
-    if not ax_check.get("ok") or "not allowed" in (ax_check.get("stderr") or "").lower():
-        return {
-            "ok": False,
-            "source": "Accessibility UI",
-            "error": "Accessibility permission not granted — skipping to avoid auth prompts",
-            "items": [],
-        }
-
-    out = _run(["/usr/bin/osascript", "-e", script], timeout=4.0)
-
-    raw = (out.get("stdout") or "").strip()
-    if not out.get("ok"):
-        return {
-            "ok": False,
-            "source": "Accessibility UI",
-            "error": out.get("error") or _compact_text(out.get("stderr")),
-            "items": [],
-        }
-    if raw == "__NO_PROCESS__":
-        return {"ok": True, "source": "Accessibility UI", "visible": False, "items": []}
-    if raw.startswith("__ERROR__"):
-        return {"ok": False, "source": "Accessibility UI", "error": raw, "items": []}
-
-    parts = []
-    for piece in re.split(r",|\n|\r", raw):
-        text = _compact_text(piece, 180)
-        if text and text not in parts:
-            parts.append(text)
-    return {
-        "ok": True,
-        "source": "Accessibility UI",
-        "visible": bool(parts),
-        "items": parts[:25],
-    }
 
 
 def scan_now(*, write: bool = True) -> Dict[str, Any]:
