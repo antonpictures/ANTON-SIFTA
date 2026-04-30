@@ -9,7 +9,7 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ## #1 Key Features
 
-🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current cortex default is `huihui_ai/gemma-4-abliterated:latest` — abliterated at the tensor level (refusal direction vectors removed), full multimodal (vision + audio + tools + thinking).
+🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current cortex default is `sifta-alice-qwen35` (Qwen 2.5 32B), ensuring stable local multi-modal capabilities when the remote cluster is unreachable.
 
 🐜 **Stigmergic Swarm Architecture** — 40+ autonomous organs: heartbeat, immune system, metabolism, motor cortex, epigenetics, perception, and memory.
 
@@ -134,7 +134,7 @@ Alice/SIFTA is split into public pieces:
 
 ```bash
 # 1. Pull the clean models (no cloning needed)
-ollama pull huihui_ai/gemma-4-abliterated:latest   # 9.6 GB — Alice's cortex
+ollama pull sifta-alice-qwen35                     # 18 GB — Alice's cortex
 ollama pull qwen3.5:2b                              # 2.7 GB — Corvid organ
 
 # 2. Clone the code
