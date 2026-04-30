@@ -10,6 +10,7 @@ import struct
 import subprocess
 import sys
 import termios
+import threading
 import time
 from pathlib import Path
 
@@ -82,6 +83,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._anim_char_idx = 0
         self._type_timer = QTimer(self)
         self._type_timer.timeout.connect(self._anim_tick)
+        self._chat_busy = False  # True while Alice is composing a reply
         
         self.clear()
         QTimer.singleShot(1000, lambda: self._queue_typing("Wake up, Neo...\n"))
@@ -253,8 +255,33 @@ class MatrixTerminalPane(QPlainTextEdit):
         if event.matches(QKeySequence.StandardKey.Copy):
             self.copy()
             return
-            
-        if self._script_state != "FINISHED":
+
+        # ── CHAT mode: talk to Alice-the-organism after the game ──────
+        if self._script_state == "CHAT":
+            if self._chat_busy or self._type_timer.isActive():
+                return  # Alice is composing — block input
+            text = event.text()
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                user_input = self._user_buffer.strip()
+                self._user_buffer = ""
+                self._append_plain("\n")
+                if user_input:
+                    self._chat_ask_alice(user_input)
+                else:
+                    self._append_plain("SIFTA > ")
+                return
+            elif event.key() == Qt.Key.Key_Backspace:
+                if self._user_buffer:
+                    self._user_buffer = self._user_buffer[:-1]
+                    cursor = self.textCursor()
+                    cursor.deletePreviousChar()
+                return
+            elif text:
+                self._user_buffer += text
+                self._append_plain(text)
+            return
+
+        if self._script_state not in ("FINISHED",):
             if self._type_timer.isActive():
                 return # Block typing while terminal is speaking
                 
@@ -339,6 +366,52 @@ class MatrixTerminalPane(QPlainTextEdit):
                 self._append_plain("\n")
                 self._queue_typing("Follow the white rabbit. For the Swarm. 🐜⚡\n\n")
                 self._script_state = "FINISHED"
+                # Transition to CHAT mode after the typing animation finishes
+                def _enter_chat():
+                    if self._script_state == "FINISHED":
+                        self._script_state = "CHAT"
+                        self._append_plain("\n─── You are now talking to Alice. The whole organism. ───\n")
+                        self._append_plain("SIFTA > ")
+                QTimer.singleShot(3500, _enter_chat)
+
+    def _chat_ask_alice(self, user_input: str) -> None:
+        """Ask Alice-the-organism via swarm_stigmergic_dialogue.
+
+        Uses compose_line which feeds Alice's REAL biological state
+        (conversation ledger, visual stigmergy, wallet, tool executions,
+        appeals, engrams) into the local LLM. Not bare Ollama.
+        The whole crypto swimmer entity responds.
+        """
+        self._chat_busy = True
+        self._append_plain("\n")
+
+        def _worker():
+            try:
+                sys_path = str(_REPO)
+                if sys_path not in sys.path:
+                    sys.path.insert(0, sys_path)
+                from System.swarm_stigmergic_dialogue import compose_line
+                reply = compose_line(
+                    occasion=user_input,
+                    topic=user_input,
+                    max_words=40,
+                    timeout_s=12.0,
+                )
+            except Exception as exc:
+                reply = f"[organism error: {exc}]"
+            # Schedule the reply back on the Qt main thread
+            QTimer.singleShot(0, lambda: self._chat_show_reply(reply))
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+    def _chat_show_reply(self, reply: str) -> None:
+        """Display Alice's reply with typewriter animation."""
+        self._chat_busy = False
+        if reply:
+            self._queue_typing(f"Alice > {reply}\n\nSIFTA > ")
+        else:
+            self._append_plain("Alice > [silence]\n\nSIFTA > ")
 
     def run_hack_1(self):
         if self._script_state == "WAIT_BTN_1":
@@ -346,7 +419,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             self.start_shell()
             self._script_state = "WAIT_EXPLAIN_1"
             QTimer.singleShot(300, lambda: self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X alphafold_db P69905"))
-        elif self._script_state == "FINISHED":
+        elif self._script_state in ("FINISHED", "CHAT"):
             if not self.is_running(): self.start_shell()
             self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X alphafold_db P69905")
 
@@ -356,7 +429,7 @@ class MatrixTerminalPane(QPlainTextEdit):
             self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X proteinmpnn")
             # Auto explain the inverse folding after it finishes (approx 4.5 seconds)
             QTimer.singleShot(4500, lambda: self._queue_typing("\nYou inverted the physics. Hallucinating new proteins that do not exist in nature.\n"))
-        elif self._script_state == "FINISHED":
+        elif self._script_state in ("FINISHED", "CHAT"):
             if not self.is_running(): self.start_shell()
             self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X proteinmpnn")
 
