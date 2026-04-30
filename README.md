@@ -9,7 +9,7 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ## #1 Key Features
 
-🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current cortex default is `sifta-alice-qwen35` (Qwen 2.5 32B), ensuring stable local multi-modal capabilities when the remote cluster is unreachable.
+🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current cortex default is `sifta-gemma4-alice` (Gemma4 12B, abliterated), the smartest local model. Qwen 2.5 32B (`sifta-alice-qwen35`) serves as the automatic fallback.
 
 🐜 **Stigmergic Swarm Architecture** — 40+ autonomous organs: heartbeat, immune system, metabolism, motor cortex, epigenetics, perception, and memory.
 

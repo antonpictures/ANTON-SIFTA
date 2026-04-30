@@ -3,16 +3,15 @@
 sifta_inference_defaults.py — Single source of truth for local model selection.
 
 Architect policy (2026-04-30):
-  - **Default Alice cortex:** `sifta-alice-qwen35` (Ollama), unless
-    `SIFTA_DEFAULT_OLLAMA_MODEL` or `.sifta_state/swimmer_ollama_assignments.json`
-    explicitly overrides it. This executable default is the source of truth.
+  - **Default Alice cortex:** `sifta-gemma4-alice` (Ollama Gemma4 12B),
+    the smartest local model. Overridable via `SIFTA_DEFAULT_OLLAMA_MODEL`
+    or `.sifta_state/swimmer_ollama_assignments.json`.
   - **MLX cortex v1:** `.sifta_state/cortex/alice_cortex_v1_fused`
     won tournament 408/459 but produced degenerate output in production
     ("That's true" loop). Archived for tournament re-runs, not live default.
     Fix planned for v2: rank 16, dropout 0.1, DPO pass.
-  - **Gemma4 line:** `sifta-gemma4-alice` is the SIFTA-branded Gemma4 12B
-    with organism system prompt. Available for heavy cortex tasks.
-  - **Ollama fallback:** `sifta-alice-qwen35` remains the stable local fallback.
+  - **Ollama fallback:** `sifta-alice-qwen35` (Qwen 2.5 32B) when Gemma4
+    is unavailable or overheating.
   - **Other models:** use for stigmergic testing, probes, or per-app tuning — never pretend
     one node's API is another node's fingerprint; routing goes through `inference_router`.
 
@@ -58,7 +57,7 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
-            "talk_to_alice": "sifta-alice-qwen35",
+            "talk_to_alice": "sifta-gemma4-alice",
             "truth_duel": CANONICAL_OLLAMA_FALLBACK,
             "lysosome": CANONICAL_OLLAMA_FALLBACK,
         },
