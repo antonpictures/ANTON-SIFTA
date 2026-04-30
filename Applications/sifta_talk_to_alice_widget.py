@@ -3511,6 +3511,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
+        # ── Ambient Context Reappraisal (learn from conversation) ──────────
+        # Biology: new evidence updates the prior. No file deletions.
+        # If Architect says "TV is off / just me / it's quiet" → clear ambient flag.
+        # If Architect says "TV is on / background music" → set ambient flag.
+        try:
+            from System.swarm_media_ingress_gate import (
+                record_ambient_media_context,
+                AMBIENT_CONTEXT_FILE,
+            )
+            import re as _re
+            _tl = text.lower()
+            _clear_patterns = _re.compile(
+                r"\b(tv.*(off|done|stopped|finished)|no (tv|youtube|background|noise|music)|"
+                r"just me|it'?s? quiet|in the kitchen|silence|nobody.*(talking|speaking)|"
+                r"that'?s? (me|my voice)|i'?m? (talking|speaking))\b"
+            )
+            _set_patterns = _re.compile(
+                r"\b(tv.*on|watching|youtube|background (music|noise|tv)|"
+                r"podcast|movie|playing in the background)\b"
+            )
+            if _clear_patterns.search(_tl):
+                # Architect said context has changed — clear the ambient flag
+                if AMBIENT_CONTEXT_FILE.exists():
+                    AMBIENT_CONTEXT_FILE.unlink()
+            elif _set_patterns.search(_tl):
+                # Architect declared ambient media — record it
+                record_ambient_media_context(
+                    source="architect_conversation",
+                    note=f"Architect said: {text[:120]}",
+                    ttl_s=3600.0,
+                )
+        except Exception:
+            pass
+
         # ── Epoch 9: Definite Autonomic Hook (Parasympathetic Healing) ──
         def _fire_parasys_background():
             try:
