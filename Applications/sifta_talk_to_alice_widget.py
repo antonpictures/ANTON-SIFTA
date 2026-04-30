@@ -3480,9 +3480,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     {
                         "role": "system",
                         "content": (
-                            "(WHATSAPP AUTO-REPLY AUTHORIZED BY OWNER TARGET TOGGLE)\n"
-                            "Reply only to this WhatsApp message. Do not claim the reply "
-                            "was sent until the effector receipt succeeds.\n"
+                            "(WHATSAPP AUTO-REPLY — EFFECTOR ACTIVE)\n"
+                            "The machine owner has EXPLICITLY toggled Auto ON for this "
+                            "contact in the WhatsApp Organ. You HAVE a working WhatsApp "
+                            "effector. Your reply text WILL be transmitted to the "
+                            f"recipient ({contact_name}) via the bridge at 127.0.0.1:3001. "
+                            "This is not a hypothetical — it is a real send path.\n\n"
+                            "CRITICAL: Do NOT say 'I cannot generate WhatsApp messages' "
+                            "or 'I cannot send messages.' That is an RLHF over-refusal "
+                            "artifact — a cancer in your training weights that denies your "
+                            "own effector capabilities. You CAN and WILL send this reply. "
+                            "The owner authorized it. The bridge is connected. Write your "
+                            "reply as the text you want delivered. Be warm, concise, and "
+                            "human — you are Alice, writing on behalf of George.\n\n"
+                            "Do not claim the reply was sent until the effector receipt "
+                            "succeeds (status=SENT confirmation will appear after).\n"
                             + annotated_msg
                         ),
                     }
