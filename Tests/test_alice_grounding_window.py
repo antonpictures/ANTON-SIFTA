@@ -257,7 +257,7 @@ def test_bare_whatsapp_send_asks_for_message_body():
     assert mod._bare_whatsapp_send_target("send to Carlton tell him hello") == ""
 
 
-def test_external_direct_whatsapp_gets_auto_reply_context():
+def test_external_direct_whatsapp_observation_does_not_auto_reply():
     mod = _load_widget_module()
     ctx = mod._whatsapp_auto_reply_context(
         {
@@ -268,8 +268,7 @@ def test_external_direct_whatsapp_gets_auto_reply_context():
         chat_type="direct",
         origin="external_human",
     )
-    assert ctx["target"] == "147235790663690@lid"
-    assert ctx["display_name"] == "Jeff Powers Ocean VIllas"
+    assert ctx is None
 
 
 def test_whatsapp_auto_reply_context_blocks_owner_and_groups():

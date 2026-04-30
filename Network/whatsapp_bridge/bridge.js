@@ -24,11 +24,25 @@ const INJECT_KEY = process.env.SIFTA_BRIDGE_INJECT_KEY || "";
 // AG31: group JID / name env-var — survives renames without a code change.
 // Set: SIFTA_WA_GROUP_JID=120363xxxxxxxx@g.us  (or leave blank = accept all groups)
 const ALLOWED_GROUP_JID = (process.env.SIFTA_WA_GROUP_JID || "").trim();
+const SYNC_FULL_HISTORY = process.env.SIFTA_WA_SYNC_FULL_HISTORY === "1";
+const BRIDGE_STARTED_AT_SEC = Math.floor(Date.now() / 1000);
+const APPEND_REPLAY_GRACE_SEC = Number(process.env.SIFTA_WA_APPEND_REPLAY_GRACE_SEC || "30");
 let lastKnownHuman = null;
 let injectServerStarted = false;
 // AG31: offline notice cooldown — never spam WhatsApp with error messages.
 let _lastOfflineNoticeSent = 0;
 const OFFLINE_NOTICE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes minimum between notices
+
+function messageTimestampSec(msg) {
+  const raw = msg?.messageTimestamp;
+  if (!raw) return 0;
+  if (typeof raw === "number") return raw;
+  if (typeof raw === "bigint") return Number(raw);
+  if (typeof raw === "string") return Number(raw) || 0;
+  if (typeof raw.toNumber === "function") return raw.toNumber();
+  if (typeof raw.low === "number") return raw.low;
+  return 0;
+}
 
 function cleanContact(contact) {
   return {
@@ -67,7 +81,7 @@ async function connectToWhatsApp() {
     version,
     auth: state,
     printQRInTerminal: false,
-    syncFullHistory: true,
+    syncFullHistory: SYNC_FULL_HISTORY,
   });
 
   sock.ev.on("connection.update", async (update) => {
@@ -118,6 +132,17 @@ async function connectToWhatsApp() {
 
     for (const msg of messages) {
       const msgId = msg.key.id;
+      const msgTs = messageTimestampSec(msg);
+
+      // Baileys can replay old self/history messages as "append" on startup.
+      // Alice should witness live WhatsApp traffic, not reprocess stale history.
+      if (
+        type === "append" &&
+        msgTs > 0 &&
+        msgTs < BRIDGE_STARTED_AT_SEC - APPEND_REPLAY_GRACE_SEC
+      ) {
+        continue;
+      }
 
       // Skip only messages the Swarm itself sent (echo prevention)
       if (sentBySwarm.has(msgId)) { sentBySwarm.delete(msgId); continue; }

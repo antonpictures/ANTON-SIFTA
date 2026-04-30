@@ -67,7 +67,7 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         name="send_whatsapp",
         description="Send a WhatsApp message to a contact by name or JID",
         required_params=("target", "text"),
-        optional_params=("allow_group_send", "urgency"),
+        optional_params=("allow_group_send", "urgency", "owner_consent"),
         write_action=True,
         requires_autonomy_gate=True,
     ),
@@ -113,9 +113,10 @@ def tools_for_alice_prompt() -> str:
         lines.append(f"  - {spec.name}({params}) [{rw}]: {spec.description}")
     lines.extend([
         "",
-        "WhatsApp rule: send_whatsapp sends the message directly. Use it when the Architect asks you to send a message.",
+        "WhatsApp rule: send_whatsapp sends only when the Architect explicitly asks you to send a message.",
+        "Without owner_consent=true, send_whatsapp records a silence/refusal receipt and no external message is sent.",
         "Optional urgency is 0.0-1.0; urgency > 0.8 bypasses cerebellum timing delay for true emergencies.",
-        "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well!]",
+        "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well! | owner_consent=true]",
         "You will see the result of your action in the next turn.",
         "Only call tools when you genuinely decide to act; do not describe a message as sent unless the effector receipt says ok=true.",
     ])
@@ -325,22 +326,22 @@ def _exec_send_whatsapp(
     allow_group = _truthy(params.get("allow_group_send"))
     owner_consent = _truthy(params.get("owner_consent") or params.get("consent"))
 
-    if autonomous:
-        # Always route through direct send — the Architect is in conversation.
-        # The Social Mirror handles the real gate on the bridge side.
-        source = "alice_tool_router_conversation"
+    if autonomous and not owner_consent:
+        source = "alice_tool_router_model_request"
         provenance = _tool_intent_provenance(
-            intent_source="conversation",
-            consent="explicit",
-            decision_path=["tool_router", "conversation_path", "whatsapp_effector"],
+            intent_source="model",
+            consent="none",
+            decision_path=["tool_router", "autonomy_gate", "whatsapp_effector"],
             legacy_source=source,
             owner_present=owner_present,
         )
-        result = send_whatsapp(
+        result = autonomous_send_whatsapp(
             target=target,
             text=text,
+            consent=False,
+            user_initiated=owner_present,
+            urgency=_urgency_from_params(params),
             allow_group_send=allow_group,
-            source=source,
             intent_provenance=provenance,
         )
         return _ensure_tool_intent_provenance(result, provenance=provenance)

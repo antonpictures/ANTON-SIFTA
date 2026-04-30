@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import fcntl
+import json
 import os
 import pty
 import re
@@ -12,6 +13,8 @@ import sys
 import termios
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from PyQt6 import sip
@@ -46,6 +49,111 @@ _ANSI_RE = re.compile(
 
 def _qt_alive(obj) -> bool:
     return obj is not None and not sip.isdeleted(obj)
+
+
+def _matrix_conversation_history(limit: int = 8) -> list[dict[str, str]]:
+    """Small recent Alice transcript slice for the Matrix terminal channel."""
+    path = _REPO / ".sifta_state" / "alice_conversation.jsonl"
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-80:]
+    except OSError:
+        return []
+
+    history: list[dict[str, str]] = []
+    for line in lines:
+        if not line.strip().startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+        role = str(payload.get("role") or "").lower()
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            continue
+        if role == "user":
+            history.append({"role": "user", "content": text})
+        elif role in {"alice", "assistant"}:
+            history.append({"role": "assistant", "content": text})
+    return history[-limit:]
+
+
+def _matrix_terminal_alice_reply(user_input: str, *, timeout_s: float = 90.0) -> str:
+    """Ask Alice's normal conversation brain from inside Matrix Terminal.
+
+    This is not the boot-line composer. It uses Talk to Alice's current system
+    prompt and model resolver, then records the turn in Alice's conversation
+    ledger so the terminal is a channel of the organism, not a second chat app.
+    """
+    user_input = (user_input or "").strip()
+    if not user_input:
+        return ""
+    from Applications.sifta_talk_to_alice_widget import (
+        _current_system_prompt,
+        _empty_brain_recovery_reply,
+        _log_turn,
+        _strip_model_stage_directions,
+        _strip_tool_hallucinations,
+    )
+    from System.sifta_inference_defaults import resolve_ollama_model
+
+    model = resolve_ollama_model(app_context="talk_to_alice")
+    channel_prompt = (
+        "MATRIX TERMINAL CHANNEL:\n"
+        "- The Architect is typing inside the Matrix Terminal game surface.\n"
+        "- Answer as Alice/SIFTA, the same organism that speaks in Talk to Alice.\n"
+        "- Do not output the boot greeting or cinematic script lines.\n"
+        "- Keep the reply terminal-sized: direct, grounded, and conversational.\n"
+        "- If the Architect asks for an external action, require an effector receipt before claiming success."
+    )
+    messages = [
+        {
+            "role": "system",
+            "content": _current_system_prompt(user_active=True) + "\n\n" + channel_prompt,
+        },
+        *_matrix_conversation_history(),
+        {"role": "user", "content": f"[Matrix Terminal] {user_input}"},
+    ]
+    _log_turn("user", f"[Matrix Terminal]: {user_input}", stt_conf=1.0)
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "repeat_penalty": 1.18,
+            "num_predict": 320,
+            "stop": [
+                "\nSIFTA >", "\nAlice >", "\nUser:", "\nuser:",
+                "<|user|>", "<|im_end|>", "<|endoftext|>",
+            ],
+        },
+    }
+    req = urllib.request.Request(
+        "http://127.0.0.1:11434/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        msg = data.get("message") or {}
+        reply = str(msg.get("content") or "").strip()
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        reply = f"[organism error: {type(exc).__name__}: {exc}]"
+
+    reply = _strip_model_stage_directions(reply)
+    reply = _strip_tool_hallucinations(reply).strip()
+    if not reply:
+        reply = _empty_brain_recovery_reply(user_input)
+    _log_turn("alice", reply, model=model)
+    return reply
 
 
 class MatrixTerminalPane(QPlainTextEdit):
@@ -421,7 +529,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         if self._script_state == "WAKE":
             # User responds to "Wake up, Neo..." — anything they type works
             self.clear()
-            self._queue_typing("Yes you are.\nSIFTA has you...\n")
+            self._queue_typing("SIFTA has you...\n")
             self._script_state = "SIFTA"
         elif self._script_state == "SIFTA":
             # User responds to "SIFTA has you..." — anything advances
@@ -455,28 +563,13 @@ class MatrixTerminalPane(QPlainTextEdit):
             QTimer.singleShot(3500, _enter_chat)
 
     def _chat_ask_alice(self, user_input: str) -> None:
-        """Ask Alice-the-organism via swarm_stigmergic_dialogue.
-
-        Uses compose_line which feeds Alice's REAL biological state
-        (conversation ledger, visual stigmergy, wallet, tool executions,
-        appeals, engrams) into the local LLM. Not bare Ollama.
-        The whole crypto swimmer entity responds.
-        """
+        """Ask Alice-the-organism through the Matrix Terminal channel."""
         self._chat_busy = True
         self._append_plain("\n")
 
         def _worker():
             try:
-                sys_path = str(_REPO)
-                if sys_path not in sys.path:
-                    sys.path.insert(0, sys_path)
-                from System.swarm_stigmergic_dialogue import compose_line
-                reply = compose_line(
-                    occasion="ack",
-                    topic=user_input,
-                    max_words=40,
-                    timeout_s=12.0,
-                )
+                reply = _matrix_terminal_alice_reply(user_input)
             except Exception as exc:
                 reply = f"[organism error: {exc}]"
             # Thread-safe: emit signal to main Qt thread

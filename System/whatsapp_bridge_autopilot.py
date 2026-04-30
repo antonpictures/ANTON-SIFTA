@@ -185,17 +185,29 @@ def send_whatsapp(
         mirror = SwarmSocialMirror()
         
         consent = "none"
-        if source == "owner_explicit":
+        source_norm = str(source or "").strip().lower()
+        provenance_consent = str((intent_provenance or {}).get("consent") or "").lower()
+        provenance_source = str((intent_provenance or {}).get("intent_source") or "").lower()
+        if source_norm == "owner_explicit":
             consent = "owner_explicit"
-        elif source == "conversation":
+        elif source_norm == "conversation":
             # Architect is in the conversation — Alice replying IS owner-directed
             consent = "owner_explicit"
-        elif intent_provenance and intent_provenance.get("consent") == "owner_explicit":
+        elif provenance_consent == "owner_explicit":
             consent = "owner_explicit"
-        elif intent_provenance and "owner" in str(intent_provenance.get("intent_source", "")).lower():
+        elif provenance_consent == "explicit" and provenance_source in {"owner", "conversation"}:
             consent = "owner_explicit"
-        elif source and source not in ("autonomous", "reflex", "scheduled"):
-            # Any source that isn't purely autonomous counts as owner-directed
+        elif "architect_consent" in source_norm or "spinal_reflex_conversation" in source_norm:
+            consent = "owner_explicit"
+        elif (
+            "autonomous" in source_norm
+            or "direct_whatsapp_reply" in source_norm
+            or "model_request" in source_norm
+            or "observation" in source_norm
+        ):
+            consent = "none"
+        elif source_norm and source_norm not in {"reflex", "scheduled", "scheduler"}:
+            # Legacy non-autonomous owner paths still count as owner-directed.
             consent = "owner_explicit"
 
         mirror_event = SocialMirrorEvent(

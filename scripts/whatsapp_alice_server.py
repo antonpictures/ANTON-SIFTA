@@ -43,6 +43,21 @@ def _now() -> float:
     return time.time()
 
 
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _normalize_chat_type(value: Any, from_jid: str) -> str:
+    chat_type = str(value or "").strip().lower()
+    if chat_type in {"direct", "group"}:
+        return chat_type
+    return "group" if str(from_jid).endswith("@g.us") else "direct"
+
+
 def _hash(value: str) -> str:
     return contact_hash(value)
 
@@ -118,10 +133,23 @@ def _record_contact(from_jid: str, name: str | None) -> None:
     _save_contacts(contacts)
 
 
-def _deposit_inbox(text: str, from_jid: str, name: str | None) -> None:
+def _deposit_inbox(
+    text: str,
+    from_jid: str,
+    name: str | None,
+    *,
+    from_me: bool = False,
+    chat_type: str | None = None,
+) -> None:
     """Deposit the incoming message to the SIFTA desktop inbox."""
     INBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
-    row = build_inbox_row(text, from_jid=from_jid, name=name)
+    row = build_inbox_row(
+        text,
+        from_jid=from_jid,
+        name=name,
+        from_me=from_me,
+        chat_type=chat_type,
+    )
     try:
         from System.jsonl_file_lock import append_line_locked
         append_line_locked(INBOX_FILE, json.dumps(row, ensure_ascii=False) + "\n")
@@ -181,19 +209,32 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
             from_jid = str(body.get("from", "unknown"))
             name = body.get("name")
             text = str(body.get("text", ""))[:MAX_INPUT_CHARS]
+            from_me = _coerce_bool(body.get("fromMe", False))
+            chat_type = _normalize_chat_type(body.get("chatType"), from_jid)
             _record_contact(from_jid, str(name) if name else None)
             _append_audit(
                 {
                     "event": "incoming_queued",
                     "from_hash": _hash(from_jid),
                     "name": name or "",
+                    "from_me": from_me,
+                    "chat_type": chat_type,
                     "text_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
                     "text_preview": text[:160],
                 }
             )
-            print(f"\n[WHATSAPP_ALICE] Queued -> {name or _hash(from_jid)}: {text[:120]}")
+            print(
+                f"\n[WHATSAPP_ALICE] Queued -> {name or _hash(from_jid)} "
+                f"({chat_type}, from_me={from_me}): {text[:120]}"
+            )
             
-            _deposit_inbox(text, from_jid, str(name) if name else None)
+            _deposit_inbox(
+                text,
+                from_jid,
+                str(name) if name else None,
+                from_me=from_me,
+                chat_type=chat_type,
+            )
 
             # Do not wait for the LLM. Just tell the bridge it's queued.
             # Alice will reply asynchronously using python3 -m System.alice_body_autopilot
