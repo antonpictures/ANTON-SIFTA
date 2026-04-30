@@ -693,12 +693,58 @@ class MatrixTerminalPane(QPlainTextEdit):
         else:
             self._queue_typing(f"Alice > {reply}\n\nSIFTA > ")
 
+    # ── Deterministic shell danger gate ────────────────────────────────
+    # These patterns are checked BEFORE write_command — no prompt-only safety.
+    _SHELL_DENY_PATTERNS = re.compile(
+        r"|".join([
+            r"\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*\s+|--recursive)",  # rm -r, rm -rf, rm -Rf
+            r"\brm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?/",               # rm /anything
+            r"\bmkfs\b",                                           # format filesystem
+            r"\bdd\s+",                                            # disk destroyer
+            r"\bchmod\s+777\b",                                    # world-writable
+            r"\bchmod\s+-R\b",                                     # recursive chmod
+            r"\bchown\s+-R\b",                                     # recursive chown
+            r">\s*/dev/sd[a-z]",                                   # overwrite disk
+            r":\(\)\{\s*:\|:&\s*\};:",                             # fork bomb
+            r"\bcurl\b.*\|\s*(ba)?sh",                             # curl pipe to shell
+            r"\bwget\b.*\|\s*(ba)?sh",                             # wget pipe to shell
+            r"\bsudo\b",                                           # privilege escalation
+            r"\bsu\s+(-\s|root\b)",                               # switch user
+            r"\bshutdown\b",                                       # shutdown
+            r"\breboot\b",                                         # reboot
+            r"\bhalt\b",                                           # halt
+            r"\bkillall\b",                                        # kill all processes
+            r"\blaunchctl\s+unload\b",                             # unload system services
+            r"\bnewfs\b",                                          # new filesystem
+            r"\bdiskutil\s+erase",                                 # erase disk (macOS)
+            r"\bsystemsetup\b",                                    # system setup changes
+        ]),
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _shell_cmd_is_safe(cls, cmd: str) -> bool:
+        """Deterministic denylist check — returns False for dangerous commands."""
+        return cls._SHELL_DENY_PATTERNS.search(cmd) is None
+
     def _execute_shell_from_alice(self, cmd: str) -> None:
-        """Pipe Alice's translated shell command into the live PTY."""
+        """Pipe Alice's translated shell command into the live PTY.
+
+        A deterministic denylist gate runs BEFORE write_command.
+        Dangerous patterns are blocked regardless of what the model says.
+        """
         if not self.is_running():
             self._append_plain("[shell not running — cannot execute]\n\nSIFTA > ")
             return
-        # Write the command to the PTY
+        if not self._shell_cmd_is_safe(cmd):
+            self._append_plain(
+                f"⚠️  BLOCKED: '{cmd}' matches a dangerous pattern.\n"
+                "    Alice will not execute destructive commands.\n"
+                "    If you need this, type it directly in the PTY.\n\n"
+                "SIFTA > "
+            )
+            return
+        # Safe — write the command to the PTY
         self.write_command(cmd)
         # After execution, show the prompt again with a delay
         QTimer.singleShot(1500, lambda: self._append_plain("\nSIFTA > "))
