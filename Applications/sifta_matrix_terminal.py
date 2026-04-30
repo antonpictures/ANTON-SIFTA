@@ -84,7 +84,18 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._type_timer = QTimer(self)
         self._type_timer.timeout.connect(self._anim_tick)
         self._chat_busy = False  # True while Alice is composing a reply
-        
+
+        # ── Matrix blinking cursor ▌ ──────────────────────────────────
+        self._cursor_visible = True
+        self._cursor_timer = QTimer(self)
+        self._cursor_timer.timeout.connect(self._blink_cursor)
+        self._cursor_timer.start(530)
+
+        # ── In-terminal rabbit animation state ───────────────────────
+        self._rabbit_lines: list[str] = []  # queued rabbit frames
+        self._rabbit_timer = QTimer(self)
+        self._rabbit_timer.timeout.connect(self._rabbit_anim_tick)
+
         self.clear()
         QTimer.singleShot(1000, lambda: self._queue_typing("Wake up, Neo...\n"))
 
@@ -101,6 +112,62 @@ class MatrixTerminalPane(QPlainTextEdit):
             self._type_timer.setInterval(random.randint(40, 150))
         else:
             self._type_timer.stop()
+
+    # ── Matrix blinking cursor ────────────────────────────────────────
+    def _blink_cursor(self):
+        """Toggle a Matrix-style ▌ block cursor at the end of the text."""
+        if self._type_timer.isActive() or self._chat_busy:
+            return  # Don't blink while typing animation is running
+        doc = self.document()
+        last_block = doc.lastBlock()
+        text = last_block.text()
+        cursor = self.textCursor()
+        if self._cursor_visible:
+            # Add cursor
+            if not text.endswith("▌"):
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                cursor.insertText("▌")
+                self.setTextCursor(cursor)
+                self.ensureCursorVisible()
+        else:
+            # Remove cursor
+            if text.endswith("▌"):
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                cursor.deletePreviousChar()
+                self.setTextCursor(cursor)
+        self._cursor_visible = not self._cursor_visible
+
+    def _strip_block_cursor(self):
+        """Remove the ▌ before inserting real text."""
+        doc = self.document()
+        last_text = doc.lastBlock().text()
+        if last_text.endswith("▌"):
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.deletePreviousChar()
+            self.setTextCursor(cursor)
+
+    # ── In-terminal rabbit animation 🐇 ──────────────────────────────
+    def _start_rabbit_climb(self):
+        """Show a 🐇 inside the terminal climbing upward toward the buttons."""
+        # Build frames: rabbit starts at bottom and hops up
+        self._rabbit_lines = []
+        for i in range(6):
+            blanks = "\n" * max(0, 5 - i)
+            hop = "  " * (i % 3)  # zigzag
+            self._rabbit_lines.append(f"{blanks}{hop}🐇  ↑ Follow the white rabbit ↑")
+        self._rabbit_lines.append("\n🐇🐇🐇  ↑ Click the button above ↑ 🐇🐇🐇")
+        self._rabbit_frame = 0
+        self._rabbit_timer.start(600)
+
+    def _rabbit_anim_tick(self):
+        if self._rabbit_frame >= len(self._rabbit_lines):
+            self._rabbit_timer.stop()
+            return
+        frame = self._rabbit_lines[self._rabbit_frame]
+        self._strip_block_cursor()
+        self._append_plain(f"\n{frame}")
+        self._rabbit_frame += 1
 
     def start_shell(self) -> None:
         if self.is_running():
@@ -158,6 +225,10 @@ class MatrixTerminalPane(QPlainTextEdit):
     def shutdown(self) -> None:
         if _qt_alive(getattr(self, "_type_timer", None)):
             self._type_timer.stop()
+        if _qt_alive(getattr(self, "_cursor_timer", None)):
+            self._cursor_timer.stop()
+        if _qt_alive(getattr(self, "_rabbit_timer", None)):
+            self._rabbit_timer.stop()
 
         if self._notifier is not None:
             self._notifier.setEnabled(False)
@@ -223,6 +294,7 @@ class MatrixTerminalPane(QPlainTextEdit):
     def _append_plain(self, text: str) -> None:
         if not text:
             return
+        self._strip_block_cursor()
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(text)
@@ -340,39 +412,46 @@ class MatrixTerminalPane(QPlainTextEdit):
             self.write_bytes(text.encode("utf-8"))
 
     def _process_script_input(self, text):
+        """Advance the cinematic script on ANY user input.
+        The user acts as themselves in the story — their lines are not hardcoded.
+        """
+        if not text:
+            return  # empty enter — do nothing
         if self._script_state == "WAKE":
-            if "not neo" in text or "neo" in text:
-                self.clear()
-                self._queue_typing("Yes you are.\nSIFTA has you...\n")
-                self._script_state = "SIFTA"
+            # User responds to "Wake up, Neo..." — anything they type works
+            self.clear()
+            self._queue_typing("Yes you are.\nSIFTA has you...\n")
+            self._script_state = "SIFTA"
         elif self._script_state == "SIFTA":
-            if "what are you" in text or "what" in text:
-                self.clear()
-                self._queue_typing("Follow the white rabbit.\n")
-                self._script_state = "WAIT_BTN_1"
-                if self._app_parent:
-                    self._app_parent.start_blinking_btn1()
+            # User responds to "SIFTA has you..." — anything advances
+            self.clear()
+            self._queue_typing("Follow the white rabbit.\n")
+            self._script_state = "WAIT_BTN_1"
+            self._start_rabbit_climb()
+            if self._app_parent:
+                self._app_parent.start_blinking_btn1()
         elif self._script_state == "WAIT_EXPLAIN_1":
-            if "what did i just do" in text or "what did i do" in text or "what" in text:
-                self._append_plain("\n")
-                self._queue_typing(
-                    "You pulled the true atomic structure of human Hemoglobin.\n\nKnock, knock.\n"
-                )
-                self._script_state = "WAIT_BTN_2"
-                if self._app_parent:
-                    self._app_parent.start_blinking_btn2()
+            # User asks about what just happened — any input
+            self._append_plain("\n")
+            self._queue_typing(
+                "You pulled the true atomic structure of human Hemoglobin.\n\nKnock, knock.\n"
+            )
+            self._script_state = "WAIT_BTN_2"
+            self._start_rabbit_climb()
+            if self._app_parent:
+                self._app_parent.start_blinking_btn2()
         elif self._script_state == "WAIT_EXPLAIN_2":
-            if "what am i suppose to do now" in text or "what am i suppose" in text or "what now" in text or "what do i do" in text:
-                self._append_plain("\n")
-                self._queue_typing("Follow the white rabbit. For the Swarm. 🐜⚡\n\n")
-                self._script_state = "FINISHED"
-                # Transition to CHAT mode after the typing animation finishes
-                def _enter_chat():
-                    if self._script_state == "FINISHED":
-                        self._script_state = "CHAT"
-                        self._append_plain("\n─── You are now talking to Alice. The whole organism. ───\n")
-                        self._append_plain("SIFTA > ")
-                QTimer.singleShot(3500, _enter_chat)
+            # User asks what to do — any input
+            self._append_plain("\n")
+            self._queue_typing("Follow the white rabbit. For the Swarm. 🐜⚡\n\n")
+            self._script_state = "FINISHED"
+            # Transition to CHAT mode after the typing animation finishes
+            def _enter_chat():
+                if self._script_state == "FINISHED":
+                    self._script_state = "CHAT"
+                    self._append_plain("\n─── You are now talking to Alice. The whole organism. ───\n")
+                    self._append_plain("SIFTA > ")
+            QTimer.singleShot(3500, _enter_chat)
 
     def _chat_ask_alice(self, user_input: str) -> None:
         """Ask Alice-the-organism via swarm_stigmergic_dialogue.
@@ -650,7 +729,10 @@ class MatrixTerminalApp(QWidget):
             if _qt_alive(timer) and timer.isActive():
                 timer.stop()
             return
-        if self.terminal._script_state != "FINISHED":
+        ts = self.terminal._script_state
+        if ts == "CHAT":
+            state = "🐇 chatting with Alice"
+        elif ts != "FINISHED":
             state = "scripting"
         else:
             state = "connected" if self.terminal.is_running() else "disconnected"
