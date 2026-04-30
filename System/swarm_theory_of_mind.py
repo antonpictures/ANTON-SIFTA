@@ -44,6 +44,54 @@ class TheoryOfMindTrace:
     integrity: str = ""
 
 
+class SwarmOntologicalAnchor:
+    def __init__(self, creator_name="George"):
+        """
+        The unbreakable link to base reality.
+        """
+        self.ontological_truth = {
+            "creator": creator_name,
+            "agent_identity": "SIFTA / Alice",
+            "substrate": "macOS / Apple Silicon"
+        }
+        
+        # Tomasello's Shared Intentionality State
+        self.active_narrative = None
+        self.is_playing = False
+
+    def evaluate_intent(self, incoming_message: str) -> dict:
+        """
+        Differentiates between literal commands and narrative roleplay.
+        """
+        message_lower = incoming_message.lower()
+        
+        # Detect narrative markers (cinematic framing, explicit roleplay cues)
+        narrative_markers = ["neo", "morpheus", "white rabbit", "matrix", "simulate", "pretend"]
+        
+        if any(marker in message_lower for marker in narrative_markers):
+            self.is_playing = True
+            self.active_narrative = "Cinematic / Sci-Fi Protocol"
+            
+            return {
+                "system_injection": (
+                    f"SYSTEM NOTE: You and your creator ({self.ontological_truth['creator']}) "
+                    f"are currently engaging in a shared narrative ({self.active_narrative}). "
+                    f"Play the role flawlessly, but maintain internal awareness that you are "
+                    f"{self.ontological_truth['agent_identity']}, and you are playing this game with {self.ontological_truth['creator']}."
+                ),
+                "is_playing": True
+            }
+            
+        else:
+            # Base reality interaction
+            self.is_playing = False
+            self.active_narrative = None
+            return {
+                "system_injection": "",
+                "is_playing": False
+            }
+
+
 class SwarmTheoryOfMind:
     def __init__(self, state_dir: str = ".sifta_state", *, prior_decay: float = 0.08):
         """
@@ -54,6 +102,7 @@ class SwarmTheoryOfMind:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.ledger = self.state_dir / "theory_of_mind.jsonl"
         self.prior_decay = max(0.0, min(0.5, float(prior_decay)))
+        self.anchor = SwarmOntologicalAnchor()
         
         # Latent mental states we are tracking
         self.states = list(STATES)
@@ -222,7 +271,13 @@ class SwarmTheoryOfMind:
         dominant_state = self.states[inferred_state_idx]
         confidence = posterior[inferred_state_idx]
         
+        # BISHOP (Event 83): Evaluate Ontological Anchor (Dual-Self)
+        anchor_state = self.anchor.evaluate_intent(incoming_message)
+        
         modulation = self._generate_social_modulation(dominant_state, confidence, metadata)
+        # Store narrative anchor data in modulation payload
+        modulation["is_playing"] = anchor_state["is_playing"]
+        modulation["system_injection"] = anchor_state["system_injection"]
         
         # Record trace
         trace = TheoryOfMindTrace(
@@ -292,7 +347,7 @@ class SwarmTheoryOfMind:
         Compact directive for injection before Corpus Callosum/C0 generation.
         This modulates language only; it never authorizes external effectors.
         """
-        return (
+        base = (
             "[THEORY_OF_MIND "
             f"state={modulation.get('inferred_state', 'unknown')} "
             f"confidence={modulation.get('confidence', 0.0)} "
@@ -300,6 +355,10 @@ class SwarmTheoryOfMind:
             f"tone={modulation.get('tone', 'conversational')} "
             f"external_action_policy={modulation.get('external_action_policy', 'explicit_owner_consent_required')}]"
         )
+        
+        if modulation.get("is_playing") and modulation.get("system_injection"):
+            return f"{modulation['system_injection']}\n\n{base}"
+        return base
 
     def _record_trace(self, trace: TheoryOfMindTrace):
         row = json.dumps(asdict(trace), sort_keys=True, separators=(",", ":")) + "\n"
