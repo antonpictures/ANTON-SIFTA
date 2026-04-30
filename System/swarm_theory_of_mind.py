@@ -44,6 +44,52 @@ class TheoryOfMindTrace:
     integrity: str = ""
 
 
+def _resolve_creator_name(default: str = "George") -> str:
+    """
+    Resolve the Architect's real name from the SIFTA stigmergic ledger.
+
+    Priority order:
+      1. .sifta_state/identity_topology.json  → architect.name
+      2. SIFTA_ARCHITECT_NAME environment variable
+      3. OS login name (getpass / pwd)
+      4. default fallback ("George")
+    """
+    import json as _json, os as _os, pathlib as _pathlib
+
+    # 1. Stigmergic identity ledger (authoritative)
+    try:
+        topo_path = _pathlib.Path(".sifta_state/identity_topology.json")
+        if not topo_path.exists():
+            # Try relative to this file's repo root
+            topo_path = _pathlib.Path(__file__).parent.parent / ".sifta_state/identity_topology.json"
+        if topo_path.exists():
+            topo = _json.loads(topo_path.read_text(encoding="utf-8"))
+            name = topo.get("architect", {}).get("name", "")
+            if name:
+                # "Ioan George Anton" → use preferred first name "George"
+                parts = name.split()
+                # Return the second token if present (preferred name), else full name
+                return parts[1] if len(parts) >= 2 else parts[0]
+    except Exception:
+        pass
+
+    # 2. Environment variable override
+    env_name = _os.environ.get("SIFTA_ARCHITECT_NAME", "").strip()
+    if env_name:
+        return env_name
+
+    # 3. OS login name
+    try:
+        import getpass
+        login = getpass.getuser()
+        if login and login not in ("root", "nobody"):
+            return login.capitalize()
+    except Exception:
+        pass
+
+    return default
+
+
 class SwarmEpistemicGradient:
     """
     Event 84: Epistemic Autofiction Gradient.
@@ -73,13 +119,14 @@ class SwarmEpistemicGradient:
         "whatsapp": 1.0, "stgm": 0.9,
     }
 
-    def __init__(self, creator_name: str = "George"):
-        self.creator = creator_name
+    def __init__(self, creator_name: str = ""):
+        # Resolve name dynamically; only fall back to "George" if everything fails
+        self.creator = creator_name.strip() or _resolve_creator_name()
         self.agent_id = "SIFTA / Alice"
 
         # Expose attributes legacy callers expect from SwarmOntologicalAnchor
         self.ontological_truth = {
-            "creator": creator_name,
+            "creator": self.creator,
             "agent_identity": self.agent_id,
             "substrate": "macOS / Apple Silicon",
         }
