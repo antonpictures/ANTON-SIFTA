@@ -30,6 +30,7 @@ DIRECT_REQUEST_RE = re.compile(
     r"^\s*(?:"
     r"can you|could you|will you|please|pls|tell me|show me|open|run|fix|"
     r"read|code|write|check|look|watch this|listen|remember|explain|"
+    r"send|message|"
     r"hey alice|alice[, ]"
     r")\b",
     re.IGNORECASE,
@@ -113,6 +114,10 @@ def classify_spoken_ingress(
     clean = " ".join(str(text or "").split())
     if not clean:
         return {"route": "ambient_media", "reason": "empty_stt", "confidence": 1.0}
+
+    # Typed text (stt_conf >= 1.0) is NEVER ambient media — the Architect typed it.
+    if stt_conf and stt_conf >= 1.0:
+        return {"route": "direct", "reason": "typed_input_always_direct", "confidence": 1.0}
 
     if DIRECT_ADDRESS_RE.search(clean) or DIRECT_REQUEST_RE.search(clean):
         return {"route": "direct", "reason": "direct_address_or_request", "confidence": 1.0}
