@@ -439,18 +439,85 @@ def read_system_settings_snapshot() -> dict[str, Any]:
 
 
 class _BrainDiagramWidget(QWidget):
-    """Live-painted brain architecture diagram for the Inference settings page.
+    """Live-painted brain architecture diagram — lightweight QPainter animation.
 
-    Renders Alice's neural topology: Cortex at center, sensory organs around it,
-    with glowing connection lines. Updates labels when the user changes model
-    selections in the dropdowns.
+    Pulse strategy (zero file I/O on paint tick):
+    • _pulse_tick: 80 ms QTimer — advances signal-dot positions along edges
+      and computes cortex glow breath. All pure math, no disk/network.
+    • _health_tick: 5 s QTimer — probes Ollama /api/tags in a thread;
+      result stored in _ollama_live bool. Only one probe in-flight at a time.
     """
+
+    _NODES = [
+        # idx, x_frac, y_frac, label, sublabel, r, g, b
+        (0, 0.50, 0.46, "🧠 CORTEX",   "",              0,   200, 255),  # cortex — sublabel set dynamically
+        (1, 0.50, 0.06, "👁 EYES",     "Iris",          0,   220, 130),
+        (2, 0.10, 0.36, "🎙 EARS",     "Whisper STT",   0,   200, 130),
+        (3, 0.90, 0.36, "🔊 VOICE",    "macOS TTS",     0,   200, 130),
+        (4, 0.16, 0.82, "🐦 CORVID",   "",              180, 100, 255),  # sublabel set dynamically
+        (5, 0.50, 0.90, "⚡ REFLEX",   "Pure Python",   255, 200,  60),
+        (6, 0.84, 0.82, "💬 WhatsApp", "Effector",       37, 211, 102),
+        (7, 0.50, 0.62, "🧬 MEMORY",   "Hippocampus",  100, 160, 255),
+    ]
+    # Edges from cortex (0) to peripherals — (src_idx, dst_idx)
+    _EDGES = [(0, i) for i in range(1, len(_NODES))]
 
     def __init__(self, cortex_model: str, corvid_model: str) -> None:
         super().__init__()
         self._cortex_label = cortex_model or "sifta-gemma4-alice"
         self._corvid_label = corvid_model or "qwen3.5:2b"
+        self._ollama_live: bool = True    # optimistic default
+        self._probe_running: bool = False
+
+        # Pulse state
+        import math
+        self._tick: int = 0
+        self._math = math
+
+        # Per-edge dot phases (offset so they don't all fire simultaneously)
+        n_edges = len(self._EDGES)
+        self._dot_phases = [i / n_edges for i in range(n_edges)]
+
         self.setStyleSheet("background: transparent;")
+        self.setMinimumHeight(290)
+
+        # 80 ms paint tick (≈12 fps — smooth but very cheap)
+        self._pulse_timer = QTimer(self)
+        self._pulse_timer.setInterval(80)
+        self._pulse_timer.timeout.connect(self._on_pulse)
+        self._pulse_timer.start()
+
+        # 5 s health probe
+        self._health_timer = QTimer(self)
+        self._health_timer.setInterval(5000)
+        self._health_timer.timeout.connect(self._probe_ollama)
+        self._health_timer.start()
+        self._probe_ollama()  # immediate first check
+
+    def _on_pulse(self) -> None:
+        self._tick += 1
+        speed = 0.018  # dots travel at this fraction of the edge per tick
+        self._dot_phases = [(p + speed) % 1.0 for p in self._dot_phases]
+        self.update()
+
+    def _probe_ollama(self) -> None:
+        """Non-blocking Ollama /api/tags ping — uses a daemon thread, zero UI block."""
+        if self._probe_running:
+            return
+        self._probe_running = True
+        import threading
+        def _check():
+            try:
+                import urllib.request
+                with urllib.request.urlopen(
+                    "http://127.0.0.1:11434/api/tags", timeout=2.0
+                ) as r:
+                    self._ollama_live = (r.status == 200)
+            except Exception:
+                self._ollama_live = False
+            finally:
+                self._probe_running = False
+        threading.Thread(target=_check, daemon=True).start()
 
     def update_cortex_label(self, text: str) -> None:
         self._cortex_label = text or "—"
@@ -460,95 +527,127 @@ class _BrainDiagramWidget(QWidget):
         self._corvid_label = text or "—"
         self.update()
 
-    def paintEvent(self, event: Any) -> None:
+    # ── helpers ────────────────────────────────────────────────────────────
+
+    def _node_center(self, idx: int, w: int, h: int) -> QPointF:
+        row = self._NODES[idx]
+        return QPointF(row[1] * w, row[2] * h)
+
+    def _node_color(self, idx: int, alpha: int = 255) -> QColor:
+        row = self._NODES[idx]
+        return QColor(row[5], row[6], row[7], alpha)
+
+    def _node_label(self, idx: int) -> str:
+        if idx == 0:
+            return self._NODES[idx][3]
+        return self._NODES[idx][3]
+
+    def _node_sublabel(self, idx: int) -> str:
+        if idx == 0:
+            return self._cortex_label
+        if idx == 4:
+            return self._corvid_label
+        return self._NODES[idx][4]
+
+    # ── paint ──────────────────────────────────────────────────────────────
+
+    def paintEvent(self, event: Any) -> None:  # noqa: N802
+        import math
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         w, h = self.width(), self.height()
 
-        # ── Node definitions: (x_frac, y_frac, label, sublabel, r, g, b) ──
-        cx, cy = 0.50, 0.48  # cortex center
-        nodes = [
-            (cx,   cy,   "🧠 CORTEX",     self._cortex_label,   0, 200, 255),
-            (0.50, 0.08, "👁 EYES",        "Iris visual cortex", 0, 200, 130),
-            (0.12, 0.38, "🎙 EARS",        "Whisper STT",        0, 200, 130),
-            (0.88, 0.38, "🔊 VOICE",       "macOS TTS",          0, 200, 130),
-            (0.18, 0.82, "🐦 CORVID",      self._corvid_label,   180, 100, 255),
-            (0.50, 0.88, "⚡ REFLEX",      "Pure Python",        255, 200, 60),
-            (0.82, 0.82, "💬 WhatsApp",    "Bridge effector",    37, 211, 102),
-            (0.50, 0.52, "🧬 MEMORY",      "Hippocampus",        100, 160, 255),
-        ]
+        breath = (math.sin(self._tick * 0.06) + 1.0) / 2.0  # 0..1 slow sine
 
-        # ── Draw connections from cortex to each peripheral ──
-        cortex_pt = QPointF(cx * w, cy * h)
-        for i, (nx, ny, _, _, r, g, b) in enumerate(nodes):
-            if i == 0 or i == 7:  # skip self / memory (drawn differently)
-                continue
-            node_pt = QPointF(nx * w, ny * h)
-            # Glow line (wider, semi-transparent)
-            glow_pen = QPen(QColor(r, g, b, 40), 5.0)
-            p.setPen(glow_pen)
-            p.drawLine(cortex_pt, node_pt)
+        # ── 1. Draw connection lines + travelling signal dots ──────────────
+        for edge_i, (src_i, dst_i) in enumerate(self._EDGES):
+            src = self._node_center(src_i, w, h)
+            dst = self._node_center(dst_i, w, h)
+            r, g, b = self._NODES[dst_i][5], self._NODES[dst_i][6], self._NODES[dst_i][7]
+
+            # Background glow line
+            p.setPen(QPen(QColor(r, g, b, 22), 5.0))
+            p.drawLine(src, dst)
             # Core line
-            core_pen = QPen(QColor(r, g, b, 160), 1.5)
-            p.setPen(core_pen)
-            p.drawLine(cortex_pt, node_pt)
+            p.setPen(QPen(QColor(r, g, b, 90), 1.2))
+            p.drawLine(src, dst)
 
-        # ── Draw memory connection (short, below cortex) ──
-        mem_pt = QPointF(0.50 * w, 0.52 * h)
-        glow_pen = QPen(QColor(100, 160, 255, 40), 5.0)
-        p.setPen(glow_pen)
-        p.drawLine(cortex_pt, QPointF(mem_pt.x(), mem_pt.y() + 18))
-        core_pen = QPen(QColor(100, 160, 255, 160), 1.5)
-        p.setPen(core_pen)
-        p.drawLine(cortex_pt, QPointF(mem_pt.x(), mem_pt.y() + 18))
+            # Travelling dot — lerp along the edge
+            t = self._dot_phases[edge_i]
+            dot_x = src.x() + (dst.x() - src.x()) * t
+            dot_y = src.y() + (dst.y() - src.y()) * t
+            dot_alpha = int(180 + 70 * breath)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(r, g, b, dot_alpha))
+            p.drawEllipse(QPointF(dot_x, dot_y), 3.5, 3.5)
+            # Dot glow halo
+            p.setBrush(QColor(r, g, b, 40))
+            p.drawEllipse(QPointF(dot_x, dot_y), 7.0, 7.0)
 
-        # ── Draw node cards ──
-        for i, (nx, ny, label, sublabel, r, g, b) in enumerate(nodes):
+        # ── 2. Draw node cards ─────────────────────────────────────────────
+        for idx, (_, nx, ny, label, _, r, g, b) in enumerate(self._NODES):
             px, py = nx * w, ny * h
-            is_cortex = (i == 0)
-            is_memory = (i == 7)
+            is_cortex = (idx == 0)
+            is_memory = (idx == 7)
 
-            # Card dimensions
-            card_w = 140 if is_cortex else (100 if is_memory else 115)
-            card_h = 52 if is_cortex else (22 if is_memory else 44)
-            card_rect = QRectF(px - card_w / 2, py - card_h / 2, card_w, card_h)
+            card_w = 152 if is_cortex else (105 if is_memory else 118)
+            card_h = 58  if is_cortex else (20 if is_memory else 46)
+            rect = QRectF(px - card_w / 2, py - card_h / 2, card_w, card_h)
 
-            # Card background
-            bg = QColor(16, 18, 28, 220)
-            p.setBrush(bg)
+            # Card fill
+            p.setBrush(QColor(14, 16, 26, 215))
 
-            # Border glow
-            border_pen = QPen(QColor(r, g, b, 180 if is_cortex else 120), 2.0 if is_cortex else 1.5)
-            p.setPen(border_pen)
-            p.drawRoundedRect(card_rect, 10.0, 10.0)
-
-            # Cortex outer glow
+            # Border: cortex flickers with breath + Ollama live/dead color
             if is_cortex:
-                for glow_i in range(3):
-                    glow_rect = card_rect.adjusted(-glow_i * 3, -glow_i * 3, glow_i * 3, glow_i * 3)
-                    glow_p = QPen(QColor(r, g, b, 30 - glow_i * 8), 1.0)
-                    p.setPen(glow_p)
-                    p.setBrush(QColor(0, 0, 0, 0))
-                    p.drawRoundedRect(glow_rect, 12.0, 12.0)
-
-            # Label text
-            p.setPen(QColor(240, 245, 255))
-            label_font = QFont("Menlo", 11 if is_cortex else (9 if is_memory else 10), QFont.Weight.Bold)
-            p.setFont(label_font)
-            if is_memory:
-                p.drawText(card_rect, Qt.AlignmentFlag.AlignCenter, sublabel)
+                live_r, live_g, live_b = (0, 220, 255) if self._ollama_live else (255, 80, 60)
+                border_alpha = int(140 + 100 * breath)
+                p.setPen(QPen(QColor(live_r, live_g, live_b, border_alpha), 2.2))
             else:
-                label_rect = QRectF(card_rect.x(), card_rect.y() + 4, card_rect.width(), card_rect.height() / 2)
-                p.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, label)
+                p.setPen(QPen(QColor(r, g, b, 110), 1.4))
 
+            p.drawRoundedRect(rect, 10.0, 10.0)
+
+            # Cortex multi-ring glow
+            if is_cortex:
+                live_r2, live_g2, live_b2 = (0, 220, 255) if self._ollama_live else (255, 80, 60)
+                p.setBrush(QColor(0, 0, 0, 0))
+                for gi in range(1, 4):
+                    ga = int((30 - gi * 7) * breath)
+                    p.setPen(QPen(QColor(live_r2, live_g2, live_b2, max(ga, 0)), 1.0))
+                    p.drawRoundedRect(rect.adjusted(-gi*3, -gi*3, gi*3, gi*3), 12.0, 12.0)
+
+            # Node inner pulse circle (tiny, only non-cortex)
+            if not is_cortex and not is_memory:
+                pulse_r = int(3 + 2 * breath)
+                p.setBrush(QColor(r, g, b, int(80 + 80 * breath)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawEllipse(QPointF(px - card_w/2 + 10, py), float(pulse_r), float(pulse_r))
+
+            # Text
+            p.setPen(QColor(240, 245, 255))
+            if is_memory:
+                p.setFont(QFont("Menlo", 8, QFont.Weight.Bold))
+                p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._node_sublabel(idx))
+            else:
+                p.setFont(QFont("Menlo", 11 if is_cortex else 9, QFont.Weight.Bold))
+                top_rect = QRectF(rect.x(), rect.y() + 5, rect.width(), rect.height() * 0.48)
+                p.drawText(top_rect, Qt.AlignmentFlag.AlignCenter, label)
                 # Sublabel
-                sub_font = QFont("Menlo", 8 if is_cortex else 7)
-                p.setFont(sub_font)
-                p.setPen(QColor(r, g, b, 200))
-                sub_rect = QRectF(card_rect.x(), card_rect.y() + card_rect.height() / 2 - 2, card_rect.width(), card_rect.height() / 2)
-                p.drawText(sub_rect, Qt.AlignmentFlag.AlignCenter, sublabel)
+                sub_color = QColor(live_r, live_g, live_b, 190) if is_cortex else QColor(r, g, b, 190)
+                p.setPen(sub_color)
+                p.setFont(QFont("Menlo", 8 if is_cortex else 7))
+                bot_rect = QRectF(rect.x(), rect.y() + rect.height() * 0.50, rect.width(), rect.height() * 0.48)
+                p.drawText(bot_rect, Qt.AlignmentFlag.AlignCenter, self._node_sublabel(idx))
+
+        # ── 3. Status bar ──────────────────────────────────────────────────
+        status_text = "● Ollama online" if self._ollama_live else "● Ollama offline"
+        status_color = QColor(0, 200, 130) if self._ollama_live else QColor(255, 80, 60)
+        p.setPen(status_color)
+        p.setFont(QFont("Menlo", 9))
+        p.drawText(QRectF(0, h - 18, w, 16), Qt.AlignmentFlag.AlignRight, status_text)
 
         p.end()
+
 
 
 class MetricCard(QFrame):
