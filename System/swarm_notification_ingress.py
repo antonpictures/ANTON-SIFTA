@@ -6,7 +6,8 @@ Alice cannot read a private Notification Center database by wish. She can,
 however, observe the same surfaces the local OS exposes to this user process:
 
   * visible Notification Center UI text through Accessibility, when permitted;
-  * Background Task Management state through `sfltool dumpbtm`;
+  * [DISABLED] Background Task Management state through `sfltool dumpbtm`
+    (disabled to prevent macOS graphical authentication popups, relying on plists instead);
   * LaunchAgent plists that cause macOS "can run in the background" banners.
 
 Every scan is written to `.sifta_state/notification_ingress.jsonl` so the
