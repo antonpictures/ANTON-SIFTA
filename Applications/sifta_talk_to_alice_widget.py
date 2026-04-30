@@ -1178,7 +1178,7 @@ def _current_system_prompt(
     parts.append(_wall_clock_grounding_block())
     parts.append(
         "TIME ACCESS PROTOCOL:\n"
-        "- If the Architect asks for the current time, use the direct local time "
+        "- If you are asked for the current time, use the direct local time "
         "acquisition path; do not invent bracketed placeholder text and do not "
         "repeat stale training text that says you do not know the time when the "
         "wall-clock block is present.\n"
@@ -1234,15 +1234,15 @@ def _current_system_prompt(
     except Exception:
         pass
 
-    # ── APP FOCUS AWARENESS: what the Architect is looking at right now ────
+    # ── APP FOCUS AWARENESS: what George is looking at right now ────
     try:
         from System.swarm_app_focus import get_focus_context
         _focus = get_focus_context(max_age_s=120.0)
         if _focus:
             parts.append(
-                "ARCHITECT APP FOCUS (live stigmergic ledger — not hardcoded):\n"
+                "APP FOCUS (live stigmergic ledger — not hardcoded):\n"
                 + _focus + "\n"
-                "If the Architect asks about what is on screen, reference this context. "
+                "If George asks about what is on screen, reference this context. "
                 "You learned this through the stigmergic ledger, not by reading code."
             )
     except Exception:
