@@ -1139,86 +1139,152 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         active_cortex = get_default_ollama_model() or "sifta-gemma4-alice"
 
+        # ── Fetch physical weights from Ollama once (no timer, cached) ──
+        model_weights: dict[str, int] = {}
+        try:
+            import urllib.request as _ur
+            with _ur.urlopen("http://127.0.0.1:11434/api/tags", timeout=2.0) as _r:
+                for m in json.loads(_r.read()).get("models", []):
+                    model_weights[m["name"]] = m.get("size", 0)
+        except Exception:
+            pass
+
+        def _fmt_weight(model_name: str) -> str:
+            """Return human-readable weight string for a model name."""
+            # Try exact match then prefix match
+            size = model_weights.get(model_name) or model_weights.get(model_name + ":latest")
+            if not size:
+                for k, v in model_weights.items():
+                    if k.startswith(model_name.split(":")[0]):
+                        size = v
+                        break
+            if not size:
+                return ""
+            if size >= 1e9:
+                return f"  ⚖ {size/1e9:.2f} GB"
+            return f"  ⚖ {size/1e6:.0f} MB"
+
+        def _state_dir_weight(subdir: str) -> str:
+            """Measure a .sifta_state subdirectory without blocking."""
+            from pathlib import Path as _P
+            p = _P(".sifta_state") / subdir
+            if not p.exists():
+                return "⚖ 0 MB"
+            try:
+                total = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+                if total >= 1e9:
+                    return f"⚖ {total/1e9:.2f} GB"
+                return f"⚖ {total/1e6:.1f} MB"
+            except Exception:
+                return "⚖ ? MB"
+
         # ── Brain Architecture Diagram (live, animated) ──
         diagram = _BrainDiagramWidget(active_cortex, self._corvid_default)
-        diagram.setFixedHeight(310)
+        diagram.setFixedHeight(290)
         root.addWidget(diagram)
         self._brain_diagram = diagram
 
-        # ── Status chips — READ ONLY, no dropdowns ──
+        # ── Status chips — READ ONLY ──
         chip_style_cortex = (
             "background: rgb(0, 30, 45); color: rgb(0, 220, 255); "
             "border: 1px solid rgb(0, 150, 200); border-radius: 8px; "
-            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
         chip_style_organ = (
             "background: rgb(10, 28, 18); color: rgb(0, 200, 130); "
             "border: 1px solid rgb(0, 140, 90); border-radius: 8px; "
-            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
         chip_style_fixed = (
             "background: rgb(28, 26, 10); color: rgb(200, 170, 50); "
             "border: 1px solid rgb(140, 110, 0); border-radius: 8px; "
-            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
         chip_style_weights = (
             "background: rgb(20, 10, 30); color: rgb(160, 100, 220); "
             "border: 1px solid rgb(100, 50, 160); border-radius: 8px; "
-            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
+        )
+        weight_style = (
+            "color: rgb(100, 115, 135); font-size: 10px; font-family: Menlo; "
+            "padding: 4px 6px; "
         )
 
-        def _chip_row(label: str, value: str, chip_css: str) -> QHBoxLayout:
+        def _chip_row(label: str, value: str, chip_css: str, weight_str: str = "") -> QHBoxLayout:
             row = QHBoxLayout()
-            row.setSpacing(10)
+            row.setSpacing(8)
             lbl = QLabel(label)
-            lbl.setStyleSheet("color: rgb(130, 140, 160); font-size: 11px; min-width: 110px;")
+            lbl.setStyleSheet("color: rgb(130, 140, 160); font-size: 11px; min-width: 118px;")
             chip = QLabel(value)
             chip.setStyleSheet(chip_css)
             row.addWidget(lbl)
             row.addWidget(chip)
+            if weight_str:
+                w_lbl = QLabel(weight_str)
+                w_lbl.setStyleSheet(weight_style)
+                row.addWidget(w_lbl)
             row.addStretch()
             return row
 
-        # Cortex heading
+        # ── Cortex section ──
         cortex_heading = QLabel("🧠  Primary Cortex  ·  Alice's reasoning brain")
         cortex_heading.setStyleSheet(
             "color: rgb(0, 220, 255); font-size: 13px; font-weight: bold; margin-top: 2px;"
         )
         root.addWidget(cortex_heading)
-        root.addLayout(_chip_row("Alice Cortex", active_cortex, chip_style_cortex))
-        root.addLayout(_chip_row("Talk to Alice", "follows Cortex", chip_style_cortex))
+        root.addLayout(_chip_row("Alice Cortex", active_cortex,
+                                  chip_style_cortex, _fmt_weight(active_cortex)))
+        root.addLayout(_chip_row("Fallback Cortex", "sifta-alice-qwen35",
+                                  chip_style_cortex, _fmt_weight("sifta-alice-qwen35")))
 
-        # Organs heading
+        # ── Organs section ──
         organ_heading = QLabel("⚡  Organs  ·  run simultaneously alongside the cortex")
         organ_heading.setStyleSheet(
-            "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 8px;"
+            "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(organ_heading)
-        root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default, chip_style_organ))
+        root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default,
+                                  chip_style_organ, _fmt_weight(self._corvid_default)))
         root.addLayout(_chip_row("Reflex Arc", "Pure Python · no model", chip_style_fixed))
         root.addLayout(_chip_row("Thermal Cortex", "BISHOP · fever router", chip_style_fixed))
 
-        # Custom weights heading
-        mlx_heading = QLabel("🔬  Custom Weights  ·  fine-tuned cortex models")
+        # ── Memory / State section ──
+        mem_heading = QLabel("🧬  Memory  ·  physical ledger on disk")
+        mem_heading.setStyleSheet(
+            "color: rgb(100, 160, 255); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        )
+        root.addWidget(mem_heading)
+        root.addLayout(_chip_row("MLX Cortex (archived)", _state_dir_weight("cortex"),
+                                  chip_style_weights))
+        root.addLayout(_chip_row("Runtime Logs", _state_dir_weight("runtime_logs"),
+                                  chip_style_fixed))
+
+        # ── Custom Weights section ──
+        mlx_heading = QLabel("🔬  Custom Weights  ·  fine-tuned originals")
         mlx_heading.setStyleSheet(
-            "color: rgb(180, 100, 255); font-size: 13px; font-weight: bold; margin-top: 8px;"
+            "color: rgb(180, 100, 255); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(mlx_heading)
-        root.addLayout(_chip_row("MLX Cortex v1", "Archived (degenerate output)", chip_style_weights))
-        root.addLayout(_chip_row("MLX Cortex v2", "Planned · rank 16, DPO", chip_style_weights))
+        root.addLayout(_chip_row("MLX Cortex v1", "Archived · degenerate output",
+                                  chip_style_weights, _state_dir_weight("cortex")))
+        root.addLayout(_chip_row("MLX Cortex v2", "Planned · rank 16, dropout 0.1, DPO",
+                                  chip_style_weights))
 
-        # Reset button — restores gemma4 if something got corrupted
+        # Reset button
         reset_row = QHBoxLayout()
         reset_row.addStretch()
         reset_btn = QPushButton("↺  Reset Brain to Default")
-        reset_btn.setFixedHeight(34)
+        reset_btn.setFixedHeight(32)
         reset_btn.setStyleSheet(
-            "QPushButton { background: rgb(20, 22, 32); color: rgb(120, 130, 150); "
-            "border: 1px solid rgb(50, 55, 70); border-radius: 8px; font-size: 11px; padding: 0 16px; }"
-            "QPushButton:hover { background: rgb(30, 35, 50); color: rgb(180, 190, 210); "
-            "border-color: rgb(0, 150, 200); }"
+            "QPushButton { background: rgb(20, 22, 32); color: rgb(100, 115, 135); "
+            "border: 1px solid rgb(40, 45, 60); border-radius: 8px; font-size: 11px; padding: 0 14px; }"
+            "QPushButton:hover { background: rgb(28, 32, 48); color: rgb(0, 200, 255); "
+            "border-color: rgb(0, 140, 200); }"
         )
-        reset_btn.setToolTip("Restore sifta-gemma4-alice as the canonical cortex model.")
+        reset_btn.setToolTip(
+            "If the assignments.json was manually edited and broke Alice,\n"
+            "this restores sifta-gemma4-alice as the canonical cortex."
+        )
         reset_btn.clicked.connect(self._reset_brain_to_default)
         reset_row.addWidget(reset_btn)
         root.addLayout(reset_row)
