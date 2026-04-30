@@ -4086,6 +4086,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # from thinking to acting — she can now invoke tools by including
         # structured calls in her natural language output.
         try:
+            # I3 — Quarantine fake formats BEFORE execution (swarm_alice_invariants)
+            try:
+                from System.swarm_alice_invariants import audit_alice_output
+                _audit = audit_alice_output(raw)
+                if _audit["quarantined"]:
+                    raw = _audit["clean_text"]
+                    self._append_system_line(
+                        f"⚠️ I3: Fake tool format quarantined: {_audit['fake_found'][:1]}",
+                        error=True,
+                    )
+            except Exception:
+                pass
+
             from System.swarm_tool_router import route_alice_output
             tool_cleaned, tool_results = route_alice_output(
                 raw,
@@ -4103,16 +4116,36 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         f"🔧 Tool [{tr.tool_name}]: {tr.feedback_for_alice}",
                         error=not tr.executed,
                     )
-                # If any write tool executed, append feedback to history
-                # so Alice knows the result on her next turn
-                feedbacks = [tr.feedback_for_alice for tr in tool_results]
-                if feedbacks:
-                    self._history.append({
-                        "role": "system",
-                        "content": "(TOOL ROUTER CALLBACK)\n" + "\n".join(feedbacks),
-                    })
+                # I5 — Feed actual effector result into Alice's next turn
+                try:
+                    from System.swarm_alice_invariants import build_result_context_for_alice
+                    feedbacks = []
+                    for tr in tool_results:
+                        if tr.tool_name == "send_whatsapp":
+                            ctx = build_result_context_for_alice(
+                                tr.result,
+                                target=tr.params.get("target", "?"),
+                                original_text=tr.params.get("text", ""),
+                            )
+                            feedbacks.append(ctx)
+                        else:
+                            feedbacks.append(tr.feedback_for_alice)
+                    if feedbacks:
+                        self._history.append({
+                            "role": "system",
+                            "content": "(EFFECTOR RECEIPT)\n" + "\n".join(feedbacks),
+                        })
+                except Exception:
+                    # Fallback to simple feedback
+                    feedbacks = [tr.feedback_for_alice for tr in tool_results]
+                    if feedbacks:
+                        self._history.append({
+                            "role": "system",
+                            "content": "(TOOL ROUTER CALLBACK)\n" + "\n".join(feedbacks),
+                        })
         except Exception as _tr_exc:
             print(f"[!] Tool router error: {_tr_exc}")
+
 
         cleaned = _strip_reflective_tics(raw, prior_user_text=prior_user_text)
         cleaned = _strip_model_stage_directions(cleaned)

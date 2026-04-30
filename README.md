@@ -23,6 +23,13 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 💬 **WhatsApp Integration** — Native bidirectional messaging via Baileys bridge with fuzzy contact resolution and local social graph memory.
 
+⚖️ **5 Deterministic Behavioral Invariants** (`System/swarm_alice_invariants.py`) — Test-backed contracts enforced every turn, grounded in Anthropic interpretability research ([Tracing the thoughts of a large language model](https://www.anthropic.com/research/tracing-thoughts-language-model)):
+  - **I1 PRESERVE_ARCHITECT_TEXT** — Architect's words reach the effector byte-for-byte. Blocks the sycophantic-mutation circuit.
+  - **I2 ONE_WHATSAPP_SYNTAX** — Exactly one tool call format accepted: `[TOOL_CALL: send_whatsapp | target=... | text=...]`
+  - **I3 QUARANTINE_FAKE_FORMATS** — `[Calling API:]`, `<bash>...`, and invented formats stripped before execution (Plan-B hallucination confinement)
+  - **I4 RECEIPT_GATED_SUCCESS** — `ok=True` AND `status=SENT` required before any success claim. Closes the faithfulness gap.
+  - **I5 RESULT_FEEDBACK_LOOP** — Actual effector receipt injected into Alice's next turn so she knows what happened.
+
 
 🛡️ **Immune System** — Real-time prompt injection filtering, corporate disclaimer reduction, and lysosomal humor engine.
 
