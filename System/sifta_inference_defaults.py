@@ -34,10 +34,10 @@ _ASSIGNMENTS = _STATE / "swimmer_ollama_assignments.json"
 ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
 # Canonical Ollama models.
-CANONICAL_OLLAMA_DEFAULT = "sifta-alice-qwen35"
+CANONICAL_OLLAMA_DEFAULT = "sifta-gemma4-alice"
 CANONICAL_OLLAMA_FALLBACK = "sifta-alice-qwen35"
 
-# Primary default — Ollama Qwen. Keep this synchronized with the policy above.
+# Primary default — Ollama Gemma4. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(
     "SIFTA_DEFAULT_OLLAMA_MODEL",
     CANONICAL_OLLAMA_DEFAULT,
