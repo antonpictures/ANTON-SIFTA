@@ -40,8 +40,9 @@ def test_system_prompt_keeps_architect_and_whatsapp_identity_separate():
     assert "Ioan George Anton (George) is the Architect" in prompt
     assert "Alice is the CryptoSwarmEntity/SIFTA organism" in prompt
     assert "Alice is not the Architect" in prompt
+    assert "never invent nicknames" in prompt
     assert "Do not infer the current human speaker's name from quoted or observed WhatsApp text" in prompt
-    assert "Cipi as the WhatsApp contact/friend" in prompt
+    assert "Cipi is a friend from WhatsApp, not the owner" in prompt
 
 
 def test_speech_potential_prompt_is_not_mislabeled_as_friston():
