@@ -1128,138 +1128,100 @@ class SystemSettingsWidget(SiftaBaseWidget):
     def _inference_page(self) -> QWidget:
         page, root = self._page("Inference")
 
-        # ── Pull LIVE model list from Ollama — zero hardcoded names ──
-        all_models = _available_local_ollama_models()
-
-        # Read the corvid organ model dynamically from its own module.
+        # Resolve active models — no user-editable dropdowns
         try:
             from System.swarm_corvid_apprentice import SwarmCorvidApprentice
             import inspect
             sig = inspect.signature(SwarmCorvidApprentice.__init__)
             self._corvid_default = str(sig.parameters["model"].default)
         except Exception:
-            self._corvid_default = ""
+            self._corvid_default = "qwen3.5:2b"
 
-        cortex_options = [m for m in all_models if m != self._corvid_default]
-        if not cortex_options:
-            cortex_options = all_models
-        corvid_options = list(all_models)
+        active_cortex = get_default_ollama_model() or "sifta-gemma4-alice"
 
-        default_model = _select_local_model(get_default_ollama_model(), cortex_options)
-
-        # ── Brain Architecture Diagram ──
-        diagram = _BrainDiagramWidget(default_model, self._corvid_default)
+        # ── Brain Architecture Diagram (live, animated) ──
+        diagram = _BrainDiagramWidget(active_cortex, self._corvid_default)
         diagram.setFixedHeight(310)
         root.addWidget(diagram)
         self._brain_diagram = diagram
 
-        # ── Cortex section ──
+        # ── Status chips — READ ONLY, no dropdowns ──
+        chip_style_cortex = (
+            "background: rgb(0, 30, 45); color: rgb(0, 220, 255); "
+            "border: 1px solid rgb(0, 150, 200); border-radius: 8px; "
+            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+        )
+        chip_style_organ = (
+            "background: rgb(10, 28, 18); color: rgb(0, 200, 130); "
+            "border: 1px solid rgb(0, 140, 90); border-radius: 8px; "
+            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+        )
+        chip_style_fixed = (
+            "background: rgb(28, 26, 10); color: rgb(200, 170, 50); "
+            "border: 1px solid rgb(140, 110, 0); border-radius: 8px; "
+            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+        )
+        chip_style_weights = (
+            "background: rgb(20, 10, 30); color: rgb(160, 100, 220); "
+            "border: 1px solid rgb(100, 50, 160); border-radius: 8px; "
+            "padding: 8px 14px; font-size: 12px; font-family: Menlo;"
+        )
+
+        def _chip_row(label: str, value: str, chip_css: str) -> QHBoxLayout:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            lbl = QLabel(label)
+            lbl.setStyleSheet("color: rgb(130, 140, 160); font-size: 11px; min-width: 110px;")
+            chip = QLabel(value)
+            chip.setStyleSheet(chip_css)
+            row.addWidget(lbl)
+            row.addWidget(chip)
+            row.addStretch()
+            return row
+
+        # Cortex heading
         cortex_heading = QLabel("🧠  Primary Cortex  ·  Alice's reasoning brain")
         cortex_heading.setStyleSheet(
-            "color: rgb(0, 220, 255); font-size: 13px; font-weight: bold; margin-top: 6px;"
+            "color: rgb(0, 220, 255); font-size: 13px; font-weight: bold; margin-top: 2px;"
         )
         root.addWidget(cortex_heading)
+        root.addLayout(_chip_row("Alice Cortex", active_cortex, chip_style_cortex))
+        root.addLayout(_chip_row("Talk to Alice", "follows Cortex", chip_style_cortex))
 
-        form = QGridLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(8)
-
-        lbl_cortex = QLabel("Alice Cortex Model")
-        lbl_cortex.setStyleSheet("color: rgb(180, 190, 210); font-size: 12px;")
-        form.addWidget(lbl_cortex, 0, 0)
-        self.inf_default_combo = QComboBox()
-        self.inf_default_combo.setObjectName("AliceCortexModelCombo")
-        self.inf_default_combo.setStyleSheet(
-            "QComboBox { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
-            "border: 1px solid rgb(0, 180, 220); border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
-            "QComboBox::drop-down { border: none; }"
-            "QComboBox QAbstractItemView { background: rgb(20, 22, 32); color: white; "
-            "selection-background-color: rgb(0, 100, 140); }"
-        )
-        self.inf_default_combo.addItems(cortex_options)
-        self.inf_default_combo.setCurrentText(default_model)
-        self.inf_default_combo.setToolTip("Single canonical cortex model for Alice, Swarm Chat, and OS helpers.")
-        form.addWidget(self.inf_default_combo, 0, 1)
-
-        lbl_alice = QLabel("Talk to Alice")
-        lbl_alice.setStyleSheet("color: rgb(180, 190, 210); font-size: 12px;")
-        form.addWidget(lbl_alice, 1, 0)
-        alice_follow = QLabel("follows Alice Cortex Model")
-        alice_follow.setStyleSheet("color: rgb(0, 200, 130); font-weight: bold; font-size: 12px;")
-        form.addWidget(alice_follow, 1, 1)
-
-        root.addLayout(form)
-
-        # ── Organ section ──
+        # Organs heading
         organ_heading = QLabel("⚡  Organs  ·  run simultaneously alongside the cortex")
         organ_heading.setStyleSheet(
-            "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 10px;"
+            "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 8px;"
         )
         root.addWidget(organ_heading)
+        root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default, chip_style_organ))
+        root.addLayout(_chip_row("Reflex Arc", "Pure Python · no model", chip_style_fixed))
+        root.addLayout(_chip_row("Thermal Cortex", "BISHOP · fever router", chip_style_fixed))
 
-        organ_grid = QGridLayout()
-        organ_grid.setHorizontalSpacing(12)
-        organ_grid.setVerticalSpacing(6)
-
-        lbl_corvid = QLabel("Corvid Apprentice")
-        lbl_corvid.setStyleSheet("color: rgb(180, 190, 210); font-size: 12px;")
-        organ_grid.addWidget(lbl_corvid, 0, 0)
-        self.inf_corvid_combo = QComboBox()
-        self.inf_corvid_combo.setStyleSheet(
-            "QComboBox { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
-            "border: 1px solid rgb(0, 200, 130); border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
-            "QComboBox::drop-down { border: none; }"
-            "QComboBox QAbstractItemView { background: rgb(20, 22, 32); color: white; "
-            "selection-background-color: rgb(0, 80, 60); }"
-        )
-        self.inf_corvid_combo.addItems(corvid_options)
-        if self._corvid_default in corvid_options:
-            self.inf_corvid_combo.setCurrentText(self._corvid_default)
-        self.inf_corvid_combo.setToolTip("Fast classifier organ. Runs in parallel with the cortex.")
-        organ_grid.addWidget(self.inf_corvid_combo, 0, 1)
-
-        lbl_reflex = QLabel("Reflex Arc")
-        lbl_reflex.setStyleSheet("color: rgb(180, 190, 210); font-size: 12px;")
-        organ_grid.addWidget(lbl_reflex, 1, 0)
-        reflex_lbl = QLabel("Pure Python · no model")
-        reflex_lbl.setStyleSheet("color: rgb(255, 200, 60); font-weight: bold; font-size: 12px;")
-        organ_grid.addWidget(reflex_lbl, 1, 1)
-
-        lbl_reflex_arc = QLabel("Thermal Cortex")
-        lbl_reflex_arc.setStyleSheet("color: rgb(180, 190, 210); font-size: 12px;")
-        organ_grid.addWidget(lbl_reflex_arc, 2, 0)
-        thermal_lbl = QLabel("BISHOP closed-loop · substrate fever router")
-        thermal_lbl.setStyleSheet("color: rgb(255, 120, 80); font-weight: bold; font-size: 12px;")
-        organ_grid.addWidget(thermal_lbl, 2, 1)
-
-        root.addLayout(organ_grid)
-
-        # ── MLX Custom Weights section ──
+        # Custom weights heading
         mlx_heading = QLabel("🔬  Custom Weights  ·  fine-tuned cortex models")
         mlx_heading.setStyleSheet(
-            "color: rgb(180, 100, 255); font-size: 13px; font-weight: bold; margin-top: 10px;"
+            "color: rgb(180, 100, 255); font-size: 13px; font-weight: bold; margin-top: 8px;"
         )
         root.addWidget(mlx_heading)
+        root.addLayout(_chip_row("MLX Cortex v1", "Archived (degenerate output)", chip_style_weights))
+        root.addLayout(_chip_row("MLX Cortex v2", "Planned · rank 16, DPO", chip_style_weights))
 
-        mlx_note = QLabel(
-            "MLX cortex v1 (tournament 408/459) archived due to degenerate output. "
-            "v2 planned: rank 16, dropout 0.1, DPO pass. "
-            "Custom weights appear here when placed in .sifta_state/cortex/"
+        # Reset button — restores gemma4 if something got corrupted
+        reset_row = QHBoxLayout()
+        reset_row.addStretch()
+        reset_btn = QPushButton("↺  Reset Brain to Default")
+        reset_btn.setFixedHeight(34)
+        reset_btn.setStyleSheet(
+            "QPushButton { background: rgb(20, 22, 32); color: rgb(120, 130, 150); "
+            "border: 1px solid rgb(50, 55, 70); border-radius: 8px; font-size: 11px; padding: 0 16px; }"
+            "QPushButton:hover { background: rgb(30, 35, 50); color: rgb(180, 190, 210); "
+            "border-color: rgb(0, 150, 200); }"
         )
-        mlx_note.setWordWrap(True)
-        mlx_note.setStyleSheet("color: rgb(120, 100, 160); font-size: 11px;")
-        root.addWidget(mlx_note)
-
-        self.inf_default_combo.currentTextChanged.connect(self._on_inf_default_changed)
-        self.inf_corvid_combo.currentTextChanged.connect(self._on_inf_corvid_changed)
-
-        # Update diagram when model selection changes
-        self.inf_default_combo.currentTextChanged.connect(
-            lambda t: self._brain_diagram.update_cortex_label(t)
-        )
-        self.inf_corvid_combo.currentTextChanged.connect(
-            lambda t: self._brain_diagram.update_corvid_label(t)
-        )
+        reset_btn.setToolTip("Restore sifta-gemma4-alice as the canonical cortex model.")
+        reset_btn.clicked.connect(self._reset_brain_to_default)
+        reset_row.addWidget(reset_btn)
+        root.addLayout(reset_row)
 
         self.inference_default_card = MetricCard("Alice Cortex", "--")
         root.addWidget(self.inference_default_card)
@@ -1267,14 +1229,26 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addStretch()
         return page
 
+    def _reset_brain_to_default(self) -> None:
+        """Restore the canonical gemma4 cortex without exposing model names to the user."""
+        canonical = "sifta-gemma4-alice"
+        set_default_ollama_model(canonical)
+        set_app_ollama_model("talk_to_alice", canonical)
+        if hasattr(self, "_brain_diagram"):
+            self._brain_diagram.update_cortex_label(f"{canonical}:latest")
+        self.refresh()
+
     def _on_inf_default_changed(self, text: str) -> None:
+        """Internal hook — kept for programmatic use; not wired to any UI control."""
         if text:
             set_default_ollama_model(text)
             set_app_ollama_model("talk_to_alice", text)
 
     def _on_inf_corvid_changed(self, text: str) -> None:
+        """Internal hook — kept for programmatic use; not wired to any UI control."""
         if text:
             set_app_ollama_model("corvid_apprentice", text)
+
 
     def _economy_page(self) -> QWidget:
         page, root = self._page("Swarm Economy")
