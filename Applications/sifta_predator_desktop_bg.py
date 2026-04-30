@@ -396,6 +396,8 @@ class PredatorDesktopBg(QWidget):
 class OrganStatusPanel(QWidget):
     """
     Right-side panel listing all organs with live truth badges.
+    Dynamically reads the canonical ORGAN_DEFS from swarm_body_monitor.py
+    so organ count is never hardcoded.
     Refreshes every 2 s from SIFTA ledgers.
     """
     def __init__(self, parent=None):
@@ -406,6 +408,18 @@ class OrganStatusPanel(QWidget):
         self._timer.timeout.connect(self.update)
         self._timer.start(2000)
         self._t0 = time.monotonic()
+
+        # Pull canonical organ registry dynamically
+        self._organ_defs: list = []
+        try:
+            from System.swarm_body_monitor import ORGAN_DEFS as _canonical
+            self._organ_defs = list(_canonical)
+        except Exception:
+            # Fallback to legacy ORGANS list if import fails
+            self._organ_defs = [
+                (name.lower().replace(" ", "_"), icon, name, "")
+                for name, icon, color, receipt_file, truth_key in ORGANS
+            ]
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -419,22 +433,24 @@ class OrganStatusPanel(QWidget):
         p.drawText(10, 20, "PREDATOR v7.0")
         p.setPen(QColor(60, 180, 120, 160))
         p.setFont(QFont("Menlo", 7))
-        p.drawText(10, 33, "SIFTA Organ Status")
+        n_organs = len(self._organ_defs)
+        p.drawText(10, 33, f"{n_organs} Organs  |  SIFTA OS")
 
         # Separator
         p.setPen(QPen(QColor(0, 80, 40), 1))
         p.drawLine(6, 38, self.width() - 6, 38)
 
-        # Organs
+        # Organs — from canonical ORGAN_DEFS (key, emoji, name, desc)
         y = 55
-        for name, icon, color, receipt_file, truth_key in ORGANS:
-            r = _last_receipt(receipt_file)
-            if r is None:
-                truth = "STUB"
-            elif truth_key and truth_key in r:
-                truth = r[truth_key]
-            else:
-                truth = "REAL"
+        for key, emoji, name, desc in self._organ_defs:
+            # Try to read truth from legacy ORGANS receipt mapping
+            truth = "STUB"
+            for oname, oicon, ocolor, receipt_file, truth_key in ORGANS:
+                if oname.lower().replace(" ", "_") == key or oname == name:
+                    r = _last_receipt(receipt_file)
+                    if r is not None:
+                        truth = r.get(truth_key, "REAL") if truth_key and truth_key in r else "REAL"
+                    break
 
             tc = QColor(TRUTH_COLORS.get(truth, "#888888"))
 
@@ -448,28 +464,28 @@ class OrganStatusPanel(QWidget):
             p.drawEllipse(8, y - 7, 7, 7)
 
             # Icon + name
-            p.setPen(QColor(color))
-            p.setFont(QFont("Apple Color Emoji", 12))
-            p.drawText(20, y, icon)
+            p.setPen(QColor(0, 255, 136))
+            p.setFont(QFont("Apple Color Emoji", 10))
+            p.drawText(20, y, emoji)
 
-            p.setFont(QFont("Menlo", 12))
+            p.setFont(QFont("Menlo", 9))
             p.setPen(QColor(180, 220, 200))
-            p.drawText(38, y, name)
+            p.drawText(36, y, name)
 
             # Truth badge
             p.setPen(tc)
-            p.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
+            p.setFont(QFont("Menlo", 8, QFont.Weight.Bold))
             badge = truth.replace("REAL_CPU", "CPU✓").replace("REAL_GPU", "GPU✓").replace("REAL", "✓")
-            p.drawText(38, y + 14, badge)
+            p.drawText(36, y + 12, badge)
 
-            y += 36
+            y += 30
             if y > self.height() - 20:
                 break
 
         # Footer
         p.setPen(QColor(40, 100, 60, 140))
         p.setFont(QFont("Menlo", 7))
-        p.drawText(8, self.height() - 8, "🐜 For the Swarm")
+        p.drawText(8, self.height() - 8, f"🐜 {n_organs} organs · For the Swarm")
         p.end()
 
     def closeEvent(self, event):

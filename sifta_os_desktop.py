@@ -2801,7 +2801,12 @@ if __name__ == "__main__":
     except Exception:
         class _pal:
             os_line = "SIFTA Mermaid OS v6.0"
-        _n_organs = 17
+        # Dynamic fallback: count System/*.py organ modules
+        try:
+            _sys_dir = Path(__file__).resolve().parent / "System"
+            _n_organs = len([f for f in _sys_dir.glob("*.py") if not f.name.startswith("__")])
+        except Exception:
+            _n_organs = 0
         _n_swimmers = 1800
         _n_photons = 200
 
