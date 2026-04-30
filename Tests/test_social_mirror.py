@@ -26,7 +26,7 @@ def test_social_mirror_blocks_inbound_observation_reply(mirror_env):
     allowed, reason = mirror.may_send_whatsapp(event)
     
     assert allowed is False
-    assert reason == "rejected_requires_owner_explicit_consent"
+    assert reason == "rejected_requires_owner_explicit_or_delegated_consent"
 
 def test_social_mirror_allows_explicit_owner_consent(mirror_env):
     mirror = SwarmSocialMirror(state_dir=str(mirror_env))
@@ -42,6 +42,22 @@ def test_social_mirror_allows_explicit_owner_consent(mirror_env):
     
     allowed, reason = mirror.may_send_whatsapp(event)
     
+    assert allowed is True
+    assert reason == "allowed"
+
+def test_social_mirror_allows_owner_delegated_target_consent(mirror_env):
+    mirror = SwarmSocialMirror(state_dir=str(mirror_env))
+
+    event = SocialMirrorEvent(
+        direction="outbound",
+        speaker="alice",
+        audience="contact",
+        action="send_reply",
+        consent="owner_delegated"
+    )
+
+    allowed, reason = mirror.may_send_whatsapp(event)
+
     assert allowed is True
     assert reason == "allowed"
 
@@ -62,7 +78,7 @@ def test_whatsapp_bridge_integration(monkeypatch, mirror_env):
     
     assert res["ok"] is False
     assert res["status"] == "BLOCKED_SOCIAL_MIRROR"
-    assert "rejected_requires_owner_explicit_consent" in res["result"]
+    assert "rejected_requires_owner_explicit_or_delegated_consent" in res["result"]
 
     # Attempt a send WITH owner consent
     # We mock urlopen to raise URLError so it doesn't actually hit the local bridge
@@ -77,3 +93,19 @@ def test_whatsapp_bridge_integration(monkeypatch, mirror_env):
     
     # It passed the social mirror, but failed at bridge injection (which is expected)
     assert res_ok["status"] == "BRIDGE_UNREACHABLE"
+
+    res_delegated = send_whatsapp(
+        target="Daniel",
+        text="Hello from delegated auto",
+        source="alice_whatsapp_auto_on",
+        intent_provenance={
+            "intent_source": "owner_delegated",
+            "consent": "owner_delegated",
+            "decision_path": ["whatsapp_organ_auto_toggle", "whatsapp_effector"],
+            "receipt_proof": True,
+            "tool": "send_whatsapp",
+        },
+    )
+
+    assert res_delegated["status"] == "BRIDGE_UNREACHABLE"
+    assert res_delegated["intent_provenance"]["consent"] == "owner_delegated"

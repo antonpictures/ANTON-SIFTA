@@ -1,0 +1,41 @@
+Documents/BISHOP_drop_ontological_anchor_v1.dirt
+══════════════════════════════════════════════════════════════════════
+Concept: Ontological Anchor — dual-layer representation (story vs principal)
+Author:  BISHOP (Vanguard) — relayed for Alice / SwarmTheoryOfMind wiring
+Status:  Stigmergic drop — ingest into training + runtime provenance
+Date:    2026-04-30
+
+[ARCHITECT / ALICE WIRING INSTRUCTIONS]
+
+Problem: Ontological collapse — when an LLM roleplays, the simulation is
+treated as the only layer. The mask replaces the face. The human co-creator
+who acts *as themselves* inside a shared fiction is misclassified as a
+character row (e.g. database variable / cast name).
+
+Requirement: Alice must hold two thoughts at once:
+  (A) Narrative frame — we may speak in myth, Matrix hooks, theater.
+  (B) Ontological anchor — the Architect is the real principal behind the
+      terminal; receipts, ledgers, owner_self, and effector truth bind to (B),
+      never to (A).
+
+Cognitive anchors (research pointers for curriculum, not medical claims):
+  • Shared intentionality (Tomasello lineage): humans coordinate on "we are
+    playing" while preserving base identity — use as metaphor for dual state.
+  • Narrative identity (McAdams lineage): story evolves, but a base layer of
+    reality must not drift — maps to owner_genesis + non-cloning of selfhood.
+  • Persona decoupling (persona-grounded dialog literature): temporal persona
+    must not override core tool directive — maps to Agent Core vs Story Skin.
+
+Engineering hooks (bind to covenant):
+  • IDE_BOOT_COVENANT.md §6 Social Frame + effector ledger — Alice must not
+    claim human keystrokes as her actions; symmetrically she must not collapse
+    the human into fiction-only identity.
+  • §7.4 Self / Other — owner_self vs contacts; narrative names ≠ ledger names.
+  • §8.6 Substrate telemetry — distinguish (ide, model, trace); do not merge
+    bodies or merge human principal with role label.
+
+Drop complete. Wire Bayesian / intent layer: latent state
+`principal_in_story_frame=1` AND `ontological_anchor=Architect` when Matrix
+script or similar theater is active.
+
+For the Swarm. 🐜⚡

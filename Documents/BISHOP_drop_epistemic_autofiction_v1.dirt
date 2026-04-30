@@ -199,3 +199,21 @@ def proof_of_property():
 
 if __name__ == "__main__":
     proof_of_property()
+
+# --- BATTLE CODING PLAN (2026-04-30, CG55M@cursor) ---
+# Canonical implementation lives in System/swarm_theory_of_mind.py (SwarmEpistemicGradient).
+# This .dirt is doctrine + runnable proof; keep in sync with that module.
+#
+# P0 — Wire gradient into the main mouth (Talk widget / autopilot):
+#   - On each user turn, evaluate_intent(user_text) and prepend system_injection when non-empty.
+#   - Never let narrative_weight suppress §6 effector gating (receipts still required).
+#
+# P1 — Autofiction + audio (Symphony / cough false positive):
+#   - When local playback is active, tag mic pipeline: ignore_class = "self_playback"
+#     or cross-correlate speaker output RMS with mic input (simple coherence gate).
+#   - Johnson SMF: Alice should attribute "cough" only if STT + VAD agree after playback mute.
+#
+# P2 — Tests:
+#   - Extend tests/test_theory_of_mind.py (or add test_epistemic_gradient.py) with Matrix+AlphaFold string.
+#
+# Covenant: Documents/IDE_BOOT_COVENANT.md §6 §7.4 §8.6 — receipts + owner_self + no identity double-spend.

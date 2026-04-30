@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 from System.whatsapp_social_graph import (
+    alias_jids_for_jid,
+    canonical_contact_entries,
     contact_rows_for_alice,
     enrich_contact_record,
     migrate_existing_contacts,
@@ -83,6 +85,45 @@ def test_locked_known_identity_wins_over_stale_duplicate():
     assert contact_rows_for_alice(contacts=contacts) == [
         "Jeff Powers Ocean VIllas (direct, whatsapp_contact)"
     ]
+
+
+def test_phone_lid_and_status_aliases_render_as_one_contact():
+    contacts = {
+        "phone": {
+            **enrich_contact_record(
+                {},
+                jid="18326231233@s.whatsapp.net",
+                name="Carlton",
+                now=1,
+            ),
+            "name_locked": True,
+        },
+        "lid": enrich_contact_record(
+            {},
+            jid="110411378614437@lid",
+            name="Carlton",
+            now=10,
+        ),
+        "status": enrich_contact_record(
+            {},
+            jid="status@broadcast",
+            name="Carlton",
+            now=11,
+        ),
+    }
+
+    entries = canonical_contact_entries(contacts)
+
+    assert [entry["display_name"] for entry in entries] == ["Carlton"]
+    assert entries[0]["jid"] == "18326231233@s.whatsapp.net"
+    assert entries[0]["jid_aliases"] == [
+        "110411378614437@lid",
+        "18326231233@s.whatsapp.net",
+    ]
+    assert entries[0]["merged_count"] == 2
+    assert alias_jids_for_jid("110411378614437@lid", contacts) == entries[0]["jid_aliases"]
+    assert resolve_target("Carlton", contacts) == "18326231233@s.whatsapp.net"
+    assert contacts["status"]["send_target_allowed"] is False
 
 
 def test_summary_names_owner_social_graph(monkeypatch, tmp_path):

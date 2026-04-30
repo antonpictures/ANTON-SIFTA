@@ -10,7 +10,9 @@ from System.whatsapp_autonomy_gate import (
     gaussian,
     infer_repetition_and_timing,
 )
+from System import whatsapp_autonomy_settings as settings
 from System import whatsapp_bridge_autopilot as wa
+from System import whatsapp_social_graph as graph
 
 
 def test_gaussian_timing_peaks_at_preferred_interval() -> None:
@@ -105,3 +107,80 @@ def test_bridge_blocks_group_send_by_default(monkeypatch, tmp_path: Path) -> Non
     assert result["status"] == "BLOCKED_GROUP_SEND_DISABLED"
     assert result["intent_provenance"]["intent_source"] == "owner"
     assert result["intent_provenance"]["consent"] == "explicit"
+
+
+def test_target_auto_reply_setting_defaults_off_and_can_toggle(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(settings, "_SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(settings, "_SETTINGS_LEDGER", tmp_path / "settings.jsonl")
+
+    assert settings.is_auto_enabled("15551234567@s.whatsapp.net", chat_type="direct") is False
+
+    row = settings.set_auto_enabled(
+        "15551234567@s.whatsapp.net",
+        display_name="Carlton",
+        chat_type="direct",
+        enabled=True,
+    )
+
+    assert row["consent"] == "owner_delegated"
+    assert settings.is_auto_enabled("15551234567@s.whatsapp.net", chat_type="direct") is True
+
+    settings.set_auto_enabled(
+        "15551234567@s.whatsapp.net",
+        display_name="Carlton",
+        chat_type="direct",
+        enabled=False,
+    )
+
+    assert settings.is_auto_enabled("15551234567@s.whatsapp.net", chat_type="direct") is False
+    assert "WHATSAPP_AUTO_REPLY_SETTING_CHANGED" in (tmp_path / "settings.jsonl").read_text()
+
+
+def test_target_auto_reply_setting_refuses_owner_self(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(settings, "_SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(settings, "_SETTINGS_LEDGER", tmp_path / "settings.jsonl")
+
+    try:
+        settings.set_auto_enabled(
+            "122093203140754@lid",
+            display_name="George",
+            chat_type="direct",
+            enabled=True,
+        )
+    except ValueError as exc:
+        assert "owner_self" in str(exc)
+    else:
+        raise AssertionError("owner_self auto-reply toggle must be rejected")
+
+
+def test_target_auto_reply_setting_follows_phone_lid_alias(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(settings, "_SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(settings, "_SETTINGS_LEDGER", tmp_path / "settings.jsonl")
+    contacts_path = tmp_path / "contacts.json"
+    graph.save_contacts(
+        {
+            "phone": graph.enrich_contact_record(
+                {},
+                jid="18326231233@s.whatsapp.net",
+                name="Carlton",
+                now=1,
+            ),
+            "lid": graph.enrich_contact_record(
+                {},
+                jid="110411378614437@lid",
+                name="Carlton",
+                now=2,
+            ),
+        },
+        contacts_path,
+    )
+    monkeypatch.setattr(graph, "CONTACTS_FILE", contacts_path)
+
+    settings.set_auto_enabled(
+        "18326231233@s.whatsapp.net",
+        display_name="Carlton",
+        chat_type="direct",
+        enabled=True,
+    )
+
+    assert settings.is_auto_enabled("110411378614437@lid", chat_type="direct") is True

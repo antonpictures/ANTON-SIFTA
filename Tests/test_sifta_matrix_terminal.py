@@ -177,3 +177,52 @@ def test_shell_allowlist_permits_safe_commands():
         assert MatrixTerminalPane._shell_cmd_is_safe(cmd), (
             f"FALSE POSITIVE: '{cmd}' was incorrectly blocked"
         )
+
+
+def test_shell_gate_blocks_before_write_command():
+    """The UI execution path must not pass blocked commands to the PTY writer."""
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications.sifta_matrix_terminal import MatrixTerminalPane, _REPO
+
+    app = QApplication.instance() or QApplication([])
+    pane = MatrixTerminalPane(_REPO)
+    written = []
+    displayed = []
+    try:
+        pane._type_timer.stop()
+        pane.is_running = lambda: True
+        pane.write_command = written.append
+        pane._append_plain = displayed.append
+
+        pane._execute_shell_from_alice("rm -rf /tmp/sifta-danger-proof")
+
+        assert written == []
+        assert any("BLOCKED" in chunk for chunk in displayed)
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()
+
+
+def test_shell_gate_allows_safe_command_to_write_command():
+    """Safe commands still reach the live PTY writer."""
+    from PyQt6.QtWidgets import QApplication
+
+    from Applications.sifta_matrix_terminal import MatrixTerminalPane, _REPO
+
+    app = QApplication.instance() or QApplication([])
+    pane = MatrixTerminalPane(_REPO)
+    written = []
+    try:
+        pane._type_timer.stop()
+        pane.is_running = lambda: True
+        pane.write_command = written.append
+
+        pane._execute_shell_from_alice("git status")
+
+        assert written == ["git status"]
+    finally:
+        pane.shutdown()
+        pane.deleteLater()
+        app.processEvents()

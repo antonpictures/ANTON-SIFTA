@@ -271,6 +271,36 @@ def test_external_direct_whatsapp_observation_does_not_auto_reply():
     assert ctx is None
 
 
+def test_external_direct_whatsapp_auto_on_grants_delegated_reply(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    from System import whatsapp_autonomy_settings as settings
+
+    monkeypatch.setattr(settings, "_SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(settings, "_SETTINGS_LEDGER", tmp_path / "settings.jsonl")
+    settings.set_auto_enabled(
+        "147235790663690@lid",
+        display_name="Jeff Powers Ocean VIllas",
+        chat_type="direct",
+        enabled=True,
+    )
+
+    ctx = mod._whatsapp_auto_reply_context(
+        {
+            "from_jid": "147235790663690@lid",
+            "message_sha256": "abc123",
+        },
+        contact_name="Jeff Powers Ocean VIllas",
+        chat_type="direct",
+        origin="external_human",
+    )
+
+    assert ctx is not None
+    assert ctx["target"] == "147235790663690@lid"
+    assert ctx["allow_group_send"] is False
+    assert ctx["source"] == "alice_whatsapp_auto_on"
+    assert ctx["intent_provenance"]["consent"] == "owner_delegated"
+
+
 def test_whatsapp_auto_reply_context_blocks_owner_and_groups():
     mod = _load_widget_module()
     assert mod._whatsapp_auto_reply_context(
@@ -285,6 +315,57 @@ def test_whatsapp_auto_reply_context_blocks_owner_and_groups():
         chat_type="group",
         origin="external_human",
     ) is None
+
+
+def test_whatsapp_owner_self_chat_is_local_dyad_not_external_send():
+    mod = _load_widget_module()
+    ctx = mod._whatsapp_owner_self_dyad_context(
+        {"from_jid": "51235386302504@lid", "message_sha256": "self123", "from_me": True},
+        contact_record={"relationship_to_owner": "owner_self"},
+        contact_name="George",
+        chat_type="direct",
+    )
+
+    assert ctx is not None
+    assert ctx["origin"] == "owner_self_dyad"
+    assert ctx["surface"] == "whatsapp_self_chat"
+    assert ctx["no_external_send"] is True
+
+
+def test_whatsapp_from_me_to_external_contact_is_not_self_dyad():
+    mod = _load_widget_module()
+    assert mod._whatsapp_owner_self_dyad_context(
+        {"from_jid": "110411378614437@lid", "from_me": True},
+        contact_record={"relationship_to_owner": "whatsapp_contact"},
+        contact_name="George",
+        chat_type="direct",
+    ) is None
+
+
+def test_group_whatsapp_auto_on_allows_group_reply(monkeypatch, tmp_path):
+    mod = _load_widget_module()
+    from System import whatsapp_autonomy_settings as settings
+
+    monkeypatch.setattr(settings, "_SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(settings, "_SETTINGS_LEDGER", tmp_path / "settings.jsonl")
+    settings.set_auto_enabled(
+        "120363045641065911@g.us",
+        display_name="SIFTA Group",
+        chat_type="group",
+        enabled=True,
+    )
+
+    ctx = mod._whatsapp_auto_reply_context(
+        {"from_jid": "120363045641065911@g.us", "message_sha256": "def456"},
+        contact_name="SIFTA Group",
+        chat_type="group",
+        origin="external_human",
+    )
+
+    assert ctx is not None
+    assert ctx["target"] == "120363045641065911@g.us"
+    assert ctx["allow_group_send"] is True
+    assert ctx["chat_type"] == "group"
 
 
 def test_model_stage_directions_are_removed_before_external_reply():
