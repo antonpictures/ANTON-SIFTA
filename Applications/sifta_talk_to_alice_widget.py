@@ -3600,6 +3600,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             
             chat_type = row.get("chat_type") or contact_record.get("chat_type") or "direct"
             
+            from System.whatsapp_autonomy_settings import is_auto_enabled
+            if not is_auto_enabled(from_jid, chat_type=chat_type):
+                # Strict Gate: Do not ingest anything (incoming or outgoing) 
+                # unless the chat is explicitly marked AUTO.
+                return
+            
             # Map owner correctly based on either the node bridge flag or the social graph graph
             is_owner = row.get("from_me") or contact_record.get("relationship_to_owner") == "owner_self"
             origin = "owner_manual" if is_owner else "external_human"
@@ -3628,14 +3634,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     else ("auto_reply_owner_delegated" if auto_ctx else "observe_only_no_reply")
                 )
             )
-
-            if policy in ("observe_only_no_reply", "owner_already_sent_no_action"):
-                import subprocess
-                is_whatsapp_open = subprocess.run(
-                    ["pgrep", "-f", "sifta_whatsapp_organ.py"], capture_output=True
-                ).returncode == 0
-                if not is_whatsapp_open:
-                    return
 
             annotated_msg = (
                 f"[OBSERVED WhatsApp {chat_type} {contact_name}; "
