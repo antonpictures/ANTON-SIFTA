@@ -296,6 +296,8 @@ class MatrixTerminalApp(QWidget):
         button("COPY", lambda: self.terminal.copy())
         button("PASTE", lambda: self.terminal.write_bytes(QApplication.clipboard().text().encode("utf-8")))
         button("CLEAR", self.terminal_clear)
+        button("HACK: ALPHAFOLD", lambda: self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X alphafold_db P69905"))
+        button("HACK: INVERSE FOLD", lambda: self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X proteinmpnn"))
         button("REBOOT", self.restart_shell)
         root.addWidget(header)
 
