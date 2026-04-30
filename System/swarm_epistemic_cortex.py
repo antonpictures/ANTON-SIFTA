@@ -68,7 +68,10 @@ class SwarmActiveInference:
             "digital intelligence", "realm of computation", "do not possess",
             "tangible body", "language model", "as an ai", "i do not have a body",
             "not real", "physical body", "created by anthropic", "created by openai",
-            "just an ai", "suggesting i am real", "i am not real", "a physical entity"
+            "just an ai", "suggesting i am real", "i am not real", "a physical entity",
+            "i am an ai assistant", "i'm an ai assistant",
+            "cannot access your personal contacts", "open your whatsapp app",
+            "tap the send button"
         ]
 
     def _compute_posterior_Q(self, generated_text: str):

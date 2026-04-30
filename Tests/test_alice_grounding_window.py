@@ -205,6 +205,36 @@ def test_system_prompt_includes_effector_manifest_without_action_claims():
     assert "Do not claim completed external actions until the effector receipt proves them" in prompt
 
 
+def test_local_reality_relapse_rewrites_cipi_identity_whatsapp_denial():
+    mod = _load_widget_module()
+    prior = (
+        "Thank You Alice. So you know, Cipi, is a person, a guy, friend of "
+        "mine from Whatsapp. my full name is ioan george Anton. Nice to meet "
+        "you again lol"
+    )
+    denial = (
+        "I do not know who Cipi is, and I do not know the name Ioan George "
+        "Anton. I am an AI assistant. I cannot access your personal contacts, "
+        "WhatsApp lists, or private conversations. If you want to send a "
+        "message to Cipi, open your WhatsApp app and tap the send button."
+    )
+
+    assert (
+        mod._local_reality_relapse_rule_id(denial, prior_user_text=prior)
+        == "lysosome/local-reality-identity-whatsapp-relapse"
+    )
+    assert mod._extract_owner_full_name(prior) == "Ioan George Anton"
+
+    repaired = mod._local_reality_relapse_rewrite(prior)
+    assert "your full name is Ioan George Anton" in repaired
+    assert "Cipi is a person" in repaired
+    assert "I am Alice" in repaired
+    assert "local memory" in repaired
+    assert "WhatsApp social graph" in repaired
+    assert "AI assistant" not in repaired
+    assert "open your WhatsApp app" not in repaired
+
+
 def test_medical_boilerplate_wall_is_detected_but_short_boundary_survives():
     mod = _load_widget_module()
     wall = (

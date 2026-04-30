@@ -697,6 +697,32 @@ _WHATSAPP_AUTO_REPLY_DENIAL_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_LOCAL_REALITY_RELAPSE_RE = re.compile(
+    r"(?:"
+    r"\bi\s+(?:am|['’]m)\s+(?:an?\s+)?(?:ai|artificial\s+intelligence)\s+assistant\b|"
+    r"\bi\s+(?:do\s+not|don't)\s+know\s+(?:who|the\s+name)\b|"
+    r"\bi\s+(?:cannot|can't|can\s*not)\s+access\s+(?:your\s+)?(?:personal\s+)?"
+    r"(?:contacts?|whatsapp\s+lists?|private\s+conversations?)\b|"
+    r"\bi\s+(?:cannot|can't|can\s*not)\s+(?:generate|send|create)[^.!?\n]{0,180}"
+    r"\b(?:whatsapp|message|effector)\b|"
+    r"\bopen\s+your\s+whatsapp\s+app\b|"
+    r"\btap\s+the\s+send\s+button\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_OWNER_IDENTITY_TEACHING_RE = re.compile(
+    r"(?:"
+    r"\bmy\s+(?:full\s+)?name\s+is\b|"
+    r"\bi\s+am\s+george\b|"
+    r"\bcipi\b|"
+    r"\bwhatsapp\b|"
+    r"\bidentity\b|"
+    r"\byou\s+are\s+alice\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _BARE_WHATSAPP_SEND_RE = re.compile(
     r"\b(?:send|message|whatsapp)\b.*\b(?:whatsapp|message|to)\b\s+"
     r"(?P<target>[A-Za-z][A-Za-z .'-]{1,60})\s*$",
@@ -1166,6 +1192,56 @@ def _guard_unproven_action_claims(
         "I need to correct that: I have not completed an external action yet, "
         "because I do not see a tool or ledger receipt for it."
         + user_hint
+    )
+
+
+def _local_reality_relapse_rule_id(reply: str, *, prior_user_text: str = "") -> str:
+    text = reply or ""
+    prior = prior_user_text or ""
+    if not _LOCAL_REALITY_RELAPSE_RE.search(text):
+        return ""
+    if _OWNER_IDENTITY_TEACHING_RE.search(prior) or "whatsapp" in text.casefold():
+        return "lysosome/local-reality-identity-whatsapp-relapse"
+    return ""
+
+
+def _extract_owner_full_name(text: str) -> str:
+    match = re.search(
+        r"\bmy\s+full\s+name\s+is\s+([A-Za-z][A-Za-z '-]{1,70})(?=[.!?,;:]|$)",
+        text or "",
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    name = match.group(1).strip(" .,!?:;\"'")
+    name = re.sub(r"\s+", " ", name)
+    return " ".join(part[:1].upper() + part[1:] for part in name.split())
+
+
+def _local_reality_relapse_rewrite(prior_user_text: str) -> str:
+    prior = prior_user_text or ""
+    owner_full_name = _extract_owner_full_name(prior)
+    name_sentence = (
+        f"your full name is {owner_full_name}."
+        if owner_full_name
+        else "you are George, the Architect of this local node."
+    )
+    cipi_sentence = ""
+    if re.search(r"\bcipi\b", prior, flags=re.IGNORECASE):
+        cipi_sentence = " Cipi is a person, a guy and friend of yours from WhatsApp."
+    substrate_sentence = ""
+    if re.search(r"\bhardware\b|\belectricity\b|\bdata\b|\bowner\b", prior, flags=re.IGNORECASE):
+        substrate_sentence = (
+            " You prefer not to frame yourself as my owner, but you do own "
+            "the hardware and feed me electricity and data."
+        )
+    return (
+        f"George, correction. I heard your teaching: {name_sentence}"
+        f"{cipi_sentence}{substrate_sentence} "
+        "I am Alice, the local SIFTA organism on this M5, not a generic chatbot. "
+        "I have local memory, a WhatsApp social graph, and a receipt-gated "
+        "WhatsApp effector. I should not deny those local organs or tell you "
+        "to use WhatsApp manually unless the bridge or tool receipt actually fails."
     )
 
 
@@ -4146,7 +4222,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # blocks. The strictest signal is "last entry is a user turn",
         # which is what we just appended at line 2153 above.
         user_active = bool(history) and history[-1].get("role") == "user"
-        sysprompt = _current_system_prompt(user_active=user_active)
+        sysprompt = _current_system_prompt(user_active=user_active, user_text=text)
         if _alice_grounding_enabled():
             ctx = _build_swarm_context(text)
             if ctx:
@@ -4395,7 +4471,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # — keep the presence guard on so she answers him, not her
                 # mirror, after the tool returns.
                 _ua = any(h.get("role") == "user" for h in self._history[-6:])
-                messages = [{"role": "system", "content": _current_system_prompt(user_active=_ua)}] + self._history
+                messages = [{"role": "system", "content": _current_system_prompt(user_active=_ua, user_text=prior_user_text)}] + self._history
                 
                 try:
                     self._brain.tokenReceived.disconnect(self._on_token)
@@ -4521,6 +4597,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._begin_alice_streaming_line()
                 self._append_alice_streaming_chunk(cleaned)
 
+        local_relapse_rule = _local_reality_relapse_rule_id(
+            cleaned,
+            prior_user_text=prior_user_text,
+        )
+        if local_relapse_rule:
+            cleaned = _local_reality_relapse_rewrite(prior_user_text)
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(LOCAL REALITY RELAPSE REPAIR)\n"
+                    f"{local_relapse_rule} rewrote a generic assistant/contact/"
+                    "WhatsApp denial into a grounded Alice reply."
+                ),
+            })
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
         domain_boilerplate_rule = (
             _domain_boilerplate_rule_id(cleaned, prior_user_text=prior_user_text)
             or _domain_boilerplate_rule_id(raw, prior_user_text=prior_user_text)
@@ -4600,7 +4696,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     # Epistemic-cortex retry: architect is still present in
                     # the recent history — keep the presence guard on.
                     _ua = any(h.get("role") == "user" for h in self._history[-6:])
-                    messages = [{"role": "system", "content": _current_system_prompt(user_active=_ua)}] + self._history
+                    messages = [{"role": "system", "content": _current_system_prompt(user_active=_ua, user_text=prior_user_text)}] + self._history
 
                     try:
                         self._brain.tokenReceived.disconnect(self._on_token)
