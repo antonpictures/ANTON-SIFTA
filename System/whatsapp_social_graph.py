@@ -25,6 +25,7 @@ CONTACTS_FILE = _STATE / "whatsapp_contacts.json"
 OWNER_SELF_JIDS = {"51235386302504@lid"}
 OWNER_NAME_ALIASES = {"george", "ioan", "ioan george anton", "george anton", "architect"}
 LOCAL_CONTROL_JIDS = {"local_reasoning_test@s.whatsapp.net"}
+STATUS_BROADCAST_JIDS = {"status@broadcast"}
 KNOWN_JID_DISPLAY_NAMES = {
     "120363408204674197@g.us": "SIFTA Group",
     "147235790663690@lid": "Jeff Powers Ocean VIllas",
@@ -39,6 +40,10 @@ def chat_type_for_jid(jid: str) -> str:
     if jid.endswith("@g.us"):
         return "group"
     return "direct"
+
+
+def is_status_broadcast_jid(jid: str) -> bool:
+    return str(jid or "").strip() in STATUS_BROADCAST_JIDS
 
 
 def display_name_for(row: Dict[str, Any]) -> str:
@@ -64,6 +69,19 @@ def _is_owner_self(jid: str, name: str) -> bool:
 
 def _is_local_control(jid: str) -> bool:
     return str(jid or "").strip() in LOCAL_CONTROL_JIDS
+
+
+def _jid_kind(jid: str) -> str:
+    jid = str(jid or "").strip()
+    if jid.endswith("@s.whatsapp.net"):
+        return "phone"
+    if jid.endswith("@lid"):
+        return "lid"
+    if jid.endswith("@g.us"):
+        return "group"
+    if is_status_broadcast_jid(jid):
+        return "status"
+    return "other"
 
 
 def load_contacts(path: Optional[Path] = None) -> Dict[str, Any]:
@@ -102,7 +120,18 @@ def enrich_contact_record(
     clean_name = _canonical_display_name(jid, name or display_name_for(row))
     is_owner = _is_owner_self(jid, clean_name)
     is_control = _is_local_control(jid)
-    if is_owner:
+    if is_status_broadcast_jid(jid):
+        relationship = "whatsapp_status_broadcast"
+        note = (
+            "WhatsApp status broadcast transport. This is not a stable person or "
+            "send target; status rows may carry a human notify name separately."
+        )
+        alice_context = (
+            "Observe status broadcasts as social context only. Do not resolve owner "
+            "send requests to status@broadcast."
+        )
+        send_target_allowed = False
+    elif is_owner:
         relationship = "owner_self"
         note = (
             "This is Ioan George Anton / George, the machine owner. Do not treat this "
@@ -146,6 +175,183 @@ def enrich_contact_record(
         }
     )
     return row
+
+
+def _contact_last_seen(row: Dict[str, Any]) -> float:
+    try:
+        return float(row.get("last_seen_ts") or row.get("synced_ts") or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _preferred_contact_row(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Choose the stable send target from a phone/LID alias cluster."""
+
+    def rank(row: Dict[str, Any]) -> tuple:
+        jid = str(row.get("jid") or "")
+        kind = _jid_kind(jid)
+        return (
+            row.get("send_target_allowed") is not False,
+            jid in KNOWN_JID_DISPLAY_NAMES,
+            bool(row.get("name_locked")),
+            kind == "phone",
+            kind == "lid",
+            _contact_last_seen(row),
+        )
+
+    return sorted(rows, key=rank, reverse=True)[0]
+
+
+def _can_merge_direct_aliases(rows: List[Dict[str, Any]]) -> bool:
+    """Two or more direct contacts with the same display_name are aliases.
+
+    Original rule: phone+LID required. But Baileys surfaces some contacts
+    as LID-only with multiple LIDs (e.g. George 2 LIDs, no phone).
+    Safe merge: same display_name + all direct + at least 2 entries.
+    """
+    if len(rows) < 2:
+        return False
+    kinds = {_jid_kind(str(row.get("jid") or "")) for row in rows}
+    # Classic phone+LID pair
+    if "phone" in kinds and "lid" in kinds:
+        return True
+    # Multiple LIDs, same name — still the same person
+    if kinds == {"lid"}:
+        return True
+    return False
+
+
+def _direct_alias_rows_for_name(
+    contacts: Dict[str, Any],
+    name_norm: str,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for row in contacts.values():
+        if not isinstance(row, dict):
+            continue
+        jid = str(row.get("jid") or "").strip()
+        if not jid or is_status_broadcast_jid(jid):
+            continue
+        if row.get("send_target_allowed") is False:
+            continue
+        chat_type = str(row.get("chat_type") or chat_type_for_jid(jid))
+        if chat_type != "direct":
+            continue
+        if _normalized(display_name_for(row)) == name_norm:
+            rows.append(row)
+    return rows
+
+
+def alias_jids_for_jid(
+    jid: str,
+    contacts: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    """Return known WhatsApp IDs for the same human contact.
+
+    Baileys may surface one person as both a phone JID
+    (``@s.whatsapp.net``) and a linked-device/private LID (``@lid``).
+    We merge only that phone/LID pair for the same display name; same-name
+    phone-only contacts remain separate to avoid unsafe identity collapse.
+    """
+    jid = str(jid or "").strip()
+    if not jid:
+        return []
+    data = contacts if contacts is not None else load_contacts()
+    target = next(
+        (
+            row
+            for row in data.values()
+            if isinstance(row, dict) and str(row.get("jid") or "").strip() == jid
+        ),
+        None,
+    )
+    if not target:
+        return [jid]
+    if is_status_broadcast_jid(jid) or str(target.get("chat_type") or chat_type_for_jid(jid)) != "direct":
+        return [jid]
+    name_norm = _normalized(display_name_for(target))
+    if not name_norm:
+        return [jid]
+    rows = _direct_alias_rows_for_name(data, name_norm)
+    if not _can_merge_direct_aliases(rows):
+        return [jid]
+    aliases = sorted({str(row.get("jid") or "").strip() for row in rows if row.get("jid")})
+    return aliases or [jid]
+
+
+def canonical_contact_entries(contacts: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Return UI-ready contacts with recurring WhatsApp aliases merged.
+
+    This hides transport duplicates such as ``Carlton`` phone JID + LID while
+    keeping the alias list so conversation filtering and Auto consent still see
+    every real identifier.
+    """
+    data = contacts if contacts is not None else load_contacts()
+    entries: List[Dict[str, Any]] = []
+    direct_by_name: Dict[str, List[Dict[str, Any]]] = {}
+    emitted: set[str] = set()
+
+    for row in data.values():
+        if not isinstance(row, dict):
+            continue
+        jid = str(row.get("jid") or "").strip()
+        name = display_name_for(row).strip()
+        if not jid or not name or is_status_broadcast_jid(jid):
+            continue
+        chat_type = str(row.get("chat_type") or chat_type_for_jid(jid))
+        if (
+            chat_type == "direct"
+            and _jid_kind(jid) in {"phone", "lid"}
+        ):
+            direct_by_name.setdefault(_normalized(name), []).append(row)
+        else:
+            aliases = [jid]
+            is_group = chat_type == "group"
+            entries.append(
+                {
+                    "label": f"📢 {name}" if is_group else name,
+                    "display_name": name,
+                    "jid": jid,
+                    "jid_aliases": aliases,
+                    "chat_type": chat_type,
+                    "send_target_allowed": row.get("send_target_allowed") is not False,
+                    "relationship_to_owner": str(row.get("relationship_to_owner") or ""),
+                    "merged_count": 1,
+                }
+            )
+            emitted.add(jid)
+
+    for rows in direct_by_name.values():
+        if not rows:
+            continue
+        groups: List[List[Dict[str, Any]]]
+        if len(rows) > 1 and _can_merge_direct_aliases(rows):
+            groups = [rows]
+        else:
+            groups = [[row] for row in rows]
+        for group in groups:
+            primary = _preferred_contact_row(group)
+            jid = str(primary.get("jid") or "").strip()
+            if jid in emitted:
+                continue
+            aliases = sorted({str(row.get("jid") or "").strip() for row in group if row.get("jid")})
+            emitted.update(aliases)
+            name = display_name_for(primary).strip()
+            entries.append(
+                {
+                    "label": name,
+                    "display_name": name,
+                    "jid": jid,
+                    "jid_aliases": aliases,
+                    "chat_type": "direct",
+                    "send_target_allowed": primary.get("send_target_allowed") is not False,
+                    "relationship_to_owner": str(primary.get("relationship_to_owner") or ""),
+                    "merged_count": len(aliases),
+                }
+            )
+
+    entries.sort(key=lambda e: (str(e["display_name"]).casefold(), str(e["chat_type"])))
+    return entries
 
 
 def migrate_existing_contacts(path: Optional[Path] = None) -> int:
@@ -220,12 +426,14 @@ def resolve_target(target: str, contacts: Optional[Dict[str, Any]] = None) -> st
 
     candidates: List[Dict[str, Any]] = []
     fuzzy_candidates: List[Dict[str, Any]] = []
-    for row in data.values():
+    for row in canonical_contact_entries(data):
         if not isinstance(row, dict):
             continue
         name = display_name_for(row)
         jid = str(row.get("jid") or "")
         if not name or not jid:
+            continue
+        if is_status_broadcast_jid(jid):
             continue
         if row.get("send_target_allowed") is False:
             continue
@@ -278,7 +486,7 @@ def resolve_target(target: str, contacts: Optional[Dict[str, Any]] = None) -> st
 def contact_rows_for_alice(limit: int = 12, contacts: Optional[Dict[str, Any]] = None) -> List[str]:
     data = contacts if contacts is not None else load_contacts()
     rows = []
-    for row in data.values():
+    for row in canonical_contact_entries(data):
         if not isinstance(row, dict):
             continue
         name = display_name_for(row)
@@ -323,11 +531,15 @@ def summary_for_alice(limit: int = 12) -> str:
 
 __all__ = [
     "CONTACTS_FILE",
+    "STATUS_BROADCAST_JIDS",
+    "alias_jids_for_jid",
+    "canonical_contact_entries",
     "chat_type_for_jid",
     "contact_hash",
     "contact_rows_for_alice",
     "display_name_for",
     "enrich_contact_record",
+    "is_status_broadcast_jid",
     "load_contacts",
     "migrate_existing_contacts",
     "resolve_target",

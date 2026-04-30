@@ -72,33 +72,36 @@ def _load_contacts() -> dict[str, Any]:
 
 
 def _contact_entries() -> list[dict[str, Any]]:
-    """Return known WhatsApp targets with JID/chat metadata, deduped by JID."""
+    """Return known WhatsApp targets with phone/LID aliases merged."""
     contacts = _load_contacts()
-    seen_jids: set[str] = set()
-    entries: list[dict[str, Any]] = []
-    for _k, v in contacts.items():
-        name = v.get("display_name", "").strip()
-        jid = str(v.get("jid") or "").strip()
-        if not name or not jid:
-            continue
-        if jid in seen_jids:
-            continue
-        seen_jids.add(jid)
-        chat_type = str(v.get("chat_type") or ("group" if jid.endswith("@g.us") else "direct")).strip()
-        is_group = chat_type == "group"
-        label = f"📢 {name}" if is_group else name
-        entries.append(
-            {
-                "label": label,
-                "display_name": name,
-                "jid": jid,
-                "chat_type": chat_type,
-                "send_target_allowed": v.get("send_target_allowed") is not False,
-                "relationship_to_owner": str(v.get("relationship_to_owner") or ""),
-            }
-        )
-    entries.sort(key=lambda e: (e["display_name"].casefold(), e["chat_type"]))
-    return entries
+    try:
+        from System.whatsapp_social_graph import canonical_contact_entries
+
+        return canonical_contact_entries(contacts)
+    except Exception:
+        entries: list[dict[str, Any]] = []
+        for _k, v in contacts.items():
+            name = v.get("display_name", "").strip()
+            jid = str(v.get("jid") or "").strip()
+            if not name or not jid or jid == "status@broadcast":
+                continue
+            chat_type = str(v.get("chat_type") or ("group" if jid.endswith("@g.us") else "direct")).strip()
+            is_group = chat_type == "group"
+            label = f"📢 {name}" if is_group else name
+            entries.append(
+                {
+                    "label": label,
+                    "display_name": name,
+                    "jid": jid,
+                    "jid_aliases": [jid],
+                    "chat_type": chat_type,
+                    "send_target_allowed": v.get("send_target_allowed") is not False,
+                    "relationship_to_owner": str(v.get("relationship_to_owner") or ""),
+                    "merged_count": 1,
+                }
+            )
+        entries.sort(key=lambda e: (e["display_name"].casefold(), e["chat_type"]))
+        return entries
 
 
 def _contact_names() -> list[str]:
@@ -166,6 +169,7 @@ class WhatsAppOrganWidget(QWidget):
         self._outbox_mtime: float = 0.0
         self._refreshing_contacts = False
         self._selected_jid: str = ""  # "" = All Chats, else filter by JID
+        self._selected_aliases: set[str] = set()
         self._selected_name: str = "All Chats"
         self._build_ui()
         self._refresh_all()
@@ -505,11 +509,19 @@ class WhatsAppOrganWidget(QWidget):
         for entry in entries:
             item = QListWidgetItem(entry["label"])
             item.setData(Qt.ItemDataRole.UserRole, entry)
+            aliases = list(entry.get("jid_aliases") or [entry.get("jid")])
+            if self._selected_jid and self._selected_jid in set(aliases):
+                item.setSelected(True)
+            if len(aliases) > 1:
+                item.setToolTip("Merged WhatsApp aliases: " + ", ".join(aliases))
             if entry.get("send_target_allowed"):
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 enabled = bool(
                     is_auto_enabled
-                    and is_auto_enabled(entry["jid"], chat_type=entry["chat_type"])
+                    and any(
+                        is_auto_enabled(alias, chat_type=entry["chat_type"])
+                        for alias in aliases
+                    )
                 )
                 item.setCheckState(Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
             else:
@@ -523,7 +535,7 @@ class WhatsAppOrganWidget(QWidget):
             if not entry.get("send_target_allowed"):
                 continue
             self._target_combo.addItem(entry["label"], entry)
-            if prior_jid and entry.get("jid") == prior_jid:
+            if prior_jid and prior_jid in set(entry.get("jid_aliases") or [entry.get("jid")]):
                 selected_idx = self._target_combo.count() - 1
         if selected_idx >= 0:
             self._target_combo.setCurrentIndex(selected_idx)
@@ -547,7 +559,10 @@ class WhatsAppOrganWidget(QWidget):
 
         # Update selected filter
         self._selected_jid = jid
+        self._selected_aliases = {str(alias).strip() for alias in (entry.get("jid_aliases") or [jid]) if str(alias).strip()}
         self._selected_name = name if jid else "All Chats"
+        if not jid:
+            self._selected_aliases = set()
 
         # Update compose bar target
         if jid:
@@ -570,23 +585,25 @@ class WhatsAppOrganWidget(QWidget):
         for entry in _contact_entries():
             if label == entry.get("label") or clean == entry.get("display_name"):
                 return entry
-        return {"label": label, "display_name": clean, "jid": clean, "chat_type": "direct"}
+        return {"label": label, "display_name": clean, "jid": clean, "jid_aliases": [clean], "chat_type": "direct"}
 
     def _set_auto_enabled_for_entry(self, entry: dict[str, Any], enabled: bool) -> bool:
         jid = str(entry.get("jid") or "").strip()
         if not jid:
             return False
+        aliases = [str(alias).strip() for alias in (entry.get("jid_aliases") or [jid]) if str(alias).strip()]
         try:
             from System.whatsapp_autonomy_settings import set_auto_enabled
 
-            set_auto_enabled(
-                jid,
-                display_name=str(entry.get("display_name") or entry.get("label") or ""),
-                chat_type=str(entry.get("chat_type") or ""),
-                enabled=bool(enabled),
-                actor="owner",
-                source="whatsapp_organ",
-            )
+            for alias in aliases:
+                set_auto_enabled(
+                    alias,
+                    display_name=str(entry.get("display_name") or entry.get("label") or ""),
+                    chat_type=str(entry.get("chat_type") or ""),
+                    enabled=bool(enabled),
+                    actor="owner",
+                    source="whatsapp_organ",
+                )
             self._publish_focus(
                 f"WhatsApp auto-reply {'ON' if enabled else 'OFF'}: "
                 f"{entry.get('display_name') or jid}"
@@ -609,7 +626,11 @@ class WhatsAppOrganWidget(QWidget):
             try:
                 from System.whatsapp_autonomy_settings import is_auto_enabled
 
-                enabled = is_auto_enabled(jid, chat_type=str(entry.get("chat_type") or ""))
+                aliases = [str(alias).strip() for alias in (entry.get("jid_aliases") or [jid]) if str(alias).strip()]
+                enabled = any(
+                    is_auto_enabled(alias, chat_type=str(entry.get("chat_type") or ""))
+                    for alias in aliases
+                )
             except Exception:
                 enabled = False
         self._auto_reply_checkbox.blockSignals(True)
@@ -669,6 +690,8 @@ class WhatsAppOrganWidget(QWidget):
         inbox = _read_inbox(max_rows=200)
         outbox = _read_outbox(max_rows=100)
         filter_jid = self._selected_jid  # "" = show all
+        filter_aliases = set(self._selected_aliases or ({filter_jid} if filter_jid else set()))
+        filter_name_norm = " ".join((self._selected_name or "").casefold().split())
 
         # Build unified timeline
         events = []
@@ -683,7 +706,9 @@ class WhatsAppOrganWidget(QWidget):
 
             # Filter: skip messages not involving selected JID
             if filter_jid:
-                if from_jid != filter_jid and participant != filter_jid:
+                name_norm = " ".join(str(name or "").casefold().split())
+                status_name_match = from_jid == "status@broadcast" and name_norm == filter_name_norm
+                if from_jid not in filter_aliases and participant not in filter_aliases and not status_name_match:
                     continue
 
             if from_me:
@@ -709,8 +734,10 @@ class WhatsAppOrganWidget(QWidget):
             source = row.get("source", "")
 
             # Filter: skip sends not to the selected JID
-            if filter_jid and resolved_jid != filter_jid:
-                continue
+            if filter_jid:
+                target_norm = " ".join(str(target_name or "").casefold().split())
+                if resolved_jid not in filter_aliases and target_norm != filter_name_norm:
+                    continue
 
             if "alice" in source.lower() or "autonomous" in source.lower() or "auto" in source.lower():
                 sender = "Alice"

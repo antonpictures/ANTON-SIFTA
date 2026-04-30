@@ -155,12 +155,25 @@ def is_auto_enabled(
     if not jid:
         return False
     data = load_settings(path) if settings is None else settings
-    row = (data.get("targets") or {}).get(jid) or {}
-    if not bool(row.get("auto_reply_enabled")):
-        return False
-    if _chat_type_for(jid, chat_type) != _chat_type_for(jid, str(row.get("chat_type") or "")):
-        return False
-    return str(row.get("consent") or "") == "owner_delegated"
+    targets = data.get("targets") or {}
+    aliases = [jid]
+    try:
+        from System.whatsapp_social_graph import alias_jids_for_jid
+
+        aliases = alias_jids_for_jid(jid)
+    except Exception:
+        pass
+
+    expected_chat_type = _chat_type_for(jid, chat_type)
+    for alias in aliases:
+        row = targets.get(alias) or {}
+        if not bool(row.get("auto_reply_enabled")):
+            continue
+        if expected_chat_type != _chat_type_for(alias, str(row.get("chat_type") or "")):
+            continue
+        if str(row.get("consent") or "") == "owner_delegated":
+            return True
+    return False
 
 
 def target_policy(jid: str, *, chat_type: str = "", path: Optional[Path] = None) -> Dict[str, Any]:
