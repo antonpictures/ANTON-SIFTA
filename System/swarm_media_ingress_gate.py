@@ -176,7 +176,7 @@ def write_gate_receipt(
         "focus_preview": str(focus_context or "")[:500],
         "truth_note": (
             "STT line was classified before cortex routing so ambient video "
-            "speech does not become an owner command."
+            "speech does not enter the conversation."
         ),
     }
     with LEDGER.open("a", encoding="utf-8") as fh:
@@ -198,8 +198,8 @@ def record_ambient_media_context(
         "note": note,
         "ttl_s": float(ttl_s),
         "truth_note": (
-            "Owner-declared context for self/other separation: background media "
-            "voices are environmental, not direct owner commands."
+            "Architect-declared context for self/other separation: background media "
+            "voices are environmental, not direct conversation."
         ),
     }
     AMBIENT_CONTEXT_FILE.write_text(json.dumps(row, ensure_ascii=False, sort_keys=True), encoding="utf-8")

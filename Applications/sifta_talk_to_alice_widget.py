@@ -3587,7 +3587,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 )
                 note = (
                     "(silent: ambient media transcript observed, not routed "
-                    f"as owner command; reason={row.get('reason')})"
+                    f"to conversation; reason={row.get('reason')})"
                 )
                 _log_turn("alice", note, model="media_ingress_gate")
                 self._history.append({"role": "assistant", "content": "(silent)"})
