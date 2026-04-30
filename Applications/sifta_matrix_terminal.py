@@ -150,13 +150,12 @@ class MatrixTerminalPane(QPlainTextEdit):
     # ── In-terminal rabbit animation 🐇 ──────────────────────────────
     def _start_rabbit_climb(self):
         """Show a 🐇 inside the terminal climbing upward toward the buttons."""
-        # Build frames: rabbit starts at bottom and hops up
         self._rabbit_lines = []
         for i in range(6):
             blanks = "\n" * max(0, 5 - i)
-            hop = "  " * (i % 3)  # zigzag
+            hop = "  " * (i % 3)
             self._rabbit_lines.append(f"{blanks}{hop}🐇  ↑ Follow the white rabbit ↑")
-        self._rabbit_lines.append("\n🐇🐇🐇  ↑ Click the button above ↑ 🐇🐇🐇")
+        self._rabbit_lines.append("\n🐇🐇🐇  ↑↑↑  🐇🐇🐇")
         self._rabbit_frame = 0
         self._rabbit_timer.start(600)
 
@@ -620,20 +619,15 @@ class MatrixTerminalApp(QWidget):
     def _toggle_btn1(self):
         self._blink_state = not self._blink_state
         if self._blink_state:
-            # Rabbit: QLabel RichText (2.5em + text-shadow); button stays readable (dark plate).
             self.lbl_rabbit_alphafold.setText(_RABBIT_SALIENCE_HTML)
             self.lbl_rabbit_alphafold.setVisible(True)
-            self.btn_alphafold.setText("HACK: ALPHAFOLD")
-            self.btn_alphafold.setFixedHeight(52)
             self.btn_alphafold.setStyleSheet(
-                "QPushButton { background: #06240f; color: #e7ffdf; border: 3px solid #43ff64; "
-                "border-radius: 10px; padding: 10px 20px; font-weight: bold; font-family: Courier; font-size: 22px; }"
+                "QPushButton { background: #06240f; color: #e7ffdf; border: 2px solid #43ff64; "
+                "border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
             )
         else:
             self.lbl_rabbit_alphafold.clear()
             self.lbl_rabbit_alphafold.setVisible(False)
-            self.btn_alphafold.setText("HACK: ALPHAFOLD")
-            self.btn_alphafold.setFixedHeight(26)
             self.btn_alphafold.setStyleSheet(
                 "QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11;"
                 " border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
@@ -663,17 +657,13 @@ class MatrixTerminalApp(QWidget):
         if self._blink_state:
             self.lbl_rabbit_inverse.setText(_RABBIT_SALIENCE_HTML)
             self.lbl_rabbit_inverse.setVisible(True)
-            self.btn_inverse.setText("HACK: INVERSE FOLD")
-            self.btn_inverse.setFixedHeight(52)
             self.btn_inverse.setStyleSheet(
-                "QPushButton { background: #06240f; color: #e7ffdf; border: 3px solid #43ff64; "
-                "border-radius: 10px; padding: 10px 20px; font-weight: bold; font-family: Courier; font-size: 22px; }"
+                "QPushButton { background: #06240f; color: #e7ffdf; border: 2px solid #43ff64; "
+                "border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
             )
         else:
             self.lbl_rabbit_inverse.clear()
             self.lbl_rabbit_inverse.setVisible(False)
-            self.btn_inverse.setText("HACK: INVERSE FOLD")
-            self.btn_inverse.setFixedHeight(26)
             self.btn_inverse.setStyleSheet(
                 "QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11;"
                 " border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
