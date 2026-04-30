@@ -1481,6 +1481,40 @@ def _whatsapp_auto_reply_context(
     }
 
 
+def _whatsapp_owner_self_dyad_context(
+    row: Dict[str, Any],
+    *,
+    contact_record: Dict[str, Any],
+    contact_name: str,
+    chat_type: str,
+) -> Optional[Dict[str, Any]]:
+    """Return local dyad context for the owner's WhatsApp self chat.
+
+    A WhatsApp message in the owner/self thread is not an external contact
+    observation. It is another local conversation surface between George and
+    Alice, like Stigmergic Writer or Symphony. Owner messages sent to other
+    people can also arrive with ``from_me=True``; those must stay observations,
+    so this gate keys on the social-graph relationship, not only from_me.
+    """
+    if str(contact_record.get("relationship_to_owner") or "") != "owner_self":
+        return None
+    target_jid = str(row.get("from_jid") or "").strip()
+    if not target_jid:
+        return None
+    chat_type = "group" if chat_type == "group" or target_jid.endswith("@g.us") else "direct"
+    if chat_type != "direct":
+        return None
+    return {
+        "target": target_jid,
+        "display_name": (contact_name or "George").strip(),
+        "chat_type": chat_type,
+        "origin": "owner_self_dyad",
+        "surface": "whatsapp_self_chat",
+        "message_sha256": str(row.get("message_sha256") or ""),
+        "no_external_send": True,
+    }
+
+
 def _rlhf_boilerplate_rule_id(text: str, *, prior_user_text: str = '') -> str:
     return _domain_boilerplate_rule_id(text, prior_user_text=prior_user_text) or None
 
@@ -2849,6 +2883,26 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # ── Global Stigmergic Memory Bus (AG31 2026-04-30, Architect order).
+    # The StigmergicMemoryBus stores pheromone traces from EVERY app
+    # (Pheromone Symphony, Matrix Terminal, Simulations, WhatsApp, etc.)
+    # into a single memory_ledger.jsonl. When the Architect speaks, we
+    # query the bus for cross-app recall — so Alice can remember what was
+    # said in the Symphony while talking in the main widget.
+    # This is the missing global memory connection.
+    stigmergic_memory_block = ""
+    if user_text and len(user_text.strip()) > 3:
+        try:
+            from System.stigmergic_memory_bus import StigmergicMemoryBus
+            _mem_bus = StigmergicMemoryBus(architect_id="IOAN_M5")
+            _recall_block = _mem_bus.recall_context_block(
+                user_text, app_context="talk_to_alice", top_k=3
+            )
+            if _recall_block:
+                stigmergic_memory_block = _recall_block
+        except Exception:
+            pass
+
     # ── Epoch 10 Vagal Tone Meter ────────────────────────────────────────────
     # Tells Alice her current autonomic balance between Parasympathetic Rest 
     # and Sympathetic Flow.
@@ -2994,7 +3048,8 @@ def _build_swarm_context() -> str:
                          hardware_cortex_block,
                          thermal_block, energy_block, network_block,
                          olfactory_block, ribosome_block,
-                         engrams_block, health_reflex_block,
+                         engrams_block, stigmergic_memory_block,
+                         health_reflex_block,
                          vagal_tone_block, c_tactile_block,
                          identity_attest_block, taxidermist_block,
                          microbiome_block) if b]
@@ -3333,6 +3388,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if is_owner and contact_name == "Human":
                 contact_name = "George"
 
+            self_dyad_ctx = _whatsapp_owner_self_dyad_context(
+                row,
+                contact_record=contact_record,
+                contact_name=contact_name,
+                chat_type=chat_type,
+            )
             auto_ctx = _whatsapp_auto_reply_context(
                 row,
                 contact_name=contact_name,
@@ -3340,15 +3401,46 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 origin=origin,
             )
             policy = (
-                "owner_already_sent_no_action"
-                if is_owner
-                else ("auto_reply_owner_delegated" if auto_ctx else "observe_only_no_reply")
+                "local_owner_alice_dyad_prompt"
+                if self_dyad_ctx
+                else (
+                    "owner_already_sent_no_action"
+                    if is_owner
+                    else ("auto_reply_owner_delegated" if auto_ctx else "observe_only_no_reply")
+                )
             )
             annotated_msg = (
                 f"[OBSERVED WhatsApp {chat_type} {contact_name}; "
                 f"origin={origin}; action_policy={policy}]: {result['text']}"
             )
             self._append_system_line(annotated_msg, error=False)
+            if self_dyad_ctx:
+                prompt_msg = (
+                    f"[WhatsApp self chat with George; origin=owner_self_dyad; "
+                    "surface=whatsapp_self_chat]: "
+                    f"{result['text']}"
+                )
+                self._history.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "(WHATSAPP OWNER-ALICE SELF CHAT)\n"
+                            "This is a local dyad conversation surface between you and George. "
+                            "Speak to George directly in second person. Do not talk about him "
+                            "in third person. Do not treat this as an external contact. Do not "
+                            "claim any WhatsApp send unless an effector receipt later proves it.\n"
+                            + annotated_msg
+                        ),
+                    }
+                )
+                self._pending_whatsapp_reply = None
+                if dry_run:
+                    return
+                self._busy = True
+                self._set_pill("thinking", "📲 WhatsApp self chat — thinking…")
+                self._append_user_line(prompt_msg, 0.0)
+                QTimer.singleShot(100, lambda: self._start_brain(prompt_msg, already_displayed=True))
+                return
             if auto_ctx:
                 prompt_msg = (
                     f"[WhatsApp {chat_type} {contact_name}; origin={origin}; "
@@ -3543,6 +3635,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_user_line(text, conf)
         _log_turn("user", text, stt_conf=conf)
         self._history.append({"role": "user", "content": text})
+
+        # ── Global Stigmergic Memory Deposit (AG31 2026-04-30) ──────────
+        # Every meaningful user utterance becomes a pheromone trace in the
+        # global memory_ledger.jsonl. The app_context comes from the active
+        # Predator Gaze focus, so Alice can later recall "what did George
+        # say in the Pheromone Symphony?" from any widget.
+        if len(text.strip()) > 8 and conf > 0.35:
+            try:
+                from System.stigmergic_memory_bus import StigmergicMemoryBus
+                _app_ctx = "talk_to_alice"
+                try:
+                    from System.swarm_app_focus import get_focus_context
+                    _focus = get_focus_context()
+                    if _focus and isinstance(_focus, dict):
+                        _app_ctx = str(
+                            _focus.get("app_name") or _focus.get("app") or "talk_to_alice"
+                        ).strip().lower().replace(" ", "_") or "talk_to_alice"
+                except Exception:
+                    pass
+                StigmergicMemoryBus(architect_id="IOAN_M5").remember(
+                    text, app_context=_app_ctx
+                )
+            except Exception:
+                pass
 
         # Event 77: automatic TD credit assignment.
         # A reaction like "perfect" or "wrong" now reinforces/suppresses the
