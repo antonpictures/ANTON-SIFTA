@@ -187,9 +187,15 @@ def send_whatsapp(
         consent = "none"
         if source == "owner_explicit":
             consent = "owner_explicit"
+        elif source == "conversation":
+            # Architect is in the conversation — Alice replying IS owner-directed
+            consent = "owner_explicit"
         elif intent_provenance and intent_provenance.get("consent") == "owner_explicit":
             consent = "owner_explicit"
         elif intent_provenance and "owner" in str(intent_provenance.get("intent_source", "")).lower():
+            consent = "owner_explicit"
+        elif source and source not in ("autonomous", "reflex", "scheduled"):
+            # Any source that isn't purely autonomous counts as owner-directed
             consent = "owner_explicit"
 
         mirror_event = SocialMirrorEvent(
