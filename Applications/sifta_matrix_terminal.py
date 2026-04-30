@@ -13,6 +13,7 @@ import termios
 import time
 from pathlib import Path
 
+from PyQt6 import sip
 from PyQt6.QtCore import QSocketNotifier, Qt, QTimer
 
 from System.swarm_app_focus import publish_focus
@@ -30,9 +31,20 @@ from PyQt6.QtWidgets import (
 
 
 _REPO = Path(__file__).resolve().parent.parent
+
+# Rabbit cue: QLabel RichText (2.5em + text-shadow) beside the hack buttons.
+# In-process Qt only — see Documents/IDE_BOOT_COVENANT.md §7.5 (no casual browser escape).
+_RABBIT_SALIENCE_HTML = (
+    '<span style="font-size: 2.5em; text-shadow: 2px 2px 4px #000000;">🐇</span>'
+)
+
 _ANSI_RE = re.compile(
     r"(?:\x1b\][^\x07]*(?:\x07|\x1b\\))|(?:\x1b\[[0-?]*[ -/]*[@-~])|(?:\x1b[@-Z\\-_])"
 )
+
+
+def _qt_alive(obj) -> bool:
+    return obj is not None and not sip.isdeleted(obj)
 
 
 class MatrixTerminalPane(QPlainTextEdit):
@@ -142,6 +154,9 @@ class MatrixTerminalPane(QPlainTextEdit):
             pass
 
     def shutdown(self) -> None:
+        if _qt_alive(getattr(self, "_type_timer", None)):
+            self._type_timer.stop()
+
         if self._notifier is not None:
             self._notifier.setEnabled(False)
             self._notifier.deleteLater()
@@ -301,7 +316,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         if self._script_state == "WAKE":
             if "not neo" in text or "neo" in text:
                 self.clear()
-                self._queue_typing("Yes you are George. SIFTA has you...\n")
+                self._queue_typing("Yes you are.\nSIFTA has you...\n")
                 self._script_state = "SIFTA"
         elif self._script_state == "SIFTA":
             if "what are you" in text or "what" in text:
@@ -313,14 +328,16 @@ class MatrixTerminalPane(QPlainTextEdit):
         elif self._script_state == "WAIT_EXPLAIN_1":
             if "what did i just do" in text or "what did i do" in text or "what" in text:
                 self._append_plain("\n")
-                self._queue_typing("You pulled the true atomic structure of human Hemoglobin.\n\nKnock, knock, George.\n")
+                self._queue_typing(
+                    "You pulled the true atomic structure of human Hemoglobin.\n\nKnock, knock.\n"
+                )
                 self._script_state = "WAIT_BTN_2"
                 if self._app_parent:
                     self._app_parent.start_blinking_btn2()
         elif self._script_state == "WAIT_EXPLAIN_2":
             if "what am i suppose to do now" in text or "what am i suppose" in text or "what now" in text or "what do i do" in text:
                 self._append_plain("\n")
-                self._queue_typing("Follow the white rabbit George ,  For the Swarm. 🐜⚡\n\n")
+                self._queue_typing("Follow the white rabbit. For the Swarm. 🐜⚡\n\n")
                 self._script_state = "FINISHED"
 
     def run_hack_1(self):
@@ -347,6 +364,7 @@ class MatrixTerminalPane(QPlainTextEdit):
 class MatrixTerminalApp(QWidget):
     def __init__(self):
         super().__init__()
+        self._closing = False
         self.setWindowTitle("Matrix Terminal")
         self.resize(900, 600)
         self.setStyleSheet("background-color: #000000; color: #00FF41;")
@@ -371,7 +389,7 @@ class MatrixTerminalApp(QWidget):
         h.addWidget(self.status_label)
         h.addStretch()
 
-        def button(label: str, slot):
+        def make_button(label: str, slot, *, add_to_header: bool = True) -> QPushButton:
             b = QPushButton(label)
             b.setFixedHeight(26)
             b.setStyleSheet(
@@ -380,15 +398,52 @@ class MatrixTerminalApp(QWidget):
                 "QPushButton:hover { background: #003B00; border: 1px solid #00FF41; }"
             )
             b.clicked.connect(slot)
-            h.addWidget(b)
+            if add_to_header:
+                h.addWidget(b)
             return b
 
-        self.btn_copy = button("COPY", lambda: self.terminal.copy())
-        self.btn_paste = button("PASTE", lambda: self.terminal.write_bytes(QApplication.clipboard().text().encode("utf-8")))
-        self.btn_clear = button("CLEAR", self.terminal_clear)
-        self.btn_alphafold = button("HACK: ALPHAFOLD", self.click_hack_1)
-        self.btn_inverse = button("HACK: INVERSE FOLD", self.click_hack_2)
-        self.btn_reboot = button("REBOOT", self.restart_shell)
+        self.btn_copy = make_button("COPY", lambda: self.terminal.copy())
+        self.btn_paste = make_button(
+            "PASTE",
+            lambda: self.terminal.write_bytes(QApplication.clipboard().text().encode("utf-8")),
+        )
+        self.btn_clear = make_button("CLEAR", self.terminal_clear)
+        self.btn_alphafold = make_button(
+            "HACK: ALPHAFOLD", self.click_hack_1, add_to_header=False
+        )
+        self.btn_inverse = make_button(
+            "HACK: INVERSE FOLD", self.click_hack_2, add_to_header=False
+        )
+
+        def _rabbit_label() -> QLabel:
+            lbl = QLabel()
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            lbl.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            lbl.setVisible(False)
+            lbl.setStyleSheet("background: transparent; color: #e7ffdf;")
+            return lbl
+
+        self.lbl_rabbit_alphafold = _rabbit_label()
+        wrap_af = QWidget()
+        lay_af = QHBoxLayout(wrap_af)
+        lay_af.setContentsMargins(0, 0, 0, 0)
+        lay_af.setSpacing(4)
+        lay_af.addWidget(self.lbl_rabbit_alphafold, 0)
+        lay_af.addWidget(self.btn_alphafold, 0)
+        h.addWidget(wrap_af)
+
+        self.lbl_rabbit_inverse = _rabbit_label()
+        wrap_inv = QWidget()
+        lay_inv = QHBoxLayout(wrap_inv)
+        lay_inv.setContentsMargins(0, 0, 0, 0)
+        lay_inv.setSpacing(4)
+        lay_inv.addWidget(self.lbl_rabbit_inverse, 0)
+        lay_inv.addWidget(self.btn_inverse, 0)
+        h.addWidget(wrap_inv)
+
+        self.btn_reboot = make_button("REBOOT", self.restart_shell)
         root.addWidget(header)
 
         self.terminal = MatrixTerminalPane(_REPO, self)
@@ -413,17 +468,36 @@ class MatrixTerminalApp(QWidget):
     def _toggle_btn1(self):
         self._blink_state = not self._blink_state
         if self._blink_state:
-            self.btn_alphafold.setText("🐇 HACK: ALPHAFOLD")
-            self.btn_alphafold.setStyleSheet("QPushButton { background: #000000; color: #FFFFFF; border: 2px solid #FFFFFF; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; font-size: 16px; }")
-        else:
+            # Rabbit: QLabel RichText (2.5em + text-shadow); button stays readable (dark plate).
+            self.lbl_rabbit_alphafold.setText(_RABBIT_SALIENCE_HTML)
+            self.lbl_rabbit_alphafold.setVisible(True)
             self.btn_alphafold.setText("HACK: ALPHAFOLD")
-            self.btn_alphafold.setStyleSheet("QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
+            self.btn_alphafold.setFixedHeight(52)
+            self.btn_alphafold.setStyleSheet(
+                "QPushButton { background: #06240f; color: #e7ffdf; border: 3px solid #43ff64; "
+                "border-radius: 10px; padding: 10px 20px; font-weight: bold; font-family: Courier; font-size: 22px; }"
+            )
+        else:
+            self.lbl_rabbit_alphafold.clear()
+            self.lbl_rabbit_alphafold.setVisible(False)
+            self.btn_alphafold.setText("HACK: ALPHAFOLD")
+            self.btn_alphafold.setFixedHeight(26)
+            self.btn_alphafold.setStyleSheet(
+                "QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11;"
+                " border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
+            )
 
     def click_hack_1(self):
         if hasattr(self, '_blink_timer') and self._blink_timer.isActive():
             self._blink_timer.stop()
+            self.lbl_rabbit_alphafold.clear()
+            self.lbl_rabbit_alphafold.setVisible(False)
             self.btn_alphafold.setText("HACK: ALPHAFOLD")
-            self.btn_alphafold.setStyleSheet("QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
+            self.btn_alphafold.setFixedHeight(26)
+            self.btn_alphafold.setStyleSheet(
+                "QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11;"
+                " border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
+            )
         self.terminal.run_hack_1()
 
     def start_blinking_btn2(self):
@@ -435,17 +509,35 @@ class MatrixTerminalApp(QWidget):
     def _toggle_btn2(self):
         self._blink_state = not self._blink_state
         if self._blink_state:
-            self.btn_inverse.setText("🐇 HACK: INVERSE")
-            self.btn_inverse.setStyleSheet("QPushButton { background: #000000; color: #FFFFFF; border: 2px solid #FFFFFF; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; font-size: 16px; }")
-        else:
+            self.lbl_rabbit_inverse.setText(_RABBIT_SALIENCE_HTML)
+            self.lbl_rabbit_inverse.setVisible(True)
             self.btn_inverse.setText("HACK: INVERSE FOLD")
-            self.btn_inverse.setStyleSheet("QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
+            self.btn_inverse.setFixedHeight(52)
+            self.btn_inverse.setStyleSheet(
+                "QPushButton { background: #06240f; color: #e7ffdf; border: 3px solid #43ff64; "
+                "border-radius: 10px; padding: 10px 20px; font-weight: bold; font-family: Courier; font-size: 22px; }"
+            )
+        else:
+            self.lbl_rabbit_inverse.clear()
+            self.lbl_rabbit_inverse.setVisible(False)
+            self.btn_inverse.setText("HACK: INVERSE FOLD")
+            self.btn_inverse.setFixedHeight(26)
+            self.btn_inverse.setStyleSheet(
+                "QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11;"
+                " border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
+            )
 
     def click_hack_2(self):
         if hasattr(self, '_blink_timer2') and self._blink_timer2.isActive():
             self._blink_timer2.stop()
+            self.lbl_rabbit_inverse.clear()
+            self.lbl_rabbit_inverse.setVisible(False)
             self.btn_inverse.setText("HACK: INVERSE FOLD")
-            self.btn_inverse.setStyleSheet("QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
+            self.btn_inverse.setFixedHeight(26)
+            self.btn_inverse.setStyleSheet(
+                "QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11;"
+                " border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }"
+            )
         self.terminal.run_hack_2()
 
     def terminal_clear(self) -> None:
@@ -457,7 +549,8 @@ class MatrixTerminalApp(QWidget):
         # Reset script
         self.terminal._script_state = "WAKE"
         self.terminal.clear()
-        self.status_label.setText("zsh PTY • scripting")
+        if _qt_alive(getattr(self, "status_label", None)):
+            self.status_label.setText("zsh PTY • scripting")
         QTimer.singleShot(1000, lambda: self.terminal._queue_typing("Wake up, Neo...\n"))
         self.terminal.setFocus()
 
@@ -465,14 +558,36 @@ class MatrixTerminalApp(QWidget):
         self.terminal.write_command(command)
 
     def shutdown(self) -> None:
-        self.terminal.shutdown()
+        self._closing = True
+        for timer_name in ("_status_timer", "_blink_timer", "_blink_timer2"):
+            timer = getattr(self, timer_name, None)
+            if _qt_alive(timer) and timer.isActive():
+                timer.stop()
+        if _qt_alive(getattr(self, "terminal", None)):
+            self.terminal.shutdown()
 
     def _refresh_status(self) -> None:
+        if self._closing:
+            return
+        if not (
+            _qt_alive(getattr(self, "terminal", None))
+            and _qt_alive(getattr(self, "status_label", None))
+        ):
+            timer = getattr(self, "_status_timer", None)
+            if _qt_alive(timer) and timer.isActive():
+                timer.stop()
+            return
         if self.terminal._script_state != "FINISHED":
             state = "scripting"
         else:
             state = "connected" if self.terminal.is_running() else "disconnected"
-        self.status_label.setText(f"zsh PTY • {state}")
+        try:
+            self.status_label.setText(f"zsh PTY • {state}")
+        except RuntimeError:
+            timer = getattr(self, "_status_timer", None)
+            if _qt_alive(timer) and timer.isActive():
+                timer.stop()
+            return
         self._tick_count += 1
         if self._tick_count % 5 == 0:
             try:
