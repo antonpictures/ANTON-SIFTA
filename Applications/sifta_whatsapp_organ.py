@@ -356,31 +356,7 @@ class WhatsAppOrganWidget(QWidget):
         compose_lay.setContentsMargins(12, 8, 12, 8)
         compose_lay.setSpacing(8)
 
-        self._target_combo = QComboBox()
-        self._target_combo.setFixedWidth(180)
-        self._target_combo.setEditable(True)
-        self._target_combo.setPlaceholderText("To: contact name")
-        self._target_combo.setStyleSheet(f"""
-            QComboBox {{
-                background: {_BG_INPUT};
-                color: {_TEXT};
-                border: 1px solid {_BORDER};
-                border-radius: 8px;
-                padding: 4px 8px;
-                font-size: 12px;
-            }}
-            QComboBox:focus {{
-                border: 1px solid {_ACCENT};
-            }}
-            QComboBox QAbstractItemView {{
-                background: {_BG_PANEL};
-                color: {_TEXT};
-                border: 1px solid {_BORDER};
-                selection-background-color: rgba(122, 162, 247, 0.3);
-            }}
-        """)
-        self._target_combo.currentIndexChanged.connect(self._sync_auto_checkbox)
-        compose_lay.addWidget(self._target_combo)
+        # Target combo removed; compose bar sends to the selected contact list item.
 
         self._auto_reply_checkbox = QCheckBox("Auto")
         self._auto_reply_checkbox.setToolTip("Owner-delegated Alice auto-reply for this person/group")
@@ -528,17 +504,6 @@ class WhatsAppOrganWidget(QWidget):
                 item.setToolTip("Owner/control identity - auto-reply disabled")
             self._contact_list.addItem(item)
 
-        # Also populate combo
-        self._target_combo.clear()
-        selected_idx = -1
-        for entry in entries:
-            if not entry.get("send_target_allowed"):
-                continue
-            self._target_combo.addItem(entry["label"], entry)
-            if prior_jid and prior_jid in set(entry.get("jid_aliases") or [entry.get("jid")]):
-                selected_idx = self._target_combo.count() - 1
-        if selected_idx >= 0:
-            self._target_combo.setCurrentIndex(selected_idx)
         self._refreshing_contacts = False
         self._sync_auto_checkbox()
 
@@ -564,28 +529,20 @@ class WhatsAppOrganWidget(QWidget):
         if not jid:
             self._selected_aliases = set()
 
-        # Update compose bar target
-        if jid:
-            idx = self._target_combo.findText(label)
-            if idx >= 0:
-                self._target_combo.setCurrentIndex(idx)
-            else:
-                self._target_combo.setCurrentText(label.replace("📢 ", ""))
+        # Sync auto checkbox based on new selection
+        self._sync_auto_checkbox()
 
         self._msg_input.setFocus()
         self._publish_focus(f"Viewing: {self._selected_name}")
         self._render_conversation()
 
     def _current_target_entry(self) -> dict[str, Any]:
-        data = self._target_combo.currentData()
-        if isinstance(data, dict):
-            return data
-        label = self._target_combo.currentText().strip()
-        clean = label.replace("📢 ", "")
-        for entry in _contact_entries():
-            if label == entry.get("label") or clean == entry.get("display_name"):
-                return entry
-        return {"label": label, "display_name": clean, "jid": clean, "jid_aliases": [clean], "chat_type": "direct"}
+        item = self._contact_list.currentItem()
+        if item:
+            data = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(data, dict):
+                return data
+        return {"label": "All Chats", "display_name": "All Chats", "jid": "", "jid_aliases": [], "chat_type": "direct"}
 
     def _set_auto_enabled_for_entry(self, entry: dict[str, Any], enabled: bool) -> bool:
         jid = str(entry.get("jid") or "").strip()
@@ -834,7 +791,7 @@ class WhatsAppOrganWidget(QWidget):
     def _send_message(self):
         """Send a WhatsApp message through the real effector."""
         entry = self._current_target_entry()
-        target = str(entry.get("jid") or self._target_combo.currentText()).strip().replace("📢 ", "")
+        target = str(entry.get("jid") or "").strip()
         text = self._msg_input.text().strip()
 
         if not target:

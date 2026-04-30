@@ -4740,6 +4740,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._history.append({"role": "assistant", "content": cleaned})
         _log_turn("alice", cleaned, model=model_name)
         self._end_alice_streaming_line()
+        if getattr(self, "_pending_whatsapp_reply", None):
+            mute_tts_override = True
         self._send_pending_whatsapp_reply(cleaned)
 
         self._set_pill("alice", "🗣  Alice is speaking")
