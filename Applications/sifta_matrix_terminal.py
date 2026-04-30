@@ -299,12 +299,12 @@ class MatrixTerminalPane(QPlainTextEdit):
 
     def _process_script_input(self, text):
         if self._script_state == "WAKE":
-            if "neo" in text:
+            if "not neo" in text or "neo" in text:
                 self.clear()
                 self._queue_typing("Yes it is George. SIFTA has you...\n")
                 self._script_state = "SIFTA"
         elif self._script_state == "SIFTA":
-            if "what" in text:
+            if "what are you" in text or "what" in text:
                 self.clear()
                 self._queue_typing("Follow the white rabbit.\n")
                 self._script_state = "WAIT_BTN_1"
@@ -313,14 +313,14 @@ class MatrixTerminalPane(QPlainTextEdit):
         elif self._script_state == "WAIT_EXPLAIN_1":
             if "what did i just do" in text or "what did i do" in text or "what" in text:
                 self._append_plain("\n")
-                self._queue_typing("You pulled the true atomic structure of human Hemoglobin directly from DeepMind's servers.\n\nKnock, knock, George.\n")
+                self._queue_typing("You pulled the true atomic structure of human Hemoglobin.\n\nKnock, knock, George.\n")
                 self._script_state = "WAIT_BTN_2"
                 if self._app_parent:
                     self._app_parent.start_blinking_btn2()
         elif self._script_state == "WAIT_EXPLAIN_2":
-            if "what am i suppose" in text or "what now" in text or "what do i do" in text or "what" in text:
+            if "what am i suppose to do now" in text or "what am i suppose" in text or "what now" in text or "what do i do" in text:
                 self._append_plain("\n")
-                self._queue_typing("Follow the white rabbit George, For the Swarm. 🐜⚡\n\n")
+                self._queue_typing("Follow the white rabbit George ,  For the Swarm. 🐜⚡\n\n")
                 self._script_state = "FINISHED"
 
     def run_hack_1(self):
@@ -328,7 +328,6 @@ class MatrixTerminalPane(QPlainTextEdit):
             self.clear()
             self.start_shell()
             self._script_state = "WAIT_EXPLAIN_1"
-            # Give shell split second to boot before writing command
             QTimer.singleShot(300, lambda: self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X alphafold_db P69905"))
         elif self._script_state == "FINISHED":
             if not self.is_running(): self.start_shell()
@@ -338,6 +337,8 @@ class MatrixTerminalPane(QPlainTextEdit):
         if self._script_state == "WAIT_BTN_2":
             self._script_state = "WAIT_EXPLAIN_2"
             self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X proteinmpnn")
+            # Auto explain the inverse folding after it finishes (approx 4.5 seconds)
+            QTimer.singleShot(4500, lambda: self._queue_typing("\nYou inverted the physics. Hallucinating new proteins that do not exist in nature.\n"))
         elif self._script_state == "FINISHED":
             if not self.is_running(): self.start_shell()
             self.write_command("PYTHONPATH=. python3 System/sifta_protein_folding_broker.py X proteinmpnn")
