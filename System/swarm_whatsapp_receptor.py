@@ -69,6 +69,7 @@ def build_inbox_row(
     name: Optional[str] = None,
     from_me: bool = False,
     chat_type: Optional[str] = None,
+    participant: Optional[str] = None,
     ts: Optional[float] = None,
     secret: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -84,6 +85,7 @@ def build_inbox_row(
         "name": name or "",
         "from_me": bool(from_me),
         "chat_type": inferred_chat_type,
+        "participant": participant or "",
         "text": text,
         "message_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         "processed": False,

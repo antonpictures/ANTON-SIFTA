@@ -140,6 +140,7 @@ def _deposit_inbox(
     *,
     from_me: bool = False,
     chat_type: str | None = None,
+    participant: str | None = None,
 ) -> None:
     """Deposit the incoming message to the SIFTA desktop inbox."""
     INBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -149,6 +150,7 @@ def _deposit_inbox(
         name=name,
         from_me=from_me,
         chat_type=chat_type,
+        participant=participant,
     )
     try:
         from System.jsonl_file_lock import append_line_locked
@@ -211,6 +213,7 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
             text = str(body.get("text", ""))[:MAX_INPUT_CHARS]
             from_me = _coerce_bool(body.get("fromMe", False))
             chat_type = _normalize_chat_type(body.get("chatType"), from_jid)
+            participant = str(body.get("participant", "")).strip() or None
             _record_contact(from_jid, str(name) if name else None)
             _append_audit(
                 {
@@ -219,6 +222,7 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
                     "name": name or "",
                     "from_me": from_me,
                     "chat_type": chat_type,
+                    "participant": participant or "",
                     "text_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
                     "text_preview": text[:160],
                 }
@@ -234,6 +238,7 @@ class AliceWhatsAppHandler(BaseHTTPRequestHandler):
                 str(name) if name else None,
                 from_me=from_me,
                 chat_type=chat_type,
+                participant=participant,
             )
 
             # Do not wait for the LLM. Just tell the bridge it's queued.
