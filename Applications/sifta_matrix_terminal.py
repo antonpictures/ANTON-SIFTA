@@ -61,11 +61,48 @@ class MatrixTerminalPane(QPlainTextEdit):
             " selection-background-color: #00FF41;"
             " selection-color: #000000; }"
         )
-        self._append_plain("Wake up, Neo...\n")
-        self._append_plain("The Matrix has you...\n")
-        self._append_plain("Follow the white rabbit.\n\n")
-        self._append_plain(f"cwd: {self.cwd}\n\n")
-        self.start_shell()
+        # Cinematic boot sequence
+        self._anim_sequence = [
+            ("Wake up, George...", 2500),
+            ("clear", 200),
+            ("SIFTA has you...", 2500),
+            ("clear", 200),
+            ("Follow the white rabbit.", 2500),
+            ("clear", 200),
+            ("Knock, knock, George.", 1500),
+            ("clear", 100),
+            (f"cwd: {self.cwd}\n\n", 0)
+        ]
+        self._anim_step = 0
+        self._anim_char_idx = 0
+        self._type_timer = QTimer(self)
+        self._type_timer.timeout.connect(self._anim_tick)
+        self._type_timer.start(500) # Initial pause before typing
+
+    def _anim_tick(self):
+        if self._anim_step >= len(self._anim_sequence):
+            self._type_timer.stop()
+            self.start_shell()
+            return
+            
+        text, delay = self._anim_sequence[self._anim_step]
+        
+        if text == "clear":
+            self.clear()
+            self._anim_step += 1
+            self._type_timer.setInterval(delay)
+            return
+
+        if self._anim_char_idx < len(text):
+            self._append_plain(text[self._anim_char_idx])
+            self._anim_char_idx += 1
+            # Randomize typing speed slightly for realism (50ms - 150ms)
+            import random
+            self._type_timer.setInterval(random.randint(60, 200))
+        else:
+            self._anim_step += 1
+            self._anim_char_idx = 0
+            self._type_timer.setInterval(delay) # pause before next line
 
     def start_shell(self) -> None:
         if self.is_running():
