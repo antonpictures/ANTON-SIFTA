@@ -6,9 +6,13 @@ Alice cannot read a private Notification Center database by wish. She can,
 however, observe the same surfaces the local OS exposes to this user process:
 
   * visible Notification Center UI text through Accessibility, when permitted;
-  * [DISABLED] Background Task Management state through `sfltool dumpbtm`
-    (disabled to prevent macOS graphical authentication popups, relying on plists instead);
-  * LaunchAgent plists that cause macOS "can run in the background" banners.
+  * LaunchAgent plists that cause macOS "can run in the background" banners;
+  * optional exported Background Task Management text from
+    `.sifta_state/manual_sfltool_dumpbtm.txt`.
+
+This module must never invoke `sfltool dumpbtm` itself. On current macOS that
+command can trigger graphical authentication prompts, so silent plist
+observation is the primary background-activity signal.
 
 Every scan is written to `.sifta_state/notification_ingress.jsonl` so the
 prompt can stay truthful: what Alice saw, what was blocked, and what launchd
@@ -31,6 +35,7 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _LEDGER = _STATE / "notification_ingress.jsonl"
 _LATEST = _STATE / "notification_ingress_latest.json"
+_MANUAL_BTM_DUMP = _STATE / "manual_sfltool_dumpbtm.txt"
 
 _INTERESTING_BACKGROUND_RE = re.compile(
     r"sifta|stig|warp9|auto[_-]?sync|codex|cursor|antigravity|ollama|python|bash",
@@ -92,20 +97,20 @@ def _parse_sfltool_dump(raw: str) -> List[Dict[str, Any]]:
     return interesting[:40]
 
 
-def scan_background_task_management() -> Dict[str, Any]:
-    manual_file = _STATE / "manual_sfltool_dumpbtm.txt"
+def scan_background_task_management(manual_dump_path: Path | None = None) -> Dict[str, Any]:
+    manual_file = manual_dump_path or _MANUAL_BTM_DUMP
     if manual_file.exists():
         try:
             raw = manual_file.read_text(encoding="utf-8")
             return {
                 "ok": True,
-                "source": "manual_sfltool_dumpbtm.txt",
+                "source": str(manual_file),
                 "items": _parse_sfltool_dump(raw),
             }
         except Exception as e:
             return {
                 "ok": False,
-                "source": "manual_sfltool_dumpbtm.txt",
+                "source": str(manual_file),
                 "error": str(e),
                 "items": [],
             }
@@ -116,6 +121,7 @@ def scan_background_task_management() -> Dict[str, Any]:
         "error": "Disabled to prevent macOS graphical authentication popups. Provide manual_sfltool_dumpbtm.txt to override.",
         "items": [],
     }
+
 
 def _read_plist(path: Path) -> Optional[Dict[str, Any]]:
     try:
