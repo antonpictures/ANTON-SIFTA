@@ -713,5 +713,15 @@
     "autostart": false,
     "_retired": false,
     "nppl": "cognitive_loop"
+  },
+  "WhatsApp Organ": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_whatsapp_organ.py",
+    "widget_class": "WhatsAppOrganWidget",
+    "window_width": 960,
+    "window_height": 640,
+    "signature": "MANIFEST-CANONICAL",
+    "description": "Alice social nerve — WhatsApp inbox viewer, contact browser, and message sender. Routes through the real Baileys effector with truth labels.",
+    "doctor": "AG31"
   }
 }

@@ -1026,6 +1026,8 @@ class LaunchpadWidget(QWidget):
             return "🎮"
         if category == "Creative":
             return "🎨"
+        if "whatsapp" in n:
+            return "📱"
         if category == "Network":
             return "🌐"
         if category == "Developer":
