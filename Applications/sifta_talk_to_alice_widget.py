@@ -3314,7 +3314,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 f"[OBSERVED WhatsApp {chat_type} {contact_name}; "
                 f"origin={origin}; action_policy={policy}]: {result['text']}"
             )
-            self._append_system_line(annotated_msg)
+            self._append_system_line(annotated_msg, error=False)
             self._history.append(
                 {
                     "role": "system",
@@ -4635,7 +4635,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._alice_stream_body_start = None
         self._alice_stream_header_start = None
 
-    def _append_system_line(self, text: str, *, error: bool) -> None:
+    def _append_system_line(self, text: str, *, error: bool = False) -> None:
         cur = self._chat.textCursor()
         cur.movePosition(QTextCursor.MoveOperation.End)
         fmt = QTextCharFormat()

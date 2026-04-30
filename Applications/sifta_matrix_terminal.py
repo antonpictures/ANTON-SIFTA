@@ -81,6 +81,57 @@ def _matrix_conversation_history(limit: int = 8) -> list[dict[str, str]]:
     return history[-limit:]
 
 
+_MATRIX_TOOL_LEAK_REPLY = (
+    "You're right. This is Matrix Terminal, not WhatsApp. I can talk with you "
+    "here, but I will not send, simulate, or format WhatsApp tool calls from "
+    "this surface."
+)
+
+
+def _matrix_ollama_model_candidates(primary: str) -> list[str]:
+    """Return local model fallbacks for Matrix chat without starting downloads."""
+    names: list[str] = []
+    for name in (
+        primary,
+        f"{primary}:latest" if primary and ":" not in primary else "",
+        "sifta-gemma4-alice:latest",
+        "sifta-alice-qwen35:latest",
+        "sifta-alice-qwen35",
+        "qwen3.5:2b",
+    ):
+        name = (name or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _strip_matrix_terminal_tool_calls(reply: str) -> str:
+    """Matrix Terminal is conversation-only; never surface effector syntax."""
+    if not reply:
+        return reply
+    had_tool_call = False
+    cleaned = reply
+    try:
+        from System.swarm_tool_router import parse_tool_calls
+
+        for call in parse_tool_calls(reply):
+            had_tool_call = True
+            cleaned = cleaned.replace(call.raw_match, "")
+    except Exception:
+        pass
+    cleaned_next = re.sub(
+        r"\[TOOL_CALL:\s*send_whatsapp\b[^\]]*(?:\]|$)",
+        "",
+        cleaned,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    had_tool_call = had_tool_call or cleaned_next != cleaned
+    cleaned = cleaned_next.strip()
+    if had_tool_call and not cleaned:
+        return _MATRIX_TOOL_LEAK_REPLY
+    return cleaned
+
+
 def _matrix_terminal_alice_reply(user_input: str, *, timeout_s: float = 90.0) -> str:
     """Ask Alice's normal conversation brain from inside Matrix Terminal.
 
@@ -105,7 +156,27 @@ def _matrix_terminal_alice_reply(user_input: str, *, timeout_s: float = 90.0) ->
         "MATRIX TERMINAL CHANNEL:\n"
         "- The Architect is typing inside the Matrix Terminal game surface.\n"
         "- Answer as Alice/SIFTA, the same organism that speaks in Talk to Alice.\n"
-        "- Do not output the boot greeting or cinematic script lines.\n"
+        "- You are speaking through this terminal right now; do not redirect the Architect to another window.\n"
+        "- When George says he is in Matrix Terminal, accept that context and converse inside it.\n"
+        "- This surface is conversation-only for WhatsApp. It is NOT a WhatsApp effector channel.\n"
+        "- Do not emit [TOOL_CALL: ...], JSON tool blocks, owner_consent flags, or any send-message syntax here.\n"
+        "- If WhatsApp is mentioned here, discuss the tool path in plain text only. Do not attempt or simulate a send.\n"
+        "- Do not output the boot greeting or cinematic script lines.\n\n"
+        "SHELL COMMAND TRANSLATION:\n"
+        "- This terminal is connected to a REAL zsh PTY on the Architect's machine.\n"
+        "- If the Architect asks you to do something that maps to a shell command (list files, change directory, \n"
+        "  show disk usage, find a file, check processes, git status, etc.), TRANSLATE their natural language\n"
+        "  into the exact shell command and wrap it in [SHELL: command_here].\n"
+        "- Examples:\n"
+        "  User: 'list all files' → Alice: 'Here you go. [SHELL: ls -la]'\n"
+        "  User: 'go to the System folder' → Alice: 'Moving there now. [SHELL: cd System]'\n"
+        "  User: 'how much disk space' → Alice: 'Checking. [SHELL: df -h .]'\n"
+        "  User: 'what git branch am I on' → Alice: '[SHELL: git branch --show-current]'\n"
+        "  User: 'find all python files' → Alice: '[SHELL: find . -name \"*.py\" | head -20]'\n"
+        "- You may include a brief conversational note before or after the [SHELL: ...] tag.\n"
+        "- Only ONE [SHELL: ...] per reply. The command runs in the live terminal.\n"
+        "- If the request is NOT a shell operation, just respond conversationally — no [SHELL:] tag.\n"
+        "- For dangerous commands (rm -rf, etc.), warn the Architect first instead of running them.\n"
         "- Keep the reply terminal-sized: direct, grounded, and conversational.\n"
         "- If the Architect asks for an external action, require an effector receipt before claiming success."
     )
@@ -135,24 +206,40 @@ def _matrix_terminal_alice_reply(user_input: str, *, timeout_s: float = 90.0) ->
             ],
         },
     }
-    req = urllib.request.Request(
-        "http://127.0.0.1:11434/api/chat",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-    )
+    used_model = model
+    last_exc: BaseException | None = None
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        msg = data.get("message") or {}
-        reply = str(msg.get("content") or "").strip()
+        for candidate in _matrix_ollama_model_candidates(model):
+            used_model = candidate
+            payload["model"] = candidate
+            req = urllib.request.Request(
+                "http://127.0.0.1:11434/api/chat",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                msg = data.get("message") or {}
+                reply = str(msg.get("content") or "").strip()
+                break
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                if exc.code == 404:
+                    continue
+                raise
+        else:
+            exc = last_exc or RuntimeError("no Ollama model candidates available")
+            reply = f"[organism error: {type(exc).__name__}: {exc}]"
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         reply = f"[organism error: {type(exc).__name__}: {exc}]"
 
     reply = _strip_model_stage_directions(reply)
     reply = _strip_tool_hallucinations(reply).strip()
+    reply = _strip_matrix_terminal_tool_calls(reply).strip()
     if not reply:
         reply = _empty_brain_recovery_reply(user_input)
-    _log_turn("alice", reply, model=model)
+    _log_turn("alice", reply, model=used_model)
     return reply
 
 
@@ -579,12 +666,42 @@ class MatrixTerminalPane(QPlainTextEdit):
         t.start()
 
     def _chat_show_reply(self, reply: str) -> None:
-        """Display Alice's reply with typewriter animation."""
+        """Display Alice's reply with typewriter animation.
+
+        If the reply contains [SHELL: command], extract the command,
+        show Alice's conversational text, then execute the command
+        in the live PTY.
+        """
         self._chat_busy = False
-        if reply:
-            self._queue_typing(f"Alice > {reply}\n\nSIFTA > ")
-        else:
+        if not reply:
             self._append_plain("Alice > [silence]\n\nSIFTA > ")
+            return
+
+        # Extract [SHELL: ...] if present
+        shell_match = re.search(r'\[SHELL:\s*(.+?)\]', reply)
+        if shell_match:
+            shell_cmd = shell_match.group(1).strip()
+            # Remove the [SHELL: ...] from the displayed text
+            display_text = reply[:shell_match.start()] + reply[shell_match.end():]
+            display_text = display_text.strip()
+
+            if display_text:
+                self._append_plain(f"Alice > {display_text}\n")
+            self._append_plain(f"\n  ⚡ {shell_cmd}\n\n")
+            # Execute via PTY after a short delay for readability
+            QTimer.singleShot(400, lambda: self._execute_shell_from_alice(shell_cmd))
+        else:
+            self._queue_typing(f"Alice > {reply}\n\nSIFTA > ")
+
+    def _execute_shell_from_alice(self, cmd: str) -> None:
+        """Pipe Alice's translated shell command into the live PTY."""
+        if not self.is_running():
+            self._append_plain("[shell not running — cannot execute]\n\nSIFTA > ")
+            return
+        # Write the command to the PTY
+        self.write_command(cmd)
+        # After execution, show the prompt again with a delay
+        QTimer.singleShot(1500, lambda: self._append_plain("\nSIFTA > "))
 
     def run_hack_1(self):
         if self._script_state == "WAIT_BTN_1":
