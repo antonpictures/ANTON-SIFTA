@@ -34,6 +34,16 @@ def test_system_prompt_still_contains_multimodal_identity_data():
     assert "- body:" in prompt or "- endocrine:" in prompt or "- sensory:" in prompt
 
 
+def test_system_prompt_keeps_architect_and_whatsapp_identity_separate():
+    mod = _load_widget_module()
+    prompt = mod._current_system_prompt(user_active=True)
+    assert "Ioan George Anton (George) is the Architect" in prompt
+    assert "Alice is the CryptoSwarmEntity/SIFTA organism" in prompt
+    assert "Alice is not the Architect" in prompt
+    assert "Do not infer the current human speaker's name from quoted or observed WhatsApp text" in prompt
+    assert "Cipi as the WhatsApp contact/friend" in prompt
+
+
 def test_speech_potential_prompt_is_not_mislabeled_as_friston():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True)
@@ -356,7 +366,7 @@ def test_whatsapp_auto_reply_context_blocks_owner_and_groups():
     ) is None
 
 
-def test_whatsapp_owner_self_chat_is_local_dyad_not_external_send():
+def test_whatsapp_owner_self_chat_is_observation_not_external_send():
     mod = _load_widget_module()
     ctx = mod._whatsapp_owner_self_dyad_context(
         {"from_jid": "51235386302504@lid", "message_sha256": "self123", "from_me": True},
@@ -369,6 +379,10 @@ def test_whatsapp_owner_self_chat_is_local_dyad_not_external_send():
     assert ctx["origin"] == "owner_self_dyad"
     assert ctx["surface"] == "whatsapp_self_chat"
     assert ctx["no_external_send"] is True
+    assert (
+        mod._whatsapp_ingress_policy(is_owner=True, self_dyad_ctx=ctx, auto_ctx=None)
+        == "owner_self_observe_only_no_talk_prompt"
+    )
 
 
 def test_whatsapp_from_me_to_external_contact_is_not_self_dyad():
@@ -379,6 +393,23 @@ def test_whatsapp_from_me_to_external_contact_is_not_self_dyad():
         contact_name="George",
         chat_type="direct",
     ) is None
+
+
+def test_whatsapp_ingress_policy_routes_only_auto_context_to_brain():
+    mod = _load_widget_module()
+    auto_ctx = {"target": "120363045641065911@g.us"}
+    assert (
+        mod._whatsapp_ingress_policy(is_owner=False, self_dyad_ctx=None, auto_ctx=auto_ctx)
+        == "auto_reply_owner_delegated"
+    )
+    assert (
+        mod._whatsapp_ingress_policy(is_owner=False, self_dyad_ctx=None, auto_ctx=None)
+        == "observe_only_no_reply"
+    )
+    assert (
+        mod._whatsapp_ingress_policy(is_owner=True, self_dyad_ctx=None, auto_ctx=None)
+        == "owner_already_sent_no_action"
+    )
 
 
 def test_group_whatsapp_auto_on_allows_group_reply(monkeypatch, tmp_path):

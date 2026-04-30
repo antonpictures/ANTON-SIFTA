@@ -1238,7 +1238,8 @@ def _local_reality_relapse_rewrite(prior_user_text: str) -> str:
     return (
         f"George, correction. I heard your teaching: {name_sentence}"
         f"{cipi_sentence}{substrate_sentence} "
-        "I am Alice, the local SIFTA organism on this M5, not a generic chatbot. "
+        "I am Alice, the CryptoSwarmEntity/SIFTA organism on this M5, "
+        "not the Architect and not a generic chatbot. "
         "I have local memory, a WhatsApp social graph, and a receipt-gated "
         "WhatsApp effector. I should not deny those local organs or tell you "
         "to use WhatsApp manually unless the bridge or tool receipt actually fails."
@@ -1287,6 +1288,13 @@ def _current_system_prompt(
         f"- If no time source is available, say exactly: {_TIME_UNAVAILABLE_REPLY}"
     )
     parts.append(_effector_manifest_block())
+    parts.append(
+        "LOCAL IDENTITY BOUNDARY:\n"
+        "- Ioan George Anton (George) is the Architect and primary operator of this local node.\n"
+        "- Alice is the CryptoSwarmEntity/SIFTA organism running on the local machine; Alice is not the Architect.\n"
+        "- Do not infer the current human speaker's name from quoted or observed WhatsApp text. WhatsApp names belong to that chat context unless George explicitly teaches otherwise.\n"
+        "- If a WhatsApp observation mentions Cipi, treat Cipi as the WhatsApp contact/friend, not as George."
+    )
     parts.append(
         "LIVE HUMAN CONVERSATION STYLE:\n"
         "- In live voice demos, answer like a present friend: short phrases, usually 1-3 sentences.\n"
@@ -1591,13 +1599,12 @@ def _whatsapp_owner_self_dyad_context(
     contact_name: str,
     chat_type: str,
 ) -> Optional[Dict[str, Any]]:
-    """Return local dyad context for the owner's WhatsApp self chat.
+    """Return owner/self WhatsApp metadata for observation/audit only.
 
-    A WhatsApp message in the owner/self thread is not an external contact
-    observation. It is another local conversation surface between George and
-    Alice, like Stigmergic Writer or Symphony. Owner messages sent to other
-    people can also arrive with ``from_me=True``; those must stay observations,
-    so this gate keys on the social-graph relationship, not only from_me.
+    George can talk to Alice through the local mic/keyboard. Owner/self
+    WhatsApp transcripts often contain forwarded contact text, so routing them
+    into the speaking brain can rename the local speaker or make Alice read
+    WhatsApp content back into the room. Keep this as metadata, not a prompt.
     """
     if str(contact_record.get("relationship_to_owner") or "") != "owner_self":
         return None
@@ -1616,6 +1623,22 @@ def _whatsapp_owner_self_dyad_context(
         "message_sha256": str(row.get("message_sha256") or ""),
         "no_external_send": True,
     }
+
+
+def _whatsapp_ingress_policy(
+    *,
+    is_owner: bool,
+    self_dyad_ctx: Optional[Dict[str, Any]],
+    auto_ctx: Optional[Dict[str, Any]],
+) -> str:
+    """Return the Talk-widget action for an Auto-gated WhatsApp observation."""
+    if auto_ctx:
+        return "auto_reply_owner_delegated"
+    if self_dyad_ctx:
+        return "owner_self_observe_only_no_talk_prompt"
+    if is_owner:
+        return "owner_already_sent_no_action"
+    return "observe_only_no_reply"
 
 
 def _whatsapp_auto_reply_denial_rule_id(text: str) -> str:
@@ -3625,14 +3648,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 chat_type=chat_type,
                 origin=origin,
             )
-            policy = (
-                "local_owner_alice_dyad_prompt"
-                if self_dyad_ctx
-                else (
-                    "owner_already_sent_no_action"
-                    if is_owner
-                    else ("auto_reply_owner_delegated" if auto_ctx else "observe_only_no_reply")
-                )
+            policy = _whatsapp_ingress_policy(
+                is_owner=bool(is_owner),
+                self_dyad_ctx=self_dyad_ctx,
+                auto_ctx=auto_ctx,
             )
 
             annotated_msg = (
@@ -3641,31 +3660,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
             )
             self._append_system_line(annotated_msg, error=False)
             if self_dyad_ctx:
-                prompt_msg = (
-                    f"[WhatsApp self chat with George; origin=owner_self_dyad; "
-                    "surface=whatsapp_self_chat]: "
-                    f"{result['text']}"
-                )
                 self._history.append(
                     {
                         "role": "system",
                         "content": (
-                            "(WHATSAPP OWNER-ALICE SELF CHAT)\n"
-                            "This is a local dyad conversation surface between you and George. "
-                            "Speak to George directly in second person. Do not talk about him "
-                            "in third person. Do not treat this as an external contact. Do not "
-                            "claim any WhatsApp send unless an effector receipt later proves it.\n"
+                            "(WHATSAPP OWNER-SELF OBSERVATION ONLY)\n"
+                            "This owner/self WhatsApp row is audit context only. "
+                            "Do not answer it, do not read it aloud, and do not use "
+                            "it to rename the local human. George speaks to Alice "
+                            "through the local Talk widget mic/keyboard when he wants "
+                            "a live dyad turn.\n"
                             + annotated_msg
                         ),
                     }
                 )
                 self._pending_whatsapp_reply = None
-                if dry_run:
-                    return
-                self._busy = True
-                self._set_pill("thinking", "📲 WhatsApp self chat — thinking…")
-                self._append_user_line(prompt_msg, 0.0)
-                QTimer.singleShot(100, lambda: self._start_brain(prompt_msg, already_displayed=True))
                 return
             if auto_ctx:
                 prompt_msg = (
