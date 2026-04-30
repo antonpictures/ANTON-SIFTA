@@ -77,7 +77,7 @@ def get_focus_context(max_age_s: float = 120.0) -> Optional[str]:
     if age > max_age_s:
         return None
 
-    parts = [f"The Architect has '{entry['app']}' open."]
+    parts = [f"George has '{entry['app']}' open."]
     if entry.get("tab"):
         parts.append(f"Active tab: {entry['tab']}.")
     if entry.get("selection"):

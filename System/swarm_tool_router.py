@@ -113,7 +113,7 @@ def tools_for_alice_prompt() -> str:
         lines.append(f"  - {spec.name}({params}) [{rw}]: {spec.description}")
     lines.extend([
         "",
-        "WhatsApp rule: send_whatsapp sends only when the Architect explicitly asks you to send a message.",
+        "WhatsApp rule: send_whatsapp sends only when George explicitly asks you to send a message.",
         "Without owner_consent=true, send_whatsapp records a silence/refusal receipt and no external message is sent.",
         "Optional urgency is 0.0-1.0; urgency > 0.8 bypasses cerebellum timing delay for true emergencies.",
         "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well! | owner_consent=true]",

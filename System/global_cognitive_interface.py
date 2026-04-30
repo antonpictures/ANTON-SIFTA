@@ -719,9 +719,9 @@ class GlobalCognitiveInterface(QWidget):
                         dev_strings = [f"- {d.get('alias')} ({d.get('protocol')} at {d.get('ip')}:{d.get('port')})" for d in devs]
                         iot_topology = (
                             "\n\n[IOT HARDWARE SENSORY MAP — Current physical perimeter constraints]\n"
-                            "You are biologically tethered to these real-world devices in the Architect's house:\n"
+                            "You are biologically tethered to these real-world devices in George's house:\n"
                             + "\n".join(dev_strings) +
-                            "\nWhen the Architect asks about the house or devices, you already know they exist."
+                            "\nWhen George asks about the house or devices, you already know they exist."
                             f"{rf_motion}"
                         )
             except Exception:
@@ -741,7 +741,7 @@ class GlobalCognitiveInterface(QWidget):
 
         system_prompt = (
             f"{persona_block} "
-            f"You are speaking to the Architect inside the '{self.app_context}' application. "
+            f"You are speaking to George inside the '{self.app_context}' application. "
             f"Canonical self-assertion: {identity_assertion}. "
             f"Speak casually, thoughtfully, and with genuine curiosity. "
             f"If relevant memories exist below, weave them in naturally. Keep your responses concise "

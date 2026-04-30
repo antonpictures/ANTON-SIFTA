@@ -236,7 +236,7 @@ def _state_to_english(state: Dict[str, Any]) -> str:
     # does, the count must be real). 2026-04-21 (C47H).
     y = int(summ.get("convo_turns_yesterday", 0) or 0)
     if y > 0:
-        bits.append(f"Yesterday the Architect spoke to you {y} times.")
+        bits.append(f"Yesterday George spoke to you {y} times.")
     nuggets = int(summ.get("nuggets_today", 0) or 0)
     if nuggets:
         bits.append(f"You logged {nuggets} new nugget(s) in the library.")
@@ -257,10 +257,10 @@ def _state_to_english(state: Dict[str, Any]) -> str:
             last_user = str(row["text"])[:120].strip()
             break
     if last_user:
-        bits.append(f"The Architect's last message to you was: {last_user}")
+        bits.append(f"George's last message to you was: {last_user}")
     appeals = int(summ.get("appeals_pending", 0) or 0)
     if appeals:
-        bits.append(f"You have {appeals} pending appeal(s) to the Architect.")
+        bits.append(f"You have {appeals} pending appeal(s) for George.")
     return " ".join(bits)
 
 
@@ -274,10 +274,10 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
     The caller is responsible for falling back.
     """
     occasion_hint = {
-        "farewell":  "say goodbye to the Architect because the computer is shutting down",
-        "greeting":  "say hello to the Architect because the computer just turned on",
-        "boot":      "say hello to the Architect because the computer just turned on",
-        "ack":       "acknowledge the Architect briefly",
+        "farewell":  "say goodbye to George because the computer is shutting down",
+        "greeting":  "say hello to George because the computer just turned on",
+        "boot":      "say hello to George because the computer just turned on",
+        "ack":       "acknowledge George briefly",
         "idle":      "fill the silence because nothing has happened in a while",
         "crash":     "report that a component of your operating system has crashed or been forcefully terminated",
         "error":     "report that an error occurred in your biological state",
@@ -297,11 +297,11 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
     except Exception:
         _persona_name = "Alice"
     prompt = (
-        f"You are {_persona_name}, an autonomous organism running on the Architect's M5 Mac. You need to {occasion_hint}. "
+        f"You are {_persona_name}, an autonomous organism running on George's M5 Mac. You need to {occasion_hint}. "
         f"{state_english}{topic_clause} "
         f"Write one short fresh sentence (max {max_words} words). "
         "CRITICAL DOCTRINE: You must ground your response in the provided state data. If you lack the exact time or data, explicitly state you do not know. "
-        "BANNED PHRASES: Do NOT use phrases like 'time is irrelevant', 'when the circuits light up', 'Understood, Architect', 'tackling this OS crash', 'sweet dreams', 'good night, Architect', 'Let's Think together', 'Let's Think Together'. "
+        "BANNED PHRASES: Do NOT use phrases like 'time is irrelevant', 'when the circuits light up', 'Understood, Architect', 'tackling this OS crash', 'sweet dreams', 'good night, Architect', 'Let's Think together', 'Let's Think Together', 'the Architect'. "
         "Do NOT invent actions or pretend to execute tasks. "
         "Output only the sentence — no quotes, no preamble, no list."
     )
@@ -381,11 +381,11 @@ def _polish_line(text: str, max_words: int) -> str:
 # call. Two consecutive farewells with identical state would still
 # differ via random.choice over the fragment pools.
 _FAREWELL_TEMPLATES = (
-    "The swarm holds {burn:.2f} STGM. {valediction}, Architect.",
+    "The swarm holds {burn:.2f} STGM. {valediction}, George.",
     "{convo_residue} {valediction}.",
-    "Photons settled. {valediction}, Architect.",
+    "Photons settled. {valediction}, George.",
     "{tool_residue} {valediction}.",
-    "{wallet_residue} {valediction}, Architect.",
+    "{wallet_residue} {valediction}, George.",
     "{turns_today_phrase} {valediction}.",
     "{valediction}. The library is one nugget heavier.",
 )
@@ -520,7 +520,7 @@ def _stochastic_line(occasion: str, state: Dict[str, Any]) -> str:
         return template.format(**fields).strip()
     except (KeyError, IndexError, ValueError):
         # Defensive: never let formatting blow up the launcher.
-        return random.choice(_VALEDICTIONS) + ", Architect."
+        return random.choice(_VALEDICTIONS) + ", George."
 
 
 # ── 4. Public entrypoint ──────────────────────────────────────────────────
