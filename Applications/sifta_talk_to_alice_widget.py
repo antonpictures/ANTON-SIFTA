@@ -1434,24 +1434,50 @@ def _whatsapp_auto_reply_context(
     contact_name: str,
     chat_type: str,
     origin: str,
-) -> Optional[Dict[str, str]]:
-    """Return effector context for owner-authorized WhatsApp replies.
+) -> Optional[Dict[str, Any]]:
+    """Return effector context for owner-delegated WhatsApp replies.
 
     Inbound WhatsApp rows are observations. Seeing a direct external message is
-    not consent to answer it; outbound replies must come from an explicit owner
-    send path.
+    not consent to answer it; only a per-target Auto toggle in the WhatsApp
+    Organ grants standing owner delegation.
     """
-    if not row.get("owner_reply_consent"):
-        return None
-    if origin != "external_human" or chat_type != "direct":
+    if origin != "external_human":
         return None
     target_jid = str(row.get("from_jid") or "").strip()
-    if not target_jid or target_jid.endswith("@g.us"):
+    if not target_jid:
         return None
+    chat_type = "group" if chat_type == "group" or target_jid.endswith("@g.us") else "direct"
+    try:
+        from System.whatsapp_autonomy_settings import is_auto_enabled
+
+        if not is_auto_enabled(target_jid, chat_type=chat_type):
+            return None
+    except Exception:
+        return None
+    display_name = (contact_name or "WhatsApp contact").strip()
     return {
         "target": target_jid,
-        "display_name": (contact_name or "WhatsApp contact").strip(),
+        "display_name": display_name,
+        "chat_type": chat_type,
+        "allow_group_send": chat_type == "group",
         "message_sha256": str(row.get("message_sha256") or ""),
+        "source": "alice_whatsapp_auto_on",
+        "intent_provenance": {
+            "intent_source": "owner_delegated",
+            "consent": "owner_delegated",
+            "decision_path": [
+                "whatsapp_organ_auto_toggle",
+                "talk_to_alice_whatsapp_ingress",
+                "model_reply",
+                "whatsapp_effector",
+            ],
+            "receipt_proof": True,
+            "tool": "send_whatsapp",
+            "target_jid": target_jid,
+            "target_display_name": display_name,
+            "chat_type": chat_type,
+            "inbound_message_sha256": str(row.get("message_sha256") or ""),
+        },
     }
 
 
@@ -3183,7 +3209,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             result = send_whatsapp(
                 ctx["target"],
                 payload,
-                source="alice_direct_whatsapp_reply",
+                allow_group_send=bool(ctx.get("allow_group_send", False)),
+                source=str(ctx.get("source") or "alice_direct_whatsapp_reply"),
+                intent_provenance=ctx.get("intent_provenance"),
             )
             name = ctx.get("display_name") or "WhatsApp contact"
             status = result.get("status", "UNKNOWN")
@@ -3304,17 +3332,48 @@ class TalkToAliceWidget(SiftaBaseWidget):
             
             if is_owner and contact_name == "Human":
                 contact_name = "George"
-                
+
+            auto_ctx = _whatsapp_auto_reply_context(
+                row,
+                contact_name=contact_name,
+                chat_type=chat_type,
+                origin=origin,
+            )
             policy = (
                 "owner_already_sent_no_action"
                 if is_owner
-                else "observe_only_no_reply"
+                else ("auto_reply_owner_delegated" if auto_ctx else "observe_only_no_reply")
             )
             annotated_msg = (
                 f"[OBSERVED WhatsApp {chat_type} {contact_name}; "
                 f"origin={origin}; action_policy={policy}]: {result['text']}"
             )
             self._append_system_line(annotated_msg, error=False)
+            if auto_ctx:
+                prompt_msg = (
+                    f"[WhatsApp {chat_type} {contact_name}; origin={origin}; "
+                    f"auto_reply=on; target={auto_ctx['target']}]: {result['text']}"
+                )
+                self._history.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "(WHATSAPP AUTO-REPLY AUTHORIZED BY OWNER TARGET TOGGLE)\n"
+                            "Reply only to this WhatsApp message. Do not claim the reply "
+                            "was sent until the effector receipt succeeds.\n"
+                            + annotated_msg
+                        ),
+                    }
+                )
+                self._pending_whatsapp_reply = auto_ctx
+                if dry_run:
+                    return
+                self._busy = True
+                self._set_pill("thinking", "📲 WhatsApp auto — thinking…")
+                self._append_user_line(prompt_msg, 0.0)
+                QTimer.singleShot(100, lambda: self._start_brain(prompt_msg, already_displayed=True))
+                return
+
             self._history.append(
                 {
                     "role": "system",

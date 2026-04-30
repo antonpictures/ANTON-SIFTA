@@ -11,7 +11,8 @@ or stay silent?
 Inbound message ≠ permission to reply.
 Reading to owner ≠ replying to sender.
 Owner discussion ≠ external send.
-External send requires explicit outbound consent.
+External send requires explicit outbound consent or owner-delegated per-target
+consent from the WhatsApp Organ.
 """
 from __future__ import annotations
 
@@ -27,7 +28,7 @@ class SocialMirrorEvent:
     speaker: str    # "contact" | "owner" | "alice"
     audience: str   # "owner" | "contact" | "group"
     action: str     # "observe" | "summarize_to_owner" | "draft_reply" | "send_reply"
-    consent: str    # "none" | "owner_explicit" | "contact_context" | "emergency"
+    consent: str    # "none" | "owner_explicit" | "owner_delegated" | "contact_context" | "emergency"
     ts: float = 0.0
     agency_verdict_id: str = ""
     event_id: str = ""
@@ -59,6 +60,6 @@ class SwarmSocialMirror:
             return False, "rejected_not_outbound"
         if event.action != "send_reply":
             return False, "rejected_not_send_reply_action"
-        if event.consent != "owner_explicit":
-            return False, "rejected_requires_owner_explicit_consent"
+        if event.consent not in {"owner_explicit", "owner_delegated"}:
+            return False, "rejected_requires_owner_explicit_or_delegated_consent"
         return True, "allowed"

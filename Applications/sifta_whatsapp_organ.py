@@ -31,7 +31,7 @@ from typing import Any, Optional
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit,
     QPushButton, QLabel, QFrame, QComboBox, QSplitter, QListWidget,
-    QListWidgetItem, QMessageBox,
+    QListWidgetItem, QMessageBox, QCheckBox,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor, QColor
@@ -71,20 +71,35 @@ def _load_contacts() -> dict[str, Any]:
         return {}
 
 
-def _contact_names() -> list[str]:
-    """Return sorted list of known WhatsApp contact display names."""
+def _contact_entries() -> list[dict[str, Any]]:
+    """Return known WhatsApp targets with JID/chat metadata."""
     contacts = _load_contacts()
-    names = []
+    entries: list[dict[str, Any]] = []
     for _k, v in contacts.items():
         name = v.get("display_name", "").strip()
-        if name and not v.get("is_group"):
-            names.append(name)
-    # Also add groups separately
-    for _k, v in contacts.items():
-        name = v.get("display_name", "").strip()
-        if name and v.get("is_group"):
-            names.append(f"📢 {name}")
-    return sorted(set(names))
+        jid = str(v.get("jid") or "").strip()
+        if not name or not jid:
+            continue
+        chat_type = str(v.get("chat_type") or ("group" if jid.endswith("@g.us") else "direct")).strip()
+        is_group = chat_type == "group"
+        label = f"📢 {name}" if is_group else name
+        entries.append(
+            {
+                "label": label,
+                "display_name": name,
+                "jid": jid,
+                "chat_type": chat_type,
+                "send_target_allowed": v.get("send_target_allowed") is not False,
+                "relationship_to_owner": str(v.get("relationship_to_owner") or ""),
+            }
+        )
+    entries.sort(key=lambda e: (e["display_name"].casefold(), e["chat_type"]))
+    return entries
+
+
+def _contact_names() -> list[str]:
+    """Return sorted list of known WhatsApp contact display labels."""
+    return [entry["label"] for entry in _contact_entries()]
 
 
 def _read_inbox(max_rows: int = 100) -> list[dict]:
@@ -145,6 +160,7 @@ class WhatsAppOrganWidget(QWidget):
         self._last_outbox_count = 0
         self._inbox_mtime: float = 0.0
         self._outbox_mtime: float = 0.0
+        self._refreshing_contacts = False
         self._build_ui()
         self._refresh_all()
 
@@ -273,6 +289,7 @@ class WhatsAppOrganWidget(QWidget):
             }}
         """)
         self._contact_list.itemClicked.connect(self._on_contact_selected)
+        self._contact_list.itemChanged.connect(self._on_contact_auto_changed)
         left_lay.addWidget(self._contact_list, 1)
 
         # Refresh contacts button
@@ -352,7 +369,36 @@ class WhatsAppOrganWidget(QWidget):
                 selection-background-color: rgba(122, 162, 247, 0.3);
             }}
         """)
+        self._target_combo.currentIndexChanged.connect(self._sync_auto_checkbox)
         compose_lay.addWidget(self._target_combo)
+
+        self._auto_reply_checkbox = QCheckBox("Auto")
+        self._auto_reply_checkbox.setToolTip("Owner-delegated Alice auto-reply for this person/group")
+        self._auto_reply_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {_TEXT};
+                background: transparent;
+                font-size: 12px;
+                font-weight: bold;
+                spacing: 5px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+            }}
+            QCheckBox::indicator:unchecked {{
+                border: 1px solid {_BORDER};
+                border-radius: 4px;
+                background: {_BG_INPUT};
+            }}
+            QCheckBox::indicator:checked {{
+                border: 1px solid {_GREEN};
+                border-radius: 4px;
+                background: {_GREEN};
+            }}
+        """)
+        self._auto_reply_checkbox.toggled.connect(self._on_compose_auto_toggled)
+        compose_lay.addWidget(self._auto_reply_checkbox)
 
         self._msg_input = QLineEdit()
         self._msg_input.setPlaceholderText("Type a message...")
@@ -430,18 +476,46 @@ class WhatsAppOrganWidget(QWidget):
     # ── Data methods ──────────────────────────────────────────────────
 
     def _refresh_contacts(self):
+        prior_jid = ""
+        try:
+            prior_jid = str(self._current_target_entry().get("jid") or "")
+        except Exception:
+            prior_jid = ""
+        self._refreshing_contacts = True
         self._contact_list.clear()
-        names = _contact_names()
-        for name in names:
-            item = QListWidgetItem(name)
+        entries = _contact_entries()
+        try:
+            from System.whatsapp_autonomy_settings import is_auto_enabled
+        except Exception:
+            is_auto_enabled = None
+
+        for entry in entries:
+            item = QListWidgetItem(entry["label"])
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+            if entry.get("send_target_allowed"):
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                enabled = bool(
+                    is_auto_enabled
+                    and is_auto_enabled(entry["jid"], chat_type=entry["chat_type"])
+                )
+                item.setCheckState(Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
+            else:
+                item.setToolTip("Owner/control identity - auto-reply disabled")
             self._contact_list.addItem(item)
+
         # Also populate combo
         self._target_combo.clear()
-        self._target_combo.addItems([n for n in names if not n.startswith("📢")])
-        # Add groups at bottom
-        for n in names:
-            if n.startswith("📢"):
-                self._target_combo.addItem(n)
+        selected_idx = -1
+        for entry in entries:
+            if not entry.get("send_target_allowed"):
+                continue
+            self._target_combo.addItem(entry["label"], entry)
+            if prior_jid and entry.get("jid") == prior_jid:
+                selected_idx = self._target_combo.count() - 1
+        if selected_idx >= 0:
+            self._target_combo.setCurrentIndex(selected_idx)
+        self._refreshing_contacts = False
+        self._sync_auto_checkbox()
 
     def _filter_contacts(self, text: str):
         text = text.strip().lower()
@@ -453,10 +527,89 @@ class WhatsAppOrganWidget(QWidget):
                 item.setHidden(True)
 
     def _on_contact_selected(self, item: QListWidgetItem):
-        name = item.text().replace("📢 ", "")
-        self._target_combo.setCurrentText(name)
+        entry = item.data(Qt.ItemDataRole.UserRole) or {}
+        label = entry.get("label") or item.text()
+        idx = self._target_combo.findText(label)
+        if idx >= 0:
+            self._target_combo.setCurrentIndex(idx)
+        else:
+            self._target_combo.setCurrentText(label.replace("📢 ", ""))
         self._msg_input.setFocus()
+        name = str(entry.get("display_name") or label).replace("📢 ", "")
         self._publish_focus(f"Selected contact: {name}")
+
+    def _current_target_entry(self) -> dict[str, Any]:
+        data = self._target_combo.currentData()
+        if isinstance(data, dict):
+            return data
+        label = self._target_combo.currentText().strip()
+        clean = label.replace("📢 ", "")
+        for entry in _contact_entries():
+            if label == entry.get("label") or clean == entry.get("display_name"):
+                return entry
+        return {"label": label, "display_name": clean, "jid": clean, "chat_type": "direct"}
+
+    def _set_auto_enabled_for_entry(self, entry: dict[str, Any], enabled: bool) -> bool:
+        jid = str(entry.get("jid") or "").strip()
+        if not jid:
+            return False
+        try:
+            from System.whatsapp_autonomy_settings import set_auto_enabled
+
+            set_auto_enabled(
+                jid,
+                display_name=str(entry.get("display_name") or entry.get("label") or ""),
+                chat_type=str(entry.get("chat_type") or ""),
+                enabled=bool(enabled),
+                actor="owner",
+                source="whatsapp_organ",
+            )
+            self._publish_focus(
+                f"WhatsApp auto-reply {'ON' if enabled else 'OFF'}: "
+                f"{entry.get('display_name') or jid}"
+            )
+            return True
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Auto Reply",
+                f"Could not update auto-reply for {entry.get('display_name') or jid}:\n{exc}",
+            )
+            return False
+
+    def _sync_auto_checkbox(self):
+        entry = self._current_target_entry()
+        jid = str(entry.get("jid") or "").strip()
+        enabled = False
+        allowed = bool(entry.get("send_target_allowed", True)) and bool(jid)
+        if allowed:
+            try:
+                from System.whatsapp_autonomy_settings import is_auto_enabled
+
+                enabled = is_auto_enabled(jid, chat_type=str(entry.get("chat_type") or ""))
+            except Exception:
+                enabled = False
+        self._auto_reply_checkbox.blockSignals(True)
+        self._auto_reply_checkbox.setEnabled(allowed)
+        self._auto_reply_checkbox.setChecked(enabled)
+        self._auto_reply_checkbox.blockSignals(False)
+
+    def _on_compose_auto_toggled(self, checked: bool):
+        if self._refreshing_contacts:
+            return
+        entry = self._current_target_entry()
+        if self._set_auto_enabled_for_entry(entry, checked):
+            self._refresh_contacts()
+
+    def _on_contact_auto_changed(self, item: QListWidgetItem):
+        if self._refreshing_contacts:
+            return
+        entry = item.data(Qt.ItemDataRole.UserRole) or {}
+        if not entry.get("send_target_allowed"):
+            return
+        enabled = item.checkState() == Qt.CheckState.Checked
+        if self._set_auto_enabled_for_entry(entry, enabled):
+            self._sync_auto_checkbox()
 
     def _refresh_all(self):
         self._refresh_contacts()
@@ -603,7 +756,8 @@ class WhatsAppOrganWidget(QWidget):
 
     def _send_message(self):
         """Send a WhatsApp message through the real effector."""
-        target = self._target_combo.currentText().strip().replace("📢 ", "")
+        entry = self._current_target_entry()
+        target = str(entry.get("jid") or self._target_combo.currentText()).strip().replace("📢 ", "")
         text = self._msg_input.text().strip()
 
         if not target:
@@ -619,6 +773,7 @@ class WhatsAppOrganWidget(QWidget):
             result = send_whatsapp(
                 target,
                 text,
+                allow_group_send=str(entry.get("chat_type") or "") == "group",
                 source="owner_explicit_whatsapp_organ",
             )
             ok = result.get("ok", False)

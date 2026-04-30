@@ -29,6 +29,10 @@ const BRIDGE_STARTED_AT_SEC = Math.floor(Date.now() / 1000);
 const APPEND_REPLAY_GRACE_SEC = Number(process.env.SIFTA_WA_APPEND_REPLAY_GRACE_SEC || "30");
 let lastKnownHuman = null;
 let injectServerStarted = false;
+let waConnectionState = "booting";
+let waLastOpenAt = 0;
+let waLastCloseAt = 0;
+let waLastStatusCode = null;
 // AG31: offline notice cooldown — never spam WhatsApp with error messages.
 let _lastOfflineNoticeSent = 0;
 const OFFLINE_NOTICE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes minimum between notices
@@ -96,12 +100,18 @@ async function connectToWhatsApp() {
     }
 
     if (connection === "open") {
+      waConnectionState = "open";
+      waLastOpenAt = Date.now();
+      waLastStatusCode = null;
       console.log("\n[🌊 SWARM BRIDGE] WhatsApp connected. The Swarm is listening on your phone.");
       console.log("[🌊 SWARM BRIDGE] Send a message from your WhatsApp now!\n");
     }
 
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
+      waConnectionState = "close";
+      waLastCloseAt = Date.now();
+      waLastStatusCode = statusCode || null;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
 
       if (!loggedOut) {
@@ -243,7 +253,23 @@ async function connectToWhatsApp() {
   // ── AUTONOMOUS INJECTION SERVER ───────────────────────────
   if (!injectServerStarted) {
   const injectServer = http.createServer((req, res) => {
-    if (req.method === 'POST' && req.url === '/system_inject') {
+    if (req.method === 'GET' && req.url === '/health') {
+        const body = JSON.stringify({
+          ok: waConnectionState === "open",
+          bridge: "listening",
+          whatsapp_state: waConnectionState,
+          last_open_at: waLastOpenAt,
+          last_close_at: waLastCloseAt,
+          last_status_code: waLastStatusCode,
+          has_last_known_human: Boolean(lastKnownHuman),
+          started_at_sec: BRIDGE_STARTED_AT_SEC,
+        });
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        });
+        res.end(body);
+    } else if (req.method === 'POST' && req.url === '/system_inject') {
         if (INJECT_KEY && req.headers["x-sifta-inject-key"] !== INJECT_KEY) {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "unauthorized" }));

@@ -115,6 +115,11 @@ def summary_for_alice(limit: int = 12) -> str:
         lines.append(_autonomy_summary(limit=2))
     except Exception:
         pass
+    try:
+        from System.whatsapp_autonomy_settings import summary_for_alice as _auto_settings_summary
+        lines.append(_auto_settings_summary(limit=8))
+    except Exception:
+        pass
     lines.append(social_graph_summary_for_alice(limit=limit))
     rows = contact_rows_for_alice(limit=limit, contacts=_load_contacts())
     if rows:
@@ -195,6 +200,16 @@ def send_whatsapp(
             consent = "owner_explicit"
         elif provenance_consent == "owner_explicit":
             consent = "owner_explicit"
+        elif (
+            provenance_consent == "owner_delegated"
+            and (
+                "whatsapp_auto" in source_norm
+                or "auto_toggle" in " ".join(
+                    str(x) for x in (intent_provenance or {}).get("decision_path", [])
+                )
+            )
+        ):
+            consent = "owner_delegated"
         elif provenance_consent == "explicit" and provenance_source in {"owner", "conversation"}:
             consent = "owner_explicit"
         elif "architect_consent" in source_norm or "spinal_reflex_conversation" in source_norm:
