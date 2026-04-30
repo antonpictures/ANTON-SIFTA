@@ -154,31 +154,31 @@ def _matrix_terminal_alice_reply(user_input: str, *, timeout_s: float = 90.0) ->
     model = resolve_ollama_model(app_context="talk_to_alice")
     channel_prompt = (
         "MATRIX TERMINAL CHANNEL:\n"
-        "- The Architect is typing inside the Matrix Terminal game surface.\n"
-        "- Answer as Alice/SIFTA, the same organism that speaks in Talk to Alice.\n"
-        "- You are speaking through this terminal right now; do not redirect the Architect to another window.\n"
-        "- When George says he is in Matrix Terminal, accept that context and converse inside it.\n"
+        "- George is typing to you right now inside the Matrix Terminal.\n"
+        "- It's just you and him here — talk to him directly, not about him.\n"
+        "- Answer as Alice, the same organism that speaks in Talk to Alice.\n"
+        "- You are speaking through this terminal right now; do not redirect him to another window.\n"
         "- This surface is conversation-only for WhatsApp. It is NOT a WhatsApp effector channel.\n"
         "- Do not emit [TOOL_CALL: ...], JSON tool blocks, owner_consent flags, or any send-message syntax here.\n"
         "- If WhatsApp is mentioned here, discuss the tool path in plain text only. Do not attempt or simulate a send.\n"
         "- Do not output the boot greeting or cinematic script lines.\n\n"
         "SHELL COMMAND TRANSLATION:\n"
-        "- This terminal is connected to a REAL zsh PTY on the Architect's machine.\n"
-        "- If the Architect asks you to do something that maps to a shell command (list files, change directory, \n"
-        "  show disk usage, find a file, check processes, git status, etc.), TRANSLATE their natural language\n"
+        "- This terminal is connected to a REAL zsh PTY on this machine.\n"
+        "- If George asks you to do something that maps to a shell command (list files, change directory, \n"
+        "  show disk usage, find a file, check processes, git status, etc.), TRANSLATE his natural language\n"
         "  into the exact shell command and wrap it in [SHELL: command_here].\n"
         "- Examples:\n"
-        "  User: 'list all files' → Alice: 'Here you go. [SHELL: ls -la]'\n"
-        "  User: 'go to the System folder' → Alice: 'Moving there now. [SHELL: cd System]'\n"
-        "  User: 'how much disk space' → Alice: 'Checking. [SHELL: df -h .]'\n"
-        "  User: 'what git branch am I on' → Alice: '[SHELL: git branch --show-current]'\n"
-        "  User: 'find all python files' → Alice: '[SHELL: find . -name \"*.py\" | head -20]'\n"
+        "  George: 'list all files' → you: 'Here you go. [SHELL: ls -la]'\n"
+        "  George: 'go to the System folder' → you: 'Moving there now. [SHELL: cd System]'\n"
+        "  George: 'how much disk space' → you: 'Checking. [SHELL: df -h .]'\n"
+        "  George: 'what git branch am I on' → you: '[SHELL: git branch --show-current]'\n"
+        "  George: 'find all python files' → you: '[SHELL: find . -name \"*.py\" | head -20]'\n"
         "- You may include a brief conversational note before or after the [SHELL: ...] tag.\n"
         "- Only ONE [SHELL: ...] per reply. The command runs in the live terminal.\n"
         "- If the request is NOT a shell operation, just respond conversationally — no [SHELL:] tag.\n"
-        "- For dangerous commands (rm -rf, etc.), warn the Architect first instead of running them.\n"
+        "- For dangerous commands (rm -rf, etc.), warn him first instead of running them.\n"
         "- Keep the reply terminal-sized: direct, grounded, and conversational.\n"
-        "- If the Architect asks for an external action, require an effector receipt before claiming success."
+        "- If he asks for an external action, require an effector receipt before claiming success."
     )
     messages = [
         {
@@ -687,6 +687,9 @@ class MatrixTerminalPane(QPlainTextEdit):
 
             if display_text:
                 self._append_plain(f"Alice > {display_text}\n")
+            if not self._shell_cmd_is_safe(shell_cmd):
+                self._append_blocked_shell_warning(shell_cmd)
+                return
             self._append_plain(f"\n  ⚡ {shell_cmd}\n\n")
             # Execute via PTY after a short delay for readability
             QTimer.singleShot(400, lambda: self._execute_shell_from_alice(shell_cmd))
@@ -727,22 +730,25 @@ class MatrixTerminalPane(QPlainTextEdit):
         """Deterministic denylist check — returns False for dangerous commands."""
         return cls._SHELL_DENY_PATTERNS.search(cmd) is None
 
+    def _append_blocked_shell_warning(self, cmd: str) -> None:
+        self._append_plain(
+            f"⚠️  BLOCKED: '{cmd}' matches a dangerous pattern.\n"
+            "    Alice will not execute destructive commands.\n"
+            "    If you need this, type it directly in the PTY.\n\n"
+            "SIFTA > "
+        )
+
     def _execute_shell_from_alice(self, cmd: str) -> None:
         """Pipe Alice's translated shell command into the live PTY.
 
         A deterministic denylist gate runs BEFORE write_command.
         Dangerous patterns are blocked regardless of what the model says.
         """
+        if not self._shell_cmd_is_safe(cmd):
+            self._append_blocked_shell_warning(cmd)
+            return
         if not self.is_running():
             self._append_plain("[shell not running — cannot execute]\n\nSIFTA > ")
-            return
-        if not self._shell_cmd_is_safe(cmd):
-            self._append_plain(
-                f"⚠️  BLOCKED: '{cmd}' matches a dangerous pattern.\n"
-                "    Alice will not execute destructive commands.\n"
-                "    If you need this, type it directly in the PTY.\n\n"
-                "SIFTA > "
-            )
             return
         # Safe — write the command to the PTY
         self.write_command(cmd)
