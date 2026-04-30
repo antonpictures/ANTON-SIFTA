@@ -684,6 +684,19 @@ _FINANCIAL_BOILERPLATE_OUTPUT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_WHATSAPP_AUTO_REPLY_DENIAL_RE = re.compile(
+    r"(?:"
+    r"\bas\s+an\s+(?:ai|artificial\s+intelligence)\b[^.!?\n]{0,240}"
+    r"\b(?:cannot|can't|unable)\b[^.!?\n]{0,160}"
+    r"\b(?:whatsapp|messages?|outgoing\s+messages?|automated\s+repl(?:y|ies)|send)\b|"
+    r"\bi\s+(?:cannot|can't|can\s*not|(?:am|['’]m)\s+unable\s+to|"
+    r"(?:do\s+not|don't)\s+have\s+the\s+ability\s+to)"
+    r"[^.!?\n]{0,240}"
+    r"\b(?:whatsapp|messages?|outgoing\s+messages?|automated\s+repl(?:y|ies)|send)\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _BARE_WHATSAPP_SEND_RE = re.compile(
     r"\b(?:send|message|whatsapp)\b.*\b(?:whatsapp|message|to)\b\s+"
     r"(?P<target>[A-Za-z][A-Za-z .'-]{1,60})\s*$",
@@ -1156,6 +1169,19 @@ def _guard_unproven_action_claims(
     )
 
 
+def _effector_manifest_block() -> str:
+    return (
+        "EFFECTOR MANIFEST:\n"
+        "- WhatsApp: send_whatsapp() via bridge.js at 127.0.0.1:3001 "
+        "[real local effector; sends require owner consent/delegation and status=SENT receipt]\n"
+        "- TTS: macOS 'say' command [real local effector]\n"
+        "- Notifications: macOS Notification Center [real local effector]\n"
+        "- File I/O: read/write to .sifta_state/ and repo-scoped ledgers [real local effector]\n"
+        "Do not deny these capabilities when their gates authorize them. "
+        "Do not claim completed external actions until the effector receipt proves them."
+    )
+
+
 def _should_bypass_body_gate(prior_user_text: str) -> bool:
     """Keep direct human turns visible; SSP should not erase active dialogue."""
     text = (prior_user_text or "").strip()
@@ -1184,6 +1210,7 @@ def _current_system_prompt(
         "wall-clock block is present.\n"
         f"- If no time source is available, say exactly: {_TIME_UNAVAILABLE_REPLY}"
     )
+    parts.append(_effector_manifest_block())
     parts.append(
         "LIVE HUMAN CONVERSATION STYLE:\n"
         "- In live voice demos, answer like a present friend: short phrases, usually 1-3 sentences.\n"
@@ -1513,6 +1540,85 @@ def _whatsapp_owner_self_dyad_context(
         "message_sha256": str(row.get("message_sha256") or ""),
         "no_external_send": True,
     }
+
+
+def _whatsapp_auto_reply_denial_rule_id(text: str) -> str:
+    if _WHATSAPP_AUTO_REPLY_DENIAL_RE.search(text or ""):
+        return "lysosome/whatsapp-auto-reply-effector-denial"
+    return ""
+
+
+def _clean_whatsapp_auto_reply_candidate(text: str) -> str:
+    candidate = (text or "").strip()
+    if not candidate:
+        return ""
+    candidate = re.sub(
+        r"(?is)^\s*(?:however|instead|sure|of\s+course)[,.\s]+",
+        "",
+        candidate,
+    )
+    candidate = re.sub(
+        r"(?is)^\s*(?:i\s+can\s+(?:still\s+)?(?:help\s+you\s+)?"
+        r"(?:draft|write|compose|suggest)|here(?:'s| is))"
+        r"[^:]{0,220}:\s*",
+        "",
+        candidate,
+    )
+    candidate = candidate.strip(" \t\r\n\"'“”")
+    candidate = re.sub(r"(?is)^\s*[-*•]+\s*", "", candidate)
+    candidate = re.sub(r"\s+", " ", candidate).strip()
+    if not candidate or _whatsapp_auto_reply_denial_rule_id(candidate):
+        return ""
+    if len(candidate.split()) < 2:
+        return ""
+    return candidate
+
+
+def _whatsapp_auto_reply_fallback(ctx: Optional[Dict[str, Any]] = None) -> str:
+    ctx = ctx or {}
+    display_name = str(ctx.get("display_name") or "").strip()
+    chat_type = str(ctx.get("chat_type") or "direct").strip().lower()
+    if chat_type == "group":
+        return "Thanks for the message. George will follow up when he can."
+    first_name = display_name.split()[0] if display_name else ""
+    greeting = f"Hi {first_name}, " if first_name else "Hi, "
+    return greeting + "thanks for reaching out. George will follow up when he can."
+
+
+def _repair_whatsapp_auto_reply_denial(
+    text: str,
+    ctx: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str]:
+    """Repair owner-delegated WhatsApp auto-replies before they hit the effector."""
+    rule = _whatsapp_auto_reply_denial_rule_id(text)
+    if not rule:
+        return text, ""
+
+    raw = (text or "").strip()
+    quoted = re.findall(r"[\"“](.+?)[\"”]", raw, flags=re.DOTALL)
+    for item in sorted(quoted, key=len, reverse=True):
+        candidate = _clean_whatsapp_auto_reply_candidate(item)
+        if candidate:
+            return candidate, rule
+
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw) if s.strip()]
+    without_denial = " ".join(
+        s for s in sentences if not _whatsapp_auto_reply_denial_rule_id(s)
+    )
+    candidate = _clean_whatsapp_auto_reply_candidate(without_denial)
+    if candidate:
+        return candidate, rule
+
+    return _whatsapp_auto_reply_fallback(ctx), rule
+
+
+def _whatsapp_effector_self_correction_line() -> str:
+    return (
+        "(Correction: I just sent that reply via my WhatsApp effector. "
+        "My earlier claim that I 'cannot generate WhatsApp messages' was a "
+        "training artifact. I CAN and I DID, because Auto was ON and the "
+        "bridge returned status=SENT.)"
+    )
 
 
 def _rlhf_boilerplate_rule_id(text: str, *, prior_user_text: str = '') -> str:
@@ -2602,7 +2708,7 @@ def _tail_jsonl(path: Path, n: int) -> List[Dict]:
     return rows
 
 
-def _build_swarm_context() -> str:
+def _build_swarm_context(user_text: str = "") -> str:
     """Compact one-liner per recent ledger event so Alice can ground her
     answers. Also folds in the live co-builder state so she knows which
     IDEs are working on her right now (System/ide_peer_review.py)."""
@@ -3305,6 +3411,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     f"(whatsapp reply sent to {name}; status={status})",
                     error=False,
                 )
+                if ctx.get("had_effector_denial") and "SENT" in str(status).upper():
+                    correction = _whatsapp_effector_self_correction_line()
+                    self._history.append({
+                        "role": "system",
+                        "content": "(WHATSAPP EFFECTOR SELF-CORRECTION)\n" + correction,
+                    })
+                    self._append_system_line(correction, error=False)
             else:
                 self._append_system_line(
                     f"(whatsapp reply to {name} failed; status={status}: "
@@ -4035,7 +4148,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         user_active = bool(history) and history[-1].get("role") == "user"
         sysprompt = _current_system_prompt(user_active=user_active)
         if _alice_grounding_enabled():
-            ctx = _build_swarm_context()
+            ctx = _build_swarm_context(text)
             if ctx:
                 sysprompt = sysprompt + "\n\n" + ctx
 
@@ -4382,6 +4495,31 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Strip hallucinated tool tags (<execute_tool>, <tool_output>,
         # fenced YAML/JSON blocks, etc.) so Alice never reads them aloud.
         cleaned = _strip_tool_hallucinations(cleaned)
+
+        whatsapp_reply_ctx = getattr(self, "_pending_whatsapp_reply", None)
+        if whatsapp_reply_ctx:
+            repaired, whatsapp_denial_rule = _repair_whatsapp_auto_reply_denial(
+                cleaned,
+                whatsapp_reply_ctx,
+            )
+            if whatsapp_denial_rule:
+                cleaned = repaired
+                raw = repaired
+                whatsapp_reply_ctx["had_effector_denial"] = True
+                self._pending_whatsapp_reply = whatsapp_reply_ctx
+                self._history.append({
+                    "role": "system",
+                    "content": (
+                        "(WHATSAPP AUTO-REPLY REPAIR)\n"
+                        f"{whatsapp_denial_rule} stripped an effector-denial draft. "
+                        "The visible reply was rewritten before the WhatsApp effector "
+                        "received it."
+                    ),
+                })
+                self._streaming_response = [cleaned]
+                self._erase_alice_streaming_line()
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(cleaned)
 
         domain_boilerplate_rule = (
             _domain_boilerplate_rule_id(cleaned, prior_user_text=prior_user_text)

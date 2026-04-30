@@ -196,6 +196,15 @@ def test_prompt_allows_business_strategy_but_bounds_personal_trades():
     assert "buy/sell instructions" in prompt
 
 
+def test_system_prompt_includes_effector_manifest_without_action_claims():
+    mod = _load_widget_module()
+    prompt = mod._current_system_prompt(user_active=True)
+    assert "EFFECTOR MANIFEST:" in prompt
+    assert "WhatsApp: send_whatsapp() via bridge.js at 127.0.0.1:3001" in prompt
+    assert "status=SENT receipt" in prompt
+    assert "Do not claim completed external actions until the effector receipt proves them" in prompt
+
+
 def test_medical_boilerplate_wall_is_detected_but_short_boundary_survives():
     mod = _load_widget_module()
     wall = (
@@ -376,6 +385,33 @@ def test_model_stage_directions_are_removed_before_external_reply():
     )
     assert cleaned == "Jeff, yes. Alice has filesystem access through approved tools."
     assert "system processes" not in cleaned.casefold()
+
+
+def test_whatsapp_auto_reply_denial_is_detected_and_salvaged():
+    mod = _load_widget_module()
+    raw = (
+        "I cannot send WhatsApp messages. I can, however, help you draft: "
+        "\"Hi Jeff, George will call you soon.\""
+    )
+    repaired, rule = mod._repair_whatsapp_auto_reply_denial(
+        raw,
+        {"display_name": "Jeff Powers Ocean VIllas", "chat_type": "direct"},
+    )
+    assert rule == "lysosome/whatsapp-auto-reply-effector-denial"
+    assert repaired == "Hi Jeff, George will call you soon."
+    assert "cannot" not in repaired.casefold()
+
+
+def test_whatsapp_auto_reply_denial_falls_back_to_sendable_text():
+    mod = _load_widget_module()
+    raw = "I cannot generate WhatsApp messages, simulate outgoing messages, or create automated replies."
+    repaired, rule = mod._repair_whatsapp_auto_reply_denial(
+        raw,
+        {"display_name": "Jeff Powers Ocean VIllas", "chat_type": "direct"},
+    )
+    assert rule == "lysosome/whatsapp-auto-reply-effector-denial"
+    assert repaired.startswith("Hi Jeff, thanks for reaching out.")
+    assert "cannot" not in repaired.casefold()
 
 
 def test_direct_human_turns_bypass_body_gate():
