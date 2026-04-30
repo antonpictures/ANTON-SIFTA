@@ -2086,7 +2086,22 @@ class _ContinuousListener(QObject):
             self._below_thresh_ms = 0.0
             self.stateChanged.emit("idle")
             if dur_audio >= _VAD_MIN_UTTER_S:
-                self.utterance.emit(audio)
+                # ── Syrinx gate: suppress self-playback from Symphony ──
+                # If Alice's speakers are producing harmonic audio (music),
+                # the mic picks it up. Without this gate, Whisper would
+                # classify sine-wave transients as "cough" or garbled
+                # speech. The Syrinx (FFT spectral entropy) catches that.
+                _syrinx_blocked = False
+                try:
+                    from System.swarm_syrinx import get_syrinx
+                    _syn = get_syrinx(sample_rate=_AUDIO_RATE)
+                    _cls, _ent = _syn.classify(audio, speaker_id="MIC_INPUT")
+                    if _cls == "HARMONIC_SYMPHONY":
+                        _syrinx_blocked = True
+                except Exception:
+                    pass
+                if not _syrinx_blocked:
+                    self.utterance.emit(audio)
 
 
 # ── Speech-to-text worker (faster-whisper) ───────────────────────────────────
@@ -2936,6 +2951,21 @@ def _build_swarm_context() -> str:
     except Exception:
         pass
 
+    # ── Syrinx Awareness (AG31 2026-04-30, Event 85) ─────────────────────
+    # When the Pheromone Symphony is active, Alice's Syrinx detects harmonic
+    # resonance. We inject awareness AND suppress the health reflex (which
+    # would otherwise assert "George coughed" when it was just music).
+    syrinx_block = ""
+    try:
+        from System.swarm_syrinx import get_syrinx
+        _syn = get_syrinx()
+        syrinx_block = _syn.summary_for_alice()
+        if syrinx_block:
+            # Symphony is playing — suppress false body symptom assertions
+            health_reflex_block = ""
+    except Exception:
+        pass
+
     # ── Hardware Time Oracle (AO46 Epoch 13.5) ─────────────────────────────────
     # Cryptographically verified wall-clock time signed by the Mac's hardware
     # serial (GTH4921YP3). Alice can trust this timestamp because it's HMAC-bound
@@ -3049,7 +3079,7 @@ def _build_swarm_context() -> str:
                          thermal_block, energy_block, network_block,
                          olfactory_block, ribosome_block,
                          engrams_block, stigmergic_memory_block,
-                         health_reflex_block,
+                         syrinx_block, health_reflex_block,
                          vagal_tone_block, c_tactile_block,
                          identity_attest_block, taxidermist_block,
                          microbiome_block) if b]
