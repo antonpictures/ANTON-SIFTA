@@ -8,6 +8,7 @@ into the Baileys Node.js bridge.
 
 import hashlib
 import json
+import os
 import urllib.request
 import urllib.error
 import time
@@ -26,6 +27,7 @@ _STATE = _REPO / ".sifta_state"
 _CONTACTS_FILE = _STATE / "whatsapp_contacts.json"
 _LEDGER = _STATE / "whatsapp_bridge_trace.jsonl"
 _INJECT_URL = "http://127.0.0.1:3001/system_inject"
+_HEALTH_URL = "http://127.0.0.1:3001/health"
 
 SCHEMA = "SIFTA_WHATSAPP_EFFECTOR_V1"
 EVENT_KIND = "WHATSAPP_SEND_ATTEMPT"
@@ -96,16 +98,67 @@ def _resolve_target(target: str) -> str:
     return resolve_target(target, _load_contacts())
 
 
+def bridge_health(*, timeout: float = 2.0) -> Dict[str, Any]:
+    """Return the bridge transport state without sending a WhatsApp message."""
+    try:
+        req = urllib.request.Request(_HEALTH_URL, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        state = str(data.get("whatsapp_state") or "unknown")
+        return {
+            "reachable": True,
+            "ok": bool(data.get("ok")),
+            "status": "READY" if data.get("ok") else "BRIDGE_NOT_READY",
+            "whatsapp_state": state,
+            "bridge": data.get("bridge", ""),
+            "last_status_code": data.get("last_status_code"),
+            "result": (
+                "Bridge connected and WhatsApp is open."
+                if data.get("ok")
+                else f"Bridge listener is up but WhatsApp state is {state}."
+            ),
+        }
+    except urllib.error.URLError as exc:
+        return {
+            "reachable": False,
+            "ok": False,
+            "status": "BRIDGE_UNREACHABLE",
+            "whatsapp_state": "unreachable",
+            "result": (
+                f"Could not reach injection server at {_INJECT_URL}. "
+                f"Start the local WhatsApp bridge. Detail: {exc.reason}"
+            ),
+        }
+    except Exception as exc:
+        return {
+            "reachable": False,
+            "ok": False,
+            "status": "BRIDGE_HEALTH_ERROR",
+            "whatsapp_state": "unknown",
+            "result": f"Bridge health probe failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _inject_headers() -> Dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    inject_key = os.environ.get("SIFTA_BRIDGE_INJECT_KEY", "").strip()
+    if inject_key:
+        headers["X-Sifta-Inject-Key"] = inject_key
+    return headers
+
+
 def summary_for_alice(limit: int = 12) -> str:
     """Compact WhatsApp world model for Alice's prompt context.
 
     Raw JIDs stay out of the prompt; Alice only needs names, chat shape, and
     whether a contact is reachable by the local bridge.
     """
+    health = bridge_health(timeout=0.35)
     lines = [
         "WHATSAPP WORLD:",
         "- transport=WhatsApp via local Baileys phone bridge; inbound messages are real external humans queued into Alice.",
         "- outbound_tool=whatsapp.send; target may be a saved display name or exact WhatsApp JID.",
+        f"- bridge_health={health['status']} whatsapp_state={health['whatsapp_state']}.",
         "- autonomy_gate=bounded Gaussian attraction; autonomous sends require consent, relevance, timing, and low repetition.",
         "- group_send_default=blocked unless an explicit group-send override is provided.",
         "- social_graph=owner WhatsApp contacts and groups are friends/collaborators/channels of the machine owner.",
@@ -145,7 +198,13 @@ def send_whatsapp(
     text = (text or "").strip()
     resolved_jid = ""
 
-    def finish(status: str, ok: bool, result: str) -> Dict[str, Any]:
+    def finish(
+        status: str,
+        ok: bool,
+        result: str,
+        *,
+        bridge_state: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         row = {
             "event_kind": EVENT_KIND,
             "schema": SCHEMA,
@@ -160,6 +219,8 @@ def send_whatsapp(
             "result": result,
             "truth_note": "External WhatsApp send is true only when ok=true and status=SENT.",
         }
+        if bridge_state:
+            row["bridge_health"] = bridge_state
         if autonomy_decision:
             row["autonomy_decision"] = autonomy_decision
         _attach_intent_provenance(
@@ -246,11 +307,16 @@ def send_whatsapp(
              # So we fail open if the module is missing? No, we shouldn't fail open for security.
              # Actually, just let exceptions bubble or print, but in SIFTA we usually pass if the module is absent, to prevent lobotomization.
 
+    health = bridge_health()
+    if not health.get("ok"):
+        status = str(health.get("status") or "BRIDGE_NOT_READY")
+        return finish(status, False, str(health.get("result") or status), bridge_state=health)
+
     payload = json.dumps({"to": resolved_jid, "text": text}).encode("utf-8")
     req = urllib.request.Request(
         _INJECT_URL,
         data=payload,
-        headers={"Content-Type": "application/json"}
+        headers=_inject_headers()
     )
     
     try:
@@ -261,7 +327,19 @@ def send_whatsapp(
             else:
                 return finish("SEND_FAILED", False, f"Bridge rejected payload: {data}")
     except urllib.error.URLError as e:
-        return finish("BRIDGE_UNREACHABLE", False, f"Could not reach injection server at {_INJECT_URL}. Is the Node bridge running?")
+        health = {
+            "reachable": False,
+            "ok": False,
+            "status": "BRIDGE_UNREACHABLE",
+            "whatsapp_state": "unreachable",
+            "result": str(e.reason),
+        }
+        return finish(
+            "BRIDGE_UNREACHABLE",
+            False,
+            f"Could not reach injection server at {_INJECT_URL}. Is the Node bridge running?",
+            bridge_state=health,
+        )
     except Exception as e:
         return finish("SEND_ERROR", False, str(e))
 

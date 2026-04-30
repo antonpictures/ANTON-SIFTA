@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 from pathlib import Path
 
 from System.whatsapp_autonomy_gate import (
@@ -107,6 +108,82 @@ def test_bridge_blocks_group_send_by_default(monkeypatch, tmp_path: Path) -> Non
     assert result["status"] == "BLOCKED_GROUP_SEND_DISABLED"
     assert result["intent_provenance"]["intent_source"] == "owner"
     assert result["intent_provenance"]["consent"] == "explicit"
+
+
+class _FakeHTTPResponse:
+    def __init__(self, payload: dict):
+        self._payload = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def read(self) -> bytes:
+        return self._payload
+
+
+def test_send_whatsapp_uses_health_gate_before_inject(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(wa, "_LEDGER", tmp_path / "bridge.jsonl")
+    monkeypatch.setattr(wa, "_resolve_target", lambda _target: "15551234567@s.whatsapp.net")
+
+    calls = []
+
+    def fake_urlopen(req, timeout=0):
+        calls.append(req.full_url)
+        raise urllib.error.URLError("offline")
+
+    monkeypatch.setattr(wa.urllib.request, "urlopen", fake_urlopen)
+
+    result = wa.send_whatsapp("Carlton", "hello", source="owner_explicit")
+
+    assert result["ok"] is False
+    assert result["status"] == "BRIDGE_UNREACHABLE"
+    assert calls == [wa._HEALTH_URL]
+    assert result["bridge_health"]["status"] == "BRIDGE_UNREACHABLE"
+
+
+def test_send_whatsapp_reports_bridge_not_ready_without_inject(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(wa, "_LEDGER", tmp_path / "bridge.jsonl")
+    monkeypatch.setattr(wa, "_resolve_target", lambda _target: "15551234567@s.whatsapp.net")
+
+    calls = []
+
+    def fake_urlopen(req, timeout=0):
+        calls.append(req.full_url)
+        return _FakeHTTPResponse({"ok": False, "bridge": "listening", "whatsapp_state": "close"})
+
+    monkeypatch.setattr(wa.urllib.request, "urlopen", fake_urlopen)
+
+    result = wa.send_whatsapp("Carlton", "hello", source="owner_explicit")
+
+    assert result["ok"] is False
+    assert result["status"] == "BRIDGE_NOT_READY"
+    assert calls == [wa._HEALTH_URL]
+    assert result["bridge_health"]["whatsapp_state"] == "close"
+
+
+def test_send_whatsapp_includes_inject_key_after_healthy_probe(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(wa, "_LEDGER", tmp_path / "bridge.jsonl")
+    monkeypatch.setattr(wa, "_resolve_target", lambda _target: "15551234567@s.whatsapp.net")
+    monkeypatch.setenv("SIFTA_BRIDGE_INJECT_KEY", "test-key")
+
+    captured_headers = {}
+
+    def fake_urlopen(req, timeout=0):
+        if req.full_url == wa._HEALTH_URL:
+            return _FakeHTTPResponse({"ok": True, "bridge": "listening", "whatsapp_state": "open"})
+        captured_headers.update(dict(req.header_items()))
+        return _FakeHTTPResponse({"ok": True})
+
+    monkeypatch.setattr(wa.urllib.request, "urlopen", fake_urlopen)
+
+    result = wa.send_whatsapp("Carlton", "hello", source="owner_explicit")
+
+    assert result["ok"] is True
+    assert result["status"] == "SENT"
+    assert captured_headers["X-sifta-inject-key"] == "test-key"
 
 
 def test_target_auto_reply_setting_defaults_off_and_can_toggle(monkeypatch, tmp_path: Path) -> None:

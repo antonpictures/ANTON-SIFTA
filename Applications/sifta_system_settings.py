@@ -392,18 +392,23 @@ def read_system_settings_snapshot() -> dict[str, Any]:
     except Exception:
         pass
 
-    # WhatsApp Bridge status — check if node bridge.js is running
+    # WhatsApp Bridge status — use the actual local health endpoint, not pgrep.
+    wa_bridge_detail = "Bridge not reachable"
     try:
-        import subprocess
-        res_wa = subprocess.run(["pgrep", "-f", "bridge.js"], capture_output=True, text=True, timeout=1)
-        wa_bridge_live = bool(res_wa.stdout.strip())
-    except Exception:
+        from System.whatsapp_bridge_autopilot import bridge_health
+
+        _wa = bridge_health(timeout=1.0)
+        wa_bridge_live = bool(_wa.get("ok"))
+        wa_bridge_detail = str(_wa.get("result") or _wa.get("status") or wa_bridge_detail)
+    except Exception as exc:
+        wa_bridge_detail = f"Bridge health probe failed: {type(exc).__name__}"
         pass
 
     return {
         "net_ssid": net_ssid,
         "net_ip": net_ip,
         "wa_bridge_live": wa_bridge_live,
+        "wa_bridge_detail": wa_bridge_detail,
         "hw_chip": hw_chip,
         "hw_memory": hw_memory,
         "hw_os": hw_os,
@@ -872,6 +877,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             # Kill it
             try:
                 subprocess.run(["pkill", "-f", "bridge.js"], timeout=3)
+                subprocess.run(["pkill", "-f", "scripts/whatsapp_alice_server.py"], timeout=3)
                 self.wa_toggle_btn.setText("🔌 Connect WhatsApp")
                 self.wa_toggle_btn.setStyleSheet(
                     "QPushButton { background: rgb(20, 60, 40); color: rgb(100, 255, 150); "
@@ -885,14 +891,18 @@ class SystemSettingsWidget(SiftaBaseWidget):
             # Start it
             try:
                 import os
-                bridge_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Network", "whatsapp_bridge")
-                log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".sifta_state", "runtime_logs", "whatsapp_bridge.log")
+                repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                script_path = os.path.join(repo_dir, "scripts", "start_swarm_whatsapp.sh")
+                log_path = os.path.join(repo_dir, ".sifta_state", "runtime_logs", "whatsapp_bridge.log")
                 os.makedirs(os.path.dirname(log_path), exist_ok=True)
-                subprocess.Popen(
-                    f"cd {bridge_dir} && node bridge.js >> {log_path} 2>&1",
-                    shell=True,
-                    start_new_session=True,
-                )
+                with open(log_path, "a", encoding="utf-8") as log:
+                    subprocess.Popen(
+                        ["bash", script_path],
+                        cwd=repo_dir,
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=True,
+                    )
                 self.wa_toggle_btn.setText("🔴 Disconnect WhatsApp")
                 self.wa_toggle_btn.setStyleSheet(
                     "QPushButton { background: rgb(70, 20, 20); color: rgb(255, 120, 120); "
@@ -1079,7 +1089,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.net_ip.set_metric(snap.get("net_ip", "Unknown"), "en0 interface address")
         wa_live = snap.get("wa_bridge_live", False)
         if wa_live:
-            self.net_wa.set_metric("Online", "Bridge running on port 3001")
+            self.net_wa.set_metric("Online", snap.get("wa_bridge_detail", "Bridge running on port 3001"))
             self.wa_toggle_btn.setText("\ud83d\udd34 Disconnect WhatsApp")
             self.wa_toggle_btn.setStyleSheet(
                 "QPushButton { background: rgb(70, 20, 20); color: rgb(255, 120, 120); "
@@ -1087,7 +1097,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
                 "QPushButton:hover { background: rgb(90, 30, 30); }"
             )
         else:
-            self.net_wa.set_metric("Offline", "Bridge not running")
+            self.net_wa.set_metric("Offline", snap.get("wa_bridge_detail", "Bridge not running"))
             self.wa_toggle_btn.setText("\ud83d\udd0c Connect WhatsApp")
             self.wa_toggle_btn.setStyleSheet(
                 "QPushButton { background: rgb(20, 60, 40); color: rgb(100, 255, 150); "

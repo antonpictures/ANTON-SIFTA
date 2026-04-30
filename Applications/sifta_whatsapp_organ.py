@@ -43,7 +43,6 @@ _CONTACTS = _STATE / "whatsapp_contacts.json"
 _BRIDGE_TRACE = _STATE / "whatsapp_bridge_trace.jsonl"
 
 # Bridge endpoints
-_BRIDGE_HEALTH = "http://127.0.0.1:3001/health"
 _INGEST_HEALTH = "http://127.0.0.1:7434/health"
 
 # ── Color palette (Tokyo Night Dark) ──────────────────────────────────
@@ -156,6 +155,21 @@ def _check_health(url: str) -> tuple[bool, str]:
             return data.get("ok", False), json.dumps(data)
     except Exception as e:
         return False, str(e)
+
+
+def _bridge_health() -> dict[str, Any]:
+    try:
+        from System.whatsapp_bridge_autopilot import bridge_health
+
+        return bridge_health(timeout=2.0)
+    except Exception as exc:
+        return {
+            "reachable": False,
+            "ok": False,
+            "status": "BRIDGE_HEALTH_ERROR",
+            "whatsapp_state": "unknown",
+            "result": f"{type(exc).__name__}: {exc}",
+        }
 
 
 class WhatsAppOrganWidget(QWidget):
@@ -772,10 +786,14 @@ class WhatsAppOrganWidget(QWidget):
 
     def _check_bridge_health(self):
         """Check both bridge.js and ingest server health."""
-        bridge_ok, bridge_info = _check_health(_BRIDGE_HEALTH)
-        if bridge_ok:
+        bridge_info = _bridge_health()
+        if bridge_info.get("ok"):
             self._bridge_status.setText("● Bridge: connected")
             self._bridge_status.setStyleSheet(f"color: {_GREEN}; background: transparent;")
+        elif bridge_info.get("reachable"):
+            state = str(bridge_info.get("whatsapp_state") or "not ready")
+            self._bridge_status.setText(f"● Bridge: {state}")
+            self._bridge_status.setStyleSheet(f"color: {_ORANGE}; background: transparent;")
         else:
             self._bridge_status.setText("● Bridge: offline")
             self._bridge_status.setStyleSheet(f"color: {_RED}; background: transparent;")
@@ -817,6 +835,9 @@ class WhatsAppOrganWidget(QWidget):
                 self._publish_focus(f"Sent message to {target}")
             else:
                 reason = result.get("result", status)
+                bridge = result.get("bridge_health") or {}
+                if bridge:
+                    reason = f"{reason}\n\nBridge status: {bridge.get('status')} ({bridge.get('whatsapp_state')})"
                 QMessageBox.warning(
                     self,
                     "Send Failed",
