@@ -3628,6 +3628,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     else ("auto_reply_owner_delegated" if auto_ctx else "observe_only_no_reply")
                 )
             )
+
+            if policy in ("observe_only_no_reply", "owner_already_sent_no_action"):
+                import subprocess
+                is_whatsapp_open = subprocess.run(
+                    ["pgrep", "-f", "sifta_whatsapp_organ.py"], capture_output=True
+                ).returncode == 0
+                if not is_whatsapp_open:
+                    return
+
             annotated_msg = (
                 f"[OBSERVED WhatsApp {chat_type} {contact_name}; "
                 f"origin={origin}; action_policy={policy}]: {result['text']}"
