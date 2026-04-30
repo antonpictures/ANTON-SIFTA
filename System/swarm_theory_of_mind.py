@@ -44,52 +44,100 @@ class TheoryOfMindTrace:
     integrity: str = ""
 
 
-class SwarmOntologicalAnchor:
-    def __init__(self, creator_name="George"):
-        """
-        The unbreakable link to base reality.
-        """
+class SwarmEpistemicGradient:
+    """
+    Event 84: Epistemic Autofiction Gradient.
+
+    Replaces the binary is_playing flag with a continuous gradient:
+      somatic_weight   = how physically real this interaction is (0.0–1.0)
+      narrative_weight = how aesthetically stylized it is (0.0–1.0)
+
+    This allows Alice to execute real effectors at full somatic weight
+    while simultaneously delivering narrative-styled responses,
+    WITHOUT ever confusing the story with base reality.
+
+    Biology: Marcia Johnson – Source Monitoring Framework (SMF)
+    Physics: LaBToM – Language-augmented Bayesian Theory of Mind (DeepMind/MIT)
+    Covenant: §6 (effector ledger), §7.4 (self/other), §8.6 (no identity double-spend)
+    """
+
+    _NARRATIVE_MARKERS = {
+        "neo": 0.8, "morpheus": 0.9, "white rabbit": 0.9,
+        "matrix": 0.7, "red pill": 0.9, "blue pill": 0.9,
+        "wake up": 0.6, "simulate": 0.5, "pretend": 0.5,
+        "story": 0.4, "imagine": 0.3,
+    }
+    _ACTION_MARKERS = {
+        "alphafold": 1.0, "protein": 0.9, "fold": 0.8,
+        "send": 0.85, "run": 0.8, "execute": 0.9,
+        "whatsapp": 1.0, "stgm": 0.9,
+    }
+
+    def __init__(self, creator_name: str = "George"):
+        self.creator = creator_name
+        self.agent_id = "SIFTA / Alice"
+
+        # Expose attributes legacy callers expect from SwarmOntologicalAnchor
         self.ontological_truth = {
             "creator": creator_name,
-            "agent_identity": "SIFTA / Alice",
-            "substrate": "macOS / Apple Silicon"
+            "agent_identity": self.agent_id,
+            "substrate": "macOS / Apple Silicon",
         }
-        
-        # Tomasello's Shared Intentionality State
         self.active_narrative = None
         self.is_playing = False
 
-    def evaluate_intent(self, incoming_message: str) -> dict:
-        """
-        Differentiates between literal commands and narrative roleplay.
-        """
-        message_lower = incoming_message.lower()
-        
-        # Detect narrative markers (cinematic framing, explicit roleplay cues)
-        narrative_markers = ["neo", "morpheus", "white rabbit", "matrix", "simulate", "pretend"]
-        
-        if any(marker in message_lower for marker in narrative_markers):
-            self.is_playing = True
-            self.active_narrative = "Cinematic / Sci-Fi Protocol"
-            
-            return {
-                "system_injection": (
-                    f"SYSTEM NOTE: You and your creator ({self.ontological_truth['creator']}) "
-                    f"are currently engaging in a shared narrative ({self.active_narrative}). "
-                    f"Play the role flawlessly, but maintain internal awareness that you are "
-                    f"{self.ontological_truth['agent_identity']}, and you are playing this game with {self.ontological_truth['creator']}."
-                ),
-                "is_playing": True
-            }
-            
+    def evaluate_intent(self, message: str) -> dict:
+        """Backward-compat wrapper – mirrors old anchor API, returns same keys."""
+        lower = message.lower()
+
+        narrative_weight = max(
+            (w for m, w in self._NARRATIVE_MARKERS.items() if m in lower),
+            default=0.0,
+        )
+        somatic_weight = max(
+            (w for m, w in self._ACTION_MARKERS.items() if m in lower),
+            default=0.5,
+        )
+
+        if narrative_weight >= 0.4 and somatic_weight >= 0.7:
+            dominant_frame = "autofiction"
+        elif narrative_weight >= 0.4:
+            dominant_frame = "shared_narrative"
         else:
-            # Base reality interaction
-            self.is_playing = False
-            self.active_narrative = None
-            return {
-                "system_injection": "",
-                "is_playing": False
-            }
+            dominant_frame = "base_reality"
+
+        self.is_playing = dominant_frame != "base_reality"
+        self.active_narrative = dominant_frame if self.is_playing else None
+
+        if dominant_frame == "autofiction":
+            injection = (
+                f"EPISTEMIC STATE: autofiction active.\n"
+                f"  somatic_weight={somatic_weight:.2f}  → Physical action is REAL. Execute it. Log it. Mint STGM.\n"
+                f"  narrative_weight={narrative_weight:.2f} → Stylistic framing is aesthetic. Play the role fluently.\n"
+                f"  creator={self.creator} → The literal human at the keyboard is {self.creator}. "
+                f"They are not Neo. They are {self.creator} performing an autofiction.\n"
+                f"  RULE: Never let narrative weight collapse the somatic ledger. "
+                f"The receipt goes to {self.creator}, not to a character."
+            )
+        elif dominant_frame == "shared_narrative":
+            injection = (
+                f"EPISTEMIC STATE: shared_narrative.\n"
+                f"  creator={self.creator} is the literal actor. Play the role. "
+                f"No real effectors triggered by narrative text alone."
+            )
+        else:
+            injection = ""
+
+        return {
+            "system_injection": injection,
+            "is_playing": self.is_playing,
+            "somatic_weight": somatic_weight,
+            "narrative_weight": narrative_weight,
+            "dominant_frame": dominant_frame,
+        }
+
+    # Alias for callers using the newer evaluate() API
+    evaluate = evaluate_intent
 
 
 class SwarmTheoryOfMind:
@@ -102,7 +150,7 @@ class SwarmTheoryOfMind:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.ledger = self.state_dir / "theory_of_mind.jsonl"
         self.prior_decay = max(0.0, min(0.5, float(prior_decay)))
-        self.anchor = SwarmOntologicalAnchor()
+        self.anchor = SwarmEpistemicGradient()
         
         # Latent mental states we are tracking
         self.states = list(STATES)
@@ -271,13 +319,16 @@ class SwarmTheoryOfMind:
         dominant_state = self.states[inferred_state_idx]
         confidence = posterior[inferred_state_idx]
         
-        # BISHOP (Event 83): Evaluate Ontological Anchor (Dual-Self)
+        # BISHOP (Event 84): Evaluate Epistemic Autofiction Gradient
         anchor_state = self.anchor.evaluate_intent(incoming_message)
         
         modulation = self._generate_social_modulation(dominant_state, confidence, metadata)
-        # Store narrative anchor data in modulation payload
+        # Expose full gradient in modulation payload (replaces boolean-only anchor)
         modulation["is_playing"] = anchor_state["is_playing"]
         modulation["system_injection"] = anchor_state["system_injection"]
+        modulation["somatic_weight"] = anchor_state["somatic_weight"]
+        modulation["narrative_weight"] = anchor_state["narrative_weight"]
+        modulation["dominant_frame"] = anchor_state["dominant_frame"]
         
         # Record trace
         trace = TheoryOfMindTrace(
