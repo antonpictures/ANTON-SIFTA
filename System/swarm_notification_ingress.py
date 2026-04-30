@@ -92,18 +92,11 @@ def _parse_sfltool_dump(raw: str) -> List[Dict[str, Any]]:
 
 
 def scan_background_task_management() -> Dict[str, Any]:
-    out = _run(["/usr/bin/sfltool", "dumpbtm"], timeout=5.0)
-    if not out.get("ok"):
-        return {
-            "ok": False,
-            "source": "sfltool dumpbtm",
-            "error": out.get("error") or _compact_text(out.get("stderr")),
-            "items": [],
-        }
     return {
-        "ok": True,
+        "ok": False,
         "source": "sfltool dumpbtm",
-        "items": _parse_sfltool_dump(out.get("stdout", "")),
+        "error": "Disabled to prevent macOS graphical authentication popups.",
+        "items": [],
     }
 
 
