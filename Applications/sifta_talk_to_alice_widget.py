@@ -3641,6 +3641,52 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        # ── WhatsApp SPINAL REFLEX ─────────────────────────────────────────
+        # Gemma cannot reliably emit [TOOL_CALL: send_whatsapp | ...] format.
+        # So we detect WhatsApp send intent at the INPUT level — before the brain —
+        # parse target + text, and fire directly. Alice sees the receipt and
+        # responds naturally. Cortex doesn't need to format tool calls.
+        try:
+            import re as _re2
+            _wa_pattern = _re2.compile(
+                r"send\s+(?:a\s+)?(?:whatsapp\s+)?(?:message\s+)?(?:to\s+)?([A-Za-z][A-Za-z\s]{1,30?}?)\s+"
+                r"(?:saying|that says?|with(?:\s+the)?\s+(?:message|text)?)[:\s]+(.+)",
+                _re2.IGNORECASE | _re2.DOTALL
+            )
+            _wa_m = _wa_pattern.search(text.strip())
+            if _wa_m:
+                _wa_target = _wa_m.group(1).strip().rstrip(".,;:")
+                _wa_text = _wa_m.group(2).strip().strip('"\'')
+                if _wa_target and _wa_text:
+                    from System.whatsapp_bridge_autopilot import send_whatsapp
+                    from System.swarm_intent_provenance import build_provenance
+                    _wa_prov = build_provenance(
+                        intent_source="conversation",
+                        consent="explicit",
+                        decision_path=["spinal_reflex", "whatsapp_effector"],
+                        receipt_proof=True,
+                        tool="send_whatsapp",
+                        extra={"trigger": "pre_cortex_pattern_match"},
+                    )
+                    _wa_result = send_whatsapp(
+                        target=_wa_target,
+                        text=_wa_text,
+                        source="alice_spinal_reflex_conversation",
+                        intent_provenance=_wa_prov,
+                    )
+                    if _wa_result.get("ok"):
+                        _wa_reply = f"✅ Sent to {_wa_target}: \"{_wa_text}\""
+                    else:
+                        _wa_reply = f"❌ Couldn't send to {_wa_target}: {_wa_result.get('result', _wa_result.get('status','unknown'))}"
+                    self._history.append({"role": "assistant", "content": _wa_reply})
+                    _log_turn("alice", _wa_reply, model="spinal_reflex_whatsapp")
+                    self._append_alice_line(_wa_reply)
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+        except Exception as _wa_err:
+            pass  # If reflex fails, fall through to brain
+
         try:
             from System.stigmergic_schedule import answer_query_for_alice
             schedule_reply = answer_query_for_alice(text)
