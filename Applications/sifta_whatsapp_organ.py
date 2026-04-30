@@ -72,14 +72,18 @@ def _load_contacts() -> dict[str, Any]:
 
 
 def _contact_entries() -> list[dict[str, Any]]:
-    """Return known WhatsApp targets with JID/chat metadata."""
+    """Return known WhatsApp targets with JID/chat metadata, deduped by JID."""
     contacts = _load_contacts()
+    seen_jids: set[str] = set()
     entries: list[dict[str, Any]] = []
     for _k, v in contacts.items():
         name = v.get("display_name", "").strip()
         jid = str(v.get("jid") or "").strip()
         if not name or not jid:
             continue
+        if jid in seen_jids:
+            continue
+        seen_jids.add(jid)
         chat_type = str(v.get("chat_type") or ("group" if jid.endswith("@g.us") else "direct")).strip()
         is_group = chat_type == "group"
         label = f"📢 {name}" if is_group else name
@@ -161,6 +165,8 @@ class WhatsAppOrganWidget(QWidget):
         self._inbox_mtime: float = 0.0
         self._outbox_mtime: float = 0.0
         self._refreshing_contacts = False
+        self._selected_jid: str = ""  # "" = All Chats, else filter by JID
+        self._selected_name: str = "All Chats"
         self._build_ui()
         self._refresh_all()
 
@@ -489,6 +495,13 @@ class WhatsAppOrganWidget(QWidget):
         except Exception:
             is_auto_enabled = None
 
+        # "All Chats" item at top
+        all_item = QListWidgetItem("💬 All Chats")
+        all_item.setData(Qt.ItemDataRole.UserRole, {"jid": "", "label": "All Chats", "display_name": "All Chats"})
+        if not self._selected_jid:
+            all_item.setSelected(True)
+        self._contact_list.addItem(all_item)
+
         for entry in entries:
             item = QListWidgetItem(entry["label"])
             item.setData(Qt.ItemDataRole.UserRole, entry)
@@ -528,15 +541,25 @@ class WhatsAppOrganWidget(QWidget):
 
     def _on_contact_selected(self, item: QListWidgetItem):
         entry = item.data(Qt.ItemDataRole.UserRole) or {}
+        jid = str(entry.get("jid") or "").strip()
         label = entry.get("label") or item.text()
-        idx = self._target_combo.findText(label)
-        if idx >= 0:
-            self._target_combo.setCurrentIndex(idx)
-        else:
-            self._target_combo.setCurrentText(label.replace("📢 ", ""))
-        self._msg_input.setFocus()
         name = str(entry.get("display_name") or label).replace("📢 ", "")
-        self._publish_focus(f"Selected contact: {name}")
+
+        # Update selected filter
+        self._selected_jid = jid
+        self._selected_name = name if jid else "All Chats"
+
+        # Update compose bar target
+        if jid:
+            idx = self._target_combo.findText(label)
+            if idx >= 0:
+                self._target_combo.setCurrentIndex(idx)
+            else:
+                self._target_combo.setCurrentText(label.replace("📢 ", ""))
+
+        self._msg_input.setFocus()
+        self._publish_focus(f"Viewing: {self._selected_name}")
+        self._render_conversation()
 
     def _current_target_entry(self) -> dict[str, Any]:
         data = self._target_combo.currentData()
@@ -638,19 +661,30 @@ class WhatsAppOrganWidget(QWidget):
             self._render_conversation()
 
     def _render_conversation(self):
-        """Merge inbox + outbox into a time-sorted conversation view."""
-        inbox = _read_inbox(max_rows=80)
-        outbox = _read_outbox(max_rows=40)
+        """Merge inbox + outbox into a time-sorted conversation view.
+
+        When a contact is selected (self._selected_jid), only show messages
+        involving that JID. When empty / All Chats, show everything.
+        """
+        inbox = _read_inbox(max_rows=200)
+        outbox = _read_outbox(max_rows=100)
+        filter_jid = self._selected_jid  # "" = show all
 
         # Build unified timeline
         events = []
         for row in inbox:
+            from_jid = str(row.get("from_jid") or "").strip()
             ts = row.get("ts", 0)
             from_me = row.get("from_me", False)
             name = row.get("name", "Unknown")
             text = row.get("text", "")
             chat_type = row.get("chat_type", "direct")
             participant = row.get("participant", "")
+
+            # Filter: skip messages not involving selected JID
+            if filter_jid:
+                if from_jid != filter_jid and participant != filter_jid:
+                    continue
 
             if from_me:
                 sender = "George"
@@ -661,21 +695,24 @@ class WhatsAppOrganWidget(QWidget):
 
             badge = ""
             if chat_type == "group":
-                group_name = name if not from_me else ""
-                if participant:
-                    badge = f' <span style="color:{_TEXT_DIM};font-size:10px;">[group]</span>'
+                badge = f' <span style="color:{_TEXT_DIM};font-size:10px;">[{name}]</span>'
 
             events.append((ts, "in", sender, text, color, badge, chat_type))
 
         for row in outbox:
+            resolved_jid = str(row.get("resolved_jid") or "").strip()
+            target_name = str(row.get("target") or "?").strip()
             ts = row.get("ts", 0)
             ok = row.get("ok", False)
             text = row.get("text", "")
-            target = row.get("target", "?")
             status = row.get("status", "")
             source = row.get("source", "")
 
-            if "alice" in source.lower() or "autonomous" in source.lower():
+            # Filter: skip sends not to the selected JID
+            if filter_jid and resolved_jid != filter_jid:
+                continue
+
+            if "alice" in source.lower() or "autonomous" in source.lower() or "auto" in source.lower():
                 sender = "Alice"
                 color = _PURPLE
             else:
@@ -690,13 +727,20 @@ class WhatsAppOrganWidget(QWidget):
             else:
                 status_badge = f' <span style="color:{_RED};font-size:10px;">✗ {status.lower()}</span>'
 
-            events.append((ts, "out", f"{sender} → {target}", text, color, status_badge, "send"))
+            events.append((ts, "out", f"{sender} → {target_name}", text, color, status_badge, "send"))
 
         # Sort by timestamp
         events.sort(key=lambda e: e[0])
 
+        # Header
+        view_label = self._selected_name or "All Chats"
+
         # Render HTML
-        html_parts = []
+        html_parts = [
+            f'<div style="text-align:center;color:{_ACCENT};font-size:13px;'
+            f'padding:8px 0;font-weight:bold;">'
+            f'── {view_label} ──</div>'
+        ]
         last_date = ""
         for ts, direction, sender, text, color, badge, chat_type in events:
             dt = datetime.fromtimestamp(ts)
@@ -726,14 +770,20 @@ class WhatsAppOrganWidget(QWidget):
                 f'</div>'
             )
 
+        if not events and filter_jid:
+            html_parts.append(
+                f'<div style="text-align:center;color:{_TEXT_DIM};font-size:14px;'
+                f'padding:40px 0;">No messages with {view_label} yet</div>'
+            )
+
         self._chat_display.setHtml("".join(html_parts))
         # Scroll to bottom
         cursor = self._chat_display.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self._chat_display.setTextCursor(cursor)
 
-        total = len(inbox)
-        self._inbox_count_label.setText(f"Inbox: {total} messages")
+        count_label = f"{len(events)} messages" if filter_jid else f"Inbox: {len(inbox)} messages"
+        self._inbox_count_label.setText(count_label)
         self._last_update_label.setText(f"Updated: {datetime.now().strftime('%H:%M:%S')}")
 
     def _check_bridge_health(self):
