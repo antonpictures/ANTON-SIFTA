@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from PyQt6 import sip
-from PyQt6.QtCore import QSocketNotifier, Qt, QTimer
+from PyQt6.QtCore import QSocketNotifier, Qt, QTimer, pyqtSignal
 
 from System.swarm_app_focus import publish_focus
 from PyQt6.QtGui import QFont, QKeySequence, QTextCursor, QColor, QPalette
@@ -50,9 +50,11 @@ def _qt_alive(obj) -> bool:
 
 class MatrixTerminalPane(QPlainTextEdit):
     """Matrix-themed PTY-backed terminal with cinematic script."""
+    _chat_reply_ready = pyqtSignal(str)  # Thread-safe bridge for Alice replies
 
     def __init__(self, cwd: Path, parent: 'MatrixTerminalApp' = None):
         super().__init__(parent)
+        self._chat_reply_ready.connect(self._chat_show_reply)
         self._app_parent = parent
         self.cwd = cwd
         self.master_fd: int | None = None
@@ -470,15 +472,15 @@ class MatrixTerminalPane(QPlainTextEdit):
                     sys.path.insert(0, sys_path)
                 from System.swarm_stigmergic_dialogue import compose_line
                 reply = compose_line(
-                    occasion=user_input,
+                    occasion="ack",
                     topic=user_input,
                     max_words=40,
                     timeout_s=12.0,
                 )
             except Exception as exc:
                 reply = f"[organism error: {exc}]"
-            # Schedule the reply back on the Qt main thread
-            QTimer.singleShot(0, lambda: self._chat_show_reply(reply))
+            # Thread-safe: emit signal to main Qt thread
+            self._chat_reply_ready.emit(reply or "[silence]")
 
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
