@@ -301,7 +301,7 @@ class MatrixTerminalPane(QPlainTextEdit):
         if self._script_state == "WAKE":
             if "not neo" in text or "neo" in text:
                 self.clear()
-                self._queue_typing("Yes it is George. SIFTA has you...\n")
+                self._queue_typing("Yes you are George. SIFTA has you...\n")
                 self._script_state = "SIFTA"
         elif self._script_state == "SIFTA":
             if "what are you" in text or "what" in text:
@@ -414,7 +414,7 @@ class MatrixTerminalApp(QWidget):
         self._blink_state = not self._blink_state
         if self._blink_state:
             self.btn_alphafold.setText("🐇 HACK: ALPHAFOLD")
-            self.btn_alphafold.setStyleSheet("QPushButton { background: #00FF41; color: #000000; border: 1px solid #00FF41; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
+            self.btn_alphafold.setStyleSheet("QPushButton { background: #000000; color: #FFFFFF; border: 2px solid #FFFFFF; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; font-size: 16px; }")
         else:
             self.btn_alphafold.setText("HACK: ALPHAFOLD")
             self.btn_alphafold.setStyleSheet("QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
@@ -436,7 +436,7 @@ class MatrixTerminalApp(QWidget):
         self._blink_state = not self._blink_state
         if self._blink_state:
             self.btn_inverse.setText("🐇 HACK: INVERSE")
-            self.btn_inverse.setStyleSheet("QPushButton { background: #00FF41; color: #000000; border: 1px solid #00FF41; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
+            self.btn_inverse.setStyleSheet("QPushButton { background: #000000; color: #FFFFFF; border: 2px solid #FFFFFF; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; font-size: 16px; }")
         else:
             self.btn_inverse.setText("HACK: INVERSE FOLD")
             self.btn_inverse.setStyleSheet("QPushButton { background: #000000; color: #00FF41; border: 1px solid #008F11; border-radius: 7px; padding: 2px 10px; font-weight: bold; font-family: Courier; }")
