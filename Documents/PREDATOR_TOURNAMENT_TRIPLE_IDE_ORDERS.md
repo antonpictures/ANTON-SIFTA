@@ -22,7 +22,7 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-01T12:05:00-07:00` — *CG55M: §0.8–0.9 auditory cortex (cochlea) + dolphin social echo battle lanes + Grok handoff; Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T13:05:45-07:00` — *CG55M@cursor: GPT-5.5 Medium [ARCHITECT_UI_TRUTH] last_known_real_time=2026-05-01T13:05:12-07:00 — Event 98b SC integrator + §0.10 plan shipped on main.* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
