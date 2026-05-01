@@ -34,7 +34,11 @@ Biology:
   Grassé (1959) + Wilson (1971) pheromone field DOIs — already in
     swarm_pheromone_field.py header.
 
-NPPL: reads screen cursor position only. No mic, no camera, no keylog.
+NPPL & Privacy:
+  Reads screen cursor position only. No mic, no camera, no keylog.
+  Persisting cursor-derived cells in `pheromone_field.json` and trace receipts
+  constitutes a behavioral trace. This trace is local-only, ephemeral to the
+  session, and explicitly governed by the "no surveillance" scope of the NPPL.
 """
 from __future__ import annotations
 
@@ -64,7 +68,18 @@ _DEFAULT_SCREEN_H: int = 1600
 
 
 def _screen_size() -> Tuple[int, int]:
-    """Return (width, height) of the primary display, with fallback."""
+    """Return (width, height) of the total virtual desktop, with fallback."""
+    try:
+        from AppKit import NSScreen
+        w = h = 0
+        for screen in NSScreen.screens():
+            f = screen.frame()
+            w = max(w, int(f.origin.x + f.size.width))
+            h = max(h, int(f.origin.y + f.size.height))
+        if w > 0 and h > 0:
+            return w, h
+    except Exception:
+        pass
     try:
         from Quartz import CGDisplayBounds, CGMainDisplayID
         bounds = CGDisplayBounds(CGMainDisplayID())

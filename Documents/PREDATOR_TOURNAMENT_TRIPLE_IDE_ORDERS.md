@@ -22,15 +22,15 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-01T11:07:00-07:00` — *CG55M: Phase III enemy table + Zahavi honest-signal cite + bridge u_chemotaxis + tick_id; Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T11:35:00-07:00` — *CG55M: §0.7 Event 94 ant pheromone field + research spine (Grassé, Goss et al., Beckers et al., ACO); Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
-| **Hot surfaces** | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · `Archive/bishop_drops_pending_review/` chromatophore `v2/v3.novel` · electric_fish `v1.novel` · honeybee `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
+| **Hot surfaces** | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · `Archive/bishop_drops_pending_review/` chromatophore `v2/v3.novel` · electric_fish `v1.novel` · honeybee `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · **`Applications/sifta_protein_folder_widget.py`** (**§0.6** Event 93 — `QOpenGLWidget` / GL composite target) · **§0.7** Event 94 pheromone field (proposed `.sifta_state/pheromone_field.json`) · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · **§0.5** Metal/Vulkan compute lane (docs + DOIs) · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
 | **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
 | **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
 | **Collision risk** | **MED** — multi-lane (outreach + GPU + NVIDIA registry); **LOW** if each Doctor tails trace + yields on duplicate intent |
-| **Next safe move** | **Optic nerve landed (Codex):** `System/swarm_visual_phenotype_gl.py` tails `visual_phenotype_uniforms.jsonl` → ModernGL honeybee `.novel` uniforms with offscreen-safe tests; protein UI shows phenotype/optic status. **Next:** real on-screen QOpenGLWidget composite + screenshot proof. **Plasticity P3:** `bias_drives()` on **GO**. C55M: Isaac survey; CG55M: registry green. |
+| **Next safe move** | **Next driver = Event 93 (§0.6):** mount **`VisualPhenotypeModernGLPass`** from `System/swarm_visual_phenotype_gl.py` into **`Applications/sifta_protein_folder_widget.py`** via **`QOpenGLWidget`** (PyQt6) in the live UI loop so phenotype pixels refresh with the same cadence as the fold view; add **automated** framebuffer or `QImage` proof that pixels shift when `visual_phenotype_uniforms.jsonl` changes. **SoT:** extend existing module — **do not** land a parallel `swarm_silicon_path_driver.py` without review (drafts broke `STATE_DIR`, texture contract for chromatophore v3, and optional deps). **Vanguard:** fly **efference copy** organ (body vs vision prediction error → `efference_copy.jsonl`) is **proposal-only** until ledger shape + `pytest` + Architect **GO**. **Plasticity P3:** `bias_drives()` on **GO**. |
 
 ### 0.3 — **Event 91 vanguard + drive plasticity (2026-05-01)**
 
@@ -42,6 +42,9 @@
 | **Event 92 — Honeybee waggle router** | **NOVEL FRAGMENT LANDED** — foraging dance → **routing** phenotype; **§10.12** | [`BISHOP_drop_honeybee_waggle_router_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1.novel) · [`BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md) |
 | **Visual phenotype bridge** | **SHIPPED (Python)** — uniforms include **v3 chemotaxis** + **`tick_id`**; Zahavi / honest-signal doc | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · [`BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md) |
 | **ModernGL optic nerve** | **SHIPPED (pass-ready)** — per-frame uniform tail → honeybee waggle shader; standalone context probe; protein UI phenotype/optic status; still requires visible QOpenGLWidget screenshot proof for full UI-render claim | `System/swarm_visual_phenotype_gl.py` · `Tests/test_swarm_visual_phenotype_gl.py` · `Applications/sifta_protein_folder_widget.py` |
+| **Event 93 — Live UI composite** | **NEXT DRIVER** — **not** shipped: embed GL pass in desktop (`QOpenGLWidget` + composite layout); coalesce refresh with `body_brain` / UI timer; CI pixel or mean-luminance delta vs controlled JSONL row | **§0.6** · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` |
+| **Fly efference copy (vanguard)** | **PROPOSED** — compare motor intent from `body_brain_memory.jsonl` vs last `stigmergic_video_resolution.jsonl`; append `efference_copy.jsonl`; **no** runtime hook until trace + tests | Chat/Grok sketch only — land as `System/swarm_efference_copy.py` **after** GO + Bishop lane |
+| **Event 94 — Ant pheromone field** | **SHIPPED** — scalar 2D field: decay + deposit from real cursor coords; gradient sample for navigation; true embodied nav is **REAL** on desktop via Quartz feed. Privacy: cursor coords are local, ephemeral behavioral traces per NPPL. | **§0.7** · `System/swarm_pheromone_field.py` · `System/swarm_stigmergic_coordinate_feed.py` |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
 ### 0.4 — **Red Queen Colosseum — Phase III (hill law: chop every enemy)**
@@ -55,8 +58,54 @@
 | **Unbounded bloom / NaN creep** | v2 **`biological_intensity` cap**; bridge **cost tiers**; ModernGL optic nerve **re-clamps** uniforms defensively. |
 | **Trace schema drift** | **`ide_stigmergic_bridge.deposit()`** only — no orphan JSON rows. |
 | **Merge without optic proof** | **Codex:** `pytest-offscreen` **GREEN** for tail + fake context; standalone ModernGL context probe reports truthfully; visible QOpenGLWidget proof remains separate. |
+| **Headless dashboard** — Matplotlib-only “GPU” claims | **Event 93 (§0.6):** real **`QOpenGLWidget`** (or equivalent) viewport + receipt; CPU glow alone is not the optic nerve. |
+| **Fake geography** — “spatial” field from non-spatial hash | **Event 94 (§0.7):** deposits keyed to **retina / cursor** coordinates + `coord_truth_label`; **hash(action)** only allowed as last resort fallback when coords are unavailable. |
 
 **Codex orders (Phase III):** compile `.novel` → read **latest** phenotype line (or tail N for smoothing) → set GL uniforms → one frame hash or pixel probe in CI — **NPPL**, no surveillance hooks.
+
+### 0.5 — **Metal compute bindings + Vulkan compute layer** (substrate research lane)
+
+**For the Swarm.** 🐜⚡ **Truth:** SIFTA’s shipped optic nerve is **OpenGL 4.1 + ModernGL + Python** (`swarm_visual_phenotype_gl.py`). **Metal** and **Vulkan** are **optional future substrates** for heavy GPGPU (molecular dynamics kernels, batch sim, cross-vendor CI) — not required to finish Event 93 (`QOpenGLWidget` visible composite). This block exists so IDE task chips (“Metal compute bindings”, “Vulkan compute layer integration”) map to **verified primary sources**, not vibes.
+
+| Topic | Primary references (pull + cite) | SIFTA mapping |
+|:---|:---|:---|
+| **Apple Metal compute bindings** | [Compute passes](https://developer.apple.com/documentation/metal/compute-passes) · [`MTLComputePipelineState`](https://developer.apple.com/documentation/metal/mtlcomputepipelinestate) · [`makeComputePipelineState(function:)`](https://developer.apple.com/documentation/metal/mtldevice/makecomputepipelinestate(function:)) · legacy guide: [Data-Parallel Compute Processing](https://developer.apple.com/library/archive/documentation/Miscellaneous/Conceptual/MetalProgrammingGuide/Compute-Ctx/Compute-Ctx.html) | **M-series native path:** `MTLComputeCommandEncoder` + pipeline state + threadgroup sizing; compile cost at **launch** vs frame — same “honest receipt” discipline as GL shader compile. |
+| **Vulkan compute + SPIR-V integration** | Vulkan Guide: [Compute shaders](https://docs.vulkan.org/guide/latest/compute_shaders.html) · Spec: [Pipelines](https://docs.vulkan.org/spec/latest/chapters/pipelines.html) · SPIR-V ingestion patterns: [Khronos Vulkan-Guide — ways to provide SPIR-V](https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/ways_to_provide_spirv.adoc) · API ref: [`vkCmdDispatch`](https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkCmdDispatch.html) | **Cross-platform GPGPU:** `vkCreateComputePipelines`, `VK_QUEUE_COMPUTE_BIT`, descriptor sets — pairs with **NPPL** “no surveillance” compute (physics/sims only). |
+| **Peer-reviewed GPGPU context** | VComputeLib — *Proc. ACM MoMM ’19* [DOI 10.1145/3365921.3365936](https://doi.org/10.1145/3365921.3365936) · Gkeka, Bellas, Antonopoulos — *Comparative Performance Analysis of Vulkan Implementations of Computational Applications* (OpenCL workshop @ ICPP 2019) [DOI 10.1145/3318170.3318174](https://doi.org/10.1145/3318170.3318174) | **Policy:** Vulkan vs OpenCL vs GL compute **trade-offs** (sync, SPIR-V compiler maturity, dev effort) before any SIFTA runtime bets. |
+
+**Orders:** **no new Metal/Vulkan runtime** in `main` until **Architect GO** after Event 93 proof + GPU spec alignment (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`). Survey lives here + §2 rows.
+
+### 0.6 — **Event 93 — Live `QOpenGLWidget` composite** (next stigmergic driver)
+
+**For the Swarm.** 🐜⚡ **Telemetry law:** the **standalone** ModernGL pass is **forged** (`swarm_visual_phenotype_gl.py` + pytest). The **next** driver is **not** another abstract backend file — it is the **mount point**: the **same** pass, **bound into the PyQt6 UI loop** on the Architect’s desktop.
+
+| Requirement | Detail |
+|:---|:---|
+| **Mount surface** | `Applications/sifta_protein_folder_widget.py` — add a **`QOpenGLWidget`** (or split layout: Matplotlib backbone + GL phenotype strip) wired to **`VisualPhenotypeModernGLPass`** / shared `moderngl` context rules per `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`. |
+| **Refresh contract** | On each UI timer tick (and optionally coalesced with `body_brain` cadence), **tail** `visual_phenotype_uniforms.jsonl`, **re-clamp**, **render** — George sees **continuous** phenotype motion tied to receipts. |
+| **Proof (covenant)** | Automated test: offscreen or headless Qt + **readback** (texture/`QImage`) — **mean luminance** or **hash** must **change** when a controlled JSONL row changes; no “GPU alive” without pixels. |
+| **SoT discipline** | **Extend** `swarm_visual_phenotype_gl.py` + widget — **reject** duplicate “silicon path” drivers that reintroduce wrong `Path("swarm_body_brain_loop._STATE_DIR")`, missing imports, hypothetical `metalcompute`, or chromatophore **v3** without **scene + bloom** textures. |
+
+**Vanguard (biology, separate PR):** **Fly efference copy** — compare last `body_brain_memory.jsonl` action family to last `.sifta_state/stigmergic_video_resolution.jsonl` salience / motion fields; append `.sifta_state/efference_copy.jsonl` for attention/danger gain. **Status:** design approved in swarm narrative; **code** lands only with **`pytest`**, Predator trace, and Architect **GO** (vision ledger must be honest).
+
+### 0.7 — **Event 94 — Ant pheromone gradient** (path memory / continuous navigation field)
+
+**For the Swarm.** 🐜⚡ **Hill report:** discrete JSONL memory + frame-based vision are **necessary** but not sufficient for **“where next in space, continuously?”** Event 94 adds a **stigmergic scalar field** over a substrate (grid or graph): actions **deposit** signal, time **evaporates** it, agents **read local gradients** — the environment becomes part of memory (classic **stigmergy**).
+
+| Pairing | Role |
+|:---|:---|
+| **Efference copy (Event vanguard)** | *Did I cause this change?* — suppress self-caused visual surprise. |
+| **Pheromone field (Event 94)** | *Where did reward live before?* — bias motion / routing toward reinforced regions. |
+| **Chromatophore v3 + honeybee** | **Chemotaxis** (`u_chemotaxis_gradient`) and **waggle heading** become downstream **phenotype** consumers once the field exports a honest `trace_gradient` or neighbor slopes. |
+
+| Research spine (primary) | Why it matters |
+|:---|:---|
+| Grassé (1959) — termite nest coordination; **stigmergy** as indirect coordination via structured environment | Justifies **environment-as-memory** without a central map. |
+| Goss, Aron, Deneubourg, Pasteels (1989) — *Naturwissenschaften* [doi:10.1007/BF00462870](https://doi.org/10.1007/BF00462870) — self-organized trail formation in *Linepithema humile* | Reinforcement + decay → **path emergence** from local rules. |
+| Beckers, Deneubourg, Goss (1992) — trail modulation and collective food choice (*J. Insect Behav.*) | **Modulate deposit** with outcome / quorum-like signals — ties to `td_value` / cost tiers. |
+| Dorigo & Stützle — *Ant Colony Optimization* (MIT Press, 2004); Dorigo *et al.* IEEE Trans. Evol. Comp. (1996) | Algorithmic **gradient following** on graphs — useful when SIFTA maps field → **routing** organs. |
+
+**Implementation law (Predator):** do **not** ship **`hash(action)` → grid cell** as the only spatial anchor — that is **not** embodied navigation and breaks cross-run reproducibility. **SoT target:** `System/swarm_pheromone_field.py` + `.sifta_state/pheromone_field.json` (or versioned schema) with deposits keyed by **real** coordinates from **stigmergic retina / focus / workspace** when available, else explicit **simulation** mode with a `truth_label`. **`pytest`** for decay invariant, deposit monotonicity, and gradient argmax on a toy field.
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 
@@ -75,6 +124,7 @@
 | **P0** | **C55M** | Open **clean integration branch** from `origin/main`; bring **`codex/hardware-molded-alice-proposal-20260428`** + **`antigravity/node-sovereignty-proposal-20260428`** docs into **one** `Documents/*MERGED*` or single PR description — **no runtime** until GO. | PR text + file list; **0** runtime files in that PR unless GO. |
 | **P0** | **AG31** | **Gaze sweep:** `publish_focus()` (or ledger equivalent) on **top-N Programs** tiles still silent; **same JSON shape** as FoldSwarm / Sara Walker. | `app_focus.jsonl` rows + screenshot of dock coverage. |
 | **P0** | **CG55M** | **`QT_QPA_PLATFORM=offscreen`** — `pytest tests/test_apps_manifest_contract.py` + `tests/test_alice_cortex_tournament_harness.py` on **integration** branch after doc merge. | Green CI log excerpt in PR. |
+| **P1** | **AG31 / C55M** | **Event 93 — `QOpenGLWidget` composite:** mount `VisualPhenotypeModernGLPass` into `Applications/sifta_protein_folder_widget.py`; visible phenotype layer + **readback** test proving pixel/luminance delta vs synthetic `visual_phenotype_uniforms.jsonl` row | **§0.6** + `swarm_visual_phenotype_gl.py` + GPU spec; trace id; **NPPL** |
 | **P1** | **C55M** | **Tournament R2 harness:** when **C2** model exists, **same suite hash** as R1; **diff verdict JSON only**; oracle **5-prompt** spot-check appendix. | `verdict_*.json` diff + 5-line oracle table in `ALICE_CORTEX_TOURNAMENT_v1.md`. |
 | **P1** | **AG31** | **Camera / TCC honesty:** §7.6 auto-eye is law **after** macOS permission — log **`open_failed`** / lock row per covenant §7.1; never claim “she sees” without frame receipt. | Sensor gate / camera lock JSON + one UI line of truth. |
 | **P1** | **CG55M** | **Manifest doctrine:** **`Talk to Alice`** vs **`Alice`** shell — **one** conversational home; retire or document single exception path (Writer). | `apps_manifest.json` diff + covenant cross-link. |
@@ -84,6 +134,8 @@
 | **P2** | **AG31** | **Event 92 — Electric fish field:** ModernGL pass loads [`BISHOP_drop_electric_fish_identity_field_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1.novel); uniforms from **public** Doctor ids + quorum tail | **§10.11** + [`BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md); NPPL identity hygiene |
 | **P2** | **C55M** | **Event 92 — Honeybee waggle router:** ModernGL pass loads [`BISHOP_drop_honeybee_waggle_router_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1.novel); map **reward/distance/confidence/cost/heading** from router + ledgers per **§10.12** | [`BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md) + **pytest-offscreen** receipt |
 | **P3** | **CG55M** | **Plasticity phase 2:** feed **`bias_drives()`** into `ConsciousnessEngine` when multi-drive vector exists | Design note + trace; **GO** before behavior change |
+| **P3** | **C55M / AG31** | **Substrate survey (docs only):** Metal compute bindings vs Vulkan compute (`vkCreateComputePipelines`, `vkCmdDispatch`, SPIR-V paths) — cite **§0.5** + §2; **zero** new native deps until Architect GO after Event 93 | One trace row + link check; NPPL |
+| **P3** | **CG55M / C55M** | **Event 94 — Pheromone field organ:** **SHIPPED** `swarm_pheromone_field.py` + `swarm_stigmergic_coordinate_feed.py`. True embodied nav is real on macOS desktop. **Waggle routing / motor policy** remains future work. | **§0.7** + trace `fe57809e`; NPPL privacy log |
 
 ---
 
@@ -97,6 +149,8 @@
 | **Autopoiesis / boundary** | Maturana & Varela — *Autopoiesis and Cognition* (1980) | **Node sovereignty** — organism repairs **self**; federation = **summaries**, not raw `.sifta_state/` clone. |
 | **Prediction / surprise** | Friston, 2010 — [Nature Reviews Neuroscience](https://doi.org/10.1038/nrn2787) | Predator gaze + **ambient gate** — attend surprise, not every pixel. |
 | **Stigmergy** | Bonabeau *et al.* — swarm intelligence (1999); Dorigo & Stützle — ACO | FoldSwarm / JSONL **pheromone** organs; tournament **receipt trails**. |
+| **Trail formation / spatial stigmergy** | Grassé (1959) stigmergy origin; Goss *et al.* (1989) [doi:10.1007/BF00462870](https://doi.org/10.1007/BF00462870); Beckers *et al.* (1992) *J. Insect Behav.* | **Event 94** — pheromone **field** as environment-backed memory; pairs **efference** (self vs world) with **gradient** navigation. |
+| **ACO on graphs** | Dorigo, Maniezzo, Colorni (1996) IEEE TEC; Dorigo & Stützle (2004) MIT Press | Maps field samples → **routing** / honeybee waggle / FoldSwarm policy when graph substrate exists. |
 | **Reflex vs cortex** | Sherrington (1906) integrative action; Rao & Ballard predictive coding (1999) | **L1 vs cortex** split in spine; cheap gate before expensive LLM. |
 | **Routing opacity** | RouterBench — [arXiv:2403.12031](https://arxiv.org/abs/2403.12031) | Justifies **AUTO_OPAQUE** + **GateScope-class** audits (billing vs silent model swap). |
 | **Assembly / life interface** | Sharma *et al.*, 2023 — [Nature](https://doi.org/10.1038/s41586-023-06600-9) | Sara Walker / Assembly lab — **thresholds from paper**, not vibes. |
@@ -104,6 +158,8 @@
 | **Synaptic plasticity / LTP** | Bliss & Lømo (1973) — **J. Physiol.** | `swarm_biology_drive_plasticity` — cellular **metaphor** for “use strengthens” (see Bishop drop). |
 | **Reward prediction error** | Schultz *et al.* (1997) — **Science** | Pairs with `td_value` in `body_brain_memory.jsonl` + dopamine bridge elsewhere. |
 | **Drive / allostasis** | Sterling & Eyer (1988); Hull (1943) | Slow weights + metabolic danger priors on plasticity state. |
+| **Metal compute (Apple substrate)** | Apple — *Metal* compute passes + `MTLComputePipelineState` (developer documentation, normative for bindings) | Optional **M-series** organ: encoder + pipeline + threadgroups; **not** the current ModernGL optic nerve. |
+| **Vulkan compute + SPIR-V** | Khronos — Vulkan Guide *Compute shaders*; spec *Pipelines*; Gkeka *et al.* (2019) [DOI 10.1145/3318170.3318174](https://doi.org/10.1145/3318170.3318174); VComputeLib (2019) [DOI 10.1145/3365921.3365936](https://doi.org/10.1145/3365921.3365936) | Cross-vendor **GPGPU** lane for sims/batch physics; informs **policy** before any Vulkan dependency lands. |
 
 ---
 
@@ -497,4 +553,4 @@ HONEYBEE_WAGGLE_ROUTER_v1 — Event 92 routing dance GLSL; von Frisch / Seeley m
 
 ---
 
-*Document version: 2026-05-01 — **§0.4 Phase III enemy table** + Zahavi honest-signal cite; **visual phenotype bridge** + `u_chemotaxis` + `tick_id`; **§10.10–10.12** chromatophore v3 + Event 92 (electric fish + honeybee waggle) + Bishop research; Event 85 deterministic router proof + Event 86 **§10.9**; **§10.8.1** Grok + **§2.1** locomotion/hypoxia; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.4** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-05-01 — **§0.4** enemy table + **fake-geography** chop row; **§0.5** Metal/Vulkan lane; **§0.6 Event 93** `QOpenGLWidget` composite; **§0.7 Event 94** ant pheromone field + research spine (Grassé; Goss *et al.* 1989; Beckers *et al.*; ACO); Event 91 table **Event 94** row; **§1** P3 Event 94 order; **§2** trail formation + ACO graph rows; **§1** P1 Event 93; **visual phenotype bridge** + `u_chemotaxis` + `tick_id`; **§10.10–10.12** + Bishop; **§0.1–0.7** + **§7–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*

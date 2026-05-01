@@ -23,9 +23,9 @@ SIFTA translation:
   pheromone_field.json    → 32×32 float grid (decay + reinforce)
   sample_gradient()       → "where should Alice go next?"
 
-Truth label (§7.11): OPERATIONAL toy dynamics — 32×32 is a proxy grid.
-  Real spatial coordinates require a live cursor / vision / map feed.
-  Do not claim this is production path-planning without that wiring.
+Truth label (§7.11): OPERATIONAL geometry via swarm_stigmergic_coordinate_feed.
+  Proxy HASH_PROXY mode is only used when the coordinate feed is unavailable.
+  Real spatial tracks are now local behavioral traces governed by NPPL.
 
 NPPL: no weapons coupling.
 """
