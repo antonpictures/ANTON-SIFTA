@@ -42,6 +42,47 @@ Ioan George Anton
 
 **In-repo spines (expand anytime):** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](../PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) §7.1 · [OWNER_FACE_PREDATOR_RESEARCH_SPINE.md](../OWNER_FACE_PREDATOR_RESEARCH_SPINE.md) · [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md).
 
+### A2b.1 — Literature spine → SIFTA organs (architecture map)
+
+**Diagram (export to PDF with the tables if you want one attachment bundle):**
+
+```mermaid
+flowchart LR
+  subgraph lit [Literature]
+    G[Grassé / Green nests]
+    B[Bonabeau / Dorigo]
+    H[Hochner octopus + Khatib fields]
+    M[Mead / DVS / Liang]
+    W[Wilson–McNaughton]
+    F[Dog sheep primate face-voice]
+  end
+  subgraph org [SIFTA organs code paths]
+    T["ide_stigmergic_trace.jsonl + FoldSwarm + UnifiedStigmergicField"]
+    O["swarm_octopus_arm.py + body monitor Octopus Arms"]
+    E["What Alice Sees + Event 90 resolution"]
+    D["swarm_dream_engine.py"]
+    P["swarm_face_detection / swarm_architect_identity"]
+  end
+  G --> T
+  B --> T
+  H --> O
+  M --> E
+  W --> D
+  F --> P
+```
+
+**Compact table (same mapping — paste into slides or PDF):**
+
+| Literature (group) | Biological principle | SIFTA organ (ground-truth module / ledger) |
+|:---|:---|:---|
+| Grassé / Green *PNAS* / Bonabeau / Dorigo–Stützle | Stigmergy; swarm construction; trail / ACO metaphors | **`UnifiedStigmergicField`** (`System/swarm_unified_field.py`), **FoldSwarm** sim, append-only **`ide_stigmergic_trace.jsonl`** + pheromone JSONL organs |
+| Hochner (octopus) + Khatib (fields) | Distributed motor; spatial goal/obstacle fields | **`swarm_octopus_arm.py`** · **`swarm_isaac_stigmergy_bridge.py`** (stub / sim receipts) · **`swarm_body_monitor.py`** “Octopus Arms” |
+| Mead / Lichtsteiner–Posch–Delbrück (DVS) / Liang *Sci. Robot.* | Neuromorphic & sparse / event-driven sensing | **`Applications/sifta_what_alice_sees_widget.py`** → **`visual_stigmergy.jsonl`** · **`System/swarm_stigmergic_video_resolution.py`** → **`stigmergic_video_resolution.jsonl`** (Event 90) |
+| Wilson–McNaughton | Hippocampal replay during sleep | **`System/swarm_dream_engine.py`** (+ body-brain hook; see Event 88 drops) |
+| Guo / Racca / Root-Gutteridge / Kendrick / Pascalis | Multimodal embodied recognition | **`System/swarm_face_detection.py`**, **`System/swarm_architect_identity.py`**, composite / owner genesis paths ([OWNER_FACE…](../OWNER_FACE_PREDATOR_RESEARCH_SPINE.md)) |
+
+**Note:** **Physarum** in-repo (`swarm_physarum_solver`, contradiction lab) is a **routing / foraging math** organ — not the camera retina. Keep **eye** mapped to **Alice widget + Event 90**, not Physarum, unless you add a new truth-labeled row after you actually wire that metaphor in code.
+
 ### I — Stigmergy & collective construction (social insects)
 
 | Claim in mail | Primary literature | Stable id |

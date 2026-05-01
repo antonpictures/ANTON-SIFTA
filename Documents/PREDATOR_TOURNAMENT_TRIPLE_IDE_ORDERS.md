@@ -22,15 +22,15 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-04-28T14:46:14-07:00` — *CG55M NVIDIA battlefield row; Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T10:26:00-07:00` — *CG55M refresh: outreach A2b organ map + battle brief; Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
-| **Git** | `main` @ ledger repair tip **`f1ab74e8`** (verify with `git rev-parse --short HEAD`) · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
-| **Active doctors** | CG55M (Cursor): **Surgeon** — `nvidia_open_assets_registry.py` + battlefield doc · C55M: **Probe/Surgeon** — Isaac Lab survey doc (P2 order still open) · AG31: **Release/Surgeon** — HF / web pulls per Architect |
-| **Hot surfaces** | `System/nvidia_open_assets_registry.py`, `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md`, `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`), `.sifta_state/work_receipts.jsonl` (append-only) |
-| **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns registry + battlefield MD for this bolus; **AG31** yields unless extending HF dataset card snapshot with GO |
-| **Trace checkpoint** | tail `ide_stigmergic_trace.jsonl` after next NVIDIA pull; include `intent: NVIDIA_OPEN_ASSETS_*` |
-| **Collision risk** | **LOW** — ledger JSONL repaired (`f1ab74e8`); remain **MED** if C55M + AG31 both touch Isaac stub without trace |
-| **Next safe move** | C55M lands **Isaac Lab wire survey**; CG55M keeps **pytest** green on registry; AG31 optional **HF dataset subset** only with Architect **GO** (no LFS blobs in git). |
+| **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
+| **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
+| **Hot surfaces** | `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md`, `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, `System/nvidia_open_assets_registry.py`, `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md`, `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`), `.sifta_state/work_receipts.jsonl` (append-only) |
+| **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
+| **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
+| **Collision risk** | **MED** — multi-lane (outreach + GPU + NVIDIA registry); **LOW** if each Doctor tails trace + yields on duplicate intent |
+| **Next safe move** | Codex implements GPU spec slices with **pytest-offscreen** bars; C55M Isaac survey; CG55M keeps **registry + tournament docs** green; Architect **GO** before wiring bloom → `body_brain_memory.jsonl` claims in production UI. |
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 
