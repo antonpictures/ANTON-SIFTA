@@ -94,20 +94,35 @@ class SwarmPhysiology:
             
         return val
 
-    def _write_memory(self, action: Dict[str, Any], result: Dict[str, Any], value: float, now_state: Dict[str, Any]):
-        """Append to stigmergic ledger."""
+    def _write_memory(
+        self,
+        action: Dict[str, Any],
+        result: Dict[str, Any],
+        value: float,
+        now_state: Dict[str, Any],
+        *,
+        drive_state: str,
+        metabolic_mode: str,
+        plasticity_danger: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Append to stigmergic ledger; return row for downstream phenotype bridge."""
         circadian = now_state.get("circadian") if isinstance(now_state.get("circadian"), dict) else {}
-        row = {
+        row: Dict[str, Any] = {
             "event": "body_brain_tick",
             "action": action,
             "result": result,
             "td_value": value,
             "now_state": now_state,
             "circadian_phase": circadian.get("phase"),
-            "ts": time.time()
+            "drive_state": drive_state,
+            "metabolic_mode": metabolic_mode,
+            "ts": time.time(),
         }
+        if plasticity_danger:
+            row["plasticity_danger"] = plasticity_danger
         _STATE_DIR.mkdir(parents=True, exist_ok=True)
         append_line_locked(_STATE_DIR / "body_brain_memory.jsonl", json.dumps(row) + "\n")
+        return row
 
     def _maybe_sleep(self, body_state: MetabolicState, danger: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Glymphatic consolidation and rest enforcement."""
@@ -163,11 +178,11 @@ class SwarmPhysiology:
         
         # 6. Value Signal
         value = self._compute_value(result, danger)
+        d_token = plasticity_danger_token(str(danger.get("mode") or ""), now_state)
 
         # 6b. Drive plasticity (slow Hebbian / homeostatic weights on disk)
         drive_plasticity: Optional[Dict[str, Any]] = None
         try:
-            d_token = plasticity_danger_token(str(danger.get("mode") or ""), now_state)
             drive_plasticity = update_drive_plasticity(
                 active_drive=attention,
                 value=value,
@@ -177,7 +192,21 @@ class SwarmPhysiology:
             logger.exception("Drive plasticity update skipped")
 
         # 7. Memory Consolidation
-        self._write_memory(action, result, value, now_state)
+        mem_row = self._write_memory(
+            action,
+            result,
+            value,
+            now_state,
+            drive_state=str(attention),
+            metabolic_mode=str(danger.get("mode") or ""),
+            plasticity_danger=d_token,
+        )
+        try:
+            from System.swarm_visual_phenotype_bridge import write_visual_phenotype_uniforms
+
+            write_visual_phenotype_uniforms(mem_row)
+        except Exception:
+            logger.exception("Visual phenotype bridge skipped")
         
         # 8. Sleep / Recovery
         dream_cycle = self._maybe_sleep(body_state, danger)
