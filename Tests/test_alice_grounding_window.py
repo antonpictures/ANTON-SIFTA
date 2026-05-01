@@ -347,6 +347,26 @@ def test_false_workspace_refusal_is_quarantined_but_receipt_boundary_survives():
     assert result.text == real_boundary
 
 
+def test_internal_drive_prompt_is_proposal_not_autonomous_action():
+    mod = _load_widget_module()
+    prompt, system = mod._internal_drive_prompt(
+        {
+            "domain": "physics",
+            "intent": "Audit the free-energy field.",
+            "truth_label": "OPERATIONAL",
+            "action_policy": "proposal_only_requires_gate",
+        }
+    )
+
+    assert "INTERNAL DRIVE PROPOSAL" in prompt
+    assert "proposal_only_requires_gate" in prompt
+    assert "not external-action authorization" in system
+    assert "not a completed tool call" in system
+    assert "ask the Architect for GO" in system
+    assert "start researching/coding" not in system
+    assert "George Prior" not in system
+
+
 def test_bare_whatsapp_send_asks_for_message_body():
     mod = _load_widget_module()
     assert mod._bare_whatsapp_send_target("Please send him a message on WhatsApp to Carlton") == "Carlton"

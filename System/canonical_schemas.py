@@ -742,8 +742,48 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "usd_burn_24h",
         "local_units_24h",
         "stgm_balance",
+        "model_gb",
+        "recent_stgm_burn",
+        "error_rate",
         "recommendation",
         "ts",
+    },
+    # Operational embodied-consciousness heartbeat — written by
+    # System/swarm_consciousness_engine.py. Truth-labeled state only:
+    # no row here proves subjective qualia; it records heartbeat dynamics,
+    # metabolic/interoceptive signals, and drive proposals.
+    "consciousness_state.jsonl": {
+        "ts",
+        "heartbeat_index",
+        "dt_s",
+        "arousal",
+        "boredom",
+        "prediction_error",
+        "free_energy",
+        "metabolic_pressure",
+        "metabolic_mode",
+        "rest_seconds",
+        "interoception",
+        "dominant_drive",
+        "emitted_drive",
+        "truth_labels",
+        "subjective_consciousness_status",
+        "schema",
+        "module_version",
+    },
+    # Intrinsic drive proposals — written by
+    # System/swarm_consciousness_engine.py. These rows are internal
+    # hypotheses only; downstream effectors still require normal gates.
+    "alice_internal_drives.jsonl": {
+        "id",
+        "domain",
+        "intent",
+        "urgency",
+        "ts",
+        "truth_label",
+        "action_policy",
+        "source",
+        "schema",
     },
     # Merkle memory attestation anchors — written by System/swarm_merkle_attestor.py
     "memory_merkle_anchors.jsonl": {
