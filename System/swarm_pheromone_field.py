@@ -133,52 +133,86 @@ def read_last_action(path: Optional[Path] = None) -> Dict[str, Any]:
 
 # ── Core update ───────────────────────────────────────────────────────────
 
+# ── Real coordinate integration ───────────────────────────────────────────
+
+def _real_position() -> Tuple[int, int, str]:
+    """
+    Get best available grid position from real coordinates.
+    Priority: retina/visual_stigmergy > Quartz cursor > Brownian sim > hash.
+    Returns (gx, gy, truth_label).
+    """
+    try:
+        from System.swarm_stigmergic_coordinate_feed import best_grid_position
+        gx, gy, label = best_grid_position(GRID_SIZE, _state_dir())
+        return gx, gy, label
+    except Exception:
+        return 0, 0, "COORD_FEED_UNAVAILABLE"
+
+
+# ── Core update ───────────────────────────────────────────────────────────────
+
 def update_pheromone_field(
     row: Optional[Dict[str, Any]] = None,
+    x: Optional[int] = None,
+    y: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     One tick of the pheromone field:
       1. Load grid.
       2. Decay all cells (evaporation — Wilson 1971).
-      3. Deposit at action position weighted by td_value.
-      4. Save grid.
-      5. Return receipt.
+      3. Resolve grid position (real coords > cursor > hash proxy).
+      4. Deposit weighted by td_value.
+      5. Save grid.
+      6. Return receipt including coord_truth_label.
 
     row: optional body_brain_memory dict; reads from JSONL if None.
+    x, y: optional explicit grid cell (e.g. from caller with real coords).
     """
     grid = load_grid()
 
     # 1. Evaporation
-    for y in range(GRID_SIZE):
-        for x in range(GRID_SIZE):
-            grid[y][x] = max(0.0, grid[y][x] * DECAY)
+    for _y in range(GRID_SIZE):
+        for _x in range(GRID_SIZE):
+            grid[_y][_x] = max(0.0, grid[_y][_x] * DECAY)
 
-    # 2. Deposit
+    # 2. Read row
     if row is None:
         row = read_last_action()
 
     action = str(row.get("action", "observe"))
-    # td_value may live under "value" (older rows) or "td_value" (current)
     raw_val = row.get("td_value", row.get("value", 0.0))
     try:
         td_val = float(raw_val)
     except (TypeError, ValueError):
         td_val = 0.0
 
-    x, y    = action_to_position(action)
+    # 3. Resolve position (real coords > hash proxy)
+    coord_truth_label: str
+    if x is not None and y is not None:
+        gx, gy = int(x) % GRID_SIZE, int(y) % GRID_SIZE
+        coord_truth_label = "CALLER_SUPPLIED"
+    else:
+        gx, gy, coord_truth_label = _real_position()
+        if coord_truth_label == "COORD_FEED_UNAVAILABLE":
+            # Hash fallback — stable across restarts (SHA-256 based)
+            gx, gy = action_to_position(action)
+            coord_truth_label = "HASH_PROXY"
+
+    # 4. Deposit
     deposit = max(0.0, td_val) * DEPOSIT_STRENGTH
-    grid[y][x] = min(1.0, grid[y][x] + deposit)
+    grid[gy][gx] = min(1.0, grid[gy][gx] + deposit)
 
     save_grid(grid)
-    chemotaxis = chemotaxis_scalar(x, y)
+    chemotaxis = chemotaxis_scalar(gx, gy)
 
     return {
-        "ts":      time.time(),
-        "action":  action,
-        "position": [x, y],
-        "deposit": round(deposit, 4),
-        "cell_value": round(grid[y][x], 4),
+        "ts":                time.time(),
+        "action":            action,
+        "position":          [gx, gy],
+        "deposit":           round(deposit, 4),
+        "cell_value":        round(grid[gy][gx], 4),
         "chemotaxis_gradient": round(chemotaxis, 4),
+        "coord_truth_label": coord_truth_label,
     }
 
 
