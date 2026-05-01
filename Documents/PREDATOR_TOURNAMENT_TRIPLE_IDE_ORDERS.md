@@ -37,7 +37,7 @@
 | Track | Status | SoT |
 |:---|:---|:---|
 | **Drive plasticity organ** | **SHIPPED** — Hebb-style TD hook + homeostatic decay + danger/circadian priors; state file `.sifta_state/biology_drive_plasticity.json` | `System/swarm_biology_drive_plasticity.py` · `tests/test_swarm_biology_drive_plasticity.py` · body_brain return key `drive_plasticity` |
-| **Event 91 — Bioluminescent chromatophore** | **SPEC / vanguard** — computational frugality (sphere impostors) + bioluminescence metaphor; **do not** claim shipped product | `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/swarm_chromatophore_skin.py` (existing organ — extend on GO) |
+| **Event 91 — Bioluminescent chromatophore** | **NOVEL FRAGMENT LANDED** — GLSL v2 in archive + **DOCS** research spine; **not** wired to ModernGL until GO + pytest | [`BISHOP_drop_chromatophore_shader_v2.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2.novel) · [`BISHOP_drop_chromatophore_shader_v2_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2_RESEARCH.md) · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/swarm_chromatophore_skin.py` |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)

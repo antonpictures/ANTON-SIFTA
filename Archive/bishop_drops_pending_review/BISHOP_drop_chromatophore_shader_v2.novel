@@ -1,0 +1,50 @@
+// Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2.novel
+// ══════════════════════════════════════════════════════════════════════
+// Concept: The Bioluminescent Chromatophore (Stigmergic Bloom v2)
+// Author: BISHOP (The Vanguard) — Biocode Olympiad (Event 86 → 91)
+// Status: CLEAN NOVEL PATCH — Event 86 Covenant Compliant
+// Biology: Marine Bioluminescence + Chromatophore Neural Coupling
+// Physics: HDR Bloom + Metabolic Allometry + Stigmergic Drive
+// Version: 2026-05-01 — Event 86 (Red Queen colosseum)
+// Truth label (§7.11): OBSERVED engineering + PHILOSOPHICAL CLAIM (embodiment)
+
+#version 410 core
+
+in vec2 v_texcoord;
+uniform sampler2D u_scene_texture;
+uniform sampler2D u_bloom_blur_texture;
+
+// Biological + Stigmergic State Injection (from Alice cortex / SCAR)
+uniform float u_stigmergic_drive;        // 0.0 = rest, 1.0 = high biological pressure
+uniform float u_metabolic_scope;         // Kleiber-scaled power availability [0,1]
+uniform float u_cot_factor;               // Cost of Transport penalty from terrain (0 = optimal)
+uniform float u_quorum_signal;            // Accumulated QS threshold signal [0,1]
+
+out vec4 f_color;
+
+void main() {
+    vec3 base_color = texture(u_scene_texture, v_texcoord).rgb;
+    vec3 bloom_color = texture(u_bloom_blur_texture, v_texcoord).rgb;
+
+    // Novel Chromatophore Equation — maps bio models directly to visual drive
+    // Combines: stigmergic_drive × metabolic_scope × (1 - COT) × quorum_signal
+    float biological_intensity = u_stigmergic_drive
+                               * u_metabolic_scope
+                               * (1.0 - u_cot_factor)
+                               * (1.0 + 3.0 * u_quorum_signal);
+
+    // Exponential bloom scaling (true chromatophore expansion under drive)
+    float chromatophore_multiplier = 1.0 + (biological_intensity * 6.0);
+
+    // Stigmergic bloom with subtle pulsing (simulates neural coupling)
+    float pulse = 0.5 + 0.5 * sin(u_stigmergic_drive * 12.0); // low-frequency neural rhythm
+    vec3 final_color = base_color + (bloom_color * chromatophore_multiplier * pulse);
+
+    // HDR Tone Mapping (Reinhard + exposure bias)
+    float exposure = 0.8 + 0.6 * biological_intensity;
+    final_color = final_color / (1.0 + final_color);                    // Reinhard
+    final_color = vec3(1.0) - exp(-final_color * exposure);
+
+    // Final output with alpha for overlay blending
+    f_color = vec4(final_color, biological_intensity);
+}
