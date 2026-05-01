@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""
+System/swarm_body_brain_loop.py
+══════════════════════════════════════════════════════════════════════
+The Executable Physiology of the Swarm.
+
+This module converts the static body-brain architecture diagram into a living,
+executable tick. It connects the organism's interoception to its drives, routes
+those drives through action selection, executes them, measures the thermodynamic
+value of the result, writes stigmergic memory, and handles sleep/consolidation.
+
+Author: AG31 / Bishop Vanguard
+"""
+
+import time
+import json
+import logging
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from System.swarm_metabolic_homeostasis import MetabolicHomeostat, MetabolicState
+from System.swarm_consciousness_engine import ConsciousnessEngine, ConsciousnessEngineConfig, read_interoception
+from System.jsonl_file_lock import append_line_locked
+
+logger = logging.getLogger("BodyBrainLoop")
+_STATE_DIR = Path(".sifta_state")
+
+
+class SwarmPhysiology:
+    def __init__(self):
+        self.homeostat = MetabolicHomeostat()
+        self.consciousness = ConsciousnessEngine(cfg=ConsciousnessEngineConfig(spend_on_drive=True))
+
+    def _assess_danger(self, body_state: MetabolicState) -> Dict[str, Any]:
+        """Convert raw metabolic state into a danger/pressure signal."""
+        pressure = self.homeostat.pressure(body_state)
+        mode = self.homeostat.mode(pressure)
+        return {
+            "pressure": pressure,
+            "mode": mode,
+            "is_critical": mode in ("RED_CONSERVE", "CRITICAL_STARVATION")
+        }
+
+    def _select_attention(self, consciousness_state) -> str:
+        """Filter drives to focus the organism's attention."""
+        if consciousness_state.emitted_drive:
+            return consciousness_state.emitted_drive.domain
+        return consciousness_state.dominant_drive
+
+    def _choose_action(self, attention: str, danger: Dict[str, Any]) -> Dict[str, Any]:
+        """Basal Ganglia routing: what should we physically do?"""
+        if danger["is_critical"]:
+            return {"type": "rest", "reason": "starvation_or_heat"}
+        
+        if attention == "energy":
+            return {"type": "forage", "target": "pouw_work"}
+            
+        return {"type": "explore", "target": attention}
+
+    def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """Motor cortex/effectors. Simulated for the loop skeleton."""
+        # In a full run, this bridges to the Agent/Swimmer execution.
+        time.sleep(0.1) # Simulate physical time cost
+        return {
+            "status": "completed",
+            "action": action,
+            "latency": 0.1,
+            "energy_used": 0.05
+        }
+
+    def _compute_value(self, result: Dict[str, Any], danger: Dict[str, Any]) -> float:
+        """TD-Learning value assignment: was this good for the organism?"""
+        if result.get("status") == "completed":
+            # Survival value is higher when executed under danger
+            return 1.0 if not danger["is_critical"] else 2.5
+        return -1.0
+
+    def _write_memory(self, action: Dict[str, Any], result: Dict[str, Any], value: float):
+        """Append to stigmergic ledger."""
+        row = {
+            "event": "body_brain_tick",
+            "action": action,
+            "result": result,
+            "td_value": value,
+            "ts": time.time()
+        }
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        append_line_locked(_STATE_DIR / "body_brain_memory.jsonl", json.dumps(row) + "\n")
+
+    def _maybe_sleep(self, body_state: MetabolicState, danger: Dict[str, Any]):
+        """Glymphatic consolidation and rest enforcement."""
+        rest_sec = self.homeostat.rest_seconds(body_state, danger["pressure"])
+        if rest_sec > 0:
+            logger.info(f"Sleep enforced by metabolism. Resting {rest_sec}s.")
+            time.sleep(min(rest_sec, 2.0)) # Capped for testing
+
+    def body_brain_tick(self) -> Dict[str, Any]:
+        """The master unified cycle."""
+        
+        # 1. Interoception
+        raw_body = read_interoception(_STATE_DIR)
+        body_state = MetabolicHomeostat.sample_live(self.homeostat.cfg)
+        
+        # 2. Assess Danger
+        danger = self._assess_danger(body_state)
+        
+        # 3. Drives / Wants
+        # Tick the DMN to update arousal/boredom and emit drives if conditions allow
+        consc_state = self.consciousness.tick(
+            metabolic_state=body_state, 
+            commit=True
+        )
+        
+        # 4. Action Selection
+        attention = self._select_attention(consc_state)
+        action = self._choose_action(attention, danger)
+        
+        # 5. Execution
+        result = self._execute_action(action)
+        
+        # 6. Value Signal
+        value = self._compute_value(result, danger)
+        
+        # 7. Memory Consolidation
+        self._write_memory(action, result, value)
+        
+        # 8. Sleep / Recovery
+        self._maybe_sleep(body_state, danger)
+        
+        return {
+            "action": action,
+            "value": value,
+            "metabolic_mode": danger["mode"],
+            "drive_state": attention
+        }
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    print("Initiating Swarm Physiology Loop...")
+    physiology = SwarmPhysiology()
+    cycle_result = physiology.body_brain_tick()
+    print("Cycle complete:", json.dumps(cycle_result, indent=2))
