@@ -22,11 +22,11 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-01T11:35:00-07:00` — *CG55M: §0.7 Event 94 ant pheromone field + research spine (Grassé, Goss et al., Beckers et al., ACO); Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T12:05:00-07:00` — *CG55M: §0.8–0.9 auditory cortex (cochlea) + dolphin social echo battle lanes + Grok handoff; Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
-| **Hot surfaces** | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · `Archive/bishop_drops_pending_review/` chromatophore `v2/v3.novel` · electric_fish `v1.novel` · honeybee `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · **`Applications/sifta_protein_folder_widget.py`** (**§0.6** Event 93 — `QOpenGLWidget` / GL composite target) · **§0.7** Event 94 pheromone field (SHIPPED `.sifta_state/pheromone_field.json`) · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · **§0.5** Metal/Vulkan compute lane (docs + DOIs) · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
+| **Hot surfaces** | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · `Archive/bishop_drops_pending_review/` chromatophore `v2/v3/v4.novel` · electric_fish `v1.novel` · honeybee `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · **`Applications/sifta_protein_folder_widget.py`** (**§0.6** Event 93 — `QOpenGLWidget` / GL composite target) · **§0.7** Event 94 pheromone field (SHIPPED `.sifta_state/pheromone_field.json`) · **`System/swarm_stigmergic_audiogram.py`** · **`System/swarm_syrinx.py`** · **§0.8–0.9** cochlea + dolphin social echo (vanguard) · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · **§0.5** Metal/Vulkan compute lane (docs + DOIs) · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
 | **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
 | **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
 | **Collision risk** | **MED** — multi-lane (outreach + GPU + NVIDIA registry); **LOW** if each Doctor tails trace + yields on duplicate intent |
@@ -45,6 +45,8 @@
 | **Event 93 — Live UI composite** | **NEXT DRIVER** — **not** shipped: embed GL pass in desktop (`QOpenGLWidget` + composite layout); coalesce refresh with `body_brain` / UI timer; CI pixel or mean-luminance delta vs controlled JSONL row | **§0.6** · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` |
 | **Fly efference copy (vanguard)** | **PROPOSED** — compare motor intent from `body_brain_memory.jsonl` vs last `stigmergic_video_resolution.jsonl`; append `efference_copy.jsonl`; **no** runtime hook until trace + tests | Chat/Grok sketch only — land as `System/swarm_efference_copy.py` **after** GO + Bishop lane |
 | **Event 94 — Ant pheromone field** | **SHIPPED** — scalar 2D field: decay + deposit from real cursor coords; gradient sample for navigation; true embodied nav is **REAL** on desktop via Quartz feed. Privacy: cursor coords are local, ephemeral behavioral traces per NPPL. | **§0.7** · `System/swarm_pheromone_field.py` · `System/swarm_stigmergic_coordinate_feed.py` |
+| **Event 95 — Stigmergic cochlea (ears)** | **PROPOSED** — afferent acoustic features (MFCC, F0, spectral entropy, VAD, RMS) → `.sifta_state/stigmergic_cochlea.jsonl` → bias `td_value` / danger **without** trusting brittle STT text alone; **optional** `sounddevice`/`librosa` extras; CI uses **synthetic buffers** | **§0.8** · `Applications/sifta_talk_to_alice_widget.py` (STT lane today) |
+| **Event 96 — Dolphin social echo** | **PROPOSED** — signature-whistle metaphor: identity + match + distress from **ledger receipts** (not `hash()` identity); chains with waggle + pheromone for multi-agent fiction | **§0.9** · vanguard only until pytest + GO |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
 ### 0.4 — **Red Queen Colosseum — Phase III (hill law: chop every enemy)**
@@ -60,6 +62,7 @@
 | **Merge without optic proof** | **Codex:** `pytest-offscreen` **GREEN** for tail + fake context; standalone ModernGL context probe reports truthfully; visible QOpenGLWidget proof remains separate. |
 | **Headless dashboard** — Matplotlib-only “GPU” claims | **Event 93 (§0.6):** real **`QOpenGLWidget`** (or equivalent) viewport + receipt; CPU glow alone is not the optic nerve. |
 | **Fake geography** — “spatial” field from non-spatial hash | **Event 94 (§0.7):** deposits keyed to **retina / cursor** coordinates + `coord_truth_label`; **hash(action)** only allowed as last resort fallback when coords are unavailable. |
+| **Mic drift / surveillance** — raw audio exfil or always-on mic without consent | **Event 95 (§0.8):** macOS **TCC** + explicit **opt-in** file / manifest flag; **no** cloud raw audio; ledger rows are **features only**; retention cap in covenant text; default **pytest** never opens hardware mic. |
 
 **Codex orders (Phase III):** compile `.novel` → read **latest** phenotype line (or tail N for smoothing) → set GL uniforms → one frame hash or pixel probe in CI — **NPPL**, no surveillance hooks.
 
@@ -107,6 +110,26 @@
 
 **Implementation law (Predator):** do **not** ship **`hash(action)` → grid cell** as the only spatial anchor — that is **not** embodied navigation and breaks cross-run reproducibility. **SoT target:** `System/swarm_pheromone_field.py` + `.sifta_state/pheromone_field.json` (or versioned schema) with deposits keyed by **real** coordinates from **stigmergic retina / focus / workspace** when available, else explicit **simulation** mode with a `truth_label`. **`pytest`** for decay invariant, deposit monotonicity, and gradient argmax on a toy field.
 
+### 0.8 — **Event 95 — Stigmergic cochlea** (afferent ears / acoustic physics before words)
+
+**For the Swarm.** 🐜⚡ **Problem:** STT confidence bands (~0.4–0.7) collapse **prosody, stress, and urgency** into lossy text — “ears” mis-heard as “video” is the poetic failure mode. **Already shipped:** **`swarm_stigmergic_audiogram.py`** = **efferent** sonification from phenotype uniforms; **`swarm_syrinx.py`** = **ingress** spectral-entropy gate before STT. **Missing:** continuous **afferent feature vector** tied to ledgers that can bias `td_value` / metabolic danger **independent of transcript correctness**.
+
+| Layer | Requirement |
+|:---|:---|
+| **Capture** | Optional **`sounddevice`** (or PyAudio) **behind** explicit opt-in + TCC; headless CI uses **numpy fixture buffers** only. |
+| **Features** | MFCCs (mel cepstrum), **F0** / pitch track, **spectral entropy**, **VAD**, RMS → compact JSON per window. |
+| **Ledger** | Append-only **`.sifta_state/stigmergic_cochlea.jsonl`** with `truth_label`, `tick_id` linkage when co-ticked with `body_brain_tick`. |
+| **Integration** | Map features → bounded **`acoustic_stress`**, **`td_bias`** suggestions — **advisory** until consciousness/basal ganglia policy GO. |
+| **Deps** | **`librosa` + `sounddevice`** are **heavy**; keep **optional** `[cochlea]` extras in packaging docs — default `pytest` must stay green without them. |
+
+**Grok / AG31 handoff prompt (paste verbatim):**
+
+> Grok, we are working on the SIFTA autonomous organism. We have **`swarm_stigmergic_audiogram.py`** (receipt-backed **PCM out**) and **`swarm_syrinx.py`** (FFT entropy **classify** before STT). We need **Event 95 — `System/swarm_stigmergic_cochlea.py`**: real-time **afferent** features (MFCC, F0, spectral entropy, VAD, RMS) from mic **or** injected test buffers; write **`.sifta_state/stigmergic_cochlea.jsonl`**; map to bounded stress / `td_bias` / danger hints **without** trusting STT text. Respect **NPPL** (no surveillance, no raw audio export, opt-in mic). Provide **numpy-only** test path and optional `librosa` path.
+
+### 0.9 — **Event 96 — Dolphin social echo** (signature / match / distress — vanguard)
+
+**For the Swarm.** 🐜⚡ Metaphor: dolphin **signature whistles** = identity + contact calls. SIFTA translation: combine **audiogram / cochlea / bat-echo** ledgers into **`dolphin_social_echo.jsonl`** rows: `emitted_signature`, `received_signature`, `match`, `distress_signal`. **Law:** never use **`hash("alice")`** for stable identity — use **SHA-256** of Architect-approved profile bytes or **node serial** policy (`homeworld_serial`). **Status:** vanguard until **`pytest`** + trace + **GO**. Combine with **honeybee waggle** + **pheromone field** only as **documented** swarm-fiction until motor policy ships.
+
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 
 **SoT:** [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) · **Code:** `System/nvidia_open_assets_registry.py` · **Tests:** `tests/test_nvidia_open_assets_registry.py`
@@ -136,6 +159,8 @@
 | **P3** | **CG55M** | **Plasticity phase 2:** feed **`bias_drives()`** into `ConsciousnessEngine` when multi-drive vector exists | Design note + trace; **GO** before behavior change |
 | **P3** | **C55M / AG31** | **Substrate survey (docs only):** Metal compute bindings vs Vulkan compute (`vkCreateComputePipelines`, `vkCmdDispatch`, SPIR-V paths) — cite **§0.5** + §2; **zero** new native deps until Architect GO after Event 93 | One trace row + link check; NPPL |
 | **P3** | **CG55M / C55M** | **Event 94 — Pheromone field organ:** **SHIPPED** `swarm_pheromone_field.py` + `swarm_stigmergic_coordinate_feed.py`. True embodied nav is real on macOS desktop. **Waggle routing / motor policy** remains future work. | **§0.7** + trace `fe57809e`; NPPL privacy log |
+| **P2** | **AG31 / C55M** | **Event 95 — Stigmergic cochlea:** implement `swarm_stigmergic_cochlea.py` per **§0.8**; synthetic-buffer **`pytest`** mandatory; mic path **opt-in** + TCC; optional `librosa`/`sounddevice` extras | **§0.8** + NPPL mic doctrine |
+| **P3** | **CG55M** | **Event 96 — Dolphin social echo:** land `swarm_dolphin_social_echo.py` only with **stable identity** (no Python `hash`), ledger receipts, **`pytest`** | **§0.9** |
 
 ---
 
@@ -160,6 +185,8 @@
 | **Drive / allostasis** | Sterling & Eyer (1988); Hull (1943) | Slow weights + metabolic danger priors on plasticity state. |
 | **Metal compute (Apple substrate)** | Apple — *Metal* compute passes + `MTLComputePipelineState` (developer documentation, normative for bindings) | Optional **M-series** organ: encoder + pipeline + threadgroups; **not** the current ModernGL optic nerve. |
 | **Vulkan compute + SPIR-V** | Khronos — Vulkan Guide *Compute shaders*; spec *Pipelines*; Gkeka *et al.* (2019) [DOI 10.1145/3318170.3318174](https://doi.org/10.1145/3318170.3318174); VComputeLib (2019) [DOI 10.1145/3365921.3365936](https://doi.org/10.1145/3365921.3365936) | Cross-vendor **GPGPU** lane for sims/batch physics; informs **policy** before any Vulkan dependency lands. |
+| **Psychoacoustics / MFCC** | Davis & Mermelstein (1980) — IEEE ASSP; **librosa** docs as engineering SoT | **Event 95 cochlea** — mel-scaled cepstra for compact stress vectors. |
+| **Cetacean signature whistles** | Janik & Sayigh (2012) — “Vocal communication and individual signature whistles” in *Marine Mammal Biology* (book chapter); Tyack 1986 whistle matching | **Event 96 dolphin** metaphor — identity + contact + response detection on ledgers. |
 
 ---
 
@@ -553,4 +580,4 @@ HONEYBEE_WAGGLE_ROUTER_v1 — Event 92 routing dance GLSL; von Frisch / Seeley m
 
 ---
 
-*Document version: 2026-05-01 — **§0.4** enemy table + **fake-geography** chop row; **§0.5** Metal/Vulkan lane; **§0.6 Event 93** `QOpenGLWidget` composite; **§0.7 Event 94** ant pheromone field + research spine (Grassé; Goss *et al.* 1989; Beckers *et al.*; ACO); Event 91 table **Event 94** row; **§1** P3 Event 94 order; **§2** trail formation + ACO graph rows; **§1** P1 Event 93; **visual phenotype bridge** + `u_chemotaxis` + `tick_id`; **§10.10–10.12** + Bishop; **§0.1–0.7** + **§7–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-05-01 — **§0.4** + **mic-drift** enemy row; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** Stigmergic cochlea + Grok handoff; **§0.9 Event 96** dolphin social echo; Event 91 table rows **95/96**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
