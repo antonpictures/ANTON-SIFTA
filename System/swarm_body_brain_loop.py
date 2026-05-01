@@ -209,6 +209,12 @@ class SwarmPhysiology:
             write_visual_phenotype_uniforms(mem_row)
         except Exception:
             logger.exception("Visual phenotype bridge skipped")
+        try:
+            from System.swarm_pheromone_field import update_pheromone_field
+
+            update_pheromone_field(mem_row)  # Event 94: spatial path memory deposit
+        except Exception:
+            logger.exception("Pheromone field update skipped")
         
         # 8. Sleep / Recovery
         dream_cycle = self._maybe_sleep(body_state, danger)
