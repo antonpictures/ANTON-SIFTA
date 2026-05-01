@@ -1321,6 +1321,21 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "best_metrics",        # dict — path/entropy/danger/repair/prediction/compute
         "ts",                  # float
     },
+
+    # ── Event 90 — Stigmergic Video Resolution / Neuromorphic Retina (AG31 2026-05-01) ──
+    # Producer: System/swarm_stigmergic_video_resolution.py
+    # Quantizes full camera pixel data into actionable biological salience.
+    "stigmergic_video_resolution.jsonl": {
+        "ts",
+        "frame_id",
+        "camera_pixels_total",
+        "stigmergic_grid",
+        "total_stig_cells",
+        "active_salient_cells",
+        "pixels_per_stig_cell",
+        "salience_density",
+        "unified_field_payload",
+    },
 }
 
 
