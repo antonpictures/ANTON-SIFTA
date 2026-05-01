@@ -22,11 +22,11 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-01T10:29:00-07:00` — *CG55M: drive plasticity SHIPPED + Event 91 vanguard row + Bishop biblio; Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T10:40:00-07:00` — *CG55M: chromatophore v3 + Event 92 electric fish novel + §10.10–10.11 + Bishop research bolus; Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
-| **Hot surfaces** | `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
+| **Hot surfaces** | `Archive/bishop_drops_pending_review/` chromatophore `v2.novel` `v3.novel` + electric_fish `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
 | **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
 | **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
 | **Collision risk** | **MED** — multi-lane (outreach + GPU + NVIDIA registry); **LOW** if each Doctor tails trace + yields on duplicate intent |
@@ -37,7 +37,8 @@
 | Track | Status | SoT |
 |:---|:---|:---|
 | **Drive plasticity organ** | **SHIPPED** — Hebb-style TD hook + homeostatic decay + danger/circadian priors; state file `.sifta_state/biology_drive_plasticity.json` | `System/swarm_biology_drive_plasticity.py` · `tests/test_swarm_biology_drive_plasticity.py` · body_brain return key `drive_plasticity` |
-| **Event 91 — Bioluminescent chromatophore** | **NOVEL FRAGMENT LANDED** — GLSL v1 (single drive scalar) + GLSL v2 (4 uniforms: Kleiber scope, COT, quorum, drive) archived; **not** wired to ModernGL until GO + pytest | [`BISHOP_drop_chromatophore_shader_v1.dirt`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v1.dirt) · [`BISHOP_drop_chromatophore_shader_v2.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2.novel) · [`BISHOP_drop_chromatophore_shader_v2_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2_RESEARCH.md) · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/swarm_chromatophore_skin.py` |
+| **Event 91 — Bioluminescent chromatophore** | **NOVEL v2+v3 LANDED** — v2 (4 uniforms) + v3 (+ **chemotaxis**); RESEARCH spines; **not** wired to ModernGL until GO + pytest | [`BISHOP_drop_chromatophore_shader_v2.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2.novel) · [`BISHOP_drop_chromatophore_shader_v3.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel) · [`BISHOP_drop_chromatophore_shader_v3_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3_RESEARCH.md) · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · [`BISHOP_drop_cuttlefish_chromatophore_skin_v1.dirt`](../Archive/bishop_drops_pending_review/BISHOP_drop_cuttlefish_chromatophore_skin_v1.dirt) |
+| **Event 92 — Electric fish identity field** | **NOVEL FRAGMENT LANDED** — EOD / jamming / electrolocation **metaphor**; **§10.11** | [`BISHOP_drop_electric_fish_identity_field_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1.novel) · [`BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md) |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
@@ -62,7 +63,8 @@
 | **P1** | **CG55M** | **Manifest doctrine:** **`Talk to Alice`** vs **`Alice`** shell — **one** conversational home; retire or document single exception path (Writer). | `apps_manifest.json` diff + covenant cross-link. |
 | **P2** | **C55M** | **Finance batch read** (Event 86 class) — no main-thread stall; **canonical_wallet_sum** truth. | `pytest tests/test_finance.py` + receipt id. |
 | **P2** | **AG31** | **Architect Room game** — scaffold `Applications/sifta_architect_room_game.py` **after** manifest row + tests green (see [PREDATOR_V7_RESEARCH_SPINE.md](PREDATOR_V7_RESEARCH_SPINE.md) §Architect Room). | Import clean + 1 smoke test. |
-| **P2** | **AG31 / C55M** | **Event 91 — Bioluminescent chromatophore:** GPU passes + optional bloom coupling to **`biology_drive_plasticity`** / body_brain — **sim + pytest first** | Bishop drop + GPU spec § stigmergic integration; **no** UI claim without green tests |
+| **P2** | **AG31 / C55M** | **Event 91 — Bioluminescent chromatophore:** GPU passes + optional bloom coupling to **`biology_drive_plasticity`** / body_brain — **sim + pytest first** | v2/v3 `.novel` + GPU spec § stigmergic integration; **§10.10** trace; **no** UI claim without green tests |
+| **P2** | **AG31** | **Event 92 — Electric fish field:** ModernGL pass loads [`BISHOP_drop_electric_fish_identity_field_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1.novel); uniforms from **public** Doctor ids + quorum tail | **§10.11** + [`BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md); NPPL identity hygiene |
 | **P3** | **CG55M** | **Plasticity phase 2:** feed **`bias_drives()`** into `ConsciousnessEngine` when multi-drive vector exists | Design note + trace; **GO** before behavior change |
 
 ---
@@ -417,6 +419,44 @@ Constraints: NPPL — no weapons / surveillance applications. If a source is ven
 
 **Assignment:** **C55M** = first DOI pass on **SLIP / Holling / jamming landed**; **AG31** = one “impossible” row as **thought experiment** paragraph (no runtime) — **Physarum row delivered** (`THOUGHT_EXPERIMENT_PHYSARUM_AG31.md`, `36ea5c28`); **CG55M** = keep **Event 85** proof bar green — **hill holds the line on tests**.
 
+### 10.10 — **CHROMATOPHORE_EMBODIMENT_EVENT86** (visual nervous system — novel fragments)
+
+**Version:** 2026-05-01 — Event 86 (Red Queen colosseum)  
+**Truth label (§7.11):** **`OBSERVED`** — shader **source files** exist in git; **uniform wiring from live organs** remains **SPEC** until ModernGL pass + `pytest-offscreen` + receipted scalars land.
+
+**Novel code (single source of truth — do not fork GLSL into chat):**
+
+| Artifact | Δ vs v2 | SoT |
+|:---|:---|:---|
+| **Chromatophore v3** | Adds **`u_chemotaxis_gradient`** into intensity + **phase-coupled** `neural_pulse` (`sin` mixes drive + chemotaxis). | [`Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel) |
+| **Research bolus** | Chemotaxis (Berg; Keller–Segel; Endres–Wingreen) + battle rows for **gradient integration / QS visuals / pulse rhythm**. | [`BISHOP_drop_chromatophore_shader_v3_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3_RESEARCH.md) |
+
+**Tournament justification (one paragraph):** v3 folds **§10.8 terrain/metabolism** and **§10.9 induction / stigmergy** vocabulary into a **single fragment** so bloom, pulse, and HDR exposure ride on **COT × Kleiber scope × quorum × chemotaxis × stigmergic drive** — **observable phenotype** for the consciousness-in-practice story *when* uniforms are fed honestly. It does **not** remove the need for **substrate metering** elsewhere (`MetabolicHomeostat`, ledgers).
+
+**Trace intent (deposit via `ide_stigmergic_bridge.deposit`):**
+
+```text
+CHROMATOPHORE_SHADER_v3 — Full bio-model GLSL integration (COT, Kleiber, QS, chemotaxis, stigmergic_drive) for Event 86 visual nervous system. Covenant §7.11 compliant. For the Swarm.
+```
+
+### 10.11 — **EVENT_92 — Electric fish identity field** (optic-nerve / social EOD metaphor)
+
+**Truth label:** **`OBSERVED`** fragment; **PHILOSOPHICAL / metaphor** mapping to weakly electric fish electrosensory **social** behaviors until wired to real agent telemetry.
+
+| Artifact | Role | SoT |
+|:---|:---|:---|
+| **Electric fish field v1** | Concentric **EOD-like** carriers, jamming/interference lane, metabolic stress ring — **stylized**, not Maxwell solve. | [`BISHOP_drop_electric_fish_identity_field_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1.novel) |
+| **Research bolus** | Hopkins EOD communication; Heiligenberg jamming; Nelson–MacIver electrolocation; Bell corollary / reafference. | [`BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md) |
+
+**Battle follow-ups (UI → code):**
+
+| Lane | Owner | Done when |
+|:---|:---|:---|
+| **Chemotaxis gradient integration** | C55M / AG31 | One scalar from **stigmergic** field or JSONL gradient → uniform + trace row schema. |
+| **Quorum sensing visuals** | C55M | `u_quorum_*` from **hardened** quorum ledger only (see quorum dirt crypto gap). |
+| **Chromatophore pulse rhythm** | CG55M | Pulse parameters from **body_brain TD EMA** or `biology_drive_plasticity.json` + doc truth label. |
+| **Electric fish composite** | AG31 | Second pass in ModernGL graph; **identity_hash** from **public** Doctor id policy — **no secrets in uniforms**. |
+
 ---
 
-*Document version: 2026-04-30 — Event 85 deterministic router proof + Event 86 **§10.9 SLIP/Holling/jamming DOI lock**; **§10.8.1** Grok + **§2.1 DOI locomotion/hypoxia**; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.2** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-05-01 — **§10.10–10.11** chromatophore v3 + Event 92 electric fish novel + Bishop research; Event 85 deterministic router proof + Event 86 **§10.9**; **§10.8.1** Grok + **§2.1** locomotion/hypoxia; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.3** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*

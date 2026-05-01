@@ -1,0 +1,39 @@
+// Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel
+// Event 86 Covenant Patch — Full Bio-Model Integration
+#version 410 core
+
+in vec2 v_texcoord;
+uniform sampler2D u_scene_texture;
+uniform sampler2D u_bloom_blur_texture;
+
+uniform float u_stigmergic_drive;      // 0..1  (Red Queen pressure)
+uniform float u_metabolic_scope;       // Kleiber-scaled rest budget
+uniform float u_cot_factor;            // Locomotion/terrain cost penalty
+uniform float u_quorum_signal;         // Accumulated signal for merge gate
+uniform float u_chemotaxis_gradient;   // Current trace gradient strength
+
+out vec4 f_color;
+
+void main() {
+    vec3 base = texture(u_scene_texture, v_texcoord).rgb;
+    vec3 bloom = texture(u_bloom_blur_texture, v_texcoord).rgb;
+
+    // Full §10.8/§10.9 biological mapping
+    float intensity = u_stigmergic_drive
+                    * u_metabolic_scope
+                    * (1.0 - clamp(u_cot_factor, 0.0, 1.0))
+                    * (1.0 + 4.0 * u_quorum_signal)
+                    * (1.0 + 2.0 * u_chemotaxis_gradient);
+
+    float bloom_scale = 1.0 + intensity * 7.5;
+    float neural_pulse = 0.6 + 0.4 * sin(u_stigmergic_drive * 18.0 + u_chemotaxis_gradient * 5.0);
+
+    vec3 final = base + bloom * bloom_scale * neural_pulse;
+
+    // Reinhard + exposure modulated by biological state
+    float exposure = 0.75 + 0.85 * intensity;
+    final = final / (1.0 + final);
+    final = vec3(1.0) - exp(-final * exposure);
+
+    f_color = vec4(final, intensity * 0.95 + 0.05);  // alpha carries drive for overlays
+}
