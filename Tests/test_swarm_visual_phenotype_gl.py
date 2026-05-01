@@ -83,6 +83,24 @@ def test_high_drive_brighter_than_low_drive() -> None:
     )
 
 
+def test_pheromone_field_brightens_optic_nerve() -> None:
+    from System.swarm_visual_phenotype_gl import mean_brightness_with_field
+
+    uniforms = {
+        "u_stigmergic_drive": 0.4,
+        "u_metabolic_scope": 0.8,
+        "u_cot_factor": 0.1,
+        "u_quorum_signal": 0.2,
+        "u_reward": 0.4,
+        "u_chemotaxis_gradient": 0.0,
+    }
+    empty = [[0.0] * 32 for _ in range(32)]
+    rich = [[1.0] * 32 for _ in range(32)]
+    lo = mean_brightness_with_field(uniforms, empty, width=128, height=128)
+    hi = mean_brightness_with_field(uniforms, rich, width=128, height=128)
+    assert hi > lo
+
+
 def test_zero_drive_does_not_produce_white() -> None:
     """Resting state should not produce a saturated/white frame."""
     from System.swarm_visual_phenotype_gl import mean_brightness

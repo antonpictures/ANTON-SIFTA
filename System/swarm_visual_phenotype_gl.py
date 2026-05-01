@@ -26,6 +26,7 @@ from typing import Any, Dict, Optional
 _REPO = Path(__file__).resolve().parent.parent
 _STATE_DIR = _REPO / ".sifta_state"
 DEFAULT_LEDGER = _STATE_DIR / "visual_phenotype_uniforms.jsonl"
+DEFAULT_PHEROMONE_FIELD = _STATE_DIR / "pheromone_field.json"
 DEFAULT_SHADER = _REPO / "Archive" / "bishop_drops_pending_review" / "BISHOP_drop_honeybee_waggle_router_v1.novel"
 
 TRUTH_LABEL = "MODERNGL_PASS_READY"
@@ -54,14 +55,18 @@ uniform float u_metabolic_scope;    // Kleiber tier          [0,2]
 uniform float u_cot_factor;         // cost-of-transport     [0,1]
 uniform float u_quorum_signal;      // quorum confidence     [0,1]
 uniform float u_chemotaxis_gradient;// scent trail strength  [0,1]
+uniform float u_reward;             // honest reinforcement [0,1]
 uniform float u_time;               // seconds (for pulse)
+uniform sampler2D u_pheromone_field;// Event 94 spatial memory texture
 
 float chromatophore_intensity() {
     float td    = clamp(abs(u_stigmergic_drive), 0.0, 1.0);
     float scope = clamp(u_metabolic_scope,       0.0, 2.0);
     float cot   = 1.0 / (1.0 + max(u_cot_factor, 0.0));
     float qrm   = 1.0 + 3.0 * clamp(u_quorum_signal, 0.0, 1.0);
-    return clamp(td * scope * cot * qrm, 0.0, 4.0);
+    float chem  = clamp(u_chemotaxis_gradient, 0.0, 1.0);
+    float rew   = clamp(u_reward, 0.0, 1.0);
+    return clamp(td * scope * cot * qrm * (1.0 + 4.0 * chem) * (1.0 + 2.5 * rew), 0.0, 8.0);
 }
 
 float glow(vec2 uv, float sharpness) {
@@ -72,13 +77,17 @@ float glow(vec2 uv, float sharpness) {
 void main() {
     float intensity = chromatophore_intensity();
     float reward    = clamp(u_stigmergic_drive, 0.0, 1.0);
-    float chem      = clamp(u_chemotaxis_gradient, 0.0, 1.0);
-    float pulse     = 0.5 + 0.5 * sin(u_time * 2.5 + intensity * 8.0);
+    vec4 field      = texture(u_pheromone_field, v_uv);
+    float trail     = clamp(field.r, 0.0, 1.0);
+    float evap      = clamp(field.g, 0.0, 1.0);
+    float chem      = max(clamp(u_chemotaxis_gradient, 0.0, 1.0), trail);
+    float pulse     = 0.5 + 0.5 * sin(u_time * 2.5 + intensity * 8.0 + trail * 6.0);
 
     vec3 color = vec3(0.012, 0.008, 0.022);
     float g    = glow(v_uv, 18.0) * intensity;
     color += mix(vec3(0.0, 0.2, 0.8), vec3(0.0, 1.0, 1.0), reward) * g * pulse;
     color += vec3(1.0, 0.75, 0.1) * glow(v_uv, 6.0) * chem * 0.5;
+    color += vec3(0.25, 0.75, 1.0) * trail * evap * 0.7;
     color += mix(vec3(0.0, 0.3, 1.0), vec3(1.0, 0.5, 0.0), reward)
              * glow(v_uv, 4.0) * intensity * 0.4;
 
@@ -167,6 +176,59 @@ def clamp_uniforms(row: Dict[str, Any]) -> Dict[str, float]:
         else:
             out[key] = _clamp(value, -10.0, 10.0, default)
     return out
+
+
+def read_pheromone_grid(path: Path | str = DEFAULT_PHEROMONE_FIELD, *, grid_size: int = 32) -> list[list[float]]:
+    """Read `pheromone_field.json` as a clamped square float grid."""
+
+    p = Path(path)
+    if not p.exists():
+        return [[0.0] * grid_size for _ in range(grid_size)]
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if (
+            isinstance(data, list)
+            and len(data) == grid_size
+            and all(isinstance(row, list) and len(row) == grid_size for row in data)
+        ):
+            return [
+                [_clamp(value, 0.0, 1.0, 0.0) for value in row]
+                for row in data
+            ]
+    except Exception:
+        pass
+    return [[0.0] * grid_size for _ in range(grid_size)]
+
+
+def pheromone_field_texture_bytes(
+    *,
+    grid: Optional[list[list[float]]] = None,
+    path: Path | str = DEFAULT_PHEROMONE_FIELD,
+    grid_size: int = 32,
+) -> tuple[bytes, tuple[int, int]]:
+    """Return RGBA8 bytes for the Event 94 pheromone texture.
+
+    R carries local pheromone strength. G carries visible evaporation/trail
+    confidence. B is a softened intensity helper for shaders that want it.
+    """
+
+    import numpy as np
+
+    source = grid if grid is not None else read_pheromone_grid(path, grid_size=grid_size)
+    arr = np.asarray(source, dtype=np.float32)
+    if arr.shape != (grid_size, grid_size):
+        arr = np.zeros((grid_size, grid_size), dtype=np.float32)
+    strength = np.clip(arr, 0.0, 1.0)
+    evaporation = np.where(strength > 0.0, np.clip(0.35 + 0.65 * strength, 0.0, 1.0), 0.0)
+    rgba = np.dstack(
+        [
+            strength,
+            evaporation,
+            np.sqrt(strength),
+            np.ones_like(strength),
+        ]
+    )
+    return (np.clip(rgba, 0.0, 1.0) * 255.0).astype("u1").tobytes(), (grid_size, grid_size)
 
 
 def read_last_jsonl_row(path: Path) -> Dict[str, Any]:
@@ -347,6 +409,7 @@ def render_to_rgba(
     width: int = 256,
     height: int = 256,
     t: float = 0.0,
+    pheromone_grid: Optional[list[list[float]]] = None,
 ) -> Any:
     """
     Render one chromatophore frame headless → RGBA numpy array (H,W,4) uint8.
@@ -372,9 +435,14 @@ def render_to_rgba(
         )
         vbo = ctx.buffer(verts)
         vao = ctx.simple_vertex_array(prog, vbo, "in_pos")
+        field_data, field_size = pheromone_field_texture_bytes(grid=pheromone_grid)
+        pheromone_texture = ctx.texture(field_size, 4, data=field_data)
         fbo = ctx.simple_framebuffer((width, height))
         fbo.use()
         ctx.clear(0.012, 0.008, 0.022, 1.0)
+        if "u_pheromone_field" in prog:
+            pheromone_texture.use(location=0)
+            prog["u_pheromone_field"].value = 0
         for key, val in uniforms.items():
             if key in prog:
                 prog[key].value = float(val)
@@ -394,6 +462,20 @@ def mean_brightness(uniforms: Dict[str, float], width: int = 256, height: int = 
     """
     import numpy as np
     rgba = render_to_rgba(uniforms, width, height)
+    return float(np.mean(rgba[:, :, :3].astype(float)))
+
+
+def mean_brightness_with_field(
+    uniforms: Dict[str, float],
+    pheromone_grid: list[list[float]],
+    width: int = 256,
+    height: int = 256,
+) -> float:
+    """Render with an explicit pheromone grid and return mean luminance."""
+
+    import numpy as np
+
+    rgba = render_to_rgba(uniforms, width, height, pheromone_grid=pheromone_grid)
     return float(np.mean(rgba[:, :, :3].astype(float)))
 
 
@@ -423,6 +505,7 @@ def _make_phenotype_widget() -> Optional[type]:
                 self._ctx    = None
                 self._prog   = None
                 self._vao    = None
+                self._pheromone_texture = None
                 self._t      = 0.0
                 self._frame: Optional[UniformFrame] = None
 
@@ -448,6 +531,7 @@ def _make_phenotype_widget() -> Optional[type]:
                 self._vao = self._ctx.simple_vertex_array(
                     self._prog, vbo, "in_pos"
                 )
+                self._refresh_pheromone_texture()
                 self._poll()
 
             def resizeGL(self, w, h):
@@ -460,6 +544,10 @@ def _make_phenotype_widget() -> Optional[type]:
                 self._t += 0.04
                 self._ctx.screen.use()
                 self._ctx.clear(0.012, 0.008, 0.022, 1.0)
+                self._refresh_pheromone_texture()
+                if self._pheromone_texture is not None and "u_pheromone_field" in self._prog:
+                    self._pheromone_texture.use(location=0)
+                    self._prog["u_pheromone_field"].value = 0
                 frame = self._frame
                 if frame:
                     for key, val in frame.uniforms.items():
@@ -471,6 +559,20 @@ def _make_phenotype_widget() -> Optional[type]:
 
             def _poll(self):
                 self._frame = self._tail.read_frame()
+
+            def _refresh_pheromone_texture(self):
+                if not self._ctx:
+                    return
+                data, size = pheromone_field_texture_bytes()
+                if self._pheromone_texture is None or self._pheromone_texture.size != size:
+                    if self._pheromone_texture is not None:
+                        try:
+                            self._pheromone_texture.release()
+                        except Exception:
+                            pass
+                    self._pheromone_texture = self._ctx.texture(size, 4, data=data)
+                else:
+                    self._pheromone_texture.write(data)
 
             @property
             def current_frame(self) -> Optional[UniformFrame]:
@@ -492,6 +594,7 @@ __all__ = [
     "DEFAULT_LEDGER",
     "DEFAULT_SHADER",
     "FULLSCREEN_VERTEX_SHADER",
+    "DEFAULT_PHEROMONE_FIELD",
     "SIFTAPhenotypeWidget",
     "TRUTH_LABEL",
     "UniformFrame",
@@ -500,8 +603,11 @@ __all__ = [
     "clamp_uniforms",
     "load_honeybee_fragment",
     "mean_brightness",
+    "mean_brightness_with_field",
     "modern_gl_available",
+    "pheromone_field_texture_bytes",
     "read_last_jsonl_row",
+    "read_pheromone_grid",
     "render_to_rgba",
     "summarize_uniform_frame",
     "try_create_standalone_context",

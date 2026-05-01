@@ -22,9 +22,11 @@ import numpy as np
 
 from System.swarm_visual_phenotype_gl import (
     DEFAULT_LEDGER,
+    DEFAULT_PHEROMONE_FIELD,
     UniformFrame,
     VisualPhenotypeUniformTail,
     clamp_uniforms,
+    pheromone_field_texture_bytes,
 )
 
 
@@ -33,7 +35,7 @@ DEFAULT_CHROMATOPHORE_SHADER = (
     _REPO
     / "Archive"
     / "bishop_drops_pending_review"
-    / "BISHOP_drop_chromatophore_shader_v3.novel"
+    / "BISHOP_drop_chromatophore_shader_v4.novel"
 )
 DEFAULT_OUTPUT_DIR = _REPO / "Tests" / "output"
 
@@ -103,6 +105,7 @@ class StigmergicOpenGLDriver:
         ctx: Any = None,
         uniforms_log: Path | str = DEFAULT_LEDGER,
         shader_path: Path | str = DEFAULT_CHROMATOPHORE_SHADER,
+        pheromone_path: Path | str = DEFAULT_PHEROMONE_FIELD,
     ) -> None:
         if width <= 0 or height <= 0:
             raise ValueError("width and height must be positive")
@@ -110,6 +113,7 @@ class StigmergicOpenGLDriver:
         self.width = int(width)
         self.height = int(height)
         self.shader_path = Path(shader_path)
+        self.pheromone_path = Path(pheromone_path)
         self.ctx = _create_context(standalone=standalone, existing_context=ctx)
         self._owns_context = ctx is None
         self.tail = VisualPhenotypeUniformTail(uniforms_log)
@@ -145,6 +149,8 @@ class StigmergicOpenGLDriver:
             4,
             data=_gradient_texture_rgba(self.width, self.height, bloom=True),
         )
+        field_data, field_size = pheromone_field_texture_bytes(path=self.pheromone_path)
+        self.pheromone_texture = self.ctx.texture(field_size, 4, data=field_data)
 
     def _load_program(self) -> Any:
         fragment_src = self.shader_path.read_text(encoding="utf-8")
@@ -170,12 +176,25 @@ class StigmergicOpenGLDriver:
         self._set_uniform("u_cot_factor", uniforms["u_cot_factor"])
         self._set_uniform("u_quorum_signal", uniforms["u_quorum_signal"])
         self._set_uniform("u_chemotaxis_gradient", uniforms["u_chemotaxis_gradient"])
+        self._set_uniform("u_reward", uniforms["u_reward"])
+
+    def _refresh_pheromone_texture(self) -> None:
+        field_data, field_size = pheromone_field_texture_bytes(path=self.pheromone_path)
+        if self.pheromone_texture.size != field_size:
+            try:
+                self.pheromone_texture.release()
+            except Exception:
+                pass
+            self.pheromone_texture = self.ctx.texture(field_size, 4, data=field_data)
+        else:
+            self.pheromone_texture.write(field_data)
 
     def render_frame(
         self,
         *,
         input_texture: Any = None,
         bloom_texture: Any = None,
+        pheromone_texture: Any = None,
         force_pull: bool = False,
     ) -> Any:
         """Render one frame and return the output texture."""
@@ -186,10 +205,16 @@ class StigmergicOpenGLDriver:
 
         scene = input_texture or self.scene_texture
         bloom = bloom_texture or self.bloom_texture
+        pheromone = pheromone_texture or self.pheromone_texture
+        if pheromone_texture is None:
+            self._refresh_pheromone_texture()
+            pheromone = self.pheromone_texture
         scene.use(location=0)
         bloom.use(location=1)
+        pheromone.use(location=2)
         self._set_uniform("u_scene_texture", 0)
         self._set_uniform("u_bloom_blur_texture", 1)
+        self._set_uniform("u_pheromone_field", 2)
         self._apply_uniforms(frame)
 
         import moderngl
@@ -253,6 +278,7 @@ class StigmergicOpenGLDriver:
             getattr(self, "output_texture", None),
             getattr(self, "scene_texture", None),
             getattr(self, "bloom_texture", None),
+            getattr(self, "pheromone_texture", None),
             getattr(self, "program", None),
         ):
             try:
@@ -270,12 +296,14 @@ def smoke_render_receipt(
     output_path: Path | str = DEFAULT_OUTPUT_DIR / "stigmergic_chromatophore_test.png",
     *,
     uniforms_log: Path | str = DEFAULT_LEDGER,
+    pheromone_path: Path | str = DEFAULT_PHEROMONE_FIELD,
 ) -> DriverFrameReceipt:
     driver = StigmergicOpenGLDriver(
         width=256,
         height=144,
         standalone=True,
         uniforms_log=uniforms_log,
+        pheromone_path=pheromone_path,
     )
     try:
         return driver.save_screenshot(Path(output_path))

@@ -12,7 +12,7 @@ in vec2 v_texcoord;
 uniform sampler2D u_scene_texture;           // Base protein impostor / geometry pass
 uniform sampler2D u_bloom_blur_texture;      // Previous bloom layer
 
-// Bio uniforms (strict clamps enforced upstream in Python)
+// Bio uniforms (strict clamps enforced upstream in Python; shader clamps again)
 uniform float u_stigmergic_drive;            // [0,1] Red Queen pressure
 uniform float u_metabolic_scope;             // [0,2] Kleiber-scaled energy
 uniform float u_cot_factor;                  // [0,10] host may clamp to [0,1] for this pass
@@ -31,22 +31,27 @@ void main() {
     vec3 bloom = texture(u_bloom_blur_texture, uv).rgb;
 
     vec4 field = texture(u_pheromone_field, uv);
-    float local_gradient = field.r;
-    float evaporation = field.g;
+    float local_gradient = clamp(field.r, 0.0, 1.0);
+    float evaporation = clamp(field.g, 0.0, 1.0);
 
-    float cot = clamp(u_cot_factor, 0.0, 1.0);
+    float cot = 1.0 / (1.0 + max(u_cot_factor, 0.0));
 
     // Honest signal core — Zahavi-style costly glow (uniforms bounded upstream)
-    float intensity = u_stigmergic_drive
-                    * clamp(u_metabolic_scope, 0.0, 2.0)
-                    * (1.0 - cot)
-                    * (1.0 + 3.5 * clamp(u_quorum_signal, 0.0, 1.0))
-                    * (1.0 + 4.0 * clamp(u_chemotaxis_gradient, 0.0, 1.0))
-                    * (1.0 + 2.5 * clamp(u_reward, 0.0, 1.0));
+    float chem = max(clamp(u_chemotaxis_gradient, 0.0, 1.0), local_gradient);
+    float intensity = clamp(
+        clamp(u_stigmergic_drive, 0.0, 1.0)
+        * clamp(u_metabolic_scope, 0.0, 2.0)
+        * cot
+        * (1.0 + 3.5 * clamp(u_quorum_signal, 0.0, 1.0))
+        * (1.0 + 4.0 * chem)
+        * (1.0 + 2.5 * clamp(u_reward, 0.0, 1.0)),
+        0.0,
+        8.0
+    );
 
     float pulse = 0.5 + 0.5 * sin(
         u_stigmergic_drive * 14.0
-        + clamp(u_chemotaxis_gradient, 0.0, 1.0) * 8.0
+        + chem * 8.0
         + local_gradient * 6.0
     );
 
