@@ -90,3 +90,29 @@ def test_integrate_to_body_brain_raises_td(tmp_path: Path) -> None:
     assert out["truth_label"] == sci.TRUTH_MULTISENSORY
     sci.append_integrated_tick(out, memory_path=mem, state_root=tmp_path)
     assert mem.read_text(encoding="utf-8").strip()
+
+
+def test_missing_modal_receipts_do_not_raise_td(tmp_path: Path) -> None:
+    base = _tick()
+    out = sci.integrate_to_body_brain(base, state_root=tmp_path)
+
+    assert out["td_value"] == base["td_value"]
+    assert out["collicular_salience"] == 0.0
+    assert out["multisensory_integrated"] is False
+    assert out["colliculus_overlay_status"] == sci.STATUS_NO_MULTISENSORY_RECEIPT
+    assert out["visual_receipt_backed"] is False
+    assert out["cochlea_receipt_backed"] is False
+
+
+def test_invalid_uniform_numbers_are_bounded(tmp_path: Path) -> None:
+    phen = tmp_path / "visual_phenotype_uniforms.jsonl"
+    phen.write_text(
+        json.dumps({"ts": 10.0, "u_stigmergic_drive": "bad", "u_metabolic_scope": 4.0, "u_heading": "nan"})
+        + "\n",
+        encoding="utf-8",
+    )
+    visual = sci.read_latest_visual_uniforms(phenotype_path=phen, state_root=tmp_path)
+
+    assert visual["u_stigmergic_drive"] == 0.2
+    assert visual["u_metabolic_scope"] == 1.0
+    assert visual["u_heading"] == 0.0

@@ -31,11 +31,33 @@ from System.swarm_stigmergic_cochlea_integrator import (
 _REPO = Path(__file__).resolve().parent.parent
 
 TRUTH_MULTISENSORY = "MULTISENSORY_COLLICULUS_MERGE"
+STATUS_MERGED = "MERGED"
+STATUS_NO_MULTISENSORY_RECEIPT = "NO_MULTISENSORY_RECEIPT"
 # Meredith/Stein temporal: broader window in seconds (video frame / cochlea window scale)
 TEMPORAL_TAU_SEC = 0.25
 # Spatial: radians mismatch decay (Wallace/Stein SC metaphors)
 SPATIAL_DECAY_PER_RAD = 2.0
 TD_SALIENCE_WEIGHT = 0.45
+
+
+def _clamp01(value: Any, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(number):
+        return default
+    return max(0.0, min(1.0, number))
+
+
+def _finite_float(value: Any, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(number):
+        return default
+    return number
 
 
 def _state_root() -> Path:
@@ -90,26 +112,17 @@ def read_latest_visual_uniforms(
             "ts": None,
             "visual_receipt_backed": False,
         }
-    try:
-        drive = float(row.get("u_stigmergic_drive", 0.2))
-    except (TypeError, ValueError):
-        drive = 0.2
-    try:
-        scope = float(row.get("u_metabolic_scope", 0.5))
-    except (TypeError, ValueError):
-        scope = 0.5
-    try:
-        heading = float(row.get("u_heading", 0.0))
-    except (TypeError, ValueError):
-        heading = 0.0
+    drive = _clamp01(row.get("u_stigmergic_drive"), default=0.2)
+    scope = _clamp01(row.get("u_metabolic_scope"), default=0.5)
+    heading = _finite_float(row.get("u_heading"), default=0.0)
     ts = row.get("ts")
     try:
         ts_f = float(ts) if ts is not None else None
     except (TypeError, ValueError):
         ts_f = None
     return {
-        "u_stigmergic_drive": max(0.0, min(1.0, drive)),
-        "u_metabolic_scope": max(0.0, min(1.0, scope)),
+        "u_stigmergic_drive": drive,
+        "u_metabolic_scope": scope,
         "u_heading": heading,
         "ts": ts_f,
         "visual_receipt_backed": True,
@@ -181,13 +194,28 @@ def compute_integrated_salience(
     owl_ts: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Fuse phenotype + cochlea (+ owl azimuth). Returns metrics + ``integrated_salience`` in [0, 1]."""
-    v_drive = max(0.0, min(1.0, float(visual.get("u_stigmergic_drive", 0.2))))
-    v_scope = max(0.0, min(1.0, float(visual.get("u_metabolic_scope", 0.5))))
-    v_heading = float(visual.get("u_heading", 0.0))
+    visual_ready = bool(visual.get("visual_receipt_backed", True))
+    cochlea_ready = bool(audio_feats.get("cochlea_receipt_backed", True))
+    if not (visual_ready and cochlea_ready):
+        return {
+            "integrated_salience": 0.0,
+            "spatial_alignment": 0.0,
+            "temporal_alignment": 0.0,
+            "inverse_effectiveness": 1.0,
+            "bimodal_core": 0.0,
+            "combined_raw": 0.0,
+            "overlay_status": STATUS_NO_MULTISENSORY_RECEIPT,
+            "visual_receipt_backed": visual_ready,
+            "cochlea_receipt_backed": cochlea_ready,
+        }
+
+    v_drive = _clamp01(visual.get("u_stigmergic_drive"), default=0.2)
+    v_scope = _clamp01(visual.get("u_metabolic_scope"), default=0.5)
+    v_heading = _finite_float(visual.get("u_heading"), default=0.0)
     v_ts = visual.get("ts")
 
-    a_stress = max(0.0, min(1.0, float(audio_feats.get("acoustic_stress", 0.1))))
-    a_danger = max(0.0, min(1.0, float(audio_feats.get("acoustic_danger_proxy", 0.0))))
+    a_stress = _clamp01(audio_feats.get("acoustic_stress"), default=0.1)
+    a_danger = _clamp01(audio_feats.get("acoustic_danger_proxy"), default=0.0)
 
     spatial = spatial_alignment(owl_azimuth_rad, v_heading)
     audio_ts = audio_feats.get("cochlea_ts")
@@ -221,6 +249,9 @@ def compute_integrated_salience(
         "inverse_effectiveness": round(float(inv), 6),
         "bimodal_core": round(float(core), 6),
         "combined_raw": round(float(combined_raw), 6),
+        "overlay_status": STATUS_MERGED,
+        "visual_receipt_backed": visual_ready,
+        "cochlea_receipt_backed": cochlea_ready,
     }
 
 
@@ -249,7 +280,11 @@ def integrate_to_body_brain(
     updated["colliculus_spatial_alignment"] = metrics["spatial_alignment"]
     updated["colliculus_temporal_alignment"] = metrics["temporal_alignment"]
     updated["colliculus_inverse_effectiveness"] = metrics["inverse_effectiveness"]
-    updated["multisensory_integrated"] = True
+    updated["multisensory_integrated"] = metrics["overlay_status"] == STATUS_MERGED
+    updated["colliculus_overlay_status"] = metrics["overlay_status"]
+    updated["visual_receipt_backed"] = bool(metrics["visual_receipt_backed"])
+    updated["cochlea_receipt_backed"] = bool(metrics["cochlea_receipt_backed"])
+    updated["owl_receipt_backed"] = owl_ts is not None
     updated["tick_source"] = "superior_colliculus_integrator"
     updated["truth_label"] = TRUTH_MULTISENSORY
     updated["colliculus_overlay_ts"] = time.time()
@@ -280,6 +315,8 @@ class SuperiorColliculusIntegrator:
 
 __all__ = [
     "SPATIAL_DECAY_PER_RAD",
+    "STATUS_MERGED",
+    "STATUS_NO_MULTISENSORY_RECEIPT",
     "TEMPORAL_TAU_SEC",
     "TD_SALIENCE_WEIGHT",
     "TRUTH_MULTISENSORY",
