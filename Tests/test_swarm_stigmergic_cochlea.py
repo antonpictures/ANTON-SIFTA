@@ -1,76 +1,80 @@
-import os
+"""Tests for Event 95 stigmergic cochlea feature extraction."""
+
+from __future__ import annotations
+
 import json
-import time
-import numpy as np
 from pathlib import Path
-from typing import Any
 
-from System.swarm_stigmergic_cochlea import StigmergicCochlea, COCHLEA_LOG
+import numpy as np
+import pytest
 
-
-def test_cochlea_default_state():
-    cochlea = StigmergicCochlea()
-    state = cochlea.get_latest_features()
-    assert state["vad_active"] == 0.0
-    assert state["danger_state"] == 0.0
-    assert "mfcc_mean" in state
+from System import swarm_stigmergic_cochlea as cochlea
 
 
-def test_cochlea_synthetic_buffer_loud_noise(monkeypatch: Any, tmp_path: Path):
-    tmp_log = tmp_path / "stigmergic_cochlea.jsonl"
-    monkeypatch.setattr("System.swarm_stigmergic_cochlea.COCHLEA_LOG", tmp_log)
-    monkeypatch.setattr("System.swarm_stigmergic_cochlea.STATE_DIR", tmp_path)
+def test_tone_extracts_pitch_and_low_entropy() -> None:
+    samples = cochlea.synthetic_tone(440.0, duration_s=0.35, amp=0.25)
+    frame = cochlea.analyze_buffer(samples, truth_label=cochlea.TRUTH_SYNTHETIC)
 
-    # Disable hardware mic completely for tests
-    monkeypatch.setenv("SIFTA_MIC_OPT_IN", "0")
-    
-    cochlea = StigmergicCochlea(samplerate=16000, block_duration=0.05)
-    cochlea.start()
-    
-    try:
-        # Generate loud synthetic noise (high RMS)
-        y = np.random.normal(0, 0.8, size=800)
-        cochlea.inject_synthetic_buffer(y)
-        
-        # Wait up to 2.0s for thread to process
-        for _ in range(20):
-            features = cochlea.get_latest_features()
-            if features["vad_active"] == 1.0:
-                break
-            time.sleep(0.1)
-            
-        assert features["vad_active"] == 1.0  # High RMS should trigger VAD
-        assert features["volume"] > 0.1
-        
-        # Verify ledger write
-        assert tmp_log.exists()
-        lines = tmp_log.read_text().strip().splitlines()
-        assert len(lines) > 0
-        written_state = json.loads(lines[-1])
-        assert "stress" in written_state
-    finally:
-        cochlea.stop()
+    assert frame.vad is True
+    assert 420.0 <= frame.f0_hz <= 460.0
+    assert frame.spectral_entropy < 0.35
+    assert len(frame.mfcc) == 13
+    assert all(np.isfinite(frame.mfcc))
 
 
-def test_cochlea_synthetic_buffer_silence(monkeypatch: Any, tmp_path: Path):
-    tmp_log = tmp_path / "stigmergic_cochlea.jsonl"
-    monkeypatch.setattr("System.swarm_stigmergic_cochlea.COCHLEA_LOG", tmp_log)
-    monkeypatch.setattr("System.swarm_stigmergic_cochlea.STATE_DIR", tmp_path)
-    monkeypatch.setenv("SIFTA_MIC_OPT_IN", "0")
-    
-    cochlea = StigmergicCochlea(samplerate=16000, block_duration=0.05)
-    cochlea.start()
-    
-    try:
-        # Generate silence
-        y = np.zeros(800)
-        cochlea.inject_synthetic_buffer(y)
-        
-        time.sleep(0.3)
-        
-        features = cochlea.get_latest_features()
-        assert features["vad_active"] == 0.0
-        assert features["volume"] < 0.01
-        
-    finally:
-        cochlea.stop()
+def test_noise_has_higher_entropy_than_tone() -> None:
+    rng = np.random.default_rng(42)
+    noise = rng.normal(0.0, 0.25, 16000).astype(np.float32)
+    tone = cochlea.synthetic_tone(440.0, duration_s=1.0, amp=0.25)
+
+    noise_frame = cochlea.analyze_buffer(noise)
+    tone_frame = cochlea.analyze_buffer(tone)
+
+    assert noise_frame.spectral_entropy > tone_frame.spectral_entropy
+    assert 0.0 <= noise_frame.acoustic_stress <= 1.0
+    assert noise_frame.vad is True
+
+
+def test_silence_is_quiet_and_feature_bounded() -> None:
+    frame = cochlea.analyze_buffer(np.zeros(4096, dtype=np.float32))
+
+    assert frame.vad is False
+    assert frame.rms == 0.0
+    assert frame.f0_hz == 0.0
+    assert frame.danger_hint == "ACOUSTIC_QUIET"
+    assert 0.0 <= frame.acoustic_stress <= 1.0
+    assert -0.2 <= frame.td_bias <= 0.2
+
+
+def test_write_cochlea_frame_logs_features_only(tmp_path: Path) -> None:
+    ledger = tmp_path / "stigmergic_cochlea.jsonl"
+    row = cochlea.analyze_and_write(
+        cochlea.synthetic_tone(330.0),
+        tick_id="tick-1",
+        truth_label=cochlea.TRUTH_SYNTHETIC,
+        ledger_path=ledger,
+    )
+
+    assert ledger.exists()
+    saved = json.loads(ledger.read_text(encoding="utf-8").strip())
+    assert saved["tick_id"] == "tick-1"
+    assert saved["raw_audio_logged"] is False
+    assert "buffer" not in saved
+    assert "samples" not in saved
+    assert saved["mfcc"] == row["mfcc"]
+
+
+def test_capture_default_is_synthetic_and_ci_safe(tmp_path: Path) -> None:
+    row = cochlea.capture_and_write(ledger_path=tmp_path / "cochlea.jsonl")
+
+    assert row["truth_label"] == cochlea.TRUTH_SYNTHETIC
+    assert row["source"] == "synthetic_440hz_tone"
+    assert row["raw_audio_logged"] is False
+
+
+def test_microphone_path_requires_prior_consent() -> None:
+    from System import audio_ingress
+
+    audio_ingress.disable_microphone()
+    with pytest.raises(cochlea.MicrophoneOptInRequired):
+        cochlea.capture_and_write(use_microphone=True)

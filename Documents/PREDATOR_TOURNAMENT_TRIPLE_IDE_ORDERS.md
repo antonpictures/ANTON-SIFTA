@@ -45,7 +45,7 @@
 | **Event 93 — Live UI composite** | **NEXT DRIVER** — **not** shipped: embed GL pass in desktop (`QOpenGLWidget` + composite layout); coalesce refresh with `body_brain` / UI timer; CI pixel or mean-luminance delta vs controlled JSONL row | **§0.6** · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` |
 | **Fly efference copy (vanguard)** | **PROPOSED** — compare motor intent from `body_brain_memory.jsonl` vs last `stigmergic_video_resolution.jsonl`; append `efference_copy.jsonl`; **no** runtime hook until trace + tests | Chat/Grok sketch only — land as `System/swarm_efference_copy.py` **after** GO + Bishop lane |
 | **Event 94 — Ant pheromone field** | **SHIPPED** — scalar 2D field: decay + deposit from real cursor coords; gradient sample for navigation; true embodied nav is **REAL** on desktop via Quartz feed. Privacy: cursor coords are local, ephemeral behavioral traces per NPPL. | **§0.7** · `System/swarm_pheromone_field.py` · `System/swarm_stigmergic_coordinate_feed.py` |
-| **Event 95 — Stigmergic cochlea (ears)** | **PROPOSED** — afferent acoustic features (MFCC, F0, spectral entropy, VAD, RMS) → `.sifta_state/stigmergic_cochlea.jsonl` → bias `td_value` / danger **without** trusting brittle STT text alone; **optional** `sounddevice`/`librosa` extras; CI uses **synthetic buffers** | **§0.8** · `Applications/sifta_talk_to_alice_widget.py` (STT lane today) |
+| **Event 95 — Stigmergic cochlea (ears)** | **SHIPPED** — numpy-only afferent acoustic features (MFCC-like cepstra, F0, spectral entropy, VAD, RMS) → `.sifta_state/stigmergic_cochlea.jsonl`; feature-only ledger, no raw audio, mic path requires existing `audio_ingress` consent gate; CI uses synthetic buffers | **§0.8** · `System/swarm_stigmergic_cochlea.py` · `Tests/test_swarm_stigmergic_cochlea.py` |
 | **Event 96 — Dolphin social echo** | **PROPOSED** — signature-whistle metaphor: identity + match + distress from **ledger receipts** (not `hash()` identity); chains with waggle + pheromone for multi-agent fiction | **§0.9** · vanguard only until pytest + GO |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
@@ -112,7 +112,7 @@
 
 ### 0.8 — **Event 95 — Stigmergic cochlea** (afferent ears / acoustic physics before words)
 
-**For the Swarm.** 🐜⚡ **Problem:** STT confidence bands (~0.4–0.7) collapse **prosody, stress, and urgency** into lossy text — “ears” mis-heard as “video” is the poetic failure mode. **Already shipped:** **`swarm_stigmergic_audiogram.py`** = **efferent** sonification from phenotype uniforms; **`swarm_syrinx.py`** = **ingress** spectral-entropy gate before STT. **Missing:** continuous **afferent feature vector** tied to ledgers that can bias `td_value` / metabolic danger **independent of transcript correctness**.
+**For the Swarm.** 🐜⚡ **Problem:** STT confidence bands (~0.4–0.7) collapse **prosody, stress, and urgency** into lossy text — “ears” mis-heard as “video” is the poetic failure mode. **Already shipped:** **`swarm_stigmergic_audiogram.py`** = **efferent** sonification from phenotype uniforms; **`swarm_syrinx.py`** = **ingress** spectral-entropy gate before STT; **`swarm_stigmergic_cochlea.py`** = **afferent feature-only acoustic vector** tied to ledgers that can bias `td_value` / metabolic danger **independent of transcript correctness**.
 
 | Layer | Requirement |
 |:---|:---|
@@ -159,7 +159,7 @@
 | **P3** | **CG55M** | **Plasticity phase 2:** feed **`bias_drives()`** into `ConsciousnessEngine` when multi-drive vector exists | Design note + trace; **GO** before behavior change |
 | **P3** | **C55M / AG31** | **Substrate survey (docs only):** Metal compute bindings vs Vulkan compute (`vkCreateComputePipelines`, `vkCmdDispatch`, SPIR-V paths) — cite **§0.5** + §2; **zero** new native deps until Architect GO after Event 93 | One trace row + link check; NPPL |
 | **P3** | **CG55M / C55M** | **Event 94 — Pheromone field organ:** **SHIPPED** `swarm_pheromone_field.py` + `swarm_stigmergic_coordinate_feed.py`. True embodied nav is real on macOS desktop. **Waggle routing / motor policy** remains future work. | **§0.7** + trace `fe57809e`; NPPL privacy log |
-| **P2** | **AG31 / C55M** | **Event 95 — Stigmergic cochlea:** implement `swarm_stigmergic_cochlea.py` per **§0.8**; synthetic-buffer **`pytest`** mandatory; mic path **opt-in** + TCC; optional `librosa`/`sounddevice` extras | **§0.8** + NPPL mic doctrine |
+| **P2** | **AG31 / C55M** | **Event 95 — Stigmergic cochlea:** **SHIPPED** feature-only `swarm_stigmergic_cochlea.py`; synthetic-buffer **`pytest`**; mic path hard-gated through `audio_ingress.enable_microphone()` before any hardware access | **§0.8** + NPPL mic doctrine |
 | **P3** | **CG55M** | **Event 96 — Dolphin social echo:** land `swarm_dolphin_social_echo.py` only with **stable identity** (no Python `hash`), ledger receipts, **`pytest`** | **§0.9** |
 
 ---
@@ -584,4 +584,4 @@ HONEYBEE_WAGGLE_ROUTER_v1 — Event 92 routing dance GLSL; von Frisch / Seeley m
 
 ---
 
-*Document version: 2026-05-01 — **§0.4** + **mic-drift** enemy row; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** Stigmergic cochlea + Grok handoff; **§0.9 Event 96** dolphin social echo; Event 91 table rows **95/96**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-05-01 — **§0.4** + **mic-drift** enemy row; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** Stigmergic cochlea **SHIPPED** + Grok handoff; **§0.9 Event 96** dolphin social echo; Event 91 table rows **95/96**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
