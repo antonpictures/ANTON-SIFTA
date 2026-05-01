@@ -38,3 +38,17 @@ def test_owl_localization_left(tmp_path: Path, monkeypatch):
     
     # Verify file written
     assert (tmp_path / "owl.jsonl").exists()
+
+
+def test_owl_uses_state_root_and_never_logs_raw_audio(tmp_path: Path):
+    owl = OwlSpatialHearing(ear_distance_meters=0.2, speed_of_sound=343.0)
+    left = np.array([0.0, np.nan, 2.0, -2.0, 0.2], dtype=float)
+    right = np.array([0.0, 0.1, 0.2, 0.1, 0.0], dtype=float)
+
+    res = owl.log_localization(left, right, state_root=tmp_path)
+
+    target = tmp_path / "owl_spatial_hearing.jsonl"
+    assert target.exists()
+    assert res["truth_label"] == "SIMULATED_SPATIAL_HEARING"
+    assert res["raw_audio_logged"] is False
+    assert -1.5708 <= res["azimuth_rad"] <= 1.5708

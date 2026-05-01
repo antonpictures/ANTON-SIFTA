@@ -50,3 +50,22 @@ def test_superior_colliculus_inverse_effectiveness(tmp_path: Path, monkeypatch):
     # Verify file write
     sc.append_integration(0.5, 0.0, 0.5, 0.0, 0.0)
     assert (tmp_path / "sc.jsonl").exists()
+
+
+def test_superior_colliculus_clamps_inputs_and_uses_state_root(tmp_path: Path):
+    sc = SuperiorColliculus()
+    row = sc.append_integration(2.0, 0.0, float("nan"), 0.0, float("nan"), state_root=tmp_path)
+
+    assert row["truth_label"] == "MULTISENSORY_SALIENCE"
+    assert row["visual_input"] == 1.0
+    assert row["audio_input"] == 0.0
+    assert 0.0 <= row["integrated_salience"] <= 1.0
+    assert (tmp_path / "superior_colliculus.jsonl").exists()
+
+
+def test_superior_colliculus_uses_circular_spatial_alignment():
+    sc = SuperiorColliculus()
+    wrapped = sc.integrate(0.2, 3.13, 0.2, -3.13, 0.0)
+    opposed = sc.integrate(0.2, 0.0, 0.2, 3.13, 0.0)
+
+    assert wrapped["spatial_alignment"] > opposed["spatial_alignment"]

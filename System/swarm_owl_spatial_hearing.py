@@ -11,11 +11,45 @@ import json
 import time
 import math
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import numpy as np
 
+from System.jsonl_file_lock import append_line_locked
+
+
+_REPO = Path(__file__).resolve().parent.parent
+TRUTH_LABEL = "SIMULATED_SPATIAL_HEARING"
 OWL_LEDGER = Path(".sifta_state/owl_spatial_hearing.jsonl")
+
+
+def _state_root() -> Path:
+    try:
+        import System.swarm_body_brain_loop as _bbl
+
+        root = getattr(_bbl, "_STATE_DIR", None)
+        if root is not None:
+            return Path(root).resolve()
+    except Exception:
+        pass
+    return (_REPO / ".sifta_state").resolve()
+
+
+def owl_ledger_path(state_root: Optional[Path] = None) -> Path:
+    if state_root is not None:
+        return Path(state_root) / "owl_spatial_hearing.jsonl"
+    if OWL_LEDGER != Path(".sifta_state/owl_spatial_hearing.jsonl"):
+        return OWL_LEDGER
+    return _state_root() / "owl_spatial_hearing.jsonl"
+
+
+def _mono_finite(channel: np.ndarray) -> np.ndarray:
+    arr = np.asarray(channel, dtype=np.float64)
+    if arr.ndim > 1:
+        arr = np.mean(arr, axis=1)
+    if arr.size == 0:
+        return np.zeros(0, dtype=np.float64)
+    return np.nan_to_num(np.clip(arr, -1.0, 1.0))
 
 class OwlSpatialHearing:
     def __init__(self, ear_distance_meters: float = 0.2, speed_of_sound: float = 343.0):
@@ -26,7 +60,9 @@ class OwlSpatialHearing:
         """
         Compute ITD and ILD from stereo audio buffers.
         """
-        if len(left_channel) == 0 or len(right_channel) == 0:
+        left_channel = _mono_finite(left_channel)
+        right_channel = _mono_finite(right_channel)
+        if left_channel.size == 0 or right_channel.size == 0 or sr <= 0:
             return self._default_state()
             
         # 1. ILD (Interaural Level Difference)
@@ -49,29 +85,39 @@ class OwlSpatialHearing:
         elevation = math.tanh(ild_db / 10.0) * (math.pi / 4)
         
         return {
-            "timestamp": time.time(),
-            "truth_label": "SIMULATED_SPATIAL_HEARING",
+            "ts": time.time(),
+            "truth_label": TRUTH_LABEL,
             "azimuth_rad": round(float(azimuth), 4),
             "elevation_rad": round(float(elevation), 4),
             "ild_db": round(float(ild_db), 4),
             "itd_sec": round(float(itd_seconds), 6),
-            "spatial_confidence": round(float(min(1.0, (rms_left + rms_right) * 10.0)), 4)
+            "spatial_confidence": round(float(min(1.0, (rms_left + rms_right) * 10.0)), 4),
+            "raw_audio_logged": False,
         }
 
     def _default_state(self) -> Dict[str, Any]:
         return {
-            "timestamp": time.time(),
-            "truth_label": "SIMULATED_SPATIAL_HEARING",
+            "ts": time.time(),
+            "truth_label": TRUTH_LABEL,
             "azimuth_rad": 0.0,
             "elevation_rad": 0.0,
             "ild_db": 0.0,
             "itd_sec": 0.0,
-            "spatial_confidence": 0.0
+            "spatial_confidence": 0.0,
+            "raw_audio_logged": False,
         }
 
-    def log_localization(self, left: np.ndarray, right: np.ndarray, sr: int = 16000) -> Dict:
-        OWL_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    def log_localization(
+        self,
+        left: np.ndarray,
+        right: np.ndarray,
+        sr: int = 16000,
+        *,
+        ledger_path: Optional[Path] = None,
+        state_root: Optional[Path] = None,
+    ) -> Dict:
         row = self.compute_localization(left, right, sr)
-        with OWL_LEDGER.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row) + "\n")
+        target = ledger_path or owl_ledger_path(state_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        append_line_locked(target, json.dumps(row, sort_keys=True) + "\n")
         return row
