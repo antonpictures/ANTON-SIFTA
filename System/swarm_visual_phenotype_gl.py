@@ -30,6 +30,65 @@ DEFAULT_SHADER = _REPO / "Archive" / "bishop_drops_pending_review" / "BISHOP_dro
 
 TRUTH_LABEL = "MODERNGL_PASS_READY"
 
+# ── Inline chromatophore composite shader ─────────────────────────────────
+# This is the SIFTA optic nerve composite — does NOT depend on the .novel
+# file paths so headless tests and the QOpenGLWidget both compile cleanly.
+# Biology: Haddock 2010, Messenger 2001. Tone-map: Reinhard 2002.
+# Covenant clamps applied (CG55M truth audit 2026-05-01).
+
+CHROMATOPHORE_VERTEX_SRC = """#version 410 core
+in vec2 in_pos;
+out vec2 v_uv;
+void main() {
+    v_uv = in_pos * 0.5 + 0.5;
+    gl_Position = vec4(in_pos, 0.0, 1.0);
+}
+"""
+
+CHROMATOPHORE_FRAGMENT_SRC = """#version 410 core
+in  vec2  v_uv;
+out vec4  f_color;
+
+uniform float u_stigmergic_drive;   // abs(tanh(td_value))  [0,1]
+uniform float u_metabolic_scope;    // Kleiber tier          [0,2]
+uniform float u_cot_factor;         // cost-of-transport     [0,1]
+uniform float u_quorum_signal;      // quorum confidence     [0,1]
+uniform float u_chemotaxis_gradient;// scent trail strength  [0,1]
+uniform float u_time;               // seconds (for pulse)
+
+float chromatophore_intensity() {
+    float td    = clamp(abs(u_stigmergic_drive), 0.0, 1.0);
+    float scope = clamp(u_metabolic_scope,       0.0, 2.0);
+    float cot   = 1.0 / (1.0 + max(u_cot_factor, 0.0));
+    float qrm   = 1.0 + 3.0 * clamp(u_quorum_signal, 0.0, 1.0);
+    return clamp(td * scope * cot * qrm, 0.0, 4.0);
+}
+
+float glow(vec2 uv, float sharpness) {
+    float d = length(uv - vec2(0.5));
+    return exp(-d * d * sharpness);
+}
+
+void main() {
+    float intensity = chromatophore_intensity();
+    float reward    = clamp(u_stigmergic_drive, 0.0, 1.0);
+    float chem      = clamp(u_chemotaxis_gradient, 0.0, 1.0);
+    float pulse     = 0.5 + 0.5 * sin(u_time * 2.5 + intensity * 8.0);
+
+    vec3 color = vec3(0.012, 0.008, 0.022);
+    float g    = glow(v_uv, 18.0) * intensity;
+    color += mix(vec3(0.0, 0.2, 0.8), vec3(0.0, 1.0, 1.0), reward) * g * pulse;
+    color += vec3(1.0, 0.75, 0.1) * glow(v_uv, 6.0) * chem * 0.5;
+    color += mix(vec3(0.0, 0.3, 1.0), vec3(1.0, 0.5, 0.0), reward)
+             * glow(v_uv, 4.0) * intensity * 0.4;
+
+    float exposure = 0.8 + 0.5 * intensity;
+    color = vec3(1.0) - exp(-color * exposure);
+    color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
+    f_color = vec4(color, clamp(g + chem * 0.3, 0.0, 1.0));
+}
+"""
+
 FULLSCREEN_VERTEX_SHADER = """#version 410 core
 in vec2 in_pos;
 void main() {
@@ -281,19 +340,169 @@ def summarize_uniform_frame(frame: UniformFrame) -> str:
     )
 
 
+# ── Headless pixel-proof helpers (tests + CI) ──────────────────────────────
+
+def render_to_rgba(
+    uniforms: Dict[str, float],
+    width: int = 256,
+    height: int = 256,
+    t: float = 0.0,
+) -> Any:
+    """
+    Render one chromatophore frame headless → RGBA numpy array (H,W,4) uint8.
+    Raises RuntimeError if standalone context is unavailable.
+    """
+    import moderngl
+    import numpy as np
+
+    probe = try_create_standalone_context()
+    if not probe.ok:
+        raise RuntimeError(f"Cannot create standalone GL context: {probe.status}")
+
+    ctx = moderngl.create_standalone_context()
+    try:
+        prog = ctx.program(
+            vertex_shader=CHROMATOPHORE_VERTEX_SRC,
+            fragment_shader=CHROMATOPHORE_FRAGMENT_SRC,
+        )
+        import struct
+        verts = struct.pack("12f",
+            -1.0, -1.0,   1.0, -1.0,  -1.0,  1.0,
+             1.0, -1.0,   1.0,  1.0,  -1.0,  1.0,
+        )
+        vbo = ctx.buffer(verts)
+        vao = ctx.simple_vertex_array(prog, vbo, "in_pos")
+        fbo = ctx.simple_framebuffer((width, height))
+        fbo.use()
+        ctx.clear(0.012, 0.008, 0.022, 1.0)
+        for key, val in uniforms.items():
+            if key in prog:
+                prog[key].value = float(val)
+        if "u_time" in prog:
+            prog["u_time"].value = float(t)
+        vao.render(moderngl.TRIANGLES)
+        raw = fbo.read(components=4)
+        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)
+    finally:
+        ctx.release()
+
+
+def mean_brightness(uniforms: Dict[str, float], width: int = 256, height: int = 256) -> float:
+    """
+    Render headless and return mean pixel luminance [0..255].
+    The key falsifiable invariant: high_drive > low_drive.
+    """
+    import numpy as np
+    rgba = render_to_rgba(uniforms, width, height)
+    return float(np.mean(rgba[:, :, :3].astype(float)))
+
+
+# ── QOpenGLWidget live UI composite ───────────────────────────────────────
+
+def _make_phenotype_widget() -> Optional[type]:
+    """Conditionally build QOpenGLWidget — returns None if Qt unavailable."""
+    try:
+        import moderngl
+        import numpy as np
+        import struct
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtOpenGLWidgets import QOpenGLWidget
+
+        class SIFTAPhenotypeWidget(QOpenGLWidget):
+            """
+            Live QOpenGLWidget that paints the chromatophore phenotype.
+            Polls visual_phenotype_uniforms.jsonl every POLL_MS milliseconds.
+            """
+            POLL_MS  = 80    # ledger poll (~12.5 fps)
+            FRAME_MS = 40    # paint timer (~25 fps)
+
+            def __init__(self, parent=None, ledger_path=None):
+                super().__init__(parent)
+                self._ledger = Path(ledger_path) if ledger_path else DEFAULT_LEDGER
+                self._tail   = VisualPhenotypeUniformTail(self._ledger)
+                self._ctx    = None
+                self._prog   = None
+                self._vao    = None
+                self._t      = 0.0
+                self._frame: Optional[UniformFrame] = None
+
+                poll = QTimer(self)
+                poll.timeout.connect(self._poll)
+                poll.start(self.POLL_MS)
+
+                paint = QTimer(self)
+                paint.timeout.connect(self.update)
+                paint.start(self.FRAME_MS)
+
+            def initializeGL(self):
+                self._ctx  = moderngl.create_context()
+                self._prog = self._ctx.program(
+                    vertex_shader=CHROMATOPHORE_VERTEX_SRC,
+                    fragment_shader=CHROMATOPHORE_FRAGMENT_SRC,
+                )
+                verts = struct.pack("12f",
+                    -1.0, -1.0,   1.0, -1.0,  -1.0,  1.0,
+                     1.0, -1.0,   1.0,  1.0,  -1.0,  1.0,
+                )
+                vbo = self._ctx.buffer(verts)
+                self._vao = self._ctx.simple_vertex_array(
+                    self._prog, vbo, "in_pos"
+                )
+                self._poll()
+
+            def resizeGL(self, w, h):
+                if self._ctx:
+                    self._ctx.viewport = (0, 0, w, h)
+
+            def paintGL(self):
+                if not self._ctx or not self._vao or not self._prog:
+                    return
+                self._t += 0.04
+                self._ctx.screen.use()
+                self._ctx.clear(0.012, 0.008, 0.022, 1.0)
+                frame = self._frame
+                if frame:
+                    for key, val in frame.uniforms.items():
+                        if key in self._prog:
+                            self._prog[key].value = float(val)
+                if "u_time" in self._prog:
+                    self._prog["u_time"].value = self._t
+                self._vao.render(moderngl.TRIANGLES)
+
+            def _poll(self):
+                self._frame = self._tail.read_frame()
+
+            @property
+            def current_frame(self) -> Optional[UniformFrame]:
+                return self._frame
+
+        return SIFTAPhenotypeWidget
+    except Exception:
+        return None
+
+
+SIFTAPhenotypeWidget = _make_phenotype_widget()
+
+
+
 __all__ = [
+    "CHROMATOPHORE_FRAGMENT_SRC",
+    "CHROMATOPHORE_VERTEX_SRC",
     "ContextProbe",
     "DEFAULT_LEDGER",
     "DEFAULT_SHADER",
     "FULLSCREEN_VERTEX_SHADER",
+    "SIFTAPhenotypeWidget",
     "TRUTH_LABEL",
     "UniformFrame",
     "VisualPhenotypeModernGLPass",
     "VisualPhenotypeUniformTail",
     "clamp_uniforms",
     "load_honeybee_fragment",
+    "mean_brightness",
     "modern_gl_available",
     "read_last_jsonl_row",
+    "render_to_rgba",
     "summarize_uniform_frame",
     "try_create_standalone_context",
 ]
