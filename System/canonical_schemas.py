@@ -1244,6 +1244,29 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "ts",                  # float
     },
 
+    # Event 90 — Stigmergic Video Resolution / Neuromorphic Retina.
+    # Written by System/swarm_stigmergic_video_resolution.py. This is a
+    # per-frame salience/resolution summary, not raw image exfiltration.
+    "stigmergic_video_resolution.jsonl": {
+        "event",                 # always "stigmergic_video_resolution"
+        "schema",                # always "SIFTA_STIGMERGIC_VIDEO_RESOLUTION_V1"
+        "module_version",        # producer version
+        "truth_label",           # OPERATIONAL
+        "ts",                    # float — write epoch seconds
+        "frame_id",              # int/str — source frame id or sha8 fallback
+        "source_ledger",         # visual_stigmergy.jsonl | manual
+        "source_sha8",           # sha8 from visual_stigmergy row when available
+        "source_frame_ts",       # float | None
+        "camera_size",           # [w, h]
+        "camera_pixels_total",   # int
+        "stigmergic_grid",       # [grid_w, grid_h]
+        "total_stig_cells",      # int
+        "active_salient_cells",  # int
+        "pixels_per_stig_cell",  # float
+        "salience_density",      # float [0,1]
+        "unified_field_payload", # compact derived salience facts
+    },
+
     # Native IDE economics — written by System/swarm_ide_cost_ledger.py.
     "ide_cost_ledger.jsonl": {
         "event",                    # always "ide_cost_sample"
@@ -1323,19 +1346,8 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
     },
 
     # ── Event 90 — Stigmergic Video Resolution / Neuromorphic Retina (AG31 2026-05-01) ──
-    # Producer: System/swarm_stigmergic_video_resolution.py
-    # Quantizes full camera pixel data into actionable biological salience.
-    "stigmergic_video_resolution.jsonl": {
-        "ts",
-        "frame_id",
-        "camera_pixels_total",
-        "stigmergic_grid",
-        "total_stig_cells",
-        "active_salient_cells",
-        "pixels_per_stig_cell",
-        "salience_density",
-        "unified_field_payload",
-    },
+    # Ledger schemas belong in LEDGER_SCHEMAS, not BODY_SCHEMA. Alice's body
+    # identity remains compact; frame summaries live in their own side-ledger.
 }
 
 
