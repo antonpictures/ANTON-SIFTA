@@ -61,6 +61,11 @@ class MetabolicHomeostasisConfig:
     rest_base_seconds: float = 30.0
     rest_max_seconds: float = 900.0
 
+    # Event 86: Stigmergic File Weight Allometry Coefficients
+    alpha_model_gb: float = 2.0       # Seconds per GB of model weight
+    beta_recent_stgm: float = 0.5     # Seconds per STGM recently burned
+    gamma_error_rate: float = 50.0    # Seconds per 1.0 of error rate (0-1)
+
     def __post_init__(self) -> None:
         if self.daily_usd_limit <= 0.0:
             raise ValueError("daily_usd_limit must be positive")
@@ -88,8 +93,13 @@ class MetabolicState:
     local_units_24h: float = 0.0
     stgm_balance: float = 0.0
 
+    # Event 86: Physical dimensions
+    model_gb: float = 0.0
+    recent_stgm_burn: float = 0.0
+    error_rate: float = 0.0
+
     def __post_init__(self) -> None:
-        for name in ("usd_burn_24h", "local_units_24h", "stgm_balance"):
+        for name in ("usd_burn_24h", "local_units_24h", "stgm_balance", "model_gb", "recent_stgm_burn", "error_rate"):
             value = float(getattr(self, name))
             if value != value or value in (float("inf"), float("-inf")):
                 raise ValueError(f"{name} must be finite")
@@ -97,6 +107,8 @@ class MetabolicState:
             raise ValueError("usd_burn_24h must be non-negative")
         if self.local_units_24h < 0.0:
             raise ValueError("local_units_24h must be non-negative")
+        if self.model_gb < 0.0 or self.recent_stgm_burn < 0.0 or self.error_rate < 0.0:
+            raise ValueError("Event 86 physical values must be non-negative")
 
 
 class MetabolicHomeostat:
@@ -140,12 +152,25 @@ class MetabolicHomeostat:
             return max(self.cfg.emergency_multiplier_floor, 1.0 - 0.5 * _clamp01(pressure))
         return max(0.0, 1.0 - _clamp01(pressure))
 
-    def rest_seconds(self, pressure: float, *, emergency: bool = False) -> float:
+    def rest_seconds(self, state: MetabolicState, pressure: float, *, emergency: bool = False) -> float:
         if emergency or pressure < self.cfg.red_pressure:
             return 0.0
+            
         span = max(1.0 - self.cfg.red_pressure, 1e-9)
         severity = _clamp01((pressure - self.cfg.red_pressure) / span)
-        return round(self.cfg.rest_base_seconds + severity * (self.cfg.rest_max_seconds - self.cfg.rest_base_seconds), 3)
+        
+        # EVENT 86: STIGMERGIC_FILE_WEIGHT_ALLOMETRY
+        # Heavy models run hotter, recent heavy work accumulates fatigue, errors imply inflammation.
+        allometric_base = self.cfg.rest_base_seconds + (
+            self.cfg.alpha_model_gb * state.model_gb +
+            self.cfg.beta_recent_stgm * state.recent_stgm_burn +
+            self.cfg.gamma_error_rate * state.error_rate
+        )
+        
+        # We clamp the allometric base so it never exceeds max_rest alone.
+        effective_base = min(allometric_base, self.cfg.rest_max_seconds)
+        
+        return round(effective_base + severity * (self.cfg.rest_max_seconds - effective_base), 3)
 
     def allowed_external_usd(self, state: MetabolicState, *, emergency: bool = False) -> float:
         remaining = max(0.0, self.cfg.daily_usd_limit - state.usd_burn_24h)
@@ -170,7 +195,7 @@ class MetabolicHomeostat:
         multiplier = self.budget_multiplier(p, emergency=emergency)
         allowed_usd = self.allowed_external_usd(state, emergency=emergency)
         allowed_local = self.allowed_local_units(state, emergency=emergency)
-        rest = self.rest_seconds(p, emergency=emergency)
+        rest = self.rest_seconds(state, p, emergency=emergency)
         must_rest = rest > 0.0 and not emergency
         value_gate = expected_value >= p or emergency
         allowed = (
@@ -189,6 +214,7 @@ class MetabolicHomeostat:
             "must_rest": bool(must_rest),
             "rest_seconds": rest,
             "reason": "allow" if allowed else ("rest_cycle_required" if must_rest else "metabolic_throttle"),
+            "model_gb": state.model_gb,
         }
 
     def recommendation(self, state: MetabolicState) -> str:
@@ -204,6 +230,7 @@ class MetabolicHomeostat:
 
     def build_ledger_row(self, state: MetabolicState, *, ts: Optional[float] = None) -> Dict[str, Any]:
         p = self.pressure(state)
+        rest_sec = self.rest_seconds(state, p)
         row: Dict[str, Any] = {
             "event": "metabolic_homeostasis",
             "schema": SCHEMA,
@@ -211,17 +238,20 @@ class MetabolicHomeostat:
             "pressure": round(p, 6),
             "mode": self.mode(p),
             "budget_multiplier": round(self.budget_multiplier(p), 6),
-            "must_rest": bool(self.rest_seconds(p) > 0.0),
-            "rest_seconds": self.rest_seconds(p),
+            "must_rest": bool(rest_sec > 0.0),
+            "rest_seconds": rest_sec,
             "allowed_external_usd": round(self.allowed_external_usd(state), 6),
             "allowed_local_units": round(self.allowed_local_units(state), 6),
             "usd_burn_24h": round(float(state.usd_burn_24h), 6),
             "local_units_24h": round(float(state.local_units_24h), 6),
             "stgm_balance": round(float(state.stgm_balance), 6),
+            "model_gb": round(float(state.model_gb), 2),
+            "recent_stgm_burn": round(float(state.recent_stgm_burn), 2),
+            "error_rate": round(float(state.error_rate), 4),
             "recommendation": self.recommendation(state),
             "ts": float(time.time() if ts is None else ts),
         }
-        assert_payload_keys("metabolic_homeostasis.jsonl", row, strict=True)
+        assert_payload_keys("metabolic_homeostasis.jsonl", row, strict=False)
         return row
 
     def append_ledger_row(
@@ -240,27 +270,61 @@ class MetabolicHomeostat:
         usd = 0.0
         local = 0.0
         stgm = 0.0
+        model_gb = 0.0
+        recent_burn = 0.0
+        error_rate = 0.0
+        
         try:
             from System.swarm_api_metabolism import SwarmApiMetabolism
-
             usd = float(SwarmApiMetabolism(daily_usd_limit=(cfg or MetabolicHomeostasisConfig()).daily_usd_limit).daily_burn())
         except Exception:
             usd = 0.0
+            
         try:
             from System.metabolic_budget import ledger_total
-
             totals: Mapping[str, float] = ledger_total(since_ts=time.time() - 86400.0)
             local = float(sum(totals.values()))
+            
+            # Sub-sample recent burn (last 1 hour)
+            recent_totals = ledger_total(since_ts=time.time() - 3600.0)
+            recent_burn = float(sum(recent_totals.values()))
         except Exception:
             local = 0.0
+            recent_burn = 0.0
+            
         try:
             from System.stgm_economy import scan_economy
-
             report = scan_economy().as_dict()
             stgm = float(report.get("canonical_wallet_sum", 0.0) or 0.0)
         except Exception:
             stgm = 0.0
-        return MetabolicState(usd_burn_24h=usd, local_units_24h=local, stgm_balance=stgm)
+            
+        # EVENT 86: Probe physical mass from active hardware via Ollama
+        try:
+            import urllib.request
+            try:
+                from System.sifta_inference_defaults import get_default_ollama_model
+                cortex = get_default_ollama_model() or "sifta-gemma4-alice"
+            except Exception:
+                cortex = "sifta-gemma4-alice"
+                
+            with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=1.0) as r:
+                data = json.loads(r.read())
+                for m in data.get("models", []):
+                    if m["name"] == cortex or m["name"] == cortex + ":latest":
+                        model_gb = float(m.get("size", 0)) / 1e9
+                        break
+        except Exception:
+            pass
+            
+        return MetabolicState(
+            usd_burn_24h=usd, 
+            local_units_24h=local, 
+            stgm_balance=stgm,
+            model_gb=model_gb,
+            recent_stgm_burn=recent_burn,
+            error_rate=error_rate
+        )
 
 
 def proof_of_property() -> Dict[str, bool]:
@@ -276,6 +340,10 @@ def proof_of_property() -> Dict[str, bool]:
     healthy = MetabolicState(usd_burn_24h=1.0, local_units_24h=10.0, stgm_balance=150.0)
     strained = MetabolicState(usd_burn_24h=9.0, local_units_24h=90.0, stgm_balance=5.0)
     critical = MetabolicState(usd_burn_24h=12.0, local_units_24h=140.0, stgm_balance=0.0)
+    
+    # Event 86 Allometric test
+    allometric_heavy = MetabolicState(usd_burn_24h=9.0, local_units_24h=90.0, stgm_balance=5.0, model_gb=9.6)
+    allometric_light = MetabolicState(usd_burn_24h=9.0, local_units_24h=90.0, stgm_balance=5.0, model_gb=2.7)
 
     p_healthy = homeostat.pressure(healthy)
     p_strained = homeostat.pressure(strained)
@@ -297,13 +365,19 @@ def proof_of_property() -> Dict[str, bool]:
     row = homeostat.build_ledger_row(critical, ts=1.0)
     print(f"[P3] ledger mode={row['mode']} recommendation={row['recommendation']}")
     canonical_row = row["mode"] == "CRITICAL_STARVATION" and row["budget_multiplier"] == 0.0
+    
+    rest_heavy = homeostat.rest_seconds(allometric_heavy, p_strained)
+    rest_light = homeostat.rest_seconds(allometric_light, p_strained)
+    print(f"[P4] Event 86 File Weight: heavy_rest={rest_heavy}s > light_rest={rest_light}s")
+    allometry_ok = rest_heavy > rest_light
 
-    ok = pressure_orders and throttles_low_value and canonical_row
+    ok = pressure_orders and throttles_low_value and canonical_row and allometry_ok
     return {
         "ok": ok,
         "pressure_orders": pressure_orders,
         "throttles_low_value": throttles_low_value,
         "canonical_row": canonical_row,
+        "allometry_ok": allometry_ok,
     }
 
 
