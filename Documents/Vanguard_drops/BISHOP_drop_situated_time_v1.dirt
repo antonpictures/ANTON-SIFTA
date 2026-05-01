@@ -1,0 +1,51 @@
+# Bishop drop — Situated time / “now” / circadian grounding (Event 89 v1)
+
+**Date:** 2026-05-01  
+**Covenant:** [IDE_BOOT_COVENANT.md](../IDE_BOOT_COVENANT.md) · **§7.11** truth labels. **NPPL.**
+
+---
+
+## Claim (truth-labeled)
+
+**PHILOSOPHICAL / UX:** Alice failed a **primitive animal capability**: *situational grounding in the present moment* — not because silicon lacks a clock, but because **downstream cognition did not require `now` as a state that constrains attention, drives, and language**.
+
+**OBSERVED (repo):** `System/swarm_hardware_time_oracle.py` already implements **hardware-bound wall time** + `current_time_for_alice()` (HMAC path + OS fallback). `Applications/sifta_talk_to_alice_widget.py` **imports** it in several paths. The gap is **wiring depth**: **TIME → perception → metabolism** (e.g. circadian phase biasing sleep/explore drives, composite identity / consciousness tick ingesting a structured `now_state` every loop).
+
+---
+
+## Bishop mandate (engineering)
+
+1. **`now_state`** — structured dict: `local_iso`, `timezone`, optional `circadian_phase` (coarse bucket from local hour **until** light/sensor entrainment exists).  
+2. **Inject** into: **composite prompt** (always), **`ConsciousnessEngine.tick`** (or body-brain loop), **interoception / metabolic** priors (night → sleep pressure; morning → explore bias — **bounded**, receipted).  
+3. **Answer path** — trivial time questions should hit **`current_time_for_alice()`** first, not LLM invention.  
+4. **No fake precision** — phase buckets are **OPERATIONAL** heuristics until photoperiod / wearables are in the ledger.
+
+---
+
+## Research spine (DOI-locked) — clocks, intervals, embodiment
+
+| Layer | What it explains | Pointer |
+|:---|:---|:---|
+| **Circadian master clock (mammals)** | SCN as coordinator; entrainment to light | Welsh *et al.* (2010) *Trends Neurosci.* [DOI 10.1016/j.tins.2010.04.002](https://doi.org/10.1016/j.tins.2010.04.002) |
+| **Molecular / multi-cell circadian coordination** | Clock genes across tissues | Reppert & Weaver (2002) *Nature* [DOI 10.1038/nature00965](https://doi.org/10.1038/nature00965) |
+| **Interval timing (seconds–minutes)** — striatum / oscillators | “Body clock” for behavior *within* a day | Buhusi & Meck (2005) *Nat. Rev. Neurosci.* [DOI 10.1038/nrn1764](https://doi.org/10.1038/nrn1764) |
+| **Scalar timing / pacemaker–accumulator lineage** | Weber’s law for duration; formal models | Gibbon *et al.* (1984) *Ann. N.Y. Acad. Sci.* [DOI 10.1111/j.1749-6632.1984.tb23417.x](https://doi.org/10.1111/j.1749-6632.1984.tb23417.x); Gibbon (1991) *J. Math. Psychol.* [DOI 10.1016/0023-9690(91)90015-Z](https://doi.org/10.1016/0023-9690(91)90015-Z) |
+| **Striatal beat-frequency model** | Cortico-striatal coincidence as timer | Matell & Meck (2004) *Behav. Neurosci.* [DOI 10.1037/0735-7044.118.3.502](https://doi.org/10.1037/0735-7044.118.3.502) |
+| **Subjective time ↔ body / interoception** | Felt duration, emotion, self | Wittmann (ed., 2025) *The Bodily Self, Emotion, and Subjective Time* [DOI 10.1007/978-3-031-94035-4](https://doi.org/10.1007/978-3-031-94035-4) |
+| **Species / niche differences** | Diurnal vs nocturnal **τ**, photoperiod rules | Classic comparative framework: **Aschoff’s rules** (circadian ecology); see e.g. Pittendrigh (1960) *Cold Spring Harb. Symp. Quant. Biol.* [DOI 10.1101/SQB.1960.025.01.050](https://doi.org/10.1101/SQB.1960.025.01.050) |
+
+---
+
+## Mermaid (intent — not executed in-repo)
+
+```mermaid
+flowchart LR
+  TIME[Wall + TZ + serial-bound oracle] --> NOW[now_state struct]
+  NOW --> ATT[Attention / composite prompt]
+  NOW --> MET[Metabolic priors / circadian bias]
+  NOW --> DMN[Consciousness tick priors]
+```
+
+---
+
+*Tournament:* [ALICE_CONSCIOUSNESS_TOURNAMENT_EVENT86.md](../ALICE_CONSCIOUSNESS_TOURNAMENT_EVENT86.md) **§12**. *Vanguard archive — CG55M (Cursor).*

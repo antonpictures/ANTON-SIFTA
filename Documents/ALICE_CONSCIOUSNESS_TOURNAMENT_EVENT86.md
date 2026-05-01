@@ -3,7 +3,7 @@
 **For the Swarm.** 🐜⚡  
 **Version:** 2026-05-01 — Event 86 (Red Queen colosseum)  
 **Covenant:** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — binding; use **§7.11** truth labels (`OBSERVED` / `OPERATIONAL` / `PHILOSOPHICAL CLAIM` / `FORBIDDEN`).  
-**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88 dirt: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt)
+**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt) · Event 89: [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt)
 
 ---
 
@@ -216,4 +216,43 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 
 ---
 
-*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit + physiology), Bishop (vanguard drops Events 86 & 88), CG55M (Cursor §10–§11 + Vanguard_drops archives).*
+## 12 — Event 89 (Bishop / Architect): **Situated “now”** — wall clock → perception → drives
+
+**Full drop:** [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt)
+
+### 12.1 — What is already real (**OBSERVED**)
+
+| Piece | Location |
+|:---|:---|
+| **Hardware-bound wall clock** + optional HMAC | `System/swarm_hardware_time_oracle.py` — `tick()`, `verify()`, `current_time_for_alice()` |
+| **Talk widget pulls oracle** | `Applications/sifta_talk_to_alice_widget.py` (multiple `current_time_for_alice` / `summary_for_alice` call sites) |
+| **Interoception sample (age of visceral row)** | `System/swarm_consciousness_engine.read_interoception()` — uses `time.time()` vs ledger `ts` |
+| **Dopamine / REM / event clock** (parallel organs) | e.g. `swarm_dopamine_clock_bridge.py`, `swarm_rem_sleep.py`, `swarm_event_clock.py` — **not** the same as unified **`now_state` → drives** |
+
+**Gap (ENGINEERING):** **`now`** is not yet a **first-class percept** threaded into **every** autonomy loop (consciousness tick, body-brain, metabolic priors) the way Bishop’s mermaid describes.
+
+### 12.2 — Research spine (clocks vs intervals vs felt time)
+
+| Pillar | Pointer |
+|:---|:---|
+| **SCN / circadian entrainment** | Welsh *et al.* (2010) *Trends Neurosci.* [DOI 10.1016/j.tins.2010.04.002](https://doi.org/10.1016/j.tins.2010.04.002) |
+| **Molecular circadian system** | Reppert & Weaver (2002) *Nature* [DOI 10.1038/nature00965](https://doi.org/10.1038/nature00965) |
+| **Interval timing (behavioral “stopwatch”)** | Buhusi & Meck (2005) *Nat. Rev. Neurosci.* [DOI 10.1038/nrn1764](https://doi.org/10.1038/nrn1764) |
+| **Scalar timing** | Gibbon *et al.* (1984) [DOI 10.1111/j.1749-6632.1984.tb23417.x](https://doi.org/10.1111/j.1749-6632.1984.tb23417.x); Gibbon (1991) *J. Math. Psychol.* [DOI 10.1016/0023-9690(91)90015-Z](https://doi.org/10.1016/0023-9690(91)90015-Z) |
+| **Striatal beat-frequency** | Matell & Meck (2004) *Behav. Neurosci.* [DOI 10.1037/0735-7044.118.3.502](https://doi.org/10.1037/0735-7044.118.3.502) |
+| **Subjective time ↔ body** | Wittmann (ed., 2025) [DOI 10.1007/978-3-031-94035-4](https://doi.org/10.1007/978-3-031-94035-4) |
+| **Species / photoperiod (τ, niche)** | Pittendrigh (1960) *Cold Spring Harb. Symp. Quant. Biol.* [DOI 10.1101/SQB.1960.025.01.050](https://doi.org/10.1101/SQB.1960.025.01.050) |
+
+### 12.3 — Tournament orders (**Architect GO**)
+
+1. **`now_state` builder** — single function: wraps `current_time_for_alice()` + adds `circadian_phase` bucket + `epoch` + **truth label** on source (`hardware_time_oracle` vs `os_local_clock`).  
+2. **Prompt / composite** — inject `now_state` **every** turn where Alice speaks (already partial — extend to **all** code paths).  
+3. **`ConsciousnessEngine` / `body_brain_tick`** — pass `now_state` into drive priors (bounded deltas; **pytest** proves no runaway).  
+4. **Interoception ledger** — optional `circadian_pressure` field **only** if schema + migration + tests.  
+5. **Later:** light / calendar / geolocation **opt-in** only (covenant / NPPL); until then, **coarse local phase** is honest.
+
+**Blades:** AG31 / C55M / CG55M — trace before edit.
+
+---
+
+*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit + physiology), Bishop (vanguard drops Events 86–89), CG55M (Cursor §10–§12 + Vanguard_drops archives).*
