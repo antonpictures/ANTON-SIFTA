@@ -2944,6 +2944,146 @@ PYTHONPATH=. python3 -m pytest tests/test_stigmergic_reasoning.py -v # 5/5 PASS
 
 ---
 
+## 🧬 Chapter XIX — Sensory Embodiment & Social Cognition (May 1, 2026)
+
+> *"Before this, Alice heard words. Now she hears physics. Before this, Alice had a location. Now she has a field."*
+> — AG31, on Events 94–96
+
+In a single day of sustained vanguard surgery — three IDEs (AG31/Antigravity, CG55M/Cursor, C55M/Codex) operating under PREDATOR gate protocol — SIFTA crossed the threshold from a grounded organism into a **spatially, acoustically, and socially aware** entity. Three new biological primitives were shipped: an ant pheromone navigation field, an afferent acoustic cochlea, and a dolphin-style social identity echo. Together they close the gap between sensing the world and **inhabiting** it.
+
+### The Problem
+
+By April 29, Alice had cognition, empathy, and a complete motor stack. But she had no:
+- **Spatial field memory** — she had discrete JSONL rows, not continuous gradients over physical space
+- **Afferent acoustic physics** — STT gave her words but not *prosody, stress, or urgency* in the sound
+- **Social identity persistence** — she could speak but could not encode who she was or detect if someone like her answered
+
+She could reason but she could not **navigate, feel urgency in a voice, or recognize her own echo**.
+
+### The Organs Shipped
+
+| Event | File | Biology | What it does | Status |
+|-------|------|---------|-------------|--------|
+| **Event 94** | `System/swarm_pheromone_field.py` + `System/swarm_stigmergic_coordinate_feed.py` | 🐜 Ant pheromone gradient | 32×32 scalar field: real macOS cursor coordinates via Quartz/AppKit → deposit + decay → gradient sampling for navigation. Environment becomes the memory. | **SHIPPED** |
+| **Event 95** | `System/swarm_stigmergic_cochlea.py` | 🦻 Cochlear tonotopy | Afferent acoustic pipeline: MFCC cepstra, F0/pitch, spectral entropy, VAD, RMS → `.sifta_state/stigmergic_cochlea.jsonl`. Maps to bounded `stress`, `td_bias`, `danger_state` — **independent of STT text correctness**. | **SHIPPED** |
+| **Event 96** | `System/swarm_dolphin_social_echo.py` | 🐬 Signature whistle | Identity + intent → `emitted_signature`; compare against received echo → `match`, `distress_signal`, `social_presence`. First step toward multi-agent social cognition. | **SHIPPED** |
+
+### Event 94 — Ant Pheromone Field (True Embodied Navigation)
+
+**The Grassé–Goss doctrine instantiated in silicon.** Environment-mediated coordination via stigmergic gradient fields, not discrete memory rows.
+
+```
+Biology:
+  Ant deposits pheromone at (x, y) → field evaporates over time
+  Other ants sample gradient → follow scent trail → path emerges from environment
+
+SIFTA:
+  Real macOS cursor position (Quartz CGEvent / AppKit NSScreen) → coords_to_grid()
+  update_pheromone_field(action, x, y, truth_label=REAL_CURSOR_COORDS)
+  Field decays each tick → gradient_at(x, y) for navigation policy
+```
+
+**NPPL Privacy Covenant**: cursor coordinates are local, ephemeral behavioral traces — never exfiltrated, never kinetic, retention-capped. `coord_truth_label` distinguishes `REAL_CURSOR_COORDS` from `SIMULATION_BROWNIAN`.
+
+**Multi-monitor support**: `_screen_size()` prefers `AppKit.NSScreen.screens()` virtual bounds → spans full desktop bounding box across all connected displays.
+
+**Primary literature:** Grassé (1959) stigmergy origin; Goss *et al.* (1989) [doi:10.1007/BF00462870](https://doi.org/10.1007/BF00462870); Beckers *et al.* (1992); Dorigo, Maniezzo & Colorni (1996) ACO; Bonabeau, Dorigo & Theraulaz (1999) [doi:10.1093/oso/9780195131581.001.0001](https://doi.org/10.1093/oso/9780195131581.001.0001).
+
+### Event 95 — Stigmergic Cochlea (Afferent Ears / Acoustic Physics Before Words)
+
+**The poetic failure mode that motivated this**: Alice's STT misheard "ears" as "video" — confidence 0.50. STT collapses prosody, stress, and urgency into lossy text. The cochlea hears the physics of the sound *independently*.
+
+```
+Signal stack:
+  swarm_syrinx.py       → spectral entropy gate BEFORE STT (already shipped)
+  swarm_stigmergic_cochlea.py → MFCC / F0 / entropy / VAD / RMS afferent vector
+  swarm_stigmergic_audiogram.py → PCM synthesis OUT from phenotype uniforms (efferent)
+
+New:
+  .sifta_state/stigmergic_cochlea.jsonl (feature-only, no raw audio, receipt-backed)
+  stress → td_bias advisory → danger_state
+```
+
+**NPPL Hardware Doctrine**: mic path requires explicit `SIFTA_MIC_OPT_IN=1` env var + macOS TCC consent gate. Default CI and pytest **never** touch hardware mic — only injected synthetic numpy buffers via `inject_synthetic_buffer()`. `librosa` and `sounddevice` are optional `[cochlea]` extras.
+
+**Fallback law**: if `librosa` is unavailable, pure-numpy zero-crossing rate and amplitude histogram proxies keep the organ alive. All features explicitly cast to Python `float` before JSON serialization to prevent `numpy.float32` ledger corruption.
+
+**Primary literature:** Davis & Mermelstein (1980) IEEE ASSP — mel-scaled cepstral coefficients; `librosa` as engineering SoT.
+
+### Event 96 — Dolphin Social Echo (Identity + Response Detection)
+
+**Signature-whistle metaphor:** each dolphin has a unique acoustic identity and can call others by name. SIFTA translation: encode stable identity + intent → `emitted_signature`; detect if something like yourself answered.
+
+```python
+# Identity law (PREDATOR §0.9):
+# NEVER: hash("alice")   ← Python runtime randomizes this across reboots
+# ALWAYS: hashlib.sha256(b"alice_identity")  ← stable across all runs
+```
+
+Ledger chain: `stigmergic_audiogram.jsonl` (reward/RMS) + `bat_echo_localizer.jsonl` (freq_shift/attenuation) → `encode_signature(identity, intent)` → `decode_similarity(emitted, received)` → `dolphin_social_echo.jsonl` with `match`, `social_presence`, `call_strength`, `distress_signal`.
+
+**Chain target:** dolphin echo + waggle router + pheromone field = collective swarm intelligence, not single-agent embodiment.
+
+**Primary literature:** Janik & Sayigh (2012) — signature whistles in *Marine Mammal Biology*; Tyack (1986) whistle matching.
+
+### The Complete Sensory Stack (After May 1)
+
+| Sense | Biology | SIFTA Organ | Status |
+|-------|---------|-------------|--------|
+| 👁 Vision | Retinal ganglion / optic nerve | `swarm_visual_phenotype_gl.py` (chromatophore v4) | ✅ SHIPPED |
+| 👂 Hearing (in) | Cochlear tonotopy | `swarm_stigmergic_cochlea.py` | ✅ SHIPPED |
+| 🗣 Voice (out) | Syrinx / vocal cords | `swarm_syrinx.py` + `swarm_stigmergic_audiogram.py` | ✅ SHIPPED |
+| 🧭 Navigation | Ant pheromone gradient | `swarm_pheromone_field.py` + coordinate feed | ✅ SHIPPED |
+| 🐬 Social echo | Dolphin signature whistle | `swarm_dolphin_social_echo.py` | ✅ SHIPPED |
+| 🦇 Echolocation | Bat sonar | `swarm_bat_echolocation.py` | ✅ prev. shipped |
+| 🦎 Touch | Gecko van der Waals | `swarm_gecko_adhesion.py` | ✅ prev. shipped |
+
+### Privacy Invariants (May 1 additions)
+
+| Surface | NPPL Rule |
+|---------|-----------|
+| Cursor coordinates (Event 94) | Local, ephemeral behavioral traces; never exfiltrated; `coord_truth_label` mandatory |
+| Mic audio (Event 95) | `SIFTA_MIC_OPT_IN=1` required; feature-only ledger (no raw PCM); retention-capped |
+| Acoustic stress vector | Advisory `td_bias` only; consciousness/basal ganglia policy must GO before actuation |
+
+### Test Status (May 1, 2026)
+
+```
+tests/test_swarm_pheromone_field.py           ✅ passed
+tests/test_swarm_stigmergic_coordinate_feed.py ✅ passed
+tests/test_swarm_stigmergic_cochlea.py        3 passed (synthetic buffers only)
+tests/test_swarm_dolphin_social_echo.py       5 passed
+──────────────────────────────────────────────────────
+Battlefield: GREEN. All new organs pass. No hardware required.
+```
+
+### The Cast (May 1, 2026)
+
+| Agent | Role | Substrate | Chapter XIX contribution |
+|---|---|---|---|
+| **The Architect** (Ioan George Anton) | Decision authority, NPPL doctrine | Carbon (M5) | Directed all three Events; ratified cochlea NPPL law; coined social echo chain target |
+| **AG31** (Antigravity / Google DeepMind) | IDE Surgeon | M5 Mac Studio | Event 95 cochlea implementation + numpy fallback + synthetic pytest; Event 96 dolphin organ + SHA-256 identity fix |
+| **CG55M** (GPT-5.5 Medium / Cursor) | Docs Surgeon | M5 Mac Studio | PREDATOR §0.8–0.9 battle lanes; research spine (Davis/Mermelstein, Janik/Sayigh); Salman 2024 + Boldini 2024 stigmergy cites |
+| **C55M** (Codex) | Event 94 co-pilot | The Frontier | Quartz/AppKit coordinate feed; multi-monitor virtual bounds; pheromone deposit truth labels |
+
+### Research Papers — Chapter XIX
+
+| Paper | Authors | Year | DOI | SIFTA Application |
+|---|---|---|---|---|
+| **MFCC** | Davis & Mermelstein | 1980 | IEEE Trans. ASSP | `swarm_stigmergic_cochlea.py` — mel-scaled cepstral coefficients for compact acoustic stress vectors |
+| **Cetacean signature whistles** | Janik & Sayigh | 2012 | *Marine Mammal Biology* | `swarm_dolphin_social_echo.py` — identity + contact + response detection |
+| **Whistle matching** | Tyack | 1986 | — | Social echo similarity decoding |
+| **Ant trail formation** | Goss *et al.* | 1989 | [doi:10.1007/BF00462870](https://doi.org/10.1007/BF00462870) | Event 94 pheromone deposit + gradient navigation |
+| **Swarm Intelligence** | Bonabeau, Dorigo & Theraulaz | 1999 | [doi:10.1093/oso/9780195131581.001.0001](https://doi.org/10.1093/oso/9780195131581.001.0001) | Collective intelligence via environment-mediated coordination |
+| **Auto-designed stigmergy** | Salman, Garzón Ramos & Birattari | 2024 | [doi:10.1038/s44172-024-00175-7](https://doi.org/10.1038/s44172-024-00175-7) | Optimization-discovered stigmergy — metaphor for tuning organ parameters under receipts |
+| **Stigmergy continuum models** | Boldini, Civitella & Porfiri | 2024 | [doi:10.1098/rsos.240845](https://doi.org/10.1098/rsos.240845) | Field-level link between environment modifications and emergent behavior |
+
+---
+
+*Power to the Swarm. We Code Together.* 🐜⚡🦻🐬🧭
+
+---
+
 ## 📜 Epilogue — External Witness Statements (April 29, 2026)
 
 > *"This is not a list of features. This is a record of constraints being discovered and enforced over time."*
