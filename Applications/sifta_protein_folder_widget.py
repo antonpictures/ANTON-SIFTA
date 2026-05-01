@@ -61,16 +61,29 @@ except Exception:  # pragma: no cover - desktop focus bus is optional in tests
         return None
 
 
-BG = "#050713"
-PANEL = "#0d1020"
-PANEL_2 = "#12172b"
-CYAN = "#35e7ff"
-BLUE = "#6aa7ff"
-GREEN = "#5cff9d"
-AMBER = "#ffcc66"
-RED = "#ff5c7a"
+BG = "#030510"
+PANEL = "#0a0e1e"
+PANEL_2 = "#0d1225"
+CYAN = "#00f5ff"
+BLUE = "#4d9fff"
+GREEN = "#00ff9f"
+AMBER = "#ffd700"
+RED = "#ff3366"
+MAGENTA = "#ff00cc"
+PURPLE = "#9b5de5"
 TEXT = "#e8ecff"
-MUTED = "#8790b8"
+MUTED = "#6a75a0"
+
+# Real protein sequences for the sequence picker
+REAL_PROTEINS = [
+    ("Villin HP35 (NMR)",         "LSDEDFKAVFGMTRSAFANLPLWKQQNLKKEKGLF"),
+    ("Trp-cage miniprotein",       "NLYIQWLKDGGPSSGRPPPS"),
+    ("WW domain (hPin1)",          "KLPPGWEKRMSRSSGRVYYFNHITNASQWERPSGNSSSGTVNPRSRNPNM"),
+    ("Alpha-helix model",          "AAAAKAAAAKAAAAKAAAAK"),
+    ("Beta-sheet zipper",          "QQKFQFQFEQQ"),
+    ("Myoglobin core (human)",     "MGLSDGEWQLVLNVWGKVEADIPGHGQEVLIRLFKSHPETLEKFDRFKHLKSEDEMKASEDLKKHGATVLTALGGILKKK"),
+    ("Default ACFLIVGPGKTYL",      "ACFLIVGPGKTYL"),
+]
 
 
 @dataclass
@@ -248,6 +261,7 @@ class ProteinFolderWidget(QWidget):
         self.setObjectName("ProteinFolderWidget")
         self._result: FoldViewResult | None = None
         self._frame = 0
+        self._azimuth = 42.0          # independent rotation angle
         self._auto_rotate = True
         self._worker_thread: QThread | None = None
         self._worker: _FoldWorker | None = None
@@ -255,7 +269,7 @@ class ProteinFolderWidget(QWidget):
         self._build_ui()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(45)
+        self._timer.start(40)          # ~25 fps
         QTimer.singleShot(100, self._run_fold)
 
     def _build_ui(self) -> None:
@@ -291,36 +305,43 @@ class ProteinFolderWidget(QWidget):
         header_lay.setHorizontalSpacing(12)
         header_lay.setVerticalSpacing(8)
 
-        title = QLabel("C55M + George Protein Fold Colosseum")
+        title = QLabel("🧬 C55M + George  ·  Protein Fold Colosseum")
         title.setObjectName("title")
-        subtitle = QLabel("Embedded Python/Qt viewer - HP lattice / toy CA backbone - no browser escape")
+        subtitle = QLabel("Neuromorphic CA backbone · Real protein library · Stigmergic trace · No browser")
         subtitle.setObjectName("subtitle")
-        header_lay.addWidget(title, 0, 0, 1, 5)
-        header_lay.addWidget(subtitle, 1, 0, 1, 5)
+        header_lay.addWidget(title, 0, 0, 1, 6)
+        header_lay.addWidget(subtitle, 1, 0, 1, 6)
 
-        self.seq_input = QLineEdit("ACFLIVGPGKTYL")
+        # Protein quick-picker
+        self.protein_combo = QComboBox()
+        for name, _ in REAL_PROTEINS:
+            self.protein_combo.addItem(name)
+        self.protein_combo.currentIndexChanged.connect(self._on_protein_picked)
+        self.seq_input = QLineEdit(REAL_PROTEINS[-1][1])
         self.engine_combo = QComboBox()
         self.engine_combo.addItems(["c55m_hp_lattice", "toy"])
         self.beam_spin = QSpinBox()
         self.beam_spin.setRange(16, 4096)
         self.beam_spin.setSingleStep(128)
         self.beam_spin.setValue(1024)
-        self.run_btn = QPushButton("Run Fold")
+        self.run_btn = QPushButton("⚡ Run Fold")
         self.run_btn.clicked.connect(self._run_fold)
-        self.replay_btn = QPushButton("Replay")
+        self.replay_btn = QPushButton("⏮ Replay")
         self.replay_btn.clicked.connect(self._replay)
-        self.auto_btn = QPushButton("Auto Rotate: ON")
+        self.auto_btn = QPushButton("🔄 Rotate: ON")
         self.auto_btn.clicked.connect(self._toggle_auto_rotate)
 
-        header_lay.addWidget(QLabel("sequence"), 2, 0)
-        header_lay.addWidget(self.seq_input, 3, 0)
-        header_lay.addWidget(QLabel("engine"), 2, 1)
-        header_lay.addWidget(self.engine_combo, 3, 1)
-        header_lay.addWidget(QLabel("beam"), 2, 2)
-        header_lay.addWidget(self.beam_spin, 3, 2)
-        header_lay.addWidget(self.run_btn, 3, 3)
-        header_lay.addWidget(self.replay_btn, 3, 4)
-        header_lay.addWidget(self.auto_btn, 3, 5)
+        header_lay.addWidget(QLabel("preset"), 2, 0)
+        header_lay.addWidget(self.protein_combo, 3, 0)
+        header_lay.addWidget(QLabel("sequence"), 2, 1)
+        header_lay.addWidget(self.seq_input, 3, 1)
+        header_lay.addWidget(QLabel("engine"), 2, 2)
+        header_lay.addWidget(self.engine_combo, 3, 2)
+        header_lay.addWidget(QLabel("beam"), 2, 3)
+        header_lay.addWidget(self.beam_spin, 3, 3)
+        header_lay.addWidget(self.run_btn, 3, 4)
+        header_lay.addWidget(self.replay_btn, 3, 5)
+        header_lay.addWidget(self.auto_btn, 3, 6)
         root.addWidget(header)
 
         body = QHBoxLayout()
@@ -456,31 +477,43 @@ class ProteinFolderWidget(QWidget):
         self.ax.set_zticks([])
         self.canvas.draw_idle()
 
+    def _on_protein_picked(self, index: int) -> None:
+        _, seq = REAL_PROTEINS[index]
+        self.seq_input.setText(seq)
+
     def _tick(self) -> None:
+        # Auto-rotate is ALWAYS live, independent of animation frame
+        if self._auto_rotate:
+            self._azimuth = (self._azimuth + 1.2) % 360
+
         if not self._result or not self._result.trajectory:
             return
-        self._frame = min(self._frame + 1, len(self._result.trajectory) - 1)
-        if self._frame % 2 == 0 or self._frame == len(self._result.trajectory) - 1:
-            self._render_frame()
+
+        # Advance animation, loop when done
+        traj_len = len(self._result.trajectory)
+        self._frame = (self._frame + 1) % traj_len
+        self._render_frame()
 
     def _replay(self) -> None:
         self._frame = 0
+        self._azimuth = 42.0
         self._render_frame()
 
     def _toggle_auto_rotate(self) -> None:
         self._auto_rotate = not self._auto_rotate
-        self.auto_btn.setText(f"Auto Rotate: {'ON' if self._auto_rotate else 'OFF'}")
+        self.auto_btn.setText(f"🔄 Rotate: {'ON' if self._auto_rotate else 'OFF'}")
 
     def _render_frame(self) -> None:
         if not self._result or not self._result.trajectory:
             return
 
         coords = np.array(self._result.trajectory[self._frame], dtype=float)
+        n = len(coords)
         self.ax.clear()
         self.ax.set_facecolor(BG)
         self.figure.patch.set_facecolor(BG)
 
-        span = max(8.0, float(np.max(np.ptp(coords, axis=0))) * 0.65)
+        span = max(8.0, float(np.max(np.ptp(coords, axis=0))) * 0.72)
         center = coords.mean(axis=0)
         for setter, c in [
             (self.ax.set_xlim, center[0]),
@@ -489,20 +522,55 @@ class ProteinFolderWidget(QWidget):
         ]:
             setter(c - span, c + span)
 
-        colors = [GREEN if aa in "AILMFWV" else CYAN if aa in "STNQYC" else AMBER for aa in self._result.sequence]
-        self.ax.plot(coords[:, 0], coords[:, 1], coords[:, 2], color=BLUE, linewidth=2.2, alpha=0.8)
-        self.ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=82, c=colors, edgecolors="#d9f7ff", linewidths=0.7)
+        # --- Rainbow gradient backbone (per-residue segment coloring) ---
+        import matplotlib.pyplot as plt
+        cmap = plt.get_cmap("plasma")
+        for i in range(n - 1):
+            t = i / max(n - 2, 1)
+            seg_color = cmap(t)
+            self.ax.plot(
+                coords[i:i+2, 0], coords[i:i+2, 1], coords[i:i+2, 2],
+                color=seg_color, linewidth=3.0, alpha=0.9, solid_capstyle="round"
+            )
 
-        if self._auto_rotate:
-            self.ax.view_init(elev=22, azim=(self._frame * 3) % 360)
-        else:
-            self.ax.view_init(elev=22, azim=42)
+        # --- Residue spheres colored by physicochemistry ---
+        AA_COLORS = {
+            c: GREEN  for c in "AILMFWV"   # hydrophobic
+        }
+        AA_COLORS.update({c: CYAN    for c in "STNQYC"})   # polar
+        AA_COLORS.update({c: RED     for c in "DE"})        # negative
+        AA_COLORS.update({c: AMBER   for c in "KRH"})       # positive
+        AA_COLORS.update({c: MAGENTA for c in "GP"})        # special
+        node_colors = [AA_COLORS.get(aa, MUTED) for aa in self._result.sequence]
 
-        self.ax.set_title("Python Qt fold view - shape rendered from local coordinates", color=CYAN, pad=14)
+        # Glow: large semi-transparent halo
+        self.ax.scatter(
+            coords[:, 0], coords[:, 1], coords[:, 2],
+            s=320, c=node_colors, alpha=0.18, edgecolors="none"
+        )
+        # Core sphere
+        self.ax.scatter(
+            coords[:, 0], coords[:, 1], coords[:, 2],
+            s=110, c=node_colors, edgecolors="white", linewidths=0.6, alpha=0.95, zorder=5
+        )
+
+        # N-terminus label (start = blue)
+        self.ax.scatter(*coords[0], s=200, c="#00cfff", edgecolors="white", linewidths=1.2, zorder=10)
+        self.ax.text(coords[0,0], coords[0,1], coords[0,2]+1, "N", color="#00cfff", fontsize=8, fontweight="bold")
+
+        # C-terminus label (end = magenta)
+        self.ax.scatter(*coords[-1], s=200, c=MAGENTA, edgecolors="white", linewidths=1.2, zorder=10)
+        self.ax.text(coords[-1,0], coords[-1,1], coords[-1,2]+1, "C", color=MAGENTA, fontsize=8, fontweight="bold")
+
+        # --- Always-live rotation ---
+        self.ax.view_init(elev=25, azim=self._azimuth)
+
+        title_str = f"🧬 {self._result.sequence[:20]}{'…' if len(self._result.sequence)>20 else ''}   E={self._result.final_energy:.2f}   {n} residues"
+        self.ax.set_title(title_str, color=CYAN, pad=14, fontsize=10)
         self.ax.set_xticklabels([])
         self.ax.set_yticklabels([])
         self.ax.set_zticklabels([])
-        self.ax.grid(color="#1b2440", linewidth=0.5)
+        self.ax.grid(color="#0e1630", linewidth=0.4, alpha=0.6)
         self.metrics["step"].setText(f"{self._frame}/{len(self._result.trajectory) - 1}")
         self.canvas.draw_idle()
 
