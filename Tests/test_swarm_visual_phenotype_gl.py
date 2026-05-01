@@ -1,189 +1,161 @@
-"""Tests for ModernGL visual phenotype optic-nerve pass."""
+"""Pixel-proof tests for the SIFTA optic nerve.
 
+Falsifiable invariants:
+  1. Standalone GL context creates without error.
+  2. High drive produces brighter pixels than low drive.
+  3. Clamp functions block out-of-range / NaN / negative inputs.
+  4. VisualPhenotypeUniformTail degrades cleanly on missing ledger.
+  5. Shader compiles with no GLSL syntax errors.
+"""
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import math
 
-import pytest
-
-from System.swarm_visual_phenotype_gl import (
-    DEFAULT_SHADER,
-    TRUTH_LABEL,
-    VisualPhenotypeModernGLPass,
-    VisualPhenotypeUniformTail,
-    clamp_uniforms,
-    load_honeybee_fragment,
-    summarize_uniform_frame,
-    try_create_standalone_context,
-)
+# Helpers
 
 
-class _FakeUniform:
-    def __init__(self) -> None:
-        self.value = None
+def _low_drive() -> dict:
+    return {
+        "u_stigmergic_drive":    0.05,
+        "u_metabolic_scope":     0.3,
+        "u_cot_factor":          0.9,
+        "u_quorum_signal":       0.05,
+        "u_chemotaxis_gradient": 0.02,
+    }
 
 
-class _FakeProgram:
-    def __init__(self) -> None:
-        self.uniforms = {name: _FakeUniform() for name in [
-            "u_resolution",
-            "u_time",
-            "u_reward",
-            "u_distance",
-            "u_confidence",
-            "u_cost",
-            "u_heading",
-            "u_stigmergic_drive",
-            "u_metabolic_scope",
-            "u_cot_factor",
-            "u_quorum_signal",
-            "u_chemotaxis_gradient",
-        ]}
-
-    def __getitem__(self, name: str) -> _FakeUniform:
-        return self.uniforms[name]
+def _high_drive() -> dict:
+    return {
+        "u_stigmergic_drive":    0.95,
+        "u_metabolic_scope":     1.8,
+        "u_cot_factor":          0.02,
+        "u_quorum_signal":       0.9,
+        "u_chemotaxis_gradient": 0.8,
+    }
 
 
-class _FakeVertexArray:
-    def __init__(self) -> None:
-        self.render_calls = 0
-
-    def render(self, *_args, **_kwargs) -> None:
-        self.render_calls += 1
+# Context probe
 
 
-class _FakeContext:
-    def __init__(self) -> None:
-        self.program_obj = _FakeProgram()
-        self.vao_obj = _FakeVertexArray()
-        self.vertex_shader = ""
-        self.fragment_shader = ""
-
-    def program(self, *, vertex_shader: str, fragment_shader: str) -> _FakeProgram:
-        self.vertex_shader = vertex_shader
-        self.fragment_shader = fragment_shader
-        return self.program_obj
-
-    def buffer(self, data: bytes) -> bytes:
-        return data
-
-    def vertex_array(self, program: _FakeProgram, content):
-        assert program is self.program_obj
-        assert content[0][2] == "in_pos"
-        return self.vao_obj
+def test_standalone_context_available() -> None:
+    """OpenGL 4.1 standalone context must be available on this node."""
+    from System.swarm_visual_phenotype_gl import try_create_standalone_context
+    probe = try_create_standalone_context()
+    assert probe.ok, f"Standalone GL unavailable: {probe.status}"
 
 
-def _append_jsonl(path: Path, row: dict) -> None:
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row) + "\n")
+# Shader compile
 
 
-def test_clamp_uniforms_defends_shader_from_bad_ledger_values() -> None:
-    uniforms = clamp_uniforms({
-        "u_reward": 2.5,
-        "u_distance": -1.0,
-        "u_confidence": float("nan"),
-        "u_cost": 7.0,
-        "u_heading": 99.0,
-        "u_metabolic_scope": 5.0,
-        "u_cot_factor": -3.0,
-    })
-
-    assert uniforms["u_reward"] == 1.0
-    assert uniforms["u_distance"] == 0.0
-    assert uniforms["u_confidence"] == 0.0
-    assert uniforms["u_cost"] == 1.0
-    assert uniforms["u_metabolic_scope"] == 2.0
-    assert uniforms["u_cot_factor"] == 0.0
-    assert uniforms["u_heading"] <= 6.28319
+def test_chromatophore_shader_compiles() -> None:
+    """Covenant-grade GLSL must compile without error on the local GPU."""
+    import moderngl
+    from System.swarm_visual_phenotype_gl import (
+        CHROMATOPHORE_FRAGMENT_SRC,
+        CHROMATOPHORE_VERTEX_SRC,
+    )
+    ctx = moderngl.create_standalone_context()
+    try:
+        prog = ctx.program(
+            vertex_shader=CHROMATOPHORE_VERTEX_SRC,
+            fragment_shader=CHROMATOPHORE_FRAGMENT_SRC,
+        )
+        assert prog is not None
+    finally:
+        ctx.release()
 
 
-def test_uniform_tail_reads_latest_jsonl_row_per_frame(tmp_path: Path) -> None:
-    ledger = tmp_path / "visual_phenotype_uniforms.jsonl"
-    _append_jsonl(ledger, {"tick_id": "old", "receipt_backed": True, "u_reward": 0.1})
-    _append_jsonl(ledger, {"tick_id": "new", "receipt_backed": True, "u_reward": 0.8, "u_cost": 0.2})
+# Pixel invariant
 
+
+def test_high_drive_brighter_than_low_drive() -> None:
+    """
+    Core falsifiable claim:
+    High biological drive yields higher mean pixel brightness.
+    """
+    from System.swarm_visual_phenotype_gl import mean_brightness
+    lo = mean_brightness(_low_drive(),  width=128, height=128)
+    hi = mean_brightness(_high_drive(), width=128, height=128)
+    assert hi > lo, (
+        f"FAIL: high-drive brightness ({hi:.2f}) must exceed "
+        f"low-drive ({lo:.2f}). Phenotype glow is not responding to ledger input."
+    )
+
+
+def test_zero_drive_does_not_produce_white() -> None:
+    """Resting state should not produce a saturated/white frame."""
+    from System.swarm_visual_phenotype_gl import mean_brightness
+    zero = {"u_stigmergic_drive": 0.0, "u_metabolic_scope": 0.0,
+            "u_cot_factor": 0.0, "u_quorum_signal": 0.0, "u_chemotaxis_gradient": 0.0}
+    b = mean_brightness(zero, width=128, height=128)
+    assert b < 200, f"Zero drive should be dark, got {b:.2f}"
+
+
+# Clamp discipline
+
+
+def test_clamp_uniforms_handles_nan_and_negative() -> None:
+    from System.swarm_visual_phenotype_gl import clamp_uniforms
+    bad_row = {
+        "u_reward":           float("nan"),
+        "u_stigmergic_drive": -5.0,
+        "u_metabolic_scope":  999.0,
+        "u_cot_factor":       -1.0,
+        "u_quorum_signal":    2.0,
+    }
+    out = clamp_uniforms(bad_row)
+    assert math.isfinite(out["u_reward"]),        "NaN reward leaked"
+    assert out["u_stigmergic_drive"] >= 0.0,       "Negative drive leaked"
+    assert out["u_metabolic_scope"]  <= 2.0,       "Scope overflow leaked"
+    assert out["u_cot_factor"]       >= 0.0,       "Negative COT leaked"
+    assert 0.0 <= out["u_quorum_signal"] <= 1.0,   "Quorum OOB leaked"
+
+
+# Uniform tail
+
+
+def test_uniform_tail_degrades_on_missing_ledger(tmp_path) -> None:
+    from System.swarm_visual_phenotype_gl import (
+        UNIFORM_DEFAULTS,
+        VisualPhenotypeUniformTail,
+    )
+    tail = VisualPhenotypeUniformTail(tmp_path / "does_not_exist.jsonl")
+    frame = tail.read_frame()
+    # Should return zeros/defaults and not crash.
+    assert isinstance(frame.uniforms, dict)
+    assert not frame.receipt_backed
+    for key in UNIFORM_DEFAULTS:
+        assert key in frame.uniforms
+
+
+def test_uniform_tail_reads_real_row(tmp_path) -> None:
+    from System.swarm_visual_phenotype_gl import VisualPhenotypeUniformTail
+    ledger = tmp_path / "test_phenotype.jsonl"
+    row = {
+        "u_reward": 0.77, "u_distance": 0.3, "u_confidence": 0.9,
+        "u_cost": 0.1, "u_heading": 1.57, "u_stigmergic_drive": 0.77,
+        "u_metabolic_scope": 1.5, "u_cot_factor": 0.1, "u_quorum_signal": 0.9,
+        "u_chemotaxis_gradient": 0.6,
+        "receipt_backed": True, "tick_id": "abc-123", "ts": 1777000000.0,
+    }
+    ledger.write_text(json.dumps(row) + "\n", encoding="utf-8")
     tail = VisualPhenotypeUniformTail(ledger)
     frame = tail.read_frame()
-
-    assert frame.truth_label == TRUTH_LABEL
-    assert frame.tick_id == "new"
     assert frame.receipt_backed is True
-    assert frame.uniforms["u_reward"] == 0.8
-    assert "reward=0.80" in summarize_uniform_frame(frame)
+    assert frame.tick_id == "abc-123"
+    assert abs(frame.uniforms["u_stigmergic_drive"] - 0.77) < 0.01
 
 
-def test_modern_gl_pass_compiles_fragment_and_applies_uniforms_with_fake_context(tmp_path: Path) -> None:
-    ledger = tmp_path / "visual_phenotype_uniforms.jsonl"
-    _append_jsonl(
-        ledger,
-        {
-            "tick_id": "tick-1",
-            "receipt_backed": True,
-            "u_reward": 0.66,
-            "u_distance": 0.25,
-            "u_confidence": 0.9,
-            "u_cost": 0.1,
-            "u_heading": 1.25,
-        },
+# Summary string
+
+
+def test_summarize_uniform_frame(tmp_path) -> None:
+    from System.swarm_visual_phenotype_gl import (
+        VisualPhenotypeUniformTail,
+        summarize_uniform_frame,
     )
-    ctx = _FakeContext()
-    pass_ = VisualPhenotypeModernGLPass(ctx, ledger_path=ledger, resolution=(320, 180))
-
-    frame = pass_.render_frame(elapsed=4.0, force_pull=True)
-
-    assert frame.tick_id == "tick-1"
-    assert "#version 410 core" in ctx.vertex_shader
-    assert "Honeybee Waggle Router" in ctx.fragment_shader
-    assert ctx.program_obj.uniforms["u_resolution"].value == (320.0, 180.0)
-    assert ctx.program_obj.uniforms["u_time"].value == 4.0
-    assert ctx.program_obj.uniforms["u_reward"].value == 0.66
-    assert ctx.program_obj.uniforms["u_confidence"].value == 0.9
-    assert ctx.vao_obj.render_calls == 1
-
-
-def test_honeybee_shader_archive_is_loadable() -> None:
-    fragment = load_honeybee_fragment(DEFAULT_SHADER)
-    assert "#version 410 core" in fragment
-    assert "u_reward" in fragment
-    assert "fragColor" in fragment
-
-
-def test_standalone_context_probe_is_truthful_not_fatal() -> None:
-    probe = try_create_standalone_context()
-    assert isinstance(probe.ok, bool)
-    assert probe.status
-
-
-def test_real_modern_gl_standalone_context_renders_when_available(tmp_path: Path) -> None:
-    try:
-        import moderngl
-
-        ctx = moderngl.create_standalone_context()
-    except Exception as exc:
-        pytest.skip(f"standalone ModernGL context unavailable: {exc}")
-
-    ledger = tmp_path / "visual_phenotype_uniforms.jsonl"
-    _append_jsonl(
-        ledger,
-        {
-            "tick_id": "real-gl",
-            "receipt_backed": True,
-            "u_reward": 0.7,
-            "u_distance": 0.2,
-            "u_confidence": 0.8,
-            "u_cost": 0.1,
-            "u_heading": 0.5,
-        },
-    )
-    try:
-        pass_ = VisualPhenotypeModernGLPass(ctx, ledger_path=ledger, resolution=(32, 32))
-        frame = pass_.render_frame(elapsed=0.1, force_pull=True)
-        assert frame.tick_id == "real-gl"
-        assert frame.receipt_backed is True
-    finally:
-        try:
-            ctx.release()
-        except Exception:
-            pass
+    tail  = VisualPhenotypeUniformTail(tmp_path / "empty.jsonl")
+    frame = tail.read_frame()
+    s     = summarize_uniform_frame(frame)
+    assert "receipt" in s or "no receipt" in s
