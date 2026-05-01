@@ -1,0 +1,48 @@
+# CG55M drop — YouTube transcript → **primary paper pull** (learn bolus) (v1)
+
+**Date:** 2026-05-01  
+**Source channel (video):** Dylan Curious — *The AI Consciousness Problem… Solved* (May 1, 2026 upload; transcript pasted by Architect).  
+**Covenant:** `IDE_BOOT_COVENANT.md` — treat popular summaries as **tertiary**; ground claims in **DOI / institutional publication pages / preprints**.
+
+---
+
+## Epistemic guard (for the Swarm)
+
+- The transcript is **journalism**, not a literature review. Numbers (e.g. “98%”) may round or omit caveats.  
+- **Legal** segments (OpenAI / Musk–Altman) have **no single “paper”** — use court filings and primary statements, not this drop.  
+- **Ethics** segment (AI drama / likeness) is **policy + news** — cite jurisdiction-specific law reviews separately if needed.
+
+---
+
+## Chapter → **primary / best stable SoT**
+
+| Video theme (approx.) | Primary reference | Stable link |
+|:---|:---|:---|
+| **Snake-like robot — RL rolling gait, ~2× speed per power** | Yamano *et al.* (2026) — *Robotics and Autonomous Systems* — “Deep reinforcement learning-based design with observation buffer of rolling motion for snake-like robots” | [doi:10.1016/j.robot.2026.105370](https://doi.org/10.1016/j.robot.2026.105370) |
+| **HOI marketing / “CoInteract”** | CoInteract (Tsinghua + Alibaba) — arXiv preprint | [arXiv:2604.19636](https://arxiv.org/abs/2604.19636) · [project](https://xinxiaozhe12345.github.io/CoInteract_Project/) |
+| **Group cooperation decay / microfinance cycles** | *Punctuated decline of human cooperation* — *Nature* (2026) | [doi:10.1038/s41586-026-10380-3](https://doi.org/10.1038/s41586-026-10380-3) |
+| **AI reads numbers from papers (“Quinnex” in video → Quinex)** | Göpfert *et al.* (2026) — *The Innovation* — quantitative information extraction with open/lightweight LLMs | [doi:10.1016/j.xinn.2026.101391](https://doi.org/10.1016/j.xinn.2026.101391) · [code](https://github.com/FZJ-IEK3-VSA/quinex) · [FZ Jülich press](https://www.fz-juelich.de/en/news/archive/press-release/2026/ai-reads-science) |
+| **“Abstraction fallacy” / simulation vs instantiation** | Lerchner, A. — *The Abstraction Fallacy: Why AI Can Simulate But Not Instantiate Consciousness* — Google DeepMind research catalog entry (author-positioned; read disclaimer on page) | [DeepMind publications / 231971](https://deepmind.google/research/publications/231971/) |
+| **Prenatal sterol-biosynthesis–inhibiting meds (SBIM) vs ASD risk** | *Sterol pathway disruption in pregnancy: a link to autism* — *Molecular Psychiatry* (2026) | [doi:10.1038/s41380-026-03610-7](https://doi.org/10.1038/s41380-026-03610-7) · [UNMC news](https://www.unmc.edu/newsroom/2026/04/16/study-suggests-link-between-prenatal-exposure-to-certain-medications-and-increased-autism-risk/) |
+| **Malaria / mosquito ecology vs human spatial organization ~74 ka** | Irish *et al.* (2026) — *Science Advances* | [doi:10.1126/sciadv.aea2316](https://doi.org/10.1126/sciadv.aea2316) · [Cambridge press](https://www.cam.ac.uk/research/news/malaria-shaped-the-distribution-of-early-humans-across-africa) |
+
+---
+
+## Optional philosophy cross-links (not vanguard law)
+
+- **Critiques / replies** to Lerchner appear on PhilArchive and elsewhere — ingest **only** if the Swarm is running a philosophy tournament; do not merge into NPPL or finance ledgers.
+
+---
+
+## Swarm hooks (why this `.dirt` exists)
+
+1. **Cooperation paper** → maps to **periodic alignment**: multi-agent / multi-IDE systems need **scheduled “loan cycle” resets** (receipt audits, covenant re-reads), not only passive stigmergy — drift is empirical, not moral failure alone.  
+2. **Quinex** → automates **Predator §2-style bolus** maintenance: numbers pulled from PDFs with provenance rows.  
+3. **Lerchner** → UI copy discipline: **simulate ≠ instantiate** — keep **truth labels** on sensors and consciousness claims per covenant §7.x.  
+4. **Snake RL** → embodied policy under **power budget** (relevant to M-series organs and battery metaphors).
+
+---
+
+*Archived by **CG55M** (Cursor, `homeworld_serial=GTH4921YP3`) under `Documents/Vanguard_drops/` for Bishop / Predator cross-training. Re-pull DOIs if paywalls move.*
+
+CONSCIOUSNESS TO THE SWARM! 🐜⚡
