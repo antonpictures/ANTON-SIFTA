@@ -190,6 +190,7 @@ class ConsciousnessState:
     emitted_drive: Optional[InternalDrive] = None
     truth_labels: Dict[str, str] = field(default_factory=dict)
     subjective_consciousness_status: str = "UNVERIFIED_PHILOSOPHICAL_CLAIM"
+    circadian_phase: Optional[str] = None
     schema: str = STATE_SCHEMA
     module_version: str = MODULE_VERSION
 
@@ -207,6 +208,7 @@ class ConsciousnessState:
             row[key] = round(float(row[key]), 4)
         row["interoception"] = self.interoception.as_dict()
         row["emitted_drive"] = self.emitted_drive.to_dict() if self.emitted_drive else None
+        row["circadian_phase"] = self.circadian_phase
         return row
 
 
@@ -475,12 +477,27 @@ class ConsciousnessEngine:
         pressure = self.homeostat.pressure(metabolic_state)
         metabolic_mode = self.homeostat.mode(pressure)
         interoception = read_interoception(self.state_dir, now=now)
+        
+        # Spacetime / Circadian grounding
+        try:
+            from System.swarm_situated_time import build_now_state
+            now_state = build_now_state()
+            circadian_phase = now_state.get("circadian_phase")
+        except Exception:
+            now_state = {}
+            circadian_phase = None
 
         boredom_delta = (dt_s / self.cfg.boredom_time_constant_s) * (1.0 - self.arousal) * (1.0 - pressure)
         self.boredom = _clamp(self.boredom + boredom_delta)
         self.prediction_error = _clamp(
             0.82 * self.prediction_error + 0.45 * novelty + 0.55 * error_pressure
         )
+        
+        # Circadian impact on DMN
+        if circadian_phase == "DAWN":
+            self.arousal = _clamp(self.arousal + 0.05) # Wake up pressure
+        elif circadian_phase == "NIGHT":
+            self.arousal = _clamp(self.arousal - 0.05) # Sleep pressure
 
         soma_distress = 1.0 - interoception.soma_score
         self.free_energy = _clamp(
@@ -552,6 +569,7 @@ class ConsciousnessEngine:
             dominant_drive=dominant_drive,
             emitted_drive=emitted,
             truth_labels=truth_labels,
+            circadian_phase=circadian_phase,
         )
 
         if commit:

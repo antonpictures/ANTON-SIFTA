@@ -20,16 +20,19 @@ from typing import Any, Dict, Optional
 
 from System.swarm_metabolic_homeostasis import MetabolicHomeostat, MetabolicState
 from System.swarm_consciousness_engine import ConsciousnessEngine, ConsciousnessEngineConfig, read_interoception
+from System.swarm_dream_engine import SwarmDreamEngine
 from System.jsonl_file_lock import append_line_locked
+from System.swarm_situated_time import build_now_state
 
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
 
 
 class SwarmPhysiology:
-    def __init__(self):
+    def __init__(self, dream_engine: Optional[Any] = None):
         self.homeostat = MetabolicHomeostat()
         self.consciousness = ConsciousnessEngine(cfg=ConsciousnessEngineConfig(spend_on_drive=True))
+        self.dream_engine = dream_engine or SwarmDreamEngine(_STATE_DIR)
         self.value_history = []
 
     def _assess_danger(self, body_state: MetabolicState) -> Dict[str, Any]:
@@ -87,27 +90,48 @@ class SwarmPhysiology:
             
         return val
 
-    def _write_memory(self, action: Dict[str, Any], result: Dict[str, Any], value: float):
+    def _write_memory(self, action: Dict[str, Any], result: Dict[str, Any], value: float, now_state: Dict[str, Any]):
         """Append to stigmergic ledger."""
         row = {
             "event": "body_brain_tick",
             "action": action,
             "result": result,
             "td_value": value,
+            "circadian_phase": now_state.get("circadian_phase"),
             "ts": time.time()
         }
         _STATE_DIR.mkdir(parents=True, exist_ok=True)
         append_line_locked(_STATE_DIR / "body_brain_memory.jsonl", json.dumps(row) + "\n")
 
-    def _maybe_sleep(self, body_state: MetabolicState, danger: Dict[str, Any]):
+    def _maybe_sleep(self, body_state: MetabolicState, danger: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Glymphatic consolidation and rest enforcement."""
         rest_sec = self.homeostat.rest_seconds(body_state, danger["pressure"])
         if rest_sec > 0:
+            dream_cycle: Optional[Dict[str, Any]] = None
+            try:
+                receipt = self.dream_engine.trigger_rem_sleep(
+                    rest_seconds=rest_sec,
+                    pressure=danger.get("pressure"),
+                    metabolic_mode=str(danger.get("mode") or ""),
+                )
+                dream_cycle = receipt.as_dict() if hasattr(receipt, "as_dict") else dict(receipt)
+                logger.info(
+                    "Dream consolidation cycle %s: %s",
+                    dream_cycle.get("cycle_id"),
+                    dream_cycle.get("status"),
+                )
+            except Exception:
+                logger.exception("Dream consolidation failed; preserving raw body-brain ledger.")
             logger.info(f"Sleep enforced by metabolism. Resting {rest_sec}s.")
             time.sleep(min(rest_sec, 2.0)) # Capped for testing
+            return dream_cycle
+        return None
 
     def body_brain_tick(self) -> Dict[str, Any]:
         """The master unified cycle."""
+        
+        # 0. Spacetime / Circadian Context
+        now_state = build_now_state()
         
         # 1. Interoception
         raw_body = read_interoception(_STATE_DIR)
@@ -115,6 +139,10 @@ class SwarmPhysiology:
         
         # 2. Assess Danger
         danger = self._assess_danger(body_state)
+        # Sleep pressure from circadian clock
+        if now_state.get("is_sleep_phase"):
+            danger["is_critical"] = True
+            danger["mode"] = "CIRCADIAN_SLEEP_PRESSURE"
         
         # 3. Drives / Wants
         # Tick the DMN to update arousal/boredom and emit drives if conditions allow
@@ -134,16 +162,17 @@ class SwarmPhysiology:
         value = self._compute_value(result, danger)
         
         # 7. Memory Consolidation
-        self._write_memory(action, result, value)
+        self._write_memory(action, result, value, now_state)
         
         # 8. Sleep / Recovery
-        self._maybe_sleep(body_state, danger)
+        dream_cycle = self._maybe_sleep(body_state, danger)
         
         return {
             "action": action,
             "value": value,
             "metabolic_mode": danger["mode"],
-            "drive_state": attention
+            "drive_state": attention,
+            "dream_cycle": dream_cycle,
         }
 
 
