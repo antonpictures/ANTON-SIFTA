@@ -62,11 +62,13 @@ except Exception:  # pragma: no cover - desktop focus bus is optional in tests
 
 try:
     from System.swarm_visual_phenotype_gl import (
+        SIFTAPhenotypeWidget,
         VisualPhenotypeUniformTail,
         modern_gl_available,
         summarize_uniform_frame,
     )
 except Exception:  # pragma: no cover - the widget falls back to CPU truth labels
+    SIFTAPhenotypeWidget = None  # type: ignore[assignment]
     VisualPhenotypeUniformTail = None  # type: ignore[assignment]
 
     def modern_gl_available() -> bool:  # type: ignore[no-redef]
@@ -283,6 +285,7 @@ class ProteinFolderWidget(QWidget):
         self._phenotype_tail = VisualPhenotypeUniformTail() if VisualPhenotypeUniformTail else None
         self._phenotype_frame: Any | None = None
         self._modern_gl_ready = modern_gl_available()
+        self.phenotype_gl_widget: QWidget | None = None
 
         self._build_ui()
         self._timer = QTimer(self)
@@ -384,6 +387,8 @@ class ProteinFolderWidget(QWidget):
         for key in ["truth", "residues", "engine", "energy", "step", "pdb", "phenotype", "optic"]:
             side_lay.addWidget(self._metric_row(key))
 
+        side_lay.addWidget(self._phenotype_opengl_panel())
+
         cite = QLabel(
             "Research credit\\n"
             "Anfinsen 1973: thermodynamic hypothesis\\n"
@@ -418,6 +423,35 @@ class ProteinFolderWidget(QWidget):
         lay.addWidget(value, 1)
         self.metrics[key] = value
         return box
+
+    def _phenotype_opengl_panel(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("panel")
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(9, 8, 9, 8)
+        lay.setSpacing(6)
+
+        label = QLabel("OPTIC NERVE")
+        label.setObjectName("metricLabel")
+        lay.addWidget(label)
+
+        offscreen = os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen"
+        if SIFTAPhenotypeWidget is not None and not offscreen:
+            try:
+                self.phenotype_gl_widget = SIFTAPhenotypeWidget(panel)
+                self.phenotype_gl_widget.setMinimumSize(260, 140)
+                lay.addWidget(self.phenotype_gl_widget)
+                return panel
+            except Exception:
+                self.phenotype_gl_widget = None
+
+        fallback = QLabel("CPU phenotype")
+        fallback.setObjectName("metricValue")
+        fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fallback.setMinimumHeight(72)
+        fallback.setStyleSheet(f"color:{MUTED}; border:1px solid #26304e; border-radius:6px;")
+        lay.addWidget(fallback)
+        return panel
 
     def _set_running(self, running: bool) -> None:
         self.run_btn.setDisabled(running)
@@ -526,7 +560,10 @@ class ProteinFolderWidget(QWidget):
 
     def _update_visual_phenotype_status(self) -> None:
         if "optic" in self.metrics:
-            self.metrics["optic"].setText("ModernGL ready" if self._modern_gl_ready else "CPU fallback")
+            if self.phenotype_gl_widget is not None:
+                self.metrics["optic"].setText("ModernGL live")
+            else:
+                self.metrics["optic"].setText("ModernGL ready" if self._modern_gl_ready else "CPU fallback")
         if "phenotype" not in self.metrics:
             return
         if self._phenotype_tail is None:

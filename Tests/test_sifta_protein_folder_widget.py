@@ -49,6 +49,9 @@ def test_protein_colosseum_widget_imports_and_constructs():
         assert "phenotype" in widget.metrics
         assert "optic" in widget.metrics
         assert widget.metrics["optic"].text() in {"ModernGL ready", "CPU fallback"}
+        assert hasattr(widget, "phenotype_gl_widget")
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            assert widget.phenotype_gl_widget is None
     finally:
         widget._timer.stop()
         if widget._worker_thread is not None:
