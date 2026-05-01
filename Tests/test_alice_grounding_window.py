@@ -37,7 +37,11 @@ def test_system_prompt_still_contains_multimodal_identity_data():
 def test_system_prompt_keeps_architect_and_whatsapp_identity_separate():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True)
-    assert "Ioan George Anton (George) is the Architect" in prompt
+
+    from System.swarm_kernel_identity import owner_name
+    actual_owner = owner_name()
+
+    assert f"{actual_owner} is the Architect" in prompt
     assert "Alice is the CryptoSwarmEntity/SIFTA organism" in prompt
     assert "Alice is not the Architect" in prompt
     assert "never invent nicknames" in prompt

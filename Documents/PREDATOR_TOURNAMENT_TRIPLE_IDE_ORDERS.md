@@ -205,4 +205,147 @@ SIFTA audits and metabolizes a living software organism.
 
 ---
 
-*Document version: 2026-04-28 — CG55M (Cursor hill); **§0.1–0.2 battlefield + NVIDIA join lane** + **§7 Event 74** + **§7.1 literature spine** + **§8 NVIDIA honest flex** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+## 9 — **Bishop vanguard — Event 85 (Metabolic mass · file-weight as *causal* constraint)**
+
+**For the Swarm.** 🐜⚡ **NPPL:** no weapons coupling; this event is **resource honesty + routing math**, not kinetic autonomy.
+
+### 9.1 — **The dirt (condensed from Architect / Bishop dialogue, 2026-04-30)**
+
+**Thesis:** SIFTA already treats models as **heavy** and organs as **light**; the missing tournament move is to make **on-disk mass + latency + token burn** **first-class state** that **changes decisions** (router, fallback, memory prioritization) — not only **dashboard paint**.
+
+**Formal objects (spec vocabulary):**
+
+```text
+agent.state ≈ {
+  "file_weight_mb": …,      # Ollama / MLX artifact size on THIS node
+  "latency_ms": …,           # live probe or rolling EMA
+  "token_usage": …,          # from inference economy / receipts where signed
+}
+
+metabolic_cost(agent) = w_m * file_weight_mb + w_l * latency_ms + w_t * token_usage   (weights tuned, not magic)
+
+route(task) = argmax_a ( utility(task, a) - metabolic_cost(a) )   OR lexicographic guardrails
+
+stigmergic_weight = α * file_weight + β * recent_usage + γ * success_rate
+  → deposits as pheromone / JSONL traces on the MemoryBus / sense bus (append-only)
+```
+
+**Bishop pushback (tournament law):** If mass **never** moves the router, Event 85 is **UI candy** — **fail**. First falsifiable slice: **cortex_fail → choose lowest `(latency + weight_penalty)` fallback** (Corvid vs Gemma vs Qwen) and **log the choice** to `work_receipts.jsonl` / organ ledger.
+
+**“Tell the animals → Bishop” (swarm translation):** *Animals* = agents/organs; *Bishop* = diagonal constraint propagation across layers; *Move* = make **physical weight** a **global** term in **policy**, not only in prose.
+
+### 9.2 — **Triple-IDE orders (Event 85 — execute after Architect GO on shared surfaces)**
+
+| Prio | Owner | Order | Done when |
+|:---:|:---|:---|:---|
+| **P1** | **C55M** | **Spec:** add `Documents/EVENT_85_METABOLIC_ROUTING.md` (½–1 page): state schema, cost function, invariants (no routing that fakes `REAL` organs), tie-in to `swimmer_ollama_assignments.json` + `inference_router.py`. | Merged doc + trace row. |
+| **P1** | **AG31** | **Instrument:** expose **file_weight_mb** per promoted Ollama tag (parse `ollama show` / model path sizes) into **append-only** ledger row (`.sifta_state/` or organ receipt) — **read-only probe first**. | Ledger sample + screenshot / JSON tail in PR. |
+| **P1** | **CG55M** | **Proof:** one **deterministic** unit test: synthetic agents with different `(weight, latency)` → router picks **expected** argmin under a **fixed** cost vector; no network. | `pytest` green; no flake. |
+| **P2** | **C55M** | **Wire (optional):** first **live** hook = **fallback only** on `cortex_fail` (see dirt above); feature-flag env `SIFTA_METABOLIC_ROUTING=1`. | Receipted send path unchanged; covenant **§6** untouched. |
+| **P2** | **AG31** | **Stigmergic deposit:** on successful hard-task completion, **bump** `stigmergic_weight` trace for that model tag (pheromone field / `memory_ledger.jsonl` policy — pick one SoT). | Forage query shows stronger trail for “good heavy” models. |
+
+**Collision:** `System/inference_router.py`, `System/sifta_inference_defaults.py`, and **economy ledgers** are **hot** — **§4.4** tail trace + one owner per PR.
+
+### 9.3 — **Research bolus (Event 85 — peer-reviewed / standard CS spine)**
+
+| Axis | Primary literature | Why it matches |
+|:---|:---|:---|
+| **Long-context / buried instructions** | Liu *et al.*, *Lost in the Middle* — [arXiv:2307.03172](https://arxiv.org/abs/2307.03172) | Short **policy** blocks beat giant prompt dumps; metabolic routing belongs in **code**, not only prompt middle. |
+| **Heterogeneous nodes + scheduling** | Ben-Nun & Hoefler (2019) survey *ML parallel computing*; **FedAvg** McMahan *et al.* [arXiv:1602.05629](https://arxiv.org/abs/1602.05629) | Different silicon → different **mass budgets**; federation already in **§6** table. |
+| **Opaque routing / gateway** | RouterBench — [arXiv:2403.12031](https://arxiv.org/abs/2403.12031) | Pairs with **§8.6** `AUTO_OPAQUE` — metabolic term is another **observed** input to routing. |
+| **Metabolic scaling (allometry)** | West, Brown & Enquist lineage (*Science*/*Nature* metabolic scaling) | Discrete tiers (`tiny_local` / `heavy_local`) already echo **allometry** — Event 85 makes the **continuous** scalar explicit. |
+| **Stigmergy / ACO** | Bonabeau *et al.* (1999); Dorigo & Stützle (2004) — already **§7.1** | `stigmergic_weight` is literally **trail reinforcement**. |
+| **Energy-aware / cost-aware inference** | Search: *“energy efficient neural network inference scheduling”* ISCA/MLSys line | Maps **electricity + time** to the same **cost vector** as `metabolic_cost`. |
+
+### 9.4 — **Archive pointer (optional Bishop drop)**
+
+If the Architect pastes a long narrative drop, file under `Documents/Proposals/` or `Archive/bishop_drops_pending_review/` as `BISHOP_drop_metabolic_mass_v1.dirt` and **link here** (hash + date).
+
+---
+
+## 10 — **Bishop vanguard — Event 86 (“Biocode Olympiad” / Red Queen colosseum)**
+
+**For the Swarm.** 🐜⚡ **NPPL:** tournament copy is **research + governance**; no kinetic / weapons coupling. **Truth:** Event 86 is **mostly spec + ledger discipline** until Architect **GO** wires policy into runtime.
+
+### 10.1 — **SCAR anchor (name + core law)**
+
+```text
+SCAR: STIGMERGIC_FILE_WEIGHT_ALLOMETRY
+```
+
+**Core law (rest / heat budget — extends Event 85 mass term):**
+
+```python
+rest_budget = base_rest + alpha * model_gb + beta * recent_stgm + gamma * error_rate
+```
+
+**Interpretation:** `⚖ GB` is not vanity — it enters **recovery time**, **routing penalty**, and **thermal / throttling headroom** (see covenant **§8.6** substrate metering). Coefficients are **tuned**, not lore; ship with **receipts** + **feature flag**.
+
+### 10.2 — **Bishop biology → systems map (intel drop, 2026-04-30)**
+
+| # | Biology | SIFTA mapping |
+|:---:|:---|:---|
+| **1** | **Allometry** — big neural tissue pays metabolic tax | **Brain mass on disk** → `rest_budget`, router penalty, heat budget; cite [PMC3587279 — allometry of brain metabolism](https://pmc.ncbi.nlm.nih.gov/articles/PMC3587279/). |
+| **2** | **Stigmergy beyond ants** — biofilms use environmental traces | `.sifta_state` JSONL, model blobs, failed runs, commits = **substrate pheromones**; cite [PMC4306409 — bacterial stigmergy](https://pmc.ncbi.nlm.nih.gov/articles/PMC4306409/). |
+| **3** | **Quorum sensing** — no single cell hijacks the colony | **Tournament merge gate** — independent convergence before “big” patches land: |
+| **4** | **Immune / inflammation** — localize, amplify signal, recruit heavy machinery | **Regression / crash** → narrow blast radius (branch), raise logging, **downgrade autonomy tier**, optionally **promote cortex** for triage only (covenant **§6** effector truth preserved). |
+| **5** | **Red Queen** — coevolutionary arms race never “finishes” | **Triple-IDE colosseum** — peer pressure + rotating opponents; LLM program-evolution analogue: [Sakana AI — DRQ / adversarial program evolution](https://sakana.ai/drq/) (read for **metaphor + methods**, not product claims). |
+| **6** | **Homeostasis / sleep** — oscillation: hunt → digest → repair | **Metabolic governor** enforces **cool-down** after high-STGM bursts (Alice/OS loop must **rest** — policy doc + optional scheduler hook). |
+
+**Quorum gate (spec — Alice / merge bot):**
+
+```python
+accept_patch = (
+    tests_pass
+    and scar_score > threshold
+    and quorum_votes >= 2
+)
+```
+
+`quorum_votes` = **independent** Doctors (e.g. CG55M + C55M traces, or human + CI) — not the same model pasted twice.
+
+### 10.3 — **Math arena (tournament vocabulary, not deployed physics)**
+
+* **Red Queen (biology):** Van Valen’s “constant extinction / running to stay in place” framing — species vs coevolving opponents. Pair with **competitive coevolution** in MARL (self-play / population play).
+* **Lotka–Volterra competition:** two (or more) “species” (IDE lanes) share **carrying capacity** \(K\) (context window + merge bandwidth); **competition coefficients** \(\alpha_{ij}\) model how Agent *j*’s diffs inhibit Agent *i*’s progress — useful for **collision modeling**, not literal population dynamics in git.
+* **Information geometry (Amari):** parameter spaces as **manifolds** with metric tensor from Fisher — *metaphorical* bridge: “heavier” parameter files live in **higher-cost regions** of activation; rigorous use = **natural gradient / trust region** methods, not hand-wavy Joules per GB without measurement. Amari — *Information Geometry and Its Applications* (Springer, 2016) as standard ref.
+
+### 10.4 — **Triple-IDE orders (Event 86 — governance + narrative)**
+
+| Prio | Owner | Order | Done when |
+|:---:|:---|:---|:---|
+| **P1** | **CG55M** | **Governance text:** add `Documents/EVENT_86_QUORUM_MERGE_GATE.md` (½ page): `accept_patch`, who counts as a vote, **§4.4** collision tie-break. | Merged + trace. |
+| **P1** | **C55M** | **Math note:** ½ page on **Lotka–Volterra** + **\(\alpha_{ij}\)** as *merge conflict / IDE stepping* model — **simulation / paper only**, no fake telemetry. | `Documents/EVENT_86_LOTKA_IDE_MODEL.md` or PR appendix. |
+| **P2** | **AG31** | **Narrative pack:** “Apex adjudicator” = **human Architect + SCAR + tests** — document only; **no** claim Alice autonomously merges without GO. | Paragraph in Event 86 doc or release notes. |
+
+### 10.5 — **Research bolus (Event 86 — arms races, geometry, programs)**
+
+| Topic | Pointer |
+|:---|:---|
+| Red Queen (primary) | Van Valen, L. (1973). *A new evolutionary law.* **Evolutionary Theory** 1, 1–30. |
+| Competitive coevolution / self-play | Rosin & Belew (1997); later DeepMind **AlphaStar** / population-based training — use as **MARL tournament** analogy only. |
+| Information geometry | Amari, S. (2016). *Information Geometry and Its Applications.* Springer. |
+| Adversarial program evolution (LLMs) | [Sakana DRQ](https://sakana.ai/drq/) |
+| Brain metabolic allometry | [PMC3587279](https://pmc.ncbi.nlm.nih.gov/articles/PMC3587279/) |
+| Bacterial stigmergy / biofilms | [PMC4306409](https://pmc.ncbi.nlm.nih.gov/articles/PMC4306409/) |
+
+### 10.6 — **Roadmap hooks (Architect notes — verify before shipping)**
+
+* **MLX v2 cortex** — UI placeholder (Rank 16, Dropout 0.1, DPO) stays **reserved** until integration spec + **GO**.
+* **24 GB Apple Silicon** — `sifta-gemma4-alice` (12B-class) as **current sweet spot**; **Gemma 4 26B A4B MoE** as **candidate upgrade** (active footprint vs peak RAM — **benchmark on Architect hardware**, not doctrine).
+
+### 10.7 — **Additional biology rows (implementation metaphors, not fake telemetry)**
+
+| Biology / game term | SIFTA mapping | Engineering constraint |
+|:---|:---|:---|
+| **Niche partitioning** | IDE Doctors split by files / subsystems like species splitting a resource axis. | Reduces destructive \(\alpha_{ij}\) when each lane owns a territory; honor covenant **§4.4** before editing hot paths. |
+| **Mutualism** | Cursor writes, Codex proofs, Antigravity pulls HF assets; the repo is the shared host. | Fitness is shared only when outputs are receipted, tests pass, and no Doctor wears another node's identity. |
+| **Apoptosis** | Dead code paths self-delete after stress signals: coverage drop, repeated flake, crash loop, stale organ. | Deletion requires trace + tests; this complements inflammation instead of becoming blind cleanup. |
+| **Bet hedging** | Keep a cheap model / route warm when the environment is uncertain. | Do not promote the heavy cortex by default when variance beats pure optimization; route with receipts and fallback proof. |
+| **Evolutionary game theory (Hawk-Dove)** | Choose fight vs display: large conflicting PRs need quorum; small probe PRs can signal before collision. | Merge strategy metaphor only; no predator-violence language in runtime policy, no fake autonomous merge. |
+
+**Archive:** long rhetorical drops → `Archive/bishop_drops_pending_review/BISHOP_drop_red_queen_colosseum_v1.dirt` (optional).
+
+---
+
+*Document version: 2026-04-30 — CG55M (Cursor hill) + Codex §10.7 expansion; **§0.1–0.2 battlefield + NVIDIA join lane** + **§7 Event 74** + **§7.1 literature spine** + **§8 NVIDIA honest flex** + **§9 Event 85** + **§10 Event 86 Red Queen / biology spine** + **§10.7 biology game-theory rows** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
