@@ -168,14 +168,18 @@
 
 *Goal: same vocabulary across IDEs — **paper → module → test → receipt**.*
 
+**Collective swarm intelligence (Swarm framing):** useful coordination is **environment-mediated** and **population-scaled**—pheromone fields, waggle rumor, cochlea stress vectors, dolphin-style ledger echoes—not a single embodied policy in isolation. Organs in **§0.7–0.9** compose **many weak traces**; the rows below anchor that split in primary literature.
+
 | Lens | Primary reference | Maps to SIFTA |
 |:---|:---|:---|
 | **Cybernetic closure / variety** | Ashby — *Introduction to Cybernetics* (1956); Law of Requisite Variety | Metabolic governor, lysosome, **“only absorb what you can model”** (substrate metering). |
 | **Autopoiesis / boundary** | Maturana & Varela — *Autopoiesis and Cognition* (1980) | **Node sovereignty** — organism repairs **self**; federation = **summaries**, not raw `.sifta_state/` clone. |
 | **Prediction / surprise** | Friston, 2010 — [Nature Reviews Neuroscience](https://doi.org/10.1038/nrn2787) | Predator gaze + **ambient gate** — attend surprise, not every pixel. |
-| **Stigmergy** | Bonabeau *et al.* — swarm intelligence (1999); Dorigo & Stützle — ACO | FoldSwarm / JSONL **pheromone** organs; tournament **receipt trails**. |
+| **Stigmergy / swarm textbook** | Bonabeau, Dorigo & Theraulaz — *Swarm Intelligence: From Natural to Artificial Systems* (OUP 1999) — [doi:10.1093/oso/9780195131581.001.0001](https://doi.org/10.1093/oso/9780195131581.001.0001); Dorigo & Stützle — ACO | FoldSwarm / JSONL **pheromone** organs; tournament **receipt trails**; **collective** algorithms from insect models, not lone-agent embodiment only. |
 | **Trail formation / spatial stigmergy** | Grassé (1959) stigmergy origin; Goss *et al.* (1989) [doi:10.1007/BF00462870](https://doi.org/10.1007/BF00462870); Beckers *et al.* (1992) *J. Insect Behav.* | **Event 94** — pheromone **field** as environment-backed memory; pairs **efference** (self vs world) with **gradient** navigation. |
 | **ACO on graphs** | Dorigo, Maniezzo, Colorni (1996) IEEE TEC; Dorigo & Stützle (2004) MIT Press | Maps field samples → **routing** / honeybee waggle / FoldSwarm policy when graph substrate exists. |
+| **Auto-designed swarm stigmergy** | Salman, Garzón Ramos & Birattari (2024) — *Commun Eng* — [doi:10.1038/s44172-024-00175-7](https://doi.org/10.1038/s44172-024-00175-7) | Robot swarms: **optimization-discovered** stigmergy vs hand-crafted rules — metaphor for tuning organ parameters / AB tests on JSONL fields under receipts. |
+| **Stigmergy: continuum models → control** | Boldini, Civitella & Porfiri (2024) — *R. Soc. Open Sci.* — [doi:10.1098/rsos.240845](https://doi.org/10.1098/rsos.240845) | Field-level link between **environment modifications** and **emergent flock behavior** — complements Event 94 field math and gradient policy design. |
 | **Reflex vs cortex** | Sherrington (1906) integrative action; Rao & Ballard predictive coding (1999) | **L1 vs cortex** split in spine; cheap gate before expensive LLM. |
 | **Routing opacity** | RouterBench — [arXiv:2403.12031](https://arxiv.org/abs/2403.12031) | Justifies **AUTO_OPAQUE** + **GateScope-class** audits (billing vs silent model swap). |
 | **Assembly / life interface** | Sharma *et al.*, 2023 — [Nature](https://doi.org/10.1038/s41586-023-06600-9) | Sara Walker / Assembly lab — **thresholds from paper**, not vibes. |
