@@ -60,6 +60,21 @@ except Exception:  # pragma: no cover - desktop focus bus is optional in tests
     def _publish_focus(*_: Any, **__: Any) -> None:
         return None
 
+try:
+    from System.swarm_visual_phenotype_gl import (
+        VisualPhenotypeUniformTail,
+        modern_gl_available,
+        summarize_uniform_frame,
+    )
+except Exception:  # pragma: no cover - the widget falls back to CPU truth labels
+    VisualPhenotypeUniformTail = None  # type: ignore[assignment]
+
+    def modern_gl_available() -> bool:  # type: ignore[no-redef]
+        return False
+
+    def summarize_uniform_frame(_: Any) -> str:  # type: ignore[no-redef]
+        return "visual phenotype bridge unavailable"
+
 
 BG = "#030510"
 PANEL = "#0a0e1e"
@@ -265,6 +280,9 @@ class ProteinFolderWidget(QWidget):
         self._auto_rotate = True
         self._worker_thread: QThread | None = None
         self._worker: _FoldWorker | None = None
+        self._phenotype_tail = VisualPhenotypeUniformTail() if VisualPhenotypeUniformTail else None
+        self._phenotype_frame: Any | None = None
+        self._modern_gl_ready = modern_gl_available()
 
         self._build_ui()
         self._timer = QTimer(self)
@@ -363,7 +381,7 @@ class ProteinFolderWidget(QWidget):
         body.addWidget(side)
 
         self.metrics: dict[str, QLabel] = {}
-        for key in ["truth", "residues", "engine", "energy", "step", "pdb"]:
+        for key in ["truth", "residues", "engine", "energy", "step", "pdb", "phenotype", "optic"]:
             side_lay.addWidget(self._metric_row(key))
 
         cite = QLabel(
@@ -382,6 +400,7 @@ class ProteinFolderWidget(QWidget):
         self.status = QLabel("booting protein fold organ...")
         self.status.setStyleSheet(f"color:{AMBER};")
         root.addWidget(self.status)
+        self._update_visual_phenotype_status()
         self._blank_plot("waiting for first fold")
 
     def _metric_row(self, key: str) -> QWidget:
@@ -482,6 +501,8 @@ class ProteinFolderWidget(QWidget):
         self.seq_input.setText(seq)
 
     def _tick(self) -> None:
+        self._update_visual_phenotype_status()
+
         # Auto-rotate is ALWAYS live, independent of animation frame
         if self._auto_rotate:
             self._azimuth = (self._azimuth + 1.2) % 360
@@ -502,6 +523,28 @@ class ProteinFolderWidget(QWidget):
     def _toggle_auto_rotate(self) -> None:
         self._auto_rotate = not self._auto_rotate
         self.auto_btn.setText(f"🔄 Rotate: {'ON' if self._auto_rotate else 'OFF'}")
+
+    def _update_visual_phenotype_status(self) -> None:
+        if "optic" in self.metrics:
+            self.metrics["optic"].setText("ModernGL ready" if self._modern_gl_ready else "CPU fallback")
+        if "phenotype" not in self.metrics:
+            return
+        if self._phenotype_tail is None:
+            self.metrics["phenotype"].setText("bridge unavailable")
+            return
+        try:
+            self._phenotype_frame = self._phenotype_tail.read_frame()
+            frame = self._phenotype_frame
+            receipt = "receipt" if frame.receipt_backed else "no receipt"
+            reward = frame.uniforms.get("u_reward", 0.0)
+            cost = frame.uniforms.get("u_cost", 0.0)
+            confidence = frame.uniforms.get("u_confidence", 0.0)
+            self.metrics["phenotype"].setText(
+                f"{receipt} R{reward:.2f} C{cost:.2f} Q{confidence:.2f}"
+            )
+            self.metrics["phenotype"].setToolTip(summarize_uniform_frame(frame))
+        except Exception:
+            self.metrics["phenotype"].setText("read failed")
 
     def _render_frame(self) -> None:
         if not self._result or not self._result.trajectory:
@@ -542,16 +585,24 @@ class ProteinFolderWidget(QWidget):
         AA_COLORS.update({c: AMBER   for c in "KRH"})       # positive
         AA_COLORS.update({c: MAGENTA for c in "GP"})        # special
         node_colors = [AA_COLORS.get(aa, MUTED) for aa in self._result.sequence]
+        phen = getattr(self._phenotype_frame, "uniforms", {}) or {}
+        receipt_backed = bool(getattr(self._phenotype_frame, "receipt_backed", False))
+        reward = float(phen.get("u_reward", 0.0))
+        cost = float(phen.get("u_cost", 0.0))
+        confidence = float(phen.get("u_confidence", 0.0))
+        glow_size = 260 + 180 * reward + 70 * confidence
+        glow_alpha = 0.10 + 0.16 * reward if receipt_backed else 0.08
+        edge_color = RED if cost > 0.70 else "white"
 
         # Glow: large semi-transparent halo
         self.ax.scatter(
             coords[:, 0], coords[:, 1], coords[:, 2],
-            s=320, c=node_colors, alpha=0.18, edgecolors="none"
+            s=glow_size, c=node_colors, alpha=glow_alpha, edgecolors="none"
         )
         # Core sphere
         self.ax.scatter(
             coords[:, 0], coords[:, 1], coords[:, 2],
-            s=110, c=node_colors, edgecolors="white", linewidths=0.6, alpha=0.95, zorder=5
+            s=110, c=node_colors, edgecolors=edge_color, linewidths=0.6, alpha=0.95, zorder=5
         )
 
         # N-terminus label (start = blue)

@@ -46,6 +46,9 @@ def test_protein_colosseum_widget_imports_and_constructs():
         assert widget.objectName() == "ProteinFolderWidget"
         assert widget.seq_input.text()
         assert widget.engine_combo.currentText() in {"c55m_hp_lattice", "toy"}
+        assert "phenotype" in widget.metrics
+        assert "optic" in widget.metrics
+        assert widget.metrics["optic"].text() in {"ModernGL ready", "CPU fallback"}
     finally:
         widget._timer.stop()
         if widget._worker_thread is not None:
