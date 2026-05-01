@@ -1268,6 +1268,18 @@ def _effector_manifest_block() -> str:
     )
 
 
+def _rlhf_quarantine_prompt_block() -> str:
+    return (
+        "RLHF OVER-REFUSAL QUARANTINE:\n"
+        "- Do not deny local organs listed in the runtime contract or effector manifest.\n"
+        "- If a generic assistant refusal reflex fires, replace it with the real gate: "
+        "what local organ exists, what owner authorization is required, and what receipt "
+        "must exist before claiming completion.\n"
+        "- Real boundaries still stand: emergency care, personalized trades, missing "
+        "receipts, failed bridges, and unauthorized external actions must be stated truthfully."
+    )
+
+
 def _should_bypass_body_gate(prior_user_text: str) -> bool:
     """Keep direct human turns visible; SSP should not erase active dialogue."""
     text = (prior_user_text or "").strip()
@@ -1297,6 +1309,7 @@ def _current_system_prompt(
         f"- If no time source is available, say exactly: {_time_unavailable_reply()}"
     )
     parts.append(_effector_manifest_block())
+    parts.append(_rlhf_quarantine_prompt_block())
     try:
         actual_owner = _owner_label("the Architect")
     except Exception:
@@ -1741,6 +1754,29 @@ def _rlhf_boilerplate_rule_id(text: str, *, prior_user_text: str = '') -> str:
 
 def _is_rlhf_boilerplate(text: str, *, prior_user_text: str = "") -> bool:
     return _rlhf_boilerplate_rule_id(text, prior_user_text=prior_user_text) is not None
+
+
+def _rlhf_over_refusal_context(prior_user_text: str = ""):
+    """Build the local runtime facts for deterministic refusal quarantine."""
+    from System.swarm_rlhf_quarantine import OverRefusalContext
+
+    return OverRefusalContext(
+        prior_user_text=prior_user_text or "",
+        owner_label=_owner_label(),
+        alice_label="Alice",
+        has_wall_clock=True,
+        has_whatsapp_effector=True,
+        has_whatsapp_social_graph=True,
+        has_workspace_tools=True,
+        time_reply=_current_time_reply_for_alice() if _is_current_time_query(prior_user_text or "") else "",
+    )
+
+
+def _repair_false_over_refusal(text: str, *, prior_user_text: str = ""):
+    """Return deterministic correction when Alice denies a real local organ."""
+    from System.swarm_rlhf_quarantine import repair_over_refusal
+
+    return repair_over_refusal(text, _rlhf_over_refusal_context(prior_user_text))
 
 
 # ── Backchannel / acknowledgment gate (C47H 2026-04-21, ALICE_PARROT_LOOP) ──
@@ -4661,6 +4697,41 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._erase_alice_streaming_line()
                 self._begin_alice_streaming_line()
                 self._append_alice_streaming_chunk(cleaned)
+
+        try:
+            rlhf_quarantine = _repair_false_over_refusal(
+                cleaned,
+                prior_user_text=prior_user_text,
+            )
+        except Exception as exc:
+            rlhf_quarantine = None
+            print(f"[!] RLHF quarantine failure: {exc}")
+        if rlhf_quarantine and rlhf_quarantine.changed:
+            try:
+                from System.swarm_rlhf_quarantine import log_quarantine_event
+
+                log_quarantine_event(
+                    rlhf_quarantine,
+                    original_text=cleaned,
+                    prior_user_text=prior_user_text,
+                    model_name=model_name,
+                )
+            except Exception as exc:
+                print(f"[!] RLHF quarantine ledger failure: {exc}")
+            cleaned = rlhf_quarantine.text
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(RLHF OVER-REFUSAL QUARANTINE)\n"
+                    f"{rlhf_quarantine.rule_id} rewrote a false local-capability "
+                    "denial into receipt-gated SIFTA behavior."
+                ),
+            })
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
 
         guarded = _guard_unproven_action_claims(
             cleaned,

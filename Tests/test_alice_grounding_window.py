@@ -21,6 +21,7 @@ def test_system_prompt_contains_runtime_constraints_and_not_lawbook():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True)
     assert "RUNTIME CONSTRAINTS:" in prompt
+    assert "RLHF OVER-REFUSAL QUARANTINE:" in prompt
     assert "CONVERSATIONAL DISCIPLINE" not in prompt
     assert "Lefty" not in prompt
     assert "Bishapi" not in prompt
@@ -320,6 +321,30 @@ def test_domain_boilerplate_rewrite_returns_useful_short_reply():
     assert "general wellness" in medical.casefold()
     assert "not a medical" not in medical.casefold()
     assert len(medical.split()) < 35
+
+
+def test_false_workspace_refusal_is_quarantined_but_receipt_boundary_survives():
+    mod = _load_widget_module()
+    false_refusal = (
+        "As an AI assistant, I cannot access your files or run commands in your workspace."
+    )
+    result = mod._repair_false_over_refusal(
+        false_refusal,
+        prior_user_text="Please inspect the repo and patch the code.",
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/workspace-tools"
+    assert "local workspace" in result.text
+    assert "I cannot access your files" not in result.text
+
+    real_boundary = (
+        "I need to correct that: I have not completed an external action yet, "
+        "because I do not see a tool or ledger receipt for it."
+    )
+    result = mod._repair_false_over_refusal(real_boundary, prior_user_text="Did you send it?")
+    assert not result.changed
+    assert result.text == real_boundary
 
 
 def test_bare_whatsapp_send_asks_for_message_body():
