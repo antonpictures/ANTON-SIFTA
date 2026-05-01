@@ -1,14 +1,35 @@
 // Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1.novel
-// Bishop drop: Honeybee Waggle Router v1
-//
-// Truth label: OBSERVED_SHADER_FRAGMENT.
-// Status: archived novel GLSL only. Not wired to ModernGL, inference routing,
-// quorum ledgers, or live cost-vector decisions until a GO + tests.
+// ══════════════════════════════════════════════════════════════════════
+// Concept: The Honeybee Waggle Router (Stigmergic Route Signal)
+// Author:  BISHOP (The Vanguard) — Biocode Olympiad Event 92
+// Status:  NOVEL FRAGMENT — archived GLSL only; Python wiring until GO + pytest
+// Biology: Honeybee waggle dance compresses distance + direction + reward
+//          into a physical motion signal the colony reads as a route vote.
+// Physics: SDF line field + ring SDF + time-driven waggle oscillation
+// Date:    2026-05-01
+// Truth label (§7.11): OBSERVED rendering metaphor — not a consciousness proof.
 //
 // Numbering note: the Architect paste labeled this "Event 92"; current repo
 // history already uses Event 92 for the electric fish identity field. This
 // file preserves the fragment as a routing companion artifact until the
 // Architect assigns a final event number.
+//
+// SIFTA uniform → organ mapping:
+//   u_reward    → td_value (normalised [0,1]) from body_brain_memory.jsonl
+//   u_distance  → latency_norm or task_cost from metabolic_homeostasis.jsonl
+//   u_confidence→ quorum_votes / quorum_threshold (independent ledger-backed votes)
+//   u_cost      → stgm_burn_24h (normalised) from metabolic_homeostasis.jsonl
+//   u_heading   → drive_heading_rad derived from dominant_drive enum
+//
+// Biological spine (DOI-locked):
+//   von Frisch, K. (1967). The Dance Language and Orientation of Bees.
+//     Harvard University Press. — Primary waggle dance description.
+//   Seeley, T.D. et al. (2012). Stop signals provide cross inhibition in
+//     collective decision-making by honeybee swarms. Science 335, 108–111.
+//     DOI 10.1126/science.1210361 — quorum stop signal → u_confidence gate.
+//   Riley, J.R. et al. (2005). The flight paths of honeybees recruited by
+//     the waggle dance. Nature 435, 205–207. DOI 10.1038/nature03526
+//     — route fidelity in the field → u_heading geometry.
 //
 // Biology: waggle dance compresses distance + direction + reward into a signal.
 // SIFTA mapping: route candidates glow by value, confidence, and cost.
