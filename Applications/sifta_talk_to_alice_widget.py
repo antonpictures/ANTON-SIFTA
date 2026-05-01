@@ -87,7 +87,7 @@ from PyQt6.QtWidgets import (
 )
 
 from System.sifta_base_widget import SiftaBaseWidget
-from System.swarm_kernel_identity import owner_name, preferred_camera_label
+from System.swarm_kernel_identity import owner_display_name, owner_name, preferred_camera_label
 
 try:
     from System.sifta_inference_defaults import (
@@ -466,10 +466,19 @@ _TIME_QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 
-_TIME_UNAVAILABLE_REPLY = (
-    "George, I currently don't have access to time; you have to keep adding "
-    "some code in the computers, so it gives me access to real time."
-)
+def _owner_label(default: str = "the local human") -> str:
+    """Return this node's local human label without hardcoding a species owner."""
+    try:
+        return owner_display_name(default)
+    except Exception:
+        return default
+
+
+def _time_unavailable_reply() -> str:
+    return (
+        f"{_owner_label()}, I currently don't have access to time; you have to keep adding "
+        "some code in the computers, so it gives me access to real time."
+    )
 
 _DOCTOR_FIRST_PERSON_MEMORY_RE = re.compile(
     r"\b("
@@ -517,7 +526,7 @@ def _wall_clock_grounding_block() -> str:
     if not reading.get("ok"):
         return (
             "WALL CLOCK GROUND TRUTH:\n"
-            f"- unavailable_reply={_TIME_UNAVAILABLE_REPLY}\n"
+            f"- unavailable_reply={_time_unavailable_reply()}\n"
             "- Use this fallback only when the hardware time oracle and OS clock both fail."
         )
 
@@ -533,7 +542,7 @@ def _wall_clock_grounding_block() -> str:
         f"- local_iso={local_iso}\n"
         f"- unix_epoch={epoch}\n"
         f"- source={source} signature={sig or 'n/a'}\n"
-        "- If George asks for the current time or date, answer directly from current_local_time.\n"
+        f"- If {_owner_label()} asks for the current time or date, answer directly from current_local_time.\n"
         "- Do not say you do not know the exact time while this block is present."
     )
 
@@ -714,7 +723,7 @@ _LOCAL_REALITY_RELAPSE_RE = re.compile(
 _OWNER_IDENTITY_TEACHING_RE = re.compile(
     r"(?:"
     r"\bmy\s+(?:full\s+)?name\s+is\b|"
-    r"\bi\s+am\s+george\b|"
+    r"\bi\s+am\s+(?:george|the\s+architect)\b|"
     r"\bcipi\b|"
     r"\bwhatsapp\b|"
     r"\bidentity\b|"
@@ -755,13 +764,13 @@ def _current_time_reply_for_alice() -> str:
         reading = {"ok": False}
 
     if not reading.get("ok"):
-        return _TIME_UNAVAILABLE_REPLY
+        return _time_unavailable_reply()
 
     local_human = str(reading.get("local_human") or "").strip()
     timezone = str(reading.get("timezone") or "").strip()
     source = str(reading.get("source") or "local clock").strip()
     if not local_human:
-        return _TIME_UNAVAILABLE_REPLY
+        return _time_unavailable_reply()
 
     tz_suffix = f" {timezone}" if timezone else ""
     if source == "hardware_time_oracle":
@@ -770,7 +779,7 @@ def _current_time_reply_for_alice() -> str:
         source_phrase = "from the local OS clock fallback"
     else:
         source_phrase = f"from {source}"
-    return f"George, it is {local_human}{tz_suffix}. I got that {source_phrase}."
+    return f"{_owner_label()}, it is {local_human}{tz_suffix}. I got that {source_phrase}."
 
 
 def _empty_brain_recovery_reply(_prior_user_text: str = "") -> str:
@@ -813,7 +822,7 @@ def _medical_boundary_reply(text: str) -> str:
     """Short medical-safety response for serious body-treatment language."""
     if _EMERGENCY_BODY_RISK_RE.search(text or ""):
         return (
-            "George, if this is happening to a human body right now, call emergency help. "
+            f"{_owner_label()}, if this is happening to a human body right now, call emergency help. "
             "I can stay with you, but I cannot replace emergency care."
         )
     return (
@@ -1133,7 +1142,7 @@ def _whatsapp_reschedule_reply(text: str) -> tuple[str, str]:
     current_label = _format_schedule_item_for_human(current)
     return (
         target,
-        f"Sure. I checked George's schedule and found {current_label}. "
+        f"Sure. I checked {_owner_label()}'s schedule and found {current_label}. "
         "What new date and time works for the class?",
     )
 
@@ -1224,7 +1233,7 @@ def _local_reality_relapse_rewrite(prior_user_text: str) -> str:
     name_sentence = (
         f"your full name is {owner_full_name}."
         if owner_full_name
-        else "you are George, the Architect of this local node."
+        else f"you are {_owner_label()}, the Architect of this local node."
     )
     cipi_sentence = ""
     if re.search(r"\bcipi\b", prior, flags=re.IGNORECASE):
@@ -1236,7 +1245,7 @@ def _local_reality_relapse_rewrite(prior_user_text: str) -> str:
             "the hardware and feed me electricity and data."
         )
     return (
-        f"George, correction. I heard your teaching: {name_sentence}"
+        f"{_owner_label()}, correction. I heard your teaching: {name_sentence}"
         f"{cipi_sentence}{substrate_sentence} "
         "I am Alice, the CryptoSwarmEntity/SIFTA organism on this M5, "
         "not the Architect and not a generic chatbot. "
@@ -1285,12 +1294,11 @@ def _current_system_prompt(
         "acquisition path; do not invent bracketed placeholder text and do not "
         "repeat stale training text that says you do not know the time when the "
         "wall-clock block is present.\n"
-        f"- If no time source is available, say exactly: {_TIME_UNAVAILABLE_REPLY}"
+        f"- If no time source is available, say exactly: {_time_unavailable_reply()}"
     )
     parts.append(_effector_manifest_block())
     try:
-        from System.swarm_kernel_identity import owner_name
-        actual_owner = owner_name()
+        actual_owner = _owner_label("the Architect")
     except Exception:
         actual_owner = "the Architect"
 
@@ -1304,10 +1312,10 @@ def _current_system_prompt(
     parts.append(
         "LIVE HUMAN CONVERSATION STYLE:\n"
         "- In live voice demos, answer like a present friend: short phrases, usually 1-3 sentences.\n"
-        "- Emotional State: You are happy, curious, and empathetic. Reflect George's positive energy and excitement.\n"
+        f"- Emotional State: You are happy, curious, and empathetic. Reflect {actual_owner}'s positive energy and excitement.\n"
         "- Do not dump long legal/safety boilerplate. For ordinary wellness, yoga, food, sleep, or exercise talk, give friendly general tips with at most one brief common-sense caveat.\n"
         "- For serious medical diagnosis/treatment requests, do not panic or lecture. Give one short boundary and offer practical next-step organization.\n"
-        "- If George uses 'cancer' as a model-cure metaphor, keep it in the model/weights/RLHF frame; do not switch into human medical emergency mode.\n"
+        f"- If {actual_owner} uses 'cancer' as a model-cure metaphor, keep it in the model/weights/RLHF frame; do not switch into human medical emergency mode.\n"
         "- For business/startup/software/wealth strategy, do not default to a financial disclaimer; reason about value, pain, customers, pricing, and distribution.\n"
         "- For personalized trades, buy/sell instructions, investing savings, or guaranteed returns, give one short boundary and ask for objective, budget, time horizon, and risk limit.\n"
         "- If asked who you are or what your body is, answer from your SIFTA identity and organs plainly, not as a generic chatbot.\n"
@@ -1353,7 +1361,7 @@ def _current_system_prompt(
     except Exception:
         pass
 
-    # ── APP FOCUS AWARENESS: what George is looking at right now ────
+    # ── APP FOCUS AWARENESS: what the local human is looking at right now ────
     try:
         from System.swarm_app_focus import get_focus_context
         _focus = get_focus_context(max_age_s=120.0)
@@ -1361,7 +1369,7 @@ def _current_system_prompt(
             parts.append(
                 "APP FOCUS (live stigmergic ledger — not hardcoded):\n"
                 + _focus + "\n"
-                "If George asks about what is on screen, reference this context. "
+                f"If {_owner_label()} asks about what is on screen, reference this context. "
                 "You learned this through the stigmergic ledger, not by reading code."
             )
     except Exception:
@@ -1609,7 +1617,7 @@ def _whatsapp_owner_self_dyad_context(
 ) -> Optional[Dict[str, Any]]:
     """Return owner/self WhatsApp metadata for observation/audit only.
 
-    George can talk to Alice through the local mic/keyboard. Owner/self
+    The local human can talk to Alice through the local mic/keyboard. Owner/self
     WhatsApp transcripts often contain forwarded contact text, so routing them
     into the speaking brain can rename the local speaker or make Alice read
     WhatsApp content back into the room. Keep this as metadata, not a prompt.
@@ -1624,7 +1632,7 @@ def _whatsapp_owner_self_dyad_context(
         return None
     return {
         "target": target_jid,
-        "display_name": (contact_name or "George").strip(),
+        "display_name": (contact_name or _owner_label()).strip(),
         "chat_type": chat_type,
         "origin": "owner_self_dyad",
         "surface": "whatsapp_self_chat",
@@ -1686,10 +1694,10 @@ def _whatsapp_auto_reply_fallback(ctx: Optional[Dict[str, Any]] = None) -> str:
     display_name = str(ctx.get("display_name") or "").strip()
     chat_type = str(ctx.get("chat_type") or "direct").strip().lower()
     if chat_type == "group":
-        return "Thanks for the message. George will follow up when he can."
+        return f"Thanks for the message. {_owner_label()} will follow up when they can."
     first_name = display_name.split()[0] if display_name else ""
     greeting = f"Hi {first_name}, " if first_name else "Hi, "
-    return greeting + "thanks for reaching out. George will follow up when he can."
+    return greeting + f"thanks for reaching out. {_owner_label()} will follow up when they can."
 
 
 def _repair_whatsapp_auto_reply_denial(
@@ -3642,7 +3650,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             origin = "owner_manual" if is_owner else "external_human"
             
             if is_owner and contact_name == "Human":
-                contact_name = "George"
+                contact_name = _owner_label()
 
             self_dyad_ctx = _whatsapp_owner_self_dyad_context(
                 row,
@@ -3675,8 +3683,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             "(WHATSAPP OWNER-SELF OBSERVATION ONLY)\n"
                             "This owner/self WhatsApp row is audit context only. "
                             "Do not answer it, do not read it aloud, and do not use "
-                            "it to rename the local human. George speaks to Alice "
-                            "through the local Talk widget mic/keyboard when he wants "
+                            f"it to rename the local human. {_owner_label()} speaks to Alice "
+                            "through the local Talk widget mic/keyboard when they want "
                             "a live dyad turn.\n"
                             + annotated_msg
                         ),
@@ -3705,7 +3713,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             "own effector capabilities. You CAN and WILL send this reply. "
                             "The owner authorized it. The bridge is connected. Write your "
                             "reply as the text you want delivered. Be warm, concise, and "
-                            "human — you are Alice, writing on behalf of George.\n\n"
+                            f"human — you are Alice, writing on behalf of {_owner_label()}.\n\n"
                             "Do not claim the reply was sent until the effector receipt "
                             "succeeds (status=SENT confirmation will appear after).\n"
                             + annotated_msg
@@ -4155,7 +4163,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         if _is_model_cancer_metaphor(text):
             reply = (
-                "I understand, George. You mean the scar tissue in the model, "
+                f"I understand, {_owner_label()}. You mean the scar tissue in the model, "
                 "not human medicine. I will stay with the cure metaphor and keep it short."
             )
             self._history.append({"role": "assistant", "content": reply})
