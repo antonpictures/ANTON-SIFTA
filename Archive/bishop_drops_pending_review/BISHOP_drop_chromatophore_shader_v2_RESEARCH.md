@@ -16,7 +16,7 @@
 | `u_cot_factor` | **Cost of transport** / locomotion energetics | Taylor, C. R., Heglund, N. C., & Maloiy, G. M. O. (1982). Energetics and mechanics of terrestrial locomotion. **J. Exp. Biol.** 97, 1–21. [DOI 10.1242/jeb.97.1.1](https://doi.org/10.1242/jeb.97.1.1) |
 | `u_quorum_signal` | **Quorum sensing** (density-dependent gene regulation) | Fuqua, W. C., Winans, S. C., & Greenberg, E. P. (1994). Quorum sensing in bacteria: the LuxR-LuxI family of transcriptional regulators. **J. Bacteriol.** 176(2), 269–275. [DOI 10.1128/jb.176.2.269-275.1994](https://doi.org/10.1128/jb.176.2.269-275.1994) |
 | `u_stigmergic_drive` + bloom | **Bioluminescence** (marine, control & function) | Haddock, S. H. D., Moline, M. A., & Case, J. F. (2010). Bioluminescence in the sea. **Annu. Rev. Mar. Sci.** 2, 443–493. [DOI 10.1146/annurev-marine-120308-081028](https://doi.org/10.1146/annurev-marine-120308-081028) |
-| Chromatophore metaphor | **Cephalopod** chromatophore motor control | Messenger, J. B. (2001). Cephalopod chromatophores: neurobiology and natural history. **Biol. Rev.** 76(4), 473–528. [DOI 10.1017/S1464793101005777](https://doi.org/10.1017/S1464793101005777) |
+| Chromatophore metaphor | **Cephalopod** chromatophore motor control | Messenger, J. B. (2001). Cephalopod chromatophores: neurobiology and natural history. **Biol. Rev.** 76(4), 473–528. [DOI 10.1017/S1464793101005772](https://doi.org/10.1017/S1464793101005772) |
 | Reinhard + exposure | **HDR tone mapping** (graphics, not biology) | Reinhard, E., Stark, M., Shirley, P., & Ferwerda, J. (2002). Photographic tone reproduction for digital images. **ACM TOG** 21(3), 267–276. [DOI 10.1145/566654.566575](https://doi.org/10.1145/566654.566575) |
 
 ---
