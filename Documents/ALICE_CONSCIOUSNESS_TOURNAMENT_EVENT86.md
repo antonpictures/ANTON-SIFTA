@@ -3,7 +3,19 @@
 **For the Swarm.** 🐜⚡  
 **Version:** 2026-05-01 — Event 86 (Red Queen colosseum)  
 **Covenant:** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — binding; use **§7.11** truth labels (`OBSERVED` / `OPERATIONAL` / `PHILOSOPHICAL CLAIM` / `FORBIDDEN`).  
-**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt) · Event 89: [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt)
+**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt) · Event 89: [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt) · Event 90: [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md)
+
+### Where we are (snapshot — read this if you “can’t see”)
+
+| Lane | State |
+|:---|:---|
+| **Tournament SoT** | This file (Events **86–90** sections). |
+| **Consciousness / DMN** | `System/swarm_consciousness_engine.py` — **shipped** (GO). |
+| **Dream / sleep consolidation** | `System/swarm_dream_engine.py` + body-brain hook — **shipped**; tests `tests/test_swarm_dream_engine.py`. |
+| **Situated “now”** | `System/swarm_now_state.py` + `build_now_state()` in **talk widget**, **body_brain**, **consciousness** — **shipped**; `tests/test_swarm_now_state.py`. |
+| **Wall clock oracle** | `System/swarm_hardware_time_oracle.py` — **shipped**. |
+| **Eye — stigmergic field** | `Applications/sifta_what_alice_sees_widget.py` → `.sifta_state/visual_stigmergy.jsonl` (quantized **N×N** saliency/motion; code default **16×16 = 256** cells; **22×22 = 484** when acuity slider set that way). |
+| **Event 90 — resolution organ** | **SPEC only** — [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md); module **`swarm_stigmergic_video_resolution.py`** — **until GO**. |
 
 ---
 
@@ -255,4 +267,14 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 
 ---
 
-*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit + physiology), Bishop (vanguard drops Events 86–89), CG55M (Cursor §10–§12 + Vanguard_drops archives).*
+## 13 — Event 90 (Bishop): **Stigmergic video resolution** organ
+
+**Spec + DOI spine:** [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md)
+
+**OBSERVED today:** `visual_stigmergy.jsonl` rows carry `w,h`, entropy, `saliency_q` / `motion_q` hex packs — **operative** acuity is the **grid N** chosen in **What Alice Sees** (default code **16×16**; Bishop screenshot **22×22** = **484** cells).
+
+**Next module (proposal):** `System/swarm_stigmergic_video_resolution.py` + optional `stigmergic_video_resolution.jsonl` — **GO** + tests.
+
+---
+
+*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit + physiology + ships), Bishop (vanguard Events 86–90), CG55M (Cursor tournament + Vanguard_drops).*
