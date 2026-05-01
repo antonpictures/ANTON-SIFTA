@@ -10,7 +10,7 @@ identity and actual autonomy:
 * active-inference style free-energy pressure
 * intrinsic drive proposals aligned to the local Architect prior
 
-Truth discipline from IDE_BOOT_COVENANT.md §7.11:
+Truth discipline from IDE_BOOT_COVENANT.md section 7.11:
 we emit OBSERVED and OPERATIONAL rows. We do not claim subjective qualia are
 proven. Generated drives are proposals for gated downstream organs; they do
 not execute effectors.
