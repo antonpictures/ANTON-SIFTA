@@ -10,6 +10,30 @@
 
 Replace `[BRACKETS]` before send. Send from an address you monitor.
 
+**Lane status:** **OPEN (proof-forward).** Architect chose to **keep** outreach and lead with **OBSERVED** SIFTA capabilities (sovereign silicon + receipts), not to ask permission to exist — only to align **AlphaFold output use** with published policy.
+
+---
+
+## A2 — AlphaFold **SEND** copy (proof-forward) — paste into Mail
+
+**To:** `dm-alphafold@google.com`  
+**Subject:** AlphaFold outputs inside a sovereign, receipt-first desktop stack (Apple Silicon)
+
+Dear AlphaFold team,
+
+I am writing on the **AlphaFold contact path** for a **technical + licensing** question, not marketing.
+
+We ship **SIFTA** — a **local-first** Python stack on **Apple Silicon** that treats the machine as a single **auditable organism**: append-only **stigmergic traces**, **hardware-bound wall-clock** reads, **continuous physiology / sleep consolidation** with backup-before-prune receipts, **situated time** injected into autonomy loops, and **neuromorphic visual telemetry** (quantized salience grids + a resolution ledger alongside `visual_stigmergy.jsonl`). Finance-sensitive paths are designed for **Ed25519-signed** ledgers per our license (**NPPL**: we do **not** pursue military or surveillance use cases).
+
+**Repo (ground truth):** https://github.com/antonpictures/ANTON-SIFTA
+
+**What we are asking you:** how to **correctly cite and redistribute** AlphaFold-derived structures (and any batch / on-device constraints you impose) when those artifacts are **composed into** this envelope — i.e. the intersection of **your** public terms and **our** receipt discipline.
+
+If this is the wrong queue, please forward or point us to the right owner.
+
+Kind regards,  
+Ioan George Anton
+
 ---
 
 ## A — AlphaFold / structural biology / open science lane
