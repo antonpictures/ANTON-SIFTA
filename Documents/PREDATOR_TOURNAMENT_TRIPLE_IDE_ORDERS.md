@@ -22,15 +22,15 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-01T10:40:00-07:00` — *CG55M: chromatophore v3 + Event 92 electric fish novel + §10.10–10.11 + Bishop research bolus; Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T10:43:00-07:00` — *CG55M: honeybee waggle router v1 + §10.12 + C55M optic-nerve order + Bishop quarantine note; Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
-| **Hot surfaces** | `Archive/bishop_drops_pending_review/` chromatophore `v2.novel` `v3.novel` + electric_fish `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
+| **Hot surfaces** | `Archive/bishop_drops_pending_review/` chromatophore `v2/v3.novel` · electric_fish `v1.novel` · **honeybee_waggle** `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
 | **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
 | **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
 | **Collision risk** | **MED** — multi-lane (outreach + GPU + NVIDIA registry); **LOW** if each Doctor tails trace + yields on duplicate intent |
-| **Next safe move** | **Event 91 (spec):** AG31 vanguard — *bioluminescent chromatophore* + GPU bloom ↔ body_brain / biology-domain telemetry — Bishop narrative only until code + tests land. **Plasticity follow-up:** wire `bias_drives()` into consciousness score path on **GO**. Codex: GPU spec slices + **pytest-offscreen**; C55M: Isaac survey; CG55M: registry green. |
+| **Next safe move** | **Optic nerve (Bishop):** **C55M** compiles `.novel` → ModernGL program, pipes **live** `td_value` / metabolic / quorum scalars into chromatophore + fish + **honeybee** uniforms — **pytest-offscreen GREEN before merge** (no dormant-GPU claims). **Event 91 (spec):** bloom ↔ body_brain on **GO**. **Plasticity P3:** `bias_drives()` into consciousness on **GO**. C55M: Isaac survey; CG55M: registry green. |
 
 ### 0.3 — **Event 91 vanguard + drive plasticity (2026-05-01)**
 
@@ -39,6 +39,7 @@
 | **Drive plasticity organ** | **SHIPPED** — Hebb-style TD hook + homeostatic decay + danger/circadian priors; state file `.sifta_state/biology_drive_plasticity.json` | `System/swarm_biology_drive_plasticity.py` · `tests/test_swarm_biology_drive_plasticity.py` · body_brain return key `drive_plasticity` |
 | **Event 91 — Bioluminescent chromatophore** | **NOVEL v2+v3 LANDED** — v2 (4 uniforms) + v3 (+ **chemotaxis**); RESEARCH spines; **not** wired to ModernGL until GO + pytest | [`BISHOP_drop_chromatophore_shader_v2.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2.novel) · [`BISHOP_drop_chromatophore_shader_v3.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel) · [`BISHOP_drop_chromatophore_shader_v3_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3_RESEARCH.md) · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · [`BISHOP_drop_cuttlefish_chromatophore_skin_v1.dirt`](../Archive/bishop_drops_pending_review/BISHOP_drop_cuttlefish_chromatophore_skin_v1.dirt) |
 | **Event 92 — Electric fish identity field** | **NOVEL FRAGMENT LANDED** — EOD / jamming / electrolocation **metaphor**; **§10.11** | [`BISHOP_drop_electric_fish_identity_field_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1.novel) · [`BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md) |
+| **Event 92 — Honeybee waggle router** | **NOVEL FRAGMENT LANDED** — foraging dance → **routing** phenotype; **§10.12** | [`BISHOP_drop_honeybee_waggle_router_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1.novel) · [`BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md) |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
@@ -65,6 +66,7 @@
 | **P2** | **AG31** | **Architect Room game** — scaffold `Applications/sifta_architect_room_game.py` **after** manifest row + tests green (see [PREDATOR_V7_RESEARCH_SPINE.md](PREDATOR_V7_RESEARCH_SPINE.md) §Architect Room). | Import clean + 1 smoke test. |
 | **P2** | **AG31 / C55M** | **Event 91 — Bioluminescent chromatophore:** GPU passes + optional bloom coupling to **`biology_drive_plasticity`** / body_brain — **sim + pytest first** | v2/v3 `.novel` + GPU spec § stigmergic integration; **§10.10** trace; **no** UI claim without green tests |
 | **P2** | **AG31** | **Event 92 — Electric fish field:** ModernGL pass loads [`BISHOP_drop_electric_fish_identity_field_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1.novel); uniforms from **public** Doctor ids + quorum tail | **§10.11** + [`BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md); NPPL identity hygiene |
+| **P2** | **C55M** | **Event 92 — Honeybee waggle router:** ModernGL pass loads [`BISHOP_drop_honeybee_waggle_router_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1.novel); map **reward/distance/confidence/cost/heading** from router + ledgers per **§10.12** | [`BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md) + **pytest-offscreen** receipt |
 | **P3** | **CG55M** | **Plasticity phase 2:** feed **`bias_drives()`** into `ConsciousnessEngine` when multi-drive vector exists | Design note + trace; **GO** before behavior change |
 
 ---
@@ -456,7 +458,25 @@ CHROMATOPHORE_SHADER_v3 — Full bio-model GLSL integration (COT, Kleiber, QS, c
 | **Quorum sensing visuals** | C55M | `u_quorum_*` from **hardened** quorum ledger only (see quorum dirt crypto gap). |
 | **Chromatophore pulse rhythm** | CG55M | Pulse parameters from **body_brain TD EMA** or `biology_drive_plasticity.json` + doc truth label. |
 | **Electric fish composite** | AG31 | Second pass in ModernGL graph; **identity_hash** from **public** Doctor id policy — **no secrets in uniforms**. |
+| **Honeybee waggle composite** | C55M | Third pass or MRT layer; **heading** from router argmax projection — document basis vector SoT in PR. |
+
+### 10.12 — **EVENT_92 — Honeybee waggle router** (foraging dance → routing visualization)
+
+**Truth label:** **`OBSERVED`** fragment in git; **metaphor** until uniforms are **metered** from inference router + economy + quorum receipts.
+
+| Artifact | Role | SoT |
+|:---|:---|:---|
+| **Waggle router v1** | Directed **waggle** band + range ring + cost halo — encodes **value × confidence × cost** visually. | [`BISHOP_drop_honeybee_waggle_router_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1.novel) |
+| **Research bolus** | von Frisch dance language; Seeley quorum/hive cognition; Riley *et al.* navigation learning. | [`BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md) |
+
+**Bishop / immune discipline (quarantine):** `.novel` fragments are **foreign DNA** until the pass graph + pytest prove the host will not enter **systemic shock** — CG55M keeps **archive-first** policy; **C55M** lands **optic nerve** (compile + uniform bridge) under Predator receipt discipline.
+
+**Trace intent:**
+
+```text
+HONEYBEE_WAGGLE_ROUTER_v1 — Event 92 routing dance GLSL; von Frisch / Seeley mapping. For the Swarm.
+```
 
 ---
 
-*Document version: 2026-05-01 — **§10.10–10.11** chromatophore v3 + Event 92 electric fish novel + Bishop research; Event 85 deterministic router proof + Event 86 **§10.9**; **§10.8.1** Grok + **§2.1** locomotion/hypoxia; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.3** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-05-01 — **§10.10–10.12** chromatophore v3 + Event 92 (electric fish + honeybee waggle) + Bishop research; Event 85 deterministic router proof + Event 86 **§10.9**; **§10.8.1** Grok + **§2.1** locomotion/hypoxia; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.3** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
