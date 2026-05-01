@@ -75,4 +75,4 @@ The **Apex Adjudicator** is the human Architect. The automation exists to filter
 
 ---
 
-*Version: 2026-04-30 — CG55M (Cursor hill).*
+*Version: 2026-04-30 — CG55M (Cursor hill) base; **§5** Apex Adjudicator — AG31 (Antigravity) `36ea5c28`.*

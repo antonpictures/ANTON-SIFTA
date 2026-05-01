@@ -316,7 +316,7 @@ accept_patch = (
 |:---:|:---|:---|:---|
 | **P1** | **CG55M** | **Governance text:** [`Documents/EVENT_86_QUORUM_MERGE_GATE.md`](EVENT_86_QUORUM_MERGE_GATE.md) — `merge_allowed`, votes, **§4.4** tie-break. | **LANDED** 2026-04-30 — extend when automation owner assigned. |
 | **P1** | **C55M** | **Math note:** [`Documents/EVENT_86_LOTKA_IDE_MODEL.md`](EVENT_86_LOTKA_IDE_MODEL.md) — LV + \(\alpha_{ij}\) vs merge pressure; **sim only** unless instrumented. | **LANDED** 2026-04-30 — C55M may extend with numeric sim appendix. |
-| **P2** | **AG31** | **Narrative pack:** “Apex adjudicator” = **human Architect + SCAR + tests** — document only; **no** claim Alice autonomously merges without GO. | Paragraph in Event 86 doc or release notes. |
+| **P2** | **AG31** | **Narrative pack:** “Apex adjudicator” = **human Architect + SCAR + tests** — document only; **no** claim Alice autonomously merges without GO. | **LANDED** `36ea5c28` — [`EVENT_86_QUORUM_MERGE_GATE.md`](EVENT_86_QUORUM_MERGE_GATE.md) **§5** + [`THOUGHT_EXPERIMENT_PHYSARUM_AG31.md`](Proposals/THOUGHT_EXPERIMENT_PHYSARUM_AG31.md). |
 
 ### 10.5 — **Research bolus (Event 86 — arms races, geometry, programs)**
 
@@ -379,7 +379,7 @@ Constraints: NPPL — no weapons / surveillance applications. If a source is ven
 
 ### 10.8.1 — **Ingested quantitative pass (consolidated nuggets)**
 
-**Landed:** [GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) — locomotion COT / drag–Re regimes / Kleiber–WBE scaling / Keller–Segel / LV–\(\alpha_{ij}\) / quorum ODEs + **§2 bibliography seed** + **§2.1 DOI-locked locomotion/COT table** (Kram–Taylor, Taylor *JEB* I & III, Full–Tu, Minetti gradient, Lejeune sand, Pontzer constrained TEE, Saunders altitude/hypoxia, Taylor–Heglund review) + DOI-locked **Neurosurgeon** energy-aware inference cite. Control docs: [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md), [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md).
+**Landed:** [GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) — locomotion COT / drag–Re regimes / Kleiber–WBE scaling / Keller–Segel / LV–\(\alpha_{ij}\) / quorum ODEs + **§2 bibliography seed** + **§2.1 DOI-locked locomotion/COT table** (Kram–Taylor, Taylor *JEB* I & III, Full–Tu, Minetti gradient, Lejeune sand, Pontzer constrained TEE, Saunders altitude/hypoxia, Taylor–Heglund review) + DOI-locked **Neurosurgeon** energy-aware inference cite. Control docs: [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md), [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) (**§5 Apex Adjudicator**, AG31 `36ea5c28`). Thought experiment: [THOUGHT_EXPERIMENT_PHYSARUM_AG31.md](Proposals/THOUGHT_EXPERIMENT_PHYSARUM_AG31.md).
 
 **Archive:** long rhetorical drops → `Archive/bishop_drops_pending_review/BISHOP_drop_red_queen_colosseum_v1.dirt` (optional).
 
@@ -402,7 +402,7 @@ Constraints: NPPL — no weapons / surveillance applications. If a source is ven
 | **Mound thermodynamics** (Turner on termites) | **Open system** dissipates energy to **regulate** interior — “building as organ.” | Data center / Mac Studio thermal narrative tied to **real** `thermal_state` reads. |
 | **Zipf / settlement scaling** (Betancourt) | **Rank–size** of cities — **heavy-tailed** file touch counts; few hot files dominate. | Prioritize instrumentation on **Pareto head** of churn. |
 
-**Assignment:** **C55M** = first DOI pass on any **three** rows above; **AG31** = one “impossible” row as **thought experiment** paragraph (no runtime); **CG55M** = keep **Event 85** proof bar green — **hill holds the line on tests**.
+**Assignment:** **C55M** = first DOI pass on any **three** rows above; **AG31** = one “impossible” row as **thought experiment** paragraph (no runtime) — **Physarum row delivered** (`THOUGHT_EXPERIMENT_PHYSARUM_AG31.md`, `36ea5c28`); **CG55M** = keep **Event 85** proof bar green — **hill holds the line on tests**.
 
 ---
 
