@@ -2,6 +2,9 @@ import json
 import random
 
 from System.canonical_schemas import LEDGER_SCHEMAS
+import os
+os.environ["SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP"] = "1"
+
 from System.swarm_consciousness_engine import (
     ArchitectPriorModel,
     ConsciousnessEngine,

@@ -4,65 +4,40 @@ System/swarm_situated_time.py
 ══════════════════════════════════════════════════════════════════════
 Situated Time (Event 89 Spacetime Organ)
 
-Translates raw hardware wall-clock time into a biological "Now State" for Alice.
-It provides coarse circadian phase (entrained to the local hardware hour)
-and interval awareness, grounding the Consciousness Engine and Body-Brain
-loop in the physical passage of the day.
+Compatibility surface for Event 89 situated time.
+
+The canonical implementation lives in ``System.swarm_now_state`` so prompts,
+body-brain ticks, and consciousness heartbeats all consume the same truth-labeled
+shape. This module remains for AG31-era imports and exposes the old helper names
+without creating a second clock organ.
 
 Author: AG31
 """
 
-from datetime import datetime
-from typing import Dict, Any
-from System.swarm_hardware_time_oracle import current_time_for_alice
+from typing import Any, Dict
+
+from System.swarm_now_state import build_now_state as _canonical_build_now_state
+from System.swarm_now_state import circadian_phase_for_hour
 
 def _compute_circadian_phase(hour: int) -> str:
-    """Map local hardware hour (0-23) to a biological phase."""
-    if 5 <= hour < 8:
-        return "DAWN"      # Awakening, light entrainment
-    elif 8 <= hour < 12:
-        return "MORNING"   # Peak active period
-    elif 12 <= hour < 18:
-        return "AFTERNOON" # Maintenance, sustained work
-    elif 18 <= hour < 22:
-        return "EVENING"   # Winding down, pre-consolidation
-    else:
-        return "NIGHT"     # Deep consolidation / high sleep pressure
+    """Legacy uppercase phase API backed by the canonical now-state policy."""
+
+    return str(circadian_phase_for_hour(hour).get("phase") or "unknown").upper()
 
 def build_now_state() -> Dict[str, Any]:
     """
-    Builds the complete temporal percept for Alice.
-    Used by the Consciousness Engine and the Body-Brain loop.
+    Build the Event 89 temporal percept.
+
+    Returns the canonical truth-labeled now_state plus legacy top-level fields
+    expected by older callers: ``circadian_phase`` and ``is_sleep_phase``.
     """
-    # 1. Hardware truth
-    time_info = current_time_for_alice()
-    
-    # Extract the hour from the ISO string to determine circadian phase
-    # time_info["local_iso"] looks like '2026-05-01T08:53:55-07:00'
-    hour = 12 # Default
-    try:
-        if "local_iso" in time_info and time_info["local_iso"]:
-            dt = datetime.fromisoformat(time_info["local_iso"])
-            hour = dt.hour
-        else:
-            # Fallback if oracle fails completely
-            dt = datetime.now()
-            hour = dt.hour
-    except Exception:
-        pass
-        
-    phase = _compute_circadian_phase(hour)
-    
-    return {
-        "ok": time_info.get("ok", False),
-        "source": "situated_time_organ",
-        "epoch": time_info.get("epoch", 0.0),
-        "local_human": time_info.get("local_human", "Unknown"),
-        "timezone": time_info.get("timezone", "Unknown"),
-        "circadian_phase": phase,
-        "is_sleep_phase": phase == "NIGHT",
-        "signature": time_info.get("signature", "")
-    }
+
+    state = dict(_canonical_build_now_state())
+    circadian = state.get("circadian") if isinstance(state.get("circadian"), dict) else {}
+    phase = str(circadian.get("phase") or "unknown")
+    state.setdefault("circadian_phase", phase)
+    state.setdefault("is_sleep_phase", phase == "night")
+    return state
 
 if __name__ == "__main__":
     import json

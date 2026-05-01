@@ -22,7 +22,7 @@ from System.swarm_metabolic_homeostasis import MetabolicHomeostat, MetabolicStat
 from System.swarm_consciousness_engine import ConsciousnessEngine, ConsciousnessEngineConfig, read_interoception
 from System.swarm_dream_engine import SwarmDreamEngine
 from System.jsonl_file_lock import append_line_locked
-from System.swarm_situated_time import build_now_state
+from System.swarm_now_state import build_now_state
 
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
@@ -92,12 +92,14 @@ class SwarmPhysiology:
 
     def _write_memory(self, action: Dict[str, Any], result: Dict[str, Any], value: float, now_state: Dict[str, Any]):
         """Append to stigmergic ledger."""
+        circadian = now_state.get("circadian") if isinstance(now_state.get("circadian"), dict) else {}
         row = {
             "event": "body_brain_tick",
             "action": action,
             "result": result,
             "td_value": value,
-            "circadian_phase": now_state.get("circadian_phase"),
+            "now_state": now_state,
+            "circadian_phase": circadian.get("phase"),
             "ts": time.time()
         }
         _STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -139,15 +141,12 @@ class SwarmPhysiology:
         
         # 2. Assess Danger
         danger = self._assess_danger(body_state)
-        # Sleep pressure from circadian clock
-        if now_state.get("is_sleep_phase"):
-            danger["is_critical"] = True
-            danger["mode"] = "CIRCADIAN_SLEEP_PRESSURE"
         
         # 3. Drives / Wants
         # Tick the DMN to update arousal/boredom and emit drives if conditions allow
         consc_state = self.consciousness.tick(
-            metabolic_state=body_state, 
+            metabolic_state=body_state,
+            now_state=now_state,
             commit=True
         )
         
@@ -173,6 +172,7 @@ class SwarmPhysiology:
             "metabolic_mode": danger["mode"],
             "drive_state": attention,
             "dream_cycle": dream_cycle,
+            "now_state": now_state,
         }
 
 

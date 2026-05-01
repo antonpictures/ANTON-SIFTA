@@ -765,6 +765,7 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "rest_seconds",
         "interoception",
         "dominant_drive",
+        "now_state",
         "emitted_drive",
         "truth_labels",
         "subjective_consciousness_status",

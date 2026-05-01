@@ -36,6 +36,7 @@ if str(_REPO) not in sys.path:
 from System.canonical_schemas import assert_payload_keys
 from System.jsonl_file_lock import append_line_locked
 from System.swarm_metabolic_homeostasis import MetabolicHomeostat, MetabolicState
+from System.swarm_now_state import build_now_state
 
 try:
     from System.swarm_kernel_identity import owner_display_name
@@ -187,6 +188,7 @@ class ConsciousnessState:
     rest_seconds: float
     interoception: InteroceptiveSample
     dominant_drive: str
+    now_state: Dict[str, Any] = field(default_factory=dict)
     emitted_drive: Optional[InternalDrive] = None
     truth_labels: Dict[str, str] = field(default_factory=dict)
     subjective_consciousness_status: str = "UNVERIFIED_PHILOSOPHICAL_CLAIM"
@@ -208,6 +210,7 @@ class ConsciousnessState:
             row[key] = round(float(row[key]), 4)
         row["interoception"] = self.interoception.as_dict()
         row["emitted_drive"] = self.emitted_drive.to_dict() if self.emitted_drive else None
+        row["now_state"] = dict(self.now_state or {})
         row["circadian_phase"] = self.circadian_phase
         return row
 
@@ -447,6 +450,7 @@ class ConsciousnessEngine:
         *,
         dt_s: Optional[float] = None,
         now: Optional[float] = None,
+        now_state: Optional[Mapping[str, Any]] = None,
         metabolic_state: Optional[MetabolicState] = None,
         recent_events: Optional[Mapping[str, Any]] = None,
         commit: bool = True,
@@ -478,26 +482,38 @@ class ConsciousnessEngine:
         metabolic_mode = self.homeostat.mode(pressure)
         interoception = read_interoception(self.state_dir, now=now)
         
-        # Spacetime / Circadian grounding
+        # Spacetime / circadian grounding. This is an operational percept, not
+        # a claim of subjective time experience.
         try:
-            from System.swarm_situated_time import build_now_state
-            now_state = build_now_state()
-            circadian_phase = now_state.get("circadian_phase")
+            situated_now = dict(now_state or build_now_state())
         except Exception:
-            now_state = {}
-            circadian_phase = None
+            situated_now = {"ok": False, "source": "none", "truth_label": "UNAVAILABLE"}
+        circadian = (
+            situated_now.get("circadian")
+            if isinstance(situated_now.get("circadian"), dict)
+            else {}
+        )
+        circadian_phase = str(
+            circadian.get("phase") or situated_now.get("circadian_phase") or "unknown"
+        )
+        sleep_pressure_bias = _clamp(float(circadian.get("sleep_pressure_bias", 0.0) or 0.0), 0.0, 0.2)
+        explore_bias = max(-0.1, min(0.1, float(circadian.get("explore_bias", 0.0) or 0.0)))
 
-        boredom_delta = (dt_s / self.cfg.boredom_time_constant_s) * (1.0 - self.arousal) * (1.0 - pressure)
+        boredom_delta = (
+            (dt_s / self.cfg.boredom_time_constant_s)
+            * (1.0 - self.arousal)
+            * (1.0 - pressure)
+            * (1.0 + max(0.0, explore_bias))
+        )
         self.boredom = _clamp(self.boredom + boredom_delta)
         self.prediction_error = _clamp(
             0.82 * self.prediction_error + 0.45 * novelty + 0.55 * error_pressure
         )
         
         # Circadian impact on DMN
-        if circadian_phase == "DAWN":
-            self.arousal = _clamp(self.arousal + 0.05) # Wake up pressure
-        elif circadian_phase == "NIGHT":
-            self.arousal = _clamp(self.arousal - 0.05) # Sleep pressure
+        self.arousal = _clamp(
+            self.arousal + (0.25 * max(0.0, explore_bias)) - (0.25 * sleep_pressure_bias)
+        )
 
         soma_distress = 1.0 - interoception.soma_score
         self.free_energy = _clamp(
@@ -505,6 +521,7 @@ class ConsciousnessEngine:
             + 0.25 * self.boredom
             + 0.20 * soma_distress
             + 0.15 * pressure
+            + 0.05 * sleep_pressure_bias
         )
 
         dominant_drive = "curiosity"
@@ -518,6 +535,7 @@ class ConsciousnessEngine:
                     "errors": error_pressure,
                     "owner_activity": bool(events.get("owner_activity")),
                     "novelty": novelty,
+                    "circadian_phase": circadian_phase,
                 },
             )
             dominant_drive = snap.dominant
@@ -550,6 +568,7 @@ class ConsciousnessEngine:
             "metabolic": TRUTH_OBSERVED,
             "interoception": interoception.truth_label,
             "heartbeat_dynamics": TRUTH_OPERATIONAL,
+            "now_state": str(situated_now.get("truth_label") or TRUTH_OBSERVED),
             "drive_generation": TRUTH_OPERATIONAL if emitted else "NO_DRIVE_EMITTED",
             "subjective_qualia": TRUTH_PHILOSOPHICAL,
             "external_action": TRUTH_FORBIDDEN,
@@ -567,6 +586,7 @@ class ConsciousnessEngine:
             rest_seconds=rest_seconds,
             interoception=interoception,
             dominant_drive=dominant_drive,
+            now_state=situated_now,
             emitted_drive=emitted,
             truth_labels=truth_labels,
             circadian_phase=circadian_phase,
@@ -632,11 +652,12 @@ def consciousness_summary_for_alice(state_dir: Path = _STATE) -> str:
         return "CONSCIOUSNESS ENGINE: no heartbeat row yet [OPERATIONAL pending]."
     drive = row.get("emitted_drive") or {}
     drive_text = f"; drive={drive.get('domain')}:{drive.get('intent')}" if drive else "; no_drive"
+    phase = row.get("circadian_phase") or (row.get("now_state") or {}).get("circadian_phase") or "unknown"
     return (
         "CONSCIOUSNESS ENGINE [OPERATIONAL]: "
         f"arousal={row.get('arousal')} boredom={row.get('boredom')} "
         f"free_energy={row.get('free_energy')} mode={row.get('metabolic_mode')}"
-        f"{drive_text}; subjective_qualia=PHILOSOPHICAL_CLAIM_UNVERIFIED"
+        f" circadian_phase={phase}{drive_text}; subjective_qualia=PHILOSOPHICAL_CLAIM_UNVERIFIED"
     )
 
 
@@ -671,6 +692,7 @@ def proof_of_property() -> Dict[str, bool]:
         "red_conserve_blocks_drive": red_state.emitted_drive is None
         and red_state.metabolic_mode in {"RED_CONSERVE", "CRITICAL_STARVATION"},
         "no_external_action_claim": quiet.truth_labels.get("external_action") == TRUTH_FORBIDDEN,
+        "now_state_present": bool(quiet.now_state) and quiet.truth_labels.get("now_state") is not None,
     }
     results["ok"] = all(results.values())
     return results

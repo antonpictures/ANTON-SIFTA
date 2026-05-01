@@ -5,6 +5,8 @@
 
 **Covenant:** truth labels in [IDE_BOOT_COVENANT.md](../IDE_BOOT_COVENANT.md) **§7.11**.
 
+**Bishop vanguard drop (voice + reference code):** [BISHOP_drop_stigmergic_video_resolution_v1.dirt](BISHOP_drop_stigmergic_video_resolution_v1.dirt)
+
 ---
 
 ## One-line truth

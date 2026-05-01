@@ -518,17 +518,25 @@ def _wall_clock_grounding_block() -> str:
     """Authoritative current wall-clock context for Alice's system prompt."""
     try:
         from System.swarm_hardware_time_oracle import current_time_for_alice
+        from System.swarm_now_state import build_now_state, now_state_prompt_block
 
         reading = current_time_for_alice()
     except Exception:
         reading = {"ok": False}
+    try:
+        now_state = build_now_state(reading)
+        now_block = now_state_prompt_block(now_state)
+    except Exception:
+        now_state = {"ok": False}
+        now_block = ""
 
     if not reading.get("ok"):
-        return (
+        block = (
             "WALL CLOCK GROUND TRUTH:\n"
             f"- unavailable_reply={_time_unavailable_reply()}\n"
             "- Use this fallback only when the hardware time oracle and OS clock both fail."
         )
+        return block + (("\n\n" + now_block) if now_block else "")
 
     local_human = str(reading.get("local_human") or "").strip()
     timezone = str(reading.get("timezone") or "").strip()
@@ -536,7 +544,7 @@ def _wall_clock_grounding_block() -> str:
     epoch = reading.get("epoch", "")
     source = str(reading.get("source") or "unknown").strip()
     sig = str(reading.get("signature") or "").strip()
-    return (
+    block = (
         "WALL CLOCK GROUND TRUTH (authoritative, live):\n"
         f"- current_local_time={local_human} {timezone}".rstrip() + "\n"
         f"- local_iso={local_iso}\n"
@@ -545,6 +553,7 @@ def _wall_clock_grounding_block() -> str:
         f"- If {_owner_label()} asks for the current time or date, answer directly from current_local_time.\n"
         "- Do not say you do not know the exact time while this block is present."
     )
+    return block + (("\n\n" + now_block) if now_block else "")
 
 
 def _sanitize_memory_block_for_alice(block: str) -> str:

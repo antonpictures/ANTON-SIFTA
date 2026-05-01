@@ -3,7 +3,7 @@
 **For the Swarm.** 🐜⚡  
 **Version:** 2026-05-01 — Event 86 (Red Queen colosseum)  
 **Covenant:** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — binding; use **§7.11** truth labels (`OBSERVED` / `OPERATIONAL` / `PHILOSOPHICAL CLAIM` / `FORBIDDEN`).  
-**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt) · Event 89: [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt) · Event 90: [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md)
+**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt) · Event 89: [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt) · Event 90: [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md) · [BISHOP_drop_stigmergic_video_resolution_v1.dirt](Vanguard_drops/BISHOP_drop_stigmergic_video_resolution_v1.dirt)
 
 ### Where we are (snapshot — read this if you “can’t see”)
 
@@ -269,7 +269,8 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 
 ## 13 — Event 90 (Bishop): **Stigmergic video resolution** organ
 
-**Spec + DOI spine:** [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md)
+**Spec + DOI spine:** [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md)  
+**Bishop vanguard narrative + sketch:** [BISHOP_drop_stigmergic_video_resolution_v1.dirt](Vanguard_drops/BISHOP_drop_stigmergic_video_resolution_v1.dirt)
 
 **OBSERVED today:** `visual_stigmergy.jsonl` rows carry `w,h`, entropy, `saliency_q` / `motion_q` hex packs — **operative** acuity is the **grid N** chosen in **What Alice Sees** (default code **16×16**; Bishop screenshot **22×22** = **484** cells).
 
