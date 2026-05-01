@@ -137,6 +137,25 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "trace_id",           # "RIBOSOME_<8hex>"
     },
 
+    # Protein folding receipts — written by System/sifta_protein_folding_broker.py.
+    # This ledger is the compliance boundary for local toy folds, AFDB lookup
+    # folds, and future external folding engines. AlphaFold-derived artifacts
+    # must carry a source-specific compliance block.
+    "protein_fold_receipts.jsonl": {
+        "ts",
+        "job_id",
+        "engine",
+        "status",
+        "truth_label",
+        "sequence_length",
+        "elapsed_s",
+        "pdb_path",
+        "pdb_sha256",
+        "source",
+        "reference",
+        "compliance",
+    },
+
     # Memory Forge engrams (Epoch 7, C47H AGI Tournament) — written by System/swarm_memory_forge.py.
     # Each row is one forged engram. Active_engrams.json is a derived view (top-5 most recent).
     "long_term_engrams.jsonl": {

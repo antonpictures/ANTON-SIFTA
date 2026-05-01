@@ -28,6 +28,12 @@ import subprocess
 import sys
 import time
 
+from System.canonical_schemas import assert_payload_keys
+from System.jsonl_file_lock import append_line_locked
+from System.alphafold_compliance import (
+    alphafold_db_compliance_metadata as _alphafold_db_compliance,
+)
+
 try:
     import urllib.request
     import urllib.error
@@ -51,6 +57,16 @@ AA20 = set("ACDEFGHIKLMNPQRSTVWY")
 # ── API Endpoints (free, no API key) ──────────────────────────────────
 ESMFOLD_API_URL = "https://api.esmatlas.com/foldSequence/v1/pdb/"
 ALPHAFOLD_DB_API = "https://alphafold.ebi.ac.uk/api/prediction/{uniprot_id}"
+
+
+def _sha256_file(path: Path) -> str:
+    if not path.exists() or not path.is_file():
+        return ""
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 @dataclass
@@ -143,19 +159,25 @@ class ProteinFoldingBroker:
         meta_path.write_text(json.dumps(meta, indent=2))
         self.jobs.append(meta)
 
-        # Append to fold receipts ledger
+        # Append to fold receipts ledger.
         ledger = Path(job.out_dir).parent / "protein_fold_receipts.jsonl"
         try:
-            with open(ledger, "a") as f:
-                f.write(json.dumps({
-                    "ts": time.time(),
-                    "job_id": jid,
-                    "engine": job.engine,
-                    "status": result.get("status", "unknown"),
-                    "truth_label": result.get("truth_label", "unknown"),
-                    "sequence_length": len(seq),
-                    "elapsed_s": round(elapsed, 2),
-                }) + "\n")
+            receipt = {
+                "ts": time.time(),
+                "job_id": jid,
+                "engine": job.engine,
+                "status": result.get("status", "unknown"),
+                "truth_label": result.get("truth_label", "unknown"),
+                "sequence_length": len(seq),
+                "elapsed_s": round(elapsed, 2),
+                "pdb_path": str(pdb_path),
+                "pdb_sha256": _sha256_file(pdb_path),
+                "source": result.get("source", ""),
+                "reference": result.get("reference", ""),
+                "compliance": result.get("compliance", {}),
+            }
+            assert_payload_keys("protein_fold_receipts.jsonl", receipt, strict=True)
+            append_line_locked(ledger, json.dumps(receipt, sort_keys=True) + "\n")
         except Exception:
             pass
 
@@ -376,6 +398,13 @@ class ProteinFoldingBroker:
                 "plddt_count": len(plddt_values),
                 "source": pdb_url,
                 "reference": "Jumper et al. Nature 596(7873) 2021",
+                "compliance": _alphafold_db_compliance(
+                    uniprot_id=uniprot_id.upper(),
+                    source_url=pdb_url,
+                    version=version,
+                    gene=gene,
+                    organism=organism,
+                ),
                 "note": "Real AlphaFold2 prediction from the EBI database. "
                         "pLDDT > 70 = reliable; > 90 = near-experimental accuracy.",
             }
@@ -571,4 +600,3 @@ if __name__ == "__main__":
     broker = ProteinFoldingBroker()
     meta = broker.run(FoldingJob(sequence=seq, engine=engine, uniprot_id=uniprot))
     print(json.dumps(meta, indent=2))
-
