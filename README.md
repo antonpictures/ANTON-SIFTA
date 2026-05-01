@@ -245,6 +245,9 @@ subgraph CORE[Swarm Organism Core]
     DNG[Danger / Immune Signals]
     ENG[Energy / Metabolic Budget]
     TIME[STIG-TIME<br/>rhythm + cycles]
+    SELF[Self Model / I-state<br/>identity & history]
+    DRV[Drives / Wants<br/>curiosity / repair / rest]
+    ACT[Action Selection<br/>basal ganglia routing]
 end
 
 UF --> MEM
@@ -254,6 +257,16 @@ UF --> DNG
 UF --> ENG
 TIME --> ENG
 TIME --> UF
+SELF --> CORE
+SELF --> IDE
+DRV --> PRE
+DRV --> IDE
+ATT --> ACT
+DNG --> ACT
+ENG --> ACT
+PRE --> ACT
+ACT --> IDE
+ACT --> BODY
 
 subgraph ANIMALS[Animal Organs]
     PHY[Physarum Retina<br/>active sensing]
@@ -282,16 +295,31 @@ subgraph BODY[Runtime Body]
     TEST[Proof / Tests]
     LOG[Ledger / JSONL Memory]
     UI[Desktop / Camera / Display]
+    INT[Interoception<br/>CPU / RAM / Heat / STGM]
+    VAL[Value Signal<br/>reward / pain / td-learning]
+    SLEEP[Sleep / Dream<br/>consolidation & defrag]
 end
 
 CORE --> SIM
 SIM --> TEST
 SIM --> LOG
 SIM --> UI
+INT --> ENG
+INT --> DNG
+INT --> ATT
+TEST --> VAL
+LOG --> VAL
+VAL --> MEM
+VAL --> DRV
+TIME --> SLEEP
+MEM --> SLEEP
+SLEEP --> PRE
+SLEEP --> MEM
 
 TEST --> IDE
 LOG --> IDE
 UI --> PHY
+BODY --> INT
 
 IDE -->|commits patches| BODY
 BODY -->|feedback| H
