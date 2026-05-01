@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from System import swarm_stigmergic_cochlea_integrator as integ
 
 
@@ -76,9 +78,58 @@ def test_append_produces_parseable_body_brain_tick(tmp_path: Path) -> None:
 def test_defaults_when_cochlea_missing(tmp_path: Path) -> None:
     missing = tmp_path / "stigmergic_cochlea.jsonl"
     out = integ.integrate_acoustic_features(
-        {"event": "body_brain_tick", "td_value": 0.0, "danger_state": 0.0, "action": {}, "result": {}},
+        {
+            "event": "body_brain_tick",
+            "tick_id": "bb3",
+            "td_value": 0.25,
+            "danger_state": 0.0,
+            "action": {"type": "observe", "target": "test"},
+            "result": {"status": "completed", "latency": 0.0, "energy_used": 0.0},
+        },
         cochlea_ledger=missing,
         state_root=tmp_path,
     )
     assert "acoustic_stress" in out
     assert out["event"] == "body_brain_tick"
+    assert out["td_value"] == 0.25
+    assert out["danger_state"] == 0.0
+    assert out["cochlea_receipt_backed"] is False
+    assert out["acoustic_overlay_status"] == integ.STATUS_NO_COHLEA_RECEIPT
+
+
+def test_rejects_rows_that_are_not_real_body_brain_ticks(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="body_brain_tick"):
+        integ.integrate_acoustic_features(
+            {"event": "not_a_tick", "td_value": 0.0},
+            cochlea_ledger=tmp_path / "missing.jsonl",
+            state_root=tmp_path,
+        )
+
+
+def test_string_danger_hint_uses_acoustic_stress_as_numeric_proxy(tmp_path: Path) -> None:
+    ledger = _write_cochlea(
+        tmp_path,
+        {
+            "tick_id": "c4",
+            "ts": 123.45,
+            "acoustic_stress": 0.8,
+            "td_bias": 0.0,
+            "danger_state": "ACOUSTIC_STRESS_HIGH",
+            "danger_hint": "ACOUSTIC_STRESS_HIGH",
+        },
+    )
+    out = integ.integrate_acoustic_features(
+        {
+            "event": "body_brain_tick",
+            "tick_id": "bb4",
+            "td_value": 0.0,
+            "danger_state": 0.0,
+            "action": {"type": "observe", "target": "test"},
+            "result": {"status": "completed", "latency": 0.0, "energy_used": 0.0},
+        },
+        cochlea_ledger=ledger,
+        state_root=tmp_path,
+    )
+    assert out["cochlea_receipt_backed"] is True
+    assert out["acoustic_overlay_status"] == integ.STATUS_MERGED
+    assert abs(out["danger_state"] - 0.64) < 1e-5

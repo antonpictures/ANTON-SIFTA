@@ -2,9 +2,10 @@
 """Cochlea → body-brain integration (Event 95 → memory bridge).
 
 Reads the tail of ``stigmergic_cochlea.jsonl`` (feature-only Event 95 rows) and
-merges bounded acoustic scalars into a ``body_brain_tick`` dict before append to
-``body_brain_memory.jsonl``. Dream engine compatibility requires
-``event == "body_brain_tick"`` and sensible ``action`` / ``result`` dicts.
+merges bounded acoustic scalars into a caller-supplied ``body_brain_tick`` dict
+before append to ``body_brain_memory.jsonl``. Dream engine compatibility
+requires ``event == "body_brain_tick"`` and sensible ``action`` / ``result``
+dicts; this bridge refuses to invent those fields for arbitrary rows.
 
 Truth label on merged rows: ``ACOUSTIC_OVERLAY_MERGE`` (string) — not a claim of
 biological audition, only ledger coupling.
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -27,6 +29,8 @@ _REPO = Path(__file__).resolve().parent.parent
 TD_BIAS_WEIGHT = 0.6
 DANGER_BLEND = 0.8
 TRUTH_OVERLAY = "ACOUSTIC_OVERLAY_MERGE"
+STATUS_MERGED = "MERGED"
+STATUS_NO_COHLEA_RECEIPT = "NO_COHLEA_RECEIPT"
 
 
 def _state_root() -> Path:
@@ -87,12 +91,14 @@ def read_latest_cochlea_features(
     row = _read_latest_jsonl_object(path)
     if not row:
         return {
-            "acoustic_stress": 0.1,
-            "td_bias": -0.2,
+            "acoustic_stress": 0.0,
+            "td_bias": 0.0,
             "acoustic_danger_proxy": 0.0,
             "cochlea_tick_id": "",
             "cochlea_ts": None,
             "cochlea_danger_hint": "",
+            "cochlea_receipt_backed": False,
+            "acoustic_overlay_status": STATUS_NO_COHLEA_RECEIPT,
         }
     stress = _clamp01(
         row.get("acoustic_stress", row.get("stress")),
@@ -101,14 +107,11 @@ def read_latest_cochlea_features(
     try:
         td_bias = float(row.get("td_bias", 0.0))
     except (TypeError, ValueError):
-        td_bias = -0.2
+        td_bias = 0.0
     if not math.isfinite(td_bias):
-        td_bias = -0.2
+        td_bias = 0.0
     td_bias = max(-1.0, min(1.0, td_bias))
-    danger_proxy = row.get("danger_state")
-    if danger_proxy is None:
-        danger_proxy = stress
-    danger_proxy = _clamp01(danger_proxy, default=0.0)
+    danger_proxy = _clamp01(row.get("danger_state"), default=stress)
     return {
         "acoustic_stress": stress,
         "td_bias": td_bias,
@@ -116,7 +119,21 @@ def read_latest_cochlea_features(
         "cochlea_tick_id": str(row.get("tick_id") or ""),
         "cochlea_ts": row.get("ts"),
         "cochlea_danger_hint": str(row.get("danger_hint") or ""),
+        "cochlea_receipt_backed": True,
+        "acoustic_overlay_status": STATUS_MERGED,
     }
+
+
+def validate_body_brain_tick(mem_row: Dict[str, Any]) -> None:
+    """Reject rows that are not already body-brain tick receipts."""
+    if mem_row.get("event") != "body_brain_tick":
+        raise ValueError("cochlea overlay requires event='body_brain_tick'")
+    if not str(mem_row.get("tick_id") or ""):
+        raise ValueError("cochlea overlay requires a body-brain tick_id")
+    if not isinstance(mem_row.get("action"), dict) or not mem_row.get("action"):
+        raise ValueError("cochlea overlay requires a non-empty action dict")
+    if not isinstance(mem_row.get("result"), dict) or not mem_row.get("result"):
+        raise ValueError("cochlea overlay requires a non-empty result dict")
 
 
 def integrate_acoustic_features(
@@ -126,21 +143,13 @@ def integrate_acoustic_features(
     state_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Merge latest cochlea scalars into a body-brain tick row (returns new dict)."""
+    validate_body_brain_tick(mem_row)
     feats = read_latest_cochlea_features(cochlea_ledger=cochlea_ledger, state_root=state_root)
     cochlea_td_bias = float(feats["td_bias"])
     acoustic_danger = float(feats["acoustic_danger_proxy"])
     acoustic_stress = float(feats["acoustic_stress"])
 
     updated = dict(mem_row)
-    if updated.get("event") != "body_brain_tick":
-        updated["event"] = "body_brain_tick"
-    act = updated.get("action")
-    if not isinstance(act, dict) or not act:
-        updated["action"] = {"type": "observe", "target": "acoustic_overlay"}
-    res = updated.get("result")
-    if not isinstance(res, dict) or not res:
-        updated["result"] = {"status": "completed", "latency": 0.0, "energy_used": 0.0}
-
     current_td = float(updated.get("td_value", 0.0))
     if not math.isfinite(current_td):
         current_td = 0.0
@@ -159,6 +168,9 @@ def integrate_acoustic_features(
     updated["cochlea_tick_id"] = feats["cochlea_tick_id"]
     updated["cochlea_ts"] = feats["cochlea_ts"]
     updated["cochlea_danger_hint"] = feats["cochlea_danger_hint"]
+    updated["cochlea_receipt_backed"] = bool(feats["cochlea_receipt_backed"])
+    updated["acoustic_overlay_status"] = feats["acoustic_overlay_status"]
+    updated["acoustic_overlay_ts"] = time.time()
     updated["tick_source"] = "cochlea_integrator"
     updated["truth_label"] = TRUTH_OVERLAY
     return updated
@@ -187,6 +199,8 @@ class CochleaBodyBrainIntegrator:
 __all__ = [
     "CochleaBodyBrainIntegrator",
     "DANGER_BLEND",
+    "STATUS_MERGED",
+    "STATUS_NO_COHLEA_RECEIPT",
     "TD_BIAS_WEIGHT",
     "TRUTH_OVERLAY",
     "append_integrated_tick",
