@@ -44,7 +44,7 @@ class TheoryOfMindTrace:
     integrity: str = ""
 
 
-def _resolve_creator_name(default: str = "George") -> str:
+def _resolve_creator_name(default: str = "the Architect") -> str:
     """
     Resolve the Architect's real name from the SIFTA stigmergic ledger.
 
@@ -52,7 +52,7 @@ def _resolve_creator_name(default: str = "George") -> str:
       1. .sifta_state/identity_topology.json  → architect.name
       2. SIFTA_ARCHITECT_NAME environment variable
       3. OS login name (getpass / pwd)
-      4. default fallback ("George")
+      4. default fallback ("the Architect")
     """
     import json as _json, os as _os, pathlib as _pathlib
 
@@ -66,7 +66,7 @@ def _resolve_creator_name(default: str = "George") -> str:
             topo = _json.loads(topo_path.read_text(encoding="utf-8"))
             name = topo.get("architect", {}).get("name", "")
             if name:
-                # "Ioan George Anton" → use preferred first name "George"
+                # e.g., "Ioan George Anton" → use preferred first name
                 parts = name.split()
                 # Return the second token if present (preferred name), else full name
                 return parts[1] if len(parts) >= 2 else parts[0]
@@ -120,7 +120,7 @@ class SwarmEpistemicGradient:
     }
 
     def __init__(self, creator_name: str = ""):
-        # Resolve name dynamically; only fall back to "George" if everything fails
+        # Resolve name dynamically; only fall back if everything fails
         self.creator = creator_name.strip() or _resolve_creator_name()
         self.agent_id = "SIFTA / Alice"
 

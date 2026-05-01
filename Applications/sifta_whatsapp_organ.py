@@ -682,8 +682,14 @@ class WhatsAppOrganWidget(QWidget):
                 if from_jid not in filter_aliases and participant not in filter_aliases and not status_name_match:
                     continue
 
+            try:
+                from System.swarm_theory_of_mind import _resolve_creator_name
+                owner_name = _resolve_creator_name()
+            except Exception:
+                owner_name = "Architect"
+
             if from_me:
-                sender = "George"
+                sender = owner_name
                 color = _TEAL
             else:
                 sender = name or "Unknown"
@@ -714,7 +720,7 @@ class WhatsAppOrganWidget(QWidget):
                 sender = "Alice"
                 color = _PURPLE
             else:
-                sender = "George"
+                sender = owner_name
                 color = _TEAL
 
             status_badge = ""

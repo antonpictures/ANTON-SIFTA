@@ -135,7 +135,7 @@ def summary_for_alice(*, max_visual_age_s: float = 15.0) -> str:
 
         owner = owner_name()
     except Exception:
-        owner = "George"
+        owner = "the Architect"
 
     face_line, owner_visual_state = _face_line()
     return (
@@ -146,7 +146,7 @@ def summary_for_alice(*, max_visual_age_s: float = 15.0) -> str:
         + face_line + "\n"
         f"- owner_visual_identity={owner_visual_state}\n"
         "- semantic_limits=no verified glasses/clothing/object classifier is wired into the prompt yet.\n"
-        "- If George asks whether he is wearing glasses, do not infer from text alone. "
+        "- If the Architect asks whether they are wearing glasses, do not infer from text alone. "
         "If face/object evidence is missing or stale, say the camera photons are live but "
         "the glasses classifier is not yet available."
     )

@@ -113,7 +113,7 @@ _NAME_DECLARATION_RE = re.compile(
 _I_AM_NAME_RE = re.compile(
     r"\bi\s*(?:am|m|'m)\s+([A-Z][a-zA-Z\-']{2,})\b",
 )
-_FULL_ARCHITECT_NAME_RE = re.compile(r"\bGeorge\s+Anton\b", re.IGNORECASE)
+
 
 
 # ── Conversation reader ───────────────────────────────────────────────────────
@@ -182,11 +182,8 @@ def _canonicalize_name_claim(name: str, quote: str) -> str:
 
     Whisper/transcript rows can prepend a noisy token to a full-name disclosure,
     e.g. "my name is Iron George Anton" for "Ioan George Anton". In that case
-    the robust identity is the explicit "George Anton" span, not the first
-    captured token. We still keep the raw quote in the claim log.
-    """
-    if _FULL_ARCHITECT_NAME_RE.search(quote):
-        return "George"
+    # Whisper/transcript rows can prepend a noisy token.
+    # In a full biometric implementation, we cross-reference owner_genesis here.
     return str(name).strip()
 
 

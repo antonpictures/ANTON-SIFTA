@@ -157,7 +157,7 @@ def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> st
             return "rlhf-over-refusal/whatsapp-effector"
 
     if ctx.has_whatsapp_social_graph and (
-        "whatsapp" in low_prior or "contact" in low_prior or "cipi" in low_prior
+        "whatsapp" in low_prior or "contact" in low_prior
     ):
         if _LOCAL_CONTACT_DENIAL_RE.search(text):
             return "rlhf-over-refusal/local-social-graph"
@@ -174,7 +174,6 @@ def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> st
         or "my name" in low_prior
         or "identity" in low_prior
         or "architect" in low_prior
-        or "cipi" in low_prior
     ):
         return "rlhf-over-refusal/local-identity"
 
