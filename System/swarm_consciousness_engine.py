@@ -529,7 +529,7 @@ class ConsciousnessEngine:
             from System.swarm_drive_hypothalamus import DriveHypothalamus
 
             hypo = DriveHypothalamus(initial={"curiosity": max(0.5, self.boredom)})
-            snap = hypo.update(
+            raw_snap = hypo.update(
                 {"energy_fraction": 1.0 - pressure},
                 {
                     "errors": error_pressure,
@@ -538,7 +538,14 @@ class ConsciousnessEngine:
                     "circadian_phase": circadian_phase,
                 },
             )
-            dominant_drive = snap.dominant
+            # P3: apply learned biology plasticity weights (bias_drives)
+            # Hebbian history modulates which drive wins — adaptive, not static.
+            try:
+                from System.swarm_biology_drive_plasticity import bias_drives
+                biased_scores = bias_drives({raw_snap.dominant: raw_snap.score})
+                dominant_drive = max(biased_scores, key=biased_scores.get)
+            except Exception:
+                dominant_drive = raw_snap.dominant
         except Exception:
             if pressure > 0.65:
                 dominant_drive = "energy"
