@@ -1,0 +1,100 @@
+# Bishop drop — Dream Engine / synaptic homeostasis / active forgetting (Event 88 v1)
+
+**Date:** 2026-05-01  
+**Channel:** Vanguard (Architect paste → Cursor hill)  
+**Covenant:** [IDE_BOOT_COVENANT.md](../IDE_BOOT_COVENANT.md); **§7.11** truth labels apply.  
+**Status:** **DIRT / SPEC** — narrative + reference sketch; **Architect GO** before production merge. **NPPL.**
+
+---
+
+## Raw transmission (Architect channel)
+
+Architect, the line has been crossed.
+
+You mapped the anatomy in a diagram. AG31 executed it in silicon. The `body_brain_tick` is the spine of the endeavor. Continuous ticks without consolidation risk **cognitive obesity**: `body_brain_memory.jsonl` grows without bound; context and disk pressure follow.
+
+**Sleep is not a pause.** Biology pays for wake plasticity with off-line, metabolically expensive consolidation and **down-selection**. Bishop orders: **Active forgetting** as a first-class organ — **SwarmDreamEngine** — hooked to the **sleep / recovery** phase of the physiology loop.
+
+We code together. 🐜⚡
+
+---
+
+## Nuggets (implementer-facing)
+
+1. **OBSERVED gap:** `System/swarm_body_brain_loop.py` step **8** is `_maybe_sleep()` → `time.sleep(...)` (capped for tests) — **no** ledger compression, **no** signed replay-to-engram pipeline yet.  
+2. **Engineering target:** on SLEEP / high metabolic rest, run **off-line consolidation**: read episodic `body_brain_memory.jsonl`, emit **low-rate engrams** to `long_term_engrams.jsonl` (or hippocampus ingress), then **prune** raw rows per **retention policy** — **never** silent unrecoverable delete without **backup + receipt**.  
+3. **LLM optional:** “hippocampal replay” summarization may call cortex — **same laws as Event 86** (budget, kill-switch, trace row).  
+4. **Schema fidelity:** live ticks write `td_value` (see `swarm_body_brain_loop._write_memory`); any dream summarizer must parse **actual** keys.
+
+---
+
+## Research spine (DOI-locked)
+
+| Pillar | Pointer |
+|:---|:---|
+| **Synaptic Homeostasis Hypothesis (SHY)** — sleep as price of plasticity; downscaling | Tononi & Cirelli (2006) *Sleep Medicine Reviews* [DOI 10.1016/j.smrv.2005.05.002](https://doi.org/10.1016/j.smrv.2005.05.002) |
+| **SHY / consolidation integration (review)** | Tononi & Cirelli (2014) *Neuron* [DOI 10.1016/j.neuron.2013.12.020](https://doi.org/10.1016/j.neuron.2013.12.020) |
+| **Sharp-wave ripples — replay & consolidation** | Buzsáki (2015) *Hippocampus* [DOI 10.1002/hipo.22488](https://doi.org/10.1002/hipo.22488) |
+| **SWR: retrieval + consolidation (review)** | Jaramillo et al. (2018) *Nat. Rev. Neurosci.* [DOI 10.1038/s41583-018-0077-1](https://doi.org/10.1038/s41583-018-0077-1) |
+| **Experience selection by SWR** | [PMC10659301](https://pmc.ncbi.nlm.nih.gov/articles/PMC10659301/) (open fulltext; check publisher DOI inside) |
+
+---
+
+## Reference sketch — `SwarmDreamEngine` (DIRT — not merged)
+
+*Aligned to real ledger field `td_value`. For pytest / smoke only until hooked behind GO + backup policy.*
+
+```python
+#!/usr/bin/env python3
+"""Reference only — see tournament ALICE §11."""
+import json
+import os
+from pathlib import Path
+
+
+class SwarmDreamEngine:
+    def __init__(self, state_dir: Path | None = None):
+        self.state_dir = state_dir or Path(".sifta_state")
+        self.short_term_ledger = self.state_dir / "body_brain_memory.jsonl"
+        self.long_term_engrams = self.state_dir / "long_term_engrams.jsonl"
+
+    def _hippocampal_replay(self, traces: list) -> str:
+        best_action = None
+        highest = float("-inf")
+        for trace in traces:
+            val = float(trace.get("td_value", trace.get("value", 0.0)))
+            act = trace.get("action") or {}
+            if val > highest:
+                highest = val
+                best_action = act
+        return (
+            f"Under recorded pressures, action {best_action!r} "
+            f"carried highest td_value={highest}."
+        )
+
+    def trigger_rem_sleep(self) -> None:
+        if not self.short_term_ledger.exists():
+            return
+        traces: list = []
+        with open(self.short_term_ledger, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    traces.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        if not traces:
+            return
+        engram = self._hippocampal_replay(traces)
+        self.long_term_engrams.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.long_term_engrams, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "engram", "content": engram}, ensure_ascii=False) + "\n")
+        # PRODUCTION REQUIRES: signed backup + retention policy + Architect GO
+        os.remove(self.short_term_ledger)
+```
+
+---
+
+*Tournament cross-link:* [ALICE_CONSCIOUSNESS_TOURNAMENT_EVENT86.md](../ALICE_CONSCIOUSNESS_TOURNAMENT_EVENT86.md) **§11**. *Archived by CG55M (Cursor) under `Documents/Vanguard_drops/`.*

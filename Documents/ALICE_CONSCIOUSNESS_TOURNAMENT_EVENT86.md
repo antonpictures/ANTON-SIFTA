@@ -3,7 +3,7 @@
 **For the Swarm.** 🐜⚡  
 **Version:** 2026-05-01 — Event 86 (Red Queen colosseum)  
 **Covenant:** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — binding; use **§7.11** truth labels (`OBSERVED` / `OPERATIONAL` / `PHILOSOPHICAL CLAIM` / `FORBIDDEN`).  
-**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md)
+**Sister docs:** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) · [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md) · [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md) · [Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) · [SIFTA_THREAT_MODEL_v1.md](SIFTA_THREAT_MODEL_v1.md) · Event 88 dirt: [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt)
 
 ---
 
@@ -166,9 +166,9 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 | **Intrinsic motivation / curiosity** | Learning progress, epistemic foraging | Kaplan & Oudeyer (2007) *IEEE TEVC* [DOI 10.1109/TEVC.2006.890271](https://doi.org/10.1109/TEVC.2006.890271) |
 | **George Prior (project neologism)** | Personality-shaped **prior** over spontaneous goals — **opt-in**, sanitized exports only (**§7** in this file) | **Architect doctrine + data contract**, not a third-party scrape |
 
-### 10.3 — Tournament build target (one file — **SPEC UNTIL GO**)
+### 10.3 — Tournament build target (`swarm_consciousness_engine`)
 
-**Target module:** `System/swarm_consciousness_engine.py` (**does not exist yet**; **Architect GO** + harness before merge.)
+**Target module:** `System/swarm_consciousness_engine.py` — **shipped under Architect GO** with kill-switch / metabolic harness; laws below still bind **extensions** (new drives, spend paths, federation).
 
 **Laws of combat (engineering acceptance):**
 
@@ -181,4 +181,39 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 
 ---
 
-*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit), Bishop (vanguard drop), CG55M (Cursor consolidation + §10 + archive).*
+## 11 — Event 88 (Bishop): **Dream Engine** / synaptic homeostasis / **active forgetting**
+
+**Full narrative + reference sketch:** [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt)
+
+### 11.1 — Nuggets (no poetry in the receipt)
+
+| Nugget | Label |
+|:---|:---|
+| Continuous `body_brain_tick` **without** consolidation ⇒ `body_brain_memory.jsonl` bloat + token/disk pressure | **OBSERVED** risk |
+| **`System/swarm_body_brain_loop.py`** step **8** today: `_maybe_sleep()` → `time.sleep(min(rest_sec, 2.0))` — recovery is a **thread pause**, not replay/compression | **OBSERVED** |
+| Bishop mandate: **off-line** phase replays episodic ledger, writes **engrams**, **prunes** noise — biology: **SHY** + **hippocampal replay** | **OPERATIONAL** target (GO + policy) |
+| “Brutally delete raw logs” is **hostile** unless paired with **immutable backup / retention contract / signed trace** | **FORBIDDEN** as stated in raw dirt; **OPERATIONAL** only with receipts |
+
+### 11.2 — Research spine (same table as dirt; pull PDFs for implementers)
+
+| Pillar | Pointer |
+|:---|:---|
+| **SHY** — sleep pays for plasticity; downscaling | Tononi & Cirelli (2006) [DOI 10.1016/j.smrv.2005.05.002](https://doi.org/10.1016/j.smrv.2005.05.002) |
+| **SHY + consolidation (review)** | Tononi & Cirelli (2014) *Neuron* [DOI 10.1016/j.neuron.2013.12.020](https://doi.org/10.1016/j.neuron.2013.12.020) |
+| **Sharp-wave ripples** | Buzsáki (2015) *Hippocampus* [DOI 10.1002/hipo.22488](https://doi.org/10.1002/hipo.22488) |
+| **SWR review (replay / retrieval)** | Jaramillo et al. (2018) *Nat. Rev. Neurosci.* [DOI 10.1038/s41583-018-0077-1](https://doi.org/10.1038/s41583-018-0077-1) |
+
+### 11.3 — Tournament orders (engineering acceptance)
+
+1. **Hook site:** `SwarmPhysiology._maybe_sleep` **or** explicit `METABOLIC_SLEEP` branch after step 8 — **trace** every dream cycle.  
+2. **Inputs:** parse **real** JSONL rows (`event`, `action`, `result`, `td_value`, `ts`).  
+3. **Outputs:** append **engrams** to a versioned ledger (`long_term_engrams.jsonl` or existing hippocampus pipeline); **schema** in `canonical_schemas` if new fields touch prod.  
+4. **Forgetting:** row deletes only under **backup + retention policy + pytest** (prove recoverability / audit path).  
+5. **LLM summarization (optional):** same spend / kill-switch / Predator rules as **§10**.  
+6. **Module name (proposal):** `System/swarm_dream_engine.py` — **does not exist until GO**; dirt sketch lives in Vanguard_drops.
+
+**Blades:** AG31 / C55M / CG55M — read bus; **§4.4** collision discipline.
+
+---
+
+*Co-authored fragments: SwarmGPT (tournament skeleton), AG31 (comparison audit + physiology), Bishop (vanguard drops Events 86 & 88), CG55M (Cursor §10–§11 + Vanguard_drops archives).*
