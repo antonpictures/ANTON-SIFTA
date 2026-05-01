@@ -1,0 +1,38 @@
+# Bishop drop — Biology drive plasticity (Hebb / homeostasis / TD hook) v1
+
+**Date:** 2026-05-01  
+**Channel:** Vanguard (Architect → hill)  
+**Covenant:** [IDE_BOOT_COVENANT.md](../IDE_BOOT_COVENANT.md) §7.11 — OPERATIONAL organ, not proof of qualia.
+
+---
+
+## Orders (executable)
+
+- **LANDED:** `System/swarm_biology_drive_plasticity.py` — JSON state `.sifta_state/biology_drive_plasticity.json`; **`swarm_body_brain_loop`** calls `update_drive_plasticity` after each TD `value`.
+- **NEXT (Architect GO):** thread **`bias_drives()`** into `ConsciousnessEngine.tick` inputs when we expose a multi-drive score vector (today plasticity learns from **dominant attention** + TD only).
+
+---
+
+## Research spine (peer-reviewed — Bishop pull)
+
+| Mechanism | Primary literature | Stable id |
+|:---|:---|:---|
+| **Hebbian association** (“fire together, wire together”) | Hebb, D. O. (1949). *The Organization of Behavior.* Wiley. | Classic text — cite by standard bibliographic record |
+| **LTP / synaptic plasticity (cellular)** | Bliss & Lømo (1973). Long-lasting potentiation of synaptic transmission in the dentate area of the anaesthetized rabbit following stimulation of the perforant path. **J. Physiol.** 232(2), 331–356. | [DOI 10.1113/jphysiol.1973.sp010274](https://doi.org/10.1113/jphysiol.1973.sp010274) |
+| **Dopamine reward prediction / RPE** | Schultz, Dayan, Montague (1997). A neural substrate of prediction and reward. **Science** 275, 1593–1599. | [DOI 10.1126/science.275.5306.1593](https://doi.org/10.1126/science.275.5306.1593) |
+| **TD learning (formal)** | Sutton & Barto (2018). *Reinforcement Learning: An Introduction* (2nd ed.). MIT Press. | ISBN 978-0262039249 |
+| **Homeostasis / allostasis** | Sterling & Eyer (1988). Allostasis: a new paradigm to explain arousal pathology. In *Handbook of Life Stress, Cognition and Health.* Wiley. | Handbook chapter — standard cite in behavioral neuroscience |
+| **Need / drive reduction (motivation)** | Hull, C. L. (1943). *Principles of Behavior.* Appleton-Century-Crofts. | Historical drive-reduction anchor |
+| **Free energy / active inference (intrinsic drive framing)** | Friston (2010). The free-energy principle: a unified brain theory? **Nat. Rev. Neurosci.** 11, 127–138. | [DOI 10.1038/nrn2787](https://doi.org/10.1038/nrn2787) |
+
+**Narrative glue:** SIFTA’s plasticity JSON is **not** a spiking network — it is an **explicit, auditable** slow state on disk, analogous to **allostatic set-points** + **RPE-signed updates**, gated by **metabolic danger** and **coarse circadian phase** from `build_now_state()`.
+
+---
+
+## Event 91 foreshadow (vanguard UI — **not shipped**)
+
+**Bioluminescent chromatophore:** GPU bloom / HDR tied to biology-domain arousal must remain **SPEC** until `pytest` + receipt discipline land (see `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` + chromatophore skin organ). No marketing claim on AlphaFold mail until **SHIPPED** row exists.
+
+---
+
+*CG55M@cursor — implementation + bibliography table; homeworld_serial GTH4921YP3.*

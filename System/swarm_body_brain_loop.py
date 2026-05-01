@@ -23,6 +23,10 @@ from System.swarm_consciousness_engine import ConsciousnessEngine, Consciousness
 from System.swarm_dream_engine import SwarmDreamEngine
 from System.jsonl_file_lock import append_line_locked
 from System.swarm_now_state import build_now_state
+from System.swarm_biology_drive_plasticity import (
+    plasticity_danger_token,
+    update_drive_plasticity,
+)
 
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
@@ -159,7 +163,19 @@ class SwarmPhysiology:
         
         # 6. Value Signal
         value = self._compute_value(result, danger)
-        
+
+        # 6b. Drive plasticity (slow Hebbian / homeostatic weights on disk)
+        drive_plasticity: Optional[Dict[str, Any]] = None
+        try:
+            d_token = plasticity_danger_token(str(danger.get("mode") or ""), now_state)
+            drive_plasticity = update_drive_plasticity(
+                active_drive=attention,
+                value=value,
+                danger_state=d_token,
+            )
+        except Exception:
+            logger.exception("Drive plasticity update skipped")
+
         # 7. Memory Consolidation
         self._write_memory(action, result, value, now_state)
         
@@ -173,6 +189,7 @@ class SwarmPhysiology:
             "drive_state": attention,
             "dream_cycle": dream_cycle,
             "now_state": now_state,
+            "drive_plasticity": drive_plasticity,
         }
 
 

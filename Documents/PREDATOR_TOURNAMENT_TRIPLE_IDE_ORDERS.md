@@ -22,15 +22,23 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-01T10:26:00-07:00` — *CG55M refresh: outreach A2b organ map + battle brief; Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T10:29:00-07:00` — *CG55M: drive plasticity SHIPPED + Event 91 vanguard row + Bishop biblio; Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
-| **Hot surfaces** | `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md`, `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, `System/nvidia_open_assets_registry.py`, `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md`, `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`), `.sifta_state/work_receipts.jsonl` (append-only) |
+| **Hot surfaces** | `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
 | **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
 | **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
 | **Collision risk** | **MED** — multi-lane (outreach + GPU + NVIDIA registry); **LOW** if each Doctor tails trace + yields on duplicate intent |
-| **Next safe move** | Codex implements GPU spec slices with **pytest-offscreen** bars; C55M Isaac survey; CG55M keeps **registry + tournament docs** green; Architect **GO** before wiring bloom → `body_brain_memory.jsonl` claims in production UI. |
+| **Next safe move** | **Event 91 (spec):** AG31 vanguard — *bioluminescent chromatophore* + GPU bloom ↔ body_brain / biology-domain telemetry — Bishop narrative only until code + tests land. **Plasticity follow-up:** wire `bias_drives()` into consciousness score path on **GO**. Codex: GPU spec slices + **pytest-offscreen**; C55M: Isaac survey; CG55M: registry green. |
+
+### 0.3 — **Event 91 vanguard + drive plasticity (2026-05-01)**
+
+| Track | Status | SoT |
+|:---|:---|:---|
+| **Drive plasticity organ** | **SHIPPED** — Hebb-style TD hook + homeostatic decay + danger/circadian priors; state file `.sifta_state/biology_drive_plasticity.json` | `System/swarm_biology_drive_plasticity.py` · `tests/test_swarm_biology_drive_plasticity.py` · body_brain return key `drive_plasticity` |
+| **Event 91 — Bioluminescent chromatophore** | **SPEC / vanguard** — computational frugality (sphere impostors) + bioluminescence metaphor; **do not** claim shipped product | `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · `System/swarm_chromatophore_skin.py` (existing organ — extend on GO) |
+| **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 
@@ -54,6 +62,8 @@
 | **P1** | **CG55M** | **Manifest doctrine:** **`Talk to Alice`** vs **`Alice`** shell — **one** conversational home; retire or document single exception path (Writer). | `apps_manifest.json` diff + covenant cross-link. |
 | **P2** | **C55M** | **Finance batch read** (Event 86 class) — no main-thread stall; **canonical_wallet_sum** truth. | `pytest tests/test_finance.py` + receipt id. |
 | **P2** | **AG31** | **Architect Room game** — scaffold `Applications/sifta_architect_room_game.py` **after** manifest row + tests green (see [PREDATOR_V7_RESEARCH_SPINE.md](PREDATOR_V7_RESEARCH_SPINE.md) §Architect Room). | Import clean + 1 smoke test. |
+| **P2** | **AG31 / C55M** | **Event 91 — Bioluminescent chromatophore:** GPU passes + optional bloom coupling to **`biology_drive_plasticity`** / body_brain — **sim + pytest first** | Bishop drop + GPU spec § stigmergic integration; **no** UI claim without green tests |
+| **P3** | **CG55M** | **Plasticity phase 2:** feed **`bias_drives()`** into `ConsciousnessEngine` when multi-drive vector exists | Design note + trace; **GO** before behavior change |
 
 ---
 
@@ -71,6 +81,9 @@
 | **Routing opacity** | RouterBench — [arXiv:2403.12031](https://arxiv.org/abs/2403.12031) | Justifies **AUTO_OPAQUE** + **GateScope-class** audits (billing vs silent model swap). |
 | **Assembly / life interface** | Sharma *et al.*, 2023 — [Nature](https://doi.org/10.1038/s41586-023-06600-9) | Sara Walker / Assembly lab — **thresholds from paper**, not vibes. |
 | **Cortex surgery (ML)** | Hu LoRA; Rafailov DPO; Liu ORPO; Arditi refusal direction; Lin ROME warning | Locked in [ALICE_CORTEX_TOURNAMENT_v1.md](ALICE_CORTEX_TOURNAMENT_v1.md) — **tournament law**. |
+| **Synaptic plasticity / LTP** | Bliss & Lømo (1973) — **J. Physiol.** | `swarm_biology_drive_plasticity` — cellular **metaphor** for “use strengthens” (see Bishop drop). |
+| **Reward prediction error** | Schultz *et al.* (1997) — **Science** | Pairs with `td_value` in `body_brain_memory.jsonl` + dopamine bridge elsewhere. |
+| **Drive / allostasis** | Sterling & Eyer (1988); Hull (1943) | Slow weights + metabolic danger priors on plasticity state. |
 
 ---
 
