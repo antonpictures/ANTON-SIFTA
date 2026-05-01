@@ -36,6 +36,61 @@ Ioan George Anton
 
 ---
 
+## A2b — **Optional attachment** — research spine for the A2 mail (animals + stigmergy + embodiment)
+
+**Truth label:** Peer-reviewed sources that **ground the metaphors** in the A2 body (traces-as-stigmergy, distributed control, sparse temporal vision, consolidation). They **do not** imply Google reviewed or endorsed SIFTA — only that the vocabulary is **literature-backed**, not invented.
+
+**In-repo spines (expand anytime):** [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](../PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) §7.1 · [OWNER_FACE_PREDATOR_RESEARCH_SPINE.md](../OWNER_FACE_PREDATOR_RESEARCH_SPINE.md) · [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md).
+
+### I — Stigmergy & collective construction (social insects)
+
+| Claim in mail | Primary literature | Stable id |
+|:---|:---|:---|
+| Append-only traces ↔ **environment-mediated coordination** | Grassé, P.-P. (1959). *La reconstruction du nid et les coordinations inter-individuelles chez Bellicositermes natalensis et Cubitermes sp.* **Insectes Sociaux** 6, 41–58. | [DOI 10.1007/BF02223791](https://doi.org/10.1007/BF02223791) |
+| Physical nest as **stigmergic medium** | Green *et al.* (2015). **PNAS** — termite-nest construction as stigmergic architecture (complex structures without central blueprint). | [DOI 10.1073/pnas.1509829113](https://doi.org/10.1073/pnas.1509829113) |
+| Insect societies → **swarm algorithms** | Bonabeau, M., Dorigo, M., & Theraulaz, G. (1999). *Swarm Intelligence: From Natural to Artificial Systems.* Oxford University Press. | ISBN 978-0195131598 |
+| Ant trails → **constructive stigmergy / ACO** | Dorigo, M., & Stützle, T. (2004). *Ant Colony Optimization.* MIT Press. | ISBN 978-0262042192 |
+
+### II — Distributed motor control & fields (embodiment; robotics glue)
+
+| Theme | Primary literature | Stable id |
+|:---|:---|:---|
+| **Octopus** — embodied, distributed motor control (metaphor for decomposed autonomy) | Hochner, B. (2012). An embodied view of octopus neurobiology. **Current Biology** 22(20), R887–R892. | [DOI 10.1016/j.cub.2012.09.001](https://doi.org/10.1016/j.cub.2012.09.001) |
+| **Potential fields** — goals/obstacles as spatial fields (pairs with “pheromone in space” narrative) | Khatib, O. (1986). Real-time obstacle avoidance for manipulators and mobile robots. **Int. J. Robotics Research** 5(1), 90–98. | [DOI 10.1177/027836498600500106](https://doi.org/10.1177/027836498600500106) |
+
+### III — Multimodal identity & faces (vertebrate cognition — “who is in the den”)
+
+| Species / result | Citation |
+|:---|:---|
+| Dogs — **cross-modal** voice vs face expectation (owner) | Guo *et al.*, *Animal Cognition* (2006). [DOI 10.1007/s10071-006-0025-8](https://doi.org/10.1007/s10071-006-0025-8) |
+| Dogs — face discrimination / inversion | Racca *et al.*, *Animal Cognition* (2010). [DOI 10.1007/s10071-009-0303-3](https://doi.org/10.1007/s10071-009-0303-3) |
+| Dogs — human **voice identity** | Root-Gutteridge *et al.*, *Animal Cognition* (2022). [DOI 10.1007/s10071-022-01601-z](https://doi.org/10.1007/s10071-022-01601-z) |
+| Sheep — **familiar faces** | Kendrick *et al.*, **Nature** 378, 479–481 (1995). [DOI 10.1038/378479a0](https://doi.org/10.1038/378479a0) |
+| Primates — development of **face expertise** | Pascalis *et al.*, **Science** (2002). [DOI 10.1126/science.1075569](https://doi.org/10.1126/science.1075569) |
+
+### IV — Neuromorphic / sparse temporal vision (biology → silicon; parallels “quantized salience / events”)
+
+| Reference | Why it’s here |
+|:---|:---|
+| Mead, C. (1990). Neuromorphic electronic systems. **Proc. IEEE** 78(11), 1629–1636. | Foundational **neuromorphic engineering** — analog computation inspired by neural tissue. [DOI 10.1109/5.58356](https://doi.org/10.1109/5.58356) |
+| Lichtsteiner, P., Posch, C., & Delbrück, T. (2008). A 128×128 120 dB 15 μs latency asynchronous temporal contrast vision sensor. **IEEE J. Solid-State Circuits** 43(2), 566–576. | **DVS** — address-event, **change-driven** imaging; closest standard citation for “not full-frame pixels only.” [DOI 10.1109/JSSC.2007.914337](https://doi.org/10.1109/JSSC.2007.914337) |
+
+### V — Sleep & consolidation (animal electrophysiology → “sleep / consolidation” language)
+
+| Reference | Note |
+|:---|:---|
+| Wilson, M. A., & McNaughton, B. L. (1994). Reactivation of hippocampal ensemble memories during sleep. **Science** 265, 676–679. | **Rats** — **replay** during sleep; defensible anchor if you mention consolidation / prune discipline next to biology. [DOI 10.1126/science.8036517](https://doi.org/10.1126/science.8036517) |
+
+### VI — Sparse / event-driven sensing (robotics — bridge to resolution ledgers)
+
+| Reference | Note |
+|:---|:---|
+| Liang *et al.*, *Science Robotics* — event/change-driven tactile sensing. | Already in Event 90 doc; use as **engineering** analogue to sparse stigmergic updates. [DOI 10.1126/scirobotics.adj8124](https://doi.org/10.1126/scirobotics.adj8124) |
+
+**Paste tip:** For a **one-page PDF** attachment, copy **§I–IV** only (~12 rows). Keep **§III** if you want “vertebrate multimodal identity” adjacent to camera/ledger claims; drop it if you want the mail strictly infrastructure-only.
+
+---
+
 ## A — AlphaFold / structural biology / open science lane
 
 **To:** `dm-alphafold@google.com`  
