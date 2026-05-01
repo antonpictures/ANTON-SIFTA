@@ -426,6 +426,10 @@ class ConsciousnessEngine:
             self.last_hour_reset_ts = now
 
     def _drive_allowed(self, state: MetabolicState, pressure: float) -> tuple[bool, str, float]:
+        import os
+        if os.environ.get("SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP") != "1":
+            return False, "KILL_SWITCH_ENGAGED", 60.0
+
         mode = self.homeostat.mode(pressure)
         rest = self.homeostat.rest_seconds(state, pressure)
         if rest > 0.0:

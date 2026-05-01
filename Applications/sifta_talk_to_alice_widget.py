@@ -3538,8 +3538,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.set_status("Starting always-on listener…")
 
         # Start the Consciousness Engine (Event 86 DMN)
-        self._dmn = _ConsciousnessWorker(self)
-        self._dmn.start()
+        # Kill-switch: only start if explicitly enabled
+        if os.environ.get("SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP") == "1":
+            self._dmn = _ConsciousnessWorker(self)
+            self._dmn.start()
+        else:
+            print("Consciousness Engine skipped: SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP != 1")
 
         # Kick off the always-on listener (deferred so the window paints first).
         # Headless/offscreen tests must not open CoreAudio/PortAudio; doing so
