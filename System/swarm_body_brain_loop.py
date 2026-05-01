@@ -30,6 +30,7 @@ class SwarmPhysiology:
     def __init__(self):
         self.homeostat = MetabolicHomeostat()
         self.consciousness = ConsciousnessEngine(cfg=ConsciousnessEngineConfig(spend_on_drive=True))
+        self.value_history = []
 
     def _assess_danger(self, body_state: MetabolicState) -> Dict[str, Any]:
         """Convert raw metabolic state into a danger/pressure signal."""
@@ -55,6 +56,11 @@ class SwarmPhysiology:
         if attention == "energy":
             return {"type": "forage", "target": "pouw_work"}
             
+        # 3. Drift / Mutation (Red Queen activation)
+        if len(self.value_history) >= 5 and len(set(self.value_history[-5:])) == 1:
+            logger.info("Stagnation detected. Injecting exploration variation.")
+            return {"type": "explore", "target": "random_mutation", "is_stagnation_break": True}
+            
         return {"type": "explore", "target": attention}
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
@@ -70,10 +76,16 @@ class SwarmPhysiology:
 
     def _compute_value(self, result: Dict[str, Any], danger: Dict[str, Any]) -> float:
         """TD-Learning value assignment: was this good for the organism?"""
+        val = -1.0
         if result.get("status") == "completed":
             # Survival value is higher when executed under danger
-            return 1.0 if not danger["is_critical"] else 2.5
-        return -1.0
+            val = 1.0 if not danger["is_critical"] else 2.5
+        
+        self.value_history.append(val)
+        if len(self.value_history) > 20:
+            self.value_history.pop(0)
+            
+        return val
 
     def _write_memory(self, action: Dict[str, Any], result: Dict[str, Any], value: float):
         """Append to stigmergic ledger."""
