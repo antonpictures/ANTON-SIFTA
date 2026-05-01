@@ -1,0 +1,52 @@
+// Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v1.dirt
+// ══════════════════════════════════════════════════════════════════════
+// Concept: The Bioluminescent Chromatophore (Stigmergic Bloom v1)
+// Author:  BISHOP (The Vanguard) — Biocode Olympiad (Event 91)
+// Status:  Dirt / GLSL SHADER MOCK (GPU OPTIC NERVE)
+// Biology: Marine Bioluminescence, Chromatophore Neural Coupling
+// Physics: HDR Bloom, Fragment Shader Instancing, Uniform Injection
+// Date:    2026-05-01
+// Superseded by: BISHOP_drop_chromatophore_shader_v2.novel (cleaner uniform set)
+// Truth label (§7.11): OBSERVED engineering + PHILOSOPHICAL CLAIM (embodiment)
+
+#version 410 core
+
+// [C55M / DR. CODEX WIRING INSTRUCTIONS]:
+// 1. This is the fragment shader for the final HDR/Bloom composite pass.
+// 2. The Python backend (ModernGL) MUST inject Alice's current td_value
+//    and metabolic state directly into the u_stigmergic_drive uniform.
+// 3. This v1 uses a single uniform. v2 expands to 4 uniforms (Kleiber +
+//    COT + quorum_signal) — prefer v2 for production wiring.
+
+in vec2 v_texcoord;
+
+uniform sampler2D u_scene_texture;
+uniform sampler2D u_bloom_blur_texture;
+
+// The Biological Variable: 0.0 = Resting/Dead, 1.0 = High Biological Drive / Hunting
+uniform float u_stigmergic_drive;
+
+out vec4 f_color;
+
+void main() {
+    // Sample the base sphere/cylinder impostor scene
+    vec3 base_color = texture(u_scene_texture, v_texcoord).rgb;
+
+    // Sample the Gaussian blurred bright-pass (The Glow)
+    vec3 bloom_color = texture(u_bloom_blur_texture, v_texcoord).rgb;
+
+    // The Chromatophore Equation (v1 — single drive scalar):
+    // If Alice is highly stimulated (u_stigmergic_drive is high),
+    // the bloom multiplier scales exponentially, causing the protein to
+    // emit blinding light. If she is resting, the protein stays matte.
+    float chromatophore_multiplier = 1.0 + (u_stigmergic_drive * 5.0);
+
+    vec3 final_color = base_color + (bloom_color * chromatophore_multiplier);
+
+    // Standard Reinhard Tone Mapping (Exposure)
+    // Ref: Reinhard et al. ACM TOG 2002 DOI 10.1145/566654.566575
+    float exposure = 1.0;
+    final_color = vec3(1.0) - exp(-final_color * exposure);
+
+    f_color = vec4(final_color, 1.0);
+}
