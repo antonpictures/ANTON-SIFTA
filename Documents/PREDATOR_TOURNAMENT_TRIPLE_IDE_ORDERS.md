@@ -1,19 +1,19 @@
 # Predator + Tournament — Triple IDE **orders** (M5 hill handoff)
 
-**For the Swarm.** 🐜⚡  
+**For the Swarm.** 🐜⚡
 **Binding:** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) (`COGLOBAL_IDE_COVENANT_v4_PREDATOR_GATE`) — **NPPL:** peace / non‑proliferation; no weapons work.
 
-**Architect seal (paste when issued):**  
+**Architect seal (paste when issued):**
 `STIGALL_555:` _______________________________________________
 
 ---
 
 ## 0 — Hill status (Cursor / CG55M)
 
-- **Covenant read:** yes — **§7.5 Python-first**, **§7.6 Alice = OS**, **§8.6 substrate metering**, Predator Gate **before** runtime surgery.  
-- **Triple-IDE collisions:** follow **`IDE_BOOT_COVENANT.md` §4.4** — tail `ide_stigmergic_trace.jsonl` + `git status` before shared edits; **one Architect-owned lane** per hot prompt/manifest/harness patch; **append-only** ledgers (add a correcting row, never rewrite history); yield if a peer already registered the same intent; cross-IDE handoff = **`ide_stigmergic_trace.jsonl`** (not the Swarm dead drop). **Battlefield snapshot:** maintain **§0.1** when two+ IDEs are on the same node.  
-- **Research bolus for “living OS” (below):** pulled as **primary cites** to match **Codex math/runtime** + **AG31 build** + **Cursor verify** — not lore.  
-- **NVIDIA open assets (join lane):** full battlefield + triple-IDE agreement line → [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) + `System/nvidia_open_assets_registry.py` (**§0.2**).  
+- **Covenant read:** yes — **§7.5 Python-first**, **§7.6 Alice = OS**, **§8.6 substrate metering**, Predator Gate **before** runtime surgery.
+- **Triple-IDE collisions:** follow **`IDE_BOOT_COVENANT.md` §4.4** — tail `ide_stigmergic_trace.jsonl` + `git status` before shared edits; **one Architect-owned lane** per hot prompt/manifest/harness patch; **append-only** ledgers (add a correcting row, never rewrite history); yield if a peer already registered the same intent; cross-IDE handoff = **`ide_stigmergic_trace.jsonl`** (not the Swarm dead drop). **Battlefield snapshot:** maintain **§0.1** when two+ IDEs are on the same node.
+- **Research bolus for “living OS” (below):** pulled as **primary cites** to match **Codex math/runtime** + **AG31 build** + **Cursor verify** — not lore.
+- **NVIDIA open assets (join lane):** full battlefield + triple-IDE agreement line → [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) + `System/nvidia_open_assets_registry.py` (**§0.2**).
 - **Dirty `main` rule:** if the M5 worktree is **contaminated**, **do not** merge proposal branches into local `main` directly. Spawn **`integration/predator-proposals-20260428`** (or dated) from **clean `origin/main`**, cherry-pick / compare docs only, then **Architect GO** for any runtime merge.
 
 ### 0.1 — Battlefield status (triple-IDE — **Architect paste / rotate**)
@@ -121,7 +121,7 @@ Every bolus: **`ide_stigmergic_trace.jsonl`** registration + **`work_receipts.js
 
 ## 7 — **Bishop vanguard — Event 74 (Isaac / Omniverse stigmergy bridge)**
 
-**Source:** Bishop narrative (Architect paste, 2026-04-28), archived as  
+**Source:** Bishop narrative (Architect paste, 2026-04-28), archived as
 `Archive/bishop_drops_pending_review/BISHOP_drop_nvidia_isaac_stigmergy_bridge_v1.dirt`.
 
 **Thesis (tournament vocabulary):** NVIDIA’s public robotics stack emphasizes **heavy centralized planning + high-rate motor prediction** (e.g. GR00T-style dual system: VLM ~10 Hz + diffusion transformer ~120 Hz for joint commands). SIFTA’s contrasting story — already legible in **Event 67 (octopus arm)** and **FoldSwarm / pheromone fields** — is **decentralized embodied stigmergy**: goals as **attention pheromones** in space, obstacles as **danger pheromones**, limbs as **gradient climbers** on a **unified field** rather than the monolithic brain computing every joint angle.
@@ -255,7 +255,7 @@ stigmergic_weight = α * file_weight + β * recent_usage + γ * success_rate
 | **Opaque routing / gateway** | RouterBench — [arXiv:2403.12031](https://arxiv.org/abs/2403.12031) | Pairs with **§8.6** `AUTO_OPAQUE` — metabolic term is another **observed** input to routing. |
 | **Metabolic scaling (allometry)** | West, Brown & Enquist lineage (*Science*/*Nature* metabolic scaling) | Discrete tiers (`tiny_local` / `heavy_local`) already echo **allometry** — Event 85 makes the **continuous** scalar explicit. |
 | **Stigmergy / ACO** | Bonabeau *et al.* (1999); Dorigo & Stützle (2004) — already **§7.1** | `stigmergic_weight` is literally **trail reinforcement**. |
-| **Energy-aware / cost-aware inference** | Search: *“energy efficient neural network inference scheduling”* ISCA/MLSys line | Maps **electricity + time** to the same **cost vector** as `metabolic_cost`. |
+| **Energy-aware / cost-aware inference** | Kang *et al.* (2017) **Neurosurgeon** — [DOI 10.1145/3037697.3037698](https://doi.org/10.1145/3037697.3037698) | Edge/cloud split inference profiles latency + energy; maps **electricity + time** to the same **cost vector** as `metabolic_cost`. |
 
 ### 9.4 — **Archive pointer (optional Bishop drop)**
 
@@ -314,8 +314,8 @@ accept_patch = (
 
 | Prio | Owner | Order | Done when |
 |:---:|:---|:---|:---|
-| **P1** | **CG55M** | **Governance text:** add `Documents/EVENT_86_QUORUM_MERGE_GATE.md` (½ page): `accept_patch`, who counts as a vote, **§4.4** collision tie-break. | Merged + trace. |
-| **P1** | **C55M** | **Math note:** ½ page on **Lotka–Volterra** + **\(\alpha_{ij}\)** as *merge conflict / IDE stepping* model — **simulation / paper only**, no fake telemetry. | `Documents/EVENT_86_LOTKA_IDE_MODEL.md` or PR appendix. |
+| **P1** | **CG55M** | **Governance text:** [`Documents/EVENT_86_QUORUM_MERGE_GATE.md`](EVENT_86_QUORUM_MERGE_GATE.md) — `merge_allowed`, votes, **§4.4** tie-break. | **LANDED** 2026-04-30 — extend when automation owner assigned. |
+| **P1** | **C55M** | **Math note:** [`Documents/EVENT_86_LOTKA_IDE_MODEL.md`](EVENT_86_LOTKA_IDE_MODEL.md) — LV + \(\alpha_{ij}\) vs merge pressure; **sim only** unless instrumented. | **LANDED** 2026-04-30 — C55M may extend with numeric sim appendix. |
 | **P2** | **AG31** | **Narrative pack:** “Apex adjudicator” = **human Architect + SCAR + tests** — document only; **no** claim Alice autonomously merges without GO. | Paragraph in Event 86 doc or release notes. |
 
 ### 10.5 — **Research bolus (Event 86 — arms races, geometry, programs)**
@@ -344,8 +344,66 @@ accept_patch = (
 | **Bet hedging** | Keep a cheap model / route warm when the environment is uncertain. | Do not promote the heavy cortex by default when variance beats pure optimization; route with receipts and fallback proof. |
 | **Evolutionary game theory (Hawk-Dove)** | Choose fight vs display: large conflicting PRs need quorum; small probe PRs can signal before collision. | Merge strategy metaphor only; no predator-violence language in runtime policy, no fake autonomous merge. |
 
+### 10.8 — **External research brief — what to ask Grok (terrain · load · atmosphere → routing math)**
+
+**Covenant truth:** Until code lands in `inference_router.py` (or equivalent) with tests and receipts, **“stigmergic file weight global”** is **spec + doc + trace**, not a magic scalar applied to every inode. Do not confuse chat JSON with runtime.
+
+**SCAR name SoT:** `STIGMERGIC_FILE_WEIGHT_ALLOMETRY` — do not drift the acronym in chat (“Core Allometric Rest” etc.).
+
+**Goal for Grok:** harvest **primary literature** that connects **moving bodies on substrates**, **carrying loads**, **thin air / cold / heat**, and **patchy resources** to **measurable cost functions** SIFTA can reuse for **Event 85/86** (metabolic_cost, rest_budget, routing penalty) — *analogies must stay honest* (animals ≠ GPUs, but **scaling laws** and **foraging theory** transfer).
+
+**Copy-paste prompt for Grok (Architect owns tone edits):**
+
+```text
+You are a biology + physics literature scout for a software swarm-routing project (SIFTA). No product hype.
+
+Task: produce a TIGHT bibliography (15–25 items) with DOI or stable URL for EACH row. Prefer peer-reviewed reviews or classics over blogs.
+
+Focus clusters (explicitly connect each cluster to a COST TERM we could map to code):
+1) Locomotion energetics on terrain: cost of transport (COT), sand/snow vs firm ground, grade (slope), duty factor / gait shifts.
+2) Load carrying: optimal foraging with central place foraging, load size vs travel speed tradeoffs, human / ant / bird analogues where measured.
+3) “Atmospheric weight” / altitude: hypoxia and VO2max decline with elevation; bar-headed goose / high-altitude mammal reviews; cold vs heat and metabolic scope.
+4) Patch choice under risk: marginal value theorem, risk-sensitive foraging, giving-up time.
+5) Space use: ideal free distribution, territory defense time/energy (economic defendability), interference competition.
+6) Mechanical work in fluids: flapping flight power curves (if any clean scaling laws useful as metaphor for “expensive remote call”).
+7) Anything on stigmergy / trail strength beyond insects: biofilms, slime molds, vertebrate paths — tie to environmental traces.
+
+Output format:
+- Table: Concept | Organism/context | Key equation or scaling (if any) | Citation | One-line mapping → {latency, GB_on_disk, STGM, error_rate, thermal} which knob it informs.
+- Final paragraph: which 3 papers are MUST-READ for implementing a rest_budget / routing_penalty without lying about Joules.
+
+Constraints: NPPL — no weapons / surveillance applications. If a source is vendor marketing, label it VENDOR_ONLY and do not treat as science.
+```
+
+**After Grok returns:** paste or save as [`Documents/Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md`](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) (or `Archive/bishop_drops_pending_review/…`) and add one trace row to `ide_stigmergic_trace.jsonl` with `intent: GROK_TERRAIN_BRIEF`.
+
+### 10.8.1 — **Ingested quantitative pass (consolidated nuggets)**
+
+**Landed:** [GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md](Proposals/GROK_BRIEF_TERRAIN_METABOLISM_EVENT86.md) — locomotion COT / drag–Re regimes / Kleiber–WBE scaling / Keller–Segel / LV–\(\alpha_{ij}\) / quorum ODEs + **§2 bibliography seed** + **§2.1 DOI-locked locomotion/COT table** (Kram–Taylor, Taylor *JEB* I & III, Full–Tu, Minetti gradient, Lejeune sand, Pontzer constrained TEE, Saunders altitude/hypoxia, Taylor–Heglund review) + DOI-locked **Neurosurgeon** energy-aware inference cite. Control docs: [EVENT_86_LOTKA_IDE_MODEL.md](EVENT_86_LOTKA_IDE_MODEL.md), [EVENT_86_QUORUM_MERGE_GATE.md](EVENT_86_QUORUM_MERGE_GATE.md).
+
 **Archive:** long rhetorical drops → `Archive/bishop_drops_pending_review/BISHOP_drop_red_queen_colosseum_v1.dirt` (optional).
+
+### 10.9 — **Spark vectors (next DOI hunt — impossible-friendly, still honest)**
+
+**For the Swarm.** 🐜⚡ **WE CODE TOGETHER** — Cursor on the **M5 hill** with Codex + Antigravity; receipts beat vibes. **Substrate honesty:** if a peer UI claims “physics live in `MetabolicHomeostat`,” **verify in git** before tournament copy treats it as shipped.
+
+| Vector (wild but citeable) | Why pull it next | SIFTA knob (metaphor → meter) |
+|:---|:---|:---|
+| **Spring-mass / SLIP templates** (Blickhan, Full, Raibert lineage) | Explains **stability vs speed** without invoking magic COT — **leg stiffness** ↔ scheduler stiffness. | Oscillation / resonance in queue depth; avoid “bouncy” thrash under load. |
+| **Elastic energy recovery** (Alexander & Bennet-Clark) | **Return of elastic strain energy** in tendons ↔ **KV cache reuse**, batching, MLX graph retention. | `cost_per_successful_task` drops when reuse is high — measure it. |
+| **Fractal transport networks** (Weibel; West *et al.*) | **Throughput ceilings** from branching geometry — not “more cores = linear.” | Router fan-out limits; context tree depth vs bandwidth. |
+| **Holling disk / type-II functional response** | Saturation of intake rate with prey density — **API server knee**. | Latency explodes past a threshold concurrency — classic SLO math. |
+| **Risk-sensitive foraging** (Stephens & Krebs; McNamara & Houston) | **Variance** matters as much as mean — **bet hedging** already in **§10.7**. | Policy under tail latency, not average ms only. |
+| **Jamming / soft matter** (Liu & Nagel) | **Disorder–order transition** in granular media — sand was **compliance** in §2.1; jamming = **thundering herd**. | Sudden **freeze** at critical load — circuit breaker as **unjamming**. |
+| **Critical slowing down** (Scheffer *et al.* regime shifts) | Near **bifurcation**, recovery time diverges — “almost stable” is dangerous. | Watch **derivative** of error_rate, not level alone, before apoptosis. |
+| **Synaptic homeostasis** (Turrigiano & Nelson) | Neurons **scale excitability** to preserve firing statistics — **auto-scaling** with bounds. | STGM governor that **adapts** without runaway (pairs Pontzer plateau). |
+| **Physarum / slime mold networks** (Tero *et al.*; Nakagaki) | **Maze-solving** via distributed flow — stigmergy without ants. | Pathfinding on **commit graph** / dependency DAG under cost. |
+| **Lane formation & collective motion** (Couzin *et al.*) | **Local rules → global traffic lanes** — IDE collision avoidance without central planner. | **§4.4** lanes as emergent **polarized flow** on hot files. |
+| **Mound thermodynamics** (Turner on termites) | **Open system** dissipates energy to **regulate** interior — “building as organ.” | Data center / Mac Studio thermal narrative tied to **real** `thermal_state` reads. |
+| **Zipf / settlement scaling** (Betancourt) | **Rank–size** of cities — **heavy-tailed** file touch counts; few hot files dominate. | Prioritize instrumentation on **Pareto head** of churn. |
+
+**Assignment:** **C55M** = first DOI pass on any **three** rows above; **AG31** = one “impossible” row as **thought experiment** paragraph (no runtime); **CG55M** = keep **Event 85** proof bar green — **hill holds the line on tests**.
 
 ---
 
-*Document version: 2026-04-30 — CG55M (Cursor hill) + Codex §10.7 expansion; **§0.1–0.2 battlefield + NVIDIA join lane** + **§7 Event 74** + **§7.1 literature spine** + **§8 NVIDIA honest flex** + **§9 Event 85** + **§10 Event 86 Red Queen / biology spine** + **§10.7 biology game-theory rows** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-04-30 — CG55M + Codex pre-physics DOI follow-up; **§10.9** spark vectors (next hunt); **§10.8.1** Grok + **§2.1 DOI locomotion/hypoxia**; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.2** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
