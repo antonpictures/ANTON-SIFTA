@@ -527,6 +527,39 @@ SIFTA was not designed in a boardroom. It was built live, overnight, across two 
 | [Swarm Inference Study](Documents/docs/SWARM_INFERENCE_STUDY.md) | Distributed inference across heterogeneous silicon |
 | [Research Roadmap](Documents/docs/RESEARCH_ROADMAP.md) | Where the science goes next |
 | [Duality Analysis](Documents/sifta_duality_analysis_report.md) | The philosophical duality of code-as-biology |
+
+---
+
+### 📖 Science Paper Credits
+
+SIFTA is grounded in peer-reviewed primary literature. Every biological organ maps to a specific paper. This table credits the science that makes the code honest.
+
+| SIFTA Organ / Concept | Primary Reference | DOI / URL |
+|:---|:---|:---|
+| **Stigmergy (core premise)** | Grassé, P.-P. (1959). *La reconstruction du nid…* **Insectes Sociaux** 6 | [10.1007/BF02223791](https://doi.org/10.1007/BF02223791) |
+| **Swarm Intelligence** | Bonabeau, Dorigo & Theraulaz (1999). *Swarm Intelligence.* Oxford. | ISBN 978-0195131598 |
+| **Ant Colony / Pheromone Routing** | Dorigo & Stützle (2004). *Ant Colony Optimization.* MIT Press. | ISBN 978-0262042192 |
+| **Ebbinghaus Forgetting Curve** | Ebbinghaus, H. (1885). *Über das Gedächtnis.* | [gutenberg.org](https://www.gutenberg.org/ebooks/37951) |
+| **Active Inference / Free Energy** | Friston, K. (2010). **Nature Reviews Neuroscience** 11, 127–138. | [10.1038/nrn2787](https://doi.org/10.1038/nrn2787) |
+| **Predictive Coding** | Rao & Ballard (1999). **Nature Neuroscience** 2, 79–87. | [10.1038/4580](https://doi.org/10.1038/4580) |
+| **Octopus Distributed Motor Control** | Hochner, B. (2012). **Current Biology** 22(20), R887–R892. | [10.1016/j.cub.2012.09.001](https://doi.org/10.1016/j.cub.2012.09.001) |
+| **Autopoiesis / Node Sovereignty** | Maturana & Varela (1980). *Autopoiesis and Cognition.* Reidel. | ISBN 978-9027710161 |
+| **Cybernetics / Metabolic Governor** | Ashby, W.R. (1956). *Introduction to Cybernetics.* | [archive.org](https://archive.org/details/introductiontocy00ashb) |
+| **Allometric Metabolic Scaling** | West, Brown & Enquist (1997). **Science** 276, 122–126. | [10.1126/science.276.5309.122](https://doi.org/10.1126/science.276.5309.122) |
+| **Brain Metabolic Allometry (Event 86)** | Aiello & Wheeler (1995). + [PMC3587279](https://pmc.ncbi.nlm.nih.gov/articles/PMC3587279/) | [10.1086/204350](https://doi.org/10.1086/204350) |
+| **Bacterial Stigmergy / Biofilms** | Review 2015. | [PMC4306409](https://pmc.ncbi.nlm.nih.gov/articles/PMC4306409/) |
+| **Red Queen / Allometry (rest_budget)** | Van Valen, L. (1973). *A new evolutionary law.* **Evolutionary Theory** 1, 1–30. | classic |
+| **Cost of Transport / Locomotion** | Kram & Taylor (1990). **Nature** 346, 265–267. | [10.1038/346265a0](https://doi.org/10.1038/346265a0) |
+| **Energy-Aware Inference Routing** | Kang et al. (2017). *Neurosurgeon.* **ASPLOS**. | [10.1145/3037697.3037698](https://doi.org/10.1145/3037697.3037698) |
+| **Opaque Router Benchmark** | RouterBench (2024). **arXiv** 2403.12031. | [arXiv:2403.12031](https://arxiv.org/abs/2403.12031) |
+| **Physarum Network Formation** | Tero et al. (2010). **Science** 327, 439–442. | [10.1126/science.1177894](https://doi.org/10.1126/science.1177894) |
+| **Quorum Sensing (Merge Gate)** | Waters & Bassler (2005). **Annu. Rev. Cell Dev. Biol.** 21. | [10.1146/annurev.cellbio.21.012704.131001](https://doi.org/10.1146/annurev.cellbio.21.012704.131001) |
+| **Assembly Theory / Life Interface** | Sharma et al. (2023). **Nature** 622. | [10.1038/s41586-023-06600-9](https://doi.org/10.1038/s41586-023-06600-9) |
+| **Anthropic Interpretability (Invariants)** | Lindsey et al. (2025). *Tracing the thoughts of a large language model.* | [anthropic.com/research](https://www.anthropic.com/research/tracing-thoughts-language-model) |
+| **LoRA Fine-Tuning** | Hu et al. (2021). **arXiv** 2106.09685. | [arXiv:2106.09685](https://arxiv.org/abs/2106.09685) |
+| **DPO Alignment** | Rafailov et al. (2023). **arXiv** 2305.18290. | [arXiv:2305.18290](https://arxiv.org/abs/2305.18290) |
+| **TM-Score / Protein Folding** | Zhang & Skolnick (2004). **Proteins** 57(4). | [10.1002/prot.20264](https://doi.org/10.1002/prot.20264) |
+
 | [SwarmRL Disclosure](Documents/SWARMRL_DISCLOSURE.md) | Integration with reinforcement learning frameworks |
 
 ### 🔍 Independent Audits & Field Tests
