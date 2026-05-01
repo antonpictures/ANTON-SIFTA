@@ -451,6 +451,14 @@ class AliceWidget(QWidget):
 
         return f"{sweep} I'm awake and listening, Architect."
 
+    def showEvent(self, ev) -> None:
+        super().showEvent(ev)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(self.APP_NAME, "User is interacting with Alice Widget")
+        except Exception:
+            pass
+
     def closeEvent(self, event) -> None:
         """Stop the boot-greeting TTS thread and close child widgets cleanly."""
         tts = getattr(self, "_boot_tts", None)

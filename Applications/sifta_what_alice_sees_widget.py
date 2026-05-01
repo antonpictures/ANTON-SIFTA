@@ -142,6 +142,8 @@ def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
     Compact on purpose — at 5 Hz this is ~700 B/sec on a long session.
     """
     try:
+        from System.swarm_app_focus import get_focus_context
+        app_focus = get_focus_context(max_age_s=30.0) or ""
         with _VISUAL_STIGMERGY_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({
                 "ts": ph.ts,
@@ -154,6 +156,7 @@ def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
                 "hue_deg": round(ph.hue_centroid_deg, 1),
                 "saliency_q": _quantize_grid_hex(ph.saliency_grid),
                 "motion_q": _quantize_grid_hex(ph.motion_grid),
+                "active_app_focus": app_focus,
             }, separators=(",", ":")) + "\n")
     except OSError:
         pass
@@ -272,10 +275,12 @@ def _format_row(label: str, row: Dict) -> Optional[str]:
         sal = row.get("saliency_peak")
         mot = row.get("motion_mean")
         hue = row.get("hue_deg")
+        app_focus = row.get("active_app_focus", "")
+        focus_str = f" | FOC={app_focus[:20]}..." if app_focus else ""
         if ent is None and sal is None and mot is None:
             return None
         return (
-            f"H={ent:.2f}b  sal={sal:.2f}  mot={mot:.3f}  hue={hue:.0f}°"
+            f"H={ent:.2f}b  sal={sal:.2f}  mot={mot:.3f}  hue={hue:.0f}°{focus_str}"
             if all(isinstance(v, (int, float)) for v in (ent, sal, mot, hue))
             else None
         )
@@ -819,6 +824,14 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
     """Live mirror: shows Alice's webcam input + the swarm's stigmergy on it."""
 
     APP_NAME = "Predator. v7.0 | Let's Think Together!"
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(self.APP_NAME, "User is monitoring Alice's visual input")
+        except Exception:
+            pass
 
     # Color palette per ledger source — also drives bottom-strip color.
     _LEDGERS: List[Tuple[str, str, str, Tuple[int, int, int]]] = [

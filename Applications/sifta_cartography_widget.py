@@ -394,6 +394,14 @@ class CartographyWidget(_BASE):
 
     APP_NAME = "Alice Safety Tracker"
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(self.APP_NAME, "Monitoring Architect safety on live map")
+        except Exception:
+            pass
+
     def __init__(self, parent=None):
         if _BASE is QWidget:
             super().__init__(parent)

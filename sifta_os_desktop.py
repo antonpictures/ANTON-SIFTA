@@ -2244,6 +2244,11 @@ class SiftaDesktop(QMainWindow):
         record_launch(title)
         wm_record_open(title)
         fs_record_access(module_path)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(title, "User launched application from Programs menu")
+        except Exception:
+            pass
 
         # Build {title: (x,y)} from live subwindow positions for the cascade calc
         win_positions = {}
@@ -2268,6 +2273,11 @@ class SiftaDesktop(QMainWindow):
         record_launch(title)
         wm_record_open(title)
         fs_record_access(entry)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(title, "User launched terminal application from Programs menu")
+        except Exception:
+            pass
         self.spawn_embedded_script(title, entry)
 
     def spawn_native_widget(self, title, module_path, class_name, w=660, h=540, x=None, y=None, pinned=False):

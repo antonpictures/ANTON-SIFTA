@@ -1432,6 +1432,14 @@ class _RenderWorker(QThread):
 class NLEWindow(SiftaBaseWidget):
     APP_NAME = "Stigmergic NLE (Sebastian)"
     
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(self.APP_NAME, "User is editing video in Stigmergic NLE")
+        except Exception:
+            pass
+
     def build_ui(self, main: QVBoxLayout) -> None:
         self.setMinimumSize(1400, 900)
         self.setStyleSheet(self.styleSheet() + """

@@ -281,6 +281,14 @@ class LBMCanvas(FigureCanvas):
 class PhysicsObservatoryWidget(SiftaBaseWidget):
     APP_NAME = "SIFTA Physics Observatory"
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(self.APP_NAME, "User is interacting with Physics Observatory")
+        except Exception:
+            pass
+
     def build_ui(self, layout: QVBoxLayout) -> None:
         self._rng = np.random.default_rng()
 

@@ -321,6 +321,14 @@ class PokerCanvas(QWidget):
 class StigmergicVideoPokerApp(SiftaBaseWidget):
     APP_NAME = "Stigmergic Video Poker"
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus(self.APP_NAME, "User is playing Stigmergic Video Poker")
+        except Exception:
+            pass
+
     def build_ui(self, layout: QVBoxLayout) -> None:
         self.set_status("Initializing Biological Luck Engine...")
 

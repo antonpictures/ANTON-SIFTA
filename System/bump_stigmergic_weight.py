@@ -38,6 +38,20 @@ def bump_model_weight(model: str, bump_amount: float = 0.1, trace_id: str = "") 
     except ImportError:
         with open(LEDGER, "a") as f:
             f.write(json.dumps(row) + "\n")
+            
+    # Deterministically bind metabolic costs and stigmergic rewards
+    try:
+        if str(_REPO) not in sys.path:
+            sys.path.insert(0, str(_REPO))
+        from System.metabolic_budget import spend, SpendKind
+        spend(
+            kind=SpendKind.LOCAL_IDE,
+            units=float(bump_amount) * 10.0,
+            note=f"Metabolic cost for stigmergic bump: {model}",
+            trigger="bump_stigmergic_weight"
+        )
+    except Exception as e:
+        print(f"Warning: Failed to spend metabolic units: {e}")
     
     print(f"Bumped {model} stigmergic weight by {bump_amount}")
     return row

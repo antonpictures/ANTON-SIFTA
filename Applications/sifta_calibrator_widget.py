@@ -908,6 +908,14 @@ class CalibrationCanvas(QWidget):
 class CalibratorWidget(QWidget):
     """Full calibration panel — embeds CalibrationCanvas + controls."""
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus("Alice-Sees Calibrator", "User is playing the Alice-Sees Calibrator game")
+        except Exception:
+            pass
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setStyleSheet("""

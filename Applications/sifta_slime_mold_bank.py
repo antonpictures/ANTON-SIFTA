@@ -1622,6 +1622,14 @@ class SlimeMoldBankWidget(QWidget):
     Lives in apps_manifest.json under category Simulations.
     """
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus("Slime Mold Bank", "User is observing the Slime Mold Bank")
+        except Exception:
+            pass
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("SlimeMoldBankWidget")
