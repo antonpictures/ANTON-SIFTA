@@ -47,6 +47,17 @@ def owner_name() -> str:
         return str(gen["owner_name"])
     return "<unclaimed>"
 
+def owner_display_name(default: str = "the local human") -> str:
+    """Human-safe owner label for prompts.
+
+    Species code must not hardcode one node's owner name. Runtime prompts can
+    call this helper and fall back to a generic local-human label before genesis.
+    """
+    name = owner_name().strip()
+    if not name or name == "<unclaimed>":
+        return default
+    return name
+
 def ai_default_name() -> str:
     gen = _read_genesis()
     if gen and "ai_display_name" in gen:

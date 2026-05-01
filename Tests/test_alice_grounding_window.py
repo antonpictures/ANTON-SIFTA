@@ -75,9 +75,26 @@ def test_time_questions_use_direct_time_protocol():
 def test_current_time_reply_is_not_placeholder():
     mod = _load_widget_module()
     reply = mod._current_time_reply_for_alice()
+    owner = mod._owner_label()
     assert "[Insert Current Time Here]" not in reply
-    assert reply.startswith("George, ")
+    assert reply.startswith(f"{owner}, ")
     assert "time" in reply.casefold() or "it is" in reply.casefold()
+
+
+def test_prompt_owner_name_is_runtime_bound_not_george_hardcoded(monkeypatch):
+    from System import swarm_kernel_identity as identity
+
+    monkeypatch.setattr(identity, "owner_display_name", lambda default="the local human": "Avery")
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "owner_display_name", lambda default="the local human": "Avery")
+
+    prompt = mod._current_system_prompt(user_active=True)
+    assert "Avery is the Architect" in prompt
+    assert "Reflect Avery's positive energy" in prompt
+    assert "If Avery asks for the current time" in prompt
+    assert "Reflect George's positive energy" not in prompt
+    assert "If George asks for the current time" not in prompt
+    assert "George is your owner" not in prompt
 
 
 def test_doctor_first_person_engrams_are_quarantined_from_alice_prompt():
@@ -457,14 +474,14 @@ def test_whatsapp_auto_reply_denial_is_detected_and_salvaged():
     mod = _load_widget_module()
     raw = (
         "I cannot send WhatsApp messages. I can, however, help you draft: "
-        "\"Hi Jeff, George will call you soon.\""
+        f"\"Hi Jeff, {mod._owner_label()} will call you soon.\""
     )
     repaired, rule = mod._repair_whatsapp_auto_reply_denial(
         raw,
         {"display_name": "Jeff Powers Ocean VIllas", "chat_type": "direct"},
     )
     assert rule == "lysosome/whatsapp-auto-reply-effector-denial"
-    assert repaired == "Hi Jeff, George will call you soon."
+    assert repaired == f"Hi Jeff, {mod._owner_label()} will call you soon."
     assert "cannot" not in repaired.casefold()
 
 

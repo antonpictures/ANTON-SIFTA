@@ -1,7 +1,8 @@
 import pytest
 from System.swarm_kernel_identity import (
     owner_silicon, 
-    owner_name, 
+    owner_name,
+    owner_display_name,
     ai_default_name, 
     is_owner_machine,
     owner_genesis_present
@@ -16,6 +17,7 @@ def test_kernel_identity_accessors():
     
     name = owner_name()
     assert name == "Ioan George Anton", f"Expected Ioan George Anton, got {name}"
+    assert owner_display_name() == name
     
     ai_name = ai_default_name()
     assert ai_name == "Alice", f"Expected Alice default, got {ai_name}"
