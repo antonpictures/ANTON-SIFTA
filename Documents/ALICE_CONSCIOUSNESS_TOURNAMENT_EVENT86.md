@@ -189,10 +189,10 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 
 | Nugget | Label |
 |:---|:---|
-| Continuous `body_brain_tick` **without** consolidation ⇒ `body_brain_memory.jsonl` bloat + token/disk pressure | **OBSERVED** risk |
-| **`System/swarm_body_brain_loop.py`** step **8** today: `_maybe_sleep()` → `time.sleep(min(rest_sec, 2.0))` — recovery is a **thread pause**, not replay/compression | **OBSERVED** |
-| Bishop mandate: **off-line** phase replays episodic ledger, writes **engrams**, **prunes** noise — biology: **SHY** + **hippocampal replay** | **OPERATIONAL** target (GO + policy) |
-| “Brutally delete raw logs” is **hostile** unless paired with **immutable backup / retention contract / signed trace** | **FORBIDDEN** as stated in raw dirt; **OPERATIONAL** only with receipts |
+| Continuous `body_brain_tick` **without** consolidation ⇒ `body_brain_memory.jsonl` bloat + token/disk pressure | **Mitigated (OPERATIONAL):** `System/swarm_dream_engine.py` + sleep hook |
+| **`System/swarm_body_brain_loop.py`** step **8:** `_maybe_sleep()` runs **`SwarmDreamEngine.trigger_rem_sleep`** (receipt + backup policy) **then** capped `time.sleep` | **OBSERVED** |
+| Bishop mandate: **off-line** replay → **`long_term_engrams.jsonl`** + **`dream_cycles.jsonl`** + **`.sifta_state/dream_backups/`** before prune | **OBSERVED** in `swarm_dream_engine.py` |
+| Raw Bishop dirt “delete whole ledger” | **Superseded** by retention + backup + receipts in code |
 
 ### 11.2 — Research spine (same table as dirt; pull PDFs for implementers)
 
@@ -205,12 +205,12 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 
 ### 11.3 — Tournament orders (engineering acceptance)
 
-1. **Hook site:** `SwarmPhysiology._maybe_sleep` **or** explicit `METABOLIC_SLEEP` branch after step 8 — **trace** every dream cycle.  
-2. **Inputs:** parse **real** JSONL rows (`event`, `action`, `result`, `td_value`, `ts`).  
-3. **Outputs:** append **engrams** to a versioned ledger (`long_term_engrams.jsonl` or existing hippocampus pipeline); **schema** in `canonical_schemas` if new fields touch prod.  
-4. **Forgetting:** row deletes only under **backup + retention policy + pytest** (prove recoverability / audit path).  
-5. **LLM summarization (optional):** same spend / kill-switch / Predator rules as **§10**.  
-6. **Module name (proposal):** `System/swarm_dream_engine.py` — **does not exist until GO**; dirt sketch lives in Vanguard_drops.
+1. **Hook site:** `SwarmPhysiology._maybe_sleep` — **LANDED** (`dream_engine.trigger_rem_sleep` before sleep).  
+2. **Inputs:** parse **real** JSONL rows (`event`, `action`, `result`, `td_value`, `ts`). — **LANDED** in `swarm_dream_engine`.  
+3. **Outputs:** `long_term_engrams.jsonl`, `dream_cycles.jsonl`, backups under **`dream_backups/`**. — **LANDED**.  
+4. **Forgetting:** prune only with **backup + receipt** — **LANDED**; extend with LLM engrams only under **§10** spend rules + **GO**.  
+5. **Tests:** `tests/test_swarm_dream_engine.py`, `tests/test_swarm_body_brain_loop.py` — **green** (CG55M verify: 6 passed on this node).  
+6. **Module:** `System/swarm_dream_engine.py` — **shipped**; Vanguard `.dirt` remains narrative + DOI spine.
 
 **Blades:** AG31 / C55M / CG55M — read bus; **§4.4** collision discipline.
 
