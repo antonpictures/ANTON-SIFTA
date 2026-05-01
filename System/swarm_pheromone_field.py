@@ -32,6 +32,7 @@ NPPL: no weapons coupling.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import time
 from pathlib import Path
@@ -105,10 +106,11 @@ def action_to_position(action: str) -> Tuple[int, int]:
     """
     Map abstract action label → spatial grid cell.
     This is a PROXY. Later replace with real cursor / vision coordinates.
-    Uses a simple deterministic hash so the same action always hits the
-    same cell — enabling genuine reinforcement.
+    Uses a stable digest so the same action always hits the same cell across
+    Python process restarts — enabling genuine reinforcement.
     """
-    h = abs(hash(str(action))) % (GRID_SIZE * GRID_SIZE)
+    digest = hashlib.sha256(str(action).encode("utf-8")).digest()
+    h = int.from_bytes(digest[:8], "big") % (GRID_SIZE * GRID_SIZE)
     return h % GRID_SIZE, h // GRID_SIZE
 
 
@@ -168,6 +170,7 @@ def update_pheromone_field(
     grid[y][x] = min(1.0, grid[y][x] + deposit)
 
     save_grid(grid)
+    chemotaxis = chemotaxis_scalar(x, y)
 
     return {
         "ts":      time.time(),
@@ -175,6 +178,7 @@ def update_pheromone_field(
         "position": [x, y],
         "deposit": round(deposit, 4),
         "cell_value": round(grid[y][x], 4),
+        "chemotaxis_gradient": round(chemotaxis, 4),
     }
 
 

@@ -49,7 +49,11 @@ def test_chemotaxis_from_trace_gradient(iso_state: Path) -> None:
         "trace_gradient": 2.0,
     }
     u = vpb.build_visual_phenotype_uniforms(row)
-    assert u["u_chemotaxis_gradient"] > 0.1
+    assert u["u_chemotaxis_gradient"] == 1.0
+
+    row["trace_gradient"] = 0.0
+    u = vpb.build_visual_phenotype_uniforms(row)
+    assert u["u_chemotaxis_gradient"] == 0.0
 
 
 def test_write_appends_jsonl(iso_state: Path) -> None:

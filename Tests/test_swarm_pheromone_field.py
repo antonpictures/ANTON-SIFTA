@@ -15,8 +15,7 @@ Invariants:
 from __future__ import annotations
 
 import json
-import tempfile
-from pathlib import Path
+import hashlib
 from unittest.mock import patch
 
 import pytest
@@ -35,13 +34,14 @@ def state_dir(tmp_path, monkeypatch):
 
 def test_deposit_increases_cell(state_dir):
     from System.swarm_pheromone_field import (
-        load_grid, update_pheromone_field, action_to_position, GRID_SIZE
+        load_grid, update_pheromone_field
     )
     result = update_pheromone_field({"action": "explore", "td_value": 1.0})
     grid = load_grid()
     x, y = result["position"]
     assert grid[y][x] > 0.0, "Positive td_value must deposit pheromone"
     assert result["deposit"] > 0.0
+    assert result["chemotaxis_gradient"] > 0.0
 
 
 # ── 2. Decay reduces cells ────────────────────────────────────────────────
@@ -127,7 +127,9 @@ def test_action_to_position_deterministic_and_inbounds():
         x, y = action_to_position(action)
         assert 0 <= x < GRID_SIZE, f"x={x} out of bounds for action={action!r}"
         assert 0 <= y < GRID_SIZE, f"y={y} out of bounds for action={action!r}"
-        # Deterministic
+        digest = hashlib.sha256(str(action).encode("utf-8")).digest()
+        expected = int.from_bytes(digest[:8], "big") % (GRID_SIZE * GRID_SIZE)
+        assert (x, y) == (expected % GRID_SIZE, expected // GRID_SIZE)
         assert action_to_position(action) == (x, y)
 
 

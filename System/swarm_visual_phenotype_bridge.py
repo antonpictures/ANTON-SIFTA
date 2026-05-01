@@ -87,7 +87,7 @@ def chemotaxis_uniform(row: Dict[str, Any]) -> float:
     g = row.get("trace_gradient")
     if g is None:
         return 0.1
-    return normalize_td_value(g)
+    return clamp01(g, 0.1)
 
 
 def _action_label(action: Any) -> str:
