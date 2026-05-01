@@ -35,6 +35,21 @@ def test_build_uniforms_from_body_row(iso_state: Path) -> None:
     assert u["u_heading"] == 0.0
     assert u["u_cost"] == 0.55
     assert u["u_quorum_signal"] == 0.8
+    assert u["u_chemotaxis_gradient"] == 0.1
+
+
+def test_chemotaxis_from_trace_gradient(iso_state: Path) -> None:
+    row = {
+        "event": "body_brain_tick",
+        "action": {"type": "explore"},
+        "result": {},
+        "td_value": 0.0,
+        "drive_state": "curiosity",
+        "metabolic_mode": "GREEN_GROW",
+        "trace_gradient": 2.0,
+    }
+    u = vpb.build_visual_phenotype_uniforms(row)
+    assert u["u_chemotaxis_gradient"] > 0.1
 
 
 def test_write_appends_jsonl(iso_state: Path) -> None:

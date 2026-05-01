@@ -51,6 +51,15 @@ def test_body_brain_tick_normal_cycle(clean_state):
             assert "action" in row
             assert "result" in row
             assert "td_value" in row
+            assert row.get("drive_state")
+            assert row.get("metabolic_mode")
+            phen = clean_state / "visual_phenotype_uniforms.jsonl"
+            assert phen.exists()
+            prow = json.loads(phen.read_text().strip().splitlines()[-1])
+            assert prow.get("u_stigmergic_drive") is not None
+            assert prow.get("receipt_backed") is True
+            assert row.get("tick_id")
+            assert "u_chemotaxis_gradient" in prow
 
 def test_body_brain_tick_critical_sleep_trigger(clean_state):
     physiology = SwarmPhysiology()

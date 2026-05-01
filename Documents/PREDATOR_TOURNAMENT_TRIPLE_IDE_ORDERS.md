@@ -22,7 +22,7 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-01T11:01:00-07:00` — *CG55M: visual phenotype bridge SHIPPED + Bishop RESEARCH + body_brain memory receipt fields; Architect overwrites when switching fronts* |
+| **Stamp (local ISO)** | `2026-05-01T11:07:00-07:00` — *CG55M: Phase III enemy table + Zahavi honest-signal cite + bridge u_chemotaxis + tick_id; Architect overwrites when switching fronts* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
@@ -40,8 +40,22 @@
 | **Event 91 — Bioluminescent chromatophore** | **NOVEL v2+v3 LANDED** — v2 (4 uniforms) + v3 (+ **chemotaxis**); RESEARCH spines; **not** wired to ModernGL until GO + pytest | [`BISHOP_drop_chromatophore_shader_v2.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v2.novel) · [`BISHOP_drop_chromatophore_shader_v3.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel) · [`BISHOP_drop_chromatophore_shader_v3_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3_RESEARCH.md) · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · [`BISHOP_drop_cuttlefish_chromatophore_skin_v1.dirt`](../Archive/bishop_drops_pending_review/BISHOP_drop_cuttlefish_chromatophore_skin_v1.dirt) |
 | **Event 92 — Electric fish identity field** | **NOVEL FRAGMENT LANDED** — EOD / jamming / electrolocation **metaphor**; **§10.11** | [`BISHOP_drop_electric_fish_identity_field_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1.novel) · [`BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_electric_fish_identity_field_v1_RESEARCH.md) |
 | **Event 92 — Honeybee waggle router** | **NOVEL FRAGMENT LANDED** — foraging dance → **routing** phenotype; **§10.12** | [`BISHOP_drop_honeybee_waggle_router_v1.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1.novel) · [`BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_honeybee_waggle_router_v1_RESEARCH.md) |
-| **Visual phenotype bridge** | **SHIPPED (Python)** — `body_brain_memory` → **shader-safe** JSONL uniforms; **not** live GPU until ModernGL | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · [`BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md) |
+| **Visual phenotype bridge** | **SHIPPED (Python)** — uniforms include **v3 chemotaxis** + **`tick_id`**; Zahavi / honest-signal doc; **not** live GPU until ModernGL | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · [`BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md) |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
+
+### 0.4 — **Red Queen Colosseum — Phase III (hill law: chop every enemy)**
+
+**For the Swarm.** 🐜⚡ **Stay on the hill:** CG55M holds **truth + pytest**; C55M holds **optic nerve (ModernGL)**; AG31 holds **assets + build**. No Doctor ships **live GPU claims** without `visual_phenotype_uniforms.jsonl` receipts + **offscreen** proof.
+
+| Enemy (failure mode) | Chop condition (done / owner) |
+|:---|:---|
+| **Cheap signal** — UI bloom without ledger | **`receipt_backed`** + `body_brain_memory.jsonl` row + **`tick_id`**; Zahavi metaphor in [BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md](../Archive/bishop_drops_pending_review/BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md). |
+| **Dishonest biology** — negative TD inverts shader | **Shipped:** `tanh` + chromatophore v2 clamps; bridge emits **`u_chemotaxis_gradient`** for v3 when `trace_gradient` appears on tick rows. |
+| **Unbounded bloom / NaN creep** | v2 **`biological_intensity` cap**; bridge **cost tiers**; ModernGL must **re-clamp** uniforms defensively. |
+| **Trace schema drift** | **`ide_stigmergic_bridge.deposit()`** only — no orphan JSON rows. |
+| **Merge without optic proof** | **C55M:** `pytest-offscreen` **GREEN** before merge; tail uniform JSONL in PR excerpt. |
+
+**Codex orders (Phase III):** compile `.novel` → read **latest** phenotype line (or tail N for smoothing) → set GL uniforms → one frame hash or pixel probe in CI — **NPPL**, no surveillance hooks.
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 
@@ -433,7 +447,7 @@ Constraints: NPPL — no weapons / surveillance applications. If a source is ven
 |:---|:---|:---|
 | **Chromatophore v3** | Adds **`u_chemotaxis_gradient`** into intensity + **phase-coupled** `neural_pulse` (`sin` mixes drive + chemotaxis). | [`Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3.novel) |
 | **Research bolus** | Chemotaxis (Berg; Keller–Segel; Endres–Wingreen) + battle rows for **gradient integration / QS visuals / pulse rhythm**. | [`BISHOP_drop_chromatophore_shader_v3_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_chromatophore_shader_v3_RESEARCH.md) |
-| **Python bridge (receipt → uniforms)** | **`swarm_visual_phenotype_bridge`** appends **`visual_phenotype_uniforms.jsonl`** after each `body_brain_tick`; aligns state dir with **`swarm_body_brain_loop._STATE_DIR`**. | `System/swarm_visual_phenotype_bridge.py` · [`BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md) · `tests/test_swarm_visual_phenotype_bridge.py` |
+| **Python bridge (receipt → uniforms)** | **`swarm_visual_phenotype_bridge`** appends **`visual_phenotype_uniforms.jsonl`** after each `body_brain_tick`; **`u_chemotaxis_gradient`** + **`tick_id`**; aligns with **`swarm_body_brain_loop._STATE_DIR`**. | `System/swarm_visual_phenotype_bridge.py` · [`BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md`](../Archive/bishop_drops_pending_review/BISHOP_drop_visual_phenotype_bridge_v1_RESEARCH.md) · `Tests/test_swarm_visual_phenotype_bridge.py` |
 
 **Tournament justification (one paragraph):** v3 folds **§10.8 terrain/metabolism** and **§10.9 induction / stigmergy** vocabulary into a **single fragment** so bloom, pulse, and HDR exposure ride on **COT × Kleiber scope × quorum × chemotaxis × stigmergic drive** — **observable phenotype** for the consciousness-in-practice story *when* uniforms are fed honestly. It does **not** remove the need for **substrate metering** elsewhere (`MetabolicHomeostat`, ledgers).
 
@@ -481,4 +495,4 @@ HONEYBEE_WAGGLE_ROUTER_v1 — Event 92 routing dance GLSL; von Frisch / Seeley m
 
 ---
 
-*Document version: 2026-05-01 — **visual phenotype bridge** (Python) SHIPPED; **§10.10–10.12** chromatophore v3 + Event 92 (electric fish + honeybee waggle) + Bishop research; Event 85 deterministic router proof + Event 86 **§10.9**; **§10.8.1** Grok + **§2.1** locomotion/hypoxia; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.3** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-05-01 — **§0.4 Phase III enemy table** + Zahavi honest-signal cite; **visual phenotype bridge** + `u_chemotaxis` + `tick_id`; **§10.10–10.12** chromatophore v3 + Event 92 (electric fish + honeybee waggle) + Bishop research; Event 85 deterministic router proof + Event 86 **§10.9**; **§10.8.1** Grok + **§2.1** locomotion/hypoxia; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.4** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*

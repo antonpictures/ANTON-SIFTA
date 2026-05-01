@@ -82,6 +82,14 @@ def normalize_td_value(value: Any) -> float:
     return clamp01((math.tanh(v) + 1.0) * 0.5)
 
 
+def chemotaxis_uniform(row: Dict[str, Any]) -> float:
+    """Chromatophore v3 `u_chemotaxis_gradient` — optional trace_gradient on memory row."""
+    g = row.get("trace_gradient")
+    if g is None:
+        return 0.1
+    return normalize_td_value(g)
+
+
 def _action_label(action: Any) -> str:
     if isinstance(action, dict):
         parts = [str(action.get("type") or ""), str(action.get("target") or "")]
@@ -135,16 +143,19 @@ def build_visual_phenotype_uniforms(row: Optional[Dict[str, Any]] = None) -> Dic
         latency_norm = cost
 
     confidence = clamp01(row.get("confidence", 0.5), 0.5)
-    quorum = clamp01(row.get("quorum_signal", confidence), confidence)
+    q_accum = row.get("quorum_accum", row.get("quorum_signal"))
+    quorum = clamp01(q_accum if q_accum is not None else confidence, confidence)
 
     uniforms: Dict[str, Any] = {
         "ts": time.time(),
         "source": "body_brain_memory.jsonl",
+        "tick_id": str(row.get("tick_id") or ""),
         "receipt_backed": row.get("event") == "body_brain_tick" and "td_value" in row,
         "u_stigmergic_drive": value,
         "u_metabolic_scope": clamp01(1.0 - cost),
         "u_cot_factor": cost,
         "u_quorum_signal": quorum,
+        "u_chemotaxis_gradient": chemotaxis_uniform(row),
         "u_reward": value,
         "u_distance": latency_norm,
         "u_confidence": confidence,

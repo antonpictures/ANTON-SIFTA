@@ -7,13 +7,21 @@
 
 ---
 
+## Honest signaling (Zahavi handicap) — Bishop read for the Architect
+
+**Idea:** costly signals are **evolutionarily stable** because cheapskates cannot afford them.  
+**Primary:** Zahavi, A. (1975). Mate selection—A selection for a handicap. **J. Theor. Biol.** 53(1), 205–214. [DOI 10.1016/0022-5193(75)90111-3](https://doi.org/10.1016/0022-5193(75)90111-3)  
+**SIFTA mapping:** GPU glow tied to **receipt-backed** `td_value` + metabolic tier is a **handicap-like** constraint — cheap fake bloom without ledger rows is the **enemy** we refuse (`receipt_backed` gate). Not a literal proof of sexual selection; **metaphor discipline** per §7.11.
+
+---
+
 ## Problem class (what the bridge fixes)
 
 | Failure mode | Biology / perception anchor | SIFTA fix |
 |:---|:---|:---|
 | **Lie by visualization** (negative drive inverts bloom) | Sensory systems bound firing rates | `tanh` normalization + **clamps** on uniforms; chromatophore v2 **inverse COT** + intensity cap (`.novel`). |
 | **Unbounded gain** | Homeostasis in photoreceptors / motor units | `clamp01`, metabolic **cost** tier from `metabolic_mode` + `plasticity_danger`. |
-| **No provenance** | Reafference / corollary discharge — distinguish self-generated from world | `receipt_backed` only when `body_brain_tick` row carries `td_value`; full row echoed from `body_brain_memory.jsonl`. |
+| **No provenance** | Reafference / corollary discharge — distinguish self-generated from world | `receipt_backed` only when `body_brain_tick` row carries `td_value`; full row echoed from `body_brain_memory.jsonl`; **`tick_id`** for join with future GPU frames. |
 
 ---
 

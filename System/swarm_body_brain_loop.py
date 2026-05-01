@@ -15,6 +15,7 @@ Author: AG31 / Bishop Vanguard
 import time
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -109,6 +110,7 @@ class SwarmPhysiology:
         circadian = now_state.get("circadian") if isinstance(now_state.get("circadian"), dict) else {}
         row: Dict[str, Any] = {
             "event": "body_brain_tick",
+            "tick_id": str(uuid.uuid4()),
             "action": action,
             "result": result,
             "td_value": value,
