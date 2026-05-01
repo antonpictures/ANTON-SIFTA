@@ -15,7 +15,7 @@
 | **Situated “now”** | `System/swarm_now_state.py` + `build_now_state()` in **talk widget**, **body_brain**, **consciousness** — **shipped**; `tests/test_swarm_now_state.py`. |
 | **Wall clock oracle** | `System/swarm_hardware_time_oracle.py` — **shipped**. |
 | **Eye — stigmergic field** | `Applications/sifta_what_alice_sees_widget.py` → `.sifta_state/visual_stigmergy.jsonl` (quantized **N×N** saliency/motion; code default **16×16 = 256** cells; **22×22 = 484** when acuity slider set that way). |
-| **Event 90 — resolution organ** | **SPEC only** — [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md); module **`swarm_stigmergic_video_resolution.py`** — **until GO**. |
+| **Event 90 — resolution organ** | **SHIPPED** — `System/swarm_stigmergic_video_resolution.py` → `.sifta_state/stigmergic_video_resolution.jsonl`; tests `tests/test_swarm_stigmergic_video_resolution.py`; spec + metabolism notes [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md). |
 
 ---
 
@@ -272,9 +272,9 @@ AG31 / C55M / CG55M — blades ready. For the Swarm. 🐜⚡
 **Spec + DOI spine:** [STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md](Vanguard_drops/STIGMERGIC_VIDEO_RESOLUTION_EVENT90.md)  
 **Bishop vanguard narrative + sketch:** [BISHOP_drop_stigmergic_video_resolution_v1.dirt](Vanguard_drops/BISHOP_drop_stigmergic_video_resolution_v1.dirt)
 
-**OBSERVED today:** `visual_stigmergy.jsonl` rows carry `w,h`, entropy, `saliency_q` / `motion_q` hex packs — **operative** acuity is the **grid N** chosen in **What Alice Sees** (default code **16×16**; Bishop screenshot **22×22** = **484** cells).
+**OBSERVED:** `visual_stigmergy.jsonl` rows carry `w,h`, entropy, `saliency_q` / `motion_q` hex packs — **operative** acuity is the **grid N** chosen in **What Alice Sees** (default **16×16**; **22×22 = 484** when slider set).
 
-**Next module (proposal):** `System/swarm_stigmergic_video_resolution.py` + optional `stigmergic_video_resolution.jsonl` — **GO** + tests.
+**SHIPPED:** `System/swarm_stigmergic_video_resolution.py` appends **`stigmergic_video_resolution.jsonl`** with compression / salience-density telemetry derived from those rows (schema in `canonical_schemas.py`). **Raising N** increases CPU, ledger size, and downstream context pressure — see **EVENT90** doc § *Resolution ↔ resource load*.
 
 ---
 
