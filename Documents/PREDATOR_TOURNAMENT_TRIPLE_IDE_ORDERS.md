@@ -389,12 +389,12 @@ Constraints: NPPL — no weapons / surveillance applications. If a source is ven
 
 | Vector (wild but citeable) | Why pull it next | SIFTA knob (metaphor → meter) |
 |:---|:---|:---|
-| **Spring-mass / SLIP templates** (Blickhan, Full, Raibert lineage) | Explains **stability vs speed** without invoking magic COT — **leg stiffness** ↔ scheduler stiffness. | Oscillation / resonance in queue depth; avoid “bouncy” thrash under load. |
+| **Spring-mass / SLIP templates** (Blickhan 1989 — [DOI 10.1016/0021-9290(89)90224-8](https://doi.org/10.1016/0021-9290(89)90224-8); Full/Raibert lineage) | Explains **stability vs speed** without invoking magic COT — **leg stiffness** ↔ scheduler stiffness. | Oscillation / resonance in queue depth; avoid “bouncy” thrash under load. |
 | **Elastic energy recovery** (Alexander & Bennet-Clark) | **Return of elastic strain energy** in tendons ↔ **KV cache reuse**, batching, MLX graph retention. | `cost_per_successful_task` drops when reuse is high — measure it. |
 | **Fractal transport networks** (Weibel; West *et al.*) | **Throughput ceilings** from branching geometry — not “more cores = linear.” | Router fan-out limits; context tree depth vs bandwidth. |
-| **Holling disk / type-II functional response** | Saturation of intake rate with prey density — **API server knee**. | Latency explodes past a threshold concurrency — classic SLO math. |
+| **Holling disk / type-II functional response** (Holling 1959 — [DOI 10.4039/Ent91385-7](https://doi.org/10.4039/Ent91385-7)) | Saturation of intake rate with prey density — **API server knee**. | Latency explodes past a threshold concurrency — classic SLO math. |
 | **Risk-sensitive foraging** (Stephens & Krebs; McNamara & Houston) | **Variance** matters as much as mean — **bet hedging** already in **§10.7**. | Policy under tail latency, not average ms only. |
-| **Jamming / soft matter** (Liu & Nagel) | **Disorder–order transition** in granular media — sand was **compliance** in §2.1; jamming = **thundering herd**. | Sudden **freeze** at critical load — circuit breaker as **unjamming**. |
+| **Jamming / soft matter** (Liu & Nagel 1998 — [DOI 10.1038/23819](https://doi.org/10.1038/23819)) | **Disorder–order transition** in granular media — sand was **compliance** in §2.1; jamming = **thundering herd**. | Sudden **freeze** at critical load — circuit breaker as **unjamming**. |
 | **Critical slowing down** (Scheffer *et al.* regime shifts) | Near **bifurcation**, recovery time diverges — “almost stable” is dangerous. | Watch **derivative** of error_rate, not level alone, before apoptosis. |
 | **Synaptic homeostasis** (Turrigiano & Nelson) | Neurons **scale excitability** to preserve firing statistics — **auto-scaling** with bounds. | STGM governor that **adapts** without runaway (pairs Pontzer plateau). |
 | **Physarum / slime mold networks** (Tero *et al.*; Nakagaki) | **Maze-solving** via distributed flow — stigmergy without ants. | Pathfinding on **commit graph** / dependency DAG under cost. |
@@ -402,8 +402,8 @@ Constraints: NPPL — no weapons / surveillance applications. If a source is ven
 | **Mound thermodynamics** (Turner on termites) | **Open system** dissipates energy to **regulate** interior — “building as organ.” | Data center / Mac Studio thermal narrative tied to **real** `thermal_state` reads. |
 | **Zipf / settlement scaling** (Betancourt) | **Rank–size** of cities — **heavy-tailed** file touch counts; few hot files dominate. | Prioritize instrumentation on **Pareto head** of churn. |
 
-**Assignment:** **C55M** = first DOI pass on any **three** rows above; **AG31** = one “impossible” row as **thought experiment** paragraph (no runtime) — **Physarum row delivered** (`THOUGHT_EXPERIMENT_PHYSARUM_AG31.md`, `36ea5c28`); **CG55M** = keep **Event 85** proof bar green — **hill holds the line on tests**.
+**Assignment:** **C55M** = first DOI pass on **SLIP / Holling / jamming landed**; **AG31** = one “impossible” row as **thought experiment** paragraph (no runtime) — **Physarum row delivered** (`THOUGHT_EXPERIMENT_PHYSARUM_AG31.md`, `36ea5c28`); **CG55M** = keep **Event 85** proof bar green — **hill holds the line on tests**.
 
 ---
 
-*Document version: 2026-04-30 — CG55M + Codex pre-physics DOI follow-up; **§10.9** spark vectors (next hunt); **§10.8.1** Grok + **§2.1 DOI locomotion/hypoxia**; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.2** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-04-30 — Event 85 deterministic router proof + Event 86 **§10.9 SLIP/Holling/jamming DOI lock**; **§10.8.1** Grok + **§2.1 DOI locomotion/hypoxia**; **EVENT_86_LOTKA** + **EVENT_86_QUORUM**; **§0.1–0.2** + **§7–8** + **§9–10** + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*

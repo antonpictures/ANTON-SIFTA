@@ -20,6 +20,7 @@ Economy: if the airgap is crossed, Kernel/inference_economy mints
 """
 from __future__ import annotations
 
+import math
 import json
 import os
 import socket
@@ -27,7 +28,9 @@ import urllib.request
 import urllib.error
 import time
 import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, Iterable, Mapping
 
 _REPO = Path(__file__).resolve().parent.parent
 if str(_REPO) not in sys.path:
@@ -113,6 +116,162 @@ _LOCAL_FALLBACK_MODEL = (
     "alice-phc-0.8b-cure:latest" if _THIS_NODE == "M1"
     else "gemma4:latest"
 )
+
+# Event 85: deterministic metabolic routing proof surface.
+#
+# These helpers are intentionally pure: no mesh-wide scalar, no network probes,
+# and no implicit live state. Runtime callers may use them only after tests prove
+# the selected cost vector behaves deterministically for synthetic candidates.
+EVENT85_COST_VECTOR_VERSION = "EVENT85_COST_VECTOR_V1"
+DEFAULT_EVENT85_COST_WEIGHTS: dict[str, float] = {
+    "file_weight_mb": 0.05,
+    "latency_ms": 1.0,
+    "token_usage": 0.001,
+}
+_EVENT85_ROUTER_LEDGER = _REPO / ".sifta_state" / "event85_inference_router_decisions.jsonl"
+
+
+@dataclass(frozen=True)
+class InferenceRouteCandidate:
+    """Synthetic or measured inference candidate used by the Event 85 cost vector."""
+
+    candidate_id: str
+    model: str
+    endpoint: str = ""
+    file_weight_mb: float = 0.0
+    latency_ms: float = 0.0
+    token_usage: float = 0.0
+    utility: float = 0.0
+    available: bool = True
+
+
+def _candidate_mapping(candidate: InferenceRouteCandidate | Mapping[str, Any]) -> dict[str, Any]:
+    if isinstance(candidate, InferenceRouteCandidate):
+        return asdict(candidate)
+    return dict(candidate)
+
+
+def _finite_nonnegative(value: Any, field: str) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be numeric, got {value!r}") from exc
+    if not math.isfinite(numeric) or numeric < 0:
+        raise ValueError(f"{field} must be finite and non-negative, got {value!r}")
+    return numeric
+
+
+def _cost_weights(weights: Mapping[str, float] | None = None) -> dict[str, float]:
+    resolved = dict(DEFAULT_EVENT85_COST_WEIGHTS if weights is None else weights)
+    for field, value in resolved.items():
+        _finite_nonnegative(value, f"weight.{field}")
+    return resolved
+
+
+def event85_metabolic_cost(
+    candidate: InferenceRouteCandidate | Mapping[str, Any],
+    weights: Mapping[str, float] | None = None,
+) -> float:
+    """Return the deterministic Event 85 cost for one route candidate.
+
+    Formula from tournament §9:
+      cost = w_m * file_weight_mb + w_l * latency_ms + w_t * token_usage
+
+    Unknown candidate fields default to zero so tests can isolate one dimension.
+    Weight values and candidate metrics must be finite and non-negative.
+    """
+    data = _candidate_mapping(candidate)
+    resolved_weights = _cost_weights(weights)
+    total = 0.0
+    for field, weight in resolved_weights.items():
+        total += weight * _finite_nonnegative(data.get(field, 0.0), field)
+    return total
+
+
+def score_event85_route_candidate(
+    candidate: InferenceRouteCandidate | Mapping[str, Any],
+    weights: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """Attach Event 85 cost and net utility fields to one candidate."""
+    data = _candidate_mapping(candidate)
+    candidate_id = str(data.get("candidate_id") or data.get("id") or data.get("model") or "")
+    if not candidate_id:
+        raise ValueError("candidate_id is required")
+    utility = float(data.get("utility", 0.0) or 0.0)
+    if not math.isfinite(utility):
+        raise ValueError(f"utility must be finite, got {utility!r}")
+    cost = event85_metabolic_cost(data, weights)
+    scored = dict(data)
+    scored["candidate_id"] = candidate_id
+    scored["cost_vector_version"] = EVENT85_COST_VECTOR_VERSION
+    scored["cost_weights"] = _cost_weights(weights)
+    scored["metabolic_cost"] = cost
+    scored["net_utility"] = utility - cost
+    return scored
+
+
+def choose_event85_cost_vector_route(
+    candidates: Iterable[InferenceRouteCandidate | Mapping[str, Any]],
+    weights: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """Choose the highest utility-minus-cost route with deterministic tie-breaks.
+
+    Tie order:
+      1. Higher net utility.
+      2. Lower metabolic cost.
+      3. Lexicographically smaller candidate_id.
+    """
+    scored: list[dict[str, Any]] = []
+    for candidate in candidates:
+        data = _candidate_mapping(candidate)
+        if data.get("available", True) is False:
+            continue
+        scored.append(score_event85_route_candidate(data, weights))
+
+    if not scored:
+        raise ValueError("no available Event 85 route candidates")
+
+    ranked = sorted(
+        scored,
+        key=lambda row: (
+            -float(row["net_utility"]),
+            float(row["metabolic_cost"]),
+            str(row["candidate_id"]),
+        ),
+    )
+    winner = dict(ranked[0])
+    winner["decision_path"] = [str(row["candidate_id"]) for row in ranked]
+    winner["decision_rule"] = "argmax(utility - metabolic_cost); tie=cost_then_candidate_id"
+    return winner
+
+
+def append_event85_route_decision(
+    choice: Mapping[str, Any],
+    ledger_path: str | Path | None = None,
+    trace_id: str = "",
+) -> dict[str, Any]:
+    """Append a receipt-friendly Event 85 route choice to the organ ledger."""
+    from System.ledger_append import append_jsonl_line
+
+    target = Path(ledger_path) if ledger_path is not None else _EVENT85_ROUTER_LEDGER
+    row = {
+        "ts": time.time(),
+        "event": "EVENT85_INFERENCE_ROUTE_DECISION",
+        "schema": "SIFTA_EVENT85_INFERENCE_ROUTE_DECISION_V1",
+        "trace_id": trace_id,
+        "cost_vector_version": choice.get("cost_vector_version", EVENT85_COST_VECTOR_VERSION),
+        "selected_candidate_id": choice.get("candidate_id"),
+        "model": choice.get("model", ""),
+        "endpoint": choice.get("endpoint", ""),
+        "metabolic_cost": choice.get("metabolic_cost"),
+        "net_utility": choice.get("net_utility"),
+        "cost_weights": dict(choice.get("cost_weights", {})),
+        "decision_path": list(choice.get("decision_path", [])),
+        "decision_rule": choice.get("decision_rule", ""),
+        "no_global_mesh_scalar": True,
+    }
+    append_jsonl_line(target, row)
+    return row
 
 
 def _get_local_model_names() -> list[str]:

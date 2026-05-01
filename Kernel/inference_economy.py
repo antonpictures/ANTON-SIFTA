@@ -947,14 +947,18 @@ def ledger_balance(agent_id: str) -> float:
                     if entry.get("agent_id", "").upper() == uid:
                         balance -= float(entry.get("amount", 0.0))
 
-                # ── MCP / ANTIGRAVITY_CREATOR_NODE overhead ────────────────────
-                # amount_stgm < 0 means a debit (legacy MCP SCAR entries)
+                # ── Legacy unstructured rows ───────────────────────────────────
+                # Future unstructured positive amount_stgm rows are blocked by
+                # System.ledger_append. Replay keeps old COMPUTE_BURN drips and
+                # negative MCP overhead rows for historical balance continuity.
                 elif event_kind == "VOID_CORRECTION":
                     continue
 
                 elif "amount_stgm" in entry and not event and not tx_type:
                     amt = float(entry.get("amount_stgm", 0.0))
-                    if amt < 0 and entry.get("agent", "").upper() == uid:
+                    reason = str(entry.get("reason") or "")
+                    agent = str(entry.get("agent") or "").upper()
+                    if agent == uid and (amt < 0 or reason.startswith("COMPUTE_BURN")):
                         balance += amt
 
     except Exception as e:
