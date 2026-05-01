@@ -44,6 +44,18 @@ VMD exists (C++ / CUDA). PyMOL exists (C++ core). Nothing exists that is:
 
 ## 🏗️ ARCHITECTURE: `System/swarm_gpu_protein_renderer.py`
 
+### Codex Pass 1 — Landed Truth Boundary
+
+`System/swarm_gpu_protein_renderer.py` now exists as the tested
+GPU-ready geometry/buffer organ. It does **not** yet claim a live
+`QOpenGLWidget` context or measured FPS. The landed code parses PDB,
+infers bonds, extracts Cα backbones, builds Catmull-Rom ribbon tubes,
+emits `float32` sphere/cylinder instance buffers, emits `uint32` ribbon
+indices, returns OpenGL 4.1 shader sources, and maps SIFTA biology drive
+rows into a bounded bloom scalar.
+
+Truth label: `GPU_READY_GEOMETRY`, not `FULL_RENDERER`.
+
 ### Stack
 ```
 PyQt6 QOpenGLWidget
