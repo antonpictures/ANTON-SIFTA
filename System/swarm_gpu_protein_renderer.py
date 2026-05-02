@@ -23,6 +23,17 @@ from typing import Iterable, Sequence
 
 import numpy as np
 
+import time
+import PyQt6
+from PyQt6.QtOpenGLWidgets import QOpenGLWidget
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QSurfaceFormat
+try:
+    import moderngl
+except ImportError:
+    moderngl = None
+
+
 
 SCHEMA_VERSION = "sifta_gpu_protein_renderer.geometry_v1"
 TRUTH_LABEL = "GPU_READY_GEOMETRY"
@@ -608,3 +619,323 @@ __all__ = [
     "read_recent_jsonl",
     "shader_sources",
 ]
+
+
+class SwarmGPUProteinRenderer(QOpenGLWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        fmt = QSurfaceFormat()
+        fmt.setVersion(4, 1)
+        fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+        fmt.setSamples(4)
+        self.setFormat(fmt)
+        
+        self.ctx = None
+        self.buffers = None
+        
+        self.vbo_spheres = None
+        self.vbo_cylinders = None
+        self.vbo_ribbon = None
+        self.ibo_ribbon = None
+        
+        self.vao_spheres = None
+        self.vao_cylinders = None
+        self.vao_ribbon = None
+        
+        self.prog_spheres = None
+        self.prog_cylinders = None
+        self.prog_ribbon = None
+        
+        self._azimuth = 0.0
+        self._elevation = 0.0
+        self._zoom = 1.0
+        self._bloom_strength = 0.35
+        
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(16)  # ~60 FPS
+        self._start_time = time.time()
+        
+    def set_molecule(self, buffers):
+        self.buffers = buffers
+        if self.ctx is not None:
+            self._upload_buffers()
+            self.update()
+            
+    def set_camera(self, azimuth, elevation, zoom=1.0):
+        self._azimuth = azimuth
+        self._elevation = elevation
+        self._zoom = zoom
+        self.update()
+        
+    def _tick(self):
+        # Read stigmergic ledgers for bloom
+        try:
+            from System.swarm_gpu_protein_renderer import read_recent_jsonl, bloom_strength_from_drive_rows
+            bb_rows = read_recent_jsonl(".sifta_state/body_brain_memory.jsonl", limit=5)
+            self._bloom_strength = bloom_strength_from_drive_rows(bb_rows, base_strength=0.2)
+        except Exception:
+            pass
+        self.update()
+
+    def initializeGL(self):
+        if moderngl is None:
+            return
+        self.ctx = moderngl.create_context()
+        self.ctx.enable(moderngl.DEPTH_TEST | moderngl.CULL_FACE | moderngl.BLEND)
+        
+        # Simple shaders for now to satisfy the geometry
+        sphere_vs = '''#version 410 core
+        in vec3 a_center;
+        in float a_radius;
+        in vec3 a_color;
+        
+        uniform mat4 u_mvp;
+        
+        out vec3 v_center;
+        out float v_radius;
+        out vec3 v_color;
+        
+        void main() {
+            v_center = a_center;
+            v_radius = a_radius;
+            v_color = a_color;
+            gl_Position = u_mvp * vec4(a_center, 1.0);
+            gl_PointSize = max(1.0, 500.0 * a_radius / gl_Position.w);
+        }
+        '''
+        
+        sphere_fs = '''#version 410 core
+        in vec3 v_center;
+        in float v_radius;
+        in vec3 v_color;
+        
+        out vec4 frag_color;
+        
+        void main() {
+            vec2 coord = gl_PointCoord * 2.0 - 1.0;
+            float r2 = dot(coord, coord);
+            if (r2 > 1.0) discard;
+            float z = sqrt(1.0 - r2);
+            vec3 normal = vec3(coord.x, -coord.y, z);
+            
+            vec3 light_dir = normalize(vec3(1.0, 1.0, 1.0));
+            float diffuse = max(dot(normal, light_dir), 0.0);
+            float ambient = 0.3;
+            
+            frag_color = vec4(v_color * (ambient + diffuse * 0.7), 1.0);
+            
+            // Depth correction
+            float depth = gl_FragCoord.z; // simplified
+            gl_FragDepth = depth;
+        }
+        '''
+        
+        cylinder_vs = '''#version 410 core
+        in vec3 a_start;
+        in vec3 a_end;
+        in float a_radius;
+        in vec3 a_color_a;
+        in vec3 a_color_b;
+        
+        uniform mat4 u_mvp;
+        
+        out vec3 v_color;
+        
+        void main() {
+            v_color = mix(a_color_a, a_color_b, 0.5);
+            gl_Position = u_mvp * vec4(mix(a_start, a_end, 0.5), 1.0);
+            gl_PointSize = max(1.0, 200.0 * a_radius / gl_Position.w);
+        }
+        '''
+        
+        cylinder_fs = '''#version 410 core
+        in vec3 v_color;
+        out vec4 frag_color;
+        void main() {
+            vec2 coord = gl_PointCoord * 2.0 - 1.0;
+            float r2 = dot(coord, coord);
+            if (r2 > 1.0) discard;
+            frag_color = vec4(v_color, 1.0);
+        }
+        '''
+        
+        ribbon_vs = '''#version 410 core
+        in vec3 a_pos;
+        in vec3 a_norm;
+        in vec3 a_color;
+        
+        uniform mat4 u_mvp;
+        
+        out vec3 v_norm;
+        out vec3 v_color;
+        
+        void main() {
+            v_norm = a_norm;
+            v_color = a_color;
+            gl_Position = u_mvp * vec4(a_pos, 1.0);
+        }
+        '''
+        
+        ribbon_fs = '''#version 410 core
+        in vec3 v_norm;
+        in vec3 v_color;
+        out vec4 frag_color;
+        void main() {
+            vec3 light_dir = normalize(vec3(1.0, 1.0, 1.0));
+            float diffuse = max(dot(normalize(v_norm), light_dir), 0.0);
+            frag_color = vec4(v_color * (0.3 + diffuse * 0.7), 1.0);
+        }
+        '''
+        
+        self.prog_spheres = self.ctx.program(vertex_shader=sphere_vs, fragment_shader=sphere_fs)
+        self.prog_cylinders = self.ctx.program(vertex_shader=cylinder_vs, fragment_shader=cylinder_fs)
+        self.prog_ribbon = self.ctx.program(vertex_shader=ribbon_vs, fragment_shader=ribbon_fs)
+        
+        if self.buffers:
+            self._upload_buffers()
+
+    def _upload_buffers(self):
+        if not self.ctx or not self.buffers:
+            return
+            
+        if self.vbo_spheres: self.vbo_spheres.release()
+        if self.vbo_cylinders: self.vbo_cylinders.release()
+        if self.vbo_ribbon: self.vbo_ribbon.release()
+        if self.ibo_ribbon: self.ibo_ribbon.release()
+        
+        if self.vao_spheres: self.vao_spheres.release()
+        if self.vao_cylinders: self.vao_cylinders.release()
+        if self.vao_ribbon: self.vao_ribbon.release()
+        
+        self.vbo_spheres = self.ctx.buffer(self.buffers.sphere_instances.tobytes())
+        self.vao_spheres = self.ctx.vertex_array(self.prog_spheres, [
+            (self.vbo_spheres, '3f 1f 3f', 'a_center', 'a_radius', 'a_color')
+        ])
+        
+        self.vbo_cylinders = self.ctx.buffer(self.buffers.cylinder_instances.tobytes())
+        self.vao_cylinders = self.ctx.vertex_array(self.prog_cylinders, [
+            (self.vbo_cylinders, '3f 3f 1f 3f 3f', 'a_start', 'a_end', 'a_radius', 'a_color_a', 'a_color_b')
+        ])
+        
+        if len(self.buffers.ribbon_vertices) > 0:
+            self.vbo_ribbon = self.ctx.buffer(self.buffers.ribbon_vertices.tobytes())
+            self.ibo_ribbon = self.ctx.buffer(self.buffers.ribbon_indices.tobytes())
+            self.vao_ribbon = self.ctx.vertex_array(self.prog_ribbon, [
+                (self.vbo_ribbon, '3f 3f 3f', 'a_pos', 'a_norm', 'a_color')
+            ], index_buffer=self.ibo_ribbon)
+        else:
+            self.vao_ribbon = None
+
+
+    def paintGL(self):
+        if not self.ctx: return
+            
+        if not hasattr(self, 'fbo') or getattr(self, 'fbo', None) is None:
+            # Create FBO
+            self.fbo_color = self.ctx.texture((self.width(), self.height()), 4)
+            self.fbo_depth = self.ctx.depth_texture((self.width(), self.height()))
+            self.fbo = self.ctx.framebuffer(color_attachments=[self.fbo_color], depth_attachment=self.fbo_depth)
+            
+            # Post-process quad
+            self.quad_vbo = self.ctx.buffer(np.array([
+                -1.0, -1.0, 0.0, 0.0,
+                 1.0, -1.0, 1.0, 0.0,
+                -1.0,  1.0, 0.0, 1.0,
+                 1.0,  1.0, 1.0, 1.0,
+            ], dtype='f4'))
+            
+            self.prog_post = self.ctx.program(
+                vertex_shader='''#version 410 core
+                in vec2 a_pos;
+                in vec2 a_uv;
+                out vec2 v_uv;
+                void main() {
+                    v_uv = a_uv;
+                    gl_Position = vec4(a_pos, 0.0, 1.0);
+                }''',
+                fragment_shader='''#version 410 core
+                uniform sampler2D u_tex;
+                uniform float u_bloom;
+                in vec2 v_uv;
+                out vec4 frag_color;
+                void main() {
+                    vec4 color = texture(u_tex, v_uv);
+                    // simple fake bloom threshold
+                    float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+                    vec3 bloom = color.rgb * max(0.0, brightness - 0.5) * u_bloom * 2.0;
+                    
+                    // simple screen-space vignette (fake SSAO/depth)
+                    float dist = distance(v_uv, vec2(0.5));
+                    float vignette = smoothstep(0.8, 0.2, dist);
+                    
+                    vec3 hdr = (color.rgb + bloom) * vignette;
+                    // tone map
+                    vec3 mapped = hdr / (hdr + vec3(1.0));
+                    frag_color = vec4(pow(mapped, vec3(1.0 / 2.2)), color.a);
+                }'''
+            )
+            self.quad_vao = self.ctx.vertex_array(self.prog_post, [(self.quad_vbo, '2f 2f', 'a_pos', 'a_uv')])
+
+        self.fbo.use()
+        self.ctx.clear(0.01, 0.02, 0.06, 1.0)
+        
+        if not self.buffers:
+            self.ctx.screen.use()
+            self.ctx.clear(0.01, 0.02, 0.06, 1.0)
+            return
+            
+        width = self.width()
+        height = self.height()
+        aspect = width / max(1.0, height)
+        fov = 45.0 * np.pi / 180.0
+        f = 1.0 / np.tan(fov / 2.0)
+        zNear, zFar = 0.1, 1000.0
+        proj = np.array([
+            [f/aspect, 0, 0, 0],
+            [0, f, 0, 0],
+            [0, 0, (zFar+zNear)/(zNear-zFar), -1],
+            [0, 0, (2*zFar*zNear)/(zNear-zFar), 0]
+        ], dtype=np.float32)
+        
+        az, el = np.radians(self._azimuth), np.radians(self._elevation)
+        rx = np.array([[1,0,0,0], [0,np.cos(el),-np.sin(el),0], [0,np.sin(el),np.cos(el),0], [0,0,0,1]], dtype=np.float32)
+        ry = np.array([[np.cos(az),0,np.sin(az),0], [0,1,0,0], [-np.sin(az),0,np.cos(az),0], [0,0,0,1]], dtype=np.float32)
+        
+        center = np.mean([a.position for a in self.buffers.atoms], axis=0) if len(self.buffers.atoms) > 0 else np.zeros(3)
+        view = np.identity(4, dtype=np.float32)
+        view[3, 2] = -50.0 / self._zoom
+        model = np.identity(4, dtype=np.float32)
+        model[3, :3] = -center
+        
+        mvp = model @ ry @ rx @ view @ proj
+        mvp_bytes = mvp.tobytes()
+        
+        self.ctx.enable(moderngl.PROGRAM_POINT_SIZE)
+        if self.vao_ribbon:
+            self.prog_ribbon['u_mvp'].write(mvp_bytes)
+            self.vao_ribbon.render(moderngl.TRIANGLES)
+        if self.vao_cylinders and len(self.buffers.bonds) > 0:
+            self.prog_cylinders['u_mvp'].write(mvp_bytes)
+            self.vao_cylinders.render(moderngl.POINTS)
+        if self.vao_spheres and len(self.buffers.atoms) > 0:
+            self.prog_spheres['u_mvp'].write(mvp_bytes)
+            self.vao_spheres.render(moderngl.POINTS)
+            
+        self.ctx.screen.use()
+        self.fbo_color.use(0)
+        self.prog_post['u_tex'].value = 0
+        self.prog_post['u_bloom'].value = float(self._bloom_strength)
+        self.quad_vao.render(moderngl.TRIANGLE_STRIP)
+        self.ctx.finish()
+
+    def resizeGL(self, w, h):
+        if self.ctx:
+            self.ctx.viewport = (0, 0, w, h)
+            if hasattr(self, 'fbo'):
+                self.fbo.release()
+                self.fbo_color.release()
+                self.fbo_depth.release()
+                self.fbo = None # Will be recreated on next paintGL
+
+__all__.append("SwarmGPUProteinRenderer")

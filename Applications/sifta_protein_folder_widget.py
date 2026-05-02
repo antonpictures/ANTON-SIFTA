@@ -55,6 +55,11 @@ except ImportError as exc:  # pragma: no cover - import failure is fatal in app 
     raise SystemExit(f"Could not import System.sifta_peptide_backbone_demo: {exc}") from exc
 
 try:
+    from System.swarm_gpu_protein_renderer import SwarmGPUProteinRenderer, build_molecule_buffers_from_pdb_file
+except ImportError:
+    SwarmGPUProteinRenderer = None
+
+try:
     from System.swarm_app_focus import publish_focus as _publish_focus
 except Exception:  # pragma: no cover - desktop focus bus is optional in tests
     def _publish_focus(*_: Any, **__: Any) -> None:
@@ -369,10 +374,14 @@ class ProteinFolderWidget(QWidget):
         body.setSpacing(10)
         root.addLayout(body, 1)
 
-        self.figure = Figure(figsize=(8.5, 6.0), facecolor=BG)
-        self.canvas = FigureCanvas(self.figure)
+        if SwarmGPUProteinRenderer is not None:
+            self.canvas = SwarmGPUProteinRenderer(self)
+            self.ax = None
+        else:
+            self.figure = Figure(figsize=(8.5, 6.0), facecolor=BG)
+            self.canvas = FigureCanvas(self.figure)
+            self.ax = self.figure.add_subplot(111, projection="3d")
         self.canvas.setMinimumSize(720, 520)
-        self.ax = self.figure.add_subplot(111, projection="3d")
         body.addWidget(self.canvas, 1)
 
         side = QFrame()
@@ -522,6 +531,8 @@ class ProteinFolderWidget(QWidget):
         self.metrics["pdb"].setText(Path(self._result.pdb_path).name if self._result.pdb_path else "in-memory")
 
     def _blank_plot(self, message: str) -> None:
+        if self.ax is None:
+            return
         self.ax.clear()
         self.ax.set_facecolor(BG)
         self.ax.text2D(0.5, 0.5, message, transform=self.ax.transAxes, ha="center", color=MUTED)
@@ -585,6 +596,18 @@ class ProteinFolderWidget(QWidget):
 
     def _render_frame(self) -> None:
         if not self._result or not self._result.trajectory:
+            return
+
+        if self.ax is None:
+            if isinstance(self.canvas, SwarmGPUProteinRenderer):
+                if self._frame == 0 and self._result.pdb_path:
+                    try:
+                        bufs = build_molecule_buffers_from_pdb_file(self._result.pdb_path)
+                        self.canvas.set_molecule(bufs)
+                    except Exception as e:
+                        print(f"Failed to load PDB into renderer: {e}")
+                self.canvas.set_camera(azimuth=self._azimuth, elevation=25.0)
+                self.metrics["step"].setText(f"{self._frame}/{len(self._result.trajectory) - 1}")
             return
 
         coords = np.array(self._result.trajectory[self._frame], dtype=float)
