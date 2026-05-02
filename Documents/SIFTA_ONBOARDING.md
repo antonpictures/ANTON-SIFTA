@@ -32,15 +32,16 @@ a unique entity cryptographically fingerprinted to your silicon.
 
 ### 3.0 Pick The Correct Hardware Role
 
-Do not clone the M5 brain onto every device. Install the role that matches the
-machine.
+Install the role that fits the physical machine. SIFTA is hardware-aware: the
+M5 can host Alice's primary cortex, while 8 GB and field devices serve as
+scouts, relays, and sensor limbs.
 
 ```mermaid
 flowchart TB
     M5["M5 / 24GB+ Foundry\nAlice primary cortex\nsifta-gemma4-alice"]
     M5Scout["M5 multimodal scout\nqwen3.5:9b"]
-    Mini["Mac Mini / 8GB Sentry\nqwen3.5:4b + qwen3.5:2b\nno Gemma4 auto-download"]
-    Field["Raspberry Pi / tractor / field device\nsensor receipts first\nno default LLM"]
+    Mini["Mac Mini / 8GB Sentry\nqwen3.5:4b + qwen3.5:2b\nGemma4 exceeds soldered RAM"]
+    Field["Raspberry Pi / tractor / field device\nsensor receipts first\nmodel only if hardware fits"]
     M5Scout --> M5
     Mini --> M5
     Field --> Mini
@@ -50,8 +51,14 @@ flowchart TB
 | Device | Role | Model policy |
 |---|---|---|
 | M5 / 24GB+ | Foundry / Alice main body | Pull `sifta-gemma4-alice` and `qwen3.5:9b`. |
-| Mac Mini / 8GB | Sentry / scout | Pull `qwen3.5:4b` and `qwen3.5:2b`; never auto-pull Gemma4. |
+| Mac Mini / 8GB | Sentry / scout | Pull `qwen3.5:4b` and `qwen3.5:2b`; Gemma4 is skipped by default because it does not fit safely in soldered 8 GB RAM. |
 | Raspberry Pi / tractor / sensor box | Field node | Start with signed sensor receipts; add a tiny scout only if hardware proves it can run. |
+
+This is a physics constraint, not a prohibition. A `.rar`/archive can reduce
+disk storage, but it does not remove the live inference requirement: tensor
+weights, KV cache, and the OS must all fit in memory at runtime. Future
+distillation, quantization, or remote Foundry delegation may improve this, but
+each path needs receipts before the installer treats it as safe.
 
 ```bash
 # Step 1: Clone the Swarm
