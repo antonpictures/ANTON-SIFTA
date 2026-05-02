@@ -112,19 +112,83 @@ def read_skill_sources(
     return skills
 
 
+# ── Per-regime skill mass modifiers ──────────────────────────────────────────
+# These scale the computed weight of each action TYPE based on the current
+# macro-regime from the Phase Detector (Event 100 / CUSUM).
+# Logic mirrors the homeostatic drive weight table (Event 101) but operates
+# on crystallized SKILL mass rather than live drive selection.
+_REGIME_ACTION_SCALE: Dict[str, Dict[str, float]] = {
+    "EXPLORATION": {
+        "explore":     1.4,   # open vacuum — reward exploration habits
+        "forage":      1.1,
+        "learn":       1.2,
+        "code":        1.1,
+        "optimize":    1.0,
+        "repair":      0.8,
+        "rest":        0.5,
+    },
+    "CONSOLIDATION": {
+        "explore":     0.7,   # density plateau — reward integration habits
+        "forage":      0.9,
+        "learn":       1.5,
+        "code":        1.3,
+        "optimize":    1.4,
+        "repair":      1.0,
+        "rest":        0.9,
+    },
+    "CRITICAL_COLLAPSE": {
+        "explore":     0.15,  # emergency — suppress destabilising habits
+        "experiment":  0.1,
+        "forage":      0.4,
+        "learn":       0.4,
+        "code":        0.3,
+        "optimize":    0.2,
+        "repair":      2.0,   # massively reward recovery habits
+        "rest":        2.0,
+        "safety":      1.8,
+    },
+}
+
+
+def _read_regime_from_cache() -> str:
+    """Fast regime read from regime_state.json (written by phase detector)."""
+    try:
+        rf = _REPO / ".sifta_state" / "regime_state.json"
+        if rf.exists():
+            data = json.loads(rf.read_text("utf-8", errors="replace"))
+            return str(data.get("state") or data.get("regime") or "EXPLORATION")
+    except Exception:
+        pass
+    return "EXPLORATION"
+
+
 def compute_policy_bias(
     current_drive: str,
     *,
     state_dir: Optional[Path] = None,
     jsonl_tail: int = 50,
+    regime: Optional[str] = None,
+    crystallizer_gate: float = 1.0,
 ) -> Dict[str, float]:
     """
     Map action_type -> non-negative weight (unnormalized).
     Uses success_rate, usage_count, stability; boosts rows that mention `current_drive`.
+
+    regime (str | None):
+        EXPLORATION / CONSOLIDATION / CRITICAL_COLLAPSE.
+        If None, auto-reads from .sifta_state/regime_state.json.
+    crystallizer_gate (float [0,1]):
+        From homeostatic stabilizer (Event 101). Near 0 during CRITICAL_COLLAPSE
+        → skill mass shrinks toward the uniform epsilon floor, so the motor
+        policy does not crystallize panic-state programs into habits.
     """
     drive = str(current_drive).strip().lower()
     raw = read_skill_sources(state_dir=state_dir, jsonl_tail=jsonl_tail)
     bias: Dict[str, float] = {}
+
+    resolved_regime = regime if regime is not None else _read_regime_from_cache()
+    action_scale = _REGIME_ACTION_SCALE.get(resolved_regime, _REGIME_ACTION_SCALE["EXPLORATION"])
+    gate = max(0.0, min(1.0, float(crystallizer_gate)))
 
     for s in raw:
         if s.get("frozen") is True or s.get("quarantined") is True:
@@ -145,6 +209,13 @@ def compute_policy_bias(
         ds = str(pl.get("drive_state", "")).lower()
         if drive and ds == drive:
             weight *= 1.2
+        # Regime scale: reshape which action types get mass
+        regime_mod = action_scale.get(action, 1.0)
+        weight *= regime_mod
+        # Crystallizer gate: during CRITICAL_COLLAPSE the stabilizer sets this
+        # to ~0.10, making all skill weights collapse toward zero (forcing
+        # the epsilon floor to dominate, i.e. back to uniform exploration).
+        weight *= gate
         bias[action] = bias.get(action, 0.0) + weight
 
     return bias
@@ -157,16 +228,27 @@ def select_action_type_from_skills(
     state_dir: Optional[Path] = None,
     jsonl_tail: int = 50,
     epsilon: float = 0.08,
+    regime: Optional[str] = None,
+    crystallizer_gate: float = 1.0,
 ) -> Tuple[str, Dict[str, float]]:
     """
     Pick one candidate action *type* using crystallized skill mass + uniform floor.
     Returns (selected, normalized_bias over union of candidates + observed keys).
+
+    regime / crystallizer_gate are forwarded to compute_policy_bias for
+    the stabilizer → phase controller → policy mass feedback path (Event 103+).
     """
     cands = [str(c).strip().lower() for c in candidates if str(c).strip()]
     if not cands:
         return "explore", {}
 
-    raw_bias = compute_policy_bias(current_drive, state_dir=state_dir, jsonl_tail=jsonl_tail)
+    raw_bias = compute_policy_bias(
+        current_drive,
+        state_dir=state_dir,
+        jsonl_tail=jsonl_tail,
+        regime=regime,
+        crystallizer_gate=crystallizer_gate,
+    )
     scores: Dict[str, float] = {}
     for c in cands:
         scores[c] = max(raw_bias.get(c, 0.0), epsilon)
@@ -189,6 +271,8 @@ def write_motor_policy_row(
     bias: Dict[str, float],
     current_drive: str,
     state_dir: Optional[Path] = None,
+    regime: Optional[str] = None,
+    crystallizer_gate: float = 1.0,
 ) -> Dict[str, Any]:
     _, _, ledger = _paths(state_dir)
     row = {
@@ -197,6 +281,8 @@ def write_motor_policy_row(
         "selected_action": selected_action,
         "current_drive": str(current_drive),
         "bias": bias,
+        "regime": regime or _read_regime_from_cache(),
+        "crystallizer_gate": round(float(crystallizer_gate), 4),
     }
     ledger.parent.mkdir(parents=True, exist_ok=True)
     append_line_locked(ledger, json.dumps(row, sort_keys=True) + "\n")

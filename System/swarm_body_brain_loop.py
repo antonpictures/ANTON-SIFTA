@@ -228,19 +228,34 @@ class SwarmPhysiology:
             }
 
         # Event 103 — skill-weighted motor policy (crystallizer → basal ganglia coupling)
+        # Now regime-aware: homeostatic_frame regime + crystallizer_gate modulate
+        # which skill types get mass (stabilizer → phase controller → policy mass loop).
         if _MOTOR_POLICY_AVAILABLE:
             try:
                 state_root = Path(__file__).resolve().parent.parent / ".sifta_state"
+                # Extract regime + gate from homeostatic frame (Event 101 → 103 feedback)
+                _regime = (
+                    getattr(homeostatic_frame, "regime", None)
+                    if homeostatic_frame is not None else None
+                )
+                _cgate = (
+                    float(getattr(homeostatic_frame, "crystallizer_weight", 1.0))
+                    if homeostatic_frame is not None else 1.0
+                )
                 motor_type, motor_bias = select_action_type_from_skills(
                     ("explore", "forage"),
                     attention,
                     state_dir=state_root,
+                    regime=_regime,
+                    crystallizer_gate=_cgate,
                 )
                 write_motor_policy_row(
                     selected_action=motor_type,
                     bias=motor_bias,
                     current_drive=attention,
                     state_dir=state_root,
+                    regime=_regime,
+                    crystallizer_gate=_cgate,
                 )
                 if motor_type == "forage":
                     return {
