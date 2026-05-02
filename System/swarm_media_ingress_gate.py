@@ -45,13 +45,13 @@ DIRECT_REQUEST_RE = re.compile(
 MEDIA_FOCUS_RE = re.compile(
     r"\b(?:youtube|caption_status|caption_excerpt|watching this youtube|"
     r"frontmost.*youtube|video_id|the architect is physically.*watching|"
-    r"background_tv|bedroom.*tv|tv.*bedroom|television.*youtube|tv.*youtube|"
+    r"background_media|ambient_tv|shared_media|television.*youtube|tv.*youtube|"
     r"reality_frame|fictional_media_clip|dialogue_boundary|movie|film|"
     r"cinema|scene|co[-_ ]?watch)\b",
     re.IGNORECASE,
 )
 AMBIENT_TV_RE = re.compile(
-    r"\b(?:background_tv|bedroom.*tv|tv.*bedroom|television.*youtube|tv.*youtube)\b",
+    r"\b(?:background_media|ambient_media(?:_youtube)?|ambient_tv|shared_media|television.*youtube|tv.*youtube)\b",
     re.IGNORECASE,
 )
 NARRATION_RE = re.compile(
@@ -231,7 +231,7 @@ def classify_spoken_ingress(
     if AMBIENT_TV_RE.search(context):
         return {
             "route": "ambient_media",
-            "reason": "owner_declared_background_tv_youtube",
+            "reason": "owner_declared_background_media_youtube",
             "confidence": 0.9,
         }
 
@@ -351,8 +351,8 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
 
 def record_ambient_media_context(
     *,
-    source: str = "background_tv_youtube",
-    note: str = "Bedroom TV is playing YouTube; voices are ambient media unless they directly address Alice or request action.",
+    source: str = "ambient_media_youtube",
+    note: str = "Screen media (e.g. YouTube/Movie) is playing; voices are ambient media unless they directly address Alice or request action.",
     ttl_s: float = 6 * 3600.0,
 ) -> dict[str, Any]:
     """Persist an owner-declared ambient media context for the STT gate."""
