@@ -13,6 +13,15 @@ hardware body -> sensors/receipts -> local scout/reflex -> Alice Foundry
 The difference is not identity. The difference is physical memory, heat, and
 what the node can honestly run.
 
+Use the deterministic planner on any node before pulling models:
+
+```bash
+PYTHONPATH=. python3 System/sifta_hardware_profile_planner.py
+```
+
+It prints the hardware role, local model policy, skipped models, and install
+commands for that machine.
+
 ## M5 Foundry, 24 GB
 
 This is Alice's full body on the current machine.
@@ -59,6 +68,12 @@ Use the read-only audit tool before cleanup:
 
 ```bash
 PYTHONPATH=. python3 System/ollama_model_inventory_audit.py
+```
+
+To delete only unreferenced Ollama blobs after review:
+
+```bash
+PYTHONPATH=. python3 System/ollama_model_inventory_audit.py --delete-orphans --yes
 ```
 
 Current M5 cleanup priority:

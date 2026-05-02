@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -165,13 +166,88 @@ def render_report(inv: OllamaInventory) -> str:
     return "\n".join(lines)
 
 
+def delete_orphaned_blobs(inv: OllamaInventory) -> list[dict[str, Any]]:
+    """Delete only blobs that no manifest references.
+
+    The caller must explicitly request this path. Shared model blobs and any blob
+    with a manifest reference are never deleted by this function.
+    """
+
+    deleted: list[dict[str, Any]] = []
+    for blob, size in sorted(inv.orphaned_blobs.items(), key=lambda item: item[1], reverse=True):
+        path = inv.root / "blobs" / blob
+        if not path.exists() or not path.is_file():
+            continue
+        path.unlink()
+        deleted.append({"blob": blob, "size": size, "path": str(path)})
+    return deleted
+
+
+def append_cleanup_receipt(receipt_path: Path, inv: OllamaInventory, deleted: list[dict[str, Any]]) -> None:
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "ts": time.time(),
+        "event": "ollama_orphan_blob_cleanup",
+        "root": str(inv.root),
+        "deleted_count": len(deleted),
+        "deleted_bytes": sum(int(item["size"]) for item in deleted),
+        "deleted": deleted,
+        "truth_label": "OBSERVED_LOCAL_FILESYSTEM_DELETE",
+    }
+    with receipt_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, sort_keys=True) + "\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.home() / ".ollama" / "models")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--delete-orphans",
+        action="store_true",
+        help="Delete unreferenced blobs after scanning. Requires --yes.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Required with --delete-orphans so accidental deletes fail closed.",
+    )
+    parser.add_argument(
+        "--receipt",
+        type=Path,
+        default=Path(".sifta_state/ollama_cleanup_receipts.jsonl"),
+        help="Append a JSONL cleanup receipt when deleting orphaned blobs.",
+    )
     args = parser.parse_args()
 
     inv = scan_inventory(args.root)
+    if args.delete_orphans:
+        if not args.yes:
+            parser.error("--delete-orphans requires --yes")
+        deleted = delete_orphaned_blobs(inv)
+        append_cleanup_receipt(args.receipt, inv, deleted)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "root": str(inv.root),
+                        "deleted": deleted,
+                        "deleted_count": len(deleted),
+                        "deleted_bytes": sum(int(item["size"]) for item in deleted),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(render_report(inv))
+            print("")
+            print(
+                f"Deleted {len(deleted)} orphaned blobs "
+                f"({sum(int(item['size']) for item in deleted) / (1024 ** 3):.2f} GB)."
+            )
+        return 0
+
     if args.json:
         print(
             json.dumps(

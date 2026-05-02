@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from System.ollama_model_inventory_audit import render_report, scan_inventory
+from System.ollama_model_inventory_audit import (
+    append_cleanup_receipt,
+    delete_orphaned_blobs,
+    render_report,
+    scan_inventory,
+)
 
 
 def _manifest(path: Path, model_digest: str, model_size: int) -> None:
@@ -63,3 +68,41 @@ def test_inventory_detects_shared_model_blobs_and_orphans(tmp_path):
     assert "alice:latest" in report
     assert "rawbase:latest" in report
     assert "sha256-orphan" in report
+
+
+def test_delete_orphaned_blobs_only_removes_unreferenced_files(tmp_path):
+    root = tmp_path / "models"
+    manifests = root / "manifests" / "registry.ollama.ai" / "library"
+
+    _manifest(manifests / "alice" / "latest", "sha256:shared", 1000)
+    _blob(root, "sha256:shared", 1000)
+    _blob(root, "sha256:orphan", 3000)
+
+    inv = scan_inventory(root)
+    deleted = delete_orphaned_blobs(inv)
+
+    assert deleted == [
+        {
+            "blob": "sha256-orphan",
+            "size": 3000,
+            "path": str(root / "blobs" / "sha256-orphan"),
+        }
+    ]
+    assert (root / "blobs" / "sha256-shared").exists()
+    assert not (root / "blobs" / "sha256-orphan").exists()
+
+
+def test_cleanup_receipt_records_deleted_bytes(tmp_path):
+    receipt = tmp_path / "receipts.jsonl"
+    root = tmp_path / "models"
+    root.mkdir()
+    inv = scan_inventory(root)
+    deleted = [{"blob": "sha256-orphan", "size": 3000, "path": "/tmp/blob"}]
+
+    append_cleanup_receipt(receipt, inv, deleted)
+
+    row = json.loads(receipt.read_text().strip())
+    assert row["event"] == "ollama_orphan_blob_cleanup"
+    assert row["deleted_count"] == 1
+    assert row["deleted_bytes"] == 3000
+    assert row["truth_label"] == "OBSERVED_LOCAL_FILESYSTEM_DELETE"
