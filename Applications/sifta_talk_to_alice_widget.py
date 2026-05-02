@@ -1449,6 +1449,14 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    try:
+        from System.swarm_concept_context_builder import build_concept_context
+        _concept_prompt = build_concept_context()
+        if _concept_prompt:
+            parts.append(_concept_prompt)
+    except Exception:
+        pass
+
     affordances = tool_affordances_for_turn(user_text)
     if affordances:
         parts.append(affordances)
