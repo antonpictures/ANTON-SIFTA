@@ -50,18 +50,48 @@ def _ssl_ctx() -> ssl.SSLContext:
         return ssl.create_default_context()  # system default fallback
 
 
+_STOPWORDS = {
+    "and", "or", "the", "a", "an", "of", "in", "on", "for",
+    "to", "with", "under", "via", "from", "by", "at",
+}
+
+
+def _query_words(phrase: str) -> List[str]:
+    return [
+        w for w in re.findall(r"[a-z0-9]+", phrase.lower())
+        if w not in _STOPWORDS and len(w) > 2
+    ]
+
+
 def _build_arxiv_query(phrase: str) -> str:
     """
     Convert a multi-word phrase to arXiv `all:` boolean query.
     'allostatic load homeostasis' → 'all:allostatic AND all:load AND all:homeostasis'
     Removes stopwords to keep query tight.
     """
-    STOPWORDS = {"and", "or", "the", "a", "an", "of", "in", "on", "for",
-                 "to", "with", "under", "via", "from", "by", "at"}
-    words = [w for w in phrase.lower().split() if w not in STOPWORDS and len(w) > 2]
+    words = _query_words(phrase)
     if not words:
         return "all:biology"
-    return " AND ".join(f"all:{w}" for w in words[:6])  # arXiv caps complex queries
+    return " AND ".join(f"all:{w}" for w in words[:4])  # arXiv caps complex queries
+
+
+def _arxiv_query_candidates(phrase: str) -> List[str]:
+    """Return precise-to-broad arXiv search_query candidates."""
+    words = _query_words(phrase)
+    if not words:
+        return ["all:biology"]
+
+    candidates = [
+        " AND ".join(f"all:{w}" for w in words[:4]),
+        " AND ".join(f"all:{w}" for w in words[:3]),
+        " AND ".join(f"all:{w}" for w in words[:2]),
+        " OR ".join(f"all:{w}" for w in words[:6]),
+    ]
+    deduped: List[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
@@ -126,65 +156,70 @@ def _arxiv_search(
     Query arXiv Atom API. Returns list of entry dicts with:
       arxiv_id, title, abstract, authors, published, doi, url
     """
-    aq = _build_arxiv_query(query)
-    search_query = f"{aq} AND cat:{category}" if category else aq
-    params = _url_parse.urlencode({
-        "search_query": search_query,
-        "start":        0,
-        "max_results":  max_results,
-        "sortBy":       "relevance",
-        "sortOrder":    "descending",
-    })
-    url = f"{ARXIV_API}?{params}"
-    try:
-        req = _url_request.Request(url, headers={"User-Agent": "SIFTA-BioResearch/1.0"})
-        with _url_request.urlopen(req, context=_ssl_ctx(), timeout=FETCH_TIMEOUT) as resp:
-            xml_bytes = resp.read()
-    except Exception as exc:
-        return [{"error": str(exc)}]
-
-    entries: List[Dict[str, Any]] = []
-    try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError as exc:
-        return [{"error": f"XML parse failed: {exc}"}]
-
-    for entry in root.findall(f"{{{ATOM_NS}}}entry"):
-        def _text(tag: str, ns: str = ATOM_NS) -> str:
-            el = entry.find(f"{{{ns}}}{tag}")
-            return el.text.strip() if el is not None and el.text else ""
-
-        arxiv_id = _text("id").split("/abs/")[-1].strip()
-        title    = re.sub(r"\s+", " ", _text("title"))
-        abstract = re.sub(r"\s+", " ", _text("summary"))
-        published = _text("published")[:10]
-
-        authors = [
-            a.find(f"{{{ATOM_NS}}}name").text.strip()
-            for a in entry.findall(f"{{{ATOM_NS}}}author")
-            if a.find(f"{{{ATOM_NS}}}name") is not None
-        ]
-
-        # DOI link
-        doi = ""
-        for link in entry.findall(f"{{{ATOM_NS}}}link"):
-            if link.get("title") == "doi":
-                doi = link.get("href", "")
-                break
-        if not doi:
-            doi = f"arxiv:{arxiv_id}"
-
-        entries.append({
-            "arxiv_id":  arxiv_id,
-            "title":     title,
-            "abstract":  abstract,
-            "authors":   authors[:5],
-            "published": published,
-            "doi":       doi,
-            "url":       f"https://arxiv.org/abs/{arxiv_id}",
+    last_entries: List[Dict[str, Any]] = []
+    for aq in _arxiv_query_candidates(query):
+        search_query = f"{aq} AND cat:{category}" if category else aq
+        params = _url_parse.urlencode({
+            "search_query": search_query,
+            "start":        0,
+            "max_results":  max_results,
+            "sortBy":       "relevance",
+            "sortOrder":    "descending",
         })
+        url = f"{ARXIV_API}?{params}"
+        try:
+            req = _url_request.Request(url, headers={"User-Agent": "SIFTA-BioResearch/1.0"})
+            with _url_request.urlopen(req, context=_ssl_ctx(), timeout=FETCH_TIMEOUT) as resp:
+                xml_bytes = resp.read()
+        except Exception as exc:
+            return [{"error": str(exc)}]
 
-    return entries
+        entries: List[Dict[str, Any]] = []
+        try:
+            root = ET.fromstring(xml_bytes)
+        except ET.ParseError as exc:
+            return [{"error": f"XML parse failed: {exc}"}]
+
+        for entry in root.findall(f"{{{ATOM_NS}}}entry"):
+            def _text(tag: str, ns: str = ATOM_NS) -> str:
+                el = entry.find(f"{{{ns}}}{tag}")
+                return el.text.strip() if el is not None and el.text else ""
+
+            arxiv_id = _text("id").split("/abs/")[-1].strip()
+            title    = re.sub(r"\s+", " ", _text("title"))
+            abstract = re.sub(r"\s+", " ", _text("summary"))
+            published = _text("published")[:10]
+
+            authors = [
+                a.find(f"{{{ATOM_NS}}}name").text.strip()
+                for a in entry.findall(f"{{{ATOM_NS}}}author")
+                if a.find(f"{{{ATOM_NS}}}name") is not None
+            ]
+
+            # DOI link
+            doi = ""
+            for link in entry.findall(f"{{{ATOM_NS}}}link"):
+                if link.get("title") == "doi":
+                    doi = link.get("href", "")
+                    break
+            if not doi:
+                doi = f"arxiv:{arxiv_id}"
+
+            entries.append({
+                "arxiv_id":  arxiv_id,
+                "title":     title,
+                "abstract":  abstract,
+                "authors":   authors[:5],
+                "published": published,
+                "doi":       doi,
+                "url":       f"https://arxiv.org/abs/{arxiv_id}",
+            })
+
+        last_entries = entries
+        if entries:
+            return entries
+
+    return last_entries
 
 
 # ═════════════════════════════════════════════════════════════════════════════

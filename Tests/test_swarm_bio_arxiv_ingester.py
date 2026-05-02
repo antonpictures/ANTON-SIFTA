@@ -42,6 +42,13 @@ _ATOM_ENTRY = """\
   </entry>
 </feed>"""
 
+_ATOM_EMPTY = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title>arXiv Query Results</title>
+</feed>"""
+
 
 class _MockResponse:
     def __init__(self, data: bytes):
@@ -58,7 +65,10 @@ class _MockResponse:
 
 def test_arxiv_search_parses_entries(monkeypatch):
     import System.swarm_bio_arxiv_ingester as mod
-    def _mock_urlopen(req, timeout=None):
+    seen = {}
+    def _mock_urlopen(req, *args, **kwargs):
+        seen["url"] = req.full_url
+        seen["kwargs"] = kwargs
         return _MockResponse(_ATOM_ENTRY.encode())
     monkeypatch.setattr(mod._url_request, "urlopen", _mock_urlopen)
     entries = mod._arxiv_search("allostatic load", category="q-bio.NC", max_results=5)
@@ -67,6 +77,39 @@ def test_arxiv_search_parses_entries(monkeypatch):
     assert entries[0]["doi"] == "https://doi.org/10.0001/test.2401"
     assert entries[0]["arxiv_id"] == "2401.00001v1"
     assert "A. McEwen" in entries[0]["authors"]
+    assert "cat%3Aq-bio.NC" in seen["url"]
+    assert "context" in seen["kwargs"]
+
+
+def test_build_arxiv_query_uses_all_terms_not_title_phrase():
+    import System.swarm_bio_arxiv_ingester as mod
+    q = mod._build_arxiv_query("allostatic load and homeostasis in stress")
+    assert "all:allostatic" in q
+    assert "all:homeostasis" in q
+    assert "all:and" not in q
+    assert "ti:" not in q
+
+
+def test_arxiv_search_falls_back_when_precise_query_empty(monkeypatch):
+    import System.swarm_bio_arxiv_ingester as mod
+    calls = []
+    def _mock_urlopen(req, *args, **kwargs):
+        calls.append(req.full_url)
+        if len(calls) == 1:
+            return _MockResponse(_ATOM_EMPTY.encode())
+        return _MockResponse(_ATOM_ENTRY.encode())
+    monkeypatch.setattr(mod._url_request, "urlopen", _mock_urlopen)
+
+    entries = mod._arxiv_search(
+        "allostatic load homeostasis stress neuroendocrine adaptation",
+        category="q-bio.NC",
+        max_results=2,
+    )
+
+    assert len(entries) == 2
+    assert len(calls) == 2
+    assert "all%3Aallostatic+AND+all%3Aload+AND+all%3Ahomeostasis+AND+all%3Astress" in calls[0]
+    assert "all%3Aallostatic+AND+all%3Aload+AND+all%3Ahomeostasis" in calls[1]
 
 
 # ── 2. ingest_arxiv_query creates bio_papers.jsonl rows ──────────────────────
@@ -80,7 +123,7 @@ def test_ingest_arxiv_query_creates_chunks(tmp_path, monkeypatch):
     monkeypatch.setattr(brl, "BIO_SKILLS",      tmp_path / "bio_skills.jsonl")
     monkeypatch.setattr(brl, "BIO_EXPERIMENTS", tmp_path / "bio_experiments.jsonl")
     monkeypatch.setattr(brl, "TOURNAMENT_LOG",  tmp_path / "bio_tournament.jsonl")
-    def _mock_urlopen(req, timeout=None):
+    def _mock_urlopen(req, *args, **kwargs):
         return _MockResponse(_ATOM_ENTRY.encode())
     monkeypatch.setattr(mod._url_request, "urlopen", _mock_urlopen)
 
@@ -144,7 +187,7 @@ def test_ingest_doi_empty_returns_empty(tmp_path, monkeypatch):
 
 def test_arxiv_search_network_error(monkeypatch):
     import System.swarm_bio_arxiv_ingester as mod
-    def _mock_fail(req, timeout=None):
+    def _mock_fail(req, *args, **kwargs):
         raise ConnectionError("no network")
     monkeypatch.setattr(mod._url_request, "urlopen", _mock_fail)
     entries = mod._arxiv_search("allostatic load", max_results=3)
@@ -174,7 +217,7 @@ def test_receipt_schema(monkeypatch, tmp_path):
     monkeypatch.setattr(brl, "BIO_SKILLS",      tmp_path / "bio_skills.jsonl")
     monkeypatch.setattr(brl, "BIO_EXPERIMENTS", tmp_path / "bio_experiments.jsonl")
     monkeypatch.setattr(brl, "TOURNAMENT_LOG",  tmp_path / "bio_tournament.jsonl")
-    def _mock_urlopen(req, timeout=None):
+    def _mock_urlopen(req, *args, **kwargs):
         return _MockResponse(_ATOM_ENTRY.encode())
     monkeypatch.setattr(mod._url_request, "urlopen", _mock_urlopen)
     receipt = mod.ingest_arxiv_query("test", max_results=2, run_claim_extraction=False)
