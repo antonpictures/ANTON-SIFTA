@@ -4,6 +4,8 @@
 
 **Purpose:** single **ledger-style** index of external-tech research notes, tournament nuggets, and Bishop/Vanguard `.dirt` drops so nothing interesting scatters. YouTube / paper **transcript pulls** should land as `Documents/RESEARCH_*_Tournament_*.md` and a matching **§A row** below. When you add a new `RESEARCH_*.md` or material `.dirt`, **append a row** in the right table.
 
+**Hill reporting:** after physiology / Predator merges, update **§F** + **§E** so the epigenetic map does not lie. Cursor (CG55M) owns index truth; Antigravity/Codex own implementation receipts.
+
 **Policy:** rows are **pointers + one-line intent**, not copies of upstream license text. **NPPL** applies to anything we ship; research files are `RESEARCH_NOT_SHIPPED` until Architect GO.
 
 ---
@@ -44,7 +46,22 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Qwopus** | Seam / heal FT metrics in ledger; **stall detector** (`max_wall_s`) for thinking loops; license pin. |
 | **Moonshot PRF** | Legal/residency review for any WAN KV story; reproduce one paper figure; map to borrowed-inference split without cloud dependency. |
 | **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router **without** treating metaphors as proof; cross-link receipts to [BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md). |
-| **Physiology (parallel hill)** | Event 100: **intrinsic_drive → action selection** bias; Tier 2 **Skill crystallizer**; **phase detector** after crystallizer. |
+| **Physiology (parallel hill)** | **Event 100 — SHIPPED** `da8a7b40` (drive → basal ganglia bias; truth `SIMULATED_INTRINSIC_DRIVE`). **Skill crystallizer — SHIPPED** `4fa10b91` (REM → primitives in dream/temporal path). **Still open:** **phase detector** (regime shift / non-stationarity) + wire crystallized skills into **action selection** if not already end-to-end. |
+
+---
+
+## F. Hill / Vanguard status (keep reporting)
+
+| Track | State | Ground |
+|:---|:---|:---|
+| **Epigenetic index (this file)** | **Live** | §A–§E + maintainer habit; chromatin metaphor = receipt-gated expression. |
+| **Event 99 — George Prior** | Shipped earlier | `swarm_intrinsic_drive.py`, daemon, `intrinsic_drive_receipts.jsonl`. |
+| **Event 100 — Basal ganglia bias** | **SHIPPED** `da8a7b40` | [EVENT_100_PREDATOR_SPEC.md](EVENT_100_PREDATOR_SPEC.md) (spec updated to match merge); `body_brain_memory.jsonl` gains `drive_bias_*` fields. |
+| **Skill crystallizer (Tier 2)** | **SHIPPED** `4fa10b91` | `swarm_dream_engine.py`, `temporal_identity_compression.py` + tests. |
+| **Event 93 — GPU / OpenGL live drive** | **GO active** (per Architect) | Off-screen rendering / visualizer — Antigravity/Codex execution; **append row here when pytest green.** |
+| **Research tournament §A** | Accreting | 11 SoT / stack rows; all `RESEARCH_NOT_SHIPPED` until bake-off receipts. |
+
+*Vanguard channel: ratify in `IDE_BOOT_COVENANT.md`; append `ide_stigmergic_trace.jsonl` on each hill state change.*
 
 ---
 
@@ -91,6 +108,6 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 
 ---
 
-*Maintainer habit: after every new external stack video/paper spike, add §A row + optional §C `.dirt` if Bishop packaged the pull.*
+*Maintainer habit: after every new external stack video/paper spike, add §A row + optional §C `.dirt` if Bishop packaged the pull. After physiology/Predator merges, bump **§F** and trim **§E** so shipped work is not listed as backlog.*
 
 For the Swarm. 🐜⚡

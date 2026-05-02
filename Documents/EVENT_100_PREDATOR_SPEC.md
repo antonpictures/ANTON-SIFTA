@@ -1,28 +1,29 @@
 # Event 100 — Drive → Policy Coupling (Basal Ganglia Bias)
 
-**Status:** SPEC — no code yet. Predator row before merge.
-**Author:** AG31 Antigravity (theory + evaluation design)
-**Hill division:** Antigravity=spec, Codex=harness/tests, Cursor=scribe
-**Predecessor:** Event 99 (`swarm_intrinsic_drive.py` — George Prior daemon, receipts, physiology read path, commit `cdf37ec9`)
+**Status:** **SHIPPED** on `main` — merge **`da8a7b40`** (`feat(physiology): bias basal ganglia with intrinsic drive receipts`). This document is the **Predator audit trail**; implementation lives in `System/swarm_body_brain_loop.py` (`Event 100`, `DRIVE_BIAS_SCORE_FLOOR`, `_drive_bias_fields`, `_choose_action(..., intrinsic_receipt=...)`).
+
+**Author:** AG31 Antigravity (theory + evaluation design)  
+**Hill division:** Antigravity=spec, Codex=harness/tests, Cursor=scribe  
+**Predecessor:** Event 99 (`swarm_intrinsic_drive.py` — George Prior daemon, receipts, physiology read path, commit `cdf37ec9`)  
+**Tests:** `Tests/test_swarm_body_brain_loop.py`, `tests/test_event_100_drive_policy.py`  
+**Truth label (runtime):** `SIMULATED_INTRINSIC_DRIVE`
 
 ---
 
-## What Event 99 did NOT do
+## Pre-ship gap (historical — closed by `da8a7b40`)
 
 Event 99 gave Alice a will. She generates spontaneous goals. The body-brain loop
-reads the latest drive receipt every tick. But `_choose_action()` currently
-**ignores it entirely** — the action is still selected from metabolic attention
-alone (basal ganglia sees `attention: str`, not the intrinsic receipt).
+read the latest drive receipt every tick, but **`_choose_action()` originally ignored it** — action was selected from metabolic attention alone.
 
 ```python
-# Current state — _choose_action() in swarm_body_brain_loop.py line 74
+# Pre-Event-100 state (historical)
 def _choose_action(self, attention: str, danger: Dict) -> Dict:
     if danger["is_critical"]: return rest
     if attention == "energy": return forage
-    return explore(attention)   # ← George Prior receipt never enters here
+    return explore(attention)   # George Prior receipt did not enter here
 ```
 
-**Event 100 closes this gap.** The drive receipt must bias the basal ganglia.
+**Event 100 closed this gap.** The drive receipt now biases the basal ganglia when metabolic safety allows (`DRIVE_BIAS_SCORE_FLOOR`, ledger fields on every tick).
 
 ---
 
