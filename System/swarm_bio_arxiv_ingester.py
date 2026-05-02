@@ -19,6 +19,11 @@ Biology search categories used:
 
 Truth label: BIOSIFTA_ARXIV_INGESTED
 
+Fixes (v2):
+  - Query format: use `all:word AND all:word` (not `ti:phrase`) — arXiv Atom
+    API returns 0 results for multi-word `ti:` phrases without quoting.
+  - SSL: use certifi bundle for macOS Python 3.13 system-cert gap.
+
 Refs:
   arXiv Atom API: https://arxiv.org/help/api/user-manual
   Meredith & Stein (1986) for multisensory salience context.
@@ -27,12 +32,36 @@ from __future__ import annotations
 
 import json
 import re
+import ssl
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib import parse as _url_parse
 from urllib import request as _url_request
+
+
+def _ssl_ctx() -> ssl.SSLContext:
+    """Return an SSL context using certifi bundle (macOS Python 3.13 fix)."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()  # system default fallback
+
+
+def _build_arxiv_query(phrase: str) -> str:
+    """
+    Convert a multi-word phrase to arXiv `all:` boolean query.
+    'allostatic load homeostasis' → 'all:allostatic AND all:load AND all:homeostasis'
+    Removes stopwords to keep query tight.
+    """
+    STOPWORDS = {"and", "or", "the", "a", "an", "of", "in", "on", "for",
+                 "to", "with", "under", "via", "from", "by", "at"}
+    words = [w for w in phrase.lower().split() if w not in STOPWORDS and len(w) > 2]
+    if not words:
+        return "all:biology"
+    return " AND ".join(f"all:{w}" for w in words[:6])  # arXiv caps complex queries
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
@@ -97,8 +126,10 @@ def _arxiv_search(
     Query arXiv Atom API. Returns list of entry dicts with:
       arxiv_id, title, abstract, authors, published, doi, url
     """
+    aq = _build_arxiv_query(query)
+    search_query = f"{aq} AND cat:{category}" if category else aq
     params = _url_parse.urlencode({
-        "search_query": f"ti:{query} AND cat:{category}",
+        "search_query": search_query,
         "start":        0,
         "max_results":  max_results,
         "sortBy":       "relevance",
@@ -107,7 +138,7 @@ def _arxiv_search(
     url = f"{ARXIV_API}?{params}"
     try:
         req = _url_request.Request(url, headers={"User-Agent": "SIFTA-BioResearch/1.0"})
-        with _url_request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+        with _url_request.urlopen(req, context=_ssl_ctx(), timeout=FETCH_TIMEOUT) as resp:
             xml_bytes = resp.read()
     except Exception as exc:
         return [{"error": str(exc)}]
