@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib import request as _urllib_request
 
+from System.jsonl_file_lock import append_line_locked, read_text_locked
+
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
@@ -45,15 +47,18 @@ OLLAMA_TIMEOUT  = 90
 
 def _append(path: Path, row: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, default=str) + "\n")
+    append_line_locked(
+        path,
+        json.dumps(row, ensure_ascii=False, default=str, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _tail(path: Path, n: int = 100) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
     rows = []
-    for line in path.read_text("utf-8", errors="replace").splitlines()[-n:]:
+    for line in read_text_locked(path, encoding="utf-8", errors="replace").splitlines()[-n:]:
         line = line.strip()
         if line:
             try:
@@ -88,6 +93,59 @@ def make_claim(
         "paper_chunk_hash": paper_chunk_hash,
         "model_used":       model_used,
     }
+
+
+def make_experiment_proposal(
+    *,
+    claim_id: str,
+    claim: str,
+    organ_mapping: str,
+    test_proposal: str,
+    source: str = "",
+    paper_chunk_hash: str = "",
+    model_used: str = "",
+    status: str = "proposed",
+) -> Dict[str, Any]:
+    """Create one pytest-level experiment proposal from a BioSIFTA claim.
+
+    This row is deliberately not a proof that the organ exists. It is a
+    receipt-backed hypothesis that a later implementation can promote only
+    after code and tests land.
+    """
+    return {
+        "experiment_id":     str(uuid.uuid4())[:12],
+        "ts":                time.time(),
+        "truth_label":       TRUTH_LABEL,
+        "claim_id":          claim_id,
+        "claim":             claim,
+        "source":            source,
+        "organ_mapping":     organ_mapping,
+        "test_proposal":     test_proposal,
+        "status":            status,
+        "paper_chunk_hash":  paper_chunk_hash,
+        "model_used":        model_used,
+        "truth_note":        "PROPOSED_TEST_ONLY__NOT_A_SHIPPED_ORGAN",
+    }
+
+
+def write_experiment_proposal(
+    claim_row: Dict[str, Any],
+    *,
+    append: bool = True,
+) -> Dict[str, Any]:
+    """Write one bio_experiments.jsonl row derived from a claim row."""
+    row = make_experiment_proposal(
+        claim_id=str(claim_row.get("claim_id", "")),
+        claim=str(claim_row.get("claim", "")),
+        organ_mapping=str(claim_row.get("organ_mapping", "")),
+        test_proposal=str(claim_row.get("test", claim_row.get("test_proposal", ""))),
+        source=str(claim_row.get("source", "")),
+        paper_chunk_hash=str(claim_row.get("paper_chunk_hash", "")),
+        model_used=str(claim_row.get("model_used", "")),
+    )
+    if append:
+        _append(BIO_EXPERIMENTS, row)
+    return row
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -258,7 +316,10 @@ def process_paper_chunk(
         model_used    = model,
     )
     claim["confidence"] = parsed.get("confidence", "low")
+    experiment = write_experiment_proposal(claim, append=False)
+    claim["experiment_id"] = experiment["experiment_id"]
     _append(BIO_CLAIMS, claim)
+    _append(BIO_EXPERIMENTS, experiment)
     return claim
 
 
@@ -416,6 +477,24 @@ def register_bio_skill(
     }
     _append(BIO_SKILLS, skill)
     return skill
+
+
+__all__ = [
+    "BIO_CLAIMS",
+    "BIO_EXPERIMENTS",
+    "BIO_PAPERS",
+    "BIO_SKILLS",
+    "TOURNAMENT_LOG",
+    "TRUTH_LABEL",
+    "ingest_paper",
+    "make_claim",
+    "make_experiment_proposal",
+    "process_paper_chunk",
+    "register_bio_skill",
+    "retrieve_papers",
+    "run_bio_tournament",
+    "write_experiment_proposal",
+]
 
 
 # ═════════════════════════════════════════════════════════════════════════════

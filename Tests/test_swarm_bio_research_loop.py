@@ -69,6 +69,15 @@ def test_process_paper_chunk_dry_run(tmp_path, monkeypatch):
     rows = [json.loads(l) for l in (tmp_path / "bio_claims.jsonl").read_text().splitlines()]
     assert len(rows) == 1
     assert rows[0]["claim_id"] == claim["claim_id"]
+    assert rows[0]["experiment_id"] == claim["experiment_id"]
+    experiments = [
+        json.loads(l)
+        for l in (tmp_path / "bio_experiments.jsonl").read_text().splitlines()
+    ]
+    assert len(experiments) == 1
+    assert experiments[0]["claim_id"] == claim["claim_id"]
+    assert experiments[0]["truth_note"] == "PROPOSED_TEST_ONLY__NOT_A_SHIPPED_ORGAN"
+    assert claim["experiment_id"] == experiments[0]["experiment_id"]
 
 
 # ── 4. TF-IDF retrieval returns correct ranking ───────────────────────────────
@@ -144,7 +153,32 @@ def test_register_bio_skill(tmp_path, monkeypatch):
     assert rows[0]["truth_label"] == "BIOSIFTA_RESEARCH_EVENT_105"
 
 
-# ── 8. Chunk overlap produces correct word count ──────────────────────────────
+# ── 8. experiment proposal can be created without appending ──────────────────
+
+def test_write_experiment_proposal_append_false(tmp_path, monkeypatch):
+    import System.swarm_bio_research_loop as mod
+    monkeypatch.setattr(mod, "BIO_EXPERIMENTS", tmp_path / "bio_experiments.jsonl")
+
+    exp = mod.write_experiment_proposal(
+        {
+            "claim_id": "claim-1",
+            "claim": "Repair should dominate during collapse.",
+            "source": "synthetic",
+            "organ_mapping": "motor_policy",
+            "test": "assert repair wins under CRITICAL_COLLAPSE",
+            "paper_chunk_hash": "abc",
+            "model_used": "dry_run",
+        },
+        append=False,
+    )
+
+    assert exp["claim_id"] == "claim-1"
+    assert exp["status"] == "proposed"
+    assert exp["truth_note"] == "PROPOSED_TEST_ONLY__NOT_A_SHIPPED_ORGAN"
+    assert not (tmp_path / "bio_experiments.jsonl").exists()
+
+
+# ── 9. Chunk overlap produces correct word count ──────────────────────────────
 
 def test_ingest_chunk_overlap(tmp_path, monkeypatch):
     import System.swarm_bio_research_loop as mod
