@@ -33,6 +33,13 @@ LEDGER = STATE_DIR / "media_ingress_gate.jsonl"
 AMBIENT_CONTEXT_FILE = STATE_DIR / "ambient_media_context.json"
 
 DIRECT_ADDRESS_RE = re.compile(r"\b(?:alice|george|architect)\b", re.IGNORECASE)
+# Short control words while YouTube plays — still the Architect, not the video track.
+_ARCHITECT_CONTROL_UTTERANCE_RE = re.compile(
+    r"^\s*(?:"
+    r"process|proceed|continue|pause|resume|stop|wait|listen|hey"
+    r")\s*[.!?…]?\s*$",
+    re.IGNORECASE,
+)
 DIRECT_REQUEST_RE = re.compile(
     r"^\s*(?:"
     r"can you|could you|will you|please|pls|tell me|show me|open|run|fix|"
@@ -45,13 +52,13 @@ DIRECT_REQUEST_RE = re.compile(
 MEDIA_FOCUS_RE = re.compile(
     r"\b(?:youtube|caption_status|caption_excerpt|watching this youtube|"
     r"frontmost.*youtube|video_id|the architect is physically.*watching|"
-    r"background_media|ambient_tv|shared_media|television.*youtube|tv.*youtube|"
+    r"background_media|ambient_media_context|ambient_tv|shared_media|television.*youtube|tv.*youtube|"
     r"reality_frame|fictional_media_clip|dialogue_boundary|movie|film|"
     r"cinema|scene|co[-_ ]?watch)\b",
     re.IGNORECASE,
 )
 AMBIENT_TV_RE = re.compile(
-    r"\b(?:background_media|ambient_media(?:_youtube)?|ambient_tv|shared_media|television.*youtube|tv.*youtube)\b",
+    r"\b(?:background_media|ambient_media_context|ambient_media(?:_youtube)?|ambient_tv|shared_media|television.*youtube|tv.*youtube)\b",
     re.IGNORECASE,
 )
 NARRATION_RE = re.compile(
@@ -229,6 +236,23 @@ def classify_spoken_ingress(
         }
 
     if AMBIENT_TV_RE.search(context):
+        # Owner-declared background YouTube is a strong prior that *most* long lines
+        # are room bleed — but one-word commands and very short interjections are
+        # almost always the Architect, not Jensen's keynote.
+        wc = _word_count(clean)
+        conf = float(stt_conf or 0.0)
+        if _ARCHITECT_CONTROL_UTTERANCE_RE.match(clean):
+            return {
+                "route": "direct",
+                "reason": "control_token_under_declared_ambient_tv",
+                "confidence": 0.95,
+            }
+        if wc <= 4 and conf >= 0.38:
+            return {
+                "route": "direct",
+                "reason": "short_utterance_under_declared_ambient_tv",
+                "confidence": 0.86,
+            }
         return {
             "route": "ambient_media",
             "reason": "owner_declared_background_media_youtube",
