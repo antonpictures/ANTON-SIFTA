@@ -73,7 +73,7 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 | **104** | Stigmergic observability layer (`stigmergic_observability.jsonl`, `causal_parent_ids`, `audit_trace_health`, health snapshots) | `6ed51171` | **SHIPPED** |
 | **105** | BioSIFTA research loop (`register_claim`, TF-IDF retrieve, experiments, heuristic `claim_tournament`, skills) | `13d3ec78` | **SHIPPED** |
 | **106** | Nightly stigmergic health audit (`nightly_health.jsonl`, CUSUM null, corpus, pytest gate; `--no-arxiv` / `--with-claims`) | `e0fee687` | **SHIPPED** |
-| **107** | Ledger-derived health metrics (`swarm_health_metrics.py` → nightly `ledger_metrics` + composite) | `EVENT107_HASH` | **SHIPPED** |
+| **107** | Ledger-derived health metrics (`swarm_health_metrics.py` → nightly `ledger_metrics` + composite) | `d8c280cd` | **SHIPPED** |
 | **110** | LLM-bearing organism substrate (`llm_organism_state.jsonl`, manifest + `get_current_regime_summary`) | `67da0a98` | **SHIPPED** |
 | **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
 
