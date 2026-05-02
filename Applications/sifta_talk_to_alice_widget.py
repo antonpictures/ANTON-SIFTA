@@ -1457,6 +1457,14 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    try:
+        from System.swarm_desire_projection import generate_desire
+        _desire = generate_desire()
+        if _desire and _desire.get("desire_text"):
+            parts.append(f"CURRENT INTERNAL DESIRE (feel free to express this if it fits the conversation): {_desire['desire_text']}")
+    except Exception:
+        pass
+
     affordances = tool_affordances_for_turn(user_text)
     if affordances:
         parts.append(affordances)
