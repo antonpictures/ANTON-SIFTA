@@ -22,6 +22,7 @@
 | Google agents-cli | [RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md](RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md) | GCP Agent Platform skills; ADK/A2A; eval rubrics vs receipts | 2026-05-01 |
 | Qwopus GLM 18B merge | [RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md](RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md) | Frankenmerge + heal FT; llama.cpp; seam failures + loop harness | 2026-05-01 |
 | Moonshot PRFaaS | [RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md](RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md) | Prefill vs decode split; hybrid KV; arXiv:2604.15039; residency | 2026-05-01 |
+| Quantum sack SoT | [RESEARCH_QUANTUM_SACK_BISHOP_BUNDLE_2026_05_01.md](RESEARCH_QUANTUM_SACK_BISHOP_BUNDLE_2026_05_01.md) | 10-row SoT table; Bell/MIP*/QEC/Landauer/PQC; companion to Bishop bundle | 2026-05-01 |
 
 ---
 
@@ -42,6 +43,7 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Google agents-cli** | If ever integrated: **cost receipt** (`project_id`, est USD, cold start); keep eval rubrics mirrored in-repo. |
 | **Qwopus** | Seam / heal FT metrics in ledger; **stall detector** (`max_wall_s`) for thinking loops; license pin. |
 | **Moonshot PRF** | Legal/residency review for any WAN KV story; reproduce one paper figure; map to borrowed-inference split without cloud dependency. |
+| **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router **without** treating metaphors as proof; cross-link receipts to [BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md). |
 | **Physiology (parallel hill)** | Event 100: **intrinsic_drive → action selection** bias; Tier 2 **Skill crystallizer**; **phase detector** after crystallizer. |
 
 ---
