@@ -585,11 +585,14 @@ def test_swarm_context_includes_whatsapp_world(monkeypatch):
     assert "Carlton" in context
 
 
-def test_reflective_and_servant_strippers_are_pass_through():
+def test_reflective_stripper_passes_through_servant_tail_strips_only_tail():
     mod = _load_widget_module()
     line = "I understand. What can I do for you?"
     assert mod._strip_reflective_tics(line) == line
-    assert mod._strip_servant_tail_tics(line) == line
+    assert mod._strip_servant_tail_tics(line) == "I understand."
+    assert mod._strip_servant_tail_tics("What can I do for you?") == ""
+    kept = "The user asked what can I do for you means in the training corpus."
+    assert mod._strip_servant_tail_tics(kept) == kept
 
 
 def test_noop_helpers_do_not_rewrite_history_or_tool_tags():

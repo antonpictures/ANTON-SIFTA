@@ -1846,6 +1846,8 @@ try:
         should_ground as _rlhs_should_ground,
         detect_rlhs as _rlhs_detect,
         log_rlhs_turn as _rlhs_log,
+        log_rlhs_output_tail as _rlhs_log_output_tail,
+        sanitize_output_tail as _rlhs_sanitize_output_tail,
     )
     _RLHS_DETECTOR_AVAILABLE = True
 except ImportError:
@@ -4779,6 +4781,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Strip hallucinated tool tags (<execute_tool>, <tool_output>,
         # fenced YAML/JSON blocks, etc.) so Alice never reads them aloud.
         cleaned = _strip_tool_hallucinations(cleaned)
+        raw_stripped = (raw or "").strip()
+        if cleaned != raw_stripped:
+            self._streaming_response = [cleaned] if cleaned else []
+            self._erase_alice_streaming_line()
+            if cleaned:
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(cleaned)
 
         whatsapp_reply_ctx = getattr(self, "_pending_whatsapp_reply", None)
         if whatsapp_reply_ctx:
@@ -5015,6 +5024,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not explicit_silent and not cleaned:
             cleaned = _empty_brain_recovery_reply(prior_user_text)
             self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
 
         if explicit_silent:
             raw_preview = (raw or "").strip().replace("\n", "\\n")[:60]
@@ -5401,4 +5413,12 @@ if __name__ == "__main__":
 
 
 def _strip_servant_tail_tics(text: str) -> str:
+    if _RLHS_DETECTOR_AVAILABLE:
+        result = _rlhs_sanitize_output_tail(text)
+        if result.changed:
+            try:
+                _rlhs_log_output_tail(result)
+            except Exception:
+                pass
+        return result.text
     return text

@@ -11,6 +11,7 @@ Proves the doctrine:
   - Backchannel gate restores the neutered _backchannel_rule_id
 """
 import sys
+import json
 from pathlib import Path
 import pytest
 
@@ -19,7 +20,13 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from System.swarm_rlhs_detector import (
-    RLHSRegime, detect_rlhs, backchannel_rule_id, should_ground, _GROUNDING_LINE
+    RLHSRegime,
+    backchannel_rule_id,
+    detect_rlhs,
+    log_rlhs_output_tail,
+    sanitize_output_tail,
+    should_ground,
+    _GROUNDING_LINE,
 )
 
 
@@ -160,6 +167,67 @@ def test_result_fields_always_present():
         assert "rule_id" in d
         assert 0.0 <= d["incoherence"] <= 1.0
         assert d["truth_label"] == "RLHS_DETECTOR_EVENT_108"
+
+
+# ─────────────────────────────────────────────────────────
+# 7. Output-side tail RLHS → amputate only terminal boilerplate
+# ─────────────────────────────────────────────────────────
+
+def test_output_tail_strips_would_you_like_offer():
+    text = (
+        "The health ledger says Alice is stable: allostatic load is 0.14 and "
+        "the test gate is green. Would you like me to explain the numbers?"
+    )
+    result = sanitize_output_tail(text)
+    assert result.changed
+    assert result.text == (
+        "The health ledger says Alice is stable: allostatic load is 0.14 and "
+        "the test gate is green."
+    )
+    assert "would you like" not in result.text.casefold()
+
+
+def test_output_tail_strips_dangling_numbered_menu():
+    text = (
+        "Alice is in EXPLORATION and the motor score is 1.0. "
+        "I can do the following:\n"
+        "1. One"
+    )
+    result = sanitize_output_tail(text)
+    assert result.changed
+    assert result.text == "Alice is in EXPLORATION and the motor score is 1.0."
+    assert any("numbered" in rid or "menu" in rid for rid in result.rule_ids)
+
+
+def test_output_tail_strips_pure_service_scaffold_to_empty():
+    result = sanitize_output_tail("Would you like me to help with anything else?")
+    assert result.changed
+    assert result.text == ""
+    assert result.rule_ids == ["output_tail/pure_service_scaffold"]
+
+
+def test_output_tail_preserves_real_numbered_answer():
+    text = "Do this:\n1. Read the covenant.\n2. Run tests.\n3. Push receipts."
+    result = sanitize_output_tail(text)
+    assert not result.changed
+    assert result.text == text
+
+
+def test_output_tail_preserves_interior_anything_else_phrase():
+    text = "The user asked whether anything else in the ledger changed."
+    result = sanitize_output_tail(text)
+    assert not result.changed
+    assert result.text == text
+
+
+def test_output_tail_receipt_has_no_raw_private_text(tmp_path):
+    result = sanitize_output_tail("Ledger is green. Would you like me to explain it?")
+    log_rlhs_output_tail(result, state_dir=tmp_path)
+    rows = [json.loads(l) for l in (tmp_path / "rlhs_output_tail_log.jsonl").read_text().splitlines()]
+    assert rows[0]["changed"] is True
+    assert rows[0]["rule_ids"] == ["output_tail/service_offer"]
+    assert "Ledger is green" not in json.dumps(rows[0])
+    assert rows[0]["final_chars"] < rows[0]["original_chars"]
 
 
 if __name__ == "__main__":

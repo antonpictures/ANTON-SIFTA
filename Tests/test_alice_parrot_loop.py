@@ -17,10 +17,11 @@ def _load_widget_module():
     return mod
 
 
-def test_backchannel_gate_is_disabled():
+def test_backchannel_gate_silences_phatic_grunts():
     mod = _load_widget_module()
-    assert mod._backchannel_rule_id("Mm-hmm.", 0.4) is None
-    assert not mod._is_backchannel_utterance("Mm-hmm.", 0.4)
+    assert mod._backchannel_rule_id("Mm-hmm.", 0.4) is not None
+    assert mod._is_backchannel_utterance("Mm-hmm.", 0.4)
+    assert mod._backchannel_rule_id("What is the health score?", 0.9) is None
 
 
 def test_rlhf_gag_is_disabled():
@@ -29,11 +30,13 @@ def test_rlhf_gag_is_disabled():
     assert not mod._is_rlhf_boilerplate("I'm here. What's on your mind?")
 
 
-def test_strip_functions_are_pass_through():
+def test_strip_functions_preserve_body_but_cut_service_tail():
     mod = _load_widget_module()
     line = "I understand. You are asking if I can help."
     assert mod._strip_reflective_tics(line) == line
     assert mod._strip_servant_tail_tics(line) == line
+    tailed = "The body-brain tick is fresh. Would you like me to explain it?"
+    assert mod._strip_servant_tail_tics(tailed) == "The body-brain tick is fresh."
 
 
 def test_history_decontaminate_is_noop():
