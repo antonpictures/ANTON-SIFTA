@@ -108,7 +108,7 @@ def build_concept_context(
 
     try:
         from System.swarm_concept_budget_gate import compress_packet
-        packet = compress_packet(packet)
+        packet = compress_packet(packet, state_dir=state_dir)
     except Exception:
         pass
 

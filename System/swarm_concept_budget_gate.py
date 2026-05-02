@@ -24,7 +24,18 @@ def score_row(row: dict[str, Any]) -> float:
     density = min(1.0, len(json.dumps(row, default=str)) / 800.0)
     return 0.55 * freshness + 0.30 * truth + 0.15 * density
 
-def compress_packet(packet: dict[str, Any], max_chars: int = MAX_CHARS) -> dict[str, Any]:
+def _budget_log(state_dir: Path | None = None) -> Path:
+    root = Path(state_dir) if state_dir is not None else STATE
+    return root / "concept_context_budget.jsonl"
+
+
+def compress_packet(
+    packet: dict[str, Any],
+    max_chars: int = MAX_CHARS,
+    *,
+    state_dir: Path | None = None,
+    write_receipt: bool = True,
+) -> dict[str, Any]:
     sources = packet.get("sources", {})
     flat = []
 
@@ -56,12 +67,14 @@ def compress_packet(packet: dict[str, Any], max_chars: int = MAX_CHARS) -> dict[
         "packet_hash": hashlib.sha256(json.dumps(packet, sort_keys=True, default=str).encode()).hexdigest()[:16],
     }
 
-    STATE.mkdir(parents=True, exist_ok=True)
-    with BUDGET_LOG.open("a", encoding="utf-8") as f:
-        f.write(json.dumps({
-            "ts": time.time(),
-            "truth_label": "CONCEPT_BUDGET_GATE",
-            **packet["budget"],
-        }, sort_keys=True) + "\n")
+    if write_receipt:
+        log = _budget_log(state_dir)
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "ts": time.time(),
+                "truth_label": "CONCEPT_BUDGET_GATE",
+                **packet["budget"],
+            }, sort_keys=True) + "\n")
 
     return packet
