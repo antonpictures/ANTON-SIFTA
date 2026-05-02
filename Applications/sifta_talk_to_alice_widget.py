@@ -1412,7 +1412,15 @@ def _current_system_prompt(
             parts.append(_seg_prompt)
     except Exception:
         pass
-    
+    try:
+        from System.swarm_episodic_diary import refresh_and_format_diary_for_prompt
+
+        _diary_prompt = refresh_and_format_diary_for_prompt(hours=4, max_rows=6).strip()
+        if _diary_prompt:
+            parts.append(_diary_prompt)
+    except Exception:
+        pass
+
     affordances = tool_affordances_for_turn(user_text)
     if affordances:
         parts.append(affordances)
