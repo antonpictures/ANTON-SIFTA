@@ -24,7 +24,9 @@ _SCHEDULE_QUERY_RE = re.compile(
     r"\b("
     r"what\s+do\s+i\s+have|what['’]?s\s+(?:on\s+)?(?:my\s+)?(?:schedule|calendar)|"
     r"what\s+is\s+(?:on\s+)?(?:my\s+)?(?:schedule|calendar)|"
-    r"do\s+i\s+have\s+anything|schedule|calendar|appointment"
+    r"do\s+i\s+have\s+anything|"
+    r"(?:read|check)\s+(?:my\s+)?(?:schedule|calendar)|"
+    r"(?:my\s+)?(?:schedule|calendar)\s+for\s+(?:today|tomorrow)"
     r")\b",
     re.IGNORECASE,
 )

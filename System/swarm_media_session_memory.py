@@ -347,7 +347,18 @@ def latest_media_session_context(
 ) -> str:
     window = infer_media_session_window(user_text, now=now)
     if not window.get("matched"):
-        return ""
+        state = Path(state_dir) if state_dir is not None else STATE_DIR
+        for row in reversed(_tail_jsonl(state / "alice_conversation.jsonl", 10)):
+            payload = row.get("payload", {})
+            if payload.get("role") == "user":
+                recent_text = str(payload.get("text") or "")
+                w = infer_media_session_window(recent_text, now=now)
+                if w.get("matched"):
+                    window = w
+                    break
+        if not window.get("matched"):
+            return ""
+
     summary = summarize_media_session(
         float(window["start_ts"]),
         float(window["end_ts"]),
