@@ -157,7 +157,13 @@ class CustomSlider(QSlider):
 class GlassWidget(QWidget):
     """The main frameless window floating over the OS."""
     
-    def __init__(self, parent=None, x: int = 1000, y: int = 40):
+    def __init__(self, x: int | QWidget | None = None, y: int | None = None, parent=None):
+        # The app can be launched two ways:
+        #   1. standalone script: GlassWidget(x=..., y=...)
+        #   2. SIFTA manifest loader: GlassWidget() or GlassWidget(parent)
+        if isinstance(x, QWidget) and parent is None:
+            parent = x
+            x = None
         super().__init__(parent)
         
         self.setWindowFlags(
@@ -168,6 +174,14 @@ class GlassWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         self.setFixedSize(320, 360)
+        if x is None or y is None:
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                geo = screen.availableGeometry()
+                x = geo.right() - 20
+                y = geo.top() + 40
+            else:
+                x, y = 1000, 40
         self.move(x - 320, y)
         
         main_layout = QVBoxLayout(self)
@@ -310,6 +324,6 @@ if __name__ == "__main__":
         except ValueError:
             pass
 
-    w = GlassWidget(x, y)
+    w = GlassWidget(x=x, y=y)
     w.show()
     sys.exit(app.exec())

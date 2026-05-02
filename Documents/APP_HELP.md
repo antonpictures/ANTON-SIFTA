@@ -742,6 +742,12 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 **Control:** enable/disable each adapter, view live logs.
 **Failure mode:** adapters that require external credentials will show "Auth required".
 
+### ⚙ NVIDIA Bridge Dashboard
+**What it does:** Truth-labeled NVIDIA x SIFTA integration surface. It separates local runtime access from online/research references for Isaac, GR00T, cuRobo, Warp, Cosmos, and Hugging Face model assets.
+**State:** local package probes, model/cache probes, and SIFTA bridge receipts.
+**Control:** rescan assets, inspect SIFTA-vs-GR00T notes, watch the live field, and inspect HF model readiness.
+**Failure mode:** `STUB` or warning states mean the package/model is not installed locally; they are not runtime failures.
+
 ### Network Control Center
 **What it does:** Warp9 federation control — manage peer-to-peer swarm mesh connections, view network topology, send cross-node swimmer messages, monitor rsync spool.
 **State:** `federation_peer.conf`, warp9 spool directory.

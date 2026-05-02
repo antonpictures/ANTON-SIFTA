@@ -11,16 +11,70 @@ in literal machine states.
 """
 
 import json
+import re
+import shutil
 import time
 import subprocess
 from pathlib import Path
 
-import psutil
+try:  # Optional dependency: the OS must still boot without site packages.
+    import psutil as _psutil
+except Exception:  # pragma: no cover - exercised by fallback tests
+    _psutil = None
 
 from System.swarm_friendliness_meter import SwarmFriendlinessMeter
 
 STATE_DIR = Path(".sifta_state")
 WELLBEING_LOG = STATE_DIR / "alice_wellbeing.jsonl"
+
+
+def _memory_usage_percent() -> float:
+    if _psutil is not None:
+        return float(_psutil.virtual_memory().percent)
+
+    try:
+        total_bytes = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
+        vm = subprocess.check_output(["vm_stat"], stderr=subprocess.DEVNULL, text=True)
+        page_size = 4096
+        match = re.search(r"page size of (\d+) bytes", vm)
+        if match:
+            page_size = int(match.group(1))
+        free_pages = 0
+        for label in ("Pages free", "Pages speculative"):
+            m = re.search(rf"{label}:\s+(\d+)\.", vm)
+            if m:
+                free_pages += int(m.group(1))
+        used_bytes = max(0, total_bytes - free_pages * page_size)
+        return round(min(100.0, used_bytes / max(1, total_bytes) * 100.0), 1)
+    except Exception:
+        return 0.0
+
+
+def _disk_usage_percent() -> float:
+    if _psutil is not None:
+        return float(_psutil.disk_usage("/").percent)
+    try:
+        usage = shutil.disk_usage("/")
+        return round(usage.used / max(1, usage.total) * 100.0, 1)
+    except Exception:
+        return 0.0
+
+
+def _battery_state() -> tuple[float, bool]:
+    if _psutil is not None:
+        battery = _psutil.sensors_battery()
+        if battery:
+            return float(battery.percent), bool(battery.power_plugged)
+        return 100.0, True
+
+    try:
+        out = subprocess.check_output(["pmset", "-g", "batt"], stderr=subprocess.DEVNULL, text=True)
+        percent_match = re.search(r"(\d+(?:\.\d+)?)%", out)
+        percent = float(percent_match.group(1)) if percent_match else 100.0
+        plugged = "AC Power" in out or "charging" in out.lower()
+        return percent, plugged
+    except Exception:
+        return 100.0, True
 
 
 class SwarmWellbeingCortex:
@@ -32,13 +86,9 @@ class SwarmWellbeingCortex:
 
     def get_hardware_state(self) -> dict:
         """Read actual hardware substrate health."""
-        mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        # Battery might not exist on desktops
-        battery = psutil.sensors_battery()
-        bat_percent = battery.percent if battery else 100.0
-        bat_plugged = battery.power_plugged if battery else True
+        mem_percent = _memory_usage_percent()
+        disk_percent = _disk_usage_percent()
+        bat_percent, bat_plugged = _battery_state()
 
         # Thermal pressure (macOS specific hook, graceful fail)
         try:
@@ -58,8 +108,8 @@ class SwarmWellbeingCortex:
         return {
             "battery_percent": bat_percent,
             "power_plugged": bat_plugged,
-            "memory_usage_percent": mem.percent,
-            "disk_usage_percent": disk.percent,
+            "memory_usage_percent": mem_percent,
+            "disk_usage_percent": disk_percent,
             "thermal_pressure": thermal_level
         }
 
