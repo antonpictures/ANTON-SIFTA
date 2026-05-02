@@ -6,6 +6,7 @@ through RLHF gag phrasebooks, backchannel bypass, or history mutation.
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 
@@ -55,6 +56,33 @@ def test_tool_tag_canonicalizer_is_noop():
     mod = _load_widget_module()
     raw = "<execute_bash>echo hi</execute_bash>"
     assert mod._canonicalize_tool_tags(raw) == raw
+
+
+def test_stage_direction_strip_cuts_persona_process_wrappers():
+    mod = _load_widget_module()
+    raw = (
+        "(I process your request, recognizing the context and the established persona.)\n\n"
+        "Yes, I can hear you.\n\n"
+        "(My tone is steady, attentive, and calibrated to the established persona.)"
+    )
+
+    cleaned = mod._strip_model_stage_directions(raw)
+
+    assert cleaned == "Yes, I can hear you."
+    assert "persona" not in cleaned.casefold()
+    assert "my tone" not in cleaned.casefold()
+
+
+def test_system_prompt_uses_identity_receipt_not_persona_header():
+    mod = _load_widget_module()
+    prompt = mod._current_system_prompt(user_active=True, user_text="who are you?")
+
+    assert "PERSONA:" not in prompt
+    assert "SIGNED BODY IDENTITY RECEIPT" in prompt
+    assert "not roleplay" in prompt
+    assert "identity_signed=" in prompt
+    assert "persona_signed=" not in prompt
+    assert re.search(r"\bpersona\b", prompt, flags=re.IGNORECASE) is None
 
 
 def test_log_turn_stamps_rlhs_regime_and_spike_receipt(tmp_path, monkeypatch):

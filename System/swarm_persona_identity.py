@@ -298,10 +298,14 @@ def window_title() -> str:
 
 
 def summary_for_alice() -> str:
-    """Data-only persona summary injected into Alice context."""
+    """Data-only identity summary injected into Alice context.
+
+    Keep the runtime prompt away from "persona" language. Alice should see this
+    as a signed body/identity receipt, not as an acting frame.
+    """
     p = current_persona()
     return (
-        f"persona_signed=true "
+        f"identity_signed=true "
         f"name={p.get('display_name')} "
         f"true_name={p.get('true_name')} "
         f"entity_nature={p.get('entity_nature')} "

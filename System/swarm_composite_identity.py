@@ -1113,7 +1113,7 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
     lines.append(
         f"- self: display_name={snap.display_name} true_name={snap.true_name} "
         f"entity_nature={snap.entity_nature} homeworld_serial={snap.homeworld_serial} "
-        f"persona_signed={bool(snap.persona_signed)}"
+        f"identity_signed={bool(snap.persona_signed)}"
     )
 
     if snap.body_energy is not None or snap.body_style or snap.stgm_balance is not None:
