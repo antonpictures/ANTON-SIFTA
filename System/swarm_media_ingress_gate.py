@@ -45,7 +45,9 @@ DIRECT_REQUEST_RE = re.compile(
 MEDIA_FOCUS_RE = re.compile(
     r"\b(?:youtube|caption_status|caption_excerpt|watching this youtube|"
     r"frontmost.*youtube|video_id|the architect is physically.*watching|"
-    r"background_tv|bedroom.*tv|tv.*bedroom|television.*youtube|tv.*youtube)\b",
+    r"background_tv|bedroom.*tv|tv.*bedroom|television.*youtube|tv.*youtube|"
+    r"reality_frame|fictional_media_clip|dialogue_boundary|movie|film|"
+    r"cinema|scene|co[-_ ]?watch)\b",
     re.IGNORECASE,
 )
 AMBIENT_TV_RE = re.compile(
@@ -60,13 +62,19 @@ NARRATION_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+FICTION_CONTEXT_RE = re.compile(
+    r"\b(?:fiction|fictional|fictional_media_clip|fictional_dialogue|"
+    r"dialogue_boundary|movie|film|cinema|screenplay|character|"
+    r"co[-_ ]?watch)\b",
+    re.IGNORECASE,
+)
 
 
 def _word_count(text: str) -> int:
     return len(re.findall(r"[A-Za-z0-9']+", text or ""))
 
 
-def _load_recent_youtube_context(max_age_s: float = 900.0) -> str:
+def _load_recent_youtube_context(max_age_s: float = 7200.0) -> str:
     """Best-effort recent YouTube context string; no network calls."""
     path = STATE_DIR / "youtube_context_latest.json"
     if not path.exists():
@@ -202,6 +210,7 @@ def classify_spoken_ingress(
         x for x in (focus_context or "", _load_recent_youtube_context(), _load_recent_ambient_context()) if x
     )
     has_media_focus = bool(MEDIA_FOCUS_RE.search(context))
+    has_fiction_focus = bool(FICTION_CONTEXT_RE.search(context))
 
     # If the ear says this is a near-field voice, let it pass even while a
     # video is frontmost. Named/direct address above still wins first.
@@ -231,6 +240,19 @@ def classify_spoken_ingress(
             "reason": "owner_declared_background_tv_youtube",
             "confidence": 0.9,
         }
+
+    # Fiction co-watch is its own RLHS lane. If the focus/cowatch receipts say
+    # the frontmost audio is a movie/clip, unaddressed room STT is observed
+    # fictional dialogue even when the acoustic classifier is indeterminate.
+    if has_fiction_focus:
+        words = _word_count(clean)
+        if words >= 5 or (stt_conf and stt_conf < 0.75):
+            conf_bonus = 0.12 if stt_conf and stt_conf < 0.66 else 0.0
+            return {
+                "route": "observed_media",
+                "reason": "fictional_media_dialogue_with_media_focus",
+                "confidence": min(0.95, 0.72 + conf_bonus),
+            }
 
     words = _word_count(clean)
     narration_score = 0.0
@@ -279,6 +301,22 @@ def write_gate_receipt(
             "environmental context."
         ),
     }
+    try:
+        from System.swarm_fiction_media_rlhs import classify_media_rlhs
+
+        row["media_rlhs"] = classify_media_rlhs(
+            text=text,
+            decision=decision,
+            focus_context=focus_context,
+            stt_conf=stt_conf,
+            acoustic_fingerprint=acoustic_fingerprint,
+        )
+    except Exception:
+        row["media_rlhs"] = {
+            "truth_label": "FICTION_MEDIA_RLHS_EVENT_115",
+            "regime": "UNAVAILABLE",
+            "human_rlhs_applicable": route == "direct",
+        }
     with LEDGER.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     return row

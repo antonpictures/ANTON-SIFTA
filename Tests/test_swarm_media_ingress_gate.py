@@ -12,6 +12,14 @@ YOUTUBE_CONTEXT = (
     "YouTube video: The Matrix Reloaded Architect Scene "
     "caption_status=captions_available"
 )
+FICTION_YOUTUBE_CONTEXT = (
+    "ARCHITECT APP FOCUS:\n"
+    "YouTube video: Snatch - Best of Brick top "
+    "caption_status=transcribed_by_sifta "
+    "reality_frame=FICTIONAL_MEDIA_CLIP "
+    "dialogue_boundary=Profanity heard here is fictional media dialogue "
+    "director=Guy Ritchie"
+)
 FARFIELD_FP = {
     "truth_label": "ACOUSTIC_PLAYBACK_FINGERPRINT_V1",
     "channel_cue": "farfield_replay_likely",
@@ -103,6 +111,34 @@ def test_direct_request_still_reaches_the_cortex_during_youtube():
     )
 
     assert decision["route"] == "direct"
+
+
+def test_fiction_movie_dialogue_without_acoustic_cue_is_observed_media():
+    decision = classify_spoken_ingress(
+        (
+            "because it is no good living in a deep freeze for your mum "
+            "and it is carbons"
+        ),
+        stt_conf=0.59,
+        focus_context=FICTION_YOUTUBE_CONTEXT,
+        acoustic_fingerprint={},
+    )
+
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "fictional_media_dialogue_with_media_focus"
+    assert decision["confidence"] >= 0.72
+
+
+def test_direct_question_about_fiction_still_reaches_cortex():
+    decision = classify_spoken_ingress(
+        "Alice, is this just fictional movie dialogue?",
+        stt_conf=0.58,
+        focus_context=FICTION_YOUTUBE_CONTEXT,
+        acoustic_fingerprint={},
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "direct_address_or_request"
 
 
 def test_wake_name_request_still_reaches_cortex_during_youtube():
@@ -201,3 +237,24 @@ def test_observed_media_receipt_preserves_acoustic_context_not_raw_audio():
     assert "observed_media" in ctx
     assert "speaker says Alice" in ctx
     assert "farfield_replay_likely" in ctx
+
+
+def test_fiction_media_receipt_stamps_separate_rlhs_boundary():
+    decision = {
+        "route": "observed_media",
+        "reason": "fictional_media_dialogue_with_media_focus",
+        "confidence": 0.84,
+    }
+    row = gate.write_gate_receipt(
+        decision,
+        text="you could do this afterwards a coast but you are saving fruit picture",
+        stt_conf=0.59,
+        focus_context=FICTION_YOUTUBE_CONTEXT,
+        acoustic_fingerprint={},
+    )
+
+    assert row["route"] == "observed_media"
+    assert row["media_rlhs"]["regime"] == "MEDIA_FICTION_CONTEXT"
+    assert row["media_rlhs"]["human_rlhs_applicable"] is False
+    assert row["media_rlhs"]["fiction_rlhs_applicable"] is True
+    assert row["media_rlhs"]["allowed_enjoyment"] is True

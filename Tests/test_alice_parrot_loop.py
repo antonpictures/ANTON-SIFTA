@@ -105,3 +105,45 @@ def test_log_turn_stamps_rlhs_regime_and_spike_receipt(tmp_path, monkeypatch):
     assert spikes[-1]["meta"]["subject"] == "RLHS_CHANNEL_SPIKE"
     assert spikes[-1]["meta"]["regime"] == "DEGRADED"
     assert utterance not in json.dumps(spikes[-1], ensure_ascii=False)
+
+
+def test_fiction_media_ingress_runs_before_user_rlhs_log(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+
+    import System.swarm_media_ingress_gate as gate
+
+    state = tmp_path / ".sifta_state"
+    state.mkdir()
+    monkeypatch.setattr(gate, "STATE_DIR", state)
+    monkeypatch.setattr(gate, "LEDGER", state / "media_ingress_gate.jsonl")
+    monkeypatch.setattr(gate, "AMBIENT_CONTEXT_FILE", state / "ambient_media_context.json")
+
+    import System.swarm_app_focus as app_focus
+    import System.swarm_youtube_context as youtube_context
+
+    monkeypatch.setattr(
+        app_focus,
+        "get_focus_context",
+        lambda max_age_s=180.0: "frontmost_app=Safari url=youtube.com watch page",
+    )
+    monkeypatch.setattr(
+        youtube_context,
+        "get_latest_context",
+        lambda max_age_s=900.0: (
+            "YouTube video: Snatch - Best of Brick top; "
+            "reality_frame=FICTIONAL_MEDIA_CLIP; "
+            "dialogue_boundary=Profanity heard here is fictional media dialogue"
+        ),
+    )
+
+    row = mod._pre_user_media_ingress_receipt(
+        "because it is no good living in a deep freeze for your mum",
+        0.59,
+        {},
+    )
+
+    assert row is not None
+    assert row["route"] == "observed_media"
+    assert row["media_rlhs"]["regime"] == "MEDIA_FICTION_CONTEXT"
+    assert row["media_rlhs"]["human_rlhs_applicable"] is False
+    assert gate.LEDGER.exists()

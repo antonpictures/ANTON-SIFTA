@@ -3002,7 +3002,7 @@ def _build_swarm_context(user_text: str = "") -> str:
     try:
         from System.swarm_media_ingress_gate import get_latest_observed_media_context
 
-        media_context = get_latest_observed_media_context(max_age_s=900.0)
+        media_context = get_latest_observed_media_context(max_age_s=7200.0)
         if media_context:
             chunks.append("  observed media audio: " + media_context[:420])
     except Exception:
@@ -3566,7 +3566,7 @@ def _pre_user_media_ingress_receipt(
         try:
             from System.swarm_youtube_context import get_latest_context
 
-            yt_raw = get_latest_context(max_age_s=900.0) or ""
+            yt_raw = get_latest_context(max_age_s=7200.0) or ""
             if isinstance(yt_raw, dict):
                 _yt_ctx = json.dumps(yt_raw, ensure_ascii=False, sort_keys=True)
             else:
@@ -4283,6 +4283,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._pending_acoustic_fingerprint = {}
         if not already_displayed:
             self._append_user_line(text, conf)
+
+        # ── MEDIA INGRESS GATE (Event 115) ─────────────────────────────
+        # This must run before _log_turn("user", ...). _log_turn stamps RLHS
+        # and deposits NOISE/DEGRADED spikes; movie/YouTube dialogue is not a
+        # human supervision channel, so it gets a media receipt instead.
+        _media_row = _pre_user_media_ingress_receipt(text, conf, _acoustic_fingerprint)
+        if _media_row:
+            note, system_context = _media_ingress_note(_media_row)
+            if _media_row.get("route") == "observed_media" and system_context:
+                self._history.append({"role": "system", "content": system_context})
+            _log_turn("alice", note, model="media_ingress_gate")
+            self._history.append({"role": "assistant", "content": "(silent)"})
+            self._append_system_line(note, error=False)
+            self._busy = False
+            self._return_to_listening()
+            return
+
         _log_turn("user", text, stt_conf=conf)
         self._history.append({"role": "user", "content": text})
 
@@ -4424,67 +4441,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # ── MEDIA INGRESS GATE (C55M 2026-04-28) ─────────────────────
-        # If the Architect is watching YouTube/a movie, room STT may
-        # transcribe the video and label it as "You". That is not a direct
-        # owner prompt. Keep it as environmental context unless the utterance
-        # directly addresses Alice/George or clearly requests an action.
-        # MUST EVALUATE BEFORE RLHS so fiction isn't grounded as degraded human speech.
-        try:
-            from System.swarm_app_focus import get_focus_context
-            from System.swarm_media_ingress_gate import (
-                classify_spoken_ingress,
-                write_gate_receipt,
-            )
-
-            _focus_ctx = get_focus_context(max_age_s=180.0) or ""
-            try:
-                from System.swarm_youtube_context import get_latest_context
-
-                _yt_ctx = get_latest_context(max_age_s=900.0) or ""
-            except Exception:
-                _yt_ctx = ""
-            _media_ctx = "\n".join(x for x in (_focus_ctx, _yt_ctx) if x)
-            _media_decision = classify_spoken_ingress(
-                text,
-                stt_conf=conf,
-                focus_context=_media_ctx,
-                acoustic_fingerprint=_acoustic_fingerprint,
-            )
-            if _media_decision.get("route") in {"ambient_media", "observed_media"}:
-                row = write_gate_receipt(
-                    _media_decision,
-                    text=text,
-                    stt_conf=conf,
-                    focus_context=_media_ctx,
-                    acoustic_fingerprint=_acoustic_fingerprint,
-                )
-                if row.get("route") == "observed_media":
-                    self._history.append({
-                        "role": "system",
-                        "content": (
-                            "Observed media audio, not a direct user prompt. "
-                            f"Acoustic cue={row.get('acoustic_fingerprint', {}).get('channel_cue', 'unknown')}. "
-                            f"Transcript excerpt: {text[:260]}"
-                        ),
-                    })
-                    note = (
-                        "(observed: media audio retained as context, not routed "
-                        f"as a direct prompt; reason={row.get('reason')})"
-                    )
-                else:
-                    note = (
-                        "(silent: ambient media transcript observed, not routed "
-                        f"to conversation; reason={row.get('reason')})"
-                    )
-                _log_turn("alice", note, model="media_ingress_gate")
-                self._history.append({"role": "assistant", "content": "(silent)"})
-                self._append_system_line(note, error=False)
-                self._busy = False
-                self._return_to_listening()
-                return
-        except Exception:
-            pass
+        # Media ingress already ran before user/RLHS logging above.
 
         # ── RLHS DEGRADED grounding (Event 108, 2026-05-02) ───────────
         # When STT channel is degraded (mid conf, incoherent) emit ONE short
