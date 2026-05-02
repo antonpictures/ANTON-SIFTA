@@ -10,8 +10,9 @@ Architect policy (2026-04-30):
     won tournament 408/459 but produced degenerate output in production
     ("That's true" loop). Archived for tournament re-runs, not live default.
     Fix planned for v2: rank 16, dropout 0.1, DPO pass.
-  - **Ollama fallback:** `sifta-alice-qwen35` (Qwen 2.5 32B) when Gemma4
-    is unavailable or overheating.
+  - **Ollama fallback:** `qwen3.5:2b` when Gemma4 is unavailable or a helper
+    app needs a cheap local model. The retired `sifta-alice-qwen35` tag is not
+    part of the live M5 install.
   - **Other models:** use for stigmergic testing, probes, or per-app tuning — never pretend
     one node's API is another node's fingerprint; routing goes through `inference_router`.
 

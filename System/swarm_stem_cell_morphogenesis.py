@@ -74,7 +74,7 @@ _ASSIGNMENTS = _STATE / "swimmer_ollama_assignments.json"
 ARCHETYPES_BLUEPRINT: Dict[str, Dict[str, Any]] = {
     "M5_STUDIO_ALPHA": {
         "morphology": np.array([24.0, 10.0, 1.0]),
-        "injected_dna": "gemma4:latest (Heavy Cognitive Cortex)",
+        "injected_dna": "sifta-gemma4-alice:latest (Heavy Cognitive Cortex)",
         "max_vagus_cpu": 80.0,
     },
     "M1_MINI_BETA": {

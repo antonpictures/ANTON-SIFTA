@@ -76,7 +76,7 @@ class OllamaWorker(QThread):
         super().__init__()
         self.prompt = prompt
         self.local_identity = local_identity
-        # Production default: gemma4:latest; per-app override via swimmer_ollama_assignments.json
+        # Production default comes from sifta_inference_defaults; per-app override via swimmer_ollama_assignments.json.
         self.model = model or resolve_ollama_model(app_context="swarm_chat")
 
     def run(self):

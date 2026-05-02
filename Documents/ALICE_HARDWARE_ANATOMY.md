@@ -38,16 +38,16 @@ flowchart TB
     Corvid["CORVID / REFLEX\nqwen3.5:2b\n2.7 GB\nINSTALLED"]
     Classifier["C1 CLASSIFIER\nsifta-classifier-c1:latest\n6.2 GB\nINSTALLED / TEST ONLY"]
     Doctor["DOCTOR / TOOL PROVER\ngranite4.1:3b\nGB unknown until pulled\nOPTIONAL TEST"]
-    Fallback["FALLBACK / COMPARE\nsifta-alice-qwen35:latest\n2.7 GB\nINSTALLED"]
-    Base["RAW BASE\ngemma4:latest\n9.6 GB\nINSTALLED / TEST ONLY"]
+    RetiredFallback["RETIRED TAG\nsifta-alice-qwen35:latest\nREMOVED"]
+    RetiredBase["RETIRED TAG\ngemma4:latest\nREMOVED"]
 
     M5 --> Sensors --> Receipts --> Alice
     VLM --> Receipts
     Corvid --> Receipts
     Classifier --> Receipts
     Doctor --> Receipts
-    Fallback -. emergency compare .-> Alice
-    Base -. base diagnostics .-> Alice
+    RetiredFallback -. replaced by qwen3.5:2b .-> Corvid
+    RetiredBase -. replaced by sifta-gemma4-alice .-> Alice
 ```
 
 ### M5 Ollama Cleanup Audit
@@ -57,13 +57,16 @@ Observed on this M5 on 2026-05-01:
 | Tag | Physical model blob | Role | Cleanup decision |
 |---|---:|---|---|
 | `sifta-gemma4-alice:latest` | 9.6 GB | Alice primary cortex | **KEEP** |
-| `gemma4:latest` | shares the same 9.6 GB blob as `sifta-gemma4-alice` | raw base diagnostics | optional remove tag only; frees almost no disk while Alice tag remains |
+| `gemma4:latest` | removed | retired raw base tag | **REMOVED**; use `sifta-gemma4-alice:latest` |
 | `qwen3.5:2b` | 2.7 GB | corvid/reflex | **KEEP** |
-| `sifta-alice-qwen35:latest` | shares the same 2.7 GB blob as `qwen3.5:2b` | old Alice fallback/compare | optional remove tag only once no UI path references it |
+| `sifta-alice-qwen35:latest` | removed | old fallback/compare tag | **REMOVED**; use `qwen3.5:2b` |
 | `sifta-classifier-c1:latest` | 6.2 GB | C1 classifier | keep if the classifier path is active; otherwise test before removing |
 
 Duplicate-looking tags do not necessarily duplicate disk. Ollama stores model
-weights by content blob, so two tags can point at one physical weight file.
+weights by content blob, so two tags can point at one physical weight file. The
+old duplicate tags have now been removed from this M5; the live Ollama registry
+contains only `sifta-gemma4-alice:latest`, `qwen3.5:2b`, and
+`sifta-classifier-c1:latest`.
 Use the read-only audit tool before cleanup:
 
 ```bash
@@ -80,12 +83,9 @@ Current M5 cleanup priority:
 
 1. Keep `sifta-gemma4-alice:latest`, `qwen3.5:2b`, and any classifier model
    that the C1 runtime is actively using.
-2. Consider removing `gemma4:latest` only to reduce UI confusion. It does not
-   free the 9.6 GB blob while `sifta-gemma4-alice:latest` still references it.
-3. Consider removing `sifta-alice-qwen35:latest` only after the UI no longer
-   names it as a fallback. It does not free the 2.7 GB blob while `qwen3.5:2b`
-   still references it.
-4. Real disk savings come from unreferenced blobs left by failed pulls or
+2. Do not reinstall `gemma4:latest` or `sifta-alice-qwen35:latest` unless a
+   specific migration test asks for them.
+3. Real disk savings come from unreferenced blobs left by failed pulls or
    rebuilds. Do not delete those blindly; audit references first.
 
 ## Mac Mini Sentry, 8 GB

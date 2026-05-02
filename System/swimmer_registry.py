@@ -41,8 +41,8 @@ Biology anchor:
 
 Architect policy (2026-04-18):
   Swimmers are SOFTWARE agents on DISK. Not nanobots. Not molecules.
-  Each swimmer uses gemma4:latest by default. Alice can override per-swimmer
-  via swimmer_ollama_assignments.json.
+  Each swimmer uses the canonical SIFTA inference default unless Alice assigns
+  a per-swimmer override via swimmer_ollama_assignments.json.
 ══════════════════════════════════════════════════════════════════════════════
 """
 from __future__ import annotations

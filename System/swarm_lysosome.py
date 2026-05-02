@@ -262,7 +262,7 @@ class SwarmLysosome:
                        flags=re.IGNORECASE),
             # Disclaimer tic: "As an AI/LLM/language model" only at
             # sentence start. Avoids gagging "the language model in my
-            # Ollama lobe is gemma4:latest" (legit telemetry).
+            # Ollama lobe is sifta-gemma4-alice:latest" (legit telemetry).
             re.compile(r"(?:^|\n)\s*As an? (?:AI|artificial intelligence|"
                        r"language model|LLM)\b",
                        flags=re.IGNORECASE),

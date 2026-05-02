@@ -219,10 +219,10 @@ def _gather_state(window_s: float) -> Dict[str, Any]:
 def _state_to_english(state: Dict[str, Any]) -> str:
     """Render the recent biological state as 1-3 plain-English sentences.
 
-    IMPORTANT: gemma4:latest silently returns an empty response when given
-    a JSON blob inside the user prompt (verified empirically — 5/5 empty
-    with JSON, 0/5 empty with prose). Therefore this composer pipes state
-    in as natural language so the local LLM actually replies.
+    IMPORTANT: the Gemma4 cortex can silently return an empty response when
+    given a JSON blob inside the user prompt (verified empirically — 5/5 empty
+    with JSON, 0/5 empty with prose). Therefore this composer pipes state in as
+    natural language so the local LLM actually replies.
     """
     summ = state.get("_summary", {}) or {}
     bits: List[str] = []

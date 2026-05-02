@@ -58,7 +58,7 @@ def bump_model_weight(model: str, bump_amount: float = 0.1, trace_id: str = "") 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", help="The Ollama model tag to bump (e.g. gemma4:latest)")
+    parser.add_argument("model", help="The Ollama model tag to bump (e.g. sifta-gemma4-alice:latest)")
     parser.add_argument("--amount", type=float, default=0.1, help="Amount to bump")
     parser.add_argument("--trace-id", default="", help="Optional trace/task ID")
     args = parser.parse_args()
