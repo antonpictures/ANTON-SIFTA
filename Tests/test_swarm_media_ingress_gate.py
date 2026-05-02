@@ -91,7 +91,7 @@ def test_farfield_replay_during_youtube_is_observed_media_context():
     assert decision["confidence"] >= 0.84
 
 
-def test_nearfield_voice_overrides_media_focus():
+def test_nearfield_voice_without_direct_address_stays_observed_during_media_focus():
     decision = classify_spoken_ingress(
         "the video is interesting but I am talking to you now",
         stt_conf=0.61,
@@ -99,8 +99,8 @@ def test_nearfield_voice_overrides_media_focus():
         acoustic_fingerprint=NEARFIELD_FP,
     )
 
-    assert decision["route"] == "direct"
-    assert decision["reason"] == "acoustic_nearfield_voice"
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "media_focus_default_to_observed"
 
 
 def test_direct_request_still_reaches_the_cortex_during_youtube():
