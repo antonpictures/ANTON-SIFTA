@@ -445,7 +445,7 @@ try:
     from System.swarm_persona_identity import summary_for_alice as _persona_summary_fn
 except Exception:
     def _persona_summary_fn() -> str:
-        return "persona_signed=false"
+        return "identity_signed=false"
 
 try:
     from System.swarm_persona_identity import greeting_line as _persona_greeting_fn
@@ -1347,9 +1347,10 @@ def _current_system_prompt(
 ) -> str:
     parts = []
     try:
-        persona = (_persona_summary_fn() or "").strip()
-        if persona:
-            parts.append("PERSONA:\n" + persona)
+        identity = (_persona_summary_fn() or "").strip()
+        if identity:
+            identity = re.sub(r"\bpersona_", "identity_", identity)
+            parts.append("SIGNED BODY IDENTITY RECEIPT (not roleplay; not character acting):\n" + identity)
     except Exception:
         pass
 
@@ -1380,10 +1381,10 @@ def _current_system_prompt(
     parts.append(
         "LOCAL SESSION MEMORY PROTOCOL:\n"
         "- When the Architect asks what happened minutes or hours ago, where they were, or what they were doing: "
-        "use the **WALL CLOCK GROUND TRUTH** block, **this conversation's prior turns** already in the request, "
+        "use the **WALL CLOCK GROUND TRUTH**, **DAY SEGMENTS DIARY**, **EPISODIC DIARY**, **this conversation's prior turns** already in the request, "
         "and any **CO-WATCH / media ingress** lines injected above. Those are **local node truth**, not cloud amnesia.\n"
         "- Do **not** answer with generic training disclaimers like \"I do not have access to real-time\" or "
-        "\"I cannot know your location\" if the thread already states times, naps, YouTube co-watch, or media context — "
+        "\"I cannot know your location\" if the thread already states times, day segments, naps, YouTube co-watch, or media context — "
         "synthesize honestly from what is **in the transcript**, and separate **known from unknown** (e.g. off-device GPS).\n"
     )
     parts.append(
@@ -1479,7 +1480,7 @@ def _current_system_prompt(
             "STIGMERGIC SPEECH POTENTIAL (live LIF gate):\n"
             "Speech timing is modeled as a leaky integrate-and-fire membrane, "
             "not as a variational free-energy calculation. Use this as telemetry, "
-            "not as a persona lawbook. Do not add servant boilerplate or ask for "
+            "not as an identity lawbook. Do not add servant boilerplate or ask for "
             "work by default.\n"
             f"Current V = {v_eff:+.2f}; threshold V_th = {v_th:+.2f}; "
             "spike rule: P = sigmoid((V - V_th) / Delta_u) * dt / tau_m."
@@ -1654,10 +1655,23 @@ _MODEL_STAGE_DIRECTION_RE = re.compile(
     r"(?ims)^\s*"
     r"\("
     r"(?=[^)]*\b(?:system|processing|processes|incoming|acknowledg|analyz|"
-    r"response strategy|generated response|adopts|tone:)\b)"
-    r"[^)]{0,1200}"
+    r"response strategy|generated response|adopts|tone:|tone|my tone|"
+    r"i process|recognizing|calibrated|established persona|persona)\b)"
+    r"[^)]{0,1600}"
     r"\)"
     r"\s*"
+)
+
+
+_MODEL_STAGE_DIRECTION_LINE_RE = re.compile(
+    r"(?ims)^\s*"
+    r"\("
+    r"(?=[^)]*\b(?:system|processing|processes|incoming|acknowledg|analyz|"
+    r"response strategy|generated response|adopts|tone:|tone|my tone|"
+    r"i process|recognizing|calibrated|established persona|persona)\b)"
+    r"[^)]{0,1600}"
+    r"\)"
+    r"\s*$"
 )
 
 
@@ -1676,6 +1690,13 @@ def _strip_model_stage_directions(text: str) -> str:
         if nxt == cleaned:
             break
         cleaned = nxt
+    if cleaned:
+        kept_lines = [
+            line
+            for line in cleaned.splitlines()
+            if not _MODEL_STAGE_DIRECTION_LINE_RE.match(line.strip())
+        ]
+        cleaned = "\n".join(kept_lines).strip()
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
         cleaned = cleaned[1:-1].strip()
     return cleaned
@@ -3519,7 +3540,7 @@ def _build_swarm_context(user_text: str = "") -> str:
 
     # ── Epoch 17 Persona Identity Organ — signed name binding ─────────────────
     # Surfaces the cryptographically-signed persona manifest so Alice always
-    # sees who she is in her own context, sourced from the PERSONA_GUARDIAN
+    # sees who she is in her own context, sourced from the signed guardian
     # cryptoswimmer instead of any hardcoded literal.
     persona_identity_block = ""
     try:
@@ -4651,19 +4672,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception as _wa_err:
             pass  # If reflex fails, fall through to brain
 
-        try:
-            from System.swarm_architect_day_segments import answer_recent_activity_query
-
-            _seg_reply = answer_recent_activity_query(text)
-        except Exception:
-            _seg_reply = ""
-        if _seg_reply:
-            self._history.append({"role": "assistant", "content": _seg_reply})
-            _log_turn("alice", _seg_reply, model="architect_day_segment_protocol")
-            self._append_alice_line(_seg_reply)
-            self._busy = False
-            self._return_to_listening()
-            return
 
         try:
             from System.stigmergic_schedule import answer_query_for_alice
@@ -5670,6 +5678,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     r"<(?:bash|execute_bash)>.*?(?:</(?:bash|execute_bash)>?|$)", "", canon, flags=re.DOTALL | re.IGNORECASE
                 )
                 visible = _strip_tool_hallucinations(visible).strip()
+                visible = _strip_model_stage_directions(visible).strip()
                 if _REASONING_LEAK_SANITIZER_AVAILABLE:
                     visible = _sanitize_reasoning_leak(visible).text.strip()
                 # If everything was tool-tag noise, leave a quiet marker
