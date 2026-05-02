@@ -723,5 +723,28 @@
     "signature": "MANIFEST-CANONICAL",
     "description": "Alice social nerve — WhatsApp inbox viewer, contact browser, and message sender. Routes through the real Baileys effector with truth labels.",
     "doctor": "AG31"
+  },
+  "Alice's Will — Intrinsic Drive Monitor": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_intrinsic_drive_monitor.py",
+    "widget_class": "AliceWillApp",
+    "window_width": 580,
+    "window_height": 780,
+    "signature": "AG31-ANTIGRAVITY-VERIFIED",
+    "doctor": "AG31",
+    "co_doctors": [
+      "BISHOP"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Live monitor for George Prior intrinsic drive receipts and basal ganglia bias. Shows topic score history (GPU-painted waveforms), current spontaneous goal, drive entropy H, circadian phase, and body_brain_memory.jsonl bias stream. Truth label: SIMULATED_INTRINSIC_DRIVE. Event 99+100.",
+    "truth_label": "SIMULATED_INTRINSIC_DRIVE",
+    "research_spine": [
+      "Friston (2010) doi:10.1038/nrn2787",
+      "Oudeyer (2007) doi:10.3389/neuro.12.006.2007"
+    ],
+    "autostart": false,
+    "requires": [
+      "PyQt6"
+    ]
   }
 }

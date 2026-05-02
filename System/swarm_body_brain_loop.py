@@ -196,16 +196,13 @@ class SwarmPhysiology:
         circadian = now_state.get("circadian") if isinstance(now_state.get("circadian"), dict) else {}
         drive_bias = _drive_bias_fields(intrinsic_receipt)
         action_bias = {
-            key: action.get(key)
-            for key in (
-                "drive_bias_applied",
-                "drive_bias_topic",
-                "drive_bias_goal",
-                "drive_bias_score",
-                "drive_bias_source",
-                "truth_label",
-            )
-            if key in action
+            # Event 100 — George Prior bias fields (always present for query consistency)
+            "drive_bias_applied": action.get("drive_bias_applied", False),
+            "drive_bias_topic":   action.get("drive_bias_topic") or None,
+            "drive_bias_goal":    action.get("drive_bias_goal"),
+            "drive_bias_score":   action.get("drive_bias_score") or None,
+            "drive_bias_source":  action.get("drive_bias_source"),
+            "truth_label":        action.get("truth_label"),
         }
         drive_bias.update(action_bias)
         row: Dict[str, Any] = {
