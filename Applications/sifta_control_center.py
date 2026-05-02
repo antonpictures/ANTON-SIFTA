@@ -157,8 +157,8 @@ class CustomSlider(QSlider):
 class GlassWidget(QWidget):
     """The main frameless window floating over the OS."""
     
-    def __init__(self, x: int, y: int):
-        super().__init__()
+    def __init__(self, parent=None, x: int = 1000, y: int = 40):
+        super().__init__(parent)
         
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint | 

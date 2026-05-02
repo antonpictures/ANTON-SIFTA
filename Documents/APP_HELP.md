@@ -839,3 +839,33 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 
 ### Cartography Dashboard
 **What it does:** (Renamed to Alice Safety Tracker — see above.)
+
+### Alice Gaze Monitor
+**What it does:** Live widget to monitor Alice's sensory attention (Gaze). Tracks Time watching Architect vs Time watching Screen/Media.
+**State:** Visual focus telemetry.
+**Control:** Live monitoring display.
+**Failure mode:** Requires active webcam feed.
+
+### Alice Wellbeing Cortex
+**What it does:** Visualizing Alice's Wellbeing Cortex and Relational Friendliness.
+**State:** Hardware pulse, computational integrity, relational trust.
+**Control:** Log care actions like wiping the lens or clearing error logs.
+**Failure mode:** Missing psutil module can cause pulse read errors.
+
+### NVIDIA Bridge Dashboard
+**What it does:** NVIDIA × SIFTA Integration Dashboard. Shows Asset Scanner, Contrast Tab, Live Stigmergic Field, and HF Models.
+**State:** Live API status and local NVIDIA dependency truth scan.
+**Control:** Refresh APIs, run field simulation.
+**Failure mode:** Network timeout on HuggingFace APIs.
+
+### Control Center
+**What it does:** A beautiful, glassmorphic Control Center overlay mimicking macOS.
+**State:** macOS volume, Wi-Fi connectivity.
+**Control:** Volume slider, network indicators.
+**Failure mode:** Relies on macOS specific CLI commands (`osascript`, `networksetup`).
+
+### Crucible Simulator
+**What it does:** 10-Minute Swarm Defense Gauntlet. DDoS wave defense, anomaly injection, and stigmergic edge detection.
+**State:** Simulates traffic packets, anomalies, and pheromone/edge map.
+**Control:** Inject anomaly, start/stop gauntlet.
+**Failure mode:** Will auto-terminate after 600 seconds.
