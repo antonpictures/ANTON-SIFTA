@@ -15,6 +15,7 @@
 | Semble MCP | [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md) | Local code retrieval MCP + OpenCode + Ollama; token economics | 2026-05-01 |
 | Hermes LM Studio | [RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md](RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md) | Nous Hermes-Agent + LM Studio; ctx ≥64k; bridge vs receipts | 2026-05-01 |
 | MiMo ASR | [RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md](RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md) | Xiaomi MiMo-V2.5-ASR local; VRAM/diarization/receipt fields | 2026-05-01 |
+| Laguna XS.2 vLLM | [RESEARCH_Poolside_Laguna_XS2_vLLM_SIFTA_Tournament_2026-05-01.md](RESEARCH_Poolside_Laguna_XS2_vLLM_SIFTA_Tournament_2026-05-01.md) | Poolside MoE coding model; vLLM build friction; bake-off vs benchmarks | 2026-05-01 |
 
 ---
 
