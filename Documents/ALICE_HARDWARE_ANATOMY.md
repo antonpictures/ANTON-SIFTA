@@ -41,6 +41,38 @@ flowchart TB
     Base -. base diagnostics .-> Alice
 ```
 
+### M5 Ollama Cleanup Audit
+
+Observed on this M5 on 2026-05-01:
+
+| Tag | Physical model blob | Role | Cleanup decision |
+|---|---:|---|---|
+| `sifta-gemma4-alice:latest` | 9.6 GB | Alice primary cortex | **KEEP** |
+| `gemma4:latest` | shares the same 9.6 GB blob as `sifta-gemma4-alice` | raw base diagnostics | optional remove tag only; frees almost no disk while Alice tag remains |
+| `qwen3.5:2b` | 2.7 GB | corvid/reflex | **KEEP** |
+| `sifta-alice-qwen35:latest` | shares the same 2.7 GB blob as `qwen3.5:2b` | old Alice fallback/compare | optional remove tag only once no UI path references it |
+| `sifta-classifier-c1:latest` | 6.2 GB | C1 classifier | keep if the classifier path is active; otherwise test before removing |
+
+Duplicate-looking tags do not necessarily duplicate disk. Ollama stores model
+weights by content blob, so two tags can point at one physical weight file.
+Use the read-only audit tool before cleanup:
+
+```bash
+PYTHONPATH=. python3 System/ollama_model_inventory_audit.py
+```
+
+Current M5 cleanup priority:
+
+1. Keep `sifta-gemma4-alice:latest`, `qwen3.5:2b`, and any classifier model
+   that the C1 runtime is actively using.
+2. Consider removing `gemma4:latest` only to reduce UI confusion. It does not
+   free the 9.6 GB blob while `sifta-gemma4-alice:latest` still references it.
+3. Consider removing `sifta-alice-qwen35:latest` only after the UI no longer
+   names it as a fallback. It does not free the 2.7 GB blob while `qwen3.5:2b`
+   still references it.
+4. Real disk savings come from unreferenced blobs left by failed pulls or
+   rebuilds. Do not delete those blindly; audit references first.
+
 ## Mac Mini Sentry, 8 GB
 
 This should look like Alice's anatomy, but smaller. It is a sentry/scout, not a
