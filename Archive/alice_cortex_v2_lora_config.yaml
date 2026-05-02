@@ -1,0 +1,38 @@
+# Alice Cortex v2 — LoRA Training Config
+# Base: mlx-community/gemma-4-e4b-it-4bit (Gemma 4 4B instruct, 4-bit quantized)
+# Task: C1 intent classifier — SILENCE / TOOL / BOND / ENGAGE labels
+# Rank 16, Dropout 0.1 per PREDATOR doctrine
+
+model: "mlx-community/gemma-4-e4b-it-4bit"
+train: true
+fine_tune_type: "lora"
+data: "Archive/alice_cortex_v2_mlx_data"
+
+# LoRA config
+num_layers: 8
+lora_parameters:
+  rank: 16
+  dropout: 0.1
+  scale: 20.0
+  keys:
+    - q_proj
+    - v_proj
+
+# Training
+iters: 600
+batch_size: 2
+grad_accumulation_steps: 4
+learning_rate: 1.0e-4
+mask_prompt: false
+max_seq_length: 512
+
+# Checkpointing
+adapter_path: "Archive/alice_cortex_v2_adapters"
+save_every: 100
+
+# Evaluation
+val_batches: 10
+steps_per_eval: 100
+steps_per_report: 25
+
+seed: 555
