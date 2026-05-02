@@ -249,7 +249,7 @@ def classify_spoken_ingress(
             "reason": "media_focus_plus_narration_shape",
             "confidence": min(1.0, narration_score),
         }
-    return {"route": "direct", "reason": "media_focus_but_prompt_like", "confidence": narration_score}
+    return {"route": "observed_media", "reason": "media_focus_default_to_observed", "confidence": max(0.5, narration_score)}
 
 
 def write_gate_receipt(
