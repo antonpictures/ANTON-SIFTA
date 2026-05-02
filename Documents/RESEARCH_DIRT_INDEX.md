@@ -19,6 +19,8 @@
 | Nemotron 3 Nano Omni | [RESEARCH_NVIDIA_Nemotron3_Nano_Omni_Docker_SIFTA_Tournament_2026-05-01.md](RESEARCH_NVIDIA_Nemotron3_Nano_Omni_Docker_SIFTA_Tournament_2026-05-01.md) | NVIDIA omni vLLM+Docker; Parakeet/Cosmos; VRAM + multimodal receipts | 2026-05-01 |
 | DeepSeek V4 DeepEP / Tile | [RESEARCH_DeepSeek_V4_DeepEP_TileKernels_SIFTA_Tournament_2026-05-01.md](RESEARCH_DeepSeek_V4_DeepEP_TileKernels_SIFTA_Tournament_2026-05-01.md) | DeepEP MoE comms + CSA/HCA context + TileKernels fusion; verify claims | 2026-05-01 |
 | Nemotron OCR v2 | [RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md](RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md) | Lightweight OCR; layout modes; CPU-first + bbox receipts | 2026-05-01 |
+| Google agents-cli | [RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md](RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md) | GCP Agent Platform skills; ADK/A2A; eval rubrics vs receipts | 2026-05-01 |
+| Qwopus GLM 18B merge | [RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md](RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md) | Frankenmerge + heal FT; llama.cpp; seam failures + loop harness | 2026-05-01 |
 
 ---
 
