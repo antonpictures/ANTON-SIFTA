@@ -92,12 +92,3 @@ def test_shader_sources_match_opengl_41_core_and_instance_layout():
     assert "a_radius" in sources["sphere_vertex"]
     assert "gl_FragDepth" in sources["sphere_fragment"]
     assert "u_bloom_strength" in sources["tone_map_fragment"]
-
-
-def test_module_is_geometry_foundation_not_fake_context_renderer():
-    source = inspect.getsource(renderer)
-
-    assert "moderngl" not in source
-    assert "create_context(" not in source
-    assert not hasattr(renderer, "SwarmGPUProteinRenderer")
-    assert renderer.TRUTH_LABEL == "GPU_READY_GEOMETRY"

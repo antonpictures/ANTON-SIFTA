@@ -1,16 +1,17 @@
-"""GPU-ready molecular geometry buffers for the SIFTA protein renderer.
+"""GPU-ready molecular geometry and Qt/OpenGL renderer for SIFTA proteins.
 
-This module is the deterministic foundation for the OpenGL/ModernGL protein
-organ. It does not claim to create a GL context or draw pixels by itself.
-Instead it converts PDB text into compact, typed buffers that a future
-QOpenGLWidget renderer can upload directly to the GPU:
+The deterministic buffer helpers convert PDB text into compact, typed arrays
+that the ``SwarmGPUProteinRenderer`` QOpenGLWidget can upload to the local
+OpenGL/ModernGL context:
 
 - sphere impostor instances for atoms
 - cylinder/capsule impostor instances for bonds
 - Catmull-Rom/parallel-transport ribbon tube geometry for CA backbones
 - stigmergic bloom strength derived from local SIFTA ledgers
 
-Truth label: GPU_READY_GEOMETRY, not FULL_RENDERER.
+Truth label for exported buffers: GPU_READY_GEOMETRY. The widget is an
+operational local renderer; visible-frame claims still require pixel/readback
+tests at the UI layer.
 """
 
 from __future__ import annotations
@@ -24,15 +25,14 @@ from typing import Iterable, Sequence
 import numpy as np
 
 import time
-import PyQt6
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QSurfaceFormat
+
 try:
     import moderngl
 except ImportError:
     moderngl = None
-
 
 
 SCHEMA_VERSION = "sifta_gpu_protein_renderer.geometry_v1"
