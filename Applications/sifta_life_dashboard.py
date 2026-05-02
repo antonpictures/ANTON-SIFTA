@@ -301,14 +301,14 @@ class ScheduleTab(QWidget):
         for task in undone + done[-5:]:
             card = QFrame()
             is_done = task.get("done", False)
-            border_color = _DIM if is_done else [_GREEN, _AMBER, _RED][task.get("priority", 0)]
+            p = max(0, min(int(task.get("priority", 0)), 2))  # clamp [0-2] — never IndexError
+            border_color = _DIM if is_done else [_GREEN, _AMBER, _RED][p]
             card.setStyleSheet(f"""
                 QFrame {{ background: {_CARD}; border-left: 3px solid {border_color};
                           border-radius: 4px; padding: 8px; margin: 2px; }}
             """)
             cl = QHBoxLayout(card)
             priority_icons = ["🟢", "🟡", "🔴"]
-            p = task.get("priority", 0)
             txt = task.get("text", "")
             created = task.get("created", 0)
             label_text = f"{priority_icons[p]} {txt}"
