@@ -1395,6 +1395,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addWidget(self.inference_default_card)
 
         root.addStretch()
+        return page
+
     def _reset_brain_to_default(self) -> None:
         """Restore the canonical gemma4 cortex without exposing model names to the user."""
         canonical = "sifta-gemma4-alice"
