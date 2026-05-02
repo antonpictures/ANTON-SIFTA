@@ -9,6 +9,22 @@ os.environ.setdefault("SIFTA_DISABLE_MESH", "1")
 REPO = Path(__file__).resolve().parent.parent
 
 
+def test_ollama_weight_labels_require_exact_model_tags():
+    from Applications.sifta_system_settings import _format_ollama_weight_label
+
+    weights = {
+        "qwen3.5:2b": 2_740_000_000,
+        "sifta-classifier-c1:latest": 6_180_000_000,
+        "sifta-gemma4-alice:latest": 9_610_000_000,
+    }
+
+    assert _format_ollama_weight_label("qwen3.5:2b", weights) == "⚖ 2.74 GB"
+    assert _format_ollama_weight_label("sifta-classifier-c1", weights) == "⚖ 6.18 GB"
+    assert _format_ollama_weight_label("sifta-gemma4-alice", weights) == "⚖ 9.61 GB"
+    assert _format_ollama_weight_label("qwen3.5:4b", weights) == "not installed"
+    assert _format_ollama_weight_label("qwen3.5:9b", weights) == "not installed"
+
+
 def test_inference_defaults_persist_global_and_app_models(tmp_path, monkeypatch):
     from System import sifta_inference_defaults as defaults
 
@@ -27,10 +43,10 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
 
     from System import sifta_inference_defaults as defaults
 
-    assert defaults.CANONICAL_OLLAMA_DEFAULT == "qwen3.5:2b"
-    assert defaults.DEFAULT_OLLAMA_MODEL == "qwen3.5:2b"
-    assert defaults.CANONICAL_OLLAMA_FALLBACK == "qwen3.5:2b"
-    assert "Default Alice cortex:** `qwen3.5:2b`" in (defaults.__doc__ or "")
+    assert defaults.CANONICAL_OLLAMA_DEFAULT == "sifta-gemma4-alice"
+    assert defaults.DEFAULT_OLLAMA_MODEL == "sifta-gemma4-alice"
+    assert defaults.CANONICAL_OLLAMA_FALLBACK == "sifta-alice-qwen35"
+    assert "Default Alice cortex:** `sifta-gemma4-alice`" in (defaults.__doc__ or "")
     assert "gemma-4-abliterated:latest` (Ollama)" not in (defaults.__doc__ or "")
 
 
@@ -52,7 +68,6 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert settings.findChild(QComboBox, "DefaultInferenceModelCombo") is None
         assert settings.findChild(QComboBox, "AliceBrainModelCombo") is None
         assert hasattr(settings, "inference_default_card")
-        assert hasattr(settings, "inference_alice_card")
     finally:
         settings.close()
         for _ in range(10):

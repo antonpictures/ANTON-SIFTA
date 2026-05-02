@@ -104,6 +104,32 @@ def _parse_ollama_list_output(text: str) -> list[str]:
     return names
 
 
+def _format_ollama_weight_label(
+    model_name: str,
+    model_weights: dict[str, int],
+    *,
+    missing_label: str = "not installed",
+) -> str:
+    """Return an exact local model weight label.
+
+    Do not prefix-match model families here. A planned tag such as
+    ``qwen3.5:9b`` must not inherit the installed weight of ``qwen3.5:2b``.
+    """
+    model = (model_name or "").strip()
+    if not model:
+        return missing_label
+
+    size = model_weights.get(model)
+    if size is None and ":" not in model:
+        size = model_weights.get(f"{model}:latest")
+
+    if not size:
+        return missing_label
+    if size >= 1e9:
+        return f"⚖ {size / 1e9:.2f} GB"
+    return f"⚖ {size / 1e6:.0f} MB"
+
+
 def _canonical_local_model_name(
     name: str,
     installed: list[str],
@@ -1174,18 +1200,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         def _fmt_weight(model_name: str) -> str:
             """Return human-readable weight string for a model name."""
-            # Try exact match then prefix match
-            size = model_weights.get(model_name) or model_weights.get(model_name + ":latest")
-            if not size:
-                for k, v in model_weights.items():
-                    if k.startswith(model_name.split(":")[0]):
-                        size = v
-                        break
-            if not size:
-                return ""
-            if size >= 1e9:
-                return f"  ⚖ {size/1e9:.2f} GB"
-            return f"  ⚖ {size/1e6:.0f} MB"
+            return f"  {_format_ollama_weight_label(model_name, model_weights)}"
 
         def _state_dir_weight(subdir: str) -> str:
             """Measure a .sifta_state subdirectory without blocking."""
@@ -1285,8 +1300,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "border: 1px solid rgb(140, 70, 20); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        root.addLayout(_chip_row("Granite Doctor",  "granite4.1  ·  router / coder / prover",
-                                  chip_style_doctor, _fmt_weight("granite4.1")))
+        root.addLayout(_chip_row("Granite Doctor",  "granite4.1:3b  ·  router / coder / prover",
+                                  chip_style_doctor, _fmt_weight("granite4.1:3b")))
         root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default,
                                   chip_style_organ, _fmt_weight(self._corvid_default)))
 
