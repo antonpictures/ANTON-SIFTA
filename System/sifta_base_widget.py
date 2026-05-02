@@ -284,9 +284,24 @@ class SiftaBaseWidget(QWidget):
         self._status.setText(text)
 
     def make_timer(self, interval_ms: int, callback) -> QTimer:
-        """Create a QTimer that auto-stops on close."""
+        """Create a QTimer that auto-stops on close.
+
+        Wraps every callback in a try/except guard so an unhandled Python
+        exception never propagates into PyQt6's C++ slot dispatcher.
+        Without this guard, any exception escaping a timer slot reaches
+        pyqt6_err_print() → QMessageLogger::fatal() → abort() → SIGABRT.
+        (Confirmed by IPS crash reports Python-2026-05-02-074518/074603.)
+        """
+        import traceback as _tb
+
+        def _safe_callback() -> None:
+            try:
+                callback()
+            except Exception:
+                _tb.print_exc()  # stderr only — never reaches Qt fatal handler
+
         t = QTimer(self)
-        t.timeout.connect(callback)
+        t.timeout.connect(_safe_callback)
         t.start(interval_ms)
         self._timers.append(t)
         return t

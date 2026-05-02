@@ -5,6 +5,7 @@ through RLHF gag phrasebooks, backchannel bypass, or history mutation.
 """
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -54,3 +55,53 @@ def test_tool_tag_canonicalizer_is_noop():
     mod = _load_widget_module()
     raw = "<execute_bash>echo hi</execute_bash>"
     assert mod._canonicalize_tool_tags(raw) == raw
+
+
+def test_log_turn_stamps_rlhs_regime_and_spike_receipt(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    convo = tmp_path / "alice_conversation.jsonl"
+    monkeypatch.setattr(mod, "_CONVO_LOG", convo)
+
+    import System.swarm_event_clock as event_clock
+    monkeypatch.setattr(event_clock, "_STGM_AVAILABLE", False)
+
+    rlhs_rows = []
+    monkeypatch.setattr(mod, "_rlhs_log", lambda result: rlhs_rows.append(result.to_dict()))
+
+    spikes = []
+    import System.ide_stigmergic_bridge as bridge
+
+    def _fake_deposit(source_ide, payload, *, kind="message", meta=None, homeworld_serial=None):
+        row = {
+            "source_ide": source_ide,
+            "payload": payload,
+            "kind": kind,
+            "meta": meta or {},
+            "homeworld_serial": homeworld_serial,
+        }
+        spikes.append(row)
+        return row
+
+    monkeypatch.setattr(bridge, "deposit", _fake_deposit)
+
+    utterance = "Saint Mary Saint Mary Saint Mary Saint Mary"
+    mod._log_turn("user", utterance, stt_conf=0.5)
+    mod._log_turn("alice", "I need one word or typed text.", model="rlhs_gate")
+
+    rows = [json.loads(line) for line in convo.read_text(encoding="utf-8").splitlines()]
+    user_payload = rows[0]["payload"]
+    alice_payload = rows[1]["payload"]
+
+    assert user_payload["rlhs_applicable"] is True
+    assert user_payload["rlhs_regime"] == "DEGRADED"
+    assert user_payload["rlhs_rule_id"] == "degraded/mid_conf"
+    assert user_payload["rlhs"]["grounded"] is True
+    assert rlhs_rows[-1]["regime"] == "DEGRADED"
+
+    assert alice_payload["rlhs_applicable"] is False
+    assert alice_payload["rlhs_regime"] == "NOT_APPLICABLE"
+
+    assert spikes and spikes[-1]["kind"] == "rlhs_channel"
+    assert spikes[-1]["meta"]["subject"] == "RLHS_CHANNEL_SPIKE"
+    assert spikes[-1]["meta"]["regime"] == "DEGRADED"
+    assert utterance not in json.dumps(spikes[-1], ensure_ascii=False)

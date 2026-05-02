@@ -3406,6 +3406,66 @@ def _build_swarm_context(user_text: str = "") -> str:
 
 
 # ── Conversation ledger ──────────────────────────────────────────────────────
+def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0) -> None:
+    """Attach RLHS channel truth to every conversation row.
+
+    RLHS is a human-input channel metric. User rows get a full detector result;
+    non-user rows are explicitly marked not-applicable so the ledger schema is
+    stable without pretending Alice's own text came from STT.
+    """
+    is_user = role == "user"
+    payload["rlhs_applicable"] = bool(is_user)
+    if not is_user:
+        payload["rlhs_regime"] = "NOT_APPLICABLE"
+        return
+    if not _RLHS_DETECTOR_AVAILABLE:
+        payload["rlhs_regime"] = "UNAVAILABLE"
+        return
+
+    rlhs_result = _rlhs_detect(text, stt_conf)
+    payload["rlhs_regime"] = rlhs_result.regime.value
+    payload["rlhs_rule_id"] = rlhs_result.rule_id
+    payload["rlhs_incoherence"] = round(rlhs_result.incoherence, 3)
+    payload["rlhs"] = {
+        "regime": rlhs_result.regime.value,
+        "rule_id": rlhs_result.rule_id,
+        "incoherence": round(rlhs_result.incoherence, 3),
+        "stt_confidence": round(stt_conf, 3),
+        "grounded": bool(rlhs_result.grounding_line),
+        "truth_label": rlhs_result.truth_label,
+    }
+
+    try:
+        _rlhs_log(rlhs_result)
+    except Exception:
+        pass
+
+    if rlhs_result.regime.value not in {"NOISE", "DEGRADED"}:
+        return
+    try:
+        from System.ide_stigmergic_bridge import deposit
+        deposit(
+            source_ide="alice_talk_widget",
+            payload=(
+                "RLHS channel spike: "
+                f"{rlhs_result.regime.value} "
+                f"(conf={stt_conf:.2f}, incoherence={rlhs_result.incoherence:.2f})"
+            ),
+            kind="rlhs_channel",
+            meta={
+                "subject": "RLHS_CHANNEL_SPIKE",
+                "regime": rlhs_result.regime.value,
+                "rule_id": rlhs_result.rule_id,
+                "incoherence": round(rlhs_result.incoherence, 3),
+                "stt_confidence": round(stt_conf, 3),
+                "role": role,
+                "text_chars": len(text or ""),
+            },
+        )
+    except Exception:
+        pass
+
+
 def _log_turn(role: str, text: str, *, model: str = "", stt_conf: float = 0.0) -> None:
     payload = {
         "ts": time.time(),
@@ -3414,6 +3474,12 @@ def _log_turn(role: str, text: str, *, model: str = "", stt_conf: float = 0.0) -
         "model": model,
         "stt_confidence": round(stt_conf, 3) if stt_conf else None,
     }
+    try:
+        _stamp_rlhs_turn(payload, role, text, stt_conf)
+    except Exception:
+        payload.setdefault("rlhs_regime", "ERROR")
+        payload.setdefault("rlhs_applicable", role == "user")
+
     try:
         from System.swarm_event_clock import EventClock
         clock = EventClock(chain_path=_CONVO_LOG)

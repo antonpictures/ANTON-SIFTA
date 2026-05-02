@@ -10,6 +10,21 @@ def test_run_nightly_audit_writes_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(nha, "HEALTH_LOG", tmp_path / "nightly_health.jsonl")
     monkeypatch.setattr(nha, "HEALTH_SUMMARY", tmp_path / "nightly_health_summary.json")
     monkeypatch.setattr(nha, "_STATE", tmp_path)
+    (tmp_path / "alice_conversation.jsonl").write_text(
+        json.dumps(
+            {
+                "payload": {
+                    "event_kind": "conversation_turn",
+                    "role": "user",
+                    "text": "clear typed request",
+                    "rlhs_regime": "CLEAR",
+                    "rlhs_incoherence": 0.0,
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     receipt = nha.run_nightly_audit(run_arxiv=False, run_claims=False, fast_tests=True)
     assert receipt["truth_label"] == nha.TRUTH_LABEL
@@ -17,6 +32,8 @@ def test_run_nightly_audit_writes_ledger(tmp_path, monkeypatch):
     assert "composite_score" in receipt
     assert "ledger_metrics" in receipt
     assert "observability_score" in receipt["ledger_metrics"]["observability"]
+    assert receipt["ledger_metrics"]["rlhs_channel"]["rlhs_score"] == 1.0
+    assert receipt["ledger_metrics"]["rlhs_channel"]["n_user_rows"] == 1
     assert receipt["sections"]["arxiv_sweep"]["status"] == "SKIPPED"
     log = tmp_path / "nightly_health.jsonl"
     assert log.exists()

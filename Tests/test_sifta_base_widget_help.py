@@ -67,3 +67,21 @@ def test_stigmergic_writer_keeps_shared_document_panel(monkeypatch):
         assert len(_chat_toggle_buttons(widget)) == 1
     finally:
         widget.close()
+
+
+def test_make_timer_contains_python_exceptions(monkeypatch):
+    monkeypatch.delenv("SIFTA_ENABLE_APP_LOCAL_CHAT", raising=False)
+    widget = _NormalHarness()
+    calls = []
+
+    def bad_callback():
+        calls.append("called")
+        raise RuntimeError("timer boom")
+
+    try:
+        timer = widget.make_timer(999_999, bad_callback)
+        timer.stop()
+        timer.timeout.emit()
+        assert calls == ["called"]
+    finally:
+        widget.close()

@@ -22,7 +22,7 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-02T07:20:00-07:00` — *CG55M@cursor: **§0.11** 555 RLHS/RLHF channel table + **Event 109** `swarm_collective_intent_field.py` (collective intent vector + pytest).* |
+| **Stamp (local ISO)** | `2026-05-02T07:58:00-07:00` — *Codex/CG55M/AG31 stigbus: **§0.11 555 sealed** — per-turn RLHS fields on Alice conversation ledger, RLHS spike traces, nightly audit metric, Event 109 collective intent vector.* |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
@@ -30,7 +30,7 @@
 | **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
 | **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
 | **Collision risk** | **MED** — multi-lane (outreach + GPU + NVIDIA registry); **LOW** if each Doctor tails trace + yields on duplicate intent |
-| **Next safe move** | **Next driver = Event 93 (§0.6):** mount **`VisualPhenotypeModernGLPass`** from `System/swarm_visual_phenotype_gl.py` into **`Applications/sifta_protein_folder_widget.py`** via **`QOpenGLWidget`** (PyQt6) in the live UI loop so phenotype pixels refresh with the same cadence as the fold view; add **automated** framebuffer or `QImage` proof that pixels shift when `visual_phenotype_uniforms.jsonl` changes. **SoT:** extend existing module — **do not** land a parallel `swarm_silicon_path_driver.py` without review (drafts broke `STATE_DIR`, texture contract for chromatophore v3, and optional deps). **Vanguard:** fly **efference copy** organ (body vs vision prediction error → `efference_copy.jsonl`) is **proposal-only** until ledger shape + `pytest` + Architect **GO**. **Plasticity P3:** `bias_drives()` on **GO**. |
+| **Next safe move** | **Next driver = BioLLM / adapters / research (Post-555):** Forage + claims toward threshold (motor/crystallizer wiring already in tree). Execution + receipts for Bio corpus / LoRA gate. Also **RESEARCH_DIRT_INDEX §A/E** (11 bake-offs remain RESEARCH_NOT_SHIPPED until bake-off + schema). **Parallel physiology (§E)**: deposit_observation on organ paths, Event 98c showpiece, CUSUM/Page tightening. |
 
 ### 0.3 — **Event 91 vanguard + drive plasticity (2026-05-01)**
 
@@ -154,13 +154,14 @@
 | Event | Layer | SoT (M5 repo) | Receipt / test law |
 |:---|:---|:---|:---|
 | **108** | **Input** — backchannel + RLHS regime (`CLEAR` / `DEGRADED` / `NOISE`) | `System/swarm_rlhs_detector.py` — `backchannel_rule_id`, `detect_rlhs`, `should_ground` | Phatic grunts **never** spin the LLM; **one** grounding line on `DEGRADED` only; `tests/test_swarm_rlhs_detector.py` |
+| **108P1** | **Ledger** — per-turn RLHS channel truth | `Applications/sifta_talk_to_alice_widget.py` — `_log_turn` stamps `rlhs_regime`, `rlhs_rule_id`, `rlhs_incoherence`; `System/swarm_health_metrics.py` — `score_rlhs_ledger` | `.sifta_state/alice_conversation.jsonl` rows are schema-stable; degraded/noise spikes append `ide_stigmergic_trace.jsonl` rows with `kind=rlhs_channel`; nightly audit exposes `ledger_metrics.rlhs_channel`; tests cover widget + metrics + audit |
 | **108** | **Output** — terminal RLHF / service-tail strip | Same module — `sanitize_output_tail` → `RLHSTailResult`; **chained** with **107** second pass | `tests/test_swarm_rlhs_output_tail.py` — payload preserved, pure scaffold → empty |
 | **107** | **Output** — RLHF cutoff / “I can do for you the following …” tail + stats | `System/swarm_rlhf_detector.py` — `strip_rlhf_output_tail`, `get_rlhf_cutoff_stats` | `.sifta_state/rlhf_cutoffs.jsonl` append-only; `tests/test_swarm_rlhf_detector.py` |
 | **109** | **Swarm vector** — collective intent from multi-ledger tails | `System/swarm_collective_intent_field.py` — `compute_collective_intent`, `write_collective_intent` | `.sifta_state/collective_intent_field.jsonl`; `truth_label=COLLECTIVE_INTENT_FIELD`; `tests/test_swarm_collective_intent_field.py` |
 
 **Triple-IDE handoff (Antigravity narrative hygiene):** do **not** paste dirt that references a non-existent `RLHFDetector` class or writes unbounded `read_text()` on multi-GB JSONL. Use **`swarm_rlhf_detector.detect_rlhf_cutoff`**, **`append_line_locked`**, and **tail-bounded reads** (see `swarm_collective_intent_field._read_jsonl_tail`).
 
-**P1 (Battle Plan continuation — not shipped in this bolus):** `rlhs_regime` / `log_rlhs_turn` on every `conversation_log.jsonl` row; NOISE / DEGRADED spikes → `ide_stigmergic_trace.jsonl` for CUSUM — **separate PR** with widget wiring + nightly audit field.
+**P1 (Battle Plan continuation — SHIPPED 555):** `rlhs_regime` / `log_rlhs_turn` on Alice's conversation ledger (`.sifta_state/alice_conversation.jsonl`; legacy readers may also inspect `conversation_log.jsonl`); NOISE / DEGRADED spikes → `ide_stigmergic_trace.jsonl` for CUSUM — **shipped** with widget wiring + nightly audit field.
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 
@@ -618,4 +619,6 @@ HONEYBEE_WAGGLE_ROUTER_v1 — Event 92 routing dance GLSL; von Frisch / Seeley m
 
 ---
 
-*Document version: 2026-05-02 — **§0.11** 555 RLHS/RLHF channel surgery (Events 108+107+109) + **`swarm_collective_intent_field`**; prior **2026-05-01** block retained: **§0.4** + **mic-drift** + **single-prover** enemy rows; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** cochlea **SHIPPED** + **media ingress gate** + **`swarm_stigmergic_cochlea_integrator.py`** overlay + Grok handoff; **§0.9** dolphin + **collective fuse**; **§0.10 Event 98b** SC integrator + temporal / owl **SHIPPED v1**; **Event 99** multi-prover verifier + **BISHOP_BUNDLE_QUANTUM_SACK** doc; Event 91 table rows **95/98b/99**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + auditory hierarchy + multisensory (SC) + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx + **media gate** + cochlea + owl + SC integrator + **multi_prover** cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`. Paste **STIGALL_555** above when the Architect seals the orders.*
+*Document version: 2026-05-02 — **§0.11** 555 RLHS/RLHF channel surgery (Events 108+107+109) + **`swarm_collective_intent_field`**; prior **2026-05-01** block retained: **§0.4** + **mic-drift** + **single-prover** enemy rows; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** cochlea **SHIPPED** + **media ingress gate** + **`swarm_stigmergic_cochlea_integrator.py`** overlay + Grok handoff; **§0.9** dolphin + **collective fuse**; **§0.10 Event 98b** SC integrator + temporal / owl **SHIPPED v1**; **Event 99** multi-prover verifier + **BISHOP_BUNDLE_QUANTUM_SACK** doc; Event 91 table rows **95/98b/99**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + auditory hierarchy + multisensory (SC) + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx + **media gate** + cochlea + owl + SC integrator + **multi_prover** cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`.*
+
+**STIGALL_555** — Architect seal line: 555 RLHS/RLHF instrumentation arc closed. P1 shipped.

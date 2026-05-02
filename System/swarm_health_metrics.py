@@ -231,6 +231,87 @@ def score_motor_policy_ledger(*, state_dir: Optional[Path] = None, tail: int = 5
     }
 
 
+def _conversation_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the conversation payload from EventClock or fallback JSONL rows."""
+    payload = row.get("payload")
+    if isinstance(payload, dict):
+        return payload
+    return row
+
+
+def score_rlhs_ledger(*, state_dir: Optional[Path] = None, tail: int = 200) -> Dict[str, Any]:
+    """
+    Score RLHS regimes based on recent conversation ledgers.
+
+    Current Talk-to-Alice writes `.sifta_state/alice_conversation.jsonl` through
+    EventClock, while older tooling may write plain `conversation_log.jsonl`.
+    Support both shapes so the health score is based on rows, not assumptions.
+    """
+    root = _base(state_dir)
+    paths = [root / "alice_conversation.jsonl", root / "conversation_log.jsonl"]
+    rows: List[Dict[str, Any]] = []
+    for path in paths:
+        rows.extend(_jsonl_tail(path, tail))
+    rows = [_conversation_payload(r) for r in rows[-tail:]]
+    user_rows = [r for r in rows if r.get("role") == "user"]
+    n = len(user_rows)
+    if n == 0:
+        return {
+            "truth_label": TRUTH_LABEL,
+            "rlhs_score": 0.0,
+            "n_user_rows": 0,
+            "n_instrumented_user_rows": 0,
+            "instrumented_rate": 0.0,
+            "degraded_rate": 0.0,
+            "noise_rate": 0.0,
+            "clear_rate": 0.0,
+            "silence_probe_rate": 0.0,
+            "rlhs_incoherence_avg": 0.0,
+            "ledger_paths": [str(p) for p in paths if p.exists()],
+        }
+
+    instrumented = [
+        r for r in user_rows
+        if str(r.get("rlhs_regime") or "").strip()
+        and str(r.get("rlhs_regime")).upper() not in {"UNAVAILABLE", "ERROR", "NOT_APPLICABLE"}
+    ]
+    denom = len(instrumented) or 1
+    regimes = [str(r.get("rlhs_regime", "")).upper() for r in instrumented]
+    degraded_cnt = sum(1 for x in regimes if x == "DEGRADED")
+    noise_cnt = sum(1 for x in regimes if x == "NOISE")
+    clear_cnt = sum(1 for x in regimes if x == "CLEAR")
+    silence_cnt = sum(1 for x in regimes if x == "SILENCE_PROBE")
+    incoherence_vals = [
+        r.get("rlhs_incoherence")
+        for r in instrumented
+        if isinstance(r.get("rlhs_incoherence"), (int, float))
+    ]
+
+    instrumented_rate = len(instrumented) / n
+    degraded_rate = degraded_cnt / denom
+    noise_rate = noise_cnt / denom
+    clear_rate = clear_cnt / denom
+    silence_probe_rate = silence_cnt / denom
+    inc_avg = sum(incoherence_vals) / len(incoherence_vals) if incoherence_vals else 0.0
+
+    # Score rewards both coverage and channel quality. A missing rlhs_regime is
+    # not silently treated as healthy.
+    quality = max(0.0, 1.0 - (degraded_rate + noise_rate * 1.5))
+    rlhs_score = instrumented_rate * quality
+    return {
+        "truth_label": TRUTH_LABEL,
+        "rlhs_score": round(rlhs_score, 4),
+        "n_user_rows": n,
+        "n_instrumented_user_rows": len(instrumented),
+        "instrumented_rate": round(instrumented_rate, 4),
+        "degraded_rate": round(degraded_rate, 4),
+        "noise_rate": round(noise_rate, 4),
+        "clear_rate": round(clear_rate, 4),
+        "silence_probe_rate": round(silence_probe_rate, 4),
+        "rlhs_incoherence_avg": round(inc_avg, 4),
+        "ledger_paths": [str(p) for p in paths if p.exists()],
+    }
+
 def test_score_numeric(test_section: Dict[str, Any]) -> float:
     """test_score = 1.0 if pytest gate PASS else 0.0"""
     return 1.0 if str(test_section.get("status", "")).upper() == "PASS" else 0.0
@@ -252,6 +333,7 @@ def composite_nightly_score(
     ledger_motor: Dict[str, Any],
     test_section: Dict[str, Any],
     bio_section: Dict[str, Any],
+    ledger_rlhs: Optional[Dict[str, Any]] = None,
 ) -> float:
     """
     Weighted composite from ledger-derived metrics (Event 107) + test + bio.
@@ -262,14 +344,18 @@ def composite_nightly_score(
     rp_term = max(0.0, 1.0 - rp)
     a = float(ledger_allo.get("allostatic_score", 0.5))
     m = float(ledger_motor.get("motor_score", 0.0))
+    r = float(ledger_rlhs.get("rlhs_score", 1.0)) if ledger_rlhs else 1.0
     t = test_score_numeric(test_section)
     b = bio_corpus_growth_score(bio_section)
+
+    # Adjust weights to fit the 1.0 total with the new RLHS channel weight.
     raw = (
-        0.18 * o
-        + 0.12 * p
-        + 0.15 * rp_term
-        + 0.22 * a
-        + 0.18 * m
+        0.15 * o
+        + 0.10 * p
+        + 0.12 * rp_term
+        + 0.18 * a
+        + 0.15 * m
+        + 0.15 * r
         + 0.10 * t
         + 0.05 * b
     )
@@ -284,5 +370,6 @@ __all__ = [
     "score_allostatic_ledger",
     "score_motor_policy_ledger",
     "score_observability_ledgers",
+    "score_rlhs_ledger",
     "test_score_numeric",
 ]

@@ -430,20 +430,24 @@ def run_nightly_audit(
         score_allostatic_ledger,
         score_motor_policy_ledger,
         score_observability_ledgers,
+        score_rlhs_ledger,
     )
 
     lm_obs = score_observability_ledgers(state_dir=_STATE)
     lm_allo = score_allostatic_ledger(state_dir=_STATE)
     lm_motor = score_motor_policy_ledger(state_dir=_STATE)
+    lm_rlhs = score_rlhs_ledger(state_dir=_STATE)
     ledger_metrics = {
         "observability": lm_obs,
         "allostatic": lm_allo,
         "motor": lm_motor,
+        "rlhs_channel": lm_rlhs,
     }
     composite = composite_nightly_score(
         ledger_obs=lm_obs,
         ledger_allo=lm_allo,
         ledger_motor=lm_motor,
+        ledger_rlhs=lm_rlhs,
         test_section=sections["tests"],
         bio_section=sections["bio_corpus"],
     )
@@ -452,7 +456,9 @@ def run_nightly_audit(
         f"parentage={lm_obs.get('parentage_score')} "
         f"race={lm_obs.get('race_pressure')} "
         f"allo={lm_allo.get('allostatic_score')} "
-        f"motor={lm_motor.get('motor_score')}"
+        f"motor={lm_motor.get('motor_score')} "
+        f"rlhs={lm_rlhs.get('rlhs_score')} "
+        f"(deg={lm_rlhs.get('degraded_rate')}, noise={lm_rlhs.get('noise_rate')})"
     )
 
     receipt: Dict[str, Any] = {

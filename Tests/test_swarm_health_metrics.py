@@ -58,13 +58,83 @@ def test_composite_nightly_score_weights(tmp_path: Path) -> None:
     lo = {"observability_score": 1.0, "parentage_score": 1.0, "race_pressure": 0.0}
     la = {"allostatic_score": 1.0}
     lm = {"motor_score": 1.0}
+    lr = {"rlhs_score": 1.0}
     tests = {"status": "PASS"}
     bio = {"n_claims": 50}
     c = hm.composite_nightly_score(
         ledger_obs=lo,
         ledger_allo=la,
         ledger_motor=lm,
+        ledger_rlhs=lr,
         test_section=tests,
         bio_section=bio,
     )
     assert 0.0 < c <= 1.0
+
+
+def test_rlhs_ledger_score(tmp_path: Path) -> None:
+    p = tmp_path / "conversation_log.jsonl"
+    rows = [
+        {"role": "user", "rlhs_regime": "CLEAR", "rlhs_incoherence": 0.1},
+        {"role": "user", "rlhs_regime": "DEGRADED", "rlhs_incoherence": 0.5},
+        {"role": "user", "rlhs_regime": "NOISE", "rlhs_incoherence": 0.9},
+        {"role": "assistant", "text": "hello"},
+    ]
+    p.write_text("\n".join(json.dumps(x) for x in rows) + "\n", encoding="utf-8")
+    r = hm.score_rlhs_ledger(state_dir=tmp_path, tail=10)
+    assert r["n_user_rows"] == 3
+    assert r["n_instrumented_user_rows"] == 3
+    assert r["instrumented_rate"] == 1.0
+    assert r["degraded_rate"] == round(1/3, 4)
+    assert r["noise_rate"] == round(1/3, 4)
+    assert r["rlhs_incoherence_avg"] == 0.5
+    assert r["rlhs_score"] < 1.0
+
+
+def test_rlhs_score_reads_event_clock_conversation_rows(tmp_path: Path) -> None:
+    p = tmp_path / "alice_conversation.jsonl"
+    rows = [
+        {
+            "event_id": "evt1",
+            "payload": {
+                "event_kind": "conversation_turn",
+                "role": "user",
+                "text": "Saint Mary Saint Mary",
+                "rlhs_regime": "DEGRADED",
+                "rlhs_incoherence": 0.35,
+            },
+        },
+        {
+            "event_id": "evt2",
+            "payload": {
+                "event_kind": "conversation_turn",
+                "role": "user",
+                "text": "clear typed request",
+                "rlhs_regime": "CLEAR",
+                "rlhs_incoherence": 0.0,
+            },
+        },
+    ]
+    p.write_text("\n".join(json.dumps(x) for x in rows) + "\n", encoding="utf-8")
+
+    r = hm.score_rlhs_ledger(state_dir=tmp_path, tail=20)
+
+    assert r["n_user_rows"] == 2
+    assert r["n_instrumented_user_rows"] == 2
+    assert r["degraded_rate"] == 0.5
+    assert r["noise_rate"] == 0.0
+    assert 0.0 < r["rlhs_score"] < 1.0
+
+
+def test_rlhs_score_penalizes_missing_instrumentation(tmp_path: Path) -> None:
+    (tmp_path / "alice_conversation.jsonl").write_text(
+        json.dumps({"payload": {"role": "user", "text": "old row without regime"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    r = hm.score_rlhs_ledger(state_dir=tmp_path, tail=20)
+
+    assert r["n_user_rows"] == 1
+    assert r["n_instrumented_user_rows"] == 0
+    assert r["instrumented_rate"] == 0.0
+    assert r["rlhs_score"] == 0.0
