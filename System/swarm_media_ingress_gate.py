@@ -10,6 +10,11 @@ imperative.
 It does not block human speech globally. It only fires when a recent focus row
 shows YouTube/media context and the utterance looks like third-person dialogue
 or narration rather than a direct prompt.
+
+Co-listening: this gate affects **STT routing into the dialog ledger**, not
+Alice's **ears**. Event 95 cochlea (+ ``swarm_acoustic_playback_fingerprint``)
+still ingests room audio features so the organism can sense playback vs
+near-field voice without storing raw PCM.
 """
 from __future__ import annotations
 

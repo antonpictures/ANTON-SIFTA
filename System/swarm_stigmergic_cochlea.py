@@ -16,9 +16,9 @@ from __future__ import annotations
 import json
 import math
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 
@@ -57,6 +57,8 @@ class CochleaFrame:
     acoustic_stress: float
     td_bias: float
     danger_hint: str
+    # Event ~111: near-field vs far-field replay cue (merged into JSONL; no raw PCM)
+    playback_fingerprint: Dict[str, Any] = field(default_factory=dict)
 
 
 def _state_root() -> Path:
@@ -208,6 +210,22 @@ def analyze_buffer(
     else:
         danger = "ACOUSTIC_FEATURES_NOMINAL"
 
+    try:
+        from System.swarm_acoustic_playback_fingerprint import compute_playback_fingerprint
+
+        pf = compute_playback_fingerprint(
+            buf,
+            sample_rate=int(sample_rate),
+            mfcc=mfcc,
+            rms=rms,
+            peak=peak,
+            spectral_entropy_val=entropy,
+            f0_hz=float(f0),
+            vad=vad,
+        )
+    except Exception:
+        pf = {}
+
     return CochleaFrame(
         ts=time.time(),
         truth_label=truth_label,
@@ -227,6 +245,7 @@ def analyze_buffer(
         acoustic_stress=round(acoustic_stress, 6),
         td_bias=td_bias,
         danger_hint=danger,
+        playback_fingerprint=pf,
     )
 
 
