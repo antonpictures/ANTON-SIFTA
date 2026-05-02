@@ -212,14 +212,8 @@ def classify_spoken_ingress(
     has_media_focus = bool(MEDIA_FOCUS_RE.search(context))
     has_fiction_focus = bool(FICTION_CONTEXT_RE.search(context))
 
-    # If the ear says this is a near-field voice, let it pass even while a
-    # video is frontmost. Named/direct address above still wins first.
-    if acoustic_cue == "nearfield_voice_likely":
-        return {
-            "route": "direct",
-            "reason": "acoustic_nearfield_voice",
-            "confidence": max(0.55, _score_from_fingerprint(acoustic_fingerprint, "nearfield_voice_likelihood", 0.55)),
-        }
+    # Acoustic nearfield override removed: professional YouTube audio often scores as nearfield,
+    # breaking the Media Gate. Direct address/requests are already caught above.
 
     if not has_media_focus:
         return {"route": "direct", "reason": "no_recent_media_focus", "confidence": 0.0}
