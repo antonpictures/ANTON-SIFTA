@@ -591,6 +591,21 @@ class ProteinFolderWidget(QWidget):
                 f"{receipt} R{reward:.2f} C{cost:.2f} Q{confidence:.2f}"
             )
             self.metrics["phenotype"].setToolTip(summarize_uniform_frame(frame))
+            
+            # Automated QImage/FBO receipt on phenotype change
+            current_tick = frame.uniforms.get("tick_id")
+            if current_tick != getattr(self, "_last_phenotype_tick", None):
+                self._last_phenotype_tick = current_tick
+                if SwarmGPUProteinRenderer is not None and isinstance(self.canvas, SwarmGPUProteinRenderer):
+                    try:
+                        img = self.canvas.grabFramebuffer()
+                        from pathlib import Path
+                        out = Path(".sifta_state/visual_phenotype_receipt.png")
+                        out.parent.mkdir(parents=True, exist_ok=True)
+                        img.save(str(out))
+                    except Exception as e:
+                        print(f"Failed to write optic receipt: {e}")
+                        
         except Exception:
             self.metrics["phenotype"].setText("read failed")
 

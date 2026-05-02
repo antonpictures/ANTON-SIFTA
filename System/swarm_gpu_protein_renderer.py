@@ -856,20 +856,46 @@ class SwarmGPUProteinRenderer(QOpenGLWidget):
                 }''',
                 fragment_shader='''#version 410 core
                 uniform sampler2D u_tex;
+                uniform sampler2D u_depth;
                 uniform float u_bloom;
                 in vec2 v_uv;
                 out vec4 frag_color;
+                
+                float getDepth(vec2 uv) {
+                    return texture(u_depth, uv).r;
+                }
+                
                 void main() {
                     vec4 color = texture(u_tex, v_uv);
+                    float depth = getDepth(v_uv);
+                    
+                    // Depth-aware pseudo-SSAO: sample neighbors
+                    vec2 texel = 1.0 / vec2(textureSize(u_tex, 0));
+                    float occlusion = 0.0;
+                    float bias = 0.0005;
+                    
+                    // 8-tap sample
+                    vec2 offsets[8] = vec2[](
+                        vec2(1, 0), vec2(-1, 0), vec2(0, 1), vec2(0, -1),
+                        vec2(1, 1), vec2(-1, -1), vec2(1, -1), vec2(-1, 1)
+                    );
+                    
+                    for(int i=0; i<8; i++) {
+                        float d = getDepth(v_uv + offsets[i] * texel * 3.0);
+                        // If neighbor is closer (smaller depth), it occludes us
+                        occlusion += clamp((depth - d - bias) * 500.0, 0.0, 1.0);
+                    }
+                    float ao = clamp(1.0 - (occlusion / 8.0) * 1.5, 0.3, 1.0);
+                    
                     // simple fake bloom threshold
                     float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
                     vec3 bloom = color.rgb * max(0.0, brightness - 0.5) * u_bloom * 2.0;
                     
-                    // simple screen-space vignette (fake SSAO/depth)
+                    // screen-space vignette
                     float dist = distance(v_uv, vec2(0.5));
-                    float vignette = smoothstep(0.8, 0.2, dist);
+                    float vignette = smoothstep(0.9, 0.2, dist);
                     
-                    vec3 hdr = (color.rgb + bloom) * vignette;
+                    vec3 hdr = (color.rgb * ao + bloom) * vignette;
                     // tone map
                     vec3 mapped = hdr / (hdr + vec3(1.0));
                     frag_color = vec4(pow(mapped, vec3(1.0 / 2.2)), color.a);
@@ -924,7 +950,9 @@ class SwarmGPUProteinRenderer(QOpenGLWidget):
             
         self.ctx.screen.use()
         self.fbo_color.use(0)
+        self.fbo_depth.use(1)
         self.prog_post['u_tex'].value = 0
+        self.prog_post['u_depth'].value = 1
         self.prog_post['u_bloom'].value = float(self._bloom_strength)
         self.quad_vao.render(moderngl.TRIANGLE_STRIP)
         self.ctx.finish()
