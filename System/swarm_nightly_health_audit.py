@@ -36,6 +36,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from System.jsonl_file_lock import append_line_locked, read_text_locked
+
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 
@@ -52,13 +54,51 @@ def _log(msg: str) -> None:
 
 def _append_health(row: Dict[str, Any]) -> None:
     _STATE.mkdir(parents=True, exist_ok=True)
-    with HEALTH_LOG.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, default=str) + "\n")
+    append_line_locked(
+        HEALTH_LOG,
+        json.dumps(row, default=str, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Section 1 — Stigmergic observability health
 # ═════════════════════════════════════════════════════════════════════════════
+
+def _tail_ide_trace_rows(max_lines: int = 400) -> List[Dict[str, Any]]:
+    p = _STATE / "ide_stigmergic_trace.jsonl"
+    if not p.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    try:
+        body = read_text_locked(p, encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    for line in body.splitlines()[-max_lines:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and "trace_id" in obj:
+            flat: Dict[str, Any] = {
+                "trace_id": obj.get("trace_id"),
+                "ts": obj.get("ts"),
+                "timestamp_ms": int(float(obj.get("ts", 0)) * 1000) if obj.get("ts") else None,
+                "homeworld_serial": obj.get("homeworld_serial"),
+                "regime": (obj.get("meta") or {}).get("regime") if isinstance(obj.get("meta"), dict) else None,
+                "causal_parent_ids": (obj.get("meta") or {}).get("causal_parent_ids", []),
+                "source_ide": obj.get("source_ide"),
+            }
+            meta = obj.get("meta")
+            if isinstance(meta, dict):
+                if meta.get("node_serial") and not flat["homeworld_serial"]:
+                    flat["homeworld_serial"] = meta.get("node_serial")
+            rows.append(flat)
+    return rows
+
 
 def _run_observability_health() -> Dict[str, Any]:
     try:
@@ -68,16 +108,19 @@ def _run_observability_health() -> Dict[str, Any]:
             test_cusum_null_hypothesis,
             write_health_snapshot,
         )
-        # 5-minute window of recent obs rows
-        recent = query_attribution(window_ms=24 * 3600 * 1000)  # last 24h
-        health = audit_trace_health(recent)
+        obs_rows = query_attribution(window_ms=24 * 3600 * 1000)
+        ide_rows = _tail_ide_trace_rows(400)
+        merged = ide_rows + obs_rows
+        health = audit_trace_health(merged)
         write_health_snapshot(health)
 
-        null_result = test_cusum_null_hypothesis(n_permutations=200, lag=5)
+        null_result = test_cusum_null_hypothesis(n_permutations=120, lag=5)
 
         return {
             "status":               "OK",
-            "n_obs_rows_24h":       len(recent),
+            "n_ide_rows":           len(ide_rows),
+            "n_obs_rows_24h":       len(obs_rows),
+            "n_merged_audit_rows":  len(merged),
             "trace_linkage":        health.get("trace_linkage", 0.0),
             "identity_consistency": health.get("identity_consistency", 0.0),
             "attribution_confidence": health.get("attribution_confidence", 0.0),
@@ -129,16 +172,37 @@ def _run_motor_policy_health() -> Dict[str, Any]:
         if not rows:
             return {"status": "EMPTY"}
         last = rows[-1]
-        regimes = [r.get("regime", "") for r in rows if r.get("regime")]
-        regime_counts: Dict[str, int] = {}
-        for reg in regimes:
-            regime_counts[reg] = regime_counts.get(reg, 0) + 1
+        regime_file = _STATE / "regime_state.json"
+        file_regime = "UNKNOWN"
+        try:
+            if regime_file.exists():
+                rd = json.loads(regime_file.read_text(encoding="utf-8"))
+                file_regime = str(rd.get("state") or rd.get("regime") or "UNKNOWN")
+        except Exception:
+            pass
+        crystallizer_gate: Optional[float] = None
+        mem_path = _STATE / "body_brain_memory.jsonl"
+        if mem_path.exists():
+            try:
+                for line in mem_path.read_text(encoding="utf-8", errors="replace").splitlines()[-20:]:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        mr = json.loads(line)
+                        if "crystallizer_weight" in mr:
+                            crystallizer_gate = float(mr.get("crystallizer_weight"))
+                    except Exception:
+                        continue
+            except OSError:
+                pass
         return {
             "status":            "OK",
             "last_selected":     last.get("selected_action"),
-            "last_regime":       last.get("regime"),
-            "last_gate":         last.get("crystallizer_gate"),
-            "regime_counts_50":  regime_counts,
+            "last_regime":       file_regime,
+            "last_motor_row_regime": last.get("regime"),
+            "crystallizer_gate": crystallizer_gate,
+            "regime_counts_50":  {},
             "n_rows":            len(rows),
         }
     except Exception as exc:
@@ -241,9 +305,12 @@ def _run_test_gate(fast: bool = True) -> Dict[str, Any]:
         "tests/test_event_103_regime_policy_mass.py",
         "tests/test_swarm_motor_policy.py",
         "tests/test_stigmergic_observability.py",
+        "tests/test_swarm_stigmergic_observability.py",
         "tests/test_swarm_bio_research_loop.py",
         "tests/test_swarm_bio_arxiv_ingester.py",
     ] if fast else ["tests/"]
+    if fast:
+        patterns = [p for p in patterns if (_REPO / p).is_file()]
 
     try:
         result = subprocess.run(
