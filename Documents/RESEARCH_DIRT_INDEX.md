@@ -35,21 +35,21 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | Theme | Left to do (pick → implement → receipt) |
 |:---|:---|
 | **Receipts / schema** | Harmonise JSONL fields (`VRAM`, `n_ctx`, `t_prefill` / `t_decode`, `bytes_moved`, modality flags) across bake-offs; document in one `work_receipts` extension or organ-specific ledgers. |
-| **Semble MCP** | Micro-benchmark token savings + latency on pinned revision; disposable MCP spike; optional MCP proxy + multi-prover extensions (see [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md)). |
-| **Hermes / LM Studio** | Optional `Hermes_USER_BRIDGE.md`; enforce **ctx receipt** on every local lane boot. |
-| **MiMo ASR** | Eval fixtures + WER/RTF rows; diarization stage; consent gates. |
-| **Laguna XS.2** | Tiered coding harness with **subscore** receipts; vLLM build hash + compile wall time. |
-| **Nemotron Omni** | Per-locale scoreboard; multimodal receipt template; threat model before Alice media wiring. |
-| **DeepSeek V4** | Reproduce CSA/HCA/DeepEP numbers vs marketing; TileKernels hardware floor on Foundry. |
-| **Nemotron OCR v2** | MCP tool with bbox+text; NVIDIA license pin; locale matrix Predator rows. |
-| **Google agents-cli** | Cost receipt + eval rubrics mirror **if** integrated. |
-| **Qwopus GLM** | Seam/heal FT metrics in ledger; **stall detector** (`max_wall_s`). |
-| **Moonshot PRFaaS** | Legal/residency review; reproduce one paper figure. |
-| **Quantum sack** | Optional: `swarm_rlhf_quarantine.py` / router metadata **without** metaphor-as-proof; [BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md). |
-| **Physiology (parallel hill)** | **Crystallizer → motor execution** weighting (close the loop with `_choose_action` / plasticity). **Event ~101 — Hypothalamus / homeostatic stabilizer:** regime + CUSUM → *active* suppression/boost of drives (planning sketch in chat; **no** `swarm_homeostatic_stabilizer.py` on `main` until Predator row + pytest). **Event 98c — closed sensorimotor loop:** pheromone → phenotype GL → audiogram → cochlea → colliculus salience → basal ganglia (receipted proof cycle — **plan**). **Intrinsic policy refinement** (floors, saturation, multi-drive arbitration). |
+| **Semble MCP** | Micro-benchmark token savings + index/query latency on pinned revision; disposable MCP spike; optional `code_search_semble` proxy behind covenant §7. |
+| **Hermes** | Optional `Hermes_USER_BRIDGE.md`; enforce **ctx receipt** on every local lane boot. |
+| **MiMo ASR** | ASR eval fixtures + WER/RTF rows; optional diarization stage; consent gates. |
+| **Laguna** | Tiered coding harness with subscore receipts; log vLLM build hash. |
+| **Nemotron Omni** | Per-locale scoreboard; multimodal receipt template; threat model. |
+| **DeepSeek** | Reproduce or bound CSA/HCA/DeepEP numbers; TileKernels floor notes. |
+| **Nemotron OCR v2** | MCP tool with bbox+text; locale matrix. |
+| **Google agents-cli** | Cost receipt + eval rubrics mirror (if integrated). |
+| **Qwopus** | Seam/heal FT metrics; stall detector. |
+| **Moonshot PRF** | Legal review; reproduce paper figure. |
+| **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router without treating metaphors as proof. |
+| **Physiology (parallel hill)** | **Event 101** is on `main` (`swarm_homeostatic_stabilizer.py` + `compute_homeostasis` in `body_brain_tick`); deepen **crystallizer ↔ stabilizer** coupling and **Event 102** `drive_modifiers` wiring into the tick (ledger exists; motor hook optional). Wire crystallized primitives → motor policy end-to-end for full-stack §A bake-offs. **Event 98c** — closed sensorimotor loop as planned showpiece (pheromone → phenotype → hearing → colliculus → policy). |
 | **§A YouTube / stack dirt** | All **11** rows remain **`RESEARCH_NOT_SHIPPED`** until each stack wins its own bake-off (this table). |
 
-**Watch window:** Antigravity vs Codex vs Cursor = **three IDE bodies**; hill honesty lives in **`ide_stigmergic_trace.jsonl`** + pytest, not vibes.
+**Watch window note:** Three IDE bodies + `ide_stigmergic_trace.jsonl` as the honest scoreboard. Colosseum lights stay on for bake-offs and Event 98c / crystallizer–motor closure work.
 
 ---
 
@@ -59,16 +59,17 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 
 | Event | Component | Commit / anchor | Status |
 |:---|:---|:---|:---|
-| **93** | Visual phenotype / OpenGL pass (ModernGL contract, ledger Δ proof) | `c82bce36` | **SHIPPED** |
-| **94** | Pheromone field + stigmergic coordinate feed (cursor → field memory) | shipped (see Predator §0.7) | **SHIPPED** |
-| **95** | Stigmergic cochlea (+ integrator overlay to `body_brain_memory`) | shipped (Predator §0.8) | **SHIPPED** |
-| **97** | Owl spatial hearing + calibrator (ITD/ILD receipts) | shipped | **SHIPPED** |
-| **98** | Superior colliculus multisensory integration | shipped | **SHIPPED** |
+| **93** | SwarmGPUProteinRenderer + QOpenGLWidget optic nerve | `c82bce36` | **SHIPPED** |
+| **94** | Stigmergic pheromone field | shipped (Predator §0.7) | **SHIPPED** |
+| **95** | Stigmergic cochlea (acoustic features) | shipped (Predator §0.8) | **SHIPPED** |
+| **97** | Owl spatial hearing (ITD/ILD) | shipped | **SHIPPED** |
+| **98** | Superior colliculus + integrator (Meredith/Stein rules) | shipped | **SHIPPED** |
 | **98b** | SC → body-brain integrator (`MULTISENSORY_COLLICULUS_MERGE`) | shipped | **SHIPPED** |
 | **99** | George Prior intrinsic drive daemon + receipts | pre-`da8a7b40` | **SHIPPED** |
-| **100** | Intrinsic drive → basal ganglia (`drive_bias_*` on tick) | `da8a7b40` | **SHIPPED** |
-| **—** | Skill crystallizer (REM → primitives) | `4fa10b91` | **SHIPPED** |
-| **—** | Phase detector + **CUSUM** on TD stream (`PhaseDetectorStats`, regime persistence) | `c82bce36` | **SHIPPED** |
+| **100** | Intrinsic drive → basal ganglia + phase detector (**CUSUM** on TD) | `da8a7b40` / `c82bce36` | **SHIPPED** |
+| **101** | Homeostatic stabilizer (hypothalamus gate, regime + crystallizer weight) | `swarm_homeostatic_stabilizer.py` | **SHIPPED** |
+| **102** | Allostatic load regulator (stress window → policy + `allostatic_load.jsonl`) | `EVENT102_COMMIT` | **SHIPPED** |
+| **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
 
 **Dashboard / UI:** regime strip + telemetry at Architect discretion (off-screen tests in Event 93 file).
 
