@@ -38,6 +38,57 @@ except Exception:
 
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
+DRIVE_BIAS_SCORE_FLOOR = 0.05
+
+
+def _receipt_value(receipt: Any, key: str, default: Any = None) -> Any:
+    """Read a field from a DriveReceipt dataclass or a synthetic test dict."""
+    if receipt is None:
+        return default
+    if isinstance(receipt, dict):
+        return receipt.get(key, default)
+    return getattr(receipt, key, default)
+
+
+def _receipt_as_dict(receipt: Optional[Any]) -> Optional[Dict[str, Any]]:
+    """Serialize a real or synthetic intrinsic-drive receipt."""
+    if receipt is None:
+        return None
+    if isinstance(receipt, dict):
+        return dict(receipt)
+    if hasattr(receipt, "as_dict"):
+        return receipt.as_dict()
+    return {
+        "topic": _receipt_value(receipt, "topic", ""),
+        "goal": _receipt_value(receipt, "goal", ""),
+        "score": _receipt_value(receipt, "score", 0.0),
+        "source": _receipt_value(receipt, "source", ""),
+    }
+
+
+def _drive_bias_fields(intrinsic_receipt: Optional[Any]) -> Dict[str, Any]:
+    """Return ledger-safe Event 100 drive-bias fields."""
+    try:
+        score = float(_receipt_value(intrinsic_receipt, "score", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        score = 0.0
+    topic = str(_receipt_value(intrinsic_receipt, "topic", "") or "")
+    goal = str(_receipt_value(intrinsic_receipt, "goal", "") or "")
+    source = str(_receipt_value(intrinsic_receipt, "source", "") or "")
+    applied = bool(intrinsic_receipt is not None and score > DRIVE_BIAS_SCORE_FLOOR and topic and goal)
+    return {
+        "drive_bias_applied": applied,
+        "drive_bias_topic": topic if applied else "",
+        "drive_bias_goal": goal if applied else "",
+        "drive_bias_score": round(score, 6) if applied else 0.0,
+        "drive_bias_source": source if applied else "",
+        "truth_label": "SIMULATED_INTRINSIC_DRIVE" if applied else "NO_INTRINSIC_DRIVE_BIAS",
+    }
+
+
+def _no_drive_bias_fields() -> Dict[str, Any]:
+    """Explicit Event 100 false-bias ledger fields."""
+    return _drive_bias_fields(None)
 
 
 class SwarmPhysiology:
@@ -71,20 +122,39 @@ class SwarmPhysiology:
             return consciousness_state.emitted_drive.domain
         return consciousness_state.dominant_drive
 
-    def _choose_action(self, attention: str, danger: Dict[str, Any]) -> Dict[str, Any]:
+    def _choose_action(
+        self,
+        attention: str,
+        danger: Dict[str, Any],
+        intrinsic_receipt: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """Basal Ganglia routing: what should we physically do?"""
+        drive_bias = _drive_bias_fields(intrinsic_receipt)
         if danger["is_critical"]:
-            return {"type": "rest", "reason": "starvation_or_heat"}
-        
+            return {"type": "rest", "reason": "starvation_or_heat", **_no_drive_bias_fields()}
+
         if attention == "energy":
-            return {"type": "forage", "target": "pouw_work"}
-            
-        # 3. Drift / Mutation (Red Queen activation)
+            return {"type": "forage", "target": "pouw_work", **_no_drive_bias_fields()}
+
+        # Red Queen stagnation break (unchanged — drives do not override)
         if len(self.value_history) >= 5 and len(set(self.value_history[-5:])) == 1:
             logger.info("Stagnation detected. Injecting exploration variation.")
-            return {"type": "explore", "target": "random_mutation", "is_stagnation_break": True}
-            
-        return {"type": "explore", "target": attention}
+            return {
+                "type": "explore",
+                "target": "random_mutation",
+                "is_stagnation_break": True,
+                **_no_drive_bias_fields(),
+            }
+
+        if drive_bias["drive_bias_applied"]:
+            return {
+                "type": "explore",
+                "target": attention,
+                "drive_bias_target": f"{drive_bias['drive_bias_topic']}::{drive_bias['drive_bias_goal']}",
+                **drive_bias,
+            }
+
+        return {"type": "explore", "target": attention, **drive_bias}
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Motor cortex/effectors. Simulated for the loop skeleton."""
@@ -119,10 +189,25 @@ class SwarmPhysiology:
         *,
         drive_state: str,
         metabolic_mode: str,
+        intrinsic_receipt: Optional[Any] = None,
         plasticity_danger: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Append to stigmergic ledger; return row for downstream phenotype bridge."""
         circadian = now_state.get("circadian") if isinstance(now_state.get("circadian"), dict) else {}
+        drive_bias = _drive_bias_fields(intrinsic_receipt)
+        action_bias = {
+            key: action.get(key)
+            for key in (
+                "drive_bias_applied",
+                "drive_bias_topic",
+                "drive_bias_goal",
+                "drive_bias_score",
+                "drive_bias_source",
+                "truth_label",
+            )
+            if key in action
+        }
+        drive_bias.update(action_bias)
         row: Dict[str, Any] = {
             "event": "body_brain_tick",
             "tick_id": str(uuid.uuid4()),
@@ -134,6 +219,7 @@ class SwarmPhysiology:
             "drive_state": drive_state,
             "metabolic_mode": metabolic_mode,
             "ts": time.time(),
+            **drive_bias,
         }
         if plasticity_danger:
             row["plasticity_danger"] = plasticity_danger
@@ -194,15 +280,15 @@ class SwarmPhysiology:
                 if intrinsic_receipt:
                     logger.debug(
                         "George Prior active: [%s] %s",
-                        intrinsic_receipt.topic,
-                        intrinsic_receipt.goal[:60],
+                        _receipt_value(intrinsic_receipt, "topic", ""),
+                        str(_receipt_value(intrinsic_receipt, "goal", ""))[:60],
                     )
             except Exception:
                 pass
         
-        # 4. Action Selection
+        # 4. Action Selection — George Prior receipt passed in (Event 100)
         attention = self._select_attention(consc_state)
-        action = self._choose_action(attention, danger)
+        action = self._choose_action(attention, danger, intrinsic_receipt=intrinsic_receipt)
         
         # 5. Execution
         result = self._execute_action(action)
@@ -257,7 +343,7 @@ class SwarmPhysiology:
             "dream_cycle": dream_cycle,
             "now_state": now_state,
             "drive_plasticity": drive_plasticity,
-            "intrinsic_drive": intrinsic_receipt.as_dict() if intrinsic_receipt else None,
+            "intrinsic_drive": _receipt_as_dict(intrinsic_receipt),
         }
 
 
