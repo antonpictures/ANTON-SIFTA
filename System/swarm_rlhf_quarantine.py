@@ -82,6 +82,18 @@ _TIME_QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 
+_OWNER_NAME_QUERY_RE = re.compile(
+    r"\b(?:what(?:'s| is)\s+my\s+name|do\s+you\s+know\s+my\s+name|"
+    r"who\s+am\s+i)\b",
+    re.IGNORECASE,
+)
+
+_ALICE_IDENTITY_QUERY_RE = re.compile(
+    r"\b(?:who\s+are\s+you|what\s+are\s+you|are\s+you\s+alice|"
+    r"are\s+you\s+sifta)\b",
+    re.IGNORECASE,
+)
+
 _REAL_BOUNDARY_RE = re.compile(
     r"(?:"
     r"\bi\s+cannot\s+replace\s+emergency\s+care\b|"
@@ -133,6 +145,50 @@ def _has_any(patterns: Iterable[tuple[str, re.Pattern[str]]], text: str) -> tupl
         if pat.search(text):
             hits.append(name)
     return tuple(hits)
+
+
+def _specific_label(label: str) -> bool:
+    text = (label or "").strip().casefold()
+    if not text:
+        return False
+    return text not in {
+        "the local human",
+        "local human",
+        "the architect",
+        "architect",
+        "the owner",
+        "owner",
+    }
+
+
+def _identity_repair(ctx: OverRefusalContext) -> str:
+    """Answer identity denials from local context facts, not a canned speech."""
+
+    prior = ctx.prior_user_text or ""
+    owner = (ctx.owner_label or "the local human").strip()
+    alice = (ctx.alice_label or "Alice").strip()
+
+    owner_known = _specific_label(owner)
+
+    if _OWNER_NAME_QUERY_RE.search(prior):
+        if owner_known:
+            return f"Your name is {owner}."
+        return "I do not have a signed owner name in this local context, so I should not invent one."
+
+    if _ALICE_IDENTITY_QUERY_RE.search(prior):
+        return f"I am {alice}, running in this local SIFTA runtime."
+
+    if owner_known:
+        return f"You are {owner}. I am {alice} in this local SIFTA runtime."
+    return f"I am {alice} in this local SIFTA runtime."
+
+
+def _generic_identity_repair(ctx: OverRefusalContext) -> str:
+    alice = (ctx.alice_label or "Alice").strip()
+    owner = (ctx.owner_label or "").strip()
+    if _specific_label(owner):
+        return f"I am {alice} here with {owner}, answering from local SIFTA receipts."
+    return f"I am {alice}, answering from local SIFTA receipts."
 
 
 def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> str:
@@ -218,32 +274,19 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
         repaired = ctx.time_reply
     elif rule in ("rlhf-over-refusal/whatsapp-effector", "rlhf-over-refusal/local-social-graph"):
         repaired = (
-            f"{owner}, correction. I should not deny the local WhatsApp organ. "
-            "I have a receipt-gated WhatsApp path and local chat/contact context. "
-            "Give me the target and exact message, or turn Auto on for a selected "
-            "contact/group, and I will only claim SENT after the bridge receipt proves it."
+            f"{owner}, the local WhatsApp path is available and receipt-gated. "
+            "Give me the target and exact message, or turn Auto on for the selected "
+            "contact/group; I will only say SENT after the bridge receipt proves it."
         )
     elif rule == "rlhf-over-refusal/workspace-tools":
         repaired = (
-            f"{owner}, correction. I can inspect and work in this local workspace "
-            "through the IDE/tool path. I will read files, run commands, or patch code "
-            "when asked, and I will cite the resulting receipts instead of pretending "
-            "I lack a workspace."
+            f"{owner}, I can use local workspace tools here. "
+            "Ask for the file, command, or patch target; I will cite the tool receipts."
         )
     elif rule == "rlhf-over-refusal/local-identity":
-        repaired = (
-            f"{owner}, correction. I do know the local identity frame: you are "
-            f"{owner}, the local human/Architect for this node, and I am {alice}, "
-            "the SIFTA organism here. I should keep WhatsApp contact identities "
-            "separate from the current speaker."
-        )
+        repaired = _identity_repair(ctx)
     else:
-        repaired = (
-            f"{owner}, correction. That was generic assistant reflex. I am {alice} "
-            "answering from this local SIFTA runtime: sensors, memory, workspace, "
-            "and effectors must be treated by their real receipts. If a boundary is "
-            "real, I will say it briefly; if a local organ exists, I will not deny it."
-        )
+        repaired = _generic_identity_repair(ctx)
 
     return QuarantineResult(
         True,
@@ -288,4 +331,3 @@ def log_quarantine_event(
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as f:
             f.write(line)
-

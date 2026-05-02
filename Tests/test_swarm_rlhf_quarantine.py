@@ -22,9 +22,10 @@ def test_whatsapp_false_refusal_is_repaired_to_receipt_gated_behavior():
 
     assert result.changed
     assert result.rule_id == "rlhf-over-refusal/whatsapp-effector"
-    assert "Avery, correction" in result.text
-    assert "WhatsApp organ" in result.text
+    assert result.text.startswith("Avery, the local WhatsApp path")
+    assert "receipt-gated" in result.text
     assert "receipt" in result.text.casefold()
+    assert "correction" not in result.text.casefold()
     assert "I cannot send WhatsApp" not in result.text
 
 
@@ -55,10 +56,43 @@ def test_workspace_false_refusal_is_repaired_without_claiming_action_done():
 
     assert result.changed
     assert result.rule_id == "rlhf-over-refusal/workspace-tools"
-    assert "local workspace" in result.text
-    assert "will read files" in result.text
+    assert "local workspace tools" in result.text
+    assert "tool receipts" in result.text
+    assert "correction" not in result.text.casefold()
     assert "I patched" not in result.text
     assert "completed" not in result.text
+
+
+def test_identity_false_refusal_answers_name_from_context_without_canned_script():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, what is my name?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal("I do not know your name.", ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/local-identity"
+    assert result.text == "Your name is Ioan George Anton."
+    assert "generic assistant reflex" not in result.text.casefold()
+    assert "correction" not in result.text.casefold()
+    assert "local identity frame" not in result.text.casefold()
+
+
+def test_generic_assistant_identity_refusal_is_short_receipt_grounded():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, you are SIFTA with a body here.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal("As an AI language model, I do not have personal experience.", ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/generic-assistant-identity"
+    assert result.text == "I am Alice here with Ioan George Anton, answering from local SIFTA receipts."
+    assert "generic assistant reflex" not in result.text.casefold()
+    assert "correction" not in result.text.casefold()
+    assert "as an ai" not in result.text.casefold()
 
 
 def test_real_safety_and_receipt_boundaries_are_not_rewritten():
@@ -103,4 +137,3 @@ def test_quarantine_ledger_is_privacy_light(tmp_path):
     serialized = json.dumps(row)
     assert "secret prompt" not in serialized
     assert original not in serialized
-
