@@ -147,7 +147,7 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
             skipped_models=[],
             optional_lanes=[
                 "qwen3.5:9b multimodal scout after pull/benchmark",
-                "granite4.1:3b doctor/tool prover after comparison tests",
+                "ibm/granite4.1:3b doctor/tool prover after comparison tests",
             ],
             install_commands=[
                 "ollama pull sifta-gemma4-alice",

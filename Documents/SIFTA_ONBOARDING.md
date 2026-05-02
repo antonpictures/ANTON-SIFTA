@@ -42,7 +42,7 @@ For the full same-shape diagrams across M5, Mac Mini, and field hardware, read
 ```mermaid
 flowchart TB
     M5["M5 / 24GB+ Foundry\nAlice primary cortex\nsifta-gemma4-alice"]
-    M5Scout["M5 multimodal scout\nqwen3.5:9b"]
+    M5Scout["M5 candidate scout\nqwen3.5:9b"]
     Mini["Mac Mini / 8GB Sentry\nqwen3.5:4b + qwen3.5:2b\nGemma4 exceeds soldered RAM"]
     Pi["Raspberry Pi 5 / 8GB Edge Scout\nGGUF/Hailo possible after proof"]
     Field["Tractor / smaller field device\nsensor receipts first\nno default LLM"]
@@ -55,7 +55,7 @@ flowchart TB
 
 | Device | Role | Model policy |
 |---|---|---|
-| M5 / 24GB+ | Foundry / Alice main body | Pull `sifta-gemma4-alice` and `qwen3.5:9b`. |
+| M5 / 24GB+ | Foundry / Alice main body | Pull `sifta-gemma4-alice`; test `qwen3.5:9b` only as a benchmark candidate. |
 | Mac Mini / 8GB | Sentry / scout | Pull `qwen3.5:4b` and `qwen3.5:2b`; Gemma4 is skipped by default because it does not fit safely in soldered 8 GB RAM. |
 | Raspberry Pi 5 / 8GB | Edge scout / sensor node | Start with signed sensor receipts; optionally add `qwen3.5:0.8b`, a 3B-class Q4 GGUF model via `llama.cpp`, or Hailo CV after proof. |
 | Tractor / smaller Python sensor box | Field node | Start with signed sensor receipts; add a tiny scout only if this exact hardware writes runtime proof receipts. |
@@ -80,7 +80,9 @@ pip3 install PyQt6
 # Step 3: Install your local AI engine
 # M5 / 24GB+ Foundry:
 ollama pull sifta-gemma4-alice
-ollama pull qwen3.5:9b
+# optional candidate after benchmark:
+# ollama pull qwen3.5:9b
+# ollama pull ibm/granite4.1:3b
 
 # Mac Mini / 8GB Sentry:
 ollama pull qwen3.5:4b

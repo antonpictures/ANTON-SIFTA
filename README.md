@@ -136,8 +136,8 @@ For the full same-shape diagrams across M5, Mac Mini, and field hardware, read
 flowchart LR
     subgraph Foundry["Foundry Node: M5 / 24GB+ Unified Memory"]
         Alice["Alice Primary Cortex\nsifta-gemma4-alice\nGemma4 main reasoning brain"]
-        Scout9["Multimodal Scout\nqwen3.5:9b\nvision receipts -> Gemma4"]
-        Doctor["Doctor / Router\nGranite4.1:3b optional\ntext, tools, JSON"]
+        Scout9["Candidate Scout\nqwen3.5:9b\nvision receipts -> Gemma4"]
+        Doctor["Candidate Doctor / Router\nibm/granite4.1:3b\ntext, tools, JSON"]
         Alice <--> Scout9
         Alice <--> Doctor
     end
@@ -162,7 +162,7 @@ flowchart LR
 
 | Hardware tier | Install role | Recommended local models | Physics constraint |
 |---|---|---|---|
-| M5 / 24 GB+ | Foundry, Alice's main body | `sifta-gemma4-alice`, `qwen3.5:9b`, optional `granite4.1:3b` | Gemma4 remains the primary cortex. |
+| M5 / 24 GB+ | Foundry, Alice's main body | `sifta-gemma4-alice`; candidate `qwen3.5:9b` and `ibm/granite4.1:3b` only after benchmark | Gemma4 remains the primary cortex. |
 | Mac Mini / 8 GB | Sentry / scout | `qwen3.5:4b`, `qwen3.5:2b` | Gemma4 is not selected by default because the RAM is soldered and the model does not fit safely. |
 | Raspberry Pi 5 / 8 GB | Edge scout / sensor node | sensor receipts first; optional `qwen3.5:0.8b`, 3B-class Q4 GGUF via `llama.cpp`, or Hailo CV | Python owns receipts; compiled backends do the heavy inference. |
 | Tractor / smaller field box | Sensor node | sensor receipts first; optional tiny scout only after proof | Send signed feature receipts, not duplicate Alice brains. |
@@ -189,7 +189,8 @@ Alice/SIFTA is split into public pieces:
 
 # M5 / 24GB+ Foundry
 ollama pull sifta-gemma4-alice                      # Alice primary cortex
-ollama pull qwen3.5:9b                              # multimodal scout
+# optional candidate after benchmark: qwen3.5:9b     # multimodal scout
+# optional candidate after benchmark: ibm/granite4.1:3b  # text/tool/JSON doctor
 
 # Mac Mini / 8GB Sentry
 ollama pull qwen3.5:4b                              # 8GB-safe multimodal scout

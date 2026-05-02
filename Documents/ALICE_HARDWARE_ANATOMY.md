@@ -34,10 +34,10 @@ flowchart TB
     Receipts["Signed JSONL receipts\n.sifta_state/*"]
 
     Alice["PRIMARY CORTEX\nsifta-gemma4-alice:latest\n9.6 GB\nINSTALLED"]
-    VLM["MULTIMODAL SCOUT\nqwen3.5:9b\nGB unknown until pulled\nPLANNED"]
+    VLM["MULTIMODAL SCOUT\nqwen3.5:9b\n6.6 GB on Ollama\nCANDIDATE"]
     Corvid["CORVID / REFLEX\nqwen3.5:2b\n2.7 GB\nINSTALLED"]
     Classifier["C1 CLASSIFIER\nsifta-classifier-c1:latest\n6.2 GB\nINSTALLED / TEST ONLY"]
-    Doctor["DOCTOR / TOOL PROVER\ngranite4.1:3b\nGB unknown until pulled\nOPTIONAL TEST"]
+    Doctor["DOCTOR / TOOL PROVER\nibm/granite4.1:3b\n2.1 GB on Ollama\nCANDIDATE"]
     RetiredFallback["RETIRED TAG\nsifta-alice-qwen35:latest\nREMOVED"]
     RetiredBase["RETIRED TAG\ngemma4:latest\nREMOVED"]
 
@@ -102,7 +102,7 @@ flowchart TB
     Receipts["Signed JSONL receipts\nlocal node ledger"]
 
     AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n(Borrowed Inference for Speech)"]
-    Scout["LOCAL MULTIMODAL SCOUT\nqwen3.5:4b\nGB unknown until pulled\nPLANNED FOR MINI"]
+    Scout["LOCAL MULTIMODAL SCOUT\nqwen3.5:4b\n3.4 GB on Ollama\nCANDIDATE FOR MINI"]
     Corvid["LOCAL CORVID / REFLEX\nqwen3.5:2b\n2.7 GB if installed\nRECOMMENDED"]
     GemmaSkip["GEMMA4 PRIMARY\nsifta-gemma4-alice:latest\n9.6 GB\nSKIPPED BY 8 GB PHYSICS"]
 

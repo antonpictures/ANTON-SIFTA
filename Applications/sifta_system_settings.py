@@ -485,7 +485,7 @@ class _BrainDiagramWidget(QWidget):
         (6,  0.88, 0.82, "💬 WhatsApp",  "Effector",       37, 211, 102),  # output effector
         (7,  0.50, 0.60, "🧬 MEMORY",    "Hippocampus",  100, 160, 255),  # sub-cortex store
         (8,  0.88, 0.12, "🔭 SCOUT",     "",              255, 180,  40),  # Qwen3.5 multimodal input
-        (9,  0.12, 0.12, "🩺 DOCTOR",    "Granite4.1",   210, 120,  60),  # text/tool/JSON doctor
+        (9,  0.12, 0.12, "🩺 DOCTOR",    "ibm/granite4.1:3b", 210, 120, 60),  # text/tool/JSON doctor
         (10, 0.88, 0.56, "🔤 C1",        "Qwen2.5 LoRA", 180, 200,  80),  # classifier input
     ]
     # Sensory/classifier inputs arrive AT cortex (dot travels src → dst = toward cortex)
@@ -1274,7 +1274,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
             label = _fmt_weight(model).strip()
             if label and label != "not installed":
                 return label, False
-            return "PLANNED  ·  ↓ pull to activate", True
+            return "CANDIDATE  ·  benchmark before pull", True
 
         # ── Live summary banner ──
         installed_count = len(model_weights)
@@ -1310,8 +1310,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addLayout(_chip_row("Corvid · Fallback", self._corvid_default + "  ·  2.7 GB installed",
                                   chip_style_organ, _fmt_weight(self._corvid_default)))
 
-        # ── Scout section (PLANNED) ──
-        scout_heading = QLabel("🔭  Multimodal Scout  ·  vision receipts feed into Gemma4  [PLANNED]")
+        # ── Scout section (candidate lanes, not boot dependencies) ──
+        scout_heading = QLabel("🔭  Multimodal Scout  ·  vision receipts feed into Gemma4  [CANDIDATE]")
         scout_heading.setStyleSheet(
             "color: rgb(100, 100, 100); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
@@ -1330,8 +1330,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
                                   "qwen3.5:4b  ·  8 GB safe",
                                   chip_style_scout_planned, mini_w, planned=mini_p))
 
-        # ── Doctor section (PLANNED) ──
-        doctor_heading = QLabel("🩺  Doctor Organ  ·  text / tool / JSON  [PLANNED]")
+        # ── Doctor section (candidate lane, not a boot dependency) ──
+        doctor_heading = QLabel("🩺  Doctor Organ  ·  text / tool / JSON  [CANDIDATE]")
         doctor_heading.setStyleSheet(
             "color: rgb(100, 100, 100); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
@@ -1341,9 +1341,9 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "border: 1px solid rgb(60, 35, 10); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        gran_w, gran_p = _scout_weight("granite4.1")
+        gran_w, gran_p = _scout_weight("ibm/granite4.1:3b")
         root.addLayout(_chip_row("Granite Doctor",
-                                  "granite4.1  ·  router / coder / prover",
+                                  "ibm/granite4.1:3b  ·  router / coder / prover",
                                   chip_style_doctor_planned, gran_w, planned=gran_p))
 
         # ── Organs section ──
