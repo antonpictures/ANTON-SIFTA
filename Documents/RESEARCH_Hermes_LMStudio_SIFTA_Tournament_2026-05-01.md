@@ -8,7 +8,7 @@
 
 **Video anchor (claims to verify locally):** Fahd Mirza, *Hermes Agent Now Runs Natively on LM Studio* (YouTube, 2026-04-30) — LM Studio daemon (`lms`), model pull/load, Hermes quick-setup with “LM Studio” backend, **context window** mismatch fix (4096 vs **≥64k** tokens for Hermes).
 
-**Related SIFTA research:** [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md) (retrieval receipts + MCP), [CODING_TOURNAMENT_TRIPLE_IDE.md](CODING_TOURNAMENT_TRIPLE_IDE.md) (hill law).
+**Related SIFTA research:** [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md) (retrieval receipts + MCP), [RESEARCH_DIRT_INDEX.md](RESEARCH_DIRT_INDEX.md) (master dirt ledger), [CODING_TOURNAMENT_TRIPLE_IDE.md](CODING_TOURNAMENT_TRIPLE_IDE.md) (hill law).
 
 ---
 

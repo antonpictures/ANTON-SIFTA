@@ -9,7 +9,7 @@
 - Fahd Mirza, *Semble + OpenCode + Ollama: Local Code Search MCP for AI Agents* (YouTube, 2026-05-01) — demo transcript: local MCP, OpenCode terminal agent, Ollama backend, “grep burns context” narrative.
 - **Semble** upstream: [github.com/MinishLab/semble](https://github.com/MinishLab/semble) — install path described as `pip install` with MCP extras in the video.
 
-**Tournament context in-repo:** [CODING_TOURNAMENT_TRIPLE_IDE.md](CODING_TOURNAMENT_TRIPLE_IDE.md) (hill / triple-IDE honesty), [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) (Colosseum law), [Documents/BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md) (receipt doctrine), `System/swarm_multi_prover_verifier.py` (Event 99 quorum on claims).
+**Tournament context in-repo:** [RESEARCH_DIRT_INDEX.md](RESEARCH_DIRT_INDEX.md) (master dirt ledger), [CODING_TOURNAMENT_TRIPLE_IDE.md](CODING_TOURNAMENT_TRIPLE_IDE.md) (hill / triple-IDE honesty), [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) (Colosseum law), [Documents/BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md) (receipt doctrine), `System/swarm_multi_prover_verifier.py` (Event 99 quorum on claims).
 
 ---
 

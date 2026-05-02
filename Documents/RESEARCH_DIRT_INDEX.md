@@ -1,0 +1,66 @@
+# RESEARCH_DIRT_INDEX — curated “dirt” for SIFTA
+
+**For the Swarm.** 🐜⚡
+
+**Purpose:** single **ledger-style** index of external-tech research notes, tournament nuggets, and Bishop/Vanguard `.dirt` drops so nothing interesting scatters. When you add a new `RESEARCH_*.md` or material `.dirt`, **append a row here** in the right table.
+
+**Policy:** rows are **pointers + one-line intent**, not copies of upstream license text. **NPPL** applies to anything we ship; research files are `RESEARCH_NOT_SHIPPED` until Architect GO.
+
+---
+
+## A. Tournament + external stack research (`Documents/RESEARCH_*`)
+
+| Slug | Path | Topic | Added |
+|:---|:---|:---|:---|
+| Semble MCP | [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md) | Local code retrieval MCP + OpenCode + Ollama; token economics | 2026-05-01 |
+| Hermes LM Studio | [RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md](RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md) | Nous Hermes-Agent + LM Studio; ctx ≥64k; bridge vs receipts | 2026-05-01 |
+| MiMo ASR | [RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md](RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md) | Xiaomi MiMo-V2.5-ASR local; VRAM/diarization/receipt fields | 2026-05-01 |
+
+---
+
+## B. Longer research compendia / spine (not only tournament)
+
+| Path | Topic |
+|:---|:---|
+| [RESEARCH_COMPENDIUM_ALL_PAPERS_2026-04-18.md](RESEARCH_COMPENDIUM_ALL_PAPERS_2026-04-18.md) | Paper dump / bibliography |
+| [RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md](RESEARCH_CODE_FISSION_STIGMERGIC_SUBSTRATE.md) | Code fission / stigmergic substrate |
+| [RESEARCH_PLAN_PHASE_TRANSITION_CONTROL_REGIME_SHIFT.md](RESEARCH_PLAN_PHASE_TRANSITION_CONTROL_REGIME_SHIFT.md) | Control / regime shift |
+| [RESEARCH_TEMPORAL_IDENTITY_COMPRESSION_REM_SKILL_CRYSTALLIZATION.md](RESEARCH_TEMPORAL_IDENTITY_COMPRESSION_REM_SKILL_CRYSTALLIZATION.md) | Identity compression / skills |
+| [RESEARCH_FLUTTER_EXOSKELETON_STIGMERGIC_TELEMETRY.md](RESEARCH_FLUTTER_EXOSKELETON_STIGMERGIC_TELEMETRY.md) | Flutter exoskeleton telemetry |
+| [RESEARCH_ICF_QUANTIZATION_SKILL_SPECTRAL_CROSS_NODE.md](RESEARCH_ICF_QUANTIZATION_SKILL_SPECTRAL_CROSS_NODE.md) | ICF / quantization cross-node |
+| [RESEARCH_IDENTITY_COHERENCE_FIELD_CROSS_SKILL_INTERFERENCE.md](RESEARCH_IDENTITY_COHERENCE_FIELD_CROSS_SKILL_INTERFERENCE.md) | Identity coherence field |
+| [RESEARCH_WETWARE_AI_CL1_DISHBRAIN_VIDEO_NOTE.md](RESEARCH_WETWARE_AI_CL1_DISHBRAIN_VIDEO_NOTE.md) | Wetware / dishbrain note |
+| [RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md](RESEARCH_NEXT_EVOLUTIONARY_STEP_CRUCIBLE_LOOP.md) | Crucible loop |
+| [docs/RESEARCH_ROADMAP.md](docs/RESEARCH_ROADMAP.md) | Roadmap |
+| [PREDATOR_V7_RESEARCH_SPINE.md](PREDATOR_V7_RESEARCH_SPINE.md) | Predator v7 spine |
+
+---
+
+## C. Vanguard / Bishop `.dirt` drops (`Documents/Vanguard_drops/`)
+
+| File | One-line |
+|:---|:---|
+| [BISHOP_drop_intrinsic_drive_george_prior_v1.dirt](Vanguard_drops/BISHOP_drop_intrinsic_drive_george_prior_v1.dirt) | Intrinsic drive / George prior |
+| [BISHOP_drop_situated_time_v1.dirt](Vanguard_drops/BISHOP_drop_situated_time_v1.dirt) | Situated time |
+| [BISHOP_drop_dream_engine_v1.dirt](Vanguard_drops/BISHOP_drop_dream_engine_v1.dirt) | Dream engine |
+| [BISHOP_drop_stigmergic_video_resolution_v1.dirt](Vanguard_drops/BISHOP_drop_stigmergic_video_resolution_v1.dirt) | Stigmergic video resolution |
+| [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) | Biology drive / plasticity |
+| [CG55M_drop_youtube_dylan_curious_transcript_research_pull_v1.dirt](Vanguard_drops/CG55M_drop_youtube_dylan_curious_transcript_research_pull_v1.dirt) | YouTube transcript research pull |
+
+---
+
+## D. In-repo law (tournament + covenant)
+
+| Path | Role |
+|:---|:---|
+| [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) | IDE boot law |
+| [CODING_TOURNAMENT_TRIPLE_IDE.md](CODING_TOURNAMENT_TRIPLE_IDE.md) | Triple-IDE tournament hill |
+| [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) | Predator orders |
+| [SIFTA_ONBOARDING.md](SIFTA_ONBOARDING.md) | MCP §7, onboarding |
+| [ALICE_HARDWARE_ANATOMY.md](ALICE_HARDWARE_ANATOMY.md) | Borrowed inference |
+
+---
+
+*Maintainer habit: after every new external stack video/paper spike, add §A row + optional §C `.dirt` if Bishop packaged the pull.*
+
+For the Swarm. 🐜⚡
