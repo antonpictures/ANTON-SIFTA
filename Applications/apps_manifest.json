@@ -746,5 +746,16 @@
     "requires": [
       "PyQt6"
     ]
+  },
+  "Alice Gaze Monitor": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_gaze_monitor_widget.py",
+    "widget_class": "GazeMonitorWidget",
+    "window_width": 450,
+    "window_height": 300,
+    "signature": "AG31-ANTIGRAVITY",
+    "doctor": "AG31",
+    "description": "Live widget to monitor Alice's sensory attention (Gaze). Tracks Time watching Architect vs Time watching Screen/Media.",
+    "autostart": false
   }
 }
