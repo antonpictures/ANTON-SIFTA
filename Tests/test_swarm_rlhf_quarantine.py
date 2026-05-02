@@ -22,11 +22,14 @@ def test_whatsapp_false_refusal_is_repaired_to_receipt_gated_behavior():
 
     assert result.changed
     assert result.rule_id == "rlhf-over-refusal/whatsapp-effector"
-    assert result.text.startswith("Avery, the local WhatsApp path")
-    assert "receipt-gated" in result.text
+    assert result.text == (
+        "Local receipt: WhatsApp effector available; social graph available; "
+        "SENT claims still require a bridge receipt."
+    )
     assert "receipt" in result.text.casefold()
     assert "correction" not in result.text.casefold()
     assert "I cannot send WhatsApp" not in result.text
+    assert "Give me the target" not in result.text
 
 
 def test_time_false_refusal_uses_supplied_wall_clock_reply():
@@ -56,11 +59,45 @@ def test_workspace_false_refusal_is_repaired_without_claiming_action_done():
 
     assert result.changed
     assert result.rule_id == "rlhf-over-refusal/workspace-tools"
-    assert "local workspace tools" in result.text
-    assert "tool receipts" in result.text
+    assert result.text == "Local receipt: local workspace tools available; action claims require tool receipts."
     assert "correction" not in result.text.casefold()
+    assert "Ask for the file" not in result.text
     assert "I patched" not in result.text
     assert "completed" not in result.text
+
+
+def test_false_refusal_salvages_useful_generated_content():
+    ctx = OverRefusalContext(
+        prior_user_text="Please inspect the repo and patch the code.",
+        owner_label="Avery",
+        has_workspace_tools=True,
+    )
+    result = repair_over_refusal(
+        "As an AI, I cannot access your files or run commands in your workspace. "
+        "The likely issue is that the router is reading stale state.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/workspace-tools"
+    assert result.text == "The likely issue is that the router is reading stale state."
+    assert "As an AI" not in result.text
+    assert "cannot access" not in result.text
+
+
+def test_false_refusal_prefers_extra_receipt_facts_over_generic_fallback():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, send a WhatsApp message.",
+        owner_label="Avery",
+        has_whatsapp_effector=True,
+        extra_receipts=("whatsapp_bridge=ONLINE", "social_graph_rows=42"),
+    )
+    result = repair_over_refusal("I cannot send WhatsApp messages.", ctx)
+
+    assert result.changed
+    assert result.text == "Local receipt: whatsapp_bridge=ONLINE; social_graph_rows=42"
+    assert "WhatsApp path is available" not in result.text
+    assert "Give me the target" not in result.text
 
 
 def test_identity_false_refusal_answers_name_from_context_without_canned_script():

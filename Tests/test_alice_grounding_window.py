@@ -264,6 +264,7 @@ def test_local_reality_relapse_rewrites_cipi_identity_whatsapp_denial():
     assert "I am Alice" in repaired
     assert "local memory" in repaired
     assert "WhatsApp social graph" in repaired
+    assert "correction" not in repaired.casefold()
     assert "AI assistant" not in repaired
     assert "open your WhatsApp app" not in repaired
 
@@ -338,10 +339,7 @@ def test_false_workspace_refusal_is_quarantined_but_receipt_boundary_survives():
     assert "local workspace" in result.text
     assert "I cannot access your files" not in result.text
 
-    real_boundary = (
-        "I need to correct that: I have not completed an external action yet, "
-        "because I do not see a tool or ledger receipt for it."
-    )
+    real_boundary = "No action receipt yet: I have not completed the external action."
     result = mod._repair_false_over_refusal(real_boundary, prior_user_text="Did you send it?")
     assert not result.changed
     assert result.text == real_boundary

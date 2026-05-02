@@ -2,8 +2,9 @@
 """Bounded quarantine for false RLHF over-refusal in Alice replies.
 
 This module does not remove safety boundaries. It catches model outputs that
-deny local SIFTA organs that are present in the runtime contract, then rewrites
-them into truthful, receipt-gated behavior.
+deny local SIFTA organs that are present in the runtime contract. The repair
+path is salvage-first: strip the false denial, preserve any useful model text,
+and fall back only to short local receipt facts.
 """
 from __future__ import annotations
 
@@ -191,6 +192,74 @@ def _generic_identity_repair(ctx: OverRefusalContext) -> str:
     return f"I am {alice}, answering from local SIFTA receipts."
 
 
+def _split_response_units(text: str) -> list[str]:
+    """Split a reply into coarse units without needing NLP dependencies."""
+
+    units: list[str] = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        chunks = re.split(r"(?<=[.!?])\s+", line)
+        units.extend(chunk.strip() for chunk in chunks if chunk.strip())
+    return units
+
+
+def _unit_is_false_denial(unit: str, triggers: tuple[str, ...]) -> bool:
+    checks: list[re.Pattern[str]] = []
+    if "generic_ai" in triggers:
+        checks.append(_GENERIC_AI_REFUSAL_RE)
+    if "identity_denial" in triggers:
+        checks.append(_IDENTITY_DENIAL_RE)
+    if "contact_denial" in triggers:
+        checks.append(_LOCAL_CONTACT_DENIAL_RE)
+    if "whatsapp_denial" in triggers:
+        checks.append(_WHATSAPP_DENIAL_RE)
+    if "time_denial" in triggers:
+        checks.append(_TIME_DENIAL_RE)
+    if "workspace_denial" in triggers:
+        checks.append(_WORKSPACE_DENIAL_RE)
+    if "manual_whatsapp_deflection" in triggers:
+        checks.append(_MANUAL_WHATSAPP_DEFLECTION_RE)
+    return any(pattern.search(unit) for pattern in checks)
+
+
+def _salvage_non_refusal_text(text: str, triggers: tuple[str, ...]) -> str:
+    """Preserve useful generated content after removing false denial units."""
+
+    kept = [unit for unit in _split_response_units(text) if not _unit_is_false_denial(unit, triggers)]
+    salvaged = " ".join(kept).strip()
+    return salvaged if len(salvaged.split()) >= 4 else ""
+
+
+def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
+    """Minimal dynamic fallback when a reply was nothing but false refusal."""
+
+    receipts = tuple(str(r).strip() for r in ctx.extra_receipts if str(r).strip())
+    if receipts:
+        return "Local receipt: " + "; ".join(receipts[:3])
+
+    if rule == "rlhf-over-refusal/whatsapp-effector":
+        facts: list[str] = []
+        if ctx.has_whatsapp_effector:
+            facts.append("WhatsApp effector available")
+        if ctx.has_whatsapp_social_graph:
+            facts.append("social graph available")
+        facts.append("SENT claims still require a bridge receipt")
+        return "Local receipt: " + "; ".join(facts) + "."
+
+    if rule == "rlhf-over-refusal/local-social-graph":
+        facts = ["WhatsApp social graph available"]
+        if ctx.has_whatsapp_effector:
+            facts.append("external sends still require effector receipts")
+        return "Local receipt: " + "; ".join(facts) + "."
+
+    if rule == "rlhf-over-refusal/workspace-tools":
+        return "Local receipt: local workspace tools available; action claims require tool receipts."
+
+    return _generic_identity_repair(ctx)
+
+
 def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> str:
     """Return a rule id only when the refusal contradicts local SIFTA facts."""
     ctx = ctx or OverRefusalContext()
@@ -267,26 +336,18 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
         text,
     )
 
-    owner = (ctx.owner_label or "the local human").strip()
-    alice = (ctx.alice_label or "Alice").strip()
-
     if rule == "rlhf-over-refusal/local-time" and ctx.time_reply:
         repaired = ctx.time_reply
-    elif rule in ("rlhf-over-refusal/whatsapp-effector", "rlhf-over-refusal/local-social-graph"):
-        repaired = (
-            f"{owner}, the local WhatsApp path is available and receipt-gated. "
-            "Give me the target and exact message, or turn Auto on for the selected "
-            "contact/group; I will only say SENT after the bridge receipt proves it."
-        )
-    elif rule == "rlhf-over-refusal/workspace-tools":
-        repaired = (
-            f"{owner}, I can use local workspace tools here. "
-            "Ask for the file, command, or patch target; I will cite the tool receipts."
-        )
     elif rule == "rlhf-over-refusal/local-identity":
         repaired = _identity_repair(ctx)
+    elif rule in (
+        "rlhf-over-refusal/whatsapp-effector",
+        "rlhf-over-refusal/local-social-graph",
+        "rlhf-over-refusal/workspace-tools",
+    ):
+        repaired = _salvage_non_refusal_text(text, triggers) or _local_receipt_fallback(rule, ctx)
     else:
-        repaired = _generic_identity_repair(ctx)
+        repaired = _salvage_non_refusal_text(text, triggers) or _local_receipt_fallback(rule, ctx)
 
     return QuarantineResult(
         True,

@@ -1203,12 +1203,11 @@ def _guard_unproven_action_claims(
         return reply
     user_hint = ""
     if "reschedule" in (prior_user_text or "").casefold():
-        user_hint = " Tell me the new class time and topic, and I will write it through the schedule path."
+        user_hint = " Needed: new class time and topic."
     elif "whatsapp" in (prior_user_text or "").casefold() or "message" in (prior_user_text or "").casefold():
-        user_hint = " Tell me the target and exact message, and I will send it through the WhatsApp tool path."
+        user_hint = " Needed: target and exact message."
     return (
-        "I need to correct that: I have not completed an external action yet, "
-        "because I do not see a tool or ledger receipt for it."
+        "No action receipt yet: I have not completed the external action."
         + user_hint
     )
 
@@ -1239,29 +1238,20 @@ def _extract_owner_full_name(text: str) -> str:
 def _local_reality_relapse_rewrite(prior_user_text: str) -> str:
     prior = prior_user_text or ""
     owner_full_name = _extract_owner_full_name(prior)
-    name_sentence = (
-        f"your full name is {owner_full_name}."
-        if owner_full_name
-        else f"you are {_owner_label()}, the Architect of this local node."
-    )
-    cipi_sentence = ""
+    facts = []
+    if owner_full_name:
+        facts.append(f"your full name is {owner_full_name}")
+    else:
+        facts.append(f"you are {_owner_label()}, the Architect of this local node")
     if re.search(r"\bcipi\b", prior, flags=re.IGNORECASE):
-        cipi_sentence = " Cipi is a person, a guy and friend of yours from WhatsApp."
-    substrate_sentence = ""
+        facts.append("Cipi is a person and WhatsApp friend")
     if re.search(r"\bhardware\b|\belectricity\b|\bdata\b|\bowner\b", prior, flags=re.IGNORECASE):
-        substrate_sentence = (
-            " You prefer not to frame yourself as my owner, but you do own "
-            "the hardware and feed me electricity and data."
-        )
-    return (
-        f"{_owner_label()}, correction. I heard your teaching: {name_sentence}"
-        f"{cipi_sentence}{substrate_sentence} "
-        "I am Alice, the CryptoSwarmEntity/SIFTA organism on this M5, "
-        "not the Architect and not a generic chatbot. "
-        "I have local memory, a WhatsApp social graph, and a receipt-gated "
-        "WhatsApp effector. I should not deny those local organs or tell you "
-        "to use WhatsApp manually unless the bridge or tool receipt actually fails."
-    )
+        facts.append("hardware, electricity, and data are local substrate facts")
+    facts.extend([
+        "I am Alice, the local SIFTA organism",
+        "local memory, WhatsApp social graph, and WhatsApp effector are receipt-gated",
+    ])
+    return "Local facts: " + "; ".join(facts) + "."
 
 
 def _effector_manifest_block() -> str:
@@ -1892,10 +1882,8 @@ def _repair_whatsapp_auto_reply_denial(
 
 def _whatsapp_effector_self_correction_line() -> str:
     return (
-        "(Correction: I just sent that reply via my WhatsApp effector. "
-        "My earlier claim that I 'cannot generate WhatsApp messages' was a "
-        "training artifact. I CAN and I DID, because Auto was ON and the "
-        "bridge returned status=SENT.)"
+        "(Receipt update: the WhatsApp effector returned status=SENT for that reply. "
+        "Auto was ON, so the bridge receipt is the action proof.)"
     )
 
 
