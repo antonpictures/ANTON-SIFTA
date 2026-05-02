@@ -867,9 +867,11 @@ class SwarmTab(QWidget):
         self._audit_result_label.setStyleSheet(f"color: {_AMBER};")
         QApplication.processEvents()
         try:
-            from System.swarm_bio_arxiv_ingester import run_sifta_bio_sweep
+            from System.swarm_bio_arxiv_ingester import SIFTA_BIO_QUERIES, run_sifta_bio_sweep
             receipts = run_sifta_bio_sweep(
-                max_results_per_query=2, run_claim_extraction=False
+                queries=SIFTA_BIO_QUERIES[:4],
+                max_results_per_query=2,
+                run_claim_extraction=False,
             )
             total = sum(r.get("n_fetched", 0) for r in receipts)
             chunks = sum(r.get("ingested_chunks", 0) for r in receipts)
@@ -953,12 +955,13 @@ class SwarmTab(QWidget):
             L["cusum"].setText("⚪ No data")
             L["cusum"].setStyleSheet(f"color: {_DIM};")
 
-        # Allostatic (ledger load + policy)
+        # Allostatic score: Event 107 score = 1.0 - latest allostatic load.
         load = float(ledger_allo.get("allostatic_load", al.get("allostatic_load", 0.0)))
-        pol = str(ledger_allo.get("policy", al.get("policy", "—")))[:14]
-        L["allostatic"].setText(f"{load:.2f} {pol}")
+        allo_score = float(ledger_allo.get("allostatic_score", max(0.0, 1.0 - load)))
+        policy = str(ledger_allo.get("policy", al.get("policy", "UNKNOWN")))
+        L["allostatic"].setText(f"{allo_score:.3f}")
         L["allostatic"].setStyleSheet(
-            f"color: {_GREEN if load < 0.45 else _AMBER if load < 0.75 else _RED};"
+            f"color: {_RED if policy == 'FORCE_REST_REPAIR' else _color_score(allo_score)};"
         )
 
         # Motor regime
