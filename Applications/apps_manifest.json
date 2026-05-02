@@ -757,5 +757,42 @@
     "doctor": "AG31",
     "description": "Live widget to monitor Alice's sensory attention (Gaze). Tracks Time watching Architect vs Time watching Screen/Media.",
     "autostart": false
+  },
+  "Alice Wellbeing Cortex": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_alice_wellbeing_panel.py",
+    "widget_class": "WellbeingPanel",
+    "window_width": 500,
+    "window_height": 450,
+    "signature": "C47H_ALICE_WELLBEING_CORTEX_AUTHORIZED",
+    "description": "Visualizing Alice's Wellbeing Cortex and Relational Friendliness. Log care actions like wiping the lens.",
+    "autostart": false
+  },
+  "NVIDIA Bridge Dashboard": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_nvidia_sifta_bridge_widget.py",
+    "widget_class": "NvidiaSiftaBridgeWidget",
+    "window_width": 1100,
+    "window_height": 720,
+    "description": "NVIDIA × SIFTA Integration Dashboard. Asset Scanner, Contrast Tab, Live Stigmergic Field, HF Models.",
+    "autostart": false
+  },
+  "Control Center": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_control_center.py",
+    "widget_class": "GlassWidget",
+    "window_width": 320,
+    "window_height": 360,
+    "description": "A beautiful, glassmorphic Control Center overlay mimicking macOS.",
+    "autostart": false
+  },
+  "Crucible Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/crucible_sim.py",
+    "widget_class": "CrucibleWindow",
+    "window_width": 1280,
+    "window_height": 820,
+    "description": "10-Minute Swarm Defense Gauntlet. DDoS wave defense, anomaly injection, and stigmergic edge detection.",
+    "autostart": false
   }
 }
