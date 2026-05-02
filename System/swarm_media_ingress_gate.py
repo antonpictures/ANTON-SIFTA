@@ -32,6 +32,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = REPO_ROOT / ".sifta_state"
 LEDGER = STATE_DIR / "media_ingress_gate.jsonl"
 AMBIENT_CONTEXT_FILE = STATE_DIR / "ambient_media_context.json"
+YOUTUBE_CONTEXT_LEDGER = STATE_DIR / "youtube_context.jsonl"
+YOUTUBE_WATCH_LEDGER = STATE_DIR / "youtube_watch_memory.jsonl"
 
 DIRECT_ADDRESS_RE = re.compile(r"\b(?:alice|george|architect)\b", re.IGNORECASE)
 # Short control words while YouTube plays — still the Architect, not the video track.
@@ -160,6 +162,44 @@ def _observed_media_terms(rows: list[Mapping[str, Any]], *, limit: int = 12) -> 
         if len(ordered) >= limit:
             break
     return ordered[:limit]
+
+
+def _recent_youtube_videos(max_age_s: float, *, limit: int = 8) -> list[dict[str, str]]:
+    """Return deduped recent YouTube/video receipts for a co-listening window."""
+
+    now = time.time()
+    seen: set[str] = set()
+    out: list[dict[str, str]] = []
+    sources = [
+        (YOUTUBE_CONTEXT_LEDGER, "youtube_context"),
+        (YOUTUBE_WATCH_LEDGER, "youtube_watch_memory"),
+    ]
+    for path, source in sources:
+        for row in reversed(_tail_jsonl(path, 64)):
+            try:
+                if now - float(row.get("ts", 0.0)) > max_age_s:
+                    continue
+            except Exception:
+                continue
+            video_id = str(row.get("video_id") or row.get("youtube_video_id") or "").strip()
+            title = " ".join(str(row.get("title") or "").split())
+            if not title and not video_id:
+                continue
+            key = video_id or title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    "title": title[:140],
+                    "video_id": video_id[:40],
+                    "status": str(row.get("status") or "")[:40],
+                    "source": source,
+                }
+            )
+            if len(out) >= limit:
+                return list(reversed(out))
+    return list(reversed(out))
 
 
 def _load_recent_youtube_context(max_age_s: float = 7200.0) -> str:
@@ -425,6 +465,7 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
     """Compact recent media-observation context for Alice's prompt block."""
     now = time.time()
     candidates = []
+    videos = _recent_youtube_videos(max_age_s=max_age_s)
     for row in reversed(_tail_jsonl(LEDGER, 96)):
         route = str(row.get("route") or "")
         if route not in {"observed_media", "ambient_media"}:
@@ -437,7 +478,7 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
         candidates.append(row)
         if len(candidates) >= 24:
             break
-    if not candidates:
+    if not candidates and not videos:
         return ""
 
     lines: list[str] = []
@@ -445,17 +486,28 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
     terms = _observed_media_terms(ordered)
     route_counts = Counter(str(row.get("route") or "unknown") for row in ordered)
     reason_counts = Counter(str(row.get("reason") or "unknown") for row in ordered)
+    video_text = ""
+    if videos:
+        formatted = []
+        for item in videos:
+            title = item.get("title") or item.get("video_id") or "unknown video"
+            vid = item.get("video_id")
+            suffix = f" [{vid}]" if vid else ""
+            formatted.append(f"{title}{suffix}")
+        video_text = " recent_youtube_videos=" + " / ".join(formatted[:6])
     if terms:
         lines.append(
             "observed_media_summary "
             f"rows={len(ordered)} routes={dict(route_counts)} "
-            f"likely_terms={', '.join(terms[:10])}; "
+            f"likely_terms={', '.join(terms[:10])};"
+            f"{video_text}; "
             "these are environmental media receipts, not George speaking"
         )
     else:
         lines.append(
             "observed_media_summary "
-            f"rows={len(ordered)} routes={dict(route_counts)}; "
+            f"rows={len(ordered)} routes={dict(route_counts)};"
+            f"{video_text}; "
             "environmental media receipts, not George speaking"
         )
     if reason_counts:

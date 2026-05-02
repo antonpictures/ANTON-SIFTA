@@ -155,10 +155,13 @@ def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
     import System.swarm_youtube_context as youtube_context
     import System.swarm_media_ingress_gate as media_gate
 
+    seen = {}
+
     monkeypatch.setattr(
         youtube_context,
         "get_latest_context",
-        lambda max_age_s=7200.0: (
+        lambda max_age_s=7200.0: seen.setdefault("youtube_max_age_s", max_age_s)
+        and (
             "YouTube video: Fiction Test; "
             "reality_frame=FICTIONAL_MEDIA_CLIP; "
             "dialogue_boundary=fictional dialogue, not real life"
@@ -167,9 +170,8 @@ def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
     monkeypatch.setattr(
         media_gate,
         "get_latest_observed_media_context",
-        lambda max_age_s=7200.0, max_chars=260: (
-            "observed_media reason=fictional_media_dialogue_with_media_focus"
-        ),
+        lambda max_age_s=7200.0, max_chars=260: seen.setdefault("media_max_age_s", max_age_s)
+        and "observed_media reason=fictional_media_dialogue_with_media_focus",
     )
 
     prompt = mod._current_system_prompt(user_active=True, user_text="what are we watching?")
@@ -177,3 +179,5 @@ def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
     assert "CO-WATCH RECEIPTS" in prompt
     assert "reality_frame=FICTIONAL_MEDIA_CLIP" in prompt
     assert "not George's real-life social norm" in prompt
+    assert seen["youtube_max_age_s"] >= 6 * 3600.0
+    assert seen["media_max_age_s"] >= 6 * 3600.0

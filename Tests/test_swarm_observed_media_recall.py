@@ -1,3 +1,4 @@
+import json
 import time
 
 from System import swarm_media_ingress_gate as gate
@@ -55,3 +56,85 @@ def test_observed_media_summary_ages_out(monkeypatch, tmp_path):
     gate.LEDGER.write_text(gate.json.dumps(rows[0]) + "\n", encoding="utf-8")
 
     assert gate.get_latest_observed_media_context(max_age_s=1.0) == ""
+
+
+def test_observed_media_summary_lists_multiple_recent_youtube_videos(monkeypatch, tmp_path):
+    monkeypatch.setattr(gate, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(gate, "LEDGER", tmp_path / "media_ingress_gate.jsonl")
+    monkeypatch.setattr(gate, "AMBIENT_CONTEXT_FILE", tmp_path / "ambient_media_context.json")
+    monkeypatch.setattr(gate, "YOUTUBE_CONTEXT_LEDGER", tmp_path / "youtube_context.jsonl")
+    monkeypatch.setattr(gate, "YOUTUBE_WATCH_LEDGER", tmp_path / "youtube_watch_memory.jsonl")
+
+    now = time.time()
+    rows = [
+        {
+            "ts": now - 1200,
+            "title": "Snatch - Best of Brick top (+ deleted scene)",
+            "video_id": "IXugVZMsZ24",
+            "status": "no_captions",
+        },
+        {
+            "ts": now - 900,
+            "title": "Disappearances of scientists & debate over possible threats | Backscroll",
+            "video_id": "Cdxnif3QZ8A",
+            "status": "empty_captions",
+        },
+        {
+            "ts": now - 600,
+            "title": "Every company needs an OpenClaw strategy: Jensen Huang claims at Nvidia GTC 2026",
+            "video_id": "x5IX5Uleb9g",
+            "status": "empty_captions",
+        },
+    ]
+    gate.YOUTUBE_CONTEXT_LEDGER.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    ctx = gate.get_latest_observed_media_context(max_age_s=3600.0)
+
+    assert "recent_youtube_videos=" in ctx
+    assert "Snatch" in ctx
+    assert "Disappearances of scientists" in ctx
+    assert "Jensen Huang" in ctx
+    assert "IXugVZMsZ24" in ctx
+
+
+def test_observed_media_summary_dedupes_context_and_watch_memory(monkeypatch, tmp_path):
+    monkeypatch.setattr(gate, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(gate, "LEDGER", tmp_path / "media_ingress_gate.jsonl")
+    monkeypatch.setattr(gate, "AMBIENT_CONTEXT_FILE", tmp_path / "ambient_media_context.json")
+    monkeypatch.setattr(gate, "YOUTUBE_CONTEXT_LEDGER", tmp_path / "youtube_context.jsonl")
+    monkeypatch.setattr(gate, "YOUTUBE_WATCH_LEDGER", tmp_path / "youtube_watch_memory.jsonl")
+
+    now = time.time()
+    gate.YOUTUBE_CONTEXT_LEDGER.write_text(
+        json.dumps(
+            {
+                "ts": now - 90,
+                "title": "Jensen Huang interview",
+                "video_id": "same_video",
+                "status": "empty_captions",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    gate.YOUTUBE_WATCH_LEDGER.write_text(
+        json.dumps(
+            {
+                "ts": now - 60,
+                "title": "Jensen Huang interview duplicate",
+                "youtube_video_id": "same_video",
+                "status": "observed",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    ctx = gate.get_latest_observed_media_context(max_age_s=3600.0)
+
+    assert ctx.count("same_video") == 1

@@ -1297,7 +1297,10 @@ def _should_bypass_body_gate(prior_user_text: str) -> bool:
     return bool(_LIVE_DIRECT_TURN_RE.search(text))
 
 
-def _cowatch_receipt_context_block(max_age_s: float = 7200.0) -> str:
+_COWATCH_RECALL_WINDOW_S = 6 * 3600.0
+
+
+def _cowatch_receipt_context_block(max_age_s: float = _COWATCH_RECALL_WINDOW_S) -> str:
     """Ledger-backed co-watch truth for the prompt; no guessing, no network."""
     bits: List[str] = []
     try:
@@ -3055,7 +3058,7 @@ def _build_swarm_context(user_text: str = "") -> str:
     try:
         from System.swarm_media_ingress_gate import get_latest_observed_media_context
 
-        media_context = get_latest_observed_media_context(max_age_s=7200.0)
+        media_context = get_latest_observed_media_context(max_age_s=_COWATCH_RECALL_WINDOW_S)
         if media_context:
             chunks.append("  observed media audio: " + media_context[:420])
     except Exception:
