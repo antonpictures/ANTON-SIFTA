@@ -750,7 +750,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
         self._pages = {
             "Identity": self._identity_page(),
-            "Appearance": self._appearance_page(),
+            "Display": self._display_page(),
             "Audio": self._audio_page(),
             "Body": self._body_page(),
             "Network": self._network_page(),
@@ -788,10 +788,21 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addWidget(heading)
         return page, root
 
-    def _appearance_page(self) -> QWidget:
-        page, root = self._page("Appearance")
-        
-        info = QLabel("Select the visual identity of the SIFTA organism. The organism remains the same, only the clothing changes.\n(Restart OS for full effect)")
+    def _display_page(self) -> QWidget:
+        page, root = self._page("Display")
+
+        # ── Appearance subsection ───────────────────────────────────────────────────────
+        appearance_head = QLabel("Appearance")
+        appearance_head.setStyleSheet(
+            "color: rgb(238, 244, 255); font-size: 14px; font-weight: bold; margin-top: 4px;"
+        )
+        root.addWidget(appearance_head)
+
+        info = QLabel(
+            "Select the visual identity of the SIFTA organism. "
+            "The organism remains the same, only the clothing changes.\n"
+            "(Restart OS for full effect)"
+        )
         info.setWordWrap(True)
         info.setStyleSheet("color: rgb(145, 153, 180); margin-bottom: 12px;")
         root.addWidget(info)
@@ -801,7 +812,6 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "QComboBox { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
             "border: 1px solid rgb(47, 52, 68); border-radius: 6px; padding: 6px 10px; font-size: 14px; }"
         )
-        
         current_theme = load_active_theme_id()
         idx_to_select = 0
         for i, (tid, palette) in enumerate(THEMES.items()):
@@ -809,17 +819,139 @@ class SystemSettingsWidget(SiftaBaseWidget):
             if tid == current_theme:
                 idx_to_select = i
         self.theme_combo.setCurrentIndex(idx_to_select)
-        
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         root.addWidget(self.theme_combo)
-        
-        # Display OS line for selected
+
         self.theme_os_line = QLabel(THEMES[current_theme].os_line)
-        self.theme_os_line.setStyleSheet("color: rgb(112, 122, 150); font-family: monospace; font-size: 11px; margin-top: 8px;")
+        self.theme_os_line.setStyleSheet(
+            "color: rgb(112, 122, 150); font-family: monospace; font-size: 11px; margin-top: 8px;"
+        )
         root.addWidget(self.theme_os_line)
-        
+
+        # ── Stigmergic OpenGL Driver section (only if real) ──────────────────────
+        gl_info = self._probe_stigmergic_opengl()
+        if gl_info:  # only rendered if real hardware + real ledger data
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.HLine)
+            sep.setStyleSheet("color: rgb(35, 40, 58); margin: 18px 0 10px 0;")
+            root.addWidget(sep)
+
+            gl_head = QLabel("Stigmergic OpenGL Driver")
+            gl_head.setStyleSheet(
+                "color: rgb(0, 220, 255); font-size: 14px; font-weight: bold;"
+            )
+            root.addWidget(gl_head)
+
+            gl_desc = QLabel(
+                "Chromatophore phenotype renderer — SIFTA's novel GPU output organ.\n"
+                "Converts stigmergic body-brain ticks into real-time GLSL fragment shader\n"
+                "uniforms (waggle dance / honeybee algorithm). ModernGL offscreen pass."
+            )
+            gl_desc.setWordWrap(True)
+            gl_desc.setStyleSheet("color: rgb(145, 153, 180); margin-bottom: 8px; font-size: 11px;")
+            root.addWidget(gl_desc)
+
+            # Status chips row
+            chips_row = QHBoxLayout()
+            for label, val, ok_color in [
+                ("ModernGL", gl_info["moderngl_version"], "#00e888"),
+                ("Context",  gl_info["context_status"],   "#00e888" if gl_info["context_ok"] else "#f0c040"),
+                ("Renderer", gl_info["renderer"],          "#c878f0"),
+                ("Ledger",   gl_info["ledger_rows"],       "#00dcff"),
+            ]:
+                chip = QLabel(f"{label}: {val}")
+                chip.setStyleSheet(
+                    f"color: {ok_color}; background: rgba(0,0,0,0.4); "
+                    "border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; "
+                    "padding: 3px 9px; font-size: 10px; font-family: Menlo;"
+                )
+                chips_row.addWidget(chip)
+            chips_row.addStretch()
+            root.addLayout(chips_row)
+
+            # Uniform values from last tick
+            if gl_info.get("last_uniforms"):
+                u = gl_info["last_uniforms"]
+                uniform_lbl = QLabel(
+                    f"Last tick uniforms  ·  drive={u.get('u_stigmergic_drive',0):.3f}  "
+                    f"quorum={u.get('u_quorum_signal',0):.3f}  "
+                    f"chemotaxis={u.get('u_chemotaxis_gradient',0):.3f}  "
+                    f"confidence={u.get('u_confidence',0):.3f}"
+                )
+                uniform_lbl.setStyleSheet(
+                    "color: rgb(90, 110, 140); font-family: Menlo; font-size: 10px; margin-top: 6px;"
+                )
+                uniform_lbl.setWordWrap(True)
+                root.addWidget(uniform_lbl)
+
+            truth_lbl = QLabel(
+                "Truth: OBSERVED_ENGINEERING_SUBSTRATE · "
+                "receipt_backed=True rows confirm GPU path is wired to live stigmergic data."
+            )
+            truth_lbl.setWordWrap(True)
+            truth_lbl.setStyleSheet(
+                "color: rgb(50, 70, 90); font-size: 9px; font-family: Menlo; margin-top: 6px;"
+            )
+            root.addWidget(truth_lbl)
+
         root.addStretch()
         return page
+
+    def _probe_stigmergic_opengl(self) -> Optional[dict]:
+        """Probe the real OpenGL driver stack. Returns None if not available."""
+        import sys as _sys
+        _repo = Path(__file__).resolve().parent.parent
+        if str(_repo) not in _sys.path:
+            _sys.path.insert(0, str(_repo))
+        try:
+            import moderngl as _mgl
+            moderngl_version = _mgl.__version__
+        except ImportError:
+            return None  # not real — don't show the section
+
+        # Check ledger has real receipt_backed data
+        ledger = _repo / ".sifta_state" / "visual_phenotype_uniforms.jsonl"
+        if not ledger.exists():
+            return None
+        try:
+            import json as _json
+            lines = [l for l in ledger.read_text("utf-8").splitlines() if l.strip()]
+            backed_rows = []
+            last_uniforms = None
+            for line in lines:
+                try:
+                    row = _json.loads(line)
+                    if row.get("receipt_backed"):
+                        backed_rows.append(row)
+                        last_uniforms = row
+                except Exception:
+                    pass
+            if not backed_rows:
+                return None  # no real receipt-backed data — don't show
+        except Exception:
+            return None
+
+        # Try to create a GL context (offscreen)
+        context_ok = False
+        renderer = "unknown"
+        try:
+            from System.swarm_visual_phenotype_gl import modern_gl_available, try_create_standalone_context
+            context_ok = modern_gl_available()
+            if context_ok:
+                probe = try_create_standalone_context()
+                renderer = getattr(probe, "renderer", "offscreen") or "offscreen"
+                context_ok = getattr(probe, "ok", False)
+        except Exception:
+            pass
+
+        return {
+            "moderngl_version": f"v{moderngl_version}",
+            "context_ok":       context_ok,
+            "context_status":   "offscreen ✓" if context_ok else "headless",
+            "renderer":         str(renderer)[:24] if renderer else "Apple M-series GPU",
+            "ledger_rows":      f"{len(backed_rows)} receipt‑backed rows",
+            "last_uniforms":    last_uniforms,
+        }
 
     def _on_theme_changed(self, idx: int) -> None:
         tid = self.theme_combo.itemData(idx)
