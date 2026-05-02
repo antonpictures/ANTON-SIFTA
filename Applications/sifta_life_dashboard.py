@@ -10,6 +10,7 @@ Architect optimized in life, health, and computing.
 Tab 1: CONTACTS — WhatsApp social graph + interaction recency
 Tab 2: SCHEDULE — Circadian rhythm + task queue + reminders
 Tab 3: HEALTH   — Owner vitals, thermal, energy, pheromone score
+Tab 4: SWARM    — Event 104/106 observability, motor policy, BioSIFTA corpus
 ═══════════════════════════════════════════════════════════════
 """
 
@@ -276,7 +277,54 @@ class ScheduleTab(QWidget):
         al_layout.addWidget(self.al_policy_label)
         layout.addWidget(al_frame)
 
-        # Task list
+        # ── Event 104/106 Auditor strip ───────────────────────────────────────
+        obs_frame = QFrame()
+        obs_frame.setStyleSheet(
+            f"QFrame {{ background: {_CARD}; border: 1px solid #1a3a5c;"
+            f" border-radius: 6px; padding: 4px 10px; }}"
+        )
+        obs_layout = QHBoxLayout(obs_frame)
+        obs_layout.setContentsMargins(0, 0, 0, 0)
+        obs_layout.setSpacing(8)
+        self.obs_label = QLabel("🔍 Auditor: —")
+        self.obs_label.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
+        obs_layout.addWidget(self.obs_label)
+        self.obs_bar = QProgressBar()
+        self.obs_bar.setMaximum(100)
+        self.obs_bar.setValue(0)
+        self.obs_bar.setFixedHeight(8)
+        self.obs_bar.setTextVisible(False)
+        obs_layout.addWidget(self.obs_bar, stretch=1)
+        self.obs_detail = QLabel("")
+        self.obs_detail.setFont(QFont("Menlo", 9))
+        self.obs_detail.setStyleSheet(f"color: {_DIM};")
+        obs_layout.addWidget(self.obs_detail)
+        layout.addWidget(obs_frame)
+
+        # ── BioSIFTA corpus strip ─────────────────────────────────────────────
+        bio_frame = QFrame()
+        bio_frame.setStyleSheet(
+            f"QFrame {{ background: {_CARD}; border: 1px solid #1a3a5c;"
+            f" border-radius: 6px; padding: 4px 10px; }}"
+        )
+        bio_layout = QHBoxLayout(bio_frame)
+        bio_layout.setContentsMargins(0, 0, 0, 0)
+        bio_layout.setSpacing(8)
+        self.bio_label = QLabel("🧬 BioSIFTA: —")
+        self.bio_label.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
+        bio_layout.addWidget(self.bio_label)
+        self.bio_bar = QProgressBar()
+        self.bio_bar.setMaximum(500)   # LoRA threshold
+        self.bio_bar.setValue(0)
+        self.bio_bar.setFixedHeight(8)
+        self.bio_bar.setTextVisible(False)
+        bio_layout.addWidget(self.bio_bar, stretch=1)
+        self.bio_detail = QLabel("")
+        self.bio_detail.setFont(QFont("Menlo", 9))
+        self.bio_detail.setStyleSheet(f"color: {_DIM};")
+        bio_layout.addWidget(self.bio_detail)
+        layout.addWidget(bio_frame)
+
         self.task_area = QVBoxLayout()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -386,7 +434,73 @@ class ScheduleTab(QWidget):
             self.al_bar.setValue(0)
             self.al_policy_label.setText("")
 
-        # ── Circadian ──────────────────────────────────────────────────────
+        # ── Event 104/106 Auditor strip ───────────────────────────────────────
+        try:
+            summary_path = _STATE / "nightly_health_summary.json"
+            if summary_path.exists():
+                summary = json.loads(summary_path.read_text("utf-8"))
+                score = float(summary.get("composite_score", 0.0))
+                obs_sec = summary.get("sections", {}).get("observability", {})
+                confidence = float(obs_sec.get("attribution_confidence", 0.0))
+                linkage = float(obs_sec.get("trace_linkage", 0.0))
+                n_rows = int(obs_sec.get("n_obs_rows_24h", 0))
+                cusum_reject = obs_sec.get("cusum_null_reject")
+                cusum_icon = "🔴" if cusum_reject is False else ("🟢" if cusum_reject else "⚪")
+                color = _GREEN if confidence > 0.6 else _AMBER if confidence > 0.3 else _RED
+                self.obs_label.setText(f"🔍 Auditor: {confidence:.2f}")
+                self.obs_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+                self.obs_bar.setValue(int(confidence * 100))
+                self.obs_bar.setStyleSheet(
+                    f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
+                )
+                ts = summary.get("ts", 0)
+                self.obs_detail.setText(
+                    f"link={linkage:.2f}  rows={n_rows}  "
+                    f"CUSUM={cusum_icon}  score={score:.3f}  [{_ago(ts)}]"
+                )
+            else:
+                # Live fallback from obs log directly
+                obs_rows = _tail_jsonl(_STATE / "stigmergic_observability.jsonl", 50)
+                linked = sum(1 for r in obs_rows if r.get("causal_parent_ids"))
+                linkage = linked / len(obs_rows) if obs_rows else 0.0
+                color = _GREEN if linkage > 0.6 else _AMBER if linkage > 0.3 else _DIM
+                self.obs_label.setText(f"🔍 Auditor: {linkage:.2f}")
+                self.obs_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+                self.obs_bar.setValue(int(linkage * 100))
+                self.obs_detail.setText(f"rows={len(obs_rows)}  link={linkage:.2f}  no audit run yet")
+        except Exception:
+            self.obs_label.setText("🔍 Auditor: —")
+            self.obs_bar.setValue(0)
+            self.obs_detail.setText("")
+
+        # ── BioSIFTA corpus strip ─────────────────────────────────────────────
+        try:
+            def _count_jsonl(name: str) -> int:
+                p = _STATE / name
+                if not p.exists():
+                    return 0
+                return sum(1 for l in p.read_text("utf-8", errors="replace").splitlines() if l.strip())
+            n_papers  = _count_jsonl("bio_papers.jsonl")
+            n_claims  = _count_jsonl("bio_claims.jsonl")
+            n_exp     = _count_jsonl("bio_experiments.jsonl")
+            n_skills  = _count_jsonl("bio_skills.jsonl")
+            lora_ready = n_claims >= 500
+            color = _GREEN if lora_ready else _AMBER if n_claims > 50 else _CYAN
+            self.bio_label.setText(f"🧬 BioSIFTA: {n_claims}c")
+            self.bio_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+            self.bio_bar.setValue(min(n_claims, 500))
+            self.bio_bar.setStyleSheet(
+                f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
+            )
+            lora_icon = "✅ LoRA ready" if lora_ready else f"📥 {500 - n_claims} to LoRA"
+            self.bio_detail.setText(
+                f"papers={n_papers}  claims={n_claims}  exp={n_exp}  skills={n_skills}  {lora_icon}"
+            )
+        except Exception:
+            self.bio_label.setText("🧬 BioSIFTA: —")
+            self.bio_bar.setValue(0)
+            self.bio_detail.setText("")
+
         now = datetime.now()
         hour = now.hour
         if 5 <= hour < 9:
@@ -617,6 +731,236 @@ class HealthTab(QWidget):
 
 
 # ═════════════════════════════════════════════════════════════════════
+# TAB 4: SWARM (Event 104/106 deep view)
+# ═════════════════════════════════════════════════════════════════════
+class SwarmTab(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        hdr = QLabel("🐜 SWARM HEALTH — Observability · Motor · BioSIFTA")
+        hdr.setFont(QFont("Menlo", 14, QFont.Weight.Bold))
+        hdr.setStyleSheet(f"color: {_CYAN};")
+        hdr.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(hdr)
+
+        self.swarm_grid = QGridLayout()
+        self.swarm_grid.setSpacing(10)
+        layout.addLayout(self.swarm_grid)
+
+        metrics = [
+            ("🔍 Attribution",    "attribution"),
+            ("🔗 Trace Linkage",  "linkage"),
+            ("🏃 Race Pressure",  "race"),
+            ("📡 CUSUM Signal",   "cusum"),
+            ("⚙️  Motor Regime",  "regime"),
+            ("🌀 Crystallizer",   "crystal"),
+            ("📄 Papers",         "papers"),
+            ("💡 Claims",         "claims"),
+            ("🔬 Experiments",    "experiments"),
+            ("🎓 Skills Shipped", "skills"),
+            ("🏆 Composite",      "composite"),
+            ("⏱  Last Audit",    "last_audit"),
+        ]
+        self._swarm_labels: dict[str, QLabel] = {}
+        for i, (label, key) in enumerate(metrics):
+            frame = QFrame()
+            frame.setStyleSheet(f"""
+                QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT};
+                          border-radius: 8px; padding: 10px; }}
+            """)
+            fl = QVBoxLayout(frame)
+            fl.setSpacing(2)
+            nl = QLabel(label)
+            nl.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
+            nl.setStyleSheet(f"color: {_DIM};")
+            fl.addWidget(nl)
+            vl = QLabel("—")
+            vl.setFont(QFont("Menlo", 18, QFont.Weight.Bold))
+            vl.setStyleSheet(f"color: {_CYAN};")
+            fl.addWidget(vl)
+            self._swarm_labels[key] = vl
+            self.swarm_grid.addWidget(frame, i // 3, i % 3)
+
+        # Nightly audit log
+        layout.addWidget(QLabel("📋 Nightly Audit History:"))
+        self.audit_log = QTextEdit()
+        self.audit_log.setReadOnly(True)
+        self.audit_log.setFixedHeight(100)
+        layout.addWidget(self.audit_log)
+
+        # Manual audit button
+        btn_row = QHBoxLayout()
+        btn_audit = QPushButton("▶ Run Audit Now (no arXiv)")
+        btn_audit.clicked.connect(self._run_audit)
+        btn_row.addWidget(btn_audit)
+        btn_sweep = QPushButton("🌐 arXiv Sweep")
+        btn_sweep.clicked.connect(self._run_arxiv_sweep)
+        btn_row.addWidget(btn_sweep)
+        layout.addLayout(btn_row)
+
+        self._audit_result_label = QLabel("")
+        self._audit_result_label.setFont(QFont("Menlo", 9))
+        self._audit_result_label.setStyleSheet(f"color: {_DIM};")
+        self._audit_result_label.setWordWrap(True)
+        layout.addWidget(self._audit_result_label)
+
+    def _run_audit(self):
+        self._audit_result_label.setText("⏳ Running audit…")
+        QApplication.processEvents()
+        try:
+            from System.swarm_nightly_health_audit import run_nightly_audit
+            result = run_nightly_audit(run_arxiv=False, fast_tests=True)
+            score = result.get("composite_score", 0.0)
+            dur   = result.get("duration_s", 0)
+            tests = result.get("sections", {}).get("tests", {})
+            self._audit_result_label.setText(
+                f"✅ Audit done  composite={score:.4f}  "
+                f"tests={tests.get('passed', 0)} passed  {dur:.1f}s"
+            )
+            self._audit_result_label.setStyleSheet(f"color: {_GREEN};")
+        except Exception as exc:
+            self._audit_result_label.setText(f"❌ Audit error: {exc}")
+            self._audit_result_label.setStyleSheet(f"color: {_RED};")
+        self.refresh()
+
+    def _run_arxiv_sweep(self):
+        self._audit_result_label.setText("⏳ Running arXiv sweep (4 queries, ~15s)…")
+        self._audit_result_label.setStyleSheet(f"color: {_AMBER};")
+        QApplication.processEvents()
+        try:
+            from System.swarm_bio_arxiv_ingester import run_sifta_bio_sweep
+            receipts = run_sifta_bio_sweep(
+                max_results_per_query=2, run_claim_extraction=False
+            )
+            total = sum(r.get("n_fetched", 0) for r in receipts)
+            chunks = sum(r.get("ingested_chunks", 0) for r in receipts)
+            self._audit_result_label.setText(
+                f"✅ Sweep done  fetched={total}  chunks={chunks}"
+            )
+            self._audit_result_label.setStyleSheet(f"color: {_GREEN};")
+        except Exception as exc:
+            self._audit_result_label.setText(f"❌ Sweep error: {exc}")
+            self._audit_result_label.setStyleSheet(f"color: {_RED};")
+        self.refresh()
+
+    def refresh(self):
+        L = self._swarm_labels
+
+        # ── Read nightly_health_summary.json ────────────────────────────────
+        summary_path = _STATE / "nightly_health_summary.json"
+        summary = _load_json(summary_path)
+        sections = summary.get("sections", {})
+
+        obs = sections.get("observability", {})
+        al  = sections.get("allostatic", {})
+        mp  = sections.get("motor_policy", {})
+        bc  = sections.get("bio_corpus", {})
+        tg  = sections.get("tests", {})
+        composite = float(summary.get("composite_score", 0.0))
+        ts_audit  = float(summary.get("ts", 0.0))
+
+        def _color_score(v: float) -> str:
+            return _GREEN if v > 0.7 else _AMBER if v > 0.4 else _RED
+
+        # Attribution confidence
+        conf = float(obs.get("attribution_confidence", 0.0))
+        L["attribution"].setText(f"{conf:.3f}")
+        L["attribution"].setStyleSheet(f"color: {_color_score(conf)};")
+
+        # Trace linkage
+        link = float(obs.get("trace_linkage", 0.0))
+        L["linkage"].setText(f"{link:.3f}")
+        L["linkage"].setStyleSheet(f"color: {_color_score(link)};")
+
+        # Race pressure (lower is better)
+        race = float(obs.get("race_pressure", 0.0))
+        race_color = _GREEN if race < 0.2 else _AMBER if race < 0.5 else _RED
+        L["race"].setText(f"{race:.3f}")
+        L["race"].setStyleSheet(f"color: {race_color};")
+
+        # CUSUM null signal
+        cusum_reject = obs.get("cusum_null_reject")
+        if cusum_reject is True:
+            L["cusum"].setText("✅ Signal")
+            L["cusum"].setStyleSheet(f"color: {_GREEN};")
+        elif cusum_reject is False:
+            L["cusum"].setText("⚠️ Noise")
+            L["cusum"].setStyleSheet(f"color: {_AMBER};")
+        else:
+            L["cusum"].setText("⚪ No data")
+            L["cusum"].setStyleSheet(f"color: {_DIM};")
+
+        # Motor regime
+        regime = mp.get("last_regime", "—")
+        _REGIME_COLORS = {
+            "EXPLORATION": _GREEN, "CONSOLIDATION": _AMBER,
+            "CRITICAL_COLLAPSE": _RED,
+        }
+        L["regime"].setText(regime[:12])
+        L["regime"].setStyleSheet(f"color: {_REGIME_COLORS.get(regime, _DIM)};")
+
+        # Crystallizer gate (from motor_policy.jsonl live fallback)
+        try:
+            mp_rows = _tail_jsonl(_STATE / "motor_policy.jsonl", 10)
+            gate = mp_rows[-1].get("crystallizer_gate", "—") if mp_rows else "—"
+            gate_str = f"{gate:.2f}" if isinstance(gate, float) else str(gate)
+            gate_color = _GREEN if isinstance(gate, float) and gate > 0.8 else _AMBER
+        except Exception:
+            gate_str, gate_color = "—", _DIM
+        L["crystal"].setText(gate_str)
+        L["crystal"].setStyleSheet(f"color: {gate_color};")
+
+        # BioSIFTA corpus metrics (live from files — faster than waiting for audit)
+        def _count(name: str) -> int:
+            p = _STATE / name
+            if not p.exists():
+                return 0
+            return sum(1 for l in p.read_text("utf-8", errors="replace").splitlines() if l.strip())
+
+        n_papers = _count("bio_papers.jsonl") or bc.get("n_paper_chunks", 0)
+        n_claims = _count("bio_claims.jsonl") or bc.get("n_claims", 0)
+        n_exp    = _count("bio_experiments.jsonl") or bc.get("n_experiments", 0)
+        n_skills = _count("bio_skills.jsonl") or bc.get("n_skills", 0)
+
+        L["papers"].setText(str(n_papers))
+        L["claims"].setText(str(n_claims))
+        L["claims"].setStyleSheet(
+            f"color: {_GREEN if n_claims >= 500 else _AMBER if n_claims > 50 else _CYAN};"
+        )
+        L["experiments"].setText(str(n_exp))
+        L["skills"].setText(str(n_skills))
+        L["skills"].setStyleSheet(f"color: {_GREEN if n_skills > 0 else _DIM};")
+
+        # Composite
+        L["composite"].setText(f"{composite:.4f}")
+        L["composite"].setStyleSheet(f"color: {_color_score(composite)};")
+
+        # Last audit
+        if ts_audit:
+            L["last_audit"].setText(_ago(ts_audit))
+            L["last_audit"].setStyleSheet(
+                f"color: {_GREEN if time.time() - ts_audit < 86400 else _AMBER};"
+            )
+        else:
+            L["last_audit"].setText("never")
+            L["last_audit"].setStyleSheet(f"color: {_RED};")
+
+        # Audit history log
+        history = _tail_jsonl(_STATE / "nightly_health.jsonl", 5)
+        lines = []
+        for h in reversed(history):
+            ts = h.get("ts", 0)
+            sc = h.get("composite_score", 0.0)
+            tp = h.get("sections", {}).get("tests", {}).get("passed", "?")
+            lines.append(
+                f"[{_ago(ts)}] composite={sc:.4f}  tests={tp}"
+            )
+        self.audit_log.setText(
+            "\n".join(lines) if lines else "No audit history yet — click ▶ Run Audit Now."
+        )
+
+
+# ═════════════════════════════════════════════════════════════════════
 # MAIN WINDOW
 # ═════════════════════════════════════════════════════════════════════
 class StigmergicLifeDashboard(QWidget):
@@ -647,10 +991,12 @@ class StigmergicLifeDashboard(QWidget):
         self.contacts_tab = ContactsTab()
         self.schedule_tab = ScheduleTab()
         self.health_tab = HealthTab()
+        self.swarm_tab = SwarmTab()
 
         self.tabs.addTab(self.contacts_tab, "🌐 Contacts")
         self.tabs.addTab(self.schedule_tab, "📅 Schedule")
         self.tabs.addTab(self.health_tab, "❤️ Health")
+        self.tabs.addTab(self.swarm_tab, "🐜 Swarm")
         layout.addWidget(self.tabs)
 
         # Auto-refresh
@@ -667,6 +1013,8 @@ class StigmergicLifeDashboard(QWidget):
             self.schedule_tab.refresh()
         elif idx == 2:
             self.health_tab.refresh()
+        elif idx == 3:
+            self.swarm_tab.refresh()
 
 
 def main():
