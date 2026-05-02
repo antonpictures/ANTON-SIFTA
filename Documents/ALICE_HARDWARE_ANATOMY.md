@@ -86,7 +86,7 @@ flowchart TB
     Sensors["Sensors + OS organs\ncamera/audio/files/network if present"]
     Receipts["Signed JSONL receipts\nlocal node ledger"]
 
-    AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n9.6 GB on M5"]
+    AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n(Borrowed Inference for Speech)"]
     Scout["LOCAL MULTIMODAL SCOUT\nqwen3.5:4b\nGB unknown until pulled\nPLANNED FOR MINI"]
     Corvid["LOCAL CORVID / REFLEX\nqwen3.5:2b\n2.7 GB if installed\nRECOMMENDED"]
     GemmaSkip["GEMMA4 PRIMARY\nsifta-gemma4-alice:latest\n9.6 GB\nSKIPPED BY 8 GB PHYSICS"]
@@ -112,8 +112,8 @@ flowchart TB
     Sensors["Physical sensors\ncamera, GPS, GPIO, serial,\nsoil, CAN, temperature"]
     Receipts["Signed feature receipts\nJSONL facts + hashes"]
 
-    AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n9.6 GB on M5"]
-    Tiny["TINY EDGE SCOUT\nqwen3.5:0.8b\nGB unknown until pulled\nOPTIONAL"]
+    AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n(Borrowed Inference for Speech)"]
+    Tiny["TINY EDGE SCOUT\nqwen3.5:0.8b\nGB unknown until pulled\nBASELINE MULTIMODAL"]
     Small["SMALL GGUF SCOUT\n3B-class Q4 GGUF\nGB depends on chosen file\nOPTIONAL / TEST"]
     Crawl["SLOW 7B GGUF\nQ4 GGUF\npossible but slow\nTEST ONLY"]
     Hailo["OPTIONAL CV ACCELERATOR\nRaspberry Pi AI HAT+ / Hailo\n13 or 26 TOPS variant\nVISION ONLY"]
@@ -158,35 +158,41 @@ Retailers sometimes rotate RAM SKUs on the same ASIN — treat RAM size as
 Do not file Pi 4 under the Pi 5 diagram without relabeling: memory and I/O
 budget are different generations.
 
-## Generic Python Field Node
+## Generic Python Field Node (2GB+ RAM)
 
 This is any smaller tractor controller, sensor box, camera box, or device that
-can run Python but has not proven local inference. It still has Alice-shaped
-anatomy, but the local brain slot is empty by default. Its job is to turn world
-events into signed facts.
+can run Python and has at least 2GB RAM. It still has Alice-shaped anatomy, but uses
+the lowest possible architecture for local multimodal perception.
+
+**Crucially, this node can "borrow" inference.** Even though the local hardware only runs 
+a tiny 0.8b model, the node streams questions to the M5 over the swarm network. Alice will talk back 
+through the field node with full Gemma4 smarts, using the local 0.8b model only for raw vision/audio 
+perception when offline or for fast local reflexes.
 
 ```mermaid
 flowchart TB
-    Field["Generic Field Node\nany Python hardware"]
+    Field["Generic Field Node\n2GB+ RAM hardware"]
 
     Sensors["Physical sensors\nGPS, camera, temperature,\nsoil, CAN, GPIO, serial"]
     Receipts["Signed feature receipts\nJSONL facts, no raw surveillance by default"]
 
-    AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n9.6 GB on M5"]
-    NoModel["DEFAULT LOCAL BRAIN\nno LLM\n0 GB\nVALID"]
+    AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n(Borrowed Inference for Speech)"]
+    Tiny["LOCAL MULTIMODAL SCOUT\nqwen3.5:0.8b\nFits in 2GB RAM\nVALID BASELINE"]
+    NoModel["DEFAULT LOCAL BRAIN\nno LLM\n0 GB\nVALID (if network only)"]
 
     Field --> Sensors --> Receipts --> AliceRemote
+    Tiny --> Receipts
     NoModel --> Receipts
 ```
 
 ## One-Line Rule
 
 ```text
-M5 = Alice thinks.
-Mac Mini = Alice scouts locally and reports.
-Pi 5 = Alice can scout at the edge if GGUF/Hailo is proven.
-Pi 4 (e.g. ASIN B07TD42S27 class) = cheap gateway: sense + receipt + forward; tiny GGUF only if proven.
-Tiny field hardware = Alice senses the world and reports.
+M5 = Alice thinks locally.
+Mac Mini = Alice scouts locally (4b) and borrows M5 inference to talk.
+Pi 5 = Alice scouts at edge (GGUF/Hailo) and borrows M5 inference to talk.
+Pi 4 / 2GB Field Node = Alice scouts locally (0.8b) and borrows M5 inference to talk.
+Tiny field hardware (<2GB) = Alice senses the world without a local model and reports.
 ```
 
-Same anatomy. Different physical scale.
+Same anatomy. Different physical scale. Local models handle perception and reflexes; the network provides the Gemma4 soul.
