@@ -1247,8 +1247,13 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "color: rgb(100, 115, 135); font-size: 10px; font-family: Menlo; "
             "padding: 4px 6px; "
         )
+        planned_style = (
+            "color: rgb(80, 80, 80); font-size: 10px; font-family: Menlo; "
+            "padding: 4px 6px; font-style: italic;"
+        )
 
-        def _chip_row(label: str, value: str, chip_css: str, weight_str: str = "") -> QHBoxLayout:
+        def _chip_row(label: str, value: str, chip_css: str, weight_str: str = "",
+                      planned: bool = False) -> QHBoxLayout:
             row = QHBoxLayout()
             row.setSpacing(8)
             lbl = QLabel(label)
@@ -1259,10 +1264,33 @@ class SystemSettingsWidget(SiftaBaseWidget):
             row.addWidget(chip)
             if weight_str:
                 w_lbl = QLabel(weight_str)
-                w_lbl.setStyleSheet(weight_style)
+                w_lbl.setStyleSheet(planned_style if planned else weight_style)
                 row.addWidget(w_lbl)
             row.addStretch()
             return row
+
+        def _scout_weight(model: str) -> tuple[str, bool]:
+            """Returns (label, is_planned). Never shows stale prefix data."""
+            label = _fmt_weight(model).strip()
+            if label and label != "not installed":
+                return label, False
+            return "PLANNED  ·  ↓ pull to activate", True
+
+        # ── Live summary banner ──
+        installed_count = len(model_weights)
+        total_bytes = sum(model_weights.values())
+        total_gb = total_bytes / 1e9 if total_bytes > 0 else 0
+        summary_lbl = QLabel(
+            f"{'✅' if installed_count >= 2 else '⚠️'}  Ollama live  ·  "
+            f"{installed_count} model{'s' if installed_count != 1 else ''} installed  ·  "
+            f"⚖ {total_gb:.1f} GB on disk"
+        )
+        summary_lbl.setStyleSheet(
+            "color: rgb(0, 210, 120); font-size: 11px; font-family: Menlo; "
+            "background: rgb(5, 22, 14); border: 1px solid rgb(0, 100, 60); "
+            "border-radius: 6px; padding: 4px 10px; margin-bottom: 4px;"
+        )
+        root.addWidget(summary_lbl)
 
         # ── Cortex section ──
         cortex_heading = QLabel("🧠  Primary Cortex  ·  Alice's main reasoning brain")
@@ -1273,45 +1301,50 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addLayout(_chip_row("Alice Cortex", active_cortex,
                                   chip_style_cortex, _fmt_weight(active_cortex)))
 
-        # ── Scout section ──
-        scout_heading = QLabel("🔭  Multimodal Scout  ·  vision receipts feed into Gemma4")
+        # ── Corvid / Fallback section ──
+        corvid_heading = QLabel("🐦  Corvid / Fallback  ·  fast reflex + canonical fallback model")
+        corvid_heading.setStyleSheet(
+            "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        )
+        root.addWidget(corvid_heading)
+        root.addLayout(_chip_row("Corvid · Fallback", self._corvid_default + "  ·  2.7 GB installed",
+                                  chip_style_organ, _fmt_weight(self._corvid_default)))
+
+        # ── Scout section (PLANNED) ──
+        scout_heading = QLabel("🔭  Multimodal Scout  ·  vision receipts feed into Gemma4  [PLANNED]")
         scout_heading.setStyleSheet(
-            "color: rgb(255, 180, 40); font-size: 13px; font-weight: bold; margin-top: 6px;"
+            "color: rgb(100, 100, 100); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(scout_heading)
-        chip_style_scout = (
-            "background: rgb(30, 22, 5); color: rgb(255, 180, 40); "
-            "border: 1px solid rgb(160, 110, 20); border-radius: 8px; "
+        chip_style_scout_planned = (
+            "background: rgb(20, 18, 5); color: rgb(100, 100, 80); "
+            "border: 1px solid rgb(60, 55, 20); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        def _scout_weight(model: str) -> str:
-            """Show installed size OR explicit download-target label — never stale prefix data."""
-            label = _fmt_weight(model).strip()
-            return label if label and label != "not installed" else "↓ not downloaded yet"
-
+        m5_w, m5_p = _scout_weight("qwen3.5:9b")
+        mini_w, mini_p = _scout_weight("qwen3.5:4b")
         root.addLayout(_chip_row("M5 Scout",
                                   "qwen3.5:9b  ·  multimodal VLM",
-                                  chip_style_scout, _scout_weight("qwen3.5:9b")))
+                                  chip_style_scout_planned, m5_w, planned=m5_p))
         root.addLayout(_chip_row("Mac Mini Scout",
                                   "qwen3.5:4b  ·  8 GB safe",
-                                  chip_style_scout, _scout_weight("qwen3.5:4b")))
+                                  chip_style_scout_planned, mini_w, planned=mini_p))
 
-        # ── Doctor section ──
-        doctor_heading = QLabel("🩺  Doctor Organ  ·  text / tool / JSON only")
+        # ── Doctor section (PLANNED) ──
+        doctor_heading = QLabel("🩺  Doctor Organ  ·  text / tool / JSON  [PLANNED]")
         doctor_heading.setStyleSheet(
-            "color: rgb(210, 120, 60); font-size: 13px; font-weight: bold; margin-top: 6px;"
+            "color: rgb(100, 100, 100); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(doctor_heading)
-        chip_style_doctor = (
-            "background: rgb(30, 14, 5); color: rgb(210, 120, 60); "
-            "border: 1px solid rgb(140, 70, 20); border-radius: 8px; "
+        chip_style_doctor_planned = (
+            "background: rgb(20, 10, 5); color: rgb(100, 80, 60); "
+            "border: 1px solid rgb(60, 35, 10); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
+        gran_w, gran_p = _scout_weight("granite4.1")
         root.addLayout(_chip_row("Granite Doctor",
                                   "granite4.1  ·  router / coder / prover",
-                                  chip_style_doctor, _scout_weight("granite4.1")))
-        root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default,
-                                  chip_style_organ, _scout_weight(self._corvid_default)))
+                                  chip_style_doctor_planned, gran_w, planned=gran_p))
 
         # ── Organs section ──
         organ_heading = QLabel("⚡  Reflex Organs  ·  pure-Python, run alongside cortex")
@@ -1357,12 +1390,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
         reset_row.addWidget(reset_btn)
         root.addLayout(reset_row)
 
-        self.inference_default_card = MetricCard("Alice Cortex", "--")
+        self.inference_default_card = MetricCard("Alice Cortex", active_cortex)
+        self.inference_default_card.set_metric(active_cortex, f"⚖ {total_gb:.1f} GB total")
         root.addWidget(self.inference_default_card)
 
         root.addStretch()
-        return page
-
     def _reset_brain_to_default(self) -> None:
         """Restore the canonical gemma4 cortex without exposing model names to the user."""
         canonical = "sifta-gemma4-alice"
