@@ -17,8 +17,7 @@ TRUTH_LABEL = "FICTION_MEDIA_RLHS_EVENT_115"
 FICTION_CONTEXT_RE = re.compile(
     r"\b(?:"
     r"fiction|fictional|fictional_media_clip|movie|film|cinema|"
-    r"screenplay|character|dialogue_boundary|fictional_dialogue|co[-_ ]?watch|"
-    r"snatch|guy\s+ritchie"
+    r"screenplay|character|dialogue_boundary|fictional_dialogue|co[-_ ]?watch"
     r")\b",
     re.IGNORECASE,
 )
