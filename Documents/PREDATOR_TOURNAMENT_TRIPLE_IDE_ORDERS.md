@@ -164,6 +164,13 @@
 
 **P1 (Battle Plan continuation — SHIPPED 555):** `rlhs_regime` / `log_rlhs_turn` on Alice's conversation ledger (`.sifta_state/alice_conversation.jsonl`; legacy readers may also inspect `conversation_log.jsonl`); NOISE / DEGRADED spikes → `ide_stigmergic_trace.jsonl` for CUSUM — **shipped** with widget wiring + nightly audit field.
 
+| Event 111 (Bio World Model) anchors | Primary reference | Maps to SIFTA |
+|:---|:---|:---|
+| **Stigmergy substrate** | Grassé (1959) — term stigmergy; indirect coordination via environment traces. | **`bio_world_model.jsonl`** — memory lives in the environment, not ephemeral LLM context. |
+| **Active inference** | Friston (2010) Nat Rev Neurosci — [doi:10.1038/nrn2787](https://doi.org/10.1038/nrn2787) | Perception–action loops bounded by the world model ledger. |
+| **Sensorimotor learning** | Wolpert & Ghahramani (2000) Phil Trans R Soc A — [doi:10.1098/rsta.2000.0558](https://doi.org/10.1098/rsta.2000.0558) | **Crystallized skills** feeding the motor policy. |
+| **Allostasis / interoception** | Sterling & Eyer (1988); Barrett & Simmons (2015) Neuron — [doi:10.1016/j.neuron.2015.09.017](https://doi.org/10.1016/j.neuron.2015.09.017) | **Organism health**, drives, and homeostasis gating. |
+
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 
 **SoT:** [NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md](NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md) · **Code:** `System/nvidia_open_assets_registry.py` · **Tests:** `tests/test_nvidia_open_assets_registry.py`
