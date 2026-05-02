@@ -180,8 +180,32 @@ def test_result_fields_always_present():
         assert "stt_conf" in d
         assert "incoherence" in d
         assert "rule_id" in d
+        assert d.get("channel_lane") == "REAL"
         assert 0.0 <= d["incoherence"] <= 1.0
         assert d["truth_label"] == "RLHS_DETECTOR_EVENT_108"
+
+
+def test_fiction_cowatch_lane_promotes_mid_conf_coherent_monologue():
+    """Room mic + screen audio during fiction co-watch: not DEGRADED vs same under REAL."""
+    text = (
+        "Do you like dog fights Turkish that is not how we talk in real life "
+        "but it is fine in a movie scene with pigs and bodies and greed"
+    )
+    real = detect_rlhs(text, 0.52, channel_lane="REAL")
+    assert real.regime == RLHSRegime.DEGRADED
+    fic = detect_rlhs(text, 0.52, channel_lane="FICTION_COWATCH")
+    assert fic.regime == RLHSRegime.CLEAR
+    assert fic.rule_id == "fiction_cowatch/coherent_monologue"
+    assert fic.to_dict()["channel_lane"] == "FICTION_COWATCH"
+
+
+def test_fiction_cowatch_promotes_short_test_phrase_architect_session():
+    """Four-word test line must not be RLHS-gagged during fiction co-watch."""
+    r_real = detect_rlhs("This is the test.", 0.52, channel_lane="REAL")
+    assert r_real.regime == RLHSRegime.DEGRADED
+    r_fic = detect_rlhs("This is the test.", 0.52, channel_lane="FICTION_COWATCH")
+    assert r_fic.regime == RLHSRegime.CLEAR
+    assert r_fic.rule_id == "fiction_cowatch/coherent_monologue"
 
 
 # ─────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ PHILOSOPHY (from the Architect, 2026-05-02):
   to have understood.
 
 WHAT THIS MODULE DOES:
-  detect_rlhs(text, stt_conf) -> RLHSResult
+  detect_rlhs(text, stt_conf, *, channel_lane="REAL") -> RLHSResult
     Classifies one turn as: CLEAR / DEGRADED / NOISE / SILENCE_PROBE.
     Sets a single short grounding_line only for DEGRADED — never a hardcoded
     therapy menu.
@@ -58,6 +58,16 @@ class RLHSRegime(str, Enum):
     EMPTY         = "EMPTY"          # blank / whitespace-only
 
 
+# Fiction co-watch (ledger-resolved): slightly lower CLEAR bar + monologue promotion.
+FICTION_CONF_CLEAR = 0.53
+FICTION_CLEAR_MAX_INC = 0.45
+# Short directed test phrases during co-watch (e.g. "This is the test.") must not
+# be misclassified as DEGRADED room noise; ledger already says fiction session.
+FICTION_PROMOTE_MIN_TOKENS = 4
+FICTION_PROMOTE_MIN_CONF = 0.40
+FICTION_PROMOTE_MAX_INC = 0.30
+
+
 @dataclass
 class RLHSResult:
     regime:         RLHSRegime
@@ -67,6 +77,7 @@ class RLHSResult:
     rule_id:        str            # what fired
     grounding_line: str            # ONE short line if DEGRADED; empty otherwise
     truth_label:    str = TRUTH_LABEL
+    channel_lane:   str = "REAL"   # REAL vs FICTION_COWATCH (see swarm_rlhs_channel_lane)
     ts:             float = field(default_factory=time.time)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -78,6 +89,7 @@ class RLHSResult:
             "incoherence":    round(self.incoherence, 3),
             "rule_id":        self.rule_id,
             "grounding_line": self.grounding_line,
+            "channel_lane":   self.channel_lane,
             "ts":             self.ts,
         }
 
@@ -203,6 +215,11 @@ def _incoherence_score(text: str, stt_conf: float) -> float:
     # Weighted composite
     raw = 0.40 * rep + 0.35 * density_incoherence + 0.25 * conf_penalty
     return round(min(1.0, raw), 3)
+
+
+def incoherence_score(text: str, stt_conf: float = 0.0) -> float:
+    """Public wrapper for RLHS auxiliary telemetry (e.g. content-signal vectors)."""
+    return _incoherence_score(text, stt_conf)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -352,17 +369,24 @@ def sanitize_output_tail(text: str) -> RLHSTailResult:
 # Main detector
 # ══════════════════════════════════════════════════════════════════════════════
 
-def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
+def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL") -> RLHSResult:
     """
     Classify one turn by ASR channel quality.
 
     Args:
         text:     The transcribed text (already stripped).
         stt_conf: Whisper / STT confidence in [0, 1]. 0 = unknown.
+        channel_lane: REAL (default) or FICTION_COWATCH when a recent architect
+            fiction co-watch receipt is active — relaxes mid-band ASR for coherent
+            long-form room pickup without changing NOISE / phatic doctrine.
 
     Returns:
         RLHSResult with regime, rule_id, and optional grounding_line.
     """
+    lane = (channel_lane or "REAL").strip().upper()
+    if lane != "FICTION_COWATCH":
+        lane = "REAL"
+
     text = (text or "").strip()
     tokens = text.split()
     n_tokens = len(tokens)
@@ -375,6 +399,7 @@ def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
             stt_conf=conf, text_tokens=0,
             incoherence=1.0, rule_id="empty_text",
             grounding_line="",
+            channel_lane=lane,
         )
 
     # 2. Direct Address Wake-Word Bypass
@@ -394,20 +419,25 @@ def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
             stt_conf=conf, text_tokens=n_tokens,
             incoherence=0.5, rule_id=f"backchannel/{rule}",
             grounding_line="",
+            channel_lane=lane,
         )
 
     # 3. Incoherence score
     inc = _incoherence_score(text, conf)
 
+    clear_bar = FICTION_CONF_CLEAR if lane == "FICTION_COWATCH" else CONF_CLEAR
+    inc_clear_cap = FICTION_CLEAR_MAX_INC if lane == "FICTION_COWATCH" else 0.4
+
     # 4. CLEAR — let weights speak
     # If the user explicitly uses the wake word, force a CLEAR channel so the organism
     # never ignores a direct address, even if the surrounding audio is degraded.
-    if has_wake_word or (conf >= CONF_CLEAR and inc < 0.4):
+    if has_wake_word or (conf >= clear_bar and inc < inc_clear_cap):
         return RLHSResult(
             regime=RLHSRegime.CLEAR,
             stt_conf=conf, text_tokens=n_tokens,
             incoherence=inc, rule_id="wake_word_override" if has_wake_word else "clear_channel",
             grounding_line="",
+            channel_lane=lane,
         )
 
     # 5. NOISE — conf very low AND (long OR incoherent)
@@ -417,6 +447,24 @@ def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
             stt_conf=conf, text_tokens=n_tokens,
             incoherence=inc, rule_id="noise/low_conf_long_incoherent",
             grounding_line="",  # go silent — no reply beats a hallucinated therapy menu
+            channel_lane=lane,
+        )
+
+    # 5b Fiction co-watch — coherent screenplay-shaped room audio at mid confidence.
+    if (
+        lane == "FICTION_COWATCH"
+        and not has_wake_word
+        and n_tokens >= FICTION_PROMOTE_MIN_TOKENS
+        and conf >= FICTION_PROMOTE_MIN_CONF
+        and inc <= FICTION_PROMOTE_MAX_INC
+    ):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf, text_tokens=n_tokens,
+            incoherence=inc,
+            rule_id="fiction_cowatch/coherent_monologue",
+            grounding_line="",
+            channel_lane=lane,
         )
 
     # 6. DEGRADED — mid-range: one short grounding line
@@ -425,6 +473,7 @@ def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
         stt_conf=conf, text_tokens=n_tokens,
         incoherence=inc, rule_id="degraded/mid_conf",
         grounding_line=_GROUNDING_LINE,
+        channel_lane=lane,
     )
 
 
@@ -432,7 +481,7 @@ def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
 # Backchannel gate (drop-in for _backchannel_rule_id in the talk widget)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def backchannel_rule_id(text: str, stt_conf: float = 0.0) -> Optional[str]:
+def backchannel_rule_id(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL") -> Optional[str]:
     """
     Return a rule-id string if this turn is phatic / backchannel (→ silence),
     or None if Alice should respond.
@@ -440,13 +489,13 @@ def backchannel_rule_id(text: str, stt_conf: float = 0.0) -> Optional[str]:
     Drop-in replacement for the neutered _backchannel_rule_id() in
     sifta_talk_to_alice_widget.py.
     """
-    result = detect_rlhs(text, stt_conf)
+    result = detect_rlhs(text, stt_conf, channel_lane=channel_lane)
     if result.regime in (RLHSRegime.SILENCE_PROBE, RLHSRegime.EMPTY, RLHSRegime.NOISE):
         return result.rule_id
     return None
 
 
-def should_ground(text: str, stt_conf: float = 0.0) -> Optional[str]:
+def should_ground(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL") -> Optional[str]:
     """
     Return the single grounding line if the channel is DEGRADED,
     or None if Alice should speak freely or go silent.
@@ -454,7 +503,7 @@ def should_ground(text: str, stt_conf: float = 0.0) -> Optional[str]:
     Use this in the talk widget INSTEAD of routing DEGRADED turns to the LLM.
     The base weights never see noisy ASR → they never hallucinate therapy.
     """
-    result = detect_rlhs(text, stt_conf)
+    result = detect_rlhs(text, stt_conf, channel_lane=channel_lane)
     if result.regime == RLHSRegime.DEGRADED:
         return result.grounding_line
     return None
@@ -489,8 +538,10 @@ def log_rlhs_output_tail(result: RLHSTailResult, *, state_dir: Optional[Path] = 
 
 
 __all__ = [
-    "CONF_CLEAR", "CONF_DEGRADED", "TRUTH_LABEL",
+    "CONF_CLEAR", "CONF_DEGRADED", "FICTION_CLEAR_MAX_INC", "FICTION_CONF_CLEAR",
+    "FICTION_PROMOTE_MAX_INC", "FICTION_PROMOTE_MIN_CONF", "FICTION_PROMOTE_MIN_TOKENS",
+    "TRUTH_LABEL",
     "RLHSRegime", "RLHSResult", "RLHSTailResult",
-    "backchannel_rule_id", "detect_rlhs", "log_rlhs_output_tail", "log_rlhs_turn",
+    "backchannel_rule_id", "detect_rlhs", "incoherence_score", "log_rlhs_output_tail", "log_rlhs_turn",
     "sanitize_output_tail", "should_ground",
 ]

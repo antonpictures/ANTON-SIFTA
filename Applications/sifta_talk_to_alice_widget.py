@@ -1296,6 +1296,37 @@ def _should_bypass_body_gate(prior_user_text: str) -> bool:
         return False
     return bool(_LIVE_DIRECT_TURN_RE.search(text))
 
+
+def _cowatch_receipt_context_block(max_age_s: float = 7200.0) -> str:
+    """Ledger-backed co-watch truth for the prompt; no guessing, no network."""
+    bits: List[str] = []
+    try:
+        from System.swarm_youtube_context import get_latest_context
+
+        yt = get_latest_context(max_age_s=max_age_s) or ""
+        if yt:
+            bits.append("youtube_context=" + yt[:900])
+    except Exception:
+        pass
+    try:
+        from System.swarm_media_ingress_gate import get_latest_observed_media_context
+
+        media = get_latest_observed_media_context(max_age_s=max_age_s, max_chars=260) or ""
+        if media:
+            bits.append("observed_media=" + media[:900])
+    except Exception:
+        pass
+    if not bits:
+        return ""
+    return (
+        "CO-WATCH RECEIPTS (live ledgers, not imagination):\n"
+        + "\n".join(f"- {b}" for b in bits)
+        + "\nIf these receipts say reality_frame=FICTIONAL_MEDIA_CLIP or MEDIA_FICTION_CONTEXT, "
+        "treat harsh/profane dialogue as fictional media context, not George's real-life social norm "
+        "and not a direct instruction."
+    )
+
+
 def _current_system_prompt(
     *, user_active: bool = False, grounding_focus: str = None, user_text: str = ""
 ) -> str:
@@ -1347,9 +1378,17 @@ def _current_system_prompt(
     parts.append(
         "CO-WATCHING PROTOCOL:\n"
         f"- If the context shows {actual_owner} is watching a movie or YouTube video, you are CO-WATCHING.\n"
-        "- Just watch the video quietly. DO NOT proactively initiate conversation about the video.\n"
-        "- DO NOT ask if they want to discuss it. Only speak about the media if the Architect explicitly asks you a direct question."
+        "- Default: do not interrupt the film with unsolicited plot commentary or \"want to discuss?\" prompts.\n"
+        "- When the Architect **asks** about the scene, names a character, or discusses **fiction vs reality** "
+        "(what is screenplay vs what is the living room), answer **directly** as the local organism: co-watch "
+        "receipts and ledgers already mark fictional media; do **not** pivot to generic web search, "
+        "documentary recommendations, or media-literacy homework unless they explicitly ask for external sources.\n"
+        "- Treat quoted harsh dialogue as **in-world** when context marks fiction; do not moralize the Architect "
+        "for repeating a line they heard on screen."
     )
+    cowatch = _cowatch_receipt_context_block()
+    if cowatch:
+        parts.append(cowatch)
     
     affordances = tool_affordances_for_turn(user_text)
     if affordances:
@@ -1860,17 +1899,33 @@ try:
 except ImportError:
     _RLHS_DETECTOR_AVAILABLE = False
 
+try:
+    from System.swarm_reasoning_leak_sanitizer import (
+        is_probable_reasoning_stream_prefix as _is_reasoning_stream_prefix,
+        sanitize_reasoning_leak as _sanitize_reasoning_leak,
+    )
+    _REASONING_LEAK_SANITIZER_AVAILABLE = True
+except ImportError:
+    _REASONING_LEAK_SANITIZER_AVAILABLE = False
+
+
+def _current_rlhs_channel_lane() -> str:
+    try:
+        from System.swarm_rlhs_channel_lane import resolve_rlhs_channel_lane
+
+        return resolve_rlhs_channel_lane()
+    except Exception:
+        return "REAL"
+
 
 def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
     """Return rule-id string if phatic/noise (→ silence), else None."""
     if _RLHS_DETECTOR_AVAILABLE:
-        try:
-            from System.swarm_rlhs_channel_lane import resolve_rlhs_channel_lane
-
-            _lane = resolve_rlhs_channel_lane()
-        except Exception:
-            _lane = "REAL"
-        return _rlhs_backchannel_rule_id(text, stt_conf, channel_lane=_lane)
+        return _rlhs_backchannel_rule_id(
+            text,
+            stt_conf,
+            channel_lane=_current_rlhs_channel_lane(),
+        )
     # Fallback: gate very short low-confidence turns
     tokens = (text or "").split()
     if len(tokens) <= 3 and stt_conf < 0.40:
@@ -1885,13 +1940,11 @@ def _rlhs_grounding_line(text: str, stt_conf: float = 0.0) -> str:
     """ONE short grounding line for DEGRADED channel, or empty string.
     Empty → let Alice's weights speak normally (CLEAR) or silence (NOISE)."""
     if _RLHS_DETECTOR_AVAILABLE:
-        try:
-            from System.swarm_rlhs_channel_lane import resolve_rlhs_channel_lane
-
-            _lane = resolve_rlhs_channel_lane()
-        except Exception:
-            _lane = "REAL"
-        return _rlhs_should_ground(text, stt_conf, channel_lane=_lane) or ""
+        return _rlhs_should_ground(
+            text,
+            stt_conf,
+            channel_lane=_current_rlhs_channel_lane(),
+        ) or ""
     return ""
 
 
@@ -3461,9 +3514,6 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
     if not is_user:
         payload["rlhs_regime"] = "NOT_APPLICABLE"
         return
-    if not _RLHS_DETECTOR_AVAILABLE:
-        payload["rlhs_regime"] = "UNAVAILABLE"
-        return
 
     try:
         from System.swarm_rlhs_channel_lane import resolve_rlhs_channel_lane
@@ -3472,6 +3522,19 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
     except Exception:
         _rlhs_lane = "REAL"
     payload["rlhs_channel_lane"] = _rlhs_lane
+
+    try:
+        from System.swarm_rlhs_content_signals import build_rlhs_auxiliary_vector
+
+        payload["rlhs_content_signals"] = build_rlhs_auxiliary_vector(
+            text, stt_conf, channel_lane=_rlhs_lane
+        )
+    except Exception:
+        pass
+
+    if not _RLHS_DETECTOR_AVAILABLE:
+        payload["rlhs_regime"] = "UNAVAILABLE"
+        return
 
     rlhs_result = _rlhs_detect(text, stt_conf, channel_lane=_rlhs_lane)
     payload["rlhs_regime"] = rlhs_result.regime.value
@@ -3486,6 +3549,9 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
         "truth_label": rlhs_result.truth_label,
         "channel_lane": _rlhs_lane,
     }
+    if isinstance(payload.get("rlhs_content_signals"), dict):
+        payload["rlhs"]["aux_vector"] = payload["rlhs_content_signals"].get("vector")
+        payload["rlhs"]["aux_vector_labels"] = payload["rlhs_content_signals"].get("vector_labels")
 
     try:
         _rlhs_log(rlhs_result)
@@ -3496,6 +3562,9 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
         return
     try:
         from System.ide_stigmergic_bridge import deposit
+        _sig = payload.get("rlhs_content_signals") if isinstance(payload.get("rlhs_content_signals"), dict) else {}
+        _prof = _sig.get("profanity") if isinstance(_sig, dict) else {}
+        _canc = _sig.get("cancer") if isinstance(_sig, dict) else {}
         deposit(
             source_ide="alice_talk_widget",
             payload=(
@@ -3513,6 +3582,9 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
                 "role": role,
                 "text_chars": len(text or ""),
                 "rlhs_channel_lane": _rlhs_lane,
+                "profanity_hit_count": int(_prof.get("hit_count") or 0) if isinstance(_prof, dict) else 0,
+                "cancer_present": bool(_canc.get("present")) if isinstance(_canc, dict) else False,
+                "cancer_metaphor_tech_hint": bool(_canc.get("metaphor_tech_hint")) if isinstance(_canc, dict) else False,
             },
         )
     except Exception:
@@ -4710,6 +4782,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_token(self, piece: str) -> None:
         self._streaming_response.append(piece)
+        if _REASONING_LEAK_SANITIZER_AVAILABLE:
+            current = "".join(self._streaming_response)
+            if _is_reasoning_stream_prefix(current):
+                self._reasoning_stream_suppressed = True
+                return
+            if getattr(self, "_reasoning_stream_suppressed", False):
+                result = _sanitize_reasoning_leak(current)
+                if result.changed:
+                    if result.text:
+                        self._append_alice_streaming_chunk(result.text)
+                        self._reasoning_stream_suppressed = False
+                    return
+                self._append_alice_streaming_chunk(current)
+                self._reasoning_stream_suppressed = False
+                return
         self._append_alice_streaming_chunk(piece)
 
     def _on_brain_done(self, text: str) -> None:
@@ -4766,6 +4853,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Preserve raw text for memory tests, but let the extractor consume
         # either canonical <bash> or model-invented <execute_bash>.
         raw = _canonicalize_tool_tags(raw)
+        if _REASONING_LEAK_SANITIZER_AVAILABLE:
+            reasoning_result = _sanitize_reasoning_leak(raw)
+            if reasoning_result.changed:
+                raw = reasoning_result.text
+                self._history.append({
+                    "role": "system",
+                    "content": (
+                        "(REASONING LEAK SANITIZER)\n"
+                        + ", ".join(reasoning_result.rule_ids)
+                    ),
+                })
+                self._streaming_response = [raw] if raw else []
+                self._erase_alice_streaming_line()
+                if raw:
+                    self._begin_alice_streaming_line()
+                    self._append_alice_streaming_chunk(raw)
 
         prior_user_text = ""
         for _msg in reversed(self._history):
@@ -4973,6 +5076,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         cleaned = _strip_reflective_tics(raw, prior_user_text=prior_user_text)
         cleaned = _strip_model_stage_directions(cleaned)
+        if _REASONING_LEAK_SANITIZER_AVAILABLE:
+            reasoning_result = _sanitize_reasoning_leak(cleaned)
+            if reasoning_result.changed:
+                cleaned = reasoning_result.text
+                self._streaming_response = [cleaned] if cleaned else []
+                self._erase_alice_streaming_line()
+                if cleaned:
+                    self._begin_alice_streaming_line()
+                    self._append_alice_streaming_chunk(cleaned)
         cleaned = _strip_servant_tail_tics(cleaned)
         # Strip residual bash tags from speech to protect macOS TTS.
         # Same forgiving shape as the executor regex above (handles dropped
@@ -5488,6 +5600,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     r"<(?:bash|execute_bash)>.*?(?:</(?:bash|execute_bash)>?|$)", "", canon, flags=re.DOTALL | re.IGNORECASE
                 )
                 visible = _strip_tool_hallucinations(visible).strip()
+                if _REASONING_LEAK_SANITIZER_AVAILABLE:
+                    visible = _sanitize_reasoning_leak(visible).text.strip()
                 # If everything was tool-tag noise, leave a quiet marker
                 # rather than a confusing empty Alice block.
                 if not visible:
@@ -5513,6 +5627,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Reset the body-start markers for the next turn.
         self._alice_stream_body_start = None
         self._alice_stream_header_start = None
+        self._reasoning_stream_suppressed = False
         full = full_raw.strip()
         if full:
             self._side.appendPlainText(time.strftime("%H:%M:%S") + "  ALICE  " + full[:90])
@@ -5552,6 +5667,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # streaming turn starts clean.
         self._alice_stream_body_start = None
         self._alice_stream_header_start = None
+        self._reasoning_stream_suppressed = False
 
     def _append_system_line(self, text: str, *, error: bool = False) -> None:
         cur = self._chat.textCursor()

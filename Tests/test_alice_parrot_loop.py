@@ -147,3 +147,33 @@ def test_fiction_media_ingress_runs_before_user_rlhs_log(tmp_path, monkeypatch):
     assert row["media_rlhs"]["regime"] == "MEDIA_FICTION_CONTEXT"
     assert row["media_rlhs"]["human_rlhs_applicable"] is False
     assert gate.LEDGER.exists()
+
+
+def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
+    mod = _load_widget_module()
+
+    import System.swarm_youtube_context as youtube_context
+    import System.swarm_media_ingress_gate as media_gate
+
+    monkeypatch.setattr(
+        youtube_context,
+        "get_latest_context",
+        lambda max_age_s=7200.0: (
+            "YouTube video: Fiction Test; "
+            "reality_frame=FICTIONAL_MEDIA_CLIP; "
+            "dialogue_boundary=fictional dialogue, not real life"
+        ),
+    )
+    monkeypatch.setattr(
+        media_gate,
+        "get_latest_observed_media_context",
+        lambda max_age_s=7200.0, max_chars=260: (
+            "observed_media reason=fictional_media_dialogue_with_media_focus"
+        ),
+    )
+
+    prompt = mod._current_system_prompt(user_active=True, user_text="what are we watching?")
+
+    assert "CO-WATCH RECEIPTS" in prompt
+    assert "reality_frame=FICTIONAL_MEDIA_CLIP" in prompt
+    assert "not George's real-life social norm" in prompt
