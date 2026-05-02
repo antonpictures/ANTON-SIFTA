@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
 System/deploy_alice_cortex_v2.py
-Post-LoRA deployment pipeline for Alice Cortex v2.
+Post-LoRA deployment pipeline for C1 Intent Classifier.
 
 Steps:
 1. Fuse LoRA adapters into the base model
-2. Create a Modelfile with Alice's system prompt
-3. Register as 'sifta-alice-v2' in Ollama
+2. Create a Modelfile with C1 system prompt
+3. Register as 'sifta-classifier-c1' in Ollama
 4. Write deployment receipt to .sifta_state ledger
+
+SAFETY: This script is IDEMPOTENT. If sifta-classifier-c1 is already
+registered in Ollama, it prints its status and exits. It will NOT:
+- Overwrite sifta-gemma4-alice
+- Re-fuse if already done
+- Register a new cortex without an explicit --force flag
 
 Run AFTER mlx_lm.lora training completes (adapters in Archive/alice_cortex_v2_adapters/).
 """
@@ -135,8 +141,31 @@ def write_receipt(model_name: str, fused_path: Path):
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Deploy SIFTA C1 Classifier")
+    parser.add_argument("--force", action="store_true",
+                        help="Re-fuse and re-register even if already deployed.")
+    args = parser.parse_args()
+
+    # ── Idempotency guard — do not re-run if already registered ──────────────
+    if not args.force:
+        import urllib.request as _ur, json as _json
+        try:
+            with _ur.urlopen("http://127.0.0.1:11434/api/tags", timeout=2.0) as _r:
+                tags = [m["name"] for m in _json.loads(_r.read()).get("models", [])]
+            if OLLAMA_MODEL_NAME in tags or OLLAMA_MODEL_NAME.split(":")[0] in [t.split(":")[0] for t in tags]:
+                print(f"[✅ ALREADY DEPLOYED] {OLLAMA_MODEL_NAME} is already registered in Ollama.")
+                print("  Alice does not need to re-fuse. Run with --force to override.")
+                print(f"  Primary cortex is still: sifta-gemma4-alice (never overwritten).")
+                raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception:
+            pass  # Ollama unreachable — proceed with deploy
+    # ─────────────────────────────────────────────────────────────────────────
+
     print("=" * 60)
-    print("Alice Cortex v2 — Post-Training Deployment Pipeline")
+    print("Alice C1 Classifier — Post-Training Deployment Pipeline")
     print("=" * 60)
     try:
         fused = fuse_adapters()
