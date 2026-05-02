@@ -2,15 +2,15 @@
 """
 Applications/sifta_life_dashboard.py
 ═══════════════════════════════════════════════════════════════
-SIFTA Stigmergic Life Dashboard — Contacts + Schedule + Health
+SIFTA Stigmergic Life Dashboard — Contacts + Schedule + Health + Swarm
 
-Three-tab PyQt6 app that reads live stigmergic data to keep the
+Four-tab PyQt6 app that reads live stigmergic data to keep the
 Architect optimized in life, health, and computing.
 
 Tab 1: CONTACTS — WhatsApp social graph + interaction recency
 Tab 2: SCHEDULE — Circadian rhythm + task queue + reminders
 Tab 3: HEALTH   — Owner vitals, thermal, energy, pheromone score
-Tab 4: SWARM    — Event 104/106 observability, motor policy, BioSIFTA corpus
+Tab 4: SWARM    — Event 104/106/107 observability, motor policy, BioSIFTA corpus
 ═══════════════════════════════════════════════════════════════
 """
 
@@ -441,9 +441,20 @@ class ScheduleTab(QWidget):
                 summary = json.loads(summary_path.read_text("utf-8"))
                 score = float(summary.get("composite_score", 0.0))
                 obs_sec = summary.get("sections", {}).get("observability", {})
-                confidence = float(obs_sec.get("attribution_confidence", 0.0))
-                linkage = float(obs_sec.get("trace_linkage", 0.0))
-                n_rows = int(obs_sec.get("n_obs_rows_24h", 0))
+                ledger_obs = summary.get("ledger_metrics", {}).get("observability", {})
+                confidence = float(
+                    ledger_obs.get("observability_score", obs_sec.get("attribution_confidence", 0.0))
+                )
+                parentage = float(
+                    ledger_obs.get("parentage_score", obs_sec.get("trace_linkage", 0.0))
+                )
+                race = float(ledger_obs.get("race_pressure", obs_sec.get("race_pressure", 0.0)))
+                n_rows = int(
+                    ledger_obs.get(
+                        "n_merged_audit_rows",
+                        obs_sec.get("n_merged_audit_rows", obs_sec.get("n_obs_rows_24h", 0)),
+                    )
+                )
                 cusum_reject = obs_sec.get("cusum_null_reject")
                 cusum_icon = "🔴" if cusum_reject is False else ("🟢" if cusum_reject else "⚪")
                 color = _GREEN if confidence > 0.6 else _AMBER if confidence > 0.3 else _RED
@@ -455,7 +466,7 @@ class ScheduleTab(QWidget):
                 )
                 ts = summary.get("ts", 0)
                 self.obs_detail.setText(
-                    f"link={linkage:.2f}  rows={n_rows}  "
+                    f"parent={parentage:.2f}  race={race:.2f}  rows={n_rows}  "
                     f"CUSUM={cusum_icon}  score={score:.3f}  [{_ago(ts)}]"
                 )
             else:
@@ -748,12 +759,12 @@ class SwarmTab(QWidget):
         layout.addLayout(self.swarm_grid)
 
         metrics = [
-            ("🔍 Attribution",    "attribution"),
-            ("🔗 Trace Linkage",  "linkage"),
+            ("🔍 Observability",  "attribution"),
+            ("🔗 Parentage",      "linkage"),
             ("🏃 Race Pressure",  "race"),
             ("📡 CUSUM Signal",   "cusum"),
             ("⚙️  Motor Regime",  "regime"),
-            ("🌀 Crystallizer",   "crystal"),
+            ("🧠 Motor Score",    "crystal"),
             ("📄 Papers",         "papers"),
             ("💡 Claims",         "claims"),
             ("🔬 Experiments",    "experiments"),
@@ -850,6 +861,9 @@ class SwarmTab(QWidget):
         summary_path = _STATE / "nightly_health_summary.json"
         summary = _load_json(summary_path)
         sections = summary.get("sections", {})
+        ledger_metrics = summary.get("ledger_metrics", {})
+        ledger_obs = ledger_metrics.get("observability", {})
+        ledger_motor = ledger_metrics.get("motor", {})
 
         obs = sections.get("observability", {})
         al  = sections.get("allostatic", {})
@@ -862,18 +876,18 @@ class SwarmTab(QWidget):
         def _color_score(v: float) -> str:
             return _GREEN if v > 0.7 else _AMBER if v > 0.4 else _RED
 
-        # Attribution confidence
-        conf = float(obs.get("attribution_confidence", 0.0))
+        # Event 107 ledger-derived observability score, with Event 104 fallback.
+        conf = float(ledger_obs.get("observability_score", obs.get("attribution_confidence", 0.0)))
         L["attribution"].setText(f"{conf:.3f}")
         L["attribution"].setStyleSheet(f"color: {_color_score(conf)};")
 
-        # Trace linkage
-        link = float(obs.get("trace_linkage", 0.0))
+        # Parentage score: fraction of audit rows with causal parents.
+        link = float(ledger_obs.get("parentage_score", obs.get("trace_linkage", 0.0)))
         L["linkage"].setText(f"{link:.3f}")
         L["linkage"].setStyleSheet(f"color: {_color_score(link)};")
 
-        # Race pressure (lower is better)
-        race = float(obs.get("race_pressure", 0.0))
+        # Race pressure (lower is better), Event 107 first.
+        race = float(ledger_obs.get("race_pressure", obs.get("race_pressure", 0.0)))
         race_color = _GREEN if race < 0.2 else _AMBER if race < 0.5 else _RED
         L["race"].setText(f"{race:.3f}")
         L["race"].setStyleSheet(f"color: {race_color};")
@@ -899,16 +913,22 @@ class SwarmTab(QWidget):
         L["regime"].setText(regime[:12])
         L["regime"].setStyleSheet(f"color: {_REGIME_COLORS.get(regime, _DIM)};")
 
-        # Crystallizer gate (from motor_policy.jsonl live fallback)
-        try:
-            mp_rows = _tail_jsonl(_STATE / "motor_policy.jsonl", 10)
-            gate = mp_rows[-1].get("crystallizer_gate", "—") if mp_rows else "—"
-            gate_str = f"{gate:.2f}" if isinstance(gate, float) else str(gate)
-            gate_color = _GREEN if isinstance(gate, float) and gate > 0.8 else _AMBER
-        except Exception:
-            gate_str, gate_color = "—", _DIM
-        L["crystal"].setText(gate_str)
-        L["crystal"].setStyleSheet(f"color: {gate_color};")
+        # Motor score: fraction of recent motor rows bearing skill-weighted policy mass.
+        motor_score = ledger_motor.get("motor_score")
+        if motor_score is None:
+            try:
+                mp_rows = _tail_jsonl(_STATE / "motor_policy.jsonl", 50)
+                biased = sum(
+                    1
+                    for r in mp_rows
+                    if str(r.get("truth_label", "")).upper() == "SKILL_WEIGHTED_POLICY"
+                )
+                motor_score = (biased / len(mp_rows)) if mp_rows else 0.0
+            except Exception:
+                motor_score = 0.0
+        motor_score = float(motor_score)
+        L["crystal"].setText(f"{motor_score:.3f}")
+        L["crystal"].setStyleSheet(f"color: {_color_score(motor_score)};")
 
         # BioSIFTA corpus metrics (live from files — faster than waiting for audit)
         def _count(name: str) -> int:

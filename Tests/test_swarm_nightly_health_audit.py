@@ -15,6 +15,8 @@ def test_run_nightly_audit_writes_ledger(tmp_path, monkeypatch):
     assert receipt["truth_label"] == nha.TRUTH_LABEL
     assert "sections" in receipt
     assert "composite_score" in receipt
+    assert "ledger_metrics" in receipt
+    assert "observability_score" in receipt["ledger_metrics"]["observability"]
     assert receipt["sections"]["arxiv_sweep"]["status"] == "SKIPPED"
     log = tmp_path / "nightly_health.jsonl"
     assert log.exists()
