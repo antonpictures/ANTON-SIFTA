@@ -36,6 +36,13 @@ except Exception:
     def start_george_prior(*a, **kw): return None  # type: ignore
     def get_current_drive(): return None  # type: ignore
 
+try:
+    from System.swarm_homeostatic_stabilizer import compute_homeostasis, HomeostaticFrame
+    _HOMEOSTASIS_AVAILABLE = True
+except Exception:
+    _HOMEOSTASIS_AVAILABLE = False
+    def compute_homeostasis(drive, **kw): return None  # type: ignore
+
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
 DRIVE_BIAS_SCORE_FLOOR = 0.05
@@ -127,14 +134,36 @@ class SwarmPhysiology:
         attention: str,
         danger: Dict[str, Any],
         intrinsic_receipt: Optional[Any] = None,
+        homeostatic_frame: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Basal Ganglia routing: what should we physically do?"""
+        """Basal Ganglia routing: what should we physically do?
+
+        Event 101: homeostatic_frame can override the attention drive
+        and cap action intensity before the motor gate fires.
+        """
+        # Event 101 — homeostatic regulation gate
+        if homeostatic_frame is not None:
+            attention = str(getattr(homeostatic_frame, "regulated_drive", attention) or attention)
+            action_intensity = float(getattr(homeostatic_frame, "action_intensity", 1.0))
+            if getattr(homeostatic_frame, "intervention_type", "NONE") == "REST_FORCED":
+                return {
+                    "type": "rest",
+                    "reason": "homeostatic_stabilizer_event_101",
+                    "action_intensity": action_intensity,
+                    **_no_drive_bias_fields(),
+                }
+        else:
+            action_intensity = 1.0
+
         drive_bias = _drive_bias_fields(intrinsic_receipt)
         if danger["is_critical"]:
-            return {"type": "rest", "reason": "starvation_or_heat", **_no_drive_bias_fields()}
+            return {"type": "rest", "reason": "starvation_or_heat",
+                    "action_intensity": min(action_intensity, 0.1),
+                    **_no_drive_bias_fields()}
 
         if attention == "energy":
-            return {"type": "forage", "target": "pouw_work", **_no_drive_bias_fields()}
+            return {"type": "forage", "target": "pouw_work",
+                    "action_intensity": action_intensity, **_no_drive_bias_fields()}
 
         # Red Queen stagnation break (unchanged — drives do not override)
         if len(self.value_history) >= 5 and len(set(self.value_history[-5:])) == 1:
@@ -143,6 +172,7 @@ class SwarmPhysiology:
                 "type": "explore",
                 "target": "random_mutation",
                 "is_stagnation_break": True,
+                "action_intensity": action_intensity,
                 **_no_drive_bias_fields(),
             }
 
@@ -151,10 +181,12 @@ class SwarmPhysiology:
                 "type": "explore",
                 "target": attention,
                 "drive_bias_target": f"{drive_bias['drive_bias_topic']}::{drive_bias['drive_bias_goal']}",
+                "action_intensity": action_intensity,
                 **drive_bias,
             }
 
-        return {"type": "explore", "target": attention, **drive_bias}
+        return {"type": "explore", "target": attention,
+                "action_intensity": action_intensity, **drive_bias}
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Motor cortex/effectors. Simulated for the loop skeleton."""
@@ -224,8 +256,18 @@ class SwarmPhysiology:
         append_line_locked(_STATE_DIR / "body_brain_memory.jsonl", json.dumps(row) + "\n")
         return row
 
-    def _maybe_sleep(self, body_state: MetabolicState, danger: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Glymphatic consolidation and rest enforcement."""
+    def _maybe_sleep(
+        self,
+        body_state: MetabolicState,
+        danger: Dict[str, Any],
+        crystallizer_weight: float = 1.0,
+    ) -> Optional[Dict[str, Any]]:
+        """Glymphatic consolidation and rest enforcement.
+
+        Event 101: crystallizer_weight gates how aggressively new skills are
+        crystallized. During CRITICAL_COLLAPSE the homeostatic stabilizer sets
+        this to ~0.1, preventing panic-state patterns from being baked in.
+        """
         rest_sec = self.homeostat.rest_seconds(body_state, danger["pressure"])
         if rest_sec > 0:
             dream_cycle: Optional[Dict[str, Any]] = None
@@ -234,17 +276,19 @@ class SwarmPhysiology:
                     rest_seconds=rest_sec,
                     pressure=danger.get("pressure"),
                     metabolic_mode=str(danger.get("mode") or ""),
+                    crystallizer_weight=crystallizer_weight,
                 )
                 dream_cycle = receipt.as_dict() if hasattr(receipt, "as_dict") else dict(receipt)
                 logger.info(
-                    "Dream consolidation cycle %s: %s",
+                    "Dream consolidation cycle %s: %s (crystallizer_w=%.2f)",
                     dream_cycle.get("cycle_id"),
                     dream_cycle.get("status"),
+                    crystallizer_weight,
                 )
             except Exception:
                 logger.exception("Dream consolidation failed; preserving raw body-brain ledger.")
             logger.info(f"Sleep enforced by metabolism. Resting {rest_sec}s.")
-            time.sleep(min(rest_sec, 2.0)) # Capped for testing
+            time.sleep(min(rest_sec, 2.0))  # Capped for testing
             return dream_cycle
         return None
 
@@ -269,7 +313,10 @@ class SwarmPhysiology:
             commit=True
         )
 
-        # 3b. George Prior — read the latest spontaneous drive receipt (non-blocking)
+        # 3b. Attention selection from consciousness state
+        attention = self._select_attention(consc_state)
+
+        # 3c_pre. George Prior — read the latest spontaneous drive receipt (non-blocking)
         intrinsic_receipt: Optional[Any] = None
         if _GEORGE_PRIOR_AVAILABLE:
             try:
@@ -282,10 +329,34 @@ class SwarmPhysiology:
                     )
             except Exception:
                 pass
-        
-        # 4. Action Selection — George Prior receipt passed in (Event 100)
-        attention = self._select_attention(consc_state)
-        action = self._choose_action(attention, danger, intrinsic_receipt=intrinsic_receipt)
+
+        # 3c. Event 101 — Homeostatic Stabilizer (hypothalamus regulation gate)
+        homeostatic_frame: Optional[Any] = None
+        if _HOMEOSTASIS_AVAILABLE:
+            try:
+                homeostatic_frame = compute_homeostasis(
+                    input_drive=attention,
+                    metabolic_mode=str(danger.get("mode") or "UNKNOWN"),
+                    intrinsic_receipt=intrinsic_receipt,
+                )
+                if homeostatic_frame and homeostatic_frame.intervention_type != "NONE":
+                    logger.info(
+                        "[Event101] %s: %s",
+                        homeostatic_frame.intervention_type,
+                        homeostatic_frame.reason[:80],
+                    )
+                    # Reroute attention to the regulated drive
+                    attention = homeostatic_frame.regulated_drive
+            except Exception:
+                logger.exception("Homeostatic stabilizer skipped (non-fatal)")
+
+        # 4. Action Selection — George Prior + Homeostatic frame passed in
+        action = self._choose_action(
+            attention,
+            danger,
+            intrinsic_receipt=intrinsic_receipt,
+            homeostatic_frame=homeostatic_frame,
+        )
         
         # 5. Execution
         result = self._execute_action(action)
@@ -315,6 +386,13 @@ class SwarmPhysiology:
             metabolic_mode=str(danger.get("mode") or ""),
             plasticity_danger=d_token,
         )
+        # Stamp Event 101 homeostatic frame fields into the ledger row
+        if homeostatic_frame is not None:
+            mem_row["homeostasis_regime"]     = homeostatic_frame.regime
+            mem_row["homeostasis_weight"]     = homeostatic_frame.drive_weight
+            mem_row["homeostasis_intensity"]  = homeostatic_frame.action_intensity
+            mem_row["homeostasis_type"]       = homeostatic_frame.intervention_type
+            mem_row["crystallizer_weight"]    = homeostatic_frame.crystallizer_weight
         try:
             from System.swarm_pheromone_field import update_pheromone_field
 
@@ -329,18 +407,24 @@ class SwarmPhysiology:
         except Exception:
             logger.exception("Visual phenotype bridge skipped")
         
-        # 8. Sleep / Recovery
-        dream_cycle = self._maybe_sleep(body_state, danger)
+        # 8. Sleep / Recovery (pass crystallizer_weight from homeostatic frame)
+        crystallizer_weight = (
+            homeostatic_frame.crystallizer_weight
+            if homeostatic_frame is not None else 1.0
+        )
+        dream_cycle = self._maybe_sleep(body_state, danger,
+                                        crystallizer_weight=crystallizer_weight)
         
         return {
-            "action": action,
-            "value": value,
-            "metabolic_mode": danger["mode"],
-            "drive_state": attention,
-            "dream_cycle": dream_cycle,
-            "now_state": now_state,
-            "drive_plasticity": drive_plasticity,
-            "intrinsic_drive": _receipt_as_dict(intrinsic_receipt),
+            "action":             action,
+            "value":              value,
+            "metabolic_mode":     danger["mode"],
+            "drive_state":        attention,
+            "dream_cycle":        dream_cycle,
+            "now_state":          now_state,
+            "drive_plasticity":   drive_plasticity,
+            "intrinsic_drive":    _receipt_as_dict(intrinsic_receipt),
+            "homeostatic_frame":  homeostatic_frame.as_dict() if homeostatic_frame else None,
         }
 
 
