@@ -242,6 +242,26 @@ def test_composite_changes_with_motor_rows(tmp_path):
     )
 
 
+def test_composite_changes_with_reset_recovery_gate():
+    """READY reset recovery scores higher than WOUND_REPAIR."""
+    lo = {"observability_score": 0.7, "parentage_score": 0.6, "race_pressure": 0.1}
+    la = {"allostatic_score": 0.8}
+    lm = {"motor_score": 0.7}
+    ts = {"status": "PASS"}
+    bio = {"n_claims": 25}
+    c_block = hm.composite_nightly_score(
+        ledger_obs=lo, ledger_allo=la, ledger_motor=lm,
+        ledger_reset={"reset_recovery_score": 0.0},
+        test_section=ts, bio_section=bio,
+    )
+    c_ready = hm.composite_nightly_score(
+        ledger_obs=lo, ledger_allo=la, ledger_motor=lm,
+        ledger_reset={"reset_recovery_score": 1.0},
+        test_section=ts, bio_section=bio,
+    )
+    assert c_ready > c_block
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 5. Race pressure edge cases
 # ══════════════════════════════════════════════════════════════════════════════

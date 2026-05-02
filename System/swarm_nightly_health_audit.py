@@ -430,6 +430,7 @@ def run_nightly_audit(
         score_allostatic_ledger,
         score_motor_policy_ledger,
         score_observability_ledgers,
+        score_reset_recovery_ledger,
         score_rlhs_ledger,
     )
 
@@ -437,17 +438,20 @@ def run_nightly_audit(
     lm_allo = score_allostatic_ledger(state_dir=_STATE)
     lm_motor = score_motor_policy_ledger(state_dir=_STATE)
     lm_rlhs = score_rlhs_ledger(state_dir=_STATE)
+    lm_reset = score_reset_recovery_ledger(state_dir=_STATE)
     ledger_metrics = {
         "observability": lm_obs,
         "allostatic": lm_allo,
         "motor": lm_motor,
         "rlhs_channel": lm_rlhs,
+        "reset_recovery": lm_reset,
     }
     composite = composite_nightly_score(
         ledger_obs=lm_obs,
         ledger_allo=lm_allo,
         ledger_motor=lm_motor,
         ledger_rlhs=lm_rlhs,
+        ledger_reset=lm_reset,
         test_section=sections["tests"],
         bio_section=sections["bio_corpus"],
     )
@@ -458,6 +462,7 @@ def run_nightly_audit(
         f"allo={lm_allo.get('allostatic_score')} "
         f"motor={lm_motor.get('motor_score')} "
         f"rlhs={lm_rlhs.get('rlhs_score')} "
+        f"reset={lm_reset.get('reset_recovery_score')}:{lm_reset.get('autonomy_gate')} "
         f"(deg={lm_rlhs.get('degraded_rate')}, noise={lm_rlhs.get('noise_rate')})"
     )
 

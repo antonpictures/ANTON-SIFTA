@@ -766,6 +766,7 @@ class SwarmTab(QWidget):
             "allostatic": "Event 102/107 — latest load + policy; score = 1−load",
             "regime": "Event 106 — regime_state.json + motor_policy tail",
             "crystal": "Event 103/107 — skill-weighted motor rows / recent tail",
+            "reset": "Event 110 — post-reset ledger warmth + autonomy gate",
             "papers": "Event 105 — bio_papers.jsonl line count",
             "claims": "Event 105 — bio_claims.jsonl (500 → LoRA-ready)",
             "experiments": "Event 105 — bio_experiments.jsonl",
@@ -781,6 +782,7 @@ class SwarmTab(QWidget):
             ("🫁 Allostatic",     "allostatic"),
             ("⚙️  Motor Regime",  "regime"),
             ("🧠 Motor Score",    "crystal"),
+            ("🛡️ Reset Gate",     "reset"),
             ("📄 Papers",         "papers"),
             ("💡 Claims",         "claims"),
             ("🔬 Experiments",    "experiments"),
@@ -904,17 +906,20 @@ class SwarmTab(QWidget):
                     score_allostatic_ledger,
                     score_motor_policy_ledger,
                     score_observability_ledgers,
+                    score_reset_recovery_ledger,
                 )
                 ledger_metrics = {
                     "observability": score_observability_ledgers(state_dir=_STATE),
                     "allostatic": score_allostatic_ledger(state_dir=_STATE),
                     "motor": score_motor_policy_ledger(state_dir=_STATE),
+                    "reset_recovery": score_reset_recovery_ledger(state_dir=_STATE),
                 }
             except Exception:
                 ledger_metrics = {}
         ledger_obs = ledger_metrics.get("observability", {})
         ledger_allo = ledger_metrics.get("allostatic", {})
         ledger_motor = ledger_metrics.get("motor", {})
+        ledger_reset = ledger_metrics.get("reset_recovery", {})
 
         obs = sections.get("observability", {})
         al  = sections.get("allostatic", {})
@@ -989,6 +994,15 @@ class SwarmTab(QWidget):
         motor_score = float(motor_score)
         L["crystal"].setText(f"{motor_score:.3f}")
         L["crystal"].setStyleSheet(f"color: {_color_score(motor_score)};")
+
+        # Reset recovery gate
+        reset_gate = str(ledger_reset.get("autonomy_gate", "UNKNOWN"))
+        reset_phase = str(ledger_reset.get("phase", "UNKNOWN"))
+        reset_score = float(ledger_reset.get("reset_recovery_score", 0.0) or 0.0)
+        reset_color = _GREEN if reset_gate == "ALLOW" else _AMBER if reset_gate == "LIMITED" else _RED
+        L["reset"].setText(f"{reset_gate[:7]} {reset_score:.2f}")
+        L["reset"].setToolTip(f"phase={reset_phase}, score={reset_score:.3f}")
+        L["reset"].setStyleSheet(f"color: {reset_color};")
 
         # BioSIFTA corpus metrics (live from files — faster than waiting for audit)
         def _count(name: str) -> int:

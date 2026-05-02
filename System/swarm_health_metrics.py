@@ -312,6 +312,39 @@ def score_rlhs_ledger(*, state_dir: Optional[Path] = None, tail: int = 200) -> D
         "ledger_paths": [str(p) for p in paths if p.exists()],
     }
 
+
+def score_reset_recovery_ledger(*, state_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Score Event 110 post-reset immunity from its receipt or a fresh scan."""
+    root = _base(state_dir)
+    path = root / "reset_recovery_immunity.jsonl"
+    row: Dict[str, Any] = {}
+    tail = _jsonl_tail(path, 5) if path.exists() else []
+    if tail:
+        row = tail[-1]
+    else:
+        try:
+            from System.swarm_reset_recovery_immunity import compute_reset_recovery
+
+            row = compute_reset_recovery(state_dir=root)
+        except Exception:
+            row = {}
+
+    try:
+        score = float(row.get("recovery_score", row.get("warmth", 0.0)) or 0.0)
+    except (TypeError, ValueError):
+        score = 0.0
+    score = max(0.0, min(1.0, score))
+    return {
+        "truth_label": TRUTH_LABEL,
+        "reset_recovery_score": round(score, 4),
+        "phase": str(row.get("phase", "UNKNOWN")),
+        "autonomy_gate": str(row.get("autonomy_gate", "UNKNOWN")),
+        "warmth": row.get("warmth", 0.0),
+        "warm_ledgers": row.get("warm_ledgers", 0),
+        "total_ledgers": row.get("total_ledgers", 0),
+    }
+
+
 def test_score_numeric(test_section: Dict[str, Any]) -> float:
     """test_score = 1.0 if pytest gate PASS else 0.0"""
     return 1.0 if str(test_section.get("status", "")).upper() == "PASS" else 0.0
@@ -334,6 +367,7 @@ def composite_nightly_score(
     test_section: Dict[str, Any],
     bio_section: Dict[str, Any],
     ledger_rlhs: Optional[Dict[str, Any]] = None,
+    ledger_reset: Optional[Dict[str, Any]] = None,
 ) -> float:
     """
     Weighted composite from ledger-derived metrics (Event 107) + test + bio.
@@ -345,19 +379,20 @@ def composite_nightly_score(
     a = float(ledger_allo.get("allostatic_score", 0.5))
     m = float(ledger_motor.get("motor_score", 0.0))
     r = float(ledger_rlhs.get("rlhs_score", 1.0)) if ledger_rlhs else 1.0
+    g = float(ledger_reset.get("reset_recovery_score", 1.0)) if ledger_reset else 1.0
     t = test_score_numeric(test_section)
     b = bio_corpus_growth_score(bio_section)
 
-    # Adjust weights to fit the 1.0 total with the new RLHS channel weight.
     raw = (
-        0.15 * o
-        + 0.10 * p
-        + 0.12 * rp_term
-        + 0.18 * a
-        + 0.15 * m
-        + 0.15 * r
+        0.13 * o
+        + 0.09 * p
         + 0.10 * t
-        + 0.05 * b
+        + 0.10 * rp_term
+        + 0.16 * a
+        + 0.13 * m
+        + 0.13 * r
+        + 0.10 * g
+        + 0.06 * b
     )
     return round(max(0.0, min(1.0, raw)), 4)
 
@@ -370,6 +405,7 @@ __all__ = [
     "score_allostatic_ledger",
     "score_motor_policy_ledger",
     "score_observability_ledgers",
+    "score_reset_recovery_ledger",
     "score_rlhs_ledger",
     "test_score_numeric",
 ]

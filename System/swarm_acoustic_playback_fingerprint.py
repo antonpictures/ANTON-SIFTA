@@ -147,10 +147,10 @@ def compute_playback_fingerprint(
             "crest_factor": 0.0,
             "spectral_flatness": 0.5,
             "mfcc_coeff_std": 0.0,
-        "hnr_proxy": 0.0,
-        "am_depth": 0.0,
-        "literature_anchors": [x["topic"] for x in LITERATURE_CITES],
-    }
+            "hnr_proxy": 0.0,
+            "am_depth": 0.0,
+            "literature_anchors": [x["topic"] for x in LITERATURE_CITES],
+        }
 
     rms_v = float(rms if rms is not None else np.sqrt(np.mean(np.square(buf.astype(np.float64)))))
     peak_v = float(peak if peak is not None else np.max(np.abs(buf.astype(np.float64))))

@@ -58,6 +58,14 @@ except Exception:
     def stamp_tick_row(row, **kw): return ""  # type: ignore
 
 try:
+    from System.swarm_reset_recovery_immunity import recovery_action, write_reset_recovery
+    _RESET_RECOVERY_AVAILABLE = True
+except Exception:
+    _RESET_RECOVERY_AVAILABLE = False
+    def write_reset_recovery(**kw): return {}  # type: ignore
+    def recovery_action(row): return {}  # type: ignore
+
+try:
     from System.swarm_motor_policy import (
         select_action_type_from_skills,
         write_motor_policy_row,
@@ -159,6 +167,7 @@ class SwarmPhysiology:
         intrinsic_receipt: Optional[Any] = None,
         homeostatic_frame: Optional[Any] = None,
         allostatic_row: Optional[Dict[str, Any]] = None,
+        reset_recovery: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Basal Ganglia routing: what should we physically do?
 
@@ -167,7 +176,11 @@ class SwarmPhysiology:
         Event 102: allostatic_row.drive_modifiers compose with homeostatic
         drive_weight to produce a compound regulator signal.
         Event 103: crystallized skill mass biases explore vs forage (motor_policy.jsonl).
+        Event 110: post-reset immunity can block unsafe autonomy until ledgers rehydrate.
         """
+        if reset_recovery and str(reset_recovery.get("autonomy_gate") or "") == "BLOCK":
+            return recovery_action(reset_recovery)
+
         # Event 101 — homeostatic regulation gate
         if homeostatic_frame is not None:
             attention = str(getattr(homeostatic_frame, "regulated_drive", attention) or attention)
@@ -181,6 +194,9 @@ class SwarmPhysiology:
                 }
         else:
             action_intensity = 1.0
+
+        if reset_recovery and str(reset_recovery.get("autonomy_gate") or "") == "LIMITED":
+            action_intensity = min(action_intensity, 0.35)
 
         # Event 102 — allostatic load compose with homeostatic weight
         if allostatic_row:
@@ -313,6 +329,7 @@ class SwarmPhysiology:
         metabolic_mode: str,
         intrinsic_receipt: Optional[Any] = None,
         plasticity_danger: Optional[str] = None,
+        extra_fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Append to stigmergic ledger; return row for downstream phenotype bridge."""
         circadian = now_state.get("circadian") if isinstance(now_state.get("circadian"), dict) else {}
@@ -342,6 +359,8 @@ class SwarmPhysiology:
         }
         if plasticity_danger:
             row["plasticity_danger"] = plasticity_danger
+        if extra_fields:
+            row.update(extra_fields)
         _STATE_DIR.mkdir(parents=True, exist_ok=True)
         append_line_locked(_STATE_DIR / "body_brain_memory.jsonl", json.dumps(row) + "\n")
         return row
@@ -387,6 +406,21 @@ class SwarmPhysiology:
         
         # 0. Spacetime / Circadian Context
         now_state = build_now_state()
+
+        # 0b. Event 110 — Reset Recovery Immunity (post-reset wound scan)
+        reset_recovery: Optional[Dict[str, Any]] = None
+        if _RESET_RECOVERY_AVAILABLE:
+            try:
+                reset_recovery = write_reset_recovery(state_dir=_STATE_DIR)
+                if reset_recovery.get("autonomy_gate") != "ALLOW":
+                    logger.info(
+                        "[Event110] phase=%s gate=%s warmth=%.3f",
+                        reset_recovery.get("phase"),
+                        reset_recovery.get("autonomy_gate"),
+                        float(reset_recovery.get("warmth", 0.0) or 0.0),
+                    )
+            except Exception:
+                logger.exception("Reset recovery immunity skipped (non-fatal)")
         
         # 1. Interoception
         raw_body = read_interoception(_STATE_DIR)
@@ -463,6 +497,7 @@ class SwarmPhysiology:
             intrinsic_receipt=intrinsic_receipt,
             homeostatic_frame=homeostatic_frame,
             allostatic_row=allostatic_row,
+            reset_recovery=reset_recovery,
         )
         
         # 5. Execution
@@ -484,6 +519,28 @@ class SwarmPhysiology:
             logger.exception("Drive plasticity update skipped")
 
         # 7. Memory Consolidation
+        memory_extra: Dict[str, Any] = {}
+        if homeostatic_frame is not None:
+            memory_extra.update({
+                "homeostasis_regime":     homeostatic_frame.regime,
+                "homeostasis_weight":     homeostatic_frame.drive_weight,
+                "homeostasis_intensity":  homeostatic_frame.action_intensity,
+                "homeostasis_type":       homeostatic_frame.intervention_type,
+                "crystallizer_weight":    homeostatic_frame.crystallizer_weight,
+            })
+        if allostatic_row:
+            memory_extra.update({
+                "allostatic_load":    allostatic_row.get("allostatic_load", 0.0),
+                "allostatic_policy":  allostatic_row.get("policy", "ALLOW_GROWTH"),
+            })
+        if reset_recovery:
+            memory_extra.update({
+                "reset_recovery_phase": reset_recovery.get("phase"),
+                "reset_recovery_gate": reset_recovery.get("autonomy_gate"),
+                "reset_recovery_warmth": reset_recovery.get("warmth"),
+                "reset_recovery_score": reset_recovery.get("recovery_score"),
+            })
+
         mem_row = self._write_memory(
             action,
             result,
@@ -492,18 +549,8 @@ class SwarmPhysiology:
             drive_state=str(attention),
             metabolic_mode=str(danger.get("mode") or ""),
             plasticity_danger=d_token,
+            extra_fields=memory_extra,
         )
-        # Stamp Event 101 homeostatic frame fields into the ledger row
-        if homeostatic_frame is not None:
-            mem_row["homeostasis_regime"]     = homeostatic_frame.regime
-            mem_row["homeostasis_weight"]     = homeostatic_frame.drive_weight
-            mem_row["homeostasis_intensity"]  = homeostatic_frame.action_intensity
-            mem_row["homeostasis_type"]       = homeostatic_frame.intervention_type
-            mem_row["crystallizer_weight"]    = homeostatic_frame.crystallizer_weight
-        # Stamp Event 102 allostatic load fields into the ledger row
-        if allostatic_row:
-            mem_row["allostatic_load"]    = allostatic_row.get("allostatic_load", 0.0)
-            mem_row["allostatic_policy"]  = allostatic_row.get("policy", "ALLOW_GROWTH")
         try:
             from System.swarm_pheromone_field import update_pheromone_field
 
@@ -551,6 +598,7 @@ class SwarmPhysiology:
             "homeostatic_frame":  homeostatic_frame.as_dict() if homeostatic_frame else None,
             "allostatic_load":    allostatic_row.get("allostatic_load", 0.0) if allostatic_row else 0.0,
             "allostatic_policy":  allostatic_row.get("policy", "ALLOW_GROWTH") if allostatic_row else "ALLOW_GROWTH",
+            "reset_recovery":     reset_recovery,
         }
 
 

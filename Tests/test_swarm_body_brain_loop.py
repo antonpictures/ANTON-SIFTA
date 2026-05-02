@@ -16,13 +16,26 @@ os.environ["SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP"] = "1"
 
 from System.swarm_body_brain_loop import SwarmPhysiology
 from System.swarm_metabolic_homeostasis import MetabolicState
+from System.swarm_reset_recovery_immunity import required_ledger_paths
 
 @pytest.fixture
 def clean_state(tmp_path):
     with patch("System.swarm_body_brain_loop._STATE_DIR", tmp_path):
         yield tmp_path
 
+
+def _warm_reset_ledgers(root: Path) -> None:
+    for name, path in required_ledger_paths(root).items():
+        # Leave body_brain_memory.jsonl empty so tests can assert the current
+        # tick's write count while still keeping Event 110 in READY phase
+        # (6/7 warm ledgers meets the 0.85 threshold).
+        if name == "body":
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ts": 2_000_000_000.0}) + "\n", encoding="utf-8")
+
 def test_body_brain_tick_normal_cycle(clean_state):
+    _warm_reset_ledgers(clean_state)
     physiology = SwarmPhysiology(enable_george_prior=False)
     
     # Force a healthy metabolic state
@@ -64,6 +77,7 @@ def test_body_brain_tick_normal_cycle(clean_state):
             assert row["truth_label"] == "NO_INTRINSIC_DRIVE_BIAS"
 
 def test_body_brain_tick_critical_sleep_trigger(clean_state):
+    _warm_reset_ledgers(clean_state)
     physiology = SwarmPhysiology(enable_george_prior=False)
     
     # Force a critical metabolic state (starving/high pressure)
@@ -122,6 +136,7 @@ def test_choose_action_ignores_low_score_intrinsic_drive_bias(clean_state):
 
 
 def test_body_brain_tick_writes_drive_bias_ledger_fields(clean_state):
+    _warm_reset_ledgers(clean_state)
     physiology = SwarmPhysiology(enable_george_prior=False)
     healthy_state = MetabolicState(usd_burn_24h=0.0, local_units_24h=0.0, stgm_balance=150.0)
     receipt = {
@@ -145,6 +160,21 @@ def test_body_brain_tick_writes_drive_bias_ledger_fields(clean_state):
     assert row["drive_bias_score"] == 0.2
     assert row["drive_bias_source"] == "test_harness"
     assert row["truth_label"] == "SIMULATED_INTRINSIC_DRIVE"
+
+
+def test_body_brain_tick_blocks_autonomy_when_reset_ledgers_are_cold(clean_state):
+    physiology = SwarmPhysiology(enable_george_prior=False)
+    healthy_state = MetabolicState(usd_burn_24h=0.0, local_units_24h=0.0, stgm_balance=150.0)
+
+    with patch("System.swarm_body_brain_loop.MetabolicHomeostat.sample_live", return_value=healthy_state):
+        with patch("time.sleep"):
+            result = physiology.body_brain_tick()
+
+    assert result["reset_recovery"]["autonomy_gate"] == "BLOCK"
+    assert result["action"]["type"] == "repair"
+    assert result["action"]["reason"] == "reset_recovery_immunity_block"
+    row = json.loads((clean_state / "body_brain_memory.jsonl").read_text().splitlines()[-1])
+    assert row["reset_recovery_gate"] == "BLOCK"
 
 
 def test_critical_danger_suppresses_drive_bias_even_with_receipt(clean_state):

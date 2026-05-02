@@ -59,6 +59,7 @@ def test_composite_nightly_score_weights(tmp_path: Path) -> None:
     la = {"allostatic_score": 1.0}
     lm = {"motor_score": 1.0}
     lr = {"rlhs_score": 1.0}
+    lg = {"reset_recovery_score": 1.0}
     tests = {"status": "PASS"}
     bio = {"n_claims": 50}
     c = hm.composite_nightly_score(
@@ -66,10 +67,34 @@ def test_composite_nightly_score_weights(tmp_path: Path) -> None:
         ledger_allo=la,
         ledger_motor=lm,
         ledger_rlhs=lr,
+        ledger_reset=lg,
         test_section=tests,
         bio_section=bio,
     )
     assert 0.0 < c <= 1.0
+
+
+def test_reset_recovery_score_reads_receipt_or_scans(tmp_path: Path) -> None:
+    r0 = hm.score_reset_recovery_ledger(state_dir=tmp_path)
+    assert r0["autonomy_gate"] == "BLOCK"
+    assert 0.0 <= r0["reset_recovery_score"] <= 1.0
+
+    p = tmp_path / "reset_recovery_immunity.jsonl"
+    p.write_text(
+        json.dumps({
+            "ts": 1000.0,
+            "phase": "READY",
+            "autonomy_gate": "ALLOW",
+            "recovery_score": 1.0,
+            "warmth": 1.0,
+            "warm_ledgers": 7,
+            "total_ledgers": 7,
+        }) + "\n",
+        encoding="utf-8",
+    )
+    r1 = hm.score_reset_recovery_ledger(state_dir=tmp_path)
+    assert r1["autonomy_gate"] == "ALLOW"
+    assert r1["reset_recovery_score"] == 1.0
 
 
 def test_rlhs_ledger_score(tmp_path: Path) -> None:
