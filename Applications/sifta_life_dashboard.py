@@ -10,7 +10,7 @@ Architect optimized in life, health, and computing.
 Tab 1: CONTACTS — WhatsApp social graph + interaction recency
 Tab 2: SCHEDULE — Circadian rhythm + task queue + reminders
 Tab 3: HEALTH   — Owner vitals, thermal, energy, pheromone score
-Tab 4: SWARM    — Event 104/106/107 observability, motor policy, BioSIFTA corpus
+Tab 4: SWARM    — Event 104/106/107 ledgers + nightly audit + BioSIFTA (live refresh)
 ═══════════════════════════════════════════════════════════════
 """
 
@@ -24,7 +24,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTabWidget, QScrollArea, QLineEdit,
-    QTextEdit, QGridLayout, QProgressBar, QComboBox,
+    QTextEdit, QGridLayout, QProgressBar, QComboBox, QMessageBox,
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont, QColor
@@ -758,11 +758,27 @@ class SwarmTab(QWidget):
         self.swarm_grid.setSpacing(10)
         layout.addLayout(self.swarm_grid)
 
+        _TT = {
+            "attribution": "Event 107 — ide trace rows with trace_id / total (ledger)",
+            "linkage": "Event 107 — rows with causal_parent_ids / merged audit tail",
+            "race": "Event 107 — duplicate id pressure in 60s windows (lower better)",
+            "cusum": "Event 106 — permutation null on regime→TD (body_brain_memory)",
+            "allostatic": "Event 102/107 — latest load + policy; score = 1−load",
+            "regime": "Event 106 — regime_state.json + motor_policy tail",
+            "crystal": "Event 103/107 — skill-weighted motor rows / recent tail",
+            "papers": "Event 105 — bio_papers.jsonl line count",
+            "claims": "Event 105 — bio_claims.jsonl (500 → LoRA-ready)",
+            "experiments": "Event 105 — bio_experiments.jsonl",
+            "skills": "Event 105 — bio_skills.jsonl shipped receipts",
+            "composite": "Event 107 — composite_nightly_score from ledgers + tests",
+            "last_audit": "nightly_health_summary.json ts field",
+        }
         metrics = [
             ("🔍 Observability",  "attribution"),
             ("🔗 Parentage",      "linkage"),
             ("🏃 Race Pressure",  "race"),
             ("📡 CUSUM Signal",   "cusum"),
+            ("🫁 Allostatic",     "allostatic"),
             ("⚙️  Motor Regime",  "regime"),
             ("🧠 Motor Score",    "crystal"),
             ("📄 Papers",         "papers"),
@@ -779,15 +795,22 @@ class SwarmTab(QWidget):
                 QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT};
                           border-radius: 8px; padding: 10px; }}
             """)
+            tip = _TT.get(key, "")
+            if tip:
+                frame.setToolTip(tip)
             fl = QVBoxLayout(frame)
             fl.setSpacing(2)
             nl = QLabel(label)
             nl.setFont(QFont("Menlo", 10, QFont.Weight.Bold))
             nl.setStyleSheet(f"color: {_DIM};")
+            if tip:
+                nl.setToolTip(tip)
             fl.addWidget(nl)
             vl = QLabel("—")
             vl.setFont(QFont("Menlo", 18, QFont.Weight.Bold))
             vl.setStyleSheet(f"color: {_CYAN};")
+            if tip:
+                vl.setToolTip(tip)
             fl.addWidget(vl)
             self._swarm_labels[key] = vl
             self.swarm_grid.addWidget(frame, i // 3, i % 3)
@@ -829,9 +852,14 @@ class SwarmTab(QWidget):
                 f"tests={tests.get('passed', 0)} passed  {dur:.1f}s"
             )
             self._audit_result_label.setStyleSheet(f"color: {_GREEN};")
+            QMessageBox.information(
+                self, "Nightly audit",
+                f"Composite {score:.4f}\nTests passed: {tests.get('passed', 0)}\nDuration {dur:.1f}s",
+            )
         except Exception as exc:
             self._audit_result_label.setText(f"❌ Audit error: {exc}")
             self._audit_result_label.setStyleSheet(f"color: {_RED};")
+            QMessageBox.warning(self, "Nightly audit", str(exc))
         self.refresh()
 
     def _run_arxiv_sweep(self):
@@ -849,9 +877,14 @@ class SwarmTab(QWidget):
                 f"✅ Sweep done  fetched={total}  chunks={chunks}"
             )
             self._audit_result_label.setStyleSheet(f"color: {_GREEN};")
+            QMessageBox.information(
+                self, "arXiv sweep",
+                f"Papers fetched: {total}\nChunks ingested: {chunks}",
+            )
         except Exception as exc:
             self._audit_result_label.setText(f"❌ Sweep error: {exc}")
             self._audit_result_label.setStyleSheet(f"color: {_RED};")
+            QMessageBox.warning(self, "arXiv sweep", str(exc))
         self.refresh()
 
     def refresh(self):
@@ -862,7 +895,23 @@ class SwarmTab(QWidget):
         summary = _load_json(summary_path)
         sections = summary.get("sections", {})
         ledger_metrics = summary.get("ledger_metrics", {})
+        if not ledger_metrics:
+            # Tiles stay truthful even before the first nightly run writes ledger_metrics.
+            try:
+                from System.swarm_health_metrics import (
+                    score_allostatic_ledger,
+                    score_motor_policy_ledger,
+                    score_observability_ledgers,
+                )
+                ledger_metrics = {
+                    "observability": score_observability_ledgers(state_dir=_STATE),
+                    "allostatic": score_allostatic_ledger(state_dir=_STATE),
+                    "motor": score_motor_policy_ledger(state_dir=_STATE),
+                }
+            except Exception:
+                ledger_metrics = {}
         ledger_obs = ledger_metrics.get("observability", {})
+        ledger_allo = ledger_metrics.get("allostatic", {})
         ledger_motor = ledger_metrics.get("motor", {})
 
         obs = sections.get("observability", {})
@@ -903,6 +952,14 @@ class SwarmTab(QWidget):
         else:
             L["cusum"].setText("⚪ No data")
             L["cusum"].setStyleSheet(f"color: {_DIM};")
+
+        # Allostatic (ledger load + policy)
+        load = float(ledger_allo.get("allostatic_load", al.get("allostatic_load", 0.0)))
+        pol = str(ledger_allo.get("policy", al.get("policy", "—")))[:14]
+        L["allostatic"].setText(f"{load:.2f} {pol}")
+        L["allostatic"].setStyleSheet(
+            f"color: {_GREEN if load < 0.45 else _AMBER if load < 0.75 else _RED};"
+        )
 
         # Motor regime
         regime = mp.get("last_regime", "—")
@@ -1000,7 +1057,9 @@ class StigmergicLifeDashboard(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        subtitle = QLabel("Contacts • Schedule • Health — powered by pheromone traces")
+        subtitle = QLabel(
+            "Contacts • Schedule • Health • Swarm — pheromone traces + nightly ledgers"
+        )
         subtitle.setFont(QFont("Menlo", 10))
         subtitle.setStyleSheet(f"color: {_DIM};")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
