@@ -252,6 +252,30 @@ class ScheduleTab(QWidget):
         rl.addWidget(self.cusum_label)
         layout.addWidget(regime_frame)
 
+        # Allostatic Load strip (Event 102)
+        al_frame = QFrame()
+        al_frame.setStyleSheet(
+            f"QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT};"
+            f" border-radius: 6px; padding: 4px 10px; }}"
+        )
+        al_layout = QHBoxLayout(al_frame)
+        al_layout.setContentsMargins(0, 0, 0, 0)
+        al_layout.setSpacing(8)
+        self.al_label = QLabel("🧠 Load: —")
+        self.al_label.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
+        al_layout.addWidget(self.al_label)
+        self.al_bar = QProgressBar()
+        self.al_bar.setMaximum(100)
+        self.al_bar.setValue(0)
+        self.al_bar.setFixedHeight(10)
+        self.al_bar.setTextVisible(False)
+        al_layout.addWidget(self.al_bar, stretch=1)
+        self.al_policy_label = QLabel("")
+        self.al_policy_label.setFont(QFont("Menlo", 10))
+        self.al_policy_label.setStyleSheet(f"color: {_DIM};")
+        al_layout.addWidget(self.al_policy_label)
+        layout.addWidget(al_frame)
+
         # Task list
         self.task_area = QVBoxLayout()
         scroll = QScrollArea()
@@ -322,6 +346,45 @@ class ScheduleTab(QWidget):
         except Exception:
             self.regime_label.setText("🌌 Regime: —")
             self.cusum_label.setText("")
+
+        # ── Allostatic Load (Event 102) ───────────────────────────────────
+        try:
+            import sys as _sys
+            if str(_REPO) not in _sys.path:
+                _sys.path.insert(0, str(_REPO))
+            from System.swarm_allostatic_load import compute_allostatic_load
+            al_row = compute_allostatic_load()
+            load = al_row.get("allostatic_load", 0.0)
+            policy = al_row.get("policy", "ALLOW_GROWTH")
+            _AL_COLORS = {
+                "ALLOW_GROWTH":        _GREEN,
+                "SUPPRESS_EXPLORATION": _AMBER,
+                "FORCE_REST_REPAIR":    _RED,
+            }
+            _AL_EMOJI = {
+                "ALLOW_GROWTH":        "🟢",
+                "SUPPRESS_EXPLORATION": "🟡",
+                "FORCE_REST_REPAIR":    "🔴",
+            }
+            al_color = _AL_COLORS.get(policy, _DIM)
+            al_emoji = _AL_EMOJI.get(policy, "⚪")
+            self.al_label.setText(f"🧠 Load: {load:.2f}")
+            self.al_label.setStyleSheet(f"color: {al_color}; font-weight: bold;")
+            self.al_bar.setValue(int(load * 100))
+            # Colour the bar chunk via stylesheet
+            self.al_bar.setStyleSheet(
+                f"QProgressBar::chunk {{ background: {al_color}; border-radius: 3px; }}"
+            )
+            window = al_row.get("window", 0)
+            self.al_policy_label.setText(f"{al_emoji} {policy}  (n={window})")
+            self.al_policy_label.setStyleSheet(
+                f"color: {al_color if policy != 'ALLOW_GROWTH' else _DIM};"
+                f" font-family: Menlo; font-size: 10px;"
+            )
+        except Exception:
+            self.al_label.setText("🧠 Load: —")
+            self.al_bar.setValue(0)
+            self.al_policy_label.setText("")
 
         # ── Circadian ──────────────────────────────────────────────────────
         now = datetime.now()

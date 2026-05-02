@@ -43,6 +43,13 @@ except Exception:
     _HOMEOSTASIS_AVAILABLE = False
     def compute_homeostasis(drive, **kw): return None  # type: ignore
 
+try:
+    from System.swarm_allostatic_load import write_allostatic_load
+    _ALLOSTATIC_AVAILABLE = True
+except Exception:
+    _ALLOSTATIC_AVAILABLE = False
+    def write_allostatic_load(**kw): return {}  # type: ignore
+
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
 DRIVE_BIAS_SCORE_FLOOR = 0.05
@@ -135,11 +142,14 @@ class SwarmPhysiology:
         danger: Dict[str, Any],
         intrinsic_receipt: Optional[Any] = None,
         homeostatic_frame: Optional[Any] = None,
+        allostatic_row: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Basal Ganglia routing: what should we physically do?
 
         Event 101: homeostatic_frame can override the attention drive
         and cap action intensity before the motor gate fires.
+        Event 102: allostatic_row.drive_modifiers compose with homeostatic
+        drive_weight to produce a compound regulator signal.
         """
         # Event 101 — homeostatic regulation gate
         if homeostatic_frame is not None:
@@ -154,6 +164,28 @@ class SwarmPhysiology:
                 }
         else:
             action_intensity = 1.0
+
+        # Event 102 — allostatic load compose with homeostatic weight
+        if allostatic_row:
+            al_modifiers = allostatic_row.get("drive_modifiers", {})
+            al_modifier = float(al_modifiers.get(attention, 1.0))
+            al_policy = allostatic_row.get("policy", "ALLOW_GROWTH")
+            # Compound: homeostatic already redirected attention; now dampen
+            # action_intensity further if chronic stress is high
+            if al_policy == "FORCE_REST_REPAIR" and attention not in ("rest", "repair", "safety"):
+                # Allostatic override: reroute to rest
+                return {
+                    "type": "rest",
+                    "reason": "allostatic_load_event_102",
+                    "action_intensity": min(action_intensity, 0.15),
+                    "allostatic_load": allostatic_row.get("allostatic_load", 0.0),
+                    **_no_drive_bias_fields(),
+                }
+            # Otherwise compose intensity: multiply by allostatic modifier (clamped)
+            al_intensity_factor = max(0.1, min(2.0, al_modifier))
+            action_intensity = min(1.0, action_intensity * al_intensity_factor)
+        else:
+            al_policy = "ALLOW_GROWTH"
 
         drive_bias = _drive_bias_fields(intrinsic_receipt)
         if danger["is_critical"]:
@@ -350,12 +382,29 @@ class SwarmPhysiology:
             except Exception:
                 logger.exception("Homeostatic stabilizer skipped (non-fatal)")
 
-        # 4. Action Selection — George Prior + Homeostatic frame passed in
+        # 3d. Event 102 — Allostatic Load (chronic stress accumulator)
+        allostatic_row: Optional[Dict[str, Any]] = None
+        if _ALLOSTATIC_AVAILABLE:
+            try:
+                allostatic_row = write_allostatic_load()
+                al_load = allostatic_row.get("allostatic_load", 0.0)
+                al_policy = allostatic_row.get("policy", "ALLOW_GROWTH")
+                if al_policy != "ALLOW_GROWTH":
+                    logger.info(
+                        "[Event102] load=%.3f policy=%s",
+                        al_load,
+                        al_policy,
+                    )
+            except Exception:
+                logger.exception("Allostatic load write skipped (non-fatal)")
+
+        # 4. Action Selection — George Prior + Homeostatic + Allostatic
         action = self._choose_action(
             attention,
             danger,
             intrinsic_receipt=intrinsic_receipt,
             homeostatic_frame=homeostatic_frame,
+            allostatic_row=allostatic_row,
         )
         
         # 5. Execution
@@ -393,6 +442,10 @@ class SwarmPhysiology:
             mem_row["homeostasis_intensity"]  = homeostatic_frame.action_intensity
             mem_row["homeostasis_type"]       = homeostatic_frame.intervention_type
             mem_row["crystallizer_weight"]    = homeostatic_frame.crystallizer_weight
+        # Stamp Event 102 allostatic load fields into the ledger row
+        if allostatic_row:
+            mem_row["allostatic_load"]    = allostatic_row.get("allostatic_load", 0.0)
+            mem_row["allostatic_policy"]  = allostatic_row.get("policy", "ALLOW_GROWTH")
         try:
             from System.swarm_pheromone_field import update_pheromone_field
 
@@ -425,6 +478,8 @@ class SwarmPhysiology:
             "drive_plasticity":   drive_plasticity,
             "intrinsic_drive":    _receipt_as_dict(intrinsic_receipt),
             "homeostatic_frame":  homeostatic_frame.as_dict() if homeostatic_frame else None,
+            "allostatic_load":    allostatic_row.get("allostatic_load", 0.0) if allostatic_row else 0.0,
+            "allostatic_policy":  allostatic_row.get("policy", "ALLOW_GROWTH") if allostatic_row else "ALLOW_GROWTH",
         }
 
 
