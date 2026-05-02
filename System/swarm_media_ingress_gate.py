@@ -83,7 +83,13 @@ def _load_recent_youtube_context(max_age_s: float = 900.0) -> str:
     title = str(row.get("title") or row.get("video_id") or "")
     status = str(row.get("status") or "")
     page = str(row.get("page_context") or "")
+    reality = str(row.get("reality_frame") or "")
+    boundary = str(row.get("dialogue_boundary") or "")
     suffix = f" page_context={page}" if page else ""
+    if reality:
+        suffix += f" reality_frame={reality}"
+    if boundary:
+        suffix += f" dialogue_boundary={boundary}"
     return f"YouTube video: {title} caption_status={status}{suffix}".strip()
 
 

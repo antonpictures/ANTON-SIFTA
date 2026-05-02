@@ -28,8 +28,15 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 LEDGER = _STATE / "youtube_context.jsonl"
 STATE_FILE = _STATE / "youtube_context_latest.json"
+COWATCH_LEDGER = _STATE / "youtube_architect_cowatch.jsonl"
+TRANSCRIPT_DIR = _STATE / "youtube_transcripts"
 
 FetchFn = Callable[[str, float], str]
+
+_YOUTUBE_WATCH_ID_RE = re.compile(
+    r"(?:youtube\.com/watch\?v=|youtube\.com/watch\?[^#\s]+&v=|youtu\.be/)([A-Za-z0-9_-]{6,32})\b",
+    re.IGNORECASE,
+)
 
 _UI_LINE_RE = re.compile(
     r"^(?:"
@@ -216,7 +223,8 @@ def _first_page_title(lines: list[str]) -> str:
     for line in lines[:24]:
         low = line.lower()
         if (
-            "subscribers" in low
+            low.startswith(("http://", "https://"))
+            or "subscribers" in low
             or "views" in low
             or line.startswith("@")
             or _QUESTION_RE.match(line)
@@ -275,6 +283,8 @@ def _extract_questions(lines: list[str], limit: int = 8) -> list[str]:
 def _keyword_signals(lines: list[str], limit: int = 10) -> list[str]:
     counts: dict[str, int] = {}
     for line in lines:
+        if line.lower().startswith(("http://", "https://")):
+            continue
         if line.startswith("@") or _VIEWS_RE.search(line) or _SUBS_RE.search(line):
             continue
         for word in re.findall(r"[A-Za-z][A-Za-z'_-]{3,}", line.lower()):
@@ -425,6 +435,26 @@ def _write_row(row: dict[str, Any]) -> None:
     tmp.replace(STATE_FILE)
 
 
+def _stamp_watch_memory(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from System.swarm_youtube_watch_memory import remember_youtube_watch
+
+        memory = remember_youtube_watch(row, state_dir=STATE_FILE.parent)
+    except Exception:
+        return row
+    row["watch_memory_id"] = memory.get("memory_id", "")
+    row["watch_notes_file"] = memory.get("notes_file", "")
+    frame = memory.get("reality_frame") if isinstance(memory.get("reality_frame"), dict) else {}
+    if frame:
+        row["reality_frame"] = frame.get("reality_frame", "")
+        row["content_category"] = frame.get("content_category", "")
+        row["source_work"] = frame.get("source_work", "")
+        row["director"] = frame.get("director", "")
+        row["profanity_frame"] = frame.get("profanity_frame", "")
+        row["dialogue_boundary"] = frame.get("dialogue_boundary", "")
+    return row
+
+
 def observe_snapshot(
     snap: dict[str, Any],
     *,
@@ -472,6 +502,7 @@ def observe_snapshot(
             "truth_note": "public YouTube caption metadata observed from frontmost browser video",
             **ctx,
         }
+        row = _stamp_watch_memory(row)
         _write_row(row)
 
     if publish:
@@ -483,6 +514,7 @@ def observe_pasted_page(
     raw_text: str,
     *,
     source: str = "architect_paste",
+    url: str = "",
     publish: bool = True,
     max_answer_chars: int = 700,
 ) -> dict[str, Any]:
@@ -494,10 +526,25 @@ def observe_pasted_page(
     misrouting the page text as direct speech from the room microphone.
     """
     parsed = parse_pasted_youtube_page(raw_text, max_answer_chars=max_answer_chars)
+    if not url:
+        try:
+            from System.swarm_youtube_watch_memory import first_youtube_url
+
+            url = first_youtube_url(raw_text)
+        except Exception:
+            url = ""
+    video_id = ""
+    if url:
+        try:
+            from System.swarm_youtube_watch_memory import youtube_video_id
+
+            video_id = youtube_video_id(url)
+        except Exception:
+            video_id = ""
     row = {
         "ts": time.time(),
-        "video_id": "",
-        "url": "",
+        "video_id": video_id,
+        "url": url,
         "frontmost_app": "",
         "frontmost_window": "",
         "cache_hit": False,
@@ -509,6 +556,7 @@ def observe_pasted_page(
         "is_auto_generated": False,
         **parsed,
     }
+    row = _stamp_watch_memory(row)
     _write_row(row)
     if publish:
         _publish_focus(row)
@@ -530,6 +578,9 @@ def _publish_focus(row: dict[str, Any]) -> None:
         detail += " Alice has a compact caption excerpt for shared context."
     if row.get("page_context"):
         detail += " Alice has owner-pasted page context for co-watching."
+    if row.get("reality_frame") == "FICTIONAL_MEDIA_CLIP":
+        director = row.get("director") or "unknown director"
+        detail += f" Reality frame: fictional media clip; director: {director}."
     publish_focus(
         "YouTube",
         detail,
@@ -549,9 +600,236 @@ def _publish_focus(row: dict[str, Any]) -> None:
             "content_signals": row.get("content_signals", []),
             "suggested_questions": row.get("suggested_questions", []),
             "ask_panel_answer_excerpt": row.get("ask_panel_answer_excerpt", ""),
+            "watch_memory_id": row.get("watch_memory_id", ""),
+            "watch_notes_file": row.get("watch_notes_file", ""),
+            "reality_frame": row.get("reality_frame", ""),
+            "content_category": row.get("content_category", ""),
+            "source_work": row.get("source_work", ""),
+            "director": row.get("director", ""),
+            "profanity_frame": row.get("profanity_frame", ""),
+            "dialogue_boundary": row.get("dialogue_boundary", ""),
             "truth_note": row.get("truth_note", ""),
         },
     )
+
+
+def extract_youtube_video_id(url_or_id: str) -> str:
+    """Return a YouTube video id from a watch URL, short URL, or bare 11-char id."""
+    s = (url_or_id or "").strip()
+    if not s:
+        return ""
+    m = _YOUTUBE_WATCH_ID_RE.search(s)
+    if m:
+        return str(m.group(1))[:32]
+    if re.fullmatch(r"[A-Za-z0-9_-]{6,32}", s):
+        return s
+    return ""
+
+
+def fetch_transcript_for_video(
+    video_id: str,
+    *,
+    fetcher: FetchFn = _default_fetch,
+    timeout_s: float = 12.0,
+    max_chars: int = 250_000,
+) -> dict[str, Any]:
+    """Fetch the full public timedtext transcript when YouTube lists a caption track.
+
+    If the video has no caption tracks in ``ytInitialPlayerResponse``, this returns
+    ``status=no_captions`` and an empty transcript — **no fabrication** (covenant §6).
+    """
+    vid = (video_id or "").strip()
+    if not vid:
+        return {
+            "ok": False,
+            "status": "bad_video_id",
+            "title": "",
+            "transcript": "",
+            "transcript_chars": 0,
+            "video_id": "",
+        }
+    watch_url = f"https://www.youtube.com/watch?v={urllib.parse.quote(vid)}"
+    watch_html = fetcher(watch_url, timeout_s)
+    player = extract_player_response(watch_html)
+    title = ""
+    if isinstance(player, dict):
+        vd = player.get("videoDetails") or {}
+        if isinstance(vd, dict):
+            title = str(vd.get("title") or "").strip()
+    if not player:
+        return {
+            "ok": False,
+            "status": "no_player_response",
+            "title": title,
+            "transcript": "",
+            "transcript_chars": 0,
+            "video_id": vid,
+            "truth_note": "watch page did not yield ytInitialPlayerResponse",
+        }
+    track = choose_caption_track(player)
+    if not track or not track.get("baseUrl"):
+        return {
+            "ok": False,
+            "status": "no_captions",
+            "title": title,
+            "transcript": "",
+            "transcript_chars": 0,
+            "video_id": vid,
+            "truth_note": "YouTube player listed no usable caption tracks for this video",
+        }
+    caption_url = _append_fmt_json3(str(track["baseUrl"]))
+    raw = fetcher(caption_url, timeout_s)
+    caption_text = parse_caption_payload(raw)
+    truncated = len(caption_text) > int(max_chars)
+    if truncated:
+        caption_text = caption_text[: int(max_chars)]
+    return {
+        "ok": bool(caption_text),
+        "status": "transcript_available" if caption_text else "empty_captions",
+        "title": title,
+        "transcript": caption_text,
+        "transcript_chars": len(caption_text),
+        "truncated": truncated,
+        "language": str(track.get("languageCode", "")),
+        "is_auto_generated": track.get("kind") == "asr",
+        "video_id": vid,
+        "truth_note": (
+            "Parsed from public YouTube timedtext payload linked in player response; "
+            "not a human-provided subtitle file and not verified against the video pixels."
+        ),
+    }
+
+
+def write_architect_cowatch_transcript_file(
+    video_id: str,
+    *,
+    url: str,
+    title: str,
+    transcript: str,
+    category_lane: str,
+    state_dir: Optional[Path] = None,
+    architect_note: str = "",
+) -> Path:
+    """Write ``.sifta_state/youtube_transcripts/<video_id>.md`` for Architect co-watch."""
+    base = Path(state_dir) if state_dir is not None else _STATE
+    tdir = base / "youtube_transcripts"
+    tdir.mkdir(parents=True, exist_ok=True)
+    path = tdir / f"{video_id}.md"
+    safe_title = (title or "").replace('"', "'").strip()[:240]
+    note = (architect_note or "").strip()
+    truth = (
+        "YOUTUBE_PUBLIC_CAPTION_TRANSCRIPT"
+        if (transcript or "").strip()
+        else "NO_PUBLIC_CAPTION_TRANSCRIPT"
+    )
+    header = (
+        "---\n"
+        f'youtube_video_id: "{video_id}"\n'
+        f'url: "{url}"\n'
+        f'title: "{safe_title}"\n'
+        f'category_lane: "{(category_lane or "unknown")[:64]}"\n'
+        f"truth_label: {truth}\n"
+        "---\n\n"
+    )
+    body = transcript if transcript.strip() else (
+        "(No timedtext payload produced usable transcript text from the YouTube player response. "
+        "Architect may paste visible page copy into ``observe_pasted_page`` "
+        "or attach an official caption export when available.)\n"
+    )
+    if note:
+        body += "\n## Architect note (human-provided)\n\n" + note + "\n"
+    path.write_text(header + body, encoding="utf-8")
+    return path
+
+
+def record_architect_youtube_cowatch(
+    url_or_id: str,
+    *,
+    category_lane: str = "fiction",
+    architect_note: str = "",
+    fetcher: FetchFn = _default_fetch,
+    state_dir: Optional[Path] = None,
+    publish_focus_event: bool = True,
+) -> dict[str, Any]:
+    """Transcribe (when YouTube exposes captions), write transcript file, append co-watch receipt.
+
+    ``category_lane`` defaults to ``fiction`` for the Architect's staged rollout
+    (broader YouTube category routing can tighten later without rewriting receipts).
+    """
+    base = Path(state_dir) if state_dir is not None else _STATE
+    video_id = extract_youtube_video_id(url_or_id)
+    if not video_id:
+        return {
+            "ok": False,
+            "error": "could_not_parse_video_id",
+            "truth_label": "FORBIDDEN_INVENTED_URL",
+        }
+    canonical_url = f"https://www.youtube.com/watch?v={video_id}"
+    tr = fetch_transcript_for_video(video_id, fetcher=fetcher)
+    transcript_body = str(tr.get("transcript") or "")
+    title = str(tr.get("title") or "")
+    tpath = write_architect_cowatch_transcript_file(
+        video_id,
+        url=canonical_url,
+        title=title,
+        transcript=transcript_body,
+        category_lane=category_lane,
+        state_dir=base,
+        architect_note=architect_note,
+    )
+    try:
+        rel = str(tpath.relative_to(base)).replace("\\", "/")
+    except ValueError:
+        rel = str(tpath)
+
+    receipt: dict[str, Any] = {
+        "ts": time.time(),
+        "truth_label": "ARCHITECT_YOUTUBE_COWATCH_SESSION",
+        "schema_version": "architect_cowatch.v1",
+        "youtube_video_id": video_id,
+        "url": canonical_url,
+        "category_lane": (category_lane or "unknown")[:64],
+        "architect_note": (architect_note or "")[:1200],
+        "caption_status": tr.get("status"),
+        "transcript_chars": int(tr.get("transcript_chars") or 0),
+        "transcript_truncated": bool(tr.get("truncated")),
+        "title": title[:400],
+        "transcript_file": rel,
+        "language": tr.get("language", ""),
+        "is_auto_generated": bool(tr.get("is_auto_generated")),
+        "truth_note": str(tr.get("truth_note") or ""),
+    }
+    cow = base / "youtube_architect_cowatch.jsonl"
+    cow.parent.mkdir(parents=True, exist_ok=True)
+    append_line_locked(cow, json.dumps(receipt, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    if publish_focus_event:
+        focus_row = {
+            "ts": receipt["ts"],
+            "video_id": video_id,
+            "url": canonical_url,
+            "title": title or video_id,
+            "frontmost_app": "",
+            "frontmost_window": "",
+            "cache_hit": False,
+            "status": tr.get("status"),
+            "caption_excerpt": transcript_body[:900],
+            "caption_chars": int(tr.get("transcript_chars") or 0),
+            "language": tr.get("language", ""),
+            "is_auto_generated": bool(tr.get("is_auto_generated")),
+            "category_lane": category_lane,
+            "context_route": "architect_cowatch_transcript_file",
+            "truth_note": (
+                f"Architect co-watch; full transcript attempt in {rel}; "
+                "ledger=youtube_architect_cowatch.jsonl"
+            ),
+        }
+        try:
+            _publish_focus(focus_row)
+        except Exception:
+            pass
+
+    return {"ok": True, "receipt": receipt, "transcript_path": str(tpath)}
 
 
 def get_latest_context(max_age_s: float = 600.0) -> Optional[str]:
@@ -575,6 +853,21 @@ def get_latest_context(max_age_s: float = 600.0) -> Optional[str]:
         bits.append(f"ask_panel_excerpt={row['ask_panel_answer_excerpt']}")
     if row.get("suggested_questions"):
         bits.append("suggested_questions=" + " / ".join(row["suggested_questions"][:4]))
+    if row.get("reality_frame"):
+        frame = f"reality_frame={row.get('reality_frame')}"
+        if row.get("director"):
+            frame += f" director={row.get('director')}"
+        bits.append(frame)
+    if row.get("dialogue_boundary"):
+        bits.append(f"dialogue_boundary={row.get('dialogue_boundary')}")
+    try:
+        from System.swarm_youtube_watch_memory import latest_watch_context
+
+        watch = latest_watch_context(state_dir=STATE_FILE.parent, max_age_s=max_age_s)
+        if watch:
+            bits.append(f"watch_memory={watch}")
+    except Exception:
+        pass
     return " | ".join(bits)
 
 

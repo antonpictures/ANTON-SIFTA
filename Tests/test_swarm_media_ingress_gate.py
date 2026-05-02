@@ -126,6 +126,8 @@ def test_youtube_pasted_page_context_is_media_focus_not_degradation(monkeypatch,
                 "title": "Snatch - Best of Brick top",
                 "status": "pasted_page_context",
                 "page_context": "title=Snatch - Best of Brick top; signals=brick,top,fighter",
+                "reality_frame": "FICTIONAL_MEDIA_CLIP",
+                "dialogue_boundary": "Profanity heard here is fictional media dialogue.",
             }
         ),
         encoding="utf-8",

@@ -42,6 +42,12 @@ def test_parse_json3_caption_payload_normalizes_segments():
     assert yc.parse_caption_payload(json.dumps(payload)) == "Hello George Alice is watching."
 
 
+def test_extract_youtube_video_id_accepts_watch_url_and_bare_id():
+    assert yc.extract_youtube_video_id("https://www.youtube.com/watch?v=IXugVZMsZ24") == "IXugVZMsZ24"
+    assert yc.extract_youtube_video_id("https://youtu.be/abcdEFGHijk") == "abcdEFGHijk"
+    assert yc.extract_youtube_video_id("IXugVZMsZ24") == "IXugVZMsZ24"
+
+
 def test_fetch_caption_context_uses_watch_page_then_caption_url():
     seen = []
 
@@ -96,6 +102,7 @@ def test_observe_snapshot_writes_ledger_and_publishes_focus(monkeypatch, tmp_pat
     assert row["status"] == "captions_available"
     assert ledger.exists()
     assert state.exists()
+    assert (Path(tmp_path) / "youtube_watch_memory.jsonl").exists()
     assert len(calls) == 1
     assert calls[0][0][0] == "YouTube"
     assert calls[0][1]["metadata"]["caption_excerpt"] == "the caption"
@@ -132,15 +139,23 @@ def test_observe_pasted_page_builds_shared_media_context(monkeypatch, tmp_path):
         Brick Top is one of those examples of old dangerous professionals.
         """,
         source="pytest_paste",
+        url="https://www.youtube.com/watch?v=IXugVZMsZ24",
     )
 
     assert row["status"] == "pasted_page_context"
     assert row["context_route"] == "shared_media_context"
     assert row["content_kind"] == "film_clip_page"
+    assert row["video_id"] == "IXugVZMsZ24"
     assert row["title"] == "Snatch - Best of Brick top ( + deleted scene)"
     assert row["channel"] == "MelodicsRareMusicVid"
     assert row["view_count_text"] == "3,893,013"
     assert row["published_text"] == "May 3, 2022"
+    assert row["reality_frame"] == "FICTIONAL_MEDIA_CLIP"
+    assert row["director"] == "Guy Ritchie"
+    assert row["profanity_frame"] == "FICTIONAL_DIALOGUE"
+    assert "fictional media clip" in row["dialogue_boundary"]
+    assert row["watch_memory_id"]
+    assert Path(row["watch_notes_file"]).exists()
     assert "brick" in row["content_signals"]
     assert row["raw_audio_logged"] is False
     assert ledger.exists()
@@ -153,3 +168,55 @@ def test_observe_pasted_page_builds_shared_media_context(monkeypatch, tmp_path):
     assert prompt_context is not None
     assert "pasted_page_context" in prompt_context
     assert "page_context=" in prompt_context
+    assert "reality_frame=FICTIONAL_MEDIA_CLIP" in prompt_context
+    assert "director=Guy Ritchie" in prompt_context
+
+
+def test_pasted_page_with_leading_url_keeps_video_title(monkeypatch, tmp_path):
+    monkeypatch.setattr(yc, "_STATE", Path(tmp_path))
+    monkeypatch.setattr(yc, "LEDGER", Path(tmp_path) / "youtube_context.jsonl")
+    monkeypatch.setattr(yc, "STATE_FILE", Path(tmp_path) / "youtube_context_latest.json")
+
+    row = yc.observe_pasted_page(
+        """
+        https://www.youtube.com/watch?v=IXugVZMsZ24
+        Snatch - Best of Brick top ( + deleted scene)
+        Unofficial YouTube clip; no official subtitles available.
+        Fiction movie clip.
+        """,
+        publish=False,
+    )
+
+    assert row["url"] == "https://www.youtube.com/watch?v=IXugVZMsZ24"
+    assert row["video_id"] == "IXugVZMsZ24"
+    assert row["title"] == "Snatch - Best of Brick top ( + deleted scene)"
+    assert row["director"] == "Guy Ritchie"
+
+
+def test_record_architect_youtube_cowatch_writes_transcript_and_ledger(monkeypatch, tmp_path):
+    cow = tmp_path / "youtube_architect_cowatch.jsonl"
+
+    def fake_fetch(url: str, _timeout: float) -> str:
+        if "watch?v=abcZ" in url:
+            return _watch_html("https://caption.local/api?lang=en")
+        return json.dumps({"events": [{"segs": [{"utf8": "line one "}, {"utf8": "line two"}]}]})
+
+    out = yc.record_architect_youtube_cowatch(
+        "https://www.youtube.com/watch?v=abcZdefGhIj",
+        category_lane="fiction",
+        architect_note="pytest co-watch",
+        fetcher=fake_fetch,
+        state_dir=tmp_path,
+        publish_focus_event=False,
+    )
+    assert out["ok"] is True
+    r = out["receipt"]
+    assert r["truth_label"] == "ARCHITECT_YOUTUBE_COWATCH_SESSION"
+    assert r["youtube_video_id"] == "abcZdefGhIj"
+    assert r["category_lane"] == "fiction"
+    assert cow.exists()
+    tpath = tmp_path / "youtube_transcripts" / "abcZdefGhIj.md"
+    assert tpath.exists()
+    text = tpath.read_text(encoding="utf-8")
+    assert "line one line two" in text
+    assert "fiction" in text
