@@ -53,6 +53,31 @@ def test_dream_engine_replays_body_brain_rows_into_engrams(tmp_path):
     cycles = _read_jsonl(tmp_path / "dream_cycles.jsonl")
     assert cycles[0]["cycle_id"] == receipt.cycle_id
     assert cycles[0]["backup_path"] == ""
+    assert "skills_crystallized" in cycles[0]
+
+
+def test_dream_engine_crystallizes_repeated_success_patterns(tmp_path):
+    rows = [
+        _body_row("explore", "biology", 1.0, 10),
+        _body_row("explore", "biology", 1.1, 11),
+        _body_row("explore", "biology", 1.2, 12),
+    ]
+    _write_jsonl(tmp_path / "body_brain_memory.jsonl", rows)
+    engine = SwarmDreamEngine(
+        tmp_path,
+        config=DreamEngineConfig(min_rows_for_engram=2, prune_after_rows=99),
+    )
+
+    receipt = engine.trigger_rem_sleep(rest_seconds=3.0, pressure=0.2, metabolic_mode="YELLOW_REST")
+
+    assert receipt.status == "consolidated"
+    assert receipt.skills_crystallized == 1
+    skills = json.loads((tmp_path / "crystallized_skills.json").read_text())
+    assert len(skills) == 1
+    skill = next(iter(skills.values()))
+    assert skill["pattern_signature"] == "body_brain:explore:biology|SIFTA_BODY"
+    skill_receipts = _read_jsonl(tmp_path / "skill_crystallization_receipts.jsonl")
+    assert skill_receipts[-1]["action"] == "SKILL_CRYSTALLIZED"
 
 
 def test_dream_engine_prunes_only_after_recoverable_backup(tmp_path):

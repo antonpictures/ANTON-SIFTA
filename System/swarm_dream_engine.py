@@ -57,6 +57,8 @@ class DreamCycleReceipt:
     engrams_written: int
     rows_pruned: int
     rows_retained: int
+    skills_crystallized: int
+    skills_updated: int
     backup_path: str
     backup_sha256: str
     retention_policy: Dict[str, Any]
@@ -126,6 +128,8 @@ class SwarmDreamEngine:
         source_hash = _sha256_text("\n".join(raw_lines)) if raw_lines else ""
         rows = self._parse_body_brain_rows(raw_lines)
         notes: Dict[str, str] = {}
+        skills_crystallized = 0
+        skills_updated = 0
 
         status = "consolidated"
         engrams_written = 0
@@ -156,6 +160,18 @@ class SwarmDreamEngine:
             engrams_written = len(engrams)
             if engrams_written == 0:
                 status = "no_salient_rows"
+            try:
+                from System.temporal_identity_compression import TemporalIdentityCompressionEngine
+
+                skill_stats = TemporalIdentityCompressionEngine(self.state_dir).process_body_brain_ticks(
+                    rows,
+                    source_hash=source_hash,
+                    cycle_id=cycle_id,
+                )
+                skills_crystallized = int(skill_stats.get("skills_created") or 0)
+                skills_updated = int(skill_stats.get("skills_updated") or 0)
+            except Exception as exc:
+                notes["skill_crystallization_error"] = str(exc)
 
         backup_path = ""
         backup_hash = ""
@@ -180,6 +196,8 @@ class SwarmDreamEngine:
             engrams_written=engrams_written,
             rows_pruned=rows_pruned,
             rows_retained=rows_retained,
+            skills_crystallized=skills_crystallized,
+            skills_updated=skills_updated,
             backup_path=backup_path,
             backup_sha256=backup_hash,
             retention_policy=self._retention_policy_dict(),
