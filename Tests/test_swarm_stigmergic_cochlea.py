@@ -62,6 +62,8 @@ def test_write_cochlea_frame_logs_features_only(tmp_path: Path) -> None:
     assert "buffer" not in saved
     assert "samples" not in saved
     assert saved["mfcc"] == row["mfcc"]
+    assert "playback_fingerprint" in saved
+    assert saved["playback_fingerprint"].get("truth_label") == "ACOUSTIC_PLAYBACK_FINGERPRINT_V1"
 
 
 def test_capture_default_is_synthetic_and_ci_safe(tmp_path: Path) -> None:
