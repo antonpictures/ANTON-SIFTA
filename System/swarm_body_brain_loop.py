@@ -66,6 +66,15 @@ except Exception:
     def recovery_action(row): return {}  # type: ignore
 
 try:
+    from System.swarm_hippocampal_novelty_map import write_novelty_map
+    from System.swarm_novelty_metabolic_gate import compute_novelty_gate, NoveltyGateFrame
+    _NOVELTY_MAP_AVAILABLE = True
+except Exception:
+    _NOVELTY_MAP_AVAILABLE = False
+    def write_novelty_map(**kw): return {}  # type: ignore
+    def compute_novelty_gate(*a, **kw): return None  # type: ignore
+
+try:
     from System.swarm_motor_policy import (
         select_action_type_from_skills,
         write_motor_policy_row,
@@ -502,9 +511,29 @@ class SwarmPhysiology:
         
         # 5. Execution
         result = self._execute_action(action)
-        
+
+        # 5b. Event 112 — Hippocampal Novelty Map & Metabolic Gate
+        novelty_frame: Optional[Any] = None
+        if _NOVELTY_MAP_AVAILABLE:
+            try:
+                novelty_row = write_novelty_map(state_dir=_STATE_DIR)
+                novelty_frame = compute_novelty_gate(novelty_row)
+                logger.info(
+                    "[Event112] Novelty: %s (score=%.2f) td_bias=%.2f",
+                    novelty_frame.phase,
+                    novelty_frame.novelty_score,
+                    novelty_frame.td_bias
+                )
+            except Exception:
+                logger.exception("Hippocampal novelty map skipped")
+
         # 6. Value Signal
         value = self._compute_value(result, danger)
+        
+        # Apply Orienting Reflex / td_value modulation
+        if novelty_frame:
+            value += novelty_frame.td_bias
+
         d_token = plasticity_danger_token(str(danger.get("mode") or ""), now_state)
 
         # 6b. Drive plasticity (slow Hebbian / homeostatic weights on disk)
@@ -539,6 +568,12 @@ class SwarmPhysiology:
                 "reset_recovery_gate": reset_recovery.get("autonomy_gate"),
                 "reset_recovery_warmth": reset_recovery.get("warmth"),
                 "reset_recovery_score": reset_recovery.get("recovery_score"),
+            })
+        if novelty_frame:
+            memory_extra.update({
+                "novelty_phase": novelty_frame.phase,
+                "novelty_score": novelty_frame.novelty_score,
+                "novelty_td_bias": novelty_frame.td_bias,
             })
 
         mem_row = self._write_memory(
@@ -599,6 +634,7 @@ class SwarmPhysiology:
             "allostatic_load":    allostatic_row.get("allostatic_load", 0.0) if allostatic_row else 0.0,
             "allostatic_policy":  allostatic_row.get("policy", "ALLOW_GROWTH") if allostatic_row else "ALLOW_GROWTH",
             "reset_recovery":     reset_recovery,
+            "novelty_gate":       novelty_frame.as_dict() if novelty_frame else None,
         }
 
 
