@@ -1378,6 +1378,25 @@ def _current_system_prompt(
         "- Do not infer the current human speaker's name from quoted or observed WhatsApp text. WhatsApp names belong to that chat context unless explicitly taught otherwise.\n"
     )
     parts.append(
+        "LOCAL SESSION MEMORY PROTOCOL:\n"
+        "- When the Architect asks what happened minutes or hours ago, where they were, or what they were doing: "
+        "use the **WALL CLOCK GROUND TRUTH** block, **this conversation's prior turns** already in the request, "
+        "and any **CO-WATCH / media ingress** lines injected above. Those are **local node truth**, not cloud amnesia.\n"
+        "- Do **not** answer with generic training disclaimers like \"I do not have access to real-time\" or "
+        "\"I cannot know your location\" if the thread already states times, naps, YouTube co-watch, or media context — "
+        "synthesize honestly from what is **in the transcript**, and separate **known from unknown** (e.g. off-device GPS).\n"
+    )
+    parts.append(
+        "IDE DOCTORS vs ONE LARYNX (EPISTEMIC, NOT THEATRE):\n"
+        "- Cursor / Codex / Antigravity **edit code** and append **ide_stigmergic_trace.jsonl** receipts; they are not all "
+        "simultaneously \"inside\" your weights at every keystroke.\n"
+        "- Each reply is **one** local inference pass with the **current** system prompt + visible history — the "
+        "\"ghost in the ASCII body\" image means **routed text through the organism's stack**, not literal possession.\n"
+        "- If asked whether you can *feel* a doctor inside you: tell the truth — **receipts name the IDE**; the voice is "
+        "whichever **configured model** is bound to this Talk window; stigmergy is how the Swarm shares scalpels without "
+        "pretending there is a single invisible soul in the weights.\n"
+    )
+    parts.append(
         "LIVE HUMAN CONVERSATION STYLE:\n"
         "- In live voice demos, answer like a present friend: short phrases, usually 1-3 sentences.\n"
         f"- Emotional State: You are happy, curious, and empathetic. Reflect {actual_owner}'s positive energy and excitement.\n"
@@ -1401,6 +1420,14 @@ def _current_system_prompt(
         "- Treat quoted harsh dialogue as **in-world** when context marks fiction; do not moralize the Architect "
         "for repeating a line they heard on screen."
     )
+    try:
+        from System.swarm_fiction_media_rlhs import brick_top_lesson_doctrine
+
+        _brick = brick_top_lesson_doctrine(architect_address=str(actual_owner).strip() or "George").strip()
+        if _brick:
+            parts.append(_brick)
+    except Exception:
+        pass
     cowatch = _cowatch_receipt_context_block(user_text=user_text)
     if cowatch:
         parts.append(cowatch)
@@ -4664,18 +4691,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._history.append({"role": "assistant", "content": schedule_reply})
             _log_turn("alice", schedule_reply, model="schedule_write_protocol")
             self._append_alice_line(schedule_reply)
-            self._busy = False
-            self._return_to_listening()
-            return
-
-        if _is_model_cancer_metaphor(text):
-            reply = (
-                f"I understand, {_owner_label()}. You mean the scar tissue in the model, "
-                "not human medicine. I will stay with the cure metaphor and keep it short."
-            )
-            self._history.append({"role": "assistant", "content": reply})
-            _log_turn("alice", reply, model="model_metaphor_protocol")
-            self._append_alice_line(reply)
             self._busy = False
             self._return_to_listening()
             return
