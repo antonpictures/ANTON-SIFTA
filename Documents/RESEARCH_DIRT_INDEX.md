@@ -46,7 +46,7 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Qwopus** | Seam/heal FT metrics; stall detector. |
 | **Moonshot PRF** | Legal review; reproduce paper figure. |
 | **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router without treating metaphors as proof. |
-| **Physiology (parallel hill)** | **Event 101** is on `main` (`swarm_homeostatic_stabilizer.py` + `compute_homeostasis` in `body_brain_tick`); deepen **crystallizer ↔ stabilizer** coupling and **Event 102** `drive_modifiers` wiring into the tick (ledger exists; motor hook optional). Wire crystallized primitives → motor policy end-to-end for full-stack §A bake-offs. **Event 98c** — closed sensorimotor loop as planned showpiece (pheromone → phenotype → hearing → colliculus → policy). |
+| **Physiology (parallel hill)** | **Event 102** allostatic + **Event 103** skill→motor policy are on `main` (ledgers + `_choose_action` hook); deepen **crystallizer ↔ stabilizer ↔ phase controller** coupling (suppress/amplify policy mass). Full-stack §A bake-offs. **Event 98c** — closed sensorimotor loop as planned showpiece (pheromone → phenotype → hearing → colliculus → policy). **CUSUM / Page** math write-up optional (see §F.1). |
 | **§A YouTube / stack dirt** | All **11** rows remain **`RESEARCH_NOT_SHIPPED`** until each stack wins its own bake-off (this table). |
 
 **Watch window note:** Three IDE bodies + `ide_stigmergic_trace.jsonl` as the honest scoreboard. Colosseum lights stay on for bake-offs and Event 98c / crystallizer–motor closure work.
@@ -69,7 +69,10 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 | **100** | Intrinsic drive → basal ganglia + phase detector (**CUSUM** on TD) | `da8a7b40` / `c82bce36` | **SHIPPED** |
 | **101** | Homeostatic stabilizer (hypothalamus gate, regime + crystallizer weight) | `swarm_homeostatic_stabilizer.py` | **SHIPPED** |
 | **102** | Allostatic load regulator (stress window → policy + `allostatic_load.jsonl`) | `020530e6` | **SHIPPED** |
+| **103** | Skill-weighted motor policy (`crystallized_skills.json` → `motor_policy.jsonl`, basal-ganglia-style candidate pick) | *(this commit)* | **SHIPPED** |
 | **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
+
+**F.1 Literature anchors (motor policy + regulation, not exhaustive):** basal ganglia–thalamo-cortical loops and action sequence chunking — [Greybiel, *Curr. Opin. Neurobiol.* 2008](https://doi.org/10.1016/j.conb.2008.08.006); dopamine / reward prediction error (TD family) — [Schultz *et al.*, *Science* 1997](https://doi.org/10.1126/science.275.5306.1593); **CUSUM / Page** change detection — [Page 1954](https://doi.org/10.2307/2333249) (see `System/phase_transition_control.py`). **Crypto swimmers:** economic / STGM lanes stay on `System/crypto_keychain.py` (Ed25519); `SKILL_WEIGHTED_POLICY` rows are physiological telemetry, not mint events.
 
 **Dashboard / UI:** regime strip + telemetry at Architect discretion (off-screen tests in Event 93 file).
 

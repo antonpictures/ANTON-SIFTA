@@ -50,6 +50,15 @@ except Exception:
     _ALLOSTATIC_AVAILABLE = False
     def write_allostatic_load(**kw): return {}  # type: ignore
 
+try:
+    from System.swarm_motor_policy import (
+        select_action_type_from_skills,
+        write_motor_policy_row,
+    )
+    _MOTOR_POLICY_AVAILABLE = True
+except Exception:
+    _MOTOR_POLICY_AVAILABLE = False
+
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
 DRIVE_BIAS_SCORE_FLOOR = 0.05
@@ -150,6 +159,7 @@ class SwarmPhysiology:
         and cap action intensity before the motor gate fires.
         Event 102: allostatic_row.drive_modifiers compose with homeostatic
         drive_weight to produce a compound regulator signal.
+        Event 103: crystallized skill mass biases explore vs forage (motor_policy.jsonl).
         """
         # Event 101 — homeostatic regulation gate
         if homeostatic_frame is not None:
@@ -216,6 +226,32 @@ class SwarmPhysiology:
                 "action_intensity": action_intensity,
                 **drive_bias,
             }
+
+        # Event 103 — skill-weighted motor policy (crystallizer → basal ganglia coupling)
+        if _MOTOR_POLICY_AVAILABLE:
+            try:
+                state_root = Path(__file__).resolve().parent.parent / ".sifta_state"
+                motor_type, motor_bias = select_action_type_from_skills(
+                    ("explore", "forage"),
+                    attention,
+                    state_dir=state_root,
+                )
+                write_motor_policy_row(
+                    selected_action=motor_type,
+                    bias=motor_bias,
+                    current_drive=attention,
+                    state_dir=state_root,
+                )
+                if motor_type == "forage":
+                    return {
+                        "type": "forage",
+                        "target": str(attention),
+                        "action_intensity": action_intensity,
+                        "truth_label": "SKILL_WEIGHTED_POLICY",
+                        **_no_drive_bias_fields(),
+                    }
+            except Exception:
+                logger.exception("Motor policy skipped (non-fatal)")
 
         return {"type": "explore", "target": attention,
                 "action_intensity": action_intensity, **drive_bias}
