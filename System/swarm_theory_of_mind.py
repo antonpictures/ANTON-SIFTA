@@ -49,14 +49,25 @@ def _resolve_creator_name(default: str = "the Architect") -> str:
     Resolve the Architect's real name from the SIFTA stigmergic ledger.
 
     Priority order:
-      1. .sifta_state/identity_topology.json  → architect.name
-      2. SIFTA_ARCHITECT_NAME environment variable
-      3. OS login name (getpass / pwd)
-      4. default fallback ("the Architect")
+      1. owner_genesis via swarm_kernel_identity.owner_display_name()
+      2. .sifta_state/identity_topology.json  → architect.name
+      3. SIFTA_ARCHITECT_NAME environment variable
+      4. OS login name (getpass / pwd)
+      5. default fallback ("the Architect")
     """
     import json as _json, os as _os, pathlib as _pathlib
 
-    # 1. Stigmergic identity ledger (authoritative)
+    # 1. Owner genesis/profile (authoritative on the local node)
+    try:
+        from System.swarm_kernel_identity import owner_display_name as _owner_display_name
+
+        owner = _owner_display_name(default).strip()
+        if owner and owner != default:
+            return owner
+    except Exception:
+        pass
+
+    # 2. Stigmergic identity ledger (legacy/topology source)
     try:
         topo_path = _pathlib.Path(".sifta_state/identity_topology.json")
         if not topo_path.exists():
@@ -66,14 +77,11 @@ def _resolve_creator_name(default: str = "the Architect") -> str:
             topo = _json.loads(topo_path.read_text(encoding="utf-8"))
             name = topo.get("architect", {}).get("name", "")
             if name:
-                # e.g., "Ioan George Anton" → use preferred first name
-                parts = name.split()
-                # Return the second token if present (preferred name), else full name
-                return parts[1] if len(parts) >= 2 else parts[0]
+                return str(name).strip()
     except Exception:
         pass
 
-    # 2. Environment variable override
+    # 3. Environment variable override
     env_name = _os.environ.get("SIFTA_ARCHITECT_NAME", "").strip()
     if env_name:
         return env_name

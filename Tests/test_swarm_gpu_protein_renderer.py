@@ -92,3 +92,20 @@ def test_shader_sources_match_opengl_41_core_and_instance_layout():
     assert "a_radius" in sources["sphere_vertex"]
     assert "gl_FragDepth" in sources["sphere_fragment"]
     assert "u_bloom_strength" in sources["tone_map_fragment"]
+
+
+def test_heavy_pdb_geometry_loading():
+    heavy_pdb = "\n".join(
+        [f"ATOM  {i:5}  CA  ALA A{i:4}    {i*1.5:8.3f}   0.000   0.000  1.00 20.00           C" for i in range(1, 101)]
+    )
+    buffers = renderer.build_molecule_buffers_from_pdb_text(heavy_pdb)
+    
+    assert buffers.metadata["atom_count"] == 100
+    assert len(buffers.backbone_points) == 100
+    # Ribbons should be heavy
+    assert len(buffers.ribbon_vertices) > 1000
+    assert buffers.sphere_instances.shape == (100, 7)
+    
+    # 99 bonds between 100 contiguous CA atoms
+    assert len(buffers.bonds) == 99
+    assert buffers.cylinder_instances.shape == (99, 13)

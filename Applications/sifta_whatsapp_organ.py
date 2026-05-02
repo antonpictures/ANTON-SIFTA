@@ -663,6 +663,12 @@ class WhatsAppOrganWidget(QWidget):
         filter_jid = self._selected_jid  # "" = show all
         filter_aliases = set(self._selected_aliases or ({filter_jid} if filter_jid else set()))
         filter_name_norm = " ".join((self._selected_name or "").casefold().split())
+        try:
+            from System.swarm_kernel_identity import owner_display_name
+
+            owner_sender_name = owner_display_name("the Architect")
+        except Exception:
+            owner_sender_name = "the Architect"
 
         # Build unified timeline
         events = []
@@ -682,14 +688,8 @@ class WhatsAppOrganWidget(QWidget):
                 if from_jid not in filter_aliases and participant not in filter_aliases and not status_name_match:
                     continue
 
-            try:
-                from System.swarm_theory_of_mind import _resolve_creator_name
-                owner_name = _resolve_creator_name()
-            except Exception:
-                owner_name = "Architect"
-
             if from_me:
-                sender = owner_name
+                sender = owner_sender_name
                 color = _TEAL
             else:
                 sender = name or "Unknown"
@@ -720,7 +720,7 @@ class WhatsAppOrganWidget(QWidget):
                 sender = "Alice"
                 color = _PURPLE
             else:
-                sender = owner_name
+                sender = owner_sender_name
                 color = _TEAL
 
             status_badge = ""

@@ -180,10 +180,9 @@ def _canonicalize_name_claim(name: str, quote: str) -> str:
     """
     Convert a raw ASR name hit into the stable Architect-facing given name.
 
-    Whisper/transcript rows can prepend a noisy token to a full-name disclosure,
-    e.g. "my name is Iron George Anton" for "Ioan George Anton". In that case
-    # Whisper/transcript rows can prepend a noisy token.
-    # In a full biometric implementation, we cross-reference owner_genesis here.
+    Whisper/transcript rows can prepend a noisy token. In a full biometric
+    implementation, we cross-reference owner_genesis here.
+    """
     return str(name).strip()
 
 
