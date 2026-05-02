@@ -12,6 +12,24 @@ YOUTUBE_CONTEXT = (
     "YouTube video: The Matrix Reloaded Architect Scene "
     "caption_status=captions_available"
 )
+FARFIELD_FP = {
+    "truth_label": "ACOUSTIC_PLAYBACK_FINGERPRINT_V1",
+    "channel_cue": "farfield_replay_likely",
+    "farfield_replay_likelihood": 0.84,
+    "nearfield_voice_likelihood": 0.21,
+    "crest_factor": 2.8,
+    "spectral_flatness": 0.72,
+    "mfcc_coeff_std": 0.18,
+}
+NEARFIELD_FP = {
+    "truth_label": "ACOUSTIC_PLAYBACK_FINGERPRINT_V1",
+    "channel_cue": "nearfield_voice_likely",
+    "farfield_replay_likelihood": 0.22,
+    "nearfield_voice_likelihood": 0.81,
+    "crest_factor": 8.2,
+    "spectral_flatness": 0.18,
+    "mfcc_coeff_std": 0.39,
+}
 
 
 @pytest.fixture(autouse=True)
@@ -43,9 +61,38 @@ def test_direct_alice_address_still_reaches_the_cortex_during_youtube():
         "Alice, what are we watching together?",
         stt_conf=0.58,
         focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=FARFIELD_FP,
     )
 
     assert decision["route"] == "direct"
+
+
+def test_farfield_replay_during_youtube_is_observed_media_context():
+    decision = classify_spoken_ingress(
+        (
+            "the video explains acoustic fingerprints and room reverberation "
+            "as a biological cue for the auditory hierarchy"
+        ),
+        stt_conf=0.91,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=FARFIELD_FP,
+    )
+
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "acoustic_farfield_replay_with_media_focus"
+    assert decision["confidence"] >= 0.84
+
+
+def test_nearfield_voice_overrides_media_focus():
+    decision = classify_spoken_ingress(
+        "the video is interesting but I am talking to you now",
+        stt_conf=0.61,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=NEARFIELD_FP,
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "acoustic_nearfield_voice"
 
 
 def test_direct_request_still_reaches_the_cortex_during_youtube():
@@ -89,3 +136,28 @@ def test_owner_declared_bedroom_tv_youtube_is_ambient():
 
     assert decision["route"] == "ambient_media"
     assert decision["reason"] == "owner_declared_background_tv_youtube"
+
+
+def test_observed_media_receipt_preserves_acoustic_context_not_raw_audio():
+    decision = {
+        "route": "observed_media",
+        "reason": "acoustic_farfield_replay_with_media_focus",
+        "confidence": 0.84,
+    }
+    row = gate.write_gate_receipt(
+        decision,
+        text="the speaker says Alice can distinguish YouTube from George now",
+        stt_conf=0.88,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint={**FARFIELD_FP, "raw_pcm": [1, 2, 3], "samples": [4, 5]},
+    )
+
+    assert row["route"] == "observed_media"
+    assert row["acoustic_fingerprint"]["channel_cue"] == "farfield_replay_likely"
+    assert "raw_pcm" not in row["acoustic_fingerprint"]
+    assert "samples" not in row["acoustic_fingerprint"]
+
+    ctx = gate.get_latest_observed_media_context(max_age_s=10.0)
+    assert "observed_media" in ctx
+    assert "speaker says Alice" in ctx
+    assert "farfield_replay_likely" in ctx

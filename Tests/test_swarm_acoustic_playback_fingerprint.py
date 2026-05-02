@@ -32,3 +32,32 @@ def test_compute_playback_fingerprint_bounded() -> None:
     assert d["truth_label"] == apf.TRUTH_LABEL
     assert 0.0 <= d["nearfield_voice_likelihood"] <= 1.0
     assert 0.0 <= d["farfield_replay_likelihood"] <= 1.0
+    assert d.get("formula_revision") == "109b"
+    assert "hnr_proxy" in d and "am_depth" in d
+    assert len(apf.BIOACOUSTIC_STIGMERGY_ANCHORS) >= 2
+
+
+def test_recent_tail_media_context(tmp_path) -> None:
+    from System.swarm_acoustic_playback_fingerprint import append_acoustic_fingerprint_ledger
+
+    for _ in range(10):
+        append_acoustic_fingerprint_ledger(
+            {
+                "tick_id": "t",
+                "sample_rate": 16000,
+                "truth_label": "SYNTHETIC_BUFFER",
+                "playback_fingerprint": {
+                    "truth_label": apf.TRUTH_LABEL,
+                    "channel_cue": "farfield_replay_likely",
+                    "farfield_replay_likelihood": 0.9,
+                    "nearfield_voice_likelihood": 0.1,
+                    "crest_factor": 2.0,
+                    "spectral_flatness": 0.8,
+                    "mfcc_coeff_std": 0.01,
+                    "hnr_proxy": 0.1,
+                    "am_depth": 0.05,
+                },
+            },
+            state_dir=tmp_path,
+        )
+    assert apf.recent_tail_is_media_playback_context(state_dir=tmp_path, n=12, media_fraction=0.55)

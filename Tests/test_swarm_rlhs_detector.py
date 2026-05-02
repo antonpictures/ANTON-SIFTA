@@ -63,6 +63,21 @@ def test_short_very_low_conf_is_silence_probe():
     assert r.grounding_line == ""
 
 
+def test_wake_word_forces_clear():
+    """Direct address 'Alice' bypasses NOISE/DEGRADED gates."""
+    r = detect_rlhs("yo alice wake up", 0.15)
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "wake_word_override"
+
+    r2 = detect_rlhs("alice", 0.10)
+    assert r2.regime == RLHSRegime.CLEAR
+    assert r2.rule_id == "wake_word_override"
+
+    r3 = detect_rlhs("yo george wake up", 0.12)
+    assert r3.regime == RLHSRegime.CLEAR
+    assert r3.rule_id == "wake_word_override"
+
+
 # ─────────────────────────────────────────────────────────
 # 2. Clean speech → CLEAR (weights speak, no grounding line)
 # ─────────────────────────────────────────────────────────

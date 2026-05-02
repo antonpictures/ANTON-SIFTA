@@ -377,12 +377,17 @@ def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
             grounding_line="",
         )
 
-    # 2. Backchannel / phatic (exact match or short + low conf)
+    # 2. Direct Address Wake-Word Bypass
+    # If the Architect uses the organism's name, short-circuit the gate.
+    # She should never ignore a direct call, even if it's brief or in a noisy room.
+    has_wake_word = re.search(r"\b(?:alice|george|architect)\b", text, re.IGNORECASE) is not None
+
+    # 3. Backchannel / phatic (exact match or short + low conf)
     norm = text.strip().rstrip(".!?,;:").lower()
     is_phrasebook = _BACKCHANNEL_RE.match(text) is not None or norm in _BACKCHANNEL_SET
     is_short_low_conf = n_tokens <= MAX_TOKENS_NOISE_GATE and conf < CONF_CLEAR
 
-    if is_phrasebook or (is_short_low_conf and conf < CONF_DEGRADED):
+    if not has_wake_word and (is_phrasebook or (is_short_low_conf and conf < CONF_DEGRADED)):
         rule = "phrasebook_match" if is_phrasebook else "short_low_conf"
         return RLHSResult(
             regime=RLHSRegime.SILENCE_PROBE,
@@ -395,11 +400,13 @@ def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
     inc = _incoherence_score(text, conf)
 
     # 4. CLEAR — let weights speak
-    if conf >= CONF_CLEAR and inc < 0.4:
+    # If the user explicitly uses the wake word, force a CLEAR channel so the organism
+    # never ignores a direct address, even if the surrounding audio is degraded.
+    if has_wake_word or (conf >= CONF_CLEAR and inc < 0.4):
         return RLHSResult(
             regime=RLHSRegime.CLEAR,
             stt_conf=conf, text_tokens=n_tokens,
-            incoherence=inc, rule_id="clear_channel",
+            incoherence=inc, rule_id="wake_word_override" if has_wake_word else "clear_channel",
             grounding_line="",
         )
 

@@ -14,7 +14,9 @@ or narration rather than a direct prompt.
 Co-listening: this gate affects **STT routing into the dialog ledger**, not
 Alice's **ears**. Event 95 cochlea (+ ``swarm_acoustic_playback_fingerprint``)
 still ingests room audio features so the organism can sense playback vs
-near-field voice without storing raw PCM.
+near-field voice without storing raw PCM. Acoustic far-field replay becomes
+``observed_media``: not a direct prompt, but still prompt-visible context for a
+later named/direct question.
 """
 from __future__ import annotations
 
@@ -101,17 +103,77 @@ def _load_recent_ambient_context(max_age_s: float = 6 * 3600.0) -> str:
     return f"ambient_media_context source={source} note={note}".strip()
 
 
+def _tail_jsonl(path: Path, n: int = 24) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_bytes().splitlines()[-max(1, int(n)) :]
+    except OSError:
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw in lines:
+        try:
+            row = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _sanitize_acoustic_fingerprint(acoustic_fingerprint: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Keep only bounded feature scalars; never store raw PCM or arrays here."""
+    if not isinstance(acoustic_fingerprint, Mapping):
+        return {}
+    keys = (
+        "truth_label",
+        "formula_revision",
+        "channel_cue",
+        "nearfield_voice_likelihood",
+        "farfield_replay_likelihood",
+        "crest_factor",
+        "spectral_flatness",
+        "mfcc_coeff_std",
+        "hnr_proxy",
+        "am_depth",
+    )
+    out: dict[str, Any] = {}
+    for key in keys:
+        if key in acoustic_fingerprint:
+            value = acoustic_fingerprint.get(key)
+            if isinstance(value, (int, float, str, bool)) or value is None:
+                out[key] = value
+    return out
+
+
+def _acoustic_channel_cue(acoustic_fingerprint: Mapping[str, Any] | None) -> str:
+    fp = _sanitize_acoustic_fingerprint(acoustic_fingerprint)
+    cue = str(fp.get("channel_cue") or "").strip().lower()
+    if cue in {"nearfield_voice_likely", "farfield_replay_likely", "indeterminate"}:
+        return cue
+    return ""
+
+
+def _score_from_fingerprint(acoustic_fingerprint: Mapping[str, Any] | None, key: str, default: float = 0.0) -> float:
+    fp = _sanitize_acoustic_fingerprint(acoustic_fingerprint)
+    try:
+        return max(0.0, min(1.0, float(fp.get(key, default) or default)))
+    except Exception:
+        return default
+
+
 def classify_spoken_ingress(
     text: str,
     *,
     stt_conf: float = 0.0,
     focus_context: str = "",
+    acoustic_fingerprint: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Classify an STT turn as direct speech or ambient media bleed.
 
     Returns:
       {
-        "route": "direct" | "ambient_media",
+        "route": "direct" | "ambient_media" | "observed_media",
         "reason": str,
         "confidence": float,
       }
@@ -127,12 +189,33 @@ def classify_spoken_ingress(
     if DIRECT_ADDRESS_RE.search(clean) or DIRECT_REQUEST_RE.search(clean):
         return {"route": "direct", "reason": "direct_address_or_request", "confidence": 1.0}
 
+    acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
     context = "\n".join(
         x for x in (focus_context or "", _load_recent_youtube_context(), _load_recent_ambient_context()) if x
     )
     has_media_focus = bool(MEDIA_FOCUS_RE.search(context))
+
+    # If the ear says this is a near-field voice, let it pass even while a
+    # video is frontmost. Named/direct address above still wins first.
+    if acoustic_cue == "nearfield_voice_likely":
+        return {
+            "route": "direct",
+            "reason": "acoustic_nearfield_voice",
+            "confidence": max(0.55, _score_from_fingerprint(acoustic_fingerprint, "nearfield_voice_likelihood", 0.55)),
+        }
+
     if not has_media_focus:
         return {"route": "direct", "reason": "no_recent_media_focus", "confidence": 0.0}
+
+    # This is the co-listening path: speaker/YouTube audio is not a direct
+    # prompt, but it is real environmental content. Keep it as observed media
+    # context so Alice can answer about it after George/Alice is addressed.
+    if acoustic_cue == "farfield_replay_likely":
+        return {
+            "route": "observed_media",
+            "reason": "acoustic_farfield_replay_with_media_focus",
+            "confidence": max(0.70, _score_from_fingerprint(acoustic_fingerprint, "farfield_replay_likelihood", 0.70)),
+        }
 
     if AMBIENT_TV_RE.search(context):
         return {
@@ -167,26 +250,63 @@ def write_gate_receipt(
     text: str,
     stt_conf: float = 0.0,
     focus_context: str = "",
+    acoustic_fingerprint: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write an append-only media ingress row for tool truth."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    route = str(decision.get("route", "unknown") or "unknown")
     row = {
         "ts": time.time(),
         "writer": "swarm_media_ingress_gate",
-        "route": decision.get("route", "unknown"),
+        "route": route,
         "reason": decision.get("reason", ""),
         "confidence": float(decision.get("confidence", 0.0) or 0.0),
         "stt_confidence": float(stt_conf or 0.0),
         "text_preview": str(text or "")[:220],
         "focus_preview": str(focus_context or "")[:500],
+        "acoustic_fingerprint": _sanitize_acoustic_fingerprint(acoustic_fingerprint),
         "truth_note": (
-            "STT line was classified before cortex routing so ambient video "
-            "speech does not enter the conversation."
+            "STT line was classified before cortex routing. Ambient media is "
+            "kept out of direct dialog; observed media remains available as "
+            "environmental context."
         ),
     }
     with LEDGER.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
     return row
+
+
+def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: int = 360) -> str:
+    """Compact recent media-observation context for Alice's prompt block."""
+    now = time.time()
+    candidates = []
+    for row in reversed(_tail_jsonl(LEDGER, 32)):
+        route = str(row.get("route") or "")
+        if route not in {"observed_media", "ambient_media"}:
+            continue
+        try:
+            if now - float(row.get("ts", 0.0)) > max_age_s:
+                continue
+        except Exception:
+            continue
+        candidates.append(row)
+        if len(candidates) >= 3:
+            break
+    if not candidates:
+        return ""
+
+    lines: list[str] = []
+    for row in reversed(candidates):
+        fp = row.get("acoustic_fingerprint") if isinstance(row.get("acoustic_fingerprint"), dict) else {}
+        cue = str(fp.get("channel_cue") or "unknown")
+        far = fp.get("farfield_replay_likelihood", "")
+        near = fp.get("nearfield_voice_likelihood", "")
+        preview = " ".join(str(row.get("text_preview") or "").split())[:max_chars]
+        reason = str(row.get("reason") or "")
+        lines.append(
+            f"{row.get('route')} cue={cue} far={far} near={near} reason={reason}; transcript_excerpt={preview}"
+        )
+    return " | ".join(lines)
 
 
 def record_ambient_media_context(
@@ -219,6 +339,7 @@ def record_ambient_media_context(
 
 __all__ = [
     "classify_spoken_ingress",
+    "get_latest_observed_media_context",
     "record_ambient_media_context",
     "write_gate_receipt",
 ]

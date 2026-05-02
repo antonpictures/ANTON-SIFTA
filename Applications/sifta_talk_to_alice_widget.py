@@ -2420,6 +2420,22 @@ class _ContinuousListener(QObject):
                 except Exception:
                     pass
                 if not _syrinx_blocked:
+                    # ── Event 95 Cochlea (Acoustic Fingerprinting) ──
+                    # Before STT, write the physical acoustic shape to the field.
+                    # This lets the organism sense room echo / speaker replay
+                    # differently from near-field voice without storing raw PCM.
+                    try:
+                        from System.swarm_stigmergic_cochlea import analyze_and_write
+
+                        analyze_and_write(
+                            audio,
+                            sample_rate=_AUDIO_RATE,
+                            source="desktop_listener",
+                            truth_label="CONSENTED_MIC_FEATURES",
+                        )
+                    except Exception:
+                        pass
+
                     self.utterance.emit(audio)
 
 
@@ -2964,6 +2980,14 @@ def _build_swarm_context(user_text: str = "") -> str:
         heard = [h for h in heard if h]
         if heard:
             chunks.append("  recently heard: " + " | ".join(h[:60] for h in heard))
+    try:
+        from System.swarm_media_ingress_gate import get_latest_observed_media_context
+
+        media_context = get_latest_observed_media_context(max_age_s=900.0)
+        if media_context:
+            chunks.append("  observed media audio: " + media_context[:420])
+    except Exception:
+        pass
 
     swarm_block = (
         "CURRENT SWARM STATE (live, just sampled):\n" + "\n".join(chunks)
@@ -3616,6 +3640,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._dmn: Optional[_ConsciousnessWorker] = None
         self._streaming_response: List[str] = []
         self._pending_whatsapp_reply: Optional[Dict[str, str]] = None
+        self._pending_acoustic_fingerprint: Dict[str, Any] = {}
         self._listener_state = "idle"           # for the pill
         self._last_internal_drive_id: str = ""
 
@@ -4080,6 +4105,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
         if audio.size < int(_AUDIO_RATE * 0.3):
             return
+        self._pending_acoustic_fingerprint = {}
+        try:
+            from System.swarm_stigmergic_cochlea import analyze_buffer
+
+            frame = analyze_buffer(
+                audio,
+                sample_rate=_AUDIO_RATE,
+                source="talk_to_alice_stt_window",
+                truth_label="CONSENTED_MIC_FEATURES",
+            )
+            self._pending_acoustic_fingerprint = dict(frame.playback_fingerprint or {})
+        except Exception:
+            self._pending_acoustic_fingerprint = {}
         # Peak-normalise the captured utterance to ~0.9 before Whisper sees
         # it. This is independent of the toolbar gain (which mostly helps
         # the VAD trigger reliably on quiet speech) and is the single
@@ -4097,6 +4135,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_stt_failed(self, msg: str) -> None:
         self._busy = False
+        self._pending_acoustic_fingerprint = {}
         self._append_system_line(msg, error=True)
         self.set_status("STT failed.")
         self._return_to_listening()
@@ -4119,10 +4158,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         text = (text or "").strip()
         if not text:
             self._busy = False
+            self._pending_acoustic_fingerprint = {}
             self._return_to_listening()
             return
         if not text.startswith("[WhatsApp "):
             self._pending_whatsapp_reply = None
+        _acoustic_fingerprint = getattr(self, "_pending_acoustic_fingerprint", {}) or {}
+        self._pending_acoustic_fingerprint = {}
         if not already_displayed:
             self._append_user_line(text, conf)
         _log_turn("user", text, stt_conf=conf)
@@ -4305,18 +4347,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 text,
                 stt_conf=conf,
                 focus_context=_media_ctx,
+                acoustic_fingerprint=_acoustic_fingerprint,
             )
-            if _media_decision.get("route") == "ambient_media":
+            if _media_decision.get("route") in {"ambient_media", "observed_media"}:
                 row = write_gate_receipt(
                     _media_decision,
                     text=text,
                     stt_conf=conf,
                     focus_context=_media_ctx,
+                    acoustic_fingerprint=_acoustic_fingerprint,
                 )
-                note = (
-                    "(silent: ambient media transcript observed, not routed "
-                    f"to conversation; reason={row.get('reason')})"
-                )
+                if row.get("route") == "observed_media":
+                    self._history.append({
+                        "role": "system",
+                        "content": (
+                            "Observed media audio, not a direct user prompt. "
+                            f"Acoustic cue={row.get('acoustic_fingerprint', {}).get('channel_cue', 'unknown')}. "
+                            f"Transcript excerpt: {text[:260]}"
+                        ),
+                    })
+                    note = (
+                        "(observed: media audio retained as context, not routed "
+                        f"as a direct prompt; reason={row.get('reason')})"
+                    )
+                else:
+                    note = (
+                        "(silent: ambient media transcript observed, not routed "
+                        f"to conversation; reason={row.get('reason')})"
+                    )
                 _log_turn("alice", note, model="media_ingress_gate")
                 self._history.append({"role": "assistant", "content": "(silent)"})
                 self._append_system_line(note, error=False)

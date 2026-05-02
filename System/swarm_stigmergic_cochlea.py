@@ -254,6 +254,12 @@ def write_cochlea_frame(frame: CochleaFrame, ledger_path: Optional[Path] = None)
     row["raw_audio_logged"] = False
     target = ledger_path or cochlea_ledger_path()
     append_line_locked(target, json.dumps(row, sort_keys=True) + "\n")
+    try:
+        from System.swarm_acoustic_playback_fingerprint import append_acoustic_fingerprint_ledger
+
+        append_acoustic_fingerprint_ledger(row, state_dir=target.parent)
+    except Exception:
+        pass
     return row
 
 

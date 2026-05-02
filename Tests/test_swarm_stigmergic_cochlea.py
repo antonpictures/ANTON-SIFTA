@@ -64,6 +64,11 @@ def test_write_cochlea_frame_logs_features_only(tmp_path: Path) -> None:
     assert saved["mfcc"] == row["mfcc"]
     assert "playback_fingerprint" in saved
     assert saved["playback_fingerprint"].get("truth_label") == "ACOUSTIC_PLAYBACK_FINGERPRINT_V1"
+    fp_ledger = tmp_path / "acoustic_fingerprints.jsonl"
+    assert fp_ledger.exists()
+    fp_row = json.loads(fp_ledger.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert fp_row.get("truth_label") == "ACOUSTIC_FINGERPRINT_LEDGER_109b"
+    assert "fingerprint_row_id" in fp_row
 
 
 def test_capture_default_is_synthetic_and_ci_safe(tmp_path: Path) -> None:
