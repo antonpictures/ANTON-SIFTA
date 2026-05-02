@@ -9,8 +9,8 @@ the **saliency-centroid kinematics** into discrete gesture events that
 SIFTA apps can react to in real time.
 
 Why no MediaPipe / no ML:
-- Alice already runs a 16×16 saliency + motion grid at 5 Hz from her
-  real camera. Centroid trajectories of motion-weighted saliency carry
+- Alice runs a square saliency + motion grid at 5 Hz from her real camera.
+  Centroid trajectories of motion-weighted saliency carry
   enough information to recognise full-body, low-resolution gestures
   (waves, nods, approach/recede, flailing, stillness) without pulling
   in a hand-pose model.
@@ -47,12 +47,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Deque, Dict, List, Optional
 
+from System.swarm_visual_acuity_budget import infer_square_grid_side
 
 _REPO = Path(__file__).resolve().parent.parent
 _PHOTON_LEDGER = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
 
 # ── Tunables ────────────────────────────────────────────────────────────────
-_GRID = 16
+_GRID = 16  # fallback only; current eye ledgers can be 16x16, 32x32, 64x64
 _BUFFER_SECONDS = 4.0          # signal window
 _MIN_FRAMES_FOR_DECISION = 6   # decoder is silent until enough frames
 _MASS_LIVING_THRESHOLD = 25.0  # below this, the room looks empty
@@ -88,24 +89,28 @@ class _Frame:
 
 
 def _decode_saliency_q(saliency_q: str) -> Optional[List[List[int]]]:
-    if not saliency_q or len(saliency_q) != _GRID * _GRID:
+    side = infer_square_grid_side(saliency_q)
+    if side is None:
         return None
     try:
         flat = [int(c, 16) for c in saliency_q]
     except ValueError:
         return None
-    return [flat[i*_GRID:(i+1)*_GRID] for i in range(_GRID)]
+    return [flat[i*side:(i+1)*side] for i in range(side)]
 
 
 def _centroid_and_mass(grid: List[List[int]]) -> tuple[float, float, float]:
     """Return (cx_norm, cy_norm, mass). cx/cy are in [-1, +1] with origin
     at the grid centre — left/up negative, right/down positive."""
+    side = len(grid)
+    if side <= 1:
+        return 0.0, 0.0, 0.0
     total = 0.0
     sx = 0.0
     sy = 0.0
-    for r in range(_GRID):
+    for r in range(side):
         row = grid[r]
-        for c in range(_GRID):
+        for c in range(min(side, len(row))):
             v = row[c]
             if v == 0:
                 continue
@@ -114,8 +119,8 @@ def _centroid_and_mass(grid: List[List[int]]) -> tuple[float, float, float]:
             sy += r * v
     if total <= 0:
         return 0.0, 0.0, 0.0
-    cx = (sx / total) / (_GRID - 1) * 2.0 - 1.0
-    cy = (sy / total) / (_GRID - 1) * 2.0 - 1.0
+    cx = (sx / total) / (side - 1) * 2.0 - 1.0
+    cy = (sy / total) / (side - 1) * 2.0 - 1.0
     return cx, cy, total
 
 

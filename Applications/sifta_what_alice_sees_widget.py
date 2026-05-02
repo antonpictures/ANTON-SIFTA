@@ -85,6 +85,11 @@ from PyQt6.QtWidgets import (
 
 from System.sifta_base_widget import SiftaBaseWidget
 from System.ledger_append import append_ledger_line
+from System.swarm_visual_acuity_budget import (
+    configured_default_acuity,
+    configured_max_acuity,
+    build_visual_acuity_budget,
+)
 
 _REPAIR_LEDGER = Path("/Users/ioanganton/Music/ANTON_SIFTA/repair_log.jsonl")
 
@@ -92,20 +97,16 @@ _REPAIR_LEDGER = Path("/Users/ioanganton/Music/ANTON_SIFTA/repair_log.jsonl")
 _VISUAL_STIGMERGY_LOG = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
 _VISUAL_STIGMERGY_LOG.parent.mkdir(parents=True, exist_ok=True)
 
-# Saliency / motion grid resolution. Powers-of-two friendly with the
-# luminance thumbnail we sample at. Doubled from Epoch 6 defaults (was
-# 8×8 on 64×64 thumbnail — Architect reported "big pixels, too big").
-# These serve as the DEFAULT; the live slider in the toolbar overrides
-# them per-session.  Each cell = _THUMB / _GRID source pixels.
-_GRID_W = 16
-_GRID_H = 16
-_THUMB_W = 128
-_THUMB_H = 128       # square thumbnail; we letterbox the source into it
-
-# Slider bounds: architect can drag between 4×4 (very coarse, fast) and
-# 32×32 (high acuity, slightly more CPU on the M5 — still <2 ms).
+# Saliency / motion grid resolution. These serve as the default; the live
+# slider overrides them per-session. Each cell is fed by an 8x8 source patch.
+# Slider bounds: architect can drag between 4x4 (very coarse, fast) and 64x64
+# by default. The max is env-bounded by SIFTA_ALICE_EYE_MAX_ACUITY.
 _GRID_MIN = 4
-_GRID_MAX = 32
+_GRID_MAX = configured_max_acuity()
+_GRID_W = configured_default_acuity()
+_GRID_H = _GRID_W
+_THUMB_W = _GRID_W * 8
+_THUMB_H = _GRID_H * 8
 
 
 # ── Camera selection (mirrors Alice CLI's prefer/avoid posture) ──────────────
@@ -156,6 +157,10 @@ def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
                 "hue_deg": round(ph.hue_centroid_deg, 1),
                 "saliency_q": _quantize_grid_hex(ph.saliency_grid),
                 "motion_q": _quantize_grid_hex(ph.motion_grid),
+                "grid_size": ph.grid_size,
+                "total_cells": ph.total_cells,
+                "source_thumb_px": ph.source_thumb_px,
+                "visual_swimmer_budget": ph.visual_swimmer_budget,
                 "active_app_focus": app_focus,
             }, separators=(",", ":")) + "\n")
     except OSError:
@@ -315,6 +320,10 @@ class PhotonStigmergy:
     saliency_peak: float         # max raw saliency BEFORE normalization, [0..1]
     motion_mean: float           # mean of motion grid, [0..1]
     hue_centroid_deg: float      # circular-mean dominant hue, [0..360)
+    grid_size: int
+    total_cells: int
+    source_thumb_px: int
+    visual_swimmer_budget: int
 
 
 def _quantize_grid_hex(g: np.ndarray) -> str:
@@ -345,19 +354,21 @@ class _PhotonMath:
         self._thumb_h = thumb_h
         self._cell_w = thumb_w // grid_w
         self._cell_h = thumb_h // grid_h
+        self._budget = build_visual_acuity_budget(grid_w)
 
     # ── Live density adjustment (wired to the toolbar slider) ────────────
     def set_density(self, grid_size: int) -> None:
         """Reconfigure grid resolution. grid_size is used for both W and H.
         Thumbnail is always 8× the grid so each cell has 8×8 source pixels.
         """
-        grid_size = max(_GRID_MIN, min(_GRID_MAX, grid_size))
-        self._grid_w = grid_size
-        self._grid_h = grid_size
-        self._thumb_w = grid_size * 8   # 8 source pixels per cell
-        self._thumb_h = grid_size * 8
-        self._cell_w = 8
-        self._cell_h = 8
+        budget = build_visual_acuity_budget(grid_size, max_acuity=_GRID_MAX)
+        self._budget = budget
+        self._grid_w = budget.grid_size
+        self._grid_h = budget.grid_size
+        self._thumb_w = budget.source_thumb_px
+        self._thumb_h = budget.source_thumb_px
+        self._cell_w = budget.source_pixels_per_cell
+        self._cell_h = budget.source_pixels_per_cell
         # Invalidate previous luminance frame (shape changed)
         self._prev_lum = None
 
@@ -486,6 +497,10 @@ class _PhotonMath:
             saliency_peak=peak / 255.0,
             motion_mean=float(motion_grid.mean()),
             hue_centroid_deg=centroid,
+            grid_size=self._budget.grid_size,
+            total_cells=self._budget.total_cells,
+            source_thumb_px=self._budget.source_thumb_px,
+            visual_swimmer_budget=self._budget.swimmer_budget,
         )
 
 
@@ -878,7 +893,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._density_slider = QSlider(Qt.Orientation.Horizontal)
         self._density_slider.setMinimum(_GRID_MIN)
         self._density_slider.setMaximum(_GRID_MAX)
-        self._density_slider.setValue(_GRID_W)  # default doubled value (16)
+        self._density_slider.setValue(_GRID_W)
         self._density_slider.setSingleStep(2)
         self._density_slider.setPageStep(4)
         self._density_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
@@ -888,7 +903,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             "Photon density: controls the resolution of Alice's saliency \n"
             "and motion grids. Higher = finer acuity, more photons per frame.\n"
             f"Range: {_GRID_MIN}×{_GRID_MIN} (coarse) → {_GRID_MAX}×{_GRID_MAX} (sharp)\n"
-            "Default: 16×16 (doubled from original 8×8)"
+            f"Default: {_GRID_W}×{_GRID_W}; max sends {_GRID_MAX*_GRID_MAX} cells into the ledger"
         )
         self._density_slider.valueChanged.connect(self._on_density_changed)
         density_bar.addWidget(self._density_slider, 1)
@@ -1253,13 +1268,18 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._canvas.set_density(value)
         self._density_value_label.setText(f"{value}×{value}")
         self._update_photon_count_label(value)
-        self.set_status(f"Photon density: {value}×{value} ({value*value} cells, {value*8}×{value*8} source px)")
+        budget = build_visual_acuity_budget(value, max_acuity=_GRID_MAX)
+        self.set_status(
+            f"Photon density: {budget.grid_size}×{budget.grid_size} "
+            f"({budget.total_cells} cells, {budget.source_thumb_px}×{budget.source_thumb_px} source px, "
+            f"{budget.swimmer_budget} swimmers)"
+        )
 
     def _update_photon_count_label(self, grid_size: int) -> None:
-        cells = grid_size * grid_size
-        src = grid_size * 8
+        budget = build_visual_acuity_budget(grid_size, max_acuity=_GRID_MAX)
         self._photon_count_label.setText(
-            f"{cells} cells · {src}×{src} source px"
+            f"{budget.total_cells} cells · {budget.source_thumb_px}×{budget.source_thumb_px} source px · "
+            f"{budget.swimmer_budget} swimmers"
         )
 
     def _on_pause_toggled(self, paused: bool) -> None:

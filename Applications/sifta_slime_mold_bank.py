@@ -116,26 +116,30 @@ try:
 except Exception:  # pragma: no cover
     _OPTICAL_NERVE_AVAILABLE = False
 
-# Real screen photon ledger — 16x16 saliency grids written by Alice's
+from System.swarm_visual_acuity_budget import infer_square_grid_side
+
+# Real screen photon ledger — square saliency grids written by Alice's
 # visual cortex at ~5Hz from the actual desktop framebuffer.
 _PHOTON_LEDGER = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
 
 
 def _decode_saliency_q(saliency_q: str, grid_size: int = 16) -> np.ndarray:
-    """Decode the 256-char hex saliency string into a 16x16 numpy array (0..15)."""
-    if not saliency_q or len(saliency_q) != grid_size * grid_size:
-        return np.zeros((grid_size, grid_size), dtype=np.float32)
+    """Decode an NxN hex saliency string into a numpy array (0..15)."""
+
+    side = infer_square_grid_side(saliency_q) or grid_size
+    if not saliency_q or len(saliency_q) != side * side:
+        return np.zeros((side, side), dtype=np.float32)
     try:
         flat = np.array([int(c, 16) for c in saliency_q], dtype=np.float32)
-        return flat.reshape((grid_size, grid_size))
+        return flat.reshape((side, side))
     except Exception:
-        return np.zeros((grid_size, grid_size), dtype=np.float32)
+        return np.zeros((side, side), dtype=np.float32)
 
 
 def harvest_latest_photons() -> Optional[dict]:
     """Read the most recent screen-photon row from .sifta_state/visual_stigmergy.jsonl.
 
-    Returns a dict with the decoded 16x16 saliency grid plus metadata
+    Returns a dict with the decoded saliency grid plus metadata
     (hue_deg, entropy_bits, saliency_peak, ts). Returns None if the
     ledger doesn't exist yet (e.g. on a fresh node where Alice's eye
     hasn't booted).

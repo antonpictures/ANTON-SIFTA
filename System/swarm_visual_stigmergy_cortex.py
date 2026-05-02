@@ -31,6 +31,8 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
+from System.swarm_visual_acuity_budget import infer_square_grid_side
+
 try:
     from swarmrl.tasks.stigmal_555 import Stigmal555
 except ImportError:
@@ -63,20 +65,41 @@ class StigmergicVisualCortex:
             field_decay=0.8 # Decay pheromones so trails fade if object leaves
         )
         
-        # Initialize particles randomly across the 16x16 grid
+        # Initialize particles randomly across the active visual grid.
         positions = np.random.uniform(0, self.grid_size, (self.num_particles, 3))
         positions[:, 2] = 0.0 # 2D slice
         self.particles = [FakeColloid(p) for p in positions]
         
         self.task.initialize(self.particles)
+
+    def _reset_grid(self, grid_size: int) -> None:
+        if grid_size == self.grid_size:
+            return
+        self.grid_size = grid_size
+        self.task = Stigmal555(
+            particle_type=0,
+            radius=3.0,
+            alignment_weight=0.5,
+            structure_weight=0.5,
+            memory_weight=1.0,
+            grid_size=self.grid_size,
+            box_size=float(self.grid_size),
+            deposit_strength=1.0,
+            field_decay=0.8,
+        )
+        positions = np.random.uniform(0, self.grid_size, (self.num_particles, 3))
+        positions[:, 2] = 0.0
+        self.particles = [FakeColloid(p) for p in positions]
+        self.task.initialize(self.particles)
         
     def decode_saliency_q(self, q_hex: str) -> np.ndarray:
-        """Decode the 256-char hex string into a 16x16 numpy array [0..15]."""
-        if len(q_hex) != self.grid_size * self.grid_size:
+        """Decode the square hex saliency string into an NxN numpy array [0..15]."""
+        side = infer_square_grid_side(q_hex)
+        if side is None:
             return np.zeros((self.grid_size, self.grid_size), dtype=np.float32)
             
         flat = np.array([int(c, 16) for c in q_hex], dtype=np.float32)
-        grid = flat.reshape((self.grid_size, self.grid_size))
+        grid = flat.reshape((side, side))
         return grid
 
     def process_frame(self, row: dict) -> dict:
@@ -86,6 +109,8 @@ class StigmergicVisualCortex:
             
         # 1. Inject real-world visual saliency directly into the stigmergic field
         saliency_grid = self.decode_saliency_q(saliency_q)
+        if saliency_grid.shape != (self.grid_size, self.grid_size):
+            self._reset_grid(int(saliency_grid.shape[0]))
         # Normalize to max 5.0 injection
         max_val = np.max(saliency_grid)
         if max_val > 0:
