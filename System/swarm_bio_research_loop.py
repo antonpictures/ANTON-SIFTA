@@ -3,7 +3,8 @@
 System/swarm_bio_research_loop.py
 Event 105 — BioSIFTA Research Loop
 
-Pipeline: paper_chunk → claim → organ_mapping → test_proposal → receipt
+Pipeline: paper_chunk → register_claim (deterministic claim_id) → organ_mapping
+→ test_proposal → experiment receipt; tournament ranks claims by heuristic product.
 Cortex: sifta-gemma4-alice (12B daily driver) | qwen3.5:2b (scout)
 Retrieval: TF-IDF cosine over bio_papers.jsonl (no external embed deps)
 Truth label: BIOSIFTA_RESEARCH_EVENT_105
@@ -33,6 +34,25 @@ BIO_SKILLS      = _STATE / "bio_skills.jsonl"
 TOURNAMENT_LOG  = _STATE / "bio_tournament.jsonl"
 
 TRUTH_LABEL = "BIOSIFTA_RESEARCH_EVENT_105"
+CLAIM_TRUTH_UNVERIFIED = "BIO_CLAIM_UNVERIFIED"
+
+# Keywords for heuristic buildability (not exhaustive).
+_ORGAN_KEYWORDS: tuple[str, ...] = (
+    "allostatic",
+    "motor",
+    "homeostatic",
+    "crystall",
+    "colliculus",
+    "cochlea",
+    "dream",
+    "pheromone",
+    "visual",
+    "intrinsic",
+    "observability",
+    "stabilizer",
+    "rem",
+    "glymph",
+)
 
 # ── Ollama config ─────────────────────────────────────────────────────────────
 OLLAMA_BASE     = "http://localhost:11434"
@@ -72,6 +92,58 @@ def _tail(path: Path, n: int = 100) -> List[Dict[str, Any]]:
 # Bio claim schema
 # ═════════════════════════════════════════════════════════════════════════════
 
+def generate_claim_id(claim: str, source_chunk_ids: List[str]) -> str:
+    """Deterministic id from claim text + chunk id multiset (order-independent)."""
+    key = str(claim) + json.dumps(sorted(str(x) for x in source_chunk_ids), separators=(",", ":"))
+    return hashlib.sha256(key.encode()).hexdigest()[:12]
+
+
+def register_claim(
+    claim: str,
+    source_chunk_ids: List[str],
+    organ_mapping: str,
+    testable_prediction: str,
+    confidence: float = 0.5,
+    *,
+    source: str = "",
+    paper_chunk_hash: str = "",
+    model_used: str = "",
+    append_experiment: bool = True,
+) -> Dict[str, Any]:
+    """
+    Canonical claim registration — middle layer between paper chunks and experiments.
+
+    Writes `bio_claims.jsonl` with truth_label BIO_CLAIM_UNVERIFIED (claim status);
+    pipeline tag BIOSIFTA remains on supporting fields for Colosseum filters.
+    """
+    claim_id = generate_claim_id(claim, source_chunk_ids)
+    conf = max(0.0, min(1.0, float(confidence)))
+    row: Dict[str, Any] = {
+        "claim_id": claim_id,
+        "ts": time.time(),
+        "truth_label": CLAIM_TRUTH_UNVERIFIED,
+        "truth_pipeline": TRUTH_LABEL,
+        "claim": claim,
+        "source_chunk_ids": [str(x) for x in source_chunk_ids],
+        "source": source,
+        "organ_mapping": organ_mapping,
+        "testable_prediction": testable_prediction,
+        "test": testable_prediction,
+        "confidence": conf,
+        "status": "unverified",
+        "paper_chunk_hash": paper_chunk_hash or (source_chunk_ids[0] if source_chunk_ids else ""),
+        "model_used": model_used,
+    }
+    if append_experiment:
+        exp = write_experiment_proposal(row, append=False)
+        row["experiment_id"] = exp["experiment_id"]
+        _append(BIO_CLAIMS, row)
+        _append(BIO_EXPERIMENTS, exp)
+    else:
+        _append(BIO_CLAIMS, row)
+    return row
+
+
 def make_claim(
     claim: str,
     source: str,
@@ -81,6 +153,7 @@ def make_claim(
     paper_chunk_hash: str = "",
     model_used: str = "",
 ) -> Dict[str, Any]:
+    """Legacy helper: random id (tests); prefer register_claim for production."""
     return {
         "claim_id":         str(uuid.uuid4())[:12],
         "ts":               time.time(),
@@ -306,20 +379,21 @@ def process_paper_chunk(
             "confidence":   "low",
         }
 
-    claim = make_claim(
-        claim         = parsed.get("claim", ""),
-        source        = source,
-        organ_mapping = parsed.get("organ_mapping", ""),
-        test_proposal = parsed.get("test_proposal", ""),
-        status        = "unverified",
-        paper_chunk_hash = chunk_hash,
-        model_used    = model,
+    conf_raw = str(parsed.get("confidence", "low")).lower()
+    confidence_val = {"high": 0.85, "medium": 0.55, "low": 0.35}.get(conf_raw, 0.5)
+
+    claim = register_claim(
+        claim=str(parsed.get("claim", "")),
+        source_chunk_ids=[chunk_hash],
+        organ_mapping=str(parsed.get("organ_mapping", "")),
+        testable_prediction=str(parsed.get("test_proposal", "")),
+        confidence=confidence_val,
+        source=source,
+        paper_chunk_hash=chunk_hash,
+        model_used=model,
+        append_experiment=True,
     )
-    claim["confidence"] = parsed.get("confidence", "low")
-    experiment = write_experiment_proposal(claim, append=False)
-    claim["experiment_id"] = experiment["experiment_id"]
-    _append(BIO_CLAIMS, claim)
-    _append(BIO_EXPERIMENTS, experiment)
+    claim["confidence_label"] = parsed.get("confidence", "low")
     return claim
 
 
@@ -364,6 +438,100 @@ def ingest_paper(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# Heuristic claim tournament (novelty × buildability × testability × source_quality)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def _token_set(text: str) -> set[str]:
+    return set(_tokenize(text))
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a and not b:
+        return 0.0
+    inter = len(a & b)
+    union = len(a | b) or 1
+    return inter / union
+
+
+def score_claim_heuristics(
+    claim_row: Dict[str, Any],
+    all_claim_texts: List[str],
+) -> Dict[str, float]:
+    """
+    Local, receipt-grade scores in [0,1] (except composite uses product with floor).
+    Not a substitute for LLM judgment — a deterministic prior for ranking.
+    """
+    claim_text = str(claim_row.get("claim", ""))
+    organ = str(claim_row.get("organ_mapping", "")).lower()
+    pred = str(
+        claim_row.get("testable_prediction", claim_row.get("test", claim_row.get("test_proposal", "")))
+    )
+    src_field = str(claim_row.get("source", ""))
+    chunk_ids = claim_row.get("source_chunk_ids")
+    if chunk_ids is None:
+        chunk_ids = []
+    if isinstance(chunk_ids, str):
+        chunk_ids = [chunk_ids] if chunk_ids else []
+
+    me = _token_set(claim_text)
+    overlaps: List[float] = []
+    for other in all_claim_texts:
+        if other == claim_text:
+            continue
+        overlaps.append(_jaccard(me, _token_set(other)))
+    max_ov = max(overlaps) if overlaps else 0.0
+    novelty = max(0.05, min(1.0, 1.0 - max_ov))
+
+    build = 0.1
+    for kw in _ORGAN_KEYWORDS:
+        if kw in organ:
+            build += 0.12
+    buildability = max(0.05, min(1.0, build))
+
+    tlen = len(pred)
+    testability = 0.08 + min(0.55, tlen / 220.0)
+    low = pred.lower()
+    if "pytest" in low or "assert " in low:
+        testability += 0.15
+    if any(x in low for x in ("measure", "metric", "correlation", "spearman", "p <")):
+        testability += 0.1
+    testability = max(0.05, min(1.0, testability))
+
+    source_quality = min(1.0, 0.15 + 0.22 * len(chunk_ids))
+    if re.search(r"10\.\d{4,}/", src_field) or "arxiv" in src_field.lower():
+        source_quality = min(1.0, source_quality + 0.2)
+
+    eps = 0.05
+    composite = (
+        max(eps, novelty)
+        * max(eps, buildability)
+        * max(eps, testability)
+        * max(eps, source_quality)
+    )
+    return {
+        "novelty": round(novelty, 4),
+        "buildability": round(buildability, 4),
+        "testability": round(testability, 4),
+        "source_quality": round(source_quality, 4),
+        "composite": round(composite, 6),
+    }
+
+
+def rank_claims_heuristic(claim_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return claim rows annotated with _heuristic scores, sorted by composite desc."""
+    texts = [str(c.get("claim", "")) for c in claim_rows]
+    enriched: List[Dict[str, Any]] = []
+    for c in claim_rows:
+        scores = score_claim_heuristics(c, texts)
+        row = dict(c)
+        row["_heuristic"] = scores
+        enriched.append(row)
+    enriched.sort(key=lambda r: float(r["_heuristic"]["composite"]), reverse=True)
+    return enriched
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Nightly bio tournament
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -398,9 +566,30 @@ def run_bio_tournament(
     papers  = retrieve_papers(query, k=n_papers)
 
     if not papers and not dry_run:
+        claims_tail = _tail(BIO_CLAIMS, n=300)
+        ranked_claims = rank_claims_heuristic(claims_tail)
+        claim_tournament: List[Dict[str, Any]] = []
+        for r in ranked_claims[:40]:
+            h = r.get("_heuristic", {})
+            claim_tournament.append(
+                {
+                    "claim_id": r.get("claim_id"),
+                    "claim": (str(r.get("claim", ""))[:200]),
+                    "organ_mapping": (str(r.get("organ_mapping", ""))[:120]),
+                    "novelty": h.get("novelty"),
+                    "buildability": h.get("buildability"),
+                    "testability": h.get("testability"),
+                    "source_quality": h.get("source_quality"),
+                    "composite": h.get("composite"),
+                }
+            )
         receipt = {
-            "ts": time.time(), "truth_label": TRUTH_LABEL,
-            "status": "NO_PAPERS", "message": "bio_papers.jsonl is empty.",
+            "ts": time.time(),
+            "truth_label": TRUTH_LABEL,
+            "status": "NO_PAPERS",
+            "message": "bio_papers.jsonl is empty.",
+            "claim_tournament": claim_tournament,
+            "top_claim_heuristic": claim_tournament[0] if claim_tournament else None,
         }
         _append(TOURNAMENT_LOG, receipt)
         return receipt
@@ -436,7 +625,26 @@ def run_bio_tournament(
         except Exception:
             scores = []
 
-    # Step 4: receipt
+    # Step 4: heuristic claim ranking (novelty × buildability × testability × source_quality)
+    claims_tail = _tail(BIO_CLAIMS, n=300)
+    ranked_claims = rank_claims_heuristic(claims_tail)
+    claim_tournament: List[Dict[str, Any]] = []
+    for r in ranked_claims[:40]:
+        h = r.get("_heuristic", {})
+        claim_tournament.append(
+            {
+                "claim_id": r.get("claim_id"),
+                "claim": (str(r.get("claim", ""))[:200] + ("…" if len(str(r.get("claim", ""))) > 200 else "")),
+                "organ_mapping": (str(r.get("organ_mapping", ""))[:120]),
+                "novelty": h.get("novelty"),
+                "buildability": h.get("buildability"),
+                "testability": h.get("testability"),
+                "source_quality": h.get("source_quality"),
+                "composite": h.get("composite"),
+            }
+        )
+
+    # Step 5: receipt
     receipt = {
         "ts":           time.time(),
         "truth_label":  TRUTH_LABEL,
@@ -447,6 +655,8 @@ def run_bio_tournament(
         "scores":       scores,
         "winner":       max(scores, key=lambda x: x.get("total", 0)) if scores else {},
         "model_used":   model,
+        "claim_tournament": claim_tournament,
+        "top_claim_heuristic": claim_tournament[0] if claim_tournament else None,
     }
     _append(TOURNAMENT_LOG, receipt)
     return receipt
@@ -479,20 +689,36 @@ def register_bio_skill(
     return skill
 
 
+class BioResearchLoop:
+    """Thin static façade — ingest, digest, crystallize (no new base BioLLM)."""
+
+    ingest_paper = staticmethod(ingest_paper)
+    retrieve_papers = staticmethod(retrieve_papers)
+    register_claim = staticmethod(register_claim)
+    register_bio_skill = staticmethod(register_bio_skill)
+    run_bio_tournament = staticmethod(run_bio_tournament)
+
+
 __all__ = [
     "BIO_CLAIMS",
     "BIO_EXPERIMENTS",
     "BIO_PAPERS",
     "BIO_SKILLS",
+    "BioResearchLoop",
+    "CLAIM_TRUTH_UNVERIFIED",
     "TOURNAMENT_LOG",
     "TRUTH_LABEL",
+    "generate_claim_id",
     "ingest_paper",
     "make_claim",
     "make_experiment_proposal",
     "process_paper_chunk",
+    "rank_claims_heuristic",
     "register_bio_skill",
+    "register_claim",
     "retrieve_papers",
     "run_bio_tournament",
+    "score_claim_heuristics",
     "write_experiment_proposal",
 ]
 

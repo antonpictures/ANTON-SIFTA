@@ -47,6 +47,28 @@ def test_make_claim_schema():
     assert len(c["claim_id"]) == 12
 
 
+# ── 2b. register_claim deterministic id + BIO_CLAIM_UNVERIFIED ───────────────
+
+def test_register_claim_id_and_schema(tmp_path, monkeypatch):
+    import System.swarm_bio_research_loop as mod
+    monkeypatch.setattr(mod, "BIO_CLAIMS", tmp_path / "bio_claims.jsonl")
+    monkeypatch.setattr(mod, "BIO_EXPERIMENTS", tmp_path / "bio_experiments.jsonl")
+
+    row = mod.register_claim(
+        "Chronic stress biases repair over exploration.",
+        source_chunk_ids=["chunk_a", "chunk_b"],
+        organ_mapping="allostatic_load + motor_policy",
+        testable_prediction="pytest: high load → forage or rest dominates",
+        confidence=0.7,
+        source="doi:10.0000/test",
+    )
+    assert row["truth_label"] == mod.CLAIM_TRUTH_UNVERIFIED
+    assert mod.generate_claim_id(row["claim"], ["chunk_b", "chunk_a"]) == row["claim_id"]
+    assert len(row["claim_id"]) == 12
+    saved = [json.loads(l) for l in (tmp_path / "bio_claims.jsonl").read_text().splitlines()]
+    assert saved[0]["experiment_id"] == row["experiment_id"]
+
+
 # ── 3. process_paper_chunk dry_run ───────────────────────────────────────────
 
 def test_process_paper_chunk_dry_run(tmp_path, monkeypatch):
@@ -112,6 +134,33 @@ def test_tfidf_scores_length(tmp_path):
 
 
 # ── 6. Tournament dry_run runs and returns receipt ────────────────────────────
+
+def test_run_bio_tournament_includes_heuristic_claim_ranking(tmp_path, monkeypatch):
+    import System.swarm_bio_research_loop as mod
+    monkeypatch.setattr(mod, "BIO_PAPERS", tmp_path / "bio_papers.jsonl")
+    monkeypatch.setattr(mod, "BIO_CLAIMS", tmp_path / "bio_claims.jsonl")
+    monkeypatch.setattr(mod, "BIO_SKILLS", tmp_path / "bio_skills.jsonl")
+    monkeypatch.setattr(mod, "BIO_EXPERIMENTS", tmp_path / "bio_experiments.jsonl")
+    monkeypatch.setattr(mod, "TOURNAMENT_LOG", tmp_path / "bio_tournament.jsonl")
+
+    mod.register_claim(
+        "alpha unique claim about quantum qubits unrelated",
+        source_chunk_ids=["c1"],
+        organ_mapping="none",
+        testable_prediction="x",
+        append_experiment=False,
+    )
+    mod.register_claim(
+        "motor cortex basal ganglia habit loop requires pytest assert",
+        source_chunk_ids=["c2", "c3"],
+        organ_mapping="motor_policy crystallized skills",
+        testable_prediction="assert motor selects forage when skills say so using pytest",
+        append_experiment=False,
+    )
+    receipt = mod.run_bio_tournament(n_papers=2, n_ideas=2, dry_run=True)
+    assert receipt.get("claim_tournament")
+    assert receipt["top_claim_heuristic"]["composite"] >= receipt["claim_tournament"][-1]["composite"]
+
 
 def test_run_bio_tournament_dry_run(tmp_path, monkeypatch):
     import System.swarm_bio_research_loop as mod

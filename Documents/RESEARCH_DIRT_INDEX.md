@@ -46,7 +46,7 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Qwopus** | Seam/heal FT metrics; stall detector. |
 | **Moonshot PRF** | Legal review; reproduce paper figure. |
 | **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router without treating metaphors as proof. |
-| **Physiology (parallel hill)** | **Events 102–105 + 110** on `main` (allostatic, motor policy, observability, **BioSIFTA research loop**, **LLM-bearing organism manifest**); wire `deposit_observation` from hot paths + nightly health snapshots. BioSIFTA now emits paper chunks → claims → experiment proposals; next lane is adapter/LoRA selection only after receipts + local hardware review. **Event 98c** showpiece; **CUSUM / Page** §F.1. |
+| **Physiology (parallel hill)** | **Events 102–105 + 110** on `main` (allostatic, motor policy, observability, **BioSIFTA research loop**, **LLM-bearing organism manifest**); wire `deposit_observation` from hot paths + nightly health snapshots. BioSIFTA emits paper chunks → **`register_claim`** (deterministic `claim_id` + `BIO_CLAIM_UNVERIFIED`) → `bio_experiments` → **`run_bio_tournament`** heuristic (`novelty×buildability×testability×source_quality`); next lane is adapter/LoRA only after receipt density + hardware review. **Event 98c** showpiece; **CUSUM / Page** §F.1. |
 | **§A YouTube / stack dirt** | All **11** rows remain **`RESEARCH_NOT_SHIPPED`** until each stack wins its own bake-off (this table). |
 
 **Watch window note:** Three IDE bodies + `ide_stigmergic_trace.jsonl` as the honest scoreboard. Colosseum lights stay on for bake-offs and Event 98c / crystallizer–motor closure work.
@@ -71,7 +71,7 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 | **102** | Allostatic load regulator (stress window → policy + `allostatic_load.jsonl`) | `020530e6` | **SHIPPED** |
 | **103** | Skill-weighted motor policy (`crystallized_skills.json` → `motor_policy.jsonl`, basal-ganglia-style candidate pick) | `33426ca0` | **SHIPPED** |
 | **104** | Stigmergic observability layer (`stigmergic_observability.jsonl`, `causal_parent_ids`, `audit_trace_health`, health snapshots) | `6ed51171` | **SHIPPED** |
-| **105** | BioSIFTA research loop (`bio_papers` → `bio_claims` → `bio_experiments` → `bio_tournament` / `bio_skills`) | `8c69622c` | **SHIPPED** |
+| **105** | BioSIFTA research loop (`register_claim`, TF-IDF retrieve, experiments, heuristic `claim_tournament`, skills) | `EVENT105_HASH` | **SHIPPED** |
 | **110** | LLM-bearing organism substrate (`llm_organism_state.jsonl`, manifest + `get_current_regime_summary`) | `67da0a98` | **SHIPPED** |
 | **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
 
