@@ -169,6 +169,8 @@ def compute_policy_bias(
     jsonl_tail: int = 50,
     regime: Optional[str] = None,
     crystallizer_gate: float = 1.0,
+    novelty_explore_mass: float = 0.0,
+    novelty_forage_mass: float = 0.0,
 ) -> Dict[str, float]:
     """
     Map action_type -> non-negative weight (unnormalized).
@@ -218,6 +220,11 @@ def compute_policy_bias(
         weight *= gate
         bias[action] = bias.get(action, 0.0) + weight
 
+    if novelty_explore_mass > 0.0:
+        bias["explore"] = bias.get("explore", 0.0) + novelty_explore_mass
+    if novelty_forage_mass > 0.0:
+        bias["forage"] = bias.get("forage", 0.0) + novelty_forage_mass
+
     return bias
 
 
@@ -230,6 +237,8 @@ def select_action_type_from_skills(
     epsilon: float = 0.08,
     regime: Optional[str] = None,
     crystallizer_gate: float = 1.0,
+    novelty_explore_mass: float = 0.0,
+    novelty_forage_mass: float = 0.0,
 ) -> Tuple[str, Dict[str, float]]:
     """
     Pick one candidate action *type* using crystallized skill mass + uniform floor.
@@ -248,6 +257,8 @@ def select_action_type_from_skills(
         jsonl_tail=jsonl_tail,
         regime=regime,
         crystallizer_gate=crystallizer_gate,
+        novelty_explore_mass=novelty_explore_mass,
+        novelty_forage_mass=novelty_forage_mass,
     )
     scores: Dict[str, float] = {}
     for c in cands:

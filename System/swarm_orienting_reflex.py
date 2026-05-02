@@ -1,95 +1,129 @@
-# System/swarm_orienting_reflex.py
+#!/usr/bin/env python3
+"""Event 113: orienting reflex from hippocampal novelty + collicular salience.
 
+The superior colliculus says "something salient happened." The hippocampal
+novelty map says "this does or does not match memory." The orienting reflex is
+the small, receipt-backed bridge that turns those two signals into a bounded
+attention/memory/exploration command.
 """
-Event 113 — Orienting Reflex
-Blends hippocampal novelty with collicular salience to trigger an orienting reflex.
-"""
+from __future__ import annotations
 
 import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-_DEFAULT_STATE = Path(".sifta_state")
-NOVELTY = "hippocampal_novelty_map.jsonl"
-COLLICULUS = "superior_colliculus.jsonl"
-REFLEX = "orienting_reflex.jsonl"
+from System.jsonl_file_lock import append_line_locked, read_text_locked
+
+DEFAULT_STATE = Path(".sifta_state")
+NOVELTY_LOG = "hippocampal_novelty_map.jsonl"
+COLLICULUS_LOG = "superior_colliculus.jsonl"
+REFLEX_LOG = "orienting_reflex.jsonl"
+TRUTH_LABEL = "SIMULATED_ORIENTING_REFLEX"
 
 
-def clamp01(v: float) -> float:
-    return max(0.0, min(1.0, float(v)))
+def clamp01(value: Any, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        return default
+    return max(0.0, min(1.0, number))
 
 
-def read_tail(path: Path, n: int = 1) -> List[Dict[str, Any]]:
+def _state_dir(state_root: Optional[Path] = None, state_dir: Optional[Path] = None) -> Path:
+    root = state_root if state_root is not None else state_dir
+    return Path(root) if root is not None else DEFAULT_STATE
+
+
+def read_tail(path: Path, n: int = 1) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    rows = []
-    for line in path.read_text(errors="ignore").splitlines()[-n:]:
+    try:
+        body = read_text_locked(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in body.splitlines()[-max(1, int(n)) :]:
         try:
-            rows.append(json.loads(line))
+            row = json.loads(line)
         except Exception:
-            pass
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
     return rows
 
 
-def compute_orienting_reflex(state_dir: Optional[Path] = None) -> Dict[str, Any]:
-    sd = state_dir if state_dir is not None else _DEFAULT_STATE
-    
-    novelty_rows = read_tail(sd / NOVELTY, 1)
-    colliculus_rows = read_tail(sd / COLLICULUS, 1)
-    
-    novelty_score = 0.0
-    if novelty_rows:
-        novelty_score = clamp01(novelty_rows[-1].get("novelty_score", 0.0))
-        
-    salience = 0.0
-    if colliculus_rows:
-        salience = clamp01(colliculus_rows[-1].get("integrated_salience", 0.0))
-        
-    # Blends novelty_score with integrated_salience (plus a small cross-term)
+def _latest_novelty(root: Path) -> dict[str, Any]:
+    rows = read_tail(root / NOVELTY_LOG, 1)
+    return rows[-1] if rows else {}
+
+
+def _latest_colliculus(root: Path) -> dict[str, Any]:
+    rows = read_tail(root / COLLICULUS_LOG, 1)
+    return rows[-1] if rows else {}
+
+
+def compute_orienting(
+    state_root: Optional[Path] = None,
+    *,
+    state_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    root = _state_dir(state_root, state_dir)
+    novelty = _latest_novelty(root)
+    colliculus = _latest_colliculus(root)
+
+    novelty_score = clamp01(novelty.get("novelty_score", 0.0))
+    novelty_phase = str(novelty.get("phase") or "NO_MEMORY")
+    salience = clamp01(
+        colliculus.get("integrated_salience", colliculus.get("salience", 0.0))
+    )
+
     cross_term = novelty_score * salience
-    raw_trigger = (0.5 * novelty_score) + (0.5 * salience) + (0.2 * cross_term)
-    orienting_intensity = clamp01(raw_trigger)
-    
-    orient_trigger = bool(orienting_intensity > 0.6)
-    
-    attention_gain = 1.0 + (1.5 * orienting_intensity)
-    memory_encode_bias = 1.0 + (1.2 * orienting_intensity)
-    explore_bias = 1.0 + (0.8 * orienting_intensity)
+    orienting_intensity = clamp01(0.45 * novelty_score + 0.45 * salience + 0.25 * cross_term)
+    orient_trigger = orienting_intensity >= 0.60
+
+    command = {
+        "attention_gain": round(1.0 + 1.5 * orienting_intensity, 4),
+        "memory_encode_bias": round(1.0 + 1.2 * orienting_intensity, 4),
+        "explore_bias": round(1.0 + 0.8 * orienting_intensity, 4),
+    }
+    td_bias = round((0.35 if orient_trigger else 0.10) * orienting_intensity, 4)
 
     return {
         "ts": time.time(),
         "trace_id": str(uuid.uuid4()),
-        "truth_label": "SIMULATED_ORIENTING_REFLEX",
+        "truth_label": TRUTH_LABEL,
+        "schema_version": "orienting_reflex.event113.v1",
+        "novelty_trace_id": str(novelty.get("trace_id") or novelty.get("tick_id") or ""),
+        "colliculus_trace_id": str(colliculus.get("trace_id") or colliculus.get("tick_id") or ""),
+        "novelty_phase": novelty_phase,
         "novelty_score": round(novelty_score, 4),
         "integrated_salience": round(salience, 4),
         "orienting_intensity": round(orienting_intensity, 4),
-        "orient_trigger": orient_trigger,
-        "command": {
-            "attention_gain": round(attention_gain, 4),
-            "memory_encode_bias": round(memory_encode_bias, 4),
-            "explore_bias": round(explore_bias, 4),
-        }
+        "orient_trigger": bool(orient_trigger),
+        "td_bias": td_bias,
+        "command": command,
+        "raw_audio_logged": False,
     }
 
 
-def write_orienting_reflex(state_dir: Optional[Path] = None) -> Dict[str, Any]:
-    sd = state_dir if state_dir is not None else _DEFAULT_STATE
-    sd.mkdir(parents=True, exist_ok=True)
-    
-    row = compute_orienting_reflex(sd)
-    out_path = sd / REFLEX
-    line = json.dumps(row, sort_keys=True) + "\n"
-    
-    try:
-        from System.jsonl_file_lock import append_line_locked
-        append_line_locked(out_path, line, encoding="utf-8")
-    except ImportError:
-        with out_path.open("a", encoding="utf-8") as f:
-            f.write(line)
-            
+def compute_orienting_reflex(state_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Backward-compatible name used by early Event 113 sketches."""
+    return compute_orienting(state_dir=state_dir)
+
+
+def write_orienting_reflex(
+    state_root: Optional[Path] = None,
+    *,
+    state_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    root = _state_dir(state_root, state_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    row = compute_orienting(state_root=root)
+    append_line_locked(root / REFLEX_LOG, json.dumps(row, sort_keys=True) + "\n")
     return row
+
 
 if __name__ == "__main__":
     print(json.dumps(write_orienting_reflex(), indent=2, sort_keys=True))

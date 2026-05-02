@@ -22,7 +22,7 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-02T08:42:00-07:00` — *Codex/CG55M/AG31 stigbus: **§0.11 555 sealed** — per-turn RLHS fields on Alice conversation ledger, RLHS spike traces, nightly audit metric, Event 109 collective intent vector.* **Event 112–113 (CG55M):** hippocampal novelty map (`hippocampal_novelty_map.jsonl`) + orienting reflex (`orienting_reflex.jsonl`) — pytest green; **GO** still required to wire into `SwarmPhysiology` / desktop tick. |
+| **Stamp (local ISO)** | `2026-05-02T08:50:00-07:00` — *Codex/CG55M/AG31 stigbus: **§0.11 555 sealed** — per-turn RLHS fields on Alice conversation ledger, RLHS spike traces, nightly audit metric, Event 109 collective intent vector.* **Event 112–113:** hippocampal novelty map (`hippocampal_novelty_map.jsonl`) + orienting reflex (`orienting_reflex.jsonl`) — pytest green; **wired into `SwarmPhysiology.body_brain_tick()`** with `orienting_*` ledger stamps and TD bias. |
 | **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
 | **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
 | **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) |
@@ -52,7 +52,7 @@
 | **Event 98b — SC → body-brain integrator** | **SHIPPED** — tail **phenotype + cochlea + owl** ledgers → `integrated_salience` → `td_value` boost on validated `body_brain_tick` (`truth_label=MULTISENSORY_COLLICULUS_MERGE`); **Meredith/Stein temporal** on receipt `ts` (τ≈0.25s) + **spatial** owl azimuth vs `u_heading`; **not** auto-wired into `SwarmPhysiology` until GO | `System/swarm_superior_colliculus_integrator.py` · `tests/test_swarm_superior_colliculus_integrator.py` |
 | **Event 99 — Multi-prover agreement (MIP-inspired)** | **SHIPPED (v1)** — append-only `.sifta_state/multi_prover_claims.jsonl` + `multi_prover_verdicts.jsonl`; quorum on `claim_hash` with **distinct agents** (not duplicate lines); **agreement ≠ truth** — receipt for tournament / RLHF quarantine routing; SoT spine: [BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md) | `System/swarm_multi_prover_verifier.py` · `tests/test_swarm_multi_prover_verifier.py` |
 | **Event 112 — Hippocampal novelty map** | **SHIPPED** — tail fingerprints over `body_brain_memory` + vision/cochlea/SC ledgers → `novelty_score` / phase (`NOVEL` / `MIXED` / `FAMILIAR` / `NO_MEMORY`); append-only `.sifta_state/hippocampal_novelty_map.jsonl`; `SIMULATED_HIPPOCAMPAL_NOVELTY` | `System/swarm_hippocampal_novelty_map.py` · `tests/test_swarm_hippocampal_novelty_map.py` |
-| **Event 113 — Orienting reflex** | **SHIPPED** — last novelty row + last SC `integrated_salience` → `orienting_intensity`, `orient_trigger`, and `command` (attention / memory encode / explore biases); append-only `.sifta_state/orienting_reflex.jsonl`; `SIMULATED_ORIENTING_REFLEX`; **not** auto-wired into `SwarmPhysiology` until Architect **GO** | `System/swarm_orienting_reflex.py` · `tests/test_swarm_orienting_reflex.py` |
+| **Event 113 — Orienting reflex** | **SHIPPED + WIRED** — last novelty row + last SC `integrated_salience` → `orienting_intensity`, `orient_trigger`, `td_bias`, and `command` (attention / memory encode / explore biases); append-only `.sifta_state/orienting_reflex.jsonl`; `SIMULATED_ORIENTING_REFLEX`; `SwarmPhysiology.body_brain_tick()` writes `orienting_*` fields to `body_brain_memory.jsonl` | `System/swarm_orienting_reflex.py` · `tests/test_swarm_orienting_reflex.py` · `System/swarm_body_brain_loop.py` |
 | **Bishop research (plasticity)** | **DOCS** — Bliss–Lømo; Schultz RPE; Sutton–Barto; Sterling–Eyer; Friston | [BISHOP_drop_biology_drive_plasticity_v1.dirt](Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt) |
 
 ### 0.4 — **Red Queen Colosseum — Phase III (hill law: chop every enemy)**
@@ -172,6 +172,17 @@
 | **Active inference** | Friston (2010) Nat Rev Neurosci — [doi:10.1038/nrn2787](https://doi.org/10.1038/nrn2787) | Perception–action loops bounded by the world model ledger. |
 | **Sensorimotor learning** | Wolpert & Ghahramani (2000) Phil Trans R Soc A — [doi:10.1098/rsta.2000.0558](https://doi.org/10.1098/rsta.2000.0558) | **Crystallized skills** feeding the motor policy. |
 | **Allostasis / interoception** | Sterling & Eyer (1988); Barrett & Simmons (2015) Neuron — [doi:10.1016/j.neuron.2015.09.017](https://doi.org/10.1016/j.neuron.2015.09.017) | **Organism health**, drives, and homeostasis gating. |
+
+### 0.12 — **Event 112/113 — CA1 Novelty Gate & Orienting Reflex**
+
+**Truth labels:** **`SIMULATED_HIPPOCAMPAL_NOVELTY`**, **`SIMULATED_ORIENTING_REFLEX`**
+
+| Artifact | Role | SoT |
+|:---|:---|:---|
+| **Hippocampal Novelty Map** | Tails `body_brain_memory.jsonl` to emit `NOVEL`/`FAMILIAR` phase and `novelty_score`. | `System/swarm_hippocampal_novelty_map.py` |
+| **Novelty Metabolic Gate** | CA1 match/mismatch comparator that governs metabolism (FAMILIAR clamps, NOVEL relaxes). | `System/swarm_body_brain_loop.py` |
+| **Orienting Reflex** | Blends hippocampal novelty with collicular salience to direct attention/exploration. | `System/swarm_orienting_reflex.py` |
+| **Research anchors** | Kumaran & Maguire (2007) match-mismatch CA1; Duncan et al. fMRI CA1. | |
 
 ### 0.2 — NVIDIA open assets (join lane — **real physics / real data**)
 

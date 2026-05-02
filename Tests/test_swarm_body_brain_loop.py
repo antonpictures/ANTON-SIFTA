@@ -177,6 +177,34 @@ def test_body_brain_tick_blocks_autonomy_when_reset_ledgers_are_cold(clean_state
     assert row["reset_recovery_gate"] == "BLOCK"
 
 
+def test_body_brain_tick_wires_orienting_reflex(clean_state):
+    _warm_reset_ledgers(clean_state)
+    body = clean_state / "body_brain_memory.jsonl"
+    body.write_text(
+        "\n".join(json.dumps({"ts": 1.0 + i, "action": {"type": f"explore_{i}"}}) for i in range(10)) + "\n",
+        encoding="utf-8",
+    )
+    (clean_state / "superior_colliculus.jsonl").write_text(
+        json.dumps({"ts": 2.0, "integrated_salience": 0.9, "trace_id": "sc-1"}) + "\n",
+        encoding="utf-8",
+    )
+    physiology = SwarmPhysiology(enable_george_prior=False)
+    healthy_state = MetabolicState(usd_burn_24h=0.0, local_units_24h=0.0, stgm_balance=150.0)
+
+    with patch("System.swarm_body_brain_loop.MetabolicHomeostat.sample_live", return_value=healthy_state):
+        with patch("time.sleep"):
+            result = physiology.body_brain_tick()
+
+    orient = result["orienting_reflex"]
+    assert orient["truth_label"] == "SIMULATED_ORIENTING_REFLEX"
+    assert orient["orient_trigger"] is True
+    assert orient["command"]["attention_gain"] > 1.0
+    assert (clean_state / "orienting_reflex.jsonl").exists()
+    row = json.loads((clean_state / "body_brain_memory.jsonl").read_text().splitlines()[-1])
+    assert row["orient_trigger"] is True
+    assert row["orienting_intensity"] == orient["orienting_intensity"]
+
+
 def test_critical_danger_suppresses_drive_bias_even_with_receipt(clean_state):
     physiology = SwarmPhysiology(enable_george_prior=False)
     receipt = {

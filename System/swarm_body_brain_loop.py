@@ -75,6 +75,13 @@ except Exception:
     def compute_novelty_gate(*a, **kw): return None  # type: ignore
 
 try:
+    from System.swarm_orienting_reflex import write_orienting_reflex
+    _ORIENTING_REFLEX_AVAILABLE = True
+except Exception:
+    _ORIENTING_REFLEX_AVAILABLE = False
+    def write_orienting_reflex(**kw): return {}  # type: ignore
+
+try:
     from System.swarm_motor_policy import (
         select_action_type_from_skills,
         write_motor_policy_row,
@@ -138,6 +145,71 @@ def _no_drive_bias_fields() -> Dict[str, Any]:
     return _drive_bias_fields(None)
 
 
+def _apply_novelty_metabolic_gate(
+    homeostat: MetabolicHomeostat,
+    danger: Dict[str, Any],
+    novelty_frame: Any,
+) -> Dict[str, Any]:
+    """CA1-style match/mismatch → metabolic governor (FAMILIAR clamps, NOVEL relaxes).
+
+    Does not mask true starvation: if the pre-gate state is already critical,
+    the gate is skipped so RED/CRITICAL pressure cannot be hidden by novelty.
+    """
+    out = dict(danger)
+    phase = str(getattr(novelty_frame, "phase", "") or "")
+    if bool(out.get("is_critical")):
+        out["novelty_metabolic_gate"] = "SKIPPED_CRITICAL"
+        out["novelty_phase_echo"] = phase
+        return out
+    raw_p = float(out.get("pressure", 0.0) or 0.0)
+    if phase == "FAMILIAR":
+        factor = 1.1
+    elif phase == "NOVEL":
+        factor = 0.82
+    else:
+        factor = 1.0
+    adj = max(0.0, min(1.0, raw_p * factor))
+    out["pressure"] = adj
+    out["mode"] = homeostat.mode(adj)
+    out["is_critical"] = out["mode"] in ("RED_CONSERVE", "CRITICAL_STARVATION")
+    out["novelty_phase"] = phase
+    out["novelty_pressure_factor"] = factor
+    out["novelty_metabolic_gate"] = "APPLIED"
+    return out
+
+
+def _apply_novelty_metabolic_gate(
+    homeostat: MetabolicHomeostat,
+    danger: Dict[str, Any],
+    novelty_frame: Any,
+) -> Dict[str, Any]:
+    """CA1-style match/mismatch → metabolic governor (FAMILIAR clamps, NOVEL relaxes).
+    Does not mask true starvation: if the pre-gate state is already critical,
+    the gate is skipped so RED/CRITICAL pressure cannot be ``hidden'' by novelty.
+    """
+    out = dict(danger)
+    if novelty_frame is None:
+        return out
+    phase = str(getattr(novelty_frame, "phase", "") or "")
+    if bool(out.get("is_critical")):
+        out["novelty_metabolic_gate"] = "SKIPPED_CRITICAL"
+        out["novelty_phase_echo"] = phase
+        return out
+
+    if phase == "FAMILIAR":
+        out["pressure"] = min(1.0, out.get("pressure", 0.0) + 0.15)
+        out["mode"] = homeostat.mode(out["pressure"])
+        out["novelty_metabolic_gate"] = "FAMILIAR_CLAMP"
+    elif phase == "NOVEL":
+        out["pressure"] = max(0.0, out.get("pressure", 0.0) - 0.15)
+        out["mode"] = homeostat.mode(out["pressure"])
+        out["novelty_metabolic_gate"] = "NOVEL_RELAX"
+    else:
+        out["novelty_metabolic_gate"] = "MIXED_OR_NONE"
+
+    out["novelty_phase_echo"] = phase
+    return out
+
 class SwarmPhysiology:
     def __init__(self, dream_engine: Optional[Any] = None, enable_george_prior: bool = True):
         self.homeostat = MetabolicHomeostat()
@@ -177,6 +249,7 @@ class SwarmPhysiology:
         homeostatic_frame: Optional[Any] = None,
         allostatic_row: Optional[Dict[str, Any]] = None,
         reset_recovery: Optional[Dict[str, Any]] = None,
+        novelty_frame: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Basal Ganglia routing: what should we physically do?
 
@@ -274,12 +347,23 @@ class SwarmPhysiology:
                     float(getattr(homeostatic_frame, "crystallizer_weight", 1.0))
                     if homeostatic_frame is not None else 1.0
                 )
+                novelty_ex = 0.0
+                novelty_fg = 0.0
+                if novelty_frame is not None:
+                    ph = str(getattr(novelty_frame, "phase", "") or "")
+                    ns = float(getattr(novelty_frame, "novelty_score", 0.0) or 0.0)
+                    if ph == "NOVEL":
+                        novelty_ex = 0.55 * min(1.0, max(0.0, ns))
+                    elif ph == "FAMILIAR":
+                        novelty_fg = 0.4
                 motor_type, motor_bias = select_action_type_from_skills(
                     ("explore", "forage"),
                     attention,
                     state_dir=state_root,
                     regime=_regime,
                     crystallizer_gate=_cgate,
+                    novelty_explore_mass=novelty_ex,
+                    novelty_forage_mass=novelty_fg,
                 )
                 write_motor_policy_row(
                     selected_action=motor_type,
@@ -431,19 +515,48 @@ class SwarmPhysiology:
             except Exception:
                 logger.exception("Reset recovery immunity skipped (non-fatal)")
         
-        # 1. Interoception
-        raw_body = read_interoception(_STATE_DIR)
+        # 1. Interoception + Event 112/113 — CA1 comparator & orienting (intake valve)
+        _intero_snapshot = read_interoception(_STATE_DIR)
         body_state = MetabolicHomeostat.sample_live(self.homeostat.cfg)
-        
+
         # 2. Assess Danger
         danger = self._assess_danger(body_state)
         
+        # 2b. Event 112 — Hippocampal Novelty Map & Metabolic Gate
+        novelty_frame: Optional[Any] = None
+        orienting_row: Optional[Dict[str, Any]] = None
+        if _NOVELTY_MAP_AVAILABLE:
+            try:
+                novelty_row = write_novelty_map(state_dir=_STATE_DIR)
+                novelty_frame = compute_novelty_gate(novelty_row)
+                logger.info(
+                    "[Event112] Novelty: %s (score=%.2f) td_bias=%.2f",
+                    getattr(novelty_frame, "phase", "?"),
+                    float(getattr(novelty_frame, "novelty_score", 0.0) or 0.0),
+                    float(getattr(novelty_frame, "td_bias", 0.0) or 0.0),
+                )
+            except Exception:
+                logger.exception("Hippocampal novelty map skipped")
+        if _ORIENTING_REFLEX_AVAILABLE:
+            try:
+                orienting_row = write_orienting_reflex(state_dir=_STATE_DIR)
+            except Exception:
+                logger.exception("Orienting reflex skipped (non-fatal)")
+
+        danger = _apply_novelty_metabolic_gate(self.homeostat, danger, novelty_frame)
+
         # 3. Drives / Wants
-        # Tick the DMN to update arousal/boredom and emit drives if conditions allow
+        recent_ev: Optional[Dict[str, Any]] = None
+        if novelty_frame is not None:
+            recent_ev = {
+                "novelty": float(getattr(novelty_frame, "novelty_score", 0.0) or 0.0),
+                "novelty_phase": str(getattr(novelty_frame, "phase", "") or ""),
+            }
         consc_state = self.consciousness.tick(
             metabolic_state=body_state,
             now_state=now_state,
-            commit=True
+            commit=True,
+            recent_events=recent_ev,
         )
 
         # 3b. Attention selection from consciousness state
@@ -499,7 +612,7 @@ class SwarmPhysiology:
             except Exception:
                 logger.exception("Allostatic load write skipped (non-fatal)")
 
-        # 4. Action Selection — George Prior + Homeostatic + Allostatic
+        # 4. Action Selection — George Prior + Homeostatic + Allostatic + CA1 motor bias
         action = self._choose_action(
             attention,
             danger,
@@ -507,32 +620,23 @@ class SwarmPhysiology:
             homeostatic_frame=homeostatic_frame,
             allostatic_row=allostatic_row,
             reset_recovery=reset_recovery,
+            novelty_frame=novelty_frame,
         )
-        
+
         # 5. Execution
         result = self._execute_action(action)
-
-        # 5b. Event 112 — Hippocampal Novelty Map & Metabolic Gate
-        novelty_frame: Optional[Any] = None
-        if _NOVELTY_MAP_AVAILABLE:
-            try:
-                novelty_row = write_novelty_map(state_dir=_STATE_DIR)
-                novelty_frame = compute_novelty_gate(novelty_row)
-                logger.info(
-                    "[Event112] Novelty: %s (score=%.2f) td_bias=%.2f",
-                    novelty_frame.phase,
-                    novelty_frame.novelty_score,
-                    novelty_frame.td_bias
-                )
-            except Exception:
-                logger.exception("Hippocampal novelty map skipped")
 
         # 6. Value Signal
         value = self._compute_value(result, danger)
         
-        # Apply Orienting Reflex / td_value modulation
+        # Apply hippocampal novelty and orienting reflex value modulation.
         if novelty_frame:
             value += novelty_frame.td_bias
+        if orienting_row:
+            try:
+                value += float(orienting_row.get("td_bias", 0.0) or 0.0)
+            except Exception:
+                pass
 
         d_token = plasticity_danger_token(str(danger.get("mode") or ""), now_state)
 
@@ -574,6 +678,16 @@ class SwarmPhysiology:
                 "novelty_phase": novelty_frame.phase,
                 "novelty_score": novelty_frame.novelty_score,
                 "novelty_td_bias": novelty_frame.td_bias,
+            })
+        if orienting_row:
+            command = orienting_row.get("command") if isinstance(orienting_row.get("command"), dict) else {}
+            memory_extra.update({
+                "orient_trigger": orienting_row.get("orient_trigger"),
+                "orienting_intensity": orienting_row.get("orienting_intensity"),
+                "orienting_td_bias": orienting_row.get("td_bias"),
+                "orienting_attention_gain": command.get("attention_gain"),
+                "orienting_memory_encode_bias": command.get("memory_encode_bias"),
+                "orienting_explore_bias": command.get("explore_bias"),
             })
 
         mem_row = self._write_memory(
@@ -635,6 +749,7 @@ class SwarmPhysiology:
             "allostatic_policy":  allostatic_row.get("policy", "ALLOW_GROWTH") if allostatic_row else "ALLOW_GROWTH",
             "reset_recovery":     reset_recovery,
             "novelty_gate":       novelty_frame.as_dict() if novelty_frame else None,
+            "orienting_reflex":    orienting_row,
         }
 
 
