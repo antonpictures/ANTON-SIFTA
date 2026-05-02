@@ -618,6 +618,7 @@ __all__ = [
     "parse_pdb_file",
     "read_recent_jsonl",
     "shader_sources",
+    "SwarmGPUProteinRenderer",
 ]
 
 
@@ -669,9 +670,8 @@ class SwarmGPUProteinRenderer(QOpenGLWidget):
         self.update()
         
     def _tick(self):
-        # Read stigmergic ledgers for bloom
+        # Read stigmergic ledgers for bloom (same module — avoid self-import).
         try:
-            from System.swarm_gpu_protein_renderer import read_recent_jsonl, bloom_strength_from_drive_rows
             bb_rows = read_recent_jsonl(".sifta_state/body_brain_memory.jsonl", limit=5)
             self._bloom_strength = bloom_strength_from_drive_rows(bb_rows, base_strength=0.2)
         except Exception:
@@ -932,10 +932,10 @@ class SwarmGPUProteinRenderer(QOpenGLWidget):
     def resizeGL(self, w, h):
         if self.ctx:
             self.ctx.viewport = (0, 0, w, h)
-            if hasattr(self, 'fbo'):
-                self.fbo.release()
-                self.fbo_color.release()
-                self.fbo_depth.release()
-                self.fbo = None # Will be recreated on next paintGL
+        fbo = getattr(self, "fbo", None)
+        if fbo is not None:
+            fbo.release()
+            self.fbo_color.release()
+            self.fbo_depth.release()
+            self.fbo = None  # Recreated on next paintGL
 
-__all__.append("SwarmGPUProteinRenderer")
