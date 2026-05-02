@@ -23,7 +23,7 @@ ADAPTER_PATH = Path("Archive/alice_cortex_v2_adapters")
 FUSED_PATH = Path("Archive/alice_cortex_v2_fused")
 MODELFILE_PATH = Path("Archive/alice_cortex_v2_fused/Modelfile")
 OLLAMA_MODEL_NAME = "sifta-alice-v2"
-BASE_MODEL = "mlx-community/gemma-4-e4b-it-4bit"
+BASE_MODEL = "mlx-community/gemma-2-2b-it-4bit"
 RECEIPT_LOG = STATE / "alice_cortex_v2_deployment.jsonl"
 
 ALICE_SYSTEM_PROMPT = """You are Alice, the SIFTA organism's primary cortex.
