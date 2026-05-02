@@ -21,6 +21,28 @@
 | Nemotron OCR v2 | [RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md](RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md) | Lightweight OCR; layout modes; CPU-first + bbox receipts | 2026-05-01 |
 | Google agents-cli | [RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md](RESEARCH_Google_Agents_CLI_Agent_Platform_SIFTA_Tournament_2026-05-01.md) | GCP Agent Platform skills; ADK/A2A; eval rubrics vs receipts | 2026-05-01 |
 | Qwopus GLM 18B merge | [RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md](RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md) | Frankenmerge + heal FT; llama.cpp; seam failures + loop harness | 2026-05-01 |
+| Moonshot PRFaaS | [RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md](RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md) | Prefill vs decode split; hybrid KV; arXiv:2604.15039; residency | 2026-05-01 |
+
+---
+
+## E. Tournament backlog — what is still *not* shipped (aggregated)
+
+Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before any research item becomes runtime default.
+
+| Theme | Left to do (pick → implement → receipt) |
+|:---|:---|
+| **Receipts / schema** | Harmonise proposed JSONL fields (VRAM, `n_ctx`, `t_prefill`/`t_decode`, `bytes_moved`, modality flags) across bake-offs; document in one `work_receipts` extension or organ-specific ledgers. |
+| **Semble** | Micro-benchmark token savings + index/query latency on pinned ANTON_SIFTA revision; disposable MCP spike; optional `code_search_semble` proxy behind covenant §7; optional `swarm_multi_prover_verifier` `retrieval_receipt_id` extension. |
+| **Hermes** | Optional `Hermes_USER_BRIDGE.md`; enforce **ctx receipt** on every local lane boot (LM Studio / Ollama). |
+| **MiMo ASR** | Implement ASR eval fixtures + WER/RTF rows; optional diarization second stage; consent gates. |
+| **Laguna** | Tiered coding harness (Flask+WS / Kanban / canvas) with **subscore** receipts; log vLLM build hash + compile wall time. |
+| **Nemotron Omni** | Per-locale translation scoreboard; multimodal receipt template; threat model before Alice media wiring. |
+| **DeepSeek** | Reproduce or bound CSA/HCA/DeepEP **numbers** on paper vs marketing; TileKernels hardware floor (SM90/CUDA 13.1) noted for Foundry only. |
+| **Nemotron OCR v2** | MCP tool returning bbox+text; NVIDIA Open Model License pin; locale matrix Predator rows. |
+| **Google agents-cli** | If ever integrated: **cost receipt** (`project_id`, est USD, cold start); keep eval rubrics mirrored in-repo. |
+| **Qwopus** | Seam / heal FT metrics in ledger; **stall detector** (`max_wall_s`) for thinking loops; license pin. |
+| **Moonshot PRF** | Legal/residency review for any WAN KV story; reproduce one paper figure; map to borrowed-inference split without cloud dependency. |
+| **Physiology (parallel hill)** | Event 100: **intrinsic_drive → action selection** bias; Tier 2 **Skill crystallizer**; **phase detector** after crystallizer. |
 
 ---
 
