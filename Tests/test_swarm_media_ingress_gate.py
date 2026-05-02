@@ -105,6 +105,44 @@ def test_direct_request_still_reaches_the_cortex_during_youtube():
     assert decision["route"] == "direct"
 
 
+def test_wake_name_request_still_reaches_cortex_during_youtube():
+    decision = classify_spoken_ingress(
+        "yo George wake up, listen to this with me",
+        stt_conf=0.58,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=FARFIELD_FP,
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "direct_address_or_request"
+
+
+def test_youtube_pasted_page_context_is_media_focus_not_degradation(monkeypatch, tmp_path):
+    latest = tmp_path / "youtube_context_latest.json"
+    latest.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "title": "Snatch - Best of Brick top",
+                "status": "pasted_page_context",
+                "page_context": "title=Snatch - Best of Brick top; signals=brick,top,fighter",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gate, "STATE_DIR", tmp_path)
+
+    decision = classify_spoken_ingress(
+        "this tense exchange happens early in the video when the fighter is changed",
+        stt_conf=0.88,
+        focus_context="",
+        acoustic_fingerprint=FARFIELD_FP,
+    )
+
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "acoustic_farfield_replay_with_media_focus"
+
+
 def test_no_media_focus_means_normal_direct_routing():
     decision = classify_spoken_ingress(
         "the Oracle found a solution to the parameters",

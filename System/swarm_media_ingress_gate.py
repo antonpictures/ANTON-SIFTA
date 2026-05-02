@@ -36,7 +36,7 @@ DIRECT_ADDRESS_RE = re.compile(r"\b(?:alice|george|architect)\b", re.IGNORECASE)
 DIRECT_REQUEST_RE = re.compile(
     r"^\s*(?:"
     r"can you|could you|will you|please|pls|tell me|show me|open|run|fix|"
-    r"read|code|write|check|look|watch this|listen|remember|explain|"
+    r"read|code|write|check|look|watch this|listen|remember|explain|wake up|"
     r"send|message|"
     r"hey alice|alice[, ]"
     r")\b",
@@ -82,7 +82,9 @@ def _load_recent_youtube_context(max_age_s: float = 900.0) -> str:
         return ""
     title = str(row.get("title") or row.get("video_id") or "")
     status = str(row.get("status") or "")
-    return f"YouTube video: {title} caption_status={status}".strip()
+    page = str(row.get("page_context") or "")
+    suffix = f" page_context={page}" if page else ""
+    return f"YouTube video: {title} caption_status={status}{suffix}".strip()
 
 
 def _load_recent_ambient_context(max_age_s: float = 6 * 3600.0) -> str:

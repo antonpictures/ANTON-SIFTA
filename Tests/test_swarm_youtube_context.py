@@ -99,3 +99,57 @@ def test_observe_snapshot_writes_ledger_and_publishes_focus(monkeypatch, tmp_pat
     assert len(calls) == 1
     assert calls[0][0][0] == "YouTube"
     assert calls[0][1]["metadata"]["caption_excerpt"] == "the caption"
+
+
+def test_observe_pasted_page_builds_shared_media_context(monkeypatch, tmp_path):
+    ledger = Path(tmp_path) / "youtube_context.jsonl"
+    state = Path(tmp_path) / "youtube_context_latest.json"
+    calls = []
+
+    monkeypatch.setattr(yc, "_STATE", Path(tmp_path))
+    monkeypatch.setattr(yc, "LEDGER", ledger)
+    monkeypatch.setattr(yc, "STATE_FILE", state)
+
+    import System.swarm_app_focus as app_focus
+
+    monkeypatch.setattr(app_focus, "publish_focus", lambda *a, **kw: calls.append((a, kw)))
+
+    row = yc.observe_pasted_page(
+        """
+        Skip navigation
+        Snatch - Best of Brick top ( + deleted scene)
+        MelodicsRareMusicVid
+        3.27K subscribers
+        3,893,013 views  May 3, 2022
+        Ask about this video
+        How does Brick Top define his role?
+        What are the consequences for failure?
+        WE'RE CHANGING THE FIGHTER
+        This tense exchange happens early in the video when Turkish and his associates
+        try to inform Brick Top that they are changing their fighter.
+        AI can make mistakes, so double-check it.
+        @greg
+        Brick Top is one of those examples of old dangerous professionals.
+        """,
+        source="pytest_paste",
+    )
+
+    assert row["status"] == "pasted_page_context"
+    assert row["context_route"] == "shared_media_context"
+    assert row["content_kind"] == "film_clip_page"
+    assert row["title"] == "Snatch - Best of Brick top ( + deleted scene)"
+    assert row["channel"] == "MelodicsRareMusicVid"
+    assert row["view_count_text"] == "3,893,013"
+    assert row["published_text"] == "May 3, 2022"
+    assert "brick" in row["content_signals"]
+    assert row["raw_audio_logged"] is False
+    assert ledger.exists()
+    assert state.exists()
+    assert len(calls) == 1
+    assert calls[0][0][0] == "YouTube"
+    assert calls[0][1]["metadata"]["context_route"] == "shared_media_context"
+
+    prompt_context = yc.get_latest_context(max_age_s=10.0)
+    assert prompt_context is not None
+    assert "pasted_page_context" in prompt_context
+    assert "page_context=" in prompt_context
