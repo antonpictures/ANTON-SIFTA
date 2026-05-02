@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -75,10 +76,90 @@ FICTION_CONTEXT_RE = re.compile(
     r"co[-_ ]?watch)\b",
     re.IGNORECASE,
 )
+_MEDIA_STOPWORDS = {
+    "about", "actually", "after", "again", "against", "alice", "always",
+    "because", "before", "being", "company", "could", "doing", "every",
+    "everything", "first", "george", "going", "gonna", "having", "here",
+    "human", "into", "just", "know", "like", "little", "make", "maybe",
+    "media", "more", "much", "need", "people", "question", "really",
+    "reason", "right", "said", "saying", "should", "some", "something",
+    "system", "talk", "that", "their", "there", "these", "thing", "think",
+    "this", "those", "through", "time", "want", "watch", "what", "when",
+    "where", "which", "while", "with", "would", "yeah", "your",
+}
+_MEDIA_TOPIC_LEXICON = {
+    "jensen": "Jensen Huang",
+    "huang": "Jensen Huang",
+    "nvidia": "NVIDIA",
+    "gpu": "GPU",
+    "gpus": "GPU",
+    "geforce": "GeForce",
+    "cuda": "CUDA",
+    "gtc": "GTC",
+    "tsmc": "TSMC",
+    "chips": "chips",
+    "supercomputer": "supercomputers",
+    "supercomputers": "supercomputers",
+    "datacenter": "data centers",
+    "data": "data centers",
+    "factory": "AI factories",
+    "factories": "AI factories",
+    "energy": "energy efficiency",
+    "watts": "energy efficiency",
+    "tokens": "tokens",
+    "agents": "agents",
+    "reasoning": "test-time reasoning",
+    "training": "training",
+    "pretrained": "pretraining",
+    "compute": "compute scaling",
+    "scaling": "compute scaling",
+    "taiwan": "Taiwan",
+}
 
 
 def _word_count(text: str) -> int:
     return len(re.findall(r"[A-Za-z0-9']+", text or ""))
+
+
+def _observed_media_terms(rows: list[Mapping[str, Any]], *, limit: int = 12) -> list[str]:
+    """Extract compact topic hints from observed media rows.
+
+    This is not semantic understanding and does not claim a transcript title.
+    It is a receipt-grounded bag of repeated words/proper nouns so the prompt
+    can remember what the background media was about after George returns.
+    """
+
+    topic_hits: Counter[str] = Counter()
+    free_terms: Counter[str] = Counter()
+    for row in rows:
+        blob = " ".join(
+            str(row.get(key) or "")
+            for key in ("text_preview", "focus_preview", "reason")
+        )
+        words = re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,}", blob)
+        for word in words:
+            lower = word.lower().strip("'")
+            if lower in _MEDIA_TOPIC_LEXICON:
+                topic_hits[_MEDIA_TOPIC_LEXICON[lower]] += 2
+                continue
+            if lower in _MEDIA_STOPWORDS or len(lower) < 4:
+                continue
+            if lower.endswith("ing") and len(lower) < 7:
+                continue
+            free_terms[lower] += 1
+
+    ordered: list[str] = []
+    for term, _count in topic_hits.most_common(limit):
+        if term not in ordered:
+            ordered.append(term)
+    for term, count in free_terms.most_common(limit * 2):
+        if count < 2:
+            continue
+        if term not in ordered:
+            ordered.append(term)
+        if len(ordered) >= limit:
+            break
+    return ordered[:limit]
 
 
 def _load_recent_youtube_context(max_age_s: float = 7200.0) -> str:
@@ -344,7 +425,7 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
     """Compact recent media-observation context for Alice's prompt block."""
     now = time.time()
     candidates = []
-    for row in reversed(_tail_jsonl(LEDGER, 32)):
+    for row in reversed(_tail_jsonl(LEDGER, 96)):
         route = str(row.get("route") or "")
         if route not in {"observed_media", "ambient_media"}:
             continue
@@ -354,13 +435,34 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
         except Exception:
             continue
         candidates.append(row)
-        if len(candidates) >= 3:
+        if len(candidates) >= 24:
             break
     if not candidates:
         return ""
 
     lines: list[str] = []
-    for row in reversed(candidates):
+    ordered = list(reversed(candidates))
+    terms = _observed_media_terms(ordered)
+    route_counts = Counter(str(row.get("route") or "unknown") for row in ordered)
+    reason_counts = Counter(str(row.get("reason") or "unknown") for row in ordered)
+    if terms:
+        lines.append(
+            "observed_media_summary "
+            f"rows={len(ordered)} routes={dict(route_counts)} "
+            f"likely_terms={', '.join(terms[:10])}; "
+            "these are environmental media receipts, not George speaking"
+        )
+    else:
+        lines.append(
+            "observed_media_summary "
+            f"rows={len(ordered)} routes={dict(route_counts)}; "
+            "environmental media receipts, not George speaking"
+        )
+    if reason_counts:
+        top_reason, top_count = reason_counts.most_common(1)[0]
+        lines.append(f"dominant_reason={top_reason} n={top_count}")
+
+    for row in ordered[-3:]:
         fp = row.get("acoustic_fingerprint") if isinstance(row.get("acoustic_fingerprint"), dict) else {}
         cue = str(fp.get("channel_cue") or "unknown")
         far = fp.get("farfield_replay_likelihood", "")
