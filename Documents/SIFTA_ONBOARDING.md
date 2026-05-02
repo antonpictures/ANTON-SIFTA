@@ -44,10 +44,12 @@ flowchart TB
     M5["M5 / 24GB+ Foundry\nAlice primary cortex\nsifta-gemma4-alice"]
     M5Scout["M5 multimodal scout\nqwen3.5:9b"]
     Mini["Mac Mini / 8GB Sentry\nqwen3.5:4b + qwen3.5:2b\nGemma4 exceeds soldered RAM"]
-    Field["Raspberry Pi / tractor / field device\nsensor receipts first\nmodel only if hardware fits"]
+    Pi["Raspberry Pi 5 / 8GB Edge Scout\nGGUF/Hailo possible after proof"]
+    Field["Tractor / smaller field device\nsensor receipts first\nno default LLM"]
     M5Scout --> M5
     Mini --> M5
-    Field --> Mini
+    Pi --> Mini
+    Pi --> M5
     Field --> M5
 ```
 
@@ -55,13 +57,17 @@ flowchart TB
 |---|---|---|
 | M5 / 24GB+ | Foundry / Alice main body | Pull `sifta-gemma4-alice` and `qwen3.5:9b`. |
 | Mac Mini / 8GB | Sentry / scout | Pull `qwen3.5:4b` and `qwen3.5:2b`; Gemma4 is skipped by default because it does not fit safely in soldered 8 GB RAM. |
-| Raspberry Pi / tractor / sensor box | Field node | Start with signed sensor receipts; add a tiny scout only if hardware proves it can run. |
+| Raspberry Pi 5 / 8GB | Edge scout / sensor node | Start with signed sensor receipts; optionally add `qwen3.5:0.8b`, a 3B-class Q4 GGUF model via `llama.cpp`, or Hailo CV after proof. |
+| Tractor / smaller Python sensor box | Field node | Start with signed sensor receipts; add a tiny scout only if this exact hardware writes runtime proof receipts. |
 
 This is a physics constraint, not a prohibition. A `.rar`/archive can reduce
 disk storage, but it does not remove the live inference requirement: tensor
-weights, KV cache, and the OS must all fit in memory at runtime. Future
+weights, KV cache, and the OS must all fit in memory at runtime. Raspberry Pi 5
+can be a real edge scout with native/compiled inference such as GGUF through
+`llama.cpp`, or a vision scout with Raspberry Pi AI HAT+/Hailo acceleration.
+Python remains the receipt, signing, networking, and orchestration layer. Future
 distillation, quantization, or remote Foundry delegation may improve this, but
-each path needs receipts before the installer treats it as safe.
+each path needs receipts before the installer treats it as a default brain.
 
 ```bash
 # Step 1: Clone the Swarm
@@ -80,8 +86,12 @@ ollama pull qwen3.5:9b
 ollama pull qwen3.5:4b
 ollama pull qwen3.5:2b
 
-# Raspberry Pi / tractor / field device:
+# Raspberry Pi 5 / 8GB edge scout:
 # no default model pull; boot sensor/receipt services first
+# optional after proof: qwen3.5:0.8b, 3B-class Q4 GGUF via llama.cpp, or Hailo CV
+
+# Tractor / smaller field device:
+# no default model pull; signed feature receipts first
 
 # Step 4: Verify Ollama is running
 ollama serve &            # or launch Ollama.app

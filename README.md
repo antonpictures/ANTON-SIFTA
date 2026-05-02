@@ -151,7 +151,7 @@ flowchart LR
 
     subgraph Field["Field Nodes: Raspberry Pi / tractor / camera / sensor box"]
         Sensors["sensors, GPS, camera, serial, CAN, GPIO"]
-        Edge["sensor-first node\noptional qwen3.5:0.8b/2b only if hardware allows"]
+        Edge["sensor-first node\nPi 5 can add GGUF/Hailo edge scout"]
         Sensors --> Edge
         Edge --> ReceiptsField["signed feature receipts\nnot raw surveillance by default"]
     end
@@ -164,14 +164,16 @@ flowchart LR
 |---|---|---|---|
 | M5 / 24 GB+ | Foundry, Alice's main body | `sifta-gemma4-alice`, `qwen3.5:9b`, optional `granite4.1:3b` | Gemma4 remains the primary cortex. |
 | Mac Mini / 8 GB | Sentry / scout | `qwen3.5:4b`, `qwen3.5:2b` | Gemma4 is not selected by default because the RAM is soldered and the model does not fit safely. |
-| Raspberry Pi / tractor / field box | Sensor node | sensor receipts first; optional tiny scout only | Send signed feature receipts, not duplicate Alice brains. |
+| Raspberry Pi 5 / 8 GB | Edge scout / sensor node | sensor receipts first; optional `qwen3.5:0.8b`, 3B-class Q4 GGUF via `llama.cpp`, or Hailo CV | Python owns receipts; compiled backends do the heavy inference. |
+| Tractor / smaller field box | Sensor node | sensor receipts first; optional tiny scout only after proof | Send signed feature receipts, not duplicate Alice brains. |
 
 The principle is simple: **one node, one honest role**. A small machine can be a
 great scout, bridge, relay, or sensor limb. This is a physical fit decision:
 compressing a model archive can save disk space, but inference still needs
-resident tensor memory, KV cache, and OS headroom. Until a smaller
-distilled/quantized Gemma4-class organ is proven with receipts, 8 GB nodes use
-Qwen scouts and send their findings back to the Foundry.
+resident tensor memory, KV cache, and OS headroom. A Pi 5 can still be a real
+edge scout with quantized GGUF models or an AI HAT+/Hailo vision lane; it just
+should prove the runtime with receipts before the installer treats it as a
+default brain.
 
 ### Free Public Access
 
