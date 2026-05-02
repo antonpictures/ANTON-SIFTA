@@ -2,7 +2,7 @@
 
 **For the Swarm.** 🐜⚡
 
-**Purpose:** single **ledger-style** index of external-tech research notes, tournament nuggets, and Bishop/Vanguard `.dirt` drops so nothing interesting scatters. When you add a new `RESEARCH_*.md` or material `.dirt`, **append a row here** in the right table.
+**Purpose:** single **ledger-style** index of external-tech research notes, tournament nuggets, and Bishop/Vanguard `.dirt` drops so nothing interesting scatters. YouTube / paper **transcript pulls** should land as `Documents/RESEARCH_*_Tournament_*.md` and a matching **§A row** below. When you add a new `RESEARCH_*.md` or material `.dirt`, **append a row** in the right table.
 
 **Policy:** rows are **pointers + one-line intent**, not copies of upstream license text. **NPPL** applies to anything we ship; research files are `RESEARCH_NOT_SHIPPED` until Architect GO.
 
@@ -17,6 +17,8 @@
 | MiMo ASR | [RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md](RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md) | Xiaomi MiMo-V2.5-ASR local; VRAM/diarization/receipt fields | 2026-05-01 |
 | Laguna XS.2 vLLM | [RESEARCH_Poolside_Laguna_XS2_vLLM_SIFTA_Tournament_2026-05-01.md](RESEARCH_Poolside_Laguna_XS2_vLLM_SIFTA_Tournament_2026-05-01.md) | Poolside MoE coding model; vLLM build friction; bake-off vs benchmarks | 2026-05-01 |
 | Nemotron 3 Nano Omni | [RESEARCH_NVIDIA_Nemotron3_Nano_Omni_Docker_SIFTA_Tournament_2026-05-01.md](RESEARCH_NVIDIA_Nemotron3_Nano_Omni_Docker_SIFTA_Tournament_2026-05-01.md) | NVIDIA omni vLLM+Docker; Parakeet/Cosmos; VRAM + multimodal receipts | 2026-05-01 |
+| DeepSeek V4 DeepEP / Tile | [RESEARCH_DeepSeek_V4_DeepEP_TileKernels_SIFTA_Tournament_2026-05-01.md](RESEARCH_DeepSeek_V4_DeepEP_TileKernels_SIFTA_Tournament_2026-05-01.md) | DeepEP MoE comms + CSA/HCA context + TileKernels fusion; verify claims | 2026-05-01 |
+| Nemotron OCR v2 | [RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md](RESEARCH_NVIDIA_Nemotron_OCR_v2_SIFTA_Tournament_2026-05-01.md) | Lightweight OCR; layout modes; CPU-first + bbox receipts | 2026-05-01 |
 
 ---
 
