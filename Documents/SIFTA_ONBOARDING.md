@@ -36,6 +36,9 @@ Install the role that fits the physical machine. SIFTA is hardware-aware: the
 M5 can host Alice's primary cortex, while 8 GB and field devices serve as
 scouts, relays, and sensor limbs.
 
+For the full same-shape diagrams across M5, Mac Mini, and field hardware, read
+[Alice Hardware Anatomy](ALICE_HARDWARE_ANATOMY.md).
+
 ```mermaid
 flowchart TB
     M5["M5 / 24GB+ Foundry\nAlice primary cortex\nsifta-gemma4-alice"]

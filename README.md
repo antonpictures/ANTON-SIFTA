@@ -129,6 +129,9 @@ Install the brain that fits the physical machine. SIFTA uses one primary cortex
 on the strongest local machine, then adds smaller scouts and field nodes that
 write signed receipts back into the same swarm.
 
+For the full same-shape diagrams across M5, Mac Mini, and field hardware, read
+[Alice Hardware Anatomy](Documents/ALICE_HARDWARE_ANATOMY.md).
+
 ```mermaid
 flowchart LR
     subgraph Foundry["Foundry Node: M5 / 24GB+ Unified Memory"]
