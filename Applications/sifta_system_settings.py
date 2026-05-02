@@ -450,24 +450,39 @@ class _BrainDiagramWidget(QWidget):
 
     _NODES = [
         # idx, x_frac, y_frac, label, sublabel, r, g, b
-        (0, 0.50, 0.46, "🧠 CORTEX",   "",              0,   200, 255),  # cortex — sublabel set dynamically
-        (1, 0.50, 0.06, "👁 EYES",     "Iris",          0,   220, 130),
-        (2, 0.10, 0.36, "🎙 EARS",     "Whisper STT",   0,   200, 130),
-        (3, 0.90, 0.36, "🔊 VOICE",    "macOS TTS",     0,   200, 130),
-        (4, 0.16, 0.82, "🐦 CORVID",   "",              180, 100, 255),  # sublabel set dynamically
-        (5, 0.50, 0.90, "⚡ REFLEX",   "Pure Python",   255, 200,  60),
-        (6, 0.84, 0.82, "💬 WhatsApp", "Effector",       37, 211, 102),
-        (7, 0.50, 0.62, "🧬 MEMORY",   "Hippocampus",  100, 160, 255),
+        (0,  0.50, 0.44, "🧠 CORTEX",   "",              0,   200, 255),  # primary brain
+        (1,  0.50, 0.04, "👁 EYES",      "Iris",          0,   220, 130),  # sensory input
+        (2,  0.08, 0.30, "🎙 EARS",      "Whisper STT",   0,   200, 130),  # sensory input
+        (3,  0.92, 0.30, "🔊 VOICE",     "macOS TTS",     0,   200, 130),  # output effector
+        (4,  0.12, 0.82, "🐦 CORVID",    "",              180, 100, 255),  # output organ
+        (5,  0.50, 0.90, "⚡ REFLEX",    "Pure Python",   255, 200,  60),  # output organ
+        (6,  0.88, 0.82, "💬 WhatsApp",  "Effector",       37, 211, 102),  # output effector
+        (7,  0.50, 0.60, "🧬 MEMORY",    "Hippocampus",  100, 160, 255),  # sub-cortex store
+        (8,  0.88, 0.12, "🔭 SCOUT",     "",              255, 180,  40),  # Qwen3.5 multimodal input
+        (9,  0.12, 0.12, "🩺 DOCTOR",    "Granite4.1",   210, 120,  60),  # text/tool/JSON doctor
+        (10, 0.88, 0.56, "🔤 C1",        "Qwen2.5 LoRA", 180, 200,  80),  # classifier input
     ]
-    # Edges from cortex (0) to peripherals — (src_idx, dst_idx)
-    _EDGES = [(0, i) for i in range(1, len(_NODES))]
+    # Sensory/classifier inputs arrive AT cortex (dot travels src → dst = toward cortex)
+    _EDGES_IN  = [(1, 0), (2, 0), (8, 0), (9, 0), (10, 0)]
+    # Output signals travel FROM cortex to effectors
+    _EDGES_OUT = [(0, 3), (0, 4), (0, 5), (0, 6), (0, 7)]
+    _EDGES = _EDGES_IN + _EDGES_OUT
 
     def __init__(self, cortex_model: str, corvid_model: str) -> None:
         super().__init__()
         self._cortex_label = cortex_model or "sifta-gemma4-alice"
         self._corvid_label = corvid_model or "qwen3.5:2b"
-        self._ollama_live: bool = True    # optimistic default
+        self._ollama_live: bool = True
         self._probe_running: bool = False
+        # Scout label — detect hardware and set appropriate model name
+        self._scout_label = "qwen3.5:9b"  # M5 default
+        try:
+            import subprocess as _sp
+            _res = _sp.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=1)
+            mem_gb = int(_res.stdout.strip()) / (1024**3)
+            self._scout_label = "qwen3.5:9b" if mem_gb >= 24 else "qwen3.5:4b"
+        except Exception:
+            pass
 
         # Pulse state
         import math
@@ -545,8 +560,10 @@ class _BrainDiagramWidget(QWidget):
     def _node_sublabel(self, idx: int) -> str:
         if idx == 0:
             return self._cortex_label
-        if idx == 4:
+        if idx == 4:  # CORVID
             return self._corvid_label
+        if idx == 8:  # SCOUT
+            return self._scout_label
         return self._NODES[idx][4]
 
     # ── paint ──────────────────────────────────────────────────────────────
@@ -557,19 +574,25 @@ class _BrainDiagramWidget(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         w, h = self.width(), self.height()
 
-        breath = (math.sin(self._tick * 0.06) + 1.0) / 2.0  # 0..1 slow sine
+        breath = (math.sin(self._tick * 0.06) + 1.0) / 2.0
+        n_in  = len(self._EDGES_IN)
 
-        # ── 1. Draw connection lines + travelling signal dots ──────────────
+        # ── 1. Draw edges + travelling signal dots ─────────────────────────
         for edge_i, (src_i, dst_i) in enumerate(self._EDGES):
             src = self._node_center(src_i, w, h)
             dst = self._node_center(dst_i, w, h)
-            r, g, b = self._NODES[dst_i][5], self._NODES[dst_i][6], self._NODES[dst_i][7]
+            is_input = edge_i < n_in  # sensory/classifier inputs → cortex
 
-            # Background glow line
-            p.setPen(QPen(QColor(r, g, b, 22), 5.0))
+            # Pick colour from destination node for outputs, source node for inputs
+            colour_node = src_i if is_input else dst_i
+            r, g, b = self._NODES[colour_node][5], self._NODES[colour_node][6], self._NODES[colour_node][7]
+
+            # Input edges are slightly brighter / warmer; output edges use dst colour
+            glow_a = 28 if is_input else 18
+            line_a = 110 if is_input else 80
+            p.setPen(QPen(QColor(r, g, b, glow_a), 5.0))
             p.drawLine(src, dst)
-            # Core line
-            p.setPen(QPen(QColor(r, g, b, 90), 1.2))
+            p.setPen(QPen(QColor(r, g, b, line_a), 1.4))
             p.drawLine(src, dst)
 
             # Travelling dot — lerp along the edge
@@ -580,7 +603,6 @@ class _BrainDiagramWidget(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(r, g, b, dot_alpha))
             p.drawEllipse(QPointF(dot_x, dot_y), 3.5, 3.5)
-            # Dot glow halo
             p.setBrush(QColor(r, g, b, 40))
             p.drawEllipse(QPointF(dot_x, dot_y), 7.0, 7.0)
 
@@ -589,19 +611,21 @@ class _BrainDiagramWidget(QWidget):
             px, py = nx * w, ny * h
             is_cortex = (idx == 0)
             is_memory = (idx == 7)
+            is_input_node = idx in (1, 2, 8, 9, 10)  # sensory/classifier inputs
 
-            card_w = 152 if is_cortex else (105 if is_memory else 118)
-            card_h = 58  if is_cortex else (20 if is_memory else 46)
+            card_w = 152 if is_cortex else (105 if is_memory else 110)
+            card_h = 58  if is_cortex else (20  if is_memory else 44)
             rect = QRectF(px - card_w / 2, py - card_h / 2, card_w, card_h)
 
-            # Card fill
             p.setBrush(QColor(14, 16, 26, 215))
 
-            # Border: cortex flickers with breath + Ollama live/dead color
             if is_cortex:
                 live_r, live_g, live_b = (0, 220, 255) if self._ollama_live else (255, 80, 60)
                 border_alpha = int(140 + 100 * breath)
                 p.setPen(QPen(QColor(live_r, live_g, live_b, border_alpha), 2.2))
+            elif is_input_node:
+                # Input nodes get a slightly warmer border to signal they feed INTO cortex
+                p.setPen(QPen(QColor(r, g, b, 150), 1.6))
             else:
                 p.setPen(QPen(QColor(r, g, b, 110), 1.4))
 
@@ -616,8 +640,8 @@ class _BrainDiagramWidget(QWidget):
                     p.setPen(QPen(QColor(live_r2, live_g2, live_b2, max(ga, 0)), 1.0))
                     p.drawRoundedRect(rect.adjusted(-gi*3, -gi*3, gi*3, gi*3), 12.0, 12.0)
 
-            # Node inner pulse circle (tiny, only non-cortex)
-            if not is_cortex and not is_memory:
+            # Input node subtle inner pulse circle
+            if is_input_node and not is_memory:
                 pulse_r = int(3 + 2 * breath)
                 p.setBrush(QColor(r, g, b, int(80 + 80 * breath)))
                 p.setPen(Qt.PenStyle.NoPen)
@@ -629,13 +653,12 @@ class _BrainDiagramWidget(QWidget):
                 p.setFont(QFont("Menlo", 8, QFont.Weight.Bold))
                 p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._node_sublabel(idx))
             else:
-                p.setFont(QFont("Menlo", 11 if is_cortex else 9, QFont.Weight.Bold))
-                top_rect = QRectF(rect.x(), rect.y() + 5, rect.width(), rect.height() * 0.48)
+                p.setFont(QFont("Menlo", 11 if is_cortex else 8, QFont.Weight.Bold))
+                top_rect = QRectF(rect.x(), rect.y() + 4, rect.width(), rect.height() * 0.48)
                 p.drawText(top_rect, Qt.AlignmentFlag.AlignCenter, label)
-                # Sublabel
                 sub_color = QColor(live_r, live_g, live_b, 190) if is_cortex else QColor(r, g, b, 190)
                 p.setPen(sub_color)
-                p.setFont(QFont("Menlo", 8 if is_cortex else 7))
+                p.setFont(QFont("Menlo", 8 if is_cortex else 6))
                 bot_rect = QRectF(rect.x(), rect.y() + rect.height() * 0.50, rect.width(), rect.height() * 0.48)
                 p.drawText(bot_rect, Qt.AlignmentFlag.AlignCenter, self._node_sublabel(idx))
 
@@ -1227,48 +1250,70 @@ class SystemSettingsWidget(SiftaBaseWidget):
             return row
 
         # ── Cortex section ──
-        cortex_heading = QLabel("🧠  Primary Cortex  ·  Alice's reasoning brain")
+        cortex_heading = QLabel("🧠  Primary Cortex  ·  Alice's main reasoning brain")
         cortex_heading.setStyleSheet(
             "color: rgb(0, 220, 255); font-size: 13px; font-weight: bold; margin-top: 2px;"
         )
         root.addWidget(cortex_heading)
         root.addLayout(_chip_row("Alice Cortex", active_cortex,
                                   chip_style_cortex, _fmt_weight(active_cortex)))
-        root.addLayout(_chip_row("Fallback Cortex", "sifta-alice-qwen35",
-                                  chip_style_cortex, _fmt_weight("sifta-alice-qwen35")))
+
+        # ── Scout section ──
+        scout_heading = QLabel("🔭  Multimodal Scout  ·  vision receipts feed into Gemma4")
+        scout_heading.setStyleSheet(
+            "color: rgb(255, 180, 40); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        )
+        root.addWidget(scout_heading)
+        chip_style_scout = (
+            "background: rgb(30, 22, 5); color: rgb(255, 180, 40); "
+            "border: 1px solid rgb(160, 110, 20); border-radius: 8px; "
+            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
+        )
+        root.addLayout(_chip_row("M5 Scout",       "qwen3.5:9b  ·  multimodal VLM",
+                                  chip_style_scout, _fmt_weight("qwen3.5:9b")))
+        root.addLayout(_chip_row("Mac Mini Scout",  "qwen3.5:4b  ·  8 GB safe",
+                                  chip_style_scout, _fmt_weight("qwen3.5:4b")))
+
+        # ── Doctor section ──
+        doctor_heading = QLabel("🩺  Doctor Organ  ·  text / tool / JSON only")
+        doctor_heading.setStyleSheet(
+            "color: rgb(210, 120, 60); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        )
+        root.addWidget(doctor_heading)
+        chip_style_doctor = (
+            "background: rgb(30, 14, 5); color: rgb(210, 120, 60); "
+            "border: 1px solid rgb(140, 70, 20); border-radius: 8px; "
+            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
+        )
+        root.addLayout(_chip_row("Granite Doctor",  "granite4.1  ·  router / coder / prover",
+                                  chip_style_doctor, _fmt_weight("granite4.1")))
+        root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default,
+                                  chip_style_organ, _fmt_weight(self._corvid_default)))
 
         # ── Organs section ──
-        organ_heading = QLabel("⚡  Organs  ·  run simultaneously alongside the cortex")
+        organ_heading = QLabel("⚡  Reflex Organs  ·  pure-Python, run alongside cortex")
         organ_heading.setStyleSheet(
             "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(organ_heading)
-        root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default,
-                                  chip_style_organ, _fmt_weight(self._corvid_default)))
-        root.addLayout(_chip_row("Reflex Arc", "Pure Python · no model", chip_style_fixed))
+        root.addLayout(_chip_row("Reflex Arc",    "Pure Python · no model", chip_style_fixed))
         root.addLayout(_chip_row("Thermal Cortex", "BISHOP · fever router", chip_style_fixed))
 
-        # ── Memory / State section ──
-        mem_heading = QLabel("🧬  Memory  ·  physical ledger on disk")
-        mem_heading.setStyleSheet(
-            "color: rgb(100, 160, 255); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        # ── C1 Classifier section ──
+        c1_heading = QLabel("🔤  C1 Classifier  ·  Qwen2.5 LoRA · SILENCE / TOOL / BOND / ENGAGE")
+        c1_heading.setStyleSheet(
+            "color: rgb(180, 200, 80); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
-        root.addWidget(mem_heading)
-        root.addLayout(_chip_row("MLX Cortex (archived)", _state_dir_weight("cortex"),
-                                  chip_style_weights))
-        root.addLayout(_chip_row("Runtime Logs", _state_dir_weight("runtime_logs"),
-                                  chip_style_fixed))
-
-        # ── Custom Weights section ──
-        mlx_heading = QLabel("🔬  Custom Weights  ·  fine-tuned originals")
-        mlx_heading.setStyleSheet(
-            "color: rgb(180, 100, 255); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        root.addWidget(c1_heading)
+        chip_style_c1 = (
+            "background: rgb(20, 22, 8); color: rgb(180, 200, 80); "
+            "border: 1px solid rgb(110, 130, 30); border-radius: 8px; "
+            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        root.addWidget(mlx_heading)
-        root.addLayout(_chip_row("MLX Cortex v1", "Archived · degenerate output",
-                                  chip_style_weights, _state_dir_weight("cortex")))
-        root.addLayout(_chip_row("MLX Cortex v2", "Planned · rank 16, dropout 0.1, DPO",
-                                  chip_style_weights))
+        root.addLayout(_chip_row("C1 Classifier",  "sifta-classifier-c1  ·  role=classifier",
+                                  chip_style_c1, _fmt_weight("sifta-classifier-c1")))
+        root.addLayout(_chip_row("Training Corpus", "1,401 rows  ·  rank=16  dropout=0.1",
+                                  chip_style_c1))
 
         # Reset button
         reset_row = QHBoxLayout()
