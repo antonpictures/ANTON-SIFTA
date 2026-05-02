@@ -46,7 +46,7 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Qwopus** | Seam/heal FT metrics; stall detector. |
 | **Moonshot PRF** | Legal review; reproduce paper figure. |
 | **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router without treating metaphors as proof. |
-| **Physiology (parallel hill)** | **Events 102–106 + 110** on `main`: **Event 106** `swarm_nightly_health_audit.py` → `nightly_health.jsonl` + summary (observability+IDE tail, CUSUM null probe, allostatic, motor/regime, bio corpus, optional arXiv sweep, pytest gate). Optional: wire **`deposit_observation`** from every organ hot path. BioSIFTA: **`register_claim`** → experiments → **`run_bio_tournament`**. Adapter/LoRA after receipt density. **Event 98c** showpiece; **CUSUM / Page** §F.1. |
+| **Physiology (parallel hill)** | **Events 102–107 + 110** on `main`: **Event 107** `swarm_health_metrics.py` — ledger-derived composite for nightly audit (observability/parentage/race, allostatic, motor skill-bias, test, bio). **Event 106** cron job + **Event 105** BioSIFTA. Optional: **`deposit_observation`** on every organ path. Adapter/LoRA after receipt density. **Event 98c** showpiece; **CUSUM / Page** §F.1. |
 | **§A YouTube / stack dirt** | All **11** rows remain **`RESEARCH_NOT_SHIPPED`** until each stack wins its own bake-off (this table). |
 
 **Watch window note:** Three IDE bodies + `ide_stigmergic_trace.jsonl` as the honest scoreboard. Colosseum lights stay on for bake-offs and Event 98c / crystallizer–motor closure work.
@@ -73,6 +73,7 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 | **104** | Stigmergic observability layer (`stigmergic_observability.jsonl`, `causal_parent_ids`, `audit_trace_health`, health snapshots) | `6ed51171` | **SHIPPED** |
 | **105** | BioSIFTA research loop (`register_claim`, TF-IDF retrieve, experiments, heuristic `claim_tournament`, skills) | `13d3ec78` | **SHIPPED** |
 | **106** | Nightly stigmergic health audit (`nightly_health.jsonl`, CUSUM null, corpus, pytest gate; `--no-arxiv` / `--with-claims`) | `e0fee687` | **SHIPPED** |
+| **107** | Ledger-derived health metrics (`swarm_health_metrics.py` → nightly `ledger_metrics` + composite) | `EVENT107_HASH` | **SHIPPED** |
 | **110** | LLM-bearing organism substrate (`llm_organism_state.jsonl`, manifest + `get_current_regime_summary`) | `67da0a98` | **SHIPPED** |
 | **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
 

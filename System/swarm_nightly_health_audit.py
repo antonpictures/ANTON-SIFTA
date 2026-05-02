@@ -22,6 +22,7 @@ single authoritative health snapshot covering:
 Output ledger: .sifta_state/nightly_health.jsonl
 Output summary: .sifta_state/nightly_health_summary.json  (overwritten each run)
 Truth label:    NIGHTLY_HEALTH_AUDIT_EVENT_106
+Event 107:      Ledger-derived scalar scores via `swarm_health_metrics.py` (composite).
 
 Scheduling (macOS launchd / cron):
   # Run at 03:00 every day:
@@ -423,13 +424,36 @@ def run_nightly_audit(
     _log(f"{status_icon} {tg.get('summary', '?')}  "
          f"passed={tg.get('passed',0)}  failed={tg.get('failed',0)}")
 
-    # ── Composite score ───────────────────────────────────────────────────────
-    obs_score   = float(sections["observability"].get("attribution_confidence", 0.5))
-    al_score    = 1.0 - float(sections["allostatic"].get("allostatic_load", 0.5))
-    test_score  = 1.0 if sections["tests"].get("status") == "PASS" else 0.0
-    bio_score   = min(1.0, float(sections["bio_corpus"].get("n_claims", 0)) / 50.0)
-    composite   = round((obs_score * 0.35 + al_score * 0.25 +
-                          test_score * 0.30 + bio_score * 0.10), 4)
+    # ── Event 107 — Ledger-derived composite (truthful, not attribution proxy alone)
+    from System.swarm_health_metrics import (
+        composite_nightly_score,
+        score_allostatic_ledger,
+        score_motor_policy_ledger,
+        score_observability_ledgers,
+    )
+
+    lm_obs = score_observability_ledgers(state_dir=_STATE)
+    lm_allo = score_allostatic_ledger(state_dir=_STATE)
+    lm_motor = score_motor_policy_ledger(state_dir=_STATE)
+    ledger_metrics = {
+        "observability": lm_obs,
+        "allostatic": lm_allo,
+        "motor": lm_motor,
+    }
+    composite = composite_nightly_score(
+        ledger_obs=lm_obs,
+        ledger_allo=lm_allo,
+        ledger_motor=lm_motor,
+        test_section=sections["tests"],
+        bio_section=sections["bio_corpus"],
+    )
+    _log(
+        f"ledger: obs={lm_obs.get('observability_score')} "
+        f"parentage={lm_obs.get('parentage_score')} "
+        f"race={lm_obs.get('race_pressure')} "
+        f"allo={lm_allo.get('allostatic_score')} "
+        f"motor={lm_motor.get('motor_score')}"
+    )
 
     receipt: Dict[str, Any] = {
         "truth_label":    TRUTH_LABEL,
@@ -437,6 +461,7 @@ def run_nightly_audit(
         "ts_end":         time.time(),
         "duration_s":     round(time.time() - ts_start, 1),
         "composite_score": composite,
+        "ledger_metrics": ledger_metrics,
         "sections":       sections,
     }
 
