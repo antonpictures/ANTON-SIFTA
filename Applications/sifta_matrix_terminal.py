@@ -95,8 +95,8 @@ def _matrix_ollama_model_candidates(primary: str) -> list[str]:
         primary,
         f"{primary}:latest" if primary and ":" not in primary else "",
         "sifta-gemma4-alice:latest",
-        "sifta-alice-qwen35:latest",
-        "sifta-alice-qwen35",
+        "qwen3.5:2b",
+        "qwen3.5:2b",
         "qwen3.5:2b",
     ):
         name = (name or "").strip()

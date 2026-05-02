@@ -9,8 +9,8 @@ from System import ollama_file_weight_ledger as ledger
 TAGS_PAYLOAD = {
     "models": [
         {
-            "name": "gemma4:latest",
-            "model": "gemma4:latest",
+            "name": "sifta-gemma4-alice:latest",
+            "model": "sifta-gemma4-alice:latest",
             "size": 9_600 * 1024 * 1024,
             "digest": "digest-gemma",
             "modified_at": "2026-04-30T12:00:00Z",
@@ -34,7 +34,7 @@ def test_ollama_payload_becomes_one_file_weight_row_per_tag():
         ts=123.0,
     )
 
-    assert [row["tag"] for row in rows] == ["gemma4:latest", "qwen3.5:2b"]
+    assert [row["tag"] for row in rows] == ["sifta-gemma4-alice:latest", "qwen3.5:2b"]
     assert [row["file_weight_mb"] for row in rows] == [9600.0, 2700.0]
     assert all(row["schema"] == ledger.SCHEMA for row in rows)
     assert all(row["trace_id"] == "trace-test" for row in rows)
@@ -51,7 +51,7 @@ def test_ollama_file_weight_append_writes_jsonl_rows(tmp_path: Path):
 
     stored = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines()]
     assert len(appended) == len(stored) == 2
-    assert stored[0]["tag"] == "gemma4:latest"
+    assert stored[0]["tag"] == "sifta-gemma4-alice:latest"
     assert stored[1]["tag"] == "qwen3.5:2b"
 
 
@@ -72,7 +72,7 @@ def test_ollama_file_weight_probe_uses_tags_api_without_ollama_cli(monkeypatch, 
     )
 
     assert calls == [("http://local.test/api/tags", 0.25)]
-    assert [row["tag"] for row in rows] == ["gemma4:latest", "qwen3.5:2b"]
+    assert [row["tag"] for row in rows] == ["sifta-gemma4-alice:latest", "qwen3.5:2b"]
 
 
 def test_ollama_file_weight_rejects_negative_sizes():

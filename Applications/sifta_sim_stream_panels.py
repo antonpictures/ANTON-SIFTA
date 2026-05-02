@@ -356,7 +356,7 @@ class CyborgPanelWidget(QWidget):
                         f"Text so far:\n{self.context[-1500:]}\n\nContinue:"
                     )
                     data = json.dumps({
-                        "model": "gemma4:latest",
+                        "model": "sifta-gemma4-alice:latest",
                         "prompt": prompt,
                         "stream": False,
                         "temperature": 0.5,

@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "System"))
 
 M5_IP      = "192.168.1.100"   # M5 Mac Studio — lender node
-M5_MODEL   = "gemma4:latest"   # Ollama model running on M5
+M5_MODEL   = "sifta-gemma4-alice:latest"   # Ollama model running on M5
 LIVE_MODE  = "--live" in sys.argv
 
 

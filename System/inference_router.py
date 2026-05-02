@@ -114,7 +114,7 @@ _REMOTE_ONLY_MODELS: dict[str, str] = {
 # locally, fall back to this local model rather than crashing.
 _LOCAL_FALLBACK_MODEL = (
     "alice-phc-0.8b-cure:latest" if _THIS_NODE == "M1"
-    else "gemma4:latest"
+    else "sifta-gemma4-alice:latest"
 )
 
 # Event 85: deterministic metabolic routing proof surface.

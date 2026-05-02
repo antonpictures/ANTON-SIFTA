@@ -238,7 +238,7 @@ class AppFactoryWorker(QThread):
     build_complete = pyqtSignal(str)  # success message
     build_failed = pyqtSignal(str)   # failure message
 
-    def __init__(self, user_request: str, model: str = "gemma4:latest"):
+    def __init__(self, user_request: str, model: str = "sifta-gemma4-alice:latest"):
         super().__init__()
         self.user_request = user_request
         self.model = model

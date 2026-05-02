@@ -556,7 +556,7 @@ def _smoke() -> int:
         ("Sonos speaker",         "HTTP/1.1 200 OK\r\nServer: Linux UPnP/1.0 Sonos/76.1\r\n",         "iot",       "Sonos"),
         ("Plex",                  "HTTP/1.1 200 OK\r\nX-Plex-Protocol: 1.0\r\nContent-Type: text/xml", "nas",       "Plex"),
         ("Synology",              "<title>DSM Login - Synology</title>",                              "nas",       "Synology"),
-        ("Ollama",                '{"models":[{"name":"gemma4:latest"}]}',                            "ai_brain",  "Ollama"),
+        ("Ollama",                '{"models":[{"name":"sifta-gemma4-alice:latest"}]}',                            "ai_brain",  "Ollama"),
         ("Hue Bridge",            "<title>Philips hue Bridge 2.0</title>",                            "iot",       "Philips Hue"),
         ("Pseudopod rejection",   "[CELL MEMBRANE REJECTED]: [Errno 61] Connection refused",         "rejection", "Connection refused"),
     ]

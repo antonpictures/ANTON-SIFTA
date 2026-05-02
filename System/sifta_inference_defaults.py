@@ -34,7 +34,7 @@ ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
 # Canonical Ollama models.
 CANONICAL_OLLAMA_DEFAULT = "sifta-gemma4-alice"
-CANONICAL_OLLAMA_FALLBACK = "sifta-alice-qwen35"
+CANONICAL_OLLAMA_FALLBACK = "qwen3.5:2b"
 
 # Primary default — Ollama Gemma4. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(

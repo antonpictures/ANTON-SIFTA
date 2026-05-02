@@ -75,7 +75,7 @@ class ScriptGeneratorWorker(QThread):
     completed = pyqtSignal()
     error_signal = pyqtSignal(str)
 
-    def __init__(self, topic_key: str, model: str = "gemma4:latest"):
+    def __init__(self, topic_key: str, model: str = "sifta-gemma4-alice:latest"):
         super().__init__()
         self.topic_key = topic_key
         self.model = model

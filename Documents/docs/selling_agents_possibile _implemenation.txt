@@ -28,7 +28,7 @@ MODEL_TIMEOUTS = {
     "qwen3.5:4b": 90, 
     "deepseek-coder:6.7b": 120, 
     "tinyllama": 30, 
-    "gemma4:latest": 120
+    "sifta-gemma4-alice:latest": 120
 }
 B. Inject the reflex_bite Function
 Add this function right above extract_bite. This is DeepSeek's quick-fix suggestion, expanded to handle both strings and missing colons without burning LLM energy.
@@ -367,7 +367,7 @@ MODEL_TIMEOUTS = {
     "qwen3.5:0.8b": 30, 
     "qwen3.5:4b": 90, 
     "deepseek-coder:6.7b": 120, 
-    "gemma4:latest": 120
+    "sifta-gemma4-alice:latest": 120
 }
 STEP 2: Inject the Reflex Bite (Right above extract_bite, around line 68)
 Paste this entire function so the agents can snap their jaws shut on simple errors without wasting LLM energy:
@@ -2302,7 +2302,7 @@ MODEL_TIMEOUTS = {
     "qwen3.5:4b": 90, 
     "deepseek-coder:6.7b": 120, 
     "tinyllama": 30, 
-    "gemma4:latest": 120
+    "sifta-gemma4-alice:latest": 120
 }
 B. Inject the reflex_bite Function
 Add this function right above extract_bite. This is DeepSeek's quick-fix suggestion, expanded to handle both strings and missing colons without burning LLM energy.
@@ -2641,7 +2641,7 @@ MODEL_TIMEOUTS = {
     "qwen3.5:0.8b": 30, 
     "qwen3.5:4b": 90, 
     "deepseek-coder:6.7b": 120, 
-    "gemma4:latest": 120
+    "sifta-gemma4-alice:latest": 120
 }
 STEP 2: Inject the Reflex Bite (Right above extract_bite, around line 68)
 Paste this entire function so the agents can snap their jaws shut on simple errors without wasting LLM energy:

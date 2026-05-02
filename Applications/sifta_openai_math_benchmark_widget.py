@@ -360,7 +360,7 @@ def _ollama_solve(question: str, timeout_s: float = 15.0) -> str:
         model = resolve_ollama_model(app_context="math_benchmark")
     except Exception:
         import os
-        model = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "gemma4:latest")
+        model = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "sifta-gemma4-alice:latest")
 
     prompt = (
         f"Solve this math problem step by step. "

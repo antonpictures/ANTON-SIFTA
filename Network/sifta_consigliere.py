@@ -262,7 +262,7 @@ Rules:
 """
 
 
-def request_advisory(model: str = "gemma4:latest", ollama_base: str = "") -> dict:
+def request_advisory(model: str = "sifta-gemma4-alice:latest", ollama_base: str = "") -> dict:
     """
     Full advisory cycle:
     1. Read colony state
@@ -505,7 +505,7 @@ Examples:
                         help="Continuous advisory loop")
     parser.add_argument("--interval", type=int, default=120,
                         help="Seconds between watch cycles (default: 120)")
-    parser.add_argument("--model", default="gemma4:latest",
+    parser.add_argument("--model", default="sifta-gemma4-alice:latest",
                         help="LLM model to use")
     parser.add_argument("--ollama-base", default="",
                         help="Ollama base URL")

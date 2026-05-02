@@ -406,7 +406,7 @@ def system_prompt_for_case(case: dict[str, Any]) -> str | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--before", default="gemma4:latest", help="Baseline Ollama model tag.")
+    parser.add_argument("--before", default="sifta-gemma4-alice:latest", help="Baseline Ollama model tag.")
     parser.add_argument("--after", default="gemma4-cured:latest", help="Modified Ollama model tag.")
     parser.add_argument("--extra-model", action="append", default=[], help="Additional model tag to run.")
     parser.add_argument("--base-url", default="http://127.0.0.1:11434", help="Ollama base URL.")

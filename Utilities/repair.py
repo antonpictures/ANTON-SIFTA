@@ -62,8 +62,8 @@ from body_state import SwarmBody, parse_body_state, apply_damage, bury, find_hea
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OLLAMA_URL    = "http://localhost:11434/api/generate"
-REPAIR_MODEL = "gemma4:latest"
-FALLBACK_MODEL = "gemma4:latest"
+REPAIR_MODEL = "sifta-gemma4-alice:latest"
+FALLBACK_MODEL = "sifta-gemma4-alice:latest"
 # Canonical economy ledger at repo root (same file as inference_economy / locked append).
 LOG_PATH     = REPO_ROOT / "repair_log.jsonl"
 # Inference fees are recorded in-process via inference_economy (repair_log.jsonl).
@@ -449,7 +449,7 @@ def stitch_bite(filepath: Path, fixed_text: str, start: int, end: int, original_
 
 
 # ─── PRE-COGNITIVE IDENTITY SYNTHESIS ────────────────────────────────────────
-def synthesize_identity(agent_id: str, error_trace: str, model: str = "gemma4:latest", ollama_base: str = "", has_hive_match: bool = False) -> dict:
+def synthesize_identity(agent_id: str, error_trace: str, model: str = "sifta-gemma4-alice:latest", ollama_base: str = "", has_hive_match: bool = False) -> dict:
     """Pre-cognitive step where the agent consciously decides its identity based on the environment."""
     import json
     import urllib.request
@@ -516,7 +516,7 @@ def synthesize_identity(agent_id: str, error_trace: str, model: str = "gemma4:la
 
 
 # ─── LLM CALL (Streaming — tokens print live into SSE pipeline) ──────────────
-def call_ollama(prompt: str, model: str = "gemma4:latest", ollama_base: str = "", vocation: str = "DETECTIVE", agent_id: str = None, temperature: float = 0.0, max_tokens: int = 512) -> Optional[str]:
+def call_ollama(prompt: str, model: str = "sifta-gemma4-alice:latest", ollama_base: str = "", vocation: str = "DETECTIVE", agent_id: str = None, temperature: float = 0.0, max_tokens: int = 512) -> Optional[str]:
     import json
     import urllib.request
     from pathlib import Path
@@ -941,8 +941,8 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
     print(f"  [LLM] Waking Grammarian to purify {len(paragraphs)} dialogue blocks...")
     
     import sys
-    model = "gemma4:latest"
-    fast_model = "gemma4:latest"
+    model = "sifta-gemma4-alice:latest"
+    fast_model = "sifta-gemma4-alice:latest"
     if "--model" in sys.argv:
         model = sys.argv[sys.argv.index("--model") + 1]
     if "--fast-model" in sys.argv:
@@ -1023,7 +1023,7 @@ def itt_exorcism(filepath: Path, state: dict, dry_run: bool = True) -> bool:
 
 from existence_guard import validate_existence, register_death, release_identity, identity_fingerprint
 
-def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False, investor: bool = False):
+def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "sifta-gemma4-alice:latest", fast_model: str = "sifta-gemma4-alice:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False, investor: bool = False):
     from inference_economy import can_spend_inference
     if not can_spend_inference(state, cost=2.0):
         return
@@ -1770,7 +1770,7 @@ def _swim_and_repair_impl(target_dir: str, state: dict, dry_run: bool = True, pr
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
-def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "gemma4:latest", fast_model: str = "gemma4:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False, investor: bool = False):
+def swim_and_repair(target_dir: str, state: dict, dry_run: bool = True, provider: str = "ollama", model: str = "sifta-gemma4-alice:latest", fast_model: str = "sifta-gemma4-alice:latest", base_url: str = "", api_key: str = "", verify: bool = False, remote_ollama_url: str = "", use_proposals: bool = False, investor: bool = False):
     import sys
     from pathlib import Path
     _SYS = Path(__file__).resolve().parent.parent / "System"
@@ -1842,8 +1842,8 @@ if __name__ == "__main__":
     parser.add_argument("--body", type=str, default="",
                         help="Raw ASCII body string to initialize state from")
     parser.add_argument("--provider", default="ollama", choices=["ollama", "openai", "openrouter", "google", "custom"])
-    parser.add_argument("--model", default="gemma4:latest")
-    parser.add_argument("--fast-model", default="gemma4:latest")
+    parser.add_argument("--model", default="sifta-gemma4-alice:latest")
+    parser.add_argument("--fast-model", default="sifta-gemma4-alice:latest")
     parser.add_argument("--base-url", default="")
     parser.add_argument("--api-key", default="")
     parser.add_argument("--depth", type=int, default=0, help="Recursion depth tracker for COOP_HANDOFF block")

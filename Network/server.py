@@ -2284,9 +2284,9 @@ async def consigliere_digest():
 async def consigliere_advise():
     """Request a full LLM advisory sweep. Uses the configured model."""
     from sifta_consigliere import request_advisory
-    model = providerSettings.get("model", "gemma4:latest") if "providerSettings" in dir() else "gemma4:latest"
+    model = providerSettings.get("model", "sifta-gemma4-alice:latest") if "providerSettings" in dir() else "sifta-gemma4-alice:latest"
     # Use a sensible default model
-    advisory = request_advisory(model="gemma4:latest")
+    advisory = request_advisory(model="sifta-gemma4-alice:latest")
     return advisory
 
 

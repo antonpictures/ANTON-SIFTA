@@ -320,7 +320,7 @@ class GlobalCognitiveInterface(QWidget):
         self.architect_id = architect_id
         self._worker: Optional[_GCIWorker] = None
         self._bus = None
-        self._model = "gemma4:latest"  # M5 default — see sifta_inference_defaults.py
+        self._model = "sifta-gemma4-alice:latest"  # M5 default — see sifta_inference_defaults.py
         self._app_context_injection = ""  # live state injected by host app (e.g. poker hand)
 
         # Try to initialize Memory Bus

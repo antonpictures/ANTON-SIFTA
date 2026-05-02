@@ -18,7 +18,7 @@ Keep it under 4 sentences.
 """
 
 payload = {
-    "model": "gemma4:latest",
+    "model": "sifta-gemma4-alice:latest",
     "prompt": prompt,
     "stream": False
 }

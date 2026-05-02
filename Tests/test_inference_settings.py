@@ -45,7 +45,7 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
 
     assert defaults.CANONICAL_OLLAMA_DEFAULT == "sifta-gemma4-alice"
     assert defaults.DEFAULT_OLLAMA_MODEL == "sifta-gemma4-alice"
-    assert defaults.CANONICAL_OLLAMA_FALLBACK == "sifta-alice-qwen35"
+    assert defaults.CANONICAL_OLLAMA_FALLBACK == "qwen3.5:2b"
     assert "Default Alice cortex:** `sifta-gemma4-alice`" in (defaults.__doc__ or "")
     assert "gemma-4-abliterated:latest` (Ollama)" not in (defaults.__doc__ or "")
 
