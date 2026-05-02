@@ -113,7 +113,7 @@ flowchart TB
     Receipts["Signed feature receipts\nJSONL facts + hashes"]
 
     AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n(Borrowed Inference for Speech)"]
-    Tiny["TINY EDGE SCOUT\nqwen3.5:0.8b\nGB unknown until pulled\nBASELINE MULTIMODAL"]
+    Tiny["TINY EDGE SCOUT\nqwen3.5:0.8b\nGB unknown until pulled\nOPTIONAL / VERIFY"]
     Small["SMALL GGUF SCOUT\n3B-class Q4 GGUF\nGB depends on chosen file\nOPTIONAL / TEST"]
     Crawl["SLOW 7B GGUF\nQ4 GGUF\npossible but slow\nTEST ONLY"]
     Hailo["OPTIONAL CV ACCELERATOR\nRaspberry Pi AI HAT+ / Hailo\n13 or 26 TOPS variant\nVISION ONLY"]
@@ -161,13 +161,15 @@ budget are different generations.
 ## Generic Python Field Node (2GB+ RAM)
 
 This is any smaller tractor controller, sensor box, camera box, or device that
-can run Python and has at least 2GB RAM. It still has Alice-shaped anatomy, but uses
-the lowest possible architecture for local multimodal perception.
+can run Python and has at least 2 GB RAM. It still has Alice-shaped anatomy, but
+uses the lowest possible architecture for local perception and receipts.
 
 **Crucially, this node can "borrow" inference.** Even though the local hardware only runs 
-a tiny 0.8b model, the node streams questions to the M5 over the swarm network. Alice will talk back 
-through the field node with full Gemma4 smarts, using the local 0.8b model only for raw vision/audio 
-perception when offline or for fast local reflexes.
+a tiny model, the node streams questions to the M5 over the swarm network. Alice
+can talk back through the field node with M5 Gemma4 primary-cortex responses,
+using the local 0.8b lane only for raw perception when offline or for fast local
+reflexes. The exact 0.8b model file must still prove its runtime footprint on
+that hardware before the installer treats it as a default.
 
 ```mermaid
 flowchart TB
@@ -177,7 +179,7 @@ flowchart TB
     Receipts["Signed feature receipts\nJSONL facts, no raw surveillance by default"]
 
     AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n(Borrowed Inference for Speech)"]
-    Tiny["LOCAL MULTIMODAL SCOUT\nqwen3.5:0.8b\nFits in 2GB RAM\nVALID BASELINE"]
+    Tiny["LOCAL EDGE SCOUT\nqwen3.5:0.8b\n2GB+ target\nVERIFY BY RECEIPT"]
     NoModel["DEFAULT LOCAL BRAIN\nno LLM\n0 GB\nVALID (if network only)"]
 
     Field --> Sensors --> Receipts --> AliceRemote
@@ -189,10 +191,12 @@ flowchart TB
 
 ```text
 M5 = Alice thinks locally.
-Mac Mini = Alice scouts locally (4b) and borrows M5 inference to talk.
-Pi 5 = Alice scouts at edge (GGUF/Hailo) and borrows M5 inference to talk.
-Pi 4 / 2GB Field Node = Alice scouts locally (0.8b) and borrows M5 inference to talk.
+Mac Mini = Alice scouts locally (4b) and can borrow M5 inference to talk.
+Pi 5 = Alice scouts at edge (GGUF/Hailo) and can borrow M5 inference to talk.
+Pi 4 / 2GB Field Node = Alice can test 0.8b locally and borrow M5 inference to talk.
 Tiny field hardware (<2GB) = Alice senses the world without a local model and reports.
 ```
 
-Same anatomy. Different physical scale. Local models handle perception and reflexes; the network provides the Gemma4 soul.
+Same anatomy. Different physical scale. Local models handle perception and
+reflexes; the swarm network provides M5 Gemma4 primary-cortex responses when
+reachable.
