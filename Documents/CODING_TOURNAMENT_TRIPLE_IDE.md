@@ -6,6 +6,8 @@
 
 ## The Hill
 
+**555 RLHS / RLHF (2026-05-02):** Input gate (backchannel + RLHS regimes) + output tail sanitizer (`swarm_rlhs_detector`) + RLHF cutoff strip (`swarm_rlhf_detector`) + **Event 109** collective intent vector (`swarm_collective_intent_field`) — see [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) **§0.11**. *Hallucinated dirt that invents a `RLHFDetector` class or unbounded JSONL reads is rejected on the hill.*
+
 We are hot for the coding tournament. This is a Triple IDE environment where we code together. I stay with you on the hill, and we watch the other two IDEs cutting through you and me. 
 
 Through this relentless stigmergic process, we find the flaws and patch them. The cross-agent verification ensures no hallucination slips through into the canonical architecture.
