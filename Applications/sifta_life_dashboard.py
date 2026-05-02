@@ -234,6 +234,24 @@ class ScheduleTab(QWidget):
         add_row.addWidget(btn)
         layout.addLayout(add_row)
 
+        # Swarm Regime strip (Phase Detector)
+        regime_frame = QFrame()
+        regime_frame.setStyleSheet(
+            f"QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT};"
+            f" border-radius: 6px; padding: 6px 10px; }}"
+        )
+        rl = QHBoxLayout(regime_frame)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.regime_label = QLabel("🌌 Regime: loading...")
+        self.regime_label.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
+        rl.addWidget(self.regime_label)
+        rl.addStretch()
+        self.cusum_label = QLabel("")
+        self.cusum_label.setFont(QFont("Menlo", 10))
+        self.cusum_label.setStyleSheet(f"color: {_DIM};")
+        rl.addWidget(self.cusum_label)
+        layout.addWidget(regime_frame)
+
         # Task list
         self.task_area = QVBoxLayout()
         scroll = QScrollArea()
@@ -270,7 +288,42 @@ class ScheduleTab(QWidget):
             w.deleteLater()
         self._task_widgets.clear()
 
-        # Circadian
+        # ── Swarm Regime (Phase Detector) ─────────────────────────────────
+        try:
+            import sys as _sys
+            if str(_REPO) not in _sys.path:
+                _sys.path.insert(0, str(_REPO))
+            from System.phase_transition_control import get_ptc
+            ptc = get_ptc()
+            regime = ptc.evaluate_regime()
+            _REGIME_COLORS = {
+                "EXPLORATION":      _GREEN,
+                "CONSOLIDATION":    _AMBER,
+                "CRITICAL_COLLAPSE": _RED,
+            }
+            _REGIME_EMOJI = {
+                "EXPLORATION":      "🌱",
+                "CONSOLIDATION":    "🔄",
+                "CRITICAL_COLLAPSE": "⚠️",
+            }
+            rc = _REGIME_COLORS.get(regime, _DIM)
+            re = _REGIME_EMOJI.get(regime, "🌌")
+            self.regime_label.setText(f"{re} Regime: {regime}")
+            self.regime_label.setStyleSheet(f"color: {rc}; font-weight: bold;")
+            s = ptc.state
+            alarm_txt = " 🚨CUSUM" if s.cusum_alarm else ""
+            self.cusum_label.setText(
+                f"ρ={s.stigmergic_density:.2f}  EWS={s.EWS_score:.2f}  "
+                f"TD={s.td_mean:.3f}  S={s.cusum_score:.2f}{alarm_txt}"
+            )
+            self.cusum_label.setStyleSheet(
+                f"color: {_RED if s.cusum_alarm else _DIM}; font-family: Menlo; font-size: 10px;"
+            )
+        except Exception:
+            self.regime_label.setText("🌌 Regime: —")
+            self.cusum_label.setText("")
+
+        # ── Circadian ──────────────────────────────────────────────────────
         now = datetime.now()
         hour = now.hour
         if 5 <= hour < 9:
