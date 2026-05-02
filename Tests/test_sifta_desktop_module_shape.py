@@ -268,6 +268,54 @@ def test_make_sub_cascades_default_positions(monkeypatch):
         app.processEvents()
 
 
+def test_mdi_wrapper_does_not_duplicate_base_widget_help(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
+    monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
+    monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
+
+    from PyQt6.QtWidgets import QApplication, QLabel, QMdiArea, QPushButton
+
+    from System.sifta_base_widget import SiftaBaseWidget
+    from sifta_os_desktop import SiftaDesktop
+
+    class HelpHarness(SiftaBaseWidget):
+        APP_NAME = "System Settings"
+
+        def build_ui(self, layout):
+            layout.addWidget(QLabel("settings body"))
+
+    def contextual_help_buttons(widget):
+        return [
+            button for button in widget.findChildren(QPushButton)
+            if button.text() == "?" and button.toolTip().startswith("Help ")
+        ]
+
+    app = QApplication.instance() or QApplication([])
+
+    class DesktopHarness:
+        _open_windows = {}
+        _apps_manifest_cache = {}
+
+    desktop = DesktopHarness()
+    desktop.mdi = QMdiArea()
+    desktop.mdi.resize(1200, 800)
+    desktop._open_windows = {}
+    desktop._apps_manifest_cache = {}
+    try:
+        base_sub = SiftaDesktop._make_sub(desktop, HelpHarness(), "System Settings", 520, 360, "#414868")
+        plain_sub = SiftaDesktop._make_sub(desktop, QLabel("plain body"), "Plain Panel", 320, 220, "#414868")
+        app.processEvents()
+
+        assert len(contextual_help_buttons(base_sub.widget())) == 1
+        assert len(contextual_help_buttons(plain_sub.widget())) == 1
+        assert plain_sub.widget().findChild(QPushButton, "mdiTitleHelpButton") is not None
+        assert base_sub.widget().findChild(QPushButton, "mdiTitleHelpButton") is None
+    finally:
+        desktop.mdi.close()
+        app.processEvents()
+
+
 def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")

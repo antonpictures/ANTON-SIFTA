@@ -180,6 +180,22 @@ def _shutdown_embedded_widget_tree(root: QWidget | None) -> None:
         _shutdown_qprocess(getattr(widget, "process", None))
 
 
+def _widget_provides_contextual_help(widget: QWidget | None) -> bool:
+    """Return True when a child app already exposes the standard app help."""
+    if widget is None:
+        return False
+    try:
+        for button in widget.findChildren(QPushButton):
+            if (
+                button.text().strip() == "?"
+                and button.toolTip().startswith("Help ")
+            ):
+                return True
+    except RuntimeError:
+        return False
+    return False
+
+
 def _ranges_overlap(a0: int, a1: int, b0: int, b1: int) -> bool:
     return a0 < b1 and b0 < a1
 
@@ -1979,7 +1995,8 @@ class SiftaDesktop(QMainWindow):
         title_layout.addStretch()
 
         # ── ? Help button (AG31) ───────────────────────────────────────────
-        # Replaces the removed native X. Shows: app description + GitHub link.
+        # Non-BaseWidget apps need wrapper help; SiftaBaseWidget apps already
+        # expose their own contextual help button inside the app chrome.
         _help_app_name = title  # capture for closure
         _manifest_cache = self._apps_manifest_cache
 
@@ -2046,16 +2063,18 @@ class SiftaDesktop(QMainWindow):
             vl.addLayout(hl)
             dlg.exec()
 
-        btn_help = QPushButton("?")
-        btn_help.setFixedSize(22, 22)
-        btn_help.setToolTip(f"Help — {_help_app_name}")
-        btn_help.setStyleSheet(
-            "QPushButton { background: #1a1b26; color: #00ffc8; border: 1px solid #2a2f3a;"
-            " border-radius: 5px; font-weight: bold; font-size: 13px; padding: 0; }"
-            " QPushButton:hover { background: #24283b; border-color: #00ffc8; }"
-        )
-        btn_help.clicked.connect(lambda _=False, n=_help_app_name: _make_help_popup(n))
-        title_layout.addWidget(btn_help)
+        if not _widget_provides_contextual_help(widget):
+            btn_help = QPushButton("?")
+            btn_help.setObjectName("mdiTitleHelpButton")
+            btn_help.setFixedSize(22, 22)
+            btn_help.setToolTip(f"Help — {_help_app_name}")
+            btn_help.setStyleSheet(
+                "QPushButton { background: #1a1b26; color: #00ffc8; border: 1px solid #2a2f3a;"
+                " border-radius: 5px; font-weight: bold; font-size: 13px; padding: 0; }"
+                " QPushButton:hover { background: #24283b; border-color: #00ffc8; }"
+            )
+            btn_help.clicked.connect(lambda _=False, n=_help_app_name: _make_help_popup(n))
+            title_layout.addWidget(btn_help)
 
         # QMdiSubWindow has no setTitleBarWidget in PyQt6. We inject it inside.
 
@@ -2127,7 +2146,8 @@ class SiftaDesktop(QMainWindow):
             sub.setToolTip("Pinned SIFTA organ: resizable, not draggable.")
         sub.show()
         self._open_windows[slot_key] = sub
-        sub.destroyed.connect(lambda _k=slot_key: self._open_windows.pop(_k, None))
+        open_windows = self._open_windows
+        sub.destroyed.connect(lambda _obj=None, _k=slot_key, _windows=open_windows: _windows.pop(_k, None))
         return sub
 
     def _panel_help_text(self, title: str) -> str:
