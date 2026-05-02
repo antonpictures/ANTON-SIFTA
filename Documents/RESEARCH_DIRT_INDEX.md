@@ -46,7 +46,7 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Qwopus** | Seam / heal FT metrics in ledger; **stall detector** (`max_wall_s`) for thinking loops; license pin. |
 | **Moonshot PRF** | Legal/residency review for any WAN KV story; reproduce one paper figure; map to borrowed-inference split without cloud dependency. |
 | **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router **without** treating metaphors as proof; cross-link receipts to [BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md). |
-| **Physiology (parallel hill)** | **Event 100 — SHIPPED** `da8a7b40` (drive → basal ganglia bias; truth `SIMULATED_INTRINSIC_DRIVE`). **Skill crystallizer — SHIPPED** `4fa10b91` (REM → primitives in dream/temporal path). **Still open:** **phase detector** (regime shift / non-stationarity) + wire crystallized skills into **action selection** if not already end-to-end. |
+| **Physiology (parallel hill)** | **Event 100 — SHIPPED** `da8a7b40`. **Skill crystallizer — SHIPPED** `4fa10b91`. **Phase detector (CUSUM on TD)** — **SHIPPED** `c82bce36` (`System/phase_transition_control.py`, `regime_shifts.jsonl` stats). **Event 93 pytest** — **SHIPPED** `c82bce36` (`tests/test_event_93_visual_phenotype_pass.py`). **Still open:** wire **crystallized primitives → motor policy** end-to-end if any gap; full-stack **bake-offs for §A** research rows. |
 
 ---
 
@@ -58,8 +58,9 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Event 99 — George Prior** | Shipped earlier | `swarm_intrinsic_drive.py`, daemon, `intrinsic_drive_receipts.jsonl`. |
 | **Event 100 — Basal ganglia bias** | **SHIPPED** `da8a7b40` | [EVENT_100_PREDATOR_SPEC.md](EVENT_100_PREDATOR_SPEC.md) (spec updated to match merge); `body_brain_memory.jsonl` gains `drive_bias_*` fields. |
 | **Skill crystallizer (Tier 2)** | **SHIPPED** `4fa10b91` | `swarm_dream_engine.py`, `temporal_identity_compression.py` + tests. |
-| **Event 93 — GPU / OpenGL live drive** | **GO active** (per Architect) | Off-screen rendering / visualizer — Antigravity/Codex execution; **append row here when pytest green.** |
-| **Research tournament §A** | Accreting | 11 SoT / stack rows; all `RESEARCH_NOT_SHIPPED` until bake-off receipts. |
+| **Event 93 — GPU / OpenGL live drive** | **SHIPPED** `c82bce36` | `tests/test_event_93_visual_phenotype_pass.py` (10/10); ModernGL offscreen + uniform contract + ledger delta proof. |
+| **Phase detector (regime / CUSUM)** | **SHIPPED** `c82bce36` | `System/phase_transition_control.py` — `PhaseDetectorStats` on `body_brain_memory.jsonl` TD stream; Page (1954) CUSUM. |
+| **Research tournament §A** | Accreting | 11 Fahd-stack / SoT **research** rows — **not** auto-implemented; each remains `RESEARCH_NOT_SHIPPED` until its own pytest + receipts (§E table). |
 
 *Vanguard channel: ratify in `IDE_BOOT_COVENANT.md`; append `ide_stigmergic_trace.jsonl` on each hill state change.*
 
