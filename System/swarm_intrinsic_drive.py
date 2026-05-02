@@ -242,7 +242,7 @@ def _emit_receipt(receipt: DriveReceipt) -> None:
     _mod._STATE.mkdir(parents=True, exist_ok=True)
     try:
         from System.jsonl_file_lock import append_line_locked
-        append_line_locked(log, receipt.as_jsonl())
+        append_line_locked(log, receipt.as_jsonl() + "\n")
     except Exception:
         # Fallback if lock module unavailable
         with log.open("a", encoding="utf-8") as f:

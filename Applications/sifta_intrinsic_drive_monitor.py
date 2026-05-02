@@ -46,6 +46,21 @@ _STATE = _REPO / ".sifta_state"
 _RECEIPT_LOG  = _STATE / "intrinsic_drive_receipts.jsonl"
 _MEMORY_LOG   = _STATE / "body_brain_memory.jsonl"
 
+# ── George Prior daemon import (non-fatal if System not on path) ──────────────
+try:
+    sys.path.insert(0, str(_REPO))
+    from System.swarm_intrinsic_drive import (
+        start_george_prior, stop_george_prior, get_current_drive,
+        intrinsic_drive_tick,
+    )
+    _GEORGE_PRIOR_AVAILABLE = True
+except Exception:
+    _GEORGE_PRIOR_AVAILABLE = False
+    def start_george_prior(*a, **kw): return None  # type: ignore
+    def stop_george_prior(): pass  # type: ignore
+    def get_current_drive(): return None  # type: ignore
+    def intrinsic_drive_tick(): return None  # type: ignore
+
 TOPIC_COLORS: Dict[str, str] = {
     "architecture": "#00dcff",
     "biology":      "#00e888",
@@ -190,11 +205,32 @@ class DriveMonitorWidget(QWidget):
         self.history = ScoreHistory()
         self.pulse_bars: Dict[str, TopicPulseBar] = {}
         self._ledger_cursor = 0
+        self._daemon = None
         self._build_ui()
+
+        # ── Self-start the George Prior daemon ────────────────────────────────
+        if _GEORGE_PRIOR_AVAILABLE:
+            try:
+                self._daemon = start_george_prior(tick_interval=5.0)  # 5 s for live UI
+            except Exception:
+                pass
+
+        # ── Backfill: generate 8 fast ticks immediately so bars aren't empty ─
+        if _GEORGE_PRIOR_AVAILABLE:
+            try:
+                for _ in range(8):
+                    intrinsic_drive_tick()
+            except Exception:
+                pass
+
+        # ── Seed cursor at 0 to backfill ALL history from disk ────────────────
+        self.history._cursor = 0
+        self.history.ingest_receipts()  # load everything already on disk
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._refresh)
         self.timer.start(1500)  # refresh every 1.5 s
+        self._refresh()  # immediate first paint
 
     def _build_ui(self):
         self.setStyleSheet("""
@@ -217,7 +253,7 @@ class DriveMonitorWidget(QWidget):
         truth_lbl.setStyleSheet("color: #2a3a4a; font-size: 10px; font-family: Menlo;")
         root.addWidget(truth_lbl)
 
-        # Entropy + count row
+        # Entropy + count + daemon status row
         entropy_row = QHBoxLayout()
         self.entropy_lbl = QLabel("H = — bits")
         self.entropy_lbl.setStyleSheet(
@@ -226,9 +262,12 @@ class DriveMonitorWidget(QWidget):
         )
         self.count_lbl = QLabel("receipts: 0")
         self.count_lbl.setStyleSheet("color: #405060; font-size: 10px; font-family: Menlo;")
+        self.daemon_lbl = QLabel("⚪ daemon: starting…")
+        self.daemon_lbl.setStyleSheet("color: #304050; font-size: 10px; font-family: Menlo;")
         entropy_row.addWidget(self.entropy_lbl)
         entropy_row.addWidget(self.count_lbl)
         entropy_row.addStretch()
+        entropy_row.addWidget(self.daemon_lbl)
         root.addLayout(entropy_row)
 
         # Current goal card
@@ -336,6 +375,18 @@ class DriveMonitorWidget(QWidget):
             f"background: #0a0a0a; border: 1px solid {h_color}40; border-radius: 5px; padding: 3px 8px;"
         )
         self.count_lbl.setText(f"receipts: {self.history.receipt_count}")
+
+        # Daemon status
+        if _GEORGE_PRIOR_AVAILABLE and self._daemon and self._daemon.is_alive():
+            ticks = getattr(self._daemon, 'ticks', '?')
+            self.daemon_lbl.setText(f"🟢 heartbeat  ·  {ticks} ticks")
+            self.daemon_lbl.setStyleSheet("color: #00e888; font-size: 10px; font-family: Menlo;")
+        elif _GEORGE_PRIOR_AVAILABLE:
+            self.daemon_lbl.setText("🟡 daemon: idle")
+            self.daemon_lbl.setStyleSheet("color: #f0c040; font-size: 10px; font-family: Menlo;")
+        else:
+            self.daemon_lbl.setText("⚪ daemon: unavailable")
+            self.daemon_lbl.setStyleSheet("color: #304050; font-size: 10px; font-family: Menlo;")
 
         # Circadian
         hour = time.localtime().tm_hour
