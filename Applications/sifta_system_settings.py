@@ -1284,10 +1284,17 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "border: 1px solid rgb(160, 110, 20); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        root.addLayout(_chip_row("M5 Scout",       "qwen3.5:9b  ·  multimodal VLM",
-                                  chip_style_scout, _fmt_weight("qwen3.5:9b")))
-        root.addLayout(_chip_row("Mac Mini Scout",  "qwen3.5:4b  ·  8 GB safe",
-                                  chip_style_scout, _fmt_weight("qwen3.5:4b")))
+        def _scout_weight(model: str) -> str:
+            """Show installed size OR explicit download-target label — never stale prefix data."""
+            label = _fmt_weight(model).strip()
+            return label if label and label != "not installed" else "↓ not downloaded yet"
+
+        root.addLayout(_chip_row("M5 Scout",
+                                  "qwen3.5:9b  ·  multimodal VLM",
+                                  chip_style_scout, _scout_weight("qwen3.5:9b")))
+        root.addLayout(_chip_row("Mac Mini Scout",
+                                  "qwen3.5:4b  ·  8 GB safe",
+                                  chip_style_scout, _scout_weight("qwen3.5:4b")))
 
         # ── Doctor section ──
         doctor_heading = QLabel("🩺  Doctor Organ  ·  text / tool / JSON only")
@@ -1300,10 +1307,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "border: 1px solid rgb(140, 70, 20); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        root.addLayout(_chip_row("Granite Doctor",  "granite4.1:3b  ·  router / coder / prover",
-                                  chip_style_doctor, _fmt_weight("granite4.1:3b")))
+        root.addLayout(_chip_row("Granite Doctor",
+                                  "granite4.1  ·  router / coder / prover",
+                                  chip_style_doctor, _scout_weight("granite4.1")))
         root.addLayout(_chip_row("Corvid Apprentice", self._corvid_default,
-                                  chip_style_organ, _fmt_weight(self._corvid_default)))
+                                  chip_style_organ, _scout_weight(self._corvid_default)))
 
         # ── Organs section ──
         organ_heading = QLabel("⚡  Reflex Organs  ·  pure-Python, run alongside cortex")
