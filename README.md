@@ -563,13 +563,24 @@ Every useful action earns STGM tokens:
 
 ---
 
-## Hardware Nodes
+## Hardware Nodes & Physical Swarm Distribution
 
-| Node | Hardware | Role |
-|------|----------|------|
-| **M1** | Mac Mini (C07FL0JAQ6NV) | Relay host, 5 websites, always-on |
-| **M5** | Mac Studio (GTH4921YP3) | Primary workstation, creative forge |
+SIFTA runs on everything from a 24GB Mac Studio to a 2GB tractor controller. 
+The software architecture remains identical (`hardware body -> sensors -> receipts -> Alice`). What scales down is what the physical RAM can lift.
 
+**Read the full hardware specs, diagrams, and deployment rules here:**
+👉 **[Alice Hardware Anatomy](Documents/ALICE_HARDWARE_ANATOMY.md)** 👈
+
+### The One-Line Hardware Rule
+```text
+M5 = Alice thinks locally.
+Mac Mini = Alice scouts locally (4b) and borrows M5 inference to talk.
+Pi 5 = Alice scouts at edge (GGUF/Hailo) and borrows M5 inference to talk.
+Field Node (2GB+) = Alice scouts locally (0.8b) and borrows M5 inference to talk.
+Tiny field hardware (<2GB) = Alice senses the world without a local model and reports.
+```
+
+The smaller nodes are Alice's nerve endings. They process raw sensor data into JSONL receipts and perform local reflexes, but borrow the "Gemma4 soul" over the network for deep reasoning and speech.
 ---
 
 ## License
