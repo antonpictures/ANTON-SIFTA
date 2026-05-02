@@ -35,6 +35,7 @@ def test_compute_playback_fingerprint_bounded() -> None:
     assert d.get("formula_revision") == "109b"
     assert "hnr_proxy" in d and "am_depth" in d
     assert len(apf.BIOACOUSTIC_STIGMERGY_ANCHORS) >= 2
+    assert len(apf.LITERATURE_CITES) >= 2
 
 
 def test_recent_tail_media_context(tmp_path) -> None:
@@ -48,6 +49,7 @@ def test_recent_tail_media_context(tmp_path) -> None:
                 "truth_label": "SYNTHETIC_BUFFER",
                 "playback_fingerprint": {
                     "truth_label": apf.TRUTH_LABEL,
+                    "formula_revision": "109b",
                     "channel_cue": "farfield_replay_likely",
                     "farfield_replay_likelihood": 0.9,
                     "nearfield_voice_likelihood": 0.1,

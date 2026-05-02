@@ -18,7 +18,10 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 import numpy as np
 
-from System.jsonl_file_lock import append_line_locked
+try:
+    from System.jsonl_file_lock import append_line_locked
+except Exception:  # pragma: no cover
+    append_line_locked = None  # type: ignore[assignment]
 
 _REPO = Path(__file__).resolve().parent.parent
 STATE_DIR = _REPO / ".sifta_state"
@@ -29,6 +32,30 @@ BIOACOUSTIC_STIGMERGY_ANCHORS = (
     "MFCC / mel cepstra: compact auditory-envelope receipt, not transcript trust.",
     "Crest factor + spectral flatness: compressed replay differs from near-field voice.",
     "Amplitude modulation depth + HNR proxy: chest voice carries different periodic structure than room speaker playback.",
+)
+
+# Citable primary literature (animal sound / audition) — for audits, not vibes.
+LITERATURE_CITES: tuple[dict[str, str], ...] = (
+    {
+        "topic": "mfcc_mel_cepstrum",
+        "cite": "Davis & Mermelstein (1980) IEEE TASSP — mel-frequency cepstral coefficients.",
+        "doi": "10.1109/TASSP.1980.1163420",
+    },
+    {
+        "topic": "animal_communication_principles",
+        "cite": "Bradbury & Vehrencamp — Principles of Animal Communication (spectral/temporal cues).",
+        "doi": "",
+    },
+    {
+        "topic": "comparative_vocal_motor",
+        "cite": "Suthers & Fitch (2011) Trends Neurosci. — vocal production across mammals/birds.",
+        "doi": "10.1016/j.tins.2011.04.002",
+    },
+    {
+        "topic": "cetacean_signature_whistles",
+        "cite": "Janik & Sayigh (2012) Commun Integr Biol. — long-window social identity signals.",
+        "doi": "10.4161/cib.21234",
+    },
 )
 
 
@@ -120,9 +147,10 @@ def compute_playback_fingerprint(
             "crest_factor": 0.0,
             "spectral_flatness": 0.5,
             "mfcc_coeff_std": 0.0,
-            "hnr_proxy": 0.0,
-            "am_depth": 0.0,
-        }
+        "hnr_proxy": 0.0,
+        "am_depth": 0.0,
+        "literature_anchors": [x["topic"] for x in LITERATURE_CITES],
+    }
 
     rms_v = float(rms if rms is not None else np.sqrt(np.mean(np.square(buf.astype(np.float64)))))
     peak_v = float(peak if peak is not None else np.max(np.abs(buf.astype(np.float64))))
@@ -168,6 +196,7 @@ def compute_playback_fingerprint(
         "mfcc_coeff_std": round(float(mfcc_std), 5),
         "hnr_proxy": round(float(hnr), 4),
         "am_depth": round(float(am_depth), 4),
+        "literature_anchors": [x["topic"] for x in LITERATURE_CITES],
     }
 
 
@@ -218,7 +247,14 @@ def append_acoustic_fingerprint_ledger(row: Mapping[str, Any], *, state_dir: Opt
         sort_keys=True,
     )
     out["fingerprint_row_id"] = hashlib.sha256(row_key.encode("utf-8")).hexdigest()[:16]
-    append_line_locked(sd / "acoustic_fingerprints.jsonl", json.dumps(out, sort_keys=True) + "\n")
+    path = sd / FINGERPRINT_LOG.name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(out, sort_keys=True) + "\n"
+    if append_line_locked is not None:
+        append_line_locked(path, line, encoding="utf-8")
+    else:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
     return out
 
 
@@ -230,7 +266,7 @@ def recent_tail_is_media_playback_context(
     max_age_s: float = 900.0,
 ) -> bool:
     """True when recent acoustic rows skew toward far-field/media replay."""
-    path = _state_dir(state_dir) / "acoustic_fingerprints.jsonl"
+    path = _state_dir(state_dir) / FINGERPRINT_LOG.name
     if not path.exists():
         return False
     try:
@@ -267,7 +303,9 @@ class AcousticPlaybackFingerprint:
     @staticmethod
     def compute_fingerprint(audio_chunk: np.ndarray, sample_rate: int = 16_000) -> Dict[str, Any]:
         fp = compute_playback_fingerprint(audio_chunk, sample_rate=sample_rate)
-        digest = hashlib.sha256(_as_mono_float(audio_chunk).tobytes()).hexdigest()[:16]
+        digest = hashlib.sha256(
+            json.dumps(fp, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:16]
         return {
             "fingerprint_id": digest,
             "timestamp": time.time(),
@@ -298,6 +336,7 @@ def classify_audio_context(audio_chunk: np.ndarray, sample_rate: int = 16_000) -
 __all__ = [
     "AcousticPlaybackFingerprint",
     "BIOACOUSTIC_STIGMERGY_ANCHORS",
+    "LITERATURE_CITES",
     "FORMULA_REVISION",
     "TRUTH_LABEL",
     "append_acoustic_fingerprint_ledger",
