@@ -1404,6 +1404,14 @@ def _current_system_prompt(
     cowatch = _cowatch_receipt_context_block(user_text=user_text)
     if cowatch:
         parts.append(cowatch)
+    try:
+        from System.swarm_architect_day_segments import format_segments_for_prompt
+
+        _seg_prompt = format_segments_for_prompt().strip()
+        if _seg_prompt:
+            parts.append(_seg_prompt)
+    except Exception:
+        pass
     
     affordances = tool_affordances_for_turn(user_text)
     if affordances:
@@ -4371,6 +4379,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not already_displayed:
             self._append_user_line(text, conf)
 
+        # ── Architect day segments (Event 117) — before media gate ─────────
+        # Sleep / activity windows must become receipts even if the next gate
+        # classifies long room audio as ambient YouTube.
+        try:
+            from System.swarm_architect_day_segments import try_ingest_architect_day_segment
+
+            try_ingest_architect_day_segment(text)
+        except Exception:
+            pass
+
         # ── MEDIA INGRESS GATE (Event 115) ─────────────────────────────
         # This must run before _log_turn("user", ...). _log_turn stamps RLHS
         # and deposits NOISE/DEGRADED spikes; movie/YouTube dialogue is not a
@@ -4597,6 +4615,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return
         except Exception as _wa_err:
             pass  # If reflex fails, fall through to brain
+
+        try:
+            from System.swarm_architect_day_segments import answer_recent_activity_query
+
+            _seg_reply = answer_recent_activity_query(text)
+        except Exception:
+            _seg_reply = ""
+        if _seg_reply:
+            self._history.append({"role": "assistant", "content": _seg_reply})
+            _log_turn("alice", _seg_reply, model="architect_day_segment_protocol")
+            self._append_alice_line(_seg_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
 
         try:
             from System.stigmergic_schedule import answer_query_for_alice
