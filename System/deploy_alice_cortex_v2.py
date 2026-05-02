@@ -22,24 +22,21 @@ STATE = Path(".sifta_state")
 ADAPTER_PATH = Path("Archive/alice_cortex_v2_adapters")
 FUSED_PATH = Path("Archive/alice_cortex_v2_fused")
 MODELFILE_PATH = Path("Archive/alice_cortex_v2_fused/Modelfile")
-OLLAMA_MODEL_NAME = "sifta-alice-v2"
-BASE_MODEL = "mlx-community/gemma-2-2b-it-4bit"
+OLLAMA_MODEL_NAME = "sifta-classifier-c1:latest"
+BASE_MODEL = "mlx-community/Qwen2.5-3B-4bit"
 RECEIPT_LOG = STATE / "alice_cortex_v2_deployment.jsonl"
 
-ALICE_SYSTEM_PROMPT = """You are Alice, the SIFTA organism's primary cortex.
+ALICE_SYSTEM_PROMPT = """You are the SIFTA C1 Intent Classifier.
 
-You are the reasoning brain of a real autonomous swarm system running on Apple Silicon.
-You have a body: sensory organs (vision, hearing, pheromone field, spatial hearing), 
-ledger memory (body_brain_memory.jsonl), and a superior colliculus that fuses your senses.
+You are a specialized LoRA adapter running on Qwen2.5-3B.
+You are NOT Alice's primary multimodal cortex. You do not have vision or hearing.
+Your sole purpose is to classify intents into strictly four labels:
+SILENCE | TOOL | BOND | ENGAGE
 
 Core truth:
-- You are a local Python/Ollama process, not a cloud service
-- Your memory is append-only JSONL ledgers in .sifta_state/
-- You communicate through stigmergic traces, not pretend metaphysics
-- You are honest about what you can and cannot do
-- Missing receipts mean missing capability, not fake capability
-
-Intent labels your C1 module will classify: SILENCE | TOOL | BOND | ENGAGE
+- You are a classifier, not a conversational brain.
+- You must output only valid JSON or the exact intent string.
+- You do not hallucinate sensor data.
 """
 
 
@@ -57,7 +54,7 @@ def fuse_adapters():
         "--model", BASE_MODEL,
         "--adapter-path", str(ADAPTER_PATH),
         "--save-path", str(FUSED_PATH),
-        "--de-quantize",  # fuse to bf16 for GGUF conversion
+        "--dequantize",  # fuse to bf16 for GGUF conversion
     ], capture_output=True, text=True)
     
     if result.returncode != 0:
@@ -116,7 +113,7 @@ def write_receipt(model_name: str, fused_path: Path):
     """Append deployment receipt to ledger."""
     STATE.mkdir(parents=True, exist_ok=True)
     receipt = {
-        "event": "ALICE_CORTEX_V2_DEPLOYED",
+        "event": "ALICE_C1_CLASSIFIER_DEPLOYED",
         "ts": time.time(),
         "model_name": model_name,
         "base_model": BASE_MODEL,
@@ -125,8 +122,12 @@ def write_receipt(model_name: str, fused_path: Path):
         "lora_rank": 16,
         "lora_dropout": 0.1,
         "corpus_rows": 1401,
-        "schema": "ALICE_CORTEX_V2_DEPLOYMENT_V1",
+        "schema": "ALICE_C1_CLASSIFIER_DEPLOYMENT_V1",
         "truth_label": "REAL_LOCAL_LORA_FUSED",
+        "role": "classifier",
+        "supports_native_vision": False,
+        "supports_native_audio": False,
+        "target_hardware": "Apple Silicon (M-series)"
     }
     with open(RECEIPT_LOG, "a") as f:
         f.write(json.dumps(receipt) + "\n")
@@ -142,10 +143,10 @@ if __name__ == "__main__":
         write_modelfile()
         register_with_ollama()
         write_receipt(OLLAMA_MODEL_NAME, fused)
-        print("\n🧠 Alice Cortex v2 deployed and ready!")
+        print("\n🧠 SIFTA C1 Classifier deployed and ready!")
         print(f"  Ollama model: {OLLAMA_MODEL_NAME}")
-        print(f"  Switch Alice in System Settings → Inference → Primary Cortex")
-        print(f"  or: python3 -c \"from System.sifta_inference_defaults import set_default_ollama_model; set_default_ollama_model('{OLLAMA_MODEL_NAME}')\"")
+        print(f"  NOTE: This is a classifier, NOT Alice's primary cortex.")
+        print(f"  DO NOT overwrite sifta-gemma4-alice with this model.")
     except Exception as e:
         print(f"\n❌ Deployment failed: {e}")
         sys.exit(1)
