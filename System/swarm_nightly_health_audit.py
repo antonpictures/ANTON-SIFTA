@@ -176,7 +176,7 @@ def _run_motor_policy_health() -> Dict[str, Any]:
         file_regime = "UNKNOWN"
         try:
             if regime_file.exists():
-                rd = json.loads(regime_file.read_text(encoding="utf-8"))
+                rd = json.loads(read_text_locked(regime_file, encoding="utf-8"))
                 file_regime = str(rd.get("state") or rd.get("regime") or "UNKNOWN")
         except Exception:
             pass
@@ -184,7 +184,8 @@ def _run_motor_policy_health() -> Dict[str, Any]:
         mem_path = _STATE / "body_brain_memory.jsonl"
         if mem_path.exists():
             try:
-                for line in mem_path.read_text(encoding="utf-8", errors="replace").splitlines()[-20:]:
+                body = read_text_locked(mem_path, encoding="utf-8", errors="replace")
+                for line in body.splitlines()[-20:]:
                     line = line.strip()
                     if not line:
                         continue
