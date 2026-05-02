@@ -4318,9 +4318,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _log_turn("alice", _rlhs_ground, model="rlhs_gate", stt_conf=conf)
             self._history.append({"role": "assistant", "content": _rlhs_ground})
             self._append_system_line(f"[RLHS] {_rlhs_ground}", error=False)
-            self._speak(_rlhs_ground)
-            self._busy = False
-            self._return_to_listening()
+            
+            self._tts = _TTSWorker(
+                _rlhs_ground, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
             return
 
         # ── MEDIA INGRESS GATE (C55M 2026-04-28) ─────────────────────
