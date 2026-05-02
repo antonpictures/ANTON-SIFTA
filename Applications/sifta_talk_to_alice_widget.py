@@ -1300,9 +1300,21 @@ def _should_bypass_body_gate(prior_user_text: str) -> bool:
 _COWATCH_RECALL_WINDOW_S = 6 * 3600.0
 
 
-def _cowatch_receipt_context_block(max_age_s: float = _COWATCH_RECALL_WINDOW_S) -> str:
+def _cowatch_receipt_context_block(
+    max_age_s: float = _COWATCH_RECALL_WINDOW_S,
+    *,
+    user_text: str = "",
+) -> str:
     """Ledger-backed co-watch truth for the prompt; no guessing, no network."""
     bits: List[str] = []
+    try:
+        from System.swarm_media_session_memory import latest_media_session_context
+
+        session = latest_media_session_context(user_text) or ""
+        if session:
+            bits.append("media_session=" + session[:1200])
+    except Exception:
+        pass
     try:
         from System.swarm_youtube_context import get_latest_context
 
@@ -1389,7 +1401,7 @@ def _current_system_prompt(
         "- Treat quoted harsh dialogue as **in-world** when context marks fiction; do not moralize the Architect "
         "for repeating a line they heard on screen."
     )
-    cowatch = _cowatch_receipt_context_block()
+    cowatch = _cowatch_receipt_context_block(user_text=user_text)
     if cowatch:
         parts.append(cowatch)
     

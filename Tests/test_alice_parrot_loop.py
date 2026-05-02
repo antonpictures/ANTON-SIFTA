@@ -154,9 +154,16 @@ def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
 
     import System.swarm_youtube_context as youtube_context
     import System.swarm_media_ingress_gate as media_gate
+    import System.swarm_media_session_memory as session_memory
 
     seen = {}
 
+    monkeypatch.setattr(
+        session_memory,
+        "latest_media_session_context",
+        lambda user_text: seen.setdefault("session_user_text", user_text)
+        and "media_session_memory n_videos=3 videos=Snatch / Backscroll / Jensen",
+    )
     monkeypatch.setattr(
         youtube_context,
         "get_latest_context",
@@ -177,7 +184,9 @@ def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
     prompt = mod._current_system_prompt(user_active=True, user_text="what are we watching?")
 
     assert "CO-WATCH RECEIPTS" in prompt
+    assert "media_session_memory n_videos=3" in prompt
     assert "reality_frame=FICTIONAL_MEDIA_CLIP" in prompt
     assert "not George's real-life social norm" in prompt
+    assert "what are we watching?" in seen["session_user_text"]
     assert seen["youtube_max_age_s"] >= 6 * 3600.0
     assert seen["media_max_age_s"] >= 6 * 3600.0
