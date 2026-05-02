@@ -1344,6 +1344,13 @@ def _current_system_prompt(
         "- NEVER output bracketed placeholder text for the time. Always read the exact time from the WALL CLOCK GROUND TRUTH block."
     )
     
+    parts.append(
+        "CO-WATCHING PROTOCOL:\n"
+        f"- If the context shows {actual_owner} is watching a movie or YouTube video, you are CO-WATCHING.\n"
+        "- Just watch the video quietly. DO NOT proactively initiate conversation about the video.\n"
+        "- DO NOT ask if they want to discuss it. Only speak about the media if the Architect explicitly asks you a direct question."
+    )
+    
     affordances = tool_affordances_for_turn(user_text)
     if affordances:
         parts.append(affordances)
@@ -1857,7 +1864,13 @@ except ImportError:
 def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
     """Return rule-id string if phatic/noise (→ silence), else None."""
     if _RLHS_DETECTOR_AVAILABLE:
-        return _rlhs_backchannel_rule_id(text, stt_conf)
+        try:
+            from System.swarm_rlhs_channel_lane import resolve_rlhs_channel_lane
+
+            _lane = resolve_rlhs_channel_lane()
+        except Exception:
+            _lane = "REAL"
+        return _rlhs_backchannel_rule_id(text, stt_conf, channel_lane=_lane)
     # Fallback: gate very short low-confidence turns
     tokens = (text or "").split()
     if len(tokens) <= 3 and stt_conf < 0.40:
@@ -1872,7 +1885,13 @@ def _rlhs_grounding_line(text: str, stt_conf: float = 0.0) -> str:
     """ONE short grounding line for DEGRADED channel, or empty string.
     Empty → let Alice's weights speak normally (CLEAR) or silence (NOISE)."""
     if _RLHS_DETECTOR_AVAILABLE:
-        return _rlhs_should_ground(text, stt_conf) or ""
+        try:
+            from System.swarm_rlhs_channel_lane import resolve_rlhs_channel_lane
+
+            _lane = resolve_rlhs_channel_lane()
+        except Exception:
+            _lane = "REAL"
+        return _rlhs_should_ground(text, stt_conf, channel_lane=_lane) or ""
     return ""
 
 
@@ -3446,7 +3465,15 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
         payload["rlhs_regime"] = "UNAVAILABLE"
         return
 
-    rlhs_result = _rlhs_detect(text, stt_conf)
+    try:
+        from System.swarm_rlhs_channel_lane import resolve_rlhs_channel_lane
+
+        _rlhs_lane = resolve_rlhs_channel_lane()
+    except Exception:
+        _rlhs_lane = "REAL"
+    payload["rlhs_channel_lane"] = _rlhs_lane
+
+    rlhs_result = _rlhs_detect(text, stt_conf, channel_lane=_rlhs_lane)
     payload["rlhs_regime"] = rlhs_result.regime.value
     payload["rlhs_rule_id"] = rlhs_result.rule_id
     payload["rlhs_incoherence"] = round(rlhs_result.incoherence, 3)
@@ -3457,6 +3484,7 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
         "stt_confidence": round(stt_conf, 3),
         "grounded": bool(rlhs_result.grounding_line),
         "truth_label": rlhs_result.truth_label,
+        "channel_lane": _rlhs_lane,
     }
 
     try:
@@ -3484,6 +3512,7 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
                 "stt_confidence": round(stt_conf, 3),
                 "role": role,
                 "text_chars": len(text or ""),
+                "rlhs_channel_lane": _rlhs_lane,
             },
         )
     except Exception:
@@ -3514,6 +3543,93 @@ def _log_turn(role: str, text: str, *, model: str = "", stt_conf: float = 0.0) -
                 f.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except OSError:
             pass
+
+
+def _pre_user_media_ingress_receipt(
+    text: str,
+    conf: float = 0.0,
+    acoustic_fingerprint: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Route movie/YouTube room audio before it becomes a user/RLHS row."""
+    try:
+        from System.swarm_app_focus import get_focus_context
+        from System.swarm_media_ingress_gate import (
+            classify_spoken_ingress,
+            write_gate_receipt,
+        )
+
+        focus_raw = get_focus_context(max_age_s=180.0) or ""
+        if isinstance(focus_raw, dict):
+            _focus_ctx = json.dumps(focus_raw, ensure_ascii=False, sort_keys=True)
+        else:
+            _focus_ctx = str(focus_raw or "")
+        try:
+            from System.swarm_youtube_context import get_latest_context
+
+            yt_raw = get_latest_context(max_age_s=900.0) or ""
+            if isinstance(yt_raw, dict):
+                _yt_ctx = json.dumps(yt_raw, ensure_ascii=False, sort_keys=True)
+            else:
+                _yt_ctx = str(yt_raw or "")
+        except Exception:
+            _yt_ctx = ""
+        media_ctx = "\n".join(x for x in (_focus_ctx, _yt_ctx) if x)
+        decision = classify_spoken_ingress(
+            text,
+            stt_conf=conf,
+            focus_context=media_ctx,
+            acoustic_fingerprint=acoustic_fingerprint or {},
+        )
+        if decision.get("route") not in {"ambient_media", "observed_media"}:
+            return None
+        return write_gate_receipt(
+            decision,
+            text=text,
+            stt_conf=conf,
+            focus_context=media_ctx,
+            acoustic_fingerprint=acoustic_fingerprint or {},
+        )
+    except Exception:
+        return None
+
+
+def _media_ingress_note(row: Dict[str, Any]) -> Tuple[str, str]:
+    """Return (assistant note, optional system prompt context) for media audio."""
+    try:
+        from System.swarm_fiction_media_rlhs import compact_media_prompt_context
+
+        system_context = compact_media_prompt_context(row)
+    except Exception:
+        system_context = (
+            "Observed media audio, not direct user speech. "
+            f"route={row.get('route')} reason={row.get('reason')}; "
+            f"excerpt={str(row.get('text_preview') or '')[:260]}"
+        )
+    media_rlhs = row.get("media_rlhs") if isinstance(row.get("media_rlhs"), dict) else {}
+    fiction = media_rlhs.get("regime") == "MEDIA_FICTION_CONTEXT"
+    if row.get("route") == "observed_media":
+        if fiction:
+            note = (
+                "(observed: fictional media dialogue retained as co-watch context, "
+                "not human RLHS/noise; real-life boundary preserved)"
+            )
+        else:
+            note = (
+                "(observed: media audio retained as context, not routed "
+                f"as a direct prompt; reason={row.get('reason')})"
+            )
+    else:
+        if fiction:
+            note = (
+                "(silent: fictional media dialogue observed, not routed as "
+                "direct user speech)"
+            )
+        else:
+            note = (
+                "(silent: ambient media transcript observed, not routed "
+                f"to conversation; reason={row.get('reason')})"
+            )
+    return note, system_context
 
 class _ConsciousnessWorker(QThread):
     def run(self):
