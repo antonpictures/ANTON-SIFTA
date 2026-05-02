@@ -46,7 +46,7 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Qwopus** | Seam/heal FT metrics; stall detector. |
 | **Moonshot PRF** | Legal review; reproduce paper figure. |
 | **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router without treating metaphors as proof. |
-| **Physiology (parallel hill)** | **Events 102–104** on `main` (allostatic, skill→motor, **observability auditor** ledger); wire `deposit_observation` from hot paths (`ide_stigmergic_bridge`, organs) + nightly `audit_trace_health` → `stigmergic_health.jsonl`. Deepen **crystallizer ↔ stabilizer ↔ phase controller** coupling. **Event 98c** showpiece; **CUSUM / Page** notes §F.1. |
+| **Physiology (parallel hill)** | **Events 102–104 + 110** on `main` (allostatic, motor policy, observability, **LLM-bearing organism manifest**); wire `deposit_observation` from hot paths + nightly health snapshots. **`swarm_bio_research_loop.py`** — paper chunk → claim → organ mapping → test proposal (backlog, 24GB LoRA-later lane). **Event 98c** showpiece; **CUSUM / Page** §F.1. |
 | **§A YouTube / stack dirt** | All **11** rows remain **`RESEARCH_NOT_SHIPPED`** until each stack wins its own bake-off (this table). |
 
 **Watch window note:** Three IDE bodies + `ide_stigmergic_trace.jsonl` as the honest scoreboard. Colosseum lights stay on for bake-offs and Event 98c / crystallizer–motor closure work.
@@ -71,6 +71,7 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 | **102** | Allostatic load regulator (stress window → policy + `allostatic_load.jsonl`) | `020530e6` | **SHIPPED** |
 | **103** | Skill-weighted motor policy (`crystallized_skills.json` → `motor_policy.jsonl`, basal-ganglia-style candidate pick) | `33426ca0` | **SHIPPED** |
 | **104** | Stigmergic observability layer (`stigmergic_observability.jsonl`, `causal_parent_ids`, `audit_trace_health`, health snapshots) | `6ed51171` | **SHIPPED** |
+| **110** | LLM-bearing organism substrate (`llm_organism_state.jsonl`, manifest + `get_current_regime_summary`) | `EVENT110_HASH` | **SHIPPED** |
 | **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
 
 **F.1 Literature anchors (motor policy + regulation, not exhaustive):** basal ganglia–thalamo-cortical loops and action sequence chunking — [Greybiel, *Curr. Opin. Neurobiol.* 2008](https://doi.org/10.1016/j.conb.2008.08.006); dopamine / reward prediction error (TD family) — [Schultz *et al.*, *Science* 1997](https://doi.org/10.1126/science.275.5306.1593); **CUSUM / Page** change detection — [Page 1954](https://doi.org/10.2307/2333249) (see `System/phase_transition_control.py`). **Crypto swimmers:** economic / STGM lanes stay on `System/crypto_keychain.py` (Ed25519); `SKILL_WEIGHTED_POLICY` rows are physiological telemetry, not mint events.
