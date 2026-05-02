@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import re
 import time
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -78,6 +79,29 @@ class RLHSResult:
             "rule_id":        self.rule_id,
             "grounding_line": self.grounding_line,
             "ts":             self.ts,
+        }
+
+
+@dataclass
+class RLHSTailResult:
+    """Output-side tail sanitizer receipt."""
+
+    text: str
+    changed: bool
+    rule_ids: List[str]
+    original_chars: int
+    final_chars: int
+    truth_label: str = TRUTH_LABEL
+    ts: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "truth_label": self.truth_label,
+            "changed": self.changed,
+            "rule_ids": list(self.rule_ids),
+            "original_chars": self.original_chars,
+            "final_chars": self.final_chars,
+            "ts": self.ts,
         }
 
 
@@ -193,6 +217,125 @@ _GROUNDING_LINE = "That came through noisy — one word or type it?"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Output-side RLHS tail detector
+# ══════════════════════════════════════════════════════════════════════════════
+# The input gate keeps noisy STT from reaching the model. This second gate cuts
+# the opposite failure mode: a clean answer followed by customer-service RLHF
+# tails or dangling option menus. We do not replace content with a scripted
+# answer. We only amputate terminal boilerplate and keep the model's payload.
+
+_SERVICE_OFFER_TAIL_RE = re.compile(
+    r"(?is)"
+    r"(?:^|(?<=[.!?])\s+|\n+)"
+    r"(?P<tail>"
+    r"(?:would\s+you\s+like\s+me\s+to|do\s+you\s+want\s+me\s+to|"
+    r"should\s+i|shall\s+i|if\s+you(?:'|’)?d\s+like,?\s+i\s+can|"
+    r"i\s+can\s+(?:also\s+)?(?:help|assist)\s+(?:you\s+)?(?:with|by)?|"
+    r"(?:how|what)\s+can\s+i\s+(?:help|assist|do)(?:\s+(?:for|with)\s+you)?|"
+    r"(?:please\s+)?let\s+me\s+know\s+if\s+you\s+(?:need|want|have)|"
+    r"is\s+there\s+anything\s+else|anything\s+else\s+i\s+can)"
+    r"[^\n]{0,600}"
+    r")\s*$",
+)
+
+_MENU_PREAMBLE_TAIL_RE = re.compile(
+    r"(?is)"
+    r"(?:^|(?<=[.!?])\s+|\n+)"
+    r"(?P<tail>"
+    r"(?:i\s+can\s+(?:do|offer|provide|help\s+with)\s+(?:you\s+)?"
+    r"(?:the\s+)?following|"
+    r"here(?:'|’)?s\s+(?:what|how)\s+i\s+can\s+help|"
+    r"here\s+are\s+(?:some\s+)?(?:options|things)\s+i\s+can\s+"
+    r"(?:do|help\s+with)|"
+    r"options\s*:)"
+    r"[^\n]{0,240}"
+    r"(?:\n?\s*(?:[-*•]|\d{1,2}[.)])\s*[^\n.!?]{0,220}){0,6}"
+    r")\s*$",
+)
+
+_DANGLING_ENUM_TAIL_RE = re.compile(
+    r"(?is)"
+    r"(?:^|(?<=[.!?])\s+|\n+)"
+    r"(?P<tail>"
+    r"(?:i\s+can\s+(?:do|offer|provide|help\s+with)\s+(?:you\s+)?"
+    r"(?:the\s+)?following|"
+    r"here(?:'|’)?s\s+(?:what|how)\s+i\s+can\s+help)"
+    r"\s*:?\s*(?:\n|\s)+"
+    r"(?:[-*•]|\d{1,2}[.)])\s*[^.!?\n]{0,160}"
+    r")\s*$",
+)
+
+_PURE_TAIL_RE = re.compile(
+    r"(?is)^\s*(?:"
+    r"would\s+you\s+like\s+me\s+to.*|"
+    r"(?:how|what)\s+can\s+i\s+(?:help|assist|do)(?:\s+(?:for|with)\s+you)?.*|"
+    r"i\s+can\s+(?:do|offer|provide|help\s+with)\s+(?:you\s+)?"
+    r"(?:the\s+)?following\s*:?.*|"
+    r"(?:please\s+)?let\s+me\s+know\s+if\s+you\s+(?:need|want|have).*"
+    r")\s*$"
+)
+
+
+def sanitize_output_tail(text: str) -> RLHSTailResult:
+    """
+    Remove terminal RLHF/RLHS service tails while preserving payload text.
+
+    This is deliberately output-side and terminal-only. Interior phrases like
+    "the user asked whether anything else changed" survive because they are not
+    service closers at the end of Alice's reply.
+    """
+    original = text or ""
+    out = original.strip()
+    rule_ids: List[str] = []
+    if not out:
+        return RLHSTailResult(
+            text="",
+            changed=bool(original),
+            rule_ids=["empty"] if original else [],
+            original_chars=len(original),
+            final_chars=0,
+        )
+
+    # If the whole reply is only service/menu scaffolding, return empty and let
+    # the caller's existing empty-reply recovery/body gate decide what happens.
+    if _PURE_TAIL_RE.match(out):
+        return RLHSTailResult(
+            text="",
+            changed=True,
+            rule_ids=["output_tail/pure_service_scaffold"],
+            original_chars=len(original),
+            final_chars=0,
+        )
+
+    changed = True
+    while changed and out:
+        changed = False
+        for rule_id, pattern in (
+            ("output_tail/dangling_numbered_menu", _DANGLING_ENUM_TAIL_RE),
+            ("output_tail/menu_preamble", _MENU_PREAMBLE_TAIL_RE),
+            ("output_tail/service_offer", _SERVICE_OFFER_TAIL_RE),
+        ):
+            match = pattern.search(out)
+            if not match:
+                continue
+            nxt = out[: match.start("tail")].rstrip()
+            if nxt == out:
+                continue
+            out = nxt
+            rule_ids.append(rule_id)
+            changed = True
+            break
+
+    return RLHSTailResult(
+        text=out,
+        changed=bool(rule_ids) or out != original.strip(),
+        rule_ids=rule_ids,
+        original_chars=len(original),
+        final_chars=len(out),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Main detector
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -303,17 +446,31 @@ def should_ground(text: str, stt_conf: float = 0.0) -> Optional[str]:
 
 def log_rlhs_turn(result: RLHSResult, *, state_dir: Optional[Path] = None) -> None:
     """Append RLHS classification row to .sifta_state/rlhs_turn_log.jsonl."""
-    import json
+    from System.jsonl_file_lock import append_line_locked
+
     root = Path(state_dir) if state_dir else _STATE_DIR
     root.mkdir(parents=True, exist_ok=True)
     log = root / "rlhs_turn_log.jsonl"
     row = json.dumps(result.to_dict(), ensure_ascii=False, separators=(",", ":"))
-    with open(log, "a", encoding="utf-8") as f:
-        f.write(row + "\n")
+    append_line_locked(log, row + "\n", encoding="utf-8")
+
+
+def log_rlhs_output_tail(result: RLHSTailResult, *, state_dir: Optional[Path] = None) -> None:
+    """Append output-tail sanitation receipt without storing private raw text."""
+    if not result.changed:
+        return
+    from System.jsonl_file_lock import append_line_locked
+
+    root = Path(state_dir) if state_dir else _STATE_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    log = root / "rlhs_output_tail_log.jsonl"
+    row = json.dumps(result.to_dict(), ensure_ascii=False, separators=(",", ":"))
+    append_line_locked(log, row + "\n", encoding="utf-8")
 
 
 __all__ = [
     "CONF_CLEAR", "CONF_DEGRADED", "TRUTH_LABEL",
-    "RLHSRegime", "RLHSResult",
-    "backchannel_rule_id", "detect_rlhs", "log_rlhs_turn", "should_ground",
+    "RLHSRegime", "RLHSResult", "RLHSTailResult",
+    "backchannel_rule_id", "detect_rlhs", "log_rlhs_output_tail", "log_rlhs_turn",
+    "sanitize_output_tail", "should_ground",
 ]
