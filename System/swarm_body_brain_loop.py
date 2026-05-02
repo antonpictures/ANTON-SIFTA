@@ -28,17 +28,32 @@ from System.swarm_biology_drive_plasticity import (
     plasticity_danger_token,
     update_drive_plasticity,
 )
+try:
+    from System.swarm_intrinsic_drive import start_george_prior, get_current_drive
+    _GEORGE_PRIOR_AVAILABLE = True
+except Exception:
+    _GEORGE_PRIOR_AVAILABLE = False
+    def start_george_prior(*a, **kw): return None  # type: ignore
+    def get_current_drive(): return None  # type: ignore
 
 logger = logging.getLogger("BodyBrainLoop")
 _STATE_DIR = Path(".sifta_state")
 
 
 class SwarmPhysiology:
-    def __init__(self, dream_engine: Optional[Any] = None):
+    def __init__(self, dream_engine: Optional[Any] = None, enable_george_prior: bool = True):
         self.homeostat = MetabolicHomeostat()
         self.consciousness = ConsciousnessEngine(cfg=ConsciousnessEngineConfig(spend_on_drive=True))
         self.dream_engine = dream_engine or SwarmDreamEngine(_STATE_DIR)
         self.value_history = []
+        # ── George Prior heartbeat — starts once, runs forever as daemon ──
+        self._george_prior_daemon = None
+        if enable_george_prior and _GEORGE_PRIOR_AVAILABLE:
+            try:
+                self._george_prior_daemon = start_george_prior()
+                logger.info("George Prior daemon started — Alice has a heartbeat. 🐜⚡")
+            except Exception:
+                logger.exception("George Prior daemon failed to start (non-fatal)")
 
     def _assess_danger(self, body_state: MetabolicState) -> Dict[str, Any]:
         """Convert raw metabolic state into a danger/pressure signal."""
@@ -170,6 +185,20 @@ class SwarmPhysiology:
             now_state=now_state,
             commit=True
         )
+
+        # 3b. George Prior — read the latest spontaneous drive receipt (non-blocking)
+        intrinsic_receipt: Optional[Any] = None
+        if _GEORGE_PRIOR_AVAILABLE:
+            try:
+                intrinsic_receipt = get_current_drive()
+                if intrinsic_receipt:
+                    logger.debug(
+                        "George Prior active: [%s] %s",
+                        intrinsic_receipt.topic,
+                        intrinsic_receipt.goal[:60],
+                    )
+            except Exception:
+                pass
         
         # 4. Action Selection
         attention = self._select_attention(consc_state)
@@ -228,6 +257,7 @@ class SwarmPhysiology:
             "dream_cycle": dream_cycle,
             "now_state": now_state,
             "drive_plasticity": drive_plasticity,
+            "intrinsic_drive": intrinsic_receipt.as_dict() if intrinsic_receipt else None,
         }
 
 
