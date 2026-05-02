@@ -51,6 +51,13 @@ except Exception:
     def write_allostatic_load(**kw): return {}  # type: ignore
 
 try:
+    from System.swarm_stigmergic_observability import stamp_tick_row
+    _OBSERVABILITY_AVAILABLE = True
+except Exception:
+    _OBSERVABILITY_AVAILABLE = False
+    def stamp_tick_row(row, **kw): return ""  # type: ignore
+
+try:
     from System.swarm_motor_policy import (
         select_action_type_from_skills,
         write_motor_policy_row,
@@ -510,7 +517,20 @@ class SwarmPhysiology:
             write_visual_phenotype_uniforms(mem_row)
         except Exception:
             logger.exception("Visual phenotype bridge skipped")
-        
+
+        # 7b. Event 104 — Stigmergic Observability stamp (The Auditor Organ)
+        obs_id: str = ""
+        if _OBSERVABILITY_AVAILABLE:
+            try:
+                obs_id = stamp_tick_row(
+                    mem_row,
+                    source="AG31",
+                    causal_parent_ids=[],  # first in chain; downstream rows will cite this
+                )
+                mem_row["obs_id"] = obs_id
+            except Exception:
+                logger.exception("Observability stamp skipped (non-fatal)")
+
         # 8. Sleep / Recovery (pass crystallizer_weight from homeostatic frame)
         crystallizer_weight = (
             homeostatic_frame.crystallizer_weight
