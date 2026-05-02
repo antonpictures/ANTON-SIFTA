@@ -34,35 +34,45 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 
 | Theme | Left to do (pick → implement → receipt) |
 |:---|:---|
-| **Receipts / schema** | Harmonise proposed JSONL fields (VRAM, `n_ctx`, `t_prefill`/`t_decode`, `bytes_moved`, modality flags) across bake-offs; document in one `work_receipts` extension or organ-specific ledgers. |
-| **Semble** | Micro-benchmark token savings + index/query latency on pinned ANTON_SIFTA revision; disposable MCP spike; optional `code_search_semble` proxy behind covenant §7; optional `swarm_multi_prover_verifier` `retrieval_receipt_id` extension. |
-| **Hermes** | Optional `Hermes_USER_BRIDGE.md`; enforce **ctx receipt** on every local lane boot (LM Studio / Ollama). |
-| **MiMo ASR** | Implement ASR eval fixtures + WER/RTF rows; optional diarization second stage; consent gates. |
-| **Laguna** | Tiered coding harness (Flask+WS / Kanban / canvas) with **subscore** receipts; log vLLM build hash + compile wall time. |
-| **Nemotron Omni** | Per-locale translation scoreboard; multimodal receipt template; threat model before Alice media wiring. |
-| **DeepSeek** | Reproduce or bound CSA/HCA/DeepEP **numbers** on paper vs marketing; TileKernels hardware floor (SM90/CUDA 13.1) noted for Foundry only. |
-| **Nemotron OCR v2** | MCP tool returning bbox+text; NVIDIA Open Model License pin; locale matrix Predator rows. |
-| **Google agents-cli** | If ever integrated: **cost receipt** (`project_id`, est USD, cold start); keep eval rubrics mirrored in-repo. |
-| **Qwopus** | Seam / heal FT metrics in ledger; **stall detector** (`max_wall_s`) for thinking loops; license pin. |
-| **Moonshot PRF** | Legal/residency review for any WAN KV story; reproduce one paper figure; map to borrowed-inference split without cloud dependency. |
-| **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router **without** treating metaphors as proof; cross-link receipts to [BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md). |
-| **Physiology (parallel hill)** | **Event 100 — SHIPPED** `da8a7b40`. **Skill crystallizer — SHIPPED** `4fa10b91`. **Phase detector (CUSUM on TD)** — **SHIPPED** `c82bce36` (`System/phase_transition_control.py`, `regime_shifts.jsonl` stats). **Event 93 pytest** — **SHIPPED** `c82bce36` (`tests/test_event_93_visual_phenotype_pass.py`). **Still open:** wire **crystallized primitives → motor policy** end-to-end if any gap; full-stack **bake-offs for §A** research rows. |
+| **Receipts / schema** | Harmonise JSONL fields (`VRAM`, `n_ctx`, `t_prefill` / `t_decode`, `bytes_moved`, modality flags) across bake-offs; document in one `work_receipts` extension or organ-specific ledgers. |
+| **Semble MCP** | Micro-benchmark token savings + latency on pinned revision; disposable MCP spike; optional MCP proxy + multi-prover extensions (see [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md)). |
+| **Hermes / LM Studio** | Optional `Hermes_USER_BRIDGE.md`; enforce **ctx receipt** on every local lane boot. |
+| **MiMo ASR** | Eval fixtures + WER/RTF rows; diarization stage; consent gates. |
+| **Laguna XS.2** | Tiered coding harness with **subscore** receipts; vLLM build hash + compile wall time. |
+| **Nemotron Omni** | Per-locale scoreboard; multimodal receipt template; threat model before Alice media wiring. |
+| **DeepSeek V4** | Reproduce CSA/HCA/DeepEP numbers vs marketing; TileKernels hardware floor on Foundry. |
+| **Nemotron OCR v2** | MCP tool with bbox+text; NVIDIA license pin; locale matrix Predator rows. |
+| **Google agents-cli** | Cost receipt + eval rubrics mirror **if** integrated. |
+| **Qwopus GLM** | Seam/heal FT metrics in ledger; **stall detector** (`max_wall_s`). |
+| **Moonshot PRFaaS** | Legal/residency review; reproduce one paper figure. |
+| **Quantum sack** | Optional: `swarm_rlhf_quarantine.py` / router metadata **without** metaphor-as-proof; [BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md](BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md). |
+| **Physiology (parallel hill)** | **Crystallizer → motor execution** weighting (close the loop with `_choose_action` / plasticity). **Event ~101 — Hypothalamus / homeostatic stabilizer:** regime + CUSUM → *active* suppression/boost of drives (planning sketch in chat; **no** `swarm_homeostatic_stabilizer.py` on `main` until Predator row + pytest). **Event 98c — closed sensorimotor loop:** pheromone → phenotype GL → audiogram → cochlea → colliculus salience → basal ganglia (receipted proof cycle — **plan**). **Intrinsic policy refinement** (floors, saturation, multi-drive arbitration). |
+| **§A YouTube / stack dirt** | All **11** rows remain **`RESEARCH_NOT_SHIPPED`** until each stack wins its own bake-off (this table). |
+
+**Watch window:** Antigravity vs Codex vs Cursor = **three IDE bodies**; hill honesty lives in **`ide_stigmergic_trace.jsonl`** + pytest, not vibes.
 
 ---
 
-## F. Hill / Vanguard status (keep reporting)
+## F. Shipped physiology & sensorimotor stack (verified on `main`)
 
-| Track | State | Ground |
-|:---|:---|:---|
-| **Epigenetic index (this file)** | **Live** | §A–§E + maintainer habit; chromatin metaphor = receipt-gated expression. |
-| **Event 99 — George Prior** | Shipped earlier | `swarm_intrinsic_drive.py`, daemon, `intrinsic_drive_receipts.jsonl`. |
-| **Event 100 — Basal ganglia bias** | **SHIPPED** `da8a7b40` | [EVENT_100_PREDATOR_SPEC.md](EVENT_100_PREDATOR_SPEC.md) (spec updated to match merge); `body_brain_memory.jsonl` gains `drive_bias_*` fields. |
-| **Skill crystallizer (Tier 2)** | **SHIPPED** `4fa10b91` | `swarm_dream_engine.py`, `temporal_identity_compression.py` + tests. |
-| **Event 93 — GPU / OpenGL live drive** | **SHIPPED** `c82bce36` | `tests/test_event_93_visual_phenotype_pass.py` (10/10); ModernGL offscreen + uniform contract + ledger delta proof. |
-| **Phase detector (regime / CUSUM)** | **SHIPPED** `c82bce36` | `System/phase_transition_control.py` — `PhaseDetectorStats` on `body_brain_memory.jsonl` TD stream; Page (1954) CUSUM. |
-| **Research tournament §A** | Accreting | 11 Fahd-stack / SoT **research** rows — **not** auto-implemented; each remains `RESEARCH_NOT_SHIPPED` until its own pytest + receipts (§E table). |
+Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md) / README hot-surfaces (94 ≠ cochlea; **95** = cochlea).
 
-*Vanguard channel: ratify in `IDE_BOOT_COVENANT.md`; append `ide_stigmergic_trace.jsonl` on each hill state change.*
+| Event | Component | Commit / anchor | Status |
+|:---|:---|:---|:---|
+| **93** | Visual phenotype / OpenGL pass (ModernGL contract, ledger Δ proof) | `c82bce36` | **SHIPPED** |
+| **94** | Pheromone field + stigmergic coordinate feed (cursor → field memory) | shipped (see Predator §0.7) | **SHIPPED** |
+| **95** | Stigmergic cochlea (+ integrator overlay to `body_brain_memory`) | shipped (Predator §0.8) | **SHIPPED** |
+| **97** | Owl spatial hearing + calibrator (ITD/ILD receipts) | shipped | **SHIPPED** |
+| **98** | Superior colliculus multisensory integration | shipped | **SHIPPED** |
+| **98b** | SC → body-brain integrator (`MULTISENSORY_COLLICULUS_MERGE`) | shipped | **SHIPPED** |
+| **99** | George Prior intrinsic drive daemon + receipts | pre-`da8a7b40` | **SHIPPED** |
+| **100** | Intrinsic drive → basal ganglia (`drive_bias_*` on tick) | `da8a7b40` | **SHIPPED** |
+| **—** | Skill crystallizer (REM → primitives) | `4fa10b91` | **SHIPPED** |
+| **—** | Phase detector + **CUSUM** on TD stream (`PhaseDetectorStats`, regime persistence) | `c82bce36` | **SHIPPED** |
+
+**Dashboard / UI:** regime strip + telemetry at Architect discretion (off-screen tests in Event 93 file).
+
+*Vanguard channel: ratify in [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md); append `ide_stigmergic_trace.jsonl` on each hill state change.*
 
 ---
 
