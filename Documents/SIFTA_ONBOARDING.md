@@ -30,22 +30,48 @@ a unique entity cryptographically fingerprinted to your silicon.
 
 ## 3. Installation
 
+### 3.0 Pick The Correct Hardware Role
+
+Do not clone the M5 brain onto every device. Install the role that matches the
+machine.
+
+```mermaid
+flowchart TB
+    M5["M5 / 24GB+ Foundry\nAlice primary cortex\nsifta-gemma4-alice"]
+    M5Scout["M5 multimodal scout\nqwen3.5:9b"]
+    Mini["Mac Mini / 8GB Sentry\nqwen3.5:4b + qwen3.5:2b\nno Gemma4 auto-download"]
+    Field["Raspberry Pi / tractor / field device\nsensor receipts first\nno default LLM"]
+    M5Scout --> M5
+    Mini --> M5
+    Field --> Mini
+    Field --> M5
+```
+
+| Device | Role | Model policy |
+|---|---|---|
+| M5 / 24GB+ | Foundry / Alice main body | Pull `sifta-gemma4-alice` and `qwen3.5:9b`. |
+| Mac Mini / 8GB | Sentry / scout | Pull `qwen3.5:4b` and `qwen3.5:2b`; never auto-pull Gemma4. |
+| Raspberry Pi / tractor / sensor box | Field node | Start with signed sensor receipts; add a tiny scout only if hardware proves it can run. |
+
 ```bash
 # Step 1: Clone the Swarm
 git clone https://github.com/antonpictures/ANTON-SIFTA.git
 cd ANTON-SIFTA
-git checkout feat/sebastian-video-economy
 
 # Step 2: Install Python dependencies
 pip3 install PyQt6
 
 # Step 3: Install your local AI engine
-# For M1/M2 Mac Mini (8GB RAM) — use small models:
-ollama pull phi3          # 2.3GB — recommended for M1
-ollama pull gemma2:2b     # 1.6GB — ultra-light backup
+# M5 / 24GB+ Foundry:
+ollama pull sifta-gemma4-alice
+ollama pull qwen3.5:9b
 
-# For M5 MacBook Pro (16GB+):
-ollama pull llama3        # 4.7GB — full power
+# Mac Mini / 8GB Sentry:
+ollama pull qwen3.5:4b
+ollama pull qwen3.5:2b
+
+# Raspberry Pi / tractor / field device:
+# no default model pull; boot sensor/receipt services first
 
 # Step 4: Verify Ollama is running
 ollama serve &            # or launch Ollama.app
@@ -84,7 +110,7 @@ The SIFTA OS Desktop includes a **GROUP chat** with three targets:
 
 | Target | What it is |
 |--------|-----------|
-| `SWARM (Ollama)` | Your local AI model (phi3, llama3, etc.) |
+| `SWARM (Ollama)` | Your local model for this hardware role (`sifta-gemma4-alice` on M5, `qwen3.5:4b`/`qwen3.5:2b` on Mac Mini, none by default on sensor-only nodes) |
 | `m5Queen (DeadDrop)` | The M5 machine's Queen — ANTIGRAVITY bridge |
 | `GROUP (Both)` | Broadcasts to all nodes simultaneously |
 

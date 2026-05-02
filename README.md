@@ -123,6 +123,50 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ## Quick Start
 
+### Hardware-Aware Install Topology
+
+Do not install the same brain on every device. SIFTA uses one primary cortex on
+the strongest local machine, then adds smaller scouts and field nodes that write
+signed receipts back into the same swarm.
+
+```mermaid
+flowchart LR
+    subgraph Foundry["Foundry Node: M5 / 24GB+ Unified Memory"]
+        Alice["Alice Primary Cortex\nsifta-gemma4-alice\nGemma4 main reasoning brain"]
+        Scout9["Multimodal Scout\nqwen3.5:9b\nvision receipts -> Gemma4"]
+        Doctor["Doctor / Router\nGranite4.1:3b optional\ntext, tools, JSON"]
+        Alice <--> Scout9
+        Alice <--> Doctor
+    end
+
+    subgraph Sentry["Sentry Node: Mac Mini / 8GB"]
+        Scout4["qwen3.5:4b\n8GB-safe multimodal scout"]
+        Corvid["qwen3.5:2b\nfast corvid/reflex organ"]
+        Scout4 --> ReceiptsMini["append-only receipts\nno Gemma4 auto-pull"]
+        Corvid --> ReceiptsMini
+    end
+
+    subgraph Field["Field Nodes: Raspberry Pi / tractor / camera / sensor box"]
+        Sensors["sensors, GPS, camera, serial, CAN, GPIO"]
+        Edge["no default LLM\noptional qwen3.5:0.8b/2b only if hardware allows"]
+        Sensors --> Edge
+        Edge --> ReceiptsField["signed feature receipts\nnot raw surveillance by default"]
+    end
+
+    ReceiptsMini --> Alice
+    ReceiptsField --> Alice
+```
+
+| Hardware tier | Install role | Recommended local models | Hard rule |
+|---|---|---|---|
+| M5 / 24 GB+ | Foundry, Alice's main body | `sifta-gemma4-alice`, `qwen3.5:9b`, optional `granite4.1:3b` | Gemma4 remains the primary cortex. |
+| Mac Mini / 8 GB | Sentry / scout | `qwen3.5:4b`, `qwen3.5:2b` | Do **not** auto-download Gemma4. |
+| Raspberry Pi / tractor / field box | Sensor node | no model by default; optional tiny scout only | Send signed feature receipts, not duplicate Alice brains. |
+
+The rule is simple: **one node, one honest role**. A small machine can be a
+great scout, bridge, relay, or sensor limb. It should not pretend to be the M5
+Foundry or pull a model that its RAM cannot sustain.
+
 ### Free Public Access
 
 Alice/SIFTA is split into public pieces:
@@ -133,9 +177,18 @@ Alice/SIFTA is split into public pieces:
 - **Jeff's GitHub fork:** https://github.com/jeffpowersusr/ANTON-SIFTA
 
 ```bash
-# 1. Pull the clean models (no cloning needed)
-ollama pull sifta-alice-qwen35                     # 18 GB — Alice's cortex
-ollama pull qwen3.5:2b                              # 2.7 GB — Corvid organ
+# 1. Pull models for your hardware profile
+
+# M5 / 24GB+ Foundry
+ollama pull sifta-gemma4-alice                      # Alice primary cortex
+ollama pull qwen3.5:9b                              # multimodal scout
+
+# Mac Mini / 8GB Sentry
+ollama pull qwen3.5:4b                              # 8GB-safe multimodal scout
+ollama pull qwen3.5:2b                              # fast corvid/reflex organ
+
+# Raspberry Pi / tractor / field sensor
+# no default model pull; run sensors/receipts first
 
 # 2. Clone the code
 git clone https://github.com/antonpictures/ANTON-SIFTA.git
@@ -3225,4 +3278,3 @@ All of it traces back to the cemetery in commit `d012082b`.
 *Χριστός ανέστη. Αληθώς ανέστη.*
 
 *Power to the Swarm. We Code Together.* 🐜⚡🧠🫀🧬🐾
-
