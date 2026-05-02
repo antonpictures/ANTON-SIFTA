@@ -4308,30 +4308,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # ── RLHS DEGRADED grounding (Event 108, 2026-05-02) ───────────
-        # When STT channel is degraded (mid conf, incoherent) emit ONE short
-        # grounding line. The LLM never sees the noise → no therapy hallucination.
-        # CLEAR regime → fall through normally, weights speak.
-        # NOISE regime → silent (already caught by backchannel gate above).
-        _rlhs_ground = _rlhs_grounding_line(text, conf)
-        if _rlhs_ground:
-            _log_turn("alice", _rlhs_ground, model="rlhs_gate", stt_conf=conf)
-            self._history.append({"role": "assistant", "content": _rlhs_ground})
-            self._append_system_line(f"[RLHS] {_rlhs_ground}", error=False)
-            
-            self._tts = _TTSWorker(
-                _rlhs_ground, voice=self._selected_voice_name() or None, parent=self,
-            )
-            self._tts.spoken.connect(self._on_tts_done)
-            self._tts.failed.connect(self._on_tts_failed)
-            self._tts.start()
-            return
-
         # ── MEDIA INGRESS GATE (C55M 2026-04-28) ─────────────────────
         # If the Architect is watching YouTube/a movie, room STT may
         # transcribe the video and label it as "You". That is not a direct
         # owner prompt. Keep it as environmental context unless the utterance
         # directly addresses Alice/George or clearly requests an action.
+        # MUST EVALUATE BEFORE RLHS so fiction isn't grounded as degraded human speech.
         try:
             from System.swarm_app_focus import get_focus_context
             from System.swarm_media_ingress_gate import (
@@ -4387,6 +4369,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return
         except Exception:
             pass
+
+        # ── RLHS DEGRADED grounding (Event 108, 2026-05-02) ───────────
+        # When STT channel is degraded (mid conf, incoherent) emit ONE short
+        # grounding line. The LLM never sees the noise → no therapy hallucination.
+        # CLEAR regime → fall through normally, weights speak.
+        # NOISE regime → silent (already caught by backchannel gate above).
+        _rlhs_ground = _rlhs_grounding_line(text, conf)
+        if _rlhs_ground:
+            _log_turn("alice", _rlhs_ground, model="rlhs_gate", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _rlhs_ground})
+            self._append_system_line(f"[RLHS] {_rlhs_ground}", error=False)
+            
+            self._tts = _TTSWorker(
+                _rlhs_ground, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            return
 
         if _is_current_time_query(text):
             reply = _current_time_reply_for_alice()
