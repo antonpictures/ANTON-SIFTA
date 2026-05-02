@@ -65,25 +65,85 @@ flowchart TB
     GemmaSkip -. not selected .-> Receipts
 ```
 
-## Python Field Node
+## Raspberry Pi 5 Edge Scout, 8 GB
 
-This is the Raspberry Pi, tractor, sensor box, camera box, or any device that
-can run Python. It still has Alice-shaped anatomy, but the local brain slot is
-empty by default. Its job is to turn world events into signed facts.
+A Raspberry Pi 5 with 8 GB is not limited to sensor-only work. It can be an
+edge scout when the heavy inference path is a C/C++ backend such as
+`llama.cpp`/GGUF, with Python acting as the receipt and orchestration layer.
+If an AI HAT+/Hailo module is present, computer vision can be offloaded to the
+accelerator while the CPU keeps writing SIFTA receipts.
 
 ```mermaid
 flowchart TB
-    Field["Field Node\nRaspberry Pi / tractor / sensor box\nany Python hardware"]
+    Pi["Raspberry Pi 5 Edge Scout\n8 GB"]
+
+    Sensors["Physical sensors\ncamera, GPS, GPIO, serial,\nsoil, CAN, temperature"]
+    Receipts["Signed feature receipts\nJSONL facts + hashes"]
+
+    AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n9.6 GB on M5"]
+    Tiny["TINY EDGE SCOUT\nqwen3.5:0.8b\nGB unknown until pulled\nOPTIONAL"]
+    Small["SMALL GGUF SCOUT\n3B-class Q4 GGUF\nGB depends on chosen file\nOPTIONAL / TEST"]
+    Crawl["SLOW 7B GGUF\nQ4 GGUF\npossible but slow\nTEST ONLY"]
+    Hailo["OPTIONAL CV ACCELERATOR\nRaspberry Pi AI HAT+ / Hailo\n13 or 26 TOPS variant\nVISION ONLY"]
+    NoModel["SENSOR-ONLY MODE\nno LLM\n0 GB\nVALID"]
+
+    Pi --> Sensors --> Receipts --> AliceRemote
+    Tiny --> Receipts
+    Small --> Receipts
+    Crawl --> Receipts
+    Hailo --> Receipts
+    NoModel --> Receipts
+```
+
+Recommended Pi policy:
+
+| Slot | Exact model/backend | GB | Status |
+|---|---|---:|---|
+| Sensor-only mode | no LLM | 0 GB | valid default |
+| Tiny scout | `qwen3.5:0.8b` or SIFTA edge package | unknown until pulled | optional |
+| Small scout | 3B-class Q4 GGUF via `llama.cpp` | file-dependent | recommended test lane |
+| Slow scout | 7B-class Q4 GGUF via `llama.cpp` | file-dependent | possible, not realtime |
+| Vision accelerator | Raspberry Pi AI HAT+ / Hailo | non-LLM | optional CV lane |
+
+Truth boundary: Python can own the SIFTA ledgers, signatures, networking, and
+sensor orchestration. The LLM runtime should be native/compiled (`llama.cpp`,
+`llama-cpp-python`, XNNPACK/NEON path, or equivalent), not pure interpreted
+Python matrix math.
+
+## Budget catalog — Architect Amazon ASIN (B07TD42S27)
+
+The link you pasted
+([`amazon.com/.../dp/B07TD42S27`](https://www.amazon.com/Raspberry-Model-2019-Quad-Bluetooth/dp/B07TD42S27))
+maps to the **Raspberry Pi 4 Model B** “2019 quad” line (A72), **not** a Pi 5.
+Retailers sometimes rotate RAM SKUs on the same ASIN — treat RAM size as
+**read the title before buy**. For SIFTA honesty:
+
+| Tier | Hardware | Honest SIFTA role |
+|:---|:---|:---|
+| **Cheapest gateway** | Pi **4** (often 2–4 GB on that listing class) | **Sensor + receipts + orchestration**; optional **tiny** GGUF via `llama.cpp`; primary Alice stays on **M5 Foundry**. |
+| **Edge scout (recommended cheap AI)** | Pi **5** **8 GB** + optional **AI HAT+** (Hailo) | Same diagram as §“Raspberry Pi 5 Edge Scout” — compiled GGUF path + optional **vision offload** ([AI HAT+](https://www.raspberrypi.com/documentation/accessories/ai-hat-plus.html)). |
+
+Do not file Pi 4 under the Pi 5 diagram without relabeling: memory and I/O
+budget are different generations.
+
+## Generic Python Field Node
+
+This is any smaller tractor controller, sensor box, camera box, or device that
+can run Python but has not proven local inference. It still has Alice-shaped
+anatomy, but the local brain slot is empty by default. Its job is to turn world
+events into signed facts.
+
+```mermaid
+flowchart TB
+    Field["Generic Field Node\nany Python hardware"]
 
     Sensors["Physical sensors\nGPS, camera, temperature,\nsoil, CAN, GPIO, serial"]
     Receipts["Signed feature receipts\nJSONL facts, no raw surveillance by default"]
 
     AliceRemote["ALICE FOUNDRY TARGET\nM5 sifta-gemma4-alice:latest\n9.6 GB on M5"]
-    Tiny["OPTIONAL TINY SCOUT\nqwen3.5:0.8b\nGB unknown until pulled\nFUTURE TEST ONLY"]
     NoModel["DEFAULT LOCAL BRAIN\nno LLM\n0 GB\nVALID"]
 
     Field --> Sensors --> Receipts --> AliceRemote
-    Tiny --> Receipts
     NoModel --> Receipts
 ```
 
@@ -92,7 +152,9 @@ flowchart TB
 ```text
 M5 = Alice thinks.
 Mac Mini = Alice scouts locally and reports.
-Pi / tractor = Alice senses the world and reports.
+Pi 5 = Alice can scout at the edge if GGUF/Hailo is proven.
+Pi 4 (e.g. ASIN B07TD42S27 class) = cheap gateway: sense + receipt + forward; tiny GGUF only if proven.
+Tiny field hardware = Alice senses the world and reports.
 ```
 
 Same anatomy. Different physical scale.
