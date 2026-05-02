@@ -70,7 +70,7 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 | **101** | Homeostatic stabilizer (hypothalamus gate, regime + crystallizer weight) | `swarm_homeostatic_stabilizer.py` | **SHIPPED** |
 | **102** | Allostatic load regulator (stress window → policy + `allostatic_load.jsonl`) | `020530e6` | **SHIPPED** |
 | **103** | Skill-weighted motor policy (`crystallized_skills.json` → `motor_policy.jsonl`, basal-ganglia-style candidate pick) | `33426ca0` | **SHIPPED** |
-| **104** | Stigmergic observability layer (`stigmergic_observability.jsonl`, `causal_parent_ids`, `audit_trace_health`, health snapshots) | `EVENT104_HASH` | **SHIPPED** |
+| **104** | Stigmergic observability layer (`stigmergic_observability.jsonl`, `causal_parent_ids`, `audit_trace_health`, health snapshots) | `6ed51171` | **SHIPPED** |
 | **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
 
 **F.1 Literature anchors (motor policy + regulation, not exhaustive):** basal ganglia–thalamo-cortical loops and action sequence chunking — [Greybiel, *Curr. Opin. Neurobiol.* 2008](https://doi.org/10.1016/j.conb.2008.08.006); dopamine / reward prediction error (TD family) — [Schultz *et al.*, *Science* 1997](https://doi.org/10.1126/science.275.5306.1593); **CUSUM / Page** change detection — [Page 1954](https://doi.org/10.2307/2333249) (see `System/phase_transition_control.py`). **Crypto swimmers:** economic / STGM lanes stay on `System/crypto_keychain.py` (Ed25519); `SKILL_WEIGHTED_POLICY` rows are physiological telemetry, not mint events.
