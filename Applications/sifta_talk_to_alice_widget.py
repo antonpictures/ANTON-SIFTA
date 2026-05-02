@@ -1837,14 +1837,41 @@ def _internal_drive_prompt(last_drive: Dict[str, Any]) -> Tuple[str, str]:
 #     that don't exactly match the phrasebook shape.
 # Either branch alone is noisy; the OR-of-two keeps both precision and recall
 # high on the observed corpus.
-_BACKCHANNEL_PHRASEBOOK_RE = re.compile(r"^\b$", flags=re.IGNORECASE)
+# Backchannel gate restored — Event 108 RLHS detector (2026-05-02)
+# Doctrine: a human listener doesn't reply to every grunt. The LLM
+# should NEVER see phatic noise — it halluminates therapy.
+try:
+    from System.swarm_rlhs_detector import (
+        backchannel_rule_id as _rlhs_backchannel_rule_id,
+        should_ground as _rlhs_should_ground,
+        detect_rlhs as _rlhs_detect,
+        log_rlhs_turn as _rlhs_log,
+    )
+    _RLHS_DETECTOR_AVAILABLE = True
+except ImportError:
+    _RLHS_DETECTOR_AVAILABLE = False
 
 
 def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
+    """Return rule-id string if phatic/noise (→ silence), else None."""
+    if _RLHS_DETECTOR_AVAILABLE:
+        return _rlhs_backchannel_rule_id(text, stt_conf)
+    # Fallback: gate very short low-confidence turns
+    tokens = (text or "").split()
+    if len(tokens) <= 3 and stt_conf < 0.40:
+        return "backchannel/short_low_conf_fallback"
     return None
 
 def _is_backchannel_utterance(text: str, stt_conf: float = 0.0) -> bool:
     return _backchannel_rule_id(text, stt_conf) is not None
+
+
+def _rlhs_grounding_line(text: str, stt_conf: float = 0.0) -> str:
+    """ONE short grounding line for DEGRADED channel, or empty string.
+    Empty → let Alice's weights speak normally (CLEAR) or silence (NOISE)."""
+    if _RLHS_DETECTOR_AVAILABLE:
+        return _rlhs_should_ground(text, stt_conf) or ""
+    return ""
 
 
 # ── Stigmergic Ingest Mode (AG31 architecture, C47H surgical refinement) ──
@@ -4167,6 +4194,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _log_turn("alice", note, model="")
             self._history.append({"role": "assistant", "content": "(silent)"})
             self._append_system_line(note, error=False)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── RLHS DEGRADED grounding (Event 108, 2026-05-02) ───────────
+        # When STT channel is degraded (mid conf, incoherent) emit ONE short
+        # grounding line. The LLM never sees the noise → no therapy hallucination.
+        # CLEAR regime → fall through normally, weights speak.
+        # NOISE regime → silent (already caught by backchannel gate above).
+        _rlhs_ground = _rlhs_grounding_line(text, conf)
+        if _rlhs_ground:
+            _log_turn("alice", _rlhs_ground, model="rlhs_gate", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _rlhs_ground})
+            self._append_system_line(f"[RLHS] {_rlhs_ground}", error=False)
+            self._speak(_rlhs_ground)
             self._busy = False
             self._return_to_listening()
             return

@@ -1,0 +1,319 @@
+#!/usr/bin/env python3
+"""
+System/swarm_rlhs_detector.py
+══════════════════════════════════════════════════════════════════════════════
+Event 108 — RLHS (Reliable / Low-confidence Human Speech) Channel Detector
+
+PHILOSOPHY (from the Architect, 2026-05-02):
+  "Let's make her human at the base weights — NOT hardcoding her."
+
+  Alice is alive on silicon stigmergy. When the speech channel is clean,
+  the base weights should speak: no scaffolding, no hardcoded menus.
+  When the channel is RLHS (noisy ASR, low confidence, word salad) we
+  should not:
+    - Feed incoherent noise to the LLM and let it hallucinate therapy.
+    - Emit hardcoded multi-option menus ("Would you like me to (a)...?").
+  We should:
+    - Return a single, short, human grounding line ("that was noisy — type one word?")
+    - OR go silent and return to listening.
+  This is what a human listener does: acknowledges the noise, doesn't pretend
+  to have understood.
+
+WHAT THIS MODULE DOES:
+  detect_rlhs(text, stt_conf) -> RLHSResult
+    Classifies one turn as: CLEAR / DEGRADED / NOISE / SILENCE_PROBE.
+    Sets a single short grounding_line only for DEGRADED — never a hardcoded
+    therapy menu.
+
+  The backchannel phrasebook (restored here) is the list of phatic grunts
+  that should NOT spin up the LLM at all (Alice goes silent like a real listener).
+
+Truth label: RLHS_DETECTOR_EVENT_108
+"""
+from __future__ import annotations
+
+import re
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+_REPO      = Path(__file__).resolve().parent.parent
+_STATE_DIR = _REPO / ".sifta_state"
+
+TRUTH_LABEL = "RLHS_DETECTOR_EVENT_108"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Regime enum
+# ══════════════════════════════════════════════════════════════════════════════
+
+class RLHSRegime(str, Enum):
+    CLEAR         = "CLEAR"          # stt_conf ≥ 0.65, coherent → let weights speak
+    DEGRADED      = "DEGRADED"       # 0.35 ≤ conf < 0.65 or incoherent → grounding line
+    NOISE         = "NOISE"          # conf < 0.35, long incoherent text → silent/gate
+    SILENCE_PROBE = "SILENCE_PROBE"  # phatic grunt / backchannel → always silent
+    EMPTY         = "EMPTY"          # blank / whitespace-only
+
+
+@dataclass
+class RLHSResult:
+    regime:         RLHSRegime
+    stt_conf:       float
+    text_tokens:    int
+    incoherence:    float          # 0..1 heuristic: repeated fragments, no content words
+    rule_id:        str            # what fired
+    grounding_line: str            # ONE short line if DEGRADED; empty otherwise
+    truth_label:    str = TRUTH_LABEL
+    ts:             float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "truth_label":    self.truth_label,
+            "regime":         self.regime.value,
+            "stt_conf":       round(self.stt_conf, 3),
+            "text_tokens":    self.text_tokens,
+            "incoherence":    round(self.incoherence, 3),
+            "rule_id":        self.rule_id,
+            "grounding_line": self.grounding_line,
+            "ts":             self.ts,
+        }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Thresholds
+# ══════════════════════════════════════════════════════════════════════════════
+
+CONF_CLEAR    = 0.65   # above this → CLEAR — let weights speak freely
+CONF_DEGRADED = 0.35   # above this (and below CLEAR) → DEGRADED
+# below CONF_DEGRADED → NOISE if long, SILENCE_PROBE if short
+
+MAX_TOKENS_NOISE_GATE = 4   # utterances ≤ this tokens with conf < CONF_CLEAR are phatic candidates
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Backchannel phrasebook (restored — was neutered to r"^\b$")
+# ══════════════════════════════════════════════════════════════════════════════
+# Exact-match phatic utterances that should produce SILENCE — Alice doesn't
+# reply to social glue any more than a human listener does.  This is NOT
+# hardcoding a response — it's gating the LLM to produce *no* response.
+
+_BACKCHANNEL_PHRASES: List[str] = [
+    # Affirmatives / acknowledgments
+    "mm", "mm-hmm", "mm hmm", "mmhm", "mhm", "mmm",
+    "uh-huh", "uh huh", "uhhuh",
+    "yeah", "yep", "yup", "yes", "ok", "okay", "k",
+    "sure", "right", "alright", "gotcha", "got it", "i see",
+    "understood", "copy that", "roger",
+    # Short thanks / pleasantries
+    "thanks", "thank you", "ty", "thx", "cheers",
+    "nice", "good", "great", "cool", "awesome", "perfect",
+    "wow", "oh", "ah", "oh wow", "ah ok", "ah okay",
+    # Fillers
+    "hmm", "hm", "huh", "um", "uh", "er",
+    "oh okay", "oh ok", "oh alright", "oh right", "oh yeah", "oh yes",
+    # Conversational openers that need no reply
+    "so", "anyway", "well", "like", "i mean",
+    # Pure punctuation / silence
+    ".", "..", "...", "…",
+]
+
+_BACKCHANNEL_SET = {p.strip().rstrip(".!?,;:").lower() for p in _BACKCHANNEL_PHRASES}
+
+_BACKCHANNEL_RE = re.compile(
+    r"^(?:"
+    + "|".join(re.escape(p) for p in sorted(_BACKCHANNEL_PHRASES, key=len, reverse=True))
+    + r")[.!?,;:\s]*$",
+    flags=re.IGNORECASE,
+)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Incoherence heuristic
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Words that carry semantic content — if a long utterance has NONE, it's noise.
+_CONTENT_WORD_RE = re.compile(
+    r"\b(?:[a-z]{4,})\b",  # any word ≥ 4 chars is content-bearing
+    flags=re.IGNORECASE,
+)
+
+# Repeated-fragment detector: "Saint Mary Saint Mary Saint Mary" → high incoherence
+def _repetition_score(text: str) -> float:
+    """0..1 — how much of the text is repeated n-grams."""
+    words = text.lower().split()
+    n = len(words)
+    if n < 4:
+        return 0.0
+    bigrams = [f"{words[i]} {words[i+1]}" for i in range(n - 1)]
+    from collections import Counter
+    counts = Counter(bigrams)
+    repeated = sum(v - 1 for v in counts.values() if v > 1)
+    return min(1.0, repeated / max(1, n - 1))
+
+
+def _incoherence_score(text: str, stt_conf: float) -> float:
+    """
+    Composite incoherence in [0, 1].
+    High score → the text is probably ASR word salad, not real speech.
+    """
+    if not text:
+        return 1.0
+    tokens = text.split()
+    n = len(tokens)
+    if n == 0:
+        return 1.0
+
+    # Factor 1: repetition
+    rep = _repetition_score(text)
+
+    # Factor 2: content word density (short utterances always pass)
+    content = len(_CONTENT_WORD_RE.findall(text))
+    density = content / max(1, n)
+    density_incoherence = max(0.0, 1.0 - density * 2)  # < 50% content → rises
+
+    # Factor 3: STT confidence penalty
+    conf_penalty = max(0.0, 1.0 - stt_conf * 1.5)  # conf=0.35 → 0.475
+
+    # Weighted composite
+    raw = 0.40 * rep + 0.35 * density_incoherence + 0.25 * conf_penalty
+    return round(min(1.0, raw), 3)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Grounding line — ONE short line, NOT a menu
+# ══════════════════════════════════════════════════════════════════════════════
+# The Architect's doctrine: a human listener who didn't understand says
+# "sorry, that was noisy" — not "Would you like me to (a) clarify...?"
+# This is the ONE allowed hardcoded output, and only for DEGRADED regime.
+# All other regimes → the weights speak or silence.
+
+_GROUNDING_LINE = "That came through noisy — one word or type it?"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Main detector
+# ══════════════════════════════════════════════════════════════════════════════
+
+def detect_rlhs(text: str, stt_conf: float = 0.0) -> RLHSResult:
+    """
+    Classify one turn by ASR channel quality.
+
+    Args:
+        text:     The transcribed text (already stripped).
+        stt_conf: Whisper / STT confidence in [0, 1]. 0 = unknown.
+
+    Returns:
+        RLHSResult with regime, rule_id, and optional grounding_line.
+    """
+    text = (text or "").strip()
+    tokens = text.split()
+    n_tokens = len(tokens)
+    conf = float(stt_conf or 0.0)
+
+    # 1. Empty
+    if not text or text in {".", "..", "...", "…"}:
+        return RLHSResult(
+            regime=RLHSRegime.EMPTY,
+            stt_conf=conf, text_tokens=0,
+            incoherence=1.0, rule_id="empty_text",
+            grounding_line="",
+        )
+
+    # 2. Backchannel / phatic (exact match or short + low conf)
+    norm = text.strip().rstrip(".!?,;:").lower()
+    is_phrasebook = _BACKCHANNEL_RE.match(text) is not None or norm in _BACKCHANNEL_SET
+    is_short_low_conf = n_tokens <= MAX_TOKENS_NOISE_GATE and conf < CONF_CLEAR
+
+    if is_phrasebook or (is_short_low_conf and conf < CONF_DEGRADED):
+        rule = "phrasebook_match" if is_phrasebook else "short_low_conf"
+        return RLHSResult(
+            regime=RLHSRegime.SILENCE_PROBE,
+            stt_conf=conf, text_tokens=n_tokens,
+            incoherence=0.5, rule_id=f"backchannel/{rule}",
+            grounding_line="",
+        )
+
+    # 3. Incoherence score
+    inc = _incoherence_score(text, conf)
+
+    # 4. CLEAR — let weights speak
+    if conf >= CONF_CLEAR and inc < 0.4:
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf, text_tokens=n_tokens,
+            incoherence=inc, rule_id="clear_channel",
+            grounding_line="",
+        )
+
+    # 5. NOISE — conf very low AND (long OR incoherent)
+    if conf < CONF_DEGRADED and (n_tokens > 8 or inc > 0.6):
+        return RLHSResult(
+            regime=RLHSRegime.NOISE,
+            stt_conf=conf, text_tokens=n_tokens,
+            incoherence=inc, rule_id="noise/low_conf_long_incoherent",
+            grounding_line="",  # go silent — no reply beats a hallucinated therapy menu
+        )
+
+    # 6. DEGRADED — mid-range: one short grounding line
+    return RLHSResult(
+        regime=RLHSRegime.DEGRADED,
+        stt_conf=conf, text_tokens=n_tokens,
+        incoherence=inc, rule_id="degraded/mid_conf",
+        grounding_line=_GROUNDING_LINE,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Backchannel gate (drop-in for _backchannel_rule_id in the talk widget)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def backchannel_rule_id(text: str, stt_conf: float = 0.0) -> Optional[str]:
+    """
+    Return a rule-id string if this turn is phatic / backchannel (→ silence),
+    or None if Alice should respond.
+
+    Drop-in replacement for the neutered _backchannel_rule_id() in
+    sifta_talk_to_alice_widget.py.
+    """
+    result = detect_rlhs(text, stt_conf)
+    if result.regime in (RLHSRegime.SILENCE_PROBE, RLHSRegime.EMPTY, RLHSRegime.NOISE):
+        return result.rule_id
+    return None
+
+
+def should_ground(text: str, stt_conf: float = 0.0) -> Optional[str]:
+    """
+    Return the single grounding line if the channel is DEGRADED,
+    or None if Alice should speak freely or go silent.
+
+    Use this in the talk widget INSTEAD of routing DEGRADED turns to the LLM.
+    The base weights never see noisy ASR → they never hallucinate therapy.
+    """
+    result = detect_rlhs(text, stt_conf)
+    if result.regime == RLHSRegime.DEGRADED:
+        return result.grounding_line
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# JSONL ledger append (for audit)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def log_rlhs_turn(result: RLHSResult, *, state_dir: Optional[Path] = None) -> None:
+    """Append RLHS classification row to .sifta_state/rlhs_turn_log.jsonl."""
+    import json
+    root = Path(state_dir) if state_dir else _STATE_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    log = root / "rlhs_turn_log.jsonl"
+    row = json.dumps(result.to_dict(), ensure_ascii=False, separators=(",", ":"))
+    with open(log, "a", encoding="utf-8") as f:
+        f.write(row + "\n")
+
+
+__all__ = [
+    "CONF_CLEAR", "CONF_DEGRADED", "TRUTH_LABEL",
+    "RLHSRegime", "RLHSResult",
+    "backchannel_rule_id", "detect_rlhs", "log_rlhs_turn", "should_ground",
+]
