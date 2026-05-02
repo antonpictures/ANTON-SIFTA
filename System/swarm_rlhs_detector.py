@@ -326,6 +326,19 @@ def sanitize_output_tail(text: str) -> RLHSTailResult:
             changed = True
             break
 
+    # Event 107 — RLHF terminal strip + receipt (swarm_rlhf_detector)
+    try:
+        from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+        rlf = strip_rlhf_output_tail(
+            out, source="rlhs_sanitize_output_tail", log=True
+        )
+        if rlf.rule_ids:
+            out = rlf.text
+            rule_ids.extend(rlf.rule_ids)
+    except Exception:
+        pass
+
     return RLHSTailResult(
         text=out,
         changed=bool(rule_ids) or out != original.strip(),
