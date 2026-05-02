@@ -68,7 +68,7 @@ Event numbering per [PREDATOR_TOURNAMENT_TRIPLE_IDE_ORDERS.md](PREDATOR_TOURNAME
 | **99** | George Prior intrinsic drive daemon + receipts | pre-`da8a7b40` | **SHIPPED** |
 | **100** | Intrinsic drive → basal ganglia + phase detector (**CUSUM** on TD) | `da8a7b40` / `c82bce36` | **SHIPPED** |
 | **101** | Homeostatic stabilizer (hypothalamus gate, regime + crystallizer weight) | `swarm_homeostatic_stabilizer.py` | **SHIPPED** |
-| **102** | Allostatic load regulator (stress window → policy + `allostatic_load.jsonl`) | `EVENT102_COMMIT` | **SHIPPED** |
+| **102** | Allostatic load regulator (stress window → policy + `allostatic_load.jsonl`) | `020530e6` | **SHIPPED** |
 | **—** | Skill crystallizer | `4fa10b91` | **SHIPPED** |
 
 **Dashboard / UI:** regime strip + telemetry at Architect discretion (off-screen tests in Event 93 file).
