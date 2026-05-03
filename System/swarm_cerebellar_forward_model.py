@@ -15,6 +15,7 @@ Kill-switch: SIFTA_CEREBELLUM_DISABLE=1.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import time
 import uuid
@@ -113,19 +114,38 @@ def _alpha(n: int) -> float:
     return 1.0 / min(max(1, n), 20)
 
 
+def context_hash(context_features: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Stable short hash for a context-conditioned forward model."""
+    if not context_features:
+        return None
+    blob = json.dumps(context_features, sort_keys=True, separators=(",", ":"), default=str)
+    return "ctx_" + hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+
+
+def model_key(tool: str, context_features: Optional[Dict[str, Any]] = None) -> str:
+    ctx = context_hash(context_features)
+    return f"{tool}::{ctx}" if ctx else tool
+
+
 def predict(
     tool: str,
     *,
+    context_features: Optional[Dict[str, Any]] = None,
     root: Optional[Path] = None,
     write_ledger: bool = False,
 ) -> Dict[str, Any]:
     """Predict latency, success prior, cost, and next observation template."""
-    model = _normal_model(load_models(root).get(tool))
+    key = model_key(tool, context_features)
+    ctx = context_hash(context_features)
+    model = _normal_model(load_models(root).get(key))
     row: Dict[str, Any] = {
         "ts": time.time(),
         "trace_id": str(uuid.uuid4()),
         "truth_label": "CEREBELLAR_FORWARD_PREDICTION",
         "tool": tool,
+        "model_key": key,
+        "context_hash": ctx,
+        "context_features": context_features or {},
         "predicted_latency_s": model["latency_mu"],
         "predicted_success": model["success_rate"],
         "predicted_cost": model["cost_mu"],
@@ -147,6 +167,7 @@ def observe(
     started_at: float,
     success: bool,
     *,
+    context_features: Optional[Dict[str, Any]] = None,
     root: Optional[Path] = None,
     actual_cost: Optional[float] = None,
     actual_observation: Optional[Any] = None,
@@ -157,7 +178,9 @@ def observe(
     t_now = time.time() if now is None else float(now)
     actual_latency = _nonnegative(t_now - float(started_at), 0.0)
     models = load_models(root)
-    prior = _normal_model(models.get(tool))
+    key = model_key(tool, context_features)
+    ctx = context_hash(context_features)
+    prior = _normal_model(models.get(key))
 
     n = int(prior.get("n", 0)) + 1
     alpha = _alpha(n)
@@ -192,6 +215,9 @@ def observe(
         "truth_label": "CEREBELLAR_FORWARD_OBSERVATION",
         "kind": "CEREBELLAR_PREDICTION",
         "tool": tool,
+        "model_key": key,
+        "context_hash": ctx,
+        "context_features": context_features or {},
         "predicted_latency_s": round(old_latency, 4),
         "actual_latency_s": actual_latency,
         "latency_error": round(actual_latency - old_latency, 4),
@@ -203,14 +229,14 @@ def observe(
         "alpha": round(alpha, 4),
         "expected_observation_before": prior.get("expected_observation"),
         "actual_observation": actual_observation,
-        "updated_tool_model": {tool: updated},
+        "updated_tool_model": {key: updated},
         "disabled": _disabled(),
     }
 
     if _disabled():
         return row
 
-    models[tool] = updated
+    models[key] = updated
     save_models(models, root)
     if write_ledger:
         append_line_locked(
@@ -226,6 +252,8 @@ __all__ = [
     "MODEL_FILE",
     "TRACE_FILE",
     "load_models",
+    "context_hash",
+    "model_key",
     "observe",
     "predict",
     "save_models",

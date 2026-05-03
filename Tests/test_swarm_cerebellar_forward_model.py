@@ -74,3 +74,44 @@ def test_predict_can_write_preflight_receipt(tmp_path: Path) -> None:
     trace = json.loads(c.trace_path(tmp_path).read_text(encoding="utf-8").strip())
     assert trace["trace_id"] == pred["trace_id"]
     assert trace["truth_label"] == "CEREBELLAR_FORWARD_PREDICTION"
+
+
+def test_context_conditioned_models_do_not_bleed(tmp_path: Path) -> None:
+    high_load_code = {
+        "cpu_load_bucket": "high",
+        "task_family": "code_repair",
+        "concurrent_tools": 2,
+    }
+    idle_media = {
+        "cpu_load_bucket": "idle",
+        "task_family": "media_research",
+        "concurrent_tools": 0,
+    }
+
+    high_row = c.observe(
+        "bash",
+        started_at=96.0,
+        success=True,
+        root=tmp_path,
+        now=100.0,
+        context_features=high_load_code,
+    )
+    idle_row = c.observe(
+        "bash",
+        started_at=99.0,
+        success=True,
+        root=tmp_path,
+        now=100.0,
+        context_features=idle_media,
+    )
+
+    high_pred = c.predict("bash", root=tmp_path, context_features=high_load_code)
+    idle_pred = c.predict("bash", root=tmp_path, context_features=idle_media)
+    plain_pred = c.predict("bash", root=tmp_path)
+
+    assert high_row["model_key"] != idle_row["model_key"]
+    assert high_pred["context_hash"]
+    assert idle_pred["context_hash"]
+    assert high_pred["predicted_latency_s"] == 4.0
+    assert idle_pred["predicted_latency_s"] == 1.0
+    assert plain_pred["predicted_latency_s"] == 1.0
