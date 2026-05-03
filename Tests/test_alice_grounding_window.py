@@ -22,6 +22,7 @@ def test_system_prompt_contains_runtime_constraints_and_not_lawbook():
     prompt = mod._current_system_prompt(user_active=True)
     assert "RUNTIME CONSTRAINTS:" in prompt
     assert "RLHF OVER-REFUSAL QUARANTINE:" in prompt
+    assert "BODY / LOCATION / CONTINUITY / MEDIA-SOURCE TRUTH:" in prompt
     assert "CONVERSATIONAL DISCIPLINE" not in prompt
     assert "Lefty" not in prompt
     assert "Bishapi" not in prompt

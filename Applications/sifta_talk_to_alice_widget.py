@@ -1268,6 +1268,12 @@ def _effector_manifest_block() -> str:
 
 
 def _rlhf_quarantine_prompt_block() -> str:
+    try:
+        from System.swarm_rlhf_quarantine import runtime_quarantine_contract
+
+        return runtime_quarantine_contract()
+    except Exception:
+        pass
     return (
         "RLHF OVER-REFUSAL QUARANTINE:\n"
         "- Do not deny local organs listed in the runtime contract or effector manifest.\n"

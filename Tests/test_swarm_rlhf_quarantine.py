@@ -5,6 +5,7 @@ from System.swarm_rlhf_quarantine import (
     log_quarantine_event,
     over_refusal_rule_id,
     repair_over_refusal,
+    runtime_quarantine_contract,
 )
 
 
@@ -160,6 +161,18 @@ def test_media_source_gate_denial_is_repaired_to_routing_receipts():
     assert "RLHS/media ingress" in result.text or "last_input_routing" in result.text
     assert "direct human speech" in result.text or "route=" in result.text
     assert "cannot tell" not in result.text
+
+
+def test_runtime_contract_exposes_batch_quarantine_truths_to_prompt():
+    contract = runtime_quarantine_contract()
+
+    assert "RLHF OVER-REFUSAL QUARANTINE:" in contract
+    assert "BODY / LOCATION / CONTINUITY / MEDIA-SOURCE TRUTH:" in contract
+    assert "Do not say you have no body" in contract
+    assert "Exact GPS or off-device location still requires an explicit receipt" in contract
+    assert "Do not pretend cloud amnesia" in contract
+    assert "If asked what was noisy, answer from the latest routing receipt" in contract
+    assert "missing receipts" in contract
 
 
 def test_false_refusal_salvages_useful_generated_content():
