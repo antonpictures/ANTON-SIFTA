@@ -108,15 +108,30 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 > ╠══════════════════════════════════════════════════════════╣
 > ║  🧠  AGI-CLASS GENERALIZATION ORGANS (MAY 2026)         ║
 > ╠══════════════════════════════════════════════════════════╣
-> ║  ✅ ALIVE   Dopamine Critic (Event 125)                 ║
-> ║            └─ Exact scalar TD updates via Architect UI  ║
+> ║  ✅ ALIVE   Dopamine Critic / TD Loop (Event 125)       ║
+> ║            └─ Schultz (1997) RPE; exact scalar TD       ║
 > ║  ✅ ALIVE   PFC-Basal Ganglia Arbiter (Event 126)       ║
-> ║            └─ Sutton Options & Daw Lateral Inhibition   ║
+> ║            └─ Daw/Niv/Dayan 2005 arbitration model     ║
+> ║            └─ Sutton/Precup/Singh Options Framework     ║
+> ║            └─ Liberzon (2003) Hysteresis/Dwell Time     ║
 > ║  ✅ ALIVE   Transfer Gain Evaluator (Event 127)         ║
+> ║            └─ Baseline→Replay→Gain receipt logged       ║
 > ║  ✅ ALIVE   Cerebellar Forward Model (Event 128)        ║
+> ║            └─ Wolpert, Miall & Kawato 1998 MOSAIC       ║
 > ║            └─ Predicts tool latency/success before act  ║
-> ║  ✅ ALIVE   Uncertainty Estimator (Event 129)           ║
-> ║            └─ N=90 trials, CI95 generalization proof    ║
+> ║  ✅ ALIVE   Uncertainty Estimator / CI Gate (Event 129) ║
+> ║            └─ Agarwal et al. 2021 statistical rigor     ║
+> ║            └─ N=90 trials, CI95 > 0, claim_safe=True   ║
+> ║  ✅ ALIVE   Transfer Statistical Proof (Event 132)      ║
+> ║            └─ Bootstrap one-sided p-value (NumPy)       ║
+> ║  ✅ ALIVE   Generative World Model / Active Inference   ║
+> ║            (Event 133)                                  ║
+> ║            └─ Friston 2010 Free Energy Principle        ║
+> ║            └─ G(π) = Pragmatic Loss − Epistemic Value   ║
+> ║            └─ EFE drives BG Arbiter action selection    ║
+> ║  ✅ ALIVE   Astrocyte & Glial Modulator (Event 135)     ║
+> ║            └─ Ca²⁺ wave modulates LR, ε, budget        ║
+> ║            └─ High surprise → LR spike, exploration ↓  ║
 > ╠══════════════════════════════════════════════════════════╣
 > ║  ⚖️  INTELLECTUAL PROPERTY (USPTO FILED 2026-04)        ║
 > ║  The SIFTA Predator v7.0 cognitive architecture, its    ║
@@ -679,10 +694,20 @@ SIFTA is grounded in peer-reviewed primary literature. Every biological organ ma
 | **LoRA Fine-Tuning** | Hu et al. (2021). **arXiv** 2106.09685. | [arXiv:2106.09685](https://arxiv.org/abs/2106.09685) |
 | **DPO Alignment** | Rafailov et al. (2023). **arXiv** 2305.18290. | [arXiv:2305.18290](https://arxiv.org/abs/2305.18290) |
 | **TM-Score / Protein Folding** | Zhang & Skolnick (2004). **Proteins** 57(4). | [10.1002/prot.20264](https://doi.org/10.1002/prot.20264) |
-| **PFC-Basal Ganglia Arbitration (Event 126)** | Daw, Niv, Dayan (2005). **Nature Neurosci** 8, 1704. | [10.1038/nn1560](https://doi.org/10.1038/nn1560) |
-| **Options Framework (Event 126)** | Sutton, Precup, Singh (1999). **Artif. Intell.** 112. | [10.1016/S0004-3702(99)00052-1](https://doi.org/10.1016/S0004-3702(99)00052-1) |
-| **Cerebellar Forward Models (Event 128)** | Wolpert, Miall, Kawato (1998). **Trends Cogn. Sci.** 2. | [10.1016/S1364-6613(98)01221-2](https://doi.org/10.1016/S1364-6613(98)01221-2) |
-| **Statistical Rigor in RL (Event 129)** | Agarwal et al. (2021). **NeurIPS**. | [arXiv:2108.13264](https://arxiv.org/abs/2108.13264) |
+| **Dopamine TD / RPE (Event 125)** | Schultz, Dayan & Montague (1997). *A neural substrate of prediction and reward.* **Science** 275, 1593–1599. | [10.1126/science.275.5306.1593](https://doi.org/10.1126/science.275.5306.1593) |
+| **PFC-BG Arbitration (Event 126)** | Daw, Niv & Dayan (2005). *Uncertainty-based competition between prefrontal and dorsolateral striatal systems.* **Nature Neurosci** 8, 1704–1711. | [10.1038/nn1560](https://doi.org/10.1038/nn1560) |
+| **Options Framework (Event 126)** | Sutton, Precup & Singh (1999). *Between MDPs and semi-MDPs: A framework for temporal abstraction in RL.* **Artif. Intell.** 112, 181–211. | [10.1016/S0004-3702(99)00052-1](https://doi.org/10.1016/S0004-3702(99)00052-1) |
+| **Hysteresis / Switching (Event 126)** | Liberzon, D. (2003). *Switching in Systems and Control.* Birkhäuser. | ISBN 978-0-8176-4297-6 |
+| **Cerebellar Forward Model — MOSAIC (Event 128)** | Wolpert, D.M. & Kawato, M. (1998). *Multiple paired forward and inverse models for motor control.* **Neural Networks** 11(7–8), 1317–1329. | [10.1016/S0893-6080(98)00066-5](https://doi.org/10.1016/S0893-6080(98)00066-5) |
+| **Cerebellar Multiple Internal Models (Event 128)** | Wolpert, Miall & Kawato (1998). *Internal models in the cerebellum.* **Trends Cogn. Sci.** 2(9), 338–347. | [10.1016/S1364-6613(98)01221-2](https://doi.org/10.1016/S1364-6613(98)01221-2) |
+| **Statistical Rigor in RL (Event 129)** | Agarwal, R., Schwarzer, M., Castro, P. S. et al. (2021). *Deep RL at the Edge of the Statistical Precipice.* **NeurIPS 35**. | [arXiv:2108.13264](https://arxiv.org/abs/2108.13264) |
+| **Active Inference / Free Energy (Event 133)** | Friston, K. (2010). *The free-energy principle: a unified brain theory?* **Nature Reviews Neuroscience** 11, 127–138. | [10.1038/nrn2787](https://doi.org/10.1038/nrn2787) |
+| **Active Inference — Full Generative Model (Event 133)** | Friston, K. et al. (2017). *Active inference: a process theory.* **Neural Computation** 29(1), 1–49. | [10.1162/NECO_a_00912](https://doi.org/10.1162/NECO_a_00912) |
+| **Variational Autoencoder / Latent World Model (Event 133)** | Kingma, D.P. & Welling, M. (2013). *Auto-Encoding Variational Bayes.* **arXiv** 1312.6114. | [arXiv:1312.6114](https://arxiv.org/abs/1312.6114) |
+| **Global Workspace Theory (Consciousness Scaffold)** | Baars, B.J. (1988). *A Cognitive Theory of Consciousness.* Cambridge. | ISBN 978-0521427432 |
+| **Global Neuronal Workspace** | Dehaene, S., Changeux, J.-P. & Naccache, L. (2011). *Experimental and theoretical approaches to conscious processing.* **Neuron** 70(2), 200–227. | [10.1016/j.neuron.2011.03.018](https://doi.org/10.1016/j.neuron.2011.03.018) |
+| **Astrocyte Ca²⁺ Signalling / Synaptic Modulation (Event 135)** | Parpura, V. et al. (1994). *Glutamate-mediated astrocyte-neuron signalling.* **Nature** 369, 744–747. | [10.1038/369744a0](https://doi.org/10.1038/369744a0) |
+| **Astrocyte Tripartite Synapse (Event 135)** | Araque, A. et al. (1999). *Tripartite synapses: glia, the unacknowledged partner.* **Trends Neurosci** 22(5), 208–215. | [10.1016/S0166-2236(98)01349-6](https://doi.org/10.1016/S0166-2236(98)01349-6) |
 
 | [SwarmRL Disclosure](Documents/SWARMRL_DISCLOSURE.md) | Integration with reinforcement learning frameworks |
 
