@@ -1595,6 +1595,24 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    try:
+        from System.swarm_conversation_shape_detector import summary_for_prompt as _shape_summary
+
+        _shape = _shape_summary().strip()
+        if _shape:
+            parts.append(_shape)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_multimodal_cortex_verifier import summary_for_prompt as _cortex_verify_summary
+
+        _cv = _cortex_verify_summary().strip()
+        if _cv:
+            parts.append(_cv)
+    except Exception:
+        pass
+
     parts.append(minimal_runtime_contract())
     parts.append(_wall_clock_grounding_block())
     parts.append(
@@ -6571,5 +6589,11 @@ def _strip_servant_tail_tics(text: str) -> str:
                 _rlhs_log_output_tail(result)
             except Exception:
                 pass
+        try:
+            from System.swarm_conversation_shape_detector import log_conversation_shape
+
+            log_conversation_shape(result.text)
+        except Exception:
+            pass
         return result.text
     return text

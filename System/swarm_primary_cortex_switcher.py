@@ -161,6 +161,8 @@ def set_primary_cortex(
     *,
     installed: Optional[Iterable[str]] = None,
     source: str = "talk_to_alice_dropdown",
+    verification_results: Optional[Dict[str, Any]] = None,
+    require_verification: bool = False,
 ) -> Dict[str, Any]:
     """Persist Alice's Talk-to-Alice cortex and append a switch receipt."""
     model = _canonical_model_name(model_name)
@@ -172,6 +174,43 @@ def set_primary_cortex(
         raise ValueError(f"primary cortex is not installed in Ollama: {model}")
 
     previous = resolve_ollama_model(app_context=APP_CONTEXT)
+    verification: Optional[Dict[str, Any]] = None
+    if require_verification or verification_results is not None:
+        try:
+            from System.swarm_multimodal_cortex_verifier import run_harness
+
+            verification = run_harness(
+                installed_match,
+                verification_results or {},
+                root=_STATE,
+                write_ledger=True,
+            )
+        except Exception as exc:
+            if require_verification:
+                raise ValueError(f"primary cortex verification failed to run: {exc}") from exc
+            verification = {
+                "truth_label": "MULTIMODAL_CORTEX_VERIFICATION",
+                "pass": False,
+                "error": str(exc),
+            }
+        if require_verification and not verification.get("pass"):
+            try:
+                from System.swarm_governance_ledger import GovernanceLedger
+
+                GovernanceLedger.record_conflict(
+                    "PRIMARY_CORTEX_VERIFICATION_FAILED",
+                    [previous, installed_match],
+                    "blocked_promotion_until_multimodal_probe_passes",
+                    human_override=True,
+                    root=_STATE,
+                )
+            except Exception:
+                pass
+            raise ValueError(
+                "primary cortex verification failed; promotion blocked "
+                f"for {installed_match}"
+            )
+
     selected = set_app_ollama_model(APP_CONTEXT, installed_match)
     row = {
         "ts": time.time(),
@@ -183,6 +222,8 @@ def set_primary_cortex(
         "selected_model": selected,
         "installed_models": installed_names,
     }
+    if verification is not None:
+        row["cortex_verification"] = verification
     _STATE.mkdir(parents=True, exist_ok=True)
     line = json.dumps(row, sort_keys=True) + "\n"
     if append_line_locked is not None:

@@ -92,6 +92,54 @@ def test_set_primary_cortex_rejects_missing_model(tmp_path, monkeypatch):
     assert not (tmp_path / "primary_cortex_switches.jsonl").exists()
 
 
+def test_set_primary_cortex_blocks_failed_required_verification(tmp_path, monkeypatch):
+    from System import sifta_inference_defaults as defaults
+    from System import swarm_primary_cortex_switcher as switcher
+
+    monkeypatch.setattr(defaults, "_STATE", tmp_path)
+    monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
+    monkeypatch.setattr(switcher, "_STATE", tmp_path)
+    monkeypatch.setattr(switcher, "_LEDGER", tmp_path / "primary_cortex_switches.jsonl")
+    defaults.set_app_ollama_model("talk_to_alice", "sifta-gemma4-alice:latest")
+
+    try:
+        switcher.set_primary_cortex(
+            "qwen3.5:2b",
+            installed=["sifta-gemma4-alice:latest", "qwen3.5:2b"],
+            verification_results={"vision": 0.9, "audio": 0.9},
+            require_verification=True,
+        )
+    except ValueError as exc:
+        assert "verification failed" in str(exc)
+    else:
+        raise AssertionError("failed verification should block promotion")
+
+    assert defaults.resolve_ollama_model(app_context="talk_to_alice") == "sifta-gemma4-alice:latest"
+    assert not (tmp_path / "primary_cortex_switches.jsonl").exists()
+    assert (tmp_path / "cortex_verification.jsonl").exists()
+    assert (tmp_path / "governance_ledger.jsonl").exists()
+
+
+def test_set_primary_cortex_allows_passing_required_verification(tmp_path, monkeypatch):
+    from System import sifta_inference_defaults as defaults
+    from System import swarm_primary_cortex_switcher as switcher
+
+    monkeypatch.setattr(defaults, "_STATE", tmp_path)
+    monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
+    monkeypatch.setattr(switcher, "_STATE", tmp_path)
+    monkeypatch.setattr(switcher, "_LEDGER", tmp_path / "primary_cortex_switches.jsonl")
+
+    receipt = switcher.set_primary_cortex(
+        "qwen3.5:2b",
+        installed=["sifta-gemma4-alice:latest", "qwen3.5:2b"],
+        verification_results={"vision": 0.87, "audio": 0.91, "tool": 0.79, "owner_continuity": 0.95},
+        require_verification=True,
+    )
+
+    assert receipt["selected_model"] == "qwen3.5:2b"
+    assert receipt["cortex_verification"]["pass"] is True
+
+
 def test_current_primary_cortex_truth_separates_native_multimodal_from_organs(tmp_path, monkeypatch):
     from System import sifta_inference_defaults as defaults
     from System import swarm_primary_cortex_switcher as switcher
