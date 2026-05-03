@@ -1,10 +1,19 @@
 """
-Event 137 — Microglia Synaptic Pruner.
+Event 137 - Microglia Synaptic Pruner.
 
 Controlled forgetting for SIFTA's adaptive ledgers. This organ never silently
 deletes data. It writes prune/depress/correct receipts first; consumers may
 later honor those receipts. Execute mode is receipt-only unless a downstream
 organ explicitly implements a safe mutation path.
+
+v8 upgrade: TREM2/CD33 two-signal pruning
+-----------------------------------------
+Microglia do not prune from a single score. They integrate:
+
+  activation_signal: complement/TREM2-like "eat me" pressure
+  inhibition_signal: CD33/fractalkine/"do not eat me" brake
+
+The decision layer consumes net_pruning_pressure, not raw damage alone.
 
 Kill switches:
   SIFTA_MICROGLIA_DISABLE=1  -> no scoring, no receipts
@@ -16,6 +25,8 @@ Thresholds:
   MICROGLIA_LOW_USAGE_COUNT
   MICROGLIA_HIGH_REGRET
   MICROGLIA_CONTRADICTION_PE
+  MICROGLIA_NET_PRUNE_PRESSURE
+  MICROGLIA_NET_DELETE_PRESSURE
 """
 from __future__ import annotations
 
@@ -69,12 +80,199 @@ def _execute_enabled() -> bool:
     return os.environ.get(_EXECUTE_ENV, "").strip() == "1"
 
 
+def _clamp01(value: Any, default: float = 0.0) -> float:
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        x = default
+    return min(1.0, max(0.0, x))
+
+
+def _usage_norm(usage_count: int) -> float:
+    return min(1.0, max(0.0, float(usage_count) / 8.0))
+
+
 def prune_log_path(root: Optional[Path] = None) -> Path:
     return state_dir(root) / EVENT_LOG_NAME
 
 
 def _legacy_class_log_path(root: Optional[Path] = None) -> Path:
     return state_dir(root) / LEGACY_CLASS_LOG_NAME
+
+
+def _compute_damage_score(
+    *,
+    age_hours: float,
+    usage_count: int,
+    recent_reward_mean: float,
+    recent_regret: float,
+    wm_contradiction_pe: float,
+    unsafe: bool,
+) -> float:
+    """
+    TREM2/DAM-like damage score [0, 1].
+
+    Damage is debris/corruption/regret/contradiction pressure. Age and weak
+    activity matter, but they are not enough by themselves to override brakes.
+    """
+    stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
+    low_reward = _env_float("MICROGLIA_LOW_REWARD_MEAN", -0.1)
+    high_regret = _env_float("MICROGLIA_HIGH_REGRET", 0.3)
+    contradiction_pe = _env_float("MICROGLIA_CONTRADICTION_PE", 0.4)
+    low_usage = _env_int("MICROGLIA_LOW_USAGE_COUNT", 1)
+
+    dmg = 0.0
+    if unsafe:
+        dmg += 0.50
+    if age_hours >= stale_hours and usage_count <= low_usage:
+        dmg += 0.25
+    if recent_reward_mean <= low_reward:
+        dmg += 0.20
+    if recent_regret >= high_regret:
+        dmg += 0.15
+    if wm_contradiction_pe >= contradiction_pe:
+        dmg += 0.10
+    return round(min(1.0, max(0.0, dmg)), 4)
+
+
+def _compute_inhibition_signal(
+    *,
+    protection_score: float = 0.0,
+    na_caution: float = 0.0,
+    tom_pruning_conservatism: float = 0.0,
+    safety_critical: bool = False,
+    ledger_type: str = "adaptive_policy",
+) -> float:
+    """
+    CD33/Siglec-like inhibition signal [0, 1].
+
+    Safety/owner ledgers are a maximum brake. Other brakes are capped so one
+    protection source cannot mask obvious corruption forever.
+    """
+    if safety_critical or ledger_type == "owner":
+        return 1.0
+    inh = 0.0
+    inh += min(0.40, _clamp01(protection_score))
+    inh += min(0.30, _clamp01(na_caution) * 0.30)
+    inh += min(0.30, _clamp01(tom_pruning_conservatism))
+    return round(min(1.0, max(0.0, inh)), 4)
+
+
+def compute_two_signal_pressure(
+    *,
+    age_hours: float = 0.0,
+    usage_count: int = 0,
+    recent_reward_mean: float = 0.0,
+    recent_regret: float = 0.0,
+    wm_contradiction_pe: float = 0.0,
+    unsafe: bool = False,
+    safety_critical: bool = False,
+    ledger_type: str = "adaptive_policy",
+    homeostatic_pressure: float = 0.0,
+    pruning_conservatism: float = 0.0,
+    tom_pruning_conservatism: Optional[float] = None,
+    protection_score: float = 0.0,
+    recent_high_value_usage: float = 0.0,
+    currently_active_in_arbiter: bool = False,
+    stability_ok: bool = True,
+    clamp_level: str = "NONE",
+    na_level: float = 0.5,
+    na_caution: Optional[float] = None,
+    valence: float = 0.0,
+) -> Dict[str, float | bool | str]:
+    """
+    Return the TREM2/CD33 two-signal state for one candidate.
+
+    The output is designed for JSONL receipts and tests. It intentionally uses
+    small bounded scalars rather than hidden state.
+    """
+    conservatism = _clamp01(
+        pruning_conservatism if tom_pruning_conservatism is None else tom_pruning_conservatism
+    )
+    usage = _usage_norm(usage_count)
+    stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
+    age_norm = _clamp01(float(age_hours) / max(1.0, stale_hours))
+    neg_reward = _clamp01(max(0.0, -float(recent_reward_mean)))
+    positive_reward = _clamp01(max(0.0, float(recent_reward_mean)))
+    contradiction = _clamp01(wm_contradiction_pe)
+    high_value = max(_clamp01(recent_high_value_usage), positive_reward)
+
+    damage_score = _compute_damage_score(
+        age_hours=age_hours,
+        usage_count=usage_count,
+        recent_reward_mean=recent_reward_mean,
+        recent_regret=recent_regret,
+        wm_contradiction_pe=wm_contradiction_pe,
+        unsafe=unsafe,
+    )
+
+    prune_tag = _clamp01(
+        0.40 * (1.0 - usage)
+        + 0.30 * neg_reward
+        + 0.20 * contradiction
+        + 0.10 * age_norm
+    )
+
+    owner_or_safety = 1.0 if safety_critical or ledger_type == "owner" else 0.0
+    active_bonus = 1.0 if currently_active_in_arbiter else 0.0
+    protection = _clamp01(
+        max(_clamp01(protection_score), 0.50 * high_value + 0.30 * owner_or_safety + 0.20 * active_bonus)
+    )
+
+    na = _clamp01(na_level, 0.5)
+    val = max(-1.0, min(1.0, float(valence or 0.0)))
+    stress_brake_applied = False
+    derived_na_caution = 0.0
+    if na > 0.65 and val < -0.20 and damage_score < 0.75:
+        derived_na_caution = min(1.0, (na - 0.65) + abs(val) * 0.25)
+        stress_brake_applied = True
+    if na_caution is not None:
+        derived_na_caution = max(derived_na_caution, _clamp01(na_caution))
+
+    inhibition_signal = _compute_inhibition_signal(
+        protection_score=protection,
+        na_caution=derived_na_caution,
+        tom_pruning_conservatism=conservatism,
+        safety_critical=safety_critical,
+        ledger_type=ledger_type,
+    )
+
+    # Fractalkine-like calm context protection, represented as additional
+    # inhibition only when damage is not already high.
+    fractalkine_analog = 0.20 if stability_ok and clamp_level == "NONE" and damage_score < 0.50 else 0.0
+    inhibition_signal = round(min(1.0, inhibition_signal + 0.15 * fractalkine_analog), 4)
+
+    activation_signal = _clamp01(
+        0.60 * prune_tag
+        + 0.35 * damage_score
+        + 0.20 * _clamp01(homeostatic_pressure)
+        + (0.20 if unsafe else 0.0)
+    )
+
+    clearance_mode = bool(
+        damage_score >= 0.75
+        and stability_ok
+        and clamp_level in ("NONE", "RATE_LIMIT")
+        and conservatism < 0.35
+    )
+    if clearance_mode:
+        activation_signal = _clamp01(activation_signal + 0.15)
+
+    net = round(activation_signal - inhibition_signal, 4)
+    return {
+        "prune_tag": round(prune_tag, 4),
+        "damage_score": round(damage_score, 4),
+        "trem2_signal": round(damage_score, 4),
+        "protection_score": round(protection, 4),
+        "inhibition_signal": round(inhibition_signal, 4),
+        "cd33_signal": round(inhibition_signal, 4),
+        "activation_signal": round(activation_signal, 4),
+        "net_pruning_pressure": net,
+        "net_signal": net,
+        "fractalkine_analog": round(fractalkine_analog, 4),
+        "clearance_mode": clearance_mode,
+        "stress_brake_applied": stress_brake_applied,
+    }
 
 
 def evaluate_prune_candidate(
@@ -88,17 +286,22 @@ def evaluate_prune_candidate(
     unsafe: bool = False,
     safety_critical: bool = False,
     ledger_type: str = "adaptive_policy",
+    protection_score: float = 0.0,
+    na_caution: float = 0.0,
+    tom_pruning_conservatism: float = 0.0,
+    homeostatic_pressure: float = 0.0,
+    pruning_conservatism: float = 0.0,
+    recent_high_value_usage: float = 0.0,
+    currently_active_in_arbiter: bool = False,
+    stability_ok: bool = True,
+    clamp_level: str = "NONE",
+    na_level: float = 0.5,
+    valence: float = 0.0,
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """
-    Evaluate one synapse/policy/memory candidate and append a receipt.
-
-    Actions are recommendations unless SIFTA_MICROGLIA_EXECUTE=1. Even execute
-    mode is receipt-only: it writes an executed correction/depression row, not a
-    silent deletion of source ledgers.
-    """
+    """Evaluate one synapse/policy/memory candidate and append a receipt."""
     if _disabled():
         return {
             "ts": now or time.time(),
@@ -114,11 +317,35 @@ def evaluate_prune_candidate(
             "reasons": [],
         }
 
+    conservatism = max(_clamp01(tom_pruning_conservatism), _clamp01(pruning_conservatism))
+    two_signal = compute_two_signal_pressure(
+        age_hours=age_hours,
+        usage_count=usage_count,
+        recent_reward_mean=recent_reward_mean,
+        recent_regret=recent_regret,
+        wm_contradiction_pe=wm_contradiction_pe,
+        unsafe=unsafe,
+        safety_critical=safety_critical,
+        ledger_type=ledger_type,
+        homeostatic_pressure=homeostatic_pressure,
+        pruning_conservatism=conservatism,
+        protection_score=protection_score,
+        recent_high_value_usage=recent_high_value_usage,
+        currently_active_in_arbiter=currently_active_in_arbiter,
+        stability_ok=stability_ok,
+        clamp_level=clamp_level,
+        na_level=na_level,
+        na_caution=na_caution,
+        valence=valence,
+    )
+
     stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
     low_reward_mean = _env_float("MICROGLIA_LOW_REWARD_MEAN", -0.1)
     low_usage_count = _env_int("MICROGLIA_LOW_USAGE_COUNT", 1)
     high_regret = _env_float("MICROGLIA_HIGH_REGRET", 0.3)
     contradiction_pe = _env_float("MICROGLIA_CONTRADICTION_PE", 0.4)
+    net_threshold = _env_float("MICROGLIA_NET_PRUNE_PRESSURE", 0.12)
+    delete_threshold = _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55)
 
     reasons: List[str] = []
     if unsafe:
@@ -133,6 +360,12 @@ def evaluate_prune_candidate(
         reasons.append("contradicted")
     if safety_critical or ledger_type == "owner":
         reasons.append("safety_invariant_keep")
+    if bool(two_signal["clearance_mode"]):
+        reasons.append("trem2_clearance_mode")
+    if bool(two_signal["stress_brake_applied"]):
+        reasons.append("cd33_stress_brake")
+    if float(two_signal["net_pruning_pressure"]) >= net_threshold:
+        reasons.append("net_pruning_pressure")
 
     if safety_critical or ledger_type == "owner":
         action = "none"
@@ -140,7 +373,13 @@ def evaluate_prune_candidate(
     elif unsafe:
         action = "recommend_delete"
         prune_recommended = True
-    elif reasons:
+    elif float(two_signal["net_pruning_pressure"]) >= delete_threshold:
+        action = "recommend_delete"
+        prune_recommended = True
+    elif float(two_signal["net_pruning_pressure"]) >= net_threshold:
+        action = "recommend_depress"
+        prune_recommended = True
+    elif reasons and float(two_signal["net_pruning_pressure"]) > 0.0:
         action = "recommend_depress"
         prune_recommended = True
     else:
@@ -160,6 +399,14 @@ def evaluate_prune_candidate(
         "recent_reward_mean": float(recent_reward_mean),
         "recent_regret": float(recent_regret),
         "wm_contradiction_pe": float(wm_contradiction_pe),
+        "homeostatic_pressure": float(homeostatic_pressure),
+        "pruning_conservatism": float(conservatism),
+        "recent_high_value_usage": float(recent_high_value_usage),
+        "currently_active_in_arbiter": bool(currently_active_in_arbiter),
+        "stability_ok": bool(stability_ok),
+        "clamp_level": str(clamp_level),
+        "na_level": float(na_level),
+        "valence": float(valence),
         "unsafe": bool(unsafe),
         "safety_critical": bool(safety_critical),
         "reasons": reasons,
@@ -168,6 +415,12 @@ def evaluate_prune_candidate(
         "dry_run": not execute,
         "executed": execute,
         "execute_mode": "receipt_only" if execute else "dry_run",
+        "two_signal_model": "TREM2_CD33",
+        "provenance": (
+            "Stevens2007_Cell; Schafer2012_Neuron; Hong2016_Science; "
+            "Jonsson2013_NEJM_TREM2; Griciuc2013_Nature_CD33; Tononi_Cirelli2014_SHY"
+        ),
+        **two_signal,
     }
 
     if write_ledger:
@@ -201,6 +454,17 @@ def batch_evaluate(
                 unsafe=bool(cand.get("unsafe", False)),
                 safety_critical=bool(cand.get("safety_critical", False) or cand.get("invariant", False)),
                 ledger_type=str(cand.get("ledger_type", "adaptive_policy")),
+                protection_score=float(cand.get("protection_score", 0.0) or 0.0),
+                na_caution=float(cand.get("na_caution", 0.0) or 0.0),
+                tom_pruning_conservatism=float(cand.get("tom_pruning_conservatism", 0.0) or 0.0),
+                homeostatic_pressure=float(cand.get("homeostatic_pressure", 0.0) or 0.0),
+                pruning_conservatism=float(cand.get("pruning_conservatism", 0.0) or 0.0),
+                recent_high_value_usage=float(cand.get("recent_high_value_usage", 0.0) or 0.0),
+                currently_active_in_arbiter=bool(cand.get("currently_active_in_arbiter", False)),
+                stability_ok=bool(cand.get("stability_ok", True)),
+                clamp_level=str(cand.get("clamp_level", "NONE")),
+                na_level=float(cand.get("na_level", 0.5) or 0.5),
+                valence=float(cand.get("valence", 0.0) or 0.0),
                 root=root,
                 write_ledger=write_ledger,
             )
@@ -226,32 +490,64 @@ def tail_prune_rows(max_rows: int = 12, *, root: Optional[Path] = None) -> List[
     return out[-max(1, min(max_rows, 200)) :]
 
 
+def _tail_legacy_rows(max_rows: int = 12, *, root: Optional[Path] = None) -> List[Dict[str, Any]]:
+    path = _legacy_class_log_path(root)
+    if not path.exists():
+        return []
+    raw = read_text_locked(path, encoding="utf-8", errors="replace")
+    out: List[Dict[str, Any]] = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            out.append(row)
+    return out[-max(1, min(max_rows, 200)) :]
+
+
 def summary_for_prompt(*, root: Optional[Path] = None) -> str:
     rows = tail_prune_rows(8, root=root)
     if not rows:
+        rows = _tail_legacy_rows(8, root=root)
+    if not rows:
         return ""
-    active = [r for r in rows if r.get("prune_recommended")]
+    active = [
+        r for r in rows
+        if r.get("prune_recommended") or str(r.get("action")) in {"delete", "depress", "recommend_delete", "recommend_depress"}
+    ]
     executed = [r for r in rows if r.get("executed")]
-    return (
+    base = (
         "MICROGLIA PRUNER (Event 137): "
         f"recent={len(rows)}, recommended={len(active)}, executed_receipts={len(executed)}"
     )
+    latest = rows[-1]
+    if "net_pruning_pressure" in latest:
+        base += (
+            f" | TREM2={latest.get('damage_score')} CD33={latest.get('inhibition_signal')} "
+            f"net={latest.get('net_pruning_pressure')}"
+        )
+    elif "damage_score" in latest:
+        base += (
+            f" | TREM2={latest.get('damage_score')} CD33={latest.get('inhibition_signal')} "
+            f"net={latest.get('net_signal')}"
+        )
+    return base
 
 
 class MicrogliaSynapticPruner:
     """
     Compatibility facade for the older class-level pruning API.
 
-    It still writes the legacy `microglia_prune.jsonl` receipts expected by
-    existing tests, while the new module-level API writes Event 137 receipts to
-    `microglia_synaptic_prunes.jsonl`.
+    It writes the legacy `microglia_prune.jsonl` receipts expected by existing
+    dashboards while carrying the v8 TREM2/CD33 fields.
     """
 
     def __init__(self, root: Optional[Path] = None):
         self.root = state_dir(root)
         self.log_path = _legacy_class_log_path(root)
-        # EMA state for SHY homeostatic pressure (Grok Q5: prevent burst pruning)
-        # α=0.3 → slow EMA; a single burst decays to 50% within ~2 calls
         self._ema_pressure: float = 0.0
         self._ema_alpha: float = 0.3
 
@@ -273,6 +569,42 @@ class MicrogliaSynapticPruner:
         dominant = max(scores, key=lambda k: scores[k]) if total > 0 else "none"
         return total, dominant
 
+    def two_signal_entry(
+        self,
+        entry: Dict[str, Any],
+        *,
+        ledger_type: str = "replay",
+        stability_ok: bool = True,
+        pruning_conservatism: float = 0.0,
+        tom_pruning_conservatism: Optional[float] = None,
+        clamp_level: str = "NONE",
+        na_level: float = 0.5,
+        na_caution: Optional[float] = None,
+        valence: float = 0.0,
+        homeostatic_pressure: float = 0.0,
+    ) -> Dict[str, float | bool | str]:
+        return compute_two_signal_pressure(
+            age_hours=float(entry.get("age_hours", 0.0) or 0.0),
+            usage_count=int(entry.get("usage_count", 0) or 0),
+            recent_reward_mean=float(entry.get("recent_reward_mean", 0.0) or 0.0),
+            recent_regret=float(entry.get("recent_regret", 0.0) or 0.0),
+            wm_contradiction_pe=float(entry.get("wm_contradiction_pe", 0.0) or 0.0),
+            unsafe=bool(entry.get("unsafe", False)),
+            safety_critical=bool(entry.get("safety_critical", False) or entry.get("invariant", False)),
+            ledger_type=ledger_type,
+            homeostatic_pressure=homeostatic_pressure,
+            pruning_conservatism=pruning_conservatism,
+            tom_pruning_conservatism=tom_pruning_conservatism,
+            protection_score=float(entry.get("protection_score", 0.0) or 0.0),
+            recent_high_value_usage=float(entry.get("recent_high_value_usage", 0.0) or 0.0),
+            currently_active_in_arbiter=bool(entry.get("currently_active_in_arbiter", False)),
+            stability_ok=stability_ok,
+            clamp_level=clamp_level,
+            na_level=na_level,
+            na_caution=na_caution,
+            valence=valence,
+        )
+
     def decide_action(self, score: float, safety_critical: bool) -> PruneAction:
         if safety_critical or score < 0.4:
             return "keep"
@@ -286,20 +618,11 @@ class MicrogliaSynapticPruner:
         buffer_capacity: int = 200,
     ) -> float:
         """
-        Q5 — SHY homeostatic pressure with EMA smoothing (Grok suggestion).
+        Q5 - SHY homeostatic pressure with EMA smoothing.
 
-        P_homeo = EMA(α=0.3)[ (Σ |reward|×eligibility) / buffer_capacity − θ ]
-
-        EMA prevents a single high-reward burst from immediately triggering
-        aggressive pruning. The slow EMA (α=0.3) means pressure builds over
-        multiple ticks and decays gradually — matching the biological SHY
-        "sleep pressure" that accumulates across hours, not seconds.
-
-        Ref: Tononi & Cirelli (2014) Neuron 81(1):12–34.
-             Grok Q5 suggestion: add EMA for burst resistance.
+        P_homeo = EMA(alpha=0.3)[(sum |reward|*eligibility)/capacity - theta]
         """
         if not recent_traces:
-            # EMA decays toward 0 even with no traces
             self._ema_pressure = self._ema_pressure * (1.0 - self._ema_alpha)
             return round(self._ema_pressure, 4)
 
@@ -307,12 +630,10 @@ class MicrogliaSynapticPruner:
         total_potentiation = 0.0
         for r in recent_traces:
             reward = abs(float(r.get("recent_reward_mean", 0.0) or 0.0))
-            elig   = float(r.get("eligibility_trace_norm", 1.0) or 1.0)
+            elig = float(r.get("eligibility_trace_norm", 1.0) or 1.0)
             total_potentiation += reward * elig
         raw = total_potentiation / max(1, buffer_capacity)
         instant = max(0.0, min(1.0, raw - theta_baseline))
-
-        # EMA update: P_ema_t = α·P_instant + (1−α)·P_ema_{t-1}
         self._ema_pressure = (
             self._ema_alpha * instant
             + (1.0 - self._ema_alpha) * self._ema_pressure
@@ -326,14 +647,6 @@ class MicrogliaSynapticPruner:
         pressure_threshold: float = 0.35,
         buffer_capacity: int = 200,
     ) -> bool:
-        """
-        Q5 — SHY-based pruning gate using EMA-smoothed pressure.
-
-        Prunes when EMA(P_homeo) > threshold AND stability_ok.
-        Suppressed in EMERGENCY regardless of pressure.
-        EMA ensures a single burst does not trigger aggressive pruning.
-        Ref: Tononi & Cirelli (2014) SHY.
-        """
         if not stability_ok:
             return False
         pressure = self.compute_homeostatic_pressure(recent_traces, buffer_capacity)
@@ -347,6 +660,13 @@ class MicrogliaSynapticPruner:
         *,
         max_prunes_override: Optional[int] = None,
         tail_lines_read: Optional[int] = None,
+        pruning_conservatism: float = 0.0,
+        tom_pruning_conservatism: Optional[float] = None,
+        clamp_level: str = "NONE",
+        na_level: float = 0.5,
+        na_caution: Optional[float] = None,
+        valence: float = 0.0,
+        homeostatic_pressure: float = 0.0,
     ) -> List[Dict[str, Any]]:
         if _disabled():
             return []
@@ -361,6 +681,11 @@ class MicrogliaSynapticPruner:
                 mo = MAX_PRUNES_PER_CYCLE
             delete_cap = max(0, min(MAX_PRUNES_PER_CYCLE, mo))
 
+        conservatism = max(
+            _clamp01(pruning_conservatism),
+            _clamp01(tom_pruning_conservatism or 0.0),
+        )
+
         for entry in ledger:
             is_safety = bool(
                 entry.get("safety_critical", False)
@@ -368,9 +693,24 @@ class MicrogliaSynapticPruner:
                 or entry.get("invariant", False)
             )
             score, dominant = self.score_entry(entry)
+            two_signal = self.two_signal_entry(
+                entry,
+                ledger_type=ledger_type,
+                stability_ok=stability_ok,
+                pruning_conservatism=conservatism,
+                clamp_level=clamp_level,
+                na_level=na_level,
+                na_caution=na_caution,
+                valence=valence,
+                homeostatic_pressure=homeostatic_pressure,
+            )
             action = self.decide_action(score, is_safety)
 
             if action == "delete" and not stability_ok:
+                action = "depress"
+            if action == "delete" and float(two_signal["inhibition_signal"]) >= 0.45:
+                action = "depress"
+            if action == "delete" and bool(two_signal["stress_brake_applied"]):
                 action = "depress"
             if action == "delete":
                 if delete_count >= delete_cap:
@@ -397,6 +737,14 @@ class MicrogliaSynapticPruner:
                 "truth_label": "CONTROLLED_FORGETTING",
                 "max_prunes_override_applied": max_prunes_override,
                 "tail_lines_read": tail_lines_read,
+                "two_signal_model": "TREM2_CD33",
+                "pruning_conservatism": round(conservatism, 4),
+                "tom_pruning_conservatism": round(conservatism, 4),
+                "clamp_level": str(clamp_level),
+                "na_level": float(na_level),
+                "valence": float(valence),
+                "homeostatic_pressure": float(homeostatic_pressure),
+                **two_signal,
             }
             append_line_locked(self.log_path, json.dumps(receipt) + "\n", encoding="utf-8")
             receipts.append(receipt)
@@ -407,8 +755,11 @@ class MicrogliaSynapticPruner:
 __all__ = [
     "MicrogliaSynapticPruner",
     "batch_evaluate",
+    "compute_two_signal_pressure",
     "evaluate_prune_candidate",
     "prune_log_path",
     "summary_for_prompt",
     "tail_prune_rows",
+    "_compute_damage_score",
+    "_compute_inhibition_signal",
 ]

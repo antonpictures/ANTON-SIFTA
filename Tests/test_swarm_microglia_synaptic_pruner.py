@@ -4,6 +4,7 @@ from pathlib import Path
 from System.swarm_microglia_synaptic_pruner import (
     MicrogliaSynapticPruner,
     batch_evaluate,
+    compute_two_signal_pressure,
     evaluate_prune_candidate,
     prune_log_path,
     summary_for_prompt,
@@ -163,3 +164,142 @@ def test_batch_evaluate_and_summary(tmp_path):
 
     assert len(rows) == 2
     assert "MICROGLIA PRUNER" in summary_for_prompt(root=tmp_path)
+
+
+# Event 137 TREM2/CD33 two-signal biology ----------------------------------
+
+
+def test_two_signal_pressure_exposes_trem2_cd33_fields():
+    row = compute_two_signal_pressure(
+        age_hours=120,
+        usage_count=0,
+        recent_reward_mean=-0.5,
+        recent_regret=0.4,
+        wm_contradiction_pe=0.8,
+    )
+
+    assert row["prune_tag"] > 0.5
+    assert row["damage_score"] > 0.5
+    assert row["trem2_signal"] == row["damage_score"]
+    assert row["cd33_signal"] == row["inhibition_signal"]
+    assert row["net_pruning_pressure"] > 0.0
+
+
+def test_evaluate_prune_candidate_records_two_signal_receipt(tmp_path):
+    row = evaluate_prune_candidate(
+        "memory:damaged_schema",
+        age_hours=120,
+        usage_count=0,
+        recent_reward_mean=-0.4,
+        recent_regret=0.5,
+        wm_contradiction_pe=0.8,
+        root=tmp_path,
+    )
+
+    assert row["two_signal_model"] == "TREM2_CD33"
+    for key in (
+        "prune_tag",
+        "damage_score",
+        "protection_score",
+        "activation_signal",
+        "inhibition_signal",
+        "net_pruning_pressure",
+    ):
+        assert key in row
+    assert row["prune_recommended"] is True
+
+
+def test_cd33_like_protection_blocks_stale_low_usage(tmp_path):
+    row = evaluate_prune_candidate(
+        "memory:owner_high_value",
+        age_hours=120,
+        usage_count=0,
+        recent_reward_mean=0.9,
+        recent_high_value_usage=1.0,
+        pruning_conservatism=0.8,
+        currently_active_in_arbiter=True,
+        root=tmp_path,
+    )
+
+    assert row["protection_score"] >= 0.7
+    assert row["inhibition_signal"] > row["activation_signal"]
+    assert row["action"] == "none"
+    assert row["prune_recommended"] is False
+
+
+def test_trem2_clearance_mode_requires_low_conservatism():
+    active = compute_two_signal_pressure(
+        age_hours=120,
+        usage_count=0,
+        wm_contradiction_pe=1.0,
+        recent_regret=1.0,
+        recent_reward_mean=-1.0,
+        unsafe=True,
+        stability_ok=True,
+        clamp_level="NONE",
+        pruning_conservatism=0.0,
+    )
+    inhibited = compute_two_signal_pressure(
+        age_hours=120,
+        usage_count=0,
+        wm_contradiction_pe=1.0,
+        recent_regret=1.0,
+        recent_reward_mean=-1.0,
+        unsafe=True,
+        stability_ok=True,
+        clamp_level="NONE",
+        pruning_conservatism=0.9,
+    )
+
+    assert active["clearance_mode"] is True
+    assert inhibited["clearance_mode"] is False
+    assert inhibited["inhibition_signal"] > active["inhibition_signal"]
+
+
+def test_high_stress_negative_valence_applies_cd33_brake():
+    calm = compute_two_signal_pressure(
+        usage_count=0,
+        age_hours=120,
+        recent_reward_mean=-0.2,
+        wm_contradiction_pe=0.2,
+        na_level=0.5,
+        valence=0.0,
+    )
+    stressed = compute_two_signal_pressure(
+        usage_count=0,
+        age_hours=120,
+        recent_reward_mean=-0.2,
+        wm_contradiction_pe=0.2,
+        na_level=0.95,
+        valence=-0.8,
+    )
+
+    assert stressed["stress_brake_applied"] is True
+    assert stressed["inhibition_signal"] > calm["inhibition_signal"]
+    assert stressed["net_pruning_pressure"] < calm["net_pruning_pressure"]
+
+
+def test_prune_degrades_delete_when_tom_conservatism_high(tmp_path):
+    p = MicrogliaSynapticPruner(root=tmp_path)
+    ledger = [{
+        "key": "comm_pattern",
+        "usage_count": 0,
+        "age_hours": 100,
+        "recent_reward_mean": -0.8,
+        "wm_contradiction_pe": 0.8,
+        "recent_regret": 0.6,
+    }]
+
+    receipts = p.prune(
+        ledger,
+        ledger_type="replay",
+        stability_ok=True,
+        pruning_conservatism=0.9,
+        na_level=0.9,
+        valence=-0.5,
+    )
+
+    assert receipts
+    assert receipts[0]["action"] == "depress"
+    assert receipts[0]["two_signal_model"] == "TREM2_CD33"
+    assert receipts[0]["pruning_conservatism"] == 0.9

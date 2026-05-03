@@ -1137,6 +1137,11 @@ class SwarmPhysiology:
                             stability_ok=_stability_ok,
                             max_prunes_override=_clamp_overrides.get("max_prunes_override"),
                             tail_lines_read=_tail_take,
+                            # Two-signal inhibition via Cursor API (Griciuc 2013 CD33)
+                            pruning_conservatism=float(_tom_receipt.get("pruning_conservatism", 0.0) or 0.0),
+                            clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
+                            na_level=float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
+                            valence=float(_valence_receipt.get("valence", 0.0) or 0.0),
                         )
         except Exception:
             logger.debug("Microglia pruner skipped (non-fatal)")
