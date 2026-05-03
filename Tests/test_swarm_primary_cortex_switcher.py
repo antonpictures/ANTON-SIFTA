@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 
 def test_primary_cortex_options_only_installed_models_are_selectable():
@@ -20,6 +21,31 @@ def test_primary_cortex_options_only_installed_models_are_selectable():
     assert missing["installed"] is False
     assert "(not installed)" in missing["label"]
     assert "sifta-classifier-c1:latest" not in {o["model"] for o in options}
+
+
+def test_installed_ollama_models_default_timeout_handles_slow_boot(monkeypatch):
+    from System import swarm_primary_cortex_switcher as switcher
+
+    captured = {}
+
+    def fake_run(cmd, *, capture_output, text, timeout, check):
+        captured["cmd"] = cmd
+        captured["timeout"] = timeout
+        return SimpleNamespace(
+            returncode=0,
+            stdout=(
+                "NAME                         ID              SIZE      MODIFIED\n"
+                "sifta-gemma4-alice:latest    abcdef123456    9.6 GB    1 minute ago\n"
+            ),
+        )
+
+    monkeypatch.setattr(switcher.subprocess, "run", fake_run)
+
+    rows = switcher.installed_ollama_models()
+
+    assert captured["cmd"] == ["ollama", "list"]
+    assert captured["timeout"] == 10.0
+    assert rows[0]["name"] == "sifta-gemma4-alice:latest"
 
 
 def test_set_primary_cortex_persists_app_override_and_receipt(tmp_path, monkeypatch):

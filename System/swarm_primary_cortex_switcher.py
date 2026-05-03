@@ -43,7 +43,6 @@ PREFERRED_PRIMARY_CORTICES: tuple[str, ...] = (
     CANONICAL_OLLAMA_DEFAULT,
     "sifta-gemma4-alice:latest",
     "gemma4:26b",
-    "gemma3:27b",
     "qwen3.5:9b",
 )
 
@@ -71,7 +70,7 @@ def _same_model(a: str, b: str) -> bool:
     return False
 
 
-def installed_ollama_models(*, timeout: float = 3.0) -> List[Dict[str, Any]]:
+def installed_ollama_models(*, timeout: float = 10.0) -> List[Dict[str, Any]]:
     """Return installed Ollama models from `ollama list`.
 
     The function is intentionally tolerant. If Ollama is offline or absent, it

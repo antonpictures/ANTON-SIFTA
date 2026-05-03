@@ -89,6 +89,48 @@ from PyQt6.QtWidgets import (
 from System.sifta_base_widget import SiftaBaseWidget
 from System.swarm_kernel_identity import owner_display_name, owner_name, preferred_camera_label
 
+_IMAGE_ATTACHMENT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+_MAX_IMAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+
+def _image_attachment_format(data: bytes) -> str:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return ""
+
+
+def _encode_ollama_image_attachment(path: str) -> str:
+    """Return base64 image payload accepted by Ollama chat.
+
+    This is intentionally strict. If the file cannot be proven to be a small
+    local image, Alice should say the attachment failed instead of pretending
+    she saw pixels.
+    """
+    import base64
+
+    p = Path(path).expanduser()
+    if not p.exists() or not p.is_file():
+        raise FileNotFoundError(f"image attachment not found: {p}")
+    if p.suffix.lower() not in _IMAGE_ATTACHMENT_SUFFIXES:
+        allowed = ", ".join(sorted(_IMAGE_ATTACHMENT_SUFFIXES))
+        raise ValueError(f"unsupported image type {p.suffix or '<none>'}; allowed: {allowed}")
+    size = p.stat().st_size
+    if size <= 0:
+        raise ValueError("image attachment is empty")
+    if size > _MAX_IMAGE_ATTACHMENT_BYTES:
+        raise ValueError(
+            f"image attachment is too large: {size} bytes "
+            f"(max {_MAX_IMAGE_ATTACHMENT_BYTES})"
+        )
+    data = p.read_bytes()
+    if not _image_attachment_format(data):
+        raise ValueError("unsupported image bytes; expected png, jpeg, or webp")
+    return base64.b64encode(data).decode("ascii")
+
 try:
     from System.sifta_inference_defaults import (
         DEFAULT_OLLAMA_MODEL, resolve_ollama_model,
@@ -2871,7 +2913,7 @@ class _BrainWorker(QThread):
     done = pyqtSignal(str)                 # full response text
     failed = pyqtSignal(str)
 
-    def __init__(self, model: str, history: List[Dict[str, str]],
+    def __init__(self, model: str, history: List[Dict[str, Any]],
                  parent: QObject = None) -> None:
         super().__init__(parent)
         self._model = model
@@ -4094,6 +4136,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._text_input.returnPressed.connect(self._submit_text_input)
         text_row.addWidget(self._text_input, 1)
 
+        self._attach_btn = QPushButton("📎 Attach")
+        self._attach_btn_default_style = (
+            "QPushButton { background: rgb(45,42,65); color: rgb(200,210,230); "
+            "font-weight: 700; border-radius: 8px; padding: 0 18px; }"
+            "QPushButton:hover { background: rgb(65,62,85); }"
+        )
+        self._attach_btn.setMinimumHeight(40)
+        self._attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._attach_btn.setStyleSheet(self._attach_btn_default_style)
+        self._attach_btn.clicked.connect(self._attach_pic)
+        text_row.addWidget(self._attach_btn)
+
         self._send_btn = QPushButton("Send")
         self._send_btn.setMinimumHeight(40)
         self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -4135,7 +4189,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         layout.addLayout(bottom)
 
         # ── State ──────────────────────────────────────────────────────────
-        self._history: List[Dict[str, str]] = []
+        self._history: List[Dict[str, Any]] = []
         self._busy = False                      # pipeline (STT/Brain/TTS) in flight
         self._listener: Optional[_ContinuousListener] = None
         self._stt: Optional[_STTWorker] = None
@@ -4145,6 +4199,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._streaming_response: List[str] = []
         self._pending_whatsapp_reply: Optional[Dict[str, str]] = None
         self._pending_acoustic_fingerprint: Dict[str, Any] = {}
+        self._pending_image_path: Optional[str] = None
         self._listener_state = "idle"           # for the pill
         self._last_internal_drive_id: str = ""
         # Event 122 — Stigtime organ: coarse action lane for continuity receipts.
@@ -4195,24 +4250,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
         else:
             QTimer.singleShot(150, self._start_listener)
 
+    def _attach_pic(self) -> None:
+        from PyQt6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(self, "Attach Picture", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        if path:
+            self._pending_image_path = path
+            self._attach_btn.setStyleSheet("QPushButton { background: rgb(0, 150, 100); color: white; font-weight: 700; border-radius: 8px; padding: 0 18px; }")
+            self._text_input.setFocus()
+
     def _submit_text_input(self) -> None:
         text = self._text_input.text().strip()
-        if not text:
+        image_path = getattr(self, "_pending_image_path", None)
+        if not text and not image_path:
             return
         self._text_input.clear()
-        self.submit_text(text)
+        self._pending_image_path = None
+        self._attach_btn.setStyleSheet(self._attach_btn_default_style)
+        self.submit_text(text, image_path=image_path)
 
-    def submit_text(self, text: str) -> None:
+    def submit_text(self, text: str, image_path: Optional[str] = None) -> None:
         """Public text-entry path for the unified Alice app/cockpit."""
         text = (text or "").strip()
-        if not text:
+        if not text and not image_path:
             return
         if self._busy:
             self._append_system_line("(Alice is still answering — wait for her turn to finish.)", error=True)
             return
         self._busy = True
         self._set_pill("thinking", "⌨️ typed — thinking…")
-        self._on_stt_done(text, 1.0)
+        self._on_stt_done(text, 1.0, image_path=image_path)
 
     # ── Brain / voice population ───────────────────────────────────────────
     def _current_brain_model(self) -> str:
@@ -4726,23 +4792,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.set_status("STT failed.")
         self._return_to_listening()
 
-    def _on_stt_done(self, text: str, conf: float) -> None:
+    def _on_stt_done(self, text: str, conf: float, image_path: Optional[str] = None) -> None:
         text = (text or "").strip()
-        if not text:
+        if not text and not image_path:
             self._busy = False
             self._return_to_listening()
             return
-        self._append_user_line(text, conf)
-        self._start_brain(text, conf=conf, already_displayed=True)
+        display_text = text
+        if not display_text and image_path:
+            display_text = f"[Attached Image: {Path(image_path).name}]"
+        self._append_user_line(display_text, conf)
+        self._start_brain(text, conf=conf, already_displayed=True, image_path=image_path)
 
-    def _start_brain(self, text: str, conf: float = 0.0, *, already_displayed: bool = False) -> None:
+    def _start_brain(self, text: str, conf: float = 0.0, *, already_displayed: bool = False, image_path: Optional[str] = None) -> None:
         """Start Alice's model turn from a user/inbox message.
 
         Inbox pollers append the visible user line before scheduling this method,
         while STT/text entry delegates here after its own display path.
         """
         text = (text or "").strip()
-        if not text:
+        if not text and not image_path:
             self._busy = False
             self._pending_acoustic_fingerprint = {}
             self._return_to_listening()
@@ -4752,7 +4821,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         _acoustic_fingerprint = getattr(self, "_pending_acoustic_fingerprint", {}) or {}
         self._pending_acoustic_fingerprint = {}
         if not already_displayed:
-            self._append_user_line(text, conf)
+            display_text = text
+            if not display_text and image_path:
+                display_text = f"[Attached Image: {Path(image_path).name}]"
+            self._append_user_line(display_text, conf)
 
         # ── Architect day segments (Event 117) — before media gate ─────────
         # Sleep / activity windows must become receipts even if the next gate
@@ -4768,7 +4840,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # This must run before _log_turn("user", ...). _log_turn stamps RLHS
         # and deposits NOISE/DEGRADED spikes; movie/YouTube dialogue is not a
         # human supervision channel, so it gets a media receipt instead.
-        _media_row = _pre_user_media_ingress_receipt(text, conf, _acoustic_fingerprint)
+        _media_row = _pre_user_media_ingress_receipt(text, conf, _acoustic_fingerprint) if text else None
         if _media_row:
             note, system_context = _media_ingress_note(_media_row)
             if _media_row.get("route") == "observed_media" and system_context:
@@ -4780,8 +4852,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        _log_turn("user", text, stt_conf=conf)
-        self._history.append({"role": "user", "content": text})
+        _log_turn("user", text if text else "[Image]", stt_conf=conf)
+        user_msg = {"role": "user", "content": text if text else "What is in this image?"}
+        if image_path:
+            try:
+                user_msg["images"] = [_encode_ollama_image_attachment(image_path)]
+            except Exception as e:
+                self._append_system_line(f"(Image read error: {e})", error=True)
+                self._busy = False
+                self._pending_acoustic_fingerprint = {}
+                self._return_to_listening()
+                return
+        self._history.append(user_msg)
 
         # ── Global Stigmergic Memory Deposit (AG31 2026-04-30) ──────────
         # Every meaningful user utterance becomes a pheromone trace in the
