@@ -834,6 +834,20 @@
       "PyQt6"
     ]
   },
+  "Tumor-Immune Stigmergic Lab": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_tumor_immune_stigmergic_lab.py",
+    "widget_class": "TumorImmuneStigmergicLab",
+    "window_width": 1120,
+    "window_height": 760,
+    "description": "Event 148 synthetic-only tumor-immune proof lab. Writes TIN_SIM_TICK receipts with Event 137 TREM2/CD33 two-signal snapshots. No PHI, no clinical guidance.",
+    "truth_label": "TIN_SIM_TICK",
+    "doctor": "Codex",
+    "autostart": false,
+    "requires": [
+      "PyQt6"
+    ]
+  },
   "Autopoiesis Monitor": {
     "category": "Neuroscience",
     "entry_point": "Applications/sifta_agi_cognition_dashboard.py",

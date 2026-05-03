@@ -422,3 +422,197 @@ __all__ = [
     "PHASE_ESCAPE",
     "PHASE_REGRESSION",
 ]
+
+
+# ── PyQt desktop wrapper ─────────────────────────────────────────────────────
+# The scientific simulator above is intentionally importable without Qt.  The
+# desktop manifest expects a widget class, so this thin shell delegates runtime
+# ticks to the locked System organ added for Event 148.
+
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+class TumorImmuneStigmergicLab(QWidget):
+    """Synthetic-only tumor-immune stigmergic proof lab widget."""
+
+    INTERVENTIONS = [
+        ("none", "No intervention"),
+        ("toy_trem2_blockade", "TREM2 blockade toy"),
+        ("toy_cart_persistence", "CAR-T persistence toy"),
+        ("toy_logic_gate_focus", "Logic-gated CAR toy"),
+        ("toy_tme_release", "TME release toy"),
+    ]
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setObjectName("TumorImmuneStigmergicLab")
+        self.setWindowTitle("Tumor-Immune Stigmergic Lab")
+
+        from System.swarm_tumor_immune_stigmergic_lab import default_synthetic_state
+
+        self._core_state = default_synthetic_state()
+        self._tick_id = 0
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(10)
+
+        title = QLabel("🧫 Tumor-Immune Stigmergic Lab")
+        title.setStyleSheet("font-size: 20px; font-weight: 800; color: rgb(120, 245, 190);")
+        root.addWidget(title)
+
+        guard = QLabel(
+            "Synthetic sandbox only. No PHI, no real patient records, no clinical guidance. "
+            "Rows are TIN_SIM_TICK receipts for algorithm research."
+        )
+        guard.setWordWrap(True)
+        guard.setStyleSheet("color: rgb(245, 205, 120); font-weight: 700;")
+        root.addWidget(guard)
+
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Toy action"))
+        self._intervention = QComboBox()
+        for key, label in self.INTERVENTIONS:
+            self._intervention.addItem(label, key)
+        controls.addWidget(self._intervention, 1)
+
+        self._tick_btn = QPushButton("Run Tick")
+        self._tick_btn.clicked.connect(self._run_tick)
+        controls.addWidget(self._tick_btn)
+
+        self._burst_btn = QPushButton("Run 8")
+        self._burst_btn.clicked.connect(lambda: self._run_many(8))
+        controls.addWidget(self._burst_btn)
+
+        self._reset_btn = QPushButton("Reset")
+        self._reset_btn.clicked.connect(self._reset)
+        controls.addWidget(self._reset_btn)
+        root.addLayout(controls)
+
+        self._bars: Dict[str, QProgressBar] = {}
+        for key, label in [
+            ("tumor_burden", "Tumor burden"),
+            ("antigen_visibility", "Antigen visibility"),
+            ("cart_effector_load", "CAR-T effector load"),
+            ("tme_suppression", "TME suppression"),
+            ("hypoxia", "Hypoxia"),
+            ("inflammatory_heat", "Inflammatory heat"),
+        ]:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label), 1)
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            row.addWidget(bar, 3)
+            self._bars[key] = bar
+            root.addLayout(row)
+
+        self._summary = QLabel("")
+        self._summary.setWordWrap(True)
+        self._summary.setStyleSheet("color: rgb(210, 230, 255);")
+        root.addWidget(self._summary)
+
+        self._ledger = QTextEdit()
+        self._ledger.setReadOnly(True)
+        self._ledger.setMinimumHeight(220)
+        self._ledger.setStyleSheet(
+            "QTextEdit { background: rgb(12, 14, 24); color: rgb(210, 235, 220); "
+            "font-family: Menlo, monospace; font-size: 12px; }"
+        )
+        root.addWidget(self._ledger, 1)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(3000)
+        self._timer.timeout.connect(self._refresh_from_ledger)
+        self._timer.start()
+
+        self._render_state()
+        self._refresh_from_ledger()
+
+    def _reset(self) -> None:
+        from System.swarm_tumor_immune_stigmergic_lab import default_synthetic_state
+
+        self._core_state = default_synthetic_state()
+        self._tick_id = 0
+        self._render_state()
+
+    def _run_many(self, ticks: int) -> None:
+        for _ in range(max(1, int(ticks))):
+            self._run_tick()
+
+    def _run_tick(self) -> None:
+        from System.swarm_tumor_immune_stigmergic_lab import run_tin_tick
+
+        intervention_id = str(self._intervention.currentData() or "none")
+        row = run_tin_tick(
+            self._core_state,
+            intervention_id=intervention_id,
+            tick_id=self._tick_id,
+            data_origin="synthetic",
+            write_ledger=True,
+        )
+        after = row.get("state_after", {})
+        for key in self._core_state.__dict__.keys():
+            if key in after:
+                setattr(self._core_state, key, float(after[key]))
+        self._tick_id += 1
+        self._render_state(row)
+        self._refresh_from_ledger()
+
+    def _render_state(self, latest_row: Optional[Dict[str, Any]] = None) -> None:
+        for key, bar in self._bars.items():
+            bar.setValue(int(round(float(getattr(self._core_state, key, 0.0)) * 100)))
+        if latest_row:
+            dynamics = latest_row.get("dynamics", {})
+            two_signal = latest_row.get("two_signal_snapshot", {})
+            self._summary.setText(
+                f"tick={latest_row.get('tick_id')} intervention={latest_row.get('intervention_id')} "
+                f"immune_pressure={dynamics.get('immune_pressure', 0.0):.3f} "
+                f"net_pruning={two_signal.get('net_pruning_pressure', 0.0):.3f} "
+                f"phase={latest_row.get('field_regime')}"
+            )
+        else:
+            self._summary.setText("Ready. Run a synthetic tick to append a TIN_SIM_TICK receipt.")
+
+    def _refresh_from_ledger(self) -> None:
+        from System.swarm_tumor_immune_stigmergic_lab import tail_lab_rows
+
+        rows = tail_lab_rows(16)
+        rendered = []
+        for row in rows[-16:]:
+            rendered.append(
+                json.dumps(
+                    {
+                        "tick_id": row.get("tick_id"),
+                        "intervention_id": row.get("intervention_id"),
+                        "field_regime": row.get("field_regime"),
+                        "tumor_burden_after": row.get("state_after", {}).get("tumor_burden"),
+                        "net_pruning_pressure": row.get("two_signal_snapshot", {}).get("net_pruning_pressure"),
+                        "truth_label": row.get("truth_label"),
+                    },
+                    sort_keys=True,
+                )
+            )
+        self._ledger.setPlainText("\n".join(rendered))
+
+
+__all__.append("TumorImmuneStigmergicLab")
+
+
+if __name__ == "__main__":
+    import sys
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication(sys.argv)
+    widget = TumorImmuneStigmergicLab()
+    widget.resize(1120, 760)
+    widget.show()
+    sys.exit(app.exec())
