@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from System import swarm_tool_router as router
 from System import whatsapp_bridge_autopilot as wa
 
@@ -127,6 +129,9 @@ def test_tool_prompt_explains_owner_consent_boundary():
 
     assert "owner_consent=true" in prompt
     assert "records a silence/refusal receipt" in prompt
+    assert "ollama_inventory" in prompt
+    assert "repo_git_snapshot" in prompt
+    assert "stigmergic_bus_tail" in prompt
 
 
 def test_cerebellum_delay_blocks_write_action_before_effector(monkeypatch):
@@ -148,3 +153,42 @@ def test_cerebellum_delay_blocks_write_action_before_effector(monkeypatch):
     assert out.result["status"] == "DELAYED_CEREBELLUM"
     assert out.result["cerebellum_timing"]["delay_s"] == 1.25
     assert "No effector action occurred" in out.result["truth_note"]
+
+
+def test_stigmergic_bus_tail_respects_line_cap(tmp_path, monkeypatch):
+    st = tmp_path / ".sifta_state"
+    st.mkdir(parents=True, exist_ok=True)
+    trace = st / "ide_stigmergic_trace.jsonl"
+    rows = [{"i": i} for i in range(10)]
+    trace.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    monkeypatch.setattr(router, "_STATE", st)
+
+    call = router.parse_tool_calls("[TOOL_CALL: stigmergic_bus_tail | lines=3]")[0]
+    out = router.execute_tool_call(call)
+    assert out.executed
+    assert '"i": 9' in out.feedback_for_alice
+
+
+def test_ollama_inventory_missing_binary(monkeypatch):
+    monkeypatch.setattr(router, "which", lambda _cmd: None)
+    call = router.parse_tool_calls("[TOOL_CALL: ollama_inventory]")[0]
+    out = router.execute_tool_call(call)
+    assert out.executed is False
+    assert "not found" in out.feedback_for_alice.lower()
+
+
+def test_repo_git_snapshot_on_tmp_repo(tmp_path, monkeypatch):
+    import subprocess as sp
+
+    monkeypatch.setattr(router, "_REPO", tmp_path)
+    sp.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    sp.run(["git", "config", "user.email", "alice@test"], cwd=tmp_path, check=True)
+    sp.run(["git", "config", "user.name", "Alice"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("hello\n", encoding="utf-8")
+    sp.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
+    sp.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+
+    call = router.parse_tool_calls("[TOOL_CALL: repo_git_snapshot]")[0]
+    out = router.execute_tool_call(call)
+    assert out.executed
+    assert "git status" in out.feedback_for_alice.lower()

@@ -10,7 +10,9 @@ ARCHITECTURE (Bishop/Vanguard doctrine 2026-04-29):
 
 Alice's brain (gemma4-phc) generates text. This router scans her output
 for structured tool-call intents and executes them through the existing
-biological effectors (WhatsApp bridge, etc).
+biological effectors (WhatsApp bridge, etc). **Event 120** adds read-heavy
+automation tools (`ollama_inventory`, `repo_git_snapshot`, `stigmergic_bus_tail`)
+— OpenClaw-style *doing*, but gated through this registry instead of silent bash.
 
 TOOL-CALL FORMAT (embedded in Alice's natural language output):
   [TOOL_CALL: send_whatsapp | target=Carlton | text=Hello from Alice!]
@@ -28,6 +30,11 @@ SAFETY INVARIANTS:
       write tools require confirmation or autonomy gate pass
   P5: All results are logged AFTER execution (post-flight trace)
   P6: Alice sees the result of her own actions (feedback loop)
+
+FUTURE PARITY POINTER:
+  If SIFTA ever deploys a local OpenAI-compatible server (e.g. vLLM/SGLang) for Alice,
+  evaluate Ling-class tool-parser parity (`--tool-call-parser qwen25` or similar) to ensure
+  the species DNA of this router matches the serving stack's native extraction capabilities.
 """
 
 from __future__ import annotations
@@ -35,9 +42,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from shutil import which
 from typing import Any, Dict, List, Optional, Tuple
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -89,6 +98,32 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         name="atp_status",
         description="Read Alice's current ATP synthase power status (read-only)",
         required_params=(),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    # ── Heavy read automation (Event 120) — OpenClaw-style *capabilities*,
+    #    routed through the deterministic registry instead of free bash.
+    "ollama_inventory": ToolSpec(
+        name="ollama_inventory",
+        description="Run `ollama list` on this node (read-only local inventory)",
+        required_params=(),
+        optional_params=(),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "repo_git_snapshot": ToolSpec(
+        name="repo_git_snapshot",
+        description="Read-only git snapshot: status --porcelain + diff --stat (repo root)",
+        required_params=(),
+        optional_params=(),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "stigmergic_bus_tail": ToolSpec(
+        name="stigmergic_bus_tail",
+        description="Tail last N lines of ide_stigmergic_trace.jsonl (read-only; N≤80)",
+        required_params=(),
+        optional_params=("lines",),
         write_action=False,
         requires_autonomy_gate=False,
     ),
@@ -401,12 +436,131 @@ def _exec_atp_status(params: Dict[str, str]) -> Dict[str, Any]:
         return {"ok": False, "error": str(e)}
 
 
+def _exec_ollama_inventory(params: Dict[str, str]) -> Dict[str, Any]:
+    """Read-only: local Ollama tags."""
+    _ = params
+    exe = which("ollama")
+    if not exe:
+        return {
+            "ok": False,
+            "error": "ollama binary not found on PATH",
+            "alice_summary": "ollama_inventory: `ollama` not found on PATH.",
+        }
+    try:
+        proc = subprocess.run(
+            [exe, "list"],
+            capture_output=True,
+            text=True,
+            timeout=float(25),
+            cwd=str(_REPO),
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "error": "timeout",
+            "alice_summary": "ollama_inventory: `ollama list` timed out after 25s.",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "alice_summary": f"ollama_inventory failed: {exc}"}
+    out = (proc.stdout or "").strip()
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip()
+        return {
+            "ok": False,
+            "returncode": proc.returncode,
+            "stderr": err[:2000],
+            "alice_summary": f"ollama_inventory: non-zero exit ({proc.returncode}).",
+        }
+    cap = 6000
+    summary = out if len(out) <= cap else out[: cap] + "\n…[truncated]"
+    return {
+        "ok": True,
+        "stdout": out,
+        "alice_summary": f"ollama_inventory (read-only):\n{summary}",
+    }
+
+
+def _exec_repo_git_snapshot(params: Dict[str, str]) -> Dict[str, Any]:
+    """Read-only: git status + short diff stat."""
+    _ = params
+    chunks: List[str] = []
+    ok_all = True
+    for args in (
+        ["git", "status", "--porcelain"],
+        ["git", "diff", "--stat", "HEAD"],
+    ):
+        try:
+            proc = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=float(30),
+                cwd=str(_REPO),
+            )
+        except Exception as exc:
+            ok_all = False
+            chunks.append(f"{' '.join(args)}: ERROR {exc}")
+            continue
+        piece = (proc.stdout or "").strip()
+        if len(piece) > 4000:
+            piece = piece[:4000] + "\n…[truncated]"
+        flat = " ".join(args)
+        label = "git status --porcelain" if "porcelain" in flat else "git diff --stat HEAD"
+        if proc.returncode != 0:
+            ok_all = False
+            err = (proc.stderr or "").strip()[:1500]
+            chunks.append(f"{label}: exit {proc.returncode}\n{err}")
+        else:
+            chunks.append(f"{label}:\n{piece or '(clean)'}")
+
+    summary = "\n\n".join(chunks)
+    return {
+        "ok": ok_all,
+        "alice_summary": f"repo_git_snapshot (read-only):\n{summary}",
+    }
+
+
+def _exec_stigmergic_bus_tail(params: Dict[str, str]) -> Dict[str, Any]:
+    """Read-only: last N JSONL rows of the cross-IDE trace."""
+    try:
+        n = int(str(params.get("lines") or "12").strip())
+    except ValueError:
+        n = 12
+    n = max(1, min(80, n))
+    path = _STATE / "ide_stigmergic_trace.jsonl"
+    if not path.exists():
+        return {
+            "ok": True,
+            "lines": 0,
+            "alice_summary": "stigmergic_bus_tail: trace file does not exist yet.",
+        }
+    try:
+        from System.jsonl_file_lock import read_text_locked
+
+        text = read_text_locked(path, encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "alice_summary": f"stigmergic_bus_tail read failed: {exc}"}
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    tail = lines[-n:]
+    body = "\n".join(tail)
+    if len(body) > 12000:
+        body = body[:12000] + "\n…[truncated]"
+    return {
+        "ok": True,
+        "lines": len(tail),
+        "alice_summary": f"stigmergic_bus_tail (last {len(tail)} rows, read-only):\n{body}",
+    }
+
+
 # Tool name → executor mapping
 _EXECUTORS = {
     "send_whatsapp": _exec_send_whatsapp,
     "get_social_context": _exec_get_social_context,
     "check_economy": _exec_check_economy,
     "atp_status": _exec_atp_status,
+    "ollama_inventory": _exec_ollama_inventory,
+    "repo_git_snapshot": _exec_repo_git_snapshot,
+    "stigmergic_bus_tail": _exec_stigmergic_bus_tail,
 }
 
 
@@ -553,8 +707,10 @@ def execute_tool_call(
             else:
                 reason = exec_result.get("result", exec_result.get("reason", status_str))
                 feedback = f"❌ WhatsApp send to {call.params.get('target', '?')} was blocked: {reason}"
+        elif exec_result.get("alice_summary"):
+            feedback = str(exec_result["alice_summary"])[:8000]
         else:
-            feedback = f"Tool {call.tool_name} returned: {json.dumps(exec_result, default=str)[:200]}"
+            feedback = f"Tool {call.tool_name} returned: {json.dumps(exec_result, default=str)[:1200]}"
 
         result = ToolResult(
             tool_name=call.tool_name,
