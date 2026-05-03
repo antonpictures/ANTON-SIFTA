@@ -354,6 +354,7 @@ def load_last_action() -> Optional[dict]:
 def process_architect_reaction(
     user_text: str,
     alice_preceding_text: str = "",
+    structured_score: Optional[float] = None,
 ) -> Optional[dict]:
     """
     Full closed loop: detect reward → log dopamine → TD update.
@@ -386,9 +387,16 @@ def process_architect_reaction(
     -------
     dict with delta, td_error, action, receipt_id — or None if no signal
     """
-    delta, marker = detect_reward(user_text)
-    if delta == 0.0:
-        return None  # neutral — nothing to update
+    if structured_score is not None:
+        try:
+            delta = max(-1.0, min(1.0, float(structured_score)))
+        except (TypeError, ValueError):
+            return None
+        marker = "UI_BUTTON"
+    else:
+        delta, marker = detect_reward(user_text)
+        if delta == 0.0:
+            return None  # neutral — nothing to update
 
     # 1. Log to dopamine ledger
     last = load_last_action()
@@ -408,12 +416,29 @@ def process_architect_reaction(
         except Exception:
             pass  # TD module unavailable — dopamine still logged
 
+    # 3. Graduate to real δ: also update the dopamine critic organ
+    critic_result = None
+    try:
+        from System.swarm_dopamine_critic_organ import apply_critic_to_bias_vector
+        from System.swarm_multi_gate_replay_policy import current_gate_state
+        prev_bias = current_gate_state()
+        critic_result = apply_critic_to_bias_vector(
+            action=action_category,
+            owner_response=user_text,
+            previous_bias=prev_bias,
+            structured_score=delta,
+            learning_rate=0.15
+        )
+    except Exception:
+        pass
+
     return {
         "delta":          delta,
         "marker":         marker,
         "dopamine_trace": dopamine_trace,
         "last_action":    last,
         "td_result":      td_result,
+        "critic_result":  critic_result,
     }
 
 
