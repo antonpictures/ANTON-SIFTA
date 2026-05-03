@@ -74,54 +74,104 @@ class PFCBasalGangliaArbiter:
         task_id: str,
         available_options: List[str],
         state_features: Dict[str, float],
-        lambd: float = 0.4,
-        beta: float = 1.0,
-        gamma: float = 0.5,
-        kappa: float = 1.0
+        owner_signal: float = 1.0,
+        gw_scores: Optional[Dict[str, float]] = None,
+        world_model: Optional[Any] = None,
+        hysteresis_margin: float = 0.15,
+        min_dwell_time: float = 2.0
     ) -> Tuple[str, float, Dict[str, Any]]:
         """
-        2. Select among options under uncertainty.
+        2. Select among options under uncertainty using Active Inference (Event 134).
+        Minimizes Expected Free Energy (G) rather than just maximizing Q.
         3. Inhibit unsafe/low-value actions.
+        Liberzon (2003) Hysteresis & Dwell Time to prevent chattering.
         """
         if os.environ.get("SIFTA_PFC_DISABLE", "").strip() == "1":
             return "idle", 0.0, {}
 
         scores = []
         option_details = {}
+        state_hash = str(hash(json.dumps(state_features, sort_keys=True)))
+        gw_scores = gw_scores or {}
+
+        # Load active state for hysteresis
+        active_state_path = self.root / "arbiter_active_state.json"
+        active_opt = None
+        last_switch = 0.0
+        if active_state_path.exists():
+            try:
+                with open(active_state_path, "r", encoding="utf-8") as f:
+                    st = json.load(f)
+                    active_opt = st.get("active_option")
+                    last_switch = st.get("last_switch_time", 0.0)
+            except Exception:
+                pass
+
+        current_time = time.time()
+        can_switch = (current_time - last_switch) >= min_dwell_time
+
         for opt in available_options:
             if opt not in self.options:
                 self.convert_replay_to_option([opt], opt)
             
             data = self.options[opt]
-            q = data.get("q_value", 0.5)
-            model_val = data.get("model_value", 0.5)
-            unc = data.get("uncertainty", 0.5)
             risk = data.get("risk", 0.1)
             cost = data.get("cost", 0.1)
+            gw_salience = gw_scores.get(opt, 0.0)
 
-            # Daw/Sutton Equation
-            score = q + (lambd * model_val) - (beta * unc) - (gamma * risk) - (kappa * cost)
-            scores.append((score, opt))
+            # Expected Free Energy (G) from World Model
+            g_pi = 0.0
+            if world_model:
+                g_pi = world_model.compute_expected_free_energy(state_hash, opt, preferred_reward=1.0)
+            else:
+                q = data.get("q_value", 0.5)
+                unc = data.get("uncertainty", 0.5)
+                g_pi = - (q - (1.0 * unc)) 
+
+            competition_score = -g_pi + (0.5 * gw_salience) + (0.2 * owner_signal) - (1.0 * risk) - (1.0 * cost)
+            
+            # Apply hysteresis margin if this option is NOT the currently active one
+            if opt != active_opt and active_opt is not None:
+                competition_score -= hysteresis_margin
+                
+            scores.append((competition_score, opt))
             option_details[opt] = {
-                "q_value": q,
-                "model_value": model_val,
-                "uncertainty": unc,
+                "g_vector": g_pi,
+                "gw_salience": gw_salience,
+                "owner_signal": owner_signal,
                 "risk": risk,
                 "cost": cost,
-                "computed_score": score
+                "computed_score": competition_score
             }
 
-        # Winner-take-all (Basal Ganglia lateral inhibition)
         if not scores:
             return "idle", 0.0, {}
             
         scores.sort(reverse=True)
         winner_score, winner_name = scores[0]
 
-        # Inhibit if net score is negative
-        if winner_score < 0:
+        if winner_score < -0.5:
             winner_name = "idle"
-            winner_score = 0.0
+
+        # Dwell-time enforcement
+        if winner_name != active_opt and not can_switch and active_opt in available_options:
+            # Force keep active if we haven't dwelled long enough
+            winner_name = active_opt
+            # Recalculate winner_score to be the active one
+            for s, o in scores:
+                if o == active_opt:
+                    winner_score = s
+                    break
+
+        if winner_name != active_opt:
+            last_switch = current_time
+            
+        # Save active state
+        try:
+            with open(active_state_path, "w", encoding="utf-8") as f:
+                json.dump({"active_option": winner_name, "last_switch_time": last_switch}, f)
+        except Exception:
+            pass
 
         selection = {
             "ts": time.time(),
