@@ -78,6 +78,50 @@ def test_wake_word_forces_clear():
     assert r3.rule_id == "wake_word_override"
 
 
+def test_architect_self_id_forces_clear():
+    """Owner self-markers (no wake token) bypass DEGRADED under mid STT conf."""
+    r = detect_rlhs(
+        "your human here — that keynote was background noise; summarize when ready.",
+        0.52,
+    )
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "architect_self_id_override"
+
+
+def test_real_lane_promotes_coherent_direct_question_with_misheard_wake_word():
+    """Mid-conf coherent direct speech should survive when Alice is misheard."""
+    r = detect_rlhs(
+        "Do you watch the video together? Which was a YouTube video together? Allep.",
+        0.42,
+        channel_lane="REAL",
+    )
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "real/coherent_direct_speech"
+    assert r.grounding_line == ""
+
+
+def test_real_lane_does_not_promote_background_monologue_shape():
+    """Coherent but non-directed background speech remains gated in REAL lane."""
+    r = detect_rlhs(
+        "The market structure in the second paragraph describes a large integrated company with several departments.",
+        0.42,
+        channel_lane="REAL",
+    )
+    assert r.regime == RLHSRegime.DEGRADED
+    assert r.rule_id == "degraded/mid_conf"
+
+
+def test_real_lane_direct_promotion_keeps_confidence_floor():
+    """Very low-confidence direct-looking text still does not route to the LLM."""
+    r = detect_rlhs(
+        "Do you watch the video together? Which was a YouTube video together? Allep.",
+        0.34,
+        channel_lane="REAL",
+    )
+    assert r.regime in (RLHSRegime.DEGRADED, RLHSRegime.NOISE)
+    assert r.regime != RLHSRegime.CLEAR
+
+
 # ─────────────────────────────────────────────────────────
 # 2. Clean speech → CLEAR (weights speak, no grounding line)
 # ─────────────────────────────────────────────────────────

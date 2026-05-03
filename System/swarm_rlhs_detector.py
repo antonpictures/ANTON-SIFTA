@@ -67,6 +67,13 @@ FICTION_PROMOTE_MIN_TOKENS = 4
 FICTION_PROMOTE_MIN_CONF = 0.40
 FICTION_PROMOTE_MAX_INC = 0.30
 
+# REAL lane promotion is narrower than fiction co-watch. It only fires when
+# the audio is coherent *and* shaped like direct speech to Alice/George, so a
+# random background monologue does not become a conversation turn.
+REAL_PROMOTE_MIN_TOKENS = 6
+REAL_PROMOTE_MIN_CONF = 0.40
+REAL_PROMOTE_MAX_INC = 0.30
+
 
 @dataclass
 class RLHSResult:
@@ -164,6 +171,28 @@ _BACKCHANNEL_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+_WAKE_WORD_RE = re.compile(r"\b(?:alice|george|architect)\b", re.IGNORECASE)
+
+_ARCHITECT_SELF_MARKER_RE = re.compile(
+    r"\b(?:"
+    r"your\s+human\s+here|"
+    r"(?:this\s+is|it(?:'|’)s|it\s+is|i(?:'|’)m|i\s+am)\s+"
+    r"(?:george|ioan|the\s+architect)|"
+    r"(?:george|architect)\s+here"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_DIRECTED_SPEECH_RE = re.compile(
+    r"\b(?:"
+    r"(?:do|did|can|could|would|will|are|should)\s+you"
+    r"[^.!?\n]{0,90}\b(?:watch|see|hear|listen|understand|remember|process)\b|"
+    r"(?:youtube|video|movie|screen)[^.!?\n]{0,90}\btogether\b|"
+    r"tell\s+me|summari[sz]e|process\s+(?:this|that|the)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Incoherence heuristic
@@ -220,6 +249,22 @@ def _incoherence_score(text: str, stt_conf: float) -> float:
 def incoherence_score(text: str, stt_conf: float = 0.0) -> float:
     """Public wrapper for RLHS auxiliary telemetry (e.g. content-signal vectors)."""
     return _incoherence_score(text, stt_conf)
+
+
+def _has_architect_self_marker(text: str) -> bool:
+    return _ARCHITECT_SELF_MARKER_RE.search(text or "") is not None
+
+
+def _has_direct_speech_signal(text: str) -> bool:
+    """Detect direct human-to-Alice speech without requiring exact wake word.
+
+    This catches STT cases where "Alice" becomes another token ("Allep", etc.)
+    but the sentence shape is still clearly a direct question or instruction.
+    """
+
+    if _has_architect_self_marker(text):
+        return True
+    return _DIRECTED_SPEECH_RE.search(text or "") is not None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -405,7 +450,9 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
     # 2. Direct Address Wake-Word Bypass
     # If the Architect uses the organism's name, short-circuit the gate.
     # She should never ignore a direct call, even if it's brief or in a noisy room.
-    has_wake_word = re.search(r"\b(?:alice|george|architect)\b", text, re.IGNORECASE) is not None
+    has_wake_word = _WAKE_WORD_RE.search(text) is not None
+    has_architect_self_marker = _has_architect_self_marker(text)
+    has_direct_speech_signal = _has_direct_speech_signal(text)
 
     # 3. Backchannel / phatic (exact match or short + low conf)
     norm = text.strip().rstrip(".!?,;:").lower()
@@ -436,6 +483,32 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
             regime=RLHSRegime.CLEAR,
             stt_conf=conf, text_tokens=n_tokens,
             incoherence=inc, rule_id="wake_word_override" if has_wake_word else "clear_channel",
+            grounding_line="",
+            channel_lane=lane,
+        )
+
+    # 4b. REAL lane coherent direct speech promotion.
+    # This is not a global confidence drop. It needs direct-speech shape plus
+    # coherence, so background interviews/keynotes without an Alice/George turn
+    # stay DEGRADED unless another media gate routes them elsewhere.
+    if (
+        lane == "REAL"
+        and not has_wake_word
+        and n_tokens >= REAL_PROMOTE_MIN_TOKENS
+        and conf >= REAL_PROMOTE_MIN_CONF
+        and inc <= REAL_PROMOTE_MAX_INC
+        and has_direct_speech_signal
+    ):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf,
+            text_tokens=n_tokens,
+            incoherence=inc,
+            rule_id=(
+                "architect_self_id_override"
+                if has_architect_self_marker
+                else "real/coherent_direct_speech"
+            ),
             grounding_line="",
             channel_lane=lane,
         )
@@ -540,6 +613,7 @@ def log_rlhs_output_tail(result: RLHSTailResult, *, state_dir: Optional[Path] = 
 __all__ = [
     "CONF_CLEAR", "CONF_DEGRADED", "FICTION_CLEAR_MAX_INC", "FICTION_CONF_CLEAR",
     "FICTION_PROMOTE_MAX_INC", "FICTION_PROMOTE_MIN_CONF", "FICTION_PROMOTE_MIN_TOKENS",
+    "REAL_PROMOTE_MAX_INC", "REAL_PROMOTE_MIN_CONF", "REAL_PROMOTE_MIN_TOKENS",
     "TRUTH_LABEL",
     "RLHSRegime", "RLHSResult", "RLHSTailResult",
     "backchannel_rule_id", "detect_rlhs", "incoherence_score", "log_rlhs_output_tail", "log_rlhs_turn",
