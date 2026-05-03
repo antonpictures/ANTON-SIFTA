@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from System.swarm_pfc_basal_ganglia_arbiter import PFCBasalGangliaArbiter
+from System import swarm_active_inference_world_model as wm
 
 def test_convert_replay_to_option_and_select(tmp_path):
     arbiter = PFCBasalGangliaArbiter(root=tmp_path)
@@ -64,3 +65,28 @@ def test_option_ledger_persistence(tmp_path):
     arbiter2 = PFCBasalGangliaArbiter(root=tmp_path)
     assert "persisted_opt" in arbiter2.options
     assert arbiter2.options["persisted_opt"]["source_skills"] == ["a", "b"]
+
+
+def test_select_action_consumes_event_133_world_model(tmp_path):
+    arbiter = PFCBasalGangliaArbiter(root=tmp_path)
+    state = {"attention": 0.7, "energy": 0.5}
+    good = "direct_answer"
+    bad = "generic_menu"
+    context_good = {"task_id": "active_inference_task", "task_family": "pfc_basal_ganglia", "option": good}
+    context_bad = {"task_id": "active_inference_task", "task_family": "pfc_basal_ganglia", "option": bad}
+
+    wm.observe(state, {"name": good, "option": good}, context_good, {"attention": 0.9}, reward=0.9, harm=0.0, root=tmp_path)
+    wm.observe(state, {"name": bad, "option": bad}, context_bad, {"attention": 0.2}, reward=0.1, harm=0.8, root=tmp_path)
+
+    action, score, details = arbiter.select_action(
+        task_id="active_inference_task",
+        available_options=[bad, good],
+        state_features=state,
+        owner_signal=0.0,
+        min_dwell_time=0.0,
+    )
+
+    assert action == good
+    assert details["truth_label"] == "PFC_BG_ACTION_SELECTION"
+    assert details["details"]["world_model"]["source"] == "event_133_world_model"
+    assert details["details"]["g_vector"] < 0.5

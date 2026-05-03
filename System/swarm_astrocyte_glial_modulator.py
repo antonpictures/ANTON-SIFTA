@@ -1,20 +1,20 @@
 import json
-import math
+import os
 import time
+import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-try:
-    from System.jsonl_file_lock import append_line_locked, read_text_locked
-except ImportError:
-    def read_text_locked(path: Path, **kwargs) -> str:
-        if not path.exists(): return ""
-        return path.read_text(**kwargs)
-    
-    def append_line_locked(path: Path, line: str, **kwargs) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", **kwargs) as f:
-            f.write(line)
+from System.jsonl_file_lock import append_line_locked, read_text_locked, rewrite_text_locked
+
+
+def _clamp(value: Any, lo: float = 0.0, hi: float = 1.0) -> float:
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        f = lo
+    return min(hi, max(lo, f))
+
 
 class AstrocyteGlialModulator:
     """
@@ -51,27 +51,40 @@ class AstrocyteGlialModulator:
         }
 
     def _save_state(self) -> None:
-        try:
-            from System.jsonl_file_lock import _lock, _unlock
-            with open(self.state_file, "w", encoding="utf-8") as f:
-                _lock(f.fileno())
-                json.dump(self.state, f, indent=2)
-                _unlock(f.fileno())
-        except ImportError:
-            self.state_file.write_text(json.dumps(self.state, indent=2))
+        rewrite_text_locked(
+            self.state_file,
+            json.dumps(self.state, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     def observe_global_state(self, new_surprise: float, compute_expended: float) -> Dict[str, Any]:
         """
         Ingest the latest prediction error (surprise) from the World Model 
         and the compute expended. Astrocyte modulates the parameters globally.
         """
+        surprise = max(0.0, float(new_surprise))
+        compute = max(0.0, float(compute_expended))
+        if os.environ.get("SIFTA_ASTROCYTE_DISABLE", "").strip() == "1":
+            return {
+                "ts": time.time(),
+                "trace_id": str(uuid.uuid4()),
+                "truth_label": "ASTROCYTE_MODULATION",
+                "kind": "ASTROCYTE_MODULATION",
+                "disabled": True,
+                "global_surprise": round(self.state["global_surprise_ema"], 4),
+                "metabolic_heat": round(self.state["metabolic_heat"], 4),
+                "modulated_lr": round(self.state["current_lr"], 4),
+                "modulated_epistemic_weight": round(self.state["current_epistemic_weight"], 4),
+                "modulated_budget": round(self.state["current_compute_budget"], 4),
+            }
+
         # Update EMA of Global Surprise
         alpha = 0.2
-        ema = (self.state["global_surprise_ema"] * (1 - alpha)) + (new_surprise * alpha)
+        ema = (self.state["global_surprise_ema"] * (1 - alpha)) + (surprise * alpha)
         self.state["global_surprise_ema"] = ema
         
         # Update metabolic heat (stress)
-        self.state["metabolic_heat"] += compute_expended
+        self.state["metabolic_heat"] += compute
         # Cooling
         self.state["metabolic_heat"] = max(0.0, self.state["metabolic_heat"] - 50.0)
         
@@ -98,12 +111,17 @@ class AstrocyteGlialModulator:
         
         trace = {
             "ts": time.time(),
+            "trace_id": str(uuid.uuid4()),
+            "truth_label": "ASTROCYTE_MODULATION",
             "kind": "ASTROCYTE_MODULATION",
+            "input_surprise": round(surprise, 4),
+            "input_compute_expended": round(compute, 4),
             "global_surprise": round(ema, 4),
             "metabolic_heat": round(self.state["metabolic_heat"], 4),
             "modulated_lr": round(new_lr, 4),
             "modulated_epistemic_weight": round(new_epistemic, 4),
-            "modulated_budget": round(new_budget, 4)
+            "modulated_budget": round(new_budget, 4),
+            "disabled": False,
         }
         append_line_locked(self.log_file, json.dumps(trace) + "\n", encoding="utf-8")
         return trace
@@ -114,3 +132,18 @@ class AstrocyteGlialModulator:
             "epistemic_weight": self.state["current_epistemic_weight"],
             "budget": self.state["current_compute_budget"]
         }
+
+    def preferences_patch(self) -> Dict[str, float]:
+        """Event 133 preference overrides for active inference scoring."""
+        return {
+            "uncertainty_weight": self.state["current_epistemic_weight"],
+            "cost_weight": 0.25 + _clamp(self.state["metabolic_heat"] / 2000.0, 0.0, 0.75),
+        }
+
+    def summary_for_prompt(self) -> str:
+        params = self.get_current_parameters()
+        return (
+            "ASTROCYTE GLIAL MODULATOR (Event 135): "
+            f"lr={params['lr']:.3f}, epistemic_weight={params['epistemic_weight']:.3f}, "
+            f"compute_budget={params['budget']:.1f}"
+        )

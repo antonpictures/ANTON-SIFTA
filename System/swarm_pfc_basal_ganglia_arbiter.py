@@ -1,23 +1,15 @@
+import os
 import json
 import time
 import uuid
-import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
+
+from System.jsonl_file_lock import append_line_locked, read_text_locked, rewrite_text_locked
 
 STATE_DIR = Path(".sifta_state")
 ARBITER_LOG = STATE_DIR / "pfc_basal_ganglia_arbiter.jsonl"
 OPTIONS_LEDGER = STATE_DIR / "sutton_options_ledger.jsonl"
-
-def append_line_locked(path: Path, text: str, encoding: str = "utf-8"):
-    # Fallback/stub if System.jsonl_file_lock unavailable
-    try:
-        from System.jsonl_file_lock import append_line_locked as append_locked
-        append_locked(path, text, encoding=encoding)
-    except ImportError:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding=encoding) as f:
-            f.write(text)
 
 class PFCBasalGangliaArbiter:
     """
@@ -37,14 +29,14 @@ class PFCBasalGangliaArbiter:
         if not self.options_path.exists():
             return
         try:
-            with open(self.options_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    row = json.loads(line)
-                    opt_name = row.get("option_name")
-                    if opt_name:
-                        self.options[opt_name] = row
+            text = read_text_locked(self.options_path, encoding="utf-8", errors="replace")
+            for line in text.splitlines():
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                opt_name = row.get("option_name")
+                if opt_name:
+                    self.options[opt_name] = row
         except Exception:
             pass
 
@@ -69,6 +61,53 @@ class PFCBasalGangliaArbiter:
                 "invocation_count": 0
             })
 
+    def _world_model_expected_free_energy(
+        self,
+        *,
+        task_id: str,
+        option_name: str,
+        state_features: Dict[str, float],
+        world_model: Optional[Any],
+    ) -> Tuple[float, Dict[str, Any]]:
+        """Return Event 133 expected free energy and a compact prediction receipt."""
+        action = {"name": option_name, "option": option_name}
+        context = {
+            "task_id": task_id,
+            "task_family": "pfc_basal_ganglia",
+            "option": option_name,
+        }
+        if world_model is not None and hasattr(world_model, "compute_expected_free_energy"):
+            state_hash = json.dumps(state_features, sort_keys=True)
+            g_pi = float(
+                world_model.compute_expected_free_energy(
+                    state_hash,
+                    option_name,
+                    preferred_reward=1.0,
+                )
+            )
+            return g_pi, {"source": "custom_compute_expected_free_energy"}
+
+        try:
+            wm = world_model
+            if wm is None:
+                from System import swarm_active_inference_world_model as wm
+            pred = wm.predict(state_features, action, context, root=self.root, write_ledger=False)
+            g_pi = float(wm.expected_free_energy(pred))
+            return g_pi, {
+                "source": "event_133_world_model",
+                "predicted_reward": pred.get("predicted_reward"),
+                "predicted_harm": pred.get("predicted_harm"),
+                "predicted_cost": pred.get("predicted_cost"),
+                "uncertainty": pred.get("uncertainty"),
+                "model_n": pred.get("n"),
+            }
+        except Exception as exc:
+            data = self.options.get(option_name, {})
+            q = data.get("q_value", 0.5)
+            unc = data.get("uncertainty", 0.5)
+            g_pi = -(q - unc)
+            return float(g_pi), {"source": "q_uncertainty_fallback", "error": str(exc)[:180]}
+
     def select_action(
         self,
         task_id: str,
@@ -91,7 +130,6 @@ class PFCBasalGangliaArbiter:
 
         scores = []
         option_details = {}
-        state_hash = str(hash(json.dumps(state_features, sort_keys=True)))
         gw_scores = gw_scores or {}
 
         # Load active state for hysteresis
@@ -100,10 +138,10 @@ class PFCBasalGangliaArbiter:
         last_switch = 0.0
         if active_state_path.exists():
             try:
-                with open(active_state_path, "r", encoding="utf-8") as f:
-                    st = json.load(f)
-                    active_opt = st.get("active_option")
-                    last_switch = st.get("last_switch_time", 0.0)
+                text = read_text_locked(active_state_path, encoding="utf-8", errors="replace")
+                st = json.loads(text) if text.strip() else {}
+                active_opt = st.get("active_option")
+                last_switch = st.get("last_switch_time", 0.0)
             except Exception:
                 pass
 
@@ -119,14 +157,12 @@ class PFCBasalGangliaArbiter:
             cost = data.get("cost", 0.1)
             gw_salience = gw_scores.get(opt, 0.0)
 
-            # Expected Free Energy (G) from World Model
-            g_pi = 0.0
-            if world_model:
-                g_pi = world_model.compute_expected_free_energy(state_hash, opt, preferred_reward=1.0)
-            else:
-                q = data.get("q_value", 0.5)
-                unc = data.get("uncertainty", 0.5)
-                g_pi = - (q - (1.0 * unc)) 
+            g_pi, wm_receipt = self._world_model_expected_free_energy(
+                task_id=task_id,
+                option_name=opt,
+                state_features=state_features,
+                world_model=world_model,
+            )
 
             competition_score = -g_pi + (0.5 * gw_salience) + (0.2 * owner_signal) - (1.0 * risk) - (1.0 * cost)
             
@@ -141,7 +177,8 @@ class PFCBasalGangliaArbiter:
                 "owner_signal": owner_signal,
                 "risk": risk,
                 "cost": cost,
-                "computed_score": competition_score
+                "computed_score": competition_score,
+                "world_model": wm_receipt,
             }
 
         if not scores:
@@ -168,18 +205,26 @@ class PFCBasalGangliaArbiter:
             
         # Save active state
         try:
-            with open(active_state_path, "w", encoding="utf-8") as f:
-                json.dump({"active_option": winner_name, "last_switch_time": last_switch}, f)
+            rewrite_text_locked(
+                active_state_path,
+                json.dumps({"active_option": winner_name, "last_switch_time": last_switch}) + "\n",
+                encoding="utf-8",
+            )
         except Exception:
             pass
 
         selection = {
             "ts": time.time(),
+            "trace_id": str(uuid.uuid4()),
+            "truth_label": "PFC_BG_ACTION_SELECTION",
             "task_id": task_id,
             "selected_option": winner_name,
             "score": winner_score,
+            "active_option_before": active_opt,
+            "can_switch": can_switch,
             "details": option_details.get(winner_name, {})
         }
+        append_line_locked(self.log_path, json.dumps(selection) + "\n", encoding="utf-8")
         return winner_name, winner_score, selection
 
     def update_generalization_trial(
@@ -213,7 +258,8 @@ class PFCBasalGangliaArbiter:
         
         # Update uncertainty (prediction error based)
         pred_error = abs(td_error)
-        new_unc = (data.get("uncertainty", 0.5) * 0.9) + (pred_error * 0.1)
+        old_unc = data.get("uncertainty", 0.5)
+        new_unc = (old_unc * 0.9) + (pred_error * 0.1)
 
         data["q_value"] = new_q
         data["uncertainty"] = new_unc
@@ -227,6 +273,8 @@ class PFCBasalGangliaArbiter:
 
         trace = {
             "ts": time.time(),
+            "trace_id": str(uuid.uuid4()),
+            "truth_label": "GENERALIZATION_TRIAL",
             "kind": "GENERALIZATION_TRIAL",
             "task_id": task_id,
             "source_skills": data.get("source_skills", []),
@@ -240,7 +288,7 @@ class PFCBasalGangliaArbiter:
             "architect_reward": architect_reward,
             "td_error": round(td_error, 3),
             "transfer_gain": round(transfer_gain, 3),
-            "gate_updates": {"q_delta": round(new_q - q_state, 3), "unc_delta": round(new_unc - data.get("uncertainty", 0.5), 3)}
+            "gate_updates": {"q_delta": round(new_q - q_state, 3), "unc_delta": round(new_unc - old_unc, 3)}
         }
 
         append_line_locked(self.log_path, json.dumps(trace) + "\n")
