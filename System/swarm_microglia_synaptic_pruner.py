@@ -250,6 +250,10 @@ class MicrogliaSynapticPruner:
     def __init__(self, root: Optional[Path] = None):
         self.root = state_dir(root)
         self.log_path = _legacy_class_log_path(root)
+        # EMA state for SHY homeostatic pressure (Grok Q5: prevent burst pruning)
+        # α=0.3 → slow EMA; a single burst decays to 50% within ~2 calls
+        self._ema_pressure: float = 0.0
+        self._ema_alpha: float = 0.3
 
     def score_entry(self, entry: Dict[str, Any]) -> Tuple[float, str]:
         scores: Dict[str, float] = {}
@@ -282,39 +286,38 @@ class MicrogliaSynapticPruner:
         buffer_capacity: int = 200,
     ) -> float:
         """
-        Q5 — SHY homeostatic pressure (Tononi & Cirelli 2014).
+        Q5 — SHY homeostatic pressure with EMA smoothing (Grok suggestion).
 
-        P_homeo = (total reward-weighted trace norm / buffer_capacity) - θ_baseline
+        P_homeo = EMA(α=0.3)[ (Σ |reward|×eligibility) / buffer_capacity − θ ]
 
-        Tononi & Cirelli (2014) SHY: the trigger criterion for homeostatic
-        downscaling is **net synaptic potentiation** accumulated during wakefulness,
-        not raw energy norm. We approximate this as the sum of |reward| × eligibility
-        across recent replay traces, normalised by buffer capacity.
+        EMA prevents a single high-reward burst from immediately triggering
+        aggressive pruning. The slow EMA (α=0.3) means pressure builds over
+        multiple ticks and decays gradually — matching the biological SHY
+        "sleep pressure" that accumulates across hours, not seconds.
 
-        P_homeo > 0.35 AND stability_ok → prune.
-
-        Args:
-            recent_traces: list of replay rows; each should have
-                'recent_reward_mean' and optionally 'eligibility_trace_norm'.
-            buffer_capacity: nominal replay buffer size (default 200).
-        Returns:
-            float in [0, 1]: homeostatic pressure.
-
-        Ref: Tononi, G. & Cirelli, C. (2014). Sleep and the price of plasticity:
-             from synaptic and cellular homeostasis to memory consolidation and
-             integration. Neuron, 81(1), 12-34.
+        Ref: Tononi & Cirelli (2014) Neuron 81(1):12–34.
+             Grok Q5 suggestion: add EMA for burst resistance.
         """
         if not recent_traces:
-            return 0.0
-        theta_baseline = 0.2  # steady-state potentiation level
+            # EMA decays toward 0 even with no traces
+            self._ema_pressure = self._ema_pressure * (1.0 - self._ema_alpha)
+            return round(self._ema_pressure, 4)
+
+        theta_baseline = 0.2
         total_potentiation = 0.0
         for r in recent_traces:
             reward = abs(float(r.get("recent_reward_mean", 0.0) or 0.0))
             elig   = float(r.get("eligibility_trace_norm", 1.0) or 1.0)
             total_potentiation += reward * elig
         raw = total_potentiation / max(1, buffer_capacity)
-        pressure = max(0.0, raw - theta_baseline)
-        return min(1.0, round(pressure, 4))
+        instant = max(0.0, min(1.0, raw - theta_baseline))
+
+        # EMA update: P_ema_t = α·P_instant + (1−α)·P_ema_{t-1}
+        self._ema_pressure = (
+            self._ema_alpha * instant
+            + (1.0 - self._ema_alpha) * self._ema_pressure
+        )
+        return round(self._ema_pressure, 4)
 
     def should_prune_homeostatic(
         self,
@@ -324,10 +327,11 @@ class MicrogliaSynapticPruner:
         buffer_capacity: int = 200,
     ) -> bool:
         """
-        Q5 — SHY-based pruning gate.
+        Q5 — SHY-based pruning gate using EMA-smoothed pressure.
 
-        Prunes when P_homeo > threshold AND stability_ok.
-        Suppressed in EMERGENCY regardless of pressure (matches Lyapunov gate).
+        Prunes when EMA(P_homeo) > threshold AND stability_ok.
+        Suppressed in EMERGENCY regardless of pressure.
+        EMA ensures a single burst does not trigger aggressive pruning.
         Ref: Tononi & Cirelli (2014) SHY.
         """
         if not stability_ok:

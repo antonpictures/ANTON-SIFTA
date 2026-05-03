@@ -127,29 +127,40 @@ class CausalInterventionLogger:
 
     def causal_closure_proven(
         self,
-        min_interventions: int = 8,
+        min_interventions: int = 15,     # raised from 8 (Grok: reduce false positives)
         *,
         min_effect_size: float = 0.12,
         max_confounder_rate: float = 0.15,
-        window: int = 30,
+        window: int = 50,                # wider window for stability
+        alpha: float = 0.05,            # p-value threshold for statistical test
+        require_stat_test: bool = True,  # if True: also require IPW p < alpha
     ) -> bool:
         """
-        Conservative Q1 gate (§10.14.14): among the last ``window`` receipts,
-        the fraction with ``confounder_clean=False`` must not exceed
-        ``max_confounder_rate``, and at least ``min_interventions`` rows must be
-        clean under explicit confounder keys, directional match, and effect size.
+        Hardened Q1 gate (Grok suggestion — reduce false positives):
 
-        Confounder keys (Pearl-style hygiene):
-          - ``owner_switch`` must be explicitly False (missing counts as active).
-          - ``metabolic_critical`` must not be True.
+        Three simultaneous requirements:
+          1. Count: ≥ min_interventions clean receipts (n≥15, not 8).
+          2. Confounder hygiene: dirty fraction ≤ max_confounder_rate.
+          3. Statistical: if require_stat_test and n_treated ≥ 10,
+             the IPW permutation test must yield p < alpha AND
+             weighted_effect > min_effect_size.
+
+        All three must pass. This prevents declaring closure when
+        interventions cluster during unstable/confounded periods.
+
+        Ref: Pearl (2009) do-calculus §3;
+             Hernán & Robins (2020) What If Ch.1–3.
         """
         recent = self.recent(max(1, window))
         if not recent:
             return False
+
+        # Gate 1: confounder hygiene
         dirty = sum(1 for r in recent if not r.get("confounder_clean"))
         if (dirty / len(recent)) > max_confounder_rate:
             return False
 
+        # Gate 2: count of clean, directionally-confirmed, adequately-sized rows
         clean: List[Dict[str, Any]] = []
         for r in recent:
             if not r.get("direction_matches"):
@@ -166,7 +177,19 @@ class CausalInterventionLogger:
             if bool(cc.get("metabolic_critical", False)):
                 continue
             clean.append(r)
-        return len(clean) >= min_interventions
+        if len(clean) < min_interventions:
+            return False
+
+        # Gate 3: statistical test (IPW permutation p-value)
+        if require_stat_test:
+            est = self.estimate_causal_effect(min_samples=10)
+            if est.get("sufficient_data"):
+                if est["p_value"] >= alpha:
+                    return False
+                if est["weighted_effect"] <= min_effect_size:
+                    return False
+
+        return True
 
     def summary_for_prompt(self, n: int = 3) -> str:
         """
