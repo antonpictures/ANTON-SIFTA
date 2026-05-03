@@ -61,6 +61,13 @@ _OWNER_LOW_CONF_FRAGMENT_RE = re.compile(
     r"\b(?:here\s+me\s+all\s+is|hear\s+me\s+alice|i\s+am\s+going\s+to\s+go\s+to\s+sleep)\b",
     re.IGNORECASE,
 )
+_OWNER_GROUNDING_SIGNAL_RE = re.compile(
+    r"\b(?:"
+    r"body|voice|noisy|noise|sleep|nap|bed|desk|keyboard|camera|hardware|"
+    r"electricity|power|owner|george|alice|hear\s+me|listen\s+to\s+me"
+    r")\b",
+    re.IGNORECASE,
+)
 DIRECT_REQUEST_RE = re.compile(
     r"^\s*(?:"
     r"can you|could you|will you|please|pls|tell me|show me|open|run|fix|"
@@ -375,6 +382,12 @@ def _owner_speech_likelihood(
         logit += 1.00
     if re.search(r"\b(?:i|i['’]m|i\s+am|my|me|we)\b", clean, re.IGNORECASE):
         logit += 0.45
+    if re.search(r"\b(?:you|your|you're|you['’]re)\b", clean, re.IGNORECASE):
+        logit += 0.35
+    if _OWNER_GROUNDING_SIGNAL_RE.search(clean):
+        logit += 0.80
+    if words <= 12 and _OWNER_GROUNDING_SIGNAL_RE.search(clean):
+        logit += 0.45
 
     if acoustic_cue == "nearfield_voice_likely":
         logit += 1.10
@@ -467,10 +480,21 @@ def classify_spoken_ingress(
             stt_conf=conf,
             acoustic_fingerprint=acoustic_fingerprint,
         )
-        if owner_p >= 0.68:
+        if owner_p >= 0.55:
             return {
                 "route": "direct",
                 "reason": "owner_speech_sigmoid_under_declared_ambient_media",
+                "confidence": owner_p,
+            }
+        if (
+            wc <= 12
+            and owner_p >= 0.30
+            and _OWNER_GROUNDING_SIGNAL_RE.search(clean)
+            and not NARRATION_RE.search(clean)
+        ):
+            return {
+                "route": "direct",
+                "reason": "owner_grounding_signal_under_declared_ambient_media",
                 "confidence": owner_p,
             }
         return {

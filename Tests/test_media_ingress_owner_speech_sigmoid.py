@@ -44,7 +44,35 @@ def test_owner_sleep_statement_routes_direct_under_declared_youtube(monkeypatch,
 
     assert decision["route"] == "direct"
     assert decision["reason"] == "owner_speech_sigmoid_under_declared_ambient_media"
-    assert decision["confidence"] >= 0.68
+    assert decision["confidence"] >= 0.55
+
+
+def test_owner_body_noise_statement_routes_direct_under_declared_youtube(monkeypatch, tmp_path):
+    _declare_youtube(tmp_path, monkeypatch)
+
+    decision = classify_spoken_ingress(
+        "body is always noisy, but it's noisy.",
+        stt_conf=0.38,
+        focus_context="background_media_youtube",
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "owner_grounding_signal_under_declared_ambient_media"
+    assert decision["confidence"] >= 0.30
+
+
+def test_owner_sleep_invitation_routes_direct_under_declared_youtube(monkeypatch, tmp_path):
+    _declare_youtube(tmp_path, monkeypatch)
+
+    decision = classify_spoken_ingress(
+        "Okay, I'm gonna go to sleep. You can go to sleep too if you like.",
+        stt_conf=0.69,
+        focus_context="background_media_youtube",
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "owner_speech_sigmoid_under_declared_ambient_media"
+    assert decision["confidence"] >= 0.55
 
 
 def test_declared_youtube_narration_stays_ambient_without_owner_signal(monkeypatch, tmp_path):
