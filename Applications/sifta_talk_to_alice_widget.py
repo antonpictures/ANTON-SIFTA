@@ -1432,6 +1432,14 @@ def _current_system_prompt(
     if cowatch:
         parts.append(cowatch)
     try:
+        from System.swarm_unified_stigmergic_field import format_unified_field_for_prompt
+
+        _field_prompt = format_unified_field_for_prompt()
+        if _field_prompt:
+            parts.append(_field_prompt)
+    except Exception:
+        pass
+    try:
         from System.swarm_architect_day_segments import format_segments_for_prompt
 
         _seg_prompt = format_segments_for_prompt().strip()

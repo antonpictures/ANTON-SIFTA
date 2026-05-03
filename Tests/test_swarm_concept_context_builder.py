@@ -71,6 +71,31 @@ def test_build_concept_context_reads_real_ledgers_by_source(tmp_path):
     assert packet["sources"]["body"][0]["selected_drive"] == "curiosity"
 
 
+def test_build_concept_context_reads_unified_field(tmp_path):
+    state = tmp_path / ".sifta_state"
+    _write_jsonl(
+        state / "unified_stigmergic_field.jsonl",
+        [
+            {
+                "ts": 3,
+                "truth_label": "UNIFIED_STIGMERGIC_FIELD_V1",
+                "field_confidence": 0.91,
+                "watching_together": True,
+                "owner_activity": "George has Stigmergic Unified Shazam open and is co-watching media.",
+                "media_guess": {"primary_category": "Gaming", "confidence": 0.98},
+            }
+        ],
+    )
+
+    packet = _packet(build_concept_context(state_dir=state, max_rows_per_source=5))
+
+    row = packet["sources"]["unified_field"][0]
+    assert row["truth_label"] == "UNIFIED_STIGMERGIC_FIELD_V1"
+    assert row["watching_together"] is True
+    assert "Stigmergic Unified Shazam" in row["owner_activity"]
+    assert "Gaming" in row["media_guess"]
+
+
 def test_build_concept_context_limits_rows_per_source(tmp_path):
     state = tmp_path / ".sifta_state"
     _write_jsonl(

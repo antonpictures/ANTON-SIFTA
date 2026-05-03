@@ -864,6 +864,30 @@ def _macos_app_category(app_name: str, meta: dict | None) -> str:
         return raw or "Utilities"
 
 
+def _publish_sifta_active_window_focus(app_title: str, display_name: str) -> None:
+    """Publish the selected SIFTA MDI window into the shared focus field."""
+    title = str(app_title or "").strip()
+    display = str(display_name or title or "").strip()
+    if not title or title == "SIFTA OS":
+        return
+    try:
+        from System.swarm_app_focus import publish_focus
+
+        publish_focus(
+            display or title,
+            "Active SIFTA OS window selected",
+            tab="MDI",
+            selection=title,
+            metadata={
+                "source": "sifta_os_desktop",
+                "event": "subwindow_activated",
+                "window_title": title,
+            },
+        )
+    except Exception:
+        pass
+
+
 # ── Launchpad / Spotlight (module-level widgets; defined before SiftaDesktop so
 #    the module’s execution order matches import introspection and one source of truth.) ──
 
@@ -2612,8 +2636,10 @@ class SiftaDesktop(QMainWindow):
             display = title.lstrip("⚙ 🐜").strip() or "SIFTA OS"
             if "SIFTA CORE CHAT" in title:
                 display = "Swarm Chat"
+            focus_display = display
             if len(display) > 26:
                 display = display[:24] + "…"
+            _publish_sifta_active_window_focus(title, focus_display)
         if hasattr(self, "_menu_app_label"):
             self._menu_app_label.setText(display)
         self._update_menu_bar_for_app(title)

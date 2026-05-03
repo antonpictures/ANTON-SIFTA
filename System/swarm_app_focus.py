@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from System.jsonl_file_lock import append_line_locked
+
 _REPO  = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 LEDGER = _STATE / "app_focus.jsonl"
@@ -51,8 +53,7 @@ def publish_focus(
         "metadata":  metadata or {},
     }
     try:
-        with open(LEDGER, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        append_line_locked(LEDGER, json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception:
         pass  # ledger write is best-effort, never crash an app
 

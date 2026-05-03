@@ -218,3 +218,25 @@ def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
     assert "what are we watching?" in seen["session_user_text"]
     assert seen["youtube_max_age_s"] >= 6 * 3600.0
     assert seen["media_max_age_s"] >= 6 * 3600.0
+
+
+def test_unified_field_is_injected_into_system_prompt(monkeypatch):
+    mod = _load_widget_module()
+
+    import System.swarm_unified_stigmergic_field as unified_field
+
+    monkeypatch.setattr(
+        unified_field,
+        "format_unified_field_for_prompt",
+        lambda **_kw: (
+            "### UNIFIED STIGMERGIC FIELD (current owner+OS situation)\n"
+            "- owner_activity: George has Stigmergic Unified Shazam open and is co-watching media.\n"
+            "- Media guess: Gaming / Deep Sea; confidence=0.98"
+        ),
+    )
+
+    prompt = mod._current_system_prompt(user_active=True, user_text="what are we watching?")
+
+    assert "UNIFIED STIGMERGIC FIELD" in prompt
+    assert "Stigmergic Unified Shazam" in prompt
+    assert "Gaming / Deep Sea" in prompt
