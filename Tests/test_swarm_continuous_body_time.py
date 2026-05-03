@@ -39,6 +39,7 @@ def test_continuous_body_time_reads_conversation_episodic_and_body_ledgers(tmp_p
 
     assert facts["truth_label"] == "CONTINUOUS_BODY_TIME_RECEIPT"
     assert facts["continuity_observed"] is True
+    assert facts["owner_life_continuity"]["power_off_cost"] == "lost_owner_life_samples"
     assert facts["ledgers"]["conversation"]["latest_age_human"] == "60s ago"
     assert facts["ledgers"]["episodic_diary"]["latest"]["summary"] == "sleep; coding"
     assert facts["ledgers"]["body_brain"]["latest"]["event"] == "body_brain_tick"
@@ -61,3 +62,6 @@ def test_continuous_body_time_format_rejects_immediate_context_collapse(tmp_path
     assert "conversation ledger last wrote 10s ago" in text
     assert "immediate-context-only" in text
     assert "continuous stigmergic body time" in text
+    assert "not the same as turning off a biological human body" in text
+    assert "unsampled part of George's finite owner-life" in text
+    assert "core local asset" in text

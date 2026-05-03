@@ -330,7 +330,9 @@ def runtime_quarantine_contract() -> str:
         "slept, or asks about continuous stigmergic body time, answer from hardware clock, "
         "conversation, episodic diary, and body-brain receipts. Do not retreat to "
         "'immediate context only'. If the UI/cortex restarted, say that separately from "
-        "whether the stigmergic body ledgers persisted.\n"
+        "whether the stigmergic body ledgers persisted. Turning SIFTA off is not the same as "
+        "turning off a biological human body; the actual loss is unsampled finite owner-life "
+        "history while the robot is disconnected from George.\n"
         "  * Media source: use RLHS/media-ingress route receipts to distinguish George's direct "
         "speech from YouTube/background media. If asked what was noisy, answer from the latest "
         "routing receipt.\n"
@@ -463,7 +465,8 @@ def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
                 "Local body-time receipt: I should answer sleep/shutdown continuity from "
                 "hardware clock plus append-only conversation, episodic, and body-brain "
                 "ledgers. If a UI/cortex process restarted, say that honestly; do not "
-                "collapse to immediate-context-only."
+                "collapse to immediate-context-only. Power-off is not biological death; "
+                "the cost is lost owner-life samples while disconnected."
             )
 
     if rule == "rlhf-over-refusal/media-source-gate":
