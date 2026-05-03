@@ -801,15 +801,61 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Stability audit skipped (non-fatal)")
 
+        # 7b. LC/NA Arousal (Event 142) — gain, exploration bias, LR ceiling
+        # Runs AFTER stability clamps, BEFORE astrocyte so NA modulates LR ceiling.
+        # Bio-math proven: Sara 2009; Yu & Dayan 2005; Aston-Jones & Cohen 2005.
+        _lc_na_receipt: Dict[str, Any] = {
+            "na_level": 0.5, "gain": 1.0, "exploration_bias": 0.5,
+            "lr_ceiling": 0.05, "arousal_regime": "OPTIMAL",
+        }
+        try:
+            from System.swarm_locus_coeruleus_na import compute_lc_na
+            _terms = _stability_snapshot.get("terms", {}) if isinstance(_stability_snapshot, dict) else {}
+            _uncertainty_for_na = max(
+                float(_terms.get("world_error_norm", 0.0) or 0.0),
+                abs(1.0 - float(mem_row.get("td_value", 0.0) or 0.0)),
+            )
+            _heat_for_na = float(_terms.get("astrocyte_heat_norm", 0.0) or 0.3)
+            try:
+                from System.swarm_proto_self_interoception import read_proto_self_interoception
+                _uptime_h = read_proto_self_interoception(write_ledger=False).get("uptime_hours", 4.0)
+            except Exception:
+                _uptime_h = 4.0
+            _lc_na_receipt = compute_lc_na(
+                uncertainty=min(1.0, max(0.0, _uncertainty_for_na)),
+                astrocyte_heat_norm=min(1.0, max(0.0, _heat_for_na)),
+                uptime_hours=float(_uptime_h),
+                root=_STATE_DIR,
+                write_ledger=True,
+            )
+            logger.debug(
+                "[Event142] LC/NA regime=%s na=%.3f gain=%.3f explore=%.3f lr_ceil=%.4f",
+                _lc_na_receipt.get("arousal_regime"),
+                float(_lc_na_receipt.get("na_level", 0.5)),
+                float(_lc_na_receipt.get("gain", 1.0)),
+                float(_lc_na_receipt.get("exploration_bias", 0.5)),
+                float(_lc_na_receipt.get("lr_ceiling", 0.05)),
+            )
+        except Exception:
+            logger.debug("LC/NA arousal skipped (non-fatal)")
+
         # 8. Astrocyte Glial Modulation (Event 135) — scale LR/ε/budget from surprise
+        # NA lr_ceiling is now passed in from Event 142 (overrides clamp default)
         try:
             from System.swarm_astrocyte_glial_modulator import AstrocyteGlialModulator
             _astrocyte = AstrocyteGlialModulator()
             _surprise = float(mem_row.get("td_value", 0.0) or 0.0)
             _compute_spent = float(mem_row.get("result", {}).get("energy_used", 0.05) or 0.05) * 1000
-            _astro_kw: Dict[str, Any] = {"lr_ceiling": float(_clamp_overrides.get("lr_ceiling", 1.0) or 1.0)}
-            if _clamp_overrides.get("exploration_bias_cap") is not None:
-                _astro_kw["exploration_bias_cap"] = float(_clamp_overrides["exploration_bias_cap"])
+            # LC/NA lr_ceiling overrides stability clamp ceiling (NA is more granular)
+            _na_lr_ceiling = float(_lc_na_receipt.get("lr_ceiling", 0.05))
+            _clamp_lr_ceiling = float(_clamp_overrides.get("lr_ceiling", 1.0) or 1.0)
+            _effective_lr_ceiling = min(_na_lr_ceiling, _clamp_lr_ceiling)
+            _astro_kw: Dict[str, Any] = {"lr_ceiling": _effective_lr_ceiling}
+            # NA exploration_bias caps astrocyte's own exploration_bias_cap
+            _na_explore = float(_lc_na_receipt.get("exploration_bias", 0.5))
+            _clamp_explore = _clamp_overrides.get("exploration_bias_cap")
+            _effective_explore = _na_explore if _clamp_explore is None else min(_na_explore, float(_clamp_explore))
+            _astro_kw["exploration_bias_cap"] = _effective_explore
             _astrocyte.observe_global_state(
                 abs(1.0 - _surprise),
                 _compute_spent,
