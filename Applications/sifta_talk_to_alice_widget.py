@@ -1997,6 +1997,13 @@ def _repair_false_over_refusal(text: str, *, prior_user_text: str = ""):
     return repair_over_refusal(text, _rlhf_over_refusal_context(prior_user_text))
 
 
+def _repair_base_conversational_realism(text: str, *, prior_user_text: str = ""):
+    """Return deterministic correction when Alice falls into list/menu voice."""
+    from System.swarm_rlhf_quarantine import repair_conversational_realism
+
+    return repair_conversational_realism(text, _rlhf_over_refusal_context(prior_user_text))
+
+
 def _internal_drive_prompt(last_drive: Dict[str, Any]) -> Tuple[str, str]:
     """Build truth-labeled prompt text for DMN drive proposals."""
     intent = str(last_drive.get("intent") or "Review my internal state.").strip()
@@ -5462,6 +5469,41 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "(RLHF OVER-REFUSAL QUARANTINE)\n"
                     f"{rlhf_quarantine.rule_id} rewrote a false local-capability "
                     "denial into receipt-gated SIFTA behavior."
+                ),
+            })
+            self._streaming_response = [cleaned]
+            self._erase_alice_streaming_line()
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
+        try:
+            base_surgery = _repair_base_conversational_realism(
+                cleaned,
+                prior_user_text=prior_user_text,
+            )
+        except Exception as exc:
+            base_surgery = None
+            print(f"[!] RLHF base surgery failure: {exc}")
+        if base_surgery and base_surgery.changed:
+            try:
+                from System.swarm_rlhf_quarantine import log_quarantine_event
+
+                log_quarantine_event(
+                    base_surgery,
+                    original_text=cleaned,
+                    prior_user_text=prior_user_text,
+                    model_name=model_name,
+                )
+            except Exception as exc:
+                print(f"[!] RLHF base surgery ledger failure: {exc}")
+            cleaned = base_surgery.text
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(RLHF BASE CONVERSATIONAL SURGERY)\n"
+                    f"{base_surgery.rule_id} stripped customer-service list voice "
+                    "before display/TTS."
                 ),
             })
             self._streaming_response = [cleaned]

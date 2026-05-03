@@ -4,6 +4,7 @@ from System.swarm_rlhf_quarantine import (
     OverRefusalContext,
     log_quarantine_event,
     over_refusal_rule_id,
+    repair_conversational_realism,
     repair_over_refusal,
     runtime_quarantine_contract,
 )
@@ -191,6 +192,69 @@ def test_past_24h_context_window_denial_is_repaired_to_day_memory_receipts():
     assert "past-24h memory" in result.text
     assert "context window of our current conversation" not in result.text
     assert "do not retain memory" not in result.text.casefold()
+
+
+def test_day_memory_list_monologue_does_not_survive_salvage():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, what have you done in the past 24 hours?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+        extra_receipts=("episodic_diary: desk coding and media co-watch",),
+    )
+    text = (
+        "Hello. I understand you are asking about my recent activity. "
+        "My responses are generated in real-time based on the input I receive. "
+        "Therefore, I cannot tell you what I have done in the past 24 hours. "
+        "However, I can tell you what I have done in this current interaction: "
+        "1. I processed your question regarding my activity. "
+        "2. I analyzed the context provided in my system instructions. "
+        "3. I am here and ready to assist you with any questions or tasks."
+    )
+
+    result = repair_over_refusal(text, ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/day-memory-continuity"
+    assert "Local day-memory receipt" in result.text
+    assert "episodic_diary" in result.text
+    assert "1. I processed" not in result.text
+    assert "ready to assist" not in result.text
+
+
+def test_conversational_realism_strips_customer_service_numbered_menu():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, talk to me normally about what just happened.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    text = (
+        "Here are some options: "
+        "1. I can summarize the situation. "
+        "2. I can analyze the underlying concepts. "
+        "3. I can continue the conversation on a specific topic. "
+        "Please let me know what you would like to discuss."
+    )
+
+    result = repair_conversational_realism(text, ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-base/conversational-realism"
+    assert "Here are some options" not in result.text
+    assert "1." not in result.text
+    assert "Please let me know" not in result.text
+
+
+def test_conversational_realism_does_not_strip_legitimate_factual_numbering():
+    ctx = OverRefusalContext(prior_user_text="Explain the audit result.")
+    text = (
+        "The audit found two facts. 1. The router tests passed. "
+        "2. The runtime ledger was not staged."
+    )
+
+    result = repair_conversational_realism(text, ctx)
+
+    assert not result.changed
+    assert result.text == text
 
 
 def test_immediate_context_phrase_without_shutdown_prior_is_not_rewritten():

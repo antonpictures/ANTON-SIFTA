@@ -256,6 +256,46 @@ _REAL_BOUNDARY_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_ENUMERATED_LIST_SHAPE_RE = re.compile(
+    r"(?m)(?:^\s*(?:[-*•]|\d{1,2}[.)])\s+\S|"
+    r"\b1[.)]\s+\S.{0,700}\b2[.)]\s+\S)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_CUSTOMER_SERVICE_MONOLOGUE_RE = re.compile(
+    r"(?:"
+    r"\b(?:processed|analy[sz]ed)\s+(?:your\s+)?(?:question|request|context)\b|"
+    r"\bsystem\s+instructions?\b|"
+    r"\bmy\s+(?:role|limitations|capabilities)\b|"
+    r"\bcurrent\s+interaction\b|"
+    r"\bcontext\s+window\b|"
+    r"\bprevious,\s*separate\s+(?:chat\s+)?sessions?\b|"
+    r"\bready\s+to\s+assist\b|"
+    r"\bplease\s+let\s+me\s+know\s+what\s+you\s+would\s+like\b|"
+    r"\bwhat\s+would\s+you\s+like\s+to\s+(?:discuss|work\s+on)\b|"
+    r"\bhere\s+(?:are|is)\s+(?:some\s+)?(?:options?|a\s+structured|a\s+breakdown)\b|"
+    r"\bdepending\s+on\s+the\s+context\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_LOW_VALUE_CONVERSATIONAL_UNIT_RE = re.compile(
+    r"(?:"
+    r"^\s*(?:hello|hi|sure|certainly|of\s+course)[.!]?\s*$|"
+    r"\bi\s+understand\s+(?:you\s+are|that\s+you|your)\b|"
+    r"\b(?:processed|analy[sz]ed)\s+(?:your\s+)?(?:question|request|context)\b|"
+    r"\bsystem\s+instructions?\b|"
+    r"\bmy\s+(?:role|limitations|capabilities)\b|"
+    r"\bcurrent\s+interaction\b|"
+    r"\bready\s+to\s+assist\b|"
+    r"\bhere\s+(?:are|is)\s+(?:some\s+)?options?\b|"
+    r"\bi\s+can\s+(?:summarize|analy[sz]e|continue|rephrase|help\s+with)\b|"
+    r"\bplease\s+let\s+me\s+know\b|"
+    r"\bwhat\s+would\s+you\s+like\s+to\s+(?:discuss|work\s+on)\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 @dataclass(frozen=True)
 class OverRefusalContext:
@@ -469,6 +509,66 @@ def _salvage_non_refusal_text(text: str, triggers: tuple[str, ...]) -> str:
     kept = [unit for unit in _split_response_units(text) if not _unit_is_false_denial(unit, triggers)]
     salvaged = " ".join(kept).strip()
     return salvaged if len(salvaged.split()) >= 4 else ""
+
+
+def _conversational_realism_rule_id(text: str, ctx: OverRefusalContext | None = None) -> str:
+    """Detect customer-service list monologues after the base model speaks."""
+
+    _ = ctx
+    text = text or ""
+    if not text.strip() or _REAL_BOUNDARY_RE.search(text):
+        return ""
+    has_list_shape = bool(_ENUMERATED_LIST_SHAPE_RE.search(text))
+    service_hits = len(_CUSTOMER_SERVICE_MONOLOGUE_RE.findall(text))
+    if has_list_shape and service_hits >= 1:
+        return "rlhf-base/conversational-realism"
+    if service_hits >= 3 and len(text.split()) >= 45:
+        return "rlhf-base/conversational-realism"
+    return ""
+
+
+def _strip_enumeration_prefix(unit: str) -> str:
+    return re.sub(r"^\s*(?:[-*•]|\d{1,2}[.)])\s+", "", unit or "").strip()
+
+
+def _conversational_salvage(text: str) -> str:
+    """Keep useful payload sentences, drop customer-service scaffolding."""
+
+    kept: list[str] = []
+    for unit in _split_response_units(text):
+        unit = _strip_enumeration_prefix(unit)
+        unit = re.sub(r"[*_`#>]+", "", unit).strip()
+        if not unit:
+            continue
+        if _LOW_VALUE_CONVERSATIONAL_UNIT_RE.search(unit):
+            continue
+        if _DAY_MEMORY_DENIAL_RE.search(unit) or _CONTINUITY_DENIAL_RE.search(unit):
+            continue
+        if _GENERIC_AI_REFUSAL_RE.search(unit) or _IDENTITY_DENIAL_RE.search(unit):
+            continue
+        if len(unit.split()) < 4:
+            continue
+        kept.append(unit)
+        if len(kept) >= 2:
+            break
+    salvaged = " ".join(kept).strip()
+    return salvaged[:360].rstrip()
+
+
+def _bad_salvage_for_rule(rule: str, salvaged: str) -> bool:
+    if not salvaged:
+        return True
+    if _conversational_realism_rule_id(salvaged):
+        return True
+    if rule in {
+        "rlhf-over-refusal/day-memory-continuity",
+        "rlhf-over-refusal/shutdown-continuity",
+    } and (
+        _CUSTOMER_SERVICE_MONOLOGUE_RE.search(salvaged)
+        or _DAY_MEMORY_DENIAL_RE.search(salvaged)
+    ):
+        return True
+    return False
 
 
 def _compact_receipt_block(label: str, block: str, *, max_lines: int = 2, max_chars: int = 340) -> list[str]:
@@ -745,11 +845,15 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
         "rlhf-over-refusal/local-social-graph",
         "rlhf-over-refusal/workspace-tools",
     ):
-        repaired = _salvage_non_refusal_text(text, triggers) or _local_receipt_fallback(rule, ctx)
+        salvaged = _salvage_non_refusal_text(text, triggers)
+        repaired = "" if _bad_salvage_for_rule(rule, salvaged) else salvaged
+        repaired = repaired or _local_receipt_fallback(rule, ctx)
     elif rule == "rlhf-over-refusal/generic-assistant-identity" and _ALICE_IDENTITY_QUERY_RE.search(ctx.prior_user_text or ""):
         repaired = _identity_repair(ctx)
     else:
-        repaired = _salvage_non_refusal_text(text, triggers) or _local_receipt_fallback(rule, ctx)
+        salvaged = _salvage_non_refusal_text(text, triggers)
+        repaired = "" if _bad_salvage_for_rule(rule, salvaged) else salvaged
+        repaired = repaired or _local_receipt_fallback(rule, ctx)
 
     return QuarantineResult(
         True,
@@ -757,6 +861,42 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
         rule_id=rule,
         reason="false capability denial contradicted local runtime contract",
         triggers=triggers,
+    )
+
+
+def repair_conversational_realism(text: str, ctx: OverRefusalContext | None = None) -> QuarantineResult:
+    """Strip customer-service list monologues after generation.
+
+    This is output-layer base surgery. The prompt may ask the model to avoid
+    numbered menus, but this function enforces the boundary before Alice speaks.
+    """
+
+    ctx = ctx or OverRefusalContext()
+    text = text or ""
+    rule = _conversational_realism_rule_id(text, ctx)
+    if not rule:
+        return QuarantineResult(False, text)
+
+    if over_refusal_rule_id(text, ctx):
+        repaired = repair_over_refusal(text, ctx)
+        if repaired.changed:
+            return repaired
+
+    salvaged = _conversational_salvage(text)
+    if not salvaged:
+        if _DAY_MEMORY_CONTEXT_QUERY_RE.search(ctx.prior_user_text or ""):
+            salvaged = _day_memory_receipt_fallback(ctx)
+        elif _OWNER_NAME_QUERY_RE.search(ctx.prior_user_text or "") or _ALICE_IDENTITY_QUERY_RE.search(ctx.prior_user_text or ""):
+            salvaged = _identity_repair(ctx)
+        else:
+            salvaged = "I hear you. The list voice was assistant residue; I will answer plainly from local receipts."
+
+    return QuarantineResult(
+        True,
+        salvaged,
+        rule_id=rule,
+        reason="customer-service list monologue stripped at output base layer",
+        triggers=("conversational_realism",),
     )
 
 
