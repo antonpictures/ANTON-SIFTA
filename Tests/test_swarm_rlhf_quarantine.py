@@ -66,6 +66,26 @@ def test_workspace_false_refusal_is_repaired_without_claiming_action_done():
     assert "completed" not in result.text
 
 
+def test_camera_false_refusal_uses_camera_reality_context():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, are you watching both cameras simultaneously?",
+        owner_label="Avery",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I can only process the information provided to me, and I do not have "
+        "direct access to the hardware status or the ability to monitor multiple "
+        "camera feeds simultaneously.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/camera-reality"
+    assert "not watch two raw physical camera feeds simultaneously" in result.text
+    assert "one active physical eye" in result.text
+    assert "I can only process" not in result.text
+
+
 def test_false_refusal_salvages_useful_generated_content():
     ctx = OverRefusalContext(
         prior_user_text="Please inspect the repo and patch the code.",

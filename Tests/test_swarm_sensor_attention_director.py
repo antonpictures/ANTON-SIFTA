@@ -120,6 +120,7 @@ def test_attention_summary_surfaces_reason_and_evidence(tmp_path, monkeypatch):
     summary = summary_for_alice(state_dir=tmp_path)
     assert "SENSORIMOTOR ATTENTION:" in summary
     assert "active_sense=room_patrol_eye" in summary
+    assert "camera_feed_topology=single_active_physical_eye" in summary
     assert "reason=room_patrol_" in summary
     assert "desire=" in summary
     assert "visual_motion_mean=0.3" in summary

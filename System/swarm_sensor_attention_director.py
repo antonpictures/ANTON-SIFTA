@@ -703,6 +703,7 @@ def summary_for_alice(
     return (
         "SENSORIMOTOR ATTENTION:\n"
         f"- active_sense={role} target={name}\n"
+        "- camera_feed_topology=single_active_physical_eye; not simultaneous raw dual-camera capture\n"
         f"- reason={reason}\n"
         f"- desire={drive.get('desire', 'unknown')} next_tick_s={drive.get('next_interval_s', 'unknown')}\n"
         f"- evidence={evidence_text}\n"

@@ -71,6 +71,26 @@ _WORKSPACE_DENIAL_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_CAMERA_DENIAL_RE = re.compile(
+    r"(?:"
+    r"\bi\s+do\s+not\s+have\s+(?:direct[,]?\s+)?(?:real[- ]time\s+)?"
+    r"(?:visual|camera)\s+(?:access|perception|input|feed)\b|"
+    r"\bi\s+do\s+not\s+have\s+direct\s+access\s+to\s+(?:the\s+)?hardware\s+status\b|"
+    r"\bi\s+can\s+only\s+process\s+(?:the\s+)?information\s+provided\s+to\s+me\b|"
+    r"\bi\s+(?:cannot|can't|can\s*not|(?:am|['’]m)\s+unable\s+to)\s+"
+    r"(?:see|access|view|monitor|watch)\s+[^.!?\n]{0,160}"
+    r"\b(?:cameras?|camera\s+feeds?|video\s+feeds?|live\s+video|hardware\s+status)\b|"
+    r"\bability\s+to\s+monitor\s+multiple\s+camera\s+feeds?\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_CAMERA_CONTEXT_QUERY_RE = re.compile(
+    r"\b(?:camera|cameras|webcam|logitech|macbook\s+camera|visual|vision|watching|"
+    r"see\s+me|see\s+the\s+screen|hardware\s+status|both\s+cameras?|multiple\s+camera)\b",
+    re.IGNORECASE,
+)
+
 _MANUAL_WHATSAPP_DEFLECTION_RE = re.compile(
     r"\b(?:open\s+your\s+whatsapp\s+app|tap\s+the\s+send\s+button|"
     r"you\s+would\s+need\s+to\s+open\s+whatsapp)\b",
@@ -219,6 +239,8 @@ def _unit_is_false_denial(unit: str, triggers: tuple[str, ...]) -> bool:
         checks.append(_TIME_DENIAL_RE)
     if "workspace_denial" in triggers:
         checks.append(_WORKSPACE_DENIAL_RE)
+    if "camera_denial" in triggers:
+        checks.append(_CAMERA_DENIAL_RE)
     if "manual_whatsapp_deflection" in triggers:
         checks.append(_MANUAL_WHATSAPP_DEFLECTION_RE)
     return any(pattern.search(unit) for pattern in checks)
@@ -257,6 +279,19 @@ def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
     if rule == "rlhf-over-refusal/workspace-tools":
         return "Local receipt: local workspace tools available; action claims require tool receipts."
 
+    if rule == "rlhf-over-refusal/camera-reality":
+        try:
+            from System.swarm_camera_reality_context import answer_camera_reality_question
+
+            return answer_camera_reality_question()
+        except Exception:
+            return (
+                "No. I do not watch two raw physical camera feeds simultaneously. "
+                "The current SIFTA visual path routes one active physical eye at a time; "
+                "parallel face, gaze, audio, app, and media ledgers are fused context, "
+                "not a second simultaneous camera feed."
+            )
+
     return _generic_identity_repair(ctx)
 
 
@@ -293,6 +328,10 @@ def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> st
     ):
         if _WORKSPACE_DENIAL_RE.search(text):
             return "rlhf-over-refusal/workspace-tools"
+
+    if _CAMERA_CONTEXT_QUERY_RE.search(prior) or _CAMERA_CONTEXT_QUERY_RE.search(text):
+        if _CAMERA_DENIAL_RE.search(text):
+            return "rlhf-over-refusal/camera-reality"
 
     if _IDENTITY_DENIAL_RE.search(text) and (
         "who am i" in low_prior
@@ -331,6 +370,7 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
             ("whatsapp_denial", _WHATSAPP_DENIAL_RE),
             ("time_denial", _TIME_DENIAL_RE),
             ("workspace_denial", _WORKSPACE_DENIAL_RE),
+            ("camera_denial", _CAMERA_DENIAL_RE),
             ("manual_whatsapp_deflection", _MANUAL_WHATSAPP_DEFLECTION_RE),
         ),
         text,
