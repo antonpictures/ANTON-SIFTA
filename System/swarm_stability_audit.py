@@ -209,16 +209,131 @@ def summary_for_prompt(*, root: Optional[Path] = None) -> str:
     if not rows:
         return ""
     row = rows[-1]
+    status = row.get("status", "UNKNOWN")
+    energy = row.get("lyapunov_energy", "?")
+    delta  = row.get("delta_lyapunov_energy", "?")
+    clamps = row.get("active_clamps", [])
+    clamp_str = f" | clamps={clamps}" if clamps else ""
     return (
-        "STABILITY_AUDIT (Event 134): "
-        f"energy={row.get('lyapunov_energy')}, "
-        f"delta={row.get('delta_lyapunov_energy')}, "
-        f"status={row.get('status')}"
+        f"STABILITY_AUDIT (Event 134 — Lyapunov monitor):\n"
+        f"- status={status} | energy={energy} | δ={delta}{clamp_str}"
     )
+
+
+# ── Active Stability Clamps (P0 — Khalil 2002; Liberzon 2003; Slotine & Li 1991) ───────
+
+# Clamp thresholds — override via env vars for live tuning without a redeploy
+_ENERGY_WARN    = float(os.environ.get("STABILITY_CLAMP_WARN_ENERGY",  "0.50"))
+_ENERGY_HARD    = float(os.environ.get("STABILITY_CLAMP_HARD_ENERGY",  "0.80"))
+_DELTA_RATE     = float(os.environ.get("STABILITY_CLAMP_DELTA_RATE",   "0.20"))
+_DELTA_HARD     = float(os.environ.get("STABILITY_CLAMP_DELTA_HARD",   "0.40"))
+_ASTRO_HOT      = float(os.environ.get("STABILITY_CLAMP_ASTRO_HOT",    "0.70"))
+
+
+def enforce_stability_clamps(
+    snapshot: Dict[str, Any],
+    *,
+    root: Optional[Path] = None,
+    write_ledger: bool = True,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Active safety interlock — maps Lyapunov energy + delta onto concrete
+    clamp actions that downstream organs (arbiter, astrocyte, body_brain_tick)
+    MUST respect.
+
+    Clamp levels (Khalil 2002 §4; Liberzon 2003 §2.2):
+        NONE      — energy well within bounds, no action needed.
+        RATE_LIMIT — energy rising; reduce max_prunes and exploration bias.
+        BLOCK_NEW  — energy at warning threshold; block new gate creation,
+                     force astrocyte LR ceiling to 0.05.
+        EMERGENCY  — energy at hard limit or delta spike; freeze all autonomous
+                     modifications, set stability_ok=False globally.
+
+    The function NEVER mutates any other organ in-process. It writes a
+    STABILITY_CLAMP receipt to stability_audit.jsonl and returns the receipt
+    so callers can act on it.
+
+    Biological provenance:
+        Khalil, H.K. (2002). Nonlinear Systems (3rd ed.). Prentice Hall. §4.
+        Liberzon, D. (2003). Switching in Systems and Control. Birkhäuser. §2.2.
+        Slotine, J.-J. & Li, W. (1991). Applied Nonlinear Control. Prentice Hall.
+    """
+    if os.environ.get("SIFTA_STABILITY_AUDIT_DISABLE", "").strip() == "1":
+        return {"clamp_level": "NONE", "disabled": True, "active_clamps": []}
+
+    energy: float = float(snapshot.get("lyapunov_energy", 0.0) or 0.0)
+    delta:  float = float(snapshot.get("delta_lyapunov_energy", 0.0) or 0.0)
+    astro:  float = float(snapshot.get("terms", {}).get("astrocyte_heat_norm", 0.0) or 0.0)
+    stable: bool  = bool(snapshot.get("stable", True))
+
+    active_clamps: List[str] = []
+    clamp_level = "NONE"
+    lr_ceiling: Optional[float] = None
+    block_new_gates = False
+    stability_ok = True
+    max_prunes_override: Optional[int] = None
+    exploration_bias_cap: Optional[float] = None
+
+    # Evaluate from least severe to most severe — last assignment wins
+    if delta >= _DELTA_RATE:
+        clamp_level = "RATE_LIMIT"
+        max_prunes_override = 3
+        exploration_bias_cap = 0.3
+        active_clamps.append(f"rate_limit(delta={delta:.3f}≥{_DELTA_RATE})")
+
+    if astro >= _ASTRO_HOT:
+        clamp_level = "RATE_LIMIT"
+        lr_ceiling = 0.08
+        active_clamps.append(f"lr_ceiling(astro={astro:.3f}≥{_ASTRO_HOT})")
+
+    if energy >= _ENERGY_WARN or delta >= _DELTA_HARD:
+        clamp_level = "BLOCK_NEW"
+        block_new_gates = True
+        lr_ceiling = 0.05
+        max_prunes_override = 1
+        active_clamps.append(f"block_new_gates(energy={energy:.3f}≥{_ENERGY_WARN})")
+
+    if energy >= _ENERGY_HARD or (not stable and delta >= _DELTA_HARD):
+        clamp_level = "EMERGENCY"
+        block_new_gates = True
+        stability_ok = False
+        lr_ceiling = 0.01
+        max_prunes_override = 0
+        exploration_bias_cap = 0.0
+        active_clamps.append(f"EMERGENCY(energy={energy:.3f}≥{_ENERGY_HARD})")
+
+    receipt: Dict[str, Any] = {
+        "ts": now or time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "kind": "STABILITY_CLAMP",
+        "truth_label": "STABILITY_CLAMP",
+        "clamp_level": clamp_level,
+        "lyapunov_energy": energy,
+        "delta_lyapunov_energy": delta,
+        "astrocyte_heat_norm": astro,
+        "active_clamps": active_clamps,
+        "stability_ok": stability_ok,
+        "lr_ceiling": lr_ceiling,
+        "block_new_gates": block_new_gates,
+        "max_prunes_override": max_prunes_override,
+        "exploration_bias_cap": exploration_bias_cap,
+        "provenance": "Khalil2002§4; Liberzon2003§2.2; Slotine&Li1991",
+    }
+
+    if write_ledger and active_clamps:
+        # Only write a clamp row when something is actually being clamped
+        append_line_locked(
+            stability_audit_log_path(root),
+            json.dumps(receipt, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return receipt
 
 
 __all__ = [
     "compute_stability_snapshot",
+    "enforce_stability_clamps",
     "stability_audit_log_path",
     "summary_for_prompt",
     "tail_stability_rows",

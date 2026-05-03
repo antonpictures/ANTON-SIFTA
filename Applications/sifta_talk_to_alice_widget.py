@@ -1533,7 +1533,15 @@ def _current_system_prompt(
     except Exception:
         pass
 
-    # ── AGI-Class Generalization Organs (Events 133, 136, 137, 138) ──────────
+    # ── AGI-Class Generalization Organs (Events 133, 134, 136, 137, 138) ─────
+    try:
+        from System.swarm_stability_audit import summary_for_prompt as _stability_summary
+        _stab = _stability_summary().strip()
+        if _stab:
+            parts.append(_stab)
+    except Exception:
+        pass
+
     try:
         from System.swarm_active_inference_world_model import summary_for_prompt as _wm_summary
         _wm = _wm_summary().strip()

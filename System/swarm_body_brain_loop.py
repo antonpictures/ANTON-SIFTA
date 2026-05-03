@@ -749,11 +749,32 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Astrocyte modulation skipped (non-fatal)")
 
+        # 8c. Stability Audit + Active Clamps (Event 134 — Khalil 2002; Liberzon 2003)
+        _clamp_receipt: Dict[str, Any] = {"clamp_level": "NONE", "stability_ok": True,
+                                           "max_prunes_override": None, "active_clamps": []}
+        try:
+            from System.swarm_stability_audit import compute_stability_snapshot, enforce_stability_clamps
+            _snap = compute_stability_snapshot(write_ledger=True)
+            _clamp_receipt = enforce_stability_clamps(_snap, write_ledger=True)
+            if _clamp_receipt["clamp_level"] != "NONE":
+                logger.warning(
+                    "[Event134] Stability clamp=%s energy=%.3f delta=%.3f clamps=%s",
+                    _clamp_receipt["clamp_level"],
+                    _clamp_receipt.get("lyapunov_energy", 0.0),
+                    _clamp_receipt.get("delta_lyapunov_energy", 0.0),
+                    _clamp_receipt.get("active_clamps", []),
+                )
+        except Exception:
+            logger.debug("Stability audit skipped (non-fatal)")
+
         # 8b. Microglia Synaptic Pruner (Event 137) — controlled forgetting gate
         # Only prunes if stability_ok (non-critical metabolic mode).
         try:
             from System.swarm_microglia_synaptic_pruner import MicrogliaSynapticPruner
-            _stability_ok = not danger.get("is_critical", False)
+            _stability_ok = (
+                not danger.get("is_critical", False)
+                and bool(_clamp_receipt.get("stability_ok", True))
+            )
             if _stability_ok:
                 _microglia = MicrogliaSynapticPruner()
                 # Collect stale candidate rows from body_brain_memory

@@ -2,20 +2,22 @@
 """
 Applications/sifta_agi_cognition_dashboard.py
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AGI-Class Cognition Dashboard — live readout of all 10 generalization organs.
+AGI-Class Cognition Dashboard — live readout of all 12 generalization organs.
 
-Events 125-137 — reads real JSONL ledger data only, no fake values.
+Events 125-138 — reads real JSONL ledger data only, no fake values.
 
-    🐀 Dopamine Critic (Event 125)  ·  TD error live feed
-    🧠 PFC-BG Arbiter   (Event 126) ·  Active option + G-vector
-    📈 Transfer Gain     (Event 127) ·  Baseline vs replay reward delta
-    🎯 Cerebellar Model  (Event 128) ·  Predicted vs actual tool latency
-    📊 CI Gate           (Event 129) ·  N=90 confidence interval
-    🔬 Statistical Proof (Event 132) ·  Bootstrap p-value
-    🌍 World Model       (Event 133) ·  Free energy + surprise EMA
-    🌿 Astrocyte         (Event 135) ·  LR · ε · budget modulation
-    ⏱  Temporal Self     (Event 136) ·  Boot ID · schema PE
-    🦠 Microglia         (Event 137) ·  Prune actions + caloric budget
+    🐀 Dopamine Critic   (Event 125)  ·  TD error live feed
+    🧠 PFC-BG Arbiter    (Event 126)  ·  Active option + G-vector
+    📈 Transfer Gain      (Event 127)  ·  Baseline vs replay reward delta
+    🎯 Cerebellar Model   (Event 128)  ·  Predicted vs actual tool latency
+    📊 CI Gate            (Event 129)  ·  N=90 confidence interval
+    🔬 Statistical Proof  (Event 132)  ·  Bootstrap p-value
+    🌍 World Model        (Event 133)  ·  Free energy + surprise EMA
+    🔒 Stability Audit    (Event 134)  ·  Lyapunov energy + active clamps
+    🌿 Astrocyte          (Event 135)  ·  LR · ε · budget modulation
+    ⏱  Temporal Self      (Event 136)  ·  Boot ID · schema PE
+    🦠 Microglia          (Event 137)  ·  Prune actions + caloric budget
+    🔬 Causal Logger      (Event 138)  ·  do() interventions + closure gate
 
 For the Swarm. 🐜⚡
 """
@@ -60,9 +62,11 @@ _COLORS = {
     "ci_gate":    "#9ece6a",
     "bootstrap":  "#7dcfff",
     "world_model":"#c0caf5",
+    "stability":  "#ff5f5f",
     "astrocyte":  "#b4f9f8",
     "temporal":   "#e0af68",
     "microglia":  "#f7768e",
+    "causal":     "#ff9e64",
 }
 
 _CSS = f"""
@@ -169,7 +173,7 @@ class AGICognitionDashboard(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("SIFTA — AGI-Class Cognition Dashboard  (Events 125-137)")
+        self.setWindowTitle("SIFTA — AGI-Class Cognition Dashboard  (Events 125-138)")
         self.setMinimumSize(1280, 860)
         self.setStyleSheet(_CSS)
         self._build_ui()
@@ -221,9 +225,11 @@ class AGICognitionDashboard(QWidget):
             ("ci_gate",     "📊", "CI Uncertainty Gate",     "Event 129"),
             ("bootstrap",   "🔬", "Statistical Proof",       "Event 132"),
             ("world_model", "🌍", "Active Inference / WM",   "Event 133"),
+            ("stability",   "🔒", "Stability Audit + Clamps","Event 134"),
             ("astrocyte",   "🌿", "Astrocyte Glial Mod",     "Event 135"),
             ("temporal",    "⏱", "Temporal Self-Model",     "Event 136"),
             ("microglia",   "🦠", "Microglia Pruner",        "Event 137"),
+            ("causal",      "🔬", "Causal Intervention Log", "Event 138"),
         ]
 
         for idx, (key, emoji, name, event) in enumerate(organs):
@@ -254,9 +260,11 @@ class AGICognitionDashboard(QWidget):
         self._refresh_ci_gate()
         self._refresh_bootstrap()
         self._refresh_world_model()
+        self._refresh_stability()
         self._refresh_astrocyte()
         self._refresh_temporal()
         self._refresh_microglia()
+        self._refresh_causal()
         self._refresh_log()
 
     # ── Per-organ refresh ──────────────────────────────────────────────────────
@@ -399,6 +407,36 @@ class AGICognitionDashboard(QWidget):
             self._set_big("bootstrap", "p", "—")
             self._set_kv("bootstrap", "status", "no transfer_proof_runs.jsonl yet", _WARN)
 
+    # Stability Audit + Clamps (Event 134)
+    def _refresh_stability(self):
+        rows = _tail_jsonl(_STATE / "stability_audit.jsonl", 10)
+        if rows:
+            # Latest snapshot row (kind=STABILITY_AUDIT)
+            snaps  = [r for r in rows if r.get("kind") == "STABILITY_AUDIT"]
+            clamps = [r for r in rows if r.get("kind") == "STABILITY_CLAMP"]
+            latest = snaps[-1] if snaps else rows[-1]
+            energy = latest.get("lyapunov_energy", 0.0)
+            delta  = latest.get("delta_lyapunov_energy", 0.0)
+            status = latest.get("status", "?")
+            col_e  = _GOOD if energy < 0.5 else (_WARN if energy < 0.8 else _BAD)
+            self._set_big("stability", "energy", f"V = {energy:.4f}")
+            self._set_kv("stability", "status", status,
+                         _GOOD if status == "STABLE" else _BAD)
+            self._set_kv("stability", "δV", f"{delta:+.4f}", col_e)
+            if clamps:
+                last_clamp = clamps[-1]
+                self._set_kv("stability", "clamp_level",
+                             last_clamp.get("clamp_level", "NONE"),
+                             _BAD if last_clamp.get("clamp_level") == "EMERGENCY" else _WARN)
+                ac = last_clamp.get("active_clamps", [])
+                self._set_kv("stability", "active_clamps",
+                             str(ac[0])[:30] if ac else "—", _WARN)
+            else:
+                self._set_kv("stability", "clamp_level", "NONE", _GOOD)
+        else:
+            self._set_big("stability", "energy", "V = —")
+            self._set_kv("stability", "status", "stability_audit.jsonl not yet written", _WARN)
+
     # World Model / Active Inference (Event 133)
     def _refresh_world_model(self):
         rows = _tail_jsonl(_STATE / "active_inference_surprise_log.jsonl", 10)
@@ -477,16 +515,39 @@ class AGICognitionDashboard(QWidget):
             self._set_big("microglia", "prunes", "0 / 0")
             self._set_kv("microglia", "status", "no microglia_prune.jsonl yet — system is clean", _GOOD)
 
+    # Causal Intervention Logger (Event 138)
+    def _refresh_causal(self):
+        rows = _tail_jsonl(_STATE / "causal_intervention_log.jsonl", 25)
+        if rows:
+            total   = len(rows)
+            hits    = sum(1 for r in rows if r.get("direction_matches"))
+            clean   = sum(1 for r in rows if r.get("confounder_clean"))
+            proven  = clean >= 5
+            col = _GOOD if proven else _WARN
+            latest  = rows[-1]
+            self._set_big("causal", "gate",
+                          "✅ CLOSED" if proven else f"⏳ {clean}/5")
+            self._set_kv("causal", "interventions", str(total), _COLORS["causal"])
+            self._set_kv("causal", "dir_matches", f"{hits}/{total}", col)
+            self._set_kv("causal", "confounder_clean", f"{clean}/{total}", col)
+            self._set_kv("causal", "last_organ", latest.get("organ","?"), _DIM)
+            self._set_kv("causal", "last_effect", f"{latest.get('causal_effect_size',0.0):.3f}", col)
+        else:
+            self._set_big("causal", "gate", "⏳ 0/5")
+            self._set_kv("causal", "status", "no causal_intervention_log.jsonl yet", _WARN)
+
     # Log strip
     def _refresh_log(self):
         files = [
             (_STATE / "dopamine_critic_log.jsonl",            _COLORS["dopamine"]),
             (_STATE / "pfc_basal_ganglia_arbiter.jsonl",      _COLORS["arbiter"]),
+            (_STATE / "stability_audit.jsonl",                _COLORS["stability"]),
             (_STATE / "transfer_confidence_intervals.jsonl",  _COLORS["ci_gate"]),
             (_STATE / "active_inference_surprise_log.jsonl",  _COLORS["world_model"]),
             (_STATE / "astrocyte_modulation_log.jsonl",       _COLORS["astrocyte"]),
             (_STATE / "self_model.jsonl",                     _COLORS["temporal"]),
             (_STATE / "microglia_prune.jsonl",                _COLORS["microglia"]),
+            (_STATE / "causal_intervention_log.jsonl",        _COLORS["causal"]),
         ]
         all_rows: List[tuple[float, str, str]] = []
         for path, col in files:
