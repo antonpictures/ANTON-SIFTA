@@ -90,10 +90,12 @@ _CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "Science & Technology": (
         "science", "technology", "ai", "nvidia", "jensen", "gpu", "cuda",
         "supercomputer", "chips", "tsmc", "compute", "agents", "reasoning",
-        "biology", "physics", "engineering",
+        "biology", "physics", "engineering", "quantum", "parallel universe",
+        "multiverse", "experiment", "experiments", "consciousness",
+        "perception", "cosmology", "universe",
     ),
     "Nonprofits & Activism": ("nonprofit", "activism", "charity", "human rights", "petition"),
-    "Documentary": ("documentary", "true story", "archive", "investigation"),
+    "Documentary": ("documentary", "true story", "archive", "investigation", "mainstream", "traditions"),
     "Movies": ("full movie", "movie", "film"),
     "Shows": ("episode", "season", "show", "series"),
     "Trailers": ("official trailer", "teaser", "trailer"),
@@ -103,6 +105,7 @@ _SOURCE_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("movie_or_fiction_clip", "fiction/movie clip", ("movie", "film", "scene", "clip", "snatch", "john wick", "scarface", "trailer")),
     ("news_network", "news network / politics", ("cnn", "fox news", "msnbc", "bbc", "reuters", "associated press", "cnbc", "bloomberg", "sky news", "al jazeera")),
     ("tech_interview", "technology interview / keynote", ("nvidia", "jensen", "gpu", "cuda", "tsmc", "supercomputer", "ai factory", "compute")),
+    ("science_documentary", "science / philosophy documentary", ("parallel universe", "multiverse", "quantum", "physics", "experiment", "experiments", "consciousness", "perception", "cosmology")),
     ("music_video", "music video / performance", ("music", "song", "lyrics", "concert", "remix")),
     ("podcast_or_long_interview", "podcast / long interview", ("podcast", "interview", "lex fridman", "conversation", "full episode")),
     ("gaming_video", "gaming video", ("gameplay", "gaming", "minecraft", "fortnite", "boss fight")),
@@ -143,6 +146,28 @@ _STOPWORDS = {
     "direct", "george", "media", "observed", "playing", "reason", "route",
     "source", "status", "that", "this", "video", "watch", "with", "youtube",
 }
+
+_SELF_SHAZAM_CONTEXT_RE = re.compile(
+    r"(?:"
+    r"\bContext:\s*category\s*=[^\n]*|"
+    r"\bprimary_category:\s*[^\n]*|"
+    r"\bmedia_guess\s*=[^|\n]*|"
+    r"\bacoustic_scene\s*=\s*[^;|\n]*|"
+    r"\bsource\s*=\s*(?:gaming|movie|fiction|news|music|sports|podcast)[^;|\n]*"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _clean_self_referential_focus(text: str) -> str:
+    """Remove Shazam's own previous guess from focus text before scoring.
+
+    Focus previews are valuable because they carry the visible YouTube title.
+    They can also contain the currently open Shazam app's own category line:
+    ``Context: category=Gaming; conf=...``. Feeding that back into the scorer
+    creates a runaway loop where one wrong category becomes overwhelming proof.
+    """
+    return _SELF_SHAZAM_CONTEXT_RE.sub(" ", str(text or ""))
 
 
 def youtube_categories(*, include_legacy: bool = True) -> list[dict[str, Any]]:
@@ -185,11 +210,20 @@ def _text_parts(row: Mapping[str, Any]) -> list[str]:
     )
     out: list[str] = []
     for key in keys:
+        if key == "scene" and str(row.get("source") or "") == "acoustic_scene_classifier":
+            try:
+                scene_conf = float(row.get("confidence", 0.0) or 0.0)
+            except Exception:
+                scene_conf = 0.0
+            if scene_conf < 0.55:
+                continue
         value = row.get(key)
         if isinstance(value, (list, tuple)):
-            out.extend(str(x) for x in value)
+            out.extend(_clean_self_referential_focus(x) if key == "focus_preview" else str(x) for x in value)
         elif value:
-            out.append(str(value))
+            text = _clean_self_referential_focus(value) if key == "focus_preview" else str(value)
+            if text.strip():
+                out.append(text)
     return out
 
 
@@ -247,6 +281,15 @@ def _score_categories(blob: str, evidence: list[Mapping[str, Any]]) -> list[dict
     low = blob.lower()
     scores: Counter[str] = Counter()
     terms: dict[str, set[str]] = {c["name"]: set() for c in YOUTUBE_CATEGORIES}
+    latest_scene_row = next(
+        (
+            row
+            for row in reversed(evidence)
+            if str(row.get("source") or "") == "acoustic_scene_classifier"
+            and str(row.get("scene") or "").upper() in _SCENE_CATEGORY_HINTS
+        ),
+        {},
+    )
 
     for row in evidence:
         category = str(row.get("content_category") or "").strip()
@@ -258,9 +301,15 @@ def _score_categories(blob: str, evidence: list[Mapping[str, Any]]) -> list[dict
             scores["Film & Animation"] += 5
             terms["Film & Animation"].add("receipt:fictional_media")
         scene = str(row.get("scene") or "").upper()
-        if scene in _SCENE_CATEGORY_HINTS:
+        if row is latest_scene_row and scene in _SCENE_CATEGORY_HINTS:
+            try:
+                scene_conf = float(row.get("confidence", 0.0) or 0.0)
+            except Exception:
+                scene_conf = 0.0
+            if scene_conf < 0.55:
+                continue
             for idx, category in enumerate(_SCENE_CATEGORY_HINTS[scene]):
-                scores[category] += 4.0 if idx == 0 else 1.5
+                scores[category] += 4.0 * scene_conf if idx == 0 else 1.5 * scene_conf
                 terms.setdefault(category, set()).add(f"acoustic_scene:{scene}")
         title = str(row.get("title") or "")
         if title:
@@ -318,22 +367,32 @@ def _source_guesses(blob: str) -> list[dict[str, Any]]:
 def _source_guesses_from_evidence(blob: str, evidence: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
     guesses = _source_guesses(blob)
     existing = {g["source_type"] for g in guesses}
-    for row in evidence:
+    row = next(
+        (
+            item
+            for item in reversed(evidence)
+            if str(item.get("source") or "") == "acoustic_scene_classifier"
+            and str(item.get("scene") or "").upper() in _SCENE_SOURCE_HINTS
+        ),
+        {},
+    )
+    if row:
         scene = str(row.get("scene") or "").upper()
-        if scene not in _SCENE_SOURCE_HINTS:
-            continue
         source_type, label = _SCENE_SOURCE_HINTS[scene]
-        if source_type in existing:
-            continue
-        guesses.append(
-            {
-                "source_type": source_type,
-                "label": label,
-                "score": float(row.get("confidence", 0.0) or 0.0) + 0.75,
-                "evidence_terms": [f"acoustic_scene:{scene}"],
-            }
-        )
-        existing.add(source_type)
+        try:
+            scene_conf = float(row.get("confidence", 0.0) or 0.0)
+        except Exception:
+            scene_conf = 0.0
+        if source_type not in existing and scene_conf >= 0.55:
+            guesses.append(
+                {
+                    "source_type": source_type,
+                    "label": label,
+                    "score": scene_conf + 0.75,
+                    "evidence_terms": [f"acoustic_scene:{scene}"],
+                }
+            )
+            existing.add(source_type)
     guesses.sort(key=lambda g: (-float(g["score"]), g["source_type"]))
     return guesses
 
@@ -374,11 +433,11 @@ def guess_media_identity(
         scene = str(row.get("scene") or "").upper()
         if not scene:
             continue
-        acoustic_scene = scene
         try:
             acoustic_scene_confidence = float(row.get("confidence", 0.0) or 0.0)
         except Exception:
             acoustic_scene_confidence = 0.0
+        acoustic_scene = scene if scene != "UNKNOWN" and acoustic_scene_confidence >= 0.55 else "UNKNOWN"
         scores = row.get("scores")
         if isinstance(scores, dict):
             acoustic_scene_scores = {

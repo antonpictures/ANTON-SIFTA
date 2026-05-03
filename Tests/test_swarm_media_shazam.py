@@ -79,6 +79,55 @@ def test_news_network_receipts_guess_news_politics():
     assert guess["source_type"] == "news_network"
 
 
+def test_shazam_self_feedback_does_not_turn_science_video_into_gaming():
+    evidence = [
+        *(
+            {
+                "source": "acoustic_scene_classifier",
+                "scene": "GAMING",
+                "confidence": 0.31,
+            }
+            for _ in range(24)
+        ),
+        {
+            "source": "youtube_context_latest",
+            "title": "He Cracked Reality on Live TV... and a Parallel Universe Appeared - YouTube",
+            "url": "https://www.youtube.com/watch?v=4tt5iXPLEqo",
+        }
+    ]
+    for _ in range(24):
+        evidence.append(
+            {
+                "source": "media_ingress_gate",
+                "focus_preview": (
+                    "George has 'SIFTA Media Shazam' open. Active tab: Co-watch guess. "
+                    "Selected: He Cracked Reality on Live TV... and a Parallel Universe Appeared - YouTube. "
+                    "Context: category=Gaming; conf=0.98; acoustic_scene=UNKNOWN(32%); source=gaming video. "
+                    "primary_category: Gaming confidence: 0.98 acoustic_scene: UNKNOWN"
+                ),
+                "text_preview": (
+                    "We have all heard about parallel universe alternatives. These ideas were "
+                    "science fiction, physics, consciousness, perception, and experiments."
+                ),
+            }
+        )
+    evidence.append(
+        {
+            "source": "acoustic_scene_classifier",
+            "scene": "UNKNOWN",
+            "confidence": 0.31,
+            "scores": {"GAMING": 0.31, "CINEMATIC": 0.13},
+        }
+    )
+
+    guess = guess_media_identity(evidence, now=1000.0)
+
+    assert guess["primary_category"] == "Science & Technology"
+    assert guess["source_type"] == "science_documentary"
+    assert guess["acoustic_scene"] == "UNKNOWN"
+    assert guess["category_candidates"][0]["name"] != "Gaming"
+
+
 def test_acoustic_scene_receipts_narrow_category_before_text_guess():
     evidence = [
         {
