@@ -220,6 +220,22 @@ def _repetition_score(text: str) -> float:
     return min(1.0, repeated / max(1, n - 1))
 
 
+def _current_fiction_conf_clear() -> float:
+    """Fiction co-watch clear bar, nudged by replay-policy receipts only within bounds."""
+    base = FICTION_CONF_CLEAR
+    try:
+        from System.swarm_replay_policy_hook import tail_policy_rows
+        rows = tail_policy_rows(1)
+        if rows:
+            bias = rows[0].get("replay_influence", {}).get("co_watch_suggestion", 0.0)
+            bias_f = min(1.0, max(0.0, float(bias)))
+            delta = bias_f * 0.15
+            return max(0.20, base - delta)
+    except Exception:
+        pass
+    return base
+
+
 def _incoherence_score(text: str, stt_conf: float) -> float:
     """
     Composite incoherence in [0, 1].
@@ -453,6 +469,16 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
     # If the Architect uses the organism's name, short-circuit the gate.
     # She should never ignore a direct call, even if it's brief or in a noisy room.
     has_wake_word = _WAKE_WORD_RE.search(text) is not None
+    # Event 118 — fuzzy STT repairs ("Allep" → Alice) when regex misses.
+    if not has_wake_word:
+        try:
+            from System.swarm_acoustic_sensory_tuning import supplement_wake_word
+
+            _sup, _ = supplement_wake_word(text, log_fuzzy_hit=True, stt_conf=conf)
+            if _sup:
+                has_wake_word = True
+        except Exception:
+            pass
     has_architect_self_marker = _has_architect_self_marker(text)
     has_direct_speech_signal = _has_direct_speech_signal(text)
 
@@ -474,7 +500,7 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
     # 3. Incoherence score
     inc = _incoherence_score(text, conf)
 
-    clear_bar = FICTION_CONF_CLEAR if lane == "FICTION_COWATCH" else CONF_CLEAR
+    clear_bar = _current_fiction_conf_clear() if lane == "FICTION_COWATCH" else CONF_CLEAR
     inc_clear_cap = FICTION_CLEAR_MAX_INC if lane == "FICTION_COWATCH" else 0.4
 
     # 4. CLEAR — let weights speak

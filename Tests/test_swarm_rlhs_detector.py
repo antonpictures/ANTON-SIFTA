@@ -96,7 +96,8 @@ def test_real_lane_promotes_coherent_direct_question_with_misheard_wake_word():
         channel_lane="REAL",
     )
     assert r.regime == RLHSRegime.CLEAR
-    assert r.rule_id == "real/coherent_direct_speech"
+    # Event 118 fuzzy wake ("Allep" → Alice) hits before REAL-lane promotion.
+    assert r.rule_id in ("real/coherent_direct_speech", "wake_word_override")
     assert r.grounding_line == ""
 
 
@@ -113,8 +114,9 @@ def test_real_lane_does_not_promote_background_monologue_shape():
 
 def test_real_lane_direct_promotion_keeps_confidence_floor():
     """Very low-confidence direct-looking text still does not route to the LLM."""
+    # No fuzzy/regex wake tokens — directed shape alone is not enough below REAL promote conf.
     r = detect_rlhs(
-        "Do you watch the video together? Which was a YouTube video together? Allep.",
+        "Do you watch the video together? Which was a YouTube video together?",
         0.34,
         channel_lane="REAL",
     )
@@ -311,6 +313,42 @@ def test_output_tail_receipt_has_no_raw_private_text(tmp_path):
     assert rows[0]["rule_ids"] == ["output_tail/service_offer"]
     assert "Ledger is green" not in json.dumps(rows[0])
     assert rows[0]["final_chars"] < rows[0]["original_chars"]
+
+
+def test_stage2_replay_policy_modifies_fiction_clearance(monkeypatch):
+    """
+    MAWF Stage 2: Ensure that a high co_watch_suggestion from replay policy
+    measurably lowers the fiction co-watch clearance margin (from 0.53 to lower).
+    """
+    from System import swarm_rlhs_detector
+
+    # Baseline check (no policy)
+    monkeypatch.setattr("System.swarm_replay_policy_hook.tail_policy_rows", lambda n: [])
+    assert swarm_rlhs_detector._current_fiction_conf_clear() == swarm_rlhs_detector.FICTION_CONF_CLEAR
+
+    # Simulated Stage 2 policy feedback
+    def mock_tail(n):
+        return [{"replay_influence": {"co_watch_suggestion": 0.60}}]
+    monkeypatch.setattr("System.swarm_replay_policy_hook.tail_policy_rows", mock_tail)
+
+    # 0.53 - (0.60 * 0.15) = 0.53 - 0.09 = 0.44
+    assert abs(swarm_rlhs_detector._current_fiction_conf_clear() - 0.44) < 0.01
+
+    # Outlier receipts are bounded; one malformed run cannot collapse the gate.
+    monkeypatch.setattr(
+        "System.swarm_replay_policy_hook.tail_policy_rows",
+        lambda n: [{"replay_influence": {"co_watch_suggestion": 99.0}}],
+    )
+    assert abs(swarm_rlhs_detector._current_fiction_conf_clear() - 0.38) < 0.01
+
+    # Verify detect_rlhs uses the lowered bar
+    # A conf of 0.45 would normally be DEGRADED (0.45 < 0.53) under fiction co-watch.
+    # But with the policy hook active, 0.45 > 0.44, so it should pass as CLEAR.
+    monkeypatch.setattr("System.swarm_replay_policy_hook.tail_policy_rows", mock_tail)
+    res_clear = swarm_rlhs_detector.detect_rlhs(
+        "A perfectly coherent sentence.", 0.45, channel_lane="FICTION_COWATCH"
+    )
+    assert res_clear.regime == swarm_rlhs_detector.RLHSRegime.CLEAR
 
 
 if __name__ == "__main__":

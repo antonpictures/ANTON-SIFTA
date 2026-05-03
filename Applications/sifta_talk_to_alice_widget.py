@@ -1480,6 +1480,25 @@ def _current_system_prompt(
         parts.append(_ocs_prompt)
 
     try:
+        from System.swarm_replay_job import summary_for_prompt as _replay_digest_for_prompt
+        from System.swarm_replay_policy_hook import (
+            apply_replay_bias as _apply_replay_bias,
+            summary_for_prompt as _replay_policy_prompt,
+        )
+
+        _rem_prompt = _replay_digest_for_prompt().strip()
+        if _rem_prompt:
+            parts.append(_rem_prompt)
+            ut = (user_text or "").strip()
+            if ut and len(ut) >= 12:
+                _apply_replay_bias(ut[:500], _rem_prompt[:2000])
+        _pol_prompt = _replay_policy_prompt().strip()
+        if _pol_prompt:
+            parts.append(_pol_prompt)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_stigtime_tracker import summary_for_alice as _stigtime_summary
 
         _st_prompt = _stigtime_summary(max_rows=8).strip()
