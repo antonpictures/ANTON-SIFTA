@@ -405,12 +405,14 @@ def propose_and_execute_runtime_intervention(
     current_clamp_level: str,
     root: Optional[Path] = None,
     dry_run: Optional[bool] = None,
+    uncertainty_threshold: float = 0.35,
 ) -> Optional[Dict[str, Any]]:
     """Convenience wrapper matching the body-brain tick integration surface."""
     return ActiveCausalProber(root=root, dry_run=dry_run).propose_and_execute(
         tick_id=tick_id,
         current_uncertainty=current_uncertainty,
         stability_level=current_clamp_level,
+        uncertainty_threshold=uncertainty_threshold,
     )
 
 

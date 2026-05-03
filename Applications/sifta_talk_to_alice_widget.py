@@ -1564,6 +1564,38 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_locus_coeruleus_na import summary_for_prompt as _lc_na_summary
+        _lc = _lc_na_summary().strip()
+        if _lc:
+            parts.append(_lc)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_affective_valence import summary_for_prompt as _valence_summary
+        _val = _valence_summary().strip()
+        if _val:
+            parts.append(_val)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_metacognitive_monitor import summary_for_prompt as _metacog_summary
+        _mc = _metacog_summary().strip()
+        if _mc:
+            parts.append(_mc)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_theory_of_mind import summary_for_prompt as _tom_summary
+        _tom = _tom_summary().strip()
+        if _tom:
+            parts.append(_tom)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_active_inference_world_model import summary_for_prompt as _wm_summary
         _wm = _wm_summary().strip()
         if _wm:
