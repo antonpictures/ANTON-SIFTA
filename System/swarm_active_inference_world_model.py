@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from System.jsonl_file_lock import append_line_locked, read_text_locked, rewrite_text_locked
+from System.swarm_persistent_owner_history import state_dir
 
-STATE_DIR = Path(".sifta_state")
 MODEL_FILE = "active_inference_world_models.json"
 TRACE_FILE = "active_inference_world_model.jsonl"
 
@@ -56,16 +56,12 @@ DEFAULT_PREFERENCES: Dict[str, float] = {
 }
 
 
-def _state_dir(root: Optional[Path] = None) -> Path:
-    return root or STATE_DIR
-
-
 def model_path(root: Optional[Path] = None) -> Path:
-    return _state_dir(root) / MODEL_FILE
+    return state_dir(root) / MODEL_FILE
 
 
 def trace_path(root: Optional[Path] = None) -> Path:
-    return _state_dir(root) / TRACE_FILE
+    return state_dir(root) / TRACE_FILE
 
 
 def _disabled() -> bool:
