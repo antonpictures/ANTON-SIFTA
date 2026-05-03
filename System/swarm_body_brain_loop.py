@@ -739,24 +739,32 @@ class SwarmPhysiology:
             except Exception:
                 logger.exception("Observability stamp skipped (non-fatal)")
 
-        # 8. Astrocyte Glial Modulation (Event 135) — scale LR/ε/budget from surprise
-        try:
-            from System.swarm_astrocyte_glial_modulator import AstrocyteGlialModulator
-            _astrocyte = AstrocyteGlialModulator()
-            _surprise = float(mem_row.get("td_value", 0.0) or 0.0)
-            _compute_spent = float(mem_row.get("result", {}).get("energy_used", 0.05) or 0.05) * 1000
-            _astrocyte.observe_global_state(new_surprise=abs(1.0 - _surprise), compute_expended=_compute_spent)
-        except Exception:
-            logger.debug("Astrocyte modulation skipped (non-fatal)")
-
         # 8c. Stability Audit + Active Clamps (Event 134 — Khalil 2002; Liberzon 2003)
+        # Runs before astrocyte so metabolic LR can honor the same-tick receipt.
         _clamp_receipt: Dict[str, Any] = {"clamp_level": "NONE", "stability_ok": True,
-                                           "max_prunes_override": None, "active_clamps": []}
+                                           "max_prunes_override": None, "active_clamps": [],
+                                           "kind": "STABILITY_CLAMP", "truth_label": "STABILITY_CLAMP"}
         _stability_snapshot: Dict[str, Any] = {}
+        _clamp_overrides: Dict[str, Any] = {
+            "lr_ceiling": 1.0,
+            "max_prunes_override": None,
+            "block_new_gates": False,
+            "clamp_level": "NONE",
+            "stability_ok": True,
+            "exploration_bias_cap": None,
+        }
         try:
-            from System.swarm_stability_audit import compute_stability_snapshot, enforce_stability_clamps
+            from System.swarm_stability_audit import (
+                compute_stability_snapshot,
+                enforce_stability_clamps,
+                get_current_clamp_overrides,
+            )
             _stability_snapshot = compute_stability_snapshot(write_ledger=True)
             _clamp_receipt = enforce_stability_clamps(_stability_snapshot, write_ledger=True)
+            _clamp_overrides = get_current_clamp_overrides(
+                root=_STATE_DIR,
+                same_tick_receipt=_clamp_receipt,
+            )
             if _clamp_receipt["clamp_level"] != "NONE":
                 logger.warning(
                     "[Event134] Stability clamp=%s energy=%.3f delta=%.3f clamps=%s",
@@ -767,6 +775,23 @@ class SwarmPhysiology:
                 )
         except Exception:
             logger.debug("Stability audit skipped (non-fatal)")
+
+        # 8. Astrocyte Glial Modulation (Event 135) — scale LR/ε/budget from surprise
+        try:
+            from System.swarm_astrocyte_glial_modulator import AstrocyteGlialModulator
+            _astrocyte = AstrocyteGlialModulator()
+            _surprise = float(mem_row.get("td_value", 0.0) or 0.0)
+            _compute_spent = float(mem_row.get("result", {}).get("energy_used", 0.05) or 0.05) * 1000
+            _astro_kw: Dict[str, Any] = {"lr_ceiling": float(_clamp_overrides.get("lr_ceiling", 1.0) or 1.0)}
+            if _clamp_overrides.get("exploration_bias_cap") is not None:
+                _astro_kw["exploration_bias_cap"] = float(_clamp_overrides["exploration_bias_cap"])
+            _astrocyte.observe_global_state(
+                abs(1.0 - _surprise),
+                _compute_spent,
+                **_astro_kw,
+            )
+        except Exception:
+            logger.debug("Astrocyte modulation skipped (non-fatal)")
 
         # 8d. Active Causal Probing (Event 139) — bounded do() experiments.
         _causal_probe_receipt: Optional[Dict[str, Any]] = None
@@ -811,9 +836,18 @@ class SwarmPhysiology:
                     import time as _time
                     _now = _time.time()
                     _candidates = []
+                    _tail_take = 200
                     try:
                         _lines = _bbm_path.read_text(errors="ignore").strip().splitlines()
-                        for _l in _lines[-200:]:  # only examine last 200 ticks
+                        _nlines = len(_lines)
+                        if _nlines > 180:
+                            _tail_take = 120
+                            logger.info(
+                                "[Event137] microglia_tail_read degraded tail=%s (file_lines=%s)",
+                                _tail_take,
+                                _nlines,
+                            )
+                        for _l in _lines[-_tail_take:]:
                             try:
                                 _r = json.loads(_l)
                                 _age_h = (_now - float(_r.get("ts", _now))) / 3600.0
@@ -826,9 +860,49 @@ class SwarmPhysiology:
                     except Exception:
                         pass
                     if _candidates:
-                        _microglia.prune(_candidates, ledger_type="replay", stability_ok=_stability_ok)
+                        _microglia.prune(
+                            _candidates,
+                            ledger_type="replay",
+                            stability_ok=_stability_ok,
+                            max_prunes_override=_clamp_overrides.get("max_prunes_override"),
+                            tail_lines_read=_tail_take,
+                        )
         except Exception:
             logger.debug("Microglia pruner skipped (non-fatal)")
+
+        # 8d. Autopoiesis Viability Monitor (Event 140 — Q2)
+        _viability_receipt: dict = {}
+        try:
+            from System.swarm_autopoiesis_monitor import compute_viability
+            _viability_receipt = compute_viability(write_ledger=True)
+            if _viability_receipt.get("viability_regime") == "CRITICAL":
+                logger.warning(
+                    "[Event140] CRITICAL viability V_t=%.3f — organism below conservation floor",
+                    float(_viability_receipt.get("viability", 0.0) or 0.0),
+                )
+        except Exception:
+            logger.debug("Autopoiesis monitor skipped (non-fatal)")
+
+        # 8e. NPPL Hard Gate (Event 141) — verify the current action is permitted
+        _nppl_receipt: dict = {"permitted": True, "tier": "SAFE"}
+        try:
+            from System.swarm_nppl_gate import check_tool as _nppl_check
+            _action_type = str(action.get("type", "explore") or "explore")
+            _nppl_receipt = _nppl_check(
+                _action_type,
+                clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
+                stability_ok=bool(_clamp_receipt.get("stability_ok", True)),
+                context={"tick_id": str(mem_row.get("tick_id", "")), "organ": "body_brain_tick"},
+                write_ledger=True,
+            )
+            if not _nppl_receipt["permitted"]:
+                logger.warning(
+                    "[Event141] NPPL blocked action=%s reason=%s",
+                    _action_type,
+                    _nppl_receipt.get("reason", "?")[:80],
+                )
+        except Exception:
+            logger.debug("NPPL gate skipped (non-fatal)")
 
         # 9. Sleep / Recovery (pass crystallizer_weight from homeostatic frame)
         crystallizer_weight = (
@@ -855,6 +929,8 @@ class SwarmPhysiology:
             "orienting_reflex":    orienting_row,
             "stability_clamp":     _clamp_receipt,
             "causal_probe":        _causal_probe_receipt,
+            "viability":           _viability_receipt,
+            "nppl_gate":           _nppl_receipt,
         }
 
 

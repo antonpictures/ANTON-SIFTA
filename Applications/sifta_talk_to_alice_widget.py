@@ -1579,6 +1579,22 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    try:
+        from System.swarm_autopoiesis_monitor import summary_for_prompt as _autopoiesis_summary
+        _vt = _autopoiesis_summary().strip()
+        if _vt:
+            parts.append(_vt)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_nppl_gate import summary_for_prompt as _nppl_summary
+        _nppl = _nppl_summary().strip()
+        if _nppl:
+            parts.append(_nppl)
+    except Exception:
+        pass
+
     parts.append(minimal_runtime_contract())
     parts.append(_wall_clock_grounding_block())
     parts.append(
