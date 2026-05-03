@@ -29,8 +29,8 @@ _DEFAULT_LEDGER = _REPO / ".sifta_state" / "rlhf_over_refusal_quarantine.jsonl"
 _GENERIC_AI_REFUSAL_RE = re.compile(
     r"\b(?:as\s+an?\s+(?:ai|artificial\s+intelligence|language\s+model)|"
     r"i\s+(?:am|['’]m)\s+(?:just\s+)?an?\s+(?:ai|artificial\s+intelligence)"
-    r"(?:\s+assistant)?|i\s+(?:do\s+not|don't)\s+have\s+personal\s+"
-    r"(?:experience|knowledge|feelings|consciousness))\b",
+    r"(?:\s+assistant)?|i\s+(?:do\s+not|don't)\s+have\s+(?:a\s+personal\s+name|personal\s+"
+    r"(?:experience|knowledge|feelings|consciousness)))\b",
     re.IGNORECASE,
 )
 
