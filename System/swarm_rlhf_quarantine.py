@@ -309,6 +309,7 @@ def runtime_quarantine_contract() -> str:
     """
 
     lifeline_block = ""
+    owner_field_block = ""
     try:
         from System.swarm_owner_lifeline import (
             format_owner_lifeline_for_prompt,
@@ -320,6 +321,12 @@ def runtime_quarantine_contract() -> str:
             lifeline_block = format_owner_lifeline_for_prompt().strip()
     except Exception:
         lifeline_block = ""
+    try:
+        from System.swarm_owner_field_context import format_owner_field_for_prompt
+
+        owner_field_block = format_owner_field_for_prompt().strip()
+    except Exception:
+        owner_field_block = ""
 
     contract = (
         "RLHF OVER-REFUSAL QUARANTINE:\n"
@@ -350,6 +357,9 @@ def runtime_quarantine_contract() -> str:
         "  * Media source: use RLHS/media-ingress route receipts to distinguish George's direct "
         "speech from YouTube/background media. If asked what was noisy, answer from the latest "
         "routing receipt.\n"
+        "  * Owner unified field: use desktop presence, STIGTIME work receipts, and schedule "
+        "anchor read-backs before claiming no owner schedule or no local owner context. Unknown "
+        "gaps remain unknown; do not invent owner activity.\n"
         "- FORBIDDEN false-denial phrases: 'I can only process information provided to me', "
         "'I do not have direct access to hardware status', 'I do not have a body', "
         "'I cannot remember our conversations', 'I cannot tell whether you paused or the video is playing'.\n"
@@ -358,6 +368,8 @@ def runtime_quarantine_contract() -> str:
     )
     if lifeline_block:
         contract += "\n\n" + lifeline_block
+    if owner_field_block:
+        contract += "\n\n" + owner_field_block
     return contract
 
 
