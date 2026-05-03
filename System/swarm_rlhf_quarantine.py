@@ -589,6 +589,12 @@ def _day_memory_receipt_fallback(ctx: OverRefusalContext) -> str:
     receipts = [str(r).strip() for r in ctx.extra_receipts if str(r).strip()]
     if not receipts:
         try:
+            from System.swarm_stigtime_tracker import summary_for_alice as _stigtime_summary
+
+            receipts.extend(_compact_receipt_block("stigtime", _stigtime_summary(max_rows=4), max_lines=3))
+        except Exception:
+            pass
+        try:
             from System.swarm_architect_day_segments import format_segments_for_prompt
 
             receipts.extend(_compact_receipt_block("day_segments", format_segments_for_prompt(), max_lines=2))

@@ -221,6 +221,34 @@ def test_day_memory_list_monologue_does_not_survive_salvage():
     assert "ready to assist" not in result.text
 
 
+def test_day_memory_fallback_can_use_stigtime_receipts(tmp_path, monkeypatch):
+    from System import swarm_stigtime_tracker as st
+
+    monkeypatch.setattr(st, "state_dir", lambda explicit=None: tmp_path)
+    st.log_action_boundary(
+        actor="alice_talk",
+        previous="idle",
+        new="thinking",
+        context="cortex=sifta-gemma4-alice",
+    )
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, what were you doing today?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    text = (
+        "I cannot tell you what I have done in the past 24 hours. "
+        "My memory is limited to the context window of our current conversation."
+    )
+
+    result = repair_over_refusal(text, ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/day-memory-continuity"
+    assert "stigtime:" in result.text
+    assert "alice_talk shifted idle -> thinking" in result.text
+
+
 def test_conversational_realism_strips_customer_service_numbered_menu():
     ctx = OverRefusalContext(
         prior_user_text="Alice, talk to me normally about what just happened.",

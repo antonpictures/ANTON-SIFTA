@@ -1343,6 +1343,15 @@ def _current_system_prompt(
 ) -> str:
     parts = []
     try:
+        from System.swarm_stigtime_tracker import summary_for_alice as _stigtime_summary
+
+        _st_prompt = _stigtime_summary(max_rows=8).strip()
+        if _st_prompt:
+            parts.append(_st_prompt)
+    except Exception:
+        pass
+
+    try:
         identity = (_persona_summary_fn() or "").strip()
         if identity:
             identity = re.sub(r"\bpersona_", "identity_", identity)
@@ -4020,6 +4029,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._pending_acoustic_fingerprint: Dict[str, Any] = {}
         self._listener_state = "idle"           # for the pill
         self._last_internal_drive_id: str = ""
+        # Event 122 — coarse action lane for append-only stigtime receipts.
+        self._stigtime_action: str = "idle"
 
         # Periodic level decay so the bar relaxes when you stop speaking.
         self.make_timer(80, self._decay_level)
@@ -4997,6 +5008,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._brain.failed.connect(self._on_brain_failed)
         self._set_pill("thinking", f"💭 thinking — {model}")
         self.set_status(f"Alice is thinking… ({model})")
+        self._stigtime_shift("thinking", f"cortex={model}")
         self._brain.start()
 
     def _cached_corvid_tag(self, text: str) -> str:
@@ -5079,6 +5091,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return
         self._append_alice_streaming_chunk(piece)
 
+    def _stigtime_shift(self, new_lane: str, context: str = "") -> None:
+        """Append STIGTIME_BOUNDARY when Alice's coarse lane changes."""
+        if os.environ.get("SIFTA_STIGTIME_DISABLE", "").strip() == "1":
+            self._stigtime_action = new_lane
+            return
+        prev = getattr(self, "_stigtime_action", "idle") or "idle"
+        if prev == new_lane:
+            return
+        try:
+            from System.swarm_stigtime_tracker import log_action_boundary
+
+            log_action_boundary(
+                actor="alice_talk",
+                previous=prev,
+                new=new_lane,
+                witness="sifta_talk_widget",
+                context=context,
+            )
+        except Exception:
+            pass
+        self._stigtime_action = new_lane
+
     def _on_brain_done(self, text: str) -> None:
         """Brain has produced a candidate reply. The model proposes;
         the body decides whether to vocalize it.
@@ -5114,6 +5148,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # final reply is degenerate, treat as model-side silence and
         # never append it to history.
         if _is_runaway_repetition(raw) or "[repetition collapse" in raw:
+            self._stigtime_shift("silent", "repetition_collapse")
             self._append_system_line(
                 "(alice: repetition collapse — treating as silence; "
                 "history protected)",
@@ -5171,6 +5206,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._append_system_line("🛑 Tool depth limit reached.", error=False)
             else:
                 self._tool_loop_depth = getattr(self, "_tool_loop_depth", 0) + 1
+                if getattr(self, "_stigtime_action", "") != "bash":
+                    self._stigtime_shift("bash", f"bash_depth={self._tool_loop_depth}")
                 tool_results = []
                 for match in bash_matches:
                     cmd = match.group(1).strip()
@@ -5282,6 +5319,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._set_pill("thinking", f"💭 thinking — {model_name_next}")
                 self._streaming_response = []
                 self._begin_alice_streaming_line()
+                self._stigtime_shift("thinking", "post_bash_cortex")
                 self._brain.start()
                 return
 
@@ -5315,6 +5353,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 autonomous=True,
             )
             if tool_results:
+                self._stigtime_shift(
+                    "tools",
+                    ",".join(str(getattr(tr, "tool_name", "") or "") for tr in tool_results)[:120],
+                )
                 # Replace raw with cleaned text (tool markers stripped)
                 raw = tool_cleaned
                 # Show feedback for each tool call
@@ -5593,6 +5635,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     self._set_pill("thinking", f"💭 thinking — {model_name_next}")
                     self._streaming_response = []
                     self._begin_alice_streaming_line()
+                    self._stigtime_shift("thinking", "epistemic_retry")
                     self._brain.start()
                     return
 
@@ -5667,6 +5710,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 note = f"(silent: model proposed silence; raw={raw_preview!r})"
             else:
                 note = "(silent: model emitted empty reply)"
+            self._stigtime_shift("silent", note[:120])
             self._history.append({"role": "assistant", "content": "(silent)"})
             _log_turn("alice", note, model=model_name)
             # Tear out the streamed Alice block entirely — otherwise the
@@ -5704,6 +5748,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # hardcoded phrase. The history sees only "(silent)" so the
                 # next turn's model context isn't poisoned by the reason.
                 note = f"(silent: body gate — {decision.reason})"
+                self._stigtime_shift("silent", note[:120])
                 self._history.append({"role": "assistant", "content": "(silent)"})
                 _log_turn("alice", note, model=model_name)
                 # The body vetoed vocalization — tear the streamed block
@@ -5719,6 +5764,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── 4. Body said yes (or SSP unavailable) — speak the cleaned reply
         self._history.append({"role": "assistant", "content": cleaned})
         _log_turn("alice", cleaned, model=model_name)
+        _stig_lane_ctx = str(model_name)[:80]
         self._end_alice_streaming_line()
         if getattr(self, "_pending_whatsapp_reply", None):
             mute_tts_override = True
@@ -5736,10 +5782,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if mute_tts_override:
             note = "(text-only: reply rendered to UI; TTS suppressed by user request)"
             self._append_system_line(note, error=False)
+            self._stigtime_shift("chat_text", _stig_lane_ctx)
             self._busy = False
             self._return_to_listening()
             return
-            
+
+        self._stigtime_shift("chat_speak", _stig_lane_ctx)
+
         # Chat history + UI keep the full reply; the mouth speaks a
         # digestible portion so `say` doesn't hit subprocess timeout on
         # long paragraphs (Epoch 21 TTS speech-budget guard).
@@ -5772,6 +5821,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
 
     def _on_brain_failed(self, msg: str) -> None:
+        self._stigtime_shift("idle", f"brain_failed:{msg[:80]}")
         self._pending_whatsapp_reply = None
         self._busy = False
         self._end_alice_streaming_line()
@@ -5793,6 +5843,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._return_to_listening()
 
     def _return_to_listening(self) -> None:
+        self._stigtime_shift("idle", "listen")
         self._set_pill("idle", "🎙  listening — just talk")
         self.set_status("Always-on. Just talk.")
 
