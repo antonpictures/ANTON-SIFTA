@@ -1,4 +1,4 @@
-"""Tests for Event 121 circadian lobe (locked JSONL, no task execution)."""
+"""Tests for Event 120/121 circadian lobe (locked JSONL, no task execution)."""
 from __future__ import annotations
 
 import json
