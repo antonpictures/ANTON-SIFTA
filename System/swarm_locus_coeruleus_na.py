@@ -113,6 +113,7 @@ def compute_lc_na(
     uncertainty: float = 0.5,
     astrocyte_heat_norm: float = 0.3,
     uptime_hours: float = 4.0,
+    clamp_level: str = "NONE",      # NEW: stability gate (Grok two-phase spec)
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
@@ -122,65 +123,79 @@ def compute_lc_na(
     """
     Event 142 — Compute the LC/NA arousal state for this tick.
 
+    TWO-PHASE DESIGN (Grok integration spec):
+        Phase A — STABLE (clamp_level == "NONE"):
+            Full Yerkes-Dodson gain. NA boosts exploration + LR ceiling.
+            NA_level = weighted(uncertainty, heat, uptime)
+        Phase B — DEGRADING (clamp_level in RATE_LIMIT/BLOCK_NEW/EMERGENCY):
+            NA is actively suppressed toward resting level (0.3).
+            Stability clamps dominate; NA does NOT fight them by pushing
+            the system into hyper-exploratory mode during instability.
+            This mirrors biological LC suppression under prolonged stress:
+            Aston-Jones & Cohen (2005) AnnRevNeurosci Fig 7 — tonic LC
+            firing drops during sustained threat to allow focused coping.
+
     Returns a receipt dict with:
-        na_level          — scalar [0,1] (0=low arousal/sleep, 1=max stress)
-        gain              — signal multiplier for this tick [NA_GAIN_BASE, NA_GAIN_SCALE]
-        exploration_bias  — Yerkes-Dodson mapped exploration bias [0.15, 0.85]
+        na_level          — scalar [0,1]
+        gain              — signal multiplier [NA_GAIN_BASE, NA_GAIN_SCALE]
+        exploration_bias  — Yerkes-Dodson mapped [0.15, 0.85]
         lr_ceiling        — Yerkes-Dodson LR ceiling [0.01, 0.10]
         arousal_regime    — "HYPO" | "OPTIMAL" | "HYPER"
+        na_suppressed     — True when Phase B is active
         truth_label       — "LC_NA_AROUSAL"
-
-    Arousal regimes (Aston-Jones & Cohen 2005):
-        HYPO   NA < 0.3 → low vigilance, poor performance, high exploit
-        OPTIMAL 0.3 ≤ NA ≤ 0.65 → peak performance window
-        HYPER  NA > 0.65 → stress/distraction, degraded performance
-
-    Integration with stability clamps:
-        Pass `gain` and `exploration_bias` into the arbiter / astrocyte
-        modulation tick so NA level steers actual cognition — not just displays.
     """
     if os.environ.get(_DISABLE_ENV, "").strip() == "1":
         return {"disabled": True, "truth_label": "LC_NA_AROUSAL",
-                "na_level": 0.5, "gain": 1.0, "exploration_bias": 0.5, "lr_ceiling": 0.05}
+                "na_level": 0.5, "gain": 1.0, "exploration_bias": 0.5,
+                "lr_ceiling": 0.05, "na_suppressed": False}
 
-    # ── Compute NA level from sub-signals ────────────────────────────────────
+    # ── Phase determination ────────────────────────────────────────────────
+    # When stability is degrading, suppress NA toward resting baseline (0.3).
+    # This prevents NA from amplifying uncertainty-driven exploration when the
+    # organism is already unstable (Aston-Jones & Cohen 2005 Fig 7).
+    _RESTING_NA = 0.30        # tonic resting NA level (Phase B target)
+    _SUPPRESSION_ALPHA = 0.4  # EMA pull toward resting (faster suppression than buildup)
+    na_suppressed = clamp_level not in ("NONE", "")
+
+    # ── Compute raw NA from sub-signals ───────────────────────────────────
     if _na_override is not None:
         na_raw = float(max(0.0, min(1.0, _na_override)))
     else:
         na_uncertainty = _na_from_uncertainty(uncertainty)
         na_heat        = _na_from_astrocyte_heat(astrocyte_heat_norm)
         na_uptime      = _na_from_uptime(uptime_hours)
-
-        # Weighted combination (Sara 2009 — LC integrates uncertainty + metabolic signals)
-        # Uncertainty: 0.5 weight (primary driver, Yu & Dayan 2005)
-        # Heat:        0.3 weight (metabolic stress, secondary)
-        # Uptime:      0.2 weight (circadian / fatigue, slow)
         na_raw = (
             0.50 * na_uncertainty
             + 0.30 * na_heat
             + 0.20 * na_uptime
         )
+        na_raw = min(1.0, max(0.0, na_raw))
+
+    # Phase B: pull NA toward resting level (EMA suppression)
+    if na_suppressed:
+        # Strength of suppression scales with clamp severity
+        suppress_strength = {
+            "RATE_LIMIT": 0.3,
+            "BLOCK_NEW":  0.6,
+            "EMERGENCY":  0.9,
+        }.get(clamp_level, 0.3)
+        na_raw = na_raw * (1.0 - suppress_strength) + _RESTING_NA * suppress_strength
         na_raw = round(min(1.0, max(0.0, na_raw)), 4)
 
-    # ── Gain (Aston-Jones & Cohen 2005, Fig 3) ───────────────────────────────
-    # Gain follows inverted-U: peaks at NA_OPTIMAL, collapses at extremes
+    na_raw = round(na_raw, 4)
+
+    # ── Gain (Aston-Jones & Cohen 2005 Fig 3 + Yerkes-Dodson) ─────────────
     yd_score = _yerkes_dodson(na_raw, optimum=_NA_OPTIMAL)
     gain     = round(_NA_GAIN_BASE + (_NA_GAIN_SCALE - _NA_GAIN_BASE) * yd_score, 4)
 
-    # ── Exploration bias (Yu & Dayan 2005: NA ~ unexpected uncertainty) ──────
-    # High NA (unexpected uncertainty) → explore more
-    # But at extreme HYPER: stress collapses exploration to fixed
-    explore_raw = (
-        _NA_EXPLORE_MIN
-        + (_NA_EXPLORE_MAX - _NA_EXPLORE_MIN) * yd_score
-    )
+    # ── Exploration bias ──────────────────────────────────────────────────
+    explore_raw = _NA_EXPLORE_MIN + (_NA_EXPLORE_MAX - _NA_EXPLORE_MIN) * yd_score
     exploration_bias = round(min(_NA_EXPLORE_MAX, max(_NA_EXPLORE_MIN, explore_raw)), 4)
 
-    # ── LR ceiling (Yerkes-Dodson: optimal learning at moderate arousal) ─────
-    # LR peaks at NA_OPTIMAL; clamped to [0.01, 0.10]
+    # ── LR ceiling (Yerkes-Dodson) ────────────────────────────────────────
     lr_ceiling = round(0.01 + 0.09 * yd_score, 4)
 
-    # ── Arousal regime ────────────────────────────────────────────────────────
+    # ── Arousal regime ────────────────────────────────────────────────────
     if na_raw < 0.30:
         regime = "HYPO"
     elif na_raw <= 0.65:
@@ -199,19 +214,22 @@ def compute_lc_na(
         "lr_ceiling":       lr_ceiling,
         "yerkes_dodson":    round(yd_score, 4),
         "arousal_regime":   regime,
+        "na_suppressed":    na_suppressed,
+        "clamp_level":      clamp_level,
         "sub_signals": {
-            "na_from_uncertainty":     round(_na_from_uncertainty(uncertainty), 4) if _na_override is None else None,
-            "na_from_astrocyte_heat":  round(_na_from_astrocyte_heat(astrocyte_heat_norm), 4) if _na_override is None else None,
-            "na_from_uptime":          round(_na_from_uptime(uptime_hours), 4) if _na_override is None else None,
+            "na_from_uncertainty":    round(_na_from_uncertainty(uncertainty), 4) if _na_override is None else None,
+            "na_from_astrocyte_heat": round(_na_from_astrocyte_heat(astrocyte_heat_norm), 4) if _na_override is None else None,
+            "na_from_uptime":         round(_na_from_uptime(uptime_hours), 4) if _na_override is None else None,
         },
         "inputs": {
-            "uncertainty":            round(float(uncertainty), 4),
-            "astrocyte_heat_norm":    round(float(astrocyte_heat_norm), 4),
-            "uptime_hours":           round(float(uptime_hours), 4),
+            "uncertainty":          round(float(uncertainty), 4),
+            "astrocyte_heat_norm":  round(float(astrocyte_heat_norm), 4),
+            "uptime_hours":         round(float(uptime_hours), 4),
+            "clamp_level":          clamp_level,
         },
         "provenance": (
             "Sara2009NatRevNeurosci; Yu&Dayan2005Neuron; "
-            "Aston-Jones&Cohen2005AnnRevNeurosci; Yerkes&Dodson1908"
+            "Aston-Jones&Cohen2005AnnRevNeurosci(Fig7=two-phase); Yerkes&Dodson1908"
         ),
     }
 

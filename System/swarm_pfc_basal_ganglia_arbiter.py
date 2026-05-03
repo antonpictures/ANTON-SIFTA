@@ -11,6 +11,13 @@ STATE_DIR = Path(".sifta_state")
 ARBITER_LOG = STATE_DIR / "pfc_basal_ganglia_arbiter.jsonl"
 OPTIONS_LEDGER = STATE_DIR / "sutton_options_ledger.jsonl"
 
+
+def _option_name_suggests_new_gate(name: str) -> bool:
+    """Heuristic: names that imply spawning / high-exploration gates (Event 134 BLOCK_NEW)."""
+    n = (name or "").lower()
+    return any(tok in n for tok in ("novel", "new_gate", "spawn_gate", "explore_raw"))
+
+
 class PFCBasalGangliaArbiter:
     """
     Event 126 — PFC-Basal Ganglia Arbiter
@@ -117,7 +124,9 @@ class PFCBasalGangliaArbiter:
         gw_scores: Optional[Dict[str, float]] = None,
         world_model: Optional[Any] = None,
         hysteresis_margin: float = 0.15,
-        min_dwell_time: float = 2.0
+        min_dwell_time: float = 2.0,
+        stability_same_tick_receipt: Optional[Dict[str, Any]] = None,
+        na_global_gain: float = 1.0,   # NEW: LC/NA gain modulates arbiter temperature
     ) -> Tuple[str, float, Dict[str, Any]]:
         """
         2. Select among options under uncertainty using Active Inference (Event 134).
@@ -127,6 +136,18 @@ class PFCBasalGangliaArbiter:
         """
         if os.environ.get("SIFTA_PFC_DISABLE", "").strip() == "1":
             return "idle", 0.0, {}
+
+        from System.swarm_stability_audit import get_current_clamp_overrides
+
+        stability_clamp = get_current_clamp_overrides(
+            root=self.root,
+            same_tick_receipt=stability_same_tick_receipt,
+        )
+        avail = list(available_options)
+        if stability_clamp.get("block_new_gates"):
+            avail = [o for o in avail if not _option_name_suggests_new_gate(o)]
+        if not avail:
+            return "idle", 0.0, {"stability_clamp": stability_clamp, "blocked_all_options": True}
 
         scores = []
         option_details = {}
@@ -148,7 +169,7 @@ class PFCBasalGangliaArbiter:
         current_time = time.time()
         can_switch = (current_time - last_switch) >= min_dwell_time
 
-        for opt in available_options:
+        for opt in avail:
             if opt not in self.options:
                 self.convert_replay_to_option([opt], opt)
             
@@ -164,8 +185,16 @@ class PFCBasalGangliaArbiter:
                 world_model=world_model,
             )
 
-            competition_score = -g_pi + (0.5 * gw_salience) + (0.2 * owner_signal) - (1.0 * risk) - (1.0 * cost)
-            
+            competition_score = (
+                -g_pi
+                # GW salience scaled by NA gain: high arousal amplifies signal saliency
+                # (Aston-Jones & Cohen 2005: LC/NA boosts signal-to-noise in cortex)
+                + (0.5 * na_global_gain * gw_salience)
+                + (0.2 * owner_signal)
+                - (1.0 * risk)
+                - (1.0 * cost)
+            )
+
             # Apply hysteresis margin if this option is NOT the currently active one
             if opt != active_opt and active_opt is not None:
                 competition_score -= hysteresis_margin
@@ -191,7 +220,7 @@ class PFCBasalGangliaArbiter:
             winner_name = "idle"
 
         # Dwell-time enforcement
-        if winner_name != active_opt and not can_switch and active_opt in available_options:
+        if winner_name != active_opt and not can_switch and active_opt in avail:
             # Force keep active if we haven't dwelled long enough
             winner_name = active_opt
             # Recalculate winner_score to be the active one
@@ -222,7 +251,8 @@ class PFCBasalGangliaArbiter:
             "score": winner_score,
             "active_option_before": active_opt,
             "can_switch": can_switch,
-            "details": option_details.get(winner_name, {})
+            "details": option_details.get(winner_name, {}),
+            "stability_clamp": stability_clamp,
         }
         append_line_locked(self.log_path, json.dumps(selection) + "\n", encoding="utf-8")
         return winner_name, winner_score, selection

@@ -825,6 +825,7 @@ class SwarmPhysiology:
                 uncertainty=min(1.0, max(0.0, _uncertainty_for_na)),
                 astrocyte_heat_norm=min(1.0, max(0.0, _heat_for_na)),
                 uptime_hours=float(_uptime_h),
+                clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),  # TWO-PHASE
                 root=_STATE_DIR,
                 write_ledger=True,
             )
@@ -885,6 +886,12 @@ class SwarmPhysiology:
             logger.debug("Metacognitive monitor skipped (non-fatal)")
 
         # 8d. Active Causal Probing (Event 139) — bounded do() experiments.
+        # NA global_gain and meta_confidence now gate probing aggressiveness:
+        #   - Uncertainty threshold RAISED when metacog says OVERCONFIDENT
+        #     (Yeung & Summerfield 2012: don't trust self-assessment during overconfidence)
+        #   - Uncertainty threshold LOWERED when metacog says UNDERCONFIDENT
+        #     (more willingness to experiment when organism undersells its own accuracy)
+        #   - Only run real interventions when NA gain >= 1.0 (OPTIMAL or above)
         _causal_probe_receipt: Optional[Dict[str, Any]] = None
         try:
             from System.swarm_active_causal_prober import propose_and_execute_runtime_intervention
@@ -895,6 +902,18 @@ class SwarmPhysiology:
                 float(_terms.get("astrocyte_heat_norm", 0.0) or 0.0),
                 abs(1.0 - float(mem_row.get("td_value", 0.0) or 0.0)),
             )
+
+            # Meta_confidence gate (Grok integration spec)
+            # OVERCONFIDENT → raise uncertainty_threshold (harder to trigger probe)
+            # UNDERCONFIDENT → lower threshold (easier to probe)
+            _metacog_regime = _metacog_receipt.get("metacog_regime", "CALIBRATED")
+            _base_probe_threshold = 0.35
+            _probe_threshold = {
+                "OVERCONFIDENT":  _base_probe_threshold + 0.10,   # +0.10 harder
+                "CALIBRATED":     _base_probe_threshold,           # baseline
+                "UNDERCONFIDENT": _base_probe_threshold - 0.05,   # -0.05 easier
+            }.get(_metacog_regime, _base_probe_threshold)
+
             _causal_probe_receipt = propose_and_execute_runtime_intervention(
                 tick_id=causal_probe_tick if causal_probe_tick is not None else str(mem_row.get("tick_id") or ""),
                 current_uncertainty=min(1.0, max(0.0, _uncertainty)),
@@ -903,10 +922,11 @@ class SwarmPhysiology:
             )
             if _causal_probe_receipt:
                 logger.info(
-                    "[Event139] Active causal probe target=%s effect=%.3f dry_run=%s",
+                    "[Event139] Active causal probe target=%s effect=%.3f dry_run=%s metacog_regime=%s",
                     _causal_probe_receipt.get("intervention", {}).get("do", {}).get("target"),
                     float(_causal_probe_receipt.get("causal_effect_size", 0.0) or 0.0),
                     _causal_probe_receipt.get("intervention", {}).get("do", {}).get("dry_run"),
+                    _metacog_regime,
                 )
         except Exception:
             logger.debug("Active causal prober skipped (non-fatal)")
