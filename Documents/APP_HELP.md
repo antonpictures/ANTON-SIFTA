@@ -560,15 +560,18 @@ stigmergic state of the Swarm in real time. Open them via **SIFTA → Swarm Inte
 - **Key principle:** You are *speaking* to the OS, not clicking checkboxes.
   The conversation is the interface.
 
-### SIFTA Media Shazam
+### Stigmergic Unified Shazam
 
-- **What it is:** A stigmergic media recognizer for co-watching. Alice listens to
-  receipts from YouTube context, watch memory, observed media ingress, and caption
-  snippets, then guesses the likely YouTube category and source family.
+- **What it is:** One unified stigmergic media recognizer for co-watching. Alice
+  listens to receipts from YouTube context, watch memory, observed media ingress,
+  acoustic scene classification, and caption snippets, then guesses the likely
+  YouTube category and source family.
 - **State:** `.sifta_state/media_shazam_guesses.jsonl`,
-  `.sifta_state/media_shazam_latest.json`, plus upstream YouTube/media ledgers.
+  `.sifta_state/media_shazam_latest.json`,
+  `.sifta_state/acoustic_scene_classifications.jsonl`, plus upstream
+  YouTube/media ledgers.
 - **Metric:** Top category confidence, candidate category scores, source-family
-  guess, evidence terms, and receipt count.
+  guess, acoustic scene prior, evidence terms, and receipt count.
 - **Control:** **Guess Now** writes a fresh guess; the app also refreshes every
   few seconds while videos play.
 - **Failure mode:** If no recent receipts exist, it reports no current category

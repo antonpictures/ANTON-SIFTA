@@ -108,6 +108,25 @@ _SOURCE_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("gaming_video", "gaming video", ("gameplay", "gaming", "minecraft", "fortnite", "boss fight")),
 )
 
+_SCENE_CATEGORY_HINTS: dict[str, tuple[str, ...]] = {
+    "CINEMATIC": ("Film & Animation", "Entertainment"),
+    "NEWS": ("News & Politics",),
+    "MUSIC": ("Music",),
+    "SPORTS": ("Sports",),
+    "GAMING": ("Gaming",),
+    "PODCAST": ("People & Blogs", "Education"),
+    "AMBIENT": ("Music", "Entertainment"),
+}
+
+_SCENE_SOURCE_HINTS: dict[str, tuple[str, str]] = {
+    "CINEMATIC": ("movie_or_fiction_clip", "fiction/movie clip"),
+    "NEWS": ("news_network", "news network / politics"),
+    "MUSIC": ("music_video", "music video / performance"),
+    "SPORTS": ("sports_broadcast", "sports broadcast"),
+    "GAMING": ("gaming_video", "gaming video"),
+    "PODCAST": ("podcast_or_long_interview", "podcast / long interview"),
+}
+
 _KNOWN_WORKS: tuple[tuple[str, str, str], ...] = (
     ("snatch", "Snatch", "Guy Ritchie"),
     ("john wick", "John Wick", "Chad Stahelski"),
@@ -162,7 +181,7 @@ def _text_parts(row: Mapping[str, Any]) -> list[str]:
         "title", "channel", "frontmost_window", "caption_excerpt", "page_context",
         "ask_panel_answer_excerpt", "content_kind", "content_category",
         "source_work", "director", "dialogue_boundary", "text_preview",
-        "focus_preview", "reason", "url", "video_id",
+        "focus_preview", "reason", "url", "video_id", "scene",
     )
     out: list[str] = []
     for key in keys:
@@ -195,6 +214,7 @@ def collect_media_evidence(
         "youtube_watch_memory": root / "youtube_watch_memory.jsonl",
         "media_ingress_gate": root / "media_ingress_gate.jsonl",
         "media_session_memory": root / "media_session_memory.jsonl",
+        "acoustic_scene_classifier": root / "acoustic_scene_classifications.jsonl",
     }
     for source, path in sources.items():
         for row in _tail_jsonl(path, limit):
@@ -237,6 +257,11 @@ def _score_categories(blob: str, evidence: list[Mapping[str, Any]]) -> list[dict
         if "FICTIONAL_MEDIA" in frame:
             scores["Film & Animation"] += 5
             terms["Film & Animation"].add("receipt:fictional_media")
+        scene = str(row.get("scene") or "").upper()
+        if scene in _SCENE_CATEGORY_HINTS:
+            for idx, category in enumerate(_SCENE_CATEGORY_HINTS[scene]):
+                scores[category] += 4.0 if idx == 0 else 1.5
+                terms.setdefault(category, set()).add(f"acoustic_scene:{scene}")
         title = str(row.get("title") or "")
         if title:
             title_low = title.lower()
@@ -290,6 +315,29 @@ def _source_guesses(blob: str) -> list[dict[str, Any]]:
     return guesses
 
 
+def _source_guesses_from_evidence(blob: str, evidence: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    guesses = _source_guesses(blob)
+    existing = {g["source_type"] for g in guesses}
+    for row in evidence:
+        scene = str(row.get("scene") or "").upper()
+        if scene not in _SCENE_SOURCE_HINTS:
+            continue
+        source_type, label = _SCENE_SOURCE_HINTS[scene]
+        if source_type in existing:
+            continue
+        guesses.append(
+            {
+                "source_type": source_type,
+                "label": label,
+                "score": float(row.get("confidence", 0.0) or 0.0) + 0.75,
+                "evidence_terms": [f"acoustic_scene:{scene}"],
+            }
+        )
+        existing.add(source_type)
+    guesses.sort(key=lambda g: (-float(g["score"]), g["source_type"]))
+    return guesses
+
+
 def _known_work(blob: str) -> dict[str, str]:
     low = blob.lower()
     for needle, work, director in _KNOWN_WORKS:
@@ -317,8 +365,28 @@ def guess_media_identity(
     now_ts = float(now if now is not None else time.time())
     blob = _blob_from_evidence(evidence)
     categories = _score_categories(blob, evidence)
-    sources = _source_guesses(blob)
+    sources = _source_guesses_from_evidence(blob, evidence)
     work = _known_work(blob)
+    acoustic_scene = ""
+    acoustic_scene_confidence = 0.0
+    acoustic_scene_scores: dict[str, float] = {}
+    for row in reversed(evidence):
+        scene = str(row.get("scene") or "").upper()
+        if not scene:
+            continue
+        acoustic_scene = scene
+        try:
+            acoustic_scene_confidence = float(row.get("confidence", 0.0) or 0.0)
+        except Exception:
+            acoustic_scene_confidence = 0.0
+        scores = row.get("scores")
+        if isinstance(scores, dict):
+            acoustic_scene_scores = {
+                str(k): float(v)
+                for k, v in scores.items()
+                if isinstance(v, (int, float))
+            }
+        break
 
     title = ""
     channel = ""
@@ -351,6 +419,9 @@ def guess_media_identity(
         "source_type": source_top.get("source_type", ""),
         "source_label": source_top.get("label", ""),
         "source_candidates": sources[:6],
+        "acoustic_scene": acoustic_scene,
+        "acoustic_scene_confidence": round(acoustic_scene_confidence, 4),
+        "acoustic_scene_scores": acoustic_scene_scores,
         "title_guess": title,
         "channel_guess": channel,
         "video_id": video_id,

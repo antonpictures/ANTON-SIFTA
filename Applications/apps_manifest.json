@@ -795,20 +795,20 @@
     "description": "10-Minute Swarm Defense Gauntlet. DDoS wave defense, anomaly injection, and stigmergic edge detection.",
     "autostart": false
   },
-  "SIFTA Media Shazam": {
+  "Stigmergic Unified Shazam": {
     "category": "Creative",
     "entry_point": "Applications/sifta_media_shazam_widget.py",
     "widget_class": "MediaShazamApp",
     "window_width": 920,
     "window_height": 680,
-    "signature": "CODEX-STIGMERGIC-MEDIA-SHAZAM-2026-05-02",
+    "signature": "CODEX-AG31-CG55M-STIGMERGIC-UNIFIED-SHAZAM-2026-05-02",
     "doctor": "Dr Codex",
     "co_doctors": [
       "AG31",
       "CG55M"
     ],
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Receipt-native unified media guesser for Alice co-watch sessions. Fuses YouTube context, watch memory, and observed media ingress to guess category/source family without per-link hardcoding.",
+    "description": "Canonical unified media organ. Fuses YouTube context, watch memory, observed media ingress, and acoustic scene classification to guess media category/source family without per-link hardcoding.",
     "truth_label": "STIGMERGIC_MEDIA_GUESS",
     "autostart": false
   }

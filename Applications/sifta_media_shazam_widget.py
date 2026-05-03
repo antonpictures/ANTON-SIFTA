@@ -33,6 +33,15 @@ from System.swarm_media_shazam import (  # noqa: E402
     observe_current_media,
     youtube_categories,
 )
+try:
+    from System.swarm_acoustic_scene_classifier import classify_scene as _classify_scene
+    _SCENE_AVAILABLE = True
+except Exception:
+    _SCENE_AVAILABLE = False
+    def _classify_scene(**_kw):  # type: ignore
+        class _F:
+            scene = "UNKNOWN"; confidence = 0.0
+        return _F()
 
 
 _BG = "#10131a"
@@ -168,7 +177,7 @@ class MediaShazamApp(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("SIFTA Media Shazam")
+        self.setWindowTitle("Stigmergic Unified Shazam")
         self.setMinimumSize(900, 640)
         self.setStyleSheet(_STYLE)
 
@@ -178,9 +187,9 @@ class MediaShazamApp(QWidget):
 
         header = QHBoxLayout()
         title_box = QVBoxLayout()
-        title = QLabel("SIFTA Media Shazam")
+        title = QLabel("Stigmergic Unified Shazam")
         title.setObjectName("Title")
-        subtitle = QLabel("Unified stigmergic media guesser: YouTube categories, source family, and receipt evidence.")
+        subtitle = QLabel("One media organ: YouTube categories, acoustic scene, source family, and receipt evidence.")
         subtitle.setObjectName("Subtle")
         subtitle.setWordWrap(True)
         title_box.addWidget(title)
@@ -190,6 +199,11 @@ class MediaShazamApp(QWidget):
         self.guess_btn = QPushButton("Guess Now")
         self.guess_btn.clicked.connect(self.refresh)
         header.addWidget(self.guess_btn)
+
+        self.scene_badge = QLabel("● SCENE")
+        self.scene_badge.setFont(QFont("SF Mono", 10, QFont.Weight.Bold))
+        self.scene_badge.setStyleSheet(f"color: {_DIM}; margin-left: 8px;")
+        header.addWidget(self.scene_badge)
         root.addLayout(header)
 
         self.summary = QFrame()
@@ -254,6 +268,12 @@ class MediaShazamApp(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
+        scene_frame = None
+        if _SCENE_AVAILABLE:
+            try:
+                scene_frame = _classify_scene()
+            except Exception:
+                scene_frame = None
         try:
             row = observe_current_media(state_dir=_STATE, write=True)
         except Exception as exc:
@@ -272,7 +292,10 @@ class MediaShazamApp(QWidget):
         self.category.setText(str(category))
         conf = int(round(float(row.get("confidence", 0.0) or 0.0) * 100))
         self.conf.setValue(conf)
-        self.source.setText(f"source: {row.get('source_label') or row.get('source_type') or '--'}")
+        scene = str(row.get("acoustic_scene") or "")
+        scene_conf = float(row.get("acoustic_scene_confidence", 0.0) or 0.0)
+        scene_part = f" | acoustic: {scene} {scene_conf:.0%}" if scene else ""
+        self.source.setText(f"source: {row.get('source_label') or row.get('source_type') or '--'}{scene_part}")
         self.title_guess.setText(f"title: {row.get('title_guess') or row.get('source_work') or '--'}")
         self.receipts.setText(
             f"receipts: {row.get('evidence_rows', 0)} rows | "
@@ -300,6 +323,17 @@ class MediaShazamApp(QWidget):
                 f"{prev.get('title_guess') or prev.get('source_work') or ''}"
             )
         self.evidence.setPlainText("\n".join(lines))
+
+        # Acoustic scene badge (Event 121b)
+        if scene_frame is not None:
+            _scene_colours = {
+                "CINEMATIC": "#c678dd", "NEWS": "#e06c75", "MUSIC": "#66fcf1",
+                "SPORTS": "#e5c07b", "GAMING": "#98c379", "PODCAST": "#56b6c2",
+                "AMBIENT": "#61afef", "UNKNOWN": "#5c6370",
+            }
+            col = _scene_colours.get(scene_frame.scene, _DIM)
+            self.scene_badge.setText(f"● {scene_frame.scene}  {scene_frame.confidence:.0%}")
+            self.scene_badge.setStyleSheet(f"color: {col}; margin-left: 8px;")
 
 
 def create_widget(parent: QWidget | None = None) -> MediaShazamApp:

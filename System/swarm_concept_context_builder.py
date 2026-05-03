@@ -82,7 +82,8 @@ def compact_row(row: dict[str, Any], *, max_value_chars: int = MAX_VALUE_CHARS) 
         "regime", "danger_state", "selected_drive", "action",
         "composite_score", "truth_label", "start_time", "end_time", "context_tags",
         "primary_category", "confidence", "source_type", "source_label",
-        "title_guess", "channel_guess", "source_work", "director", "evidence_terms",
+        "acoustic_scene", "acoustic_scene_confidence", "title_guess",
+        "channel_guess", "source_work", "director", "evidence_terms",
     ]
     return {k: _compact_value(row[k], max_chars=max_value_chars) for k in keys if k in row}
 

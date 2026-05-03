@@ -79,6 +79,24 @@ def test_news_network_receipts_guess_news_politics():
     assert guess["source_type"] == "news_network"
 
 
+def test_acoustic_scene_receipts_narrow_category_before_text_guess():
+    evidence = [
+        {
+            "source": "acoustic_scene_classifier",
+            "scene": "NEWS",
+            "confidence": 0.84,
+            "scores": {"NEWS": 0.84, "CINEMATIC": 0.10},
+        }
+    ]
+
+    guess = guess_media_identity(evidence, now=1000.0)
+
+    assert guess["primary_category"] == "News & Politics"
+    assert guess["source_type"] == "news_network"
+    assert guess["acoustic_scene"] == "NEWS"
+    assert guess["acoustic_scene_confidence"] == 0.84
+
+
 def test_collect_and_observe_write_receipt(tmp_path: Path):
     (tmp_path / "youtube_context.jsonl").write_text(
         json.dumps(
@@ -106,6 +124,28 @@ def test_collect_and_observe_write_receipt(tmp_path: Path):
     saved = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
     assert saved["truth_label"] == TRUTH_LABEL
     assert "media_guess=Film & Animation" in format_guess_for_prompt(saved)
+
+
+def test_collect_evidence_includes_acoustic_scene_rows(tmp_path: Path):
+    (tmp_path / "acoustic_scene_classifications.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": 1000.0,
+                "scene": "CINEMATIC",
+                "confidence": 0.72,
+                "scores": {"CINEMATIC": 0.72},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    evidence = collect_media_evidence(state_dir=tmp_path, now=1005.0, window_s=60.0)
+    guess = guess_media_identity(evidence, now=1005.0)
+
+    assert evidence[0]["source"] == "acoustic_scene_classifier"
+    assert guess["primary_category"] == "Film & Animation"
+    assert guess["source_type"] == "movie_or_fiction_clip"
 
 
 def test_no_recent_media_evidence_is_honest(tmp_path: Path):
