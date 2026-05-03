@@ -68,6 +68,15 @@ _OWNER_GROUNDING_SIGNAL_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_OWNER_IDENTITY_QUERY_RE = re.compile(
+    r"\b(?:"
+    r"who\s+am\s+i|"
+    r"what(?:'s| is)\s+my\s+name|"
+    r"do\s+you\s+know\s+(?:who\s+i\s+am|my\s+name)|"
+    r"you\s+know\s+who\s+i\s+am"
+    r")\b",
+    re.IGNORECASE,
+)
 DIRECT_REQUEST_RE = re.compile(
     r"^\s*(?:"
     r"can you|could you|will you|please|pls|tell me|show me|open|run|fix|"
@@ -388,6 +397,8 @@ def _owner_speech_likelihood(
         logit += 0.80
     if words <= 12 and _OWNER_GROUNDING_SIGNAL_RE.search(clean):
         logit += 0.45
+    if _OWNER_IDENTITY_QUERY_RE.search(clean):
+        logit += 1.55
 
     if acoustic_cue == "nearfield_voice_likely":
         logit += 1.10
@@ -443,6 +454,17 @@ def classify_spoken_ingress(
 
     # Acoustic nearfield override removed: professional YouTube audio often scores as nearfield,
     # breaking the Media Gate. Direct address/requests are already caught above.
+
+    if (
+        _OWNER_IDENTITY_QUERY_RE.search(clean)
+        and acoustic_cue != "farfield_replay_likely"
+        and (acoustic_cue == "nearfield_voice_likely" or (stt_conf and stt_conf >= 0.52))
+    ):
+        return {
+            "route": "direct",
+            "reason": "owner_identity_question",
+            "confidence": 0.94 if acoustic_cue == "nearfield_voice_likely" else 0.78,
+        }
 
     if not has_media_focus:
         return {"route": "direct", "reason": "no_recent_media_focus", "confidence": 0.0}

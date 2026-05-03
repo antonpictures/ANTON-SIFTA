@@ -293,6 +293,29 @@ def test_identity_false_refusal_answers_name_from_context_without_canned_script(
     assert "local identity frame" not in result.text.casefold()
 
 
+def test_owner_identity_deflection_to_media_context_is_repaired_from_receipt():
+    ctx = OverRefusalContext(
+        prior_user_text="Who am I Alice?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        (
+            "However, if you are referring to the content from the overheard audio "
+            "snippet, the question \"Who am I?\" was posed in a context that suggests "
+            "self-reflection. I can help you explore concepts of identity, but I need "
+            "you to provide more context."
+        ),
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/local-identity"
+    assert result.text == "Your name is Ioan George Anton."
+    assert "overheard audio" not in result.text.casefold()
+    assert "concepts of identity" not in result.text.casefold()
+
+
 def test_generic_assistant_identity_refusal_is_short_receipt_grounded():
     ctx = OverRefusalContext(
         prior_user_text="Alice, you are SIFTA with a body here.",

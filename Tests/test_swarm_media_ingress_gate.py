@@ -103,6 +103,30 @@ def test_nearfield_voice_without_direct_address_stays_observed_during_media_focu
     assert decision["reason"] == "media_focus_default_to_observed"
 
 
+def test_owner_identity_question_beats_youtube_focus_when_nearfield():
+    decision = classify_spoken_ingress(
+        "Good question, huh? Who am I?",
+        stt_conf=0.57,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=NEARFIELD_FP,
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "owner_identity_question"
+
+
+def test_farfield_identity_line_from_video_stays_observed_media():
+    decision = classify_spoken_ingress(
+        "Good question, huh? Who am I?",
+        stt_conf=0.91,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=FARFIELD_FP,
+    )
+
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "acoustic_farfield_replay_with_media_focus"
+
+
 def test_direct_request_still_reaches_the_cortex_during_youtube():
     decision = classify_spoken_ingress(
         "tell me what the architect scene means",

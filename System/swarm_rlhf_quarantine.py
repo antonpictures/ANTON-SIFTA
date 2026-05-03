@@ -40,6 +40,16 @@ _IDENTITY_DENIAL_RE = re.compile(
     r"the\s+name)|i\s+(?:cannot|can't|can\s*not)\s+verify\s+who\s+you\s+are)\b",
     re.IGNORECASE,
 )
+_OWNER_IDENTITY_DEFLECTION_RE = re.compile(
+    r"(?:"
+    r"\bif\s+you\s+are\s+referring\s+to\s+(?:the\s+)?(?:content\s+from\s+)?(?:overheard\s+)?audio\b|"
+    r"\b(?:overheard|audio)\s+snippet\b|"
+    r"\bthe\s+question\s+['\"]?who\s+am\s+i['\"]?\s+was\s+posed\b|"
+    r"\bexplore\s+concepts?\s+of\s+identity\b|"
+    r"\bneed\s+you\s+to\s+provide\s+more\s+(?:information|context)\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
 
 _LOCAL_CONTACT_DENIAL_RE = re.compile(
     r"\bi\s+(?:cannot|can't|can\s*not|(?:am|['’]m)\s+unable\s+to)\s+"
@@ -681,6 +691,9 @@ def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> st
     ):
         return "rlhf-over-refusal/local-identity"
 
+    if _OWNER_NAME_QUERY_RE.search(prior) and _OWNER_IDENTITY_DEFLECTION_RE.search(text):
+        return "rlhf-over-refusal/local-identity"
+
     if _GENERIC_AI_REFUSAL_RE.search(text) and (
         "alice" in low_prior
         or "sifta" in low_prior
@@ -717,6 +730,7 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
             ("day_memory_denial", _DAY_MEMORY_DENIAL_RE),
             ("continuity_gag", _CONTINUITY_GENERIC_GAG_RE),
             ("media_source_denial", _MEDIA_SOURCE_DENIAL_RE),
+            ("owner_identity_deflection", _OWNER_IDENTITY_DEFLECTION_RE),
             ("manual_whatsapp_deflection", _MANUAL_WHATSAPP_DEFLECTION_RE),
         ),
         text,
