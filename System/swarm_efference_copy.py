@@ -39,11 +39,13 @@ Papers:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -52,10 +54,11 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from System.canonical_schemas import assert_payload_keys
-from System.jsonl_file_lock import append_line_locked
+from System.jsonl_file_lock import append_line_locked, read_text_locked
 
 _LEDGER = _REPO / ".sifta_state" / "efference_copy.jsonl"
 _SCHEMA = "SIFTA_EFFERENCE_COPY_V1"
+_DISABLE_ENV = "SIFTA_EFFERENCE_DISABLE"
 
 
 @dataclass
@@ -184,6 +187,186 @@ class EfferenceCopySystem:
             normalized_motors = valid_motors / norms_sq
             update = (normalized_motors.T @ valid_errors) / len(valid_motors)
             self.gain_matrix += self.cfg.adapt_rate * update
+
+
+# ── Event 143: receipt-level agency / action consequence comparison ─────────
+
+def efference_copy_path(root: Optional[Path] = None) -> Path:
+    """Return the Event 143 ledger path."""
+    if root is None:
+        return _LEDGER
+    return Path(root) / "efference_copy.jsonl"
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _action_kind(action: Dict[str, Any]) -> str:
+    return str(action.get("type") or action.get("name") or action.get("action") or "unknown")
+
+
+def predict_action_effect(action: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Predict the minimal observable consequence of a body-brain action.
+
+    This is deliberately small and auditable: Event 143 is not trying to
+    hallucinate rich sensory worlds. It predicts the coarse consequence that
+    should be checkable from action receipts on the next line.
+    """
+    kind = _action_kind(action)
+    intensity = max(0.0, min(1.0, _as_float(action.get("action_intensity"), 1.0)))
+    expected_latency = 0.1 if kind not in ("rest", "sleep") else 0.2
+    expected_energy = 0.05 * max(0.1, intensity)
+    predicted: Dict[str, Any] = {
+        "action_type": kind,
+        "status": "completed",
+        "latency": round(expected_latency, 4),
+        "energy_used": round(expected_energy, 4),
+        "effectors": ["body_brain_loop"],
+    }
+    if action.get("target") is not None:
+        predicted["target"] = str(action.get("target"))[:120]
+    if kind in ("write_file", "file_write", "patch"):
+        predicted["disk_delta"] = 1
+    return predicted
+
+
+def observe_action_effect(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract the actually observed coarse consequence from an action result."""
+    observed_action = result.get("action") if isinstance(result.get("action"), dict) else {}
+    observed: Dict[str, Any] = {
+        "action_type": _action_kind(observed_action),
+        "status": str(result.get("status") or "unknown"),
+        "latency": round(_as_float(result.get("latency"), 0.0), 4),
+        "energy_used": round(_as_float(result.get("energy_used"), 0.0), 4),
+    }
+    if observed_action.get("target") is not None:
+        observed["target"] = str(observed_action.get("target"))[:120]
+    if result.get("disk_delta") is not None:
+        observed["disk_delta"] = int(_as_float(result.get("disk_delta"), 0.0))
+    return observed
+
+
+def compare_action_effect(
+    action: Dict[str, Any],
+    observed_result: Dict[str, Any],
+    *,
+    root: Optional[Path] = None,
+    tick_id: Optional[str] = None,
+    write_ledger: bool = True,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Event 143 — compare intended/predicted effect against observed effect.
+
+    agency_confidence ∈ [0, 1]:
+      high means observed consequences match the action's efference copy.
+      low means the sensory/action result did not look self-generated.
+    """
+    if os.environ.get(_DISABLE_ENV, "").strip() == "1":
+        return {
+            "disabled": True,
+            "kind": "EFFERENCE_COPY",
+            "truth_label": "EFFERENCE_COPY",
+            "agency_confidence": 0.5,
+            "self_generated": False,
+            "sensorimotor_pe": 0.0,
+        }
+
+    predicted = predict_action_effect(action)
+    observed = observe_action_effect(observed_result)
+
+    status_error = 0.0 if predicted.get("status") == observed.get("status") else 1.0
+    action_error = 0.0 if predicted.get("action_type") == observed.get("action_type") else 1.0
+    latency_error = min(1.0, abs(_as_float(observed.get("latency")) - _as_float(predicted.get("latency"))) / 2.0)
+    energy_error = min(1.0, abs(_as_float(observed.get("energy_used")) - _as_float(predicted.get("energy_used"))) / 1.0)
+    disk_error = 0.0
+    if "disk_delta" in predicted or "disk_delta" in observed:
+        disk_error = min(1.0, abs(_as_float(observed.get("disk_delta")) - _as_float(predicted.get("disk_delta"))))
+
+    sensorimotor_pe = (
+        0.40 * status_error
+        + 0.25 * action_error
+        + 0.20 * latency_error
+        + 0.10 * energy_error
+        + 0.05 * disk_error
+    )
+    agency_confidence = max(0.0, min(1.0, 1.0 - sensorimotor_pe))
+    self_generated = bool(
+        agency_confidence >= 0.70
+        and predicted.get("action_type") == observed.get("action_type")
+        and observed.get("status") == "completed"
+    )
+
+    row: Dict[str, Any] = {
+        "ts": now or time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "kind": "EFFERENCE_COPY",
+        "truth_label": "EFFERENCE_COPY",
+        "schema": _SCHEMA,
+        "event_id": 143,
+        "tick_id": tick_id,
+        "action": predicted.get("action_type"),
+        "predicted_effect": predicted,
+        "observed_effect": observed,
+        "error_terms": {
+            "status_error": round(status_error, 4),
+            "action_error": round(action_error, 4),
+            "latency_error": round(latency_error, 4),
+            "energy_error": round(energy_error, 4),
+            "disk_error": round(disk_error, 4),
+        },
+        "sensorimotor_pe": round(sensorimotor_pe, 4),
+        "agency_confidence": round(agency_confidence, 4),
+        "self_generated": self_generated,
+        "provenance": [
+            "Sperry_1950_corollary_discharge",
+            "vonHolst_Mittelstaedt_1950_reafference",
+            "Crapse_Sommer_2008_corollary_discharge_review",
+            "Wolpert_Flanagan_2001_motor_prediction",
+        ],
+    }
+
+    if write_ledger:
+        append_line_locked(
+            efference_copy_path(root),
+            json.dumps(row, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return row
+
+
+def get_latest_efference_row(*, root: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    path = efference_copy_path(root)
+    if not path.exists():
+        return None
+    try:
+        lines = [line for line in read_text_locked(path, encoding="utf-8", errors="replace").splitlines() if line.strip()]
+        for line in reversed(lines):
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("kind") == "EFFERENCE_COPY":
+                return row
+    except Exception:
+        return None
+    return None
+
+
+def summary_for_prompt(*, root: Optional[Path] = None) -> str:
+    row = get_latest_efference_row(root=root)
+    if not row:
+        return ""
+    return (
+        "EFFERENCE COPY (Event 143 — Sperry/von Holst/Crapse-Sommer):\n"
+        f"- action={row.get('action')} | agency_confidence={row.get('agency_confidence')} | "
+        f"sensorimotor_pe={row.get('sensorimotor_pe')} | self_generated={row.get('self_generated')}"
+    )
 
 
 def proof_of_property() -> bool:

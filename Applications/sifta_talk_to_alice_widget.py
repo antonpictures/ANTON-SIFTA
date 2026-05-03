@@ -1572,6 +1572,14 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_efference_copy import summary_for_prompt as _efference_summary
+        _eff = _efference_summary().strip()
+        if _eff:
+            parts.append(_eff)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_affective_valence import summary_for_prompt as _valence_summary
         _val = _valence_summary().strip()
         if _val:

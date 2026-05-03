@@ -658,6 +658,32 @@ class SwarmPhysiology:
         # 5. Execution
         result = self._execute_action(action)
 
+        # 5b. Efference Copy / Agency (Event 143) — predicted vs observed effect
+        # Corollary discharge for tool/body actions: self-generated vs external PE.
+        efference_receipt: Dict[str, Any] = {
+            "agency_confidence": 0.5,
+            "sensorimotor_pe": 0.0,
+            "self_generated": False,
+        }
+        try:
+            from System.swarm_efference_copy import compare_action_effect
+            efference_receipt = compare_action_effect(
+                action,
+                result,
+                root=_STATE_DIR,
+                tick_id=None,
+                write_ledger=True,
+            )
+            logger.debug(
+                "[Event143] Efference action=%s agency=%.3f pe=%.3f self=%s",
+                efference_receipt.get("action"),
+                float(efference_receipt.get("agency_confidence", 0.5) or 0.5),
+                float(efference_receipt.get("sensorimotor_pe", 0.0) or 0.0),
+                efference_receipt.get("self_generated"),
+            )
+        except Exception:
+            logger.debug("Efference copy skipped (non-fatal)")
+
         # 6. Value Signal
         value = self._compute_value(result, danger)
         
@@ -685,6 +711,13 @@ class SwarmPhysiology:
 
         # 7. Memory Consolidation
         memory_extra: Dict[str, Any] = {}
+        if efference_receipt:
+            memory_extra.update({
+                "efference_agency_confidence": efference_receipt.get("agency_confidence"),
+                "efference_sensorimotor_pe": efference_receipt.get("sensorimotor_pe"),
+                "efference_self_generated": efference_receipt.get("self_generated"),
+                "efference_trace_id": efference_receipt.get("trace_id"),
+            })
         if causal_probe_tick is not None:
             memory_extra.update({
                 "causal_probe_tick": causal_probe_tick,
