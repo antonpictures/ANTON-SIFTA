@@ -6,6 +6,7 @@ from System.swarm_microglia_synaptic_pruner import (
     batch_evaluate,
     compute_two_signal_pressure,
     evaluate_prune_candidate,
+    microglia_sleep_window_receipt,
     prune_log_path,
     summary_for_prompt,
 )
@@ -303,3 +304,57 @@ def test_prune_degrades_delete_when_tom_conservatism_high(tmp_path):
     assert receipts[0]["action"] == "depress"
     assert receipts[0]["two_signal_model"] == "TREM2_CD33"
     assert receipts[0]["pruning_conservatism"] == 0.9
+
+
+def test_rich_fractalkine_continuous_context_protection():
+    protected = compute_two_signal_pressure(
+        age_hours=90,
+        usage_count=0,
+        recent_reward_mean=-0.2,
+        stability_dwell_score=1.0,
+        goal_alignment=1.0,
+        owner_frustration=0.0,
+    )
+    exposed = compute_two_signal_pressure(
+        age_hours=90,
+        usage_count=0,
+        recent_reward_mean=-0.2,
+        stability_dwell_score=0.0,
+        goal_alignment=0.0,
+        owner_frustration=1.0,
+    )
+
+    assert protected["fractalkine_analog"] > exposed["fractalkine_analog"]
+    assert protected["inhibition_signal"] > exposed["inhibition_signal"]
+    assert protected["net_pruning_pressure"] < exposed["net_pruning_pressure"]
+
+
+def test_sleep_window_receipt_and_clearance_bias(monkeypatch):
+    monkeypatch.setenv(
+        "MICROGLIA_SLEEP_WINDOW",
+        '{"enabled": true, "name": "night", "start_hour": 23, "end_hour": 7, '
+        '"activation_boost": 0.1, "net_threshold_delta": 0.04}',
+    )
+    # 02:00 local is inside 23 -> 7 wraparound. The epoch value is arbitrary;
+    # tests only need the local hour decoded by time.localtime().
+    import time
+    now = time.mktime((2026, 5, 3, 2, 0, 0, 0, 0, -1))
+
+    sleep = microglia_sleep_window_receipt(now=now)
+    row = evaluate_prune_candidate(
+        "sleep:weak_schema",
+        age_hours=120,
+        usage_count=0,
+        recent_reward_mean=-0.4,
+        recent_regret=0.5,
+        wm_contradiction_pe=0.8,
+        root=None,
+        write_ledger=False,
+        now=now,
+    )
+
+    assert sleep["sleep_window_active"] is True
+    assert row["sleep_window_active"] is True
+    assert row["sleep_window_name"] == "night"
+    assert "sleep_window_clearance_bias" in row["reasons"]
+    assert row["clearance_net_threshold"] < 0.55

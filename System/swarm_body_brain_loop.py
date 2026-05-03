@@ -1155,7 +1155,15 @@ class SwarmPhysiology:
                             # Two-signal inhibition (Griciuc 2013 CD33)
                             pruning_conservatism=float(_tom_receipt.get("pruning_conservatism", 0.0) or 0.0),
                             clamp_level=_clamp_lv,
-                            na_level=float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
+                            na_level=float(
+                                _lc_na_receipt.get(
+                                    "na_level_efference_boosted",
+                                    _lc_na_receipt.get(
+                                        "na_level_tom_boosted",
+                                        _lc_na_receipt.get("na_level", 0.5),
+                                    ),
+                                ) or 0.5
+                            ),
                             valence=float(_valence_receipt.get("valence", 0.0) or 0.0),
                             # Rich fractalkine CX3CL1 inputs (\u00a710.14.25)
                             stability_dwell_score=_dwell_score,

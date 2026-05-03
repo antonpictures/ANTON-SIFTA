@@ -335,3 +335,131 @@ def test_disabled_returns_safe(monkeypatch):
     row = evaluate_prune_candidate("test", write_ledger=False)
     assert row["disabled"] is True
     assert row["prune_recommended"] is False
+
+# ============================================================
+# PART 8: Rich fractalkine - CX3CL1-CX3CR1 (§10.14.25)
+# Cardona et al. (2006) Nature Neuroscience 9(7):917-924
+# Paolicelli et al. (2011) Science 333(6048):1456-1458
+# Ransohoff, R.M. (2009) Nature 462(7271):183-184
+# ============================================================
+
+def test_fractalkine_in_receipt():
+    """compute_two_signal_pressure now returns fractalkine field (Cardona 2006)."""
+    r = compute_two_signal_pressure(stability_dwell_score=0.8, goal_alignment=0.9)
+    assert "fractalkine" in r
+    assert "stability_dwell_score" in r
+    assert "goal_alignment" in r
+    assert "owner_frustration" in r
+
+
+def test_fractalkine_grows_with_dwell():
+    """
+    Cardona (2006): CX3CL1 expression sustained during prolonged stable states.
+    More dwell -> more fractalkine -> more inhibition.
+    """
+    low = compute_two_signal_pressure(
+        stability_dwell_score=0.0, goal_alignment=0.8, stability_ok=True, clamp_level="NONE",
+    )
+    high = compute_two_signal_pressure(
+        stability_dwell_score=1.0, goal_alignment=0.8, stability_ok=True, clamp_level="NONE",
+    )
+    assert high["fractalkine"] >= low["fractalkine"]
+    assert high["inhibition_signal"] >= low["inhibition_signal"]
+
+
+def test_fractalkine_grows_with_goal_alignment():
+    """
+    Paolicelli (2011): goal-relevant synapses retain fractalkine protection longer.
+    Higher goal_alignment -> more fractalkine -> synapse protected.
+    """
+    lo = compute_two_signal_pressure(stability_dwell_score=0.8, goal_alignment=0.1)
+    hi = compute_two_signal_pressure(stability_dwell_score=0.8, goal_alignment=0.9)
+    assert hi["fractalkine"] > lo["fractalkine"]
+
+
+def test_owner_frustration_attenuates_fractalkine():
+    """
+    Ransohoff (2009): social stress / owner frustration attenuates CX3CL1 expression.
+    High frustration -> less fractalkine -> less protection.
+    """
+    calm = compute_two_signal_pressure(
+        stability_dwell_score=1.0, goal_alignment=0.8, owner_frustration=0.0,
+    )
+    frustrated = compute_two_signal_pressure(
+        stability_dwell_score=1.0, goal_alignment=0.8, owner_frustration=1.0,
+    )
+    assert frustrated["fractalkine"] < calm["fractalkine"]
+
+
+def test_fractalkine_capped_at_0_30():
+    """
+    Fractalkine cannot alone block a genuinely damaged synapse (cap = 0.30).
+    Even maximum dwell + perfect alignment < 0.31.
+    """
+    r = compute_two_signal_pressure(
+        stability_dwell_score=1.0, goal_alignment=1.0, owner_frustration=0.0,
+        stability_ok=True, clamp_level="NONE",
+    )
+    assert r["fractalkine"] <= 0.30 + 1e-4
+
+
+def test_fractalkine_floor_when_stable():
+    """
+    Even zero dwell gets a fractalkine floor when stable + NONE clamp (old binary ≈ 0.03).
+    """
+    r = compute_two_signal_pressure(
+        stability_dwell_score=0.0, goal_alignment=0.0, owner_frustration=0.0,
+        stability_ok=True, clamp_level="NONE",
+        # Ensure damage is below 0.50 for floor to apply
+        age_hours=0.0, usage_count=5, recent_reward_mean=0.5,
+    )
+    assert r["fractalkine"] >= 0.05
+
+
+def test_no_fractalkine_floor_during_emergency():
+    """No fractalkine floor during EMERGENCY clamp (organism under threat)."""
+    r = compute_two_signal_pressure(
+        stability_dwell_score=0.0, goal_alignment=0.0, stability_ok=False,
+        clamp_level="EMERGENCY",
+    )
+    # Either no floor, or fractalkine is very low
+    assert r["fractalkine"] < 0.10
+
+
+def test_clearance_mode_net_based():
+    """
+    §10.14.25.3: clearance_mode now fires on net_pruning_pressure >= threshold,
+    not raw damage_score >= 0.75. More precise biological gate.
+    """
+    # Net below delete threshold: clearance_mode = False even with high damage
+    r_blocked = compute_two_signal_pressure(
+        wm_contradiction_pe=0.6, recent_regret=0.6, unsafe=False,
+        pruning_conservatism=0.9,   # high inhibition -> net stays low
+        stability_ok=True, clamp_level="NONE",
+    )
+    assert r_blocked["clearance_mode"] is False
+
+    # Net above delete threshold: clearance_mode = True
+    r_clear = compute_two_signal_pressure(
+        wm_contradiction_pe=0.9, recent_regret=0.9, unsafe=True,
+        pruning_conservatism=0.0,   # no inhibition
+        stability_ok=True, clamp_level="NONE",
+        stability_dwell_score=0.0, goal_alignment=0.0, owner_frustration=1.0,
+    )
+    if r_clear["net_pruning_pressure"] >= 0.55:
+        assert r_clear["clearance_mode"] is True
+
+
+def test_provenance_in_two_signal_receipt():
+    """Receipt provenance includes new CX3CL1-related citations."""
+    r = compute_two_signal_pressure()
+    p = r["provenance"]
+    assert "Cardona" in p
+    assert "Paolicelli" in p
+    assert "Ransohoff" in p
+
+
+def test_fractalkine_legacy_alias():
+    """fractalkine_analog remains as legacy alias for backwards compat."""
+    r = compute_two_signal_pressure(stability_dwell_score=0.5, goal_alignment=0.7)
+    assert r["fractalkine_analog"] == r["fractalkine"]

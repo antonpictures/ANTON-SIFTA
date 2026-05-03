@@ -265,6 +265,8 @@ def compute_two_signal_pressure(
     stability_dwell_score: float = 0.0,   # 0–1: how long organism has been calm
     goal_alignment: float = 0.5,          # 0–1: candidate aligned with current goals
     owner_frustration: float = 0.0,       # 0–1: from ToM; frustrated owner → less fractalkine
+    sleep_window: Optional[Dict[str, Any]] = None,
+    now: Optional[float] = None,
 ) -> Dict[str, float | bool | str]:
     """
     Return the TREM2/CD33 two-signal state for one candidate.
@@ -336,6 +338,7 @@ def compute_two_signal_pressure(
     _dwell   = _clamp01(stability_dwell_score)
     _goal    = _clamp01(goal_alignment)
     _frustr  = _clamp01(owner_frustration)
+    sleep_state = dict(sleep_window or microglia_sleep_window_receipt(now=now))
     fractalkine = round(
         _clamp01(_dwell * _goal * (1.0 - _frustr * 0.5)) * 0.30,
         4,
@@ -351,11 +354,21 @@ def compute_two_signal_pressure(
         + 0.20 * _clamp01(homeostatic_pressure)
         + (0.20 if unsafe else 0.0)
     )
+    if bool(sleep_state.get("sleep_window_active")):
+        activation_signal = _clamp01(
+            activation_signal
+            + float(sleep_state.get("sleep_activation_boost", 0.0) or 0.0)
+            * (0.50 + 0.50 * _clamp01(homeostatic_pressure))
+        )
 
     # Net-based clearance (§10.14.25.3: threshold on net, not just damage_score >= 0.75)
     # Keren-Shaul (2017) DAM Phase 2 clears when activation clearly dominates inhibition
     net_prune_threshold = _env_float("MICROGLIA_NET_PRUNE_PRESSURE", 0.12)
-    net_delete_threshold = _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55)
+    net_delete_threshold = max(
+        0.30,
+        _env_float("MICROGLIA_CLEARANCE_NET_PRESSURE", _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55))
+        - float(sleep_state.get("sleep_net_threshold_delta", 0.0) or 0.0),
+    )
     clearance_mode = bool(
         (activation_signal - inhibition_signal) >= net_delete_threshold
         and stability_ok
@@ -382,8 +395,10 @@ def compute_two_signal_pressure(
         "stability_dwell_score": round(_dwell, 4),
         "goal_alignment":       round(_goal, 4),
         "owner_frustration":    round(_frustr, 4),
+        "clearance_net_threshold": round(net_delete_threshold, 4),
         "clearance_mode":       clearance_mode,
         "stress_brake_applied": stress_brake_applied,
+        **sleep_state,
         "provenance": (
             "Stevens2007Cell; Schafer2012Neuron; Jonsson2013NEJM; Griciuc2013Neuron; "
             "Keren-Shaul2017Cell; Cardona2006NatNeurosci; Paolicelli2011Science; "
@@ -439,6 +454,7 @@ def evaluate_prune_candidate(
         }
 
     conservatism = max(_clamp01(tom_pruning_conservatism), _clamp01(pruning_conservatism))
+    sleep_state = microglia_sleep_window_receipt(now=now)
     two_signal = compute_two_signal_pressure(
         age_hours=age_hours,
         usage_count=usage_count,
@@ -462,6 +478,8 @@ def evaluate_prune_candidate(
         stability_dwell_score=stability_dwell_score,
         goal_alignment=goal_alignment,
         owner_frustration=owner_frustration,
+        sleep_window=sleep_state,
+        now=now,
     )
 
     stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
@@ -471,6 +489,10 @@ def evaluate_prune_candidate(
     contradiction_pe = _env_float("MICROGLIA_CONTRADICTION_PE", 0.4)
     net_threshold = _env_float("MICROGLIA_NET_PRUNE_PRESSURE", 0.12)
     delete_threshold = _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55)
+    if bool(two_signal.get("sleep_window_active")):
+        delta = float(two_signal.get("sleep_net_threshold_delta", 0.0) or 0.0)
+        net_threshold = max(0.05, net_threshold - delta)
+        delete_threshold = max(net_threshold + 0.10, delete_threshold - delta)
 
     reasons: List[str] = []
     if unsafe:
@@ -489,6 +511,8 @@ def evaluate_prune_candidate(
         reasons.append("trem2_clearance_mode")
     if bool(two_signal["stress_brake_applied"]):
         reasons.append("cd33_stress_brake")
+    if bool(two_signal.get("sleep_window_active")):
+        reasons.append("sleep_window_clearance_bias")
     if float(two_signal["net_pruning_pressure"]) >= net_threshold:
         reasons.append("net_pruning_pressure")
 
@@ -587,6 +611,9 @@ def batch_evaluate(
                 recent_high_value_usage=float(cand.get("recent_high_value_usage", 0.0) or 0.0),
                 currently_active_in_arbiter=bool(cand.get("currently_active_in_arbiter", False)),
                 stability_ok=bool(cand.get("stability_ok", True)),
+                stability_dwell_score=float(cand.get("stability_dwell_score", 0.0) or 0.0),
+                goal_alignment=float(cand.get("goal_alignment", 0.5) or 0.5),
+                owner_frustration=float(cand.get("owner_frustration", 0.0) or 0.0),
                 clamp_level=str(cand.get("clamp_level", "NONE")),
                 na_level=float(cand.get("na_level", 0.5) or 0.5),
                 valence=float(cand.get("valence", 0.0) or 0.0),
@@ -652,7 +679,7 @@ def summary_for_prompt(*, root: Optional[Path] = None) -> str:
     if "net_pruning_pressure" in latest:
         base += (
             f" | TREM2={latest.get('damage_score')} CD33={latest.get('inhibition_signal')} "
-            f"net={latest.get('net_pruning_pressure')}"
+            f"net={latest.get('net_pruning_pressure')} fractalkine={latest.get('fractalkine_analog')}"
         )
     elif "damage_score" in latest:
         base += (
@@ -707,6 +734,10 @@ class MicrogliaSynapticPruner:
         na_caution: Optional[float] = None,
         valence: float = 0.0,
         homeostatic_pressure: float = 0.0,
+        stability_dwell_score: float = 0.0,
+        goal_alignment: float = 0.5,
+        owner_frustration: float = 0.0,
+        sleep_window: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, float | bool | str]:
         return compute_two_signal_pressure(
             age_hours=float(entry.get("age_hours", 0.0) or 0.0),
@@ -728,6 +759,10 @@ class MicrogliaSynapticPruner:
             na_level=na_level,
             na_caution=na_caution,
             valence=valence,
+            stability_dwell_score=stability_dwell_score,
+            goal_alignment=goal_alignment,
+            owner_frustration=owner_frustration,
+            sleep_window=sleep_window,
         )
 
     def decide_action(self, score: float, safety_critical: bool) -> PruneAction:
@@ -792,6 +827,9 @@ class MicrogliaSynapticPruner:
         na_caution: Optional[float] = None,
         valence: float = 0.0,
         homeostatic_pressure: float = 0.0,
+        stability_dwell_score: float = 0.0,
+        goal_alignment: float = 0.5,
+        owner_frustration: float = 0.0,
     ) -> List[Dict[str, Any]]:
         if _disabled():
             return []
@@ -810,6 +848,7 @@ class MicrogliaSynapticPruner:
             _clamp01(pruning_conservatism),
             _clamp01(tom_pruning_conservatism or 0.0),
         )
+        sleep_state = microglia_sleep_window_receipt()
 
         for entry in ledger:
             is_safety = bool(
@@ -828,6 +867,10 @@ class MicrogliaSynapticPruner:
                 na_caution=na_caution,
                 valence=valence,
                 homeostatic_pressure=homeostatic_pressure,
+                stability_dwell_score=stability_dwell_score,
+                goal_alignment=goal_alignment,
+                owner_frustration=owner_frustration,
+                sleep_window=sleep_state,
             )
             action = self.decide_action(score, is_safety)
 
@@ -869,6 +912,9 @@ class MicrogliaSynapticPruner:
                 "na_level": float(na_level),
                 "valence": float(valence),
                 "homeostatic_pressure": float(homeostatic_pressure),
+                "stability_dwell_score": round(_clamp01(stability_dwell_score), 4),
+                "goal_alignment": round(_clamp01(goal_alignment), 4),
+                "owner_frustration": round(_clamp01(owner_frustration), 4),
                 **two_signal,
             }
             append_line_locked(self.log_path, json.dumps(receipt) + "\n", encoding="utf-8")
@@ -882,6 +928,7 @@ __all__ = [
     "batch_evaluate",
     "compute_two_signal_pressure",
     "evaluate_prune_candidate",
+    "microglia_sleep_window_receipt",
     "prune_log_path",
     "summary_for_prompt",
     "tail_prune_rows",
