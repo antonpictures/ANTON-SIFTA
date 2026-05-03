@@ -1131,17 +1131,36 @@ class SwarmPhysiology:
                     except Exception:
                         pass
                     if _candidates:
+                        # Rich fractalkine (\u00a710.14.25 \u2014 Cardona 2006; Paolicelli 2011)
+                        # stability_dwell_score: 1.0 when NONE, falls for active clamps
+                        _clamp_lv = str(_clamp_receipt.get("clamp_level", "NONE"))
+                        _dwell_score = {
+                            "NONE": 1.0, "RATE_LIMIT": 0.5,
+                            "BLOCK_NEW": 0.2, "EMERGENCY": 0.0,
+                        }.get(_clamp_lv, 0.0)
+                        # goal_alignment: arbiter action confidence as proxy
+                        _goal_align = float(
+                            (action or {}).get("confidence", 0.5) or 0.5
+                        )
+                        # owner_frustration: directly from ToM receipt (Ransohoff 2009)
+                        _owner_frustr = float(
+                            (_tom_receipt.get("owner_state") or {}).get("frustration", 0.0) or 0.0
+                        )
                         _microglia.prune(
                             _candidates,
                             ledger_type="replay",
                             stability_ok=_stability_ok,
                             max_prunes_override=_clamp_overrides.get("max_prunes_override"),
                             tail_lines_read=_tail_take,
-                            # Two-signal inhibition via Cursor API (Griciuc 2013 CD33)
+                            # Two-signal inhibition (Griciuc 2013 CD33)
                             pruning_conservatism=float(_tom_receipt.get("pruning_conservatism", 0.0) or 0.0),
-                            clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
+                            clamp_level=_clamp_lv,
                             na_level=float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
                             valence=float(_valence_receipt.get("valence", 0.0) or 0.0),
+                            # Rich fractalkine CX3CL1 inputs (\u00a710.14.25)
+                            stability_dwell_score=_dwell_score,
+                            goal_alignment=_goal_align,
+                            owner_frustration=_owner_frustr,
                         )
         except Exception:
             logger.debug("Microglia pruner skipped (non-fatal)")

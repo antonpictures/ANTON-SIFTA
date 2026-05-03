@@ -27,6 +27,8 @@ Thresholds:
   MICROGLIA_CONTRADICTION_PE
   MICROGLIA_NET_PRUNE_PRESSURE
   MICROGLIA_NET_DELETE_PRESSURE
+  MICROGLIA_CLEARANCE_NET_PRESSURE
+  MICROGLIA_SLEEP_WINDOW          JSON: {"enabled": true, "start_hour": 23, "end_hour": 7}
 """
 from __future__ import annotations
 
@@ -42,6 +44,7 @@ from System.swarm_persistent_owner_history import state_dir
 
 _DISABLE_ENV = "SIFTA_MICROGLIA_DISABLE"
 _EXECUTE_ENV = "SIFTA_MICROGLIA_EXECUTE"
+_SLEEP_WINDOW_ENV = "MICROGLIA_SLEEP_WINDOW"
 MAX_PRUNES_PER_CYCLE = 10
 EVENT_LOG_NAME = "microglia_synaptic_prunes.jsonl"
 LEGACY_CLASS_LOG_NAME = "microglia_prune.jsonl"
@@ -90,6 +93,82 @@ def _clamp01(value: Any, default: float = 0.0) -> float:
 
 def _usage_norm(usage_count: int) -> float:
     return min(1.0, max(0.0, float(usage_count) / 8.0))
+
+
+def _hour_in_window(hour: float, start_hour: float, end_hour: float) -> bool:
+    if start_hour == end_hour:
+        return True
+    if start_hour < end_hour:
+        return start_hour <= hour < end_hour
+    return hour >= start_hour or hour < end_hour
+
+
+def microglia_sleep_window_receipt(
+    *,
+    now: Optional[float] = None,
+    raw_config: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Decode MICROGLIA_SLEEP_WINDOW without side effects.
+
+    Supported JSON shapes:
+      {"enabled": true, "start_hour": 23, "end_hour": 7}
+      {"windows": [{"name": "night", "start_hour": 23, "end_hour": 7}]}
+
+    The returned dict is embedded in prune receipts so sleep-window clearance is
+    auditable instead of hidden in a wall-clock branch.
+    """
+    raw = raw_config if raw_config is not None else os.environ.get(_SLEEP_WINDOW_ENV, "").strip()
+    hour_struct = time.localtime(now or time.time())
+    current_hour = hour_struct.tm_hour + hour_struct.tm_min / 60.0
+    base: Dict[str, Any] = {
+        "sleep_window_configured": False,
+        "sleep_window_active": False,
+        "sleep_window_name": "none",
+        "sleep_current_hour": round(current_hour, 3),
+        "sleep_start_hour": None,
+        "sleep_end_hour": None,
+        "sleep_activation_boost": 0.0,
+        "sleep_net_threshold_delta": 0.0,
+    }
+    if not raw:
+        return base
+    try:
+        cfg = json.loads(raw)
+    except json.JSONDecodeError:
+        base.update({
+            "sleep_window_configured": True,
+            "sleep_window_error": "invalid_json",
+        })
+        return base
+
+    windows = cfg.get("windows") if isinstance(cfg, dict) else cfg
+    if isinstance(windows, dict):
+        windows = [windows]
+    if not isinstance(windows, list):
+        windows = [cfg] if isinstance(cfg, dict) else []
+
+    base["sleep_window_configured"] = True
+    for idx, win in enumerate(windows):
+        if not isinstance(win, dict) or win.get("enabled", True) is False:
+            continue
+        try:
+            start = float(win.get("start_hour"))
+            end = float(win.get("end_hour"))
+        except (TypeError, ValueError):
+            continue
+        if _hour_in_window(current_hour, start, end):
+            base.update({
+                "sleep_window_active": True,
+                "sleep_window_name": str(win.get("name") or f"window_{idx}"),
+                "sleep_start_hour": start,
+                "sleep_end_hour": end,
+                "sleep_activation_boost": _clamp01(win.get("activation_boost", 0.08)),
+                "sleep_net_threshold_delta": min(0.20, _clamp01(win.get("net_threshold_delta", 0.03))),
+            })
+            return base
+
+    return base
 
 
 def prune_log_path(root: Optional[Path] = None) -> Path:
@@ -179,12 +258,23 @@ def compute_two_signal_pressure(
     na_level: float = 0.5,
     na_caution: Optional[float] = None,
     valence: float = 0.0,
+    # Rich fractalkine upgrade (§10.14.25 — CX3CL1–CX3CR1 continuous signal)
+    # Cardona et al. (2006) Nature Neuroscience 9(7):917-924
+    # Paolicelli et al. (2011) Science 333(6048):1456-1458
+    # Ransohoff, R.M. (2009) Nature 462(7271):183-184
+    stability_dwell_score: float = 0.0,   # 0–1: how long organism has been calm
+    goal_alignment: float = 0.5,          # 0–1: candidate aligned with current goals
+    owner_frustration: float = 0.0,       # 0–1: from ToM; frustrated owner → less fractalkine
 ) -> Dict[str, float | bool | str]:
     """
     Return the TREM2/CD33 two-signal state for one candidate.
 
-    The output is designed for JSONL receipts and tests. It intentionally uses
-    small bounded scalars rather than hidden state.
+    v8.1 upgrade (§10.14.25): continuous fractalkine CX3CL1 signal replaces binary flag.
+    fractalkine = stability_dwell × goal_alignment × (1 − owner_frustration × 0.5)
+    This mirrors the CX3CL1–CX3CR1 'calm context' protection:
+        - dwell: sustained stability allows fractalkine expression (Cardona 2006)
+        - goal alignment: goal-relevant synapses are protected (Paolicelli 2011)
+        - owner frustration attenuates protection (Ransohoff 2009 state-dependency)
     """
     conservatism = _clamp01(
         pruning_conservatism if tom_pruning_conservatism is None else tom_pruning_conservatism
@@ -237,10 +327,23 @@ def compute_two_signal_pressure(
         ledger_type=ledger_type,
     )
 
-    # Fractalkine-like calm context protection, represented as additional
-    # inhibition only when damage is not already high.
-    fractalkine_analog = 0.20 if stability_ok and clamp_level == "NONE" and damage_score < 0.50 else 0.0
-    inhibition_signal = round(min(1.0, inhibition_signal + 0.15 * fractalkine_analog), 4)
+    # Rich CX3CL1-CX3CR1 fractalkine signal (continuous, §10.14.25)
+    # Cardona (2006): fractalkine expressed during calm/stable states, gates microglial pruning
+    # Paolicelli (2011): goal-relevant synapses retain fractalkine protection longer
+    # Ransohoff (2009): owner frustration / social stress attenuates CX3CL1 expression
+    # Formula: fractalkine = dwell × goal_align × (1 − frustration × 0.5)
+    #   capped at 0.30 so it cannot alone block a genuinely damaged synapse
+    _dwell   = _clamp01(stability_dwell_score)
+    _goal    = _clamp01(goal_alignment)
+    _frustr  = _clamp01(owner_frustration)
+    fractalkine = round(
+        _clamp01(_dwell * _goal * (1.0 - _frustr * 0.5)) * 0.30,
+        4,
+    )
+    # Fractalkine baseline: even at dwell=0, stable+no-clamp gives a small floor
+    if stability_ok and clamp_level == "NONE" and damage_score < 0.50:
+        fractalkine = round(max(fractalkine, 0.05), 4)   # floor (old binary was 0.03)
+    inhibition_signal = round(min(1.0, inhibition_signal + fractalkine), 4)
 
     activation_signal = _clamp01(
         0.60 * prune_tag
@@ -249,8 +352,12 @@ def compute_two_signal_pressure(
         + (0.20 if unsafe else 0.0)
     )
 
+    # Net-based clearance (§10.14.25.3: threshold on net, not just damage_score >= 0.75)
+    # Keren-Shaul (2017) DAM Phase 2 clears when activation clearly dominates inhibition
+    net_prune_threshold = _env_float("MICROGLIA_NET_PRUNE_PRESSURE", 0.12)
+    net_delete_threshold = _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55)
     clearance_mode = bool(
-        damage_score >= 0.75
+        (activation_signal - inhibition_signal) >= net_delete_threshold
         and stability_ok
         and clamp_level in ("NONE", "RATE_LIMIT")
         and conservatism < 0.35
@@ -260,18 +367,28 @@ def compute_two_signal_pressure(
 
     net = round(activation_signal - inhibition_signal, 4)
     return {
-        "prune_tag": round(prune_tag, 4),
-        "damage_score": round(damage_score, 4),
-        "trem2_signal": round(damage_score, 4),
-        "protection_score": round(protection, 4),
-        "inhibition_signal": round(inhibition_signal, 4),
-        "cd33_signal": round(inhibition_signal, 4),
-        "activation_signal": round(activation_signal, 4),
+        "prune_tag":            round(prune_tag, 4),
+        "damage_score":         round(damage_score, 4),
+        "trem2_signal":         round(damage_score, 4),
+        "protection_score":     round(protection, 4),
+        "inhibition_signal":    round(inhibition_signal, 4),
+        "cd33_signal":          round(inhibition_signal, 4),
+        "activation_signal":    round(activation_signal, 4),
         "net_pruning_pressure": net,
-        "net_signal": net,
-        "fractalkine_analog": round(fractalkine_analog, 4),
-        "clearance_mode": clearance_mode,
+        "net_signal":           net,
+        # Rich fractalkine fields (§10.14.25)
+        "fractalkine":          fractalkine,
+        "fractalkine_analog":   fractalkine,          # legacy alias
+        "stability_dwell_score": round(_dwell, 4),
+        "goal_alignment":       round(_goal, 4),
+        "owner_frustration":    round(_frustr, 4),
+        "clearance_mode":       clearance_mode,
         "stress_brake_applied": stress_brake_applied,
+        "provenance": (
+            "Stevens2007Cell; Schafer2012Neuron; Jonsson2013NEJM; Griciuc2013Neuron; "
+            "Keren-Shaul2017Cell; Cardona2006NatNeurosci; Paolicelli2011Science; "
+            "Ransohoff2009Nature; Tononi&Cirelli2014Neuron"
+        ),
     }
 
 
@@ -297,6 +414,10 @@ def evaluate_prune_candidate(
     clamp_level: str = "NONE",
     na_level: float = 0.5,
     valence: float = 0.0,
+    # Rich fractalkine inputs (§10.14.25 — Cardona 2006; Paolicelli 2011; Ransohoff 2009)
+    stability_dwell_score: float = 0.0,
+    goal_alignment: float = 0.5,
+    owner_frustration: float = 0.0,
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
@@ -337,6 +458,10 @@ def evaluate_prune_candidate(
         na_level=na_level,
         na_caution=na_caution,
         valence=valence,
+        # Rich fractalkine (§10.14.25)
+        stability_dwell_score=stability_dwell_score,
+        goal_alignment=goal_alignment,
+        owner_frustration=owner_frustration,
     )
 
     stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
