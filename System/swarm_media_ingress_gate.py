@@ -21,6 +21,7 @@ later named/direct question.
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 from collections import Counter
@@ -41,6 +42,23 @@ _ARCHITECT_CONTROL_UTTERANCE_RE = re.compile(
     r"^\s*(?:"
     r"process|proceed|continue|pause|resume|stop|wait|listen|hey"
     r")\s*[.!?…]?\s*$",
+    re.IGNORECASE,
+)
+_OWNER_INTENT_SIGNAL_RE = re.compile(
+    r"\b(?:"
+    r"i\s+(?:am|['’]m)\s+(?:going\s+to\s+)?(?:go\s+to\s+)?(?:sleep|nap|bed|talk(?:ing)?|speaking|back)|"
+    r"i\s+(?:want|need|said|mean|asked|feel|think|believe|care|love|hate|slept|woke|wake)|"
+    r"(?:hear|listen\s+to)\s+me|"
+    r"here\s+me|"
+    r"my\s+(?:body|voice|sleep|nap|bed|schedule|question|name)|"
+    r"we\s+(?:need|are|were|watch|watched|talk|have|should)|"
+    r"you\s+and\s+me|"
+    r"i\s+and\s+you"
+    r")\b",
+    re.IGNORECASE,
+)
+_OWNER_LOW_CONF_FRAGMENT_RE = re.compile(
+    r"\b(?:here\s+me\s+all\s+is|hear\s+me\s+alice|i\s+am\s+going\s+to\s+go\s+to\s+sleep)\b",
     re.IGNORECASE,
 )
 DIRECT_REQUEST_RE = re.compile(
@@ -316,6 +334,64 @@ def _score_from_fingerprint(acoustic_fingerprint: Mapping[str, Any] | None, key:
         return default
 
 
+def _sigmoid(x: float) -> float:
+    """Numerically stable logistic curve: 1 / (1 + e^-x)."""
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
+def _owner_speech_likelihood(
+    text: str,
+    *,
+    stt_conf: float,
+    acoustic_fingerprint: Mapping[str, Any] | None = None,
+) -> float:
+    """Estimate P(owner direct speech) while ambient YouTube is declared.
+
+    The declared-media flag is a prior, not a hard wall. This sigmoid lets
+    owner evidence compete with media evidence without making Alice answer the
+    TV again.
+    """
+
+    clean = " ".join(str(text or "").split())
+    if not clean:
+        return 0.0
+
+    words = _word_count(clean)
+    conf = max(0.0, min(1.0, float(stt_conf or 0.0)))
+    acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
+
+    logit = -1.35  # owner-declared YouTube is a strong ambient prior.
+    logit += (conf - 0.45) * 2.0
+
+    if _OWNER_INTENT_SIGNAL_RE.search(clean):
+        logit += 2.05
+    if _OWNER_LOW_CONF_FRAGMENT_RE.search(clean):
+        logit += 1.25
+    if re.search(r"\b(?:sleep|nap|bed|woke|wake|talking|speaking|hear\s+me|listen\s+to\s+me)\b", clean, re.IGNORECASE):
+        logit += 1.00
+    if re.search(r"\b(?:i|i['’]m|i\s+am|my|me|we)\b", clean, re.IGNORECASE):
+        logit += 0.45
+
+    if acoustic_cue == "nearfield_voice_likely":
+        logit += 1.10
+    elif acoustic_cue == "farfield_replay_likely":
+        logit -= 1.60
+
+    # Long polished narration with no explicit owner-intent signal remains media.
+    if words >= 18:
+        logit -= 0.75
+    if NARRATION_RE.search(clean):
+        logit -= 0.95
+    if re.search(r"\b(?:he|she|they|subjects?|program|oracle|matrix|universe|theory)\b", clean, re.IGNORECASE):
+        logit -= 0.35
+
+    return round(_sigmoid(logit), 3)
+
+
 def classify_spoken_ingress(
     text: str,
     *,
@@ -385,6 +461,17 @@ def classify_spoken_ingress(
                 "route": "direct",
                 "reason": "short_utterance_under_declared_ambient_tv",
                 "confidence": 0.86,
+            }
+        owner_p = _owner_speech_likelihood(
+            clean,
+            stt_conf=conf,
+            acoustic_fingerprint=acoustic_fingerprint,
+        )
+        if owner_p >= 0.68:
+            return {
+                "route": "direct",
+                "reason": "owner_speech_sigmoid_under_declared_ambient_media",
+                "confidence": owner_p,
             }
         return {
             "route": "ambient_media",
