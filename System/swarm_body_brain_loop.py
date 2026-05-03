@@ -487,6 +487,18 @@ class SwarmPhysiology:
                     dream_cycle.get("status"),
                     crystallizer_weight,
                 )
+                
+                # Event 101 Horizontal Stigmergy: Broadcast and ingest boundary engrams
+                try:
+                    from System.swarm_horizontal_stigmergy import HorizontalStigmergyEngine
+                    hs_engine = HorizontalStigmergyEngine(_STATE_DIR)
+                    exp_count = hs_engine.export_stable_skills()
+                    imp_count = hs_engine.import_foreign_engrams()
+                    if exp_count > 0 or imp_count > 0:
+                        logger.info(f"Horizontal Stigmergy: {exp_count} exported, {imp_count} imported")
+                except Exception:
+                    logger.exception("Horizontal Stigmergy failed")
+
             except Exception:
                 logger.exception("Dream consolidation failed; preserving raw body-brain ledger.")
             logger.info(f"Sleep enforced by metabolism. Resting {rest_sec}s.")
@@ -727,7 +739,49 @@ class SwarmPhysiology:
             except Exception:
                 logger.exception("Observability stamp skipped (non-fatal)")
 
-        # 8. Sleep / Recovery (pass crystallizer_weight from homeostatic frame)
+        # 8. Astrocyte Glial Modulation (Event 135) — scale LR/ε/budget from surprise
+        try:
+            from System.swarm_astrocyte_glial_modulator import AstrocyteGlialModulator
+            _astrocyte = AstrocyteGlialModulator()
+            _surprise = float(mem_row.get("td_value", 0.0) or 0.0)
+            _compute_spent = float(mem_row.get("result", {}).get("energy_used", 0.05) or 0.05) * 1000
+            _astrocyte.observe_global_state(new_surprise=abs(1.0 - _surprise), compute_expended=_compute_spent)
+        except Exception:
+            logger.debug("Astrocyte modulation skipped (non-fatal)")
+
+        # 8b. Microglia Synaptic Pruner (Event 137) — controlled forgetting gate
+        # Only prunes if stability_ok (non-critical metabolic mode).
+        try:
+            from System.swarm_microglia_synaptic_pruner import MicrogliaSynapticPruner
+            _stability_ok = not danger.get("is_critical", False)
+            if _stability_ok:
+                _microglia = MicrogliaSynapticPruner()
+                # Collect stale candidate rows from body_brain_memory
+                _bbm_path = _STATE_DIR / "body_brain_memory.jsonl"
+                if _bbm_path.exists():
+                    import time as _time
+                    _now = _time.time()
+                    _candidates = []
+                    try:
+                        _lines = _bbm_path.read_text(errors="ignore").strip().splitlines()
+                        for _l in _lines[-200:]:  # only examine last 200 ticks
+                            try:
+                                _r = json.loads(_l)
+                                _age_h = (_now - float(_r.get("ts", _now))) / 3600.0
+                                _r["age_hours"] = _age_h
+                                _r["usage_count"] = 1  # body-brain rows are used once
+                                _r["recent_reward_mean"] = float(_r.get("td_value", 0.0) or 0.0)
+                                _candidates.append(_r)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    if _candidates:
+                        _microglia.prune(_candidates, ledger_type="replay", stability_ok=_stability_ok)
+        except Exception:
+            logger.debug("Microglia pruner skipped (non-fatal)")
+
+        # 9. Sleep / Recovery (pass crystallizer_weight from homeostatic frame)
         crystallizer_weight = (
             homeostatic_frame.crystallizer_weight
             if homeostatic_frame is not None else 1.0

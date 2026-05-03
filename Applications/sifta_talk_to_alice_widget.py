@@ -1533,6 +1533,44 @@ def _current_system_prompt(
     except Exception:
         pass
 
+    # ── AGI-Class Generalization Organs (Events 133, 136, 137, 138) ──────────
+    try:
+        from System.swarm_active_inference_world_model import summary_for_prompt as _wm_summary
+        _wm = _wm_summary().strip()
+        if _wm:
+            parts.append(_wm)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_temporal_self_model import TemporalSelfModel as _TSM
+        _tsm_summary = _TSM().get_identity_summary()
+        if _tsm_summary.get("boot_id"):
+            parts.append(
+                f"TEMPORAL SELF-MODEL (Event 136 — Drescher schema):\n"
+                f"- Boot #{_tsm_summary['boot_id']} | "
+                f"schemas known: {_tsm_summary['known_schemas']} | "
+                f"mean self-PE: {_tsm_summary['mean_self_pe']}"
+            )
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_microglia_synaptic_pruner import summary_for_prompt as _microglia_summary
+        _mg = _microglia_summary().strip()
+        if _mg:
+            parts.append(_mg)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_causal_intervention_logger import CausalInterventionLogger as _CIL
+        _cil_summary = _CIL().summary_for_prompt().strip()
+        if _cil_summary:
+            parts.append(_cil_summary)
+    except Exception:
+        pass
+
     parts.append(minimal_runtime_contract())
     parts.append(_wall_clock_grounding_block())
     parts.append(
@@ -4233,6 +4271,32 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         self._send_btn.clicked.connect(self._submit_text_input)
         text_row.addWidget(self._send_btn)
+
+        # ── Event 125: Structured Dopamine Critic Buttons ─────────────────
+        self._btn_pos = QPushButton("👍")
+        self._btn_pos.setToolTip("Structured reward (+1) to the critic loop.")
+        self._btn_pos.setMinimumHeight(40)
+        self._btn_pos.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_pos.setStyleSheet(
+            "QPushButton { background: rgb(35,80,45); color: rgb(200,255,200); "
+            "font-weight: 700; border-radius: 8px; padding: 0 10px; }"
+            "QPushButton:hover { background: rgb(45,100,55); }"
+        )
+        self._btn_pos.clicked.connect(lambda: self._send_structured_reward(1.0, "👍"))
+        text_row.addWidget(self._btn_pos)
+
+        self._btn_neg = QPushButton("👎")
+        self._btn_neg.setToolTip("Structured punishment (-1) to the critic loop.")
+        self._btn_neg.setMinimumHeight(40)
+        self._btn_neg.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_neg.setStyleSheet(
+            "QPushButton { background: rgb(90,30,40); color: rgb(255,200,200); "
+            "font-weight: 700; border-radius: 8px; padding: 0 10px; }"
+            "QPushButton:hover { background: rgb(110,40,50); }"
+        )
+        self._btn_neg.clicked.connect(lambda: self._send_structured_reward(-1.0, "👎"))
+        text_row.addWidget(self._btn_neg)
+
         layout.addLayout(text_row)
 
         # ── Bottom row: status pill + level meter ──────────────────────────
@@ -4331,6 +4395,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._pending_image_path = path
             self._attach_btn.setStyleSheet("QPushButton { background: rgb(0, 150, 100); color: white; font-weight: 700; border-radius: 8px; padding: 0 18px; }")
             self._text_input.setFocus()
+
+    def _send_structured_reward(self, score: float, marker: str) -> None:
+        try:
+            prior_alice = ""
+            for turn in reversed(self._history):
+                if turn.get("role") == "assistant":
+                    prior_alice = str(turn.get("content") or "")
+                    break
+            from System.dopamine_reward_loop import process_architect_reaction
+            process_architect_reaction(f"[{marker} STRUCTURED FEEDBACK]", alice_preceding_text=prior_alice, structured_score=score)
+            self._side.appendPlainText(f"\n[CRITIC] Sent structured outcome: {score:+.1f}")
+            if self.window():
+                QApplication.alert(self.window(), 0)
+        except Exception as e:
+            self._side.appendPlainText(f"\n[CRITIC] Failed to send structured feedback: {e}")
 
     def _submit_text_input(self) -> None:
         text = self._text_input.text().strip()
