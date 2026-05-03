@@ -186,7 +186,9 @@ _ARCHITECT_SELF_MARKER_RE = re.compile(
 _DIRECTED_SPEECH_RE = re.compile(
     r"\b(?:"
     r"(?:do|did|can|could|would|will|are|should)\s+you"
-    r"[^.!?\n]{0,90}\b(?:watch|see|hear|listen|understand|remember|process)\b|"
+    r"[^.!?\n]{0,90}\b(?:watch|see|hear|listen|understand|remember|process|"
+    r"tell|distinguish|differentiate|detect|recognize|separate)\b|"
+    r"(?:can|could|do|did)\s+you[^.!?\n]{0,90}\bmake\s+(?:the\s+)?difference\b|"
     r"(?:youtube|video|movie|screen)[^.!?\n]{0,90}\btogether\b|"
     r"tell\s+me|summari[sz]e|process\s+(?:this|that|the)"
     r")\b",
