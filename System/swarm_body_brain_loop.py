@@ -511,6 +511,26 @@ class SwarmPhysiology:
         
         # 0. Spacetime / Circadian Context
         now_state = build_now_state()
+        causal_probe_tick: Optional[int] = None
+        causal_probe_reverts_applied = 0
+        try:
+            from System.swarm_active_causal_prober import (
+                advance_runtime_tick as _advance_causal_probe_tick,
+                apply_pending_reverts as _apply_causal_probe_reverts,
+            )
+
+            causal_probe_tick = _advance_causal_probe_tick(root=_STATE_DIR)
+            causal_probe_reverts_applied = _apply_causal_probe_reverts(
+                current_tick=causal_probe_tick,
+                root=_STATE_DIR,
+            )
+            if causal_probe_reverts_applied:
+                logger.info(
+                    "[Event139] Applied %s pending causal probe reverts",
+                    causal_probe_reverts_applied,
+                )
+        except Exception:
+            logger.debug("Active causal prober revert sweep skipped (non-fatal)")
 
         # 0b. Event 110 — Reset Recovery Immunity (post-reset wound scan)
         reset_recovery: Optional[Dict[str, Any]] = None
@@ -665,6 +685,11 @@ class SwarmPhysiology:
 
         # 7. Memory Consolidation
         memory_extra: Dict[str, Any] = {}
+        if causal_probe_tick is not None:
+            memory_extra.update({
+                "causal_probe_tick": causal_probe_tick,
+                "causal_probe_reverts_applied": causal_probe_reverts_applied,
+            })
         if homeostatic_frame is not None:
             memory_extra.update({
                 "homeostasis_regime":     homeostatic_frame.regime,
@@ -805,7 +830,7 @@ class SwarmPhysiology:
                 abs(1.0 - float(mem_row.get("td_value", 0.0) or 0.0)),
             )
             _causal_probe_receipt = propose_and_execute_runtime_intervention(
-                tick_id=str(mem_row.get("tick_id") or ""),
+                tick_id=causal_probe_tick if causal_probe_tick is not None else str(mem_row.get("tick_id") or ""),
                 current_uncertainty=min(1.0, max(0.0, _uncertainty)),
                 current_clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
                 root=_STATE_DIR,

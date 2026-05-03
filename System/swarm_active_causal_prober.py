@@ -29,7 +29,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     from System.swarm_persistent_owner_history import state_dir
@@ -38,7 +38,12 @@ except ImportError:
         return Path(root) if root else Path(".sifta_state")
 
 from System.swarm_causal_intervention_logger import CausalInterventionLogger
-from System.jsonl_file_lock import read_text_locked, rewrite_text_locked
+from System.jsonl_file_lock import (
+    append_line_locked,
+    read_text_locked,
+    read_write_json_locked,
+    rewrite_text_locked,
+)
 
 _DISABLE_ENV = "SIFTA_CAUSAL_PROBE_DISABLE"
 _EXECUTE_ENV  = "SIFTA_CAUSAL_PROBE_EXECUTE"   # legacy override (kept for compat)
@@ -50,6 +55,32 @@ _PROBE_TARGETS = [
     "replay_priority_lr",    # adjusts replay sampling temperature
     "wm_epistemic_weight",   # weights epistemic vs pragmatic free energy
 ]
+
+_PENDING_REVERTS_NAME = "causal_probe_pending_reverts.jsonl"
+_REVERT_LOG_NAME = "causal_probe_revert_log.jsonl"
+_TICK_COUNTER_NAME = "causal_probe_tick_counter.json"
+
+
+def _coerce_tick(value: Any) -> int:
+    """Return a stable integer tick; nonnumeric ids fall back to wall-clock seconds."""
+    tick = _as_int_tick(value)
+    if tick is not None:
+        return tick
+    return int(time.time())
+
+
+def _as_int_tick(value: Any) -> Optional[int]:
+    """Return integer tick only when the caller supplied a real numeric tick."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _json_dumps(row: Dict[str, Any]) -> str:
+    import json
+
+    return json.dumps(row, sort_keys=True) + "\n"
 
 
 class ActiveCausalProber:
@@ -79,8 +110,8 @@ class ActiveCausalProber:
         self._dry_run_forced: Optional[bool] = dry_run
         self._rng = rng or random.Random()
         self._logger = CausalInterventionLogger(root=root)
-        # Pending reverts: list of (revert_at_tick, path, key, original_value, kind)
-        self._pending_reverts: list = []
+        self._pending_reverts_path = self.root / _PENDING_REVERTS_NAME
+        self._revert_log_path = self.root / _REVERT_LOG_NAME
 
     def _dry_run_for(self, stability_level: str) -> bool:
         """Resolve dry_run based on stability level and env overrides."""
@@ -132,18 +163,20 @@ class ActiveCausalProber:
         dry_run = self._dry_run_for(stability_level)
         target  = self._rng.choice(_PROBE_TARGETS)
         delta   = round(self._rng.uniform(0.02, max_effect_size), 4)
+        tick_num = _coerce_tick(tick_id)
+        duration_ticks = max(1, int(duration_ticks))
 
         do_vars = {
             "target":        target,
             "delta":         delta,
             "duration_ticks": duration_ticks,
             "dry_run":       dry_run,
-            "revert_at_tick": int(tick_id) + duration_ticks if isinstance(tick_id, (int, float)) else None,
+            "revert_at_tick": tick_num + duration_ticks,
         }
 
         # Execute the bounded intervention (or simulate in dry-run)
         pre_value, post_value, observed_shift = self._execute(
-            target, delta, dry_run=dry_run, tick_id=tick_id, duration_ticks=duration_ticks
+            target, delta, dry_run=dry_run, tick_id=tick_num, duration_ticks=duration_ticks
         )
 
         effect_size       = abs(post_value - pre_value)
@@ -177,26 +210,105 @@ class ActiveCausalProber:
         Call every tick from body_brain_tick to auto-revert expired interventions.
         Returns the number of reverts applied.
         """
-        if not self._pending_reverts:
+        pending_rows = self._read_pending_reverts()
+        if not pending_rows:
             return 0
-        still_pending = []
+        still_pending: List[Dict[str, Any]] = []
         reverted = 0
-        try:
-            current = int(current_tick)
-        except (TypeError, ValueError):
+        current = _as_int_tick(current_tick)
+        if current is None:
             return 0
-        for entry in self._pending_reverts:
-            revert_at, path, key, original, kind = entry
+        for row in pending_rows:
+            try:
+                revert_at = int(row.get("revert_at_tick"))
+            except (TypeError, ValueError):
+                continue
             if current >= revert_at:
                 try:
-                    self._write_float(path, key, original, kind=f"{kind}_REVERTED")
+                    path = self._resolve_state_path(str(row.get("path") or ""))
+                    key = str(row.get("key") or "value")
+                    original = float(row.get("original_value"))
+                    source_kind = str(row.get("source_kind") or "CAUSAL_PROBE")
+                    self._write_float(path, key, original, kind=f"{source_kind}_REVERTED")
+                    log_row = {
+                        **row,
+                        "ts": time.time(),
+                        "kind": "CAUSAL_PROBE_REVERT_APPLIED",
+                        "truth_label": "CAUSAL_PROBE_REVERT_APPLIED",
+                        "status": "reverted",
+                        "applied_at_tick": current,
+                    }
+                    append_line_locked(self._revert_log_path, _json_dumps(log_row), encoding="utf-8")
                     reverted += 1
                 except Exception:
-                    pass
+                    still_pending.append(row)
             else:
-                still_pending.append(entry)
-        self._pending_reverts = still_pending
+                still_pending.append(row)
+        rewrite_text_locked(
+            self._pending_reverts_path,
+            "".join(_json_dumps(row) for row in still_pending),
+            encoding="utf-8",
+        )
         return reverted
+
+    def _read_pending_reverts(self) -> List[Dict[str, Any]]:
+        import json
+
+        rows: List[Dict[str, Any]] = []
+        raw = read_text_locked(self._pending_reverts_path, encoding="utf-8", errors="replace")
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict) and row.get("status", "pending") == "pending":
+                rows.append(row)
+        return rows
+
+    def _state_relative_path(self, path: Path) -> str:
+        resolved = path.resolve()
+        root = self.root.resolve()
+        try:
+            return str(resolved.relative_to(root))
+        except ValueError as exc:
+            raise ValueError(f"causal probe path outside state_dir: {path}") from exc
+
+    def _resolve_state_path(self, rel_path: str) -> Path:
+        rel = Path(rel_path)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise ValueError(f"unsafe causal probe revert path: {rel_path}")
+        resolved = (self.root / rel).resolve()
+        root = self.root.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(f"causal probe revert path outside state_dir: {rel_path}") from exc
+        return resolved
+
+    def _schedule_revert(
+        self,
+        *,
+        revert_at_tick: int,
+        path: Path,
+        key: str,
+        original_value: float,
+        source_kind: str,
+    ) -> None:
+        row = {
+            "ts": time.time(),
+            "kind": "CAUSAL_PROBE_PENDING_REVERT",
+            "truth_label": "CAUSAL_PROBE_PENDING_REVERT",
+            "status": "pending",
+            "revert_at_tick": int(revert_at_tick),
+            "path": self._state_relative_path(path),
+            "key": key,
+            "original_value": float(original_value),
+            "source_kind": source_kind,
+        }
+        append_line_locked(self._pending_reverts_path, _json_dumps(row), encoding="utf-8")
+        append_line_locked(self._revert_log_path, _json_dumps(row), encoding="utf-8")
 
     def _execute(
         self,
@@ -227,11 +339,13 @@ class ActiveCausalProber:
             if not dry_run:
                 self._write_float(_sd / "exploration_bias.json", "value", post,
                                   kind="CAUSAL_PROBE_EXPLORATION_BIAS")
-                self._pending_reverts.append((
-                    int(tick_id) + duration_ticks,
-                    _sd / "exploration_bias.json",
-                    "value", pre, "CAUSAL_PROBE_EXPLORATION_BIAS"
-                ))
+                self._schedule_revert(
+                    revert_at_tick=_coerce_tick(tick_id) + duration_ticks,
+                    path=_sd / "exploration_bias.json",
+                    key="value",
+                    original_value=pre,
+                    source_kind="CAUSAL_PROBE_EXPLORATION_BIAS",
+                )
             return pre, post, post - pre
 
         if target == "replay_priority_lr":
@@ -240,11 +354,13 @@ class ActiveCausalProber:
             if not dry_run:
                 self._write_float(_sd / "replay_priority_lr.json", "value", post,
                                   kind="CAUSAL_PROBE_REPLAY_LR")
-                self._pending_reverts.append((
-                    int(tick_id) + duration_ticks,
-                    _sd / "replay_priority_lr.json",
-                    "value", pre, "CAUSAL_PROBE_REPLAY_LR"
-                ))
+                self._schedule_revert(
+                    revert_at_tick=_coerce_tick(tick_id) + duration_ticks,
+                    path=_sd / "replay_priority_lr.json",
+                    key="value",
+                    original_value=pre,
+                    source_kind="CAUSAL_PROBE_REPLAY_LR",
+                )
             return pre, post, post - pre
 
         if target == "wm_epistemic_weight":
@@ -253,11 +369,13 @@ class ActiveCausalProber:
             if not dry_run:
                 self._write_float(_sd / "wm_epistemic_weight.json", "value", post,
                                   kind="CAUSAL_PROBE_WM_EPISTEMIC")
-                self._pending_reverts.append((
-                    int(tick_id) + duration_ticks,
-                    _sd / "wm_epistemic_weight.json",
-                    "value", pre, "CAUSAL_PROBE_WM_EPISTEMIC"
-                ))
+                self._schedule_revert(
+                    revert_at_tick=_coerce_tick(tick_id) + duration_ticks,
+                    path=_sd / "wm_epistemic_weight.json",
+                    key="value",
+                    original_value=pre,
+                    source_kind="CAUSAL_PROBE_WM_EPISTEMIC",
+                )
             return pre, post, post - pre
 
         return 0.0, delta, delta
@@ -294,3 +412,24 @@ def propose_and_execute_runtime_intervention(
         current_uncertainty=current_uncertainty,
         stability_level=current_clamp_level,
     )
+
+
+def advance_runtime_tick(*, root: Optional[Path] = None) -> int:
+    """Advance and return the Event139 runtime tick counter."""
+    counter_path = state_dir(root) / _TICK_COUNTER_NAME
+
+    def _update(data: Dict[str, Any]) -> Dict[str, Any]:
+        tick = (_as_int_tick(data.get("tick")) or 0) + 1
+        return {
+            "ts": time.time(),
+            "kind": "CAUSAL_PROBE_TICK_COUNTER",
+            "truth_label": "CAUSAL_PROBE_TICK_COUNTER",
+            "tick": tick,
+        }
+
+    return int(read_write_json_locked(counter_path, _update).get("tick", 0))
+
+
+def apply_pending_reverts(*, current_tick: Any, root: Optional[Path] = None) -> int:
+    """Convenience wrapper for the body-brain tick sweep."""
+    return ActiveCausalProber(root=root).apply_pending_reverts(current_tick)

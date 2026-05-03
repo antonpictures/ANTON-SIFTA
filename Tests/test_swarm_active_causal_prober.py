@@ -56,7 +56,7 @@ def test_active_causal_probe_execute_env_writes_bounded_sidecar(tmp_path, monkey
     monkeypatch.setenv("SIFTA_CAUSAL_PROBE_EXECUTE", "1")
     prober = ActiveCausalProber(root=tmp_path, rng=FixedRng())
     row = prober.propose_and_execute(
-        tick_id="tick-4",
+        tick_id=4,
         current_uncertainty=0.8,
         stability_level="NONE",
     )
@@ -66,6 +66,50 @@ def test_active_causal_probe_execute_env_writes_bounded_sidecar(tmp_path, monkey
     state = json.loads((tmp_path / "exploration_bias.json").read_text())
     assert state["value"] == 0.6
     assert state["kind"] == "CAUSAL_PROBE_EXPLORATION_BIAS"
+
+
+def test_active_causal_probe_revert_persists_across_instances(tmp_path):
+    prober = ActiveCausalProber(root=tmp_path, dry_run=False, rng=FixedRng())
+    row = prober.propose_and_execute(
+        tick_id=10,
+        current_uncertainty=0.8,
+        stability_level="NONE",
+    )
+
+    assert row is not None
+    assert row["intervention"]["do"]["revert_at_tick"] == 13
+    state = json.loads((tmp_path / "exploration_bias.json").read_text())
+    assert state["value"] == 0.6
+
+    fresh = ActiveCausalProber(root=tmp_path)
+    assert fresh.apply_pending_reverts(12) == 0
+    assert json.loads((tmp_path / "exploration_bias.json").read_text())["value"] == 0.6
+
+    assert fresh.apply_pending_reverts(13) == 1
+    restored = json.loads((tmp_path / "exploration_bias.json").read_text())
+    assert restored["value"] == 0.5
+    assert restored["kind"] == "CAUSAL_PROBE_EXPLORATION_BIAS_REVERTED"
+    assert (tmp_path / "causal_probe_pending_reverts.jsonl").read_text() == ""
+
+    log_rows = [
+        json.loads(line)
+        for line in (tmp_path / "causal_probe_revert_log.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    assert log_rows[-1]["truth_label"] == "CAUSAL_PROBE_REVERT_APPLIED"
+
+
+def test_active_causal_probe_revert_requires_numeric_tick(tmp_path):
+    prober = ActiveCausalProber(root=tmp_path, dry_run=False, rng=FixedRng())
+    prober.propose_and_execute(
+        tick_id=10,
+        current_uncertainty=0.8,
+        stability_level="NONE",
+    )
+
+    fresh = ActiveCausalProber(root=tmp_path)
+    assert fresh.apply_pending_reverts("body-tick-uuid") == 0
+    assert json.loads((tmp_path / "exploration_bias.json").read_text())["value"] == 0.6
 
 
 def test_active_causal_probe_disable_env(tmp_path, monkeypatch):
