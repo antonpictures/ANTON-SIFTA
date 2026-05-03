@@ -3897,6 +3897,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._brain_model_label.setStyleSheet("color: rgb(180,200,230); font-weight: 700;")
         bar.addWidget(self._brain_model_label)
 
+        self._primary_cortex_dropbox = QComboBox()
+        self._primary_cortex_dropbox.setObjectName("PrimaryCortexDropBox")
+        self._primary_cortex_dropbox.setMinimumWidth(230)
+        self._primary_cortex_dropbox.setToolTip(
+            "Primary cortex for Alice's next reply. Only locally installed Ollama models are selectable."
+        )
+        self._primary_cortex_dropbox.setStyleSheet(
+            "QComboBox { background: rgb(12,16,28); color: rgb(220,235,255); "
+            "border: 1px solid rgb(70,86,130); border-radius: 7px; padding: 5px 9px; "
+            "font-family: 'Menlo'; font-size: 11px; }"
+            "QComboBox:hover { border: 1px solid rgb(0,210,255); }"
+            "QComboBox::drop-down { border: 0px; width: 22px; }"
+            "QComboBox QAbstractItemView { background: rgb(10,13,22); color: rgb(225,235,255); "
+            "selection-background-color: rgb(34,80,120); }"
+        )
+        self._primary_cortex_dropbox.currentIndexChanged.connect(self._on_primary_cortex_selected)
+        self._refresh_primary_cortex_dropbox()
+        bar.addWidget(self._primary_cortex_dropbox)
+
         bar.addStretch(1)
 
         layout.addLayout(bar)
@@ -4061,11 +4080,91 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     # ── Brain / voice population ───────────────────────────────────────────
     def _current_brain_model(self) -> str:
-        """Return Alice's configured brain model without exposing a cockpit picker."""
+        """Return Alice's selected primary cortex for the next brain turn."""
+        combo = getattr(self, "_primary_cortex_dropbox", None)
+        if combo is not None:
+            try:
+                model = str(combo.currentData() or "").strip()
+                label = str(combo.currentText() or "")
+                if model and "(not installed)" not in label:
+                    return model
+            except Exception:
+                pass
         try:
             return resolve_ollama_model(app_context="talk_to_alice")
         except Exception:
             return DEFAULT_OLLAMA_MODEL
+
+    def _refresh_primary_cortex_dropbox(self) -> None:
+        combo = getattr(self, "_primary_cortex_dropbox", None)
+        if combo is None:
+            return
+        try:
+            from System.swarm_primary_cortex_switcher import primary_cortex_options
+
+            options = primary_cortex_options()
+        except Exception:
+            options = [{
+                "model": self._current_brain_model(),
+                "label": f"{self._current_brain_model()} (active)",
+                "installed": True,
+                "active": True,
+            }]
+
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            active_index = 0
+            for i, option in enumerate(options):
+                label = str(option.get("label") or option.get("model") or "unknown")
+                model = str(option.get("model") or label)
+                combo.addItem(label, model)
+                if option.get("active"):
+                    active_index = i
+                if not option.get("installed", False):
+                    try:
+                        combo.model().item(i).setEnabled(False)
+                    except Exception:
+                        pass
+            combo.setCurrentIndex(active_index)
+        finally:
+            combo.blockSignals(False)
+
+    def _on_primary_cortex_selected(self, index: int) -> None:
+        combo = getattr(self, "_primary_cortex_dropbox", None)
+        if combo is None or index < 0:
+            return
+        model = str(combo.itemData(index) or "").strip()
+        label = combo.itemText(index)
+        if not model:
+            return
+        if "(not installed)" in label:
+            self._append_system_line(
+                f"(primary cortex not installed locally: {model}; pull it in Ollama first)",
+                error=True,
+            )
+            self._refresh_primary_cortex_dropbox()
+            return
+        try:
+            from System.swarm_primary_cortex_switcher import set_primary_cortex
+
+            receipt = set_primary_cortex(model)
+            selected = str(receipt.get("selected_model") or model)
+            self._brain_model_label.setToolTip(
+                f"Primary cortex for Talk to Alice: {selected}"
+            )
+            self._append_system_line(
+                f"(primary cortex switched to {selected}; next Alice turn uses it)",
+                error=False,
+            )
+            self.set_status(f"Primary cortex: {selected}")
+            self._refresh_primary_cortex_dropbox()
+        except Exception as exc:
+            self._append_system_line(
+                f"(primary cortex switch failed for {model}: {type(exc).__name__}: {exc})",
+                error=True,
+            )
+            self._refresh_primary_cortex_dropbox()
 
     def _send_pending_whatsapp_reply(self, text: str) -> None:
         """Send Alice's cleaned reply back to a direct external WhatsApp sender."""
