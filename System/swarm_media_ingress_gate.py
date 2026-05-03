@@ -52,6 +52,16 @@ DIRECT_REQUEST_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+SELF_REFERENCE_CORRECTION_RE = re.compile(
+    r"\b(?:"
+    r"(?:it|this|that|the\s+system|the\s+text|the\s+framework|what\s+i\s+pasted)\s+"
+    r"(?:is|was|means|describes)\s+(?:you|alice)\b|"
+    r"(?:i\s+said|i\s+mean|i\s+pasted|the\s+system\s+(?:that\s+)?i\s+pasted)"
+    r"[\w\s,.'-]{0,120}\b(?:you|alice)\b|"
+    r"(?:you|alice)\s+(?:are|is)\s+(?:that|this|the\s+system|sifta)\b"
+    r")",
+    re.IGNORECASE,
+)
 MEDIA_FOCUS_RE = re.compile(
     r"\b(?:youtube|caption_status|caption_excerpt|watching this youtube|"
     r"frontmost.*youtube|video_id|the architect is physically.*watching|"
@@ -332,6 +342,8 @@ def classify_spoken_ingress(
 
     if DIRECT_ADDRESS_RE.search(clean) or DIRECT_REQUEST_RE.search(clean):
         return {"route": "direct", "reason": "direct_address_or_request", "confidence": 1.0}
+    if SELF_REFERENCE_CORRECTION_RE.search(clean):
+        return {"route": "direct", "reason": "direct_self_reference_correction", "confidence": 0.96}
 
     acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
     context = "\n".join(

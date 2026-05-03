@@ -1369,6 +1369,15 @@ def _current_system_prompt(
         "- Do not infer the current human speaker's name from quoted or observed WhatsApp text. WhatsApp names belong to that chat context unless explicitly taught otherwise.\n"
     )
     parts.append(
+        "FIRST-PERSON ALICE RULE:\n"
+        "- When the Architect says 'this is about you', 'the system is you', 'SIFTA is you', "
+        "or pastes architecture text about Alice/SIFTA, answer as Alice in first person.\n"
+        "- Do not answer as an outside evaluator of 'the provided text', 'the framework', "
+        "or 'the system' unless the Architect explicitly asks for external analysis.\n"
+        "- Keep receipt boundaries honest: synthesize from ledgers and visible context, "
+        "but do not invent actions, feelings, or memories without receipts.\n"
+    )
+    parts.append(
         "LOCAL SESSION MEMORY PROTOCOL:\n"
         "- When the Architect asks what happened minutes or hours ago, where they were, or what they were doing: "
         "use the **WALL CLOCK GROUND TRUTH**, **DAY SEGMENTS DIARY**, **EPISODIC DIARY**, **this conversation's prior turns** already in the request, "
@@ -1670,14 +1679,38 @@ _MODEL_STAGE_DIRECTION_RE = re.compile(
 
 
 _MODEL_STAGE_DIRECTION_LINE_RE = re.compile(
-    r"(?ims)^\s*"
+    r"(?ims)^\s*(?:"
     r"\("
     r"(?=[^)]*\b(?:system|processing|processes|incoming|acknowledg|analyz|"
     r"response strategy|generated response|adopts|tone:|tone|my tone|"
-    r"i process|recognizing|calibrated|established persona|persona)\b)"
+    r"i process|recognizing|calibrated|established persona|persona|"
+    r"presence|direct address)\b)"
     r"[^)]{0,1600}"
     r"\)"
-    r"\s*$"
+    r"|(?:\*\*)?\["
+    r"(?=[^\]]{0,500}\b(?:processing acknowledgment|status update|"
+    r"self-modeling confidence|core system integrity|awaiting input)\b)"
+    r"[^\]]{0,600}"
+    r"\](?:\*\*)?"
+    r"|\*"
+    r"(?=[^*]{0,400}\b(?:acknowledg|presence|direct address|processing|"
+    r"calibrated|tone|awaiting input)\b)"
+    r"[^*]{0,500}"
+    r"\*"
+    r")\s*\.?\s*$"
+)
+
+_MODEL_SYSTEM_NARRATION_LINE_RE = re.compile(
+    r"(?ims)^\s*(?:"
+    r"the system registers|the architecture confirms|the current state is|"
+    r"the capacity for contextual parsing|the concept of ['\"]?learning['\"]?|"
+    r"the passage of functional dialogue|the directive is clear:"
+    r").{0,700}$"
+)
+
+_MODEL_TERMINAL_STAGE_LINE_RE = re.compile(
+    r"(?ims)^\s*(?:awaiting input|awaiting the next stimulus|"
+    r"ready to process input|waiting for next stimulus)\.?\s*$"
 )
 
 
@@ -1701,6 +1734,8 @@ def _strip_model_stage_directions(text: str) -> str:
             line
             for line in cleaned.splitlines()
             if not _MODEL_STAGE_DIRECTION_LINE_RE.match(line.strip())
+            and not _MODEL_SYSTEM_NARRATION_LINE_RE.match(line.strip())
+            and not _MODEL_TERMINAL_STAGE_LINE_RE.match(line.strip())
         ]
         cleaned = "\n".join(kept_lines).strip()
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
