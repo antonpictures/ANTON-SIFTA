@@ -46,7 +46,6 @@ PREFERRED_PRIMARY_CORTICES: tuple[str, ...] = (
     "gemma4:26b",
     "gemma3:27b",
     "qwen3.5:9b",
-    CANONICAL_OLLAMA_FALLBACK,
 )
 
 

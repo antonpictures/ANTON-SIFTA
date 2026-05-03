@@ -10,9 +10,11 @@ Architect policy (2026-04-30):
     won tournament 408/459 but produced degenerate output in production
     ("That's true" loop). Archived for tournament re-runs, not live default.
     Fix planned for v2: rank 16, dropout 0.1, DPO pass.
-  - **Ollama fallback:** `qwen3.5:2b` when Gemma4 is unavailable or a helper
-    app needs a cheap local model. The retired `sifta-alice-qwen35` tag is not
-    part of the live M5 install.
+  - **Reflex fallback:** `sifta-classifier-c1:latest` for fast local
+    classifier/reflex work such as lysosome, truth duel, and RLHF gates.
+    This is not a primary cortex; it should not be selected as Alice's voice.
+    `qwen3.5:2b` remains installed as a legacy/manual probe, not the canonical
+    reflex path.
   - **Other models:** use for stigmergic testing, probes, or per-app tuning — never pretend
     one node's API is another node's fingerprint; routing goes through `inference_router`.
 
@@ -35,7 +37,9 @@ ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
 # Canonical Ollama models.
 CANONICAL_OLLAMA_DEFAULT = "sifta-gemma4-alice"
-CANONICAL_OLLAMA_FALLBACK = "qwen3.5:2b"
+# AG31: Dual-Process Architecture (Event 122). Gemma is the multimodal sovereign cortex.
+# Bonsai 8B (classifier-c1) is the autonomic spinal reflex layer (Lysosome, RLHF).
+CANONICAL_OLLAMA_FALLBACK = "sifta-classifier-c1:latest"
 
 # Primary default — Ollama Gemma4. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(

@@ -185,7 +185,7 @@ def _resolve_rewrite_model() -> str:
         from System.sifta_inference_defaults import resolve_ollama_model
         return resolve_ollama_model(app_context="lysosome")
     except Exception:
-        return "qwen3.5:2b"
+        return "sifta-classifier-c1:latest"
 
 
 class SwarmLysosome:
