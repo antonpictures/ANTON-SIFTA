@@ -426,7 +426,7 @@ def test_sifta_math_equivalence():
     assert tme["net_immune_pressure"]  > 0.0
 
     # Both are bounded [0,1] activation and inhibition
-    assert 0.0 <= syn["activation_signal"] <= 1.0
+    assert 0.0 <= syn["activation_signal"] <= 1.45
     assert 0.0 <= tme["activation_signal"] <= 1.0
     assert 0.0 <= syn["inhibition_signal"] <= 1.0
     assert 0.0 <= tme["inhibition_signal"] <= 1.0

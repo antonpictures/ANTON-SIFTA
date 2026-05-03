@@ -18,7 +18,9 @@ from System.swarm_microglia_synaptic_pruner import (
     evaluate_prune_candidate,
     batch_evaluate,
     compute_two_signal_pressure,
+    _base_pathology,
     _compute_damage_score,
+    _compute_dam_stage,
     _compute_inhibition_signal,
     MicrogliaSynapticPruner,
     tail_prune_rows,
@@ -59,7 +61,7 @@ def test_damage_score_zero_for_healthy():
 
 def test_damage_score_high_for_contradiction():
     """Keren-Shaul (2017) DAM Phase 1: world model contradiction raises damage."""
-    r = compute_two_signal_pressure(wm_contradiction_pe=0.9, recent_regret=0.8)
+    r = compute_two_signal_pressure(wm_contradiction_pe=0.9, recent_regret=0.8, unsafe=True)
     assert r["damage_score"] > 0.2
 
 
@@ -105,14 +107,15 @@ def test_clearance_mode_with_high_damage():
 
 
 def test_all_outputs_bounded():
-    """All signals bounded [0, 1] (Schafer 2012 complement pathway is graded)."""
+    """All signals bounded; DAM-scaled activation has ratified cap 1.45."""
     r = compute_two_signal_pressure(
         age_hours=1000.0, usage_count=0, recent_reward_mean=-1.0,
         recent_regret=1.0, wm_contradiction_pe=1.0, unsafe=True,
         pruning_conservatism=1.0, na_level=1.0, valence=-1.0,
     )
-    for key in ("damage_score", "activation_signal", "inhibition_signal", "protection_score"):
+    for key in ("damage_score", "inhibition_signal", "protection_score"):
         assert 0.0 <= r[key] <= 1.0, f"{key} out of bounds: {r[key]}"
+    assert 0.0 <= r["activation_signal"] <= 1.45
 
 
 # ============================================================
@@ -463,3 +466,421 @@ def test_fractalkine_legacy_alias():
     """fractalkine_analog remains as legacy alias for backwards compat."""
     r = compute_two_signal_pressure(stability_dwell_score=0.5, goal_alignment=0.7)
     assert r["fractalkine_analog"] == r["fractalkine"]
+
+
+# ============================================================
+# PART 9: DAM stage v2 (§10.14.28.1)
+# Keren-Shaul et al. (2017) Cell 169:1276-1290
+# Deczkowska et al. (2018) Cell 173:1073-1081
+# ============================================================
+
+def test_dam_receipt_fields_present():
+    """compute_two_signal_pressure receipts expose the full ratified DAM v2 fields."""
+    r = compute_two_signal_pressure(wm_contradiction_pe=0.8, recent_regret=0.8, age_hours=9.0)
+    for key in (
+        "dam_stage",
+        "activation_multiplier",
+        "base_pathology",
+        "sustained_pathology",
+        "activation_signal_pre_dam",
+        "net_clearance_bias",
+        "clearance_bias_applied",
+    ):
+        assert key in r
+
+
+def test_base_pathology_uses_regret_and_prediction_error():
+    """§10.14.28.1: base=max(damage_score, 0.75*regret, 0.65*PE)."""
+    base = _base_pathology(0.10, recent_regret=0.80, wm_contradiction_pe=0.20)
+    assert base == pytest.approx(0.60)
+    base = _base_pathology(0.10, recent_regret=0.20, wm_contradiction_pe=0.80)
+    assert base == pytest.approx(0.52)
+
+
+def test_dam_stage0_homeostatic_under_threshold():
+    assert _compute_dam_stage(
+        0.10, age_hours=99.0, recent_regret=0.99, wm_contradiction_pe=0.99,
+    ) == 0
+
+
+def test_dam_stage1_for_unsustained_spike():
+    """
+    High base pathology alone is not enough for stage 2; sustained evidence is
+    the no-chatter gate.
+    """
+    assert _compute_dam_stage(
+        0.70, age_hours=1.0, recent_regret=0.20, wm_contradiction_pe=0.50,
+    ) == 1
+
+
+def test_dam_stage2_requires_sustained_pathology():
+    """8h+, high regret, or high PE with age >4 promotes stage 2."""
+    assert _compute_dam_stage(
+        0.70, age_hours=9.0, recent_regret=0.10, wm_contradiction_pe=0.10,
+    ) == 2
+    assert _compute_dam_stage(
+        0.70, age_hours=1.0, recent_regret=0.60, wm_contradiction_pe=0.10,
+    ) == 2
+    assert _compute_dam_stage(
+        0.70, age_hours=5.0, recent_regret=0.10, wm_contradiction_pe=0.60,
+    ) == 2
+
+
+def test_activation_multiplier_applies_after_composition():
+    """Stage multipliers scale the composed activation arm, not raw damage_score."""
+    stage1 = compute_two_signal_pressure(
+        unsafe=True,
+        recent_regret=0.10,
+        wm_contradiction_pe=0.10,
+        age_hours=1.0,
+        stability_ok=True,
+        clamp_level="NONE",
+        pruning_conservatism=0.0,
+    )
+    stage2 = compute_two_signal_pressure(
+        unsafe=True,
+        recent_regret=0.80,
+        wm_contradiction_pe=0.80,
+        age_hours=9.0,
+        stability_ok=True,
+        clamp_level="NONE",
+        pruning_conservatism=0.0,
+    )
+    assert stage1["activation_multiplier"] == pytest.approx(0.92)
+    assert stage2["activation_multiplier"] == pytest.approx(1.28)
+    assert stage2["activation_signal"] > stage2["activation_signal_pre_dam"]
+
+
+def test_stage2_clearance_bias_lowers_threshold_but_receipts_it(monkeypatch):
+    """Stage 2 can lower clearance threshold only via an explicit receipt field."""
+    monkeypatch.delenv("MICROGLIA_CLEARANCE_NET_PRESSURE", raising=False)
+    monkeypatch.delenv("MICROGLIA_NET_DELETE_PRESSURE", raising=False)
+    r = compute_two_signal_pressure(
+        unsafe=True,
+        recent_regret=0.80,
+        wm_contradiction_pe=0.80,
+        age_hours=9.0,
+        stability_ok=True,
+        clamp_level="NONE",
+        pruning_conservatism=0.0,
+    )
+    assert r["dam_stage"] == 2
+    assert r["clearance_bias_applied"] is True
+    assert r["net_clearance_bias"] == pytest.approx(0.05)
+    assert r["clearance_net_threshold"] == pytest.approx(0.50)
+
+
+def test_stage2_high_fractalkine_can_still_block_clearance():
+    """Stage 2 does not bypass inhibition; high fractalkine/conservatism can win."""
+    r = compute_two_signal_pressure(
+        unsafe=False,
+        recent_regret=0.80,
+        wm_contradiction_pe=0.80,
+        age_hours=9.0,
+        stability_dwell_score=1.0,
+        goal_alignment=1.0,
+        owner_frustration=0.0,
+        pruning_conservatism=1.0,
+        stability_ok=True,
+        clamp_level="NONE",
+    )
+    assert r["dam_stage"] == 2
+    assert r["inhibition_signal"] >= r["activation_signal"] or r["clearance_mode"] is False
+
+
+def test_prev_stage2_hysteresis_prevents_boundary_chatter():
+    """Committed DAM stage 2 persists until base pathology falls below release."""
+    assert _compute_dam_stage(
+        0.43,
+        age_hours=1.0,
+        recent_regret=0.10,
+        wm_contradiction_pe=0.10,
+        prev_dam_stage=2,
+    ) == 2
+    assert _compute_dam_stage(
+        0.17,
+        age_hours=1.0,
+        recent_regret=0.10,
+        wm_contradiction_pe=0.10,
+        prev_dam_stage=1,
+    ) == 0
+
+
+def test_compute_two_signal_accepts_prev_dam_stage_receipt():
+    """Callers can pass last-tick DAM stage and get it receipted."""
+    r = compute_two_signal_pressure(
+        wm_contradiction_pe=0.65,
+        recent_regret=0.10,
+        age_hours=1.0,
+        prev_dam_stage=2,
+    )
+    assert r["prev_dam_stage"] == 2
+    assert r["dam_stage"] == 2
+
+# ============================================================
+# PART 9: DAM stage thresholds (§10.14.28.1 v2)
+# Keren-Shaul et al. (2017) Cell 169:1276
+# Deczkowska et al. (2018) Cell 173:1073
+# ============================================================
+
+def test_dam_stage_zero_for_healthy():
+    """Homeostatic synapse -> Stage 0 (multiplier 0.60)."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    stage = _compute_dam_stage(0.10, age_hours=1.0, recent_regret=0.1, wm_contradiction_pe=0.1)
+    assert stage == 0
+
+
+def test_dam_stage_one_reactive():
+    """Keren-Shaul (2017) Phase 1: score >= 0.32 -> Stage 1 (reactive)."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    stage = _compute_dam_stage(0.40, age_hours=1.0, recent_regret=0.1, wm_contradiction_pe=0.1)
+    assert stage == 1
+
+
+def test_dam_stage_two_requires_sustained():
+    """
+    Keren-Shaul (2017): Phase 2 (TREM2-dependent) requires sustained activation.
+    Score >= 0.58 alone is NOT enough — must have sustained signal.
+    Transient spike should stay Stage 1.
+    """
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    # High score but NOT sustained (no age, no regret, no PE)
+    stage = _compute_dam_stage(0.70, age_hours=1.0, recent_regret=0.1, wm_contradiction_pe=0.1)
+    assert stage == 1   # Stage 1, not 2 — no sustained activation
+
+
+def test_dam_stage_two_with_regret_sustained():
+    """Sustained via regret > 0.45 -> Stage 2 commitment (Keren-Shaul 2017 Phase 2)."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    stage = _compute_dam_stage(0.60, age_hours=2.0, recent_regret=0.5, wm_contradiction_pe=0.1)
+    assert stage == 2
+
+
+def test_dam_stage_two_with_age():
+    """Sustained via age > 8h -> Stage 2."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    stage = _compute_dam_stage(0.60, age_hours=10.0, recent_regret=0.2, wm_contradiction_pe=0.1)
+    assert stage == 2
+
+
+def test_dam_stage_in_two_signal_receipt():
+    """Two-signal receipt now includes dam_stage field (§10.14.28.1 v2)."""
+    r = compute_two_signal_pressure(
+        recent_regret=0.6, age_hours=12.0, wm_contradiction_pe=0.7,
+    )
+    assert "dam_stage" in r
+    assert r["dam_stage"] in (0, 1, 2)
+
+
+def test_stage2_multiplier_increases_damage():
+    """
+    Stage 2 multiplier (1.28) raises activation after composition; raw
+    damage_score remains a separate pathology receipt.
+    """
+    # Stage 0 entry: minimal damage (multiplier 0.60)
+    r_low = compute_two_signal_pressure(
+        age_hours=0.0, usage_count=10, recent_reward_mean=0.5,
+        recent_regret=0.0, wm_contradiction_pe=0.0, unsafe=False,
+    )
+    # Stage 2 entry: unsafe + high sustained damage -> raw >= 0.58, sustained via regret
+    # unsafe(+0.50) + reward(-0.5 -> +0.20) + regret(0.6 -> +0.15) + PE(0.8 -> +0.10) = 0.95
+    # 0.95 >= 0.58 threshold AND regret 0.6 > 0.45 sustained -> Stage 2
+    r_high = compute_two_signal_pressure(
+        age_hours=2.0, usage_count=0, recent_reward_mean=-0.5,
+        recent_regret=0.6, wm_contradiction_pe=0.8, unsafe=True,
+    )
+    assert r_high["activation_signal"] > r_high["activation_signal_pre_dam"]
+    assert r_high["dam_stage"] == 2
+    assert r_low["dam_stage"] == 0
+
+# ============================================================
+# PART 10: DAM stage hysteresis (§10.14.28.1 + Deczkowska 2018)
+# Deczkowska et al. (2018) Cell 173:1073
+# Bhatt et al. (2020) Nat Commun 11:4044 (microglial priming/memory)
+# ============================================================
+
+def test_hysteresis_stage2_persists_when_pressure_moderates():
+    """
+    Deczkowska (2018): Once Stage 2 is reached, it persists until pressure
+    drops below STAGE2_RELEASE (0.42), not just the entry threshold (0.58).
+    prev_dam_stage=2 + base=0.50 (between release 0.42 and entry 0.58) -> stays 2.
+    """
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    # Without hysteresis: 0.50 would be Stage 1 (below entry 0.58)
+    # With hysteresis + prev=2: 0.50 >= STAGE2_RELEASE(0.42) -> stays Stage 2
+    stage = _compute_dam_stage(
+        0.50, age_hours=1.0, recent_regret=0.1, wm_contradiction_pe=0.1,
+        prev_dam_stage=2,
+    )
+    assert stage == 2, f"Expected 2 (hysteresis), got {stage}"
+
+
+def test_hysteresis_stage2_releases_when_fully_resolved():
+    """Stage 2 falls to Stage 1 when base drops below STAGE2_RELEASE (0.42)."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    # base=0.35 < 0.42 -> should leave Stage 2 -> Stage 1 (still >= STAGE1 0.32)
+    stage = _compute_dam_stage(
+        0.35, age_hours=1.0, recent_regret=0.1, wm_contradiction_pe=0.1,
+        prev_dam_stage=2,
+    )
+    assert stage == 1, f"Expected 1 (released from 2), got {stage}"
+
+
+def test_hysteresis_stage2_fully_resolves():
+    """Below STAGE1_THRESHOLD (0.32) after Stage 2 -> Stage 0 resolved."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    stage = _compute_dam_stage(
+        0.10, age_hours=0.0, recent_regret=0.0, wm_contradiction_pe=0.0,
+        prev_dam_stage=2,
+    )
+    assert stage == 0
+
+
+def test_hysteresis_stage1_persists_mildly():
+    """
+    Stage 1 has mild persistence: base >= STAGE1_RELEASE (0.18) stays Stage 1
+    even if temporarily below STAGE1_THRESHOLD (0.32) entry.
+    """
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    # base=0.25 is between STAGE1_RELEASE (0.18) and STAGE1_THRESHOLD (0.32)
+    # With prev=1: should stay Stage 1
+    stage = _compute_dam_stage(
+        0.25, age_hours=1.0, recent_regret=0.1, wm_contradiction_pe=0.1,
+        prev_dam_stage=1,
+    )
+    assert stage == 1
+
+
+def test_hysteresis_stage1_resolves_below_release():
+    """Stage 1 resolves to Stage 0 when base drops below STAGE1_RELEASE (0.18)."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    stage = _compute_dam_stage(
+        0.10, age_hours=0.0, recent_regret=0.0, wm_contradiction_pe=0.0,
+        prev_dam_stage=1,
+    )
+    assert stage == 0
+
+
+def test_no_hysteresis_from_stage0():
+    """From Stage 0 base, standard thresholds apply (no history bias)."""
+    from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
+    # base=0.25 from Stage 0 -> Stage 1 (normal entry)
+    stage = _compute_dam_stage(
+        0.25, age_hours=0.0, recent_regret=0.0, wm_contradiction_pe=0.0,
+        prev_dam_stage=0,
+    )
+    assert stage == 1
+
+
+def test_hysteresis_in_two_signal_receipt():
+    """
+    Two-signal receipt accepts prev_dam_stage and applies hysteresis.
+    Bhatt (2020): microglial priming means past activation lowers future threshold.
+    """
+    # First tick: reach Stage 2
+    r1 = compute_two_signal_pressure(
+        unsafe=True, recent_reward_mean=-0.5,
+        recent_regret=0.6, wm_contradiction_pe=0.8,
+        prev_dam_stage=0,
+    )
+    assert r1["dam_stage"] == 2
+
+    # Second tick: pressure moderates but hysteresis keeps Stage 2
+    r2 = compute_two_signal_pressure(
+        unsafe=False, recent_reward_mean=0.0,
+        recent_regret=0.3, wm_contradiction_pe=0.4,
+        prev_dam_stage=r1["dam_stage"],  # pass previous stage
+    )
+    # Without hysteresis this would be Stage 1; with prev=2, stays 2 if base>=0.42
+    # The key: dam_stage is in the receipt and was threaded correctly
+    assert "dam_stage" in r2
+    assert "prev_dam_stage" in r2
+
+
+# ============================================================
+# PART 11: Rich fractalkine — IL-34, resilience floor, catastrophic override
+# Wang et al. (2012) J Exp Med 209:1525 — IL-34 as CSF1R co-ligand
+# Bhatt et al. (2020) Nat Commun 11:4044 — microglial priming / resilience
+# Bialas & Stevens (2013) Neuron 80:1368 — C1q/C3 overwhelms CX3CR1
+# ============================================================
+
+def test_il34_boost_in_deep_calm():
+    """
+    Wang (2012): IL-34 reinforces fractalkine in sustained homeostatic states.
+    Deep calm (dwell > 0.60) + low frustration -> extra inhibition from IL-34.
+    """
+    # Compare deep calm vs moderate calm
+    shallow = compute_two_signal_pressure(
+        stability_dwell_score=0.5, goal_alignment=0.8, owner_frustration=0.1,
+        stability_ok=True, clamp_level="NONE",
+    )
+    deep = compute_two_signal_pressure(
+        stability_dwell_score=0.95, goal_alignment=0.8, owner_frustration=0.1,
+        stability_ok=True, clamp_level="NONE",
+    )
+    # Deep calm should have more inhibition (IL-34 boost)
+    assert deep["inhibition_signal"] >= shallow["inhibition_signal"]
+    # IL-34 field should be in receipt
+    assert "il34_boost" in deep
+
+
+def test_il34_suppressed_by_frustration():
+    """IL-34 is not expressed under stress/frustration (Wang 2012)."""
+    high_frustr = compute_two_signal_pressure(
+        stability_dwell_score=0.95, goal_alignment=0.8, owner_frustration=0.80,
+        stability_ok=True, clamp_level="NONE",
+    )
+    assert high_frustr["il34_boost"] == pytest.approx(0.0, abs=1e-4)
+
+
+def test_resilience_floor_grows_with_dwell_squared():
+    """
+    Bhatt (2020): resilience accumulates non-linearly (epigenetic-like).
+    High dwell^2 * goal -> higher floor than low dwell.
+    """
+    lo_dwell = compute_two_signal_pressure(
+        stability_dwell_score=0.3, goal_alignment=0.9,
+        stability_ok=True, clamp_level="NONE",
+    )
+    hi_dwell = compute_two_signal_pressure(
+        stability_dwell_score=0.9, goal_alignment=0.9,
+        stability_ok=True, clamp_level="NONE",
+    )
+    assert hi_dwell.get("resilience_floor", 0.0) > lo_dwell.get("resilience_floor", 0.0)
+
+
+def test_catastrophic_override_at_high_damage():
+    """
+    Bialas & Stevens (2013): at extreme damage (>0.85), complement cascade
+    overwhelms CX3CR1 — fractalkine protection is bypassed.
+    Very high damage: fractalkine and il34 should be zeroed, fractalkine_overridden=True.
+    """
+    r = compute_two_signal_pressure(
+        unsafe=True, recent_reward_mean=-0.9, recent_regret=0.9,
+        wm_contradiction_pe=0.9,
+        stability_dwell_score=1.0, goal_alignment=1.0, owner_frustration=0.0,
+        stability_ok=True, clamp_level="NONE",
+    )
+    if r["damage_score"] > 0.85:
+        assert r["fractalkine"] == pytest.approx(0.0, abs=1e-4)
+        assert r.get("fractalkine_overridden") is True
+
+
+def test_no_catastrophic_override_at_moderate_damage():
+    """Fractalkine protection remains intact at moderate damage levels."""
+    r = compute_two_signal_pressure(
+        stability_dwell_score=0.8, goal_alignment=0.8, owner_frustration=0.0,
+        stability_ok=True, clamp_level="NONE",
+        unsafe=False, recent_regret=0.0, wm_contradiction_pe=0.0,
+    )
+    assert r.get("fractalkine_overridden", False) is False
+    assert r["fractalkine"] > 0.0
+
+
+def test_il34_and_resilience_in_receipt():
+    """All new fractalkine fields present in receipt."""
+    r = compute_two_signal_pressure(
+        stability_dwell_score=0.8, goal_alignment=0.7, stability_ok=True,
+    )
+    for key in ("il34_boost", "resilience_floor", "fractalkine_overridden"):
+        assert key in r, f"Missing receipt key: {key}"

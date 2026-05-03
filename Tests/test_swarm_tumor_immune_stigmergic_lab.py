@@ -8,6 +8,7 @@ from System.swarm_tumor_immune_stigmergic_lab import (
     TumorImmuneState,
     assert_synthetic_contract,
     default_synthetic_state,
+    golden_tin_sim_rows,
     lab_log_path,
     remap_to_microglia_inputs,
     run_tin_tick,
@@ -16,6 +17,7 @@ from System.swarm_tumor_immune_stigmergic_lab import (
     tail_lab_rows,
     tick_state,
     two_signal_snapshot_for_state,
+    verify_tin_round_trip,
 )
 
 
@@ -115,3 +117,32 @@ def test_simulate_trajectory_records_schedule_and_summary(tmp_path):
     assert rows[2]["intervention_id"] == "toy_logic_gate_focus"
     assert "TUMOR-IMMUNE STIGMERGIC LAB" in summary
     assert "nonclinical sandbox" in summary
+
+
+def test_golden_tin_rows_are_deterministic_and_dam_complete(tmp_path):
+    rows = golden_tin_sim_rows(root=tmp_path, write_ledger=True, now=1000.0)
+    tail = tail_lab_rows(3, root=tmp_path)
+
+    assert [row["tick_id"] for row in rows] == [0, 1, 2]
+    assert [row["ts"] for row in rows] == [1000.0, 1001.0, 1002.0]
+    assert [row["intervention_id"] for row in rows] == [
+        "none",
+        "toy_cart_persistence",
+        "toy_logic_gate_focus",
+    ]
+    assert [row["trace_id"] for row in tail] == [row["trace_id"] for row in rows]
+    for row in rows:
+        two = row["two_signal_snapshot"]
+        assert "dam_stage" in two
+        assert "prev_dam_stage" in two
+        assert "activation_multiplier" in two
+        assert "base_pathology" in two
+        assert "sustained_pathology" in two
+
+
+def test_verify_tin_round_trip_rejects_missing_dam_fields():
+    rows = golden_tin_sim_rows(write_ledger=False)
+    del rows[0]["two_signal_snapshot"]["dam_stage"]
+
+    with pytest.raises(ValueError, match="missing two_signal_snapshot keys"):
+        verify_tin_round_trip(rows)

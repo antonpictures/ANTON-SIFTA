@@ -179,45 +179,123 @@ def _legacy_class_log_path(root: Optional[Path] = None) -> Path:
     return state_dir(root) / LEGACY_CLASS_LOG_NAME
 
 
-def _compute_dam_stage(
-    damage_score: float,
+STAGE1_THRESHOLD = 0.32
+STAGE2_THRESHOLD = 0.58
+
+
+def _sustained_pathology(
     *,
     age_hours: float,
     recent_regret: float,
     wm_contradiction_pe: float,
-) -> int:
+) -> bool:
     """
-    Ratified DAM stage (§10.14.28.1 v2).
-    Maps continuous damage_score + sustained-activation signals to DAM Phase 0/1/2.
+    DAM stage-2 hysteresis gate from §10.14.28.1.
 
-    Biology:
-        Keren-Shaul et al. (2017) Cell 169:1276 — DAM Phase 1 (TREM2-independent
-        homeostatic-to-reactive transition), Phase 2 (TREM2-dependent full activation).
-        Deczkowska et al. (2018) Cell 173:1073 — DAM continuum.
-
-    Thresholds (ratified v2, §10.14.28.1):
-        STAGE1_THRESHOLD = 0.32   — Phase 1 entry: reactive-but-not-committed
-        STAGE2_THRESHOLD = 0.58   — Phase 2 entry: TREM2-dependent full activation
-
-    Sustained-activation gate (prevents transient spikes from triggering Stage 2):
-        sustained = (age_hours > 8.0)
-                 OR (recent_regret > 0.45)
-                 OR (wm_contradiction_pe > 0.55 AND age_hours > 4.0)
+    Transient pathology can enter stage 1, but stage 2 requires time or repeated
+    regret/contradiction evidence. This prevents 1↔2 boundary chatter.
     """
-    STAGE1_THRESHOLD = 0.32
-    STAGE2_THRESHOLD = 0.58
-
-    sustained = (
+    sustained_window = _env_float("MICROGLIA_DAM_SUSTAINED_REGRET", 0.45)
+    return bool(
         age_hours > 8.0
-        or recent_regret > 0.45
+        or recent_regret > sustained_window
         or (wm_contradiction_pe > 0.55 and age_hours > 4.0)
     )
 
-    if damage_score >= STAGE2_THRESHOLD and sustained:
-        return 2
-    if damage_score >= STAGE1_THRESHOLD:
+
+def _base_pathology(
+    damage_score: float,
+    *,
+    recent_regret: float,
+    wm_contradiction_pe: float,
+) -> float:
+    """Ratified base pathology scalar from §10.14.28.1."""
+    return round(
+        _clamp01(
+            max(
+                _clamp01(damage_score),
+                0.75 * _clamp01(recent_regret),
+                0.65 * _clamp01(wm_contradiction_pe),
+            )
+        ),
+        4,
+    )
+
+
+def _compute_dam_stage(
+    base_pathology: float,
+    *,
+    age_hours: float,
+    recent_regret: float,
+    wm_contradiction_pe: float,
+    prev_dam_stage: int = 0,
+) -> int:
+    """
+    Ratified DAM stage with hysteresis (§10.14.28.1 v2 + hysteresis upgrade).
+
+    Biology:
+        Keren-Shaul et al. (2017) Cell 169:1276 — DAM Phase 1 (TREM2-independent
+        homeostatic-to-reactive), Phase 2 (TREM2-dependent full activation).
+        Deczkowska et al. (2018) Cell 173:1073 — DAM continuum; microglial state
+        transitions are not instantaneous. Committed states require sustained signals
+        to BOTH enter and exit (biological hysteresis, not ping-pong).
+        Bhatt et al. (2020) Nat Commun 11:4044 — microglial memory: epigenetic marks
+        from prior activation lower the re-activation threshold (priming).
+
+    Hysteresis rules (prevents 1↔2 boundary chatter):
+        ENTRY into Stage 2: base ≥ STAGE2_THRESHOLD (0.58) AND sustained
+        EXIT  from Stage 2: base must fall below STAGE2_RELEASE (0.42) — wider gap
+        EXIT  from Stage 1: base must fall below STAGE1_RELEASE (0.18) — wider gap
+
+    prev_dam_stage: stage from the previous tick (default 0 for first call).
+        Pass the `dam_stage` from the last compute_two_signal_pressure receipt
+        via body_brain_loop to enable tick-to-tick hysteresis.
+    """
+    # Hysteresis release thresholds (wider than entry — Deczkowska 2018)
+    STAGE2_RELEASE = 0.42   # must fall below here to leave Stage 2
+    STAGE1_RELEASE = 0.18   # must fall below here to leave Stage 1
+
+    base = _clamp01(base_pathology)
+
+    # Stage 2 hysteresis: committed state with memory
+    if prev_dam_stage == 2:
+        # Microglial priming: once Stage 2 was reached, it persists until
+        # pressure genuinely subsides below STAGE2_RELEASE (Deczkowska 2018)
+        if base >= STAGE2_RELEASE:
+            return 2   # stay committed
+        if base >= STAGE1_THRESHOLD:
+            return 1   # fall back to reactive
+        return 0       # fully resolved
+
+    # Stage 1 hysteresis: reactive state has mild persistence
+    if prev_dam_stage == 1:
+        if base >= STAGE1_RELEASE:
+            # If pathology still elevated, check for Stage 2 promotion
+            if base >= STAGE2_THRESHOLD and _sustained_pathology(
+                age_hours=age_hours,
+                recent_regret=recent_regret,
+                wm_contradiction_pe=wm_contradiction_pe,
+            ):
+                return 2
+            return 1   # stay reactive
+        return 0       # resolved
+
+    # Stage 0 (homeostatic): standard entry thresholds
+    if base < STAGE1_THRESHOLD:
+        return 0
+    if base < STAGE2_THRESHOLD:
         return 1
-    return 0
+    return 2 if _sustained_pathology(
+        age_hours=age_hours,
+        recent_regret=recent_regret,
+        wm_contradiction_pe=wm_contradiction_pe,
+    ) else 1
+
+
+def _dam_activation_multiplier(dam_stage: int) -> float:
+    """Activation multiplier from §10.14.28.1 v2."""
+    return {0: 0.60, 1: 0.92, 2: 1.28}.get(int(dam_stage), 0.60)
+
 
 
 def _compute_damage_score(
@@ -230,17 +308,12 @@ def _compute_damage_score(
     unsafe: bool,
 ) -> float:
     """
-    TREM2/DAM-like damage score [0, 1] — v2 with DAM-stage multipliers (§10.14.28.1).
+    TREM2/DAM-like raw damage score [0, 1].
 
-    Base score computed from damage contributors.  Then multiplied by the DAM-stage
-    factor so Stage 2 (sustained + high damage) yields more aggressive activation —
-    matching the biological commitment of TREM2-dependent DAM Phase 2 (Keren-Shaul 2017).
-
-    DAM-stage multipliers (ratified §10.14.28.1):
-        Stage 0 →  0.60   (homeostatic, minimal microglial response)
-        Stage 1 →  0.92   (reactive, sub-threshold TREM2 activation)
-        Stage 2 →  1.28   (committed, TREM2-dependent clearance mode)
-        clip     →  1.45   (maximum, avoid runaway from stacking)
+    DAM stage is intentionally computed downstream from the ratified
+    `base_pathology` scalar. Stage multipliers are applied to composed
+    activation_signal, not to raw damage_score, so receipts keep the pathology
+    arm and activation commitment separate.
     """
     stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
     low_reward  = _env_float("MICROGLIA_LOW_REWARD_MEAN", -0.1)
@@ -260,19 +333,7 @@ def _compute_damage_score(
         dmg += 0.15
     if wm_contradiction_pe >= contradiction_pe:
         dmg += 0.10
-
-    # DAM-stage multiplier (Keren-Shaul 2017 Phase 1/2; §10.14.28.1 v2)
-    dam_stage = _compute_dam_stage(
-        dmg,
-        age_hours=age_hours,
-        recent_regret=recent_regret,
-        wm_contradiction_pe=wm_contradiction_pe,
-    )
-    multiplier = {0: 0.60, 1: 0.92, 2: 1.28}[dam_stage]
-    dmg_scaled = min(1.45, dmg * multiplier)
-
-    return round(min(1.0, max(0.0, dmg_scaled)), 4)
-
+    return round(min(1.0, max(0.0, dmg)), 4)
 
 
 def _compute_inhibition_signal(
@@ -326,6 +387,7 @@ def compute_two_signal_pressure(
     stability_dwell_score: float = 0.0,   # 0–1: how long organism has been calm
     goal_alignment: float = 0.5,          # 0–1: candidate aligned with current goals
     owner_frustration: float = 0.0,       # 0–1: from ToM; frustrated owner → less fractalkine
+    prev_dam_stage: int = 0,              # optional last-tick stage for hysteresis
     sleep_window: Optional[Dict[str, Any]] = None,
     now: Optional[float] = None,
 ) -> Dict[str, float | bool | str]:
@@ -358,13 +420,24 @@ def compute_two_signal_pressure(
         wm_contradiction_pe=wm_contradiction_pe,
         unsafe=unsafe,
     )
-    # DAM stage field for receipt (Keren-Shaul 2017; §10.14.28.1 v2)
-    dam_stage = _compute_dam_stage(
+    base_pathology = _base_pathology(
         damage_score,
+        recent_regret=recent_regret,
+        wm_contradiction_pe=wm_contradiction_pe,
+    )
+    sustained_pathology = _sustained_pathology(
         age_hours=age_hours,
         recent_regret=recent_regret,
         wm_contradiction_pe=wm_contradiction_pe,
     )
+    dam_stage = _compute_dam_stage(
+        base_pathology,
+        age_hours=age_hours,
+        recent_regret=recent_regret,
+        wm_contradiction_pe=wm_contradiction_pe,
+        prev_dam_stage=prev_dam_stage,
+    )
+    activation_multiplier = _dam_activation_multiplier(dam_stage)
 
     prune_tag = _clamp01(
         0.40 * (1.0 - usage)
@@ -397,10 +470,8 @@ def compute_two_signal_pressure(
         ledger_type=ledger_type,
     )
 
-    # Rich CX3CL1-CX3CR1 fractalkine signal (continuous, §10.14.25)
-    # Cardona (2006): fractalkine expressed during calm/stable states, gates microglial pruning
-    # Paolicelli (2011): goal-relevant synapses retain fractalkine protection longer
-    # Ransohoff (2009): owner frustration / social stress attenuates CX3CL1 expression
+    # ── Rich fractalkine inhibition (§10.14.25 + §10.14.28 upgrade) ────────────
+    # CX3CL1-CX3CR1 continuous signal (Cardona 2006; Paolicelli 2011; Ransohoff 2009)
     # Formula: fractalkine = dwell × goal_align × (1 − frustration × 0.5)
     #   capped at 0.30 so it cannot alone block a genuinely damaged synapse
     _dwell   = _clamp01(stability_dwell_score)
@@ -411,30 +482,78 @@ def compute_two_signal_pressure(
         _clamp01(_dwell * _goal * (1.0 - _frustr * 0.5)) * 0.30,
         4,
     )
-    # Fractalkine baseline: even at dwell=0, stable+no-clamp gives a small floor
-    if stability_ok and clamp_level == "NONE" and damage_score < 0.50:
-        fractalkine = round(max(fractalkine, 0.05), 4)   # floor (old binary was 0.03)
-    inhibition_signal = round(min(1.0, inhibition_signal + fractalkine), 4)
 
-    activation_signal = _clamp01(
+    # ─ IL-34 co-signal (CSF1R alternative ligand; Wang et al. 2012 J Exp Med 209:1525) ─
+    # IL-34 reinforces fractalkine protection in sustained stable states.
+    # Expressed in cortex under homeostatic conditions; falls under chronic stress.
+    # Adds up to +0.04 when organism is deeply calm + low frustration.
+    il34_boost = 0.0
+    if _dwell > 0.60 and _frustr < 0.30 and stability_ok and clamp_level == "NONE":
+        il34_boost = round(min(0.04, 0.04 * (_dwell - 0.60) / 0.40), 4)
+
+    # ─ Resilience floor (Bhatt 2020 priming — NatCommun 11:4044) ──────────────
+    # Synapses that experienced long calm dwell + high goal alignment accumulate
+    # an epigenetic-like resilience floor: harder to prune even briefly.
+    # Floor scales with dwell^2 (slow accumulation, fast decay).
+    resilience_floor = 0.0
+    if stability_ok and clamp_level == "NONE" and damage_score < 0.50:
+        resilience_floor = round(
+            min(0.07, 0.07 * (_dwell ** 2) * _goal),
+            4,
+        )
+        fractalkine = round(max(fractalkine, max(0.05, resilience_floor)), 4)  # floor
+    else:
+        # Non-stable: still apply a minimum floor when safe (old binary was 0.03)
+        if stability_ok and clamp_level == "NONE" and damage_score < 0.50:
+            fractalkine = round(max(fractalkine, 0.05), 4)
+
+    # ─ Catastrophic override (Bialas & Stevens 2013 Neuron 80:1368) ────────────
+    # When complement cascade (C1q/C3) overwhelms CX3CR1 signaling,
+    # fractalkine protection is bypassed. Model: damage_score > 0.85 zeroes
+    # fractalkine + il34 (emergency debris clearance overrides 'calm' signal).
+    fractalkine_overridden = False
+    if damage_score > 0.85:
+        fractalkine = 0.0
+        il34_boost   = 0.0
+        resilience_floor = 0.0
+        fractalkine_overridden = True
+
+    inhibition_signal = round(
+        min(1.0, inhibition_signal + fractalkine + il34_boost),
+        4,
+    )
+
+    activation_signal_pre_dam = _clamp01(
         0.60 * prune_tag
         + 0.35 * damage_score
         + 0.20 * _clamp01(homeostatic_pressure)
         + (0.20 if unsafe else 0.0)
     )
     if bool(sleep_state.get("sleep_window_active")):
-        activation_signal = _clamp01(
-            activation_signal
+        activation_signal_pre_dam = _clamp01(
+            activation_signal_pre_dam
             + float(sleep_state.get("sleep_activation_boost", 0.0) or 0.0)
             * (0.50 + 0.50 * _clamp01(homeostatic_pressure))
         )
+    activation_signal = round(
+        min(1.45, max(0.0, activation_signal_pre_dam * activation_multiplier)),
+        4,
+    )
 
     # Net-based clearance (§10.14.25.3: threshold on net, not just damage_score >= 0.75)
     # Keren-Shaul (2017) DAM Phase 2 clears when activation clearly dominates inhibition
     net_prune_threshold = _env_float("MICROGLIA_NET_PRUNE_PRESSURE", 0.12)
+    raw_delete_threshold = _env_float(
+        "MICROGLIA_CLEARANCE_NET_PRESSURE",
+        _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55),
+    )
+    net_clearance_bias = 0.0
+    if dam_stage == 2 and stability_ok and clamp_level not in ("EMERGENCY",):
+        net_clearance_bias = _env_float("MICROGLIA_NET_CLEARANCE_BIAS", 0.05)
     net_delete_threshold = max(
         0.30,
-        _env_float("MICROGLIA_CLEARANCE_NET_PRESSURE", _env_float("MICROGLIA_NET_DELETE_PRESSURE", 0.55))
+        raw_delete_threshold
+        - net_clearance_bias
         - float(sleep_state.get("sleep_net_threshold_delta", 0.0) or 0.0),
     )
     clearance_mode = bool(
@@ -444,7 +563,7 @@ def compute_two_signal_pressure(
         and conservatism < 0.35
     )
     if clearance_mode:
-        activation_signal = _clamp01(activation_signal + 0.15)
+        activation_signal = round(min(1.45, activation_signal + 0.15), 4)
 
     net = round(activation_signal - inhibition_signal, 4)
     return {
@@ -452,6 +571,11 @@ def compute_two_signal_pressure(
         "damage_score":         round(damage_score, 4),
         "trem2_signal":         round(damage_score, 4),
         "dam_stage":            dam_stage,   # 0=homeostatic 1=reactive 2=committed (§10.14.28.1)
+        "prev_dam_stage":       int(prev_dam_stage),
+        "activation_multiplier": round(activation_multiplier, 4),
+        "base_pathology":       round(base_pathology, 4),
+        "sustained_pathology":  bool(sustained_pathology),
+        "activation_signal_pre_dam": round(activation_signal_pre_dam, 4),
         "protection_score":     round(protection, 4),
         "inhibition_signal":    round(inhibition_signal, 4),
         "cd33_signal":          round(inhibition_signal, 4),
@@ -465,6 +589,8 @@ def compute_two_signal_pressure(
         "goal_alignment":       round(_goal, 4),
         "owner_frustration":    round(_frustr, 4),
         "clearance_net_threshold": round(net_delete_threshold, 4),
+        "net_clearance_bias":   round(net_clearance_bias, 4),
+        "clearance_bias_applied": bool(net_clearance_bias > 0.0),
         "clearance_mode":       clearance_mode,
         "stress_brake_applied": stress_brake_applied,
         **sleep_state,
@@ -502,6 +628,7 @@ def evaluate_prune_candidate(
     stability_dwell_score: float = 0.0,
     goal_alignment: float = 0.5,
     owner_frustration: float = 0.0,
+    prev_dam_stage: int = 0,
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
@@ -547,6 +674,7 @@ def evaluate_prune_candidate(
         stability_dwell_score=stability_dwell_score,
         goal_alignment=goal_alignment,
         owner_frustration=owner_frustration,
+        prev_dam_stage=prev_dam_stage,
         sleep_window=sleep_state,
         now=now,
     )
@@ -562,6 +690,7 @@ def evaluate_prune_candidate(
         delta = float(two_signal.get("sleep_net_threshold_delta", 0.0) or 0.0)
         net_threshold = max(0.05, net_threshold - delta)
         delete_threshold = max(net_threshold + 0.10, delete_threshold - delta)
+    delete_threshold = float(two_signal.get("clearance_net_threshold", delete_threshold) or delete_threshold)
 
     reasons: List[str] = []
     if unsafe:
@@ -683,6 +812,7 @@ def batch_evaluate(
                 stability_dwell_score=float(cand.get("stability_dwell_score", 0.0) or 0.0),
                 goal_alignment=float(cand.get("goal_alignment", 0.5) or 0.5),
                 owner_frustration=float(cand.get("owner_frustration", 0.0) or 0.0),
+                prev_dam_stage=int(cand.get("prev_dam_stage", 0) or 0),
                 clamp_level=str(cand.get("clamp_level", "NONE")),
                 na_level=float(cand.get("na_level", 0.5) or 0.5),
                 valence=float(cand.get("valence", 0.0) or 0.0),
@@ -806,6 +936,7 @@ class MicrogliaSynapticPruner:
         stability_dwell_score: float = 0.0,
         goal_alignment: float = 0.5,
         owner_frustration: float = 0.0,
+        prev_dam_stage: int = 0,
         sleep_window: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, float | bool | str]:
         return compute_two_signal_pressure(
@@ -831,6 +962,7 @@ class MicrogliaSynapticPruner:
             stability_dwell_score=stability_dwell_score,
             goal_alignment=goal_alignment,
             owner_frustration=owner_frustration,
+            prev_dam_stage=prev_dam_stage,
             sleep_window=sleep_window,
         )
 
@@ -899,6 +1031,7 @@ class MicrogliaSynapticPruner:
         stability_dwell_score: float = 0.0,
         goal_alignment: float = 0.5,
         owner_frustration: float = 0.0,
+        prev_dam_stage: int = 0,
     ) -> List[Dict[str, Any]]:
         if _disabled():
             return []
@@ -939,6 +1072,7 @@ class MicrogliaSynapticPruner:
                 stability_dwell_score=stability_dwell_score,
                 goal_alignment=goal_alignment,
                 owner_frustration=owner_frustration,
+                prev_dam_stage=prev_dam_stage,
                 sleep_window=sleep_state,
             )
             action = self.decide_action(score, is_safety)

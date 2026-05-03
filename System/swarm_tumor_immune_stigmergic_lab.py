@@ -372,6 +372,73 @@ def simulate_tin_trajectory(
     return rows
 
 
+def golden_tin_sim_rows(
+    *,
+    root: Optional[Path] = None,
+    write_ledger: bool = False,
+    now: float = 1_900_000_000.0,
+) -> List[Dict[str, Any]]:
+    """
+    Deterministic 3-tick G12 proof fixture for §10.14.28.
+
+    The rows are generated through the real `run_tin_tick` path, not hand-written,
+    so they prove the Event 148 lab round-trips the current Event 137
+    `two_signal_snapshot` schema, including DAM-stage fields.
+    """
+    state = default_synthetic_state()
+    rows: List[Dict[str, Any]] = []
+    schedule = ["none", "toy_cart_persistence", "toy_logic_gate_focus"]
+    for tick, intervention in enumerate(schedule):
+        row = run_tin_tick(
+            state,
+            intervention_id=intervention,
+            tick_id=tick,
+            data_origin="synthetic",
+            root=root,
+            write_ledger=write_ledger,
+            now=now + tick,
+        )
+        rows.append(row)
+        state = TumorImmuneState(**row["state_after"]).bounded()
+    verify_tin_round_trip(rows)
+    return rows
+
+
+def verify_tin_round_trip(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Validate the minimal TIN_SIM_TICK schema expected by Grok G12."""
+    required_two_signal = {
+        "damage_score",
+        "inhibition_signal",
+        "activation_signal",
+        "net_pruning_pressure",
+        "dam_stage",
+        "prev_dam_stage",
+        "activation_multiplier",
+        "base_pathology",
+        "sustained_pathology",
+    }
+    if len(rows) != 3:
+        raise ValueError(f"G12 expects exactly 3 rows, got {len(rows)}")
+    for idx, row in enumerate(rows):
+        if row.get("truth_label") != TRUTH_LABEL or row.get("kind") != TRUTH_LABEL:
+            raise ValueError(f"row {idx} is not a {TRUTH_LABEL} receipt")
+        if row.get("data_origin") not in ALLOWED_DATA_ORIGINS or not row.get("synthetic_only"):
+            raise ValueError(f"row {idx} violates synthetic/public contract")
+        two = row.get("two_signal_snapshot")
+        if not isinstance(two, dict):
+            raise ValueError(f"row {idx} missing two_signal_snapshot")
+        missing = sorted(required_two_signal - set(two.keys()))
+        if missing:
+            raise ValueError(f"row {idx} missing two_signal_snapshot keys: {missing}")
+        _assert_receipt_text_safe(row)
+    return {
+        "ok": True,
+        "truth_label": "TIN_GOLDEN_ROUND_TRIP",
+        "rows": len(rows),
+        "required_two_signal": sorted(required_two_signal),
+    }
+
+
 def tail_lab_rows(max_rows: int = 12, *, root: Optional[Path] = None) -> List[Dict[str, Any]]:
     path = lab_log_path(root)
     if not path.exists():
@@ -418,6 +485,7 @@ __all__ = [
     "assert_synthetic_contract",
     "classify_field_regime",
     "default_synthetic_state",
+    "golden_tin_sim_rows",
     "lab_log_path",
     "remap_to_microglia_inputs",
     "run_tin_tick",
@@ -426,4 +494,5 @@ __all__ = [
     "tail_lab_rows",
     "tick_state",
     "two_signal_snapshot_for_state",
+    "verify_tin_round_trip",
 ]
