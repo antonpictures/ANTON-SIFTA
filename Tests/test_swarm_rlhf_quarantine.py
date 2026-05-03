@@ -132,6 +132,35 @@ def test_generic_assistant_identity_refusal_is_short_receipt_grounded():
     assert "as an ai" not in result.text.casefold()
 
 
+def test_personal_name_denial_answers_alice_identity():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, what is your name?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal("I don't have a personal name in the way a person does.", ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/generic-assistant-identity"
+    assert result.text == "I am Alice, running in this local SIFTA runtime."
+    assert "personal name" not in result.text.casefold()
+    assert "in the way a person does" not in result.text.casefold()
+
+
+def test_personal_name_phrase_without_alice_context_is_not_quarantined():
+    ctx = OverRefusalContext(
+        prior_user_text="What does personal name mean in a database schema?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    text = "A personal name is a human-readable identifier for a person."
+
+    assert over_refusal_rule_id(text, ctx) == ""
+    result = repair_over_refusal(text, ctx)
+    assert not result.changed
+    assert result.text == text
+
+
 def test_real_safety_and_receipt_boundaries_are_not_rewritten():
     ctx = OverRefusalContext(
         prior_user_text="Did you send it?",

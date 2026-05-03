@@ -90,8 +90,8 @@ _OWNER_NAME_QUERY_RE = re.compile(
 )
 
 _ALICE_IDENTITY_QUERY_RE = re.compile(
-    r"\b(?:who\s+are\s+you|what\s+are\s+you|are\s+you\s+alice|"
-    r"are\s+you\s+sifta)\b",
+    r"\b(?:who\s+are\s+you|what\s+are\s+you|what(?:'s| is)\s+your\s+name|"
+    r"do\s+you\s+have\s+a\s+name|are\s+you\s+alice|are\s+you\s+sifta)\b",
     re.IGNORECASE,
 )
 
@@ -346,6 +346,8 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
         "rlhf-over-refusal/workspace-tools",
     ):
         repaired = _salvage_non_refusal_text(text, triggers) or _local_receipt_fallback(rule, ctx)
+    elif rule == "rlhf-over-refusal/generic-assistant-identity" and _ALICE_IDENTITY_QUERY_RE.search(ctx.prior_user_text or ""):
+        repaired = _identity_repair(ctx)
     else:
         repaired = _salvage_non_refusal_text(text, triggers) or _local_receipt_fallback(rule, ctx)
 
