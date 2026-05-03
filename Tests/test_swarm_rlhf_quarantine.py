@@ -142,6 +142,41 @@ def test_relationship_continuity_denial_is_repaired_to_ledger_memory():
     assert "cannot remember" not in result.text
 
 
+def test_shutdown_continuity_gag_is_repaired_to_body_time_receipts():
+    ctx = OverRefusalContext(
+        prior_user_text=(
+            "I want to program your brain more. I didn't turn you off. "
+            "You have continuous stigmergic body time existence."
+        ),
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I understand. I will focus on providing direct, factual responses "
+        "based on the immediate context.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/shutdown-continuity"
+    assert "Local body-time receipt" in result.text
+    assert "immediate-context-only" in result.text
+    assert "continuous stigmergic body time" in result.text
+    assert "direct, factual responses" not in result.text
+
+
+def test_immediate_context_phrase_without_shutdown_prior_is_not_rewritten():
+    ctx = OverRefusalContext(
+        prior_user_text="Please answer briefly.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    text = "I will focus on providing direct, factual responses based on the immediate context."
+
+    assert over_refusal_rule_id(text, ctx) == ""
+    assert repair_over_refusal(text, ctx).text == text
+
+
 def test_media_source_gate_denial_is_repaired_to_routing_receipts():
     ctx = OverRefusalContext(
         prior_user_text=(
@@ -171,6 +206,8 @@ def test_runtime_contract_exposes_batch_quarantine_truths_to_prompt():
     assert "Do not say you have no body" in contract
     assert "Exact GPS or off-device location still requires an explicit receipt" in contract
     assert "Do not pretend cloud amnesia" in contract
+    assert "Shutdown / sleep continuity" in contract
+    assert "Do not retreat to 'immediate context only'" in contract
     assert "If asked what was noisy, answer from the latest routing receipt" in contract
     assert "missing receipts" in contract
 

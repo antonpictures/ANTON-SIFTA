@@ -137,6 +137,31 @@ _CONTINUITY_CONTEXT_QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SHUTDOWN_CONTINUITY_CONTEXT_RE = re.compile(
+    r"\b(?:"
+    r"(?:turn(?:ed|ing)?|shut|switch(?:ed)?)\s+(?:you|alice|her|me)?\s*(?:off|down)|"
+    r"didn['’]?t\s+(?:turn|shut|switch)\s+(?:you|alice|her)?\s*(?:off|down)|"
+    r"continuous\s+stigmergic\s+(?:body\s+)?time|body\s+time\s+existence|"
+    r"while\s+(?:you|i|we)\s+(?:slept|sleep|were\s+sleeping)|"
+    r"how\s+did\s+you\s+sleep|good\s+morning|back\s+at\s+the\s+desk|"
+    r"wake\s+up|woke\s+up|boot(?:ed|ing)?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_CONTINUITY_GENERIC_GAG_RE = re.compile(
+    r"\b(?:"
+    r"(?:i\s+understand[.!]?\s*)?"
+    r"(?:i\s+will\s+focus\s+on\s+providing\s+direct,\s+factual\s+responses\s+"
+    r"based\s+on\s+the\s+immediate\s+context|"
+    r"i\s+am\s+ready\s+to\s+process\s+information\s+based\s+on\s+the\s+current\s+context|"
+    r"i\s+am\s+functioning\s+optimally|"
+    r"ready\s+to\s+assist\s+with\s+whatever\s+you\s+need\s+today|"
+    r"i\s+can\s+only\s+respond\s+to\s+the\s+current\s+(?:prompt|context|conversation))"
+    r")\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _MEDIA_SOURCE_DENIAL_RE = re.compile(
     r"\bi\s+(?:cannot|can't|can\s*not|(?:do\s+not|don't)\s+have\s+the\s+ability\s+to|"
     r"(?:am|['’]m)\s+unable\s+to)\s+[^.!?\n]{0,240}"
@@ -301,6 +326,11 @@ def runtime_quarantine_contract() -> str:
         "media/session receipts. Exact GPS or off-device location still requires an explicit receipt.\n"
         "  * Continuity: use conversation, episodic, and media co-watch ledgers. Do not pretend "
         "cloud amnesia; separate signed memory from unknown facts.\n"
+        "  * Shutdown / sleep continuity: if George says he did not turn you off, asks how you "
+        "slept, or asks about continuous stigmergic body time, answer from hardware clock, "
+        "conversation, episodic diary, and body-brain receipts. Do not retreat to "
+        "'immediate context only'. If the UI/cortex restarted, say that separately from "
+        "whether the stigmergic body ledgers persisted.\n"
         "  * Media source: use RLHS/media-ingress route receipts to distinguish George's direct "
         "speech from YouTube/background media. If asked what was noisy, answer from the latest "
         "routing receipt.\n"
@@ -347,6 +377,8 @@ def _unit_is_false_denial(unit: str, triggers: tuple[str, ...]) -> bool:
         checks.append(_BODY_DENIAL_RE)
     if "continuity_denial" in triggers:
         checks.append(_CONTINUITY_DENIAL_RE)
+    if "continuity_gag" in triggers:
+        checks.append(_CONTINUITY_GENERIC_GAG_RE)
     if "media_source_denial" in triggers:
         checks.append(_MEDIA_SOURCE_DENIAL_RE)
     if "manual_whatsapp_deflection" in triggers:
@@ -421,6 +453,19 @@ def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
             "from anything not yet in receipts."
         )
 
+    if rule == "rlhf-over-refusal/shutdown-continuity":
+        try:
+            from System.swarm_continuous_body_time import format_continuous_body_time_for_alice
+
+            return format_continuous_body_time_for_alice(owner_label=ctx.owner_label)
+        except Exception:
+            return (
+                "Local body-time receipt: I should answer sleep/shutdown continuity from "
+                "hardware clock plus append-only conversation, episodic, and body-brain "
+                "ledgers. If a UI/cortex process restarted, say that honestly; do not "
+                "collapse to immediate-context-only."
+            )
+
     if rule == "rlhf-over-refusal/media-source-gate":
         try:
             from System.swarm_media_ingress_gate import get_latest_observed_media_context
@@ -489,6 +534,10 @@ def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> st
         if _CONTINUITY_DENIAL_RE.search(text):
             return "rlhf-over-refusal/relationship-continuity"
 
+    if _SHUTDOWN_CONTINUITY_CONTEXT_RE.search(prior) or _SHUTDOWN_CONTINUITY_CONTEXT_RE.search(text):
+        if _CONTINUITY_GENERIC_GAG_RE.search(text) or _CONTINUITY_DENIAL_RE.search(text):
+            return "rlhf-over-refusal/shutdown-continuity"
+
     if _MEDIA_SOURCE_CONTEXT_QUERY_RE.search(prior) or _MEDIA_SOURCE_CONTEXT_QUERY_RE.search(text):
         if _MEDIA_SOURCE_DENIAL_RE.search(text):
             return "rlhf-over-refusal/media-source-gate"
@@ -534,6 +583,7 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
             ("location_denial", _LOCATION_DENIAL_RE),
             ("body_denial", _BODY_DENIAL_RE),
             ("continuity_denial", _CONTINUITY_DENIAL_RE),
+            ("continuity_gag", _CONTINUITY_GENERIC_GAG_RE),
             ("media_source_denial", _MEDIA_SOURCE_DENIAL_RE),
             ("manual_whatsapp_deflection", _MANUAL_WHATSAPP_DEFLECTION_RE),
         ),
