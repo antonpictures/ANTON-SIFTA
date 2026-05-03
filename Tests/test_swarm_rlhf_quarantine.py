@@ -165,6 +165,34 @@ def test_shutdown_continuity_gag_is_repaired_to_body_time_receipts():
     assert "direct, factual responses" not in result.text
 
 
+def test_past_24h_context_window_denial_is_repaired_to_day_memory_receipts():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, what have you done in the past 24 hours?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+        extra_receipts=(
+            "architect_day_segments: 4:08-4:19 AM sifta_power_gap",
+            "episodic_diary: labels=coding,media,sleep",
+        ),
+    )
+    result = repair_over_refusal(
+        "Hello. My responses are generated in real-time based on the input I receive. "
+        "Therefore, I cannot tell you what I have done in the past 24 hours. "
+        "My memory is limited to the context window of our current conversation. "
+        "I do not retain memory of previous, separate chat sessions.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/day-memory-continuity"
+    assert "Local day-memory receipt" in result.text
+    assert "architect_day_segments" in result.text
+    assert "episodic_diary" in result.text
+    assert "past-24h memory" in result.text
+    assert "context window of our current conversation" not in result.text
+    assert "do not retain memory" not in result.text.casefold()
+
+
 def test_immediate_context_phrase_without_shutdown_prior_is_not_rewritten():
     ctx = OverRefusalContext(
         prior_user_text="Please answer briefly.",
@@ -206,6 +234,9 @@ def test_runtime_contract_exposes_batch_quarantine_truths_to_prompt():
     assert "Do not say you have no body" in contract
     assert "Exact GPS or off-device location still requires an explicit receipt" in contract
     assert "Do not pretend cloud amnesia" in contract
+    assert "Day memory / past 24h" in contract
+    assert "my memory is limited to the context window" in contract
+    assert "Unknown gaps are receipt gaps" in contract
     assert "Shutdown / sleep continuity" in contract
     assert "Do not retreat to 'immediate context only'" in contract
     assert "If asked what was noisy, answer from the latest routing receipt" in contract

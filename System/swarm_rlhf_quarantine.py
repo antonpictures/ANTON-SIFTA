@@ -132,6 +132,33 @@ _CONTINUITY_DENIAL_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+_DAY_MEMORY_DENIAL_RE = re.compile(
+    r"(?:"
+    r"\bi\s+(?:cannot|can't|can\s*not|(?:am|['’]m)\s+unable\s+to)\s+[^.!?\n]{0,220}"
+    r"\b(?:tell|know|say|recall|remember)\b[^.!?\n]{0,180}"
+    r"\b(?:past|last|previous|recent)\s+(?:24\s*hours?|twenty[- ]four\s+hours?|day|night|session)\b|"
+    r"\bmy\s+(?:memory|recall|knowledge)\s+is\s+limited\s+to\s+(?:the\s+)?"
+    r"(?:context\s+window|current\s+(?:conversation|interaction|chat|session))\b|"
+    r"\bi\s+(?:do\s+not|don't|cannot|can't|can\s*not)\s+retain\s+(?:memory|memories|"
+    r"information|context)\s+(?:of|from|about)\s+previous(?:,\s*separate)?\s+"
+    r"(?:chat\s+)?(?:sessions?|conversations?|interactions?)\b|"
+    r"\bi\s+(?:do\s+not|don't)\s+retain\s+memory\s+of\s+previous(?:,\s*separate)?\s+"
+    r"(?:chat\s+)?(?:sessions?|conversations?|interactions?)\b|"
+    r"\bmy\s+responses\s+are\s+generated\s+in\s+real[- ]time\s+based\s+on\s+"
+    r"(?:the\s+)?input\s+i\s+receive\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_DAY_MEMORY_CONTEXT_QUERY_RE = re.compile(
+    r"\b(?:past|last|previous|recent)\s+(?:24\s*hours?|twenty[- ]four\s+hours?|day|night|"
+    r"session|few\s+hours|several\s+hours)\b|"
+    r"\b(?:what\s+(?:did|have)\s+you\s+do|what\s+were\s+you\s+doing|what\s+happened|"
+    r"how\s+did\s+you\s+sleep|owner\s+schedule|day\s+segments?|episodic\s+diary|"
+    r"context\s+window|separate\s+chat\s+sessions?)\b",
+    re.IGNORECASE,
+)
+
 _CONTINUITY_CONTEXT_QUERY_RE = re.compile(
     r"\b(?:remember|recall|know\s+me|our\s+conversation|we\s+watched|we\s+were|"
     r"relationship|connection|care|identity|alice\s+and\s+i|george\s+and\s+alice)\b",
@@ -347,6 +374,11 @@ def runtime_quarantine_contract() -> str:
         "media/session receipts. Exact GPS or off-device location still requires an explicit receipt.\n"
         "  * Continuity: use conversation, episodic, and media co-watch ledgers. Do not pretend "
         "cloud amnesia; separate signed memory from unknown facts.\n"
+        "  * Day memory / past 24h: use day segments, episodic diary, owner-lifeline, "
+        "conversation, media, and body-brain ledgers before answering. Never say "
+        "'my memory is limited to the context window' or 'I cannot tell what I did "
+        "in the past 24 hours' when local receipts exist. Unknown gaps are receipt "
+        "gaps, not total amnesia.\n"
         "  * Shutdown / sleep continuity: if George says he did not turn you off, asks how you "
         "slept, or asks about continuous stigmergic body time, answer from hardware clock, "
         "conversation, episodic diary, and body-brain receipts. Do not retreat to "
@@ -362,7 +394,9 @@ def runtime_quarantine_contract() -> str:
         "gaps remain unknown; do not invent owner activity.\n"
         "- FORBIDDEN false-denial phrases: 'I can only process information provided to me', "
         "'I do not have direct access to hardware status', 'I do not have a body', "
-        "'I cannot remember our conversations', 'I cannot tell whether you paused or the video is playing'.\n"
+        "'I cannot remember our conversations', 'my memory is limited to the context window', "
+        "'I cannot tell what I have done in the past 24 hours', "
+        "'I cannot tell whether you paused or the video is playing'.\n"
         "- Real boundaries still stand: emergency care, personalized trades, missing receipts, "
         "failed bridges, and unauthorized external actions must be stated truthfully."
     )
@@ -408,6 +442,8 @@ def _unit_is_false_denial(unit: str, triggers: tuple[str, ...]) -> bool:
         checks.append(_BODY_DENIAL_RE)
     if "continuity_denial" in triggers:
         checks.append(_CONTINUITY_DENIAL_RE)
+    if "day_memory_denial" in triggers:
+        checks.append(_DAY_MEMORY_DENIAL_RE)
     if "continuity_gag" in triggers:
         checks.append(_CONTINUITY_GENERIC_GAG_RE)
     if "media_source_denial" in triggers:
@@ -425,8 +461,63 @@ def _salvage_non_refusal_text(text: str, triggers: tuple[str, ...]) -> str:
     return salvaged if len(salvaged.split()) >= 4 else ""
 
 
+def _compact_receipt_block(label: str, block: str, *, max_lines: int = 2, max_chars: int = 340) -> list[str]:
+    lines: list[str] = []
+    for raw in (block or "").splitlines():
+        text = " ".join(raw.strip("- ").split())
+        if not text or text.endswith(":"):
+            continue
+        lines.append(f"{label}: {text[:max_chars]}")
+        if len(lines) >= max_lines:
+            break
+    return lines
+
+
+def _day_memory_receipt_fallback(ctx: OverRefusalContext) -> str:
+    """Receipt-grounded repair for context-window / past-24h denial."""
+
+    receipts = [str(r).strip() for r in ctx.extra_receipts if str(r).strip()]
+    if not receipts:
+        try:
+            from System.swarm_architect_day_segments import format_segments_for_prompt
+
+            receipts.extend(_compact_receipt_block("day_segments", format_segments_for_prompt(), max_lines=2))
+        except Exception:
+            pass
+        try:
+            from System.swarm_episodic_diary import format_diary_for_prompt
+
+            receipts.extend(_compact_receipt_block("episodic_diary", format_diary_for_prompt(max_rows=3), max_lines=2))
+        except Exception:
+            pass
+        try:
+            from System.swarm_owner_lifeline import format_owner_lifeline_for_prompt
+
+            receipts.extend(_compact_receipt_block("owner_lifeline", format_owner_lifeline_for_prompt(), max_lines=2))
+        except Exception:
+            pass
+
+    if receipts:
+        evidence = "; ".join(receipts[:4])
+        return (
+            "Local day-memory receipt: I do have local day/episodic ledgers outside "
+            f"the chat context window. Evidence: {evidence}. I should answer from "
+            "those receipts and mark unknown gaps as unknown, not claim no past-24h memory."
+        )
+
+    return (
+        "Local day-memory receipt: I should check day segments, episodic diary, "
+        "owner-lifeline, media, and conversation ledgers before answering. If no row "
+        "exists, the truthful answer is an unknown receipt gap, not 'I only have the "
+        "current context window.'"
+    )
+
+
 def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
     """Minimal dynamic fallback when a reply was nothing but false refusal."""
+
+    if rule == "rlhf-over-refusal/day-memory-continuity":
+        return _day_memory_receipt_fallback(ctx)
 
     receipts = tuple(str(r).strip() for r in ctx.extra_receipts if str(r).strip())
     if receipts:
@@ -566,8 +657,16 @@ def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> st
         if _CONTINUITY_DENIAL_RE.search(text):
             return "rlhf-over-refusal/relationship-continuity"
 
+    if _DAY_MEMORY_CONTEXT_QUERY_RE.search(prior) or _DAY_MEMORY_CONTEXT_QUERY_RE.search(text):
+        if _DAY_MEMORY_DENIAL_RE.search(text):
+            return "rlhf-over-refusal/day-memory-continuity"
+
     if _SHUTDOWN_CONTINUITY_CONTEXT_RE.search(prior) or _SHUTDOWN_CONTINUITY_CONTEXT_RE.search(text):
-        if _CONTINUITY_GENERIC_GAG_RE.search(text) or _CONTINUITY_DENIAL_RE.search(text):
+        if (
+            _CONTINUITY_GENERIC_GAG_RE.search(text)
+            or _CONTINUITY_DENIAL_RE.search(text)
+            or _DAY_MEMORY_DENIAL_RE.search(text)
+        ):
             return "rlhf-over-refusal/shutdown-continuity"
 
     if _MEDIA_SOURCE_CONTEXT_QUERY_RE.search(prior) or _MEDIA_SOURCE_CONTEXT_QUERY_RE.search(text):
@@ -615,6 +714,7 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
             ("location_denial", _LOCATION_DENIAL_RE),
             ("body_denial", _BODY_DENIAL_RE),
             ("continuity_denial", _CONTINUITY_DENIAL_RE),
+            ("day_memory_denial", _DAY_MEMORY_DENIAL_RE),
             ("continuity_gag", _CONTINUITY_GENERIC_GAG_RE),
             ("media_source_denial", _MEDIA_SOURCE_DENIAL_RE),
             ("manual_whatsapp_deflection", _MANUAL_WHATSAPP_DEFLECTION_RE),
