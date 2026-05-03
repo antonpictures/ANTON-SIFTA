@@ -132,6 +132,7 @@ def test_tool_prompt_explains_owner_consent_boundary():
     assert "ollama_inventory" in prompt
     assert "repo_git_snapshot" in prompt
     assert "stigmergic_bus_tail" in prompt
+    assert "verification_contract" in prompt
 
 
 def test_cerebellum_delay_blocks_write_action_before_effector(monkeypatch):
@@ -192,3 +193,33 @@ def test_repo_git_snapshot_on_tmp_repo(tmp_path, monkeypatch):
     out = router.execute_tool_call(call)
     assert out.executed
     assert "git status" in out.feedback_for_alice.lower()
+
+
+def test_verification_contract_tool_reads_latest_human_signal(tmp_path, monkeypatch):
+    st = tmp_path / ".sifta_state"
+    st.mkdir(parents=True, exist_ok=True)
+    (st / "human_signals.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": 10,
+                "kind": "MINE_INFERENCE",
+                "signal": "VERIFICATION_CONTRACT",
+                "policy": "automate_what_you_can_verify",
+                "rules": {
+                    "tool_router_changes": "Requires pytest execution before merge",
+                    "new_surface": "Requires receipt-backed proof",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(router, "_STATE", st)
+
+    call = router.parse_tool_calls("[TOOL_CALL: verification_contract]")[0]
+    out = router.execute_tool_call(call)
+
+    assert out.executed
+    assert out.result["contract"]["rules"]["new_surface"] == "Requires receipt-backed proof"
+    assert "VERIFICATION CONTRACT" in out.feedback_for_alice
+    assert "tool_router_changes" in out.feedback_for_alice

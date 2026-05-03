@@ -127,6 +127,14 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=False,
         requires_autonomy_gate=False,
     ),
+    "verification_contract": ToolSpec(
+        name="verification_contract",
+        description="Read SIFTA's current verification contract from human_signals.jsonl",
+        required_params=(),
+        optional_params=(),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
 }
 
 # Alice's prompt-injectable tool catalog (for her system prompt)
@@ -552,6 +560,29 @@ def _exec_stigmergic_bus_tail(params: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _exec_verification_contract(params: Dict[str, str]) -> Dict[str, Any]:
+    """Read-only: current verification contract from the human signal ledger."""
+    _ = params
+    try:
+        from System.swarm_verification_contract import (
+            contract_for_alice_prompt,
+            latest_verification_contract,
+        )
+
+        contract = latest_verification_contract(state_dir=_STATE)
+        return {
+            "ok": True,
+            "contract": contract.as_dict(),
+            "alice_summary": contract_for_alice_prompt(state_dir=_STATE),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "alice_summary": f"verification_contract read failed: {exc}",
+        }
+
+
 # Tool name → executor mapping
 _EXECUTORS = {
     "send_whatsapp": _exec_send_whatsapp,
@@ -561,6 +592,7 @@ _EXECUTORS = {
     "ollama_inventory": _exec_ollama_inventory,
     "repo_git_snapshot": _exec_repo_git_snapshot,
     "stigmergic_bus_tail": _exec_stigmergic_bus_tail,
+    "verification_contract": _exec_verification_contract,
 }
 
 
