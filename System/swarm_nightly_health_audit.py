@@ -262,7 +262,7 @@ def _run_bio_corpus_health() -> Dict[str, Any]:
 def _run_arxiv_sweep(
     max_per_query: int = 2,
     run_claims: bool = False,
-    model: str = "sifta-classifier-c1:latest",
+    model: str = "qwen3.5:2b",
 ) -> Dict[str, Any]:
     try:
         from System.swarm_bio_arxiv_ingester import (
@@ -354,7 +354,7 @@ def run_nightly_audit(
     run_arxiv: bool = True,
     run_claims: bool = False,
     fast_tests: bool = True,
-    arxiv_model: str = "sifta-classifier-c1:latest",
+    arxiv_model: str = "qwen3.5:2b",
 ) -> Dict[str, Any]:
     """
     Run all health audit sections and write nightly_health.jsonl.

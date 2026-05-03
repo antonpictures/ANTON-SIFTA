@@ -164,7 +164,7 @@ class SwarmCorvidApprentice:
 
     def __init__(
         self,
-        model: str = "sifta-classifier-c1:latest",
+        model: str = "qwen3.5:2b",
         ollama_url: str = "http://127.0.0.1:11434",
         timeout_s: float = 15.0,
         max_tokens: int = 256,

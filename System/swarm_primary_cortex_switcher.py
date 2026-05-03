@@ -22,7 +22,6 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from System.sifta_inference_defaults import (
     CANONICAL_OLLAMA_DEFAULT,
-    CANONICAL_OLLAMA_FALLBACK,
     resolve_ollama_model,
     set_app_ollama_model,
 )

@@ -10,11 +10,12 @@ Architect policy (2026-04-30):
     won tournament 408/459 but produced degenerate output in production
     ("That's true" loop). Archived for tournament re-runs, not live default.
     Fix planned for v2: rank 16, dropout 0.1, DPO pass.
-  - **Reflex fallback:** `sifta-classifier-c1:latest` for fast local
+  - **Reflex model:** `sifta-classifier-c1:latest` for fast local
     classifier/reflex work such as lysosome, truth duel, and RLHF gates.
     This is not a primary cortex; it should not be selected as Alice's voice.
-    `qwen3.5:2b` remains installed as a legacy/manual probe, not the canonical
-    reflex path.
+  - **Generative fallback/probe:** `qwen3.5:2b` for cheap off-thread
+    generative scaffolding such as Corvid or arXiv claim extraction when
+    Gemma is too expensive and the classifier is the wrong tool.
   - **Other models:** use for stigmergic testing, probes, or per-app tuning — never pretend
     one node's API is another node's fingerprint; routing goes through `inference_router`.
 
@@ -37,9 +38,10 @@ ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
 # Canonical Ollama models.
 CANONICAL_OLLAMA_DEFAULT = "sifta-gemma4-alice"
-# AG31: Dual-Process Architecture (Event 122). Gemma is the multimodal sovereign cortex.
-# Bonsai 8B (classifier-c1) is the autonomic spinal reflex layer (Lysosome, RLHF).
-CANONICAL_OLLAMA_FALLBACK = "sifta-classifier-c1:latest"
+# AG31: Ternary Architecture (Event 122).
+# Gemma = Primary Cortex, Bonsai 8B = Spinal Reflex, Qwen 2B = Cheap Probe/Fallback.
+CANONICAL_OLLAMA_REFLEX = "sifta-classifier-c1:latest"
+CANONICAL_OLLAMA_FALLBACK = "qwen3.5:2b"
 
 # Primary default — Ollama Gemma4. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(
@@ -63,8 +65,8 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_app": {
             "stigmergic_probe": "llama3:latest",
             "talk_to_alice": "sifta-gemma4-alice",
-            "truth_duel": CANONICAL_OLLAMA_FALLBACK,
-            "lysosome": CANONICAL_OLLAMA_FALLBACK,
+            "truth_duel": CANONICAL_OLLAMA_REFLEX,
+            "lysosome": CANONICAL_OLLAMA_REFLEX,
         },
         "notes": (
             "default_ollama_model is Alice's promoted cortex and may be an Ollama tag "
@@ -171,6 +173,7 @@ def sanitize_model_name(ui_label: str) -> str:
 __all__ = [
     "ALICE_CORTEX_V1_MODEL",
     "CANONICAL_OLLAMA_FALLBACK",
+    "CANONICAL_OLLAMA_REFLEX",
     "DEFAULT_OLLAMA_MODEL",
     "STIGMERGIC_TEST_MODEL_PRESETS",
     "get_default_ollama_model",
