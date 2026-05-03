@@ -752,10 +752,11 @@ class SwarmPhysiology:
         # 8c. Stability Audit + Active Clamps (Event 134 — Khalil 2002; Liberzon 2003)
         _clamp_receipt: Dict[str, Any] = {"clamp_level": "NONE", "stability_ok": True,
                                            "max_prunes_override": None, "active_clamps": []}
+        _stability_snapshot: Dict[str, Any] = {}
         try:
             from System.swarm_stability_audit import compute_stability_snapshot, enforce_stability_clamps
-            _snap = compute_stability_snapshot(write_ledger=True)
-            _clamp_receipt = enforce_stability_clamps(_snap, write_ledger=True)
+            _stability_snapshot = compute_stability_snapshot(write_ledger=True)
+            _clamp_receipt = enforce_stability_clamps(_stability_snapshot, write_ledger=True)
             if _clamp_receipt["clamp_level"] != "NONE":
                 logger.warning(
                     "[Event134] Stability clamp=%s energy=%.3f delta=%.3f clamps=%s",
@@ -766,6 +767,33 @@ class SwarmPhysiology:
                 )
         except Exception:
             logger.debug("Stability audit skipped (non-fatal)")
+
+        # 8d. Active Causal Probing (Event 139) — bounded do() experiments.
+        _causal_probe_receipt: Optional[Dict[str, Any]] = None
+        try:
+            from System.swarm_active_causal_prober import propose_and_execute_runtime_intervention
+
+            _terms = _stability_snapshot.get("terms", {}) if isinstance(_stability_snapshot, dict) else {}
+            _uncertainty = max(
+                float(_terms.get("world_error_norm", 0.0) or 0.0),
+                float(_terms.get("astrocyte_heat_norm", 0.0) or 0.0),
+                abs(1.0 - float(mem_row.get("td_value", 0.0) or 0.0)),
+            )
+            _causal_probe_receipt = propose_and_execute_runtime_intervention(
+                tick_id=str(mem_row.get("tick_id") or ""),
+                current_uncertainty=min(1.0, max(0.0, _uncertainty)),
+                current_clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
+                root=_STATE_DIR,
+            )
+            if _causal_probe_receipt:
+                logger.info(
+                    "[Event139] Active causal probe target=%s effect=%.3f dry_run=%s",
+                    _causal_probe_receipt.get("intervention", {}).get("do", {}).get("target"),
+                    float(_causal_probe_receipt.get("causal_effect_size", 0.0) or 0.0),
+                    _causal_probe_receipt.get("intervention", {}).get("do", {}).get("dry_run"),
+                )
+        except Exception:
+            logger.debug("Active causal prober skipped (non-fatal)")
 
         # 8b. Microglia Synaptic Pruner (Event 137) — controlled forgetting gate
         # Only prunes if stability_ok (non-critical metabolic mode).
@@ -825,6 +853,8 @@ class SwarmPhysiology:
             "reset_recovery":     reset_recovery,
             "novelty_gate":       novelty_frame.as_dict() if novelty_frame else None,
             "orienting_reflex":    orienting_row,
+            "stability_clamp":     _clamp_receipt,
+            "causal_probe":        _causal_probe_receipt,
         }
 
 
