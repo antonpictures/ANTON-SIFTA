@@ -27,3 +27,10 @@ def test_prompt_contract_conversation_cadence_is_not_absolute_list_ban():
     assert "Use numbered lists or long markdown only when" in contract
     assert "NEVER use numbered lists" not in contract
     assert "customer-service endings" in contract
+
+
+def test_prompt_contract_tool_calls_include_receipt_economy():
+    contract = minimal_runtime_contract()
+
+    assert "cost_justification" in contract
+    assert "STGM spend" in contract

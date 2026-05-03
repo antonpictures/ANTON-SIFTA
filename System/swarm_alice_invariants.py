@@ -246,7 +246,7 @@ def proof_of_property() -> Dict[str, bool]:
     print(f"  I1 no_mutate:  {'PASS' if results['I1_no_mutation'] else 'FAIL'}")
 
     # I2: canonical format detected
-    good = "[TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother]"
+    good = "[TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother | cost_justification=George explicitly asked me to send this.]"
     audit_good = audit_alice_output(good)
     results["I2_canonical"] = audit_good["canonical_found"]
     print(f"  I2 canonical:  {'PASS' if results['I2_canonical'] else 'FAIL'}")

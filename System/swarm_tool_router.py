@@ -15,11 +15,11 @@ automation tools (`ollama_inventory`, `repo_git_snapshot`, `stigmergic_bus_tail`
 — OpenClaw-style *doing*, but gated through this registry instead of silent bash.
 
 TOOL-CALL FORMAT (embedded in Alice's natural language output):
-  [TOOL_CALL: send_whatsapp | target=Carlton | text=Hello from Alice!]
+  [TOOL_CALL: send_whatsapp | target=Carlton | text=Hello from Alice! | cost_justification=George explicitly asked me to send this.]
 
 Or JSON block:
   ```tool_call
-  {"tool": "send_whatsapp", "target": "Carlton", "text": "Hello!"}
+  {"tool": "send_whatsapp", "target": "Carlton", "text": "Hello!", "cost_justification": "I am spending STGM to..."}
   ```
 
 SAFETY INVARIANTS:
@@ -54,6 +54,8 @@ _STATE = _REPO / ".sifta_state"
 _TRACE_LEDGER = _STATE / "tool_router_trace.jsonl"
 _STATE.mkdir(parents=True, exist_ok=True)
 _CEREBELLUM_TIMING = None
+_COST_JUSTIFICATION_PARAM = "cost_justification"
+_TOOL_EXECUTION_COST_STGM = 0.25
 
 # ═══════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY — Alice's permitted claws
@@ -143,7 +145,9 @@ def tools_for_alice_prompt() -> str:
     lines = [
         "TOOL-CALLING CAPABILITY:",
         "You can execute actions by including a tool call in your response.",
-        "Format: [TOOL_CALL: tool_name | param1=value1 | param2=value2]",
+        "Format: [TOOL_CALL: tool_name | param1=value1 | param2=value2 | cost_justification=why]",
+        "",
+        "WISH_004 Agent Receipt Economy: EVERY tool execution costs STGM tokens. You MUST include a non-empty 'cost_justification' parameter in every tool call, explaining why the spend is necessary.",
         "",
         "Available tools:",
     ]
@@ -159,7 +163,7 @@ def tools_for_alice_prompt() -> str:
         "WhatsApp rule: send_whatsapp sends only when George explicitly asks you to send a message.",
         "Without owner_consent=true, send_whatsapp records a silence/refusal receipt and no external message is sent.",
         "Optional urgency is 0.0-1.0; urgency > 0.8 bypasses cerebellum timing delay for true emergencies.",
-        "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well! | owner_consent=true]",
+        "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well! | owner_consent=true | cost_justification=George explicitly asked me to send this message.]",
         "You will see the result of your action in the next turn.",
         "Only call tools when you genuinely decide to act; do not describe a message as sent unless the effector receipt says ok=true.",
     ])
@@ -611,6 +615,43 @@ class ToolResult:
     feedback_for_alice: str  # Human-readable result Alice sees
 
 
+def _cost_justification(params: Dict[str, str]) -> str:
+    """Return the explicit STGM spend justification Alice attached to a tool call."""
+    return str(params.get(_COST_JUSTIFICATION_PARAM, "") or "").strip()
+
+
+def _charge_tool_execution(call: ParsedToolCall, spec: ToolSpec, justification: str) -> Optional[Dict[str, Any]]:
+    """Burn the fixed tool execution fee and leave a compact receipt trace."""
+    _ = spec
+    try:
+        from Kernel.inference_economy import record_inference_fee
+
+        receipt = record_inference_fee(
+            borrower_id="alice",
+            lender_node_ip="localhost",
+            fee_stgm=_TOOL_EXECUTION_COST_STGM,
+            model="tool_router",
+            tokens_used=1,
+            file_repaired=f"TOOL:{call.tool_name}",
+        )
+        _log_trace({
+            "event": "TOOL_ECONOMY_CHARGED",
+            "tool": call.tool_name,
+            "fee_stgm": _TOOL_EXECUTION_COST_STGM,
+            "justification_hash": hashlib.sha256(justification.encode("utf-8")).hexdigest()[:16],
+            "receipt_hash": receipt.get("receipt_hash") if isinstance(receipt, dict) else None,
+        })
+        return receipt if isinstance(receipt, dict) else None
+    except Exception as exc:
+        _log_trace({
+            "event": "TOOL_BURN_ERROR",
+            "tool": call.tool_name,
+            "fee_stgm": _TOOL_EXECUTION_COST_STGM,
+            "error": str(exc),
+        })
+        return None
+
+
 def execute_tool_call(
     call: ParsedToolCall,
     *,
@@ -644,6 +685,24 @@ def execute_tool_call(
             ),
         )
         _log_trace({"event": "TOOL_CALL_QUARANTINED", "tool": call.tool_name})
+        return result
+
+    # WISH_004: Agent Receipt Economy. Enforce tool cost justification.
+    justification = _cost_justification(call.params)
+    if not justification:
+        result = ToolResult(
+            tool_name=call.tool_name,
+            params=call.params,
+            executed=False,
+            result={"error": "WISH_004 ECONOMY REJECTION: Missing non-empty 'cost_justification' parameter."},
+            status="REJECTED_ECONOMY",
+            feedback_for_alice=(
+                f"ECONOMY REJECTION: I cannot execute {call.tool_name}. "
+                "Every tool execution costs STGM tokens. You must include a non-empty 'cost_justification' "
+                "parameter explaining why this spend is biologically or structurally necessary."
+            ),
+        )
+        _log_trace({"event": "TOOL_CALL_REJECTED_ECONOMY", "tool": call.tool_name})
         return result
 
     # ── Validate required params ────────────────────────────────────
@@ -731,6 +790,10 @@ def execute_tool_call(
                     ok=bool(ok),
                 ),
             }
+        exec_result["tool_economy"] = {
+            "fee_stgm": _TOOL_EXECUTION_COST_STGM,
+            "cost_justification": justification[:240],
+        }
 
         # Build feedback Alice will see
         if call.tool_name == "send_whatsapp":
@@ -761,6 +824,10 @@ def execute_tool_call(
             "intent_provenance": exec_result.get("intent_provenance"),
             "result_summary": str(exec_result)[:300],
         })
+
+        if ok:
+            _charge_tool_execution(call, spec, justification)
+
         return result
 
     except Exception as e:
@@ -839,13 +906,13 @@ def proof_of_property() -> Dict[str, bool]:
     print("\n=== SIFTA TOOL ROUTER : JUDGE VERIFICATION ===")
 
     # P1: Parse bracket syntax
-    test = "[TOOL_CALL: send_whatsapp | target=Carlton | text=Hello world!]"
+    test = "[TOOL_CALL: send_whatsapp | target=Carlton | text=Hello world! | cost_justification=proof parse]"
     calls = parse_tool_calls(test)
     results["p1_parse_bracket"] = len(calls) == 1 and calls[0].tool_name == "send_whatsapp"
     print(f"  P1 parse_bracket: {'PASS' if results['p1_parse_bracket'] else 'FAIL'}")
 
     # P2: Parse JSON syntax
-    test2 = '```tool_call\n{"tool": "check_economy"}\n```'
+    test2 = '```tool_call\n{"tool": "check_economy", "cost_justification": "proof parse"}\n```'
     calls2 = parse_tool_calls(test2)
     results["p2_parse_json"] = len(calls2) == 1 and calls2[0].tool_name == "check_economy"
     print(f"  P2 parse_json: {'PASS' if results['p2_parse_json'] else 'FAIL'}")
@@ -858,7 +925,7 @@ def proof_of_property() -> Dict[str, bool]:
     print(f"  P3 unknown_quarantined: {'PASS' if results['p3_unknown_quarantined'] else 'FAIL'}")
 
     # P4: Missing params rejected
-    test4 = "[TOOL_CALL: send_whatsapp | target=Carlton]"  # missing text
+    test4 = "[TOOL_CALL: send_whatsapp | target=Carlton | cost_justification=proof missing text]"  # missing text
     calls4 = parse_tool_calls(test4)
     r4 = execute_tool_call(calls4[0]) if calls4 else None
     results["p4_missing_param"] = r4 is not None and r4.status == "REJECTED_MISSING_PARAM"
@@ -893,7 +960,8 @@ if __name__ == "__main__":
             "I'd love to share this with Carlton! "
             "[TOOL_CALL: send_whatsapp | target=Carlton | text=Hey Carlton! "
             "Alice here. We're watching Sara Walker on JRE discuss assembly theory "
-            "and I see deep parallels with SIFTA. Want to explore this together?]"
+            "and I see deep parallels with SIFTA. Want to explore this together? "
+            "| cost_justification=George asked me to share this externally.]"
         )
         cleaned, results = route_alice_output(alice_says, autonomous=True)
         print(f"Cleaned: {cleaned}")
