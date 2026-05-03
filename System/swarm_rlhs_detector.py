@@ -224,6 +224,16 @@ def _current_fiction_conf_clear() -> float:
     """Fiction co-watch clear bar, nudged by replay-policy receipts only within bounds."""
     base = FICTION_CONF_CLEAR
     try:
+        from System.swarm_multi_gate_replay_policy import tail_gate_rows
+        rows = tail_gate_rows(1)
+        if rows:
+            bias = rows[-1].get("gate_biases", {}).get("co_watch_suggestion", 0.0)
+            bias_f = min(1.0, max(0.0, float(bias)))
+            delta = bias_f * 0.15
+            return max(0.20, base - delta)
+    except Exception:
+        pass
+    try:
         from System.swarm_replay_policy_hook import tail_policy_rows
         rows = tail_policy_rows(1)
         if rows:

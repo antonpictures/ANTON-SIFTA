@@ -15,6 +15,7 @@ def test_compute_bias_youtube_boost() -> None:
 def test_apply_writes_ledger(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(ph, "state_dir", lambda explicit=None: tmp_path)
     monkeypatch.delenv("SIFTA_REPLAY_POLICY_DISABLE", raising=False)
+    monkeypatch.delenv("SIFTA_MULTI_GATE_REPLAY_DISABLE", raising=False)
     b = ph.apply_replay_bias(
         "opening YouTube",
         "collab video sessions are common here",
@@ -27,6 +28,10 @@ def test_apply_writes_ledger(tmp_path: Path, monkeypatch) -> None:
     row = json.loads(p.read_text(encoding="utf-8").strip().splitlines()[-1])
     assert row["truth_label"] == "REPLAY_POLICY_BIAS"
     assert row["replay_influence"] == b
+    multi_gate = tmp_path / "multi_gate_policy.jsonl"
+    assert multi_gate.exists()
+    gate_row = json.loads(multi_gate.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert gate_row["truth_label"] == "MULTI_GATE_REPLAY_POLICY"
 
 
 def test_disable_env_skips_ledger(tmp_path: Path, monkeypatch) -> None:

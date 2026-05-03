@@ -124,6 +124,19 @@ def apply_replay_bias(
             json.dumps(row, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+    try:
+        from System.swarm_multi_gate_replay_policy import apply_multi_gate_bias
+
+        apply_multi_gate_bias(
+            current_context,
+            replay_summary,
+            root=root,
+            write_ledger=write_ledger,
+            min_seconds_between_writes=min_seconds_between_writes,
+            force_write=force_write,
+        )
+    except Exception:
+        pass
     return bias
 
 
@@ -145,15 +158,26 @@ def tail_policy_rows(max_lines: int = 12, *, root: Optional[Path] = None) -> Lis
 def summary_for_prompt(*, root: Optional[Path] = None, max_rows: int = 5) -> str:
     """Compact block for system prompt - recent bias receipts only."""
     rows = tail_policy_rows(max_rows, root=root)
-    if not rows:
+    multi_gate = ""
+    try:
+        from System.swarm_multi_gate_replay_policy import summary_for_prompt as _multi_summary
+
+        multi_gate = _multi_summary(root=root).strip()
+    except Exception:
+        multi_gate = ""
+    if not rows and not multi_gate:
         return ""
-    lines = [
-        "REPLAY->POLICY HOOK (Event 123 - scalar biases from replay digest; hand policy, not learned weights):",
-    ]
+    lines = []
+    if rows:
+        lines.append(
+            "REPLAY->POLICY HOOK (Event 123 - scalar biases from replay digest; hand policy, not learned weights):"
+        )
     for row in rows:
         mb = row.get("mean_bias")
         prev = str(row.get("context_preview") or "")[:72]
         lines.append(f"- mean_bias={mb} preview={prev!r}")
+    if multi_gate:
+        lines.append(multi_gate)
     return "\n".join(lines)
 
 

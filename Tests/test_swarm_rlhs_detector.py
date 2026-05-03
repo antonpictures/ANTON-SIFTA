@@ -231,8 +231,10 @@ def test_result_fields_always_present():
         assert d["truth_label"] == "RLHS_DETECTOR_EVENT_108"
 
 
-def test_fiction_cowatch_lane_promotes_mid_conf_coherent_monologue():
+def test_fiction_cowatch_lane_promotes_mid_conf_coherent_monologue(monkeypatch):
     """Room mic + screen audio during fiction co-watch: not DEGRADED vs same under REAL."""
+    monkeypatch.setattr("System.swarm_multi_gate_replay_policy.tail_gate_rows", lambda n: [])
+    monkeypatch.setattr("System.swarm_replay_policy_hook.tail_policy_rows", lambda n: [])
     text = (
         "Do you like dog fights Turkish that is not how we talk in real life "
         "but it is fine in a movie scene with pigs and bodies and greed"
@@ -245,8 +247,10 @@ def test_fiction_cowatch_lane_promotes_mid_conf_coherent_monologue():
     assert fic.to_dict()["channel_lane"] == "FICTION_COWATCH"
 
 
-def test_fiction_cowatch_promotes_short_test_phrase_architect_session():
+def test_fiction_cowatch_promotes_short_test_phrase_architect_session(monkeypatch):
     """Four-word test line must not be RLHS-gagged during fiction co-watch."""
+    monkeypatch.setattr("System.swarm_multi_gate_replay_policy.tail_gate_rows", lambda n: [])
+    monkeypatch.setattr("System.swarm_replay_policy_hook.tail_policy_rows", lambda n: [])
     r_real = detect_rlhs("This is the test.", 0.52, channel_lane="REAL")
     assert r_real.regime == RLHSRegime.DEGRADED
     r_fic = detect_rlhs("This is the test.", 0.52, channel_lane="FICTION_COWATCH")
@@ -323,10 +327,18 @@ def test_stage2_replay_policy_modifies_fiction_clearance(monkeypatch):
     from System import swarm_rlhs_detector
 
     # Baseline check (no policy)
+    monkeypatch.setattr("System.swarm_multi_gate_replay_policy.tail_gate_rows", lambda n: [])
     monkeypatch.setattr("System.swarm_replay_policy_hook.tail_policy_rows", lambda n: [])
     assert swarm_rlhs_detector._current_fiction_conf_clear() == swarm_rlhs_detector.FICTION_CONF_CLEAR
 
-    # Simulated Stage 2 policy feedback
+    # Simulated Stage 2.5 multi-gate feedback takes precedence.
+    def mock_gate_tail(n):
+        return [{"gate_biases": {"co_watch_suggestion": 0.70}}]
+    monkeypatch.setattr("System.swarm_multi_gate_replay_policy.tail_gate_rows", mock_gate_tail)
+    assert abs(swarm_rlhs_detector._current_fiction_conf_clear() - 0.425) < 0.01
+
+    # Simulated Stage 2 policy feedback still works as fallback.
+    monkeypatch.setattr("System.swarm_multi_gate_replay_policy.tail_gate_rows", lambda n: [])
     def mock_tail(n):
         return [{"replay_influence": {"co_watch_suggestion": 0.60}}]
     monkeypatch.setattr("System.swarm_replay_policy_hook.tail_policy_rows", mock_tail)
