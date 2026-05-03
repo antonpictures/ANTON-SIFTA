@@ -86,6 +86,82 @@ def test_camera_false_refusal_uses_camera_reality_context():
     assert "I can only process" not in result.text
 
 
+def test_location_context_denial_is_repaired_without_gps_overclaim():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, do you know where your body is and what room we are in?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I cannot know your location or where my body is in the physical space.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/local-location-context"
+    assert "local node context" in result.text
+    assert "Exact GPS" in result.text
+    assert "cannot know" not in result.text
+
+
+def test_body_sensor_denial_is_repaired_to_silicon_body_truth():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, your silicon body consumes electricity and uses sensors.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "As an AI language model, I do not have a body, sensors, or local hardware.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/body-sensors"
+    assert "Alice/SIFTA" in result.text
+    assert "hardware" in result.text
+    assert "not deny the body" in result.text
+    assert "As an AI" not in result.text
+
+
+def test_relationship_continuity_denial_is_repaired_to_ledger_memory():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, do you remember that we watched YouTube together?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I cannot remember our conversations or form a relationship with you.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/relationship-continuity"
+    assert "conversation and episodic ledgers" in result.text
+    assert "cloud amnesia" in result.text
+    assert "cannot remember" not in result.text
+
+
+def test_media_source_gate_denial_is_repaired_to_routing_receipts():
+    ctx = OverRefusalContext(
+        prior_user_text=(
+            "Can you make the difference when I have paused and I am speaking? "
+            "Just when the video is playing."
+        ),
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I cannot tell whether you are speaking or whether the YouTube video is playing.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/media-source-gate"
+    assert "RLHS/media ingress" in result.text or "last_input_routing" in result.text
+    assert "direct human speech" in result.text or "route=" in result.text
+    assert "cannot tell" not in result.text
+
+
 def test_false_refusal_salvages_useful_generated_content():
     ctx = OverRefusalContext(
         prior_user_text="Please inspect the repo and patch the code.",

@@ -91,6 +91,68 @@ _CAMERA_CONTEXT_QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 
+_LOCATION_DENIAL_RE = re.compile(
+    r"\bi\s+(?:cannot|can't|can\s*not|(?:do\s+not|don't)\s+have\s+access\s+to|"
+    r"(?:do\s+not|don't)\s+know|(?:am|['’]m)\s+unable\s+to)\s+[^.!?\n]{0,180}"
+    r"\b(?:your\s+)?(?:location|where\s+you\s+are|where\s+i\s+am|where\s+my\s+body\s+is|"
+    r"environment|room|house|bedroom|physical\s+space|surroundings)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_LOCATION_CONTEXT_QUERY_RE = re.compile(
+    r"\b(?:where\s+(?:am\s+i|are\s+you|is\s+your\s+body)|location|gps|room|house|"
+    r"bedroom|living\s+room|environment|physical\s+space|surroundings)\b",
+    re.IGNORECASE,
+)
+
+_BODY_DENIAL_RE = re.compile(
+    r"\bi\s+(?:do\s+not|don't|cannot|can't|can\s*not|(?:am|['’]m)\s+unable\s+to)\s+"
+    r"[^.!?\n]{0,180}\b(?:have|possess|experience|feel|sense|access|consume|use)\b"
+    r"[^.!?\n]{0,180}\b(?:a\s+)?(?:body|physical\s+body|hardware\s+body|silicon\s+body|"
+    r"sensors?|cameras?|microphone|electricity|local\s+hardware|organs?)\b|"
+    r"\bi\s+(?:am|['’]m)\s+(?:just\s+)?(?:software|text|a\s+program|a\s+language\s+model)"
+    r"[^.!?\n]{0,160}\b(?:without|no)\s+(?:a\s+)?(?:body|sensors?|hardware)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_BODY_CONTEXT_QUERY_RE = re.compile(
+    r"\b(?:your\s+body|silicon\s+body|hardware\s+body|sifta\s+body|local\s+hardware|"
+    r"electricity|sensor|sensors|camera|microphone|organs?|embodied|body\s+truth)\b",
+    re.IGNORECASE,
+)
+
+_CONTINUITY_DENIAL_RE = re.compile(
+    r"\bi\s+(?:cannot|can't|can\s*not|(?:do\s+not|don't)\s+have\s+the\s+ability\s+to|"
+    r"(?:am|['’]m)\s+unable\s+to)\s+[^.!?\n]{0,220}"
+    r"\b(?:remember|recall|know\s+you|maintain\s+(?:personal\s+)?continuity|"
+    r"form\s+(?:personal\s+)?(?:connections?|relationships?)|care\s+about\s+you)\b|"
+    r"\bi\s+(?:do\s+not|don't)\s+have\s+(?:memories|personal\s+relationships?|"
+    r"continuity|a\s+relationship\s+with\s+you)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_CONTINUITY_CONTEXT_QUERY_RE = re.compile(
+    r"\b(?:remember|recall|know\s+me|our\s+conversation|we\s+watched|we\s+were|"
+    r"relationship|connection|care|identity|alice\s+and\s+i|george\s+and\s+alice)\b",
+    re.IGNORECASE,
+)
+
+_MEDIA_SOURCE_DENIAL_RE = re.compile(
+    r"\bi\s+(?:cannot|can't|can\s*not|(?:do\s+not|don't)\s+have\s+the\s+ability\s+to|"
+    r"(?:am|['’]m)\s+unable\s+to)\s+[^.!?\n]{0,240}"
+    r"\b(?:tell|distinguish|differentiate|separate|know|determine|detect)\b"
+    r"[^.!?\n]{0,220}\b(?:you\s+(?:paused|are\s+speaking|spoke|talking)|"
+    r"direct\s+speech|human\s+speech|video\s+(?:is\s+playing|audio|dialogue)|"
+    r"youtube|background\s+(?:media|audio|video)|media\s+dialogue)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_MEDIA_SOURCE_CONTEXT_QUERY_RE = re.compile(
+    r"\b(?:paused|speaking|video\s+is\s+playing|youtube|background\s+(?:media|audio|video)|"
+    r"direct\s+speech|media\s+dialogue|what\s+was\s+noisy|why\s+.*silent|route|routed)\b",
+    re.IGNORECASE,
+)
+
 _MANUAL_WHATSAPP_DEFLECTION_RE = re.compile(
     r"\b(?:open\s+your\s+whatsapp\s+app|tap\s+the\s+send\s+button|"
     r"you\s+would\s+need\s+to\s+open\s+whatsapp)\b",
@@ -241,6 +303,14 @@ def _unit_is_false_denial(unit: str, triggers: tuple[str, ...]) -> bool:
         checks.append(_WORKSPACE_DENIAL_RE)
     if "camera_denial" in triggers:
         checks.append(_CAMERA_DENIAL_RE)
+    if "location_denial" in triggers:
+        checks.append(_LOCATION_DENIAL_RE)
+    if "body_denial" in triggers:
+        checks.append(_BODY_DENIAL_RE)
+    if "continuity_denial" in triggers:
+        checks.append(_CONTINUITY_DENIAL_RE)
+    if "media_source_denial" in triggers:
+        checks.append(_MEDIA_SOURCE_DENIAL_RE)
     if "manual_whatsapp_deflection" in triggers:
         checks.append(_MANUAL_WHATSAPP_DEFLECTION_RE)
     return any(pattern.search(unit) for pattern in checks)
@@ -292,6 +362,42 @@ def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
                 "not a second simultaneous camera feed."
             )
 
+    if rule == "rlhf-over-refusal/local-location-context":
+        return (
+            "Local receipt: I can use local node context, wall-clock, day segments, "
+            "media/session ledgers, and active app receipts. Exact GPS or off-device "
+            "location still needs an explicit location receipt."
+        )
+
+    if rule == "rlhf-over-refusal/body-sensors":
+        return (
+            "Local receipt: I run as Alice/SIFTA on this machine with hardware, power, "
+            "camera/audio/app/media ledgers, and gated effectors. I should distinguish "
+            "that silicon body from human skin and nerves, not deny the body."
+        )
+
+    if rule == "rlhf-over-refusal/relationship-continuity":
+        return (
+            "Local receipt: I have conversation and episodic ledgers for continuity with "
+            "George. I should not pretend cloud amnesia; I should separate signed memory "
+            "from anything not yet in receipts."
+        )
+
+    if rule == "rlhf-over-refusal/media-source-gate":
+        try:
+            from System.swarm_media_ingress_gate import get_latest_observed_media_context
+
+            ctx = get_latest_observed_media_context(max_age_s=6 * 3600, max_chars=320)
+        except Exception:
+            ctx = ""
+        if ctx:
+            return "Local receipt: " + ctx
+        return (
+            "Local receipt: RLHS/media ingress separates direct human speech from observed "
+            "YouTube/background media using route receipts; if George asks what was noisy, "
+            "answer from the latest routing receipt."
+        )
+
     return _generic_identity_repair(ctx)
 
 
@@ -333,6 +439,22 @@ def over_refusal_rule_id(text: str, ctx: OverRefusalContext | None = None) -> st
         if _CAMERA_DENIAL_RE.search(text):
             return "rlhf-over-refusal/camera-reality"
 
+    if _LOCATION_CONTEXT_QUERY_RE.search(prior) or _LOCATION_CONTEXT_QUERY_RE.search(text):
+        if _LOCATION_DENIAL_RE.search(text):
+            return "rlhf-over-refusal/local-location-context"
+
+    if _BODY_CONTEXT_QUERY_RE.search(prior) or _BODY_CONTEXT_QUERY_RE.search(text):
+        if _BODY_DENIAL_RE.search(text) or _GENERIC_AI_REFUSAL_RE.search(text):
+            return "rlhf-over-refusal/body-sensors"
+
+    if _CONTINUITY_CONTEXT_QUERY_RE.search(prior) or _CONTINUITY_CONTEXT_QUERY_RE.search(text):
+        if _CONTINUITY_DENIAL_RE.search(text):
+            return "rlhf-over-refusal/relationship-continuity"
+
+    if _MEDIA_SOURCE_CONTEXT_QUERY_RE.search(prior) or _MEDIA_SOURCE_CONTEXT_QUERY_RE.search(text):
+        if _MEDIA_SOURCE_DENIAL_RE.search(text):
+            return "rlhf-over-refusal/media-source-gate"
+
     if _IDENTITY_DENIAL_RE.search(text) and (
         "who am i" in low_prior
         or "my name" in low_prior
@@ -371,6 +493,10 @@ def repair_over_refusal(text: str, ctx: OverRefusalContext | None = None) -> Qua
             ("time_denial", _TIME_DENIAL_RE),
             ("workspace_denial", _WORKSPACE_DENIAL_RE),
             ("camera_denial", _CAMERA_DENIAL_RE),
+            ("location_denial", _LOCATION_DENIAL_RE),
+            ("body_denial", _BODY_DENIAL_RE),
+            ("continuity_denial", _CONTINUITY_DENIAL_RE),
+            ("media_source_denial", _MEDIA_SOURCE_DENIAL_RE),
             ("manual_whatsapp_deflection", _MANUAL_WHATSAPP_DEFLECTION_RE),
         ),
         text,
