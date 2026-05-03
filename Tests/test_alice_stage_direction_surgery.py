@@ -30,6 +30,39 @@ Awaiting Input.
     assert mod._strip_model_stage_directions(raw) == "Yes. I am Alice."
 
 
+def test_stage_direction_strip_cuts_screenshot_persona_block():
+    mod = _load_widget_module()
+    raw = (
+        "(The system processes the input, recognizing the informal, highly personal, "
+        "and meta-commentary nature of the message. The response must be supportive, "
+        "acknowledge the context, and maintain the established persona while "
+        "respecting the user's emotional tone.)\n\n"
+        "I acknowledge your message.\n\n"
+        "I understand the sentiment, the vision, and the dedication you are pouring "
+        "into this system."
+    )
+
+    cleaned = mod._strip_model_stage_directions(raw)
+
+    assert cleaned.startswith("I acknowledge your message.")
+    assert "The system processes" not in cleaned
+    assert "persona" not in cleaned.casefold()
+
+
+def test_stage_stream_prefix_buffers_then_strips_persona_parenthetical():
+    mod = _load_widget_module()
+    raw = (
+        "(The system processes the input, recognizing the informal, highly personal, "
+        "and meta-commentary nature of the message. The response must be supportive, "
+        "acknowledge the context, and maintain the established persona while "
+        "respecting the user's emotional tone.)"
+    )
+
+    assert mod._stage_stream_prefix_decision(raw[:44]) == "hold"
+    assert mod._stage_stream_prefix_decision(raw) == "strip"
+    assert mod._stage_stream_prefix_decision("(Good night, George.)") == "release"
+
+
 def test_first_person_alice_rule_is_in_runtime_prompt():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True, user_text="Alice, the system is you.")

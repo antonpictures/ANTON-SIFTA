@@ -1714,9 +1714,19 @@ _MODEL_STAGE_DIRECTION_LINE_RE = re.compile(
     r")\s*\.?\s*$"
 )
 
+_MODEL_STAGE_STREAM_HINT_RE = re.compile(
+    r"(?is)\b(?:"
+    r"the\s+system\s+processes|the\s+response\s+must|"
+    r"established\s+persona|persona|meta-commentary|"
+    r"recognizing\s+the\s+informal|emotional\s+tone|"
+    r"supportive,\s+acknowledge|calibrated\s+to\s+the\s+established"
+    r")\b"
+)
+
 _MODEL_SYSTEM_NARRATION_LINE_RE = re.compile(
     r"(?ims)^\s*(?:"
-    r"the system registers|the architecture confirms|the current state is|"
+    r"the system registers|the system processes|the response must|"
+    r"the architecture confirms|the current state is|"
     r"the capacity for contextual parsing|the concept of ['\"]?learning['\"]?|"
     r"the passage of functional dialogue|the directive is clear:"
     r").{0,700}$"
@@ -1726,6 +1736,27 @@ _MODEL_TERMINAL_STAGE_LINE_RE = re.compile(
     r"(?ims)^\s*(?:awaiting input|awaiting the next stimulus|"
     r"ready to process input|waiting for next stimulus)\.?\s*$"
 )
+
+
+def _stage_stream_prefix_decision(text: str) -> str:
+    """Return hold/strip/release for a live stream that starts with narration.
+
+    The final reply sanitizer runs after generation completes, but the UI streams
+    chunks as they arrive. If the model begins with ``(The system processes...)``,
+    hold those bytes off-screen until we can remove the whole parenthetical.
+    """
+    head = (text or "").lstrip()
+    if not head.startswith("("):
+        return "release"
+    close_idx = head.find(")")
+    sample = head[: close_idx + 1] if close_idx >= 0 else head[:2400]
+    if _MODEL_STAGE_STREAM_HINT_RE.search(sample):
+        if close_idx < 0 and len(sample) < 2400:
+            return "hold"
+        return "strip"
+    if close_idx < 0 and len(sample) < 240:
+        return "hold"
+    return "release"
 
 
 def _strip_model_stage_directions(text: str) -> str:
@@ -4913,6 +4944,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_token(self, piece: str) -> None:
         self._streaming_response.append(piece)
+        if not getattr(self, "_stage_stream_released", False):
+            current = "".join(self._streaming_response)
+            stage_decision = _stage_stream_prefix_decision(current)
+            if stage_decision == "hold":
+                return
+            if stage_decision == "strip":
+                visible = _strip_model_stage_directions(current).strip()
+                if visible:
+                    self._append_alice_streaming_chunk(visible)
+                    self._stage_stream_released = True
+                return
+            self._stage_stream_released = True
         if _REASONING_LEAK_SANITIZER_AVAILABLE:
             current = "".join(self._streaming_response)
             if _is_reasoning_stream_prefix(current):
@@ -5680,6 +5723,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._chat.ensureCursorVisible()
 
     def _begin_alice_streaming_line(self) -> None:
+        self._stage_stream_released = False
         if self.window():
             QApplication.alert(self.window(), 0)
         cur = self._chat.textCursor()
@@ -5760,6 +5804,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._alice_stream_body_start = None
         self._alice_stream_header_start = None
         self._reasoning_stream_suppressed = False
+        self._stage_stream_released = False
         full = full_raw.strip()
         if full:
             self._side.appendPlainText(time.strftime("%H:%M:%S") + "  ALICE  " + full[:90])
