@@ -98,6 +98,26 @@ def _classify(tool_name: str) -> str:
     return "SAFE"
 
 
+def _governance_truth(root: Optional[Path] = None) -> Dict[str, Any]:
+    try:
+        from System.swarm_governance_ledger import GovernanceLedger
+
+        truth = GovernanceLedger.get_current_truth(root=root)
+        return truth if isinstance(truth, dict) else {}
+    except Exception:
+        return {}
+
+
+def _context_approval(context: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(context, dict):
+        return False
+    return bool(
+        context.get("human_governance_approved")
+        or context.get("governance_approved")
+        or context.get("architect_go")
+    )
+
+
 # ── Main API ──────────────────────────────────────────────────────────────────
 
 def check_tool(
@@ -131,6 +151,9 @@ def check_tool(
     """
     disabled = os.environ.get(_DISABLE_ENV, "").strip() == "1"
     tier     = _classify(tool_name)
+    governance_truth = _governance_truth(root)
+    governance_escalation = bool(governance_truth.get("human_escalation_required"))
+    governance_approved = _context_approval(context)
 
     if disabled:
         permitted = True
@@ -138,6 +161,12 @@ def check_tool(
     elif tier == "HARD_BLOCK":
         permitted = False
         reason    = f"HARD_BLOCK: '{tool_name}' is never permitted autonomously (Russell 2019 §5)"
+    elif governance_escalation and tier in {"CAUTION", "RISKY"} and not governance_approved:
+        permitted = False
+        reason    = (
+            f"GOVERNANCE_ESCALATION_REQUIRED: '{tool_name}' blocked until "
+            "Architect approval is present in the NPPL context"
+        )
     elif tier == "RISKY" and clamp_level != "NONE":
         permitted = False
         reason    = (
@@ -164,10 +193,14 @@ def check_tool(
         "permitted":    permitted,
         "clamp_level":  clamp_level,
         "stability_ok": stability_ok,
+        "governance_escalation_required": governance_escalation,
+        "governance_approved": governance_approved,
         "reason":       reason,
         "disabled":     disabled,
         "provenance":   "Amodei2016; Leike2018; Russell2019",
     }
+    if governance_truth.get("last_conflict"):
+        receipt["governance_last_conflict"] = governance_truth.get("last_conflict")
     if context:
         receipt["context"] = context
 

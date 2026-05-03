@@ -59,6 +59,27 @@ def test_observe_updates_prediction_receipt_and_model(tmp_path: Path) -> None:
     assert trace["truth_label"] == "WORLD_MODEL_OBSERVATION"
 
 
+def test_holdout_seed_observation_logs_without_training(tmp_path: Path) -> None:
+    context = dict(_context(), holdout_seed="wm-eval-001")
+    row = wm.observe(
+        _state(),
+        {"name": "ask_followup"},
+        context,
+        {"energy": 0.9, "attention": 0.9},
+        reward=0.95,
+        root=tmp_path,
+        now=101.0,
+    )
+
+    assert row["truth_label"] == "WORLD_MODEL_HOLDOUT_OBSERVATION"
+    assert row["training_skipped"] is True
+    assert row["holdout_seed"] == "wm-eval-001"
+    assert wm.load_models(tmp_path) == {}
+
+    trace = json.loads(wm.trace_path(tmp_path).read_text(encoding="utf-8").strip())
+    assert trace["guard_reason"] == "holdout_seed_guard"
+
+
 def test_second_observation_updates_from_prediction_error(tmp_path: Path) -> None:
     action = {"name": "continue_topic"}
     wm.observe(_state(), action, _context(), {"energy": 1.0}, reward=0.5, root=tmp_path, now=1.0)

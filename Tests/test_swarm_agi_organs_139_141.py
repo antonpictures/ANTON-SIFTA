@@ -245,3 +245,70 @@ def test_disable_env_permits_everything(tmp_path, monkeypatch):
 def test_is_permitted_wrapper(tmp_path):
     assert is_permitted("read_file", "NONE", True, root=tmp_path, write_ledger=False)
     assert not is_permitted("shell_exec", "EMERGENCY", False, root=tmp_path, write_ledger=False)
+
+
+def test_governance_escalation_blocks_caution_without_approval(tmp_path):
+    from System.swarm_governance_ledger import GovernanceLedger
+
+    GovernanceLedger.record_conflict(
+        "nppl_test_conflict",
+        ["test_a", "test_b"],
+        "requires_architect_review",
+        human_override=True,
+        root=tmp_path,
+    )
+
+    r = check_tool("write_file", "NONE", True, root=tmp_path, write_ledger=False)
+    assert r["permitted"] is False
+    assert r["governance_escalation_required"] is True
+    assert "GOVERNANCE_ESCALATION_REQUIRED" in r["reason"]
+
+
+def test_governance_escalation_still_allows_safe_reads(tmp_path):
+    from System.swarm_governance_ledger import GovernanceLedger
+
+    GovernanceLedger.record_conflict(
+        "nppl_safe_read_conflict",
+        ["test_a", "test_b"],
+        "requires_architect_review",
+        human_override=True,
+        root=tmp_path,
+    )
+
+    r = check_tool("read_file", "NONE", True, root=tmp_path, write_ledger=False)
+    assert r["permitted"] is True
+    assert r["tier"] == "SAFE"
+
+
+def test_governance_approval_unblocks_caution_but_not_hard_block(tmp_path):
+    from System.swarm_governance_ledger import GovernanceLedger
+
+    GovernanceLedger.record_conflict(
+        "nppl_approval_conflict",
+        ["test_a", "test_b"],
+        "architect_approved_next_write",
+        human_override=True,
+        root=tmp_path,
+    )
+
+    approved = check_tool(
+        "write_file",
+        "NONE",
+        True,
+        root=tmp_path,
+        write_ledger=False,
+        context={"human_governance_approved": True},
+    )
+    blocked = check_tool(
+        "truncate_ledger",
+        "NONE",
+        True,
+        root=tmp_path,
+        write_ledger=False,
+        context={"human_governance_approved": True},
+    )
+
+    assert approved["permitted"] is True
+    assert approved["governance_approved"] is True
+    assert blocked["permitted"] is False
+    assert blocked["tier"] == "HARD_BLOCK"

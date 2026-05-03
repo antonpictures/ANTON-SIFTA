@@ -15,6 +15,7 @@ happened" across action choices.
 Truth labels:
   WORLD_MODEL_PREDICTION
   WORLD_MODEL_OBSERVATION
+  WORLD_MODEL_HOLDOUT_OBSERVATION
   WORLD_MODEL_ACTION_SCORE
 
 Kill-switch: SIFTA_WORLD_MODEL_DISABLE=1.
@@ -101,6 +102,43 @@ def _compact(payload: Any, limit: int = 600) -> Any:
     if len(blob) <= limit:
         return payload
     return {"preview": blob[:limit]}
+
+
+def _find_holdout_seed(payload: Any) -> Optional[str]:
+    if isinstance(payload, dict):
+        if payload.get("holdout") is True:
+            return str(payload.get("holdout_seed") or payload.get("seed") or "holdout")
+        for key in ("holdout_seed", "eval_seed"):
+            value = payload.get(key)
+            if value not in (None, ""):
+                return str(value)
+        split = str(payload.get("split") or payload.get("dataset_split") or "").lower()
+        if split in {"holdout", "eval_holdout", "test"}:
+            return str(payload.get("seed") or split)
+        for value in payload.values():
+            found = _find_holdout_seed(value)
+            if found:
+                return found
+    elif isinstance(payload, (list, tuple)):
+        for value in payload:
+            found = _find_holdout_seed(value)
+            if found:
+                return found
+    return None
+
+
+def holdout_seed_for(
+    state: Dict[str, Any],
+    action: Dict[str, Any],
+    context: Optional[Dict[str, Any]],
+    next_state: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Return the evaluation split seed, if this observation must not train WM."""
+    for payload in (context or {}, action or {}, state or {}, next_state or {}):
+        found = _find_holdout_seed(payload)
+        if found:
+            return found
+    return None
 
 
 def _flatten_numeric(prefix: str, value: Any, out: Dict[str, float]) -> None:
@@ -278,6 +316,45 @@ def observe(
     old_reward = float(prior["reward_mu"])
     old_harm = float(prior["harm_mu"])
     old_cost = float(prior["cost_mu"])
+    holdout_seed = holdout_seed_for(state, action, context, next_state)
+
+    if holdout_seed:
+        reward_f = _clamp(reward, lo=-1.0, hi=1.0)
+        harm_f = _clamp(harm)
+        row: Dict[str, Any] = {
+            "ts": t_now,
+            "trace_id": str(uuid.uuid4()),
+            "truth_label": "WORLD_MODEL_HOLDOUT_OBSERVATION",
+            "kind": "WORLD_MODEL_HOLDOUT_OBSERVATION",
+            "model_key": key,
+            "state_schema": state_schema(state),
+            "action_schema": action_schema(action),
+            "context_schema": context_schema(context or {}),
+            "holdout_seed": holdout_seed,
+            "training_skipped": True,
+            "guard_reason": "holdout_seed_guard",
+            "predicted_next_state": predicted_next,
+            "actual_next_state": _compact(next_state),
+            "state_prediction_error": state_error,
+            "predicted_reward": round(old_reward, 4),
+            "actual_reward": reward_f,
+            "reward_error": round(reward_f - old_reward, 4),
+            "predicted_harm": round(old_harm, 4),
+            "actual_harm": harm_f,
+            "harm_error": round(harm_f - old_harm, 4),
+            "predicted_cost": round(old_cost, 4),
+            "actual_cost": cost,
+            "updated_model": prior,
+            "disabled": _disabled(),
+        }
+        if write_ledger and not _disabled():
+            append_line_locked(
+                trace_path(root),
+                json.dumps(row, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        return row
+
     n = int(prior["n"]) + 1
     alpha = _alpha(n)
 
@@ -467,6 +544,7 @@ __all__ = [
     "action_schema",
     "context_schema",
     "expected_free_energy",
+    "holdout_seed_for",
     "load_models",
     "model_key",
     "model_path",
