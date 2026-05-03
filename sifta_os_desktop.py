@@ -766,6 +766,22 @@ class SiftaMdiArea(QMdiArea):
                 
                 p[0] = float(np.clip(p[0] + grad[0] * 0.012 + eta_x, 0.0, 1.0))
                 p[1] = float(np.clip(p[1] + grad[1] * 0.012 + eta_y, 0.0, 1.0))
+    def _refresh_pred_data(self) -> None:
+        import time as _t
+        now = _t.monotonic()
+        if now - getattr(self, "_pred_last_read", 0.0) < 30.0:
+            return
+        self._pred_last_read = now
+        try:
+            from System.swarm_body_monitor import ORGAN_DEFS
+            self._pred_data["alive"] = len(ORGAN_DEFS)
+            from System.stgm_economy import scan_economy
+            snap = scan_economy()
+            self._pred_data["stgm"] = snap.canonical_wallet_sum
+        except Exception:
+            self._pred_data["alive"] = 0
+            self._pred_data["stgm"] = 0.0
+
     def _draw_predator_sigil(self, painter: "QPainter", w: int, h: int) -> None:
         """Single whisper line + ghost PREDATOR text. Human predator: you feel it.
         Data refresh every 30 s, paint cost = 2 drawText calls.
@@ -891,6 +907,18 @@ def _publish_sifta_active_window_focus(app_title: str, display_name: str) -> Non
 # ── Launchpad / Spotlight (module-level widgets; defined before SiftaDesktop so
 #    the module’s execution order matches import introspection and one source of truth.) ──
 
+class LaunchpadButton(QPushButton):
+    def __init__(self, text, app_name, parent=None):
+        super().__init__(text, parent)
+        self.app_name = app_name
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        try:
+            from System.swarm_app_focus import publish_focus
+            publish_focus("Launchpad", f"Focus on tile: {self.app_name}", tab=self.app_name)
+        except Exception:
+            pass
 
 class LaunchpadWidget(QWidget):
 
@@ -991,7 +1019,7 @@ class LaunchpadWidget(QWidget):
                 continue
             cat = _macos_app_category(name, dat)
             icon = self._icon_for(name, cat)
-            btn = QPushButton(f"{icon}  {name}    {cat}")
+            btn = LaunchpadButton(f"{icon}  {name}    {cat}", name)
             btn.setMinimumHeight(44)
             btn.setMaximumWidth(760)
             btn.setStyleSheet("""
@@ -1116,7 +1144,18 @@ class SpotlightWidget(QWidget):
         self.list_widget.itemActivated.connect(self._launch_item)
         self.list_widget.itemDoubleClicked.connect(self._launch_item)
         self.list_widget.itemClicked.connect(self._launch_item)
+        self.list_widget.currentItemChanged.connect(self._on_item_changed)
         layout.addWidget(self.list_widget)
+
+    def _on_item_changed(self, current, previous):
+        if current:
+            app_name = current.data(Qt.ItemDataRole.UserRole)
+            if app_name:
+                try:
+                    from System.swarm_app_focus import publish_focus
+                    publish_focus("Spotlight", f"Focus on app: {app_name}", tab=app_name)
+                except Exception:
+                    pass
 
     def _update_list(self):
         self.list_widget.clear()
@@ -1268,6 +1307,9 @@ class SiftaDesktop(QMainWindow):
             self._local_hw_serial = read_apple_serial()
         except Exception:
             pass
+
+        # Owner-field heartbeat — touch presence JSON no faster than 15 min.
+        self._last_owner_alive_touch = time.time()
 
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._update_clock)
@@ -1427,6 +1469,15 @@ class SiftaDesktop(QMainWindow):
             from System.swarm_sensor_attention_director import tick
 
             decision = tick(write_hardware=True)
+            # Event 114 — ledger-fused Architect vs screen gaze proxy (~6s cadence)
+            self._gaze_balance_i = getattr(self, "_gaze_balance_i", 0) + 1
+            if self._gaze_balance_i % 3 == 0:
+                try:
+                    from System.swarm_architect_screen_gaze_balance import write_gaze_balance_sample
+
+                    write_gaze_balance_sample()
+                except Exception as exc2:
+                    print(f"[SiftaDesktop] gaze balance sample failed: {exc2}", file=sys.stderr)
             if hasattr(self, "_alice_status_label") and not self._alice_status_label.text():
                 role = "room" if decision.target_role == "room_patrol_eye" else "near"
                 self._alice_status_label.setText(f"👁  {role} eye")
@@ -1529,6 +1580,12 @@ class SiftaDesktop(QMainWindow):
                 self._desktop_mesh.wait(2000)
             except Exception:
                 pass
+        try:
+            from System.swarm_owner_unified_field_boot import note_desktop_shutdown_for_owner_field
+
+            note_desktop_shutdown_for_owner_field()
+        except Exception:
+            pass
         super().closeEvent(event)
 
     def _on_desktop_mesh_status(self, status):
@@ -1556,6 +1613,19 @@ class SiftaDesktop(QMainWindow):
             new_ms = max(1000, int(self._heart_period_s() * 1000))
             if hasattr(self, "_heartbeat_timer") and self._heartbeat_timer.interval() != new_ms:
                 self._heartbeat_timer.setInterval(new_ms)
+        except Exception:
+            pass
+
+        # Owner unified field — periodic "still powered / still at desk session" stamp.
+        try:
+            import time as _time_mod
+
+            _now = _time_mod.time()
+            if _now - float(getattr(self, "_last_owner_alive_touch", 0.0)) > 900.0:
+                from System.swarm_owner_unified_field_boot import touch_owner_desktop_alive
+
+                touch_owner_desktop_alive()
+                self._last_owner_alive_touch = _now
         except Exception:
             pass
 
@@ -2293,6 +2363,11 @@ class SiftaDesktop(QMainWindow):
             publish_focus(title, "User launched application from Programs menu")
         except Exception:
             pass
+        try:
+            from System.swarm_unified_cowatch_field import write_organ_focus
+            write_organ_focus(title)  # initial open — no guess data yet
+        except Exception:
+            pass
 
         # Build {title: (x,y)} from live subwindow positions for the cascade calc
         win_positions = {}
@@ -2877,6 +2952,16 @@ if __name__ == "__main__":
     app.setFont(QFont("Helvetica Neue", 13))
     app.setStyleSheet(_get_global_qss())   # Predator / Mermaid from theme engine
 
+    # ── Owner unified field — STIGTIME + schedule + presence (Event 119+) ─
+    try:
+        from System.swarm_owner_unified_field_boot import anchor_owner_unified_field_on_boot
+
+        _boot_anchor = anchor_owner_unified_field_on_boot()
+        sys.stderr.write(
+            f"  [BOOT] owner_unified_field trace={_boot_anchor.get('receipt_trace_id')}\n"
+        )
+    except Exception as exc:
+        sys.stderr.write(f"[BOOT] owner_unified_field_boot skipped: {exc}\n")
 
     # ── Hot-Reload Organ (Epoch 4, C47H) — install once at boot. ─────────
     # After this, code patches to whitelisted modules can land via:

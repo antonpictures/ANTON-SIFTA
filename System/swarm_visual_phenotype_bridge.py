@@ -165,6 +165,13 @@ def build_visual_phenotype_uniforms(row: Optional[Dict[str, Any]] = None) -> Dic
         "action": _action_label(action),
         "metabolic_mode": str(row.get("metabolic_mode") or ""),
         "plasticity_danger": str(row.get("plasticity_danger") or ""),
+        
+        # Event 92: Electric Fish Identity Field
+        "u_identity_hash": float(hash(str(row.get("doctor", "AG31"))) % 1000) / 1000.0,
+        "u_arousal": clamp01(value),
+        "u_stgm_pressure": clamp01(cost),
+        "u_quorum_density": quorum,
+        "u_self_confidence": confidence,
     }
     return uniforms
 
@@ -180,3 +187,47 @@ def write_visual_phenotype_uniforms(row: Optional[Dict[str, Any]] = None) -> Dic
 
 if __name__ == "__main__":
     print(json.dumps(write_visual_phenotype_uniforms(), indent=2, sort_keys=True))
+
+
+def summary_for_alice(max_rows: int = 5) -> str:
+    """
+    Read the latest visual telemetry from what_alice_sees.jsonl to anchor Alice's 
+    conversational cortex in the physical environment.
+    """
+    sees_path = _state_root() / "what_alice_sees.jsonl"
+    if not sees_path.exists():
+        return ""
+        
+    try:
+        lines = sees_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        rows = []
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                import json
+                row = json.loads(line)
+                if isinstance(row, dict):
+                    rows.append(row)
+                    if len(rows) >= max_rows:
+                        break
+            except Exception:
+                continue
+                
+        if not rows:
+            return ""
+            
+        rows.reverse()
+        out = ["LIVE VISUAL CORTEX TELEMETRY (What you are seeing right now):"]
+        for r in rows:
+            iso = r.get("iso_ts") or r.get("ts") or ""
+            scene = r.get("scene_description") or r.get("description") or str(r)
+            if iso:
+                out.append(f"- [{iso}] {scene}")
+            else:
+                out.append(f"- {scene}")
+        
+        return "\n".join(out)
+    except Exception:
+        return ""
