@@ -33,6 +33,8 @@ def test_observed_media_summary_keeps_jensen_nvidia_topic_across_long_run(monkey
 
     ctx = gate.get_latest_observed_media_context(max_age_s=60.0)
 
+    assert "last_input_routing route=observed_media" in ctx
+    assert "if George asks what was noisy" in ctx
     assert "observed_media_summary" in ctx
     assert "Jensen Huang" in ctx
     assert "NVIDIA" in ctx
@@ -138,3 +140,27 @@ def test_observed_media_summary_dedupes_context_and_watch_memory(monkeypatch, tm
     ctx = gate.get_latest_observed_media_context(max_age_s=3600.0)
 
     assert ctx.count("same_video") == 1
+
+
+def test_latest_ambient_media_receipt_answers_what_was_noisy(monkeypatch, tmp_path):
+    monkeypatch.setattr(gate, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(gate, "LEDGER", tmp_path / "media_ingress_gate.jsonl")
+    monkeypatch.setattr(gate, "AMBIENT_CONTEXT_FILE", tmp_path / "ambient_media_context.json")
+
+    gate.write_gate_receipt(
+        {
+            "route": "ambient_media",
+            "reason": "owner_declared_background_media_youtube",
+            "confidence": 0.9,
+        },
+        text="OpenAI will revamp Codex and the desktop agent will operate every app.",
+        stt_conf=0.62,
+        focus_context="ambient_media_youtube owner declared",
+    )
+
+    ctx = gate.get_latest_observed_media_context(max_age_s=60.0)
+
+    assert "last_input_routing route=ambient_media" in ctx
+    assert "owner_declared_background_media_youtube" in ctx
+    assert "suppressed as environmental media, not George speaking" in ctx
+    assert "OpenAI will revamp Codex" in ctx

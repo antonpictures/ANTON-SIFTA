@@ -495,6 +495,25 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
 
     lines: list[str] = []
     ordered = list(reversed(candidates))
+    latest = candidates[0] if candidates else {}
+    if latest:
+        route = str(latest.get("route") or "unknown")
+        reason = str(latest.get("reason") or "unknown")
+        stt = latest.get("stt_confidence", "")
+        preview = " ".join(str(latest.get("text_preview") or "").split())[:max_chars]
+        if route == "ambient_media":
+            interpretation = "suppressed as environmental media, not George speaking"
+        elif route == "observed_media":
+            interpretation = "kept as co-watch/environmental context, not a direct prompt"
+        else:
+            interpretation = "input route recorded"
+        lines.append(
+            "last_input_routing "
+            f"route={route} reason={reason} stt_conf={stt}; "
+            f"{interpretation}; "
+            "if George asks what was noisy or why I went silent, answer from this receipt; "
+            f"transcript_excerpt={preview}"
+        )
     terms = _observed_media_terms(ordered)
     route_counts = Counter(str(row.get("route") or "unknown") for row in ordered)
     reason_counts = Counter(str(row.get("reason") or "unknown") for row in ordered)
