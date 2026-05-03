@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from System.jsonl_file_lock import append_line_locked, read_text_locked, rewrite_text_locked
+from System.swarm_persistent_owner_history import state_dir
 
 
 def _clamp(value: Any, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -24,7 +25,7 @@ class AstrocyteGlialModulator:
     """
 
     def __init__(self, root: Optional[Path] = None):
-        self.root = root or Path(".sifta_state")
+        self.root = state_dir(root)
         self.state_file = self.root / "astrocyte_glial_state.json"
         self.log_file = self.root / "astrocyte_modulation_log.jsonl"
         

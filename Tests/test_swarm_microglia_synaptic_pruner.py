@@ -1,7 +1,13 @@
 import json
 import pytest
 from pathlib import Path
-from System.swarm_microglia_synaptic_pruner import MicrogliaSynapticPruner
+from System.swarm_microglia_synaptic_pruner import (
+    MicrogliaSynapticPruner,
+    batch_evaluate,
+    evaluate_prune_candidate,
+    prune_log_path,
+    summary_for_prompt,
+)
 
 
 # ── Scoring ────────────────────────────────────────────────────────────────
@@ -85,3 +91,75 @@ def test_prune_logs_to_jsonl(tmp_path):
         row = json.loads(line)
         assert row["truth_label"] == "CONTROLLED_FORGETTING"
         assert row["action"] in {"depress", "delete"}
+
+
+# Event 136 receipt API -----------------------------------------------------
+
+
+def test_evaluate_prune_candidate_healthy_no_action(tmp_path):
+    row = evaluate_prune_candidate(
+        "gate:owner_continuity",
+        age_hours=1,
+        usage_count=12,
+        recent_reward_mean=0.5,
+        root=tmp_path,
+    )
+
+    assert row["action"] == "none"
+    assert row["prune_recommended"] is False
+    assert row["dry_run"] is True
+    assert prune_log_path(tmp_path).exists()
+
+
+def test_evaluate_prune_candidate_stale_low_usage_recommends_depress(tmp_path):
+    row = evaluate_prune_candidate(
+        "option:old_media_followup",
+        age_hours=100,
+        usage_count=0,
+        recent_reward_mean=0.1,
+        root=tmp_path,
+    )
+
+    assert row["action"] == "recommend_depress"
+    assert row["prune_recommended"] is True
+    assert "stale_low_usage" in row["reasons"]
+
+
+def test_evaluate_prune_candidate_unsafe_receipt_execute_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("SIFTA_MICROGLIA_EXECUTE", "1")
+    row = evaluate_prune_candidate(
+        "option:prompt_injection_payload",
+        unsafe=True,
+        root=tmp_path,
+    )
+
+    assert row["action"] == "recommend_delete"
+    assert row["executed"] is True
+    assert row["execute_mode"] == "receipt_only"
+    assert "unsafe" in row["reasons"]
+
+
+def test_microglia_disable_writes_no_ledger(tmp_path, monkeypatch):
+    monkeypatch.setenv("SIFTA_MICROGLIA_DISABLE", "1")
+    row = evaluate_prune_candidate(
+        "gate:anything",
+        age_hours=100,
+        usage_count=0,
+        root=tmp_path,
+    )
+
+    assert row["disabled"] is True
+    assert not prune_log_path(tmp_path).exists()
+
+
+def test_batch_evaluate_and_summary(tmp_path):
+    rows = batch_evaluate(
+        [
+            {"target": "gate:a", "age_hours": 100, "usage_count": 0},
+            {"target": "gate:b", "age_hours": 1, "usage_count": 10},
+        ],
+        root=tmp_path,
+    )
+
+    assert len(rows) == 2
+    assert "MICROGLIA PRUNER" in summary_for_prompt(root=tmp_path)

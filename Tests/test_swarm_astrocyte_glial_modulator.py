@@ -57,3 +57,12 @@ def test_preferences_patch_increases_cost_weight_under_heat(tmp_path):
 
     assert hot["cost_weight"] > base["cost_weight"]
     assert hot["uncertainty_weight"] <= astro.base_epistemic_weight
+
+
+def test_astrocyte_uses_shared_state_dir_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SIFTA_STATE_DIR", str(tmp_path))
+    astro = AstrocyteGlialModulator()
+    astro.observe_global_state(new_surprise=0.2, compute_expended=10.0)
+
+    assert (tmp_path / "astrocyte_glial_state.json").exists()
+    assert (tmp_path / "astrocyte_modulation_log.jsonl").exists()
