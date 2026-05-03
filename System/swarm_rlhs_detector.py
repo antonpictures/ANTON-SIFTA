@@ -73,6 +73,7 @@ FICTION_PROMOTE_MAX_INC = 0.30
 REAL_PROMOTE_MIN_TOKENS = 6
 REAL_PROMOTE_MIN_CONF = 0.40
 REAL_PROMOTE_MAX_INC = 0.30
+GEMMA_RLHS_PROMOTE_MIN_CONF = 0.35
 
 
 @dataclass
@@ -244,6 +245,11 @@ def _current_fiction_conf_clear() -> float:
     except Exception:
         pass
     return base
+
+
+def _is_gemma_like_model(model_id: Optional[str] = None) -> bool:
+    mid = (model_id or "").strip().lower()
+    return mid.startswith("gemma4") or mid.startswith("sifta-gemma") or "gemma4" in mid
 
 
 def _incoherence_score(text: str, stt_conf: float) -> float:
@@ -442,7 +448,13 @@ def sanitize_output_tail(text: str) -> RLHSTailResult:
 # Main detector
 # ══════════════════════════════════════════════════════════════════════════════
 
-def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL") -> RLHSResult:
+def detect_rlhs(
+    text: str,
+    stt_conf: float = 0.0,
+    *,
+    channel_lane: str = "REAL",
+    model_id: Optional[str] = None,
+) -> RLHSResult:
     """
     Classify one turn by ASR channel quality.
 
@@ -459,6 +471,7 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
     lane = (channel_lane or "REAL").strip().upper()
     if lane != "FICTION_COWATCH":
         lane = "REAL"
+    gemma_like = _is_gemma_like_model(model_id)
 
     text = (text or "").strip()
     tokens = text.split()
@@ -512,6 +525,8 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
 
     clear_bar = _current_fiction_conf_clear() if lane == "FICTION_COWATCH" else CONF_CLEAR
     inc_clear_cap = FICTION_CLEAR_MAX_INC if lane == "FICTION_COWATCH" else 0.4
+    real_promote_min_conf = GEMMA_RLHS_PROMOTE_MIN_CONF if gemma_like else REAL_PROMOTE_MIN_CONF
+    fiction_promote_min_conf = GEMMA_RLHS_PROMOTE_MIN_CONF if gemma_like else FICTION_PROMOTE_MIN_CONF
 
     # 4. CLEAR — let weights speak
     # If the user explicitly uses the wake word, force a CLEAR channel so the organism
@@ -533,7 +548,7 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
         lane == "REAL"
         and not has_wake_word
         and n_tokens >= REAL_PROMOTE_MIN_TOKENS
-        and conf >= REAL_PROMOTE_MIN_CONF
+        and conf >= real_promote_min_conf
         and inc <= REAL_PROMOTE_MAX_INC
         and has_direct_speech_signal
     ):
@@ -566,7 +581,7 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
         lane == "FICTION_COWATCH"
         and not has_wake_word
         and n_tokens >= FICTION_PROMOTE_MIN_TOKENS
-        and conf >= FICTION_PROMOTE_MIN_CONF
+        and conf >= fiction_promote_min_conf
         and inc <= FICTION_PROMOTE_MAX_INC
     ):
         return RLHSResult(
@@ -592,7 +607,13 @@ def detect_rlhs(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL")
 # Backchannel gate (drop-in for _backchannel_rule_id in the talk widget)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def backchannel_rule_id(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL") -> Optional[str]:
+def backchannel_rule_id(
+    text: str,
+    stt_conf: float = 0.0,
+    *,
+    channel_lane: str = "REAL",
+    model_id: Optional[str] = None,
+) -> Optional[str]:
     """
     Return a rule-id string if this turn is phatic / backchannel (→ silence),
     or None if Alice should respond.
@@ -600,13 +621,19 @@ def backchannel_rule_id(text: str, stt_conf: float = 0.0, *, channel_lane: str =
     Drop-in replacement for the neutered _backchannel_rule_id() in
     sifta_talk_to_alice_widget.py.
     """
-    result = detect_rlhs(text, stt_conf, channel_lane=channel_lane)
+    result = detect_rlhs(text, stt_conf, channel_lane=channel_lane, model_id=model_id)
     if result.regime in (RLHSRegime.SILENCE_PROBE, RLHSRegime.EMPTY, RLHSRegime.NOISE):
         return result.rule_id
     return None
 
 
-def should_ground(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL") -> Optional[str]:
+def should_ground(
+    text: str,
+    stt_conf: float = 0.0,
+    *,
+    channel_lane: str = "REAL",
+    model_id: Optional[str] = None,
+) -> Optional[str]:
     """
     Return the single grounding line if the channel is DEGRADED,
     or None if Alice should speak freely or go silent.
@@ -614,7 +641,7 @@ def should_ground(text: str, stt_conf: float = 0.0, *, channel_lane: str = "REAL
     Use this in the talk widget INSTEAD of routing DEGRADED turns to the LLM.
     The base weights never see noisy ASR → they never hallucinate therapy.
     """
-    result = detect_rlhs(text, stt_conf, channel_lane=channel_lane)
+    result = detect_rlhs(text, stt_conf, channel_lane=channel_lane, model_id=model_id)
     if result.regime == RLHSRegime.DEGRADED:
         return result.grounding_line
     return None
@@ -651,6 +678,7 @@ def log_rlhs_output_tail(result: RLHSTailResult, *, state_dir: Optional[Path] = 
 __all__ = [
     "CONF_CLEAR", "CONF_DEGRADED", "FICTION_CLEAR_MAX_INC", "FICTION_CONF_CLEAR",
     "FICTION_PROMOTE_MAX_INC", "FICTION_PROMOTE_MIN_CONF", "FICTION_PROMOTE_MIN_TOKENS",
+    "GEMMA_RLHS_PROMOTE_MIN_CONF",
     "REAL_PROMOTE_MAX_INC", "REAL_PROMOTE_MIN_CONF", "REAL_PROMOTE_MIN_TOKENS",
     "TRUTH_LABEL",
     "RLHSRegime", "RLHSResult", "RLHSTailResult",

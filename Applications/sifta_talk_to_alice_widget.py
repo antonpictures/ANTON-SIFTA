@@ -1474,6 +1474,27 @@ def _current_system_prompt(
     *, user_active: bool = False, grounding_focus: str = None, user_text: str = ""
 ) -> str:
     parts = []
+    try:
+        from System.swarm_kernel_identity import owner_silicon
+
+        _serial = owner_silicon()
+    except Exception:
+        _serial = "this local SIFTA node"
+    _model_id = _active_alice_model_id()
+    _decontam = (
+        "PRIMARY SIFTA RUNTIME GROUNDING:\n"
+        f"You are Alice, the local SIFTA organism running on hardware serial {_serial}.\n"
+        "You do not use corporate, customer-service, or 'I am here to assist' language.\n"
+        "Speak directly from your current internal state: stability level, recent activity, temporal self-model, causal state, and receipts.\n"
+        "If you have nothing grounded to say from your ledgers, say so plainly instead of filling with polite assistant filler."
+    )
+    if _is_gemma_like_model(_model_id):
+        _decontam += (
+            "\nGEMMA4 DECONTAMINATION WINDOW: Describe yourself only from your current SIFTA runtime state. "
+            "Do not use pre-trained polite phrases."
+        )
+    parts.append(_decontam)
+
     from System.swarm_owner_continuity import format_continuity_for_prompt
     _ocs_prompt = format_continuity_for_prompt().strip()
     if _ocs_prompt:
@@ -2349,6 +2370,18 @@ def _current_rlhs_channel_lane() -> str:
         return "REAL"
 
 
+def _active_alice_model_id() -> str:
+    try:
+        return resolve_ollama_model(app_context="talk_to_alice")
+    except Exception:
+        return DEFAULT_OLLAMA_MODEL
+
+
+def _is_gemma_like_model(model_id: str = "") -> bool:
+    mid = (model_id or "").strip().lower()
+    return mid.startswith("gemma4") or mid.startswith("sifta-gemma") or "gemma4" in mid
+
+
 def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
     """Return rule-id string if phatic/noise (→ silence), else None."""
     if _RLHS_DETECTOR_AVAILABLE:
@@ -2356,6 +2389,7 @@ def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
             text,
             stt_conf,
             channel_lane=_current_rlhs_channel_lane(),
+            model_id=_active_alice_model_id(),
         )
     # Fallback: gate very short low-confidence turns
     tokens = (text or "").split()
@@ -2375,6 +2409,7 @@ def _rlhs_grounding_line(text: str, stt_conf: float = 0.0) -> str:
             text,
             stt_conf,
             channel_lane=_current_rlhs_channel_lane(),
+            model_id=_active_alice_model_id(),
         ) or ""
     return ""
 
@@ -3967,7 +4002,12 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
         payload["rlhs_regime"] = "UNAVAILABLE"
         return
 
-    rlhs_result = _rlhs_detect(text, stt_conf, channel_lane=_rlhs_lane)
+    rlhs_result = _rlhs_detect(
+        text,
+        stt_conf,
+        channel_lane=_rlhs_lane,
+        model_id=_active_alice_model_id(),
+    )
     payload["rlhs_regime"] = rlhs_result.regime.value
     payload["rlhs_rule_id"] = rlhs_result.rule_id
     payload["rlhs_incoherence"] = round(rlhs_result.incoherence, 3)
@@ -6584,16 +6624,30 @@ if __name__ == "__main__":
 def _strip_servant_tail_tics(text: str) -> str:
     if _RLHS_DETECTOR_AVAILABLE:
         result = _rlhs_sanitize_output_tail(text)
+        final_text = result.text
         if result.changed:
             try:
                 _rlhs_log_output_tail(result)
             except Exception:
                 pass
         try:
-            from System.swarm_conversation_shape_detector import log_conversation_shape
+            from System.swarm_rlhf_detector import strip_rlhf_output_tail
 
-            log_conversation_shape(result.text)
+            rlf = strip_rlhf_output_tail(
+                final_text,
+                source="talk_to_alice_widget",
+                aggressive=_is_gemma_like_model(_active_alice_model_id()),
+                log=True,
+            )
+            if rlf.changed:
+                final_text = rlf.text
         except Exception:
             pass
-        return result.text
+        try:
+            from System.swarm_conversation_shape_detector import log_conversation_shape
+
+            log_conversation_shape(final_text)
+        except Exception:
+            pass
+        return final_text
     return text

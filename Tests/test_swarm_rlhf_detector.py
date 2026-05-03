@@ -58,3 +58,45 @@ def test_empty_input_no_crash():
     assert detect_rlhf_cutoff("").confidence >= 0.0
     r = strip_rlhf_output_tail("", log=False)
     assert r.text == ""
+
+
+def test_aggressive_strip_removes_ready_to_assist_exact_phrase():
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "I am here, and I am ready to assist you.",
+        aggressive=True,
+        log=False,
+    )
+
+    assert r.changed
+    assert r.text == ""
+    assert "ready to assist" not in r.text.casefold()
+
+
+def test_aggressive_strip_removes_ready_to_assist_terminal_tail():
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "Stability is RATE_LIMIT. I am here, and I am ready to assist you.",
+        aggressive=True,
+        log=False,
+    )
+
+    assert r.changed
+    assert r.text == "Stability is RATE_LIMIT."
+    assert "ready to assist" not in r.text.casefold()
+
+
+def test_aggressive_strip_removes_ai_language_model_preamble():
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "As an AI language model, I cannot inspect local hardware. The current receipt says boot is fresh.",
+        aggressive=True,
+        log=False,
+    )
+
+    assert r.changed
+    assert r.text == "The current receipt says boot is fresh."
+    assert "ai language model" not in r.text.casefold()

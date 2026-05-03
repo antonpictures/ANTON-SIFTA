@@ -363,6 +363,23 @@ def test_stage2_replay_policy_modifies_fiction_clearance(monkeypatch):
     assert res_clear.regime == swarm_rlhs_detector.RLHSRegime.CLEAR
 
 
+def test_gemma_model_lowers_direct_speech_promotion_floor():
+    from System import swarm_rlhs_detector
+
+    text = "Can you tell what I was asking from this noisy audio now"
+    baseline = swarm_rlhs_detector.detect_rlhs(text, 0.36, channel_lane="REAL")
+    gemma = swarm_rlhs_detector.detect_rlhs(
+        text,
+        0.36,
+        channel_lane="REAL",
+        model_id="sifta-gemma4-alice:latest",
+    )
+
+    assert baseline.regime == swarm_rlhs_detector.RLHSRegime.DEGRADED
+    assert gemma.regime == swarm_rlhs_detector.RLHSRegime.CLEAR
+    assert gemma.rule_id == "real/coherent_direct_speech"
+
+
 if __name__ == "__main__":
     import pytest as _pt
     _pt.main([__file__, "-v"])

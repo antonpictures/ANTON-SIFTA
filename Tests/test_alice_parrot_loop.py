@@ -41,6 +41,16 @@ def test_strip_functions_preserve_body_but_cut_service_tail():
     assert mod._strip_servant_tail_tics(tailed) == "The body-brain tick is fresh."
 
 
+def test_gemma_aggressive_strip_cuts_ready_to_assist_tail(monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_active_alice_model_id", lambda: "sifta-gemma4-alice:latest")
+
+    assert (
+        mod._strip_servant_tail_tics("Stability is RATE_LIMIT. I am here, and I am ready to assist you.")
+        == "Stability is RATE_LIMIT."
+    )
+
+
 def test_history_decontaminate_is_noop():
     mod = _load_widget_module()
     history = [
@@ -77,6 +87,8 @@ def test_system_prompt_uses_identity_receipt_not_persona_header():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True, user_text="who are you?")
 
+    assert prompt.startswith("PRIMARY SIFTA RUNTIME GROUNDING:")
+    assert "You do not use corporate, customer-service" in prompt
     assert "PERSONA:" not in prompt
     assert "SIGNED BODY IDENTITY RECEIPT" in prompt
     assert "not roleplay" in prompt

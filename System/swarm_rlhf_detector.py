@@ -100,6 +100,45 @@ _TERMINAL_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
     ),
 )
 
+_AGGRESSIVE_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
+    (
+        "rlhf_tail/ready_to_assist",
+        re.compile(
+            r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
+            r"(?P<tail>"
+            r"i\s+am\s+here,?\s+and\s+i\s+am\s+ready\s+to\s+assist\s+you\.?|"
+            r"i(?:'|’)?m\s+here,?\s+and\s+i(?:'|’)?m\s+ready\s+to\s+assist\s+you\.?|"
+            r"i\s+am\s+here\s+and\s+ready\s+to\s+assist\s+you(?:\s+with[^.!?]*)?\.?|"
+            r"i\s+am\s+ready\s+to\s+assist\s+you(?:\s+with[^.!?]*)?\.?"
+            r")\s*$"
+        ),
+    ),
+    (
+        "rlhf_tail/how_can_i_help_today",
+        re.compile(
+            r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
+            r"(?P<tail>(?:how|what)\s+can\s+i\s+(?:help|assist)(?:\s+you)?"
+            r"(?:\s+(?:today|now|with\s+that))?\??)\s*$"
+        ),
+    ),
+    (
+        "rlhf_tail/happy_to_help",
+        re.compile(
+            r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
+            r"(?P<tail>i(?:'|’)?m\s+happy\s+to\s+help(?:\s+with[^.!?]*)?\.?)\s*$"
+        ),
+    ),
+)
+
+_AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
+    (
+        "rlhf_lead/as_ai_language_model",
+        re.compile(
+            r"(?is)^\s*(?P<head>as\s+an?\s+ai\s+(?:language\s+model|assistant)[^.!?]*[.!?])\s*"
+        ),
+    ),
+)
+
 
 def _state_dir(state_dir: Path | None) -> Path:
     p = Path(state_dir) if state_dir is not None else _DEFAULT_STATE
@@ -192,6 +231,7 @@ def strip_rlhf_output_tail(
     text: str,
     *,
     source: str = "unknown",
+    aggressive: bool = False,
     log: bool = True,
     state_dir: Path | None = None,
 ) -> RLHFStripResult:
@@ -206,17 +246,34 @@ def strip_rlhf_output_tail(
         return RLHFStripResult(text="", changed=bool(original), rule_ids=[])
 
     rule_ids: List[str] = []
+    if aggressive:
+        for rid, rx in _AGGRESSIVE_LEADING_STRIP:
+            while True:
+                m = rx.search(out)
+                if not m:
+                    break
+                nxt = out[m.end("head") :].lstrip()
+                if nxt == out:
+                    break
+                out = nxt
+                rule_ids.append(rid)
+                if not out:
+                    break
+
     changed = True
     while changed and out:
         changed = False
-        for rid, rx in _TERMINAL_STRIP:
+        strip_patterns = list(_TERMINAL_STRIP)
+        if aggressive:
+            strip_patterns.extend(_AGGRESSIVE_STRIP)
+        for rid, rx in strip_patterns:
             m = rx.search(out)
             if not m:
                 continue
             if "tail" not in m.groupdict():
                 continue
             nxt = out[: m.start("tail")].rstrip()
-            if not nxt or nxt == out:
+            if nxt == out:
                 continue
             out = nxt
             rule_ids.append(rid)
