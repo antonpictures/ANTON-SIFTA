@@ -113,10 +113,16 @@ def compute_lc_na(
     uncertainty: float = 0.5,
     astrocyte_heat_norm: float = 0.3,
     uptime_hours: float = 4.0,
-    clamp_level: str = "NONE",      # NEW: stability gate (Grok two-phase spec)
+    clamp_level: str = "NONE",      # stability gate (Grok two-phase spec)
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
+    # TME integration (§10.14.28 Priority 2 — Event 148 → Event 142)
+    # Systemic inflammatory signals reach LC via vagal afferents + cytokine BBB crossing.
+    # Dantzer et al. (2008) Neuron 61:760 — cytokine-to-brain signaling; LC activation
+    # Capuron & Miller (2011) Nat Rev Immunol 11:738 — immune-to-brain arousal
+    tme_phase: str = "EQUILIBRIUM",           # from Event148: ELIMINATION/EQUILIBRIUM/ESCAPE
+    tme_net_immune_pressure: float = 0.0,     # net TME pressure [-1, 1]
     # Allow direct injection for tests
     _na_override: Optional[float] = None,
 ) -> Dict[str, Any]:
@@ -149,6 +155,21 @@ def compute_lc_na(
                 "na_level": 0.5, "gain": 1.0, "exploration_bias": 0.5,
                 "lr_ceiling": 0.05, "na_suppressed": False}
 
+    # ── TME immune arousal (§10.14.28 Priority 2) ─────────────────────────────
+    # Escape phase + negative net_immune_pressure signals systemic immune burden.
+    # This boosts LC uncertainty (more NA) — mirroring vagal afferent / cytokine
+    # signaling that activates the LC during inflammatory challenge.
+    # Dantzer (2008) Neuron 61:760; Capuron & Miller (2011) Nat Rev Immunol 11:738.
+    _tme_arousal_boost = 0.0
+    _tme_escape = tme_phase == "ESCAPE"
+    _tme_pressure = float(tme_net_immune_pressure)
+    if _tme_escape:
+        # Escape = immune system losing to tumor; LC ramps up (alarm signal)
+        _tme_arousal_boost = min(0.20, 0.20 * abs(min(0.0, _tme_pressure)))
+    elif tme_phase == "ELIMINATION" and _tme_pressure > 0.25:
+        # Active elimination: mild NA boost from inflammatory heat (Dantzer 2008)
+        _tme_arousal_boost = min(0.08, 0.08 * _tme_pressure)
+
     # ── Phase determination ────────────────────────────────────────────────
     # When stability is degrading, suppress NA toward resting baseline (0.3).
     # This prevents NA from amplifying uncertainty-driven exploration when the
@@ -168,6 +189,7 @@ def compute_lc_na(
             0.50 * na_uncertainty
             + 0.30 * na_heat
             + 0.20 * na_uptime
+            + _tme_arousal_boost    # TME immune alarm (§10.14.28)
         )
         na_raw = min(1.0, max(0.0, na_raw))
 
@@ -220,6 +242,9 @@ def compute_lc_na(
             "na_from_uncertainty":    round(_na_from_uncertainty(uncertainty), 4) if _na_override is None else None,
             "na_from_astrocyte_heat": round(_na_from_astrocyte_heat(astrocyte_heat_norm), 4) if _na_override is None else None,
             "na_from_uptime":         round(_na_from_uptime(uptime_hours), 4) if _na_override is None else None,
+            "tme_arousal_boost":      round(_tme_arousal_boost, 4),
+            "tme_phase":              tme_phase,
+            "tme_net_immune_pressure": round(_tme_pressure, 4),
         },
         "inputs": {
             "uncertainty":          round(float(uncertainty), 4),

@@ -179,6 +179,47 @@ def _legacy_class_log_path(root: Optional[Path] = None) -> Path:
     return state_dir(root) / LEGACY_CLASS_LOG_NAME
 
 
+def _compute_dam_stage(
+    damage_score: float,
+    *,
+    age_hours: float,
+    recent_regret: float,
+    wm_contradiction_pe: float,
+) -> int:
+    """
+    Ratified DAM stage (§10.14.28.1 v2).
+    Maps continuous damage_score + sustained-activation signals to DAM Phase 0/1/2.
+
+    Biology:
+        Keren-Shaul et al. (2017) Cell 169:1276 — DAM Phase 1 (TREM2-independent
+        homeostatic-to-reactive transition), Phase 2 (TREM2-dependent full activation).
+        Deczkowska et al. (2018) Cell 173:1073 — DAM continuum.
+
+    Thresholds (ratified v2, §10.14.28.1):
+        STAGE1_THRESHOLD = 0.32   — Phase 1 entry: reactive-but-not-committed
+        STAGE2_THRESHOLD = 0.58   — Phase 2 entry: TREM2-dependent full activation
+
+    Sustained-activation gate (prevents transient spikes from triggering Stage 2):
+        sustained = (age_hours > 8.0)
+                 OR (recent_regret > 0.45)
+                 OR (wm_contradiction_pe > 0.55 AND age_hours > 4.0)
+    """
+    STAGE1_THRESHOLD = 0.32
+    STAGE2_THRESHOLD = 0.58
+
+    sustained = (
+        age_hours > 8.0
+        or recent_regret > 0.45
+        or (wm_contradiction_pe > 0.55 and age_hours > 4.0)
+    )
+
+    if damage_score >= STAGE2_THRESHOLD and sustained:
+        return 2
+    if damage_score >= STAGE1_THRESHOLD:
+        return 1
+    return 0
+
+
 def _compute_damage_score(
     *,
     age_hours: float,
@@ -189,17 +230,25 @@ def _compute_damage_score(
     unsafe: bool,
 ) -> float:
     """
-    TREM2/DAM-like damage score [0, 1].
+    TREM2/DAM-like damage score [0, 1] — v2 with DAM-stage multipliers (§10.14.28.1).
 
-    Damage is debris/corruption/regret/contradiction pressure. Age and weak
-    activity matter, but they are not enough by themselves to override brakes.
+    Base score computed from damage contributors.  Then multiplied by the DAM-stage
+    factor so Stage 2 (sustained + high damage) yields more aggressive activation —
+    matching the biological commitment of TREM2-dependent DAM Phase 2 (Keren-Shaul 2017).
+
+    DAM-stage multipliers (ratified §10.14.28.1):
+        Stage 0 →  0.60   (homeostatic, minimal microglial response)
+        Stage 1 →  0.92   (reactive, sub-threshold TREM2 activation)
+        Stage 2 →  1.28   (committed, TREM2-dependent clearance mode)
+        clip     →  1.45   (maximum, avoid runaway from stacking)
     """
     stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
-    low_reward = _env_float("MICROGLIA_LOW_REWARD_MEAN", -0.1)
+    low_reward  = _env_float("MICROGLIA_LOW_REWARD_MEAN", -0.1)
     high_regret = _env_float("MICROGLIA_HIGH_REGRET", 0.3)
     contradiction_pe = _env_float("MICROGLIA_CONTRADICTION_PE", 0.4)
     low_usage = _env_int("MICROGLIA_LOW_USAGE_COUNT", 1)
 
+    # Base damage components
     dmg = 0.0
     if unsafe:
         dmg += 0.50
@@ -211,7 +260,19 @@ def _compute_damage_score(
         dmg += 0.15
     if wm_contradiction_pe >= contradiction_pe:
         dmg += 0.10
-    return round(min(1.0, max(0.0, dmg)), 4)
+
+    # DAM-stage multiplier (Keren-Shaul 2017 Phase 1/2; §10.14.28.1 v2)
+    dam_stage = _compute_dam_stage(
+        dmg,
+        age_hours=age_hours,
+        recent_regret=recent_regret,
+        wm_contradiction_pe=wm_contradiction_pe,
+    )
+    multiplier = {0: 0.60, 1: 0.92, 2: 1.28}[dam_stage]
+    dmg_scaled = min(1.45, dmg * multiplier)
+
+    return round(min(1.0, max(0.0, dmg_scaled)), 4)
+
 
 
 def _compute_inhibition_signal(
@@ -296,6 +357,13 @@ def compute_two_signal_pressure(
         recent_regret=recent_regret,
         wm_contradiction_pe=wm_contradiction_pe,
         unsafe=unsafe,
+    )
+    # DAM stage field for receipt (Keren-Shaul 2017; §10.14.28.1 v2)
+    dam_stage = _compute_dam_stage(
+        damage_score,
+        age_hours=age_hours,
+        recent_regret=recent_regret,
+        wm_contradiction_pe=wm_contradiction_pe,
     )
 
     prune_tag = _clamp01(
@@ -383,6 +451,7 @@ def compute_two_signal_pressure(
         "prune_tag":            round(prune_tag, 4),
         "damage_score":         round(damage_score, 4),
         "trem2_signal":         round(damage_score, 4),
+        "dam_stage":            dam_stage,   # 0=homeostatic 1=reactive 2=committed (§10.14.28.1)
         "protection_score":     round(protection, 4),
         "inhibition_signal":    round(inhibition_signal, 4),
         "cd33_signal":          round(inhibition_signal, 4),
