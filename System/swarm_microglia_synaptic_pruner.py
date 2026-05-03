@@ -276,17 +276,86 @@ class MicrogliaSynapticPruner:
             return "depress"
         return "delete"
 
+    def compute_homeostatic_pressure(
+        self,
+        recent_traces: List[Dict[str, Any]],
+        buffer_capacity: int = 200,
+    ) -> float:
+        """
+        Q5 — SHY homeostatic pressure (Tononi & Cirelli 2014).
+
+        P_homeo = (total reward-weighted trace norm / buffer_capacity) - θ_baseline
+
+        Tononi & Cirelli (2014) SHY: the trigger criterion for homeostatic
+        downscaling is **net synaptic potentiation** accumulated during wakefulness,
+        not raw energy norm. We approximate this as the sum of |reward| × eligibility
+        across recent replay traces, normalised by buffer capacity.
+
+        P_homeo > 0.35 AND stability_ok → prune.
+
+        Args:
+            recent_traces: list of replay rows; each should have
+                'recent_reward_mean' and optionally 'eligibility_trace_norm'.
+            buffer_capacity: nominal replay buffer size (default 200).
+        Returns:
+            float in [0, 1]: homeostatic pressure.
+
+        Ref: Tononi, G. & Cirelli, C. (2014). Sleep and the price of plasticity:
+             from synaptic and cellular homeostasis to memory consolidation and
+             integration. Neuron, 81(1), 12-34.
+        """
+        if not recent_traces:
+            return 0.0
+        theta_baseline = 0.2  # steady-state potentiation level
+        total_potentiation = 0.0
+        for r in recent_traces:
+            reward = abs(float(r.get("recent_reward_mean", 0.0) or 0.0))
+            elig   = float(r.get("eligibility_trace_norm", 1.0) or 1.0)
+            total_potentiation += reward * elig
+        raw = total_potentiation / max(1, buffer_capacity)
+        pressure = max(0.0, raw - theta_baseline)
+        return min(1.0, round(pressure, 4))
+
+    def should_prune_homeostatic(
+        self,
+        recent_traces: List[Dict[str, Any]],
+        stability_ok: bool,
+        pressure_threshold: float = 0.35,
+        buffer_capacity: int = 200,
+    ) -> bool:
+        """
+        Q5 — SHY-based pruning gate.
+
+        Prunes when P_homeo > threshold AND stability_ok.
+        Suppressed in EMERGENCY regardless of pressure (matches Lyapunov gate).
+        Ref: Tononi & Cirelli (2014) SHY.
+        """
+        if not stability_ok:
+            return False
+        pressure = self.compute_homeostatic_pressure(recent_traces, buffer_capacity)
+        return pressure > pressure_threshold
+
     def prune(
         self,
         ledger: List[Dict[str, Any]],
         ledger_type: str = "replay",
         stability_ok: bool = True,
+        *,
+        max_prunes_override: Optional[int] = None,
+        tail_lines_read: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         if _disabled():
             return []
 
         receipts: List[Dict[str, Any]] = []
         delete_count = 0
+        delete_cap = MAX_PRUNES_PER_CYCLE
+        if max_prunes_override is not None:
+            try:
+                mo = int(max_prunes_override)
+            except (TypeError, ValueError):
+                mo = MAX_PRUNES_PER_CYCLE
+            delete_cap = max(0, min(MAX_PRUNES_PER_CYCLE, mo))
 
         for entry in ledger:
             is_safety = bool(
@@ -300,7 +369,7 @@ class MicrogliaSynapticPruner:
             if action == "delete" and not stability_ok:
                 action = "depress"
             if action == "delete":
-                if delete_count >= MAX_PRUNES_PER_CYCLE:
+                if delete_count >= delete_cap:
                     action = "depress"
                 else:
                     delete_count += 1
@@ -322,6 +391,8 @@ class MicrogliaSynapticPruner:
                 "action": action,
                 "stability_ok": stability_ok,
                 "truth_label": "CONTROLLED_FORGETTING",
+                "max_prunes_override_applied": max_prunes_override,
+                "tail_lines_read": tail_lines_read,
             }
             append_line_locked(self.log_path, json.dumps(receipt) + "\n", encoding="utf-8")
             receipts.append(receipt)
