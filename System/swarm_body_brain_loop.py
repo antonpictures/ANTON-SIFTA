@@ -952,6 +952,48 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Theory of Mind organ skipped (non-fatal)")
 
+        # 8f.1 Efference Copy / Sensorimotor Agency (Event 143)
+        # Sperry 1950; von Holst & Mittelstaedt 1950; Wolpert+1995; Blakemore+1998; Frith+2000.
+        # Forward model compares predicted tick features to observed → PE + agency_confidence.
+        # PE wires into: (a) Causal Prober uncertainty, (b) LC/NA arousal boost.
+        _efference_receipt: Dict[str, Any] = {
+            "prediction_error": 0.0, "agency_confidence": 1.0,
+            "self_generated": True, "pe_ema": 0.0,
+        }
+        try:
+            from System.swarm_efference_copy import compute_efference_copy
+            _observed_tick = {
+                "td_value":        float(mem_row.get("td_value", 0.5) or 0.5),
+                "uncertainty":     float((_stability_snapshot.get("terms") or {}).get("world_error_norm", 0.5) or 0.5),
+                "stability_score": float((_stability_snapshot.get("terms") or {}).get("stability_score", 0.5) or 0.5),
+                "astrocyte_heat":  float((_stability_snapshot.get("terms") or {}).get("astrocyte_heat_norm", 0.3) or 0.3),
+                "na_level":        float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
+                "valence":         0.5,  # placeholder: valence not yet computed this tick
+            }
+            _efference_receipt = compute_efference_copy(
+                action_kind=str(action.get("type") or action.get("name") or "body_brain_tick"),
+                action_payload={"task_id": str(mem_row.get("tick_id") or "")},
+                observed_tick_state=_observed_tick,
+                root=_STATE_DIR,
+                write_ledger=True,
+            )
+            # Wire PE boost into LC/NA: unexpected outcomes elevate arousal (Blakemore 1998)
+            _efference_pe = float(_efference_receipt.get("prediction_error", 0.0))
+            if _efference_pe > 0.3:
+                _pe_arousal_bump = round((_efference_pe - 0.3) * 0.3, 4)  # modest bump
+                _existing_na = float(_lc_na_receipt.get("na_level_tom_boosted",
+                                      _lc_na_receipt.get("na_level", 0.5)))
+                _lc_na_receipt["na_level_efference_boosted"] = round(min(1.0, _existing_na + _pe_arousal_bump), 4)
+            logger.debug(
+                "[Event143] Efference PE=%.3f agency_conf=%.3f self_gen=%s pe_ema=%.3f",
+                _efference_pe,
+                float(_efference_receipt.get("agency_confidence", 1.0)),
+                _efference_receipt.get("self_generated"),
+                float(_efference_receipt.get("pe_ema", 0.0)),
+            )
+        except Exception:
+            logger.debug("Efference copy organ skipped (non-fatal)")
+
         # 8f. Affective Valence Tag (Event 144) — fast approach/avoid prior
         # Schultz/Dayan/Montague 1997; LeDoux 1996; Damasio 1994.
         _valence_receipt: Dict[str, Any] = {
@@ -1008,6 +1050,8 @@ class SwarmPhysiology:
                 float(_terms.get("world_error_norm", 0.0) or 0.0),
                 float(_terms.get("astrocyte_heat_norm", 0.0) or 0.0),
                 abs(1.0 - float(mem_row.get("td_value", 0.0) or 0.0)),
+                # Efference PE: unexpected outcomes add to uncertainty (Frith 2000)
+                float(_efference_receipt.get("prediction_error", 0.0)) * 0.5,
             )
 
             # Meta_confidence gate (Grok integration spec)

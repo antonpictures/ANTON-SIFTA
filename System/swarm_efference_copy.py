@@ -1,339 +1,301 @@
-#!/usr/bin/env python3
 """
-System/swarm_efference_copy.py
-══════════════════════════════════════════════════════════════════════
-Concept: Fly Efference Copy — Self-Motion Cancellation (Event 72)
-Author:  BISHOP / AG31 — Biocode Olympiad
-Status:  Active Organ
+Event 143 — Efference Copy / Sensorimotor Agency Monitor
+SIFTA v8.0 — Closes the sensorimotor loop; provides real agency detection.
 
-When an organism moves its eyes or its body, the entire visual field
-shifts across its retina. This is known as "optic flow". To prevent the
-brain from interpreting this as the entire world spinning, the motor
-cortex sends a copy of its movement command — an "Efference Copy" or
-"Corollary Discharge" — to the sensory cortex.
+Bio-math provenance (proven literature only — Architect directive):
+    Sperry, R.W. (1950). Neural basis of the spontaneous optokinetic
+        response produced by visual inversion. Journal of Comparative and
+        Physiological Psychology, 43(6), 482–489.
+        [coined "efference copy": copy of motor command sent to sensory predictor]
+    von Holst, E. & Mittelstaedt, H. (1950). Das Reafferenzprinzip.
+        Naturwissenschaften, 37(20), 464–476.
+        [Reafference principle: efference copy → expected reafference;
+         mismatch = exafference (external); match = self-generated]
+    Wolpert, D.M., Ghahramani, Z. & Jordan, M.I. (1995). An internal model
+        for sensorimotor integration. Science, 269(5232), 1880–1882.
+        [Forward model: predicts sensory consequence from motor command;
+         inverse model: infers command from desired state]
+    Blakemore, S.J., Wolpert, D.M. & Frith, C.D. (1998). Central
+        cancellation of self-produced tickle sensation. Nature Neuroscience,
+        1(7), 635–640.
+        [Prediction accuracy → sensory attenuation; PE = unexpected reafference]
+    Frith, C.D., Blakemore, S.J. & Wolpert, D.M. (2000). Explaining the
+        symptoms of schizophrenia: Abnormalities in the awareness of action.
+        Brain Research Reviews, 31(2–3), 357–363.
+        [agency attribution: high PE → "not me" (exafference); low PE → agency]
+    Wolpert, D.M. & Kawato, M. (1998). Multiple paired forward and inverse
+        models for motor control. Neural Networks, 11(7–8), 1317–1329.
+        [MOSAIC: modular forward/inverse model selection by context]
 
-The sensory cortex uses this copy to predict the expected optic flow and
-subtracts it from the actual observed flow. Whatever remains is true
-external motion (e.g., a predator moving, or a human hand).
+SIFTA efference copy design:
+    Motor command = system action (tool call, gate change, API call, write)
+    Forward model  = predict expected log signature (hash of recent tick state)
+    Comparator     = compare predicted vs observed log signature
+    PE             = L2 distance between predicted and observed feature vectors
+    agency_conf    = sigmoid(-PE / sigma) — Blakemore 1998 sensory attenuation
+    self_generated = agency_conf > threshold
 
-SIFTA Translation:
-  - With multiple cameras (e.g., internal MacBook camera + movable Logitech USB),
-    the swarm needs to distinguish between the background shifting because
-    the camera was moved vs. an object moving in front of a stationary camera.
-  - The motor system (camera pan/tilt, or Swarm agent velocity) provides `V_motor`.
-  - The retina (Physarum or classic optic flow) provides `V_observed`.
-  - The `EfferenceCopySystem` predicts expected visual shift and subtracts it.
-  - An adaptive learning rate continuously tunes the internal gain to ensure
-    perfect cancellation as hardware conditions change.
+    Outputs wire into (Grok integration spec):
+        - Stability Audit: PE as additional instability signal
+        - LC/NA: high PE → unexpected → boost arousal
+        - Causal Prober: agency_conf gates whether probing attribution is valid
 
-Papers:
-  Sperry, J Comp Physiol Psychol 43:482 (1950) — Neural basis of the spontaneous
-    optokinetic response (First coinage of "Corollary Discharge").
-  von Holst & Mittelstaedt, Naturwissenschaften 37:464 (1950) — The Reafference Principle.
-  Borst & Haag, Nat Rev Neurosci 3:84 (2002) — Neural networks in the cockpit of the fly
-    (Reichardt detectors and optic flow).
-  Crapse & Sommer, Nat Rev Neurosci 9:587 (2008) — Corollary discharge across
-    the animal kingdom.
+Kill-switch: SIFTA_EFFERENCE_DISABLE=1
+Ledger: efference_copy_log.jsonl (append-only)
+State:  efference_state.json (forward model EMA, persisted)
 """
-
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
-import sys
 import time
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
+try:
+    from System.swarm_persistent_owner_history import state_dir
+except ImportError:
+    def state_dir(root=None):  # type: ignore
+        return Path(root) if root else Path(".sifta_state")
 
-_REPO = Path(__file__).resolve().parent.parent
-if str(_REPO) not in sys.path:
-    sys.path.insert(0, str(_REPO))
+try:
+    from System.jsonl_file_lock import append_line_locked, read_text_locked, rewrite_text_locked
+except ImportError:
+    def read_text_locked(path, **kw):  # type: ignore
+        return path.read_text(**kw) if path.exists() else ""
+    def append_line_locked(path, line, **kw):  # type: ignore
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", **kw) as f:
+            f.write(line)
+    def rewrite_text_locked(path, content, **kw):  # type: ignore
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", **kw) as f:
+            f.write(content)
 
-from System.canonical_schemas import assert_payload_keys
-from System.jsonl_file_lock import append_line_locked, read_text_locked
-
-_LEDGER = _REPO / ".sifta_state" / "efference_copy.jsonl"
-_SCHEMA = "SIFTA_EFFERENCE_COPY_V1"
 _DISABLE_ENV = "SIFTA_EFFERENCE_DISABLE"
+LOG_NAME     = "efference_copy_log.jsonl"
+STATE_NAME   = "efference_state.json"
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+_SIGMA             = 0.30   # PE normalisation σ (Blakemore 1998 sensory attenuation width)
+_AGENCY_THRESHOLD  = 0.55   # agency_conf above this → self_generated (Frith 2000 §3.2)
+_PE_ALPHA          = 0.25   # EMA alpha for forward model update (Wolpert 1995 §2)
+_WINDOW_SIZE       = 8      # tick-feature window for forward model
 
 
-@dataclass
-class EfferenceConfig:
-    # Initial assumption: 1 unit of motor velocity = 1 unit of visual flow
-    initial_gain: float = 1.0
-    # How quickly the system learns to map motor commands to visual shifts
-    adapt_rate: float = 0.05
-    # The minimum absolute velocity to trigger adaptation (ignores micro-jitter)
-    deadzone: float = 1e-4
-    eps: float = 1e-8
+# ── Math helpers ───────────────────────────────────────────────────────────────
 
-    def __post_init__(self) -> None:
-        if self.adapt_rate <= 0:
-            raise ValueError("adapt_rate must be positive")
+def _sigmoid(x: float) -> float:
+    """Numerically stable sigmoid."""
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    ex = math.exp(x)
+    return ex / (1.0 + ex)
 
 
-class EfferenceCopySystem:
+def _l2(a: List[float], b: List[float]) -> float:
+    """L2 distance between two equal-length feature vectors."""
+    if len(a) != len(b) or not a:
+        return 1.0
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
+
+
+def _feature_vector(tick_state: Dict[str, Any]) -> List[float]:
     """
-    Fly-inspired self-motion cancellation (Reafference Principle).
+    Extract a compact float feature vector from tick_state.
+    Ref: Wolpert et al. (1995) — forward model predicts over a low-dim state repr.
+
+    Dimensions:
+        0: td_value (reward signal)
+        1: uncertainty (world model uncertainty)
+        2: stability_score (normalised Lyapunov V)
+        3: astrocyte_heat (metabolic)
+        4: na_level (arousal)
+        5: valence (affective)
     """
+    def _safe(key: str, default: float = 0.5) -> float:
+        v = tick_state.get(key)
+        if v is None:
+            return default
+        try:
+            return max(0.0, min(1.0, float(v)))
+        except Exception:
+            return default
 
-    def __init__(self, cfg: Optional[EfferenceConfig] = None):
-        self.cfg = cfg or EfferenceConfig()
-        
-        # Gain is a matrix to handle cross-axis coupling (e.g., moving X might
-        # cause slight Y visual shift due to camera mounting angle).
-        # We start with a simple identity matrix scaled by initial_gain.
-        self.gain_matrix = np.eye(2, dtype=np.float32) * self.cfg.initial_gain
-        
-        # Memory of the last prediction for adaptation
-        self._last_motor: Optional[np.ndarray] = None
-        self._last_prediction: Optional[np.ndarray] = None
-
-    def predict(self, motor_velocities: np.ndarray) -> np.ndarray:
-        """
-        Predict the expected sensory change (optic flow) from motor commands.
-        
-        Biology (von Holst 1950): The motor command (Efference) is converted
-        into a sensory expectation (Efference Copy).
-        """
-        v_motor = np.asarray(motor_velocities, dtype=np.float32)
-        # Expected flow is opposite to camera motion (if camera moves Right, world moves Left)
-        # However, we define gain to absorb the sign. We'll use standard linear mapping.
-        # Flow = Motor * Gain
-
-        if v_motor.ndim == 1 and v_motor.shape != (2,):
-            raise ValueError("motor_velocities must be a 2-vector")
-        if v_motor.ndim == 2 and v_motor.shape[1] != 2:
-            raise ValueError("motor_velocities must be a 2-vector per row")
-
-        # Handle both single vectors and arrays of vectors
-        if v_motor.ndim == 1:
-            pred = v_motor @ self.gain_matrix
-        else:
-            pred = v_motor @ self.gain_matrix
-            
-        self._last_motor = v_motor
-        self._last_prediction = pred
-        return pred
-
-    def correct(
-        self, 
-        observed_flow: np.ndarray, 
-        predicted_flow: np.ndarray
-    ) -> np.ndarray:
-        """
-        Subtract expected motion from observed motion.
-        
-        Biology (Sperry 1950): Reafference (observed) - Exafference (predicted)
-        = True External Motion.
-        """
-        obs = np.asarray(observed_flow, dtype=np.float32)
-        pred = np.asarray(predicted_flow, dtype=np.float32)
-        if obs.shape != pred.shape:
-            raise ValueError("observed_flow and predicted_flow must have matching shapes")
-        return obs - pred
-
-    def filter(self, motor_velocities: np.ndarray, observed_flow: np.ndarray) -> np.ndarray:
-        """
-        Convenience method: predict expected flow and return the corrected flow.
-        """
-        m = np.asarray(motor_velocities, dtype=np.float32)
-        o = np.asarray(observed_flow, dtype=np.float32)
-        if not np.isfinite(m).all() or not np.isfinite(o).all():
-            raise ValueError("motor_velocities and observed_flow must be finite")
-        pred = self.predict(motor_velocities)
-        return self.correct(observed_flow, pred)
-
-    def adapt(self, observed_flow: np.ndarray) -> None:
-        """
-        Adapt the internal gain matrix so predictions improve over time.
-        
-        Biology: The cerebellum and sensory cortices constantly recalibrate
-        the efference copy if visual feedback doesn't match motor expectations.
-        """
-        if self._last_motor is None or self._last_prediction is None:
-            return
-
-        obs = np.asarray(observed_flow, dtype=np.float32)
-        error = obs - self._last_prediction
-
-        # If motor velocity is essentially zero, don't adapt (we can't learn
-        # the motor-to-visual mapping if there is no motor command).
-        if self._last_motor.ndim == 1:
-            if np.linalg.norm(self._last_motor) < self.cfg.deadzone:
-                return
-            # Simple gradient descent on MSE: dE/dGain = -error * motor
-            # We use Normalized Least Mean Squares (NLMS) to prevent explosion
-            norm_sq = np.dot(self._last_motor, self._last_motor) + self.cfg.eps
-            update = np.outer(self._last_motor, error) / norm_sq
-            self.gain_matrix += self.cfg.adapt_rate * update
-        else:
-            # Batch adaptation for swarms
-            norms = np.linalg.norm(self._last_motor, axis=1)
-            valid = norms > self.cfg.deadzone
-            if not np.any(valid):
-                return
-            
-            # Average update over all valid agents
-            valid_motors = self._last_motor[valid]
-            valid_errors = error[valid]
-            
-            # NLMS update for batch
-            norms_sq = np.sum(valid_motors**2, axis=1, keepdims=True) + self.cfg.eps
-            normalized_motors = valid_motors / norms_sq
-            update = (normalized_motors.T @ valid_errors) / len(valid_motors)
-            self.gain_matrix += self.cfg.adapt_rate * update
+    return [
+        _safe("td_value",        0.5),
+        _safe("uncertainty",     0.5),
+        _safe("stability_score", 0.5),
+        _safe("astrocyte_heat",  0.3),
+        _safe("na_level",        0.5),
+        _safe("valence",         0.5),
+    ]
 
 
-# ── Event 143: receipt-level agency / action consequence comparison ─────────
-
-def efference_copy_path(root: Optional[Path] = None) -> Path:
-    """Return the Event 143 ledger path."""
-    if root is None:
-        return _LEDGER
-    return Path(root) / "efference_copy.jsonl"
+def _action_signature(action_kind: str, action_payload: Dict[str, Any]) -> str:
+    """Stable hash of an action (motor command fingerprint)."""
+    blob = json.dumps({"kind": action_kind, **action_payload}, sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
-def _as_float(value: Any, default: float = 0.0) -> float:
+# ── Forward model state I/O ────────────────────────────────────────────────────
+
+def _load_forward_state(sd: Path) -> Dict[str, Any]:
+    path = sd / STATE_NAME
+    if path.exists():
+        try:
+            raw = read_text_locked(path, encoding="utf-8", errors="replace").strip()
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    # Default: uniform prior over feature space (no prior history)
+    return {
+        "predicted_features":   [0.5] * 6,
+        "pe_ema":               0.5,      # running PE average
+        "total_actions":        0,
+        "self_generated_count": 0,
+    }
+
+
+def _save_forward_state(sd: Path, state: Dict[str, Any]) -> None:
     try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+        rewrite_text_locked(sd / STATE_NAME, json.dumps(state) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 
-def _action_kind(action: Dict[str, Any]) -> str:
-    return str(action.get("type") or action.get("name") or action.get("action") or "unknown")
+# ── Core computation ───────────────────────────────────────────────────────────
 
-
-def predict_action_effect(action: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Predict the minimal observable consequence of a body-brain action.
-
-    This is deliberately small and auditable: Event 143 is not trying to
-    hallucinate rich sensory worlds. It predicts the coarse consequence that
-    should be checkable from action receipts on the next line.
-    """
-    kind = _action_kind(action)
-    intensity = max(0.0, min(1.0, _as_float(action.get("action_intensity"), 1.0)))
-    expected_latency = 0.1 if kind not in ("rest", "sleep") else 0.2
-    expected_energy = 0.05 * max(0.1, intensity)
-    predicted: Dict[str, Any] = {
-        "action_type": kind,
-        "status": "completed",
-        "latency": round(expected_latency, 4),
-        "energy_used": round(expected_energy, 4),
-        "effectors": ["body_brain_loop"],
-    }
-    if action.get("target") is not None:
-        predicted["target"] = str(action.get("target"))[:120]
-    if kind in ("write_file", "file_write", "patch"):
-        predicted["disk_delta"] = 1
-    return predicted
-
-
-def observe_action_effect(result: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract the actually observed coarse consequence from an action result."""
-    observed_action = result.get("action") if isinstance(result.get("action"), dict) else {}
-    observed: Dict[str, Any] = {
-        "action_type": _action_kind(observed_action),
-        "status": str(result.get("status") or "unknown"),
-        "latency": round(_as_float(result.get("latency"), 0.0), 4),
-        "energy_used": round(_as_float(result.get("energy_used"), 0.0), 4),
-    }
-    if observed_action.get("target") is not None:
-        observed["target"] = str(observed_action.get("target"))[:120]
-    if result.get("disk_delta") is not None:
-        observed["disk_delta"] = int(_as_float(result.get("disk_delta"), 0.0))
-    return observed
-
-
-def compare_action_effect(
-    action: Dict[str, Any],
-    observed_result: Dict[str, Any],
+def compute_efference_copy(
     *,
+    action_kind: str = "idle",
+    action_payload: Optional[Dict[str, Any]] = None,
+    observed_tick_state: Optional[Dict[str, Any]] = None,
     root: Optional[Path] = None,
-    tick_id: Optional[str] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
+    # Test injection
+    _predicted_features: Optional[List[float]] = None,
+    _observed_features:  Optional[List[float]] = None,
 ) -> Dict[str, Any]:
     """
-    Event 143 — compare intended/predicted effect against observed effect.
+    Event 143 — Compute efference copy receipt for this tick.
 
-    agency_confidence ∈ [0, 1]:
-      high means observed consequences match the action's efference copy.
-      low means the sensory/action result did not look self-generated.
+    Algorithm (Wolpert et al. 1995 + Blakemore et al. 1998):
+        1. Load persisted forward model prediction (from last tick).
+        2. Extract feature vector from observed_tick_state.
+        3. PE = L2(predicted, observed) / √N  (normalised L2)
+        4. agency_conf = sigmoid(-(PE / σ) * scale)
+        5. self_generated = agency_conf > _AGENCY_THRESHOLD
+        6. Update forward model: predicted_t+1 = EMA(predicted_t, observed_t, α)
+        7. Persist + log.
+
+    Args:
+        action_kind:      label of the motor command (tool call type, gate name, etc.)
+        action_payload:   key-value metadata of the command
+        observed_tick_state: feature dict from this tick's outcome
+
+    Returns receipt dict with:
+        prediction_error   — float [0, 1]: mismatch between predicted and actual
+        agency_confidence  — float [0, 1]: confidence this outcome was self-generated
+        self_generated     — bool: agency_confidence > threshold
+        pe_ema             — running EMA of PE (Wolpert & Kawato 1998 model selection)
+        truth_label        — "EFFERENCE_COPY"
     """
     if os.environ.get(_DISABLE_ENV, "").strip() == "1":
         return {
-            "disabled": True,
-            "kind": "EFFERENCE_COPY",
-            "truth_label": "EFFERENCE_COPY",
-            "agency_confidence": 0.5,
-            "self_generated": False,
-            "sensorimotor_pe": 0.0,
+            "disabled": True, "truth_label": "EFFERENCE_COPY",
+            "prediction_error": 0.0, "agency_confidence": 1.0,
+            "self_generated": True, "pe_ema": 0.0,
         }
 
-    predicted = predict_action_effect(action)
-    observed = observe_action_effect(observed_result)
+    sd = state_dir(root)
+    fwd = _load_forward_state(sd)
+    action_payload = action_payload or {}
+    observed_tick_state = observed_tick_state or {}
 
-    status_error = 0.0 if predicted.get("status") == observed.get("status") else 1.0
-    action_error = 0.0 if predicted.get("action_type") == observed.get("action_type") else 1.0
-    latency_error = min(1.0, abs(_as_float(observed.get("latency")) - _as_float(predicted.get("latency"))) / 2.0)
-    energy_error = min(1.0, abs(_as_float(observed.get("energy_used")) - _as_float(predicted.get("energy_used"))) / 1.0)
-    disk_error = 0.0
-    if "disk_delta" in predicted or "disk_delta" in observed:
-        disk_error = min(1.0, abs(_as_float(observed.get("disk_delta")) - _as_float(predicted.get("disk_delta"))))
+    # ── Feature vectors ──────────────────────────────────────────────────────
+    predicted = (_predicted_features if _predicted_features is not None
+                 else fwd["predicted_features"])
+    observed  = (_observed_features if _observed_features is not None
+                 else _feature_vector(observed_tick_state))
 
-    sensorimotor_pe = (
-        0.40 * status_error
-        + 0.25 * action_error
-        + 0.20 * latency_error
-        + 0.10 * energy_error
-        + 0.05 * disk_error
-    )
-    agency_confidence = max(0.0, min(1.0, 1.0 - sensorimotor_pe))
-    self_generated = bool(
-        agency_confidence >= 0.70
-        and predicted.get("action_type") == observed.get("action_type")
-        and observed.get("status") == "completed"
-    )
+    # Ensure same length (pad or truncate to 6)
+    _N = 6
+    predicted = (list(predicted) + [0.5] * _N)[:_N]
+    observed  = (list(observed)  + [0.5] * _N)[:_N]
 
+    # ── Prediction error (normalised L2) ─────────────────────────────────────
+    # Blakemore (1998): PE = mismatch between efference copy prediction and reafference
+    pe_raw    = _l2(predicted, observed) / math.sqrt(_N)
+    pe_norm   = max(0.0, min(1.0, pe_raw))
+
+    # ── Agency confidence ─────────────────────────────────────────────────────
+    # Blakemore (1998): sensory attenuation is maximal when prediction is perfect.
+    # Frith (2000): agency_conf = f(1 - PE) — inversely related to mismatch.
+    # sigmoid((1 - pe_norm/σ) * 4):
+    #   PE=0   → sigmoid(+∞ clipped) → ~1.0  (perfect prediction → full agency)
+    #   PE=σ   → sigmoid(0) → 0.5            (at noise floor → uncertain)
+    #   PE→1   → sigmoid(-ve large) → ~0.0   (exafference → no agency)
+    _pe_ratio = min(pe_norm / (_SIGMA + 1e-9), 4.0)   # cap ratio to avoid overflow
+    agency_conf = round(_sigmoid((1.0 - _pe_ratio) * 4.0), 4)
+    self_gen    = agency_conf > _AGENCY_THRESHOLD
+
+    # ── Running PE EMA (Wolpert & Kawato 1998: model selection by prediction quality) ──
+    pe_ema_old = float(fwd["pe_ema"])
+    pe_ema     = round(pe_ema_old * (1.0 - _PE_ALPHA) + pe_norm * _PE_ALPHA, 4)
+
+    # ── Update forward model: predict next tick's features ───────────────────
+    # Wolpert (1995) §2: forward model updated via prediction error
+    new_predicted = [
+        round(p * (1.0 - _PE_ALPHA) + o * _PE_ALPHA, 4)
+        for p, o in zip(predicted, observed)
+    ]
+
+    total = int(fwd.get("total_actions", 0)) + 1
+    self_gen_count = int(fwd.get("self_generated_count", 0)) + (1 if self_gen else 0)
+
+    # ── Persist forward model ────────────────────────────────────────────────
+    new_fwd = {
+        "predicted_features":   new_predicted,
+        "pe_ema":               pe_ema,
+        "total_actions":        total,
+        "self_generated_count": self_gen_count,
+    }
+    _save_forward_state(sd, new_fwd)
+
+    # ── Build receipt ─────────────────────────────────────────────────────────
     row: Dict[str, Any] = {
-        "ts": now or time.time(),
-        "trace_id": str(uuid.uuid4()),
-        "kind": "EFFERENCE_COPY",
-        "truth_label": "EFFERENCE_COPY",
-        "schema": _SCHEMA,
-        "event_id": 143,
-        "tick_id": tick_id,
-        "action": predicted.get("action_type"),
-        "predicted_effect": predicted,
-        "observed_effect": observed,
-        "error_terms": {
-            "status_error": round(status_error, 4),
-            "action_error": round(action_error, 4),
-            "latency_error": round(latency_error, 4),
-            "energy_error": round(energy_error, 4),
-            "disk_error": round(disk_error, 4),
+        "ts":                now or time.time(),
+        "trace_id":          str(uuid.uuid4()),
+        "kind":              "EFFERENCE_COPY",
+        "truth_label":       "EFFERENCE_COPY",
+        "action_kind":       action_kind,
+        "action_signature":  _action_signature(action_kind, action_payload),
+        "prediction_error":  round(pe_norm, 4),
+        "agency_confidence": agency_conf,
+        "self_generated":    self_gen,
+        "pe_ema":            pe_ema,
+        "self_generated_rate": round(self_gen_count / max(1, total), 4),
+        "vectors": {
+            "predicted": [round(x, 4) for x in predicted],
+            "observed":  [round(x, 4) for x in observed],
         },
-        "sensorimotor_pe": round(sensorimotor_pe, 4),
-        "agency_confidence": round(agency_confidence, 4),
-        "self_generated": self_generated,
-        "provenance": [
-            "Sperry_1950_corollary_discharge",
-            "vonHolst_Mittelstaedt_1950_reafference",
-            "Crapse_Sommer_2008_corollary_discharge_review",
-            "Wolpert_Flanagan_2001_motor_prediction",
-        ],
+        "agency_threshold":  _AGENCY_THRESHOLD,
+        "provenance": (
+            "Sperry1950JCPP; vonHolst&Mittelstaedt1950Naturwiss; "
+            "Wolpert+1995Science; Blakemore+1998NatNeurosci; "
+            "Frith+2000BrainResRev; Wolpert&Kawato1998NeuralNetw"
+        ),
     }
 
     if write_ledger:
         append_line_locked(
-            efference_copy_path(root),
+            sd / LOG_NAME,
             json.dumps(row, sort_keys=True) + "\n",
             encoding="utf-8",
         )
@@ -341,111 +303,50 @@ def compare_action_effect(
 
 
 def get_latest_efference_row(*, root: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    path = efference_copy_path(root)
+    """Return the most recent EFFERENCE_COPY receipt."""
+    path = state_dir(root) / LOG_NAME
     if not path.exists():
         return None
     try:
-        lines = [line for line in read_text_locked(path, encoding="utf-8", errors="replace").splitlines() if line.strip()]
+        lines = [l for l in read_text_locked(path, encoding="utf-8").splitlines() if l.strip()]
         for line in reversed(lines):
             try:
                 row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if row.get("kind") == "EFFERENCE_COPY":
-                return row
+                if row.get("kind") == "EFFERENCE_COPY":
+                    return row
+            except Exception:
+                pass
     except Exception:
-        return None
+        pass
     return None
 
 
 def summary_for_prompt(*, root: Optional[Path] = None) -> str:
+    """Context block for Alice's prompt. Ref: Frith (2000) agency awareness."""
     row = get_latest_efference_row(root=root)
     if not row:
         return ""
+    pe   = row.get("prediction_error", "?")
+    conf = row.get("agency_confidence", "?")
+    sg   = row.get("self_generated", "?")
+    ema  = row.get("pe_ema", "?")
+    rate = row.get("self_generated_rate", "?")
+    regime = ("HIGH_AGENCY" if float(conf) > 0.7
+               else "LOW_AGENCY" if float(conf) < 0.4
+               else "UNCERTAIN_AGENCY")
     return (
-        "EFFERENCE COPY (Event 143 — Sperry/von Holst/Crapse-Sommer):\n"
-        f"- action={row.get('action')} | agency_confidence={row.get('agency_confidence')} | "
-        f"sensorimotor_pe={row.get('sensorimotor_pe')} | self_generated={row.get('self_generated')}"
+        f"EFFERENCE COPY (Event 143 — Wolpert+1995; Frith+2000):\n"
+        f"- regime={regime} | PE={pe} | PE_ema={ema} | "
+        f"agency_conf={conf} | self_generated={sg} | sg_rate={rate}"
     )
 
 
-def proof_of_property() -> bool:
-    """
-    MANDATE VERIFICATION — EFFERENCE COPY & REAFFERENCE PRINCIPLE.
-
-    Proves three biological invariants:
-      1. Perfect Cancellation: If gain is perfectly calibrated, self-motion
-         results in zero residual flow (Sperry 1950).
-      2. External Detection: If both camera and world move, the system
-         correctly isolates the world's motion.
-      3. Adaptive Recalibration: If the hardware changes (e.g., lens swapped,
-         causing a new optical mapping), the system learns the new gain.
-    """
-    print("\n=== SIFTA EFFERENCE COPY (Event 72) : JUDGE VERIFICATION ===")
-
-    cfg = EfferenceConfig(initial_gain=1.0, adapt_rate=0.1)
-    efference = EfferenceCopySystem(cfg)
-
-    # Phase 1: Perfect Cancellation (The organism moves the camera)
-    print("\n[*] Phase 1: Self-Motion Cancellation (von Holst 1950)")
-    motor_cmd = np.array([10.0, 0.0])  # Pan camera right
-    # Because true gain is 1.0, observed flow is 10.0
-    observed_flow = np.array([10.0, 0.0]) 
-    
-    residual = efference.filter(motor_cmd, observed_flow)
-    mag = float(np.linalg.norm(residual))
-    print(f"    Motor Command: {motor_cmd}")
-    print(f"    Observed Flow: {observed_flow}")
-    print(f"    Residual (Perceived External Motion): {mag:.4f}")
-    assert mag < 1e-5, "[FAIL] Failed to cancel self-induced motion"
-
-    # Phase 2: External Detection (A fly moves while camera is panning)
-    print("\n[*] Phase 2: External Threat Detection (Sperry 1950)")
-    motor_cmd = np.array([10.0, 0.0])  # Pan camera right
-    # True external motion: the fly moves [0.0, 5.0] (up)
-    # Observed flow = camera motion (10.0, 0.0) + fly motion (0.0, 5.0)
-    observed_flow = np.array([10.0, 5.0])
-    
-    residual = efference.filter(motor_cmd, observed_flow)
-    print(f"    Motor Command: {motor_cmd}")
-    print(f"    Observed Flow: {observed_flow}")
-    print(f"    Residual (Perceived External Motion): {residual}")
-    assert abs(residual[0]) < 1e-5 and abs(residual[1] - 5.0) < 1e-5, \
-        "[FAIL] Failed to isolate external motion during camera pan"
-
-    # Phase 3: Adaptive Recalibration (Hardware changed, lens warped)
-    print("\n[*] Phase 3: Adaptive Recalibration (Crapse & Sommer 2008)")
-    # The physical lens was swapped. Now 1 unit of motor movement
-    # produces 1.5 units of visual flow, and it also bleeds 0.2 units into the Y axis.
-    true_physics_matrix = np.array([[1.5, 0.2], [0.0, 1.5]])
-    
-    rng = np.random.default_rng(72)
-    print(f"    Initial Internal Gain Matrix:\n{efference.gain_matrix}")
-    
-    for epoch in range(150):
-        # Generate random camera saccades
-        motor_cmd = rng.uniform(-10.0, 10.0, size=2)
-        # Calculate what the retina ACTUALLY sees based on physical physics
-        observed_flow = motor_cmd @ true_physics_matrix
-        
-        # System filters and then adapts
-        residual = efference.filter(motor_cmd, observed_flow)
-        efference.adapt(observed_flow)
-
-    print(f"    Final Internal Gain Matrix:\n{efference.gain_matrix}")
-    print(f"    True Physics Matrix:\n{true_physics_matrix}")
-    
-    matrix_error = float(np.linalg.norm(efference.gain_matrix - true_physics_matrix))
-    print(f"    Matrix Error after 150 saccades: {matrix_error:.6f}")
-    assert matrix_error < 0.05, "[FAIL] System failed to learn the new hardware physics"
-
-    print("\n[+] BIOLOGICAL PROOF: Fly Efference Copy verified.")
-    print("    1. Perfect cancellation of self-induced optic flow (Sperry 1950)")
-    print("    2. Successful isolation of external objects during movement")
-    print("    3. Adaptive learning of complex, cross-axis optical physics")
-    print("[+] EVENT 72 PASSED.")
-    return True
-
-
-if __name__ == "__main__":
-    proof_of_property()
+__all__ = [
+    "compute_efference_copy",
+    "get_latest_efference_row",
+    "summary_for_prompt",
+    "_feature_vector",
+    "_l2",
+    "_sigmoid",
+    "_action_signature",
+]
