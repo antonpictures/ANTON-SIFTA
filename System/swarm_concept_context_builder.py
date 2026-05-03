@@ -20,6 +20,7 @@ def _sources(state_dir: Path | None = None) -> dict[str, Path]:
         "health": root / "nightly_health.jsonl",
         "body": root / "body_brain_memory.jsonl",
         "regime": root / "regime_shifts.jsonl",
+        "media_shazam": root / "media_shazam_guesses.jsonl",
     }
 
 
@@ -79,7 +80,9 @@ def compact_row(row: dict[str, Any], *, max_value_chars: int = MAX_VALUE_CHARS) 
         "ts", "timestamp", "local_date", "start_minute", "end_minute",
         "label", "location", "media_context", "summary", "phase",
         "regime", "danger_state", "selected_drive", "action",
-        "composite_score", "truth_label", "start_time", "end_time", "context_tags"
+        "composite_score", "truth_label", "start_time", "end_time", "context_tags",
+        "primary_category", "confidence", "source_type", "source_label",
+        "title_guess", "channel_guess", "source_work", "director", "evidence_terms",
     ]
     return {k: _compact_value(row[k], max_chars=max_value_chars) for k in keys if k in row}
 
