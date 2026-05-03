@@ -321,8 +321,9 @@ def enforce_stability_clamps(
         "provenance": "Khalil2002§4; Liberzon2003§2.2; Slotine&Li1991",
     }
 
-    if write_ledger and active_clamps:
-        # Only write a clamp row when something is actually being clamped
+    if write_ledger:
+        # Always persist STABILITY_CLAMP so `get_latest_stability_clamp_row()` is never
+        # stuck on a stale EMERGENCY row after recovery to NONE (§10.14.14).
         append_line_locked(
             stability_audit_log_path(root),
             json.dumps(receipt, sort_keys=True) + "\n",
@@ -331,9 +332,79 @@ def enforce_stability_clamps(
     return receipt
 
 
+def get_latest_stability_clamp_row(
+    *,
+    root: Optional[Path] = None,
+    scan_tail: int = 512,
+) -> Optional[Dict[str, Any]]:
+    """Return the most recent STABILITY_CLAMP row from stability_audit.jsonl, if any."""
+    path = stability_audit_log_path(root)
+    if not path.exists():
+        return None
+    raw = read_text_locked(path, encoding="utf-8", errors="replace")
+    last: Optional[Dict[str, Any]] = None
+    lines = [ln for ln in raw.splitlines() if ln.strip()][-max(1, min(scan_tail, 2000)) :]
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("kind") == "STABILITY_CLAMP":
+            last = row
+    return last
+
+
+def get_current_clamp_overrides(
+    *,
+    root: Optional[Path] = None,
+    same_tick_receipt: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Canonical read API for organs (Microglia, Arbiter, Astrocyte, NPPL, …).
+
+    Prefer `same_tick_receipt` when the caller just received it from
+    `enforce_stability_clamps()` in the same tick; otherwise scan the ledger.
+    """
+    row: Optional[Dict[str, Any]] = None
+    if isinstance(same_tick_receipt, dict) and same_tick_receipt.get("kind") == "STABILITY_CLAMP":
+        row = same_tick_receipt
+    else:
+        row = get_latest_stability_clamp_row(root=root)
+
+    if not row:
+        return {
+            "lr_ceiling": 1.0,
+            "max_prunes_override": None,
+            "block_new_gates": False,
+            "clamp_level": "NONE",
+            "stability_ok": True,
+            "exploration_bias_cap": None,
+        }
+
+    raw_lr = row.get("lr_ceiling")
+    if raw_lr is None:
+        lr_out = 1.0
+    else:
+        try:
+            lr_out = float(raw_lr)
+        except (TypeError, ValueError):
+            lr_out = 1.0
+
+    return {
+        "lr_ceiling": lr_out,
+        "max_prunes_override": row.get("max_prunes_override"),
+        "block_new_gates": bool(row.get("block_new_gates", False)),
+        "clamp_level": str(row.get("clamp_level", "NONE") or "NONE"),
+        "stability_ok": bool(row.get("stability_ok", True)),
+        "exploration_bias_cap": row.get("exploration_bias_cap"),
+    }
+
+
 __all__ = [
     "compute_stability_snapshot",
     "enforce_stability_clamps",
+    "get_current_clamp_overrides",
+    "get_latest_stability_clamp_row",
     "stability_audit_log_path",
     "summary_for_prompt",
     "tail_stability_rows",

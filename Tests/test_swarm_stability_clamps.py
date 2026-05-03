@@ -10,6 +10,8 @@ from pathlib import Path
 from System.swarm_stability_audit import (
     compute_stability_snapshot,
     enforce_stability_clamps,
+    get_current_clamp_overrides,
+    get_latest_stability_clamp_row,
     tail_stability_rows,
 )
 
@@ -82,11 +84,37 @@ def test_clamp_writes_to_ledger_when_active(tmp_path, monkeypatch):
     assert row["clamp_level"] == "EMERGENCY"
 
 
-def test_no_write_when_clamp_is_none(tmp_path):
-    enforce_stability_clamps(_snap(energy=0.1, delta=0.01), root=tmp_path, write_ledger=True)
+def test_none_clamp_writes_correct_schema(tmp_path):
+    """NONE clamp rows ARE written (recovery tracking), but must have empty active_clamps."""
+    receipt = enforce_stability_clamps(_snap(energy=0.1, delta=0.01), root=tmp_path, write_ledger=True)
+    assert receipt["clamp_level"] == "NONE"
+    assert receipt["active_clamps"] == []
+    assert receipt["stability_ok"] is True
+    assert receipt["block_new_gates"] is False
     log = tmp_path / "stability_audit.jsonl"
-    # file should not exist (NONE clamp skips write)
-    assert not log.exists()
+    assert log.exists()
+    row = json.loads(log.read_text().strip().splitlines()[-1])
+    assert row["kind"] == "STABILITY_CLAMP"
+    assert row["clamp_level"] == "NONE"
+
+
+def test_get_current_clamp_overrides_reads_latest_row(tmp_path, monkeypatch):
+    monkeypatch.setenv("SIFTA_SHARED_STATE_DIR", str(tmp_path))
+    enforce_stability_clamps(_snap(energy=0.9), root=tmp_path, write_ledger=True)
+    last = get_latest_stability_clamp_row(root=tmp_path)
+    assert last is not None
+    assert last["clamp_level"] == "EMERGENCY"
+    ov = get_current_clamp_overrides(root=tmp_path)
+    assert ov["clamp_level"] == "EMERGENCY"
+    assert ov["max_prunes_override"] == 0
+
+
+def test_same_tick_receipt_short_circuits_ledger(tmp_path, monkeypatch):
+    monkeypatch.setenv("SIFTA_SHARED_STATE_DIR", str(tmp_path))
+    enforce_stability_clamps(_snap(energy=0.9), root=tmp_path, write_ledger=True)
+    live = enforce_stability_clamps(_snap(energy=0.1, delta=0.01), root=tmp_path, write_ledger=False)
+    ov = get_current_clamp_overrides(root=tmp_path, same_tick_receipt=live)
+    assert ov["clamp_level"] == live["clamp_level"]
 
 
 # ── Kill-switch ────────────────────────────────────────────────────────────────

@@ -54,7 +54,12 @@ def test_log_written_to_jsonl(tmp_path):
 def test_causal_closure_gate_requires_min_interventions(tmp_path):
     logger = CausalInterventionLogger(root=tmp_path)
     # No interventions yet
-    assert not logger.causal_closure_proven(min_interventions=1)
+    assert not logger.causal_closure_proven(
+        min_interventions=1,
+        min_effect_size=0.0,
+        max_confounder_rate=1.0,
+        window=50,
+    )
 
     # One clean, directional hit
     logger.log_intervention(
@@ -63,10 +68,39 @@ def test_causal_closure_gate_requires_min_interventions(tmp_path):
         expected_effect_on="replay",
         observed_shift={"direction_matches": True},
         causal_effect_size=0.5,
-        confounder_check={"owner_switch": False},
+        confounder_check={"owner_switch": False, "metabolic_critical": False},
     )
-    assert logger.causal_closure_proven(min_interventions=1)
-    assert not logger.causal_closure_proven(min_interventions=2)
+    assert logger.causal_closure_proven(
+        min_interventions=1,
+        min_effect_size=0.0,
+        max_confounder_rate=1.0,
+        window=50,
+    )
+    assert not logger.causal_closure_proven(
+        min_interventions=2,
+        min_effect_size=0.0,
+        max_confounder_rate=1.0,
+        window=50,
+    )
+
+
+def test_causal_closure_strict_effect_and_confounders(tmp_path):
+    logger = CausalInterventionLogger(root=tmp_path)
+    for i in range(10):
+        logger.log_intervention(
+            tick_id=i,
+            do_vars={"x": i},
+            expected_effect_on="replay",
+            observed_shift={"direction_matches": True},
+            causal_effect_size=0.2,
+            confounder_check={"owner_switch": False, "metabolic_critical": False},
+        )
+    assert logger.causal_closure_proven(
+        min_interventions=8,
+        min_effect_size=0.12,
+        max_confounder_rate=0.15,
+        window=30,
+    )
 
 
 def test_summary_for_prompt_empty_when_no_data(tmp_path):

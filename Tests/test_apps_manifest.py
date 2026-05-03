@@ -16,6 +16,7 @@ ALLOWED_CATEGORIES = {
     "Games",
     "Developer",
     "Economy",
+    "Neuroscience",
 }
 
 

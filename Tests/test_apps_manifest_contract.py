@@ -82,12 +82,19 @@ def test_critical_apps_present(manifest_data):
 
 
 def test_manifest_has_no_default_autostart_apps(manifest_data):
-    """Mermaid OS should boot to a clean desktop unless autostart is explicitly enabled."""
+    """
+    Mermaid OS boots to a clean desktop unless explicitly enabled via env var.
+    Alice is the single permitted autostart app (autonomic boot covenant §10.14.x).
+    All other apps must have autostart=False (or omitted).
+    """
+    _PERMITTED_AUTOSTART = {"Alice"}
     autostart_apps = [
         name for name, app in manifest_data.items()
-        if app.get("autostart") is True
+        if app.get("autostart") is True and name not in _PERMITTED_AUTOSTART
     ]
-    assert autostart_apps == []
+    assert autostart_apps == [], (
+        f"Only Alice may autostart. Unexpected autostart apps: {autostart_apps}"
+    )
 
 
 def test_desktop_autostart_requires_explicit_enable(monkeypatch):
