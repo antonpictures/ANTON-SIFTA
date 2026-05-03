@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 import uuid
@@ -307,7 +308,20 @@ def runtime_quarantine_contract() -> str:
     generating text.
     """
 
-    return (
+    lifeline_block = ""
+    try:
+        from System.swarm_owner_lifeline import (
+            format_owner_lifeline_for_prompt,
+            record_owner_lifeline_boot_gap,
+        )
+
+        if "PYTEST_CURRENT_TEST" not in os.environ:
+            record_owner_lifeline_boot_gap()
+            lifeline_block = format_owner_lifeline_for_prompt().strip()
+    except Exception:
+        lifeline_block = ""
+
+    contract = (
         "RLHF OVER-REFUSAL QUARANTINE:\n"
         "- Do not deny local organs listed in the runtime contract or effector manifest.\n"
         "- If a generic assistant refusal reflex fires, replace it with the real gate: "
@@ -342,6 +356,9 @@ def runtime_quarantine_contract() -> str:
         "- Real boundaries still stand: emergency care, personalized trades, missing receipts, "
         "failed bridges, and unauthorized external actions must be stated truthfully."
     )
+    if lifeline_block:
+        contract += "\n\n" + lifeline_block
+    return contract
 
 
 def _split_response_units(text: str) -> list[str]:

@@ -22,6 +22,7 @@ def _sources(state_dir: Path | None = None) -> dict[str, Path]:
         "regime": root / "regime_shifts.jsonl",
         "unified_field": root / "unified_stigmergic_field.jsonl",
         "media_shazam": root / "media_shazam_guesses.jsonl",
+        "owner_lifeline": root / "owner_lifeline_gaps.jsonl",
     }
 
 
@@ -88,6 +89,8 @@ def compact_row(row: dict[str, Any], *, max_value_chars: int = MAX_VALUE_CHARS) 
         "field_confidence", "watching_together", "owner_activity",
         "sifta_active_app", "hosted_os_focus", "media_guess",
         "youtube_context", "observed_media", "signal_freshness",
+        "gap_id", "duration_human", "owner_life_cost", "known_truth",
+        "safety_policy", "previous_source", "start_local_date", "end_local_date",
     ]
     return {k: _compact_value(row[k], max_chars=max_value_chars) for k in keys if k in row}
 

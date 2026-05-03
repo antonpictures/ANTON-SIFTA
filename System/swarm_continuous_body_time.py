@@ -22,6 +22,7 @@ _LEDGER_NAMES = {
     "episodic_diary": "episodic_diary.jsonl",
     "body_brain": "body_brain_memory.jsonl",
     "ide_trace": "ide_stigmergic_trace.jsonl",
+    "owner_lifeline": "owner_lifeline_gaps.jsonl",
 }
 
 _OWNER_LIFE_CONTINUITY = {
@@ -125,6 +126,10 @@ def _compact_payload(row: dict[str, Any]) -> dict[str, Any]:
         "circadian_phase",
         "kind",
         "source_ide",
+        "gap_id",
+        "duration_human",
+        "owner_life_cost",
+        "known_truth",
     ):
         if key in payload:
             value = payload[key]
@@ -210,7 +215,7 @@ def format_continuous_body_time_for_alice(
 
     ledgers = facts.get("ledgers")
     if isinstance(ledgers, dict):
-        for label in ("conversation", "episodic_diary", "body_brain"):
+        for label in ("conversation", "episodic_diary", "body_brain", "owner_lifeline"):
             row = ledgers.get(label)
             if isinstance(row, dict):
                 parts.append(f"{label} ledger last wrote {row.get('latest_age_human', 'unknown age')}")
