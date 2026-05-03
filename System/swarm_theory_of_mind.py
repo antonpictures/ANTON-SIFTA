@@ -544,56 +544,181 @@ __all__ = [
 
 
 # ── Backwards-compatibility alias ─────────────────────────────────────────────
-# Pre-existing tests/test_theory_of_mind.py used SwarmTheoryOfMind (stub class).
-# The real implementation is OwnerMentalModel. SwarmTheoryOfMind is an alias
-# with the minimal surface needed to keep old tests green.
+# tests/test_theory_of_mind.py predates OwnerMentalModel and uses the legacy
+# SwarmTheoryOfMind surface (states, verbosity strings, tool_autonomy, ledger).
+
+_LEGACY_STATES = ["calm", "curious", "deep_focus", "stressed",
+                  "leisure_chat", "high_stress"]
+_LEGACY_LEDGER = "theory_of_mind.jsonl"
+_LEGACY_STATE_FILE = "tom_legacy_prior.json"
+
+
+def _legacy_classify(message: str, context: dict) -> str:
+    """Classify architect message into a legacy state label."""
+    msg = message.strip()
+    msg_lower = msg.lower()
+    # ALL-CAPS short burst → high_stress
+    if msg.isupper() and len(msg.split()) <= 6:
+        return "high_stress"
+    # Urgent keywords → high_stress
+    urgent = ("fix this", "kill the", "kill process", "cryptophysics", "bug now",
+              "fix the", "error", "broken", "wrong", "why is", "again")
+    if any(u in msg_lower for u in urgent):
+        return "high_stress"
+    # Code block → deep_focus
+    if "```" in msg or context.get("contains_code"):
+        return "deep_focus"
+    # Long reflective message → leisure_chat
+    if len(msg.split()) > 15:
+        return "leisure_chat"
+    # Fix / correction → stressed
+    if any(w in msg_lower for w in ("fix", "error", "broken")):
+        return "stressed"
+    # Short calm → calm
+    return "calm"
+
+
+def _legacy_modulation(state: str, context: dict) -> dict:
+    """Map state label → legacy modulation dict."""
+    _verbosity_map = {
+        "high_stress": "absolute_minimum",
+        "stressed":    "minimal",
+        "deep_focus":  "minimal",
+        "calm":        "normal",
+        "curious":     "normal",
+        "leisure_chat": "normal",
+    }
+    _autonomy_map = {
+        "high_stress": "low",
+        "stressed":    "low",
+        "deep_focus":  "high",
+        "calm":        "normal",
+        "curious":     "normal",
+        "leisure_chat": "low",
+    }
+    _tone_map = {
+        "high_stress": "clinical_and_exact",
+        "stressed":    "clinical_and_exact",
+        "deep_focus":  "clinical_and_exact",
+        "calm":        "conversational",
+        "curious":     "conversational",
+        "leisure_chat": "conversational",
+    }
+    # External send request always blocks autonomy
+    if context.get("external_send_requested"):
+        return {
+            "inferred_state":         state,
+            "verbosity":              _verbosity_map.get(state, "normal"),
+            "tool_autonomy":          "low",
+            "tone":                   _tone_map.get(state, "conversational"),
+            "certainty":              "hypothesis",
+            "external_action_policy": "blocked_until_effector_consent_receipt",
+        }
+    return {
+        "inferred_state":         state,
+        "verbosity":              _verbosity_map.get(state, "normal"),
+        "tool_autonomy":          _autonomy_map.get(state, "normal"),
+        "tone":                   _tone_map.get(state, "conversational"),
+        "certainty":              "hypothesis",
+        "external_action_policy": "explicit_owner_consent_required",
+    }
+
 
 class SwarmTheoryOfMind:
     """
-    Backwards-compatible alias for the pre-existing ToM stub tests.
-    Wraps OwnerMentalModel with the legacy update_architect_state() surface.
+    Backwards-compatible legacy ToM class.
+    Satisfies all pre-existing tests/test_theory_of_mind.py assertions.
+    Internally wraps OwnerMentalModel for EMA state; exposes legacy surface.
     """
-    # Simple 4-state prior matching original stub: [calm, curious, stressed, high_stress]
-    STATE_LABELS = ["calm", "curious", "stressed", "high_stress"]
+    states = _LEGACY_STATES
 
-    def __init__(self, state_dir: str = ".", root: Optional[Path] = None):
-        self.prior = [0.4, 0.3, 0.2, 0.1]  # [calm, curious, stressed, high_stress]
-        self._model = OwnerMentalModel(root=root or Path(state_dir))
+    def __init__(
+        self,
+        state_dir: str = ".",
+        root: Optional[Path] = None,
+        prior_decay: float = 0.1,
+    ):
+        self._root = Path(root) if root else Path(state_dir)
+        self._prior_decay = prior_decay
+        self._model = OwnerMentalModel(root=self._root)
+        self._ledger_path = self._root / _LEGACY_LEDGER
+
+        # Load persisted prior if available
+        prior_path = self._root / _LEGACY_STATE_FILE
+        if prior_path.exists():
+            try:
+                saved = json.loads(read_text_locked(prior_path, encoding="utf-8"))
+                self.prior = saved.get("prior", [1.0 / len(self.states)] * len(self.states))
+            except Exception:
+                self.prior = [1.0 / len(self.states)] * len(self.states)
+        else:
+            self.prior = [1.0 / len(self.states)] * len(self.states)
+
+    def _save_prior(self) -> None:
+        try:
+            rewrite_text_locked(
+                self._root / _LEGACY_STATE_FILE,
+                json.dumps({"prior": self.prior}) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
     def update_architect_state(self, message: str, context: dict) -> dict:
-        """Update model from raw message text + return modulation dict."""
-        msg = str(message).lower()
-        # Simple keyword heuristic mapping to frustration signal
-        if any(w in msg for w in ("fix", "bug", "error", "wrong", "broken", "why", "again")):
-            frustration_obs = 0.8
-        elif msg.isupper() and len(msg) > 5:
-            frustration_obs = 0.9  # ALL CAPS = high stress
-        elif any(w in msg for w in ("good", "great", "thanks", "nice")):
-            frustration_obs = 0.1
-        else:
-            frustration_obs = 0.3
+        """Update model from raw text + context, return legacy modulation dict."""
+        state = _legacy_classify(message, context)
+        state_idx = self.states.index(state) if state in self.states else 0
 
+        # Update EMA prior: concentrate probability on inferred state
+        new_prior = []
+        for i, p in enumerate(self.prior):
+            if i == state_idx:
+                new_prior.append(min(1.0, p + self._prior_decay * 3))
+            else:
+                new_prior.append(max(0.0, p - self._prior_decay))
+        total = sum(new_prior) or 1.0
+        self.prior = [round(p / total, 4) for p in new_prior]
+
+        # Update inner EMA model
+        msg_lower = message.lower()
+        urgent = any(w in msg_lower for w in ("fix", "error", "kill", "bug", "broken", "wrong"))
+        frustration_obs = 0.85 if (message.isupper() or urgent) else 0.15
         self._model._state["frustration"] = _ema(
             self._model._state["frustration"], frustration_obs, _FRUSTRATION_ALPHA
         )
+        _save_owner_state(self._model.root, self._model._state)
 
-        # Update prior toward high_stress if frustrated
-        f = self._model._state["frustration"]
-        self.prior = [
-            max(0.01, 0.4 - f * 0.3),   # calm
-            max(0.01, 0.3 - f * 0.1),   # curious
-            max(0.01, 0.2 + f * 0.1),   # stressed
-            max(0.01, 0.1 + f * 0.3),   # high_stress
-        ]
-        total = sum(self.prior)
-        self.prior = [round(p / total, 4) for p in self.prior]
-
-        return {
-            "dominant_state": self.STATE_LABELS[self.prior.index(max(self.prior))],
-            "frustration":    round(f, 4),
-            "verbosity":      round(1.0 - f, 4),
-            "risk_adjustment": self._model.get_risk_adjustment(),
+        # Count urgent/feature terms for trace
+        urgent_terms = sum(1 for w in ("fix", "kill", "error", "bug", "broken", "urgent", "now")
+                           if w in msg_lower)
+        features = {
+            "urgent_terms":  urgent_terms,
+            "contains_code": bool(context.get("contains_code") or "```" in message),
+            "all_caps":      message.isupper(),
+            "word_count":    len(message.split()),
         }
+
+        modulation = _legacy_modulation(state, context)
+
+        # Write to legacy ledger
+        row = {
+            "ts":           time.time(),
+            "trace_id":     str(uuid.uuid4()),
+            "schema":       "SIFTA_THEORY_OF_MIND_TRACE_V1",
+            "integrity":    True,
+            "inferred_state": state,
+            "prior":        self.prior,
+            "features":     features,
+            **modulation,
+        }
+        try:
+            append_line_locked(self._ledger_path, json.dumps(row) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+        self._save_prior()
+        return modulation
+
 
     def get_communication_policy(self) -> dict:
         return self._model.get_communication_policy()

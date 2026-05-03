@@ -919,12 +919,52 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Theory of Mind organ skipped (non-fatal)")
 
+        # 8f. Affective Valence Tag (Event 144) — fast approach/avoid prior
+        # Schultz/Dayan/Montague 1997; LeDoux 1996; Damasio 1994.
+        _valence_receipt: Dict[str, Any] = {
+            "valence": 0.0, "intensity": 0.0, "regime": "NEUTRAL",
+        }
+        try:
+            from System.swarm_affective_valence import compute_affective_valence
+            _terms = _stability_snapshot.get("terms", {}) if isinstance(_stability_snapshot, dict) else {}
+            _reward = float(mem_row.get("td_value", 0.5) or 0.5)
+            _surprise = max(
+                float(_terms.get("world_error_norm", 0.0) or 0.0),
+                abs(1.0 - _reward),
+            )
+            _threat = max(
+                1.0 if danger.get("is_critical", False) else 0.0,
+                0.65 if str(_clamp_receipt.get("clamp_level", "NONE")) == "EMERGENCY" else 0.0,
+                0.40 if str(_clamp_receipt.get("clamp_level", "NONE")) == "BLOCK_NEW" else 0.0,
+                0.20 if str(_clamp_receipt.get("clamp_level", "NONE")) == "RATE_LIMIT" else 0.0,
+                float(_tom_receipt.get("risk_adjustment", 1.0) or 1.0) - 1.0,
+            )
+            _valence_receipt = compute_affective_valence(
+                event=str(action.get("type") or action.get("name") or "body_brain_tick"),
+                reward=min(1.0, max(0.0, _reward)),
+                surprise=min(1.0, max(0.0, _surprise)),
+                threat=min(1.0, max(0.0, _threat)),
+                arousal=float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
+                root=_STATE_DIR,
+                write_ledger=True,
+            )
+            logger.debug(
+                "[Event144] Valence regime=%s valence=%.3f intensity=%.3f",
+                _valence_receipt.get("regime"),
+                float(_valence_receipt.get("valence", 0.0) or 0.0),
+                float(_valence_receipt.get("intensity", 0.0) or 0.0),
+            )
+        except Exception:
+            logger.debug("Affective valence skipped (non-fatal)")
+
         # 8d. Active Causal Probing (Event 139) — bounded do() experiments.
         # NA global_gain and meta_confidence now gate probing aggressiveness:
         #   - Uncertainty threshold RAISED when metacog says OVERCONFIDENT
         #     (Yeung & Summerfield 2012: don't trust self-assessment during overconfidence)
         #   - Uncertainty threshold LOWERED when metacog says UNDERCONFIDENT
         #     (more willingness to experiment when organism undersells its own accuracy)
+        #   - Negative valence raises the threshold (probe less under aversion);
+        #     positive valence slightly lowers it (safe approach bias)
         #   - Only run real interventions when NA gain >= 1.0 (OPTIMAL or above)
         _causal_probe_receipt: Optional[Dict[str, Any]] = None
         try:
@@ -947,20 +987,29 @@ class SwarmPhysiology:
                 "CALIBRATED":     _base_probe_threshold,           # baseline
                 "UNDERCONFIDENT": _base_probe_threshold - 0.05,   # -0.05 easier
             }.get(_metacog_regime, _base_probe_threshold)
+            _valence = float(_valence_receipt.get("valence", 0.0) or 0.0)
+            if _valence <= -0.20:
+                _probe_threshold += min(0.08, abs(_valence) * 0.08)
+            elif _valence >= 0.20:
+                _probe_threshold -= min(0.04, _valence * 0.04)
+            _probe_threshold = min(0.85, max(0.15, _probe_threshold))
 
             _causal_probe_receipt = propose_and_execute_runtime_intervention(
                 tick_id=causal_probe_tick if causal_probe_tick is not None else str(mem_row.get("tick_id") or ""),
                 current_uncertainty=min(1.0, max(0.0, _uncertainty)),
                 current_clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
                 root=_STATE_DIR,
+                uncertainty_threshold=_probe_threshold,
             )
             if _causal_probe_receipt:
                 logger.info(
-                    "[Event139] Active causal probe target=%s effect=%.3f dry_run=%s metacog_regime=%s",
+                    "[Event139] Active causal probe target=%s effect=%.3f dry_run=%s metacog_regime=%s valence=%.3f threshold=%.3f",
                     _causal_probe_receipt.get("intervention", {}).get("do", {}).get("target"),
                     float(_causal_probe_receipt.get("causal_effect_size", 0.0) or 0.0),
                     _causal_probe_receipt.get("intervention", {}).get("do", {}).get("dry_run"),
                     _metacog_regime,
+                    _valence,
+                    _probe_threshold,
                 )
         except Exception:
             logger.debug("Active causal prober skipped (non-fatal)")
