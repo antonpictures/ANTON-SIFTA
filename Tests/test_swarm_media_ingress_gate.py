@@ -75,6 +75,31 @@ def test_direct_alice_address_still_reaches_the_cortex_during_youtube():
     assert decision["route"] == "direct"
 
 
+def test_fuzzy_wake_name_reaches_cortex_during_youtube_when_nearfield():
+    decision = classify_spoken_ingress(
+        "I am going to sleep, hear me Alep",
+        stt_conf=0.58,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=NEARFIELD_FP,
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "wake_ear_fuzzy_wake_name_nearfield"
+    assert decision["wake_ear"]["name_match"]["candidate"] == "alep"
+
+
+def test_fuzzy_wake_name_from_farfield_stays_media_context():
+    decision = classify_spoken_ingress(
+        "Alep can you hear the universe theory now",
+        stt_conf=0.91,
+        focus_context=YOUTUBE_CONTEXT,
+        acoustic_fingerprint=FARFIELD_FP,
+    )
+
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "acoustic_farfield_replay_with_media_focus"
+
+
 def test_farfield_replay_during_youtube_is_observed_media_context():
     decision = classify_spoken_ingress(
         (
@@ -215,13 +240,13 @@ def test_no_media_focus_means_normal_direct_routing():
     assert decision["route"] == "direct"
 
 
-def test_owner_declared_bedroom_tv_youtube_is_ambient():
+def test_owner_declared_background_media_youtube_is_ambient():
     gate.AMBIENT_CONTEXT_FILE.write_text(
         json.dumps(
             {
                 "ts": time.time(),
-                "source": "background_tv_youtube",
-                "note": "Bedroom TV is playing YouTube; voices are ambient.",
+                "source": "ambient_media_youtube",
+                "note": "Screen media (e.g. YouTube/Movie) is playing; voices are ambient.",
                 "ttl_s": 3600.0,
             }
         ),
@@ -235,7 +260,49 @@ def test_owner_declared_bedroom_tv_youtube_is_ambient():
     )
 
     assert decision["route"] == "ambient_media"
-    assert decision["reason"] == "owner_declared_background_tv_youtube"
+    assert decision["reason"] == "owner_declared_background_media_youtube"
+
+
+def test_owner_declared_ambient_tv_process_routes_direct():
+    gate.AMBIENT_CONTEXT_FILE.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "source": "ambient_media_youtube",
+                "note": "background_media_youtube owner declared",
+                "ttl_s": 3600.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    decision = classify_spoken_ingress(
+        "process",
+        stt_conf=0.57,
+        focus_context="ARCHITECT APP FOCUS:\nYouTube video: keynote caption_status=ok",
+    )
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "control_token_under_declared_ambient_tv"
+
+
+def test_owner_declared_ambient_tv_short_interjection_routes_direct():
+    gate.AMBIENT_CONTEXT_FILE.write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "source": "ambient_media_youtube",
+                "note": "ambient_tv youtube",
+                "ttl_s": 3600.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    decision = classify_spoken_ingress(
+        "okay wait",
+        stt_conf=0.48,
+        focus_context="background_media_youtube",
+    )
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "short_utterance_under_declared_ambient_tv"
 
 
 def test_observed_media_receipt_preserves_acoustic_context_not_raw_audio():

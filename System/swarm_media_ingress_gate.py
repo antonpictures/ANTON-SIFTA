@@ -444,6 +444,27 @@ def classify_spoken_ingress(
         return {"route": "direct", "reason": "direct_address_or_request", "confidence": 1.0}
     if SELF_REFERENCE_CORRECTION_RE.search(clean):
         return {"route": "direct", "reason": "direct_self_reference_correction", "confidence": 0.96}
+    try:
+        from System.swarm_alice_wake_ear import classify_wake_turn
+
+        wake = classify_wake_turn(
+            clean,
+            stt_conf=stt_conf,
+            focus_context=focus_context or "",
+            acoustic_fingerprint=acoustic_fingerprint,
+        )
+        if wake.get("route") == "direct":
+            return {
+                "route": "direct",
+                "reason": f"wake_ear_{wake.get('reason')}",
+                "confidence": float(wake.get("confidence", 0.0) or 0.0),
+                "wake_ear": {
+                    "wake_score": wake.get("wake_score"),
+                    "name_match": wake.get("name_match"),
+                },
+            }
+    except Exception:
+        pass
 
     acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
     context = "\n".join(
@@ -468,6 +489,25 @@ def classify_spoken_ingress(
 
     if not has_media_focus:
         return {"route": "direct", "reason": "no_recent_media_focus", "confidence": 0.0}
+
+    # SENSORIMOTOR ATTENTION SHIFT (Event 121)
+    # The Architect observes: "watching a youtube video is totally different sound visual
+    # experience than having a conversation... humans can pay attention to only one at the time."
+    # We fuse the visual ledger (is George looking at the screen?) with acoustic physics (near-field voice).
+    # If both are true, Alice shifts her attention from the background media to the human.
+    try:
+        from System.swarm_face_detection import current_presence_safe
+        presence = current_presence_safe()
+        architect_visible = presence.face_present()
+    except Exception:
+        architect_visible = False
+
+    if architect_visible and acoustic_cue == "nearfield_voice_likely":
+        return {
+            "route": "direct",
+            "reason": "sensorimotor_attention_shift",
+            "confidence": 0.95,
+        }
 
     # This is the co-listening path: speaker/YouTube audio is not a direct
     # prompt, but it is real environmental content. Keep it as observed media

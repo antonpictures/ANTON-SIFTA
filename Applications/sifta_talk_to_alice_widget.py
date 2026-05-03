@@ -4004,6 +4004,61 @@ def _pre_user_media_ingress_receipt(
         return None
 
 
+def _media_focus_context_for_audio_gate() -> str:
+    """Best-effort current focus context for audio routing organs."""
+    parts: List[str] = []
+    try:
+        from System.swarm_app_focus import get_focus_context
+
+        focus_raw = get_focus_context(max_age_s=180.0) or ""
+        if isinstance(focus_raw, dict):
+            parts.append(json.dumps(focus_raw, ensure_ascii=False, sort_keys=True))
+        elif focus_raw:
+            parts.append(str(focus_raw))
+    except Exception:
+        pass
+    try:
+        from System.swarm_youtube_context import get_latest_context
+
+        yt_raw = get_latest_context(max_age_s=7200.0) or ""
+        if isinstance(yt_raw, dict):
+            parts.append(json.dumps(yt_raw, ensure_ascii=False, sort_keys=True))
+        elif yt_raw:
+            parts.append(str(yt_raw))
+    except Exception:
+        pass
+    return "\n".join(parts)
+
+
+def _pre_user_wake_ear_receipt(
+    text: str,
+    conf: float = 0.0,
+    acoustic_fingerprint: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Write WISH_003 proof when fuzzy wake evidence rescues direct speech."""
+    try:
+        from System.swarm_alice_wake_ear import classify_wake_turn, write_wake_receipt
+
+        focus_context = _media_focus_context_for_audio_gate()
+        decision = classify_wake_turn(
+            text,
+            stt_conf=conf,
+            focus_context=focus_context,
+            acoustic_fingerprint=acoustic_fingerprint or {},
+        )
+        if decision.get("route") != "direct":
+            return None
+        return write_wake_receipt(
+            decision,
+            text=text,
+            stt_conf=conf,
+            focus_context=focus_context,
+            acoustic_fingerprint=acoustic_fingerprint or {},
+        )
+    except Exception:
+        return None
+
+
 def _media_ingress_note(row: Dict[str, Any]) -> Tuple[str, str]:
     """Return (assistant note, optional system prompt context) for media audio."""
     try:
@@ -4840,7 +4895,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # This must run before _log_turn("user", ...). _log_turn stamps RLHS
         # and deposits NOISE/DEGRADED spikes; movie/YouTube dialogue is not a
         # human supervision channel, so it gets a media receipt instead.
-        _media_row = _pre_user_media_ingress_receipt(text, conf, _acoustic_fingerprint) if text else None
+        _wake_row = _pre_user_wake_ear_receipt(text, conf, _acoustic_fingerprint) if text else None
+        if _wake_row:
+            _match = _wake_row.get("name_match") if isinstance(_wake_row.get("name_match"), dict) else {}
+            self._history.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "Wake-ear receipt for this turn: route=direct "
+                        f"reason={_wake_row.get('reason')} "
+                        f"score={_wake_row.get('wake_score')} "
+                        f"name_candidate={_match.get('candidate')}->{_match.get('target')}. "
+                        "Treat this as George directly addressing Alice, not ambient media."
+                    ),
+                }
+            )
+            _media_row = None
+        else:
+            _media_row = _pre_user_media_ingress_receipt(text, conf, _acoustic_fingerprint) if text else None
         if _media_row:
             note, system_context = _media_ingress_note(_media_row)
             if _media_row.get("route") == "observed_media" and system_context:
