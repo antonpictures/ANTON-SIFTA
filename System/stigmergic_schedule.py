@@ -53,9 +53,8 @@ _SCHEDULE_WRITE_RE = re.compile(
     r"put\s+(?:this\s+)?(?:on|in)\s+(?:my\s+)?(?:schedule|calendar|tasks?|todo)|"
     r"write\s+(?:this\s+)?(?:on|in)\s+(?:my\s+)?(?:schedule|calendar|tasks?|todo)|"
     r"save\s+(?:this\s+)?(?:on|in)\s+(?:my\s+)?(?:schedule|calendar|tasks?|todo)|"
-    r"schedule\s+(?:me\s+)?|"
-    r"i\s+have\s+(?:an?\s+)?(?:appointment|meeting|call|class|lesson|task)|"
-    r"i\s+need\s+to\s+(?:remember|do|go|call|meet|take|buy)"
+    r"schedule\s+an?\s+(?:appointment|meeting|call|event)|"
+    r"i\s+have\s+(?:an?\s+)?(?:appointment|meeting|call|class|lesson|task)\s+(?:at|on|tomorrow|today)"
     r")\b",
     re.IGNORECASE,
 )
