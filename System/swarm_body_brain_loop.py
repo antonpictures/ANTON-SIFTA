@@ -885,6 +885,40 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Metacognitive monitor skipped (non-fatal)")
 
+        # 8e. Theory of Mind / Owner Mental Model (Event 147) — owner-centric social brain
+        # Premack & Woodruff 1978; Frith 1992; Saxe & Kanwisher 2003; Lieberman 2007.
+        # Runs after metacog so it can incorporate overconfidence signals into risk gate.
+        _tom_receipt: Dict[str, Any] = {
+            "risk_adjustment": 1.0,
+            "arousal_boost":   0.0,
+            "pruning_conservatism": 0.0,
+            "communication_policy": {"detail_level": 0.6, "explain_reasoning": False,
+                                     "ask_for_clarification": False},
+            "owner_state": {},
+        }
+        try:
+            from System.swarm_theory_of_mind import compute_owner_mental_model
+            _tom_receipt = compute_owner_mental_model(
+                root=_STATE_DIR,
+                tick_id=str(mem_row.get("tick_id") or ""),
+                write_ledger=True,
+            )
+            # Wire arousal_boost back into LC/NA: if owner knowledge is low or
+            # frustration rising, elevate effective arousal (Lieberman 2007 §4)
+            _tom_arousal_boost = float(_tom_receipt.get("arousal_boost", 0.0))
+            if _tom_arousal_boost > 0.0:
+                _boosted_na = min(1.0, float(_lc_na_receipt.get("na_level", 0.5)) + _tom_arousal_boost)
+                _lc_na_receipt["na_level_tom_boosted"] = round(_boosted_na, 4)
+            logger.debug(
+                "[Event147] ToM frustration=%.3f knowledge=%.3f risk_adj=%.3f arousal_boost=%.3f",
+                float((_tom_receipt.get("owner_state") or {}).get("frustration", 0.0)),
+                float((_tom_receipt.get("owner_state") or {}).get("knowledge_of_system", 0.6)),
+                float(_tom_receipt.get("risk_adjustment", 1.0)),
+                float(_tom_receipt.get("arousal_boost", 0.0)),
+            )
+        except Exception:
+            logger.debug("Theory of Mind organ skipped (non-fatal)")
+
         # 8d. Active Causal Probing (Event 139) — bounded do() experiments.
         # NA global_gain and meta_confidence now gate probing aggressiveness:
         #   - Uncertainty threshold RAISED when metacog says OVERCONFIDENT
