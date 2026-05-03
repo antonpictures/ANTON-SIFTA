@@ -14,12 +14,16 @@ replay, dopamine critic) and writes a NEW file only. It does not
 mutate any other organ's state.
 """
 import json
-import math
 import os
 import time
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+try:
+    from System.swarm_persistent_owner_history import state_dir
+except ImportError:
+    def state_dir(root=None):
+        return Path(root) if root else Path(".sifta_state")
 
 try:
     from System.jsonl_file_lock import append_line_locked, read_text_locked
@@ -51,7 +55,7 @@ class TemporalSelfModel:
     """
 
     def __init__(self, root: Optional[Path] = None):
-        self.root = root or Path(".sifta_state")
+        self.root = state_dir(root)
         self.log_path = self.root / "self_model.jsonl"
         self.snapshot_path = self.root / "self_model_snapshot.json"
         self._boot_id: int = self._load_boot_id()
