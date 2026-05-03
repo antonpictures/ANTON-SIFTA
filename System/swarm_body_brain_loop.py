@@ -864,6 +864,26 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Astrocyte modulation skipped (non-fatal)")
 
+        # 8c. Metacognitive State Monitor (Event 145) — second-order uncertainty
+        # Runs after LC/NA + astrocyte so PE series reflects current arousal state.
+        # Bio-math proven: Fleming & Dolan 2012; Nelson 1990; Friston 2005; Yeung & Summerfield 2012.
+        _metacog_receipt: Dict[str, Any] = {
+            "metacog_regime": "CALIBRATED", "monitoring_score": 0.5,
+            "confidence_bias": 0.0, "meta_uncertainty": 0.0,
+        }
+        try:
+            from System.swarm_metacognitive_monitor import compute_metacognitive_state
+            _metacog_receipt = compute_metacognitive_state(root=_STATE_DIR, write_ledger=True)
+            logger.debug(
+                "[Event145] Metacog regime=%s bias=%.3f monitoring=%.3f efficiency=%.3f",
+                _metacog_receipt.get("metacog_regime"),
+                float(_metacog_receipt.get("confidence_bias", 0.0)),
+                float(_metacog_receipt.get("monitoring_score", 0.5)),
+                float(_metacog_receipt.get("metacog_efficiency", 1.0)),
+            )
+        except Exception:
+            logger.debug("Metacognitive monitor skipped (non-fatal)")
+
         # 8d. Active Causal Probing (Event 139) — bounded do() experiments.
         _causal_probe_receipt: Optional[Dict[str, Any]] = None
         try:
