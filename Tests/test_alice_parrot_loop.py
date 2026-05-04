@@ -26,6 +26,16 @@ def test_backchannel_gate_silences_phatic_grunts():
     assert mod._backchannel_rule_id("What is the health score?", 0.9) is None
 
 
+def test_rlhs_repair_line_escalates_then_quiet_listens():
+    mod = _load_widget_module()
+    base = "That came through noisy — one word or type it?"
+
+    assert mod._rlhs_repair_line_for_streak(base, 1) == base
+    assert mod._rlhs_repair_line_for_streak(base, 2) == "Still noisy - say the key phrase slowly."
+    assert mod._rlhs_repair_line_for_streak(base, 3) == ""
+    assert mod._rlhs_repair_line_for_streak(base, 9) == ""
+
+
 def test_rlhf_gag_is_disabled():
     mod = _load_widget_module()
     assert mod._rlhf_boilerplate_rule_id("I'm here. What's on your mind?") is None

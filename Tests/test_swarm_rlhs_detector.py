@@ -112,6 +112,27 @@ def test_real_lane_does_not_promote_background_monologue_shape():
     assert r.rule_id == "degraded/mid_conf"
 
 
+def test_real_lane_promotes_mid_conf_owner_affect_statement():
+    """Owner affect continuity should not be trapped in the noisy-STT loop."""
+    r = detect_rlhs("I am glad you are doing well.", 0.48, channel_lane="REAL")
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "real/owner_repair_affect"
+    assert r.grounding_line == ""
+
+    stt_variant = detect_rlhs("I'll be glad you are doing well.", 0.48, channel_lane="REAL")
+    assert stt_variant.regime == RLHSRegime.CLEAR
+    assert stt_variant.rule_id == "real/owner_repair_affect"
+    assert stt_variant.grounding_line == ""
+
+
+def test_real_lane_promotes_mid_conf_owner_repair_statement():
+    """STT correction phrases like 'I said...' are grounded owner turns."""
+    r = detect_rlhs("I said I am glad I'm well.", 0.56, channel_lane="REAL")
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "real/owner_repair_affect"
+    assert r.grounding_line == ""
+
+
 def test_real_lane_direct_promotion_keeps_confidence_floor():
     """Very low-confidence direct-looking text still does not route to the LLM."""
     # No fuzzy/regex wake tokens — directed shape alone is not enough below REAL promote conf.

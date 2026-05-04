@@ -2462,6 +2462,21 @@ def _rlhs_grounding_line(text: str, stt_conf: float = 0.0) -> str:
     return ""
 
 
+def _rlhs_repair_line_for_streak(base_line: str, streak: int) -> str:
+    """Escalate repeated degraded-STT repairs instead of looping one phrase.
+
+    First miss: normal grounding line.
+    Second miss: a slower, more specific repair request.
+    Third+ miss: empty string, so the caller can quiet-listen without TTS.
+    """
+
+    if streak <= 1:
+        return base_line
+    if streak == 2:
+        return "Still noisy - say the key phrase slowly."
+    return ""
+
+
 # ── Stigmergic Ingest Mode (AG31 architecture, C47H surgical refinement) ──
 # Original AG31 implementation triggered if the word "stigmergic" appeared
 # anywhere in the user's last turn. That silences Alice on every message
@@ -5330,6 +5345,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # becomes an honest "(silent)" marker.
         backchannel_rule = _backchannel_rule_id(text, conf)
         if backchannel_rule:
+            self._rlhs_grounding_streak = 0
             note = f"(silent: {backchannel_rule} — body doesn't reply to phatic '{text[:30]}')"
             _log_turn("alice", note, model="")
             self._history.append({"role": "assistant", "content": "(silent)"})
@@ -5347,17 +5363,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # NOISE regime → silent (already caught by backchannel gate above).
         _rlhs_ground = _rlhs_grounding_line(text, conf)
         if _rlhs_ground:
-            _log_turn("alice", _rlhs_ground, model="rlhs_gate", stt_conf=conf)
-            self._history.append({"role": "assistant", "content": _rlhs_ground})
-            self._append_system_line(f"[RLHS] {_rlhs_ground}", error=False)
+            _streak = int(getattr(self, "_rlhs_grounding_streak", 0)) + 1
+            self._rlhs_grounding_streak = _streak
+            _repair_line = _rlhs_repair_line_for_streak(_rlhs_ground, _streak)
+            if not _repair_line:
+                note = "(silent: rlhs/degraded_repeat — staying quiet and listening)"
+                _log_turn("alice", note, model="rlhs_gate", stt_conf=conf)
+                self._history.append({"role": "assistant", "content": "(silent)"})
+                self._append_system_line(note, error=False)
+                self._busy = False
+                self._return_to_listening()
+                return
+
+            _log_turn("alice", _repair_line, model="rlhs_gate", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _repair_line})
+            self._append_system_line(f"[RLHS] {_repair_line}", error=False)
             
             self._tts = _TTSWorker(
-                _rlhs_ground, voice=self._selected_voice_name() or None, parent=self,
+                _repair_line, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)
             self._tts.start()
             return
+        self._rlhs_grounding_streak = 0
 
         if _is_current_time_query(text):
             reply = _current_time_reply_for_alice()

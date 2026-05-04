@@ -196,6 +196,16 @@ _DIRECTED_SPEECH_RE = re.compile(
     re.IGNORECASE,
 )
 
+_OWNER_REPAIR_OR_AFFECT_RE = re.compile(
+    r"\b(?:"
+    r"i\s+(?:said|mean|meant|was\s+saying)\b|"
+    r"(?:i\s+am|i(?:'|’)m|i(?:'|’)ll\s+be|i\s+will\s+be)\s+glad\b|"
+    r"(?:glad|happy)\s+(?:you(?:'|’)?re|you\s+are|i(?:'|’)?m|i\s+am)\b|"
+    r"that\s+(?:came|was)\s+(?:out|through)\s+(?:wrong|noisy|badly)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Incoherence heuristic
@@ -299,6 +309,18 @@ def _has_direct_speech_signal(text: str) -> bool:
     if _has_architect_self_marker(text):
         return True
     return _DIRECTED_SPEECH_RE.search(text or "") is not None
+
+
+def _has_owner_repair_or_affect_signal(text: str) -> bool:
+    """Detect owner correction/affect utterances that STT often underrates.
+
+    These are not generic background monologues. They are first-person repair or
+    affective continuity markers from the owner, e.g. "I said..." or "I'm glad".
+    At medium confidence they should reach Alice instead of triggering the same
+    noisy-channel repair loop.
+    """
+
+    return _OWNER_REPAIR_OR_AFFECT_RE.search(text or "") is not None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -562,6 +584,29 @@ def detect_rlhs(
                 if has_architect_self_marker
                 else "real/coherent_direct_speech"
             ),
+            grounding_line="",
+            channel_lane=lane,
+        )
+
+    # 4c. REAL lane owner repair / affect promotion.
+    # The Architect often corrects STT with "I said..." or gives short affective
+    # continuity ("I'm glad..."). These phrases are semantically grounded even
+    # when Whisper confidence lands in the 0.45-0.60 band. Without this narrow
+    # bypass Alice loops on the same RLHS prompt while the owner is clearly
+    # repairing the channel.
+    if (
+        lane == "REAL"
+        and not has_wake_word
+        and conf >= 0.45
+        and inc <= 0.42
+        and _has_owner_repair_or_affect_signal(text)
+    ):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf,
+            text_tokens=n_tokens,
+            incoherence=inc,
+            rule_id="real/owner_repair_affect",
             grounding_line="",
             channel_lane=lane,
         )
