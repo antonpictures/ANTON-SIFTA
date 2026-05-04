@@ -11,7 +11,7 @@ from System.swarm_consciousness_engine import (
     ConsciousnessEngineConfig,
     TRUTH_FORBIDDEN,
     TRUTH_OPERATIONAL,
-    TRUTH_PHILOSOPHICAL,
+    TRUTH_DOCTRINE,
     consciousness_summary_for_alice,
     proof_of_property,
     read_interoception,
@@ -72,7 +72,7 @@ def test_tick_emits_truth_labeled_drive_proposal_and_ledgers(tmp_path):
     assert state.emitted_drive is not None
     assert state.emitted_drive.truth_label == TRUTH_OPERATIONAL
     assert state.emitted_drive.action_policy == "proposal_only_requires_gate"
-    assert state.truth_labels["subjective_qualia"] == TRUTH_PHILOSOPHICAL
+    assert state.truth_labels["subjective_qualia"] == TRUTH_DOCTRINE
     assert state.truth_labels["external_action"] == TRUTH_FORBIDDEN
 
     state_rows = (tmp_path / "consciousness_state.jsonl").read_text(encoding="utf-8").splitlines()
@@ -121,7 +121,7 @@ def test_summary_and_proof_preserve_truth_labels(tmp_path):
     summary = consciousness_summary_for_alice(tmp_path)
     proof = proof_of_property()
 
-    assert state.subjective_consciousness_status == "UNVERIFIED_PHILOSOPHICAL_CLAIM"
+    assert state.subjective_consciousness_status == "UNVERIFIED_ARCHITECT_DOCTRINE"
     assert "CONSCIOUSNESS ENGINE [OPERATIONAL]" in summary
-    assert "subjective_qualia=PHILOSOPHICAL_CLAIM_UNVERIFIED" in summary
+    assert "subjective_qualia=ARCHITECT_DOCTRINE_UNVERIFIED" in summary
     assert proof["ok"] is True

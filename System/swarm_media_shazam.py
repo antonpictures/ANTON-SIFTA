@@ -106,7 +106,7 @@ _SOURCE_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("movie_or_fiction_clip", "fiction/movie clip", ("movie", "film", "scene", "clip", "snatch", "goodfellas", "john wick", "scarface", "trailer")),
     ("news_network", "news network / politics", ("cnn", "fox news", "msnbc", "bbc", "reuters", "associated press", "cnbc", "bloomberg", "sky news", "al jazeera")),
     ("tech_interview", "technology interview / keynote", ("nvidia", "jensen", "gpu", "cuda", "tsmc", "supercomputer", "ai factory", "compute")),
-    ("science_documentary", "science / philosophy documentary", ("parallel universe", "multiverse", "quantum", "physics", "experiment", "experiments", "consciousness", "perception", "cosmology")),
+    ("science_documentary", "science documentary", ("parallel universe", "multiverse", "quantum", "physics", "experiment", "experiments", "consciousness", "perception", "cosmology")),
     ("music_video", "music video / performance", ("music", "song", "lyrics", "concert", "remix")),
     ("podcast_or_long_interview", "podcast / long interview", ("podcast", "interview", "lex fridman", "conversation", "full episode")),
     ("gaming_video", "gaming video", ("gameplay", "gaming", "minecraft", "fortnite", "boss fight")),

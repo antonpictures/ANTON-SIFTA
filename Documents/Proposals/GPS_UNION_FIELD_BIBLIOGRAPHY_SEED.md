@@ -40,7 +40,7 @@
 * **Geofencing + temporal logic:** Allen interval algebra + simple cylindrical (lat, lon, r, t) predicates — **union field voxels**.  
 * **Episodic mobility / exploration–return:** Song *et al.* scaling laws; Pappalardo *et al.* “Returners vs explorers” — personality of **mobility style** (optional UX).  
 * **Energy / duty cycle on phone:** duty-cycled GPS sampling papers — **battery honesty** for Shortcut frequency.  
-* **Kalman / particle smoothing on GNSS:** standard robotics — **Kalman filter** row for denoising before ledger write (implementation ref, not philosophy).
+* **Kalman / particle smoothing on GNSS:** standard robotics — **Kalman filter** row for denoising before ledger write (implementation ref, not doctrine).
 
 ---
 

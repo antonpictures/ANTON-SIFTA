@@ -152,7 +152,7 @@ friction_cost(action, state_delta) =
 
 **Why it matters:** Prefer **small, reversible** edits; stabilize stigmergy (less blackboard noise). Biology works because **change is expensive**.
 
-**Fit:** Feed **friction_cost** into `MutationGovernor.allow(...)` as an additive **tax** or **hard ceiling**; pair with **dissipation / irreducible cost** organs already in the philosophical stack.
+**Fit:** Feed **friction_cost** into `MutationGovernor.allow(...)` as an additive **tax** or **hard ceiling**; pair with **dissipation / irreducible cost** organs already in the doctrine stack.
 
 ---
 

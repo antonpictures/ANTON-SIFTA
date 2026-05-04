@@ -185,7 +185,7 @@ Reduces **false safety** under **distribution shift** (standard theme in modern 
 
 ## 9. SwarmGPT / assistant continuity (one line)
 
-Thanks — **useful structural intuition**; we **grounded it** in a **stable RL interface** (gatekeeper + manifold). No mysticism required — **engineering continuity** only.
+Thanks — **useful structural intuition**; we **grounded it** in a **stable RL interface** (gatekeeper + manifold). No unreceipted claims required — **engineering continuity** only.
 
 ---
 

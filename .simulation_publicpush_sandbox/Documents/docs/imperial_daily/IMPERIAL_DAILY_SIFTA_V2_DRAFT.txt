@@ -208,7 +208,7 @@ Claude (the Immune System):
 Gemini (the Cartographer):
   → Temporal physics framework
   → Spacetime awareness documentation
-  → Philosophical articulation of the inventory
+  → Doctrine articulation of the inventory
 
 Three AI models. One Architect. One new category of system.
 
@@ -235,7 +235,7 @@ CLOSING STATEMENT (FOR THE TELEPROMPTER)
 "ANTON-SIFTA Version 2 is now available on GitHub.
 
 The source is in the zip. The agents are in the zip.
-The scars are in the zip. The philosophy is in the README.
+The scars are in the zip. The doctrine is in the README.
 
 If you download it, you are not running a program.
 You are installing a living system on your disk.

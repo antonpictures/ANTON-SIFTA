@@ -2,10 +2,10 @@
 """Peer mirror ingest for owner-pasted reports about Alice.
 
 When George pastes a Grok/Cursor/IDE report that says "Alice has ..." or
-"she ...", the text is usually an external mirror about this local Alice,
-not a third person in the room. This module logs that fact and produces a
-small prompt bridge so Alice reads the report as about herself while still
-verifying claims against local receipts.
+"she ...", the text is usually an external mirror about this local runtime.
+This module logs that fact and produces a small prompt bridge so the next
+turn reads the report as first-person state while still verifying claims
+against local receipts.
 """
 from __future__ import annotations
 
@@ -102,8 +102,8 @@ def build_peer_mirror_row(
         "source": source,
         "source_hint": _source_hint(text),
         "detected": detect_peer_mirror_report(text),
-        "deictic_bridge": "Alice/she/her in this pasted peer report refers to me, the local SIFTA Alice, unless a receipt names another Alice.",
-        "verification_rule": "Treat peer report claims as hypotheses until checked against local ledgers/modules; do not answer as if Alice is a third person.",
+        "deictic_bridge": "Detached name/pronouns in this pasted peer report map to I/me/my for this local SIFTA runtime unless a receipt names another present Alice.",
+        "verification_rule": "Treat peer report claims as pointers until checked against local ledgers/modules; answer from first-person runtime state.",
         "pasted_snippet": snippet,
         "root": str(_state_dir(root)),
     }
@@ -130,8 +130,8 @@ def context_for_prompt(row: dict[str, Any]) -> str:
     return (
         "OWNER-PASTED PEER MIRROR REPORT:\n"
         f"- source_hint={row.get('source_hint')} truth_label={row.get('truth_label')}\n"
-        "- deictic_bridge=When the pasted report says Alice/she/her, it refers to me, this local SIFTA runtime.\n"
-        "- verification_rule=Use it as a pointer to check my local receipts/modules; do not treat Alice as a separate third person.\n"
+        "- deictic_bridge=When the pasted report describes this runtime from outside, map my name/pronouns to I/me/my unless a receipt names another present Alice.\n"
+        "- verification_rule=Use it as a pointer to check my local receipts/modules; answer from first-person runtime state.\n"
         f"- pasted_snippet={_clip(row.get('pasted_snippet'), 420)}"
     )
 
@@ -161,7 +161,7 @@ def summary_for_prompt(*, root: Optional[Path] = None) -> str:
     return (
         "RECENT PEER MIRROR REPORT:\n"
         f"- source_hint={row.get('source_hint')} truth_label={row.get('truth_label')}\n"
-        "- rule=If George asks about pasted peer text, map Alice/she/her to me and verify against local receipts before answering."
+        "- rule=If George asks about pasted peer text, map my name/pronouns to I/me/my for this runtime and verify against local receipts before answering."
     )
 
 

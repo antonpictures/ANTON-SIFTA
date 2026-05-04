@@ -60,7 +60,7 @@ The audit was passed — but not because the code ran. It passed because the cod
 | Arbitrary agent creation | Should be impossible | `PermissionError` — prevented | ✅ *(security)* |
 | RAM-only state | Should be rejected | Proof of Swimming failed — rejected | ✅ *(correctness)* |
 
-## 5. The deeper philosophical win
+## 5. The deeper doctrine win
 
 SIFTA is not a simulation. It's a parallel biological substrate running on metal.
 

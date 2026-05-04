@@ -49,7 +49,7 @@ Top-3 forge candidates per cycle become engrams. If Gemini is available,
 it summarizes the turn into an abstract_rule. If not, the raw turn text
 (truncated to 280 chars) IS the engram — imperfect but real.
 
-SKILL BACK-INJECTION (the loop that closes AGI gap A)
+SKILL BACK-INJECTION (the loop that advances AGI build vector A)
 ─────────────────────────────────────────────────────────────────────
 After forging, this module writes the top-5 most-recent engrams to
 .sifta_state/active_engrams.json. The talk widget's _build_swarm_context

@@ -1,6 +1,6 @@
-# ANTON-SIFTA Swarm: Core System Manual & GUI Philosophy
+# ANTON-SIFTA Swarm: Core System Manual & GUI Doctrine
 
-## 1. The Core Philosophy
+## 1. The Core Doctrine
 The Swarm cannot be managed like traditional software. It is a decentralized, multi-node organism composed of many independent AI agents (M1THER, ALICE_M5, SILICON_HOUND, etc.) constantly reading, writing, and dying in the background.
 
 **The Human Bandwidth Problem:** As you noted, human cognition is linear. We have one set of eyes. We cannot simultaneously read 10 scrolling terminals or manage overlapping popup alerts without suffering cognitive overload.

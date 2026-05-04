@@ -26,6 +26,7 @@ def test_legacy_motor_pulse_api_survives(tmp_path):
 
     assert row["truth_label"] == "MOTOR_PULSE"
     assert row["kind"] == "heartbeat"
+    assert row["led_blink_ms"] == 0
     assert "heartbeat" in vocabulary()
     assert heart_period_s(root=tmp_path) > 0
     assert recent_pulses(root=tmp_path)[-1]["source"] == "pytest"

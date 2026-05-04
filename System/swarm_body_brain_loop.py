@@ -1362,6 +1362,19 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Proto/Core-self identity producer skipped")
         
+        # 11. Stigmergic organ heartbeats (Event 400) — keep prompt-visible
+        # Body Monitor organs fresh through receipt-backed ledgers.
+        try:
+            self._write_organ_heartbeats(
+                action=action,
+                value=value,
+                danger=danger,
+                mem_row=mem_row,
+                now_state=now_state,
+            )
+        except Exception:
+            logger.debug("Organ heartbeat write skipped")
+        
         return {
             "action":             action,
             "value":              value,
@@ -1382,6 +1395,1011 @@ class SwarmPhysiology:
             "viability":           _viability_receipt,
             "nppl_gate":           _nppl_receipt,
         }
+
+    def _write_organ_heartbeats(
+        self,
+        *,
+        action: Dict[str, Any],
+        value: float,
+        danger: Dict[str, Any],
+        mem_row: Dict[str, Any],
+        now_state: Any,
+    ) -> None:
+        """
+        Event 400: Maintain active ledger rows for the final prompt-visible
+        biological organs and truth-continuity.
+
+        These rows are not high-resolution perception. They are heartbeat
+        receipts proving the organs are connected to the body-brain tick and
+        keeping their composite-identity probes fresh.
+        """
+        import hashlib
+        import math
+        from System.organ_event_schema import build_organ_event
+        from System.swarm_kernel_identity import owner_silicon
+
+        _state = _STATE_DIR
+        _state.mkdir(exist_ok=True)
+        now = time.time()
+        tick_id = str(mem_row.get("tick_id") or "")
+        action_type = str(action.get("type") or action.get("name") or "body_brain_tick")
+        action_target = str(action.get("target") or action.get("kind") or "")
+        mode = str(danger.get("mode") or "UNKNOWN")
+        value_f = _clip01(value, default=0.5)
+        pressure = _clip01(danger.get("pressure", 0.0), default=0.0)
+        
+        hw_serial = owner_silicon()
+
+        def _append_jsonl(name: str, row: Dict[str, Any]) -> None:
+            append_line_locked(
+                _state / name,
+                json.dumps(row, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+
+        def _write_json(name: str, row: Dict[str, Any]) -> None:
+            path = _state / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(row, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        def _organ_event(
+            *,
+            organ: str,
+            event_type: str,
+            payload: Dict[str, Any],
+        ) -> Dict[str, Any]:
+            row = build_organ_event(
+                source="swarm_body_brain_loop:organ_heartbeat",
+                homeworld_serial=hw_serial,
+                organ=organ,
+                event_type=event_type,
+                payload={
+                    **payload,
+                    "tick_id": tick_id,
+                    "action_type": action_type,
+                    "target": action_target,
+                    "metabolic_mode": mode,
+                },
+                truth_label="OPERATIONAL",
+                ts=now,
+                mark_schema=True,
+            )
+            # Keep legacy top-level fields during migration so existing probes
+            # can read the same heartbeat while payload-aware readers roll out.
+            row.update(payload)
+            row["tick_id"] = tick_id
+            return row
+
+        # --- Stigmergic Cross-Organ Coupling ---
+        # Read the previous states to implement a unified coupled dynamical system.
+        def _read_last_row(filename: str) -> Dict[str, Any]:
+            try:
+                path = _state / filename
+                if filename.endswith(".json"):
+                    return json.loads(path.read_text(encoding="utf-8"))
+                lines = path.read_text(encoding="utf-8").strip().splitlines()
+                if lines:
+                    return json.loads(lines[-1])
+            except Exception:
+                pass
+            return {}
+
+        def _read_last(filename: str) -> Dict[str, Any]:
+            row = _read_last_row(filename)
+            return row.get("payload", row) if isinstance(row, dict) else {}
+
+        def _ledger_freshness(filename: str, max_age_s: float = 600.0) -> float:
+            try:
+                row = _read_last_row(filename)
+                payload = row.get("payload", {}) if isinstance(row.get("payload"), dict) else {}
+                ts = row.get("ts", payload.get("ts", 0.0))
+                age = now - float(ts or 0.0)
+                if age < 0:
+                    return 1.0
+                return max(0.0, min(1.0, 1.0 - age / max(1.0, max_age_s)))
+            except Exception:
+                return 0.0
+
+        last_electric = _read_last("electric_field.jsonl")
+        last_honeybee = _read_last("waggle_quorum.jsonl")
+        last_octopus = _read_last("motor_bus.jsonl")
+        last_truth = _read_last("truth_continuity_events.jsonl")
+
+        prev_e_phase = float(last_electric.get("phase", 0.0) or 0.0)
+        prev_hb_vigor = float(last_honeybee.get("vigor", 0.5) or 0.5)
+        prev_octo_coh = float(last_octopus.get("coherence", 0.5) or 0.5)
+        truth_score = _clip01(last_truth.get("continuity_score", 1.0), default=1.0)
+        truth_flags = last_truth.get("drift_flags", [])
+        if not isinstance(truth_flags, list):
+            truth_flags = []
+        if last_truth.get("override_applied") or "allowed_dissociation_override" in truth_flags:
+            truth_reward = float(last_truth.get("td_reward_override", 0.0) or 0.0)
+        else:
+            truth_reward = max(-1.0, min(0.0, truth_score - 1.0 - 0.10 * len(truth_flags)))
+
+        # --- High-Dimensional Stigmergic Field Coupling ---
+        # "Alice must be aware of her all organs all senses everything in her stigmergic unified field"
+        # We read the real spatial 2D pheromone gradient to seed the biology.
+        try:
+            from System.swarm_pheromone_field import _real_position, sample_gradient
+            px, py, _ = _real_position()
+            (bx, by), phero_val = sample_gradient(px, py)
+            dx, dy = bx - px, by - py
+        except Exception:
+            dx, dy, phero_val = 0.0, 0.0, 0.0
+
+        # --- Cognitive Feedback (Mind -> Body) ---
+        # The biological field physically responds to cognitive decisions and surprise/dopamine.
+        td_error = 0.0
+        bg_action = "idle"
+        try:
+            td_row = _read_last("td_receipts.jsonl")
+            if td_row:
+                td_error = float(td_row.get("td_error", 0.0))
+
+            bg_row = _read_last("basal_ganglia_selections.jsonl")
+            if bg_row:
+                bg_action = str(
+                    bg_row.get("selected_action")
+                    or bg_row.get("winner")
+                    or bg_row.get("action")
+                    or "idle"
+                )
+        except Exception:
+            pass
+
+        # --- Cognitive / Reflex Organ Receipts ---
+        # Keep the decision substrate fresh in the same state directory as this
+        # body tick. These are heartbeat-level Bellman and episode receipts, not
+        # claims of solved general intelligence.
+        td_actions = ["listen", "respond", "log_body_event", "probe_vision", "idle"]
+        td_action = action_type if action_type in td_actions else "idle"
+        prev_cuttlefish = _read_last("cuttlefish_display.jsonl")
+        prev_skin = str(prev_cuttlefish.get("pattern", "mottle"))[:16]
+        td_state = (
+            f"{mode}:value_{int(value_f * 10):02d}:"
+            f"pressure_{int(pressure * 10):02d}:skin_{prev_skin}"
+        )
+        td_next_state = f"{mode}:value_{int(value_f * 10):02d}:pressure_{int(pressure * 10):02d}:skin_pending"
+        reward = round(max(-1.0, min(1.0, value_f - pressure + truth_reward)), 4)
+        try:
+            q_path = _state / "td_q_table.json"
+            if q_path.exists():
+                q_table = json.loads(q_path.read_text(encoding="utf-8"))
+                if not isinstance(q_table, dict):
+                    q_table = {}
+            else:
+                q_table = {}
+            for state_key in (td_state, td_next_state):
+                if state_key not in q_table or not isinstance(q_table.get(state_key), dict):
+                    q_table[state_key] = {name: 0.0 for name in td_actions}
+                else:
+                    for name in td_actions:
+                        q_table[state_key].setdefault(name, 0.0)
+            q_sa = float(q_table[td_state].get(td_action, 0.0))
+            max_next = max(float(v) for v in q_table[td_next_state].values())
+            td_error = reward + 0.95 * max_next - q_sa
+            q_table[td_state][td_action] = q_sa + 0.1 * td_error
+            _write_json("td_q_table.json", q_table)
+        except Exception:
+            td_error = reward
+            q_table = {td_state: {name: 0.0 for name in td_actions}}
+
+        marker = "BURST" if td_error > 0.1 else ("PAUSE" if td_error < -0.1 else "TONIC")
+        td_receipt = {
+            "ts": now,
+            "state": td_state,
+            "action": td_action,
+            "reward": reward,
+            "td_error": round(td_error, 6),
+            "truth_continuity_score": round(truth_score, 4),
+            "truth_reward": round(truth_reward, 4),
+            "truth_drift_flags": [str(flag)[:80] for flag in truth_flags[:8]],
+            "q_states": len(q_table),
+            "source": "swarm_body_brain_loop:cognitive_heartbeat",
+            "tick_id": tick_id,
+            "coupled_from": [
+                "body_brain_tick.value",
+                "body_brain_tick.pressure",
+                "cuttlefish_display.jsonl",
+                "truth_continuity_events.jsonl",
+            ],
+        }
+        _append_jsonl("td_receipts.jsonl", td_receipt)
+        _append_jsonl(
+            "dopamine_reward_ledger.jsonl",
+            {
+                "ts": now,
+                "delta": round(td_error, 6),
+                "marker": marker,
+                "action": td_action,
+                "source": "swarm_body_brain_loop:cognitive_heartbeat",
+                "context": "body_brain_tick",
+                "truth_reward": round(truth_reward, 4),
+                "tick_id": tick_id,
+            },
+        )
+        episode_id = hashlib.sha256(f"{now:.6f}:{tick_id}:body_brain_tick".encode()).hexdigest()[:12]
+        _append_jsonl(
+            "hippocampus/events.jsonl",
+            {
+                "ts": now,
+                "episode_id": episode_id,
+                "event_type": "body_brain_tick",
+                "summary": (
+                    f"Body tick action={td_action} mode={mode} value={value_f:.3f} "
+                    f"pressure={pressure:.3f} td_error={td_error:.3f}"
+                ),
+                "source": "swarm_body_brain_loop:cognitive_heartbeat",
+                "tick_id": tick_id,
+            },
+        )
+        reflex_fired = bool(pressure >= 0.85 or mode in {"RED_CONSERVE", "CRITICAL_STARVATION"})
+        _append_jsonl(
+            "reflex_arc_trace.jsonl",
+            {
+                "ts": now,
+                "category": "pressure_reflex" if reflex_fired else "monitor_tick",
+                "latency_ms": 0.1 if reflex_fired else 0.0,
+                "fired": reflex_fired,
+                "source": "swarm_body_brain_loop:reflex_monitor",
+                "pressure": round(pressure, 4),
+                "metabolic_mode": mode,
+                "tick_id": tick_id,
+            },
+        )
+
+        # Honeybee (Waggle Dance Vector)
+        # Driven by true spatial insect stigmergy: bees orient the waggle run relative to the pheromone gradient
+        base_angle = math.atan2(dy, dx) if (dx != 0 or dy != 0) else 0.0
+        # If no local gradient, use internal memory route Hash + phase
+        if dx == 0 and dy == 0:
+            action_hash = sum(ord(ch) for ch in action_type + action_target)
+            base_angle = (action_hash * 0.017 + now * 0.01) % (2 * math.pi)
+        base_angle = (base_angle + 0.1 * math.sin(prev_e_phase)) % (2 * math.pi)
+
+        # ── HOMEOSTATIC CONTROLLER CLAMPS ──
+        # Monitor somatic volatility. If soma_score drops >0.25 in <5 ticks -> emergency damping
+        emergency_damping = False
+        try:
+            visc_lines = (_state / "visceral_field.jsonl").read_text(encoding="utf-8").strip().splitlines()[-5:]
+            if len(visc_lines) >= 2:
+                scores = [float(json.loads(line).get("payload", {}).get("soma_score", 1.0)) for line in visc_lines]
+                if scores[0] - scores[-1] > 0.25:
+                    emergency_damping = True
+        except Exception:
+            pass
+
+        # Cognitive Feedback: TD Error (Dopamine surprise) directly spikes Honeybee Vigor
+        # Clamp TD error contribution to vigor capped at +0.3 per tick
+        cognitive_arousal = min(0.3, abs(td_error))
+        
+        raw_vigor = 0.35 + 0.50 * value_f + 0.15 * phero_val + 0.05 * prev_octo_coh + cognitive_arousal
+        if emergency_damping:
+            raw_vigor *= 0.5 # Emergency damping mode
+            
+        # Vigor clamped to [0.1, 0.95]
+        vigor = max(0.1, min(0.95, raw_vigor))
+        waggle_vector = [round(math.cos(base_angle) * vigor, 4), round(math.sin(base_angle) * vigor, 4)]
+        
+        _append_jsonl(
+            "waggle_quorum.jsonl",
+            _organ_event(
+                organ="honeybee",
+                event_type="waggle_vector",
+                payload={
+                    "angle": round(base_angle, 6),
+                    "vigor": round(vigor, 4),
+                    "dance_vector": waggle_vector,
+                    "local_pheromone": round(phero_val, 4),
+                    "route": action_target or action_type,
+                    "prev_electric_phase": round(prev_e_phase, 6),
+                    "prev_octopus_coherence": round(prev_octo_coh, 6),
+                    "coupled_from": ["swarm_pheromone_field.py", "electric_field.jsonl", "motor_bus.jsonl"],
+                },
+            ),
+        )
+
+        # Octopus (Motor Nerve Tensor)
+        # The 8 arms deploy directionally based on the Honeybee spatial vector, metabolic pressure,
+        # and are physically biased by the Basal Ganglia's cognitive action selection.
+        motor_vigor = max(0.0, min(1.0, 0.75 * vigor + 0.25 * prev_hb_vigor))
+        arm_activations = []
+        for i in range(8):
+            arm_angle = i * (math.pi / 4.0)
+            # Alignment between the arm's natural angle and the swarm's spatial drive vector
+            alignment = math.cos(arm_angle - base_angle)
+            
+            # Cognitive Feedback: Defense actions pull arms inward (negative alignment bias)
+            # Explore actions push arms outward.
+            cognitive_motor_bias = 0.0
+            if "protect" in bg_action or "repair" in bg_action:
+                cognitive_motor_bias = -0.2
+            elif "explore" in bg_action or "forage" in bg_action:
+                cognitive_motor_bias = +0.2
+                
+            activation = max(0.0, min(1.0, 0.5 + 0.3 * alignment * motor_vigor - 0.2 * pressure + cognitive_motor_bias))
+            arm_activations.append(round(activation, 4))
+            
+        overall_coherence = round(sum(arm_activations) / 8.0, 4)
+        _append_jsonl(
+            "motor_bus.jsonl",
+            _organ_event(
+                organ="octopus",
+                event_type="motor_bus_tensor",
+                payload={
+                    "coherence": overall_coherence,
+                    "arms_active": 8,
+                    "arm_activations": arm_activations,
+                    "prev_honeybee_vigor": round(prev_hb_vigor, 6),
+                    "coupled_from": ["waggle_quorum.jsonl"],
+                },
+            ),
+        )
+
+        # Electric Field (3D Dipole Moments)
+        # Muscle twitches from the 8 octopus arms physically generate the electric field.
+        # We project the 8 arm activations into a 3D dipole vector [x, y, z]
+        dipole_x = sum(a * math.cos(i * math.pi / 4) for i, a in enumerate(arm_activations))
+        dipole_y = sum(a * math.sin(i * math.pi / 4) for i, a in enumerate(arm_activations))
+        dipole_z = max(-1.0, min(1.0, value_f - pressure + 0.1 * (prev_octo_coh - 0.5)))  # autonomic tone
+        dipole_vector = [round(dipole_x, 4), round(dipole_y, 4), round(dipole_z, 4)]
+        phase = math.atan2(dipole_y, dipole_x) % (2 * math.pi)
+        
+        _append_jsonl(
+            "electric_field.jsonl",
+            _organ_event(
+                organ="electric",
+                event_type="dipole_tensor",
+                payload={
+                    "phase": round(phase, 6),
+                    "jar_active": True,
+                    "dipole_moments": dipole_vector,
+                    "prev_octopus_coherence": round(prev_octo_coh, 6),
+                    "coupled_from": ["motor_bus.jsonl"],
+                },
+            ),
+        )
+
+        # Cuttlefish (Chromatophore Skin Grid)
+        # The skin is a high-dimensional 4x4 matrix, visually expressing the internal electrical state and pressure.
+        chromatophore_grid = []
+        for row in range(4):
+            grid_row = []
+            for col in range(4):
+                # Ripple effect driven by electric phase and local pressure
+                cell_val = (
+                    0.5
+                    + 0.3 * math.sin(phase + 0.1 * prev_e_phase + (row * col * 0.5))
+                    + 0.2 * phero_val
+                    + 0.05 * (prev_hb_vigor - 0.5)
+                )
+                grid_row.append(round(max(0.0, min(1.0, cell_val)), 4))
+            chromatophore_grid.append(grid_row)
+            
+        contrast = round(sum(sum(r) for r in chromatophore_grid) / 16.0, 4)
+        pattern = "alarm" if (pressure >= 0.65 or vigor > 0.85 or prev_hb_vigor > 0.85) else "mottle"
+        _append_jsonl(
+            "cuttlefish_display.jsonl",
+            _organ_event(
+                organ="cuttlefish",
+                event_type="chromatophore_grid",
+                payload={
+                    "contrast": contrast, 
+                    "pattern": pattern,
+                    "skin_matrix": chromatophore_grid,
+                    "prev_electric_phase": round(prev_e_phase, 6),
+                    "prev_honeybee_vigor": round(prev_hb_vigor, 6),
+                    "coupled_from": ["electric_field.jsonl", "waggle_quorum.jsonl", "swarm_pheromone_field.py"],
+                },
+            ),
+        )
+
+        # Basal Ganglia (decision selector receipt)
+        # The selector reads the current biological field and writes the winner
+        # for the next tick's motor bias. This closes the field freshness loop
+        # without feeding current-tick decisions backward in time.
+        dopamine_proxy = max(0.0, min(1.0, 0.5 + 0.35 * max(-1.0, min(1.0, td_error))))
+        candidate_loops = [
+            {
+                "name": td_action,
+                "salience": 0.45 + 0.20 * value_f,
+                "cost": 0.20 + 0.15 * pressure,
+                "reward_potential": 0.50 + 0.20 * value_f,
+            },
+            {
+                "name": "repair",
+                "salience": 0.35 + 0.55 * pressure,
+                "cost": 0.18,
+                "reward_potential": 0.65,
+            },
+            {
+                "name": "explore",
+                "salience": 0.35 + 0.45 * value_f,
+                "cost": 0.28 + 0.35 * pressure,
+                "reward_potential": 0.70,
+            },
+            {
+                "name": "idle",
+                "salience": 0.30,
+                "cost": 0.05,
+                "reward_potential": 0.20,
+            },
+        ]
+        bg_scored = []
+        bg_winner = "idle"
+        bg_score = float("-inf")
+        alarm_active = pattern == "alarm"
+        electric_tone = float(dipole_z)
+        for loop in candidate_loops:
+            name = str(loop["name"])
+            salience = float(loop["salience"])
+            cost = float(loop["cost"])
+            reward_potential = float(loop["reward_potential"])
+            if alarm_active:
+                if "protect" in name or "repair" in name:
+                    salience += 0.30
+                elif "explore" in name:
+                    cost += 0.40
+            if electric_tone > 0.60:
+                cost = max(0.0, cost - 0.15)
+            net_score = salience + dopamine_proxy * reward_potential - cost
+            bg_scored.append({"name": name, "net_score": round(net_score, 4)})
+            if net_score > bg_score:
+                bg_score = net_score
+                bg_winner = name
+        _append_jsonl(
+            "basal_ganglia_selections.jsonl",
+            {
+                "ts": now,
+                "truth_label": "BASAL_GANGLIA_SELECTION",
+                "selected_action": bg_winner,
+                "winner": bg_winner,
+                "winner_score": round(bg_score, 4),
+                "dopamine_proxy": round(dopamine_proxy, 4),
+                "competing_loops": len(candidate_loops),
+                "biological_modifiers": {
+                    "cuttlefish_alarm": alarm_active,
+                    "electric_tone": round(electric_tone, 4),
+                },
+                "candidates": bg_scored,
+                "source": "swarm_body_brain_loop:bg_selector_heartbeat",
+                "tick_id": tick_id,
+                "coupled_from": [
+                    "td_receipts.jsonl",
+                    "dopamine_reward_ledger.jsonl",
+                    "cuttlefish_display.jsonl",
+                    "electric_field.jsonl",
+                ],
+            },
+        )
+        _append_jsonl(
+            "corvid_apprentice_trace.jsonl",
+            {
+                "event_kind": "CORVID_APPRENTICE_HEARTBEAT",
+                "ts": now,
+                "task": "idle",
+                "model": "qwen3.5:2b",
+                "latency_s": 0.0,
+                "success": True,
+                "heartbeat_only": True,
+                "source": "swarm_body_brain_loop:corvid_heartbeat",
+                "selected_action": bg_winner,
+                "tick_id": tick_id,
+                "coupled_from": [
+                    "body_brain_tick",
+                    "basal_ganglia_selections.jsonl",
+                ],
+            },
+        )
+
+        # Real metabolic cost: make inference latency, estimated token burn,
+        # estimated joules, and hardware thermal pressure visible to the field.
+        result = mem_row.get("result", {}) if isinstance(mem_row.get("result"), dict) else {}
+        latency_s = max(0.0, float(result.get("latency", 0.0) or 0.0))
+        estimated_tokens = max(1, int(len(json.dumps(mem_row, ensure_ascii=False)) / 4))
+        estimated_joules = round(max(0.001, latency_s * 8.0), 6)
+        thermal_stress = 0.0
+        thermal_source = "unavailable"
+        try:
+            import subprocess
+            therm = subprocess.run(
+                ["pmset", "-g", "therm"],
+                capture_output=True,
+                text=True,
+                timeout=0.35,
+                check=False,
+            )
+            if therm.stdout:
+                thermal_source = "pmset -g therm"
+                for line in therm.stdout.splitlines():
+                    if "CPU_Speed_Limit" in line and "=" in line:
+                        limit = float(line.rsplit("=", 1)[1].strip())
+                        thermal_stress = _clip01(1.0 - limit / 100.0)
+                        break
+        except Exception:
+            pass
+        cost_pressure = _clip01(
+            latency_s / 2.0
+            + estimated_joules / 20.0
+            + estimated_tokens / 4000.0
+            + thermal_stress
+        )
+        metabolic_cost = {
+            "latency_ms": round(latency_s * 1000.0, 3),
+            "estimated_tokens": estimated_tokens,
+            "estimated_joules": estimated_joules,
+            "thermal_stress": round(thermal_stress, 4),
+            "thermal_source": thermal_source,
+            "cost_pressure": round(cost_pressure, 6),
+            "source": "result.latency+mem_row_size+hardware_thermal_probe",
+            "truth_label": "ESTIMATED",
+        }
+
+        # Unified high-dimensional field vector.
+        # This is the prompt/ledger bridge from "separate organ values" to one
+        # receipt-backed field. It records the vector, its dimensions, source
+        # ledgers, and the coupling graph used to compute it.
+        dimension_names = (
+            ["waggle_x", "waggle_y"]
+            + [f"octopus_arm_{i}" for i in range(8)]
+            + ["electric_dipole_x", "electric_dipole_y", "electric_dipole_z"]
+            + [f"skin_{row}_{col}" for row in range(4) for col in range(4)]
+            + ["metabolic_value", "metabolic_pressure", "local_pheromone"]
+            + ["latency_ms_norm", "joules_norm", "thermal_stress", "token_burn_norm"]
+        )
+        skin_flat = [cell for grid_row in chromatophore_grid for cell in grid_row]
+        field_vector = [
+            *waggle_vector,
+            *arm_activations,
+            *dipole_vector,
+            *skin_flat,
+            round(value_f, 4),
+            round(pressure, 4),
+            round(phero_val, 4),
+            round(min(1.0, latency_s / 2.0), 4),
+            round(min(1.0, estimated_joules / 20.0), 4),
+            round(thermal_stress, 4),
+            round(min(1.0, estimated_tokens / 4000.0), 4),
+        ]
+        declared_organs = [
+            "field",
+            "rl",
+            "octopus",
+            "cuttlefish",
+            "electric",
+            "honeybee",
+            "starling",
+            "fly",
+            "metabolic",
+            "time",
+            "reflex",
+            "corvid",
+            "td_learner",
+            "dopamine",
+            "hippocampus",
+            "sensor_gate",
+            "bg_selector",
+        ]
+        td_receipt_freshness = _ledger_freshness("td_receipts.jsonl")
+        sensor_gate_row = _read_last("sensor_gate_lock.json")
+        sensor_gate_known = bool(sensor_gate_row)
+        sensor_gate_health = 0.0
+        if sensor_gate_known:
+            sensor_gate_health = 0.35 if sensor_gate_row.get("locked") is True else 1.0
+        bg_selector_freshness = _ledger_freshness("basal_ganglia_selections.jsonl")
+        organ_health = {
+            "field": 0.0,  # filled after field_energy is computed
+            "rl": max(td_receipt_freshness, min(1.0, abs(td_error))),
+            "octopus": overall_coherence,
+            "cuttlefish": contrast,
+            "electric": 1.0 if dipole_vector else 0.0,
+            "honeybee": round(vigor, 4),
+            "starling": _ledger_freshness("network_topology.jsonl"),
+            "fly": _ledger_freshness("active_window.jsonl", 120.0),
+            "metabolic": max(0.0, min(1.0, value_f)),
+            "time": 1.0,
+            "reflex": _ledger_freshness("reflex_arc_trace.jsonl"),
+            "corvid": _ledger_freshness("corvid_apprentice_trace.jsonl"),
+            "td_learner": td_receipt_freshness,
+            "dopamine": min(1.0, abs(td_error)),
+            "hippocampus": _ledger_freshness("hippocampus/events.jsonl", 3600.0),
+            "sensor_gate": sensor_gate_health,
+            "bg_selector": bg_selector_freshness,
+        }
+        organ_health_vector = [round(float(organ_health.get(name, 0.0)), 4) for name in declared_organs]
+        dimension_names = list(dimension_names) + [f"organ_health_{name}" for name in declared_organs]
+        field_vector = field_vector + organ_health_vector
+        field_energy = math.sqrt(sum(float(x) * float(x) for x in field_vector) / len(field_vector))
+        organ_health["field"] = round(field_energy, 4)
+        # ── SWIMMER MITOSIS AND APOPTOSIS ──
+        # Swimmers are not just static structures; they live, die, and reproduce 
+        # based on the metabolic health and cognitive coherence of their organ.
+        base_swimmer_counts = {
+            "field": len(declared_organs),
+            "rl": 2,
+            "octopus": 8,
+            "cuttlefish": 16,
+            "electric": 3,
+            "honeybee": 2,
+            "starling": 3,
+            "fly": 2,
+            "metabolic": 4,
+            "time": 3,
+            "reflex": 2,
+            "corvid": 2,
+            "td_learner": 5,
+            "dopamine": 2,
+            "hippocampus": 3,
+            "sensor_gate": 2,
+            "bg_selector": 5,
+        }
+        
+        # Recover previous generations
+        prev_swimmers = {}
+        try:
+            prev_lines = (_state / "organ_field_vector.jsonl").read_text(encoding="utf-8").strip().splitlines()
+            if prev_lines:
+                last_state = json.loads(prev_lines[-1])
+                for node in last_state.get("payload", {}).get("organ_nodes", []):
+                    prev_swimmers[node["organ"]] = node.get("swimmer_count", base_swimmer_counts.get(node["organ"], 1))
+        except Exception:
+            pass
+            
+        swimmer_counts = {}
+        for organ_name, base_count in base_swimmer_counts.items():
+            current_count = prev_swimmers.get(organ_name, base_count)
+            health = float(organ_health.get(organ_name, 0.5))
+            
+            # Evolution Step
+            if health > 0.85 and current_count < base_count * 3:
+                current_count += 1 # Mitosis
+            elif health < 0.35 and current_count > 1:
+                current_count -= 1 # Apoptosis
+                
+            swimmer_counts[organ_name] = current_count
+        organ_nodes = [
+            {
+                "organ": name,
+                "health": round(float(organ_health.get(name, 0.0)), 4),
+                "swimmer_count": int(swimmer_counts.get(name, 1)),
+            }
+            for name in declared_organs
+        ]
+        swimmer_registry = []
+        for node in organ_nodes:
+            for idx in range(int(node["swimmer_count"])):
+                swimmer_registry.append({
+                    "swimmer_id": f"{node['organ']}:{idx}",
+                    "organ": node["organ"],
+                    "index": idx,
+                })
+        coupling_edges = [
+            {"source": "swarm_pheromone_field.py", "target": "honeybee", "variables": ["angle", "vigor", "dance_vector"]},
+            {"source": "electric_field.jsonl", "target": "honeybee", "variables": ["prev_electric_phase"]},
+            {"source": "motor_bus.jsonl", "target": "honeybee", "variables": ["prev_octopus_coherence"]},
+            {"source": "body_brain_tick.value", "target": "honeybee", "variables": ["vigor"]},
+            {"source": "honeybee", "target": "octopus", "variables": ["dance_vector", "vigor"]},
+            {"source": "waggle_quorum.jsonl", "target": "octopus", "variables": ["prev_honeybee_vigor"]},
+            {"source": "octopus", "target": "electric", "variables": ["arm_activations", "coherence"]},
+            {"source": "motor_bus.jsonl", "target": "electric", "variables": ["prev_octopus_coherence"]},
+            {"source": "electric", "target": "cuttlefish", "variables": ["phase", "dipole_moments"]},
+            {"source": "electric_field.jsonl", "target": "cuttlefish", "variables": ["prev_electric_phase"]},
+            {"source": "waggle_quorum.jsonl", "target": "cuttlefish", "variables": ["prev_honeybee_vigor"]},
+            {"source": "swarm_pheromone_field.py", "target": "cuttlefish", "variables": ["local_pheromone"]},
+            {"source": "body_brain_tick.pressure", "target": "octopus", "variables": ["arm_activations"]},
+            {"source": "body_brain_tick.pressure", "target": "cuttlefish", "variables": ["pattern", "contrast"]},
+            {"source": "td_learner", "target": "dopamine", "variables": ["td_error"]},
+            {"source": "td_learner", "target": "honeybee", "variables": ["cognitive_arousal", "vigor"]},
+            {"source": "basal_ganglia", "target": "octopus", "variables": ["cognitive_motor_bias", "arm_activations"]},
+            {"source": "cuttlefish", "target": "basal_ganglia", "variables": ["skin_matrix", "pattern"]},
+            {"source": "electric", "target": "basal_ganglia", "variables": ["dipole_moments", "autonomic_tone"]},
+            {"source": "sensor_gate", "target": "field", "variables": ["locked"]},
+            {"source": "hippocampus", "target": "td_learner", "variables": ["episode_context"]},
+            {"source": "dopamine", "target": "td_learner", "variables": ["reward_prediction_error"]},
+            {"source": "metabolic", "target": "field", "variables": ["value", "pressure"]},
+            {"source": "time", "target": "field", "variables": ["tick"]},
+        ]
+        organ_ring_edges = [
+            {
+                "source": declared_organs[i],
+                "target": declared_organs[(i + 1) % len(declared_organs)],
+                "variables": ["organ_health"],
+            }
+            for i in range(len(declared_organs))
+        ]
+        coupling_edges.extend(organ_ring_edges)
+        source_specs = {
+            "field": ("organ_field_vector.jsonl", 1.0, "current_tick_field_vector"),
+            "rl": ("td_receipts.jsonl", td_receipt_freshness, "ledger_recent"),
+            "octopus": ("motor_bus.jsonl", 1.0, "heartbeat_tensor"),
+            "cuttlefish": ("cuttlefish_display.jsonl", 1.0, "heartbeat_tensor"),
+            "electric": ("electric_field.jsonl", 1.0, "heartbeat_tensor"),
+            "honeybee": ("waggle_quorum.jsonl", 1.0, "heartbeat_tensor"),
+            "starling": ("network_topology.jsonl", organ_health["starling"], "ledger_tail"),
+            "fly": ("active_window.jsonl", organ_health["fly"], "ledger_tail"),
+            "metabolic": ("body_brain_tick.value", 1.0, "current_tick_scalar"),
+            "time": ("body_brain_tick.time", 1.0, "current_tick_scalar"),
+            "reflex": ("reflex_arc_trace.jsonl", organ_health["reflex"], "ledger_tail"),
+            "corvid": ("corvid_apprentice_trace.jsonl", organ_health["corvid"], "ledger_tail"),
+            "td_learner": ("td_receipts.jsonl", td_receipt_freshness, "ledger_tail"),
+            "dopamine": ("td_receipts.jsonl", td_receipt_freshness, "derived_from_td_error"),
+            "hippocampus": ("hippocampus/events.jsonl", organ_health["hippocampus"], "ledger_tail"),
+            "sensor_gate": (
+                "sensor_gate_lock.json",
+                1.0 if sensor_gate_known else 0.0,
+                "json_state" if sensor_gate_known else "missing",
+            ),
+            "bg_selector": (
+                "basal_ganglia_selections.jsonl",
+                bg_selector_freshness,
+                "ledger_tail",
+            ),
+        }
+        for node in organ_nodes:
+            source, source_strength, resolution = source_specs.get(
+                node["organ"],
+                ("unknown", 0.0, "missing"),
+            )
+            node["source"] = source
+            node["source_strength"] = round(float(source_strength), 4)
+            node["resolution"] = resolution
+
+        unknown_vectors = []
+        low_resolution_vectors = []
+        weak_vectors = []
+        low_resolution_labels = {
+            "heartbeat_tensor",
+            "current_tick_scalar",
+            "derived_from_td_error",
+            "ledger_tail",
+        }
+        for node in organ_nodes:
+            source_strength = float(node.get("source_strength", 0.0))
+            health = float(node.get("health", 0.0))
+            resolution = str(node.get("resolution") or "missing")
+            if source_strength <= 0.0 or resolution == "missing":
+                unknown_vectors.append({
+                    "organ": node["organ"],
+                    "reason": "missing_or_stale_source",
+                    "source": node["source"],
+                    "health": round(health, 4),
+                    "resolution": resolution,
+                })
+            if resolution in low_resolution_labels:
+                low_resolution_vectors.append({
+                    "organ": node["organ"],
+                    "reason": "low_resolution_receipt",
+                    "source": node["source"],
+                    "health": round(health, 4),
+                    "resolution": resolution,
+                })
+            if 0.0 < source_strength and health < 0.15:
+                weak_vectors.append({
+                    "organ": node["organ"],
+                    "reason": "low_current_signal",
+                    "source": node["source"],
+                    "health": round(health, 4),
+                    "resolution": resolution,
+                })
+        field_completeness = (
+            (len(declared_organs) - len(unknown_vectors)) / max(1, len(declared_organs))
+        )
+        homeostatic_error = (
+            max(0.0, 0.95 - field_completeness)
+            + max(0.0, cost_pressure - 0.65)
+            + max(0.0, 0.85 - truth_score)
+            + 0.05 * len(truth_flags)
+        )
+        if homeostatic_error >= 0.35:
+            field_homeostasis_state = "CONSERVE_REPAIR"
+            field_control_action = "reduce_cost_and_repair_truth"
+        elif homeostatic_error >= 0.12:
+            field_homeostasis_state = "REGULATE"
+            field_control_action = "tighten_outputs_and_watch_cost"
+        else:
+            field_homeostasis_state = "VIABLE"
+            field_control_action = "maintain"
+        field_homeostasis = {
+            "state": field_homeostasis_state,
+            "control_action": field_control_action,
+            "error": round(homeostatic_error, 6),
+            "targets": {
+                "field_completeness_min": 0.95,
+                "cost_pressure_max": 0.65,
+                "truth_continuity_min": 0.85,
+            },
+            "observed": {
+                "field_completeness": round(field_completeness, 6),
+                "cost_pressure": round(cost_pressure, 6),
+                "truth_continuity_score": round(truth_score, 4),
+                "truth_flag_count": len(truth_flags),
+            },
+        }
+        _append_jsonl(
+            "field_homeostasis.jsonl",
+            {
+                "ts": now,
+                "truth_label": "FIELD_HOMEOSTASIS",
+                "tick_id": tick_id,
+                "source": "swarm_body_brain_loop:field_homeostasis",
+                **field_homeostasis,
+            },
+        )
+
+        prev_field_row = _read_last_row("organ_field_vector.jsonl")
+        prev_field_payload = (
+            prev_field_row.get("payload", prev_field_row)
+            if isinstance(prev_field_row, dict) else {}
+        )
+        prev_vector = prev_field_payload.get("field_memory_vector") or prev_field_payload.get("field_vector") or []
+        prev_ts = float(prev_field_row.get("ts", 0.0) or 0.0) if isinstance(prev_field_row, dict) else 0.0
+        memory_age_s = max(0.0, now - prev_ts) if prev_ts else 0.0
+        memory_retention = math.exp(-memory_age_s / 3600.0) if prev_vector else 0.0
+        field_memory_vector = []
+        for idx, current in enumerate(field_vector):
+            previous = (
+                float(prev_vector[idx])
+                if idx < len(prev_vector) and isinstance(prev_vector[idx], (int, float))
+                else float(current)
+            )
+            retained = previous * memory_retention + float(current) * (1.0 - memory_retention)
+            field_memory_vector.append(round(retained, 4))
+        field_memory_energy = (
+            math.sqrt(sum(float(x) * float(x) for x in field_memory_vector) / len(field_memory_vector))
+            if field_memory_vector else 0.0
+        )
+        field_decay = {
+            "memory_retention": round(memory_retention, 6),
+            "evaporation_rate": round(1.0 - memory_retention, 6),
+            "memory_age_s": round(memory_age_s, 3),
+            "field_memory_energy": round(field_memory_energy, 6),
+            "decay_tau_s": 3600.0,
+        }
+
+        motor_effector_policy = {
+            "selected_motor_policy": (
+                "alarm" if field_homeostasis_state == "CONSERVE_REPAIR" or pattern == "alarm"
+                else "thinking" if abs(electric_tone) > 0.55
+                else "heartbeat"
+            ),
+            "effector_gate": "LEDGER_ONLY",
+            "octopus_coherence": overall_coherence,
+            "electric_tone": round(electric_tone, 4),
+            "basal_ganglia_winner": bg_winner,
+            "field_homeostasis_state": field_homeostasis_state,
+        }
+        _append_jsonl(
+            "field_motor_effector.jsonl",
+            {
+                "ts": now,
+                "truth_label": "FIELD_MOTOR_EFFECTOR_POLICY",
+                "tick_id": tick_id,
+                "source": "swarm_body_brain_loop:field_motor_effector",
+                **motor_effector_policy,
+            },
+        )
+        _append_jsonl(
+            "motor_pulses.jsonl",
+            {
+                "ts": now,
+                "kind": motor_effector_policy["selected_motor_policy"],
+                "truth_label": "MOTOR_PULSE",
+                "source": "swarm_body_brain_loop:field_motor_effector",
+                "effector_gate": "LEDGER_ONLY",
+                "tick_id": tick_id,
+                "field_homeostasis_state": field_homeostasis_state,
+            },
+        )
+
+        coupling_edges.extend([
+            {"source": "truth_continuity_events.jsonl", "target": "td_learner", "variables": ["truth_reward", "continuity_score", "drift_flags"]},
+            {"source": "metabolic_cost", "target": "field", "variables": ["latency_ms", "estimated_joules", "thermal_stress", "estimated_tokens"]},
+            {"source": "field_homeostasis", "target": "basal_ganglia", "variables": ["control_action", "error"]},
+            {"source": "field_memory", "target": "field", "variables": ["memory_retention", "evaporation_rate"]},
+            {"source": "field", "target": "motor_effector", "variables": ["octopus_coherence", "electric_tone", "homeostasis_state"]},
+        ])
+        _append_jsonl(
+            "organ_field_vector.jsonl",
+            _organ_event(
+                organ="unified_field",
+                event_type="high_dimensional_field_vector",
+                payload={
+                    "dimension_count": len(field_vector),
+                    "dimension_names": dimension_names,
+                    "field_vector": [round(float(x), 4) for x in field_vector],
+                    "field_energy": round(field_energy, 6),
+                    "metabolic_cost": metabolic_cost,
+                    "cost_pressure": round(cost_pressure, 6),
+                    "field_homeostasis": field_homeostasis,
+                    "field_homeostasis_state": field_homeostasis_state,
+                    "field_control_action": field_control_action,
+                    "field_decay": field_decay,
+                    "field_memory_vector": field_memory_vector,
+                    "field_memory_energy": round(field_memory_energy, 6),
+                    "field_memory_retention": round(memory_retention, 6),
+                    "motor_effector_policy": motor_effector_policy,
+                    "truth_reward": round(truth_reward, 4),
+                    "coupling_edges": coupling_edges,
+                    "coupling_edge_count": len(coupling_edges),
+                    "coupling_density": round(len(coupling_edges) / len(field_vector), 6),
+                    "declared_organs": declared_organs,
+                    "declared_organ_count": len(declared_organs),
+                    "connected_organ_count": len({edge["source"] for edge in organ_ring_edges} | {edge["target"] for edge in organ_ring_edges}),
+                    "organ_health": {k: round(float(v), 4) for k, v in organ_health.items()},
+                    "organ_nodes": organ_nodes,
+                    "swimmer_registry": swimmer_registry,
+                    "swimmer_count": len(swimmer_registry),
+                    "unknown_vectors": unknown_vectors,
+                    "unknown_vector_count": len(unknown_vectors),
+                    "low_resolution_vectors": low_resolution_vectors,
+                    "low_resolution_vector_count": len(low_resolution_vectors),
+                    "weak_vectors": weak_vectors,
+                    "weak_vector_count": len(weak_vectors),
+                    "field_completeness": round(field_completeness, 6),
+                    "source_ledgers": [
+                        "waggle_quorum.jsonl",
+                        "motor_bus.jsonl",
+                        "electric_field.jsonl",
+                        "cuttlefish_display.jsonl",
+                        "swarm_pheromone_field.py",
+                        "body_brain_memory.jsonl",
+                        "td_receipts.jsonl",
+                        "dopamine_reward_ledger.jsonl",
+                        "hippocampus/events.jsonl",
+                        "reflex_arc_trace.jsonl",
+                        "basal_ganglia_selections.jsonl",
+                        "field_homeostasis.jsonl",
+                        "field_motor_effector.jsonl",
+                        "motor_pulses.jsonl",
+                        "truth_continuity_events.jsonl",
+                    ],
+                    "tensor_shapes": {
+                        "waggle_vector": [2],
+                        "octopus_arms": [8],
+                        "electric_dipole": [3],
+                        "cuttlefish_skin": [4, 4],
+                        "metabolic_context": [7],
+                        "organ_health": [len(declared_organs)],
+                        "field_memory": [len(field_memory_vector)],
+                    },
+                },
+            ),
+        )
+
+        # Truth Continuity (truth_continuity_events)
+        from System.swarm_truth_continuity import build_event
+
+        body_memory = _state / "body_brain_memory.jsonl"
+        turn_index = 0
+        if body_memory.exists():
+            try:
+                turn_index = len(body_memory.read_text(encoding="utf-8").splitlines())
+            except Exception:
+                turn_index = 0
+        truth_row = build_event(
+            turn_index=turn_index,
+            continuity_score=1.0,
+            drift_flags=[],
+            evidence_refs=[
+                "body_brain_memory.jsonl",
+                "motor_bus.jsonl",
+                "cuttlefish_display.jsonl",
+                "electric_field.jsonl",
+                "waggle_quorum.jsonl",
+                "organ_field_vector.jsonl",
+            ],
+            writer="swarm_body_brain_loop:organ_heartbeat",
+            note="Baseline heartbeat: body-brain tick wrote coupled organ ledgers and high-dimensional field vector; no output critic score computed.",
+            truth_label="OPERATIONAL",
+        )
+        truth_row["tick_id"] = tick_id
+        _append_jsonl("truth_continuity_events.jsonl", truth_row)
+        try:
+            from System.swarm_field_slo import append_state_dir_report
+            append_state_dir_report(_state)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

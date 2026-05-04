@@ -123,7 +123,7 @@ ANTON_STYLE_PROFILE = {
     "p75":              6.733,
     "p90":              7.700,
     "p95":              10.826,
-    # ── Transition Philosophy ────────────────────────────────────
+    # ── Transition Doctrine ────────────────────────────────────
     "transition_ratio": 0.052,   # 5.2% — hard cuts are king
     "preferred_transitions": ["Cross Dissolve", "Flow", "Bloom", "Zoom"],
     # ── Tempo Bands (from system_dna.md) ─────────────────────────
@@ -1895,7 +1895,7 @@ class NLEWindow(SiftaBaseWidget):
             <td style="color:#8090b0;">P95:</td><td>{p['p95']:.1f}s</td></tr>
         </table>
 
-        <h3 style="color: #00ffc8;">Transition Philosophy</h3>
+        <h3 style="color: #00ffc8;">Transition Doctrine</h3>
         <p>Hard cuts: <b style="color:#00ffc8;">{(1 - p['transition_ratio'])*100:.1f}%</b>&nbsp;&nbsp;
         Transitions: <b>{p['transition_ratio']*100:.1f}%</b></p>
         <p style="color:#8090b0;">Preferred: {', '.join(p['preferred_transitions'])}</p>

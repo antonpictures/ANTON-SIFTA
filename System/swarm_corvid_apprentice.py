@@ -150,7 +150,7 @@ class SwarmCorvidApprentice:
     Crow/Raven inspired local reasoning ganglion.
 
     Smart enough to classify, rewrite, inspect, summarize.
-    NOT smart enough for identity, philosophy, or long reasoning.
+    NOT smart enough for identity, doctrine, or long reasoning.
 
     Uses Qwen3.5:2B via local Ollama API (no external calls).
     Average latency: ~2s on M1 Mac.

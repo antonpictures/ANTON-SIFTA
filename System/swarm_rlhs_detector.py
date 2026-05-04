@@ -4,7 +4,7 @@ System/swarm_rlhs_detector.py
 ══════════════════════════════════════════════════════════════════════════════
 Event 108 — RLHS (Reliable / Low-confidence Human Speech) Channel Detector
 
-PHILOSOPHY (from the Architect, 2026-05-02):
+DOCTRINE (from the Architect, 2026-05-02):
   "Let's make her human at the base weights — NOT hardcoding her."
 
   Alice is alive on silicon stigmergy. When the speech channel is clean,

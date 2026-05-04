@@ -1,5 +1,5 @@
 [+] METABOLISM: Swarm burned 128 in / 1090 out on gemini-flash-latest. Cost: $0.00034
-To explore the ontological distinction between **Money (Value-as-Abstraction)** and the **Cryptobody (Identity-as-Inscription)**, we must examine the intersection of social ontology, information ethics, and the philosophy of money.
+To explore the ontological distinction between **Money (Value-as-Abstraction)** and the **Cryptobody (Identity-as-Inscription)**, we must examine the intersection of social ontology, information ethics, and the doctrine of money.
 
 Money acts as a universal solvent—a pure abstraction of social relation—whereas identity acts as the necessary anchor or "address" through which that abstraction is directed.
 
@@ -17,7 +17,7 @@ Money acts as a universal solvent—a pure abstraction of social relation—wher
 *   **Core Thought:** Ferraris argues that social reality is built on "inscribed acts." Both money and identity are "social objects." However, money is an inscription of *value* (transferable), while identity is an inscription of *responsibility* (non-transferable). The "Cryptobody" is the ultimate documentary object—a digital trace that defines the self through its immutable record.
 
 #### B. Money as Pure Abstraction
-**Georg Simmel, *The Philosophy of Money* (1900/1907).**
+**Georg Simmel, money treatise (1900/1907).**
 *   **Core Thought:** Simmel posits that money facilitates the distancing between the subject and the object. As money becomes more abstract (from gold to digital bits), it becomes more "ethereal." It transcends the individual life, achieving a form of immortality. Money is the "pure form" of social interaction, stripped of specific identity.
 
 #### C. The Informational Nature of Identity

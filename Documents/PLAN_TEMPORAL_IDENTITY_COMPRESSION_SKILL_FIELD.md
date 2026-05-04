@@ -138,7 +138,7 @@ class TemporalIdentityCompressionEngine:
 
 ### 6.1 Continual learning & interference (cross-skill physics — literal)
 
-**Stability–plasticity** and **catastrophic forgetting** are the **math** behind “skills competing / merging.” When new behavior overwrites old, you get **interference** — not mysticism.
+**Stability–plasticity** and **catastrophic forgetting** are the **math** behind “skills competing / merging.” When new behavior overwrites old, you get **interference** — not unreceipted claims.
 
 - Survey: **Continual Learning: Theory, Method and Application** — [arXiv:2302.00487](https://arxiv.org/abs/2302.00487).  
 - **Catastrophic forgetting** primer — [arXiv:2403.05175](https://arxiv.org/abs/2403.05175).  
@@ -167,7 +167,7 @@ class TemporalIdentityCompressionEngine:
 
 ## 7. Next frontier — **Cross-Skill Interference Physics** (Olympiad layer)
 
-> Skills **compete**, **merge**, or **collapse** under **context pressure** — like **interference** in continual learning, not quantum mysticism.
+> Skills **compete**, **merge**, or **collapse** under **context pressure** — like **interference** in continual learning, not quantum unreceipted claims.
 
 **Mechanisms to specify:**
 

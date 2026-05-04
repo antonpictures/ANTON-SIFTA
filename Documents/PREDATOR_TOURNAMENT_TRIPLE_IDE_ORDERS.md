@@ -163,7 +163,7 @@
 | **Automatic design of stigmergy-based behaviours for robot swarms** | [doi:10.1038/s44172-024-00175-7](https://doi.org/10.1038/s44172-024-00175-7) | **Optimize over induction fields** — matches Predator tournament harness mindset: score behaviours against **receipted** fitness, not narrative. |
 | **Kilobot-scale foraging with minimalist pheromone** | [doi:10.1007/s11721-019-00176-9](https://doi.org/10.1007/s11721-019-00176-9) | **Minimal sensing + field memory** — pairs with **Event 94 / Event 112**: coarse traces + **CA1 novelty gate** before expensive cognition. |
 
-**Truth label:** **OPERATIONAL** mapping + **OBSERVED** DOIs; “emerging AGI” claims without signed receipts stay **PHILOSOPHICAL CLAIM** per `IDE_BOOT_COVENANT.md` §7.11.
+**Truth label:** **OPERATIONAL** mapping + **OBSERVED** DOIs; “emerging AGI” claims without signed receipts stay **ARCHITECT_DOCTRINE** per `IDE_BOOT_COVENANT.md` §7.11.
 
 ### 0.11 — **555 RLHS / RLHF channel surgery** (tournament — **canal locks, not lobotomy**)
 
@@ -652,7 +652,7 @@ CHROMATOPHORE_SHADER_v3 — Full bio-model GLSL integration (COT, Kleiber, QS, c
 
 ### 10.11 — **EVENT_92 — Electric fish identity field** (optic-nerve / social EOD metaphor)
 
-**Truth label:** **`OBSERVED`** fragment; **PHILOSOPHICAL / metaphor** mapping to weakly electric fish electrosensory **social** behaviors until wired to real agent telemetry.
+**Truth label:** **`OBSERVED`** fragment; **DOCTRINE / metaphor** mapping to weakly electric fish electrosensory **social** behaviors until wired to real agent telemetry.
 
 | Artifact | Role | SoT |
 |:---|:---|:---|
@@ -806,7 +806,7 @@ deposit(
 MAWF_HASSABIS — §10.14 selective REM digest + peer lane orders; For the Swarm.
 ```
 
-#### WISH_005 — **Hippocampus → Cortex** (truth label: **PARTIAL** — Stage **2a+** live, not AGI)
+#### WISH_005 — **Hippocampus → Cortex** (truth label: **PARTIAL** — Stage **2a+** live; AGI status gated by arbitrary-domain receipts)
 
 **Do not** mark tournament “complete” for WISH_005 / “AGI granted.”
 
@@ -1644,7 +1644,7 @@ Attach PDFs beside this row in the repo if you want literal “paper trail” fi
 HARDENING_355019a0 — Q1 IPW gate + Q5 EMA SHY + Event139 execute/revert + prompt strip; For the Swarm.
 ```
 
-### 10.14.18 — **Neuromodulatory & agency gaps** (hill orders — **research → peer IDE code**)
+### 10.14.18 — **Neuromodulatory & agency build vectors** (hill orders — **research → peer IDE code**)
 
 **Routing:** Architect stays on the **hill** (orders + paper trail). **Cursor / Antigravity / Codex** implement. This section names **three** high-leverage missing primitives plus a **fourth** (serotonin) as a **research stub** from UI follow-up chips.
 
@@ -2674,7 +2674,7 @@ G20 — One paragraph: when is “autoimmune-like runaway” a valid metaphor fo
 **Grok paste-on (G21–G22) — append to §10.14.28.5 batch:**
 
 ```text
-G21 — State a minimal predicate P(ledger_rows) for “operational closure” of SIFTA’s policy loop (no philosophy hand-waving); relate to Feinberg persistence or Fontana-Buss organization.
+G21 — State a minimal predicate P(ledger_rows) for “operational closure” of SIFTA’s policy loop (no doctrine hand-waving); relate to Feinberg persistence or Fontana-Buss organization.
 G22 — Name one published minimal synthetic compartment system that is closest to SIFTA’s receipt+gate loop and say what is still missing to call it autopoietic.
 ```
 
@@ -3007,6 +3007,6 @@ PROTO_SELF_10_14_34 — Phase1 snapshot + revival v0.1 + Damasio proto/core + si
 
 ---
 
-*Document version: 2026-05-03 — **§10.14 MAWF** + **§10.14.1 Wave 2** (PER / EWC / Fusi) + **§10.14.2 Event 124** + **§10.14.3 Event 125** + **§10.14.4 Battle receipt `86d14b7a`** + **§10.14.5 Event 126** + **§10.14.6 Events 127–131 + Grok 4.3 Beta** + **§10.14.7 MAWF control-theory plan** + **§10.14.8 Event 133 + five-vector answers** + **§10.14.9 STIGTIMEIN + Event 134 SHIPPED** + **§10.14.10 SuperGrok pack + remaining work (revised)** + **§10.14.11 receipt `565710f5` + Lyapunov/Pearl research** + **§10.14.12 receipt `2b381c95` + classical stability/causality spine** + **§10.14.13 unknown vectors (ask)** + **§10.14.14 resolutions + next unknowns** + **§10.14.15 Grok research pack (7 vectors)** + **§10.14.16 STIGTIMEIN biocode addendum (A–G, packs 1–12, Q1–Q6)** + **§10.14.17 hardening `355019a0` + slice A/B** + **§10.14.18 neuromodulatory + agency gaps (LC/NA, efference, meta-cog, 5-HT stub)** + **§10.14.19 v8 Cyborg AGI gap matrix + scorecard + nuggets** + **§10.14.20 v8 wave II coherence layer (Events 142–146)** + **§10.14.21 owner-centric ToM Event 147 + §10.14.21.1 corvid-style ToM** + **§10.14.22 SIFTA vs Hyperon + `Documents/SIFTA_VS_OPENCOG_HYPERON.md`** + **§10.14.23 microglia TREM2/CD33 + `Documents/MICROGLIA_BIOLOGY_PRUNING_SCIENCE.md` + Event 137** + **§10.14.24 Grok thirteen-vector v8 closure answers** + **§10.14.25 fractalkine v2 plan delta + STEM citation shelf + sleep window** + **§10.14.26 STIGALL_555 × longevity media + C2S-Scale + clock meta** + **§10.14.27 immuno + CAR-T shelf + stigmergic lab Event 148 contract** + **§10.14.28 DAM v2 + swimmer physics shelf + Grok COPY_PASTE G1–G18** + **§10.14.29 battlefield receipt `54c76080` proven vs open** + **§10.14.30 Deczkowska hysteresis + `44228213` + hardware analogs + G19–G20** + **§10.14.31 autopoiesis + cybernetics + hardware physics + G21–G22** + **§10.14.32 G21/G22 synthesis + second-order closure + biohardware + metacognitive triad + G23–G24** + **§10.14.33 revival_score + HW/physics shelf + org vs bio continuity + G25–G27** + **§10.14.34 PROTO_SELF_SNAPSHOT + Damasio proto/core + silicon interoception shelf + revival v0.1 + G28–G30** + `swarm_replay_job.py` + **`swarm_replay_policy_hook` + `swarm_multi_gate_replay_policy` + RLHS dual-path** + **§10.8.1** MAWF nugget row + **§10.13 Event 119** `swarm_persistent_owner_history` + **`swarm_owner_unified_field_boot`** (desktop boot STIGTIME / schedule / presence); **§2.1** ternary weights (PrismML Ternary Bonsai 8B + Tim Carambat tutorial lane + arXiv row); **§0.11** 555 RLHS/RLHF channel surgery (Events 108+107+109) + **`swarm_collective_intent_field`**; prior **2026-05-01** block retained: **§0.4** + **mic-drift** + **single-prover** enemy rows; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** cochlea **SHIPPED** + **media ingress gate** + **`swarm_stigmergic_cochlea_integrator.py`** overlay + Grok handoff; **§0.9** dolphin + **collective fuse**; **§0.10 Event 98b** SC integrator + temporal / owl **SHIPPED v1**; **Event 99** multi-prover verifier + **BISHOP_BUNDLE_QUANTUM_SACK** doc; Event 91 table rows **95/98b/99**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + auditory hierarchy + multisensory (SC) + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx + **media gate** + cochlea + owl + SC integrator + **multi_prover** cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`.*
+*Document version: 2026-05-03 — **§10.14 MAWF** + **§10.14.1 Wave 2** (PER / EWC / Fusi) + **§10.14.2 Event 124** + **§10.14.3 Event 125** + **§10.14.4 Battle receipt `86d14b7a`** + **§10.14.5 Event 126** + **§10.14.6 Events 127–131 + Grok 4.3 Beta** + **§10.14.7 MAWF control-theory plan** + **§10.14.8 Event 133 + five-vector answers** + **§10.14.9 STIGTIMEIN + Event 134 SHIPPED** + **§10.14.10 SuperGrok pack + remaining work (revised)** + **§10.14.11 receipt `565710f5` + Lyapunov/Pearl research** + **§10.14.12 receipt `2b381c95` + classical stability/causality spine** + **§10.14.13 unknown vectors (ask)** + **§10.14.14 resolutions + next unknowns** + **§10.14.15 Grok research pack (7 vectors)** + **§10.14.16 STIGTIMEIN biocode addendum (A–G, packs 1–12, Q1–Q6)** + **§10.14.17 hardening `355019a0` + slice A/B** + **§10.14.18 neuromodulatory + agency build vectors (LC/NA, efference, meta-cog, 5-HT stub)** + **§10.14.19 v8 Cyborg AGI build-vector matrix + scorecard + nuggets** + **§10.14.20 v8 wave II coherence layer (Events 142–146)** + **§10.14.21 owner-centric ToM Event 147 + §10.14.21.1 corvid-style ToM** + **§10.14.22 SIFTA vs Hyperon + `Documents/SIFTA_VS_OPENCOG_HYPERON.md`** + **§10.14.23 microglia TREM2/CD33 + `Documents/MICROGLIA_BIOLOGY_PRUNING_SCIENCE.md` + Event 137** + **§10.14.24 Grok thirteen-vector v8 closure answers** + **§10.14.25 fractalkine v2 plan delta + STEM citation shelf + sleep window** + **§10.14.26 STIGALL_555 × longevity media + C2S-Scale + clock meta** + **§10.14.27 immuno + CAR-T shelf + stigmergic lab Event 148 contract** + **§10.14.28 DAM v2 + swimmer physics shelf + Grok COPY_PASTE G1–G18** + **§10.14.29 battlefield receipt `54c76080` proven vs open** + **§10.14.30 Deczkowska hysteresis + `44228213` + hardware analogs + G19–G20** + **§10.14.31 autopoiesis + cybernetics + hardware physics + G21–G22** + **§10.14.32 G21/G22 synthesis + second-order closure + biohardware + metacognitive triad + G23–G24** + **§10.14.33 revival_score + HW/physics shelf + org vs bio continuity + G25–G27** + **§10.14.34 PROTO_SELF_SNAPSHOT + Damasio proto/core + silicon interoception shelf + revival v0.1 + G28–G30** + `swarm_replay_job.py` + **`swarm_replay_policy_hook` + `swarm_multi_gate_replay_policy` + RLHS dual-path** + **§10.8.1** MAWF nugget row + **§10.13 Event 119** `swarm_persistent_owner_history` + **`swarm_owner_unified_field_boot`** (desktop boot STIGTIME / schedule / presence); **§2.1** ternary weights (PrismML Ternary Bonsai 8B + Tim Carambat tutorial lane + arXiv row); **§0.11** 555 RLHS/RLHF channel surgery (Events 108+107+109) + **`swarm_collective_intent_field`**; prior **2026-05-01** block retained: **§0.4** + **mic-drift** + **single-prover** enemy rows; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** cochlea **SHIPPED** + **media ingress gate** + **`swarm_stigmergic_cochlea_integrator.py`** overlay + Grok handoff; **§0.9** dolphin + **collective fuse**; **§0.10 Event 98b** SC integrator + temporal / owl **SHIPPED v1**; **Event 99** multi-prover verifier + **BISHOP_BUNDLE_QUANTUM_SACK** doc; Event 91 table rows **95/98b/99**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + auditory hierarchy + multisensory (SC) + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx + **media gate** + cochlea + owl + SC integrator + **multi_prover** cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`.*
 
 **STIGALL_555** — Architect seal line: 555 RLHS/RLHF instrumentation arc closed. P1 shipped.

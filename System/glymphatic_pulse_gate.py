@@ -10,7 +10,7 @@ Peer anchors (DYOR §20):
   Iliff *et al.* 2012 — paravascular CSF–ISF exchange (glymphatic).
   Fultz *et al.* 2019 — NREM sleep, slow waves, hemodynamics, **CSF oscillations** coupled.
 
-**Epistemic line:** wellness videos that tie **pineal breathing** to guaranteed CSF “mystical”
+**Epistemic line:** wellness videos that tie **pineal breathing** to guaranteed CSF “unreceipted”
 circulation are **not** interchangeable with the papers above; pineal **melatonin** physiology
 is separate (Endotext / reviews).
 

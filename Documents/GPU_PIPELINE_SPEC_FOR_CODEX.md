@@ -112,7 +112,7 @@ vao.render(moderngl.TRIANGLE_STRIP, instances=n_atoms)
 
 ## 📐 PASS 1: CYLINDER IMPOSTORS (bonds)
 
-Same philosophy as sphere impostors but for bond sticks.
+Same doctrine as sphere impostors but for bond sticks.
 
 ### Key math
 ```

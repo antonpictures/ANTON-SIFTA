@@ -85,7 +85,7 @@ Popular panels (e.g. emergence, replication, symbol-shuffling vs meaning, inform
 |------------------------------|-----------------------------|------------------|
 | **Emergence** from local rules (flocking / birds) | Reynolds SIGGRAPH ’87 | `ide_stigmergic_bridge` append-only traces; `quorum_sensing`-style thresholds elsewhere |
 | **Replicators** from simple rules | von Neumann (1966) self-reproducing automata | **Do not** auto-spawn unconstrained agents; use **governed** duplication (`swarm_boot`, apoptosis) only |
-| **Symbol shuffling vs meaning** | philosophy / ML epistemology (informal) | `identity_field_crdt` + **measured** outcomes (`identity_outcome_contract`); forbid raw model confidence as reward |
+| **Symbol shuffling vs meaning** | doctrine / ML epistemology (informal) | `identity_field_crdt` + **measured** outcomes (`identity_outcome_contract`); forbid raw model confidence as reward |
 | **Information scrambled, not erased** | BH information debate; Landauer 1961 | `stigmergic_ledger_chain.py` — hash-chained JSONL for audit continuity; `holographic_stigmergy_projection.boundary_digest` for boundary summaries |
 | **BH / holography language** | DYOR §14 | Metaphor only; **not** a substitute for crypto keys or threat modeling |
 | **QEC / syndromes** (Willow-class narratives) | DYOR §16 (Nature 2024; Gates Adinkras; heterotic E8) | `stigmergic_syndrome_log.py` — symbolic syndrome lines; **not** quantum hardware |

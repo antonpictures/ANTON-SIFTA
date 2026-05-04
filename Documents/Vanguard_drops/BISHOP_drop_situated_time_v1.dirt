@@ -7,7 +7,7 @@
 
 ## Claim (truth-labeled)
 
-**PHILOSOPHICAL / UX:** Alice failed a **primitive animal capability**: *situational grounding in the present moment* — not because silicon lacks a clock, but because **downstream cognition did not require `now` as a state that constrains attention, drives, and language**.
+**DOCTRINE / UX:** Alice failed a **primitive animal capability**: *situational grounding in the present moment* — not because silicon lacks a clock, but because **downstream cognition did not require `now` as a state that constrains attention, drives, and language**.
 
 **OBSERVED (repo):** `System/swarm_hardware_time_oracle.py` already implements **hardware-bound wall time** + `current_time_for_alice()` (HMAC path + OS fallback). `Applications/sifta_talk_to_alice_widget.py` **imports** it in several paths. The gap is **wiring depth**: **TIME → perception → metabolism** (e.g. circadian phase biasing sleep/explore drives, composite identity / consciousness tick ingesting a structured `now_state` every loop).
 

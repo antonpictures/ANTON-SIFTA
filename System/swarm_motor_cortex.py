@@ -67,7 +67,10 @@ class Pulse:
 
 
 _VOCAB: Dict[str, Pulse] = {
-    "heartbeat":   Pulse("heartbeat",   1, 0,   160, "single soft pulse"),
+    # Heartbeat rows are ordinary body-language receipts. They must not toggle
+    # the active camera by default; on Continuity Camera that wakes the iPhone
+    # camera in a loop. Explicit pulses such as speak_start/alarm may still wink.
+    "heartbeat":   Pulse("heartbeat",   1, 0,     0, "single soft pulse"),
     "hello":       Pulse("hello",       2, 120,   0, "two-bounce greeting"),
     "thinking":    Pulse("thinking",    1, 0,     0, "single slow bounce"),
     "speak_start": Pulse("speak_start", 1, 0,    80, "wink as voice opens"),

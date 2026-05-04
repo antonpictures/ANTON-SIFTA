@@ -77,7 +77,7 @@ Life emergence = phase transition (like water → ice):
 
 ## 5. The App — `Applications/sara_imari_walker_widget.py` (shipped)
 
-### Philosophy (aligned with her public X voice + Predator v7)
+### Doctrine (aligned with her public X voice + Predator v7)
 - **Clarify, don’t fog:** curated primary citations (DOI links) next to honest “what SIFTA can / cannot do.”
 - **Digitize chemistry:** chemputation row in the spine — SIFTA does **not** run a chemputer; we cite the Cronin program instead of cosplay.
 - **Memory / history:** pheromone panel remains a **software analogue** with explicit truth labels (Covenant §7.2, §7.6 — no second chat; `publish_focus` only).

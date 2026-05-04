@@ -81,7 +81,7 @@ class IdentityCoherenceField:
 
 ## 3. Cross-skill interference — rigorous stack (this is the real “physics”)
 
-### 3.1 Interference = continual learning, not mysticism
+### 3.1 Interference = continual learning, not unreceipted claims
 
 In deep continual learning, **interference** means **shared representational resources** cause **forgetting** or **negative transfer** when tasks overlap in **input** but diverge in **output mapping**. A crisp 2024 result:
 

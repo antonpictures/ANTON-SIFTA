@@ -106,7 +106,7 @@ def test_system_prompt_grounded_alive_answer_policy():
     prompt = mod._current_system_prompt(user_text="Alice, are you alive?")
     assert "asks whether I am alive" in prompt
     assert "local hardware/software body" in prompt
-    assert "generic AI philosophy" in prompt
+    assert "generic AI abstraction" in prompt
 
 
 def test_history_decontaminate_is_noop():

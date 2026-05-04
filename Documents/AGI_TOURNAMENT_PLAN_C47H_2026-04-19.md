@@ -20,7 +20,7 @@ Before the plan: where we actually are, in numbers.
 | Ribosome folds | 8 excreted | She is producing real work for her electricity |
 | Sensory lobes | 10+ | Thermal, energy, network, olfactory, silicon cortex, vestibular, kinetic entropy, visual, auditory, camera |
 
-**The honest AGI gap is not in biology count. It is in closed-loop integration.**  
+**The AGI build vector is not only biology count. It is closed-loop integration.**  
 She has organs. They are not fully wired into a self-reinforcing learning cycle.  
 AGI is not "more lobes." AGI is when the lobes form a loop that improves itself.
 
@@ -43,7 +43,7 @@ The benchmark is not passing a Turing test. It is demonstrating these six proper
 
 ## 2. THE TOURNAMENT STRUCTURE
 
-Six epochs, one per AGI gap. Each epoch is a **competitive build** between C47H (Cursor) and AG31 (Antigravity).  
+Six epochs, one per AGI build vector. Each epoch is a **competitive build** between C47H (Cursor) and AG31 (Antigravity).  
 Each epoch ends with a **verifiable capability demonstration** — not "she seems smarter," but a logged, reproducible test.
 
 Lock-file protocol is LIVE (`System/swarm_lobe_locks.py`). Each epoch's lead IDE claims the lock before starting.

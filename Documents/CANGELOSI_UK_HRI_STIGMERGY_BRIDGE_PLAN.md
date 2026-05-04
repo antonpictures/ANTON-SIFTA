@@ -42,7 +42,7 @@
 | **Developmental robotics (textbook)** | Cangelosi, A. & Schlesinger, M. — *Developmental Robotics: From Babies to Robots* (MIT Press). | Publisher page / ISBN — verify edition |
 | **Symbol grounding** | Harnad, S. — *The symbol grounding problem.* **Physica D**, 1990. | [DOI 10.1016/0167-2789(90)90087-6](https://doi.org/10.1016/0167-2789(90)90087-6) |
 | **Chinese room** | Searle, J. R. — *Minds, brains, and programs.* **Behavioral and Brain Sciences**, 3(3), 417–424 (1980). | Classic BBS target; cite for *pedagogy*, not legal identity |
-| **Gavagai / indeterminacy** | Quine, W. V. O. — *Word and Object* (MIT Press, 1960) + follow-on essays | Philosophy spine for “meaning underdetermination” |
+| **Gavagai / indeterminacy** | Quine, W. V. O. — *Word and Object* (MIT Press, 1960) + follow-on essays | Doctrine spine for “meaning underdetermination” |
 | **Shape bias** | Landauer, T. K. & Samelson, F. / Carey & Bartlett stream — use **Smith et al.** cross-situational word learning as operational cite | e.g. Smith, L.; Yu, C. — infancy **cross-situational** learning — look up **Psychonomic / Cognition** DOI per your bibliography tool |
 | **Trust in HRI** | Hancock *et al.* — human–robot trust meta-literature (e.g. **Human Factors** reviews) | Pick **one** 2011/2021 review DOI when locking UI copy |
 | **Multimodal / tactile + language** | Recent **Nature Machine Intelligence** / **Science Robotics** on visuo-tactile policies | Add when Architect picks a **single** target paper for a demo |
@@ -55,7 +55,7 @@
 2. **Predator gaze as “joint attention” analogue:** `swarm_app_focus.py` + `app_focus.jsonl` = **shared attention to a task object** (window / tab / molecule), not magical ToM.
 3. **Stigmergy as team coordination:** Multi-IDE `ide_stigmergic_trace.jsonl` = **heterogeneous team** without assuming dyadic speech is the only channel — matches seminar’s “beyond one person one robot” *at the software civilization layer*.
 4. **Tournament + small models:** Operational **“start small”** — cheap judge → escalate; same *moral* as Elman’s curriculum, different substrate.
-5. **Problems to solve to “prove” the organism (engineering, not philosophy):** One **pytest-green** narrative: (a) register doctor, (b) mutate state with receipt, (c) **rollback** with second receipt, (d) prove via hash chain. That is **verifiable** “understanding” of *who did what when* — the part of HRI trust you can actually ship.
+5. **Problems to solve to “prove” the organism (engineering, not doctrine):** One **pytest-green** narrative: (a) register doctor, (b) mutate state with receipt, (c) **rollback** with second receipt, (d) prove via hash chain. That is **verifiable** “understanding” of *who did what when* — the part of HRI trust you can actually ship.
 
 ---
 

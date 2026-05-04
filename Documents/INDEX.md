@@ -1,6 +1,6 @@
 # SIFTA Doctrine Index
 
-Welcome to the **SIFTA Swarm OS** learning hub. This directory contains the architectural, operational, and philosophical texts necessary to understand and orchestrate the Swarm.
+Welcome to the **SIFTA Swarm OS** learning hub. This directory contains the architectural, operational, and doctrine texts necessary to understand and orchestrate the Swarm.
 
 If you are a new Architect attempting to spin up a distribution fork or operate your own Swarm safely, read the documents below in order.
 
@@ -10,7 +10,7 @@ If you are a new Architect attempting to spin up a distribution fork or operate 
 - **[SIFTA Constitution](docs/SIFTA_CONSTITUTION.md)**  
   Non-proliferation guardrails and safety directives written into the Swarm's cognitive bedrock.
 - **[SIFTA V4 Architectural Principles](docs/SIFTA_V4_ARCHITECTURAL_PRINCIPLES.md)**  
-  High-level framework topology and design philosophy.
+  High-level framework topology and design doctrine.
 - **[Swarm DNA Spec](docs/SWARM_DNA_SPEC.md)**  
   The mathematics behind cryptographic identity preservation (Ed25519) in Swarm workers.
 - **[Identity Matrix](IDENTITY_MATRIX.md)**  

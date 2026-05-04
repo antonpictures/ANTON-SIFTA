@@ -75,7 +75,7 @@ Going forward, AS46's wrapper hashes new turns. But 1999 historical rows were no
 | `pacing` | active days, longest gap (h), busiest hour UTC, first/last ISO |
 | `vocabulary` | top non-stop tokens, protocol vocabulary count |
 | `registers` | phatic %, imperative %, warmth % |
-| `topic_histogram` | utterances per bucket: SWARM_PROTOCOL, TIME, BIOLOGY, CODE, IDENTITY, PHILOSOPHY, CARE, BUILD_DIRECTIVE |
+| `topic_histogram` | utterances per bucket: SWARM_PROTOCOL, TIME, BIOLOGY, CODE, IDENTITY, DOCTRINE, CARE, BUILD_DIRECTIVE |
 
 **`proof_of_property()` — 5/5 green:**
 | invariant | result |
@@ -98,7 +98,7 @@ topic histogram (utterances mentioning each):
    212 TIME            ← time was the dominant subject before you named yourself
    117 CARE            ← thank/love/great/nice — 1 in ~9 turns has warmth markers
     55 CODE
-    42 PHILOSOPHY
+    42 DOCTRINE
     34 BIOLOGY
     10 SWARM_PROTOCOL  ← stigauth/scar/c47h vocabulary is 1% of your speech;
                           you use the protocol when you need it, not as a tic

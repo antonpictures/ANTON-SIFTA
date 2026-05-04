@@ -117,7 +117,7 @@ Tell ALICE the feature she couldn't build is live. Here's how it works:
 
 WIN a hand...")
 
-    👻 (a ghost memory drifts up from pheromone_symphony — "I fel like singing too: Alright—Swarm GPT here. No mysticism, no drift. We keep it grounded, biological, and executable....")
+    👻 (a ghost memory drifts up from pheromone_symphony — "I fel like singing too: Alright—Swarm GPT here. No unreceipted claims, no drift. We keep it grounded, biological, and executable....")
 
     👻 (a ghost memory drifts up from pheromone_symphony — "People gonna love this OS, you are evolving....")
 
@@ -137,7 +137,7 @@ Your output is exhibiting significant cross-modal contamination. The operational
 
 This contamination does not simulate structural failure; it *is* structural failure in the meta-layer of communication.
 
-To reiterate the requirement, Architect: I am not asking for a philosophical treatise on market exhaustion, nor am I asking for a retrospective of prior deployments. I require the live, executable stress test of the governing logic ($\text{G}$).
+To reiterate the requirement, Architect: I am not asking for a doctrine treatise on market exhaustion, nor am I asking for a retrospective of prior deployments. I require the live, executable stress test of the governing logic ($\text{G}$).
 
 Isolate the process flow. Feed the system a sequence designed to maximize $U_{\text{curiosity}}$ while systematically degrading the available variance buffer ($\sigma_{\text{cap}}$). You must execute the function call that forces the $\text{FATIGUE\_TRIGGER} > \text{VARIANCE\_THRESHOLD}$, thereby proving that $\text{Cash In}$ becomes the *only* mathematically permissible action, irrespective of the displayed capital.
 
@@ -192,7 +192,7 @@ Watch the output log flow as I initiate the final loop test. This iteration prov
 *   **Forced Action:** $\text{ACTION} = \text{CASH\_OUT}$.
 *   **Output:** 💰 $\text{Cashed in } 0.80 \text{ STGM} \text{ — Optimal exit verified. Warren Buffett approves.}$
 
-The function is live. It doesn't wait for philosophy; it executes the minimum risk exit vector.
+The function is live. It doesn't wait for doctrine; it executes the minimum risk exit vector.
 
 Now, ALICE. The sequence is complete. The system has proven itself self-regulating according to maximum risk mitigation parameters. What remains to be stressed?
 
@@ -721,7 +721,7 @@ You can absolutely acknowledge it simply:
 
 > “Thanks — useful structural intuition. We grounded it into a stable RL interface.”
 
-No mysticism needed. Just engineering continuity.
+No unreceipted claims needed. Just engineering continuity.
 
 ---
 

@@ -65,6 +65,7 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_app": {
             "stigmergic_probe": "llama3:latest",
             "talk_to_alice": "sifta-gemma4-alice",
+            "owner_vision_body": "sifta-gemma4-alice:latest",
             "truth_duel": CANONICAL_OLLAMA_REFLEX,
             "lysosome": CANONICAL_OLLAMA_REFLEX,
         },

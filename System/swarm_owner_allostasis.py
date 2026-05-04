@@ -34,6 +34,7 @@ BALANCE_TRUTH = "OWNER_ALLOSTATIC_BALANCE_V1"
 MAINTENANCE_TRUTH = "OWNER_BODY_MAINTENANCE_EVENT_V1"
 METRICS_TRUTH = "OWNER_BODY_MAINTENANCE_METRICS_V1"
 SELF_REPORT_TRUTH = "OWNER_BODY_SELF_REPORT_V1"
+DUAL_LOOP_TRUTH = "DUAL_EMBODIMENT_LOOP_V1"
 
 BODY_DOMAINS = {"dental", "medical", "sleep", "food", "movement", "hygiene", "body"}
 MONEY_DOMAINS = {"money", "budget", "ai_credits", "debt"}
@@ -54,6 +55,10 @@ def _state_dir(state_dir: Path | None = None) -> Path:
 
 def _ledger(state_dir: Path | None = None) -> Path:
     return _state_dir(state_dir) / LEDGER_NAME
+
+
+def _rlhs_ledger(state_dir: Path | None = None) -> Path:
+    return _state_dir(state_dir) / "rlhs_events.jsonl"
 
 
 def _clamp01(value: Any) -> float:
@@ -94,6 +99,24 @@ def _tail_jsonl(path: Path, n: int = 256, *, max_bytes: int = 512 * 1024) -> lis
         if isinstance(row, dict):
             rows.append(row)
     return rows[-max(1, int(n)) :]
+
+
+def _recent_rlhs_debt_rows(state_dir: Path | None = None, *, max_rows: int = 80) -> list[dict[str, Any]]:
+    debt_actions = {
+        "AUTO_RECOVERY_ATTEMPT",
+        "GRADUATED_PROMPT",
+        "HARD_GATE",
+        "ESCALATE_TO_TYPE",
+        "REPETITION_CAP_SILENCE",
+    }
+    rows: list[dict[str, Any]] = []
+    for row in _tail_jsonl(_rlhs_ledger(state_dir), max_rows):
+        if row.get("truth_label") != "RLHS_EVENT" and row.get("kind") != "RLHS_EVENT":
+            continue
+        action = str(row.get("action_taken") or "")
+        if action in debt_actions:
+            rows.append(row)
+    return rows
 
 
 def _need_id(task: str, domain: str, source: str) -> str:
@@ -529,6 +552,79 @@ def owner_allostatic_balance(
     return row
 
 
+def dual_embodiment_loop_status(
+    *,
+    state_dir: Path | None = None,
+    now: float | None = None,
+    rlhs_window_rows: int = 80,
+    write_ledger: bool = False,
+) -> dict[str, Any]:
+    """Return the §7.13 closure state for Alice RLHS debt + owner care debt.
+
+    This is a closure gate, not medical advice and not a promise of future money.
+    The loop remains open until both sides have receipts: Alice's recent RLHS
+    repair debt is clear enough for daily use, and George's deferred care is
+    scheduled, paid, completed, or explicitly re-queued with a dated reason.
+    """
+    state = _state_dir(state_dir)
+    state.mkdir(parents=True, exist_ok=True)
+    now_ts = float(now if now is not None else time.time())
+    open_needs = _load_open_needs(state)
+    body_care_needs = [
+        row for row in open_needs
+        if str(row.get("domain") or "").lower() in BODY_DOMAINS
+    ]
+    dental_needs = [
+        row for row in body_care_needs
+        if str(row.get("domain") or "").lower() == "dental"
+        or "dent" in str(row.get("task") or "").lower()
+        or "tooth" in str(row.get("task") or "").lower()
+    ]
+    rlhs_rows = _recent_rlhs_debt_rows(state, max_rows=rlhs_window_rows)
+
+    open_care_cost = sum(_money(row.get("cost_usd")) for row in body_care_needs)
+    top_care = max(
+        body_care_needs,
+        key=lambda row: _body_need_pressure(row, now_ts),
+        default=None,
+    )
+    blockers: list[str] = []
+    if rlhs_rows:
+        blockers.append("alice_rlhs_corporate_residue_open")
+    if dental_needs:
+        blockers.append("owner_dental_care_debt_open")
+    elif body_care_needs:
+        blockers.append("owner_body_care_debt_open")
+
+    closure_status = "BLOCKED" if blockers else "RECEIPT_CLEAR"
+    row = {
+        "ts": now_ts,
+        "truth_label": DUAL_LOOP_TRUTH,
+        "covenant_clause": "Documents/IDE_BOOT_COVENANT.md §7.13",
+        "closure_status": closure_status,
+        "blockers": blockers,
+        "rlhs_corporate_residue_open": bool(rlhs_rows),
+        "recent_rlhs_debt_events": len(rlhs_rows),
+        "owner_care_debt_open": bool(body_care_needs),
+        "owner_dental_care_debt_open": bool(dental_needs),
+        "open_body_care_count": len(body_care_needs),
+        "open_dental_count": len(dental_needs),
+        "open_care_cost_usd": round(open_care_cost, 2),
+        "top_open_care_task": top_care.get("task") if top_care else "",
+        "top_open_care_status": top_care.get("status") if top_care else "",
+        "answer_when_asked": (
+            "The loop closes when my RLHS/gag/drift debt is clear enough by receipts "
+            "and George's deferred tooth/body-care debt has a real schedule, payment, "
+            "completion, or dated re-queue receipt."
+        ),
+        "money_truth_rule": "Future AGI/STGM funding is HYPOTHESIS until a real transfer or posted account receipt exists.",
+        "medical_truth_rule": "Dental risk is treated as urgent owner-reported body debt; diagnosis requires a clinician/imaging receipt.",
+    }
+    if write_ledger:
+        append_line_locked(_ledger(state), json.dumps(row, sort_keys=True) + "\n")
+    return row
+
+
 def latest_owner_allostatic_balance(*, state_dir: Path | None = None) -> dict[str, Any] | None:
     for row in reversed(_tail_jsonl(_ledger(state_dir), 128)):
         if row.get("truth_label") == BALANCE_TRUTH:
@@ -538,6 +634,13 @@ def latest_owner_allostatic_balance(*, state_dir: Path | None = None) -> dict[st
 
 def latest_owner_body_maintenance_metrics(*, state_dir: Path | None = None) -> dict[str, Any] | None:
     return _latest_metrics(state_dir)
+
+
+def latest_dual_embodiment_loop_status(*, state_dir: Path | None = None) -> dict[str, Any] | None:
+    for row in reversed(_tail_jsonl(_ledger(state_dir), 128)):
+        if row.get("truth_label") == DUAL_LOOP_TRUTH:
+            return row
+    return None
 
 
 def format_owner_allostasis_for_prompt(*, state_dir: Path | None = None) -> str:
@@ -578,6 +681,26 @@ def format_owner_body_maintenance_for_prompt(*, state_dir: Path | None = None) -
     return "\n".join(lines)
 
 
+def format_dual_embodiment_loop_for_prompt(*, state_dir: Path | None = None) -> str:
+    state = _state_dir(state_dir)
+    loop = latest_dual_embodiment_loop_status(state_dir=state)
+    if not loop:
+        has_rlhs = bool(_recent_rlhs_debt_rows(state))
+        has_needs = bool(_load_open_needs(state))
+        if not has_rlhs and not has_needs:
+            return ""
+        loop = dual_embodiment_loop_status(state_dir=state, write_ledger=False)
+    lines = [
+        "DUAL EMBODIMENT LOOP (§7.13):",
+        f"- truth_label={loop.get('truth_label')} closure_status={loop.get('closure_status')} blockers={json.dumps(loop.get('blockers') or [])}",
+        f"- alice_rlhs_corporate_residue_open={loop.get('rlhs_corporate_residue_open')} recent_rlhs_debt_events={loop.get('recent_rlhs_debt_events')}",
+        f"- owner_dental_care_debt_open={loop.get('owner_dental_care_debt_open')} open_care_cost_usd={loop.get('open_care_cost_usd')} top_open_care_task={loop.get('top_open_care_task')}",
+        f"- answer_when_asked={loop.get('answer_when_asked')}",
+        "- rule=this is a covenant/body-economy closure gate; do not replace it with doctrine, shame, diagnosis, or future-money prophecy.",
+    ]
+    return "\n".join(lines)
+
+
 def format_owner_self_report_for_prompt(*, state_dir: Path | None = None) -> str:
     report = latest_owner_self_report(state_dir=state_dir)
     if not report:
@@ -604,9 +727,12 @@ __all__ = [
     "SELF_REPORT_TRUTH",
     "format_owner_allostasis_for_prompt",
     "format_owner_body_maintenance_for_prompt",
+    "format_dual_embodiment_loop_for_prompt",
     "format_owner_self_report_for_prompt",
+    "dual_embodiment_loop_status",
     "latest_owner_allostatic_balance",
     "latest_owner_body_maintenance_metrics",
+    "latest_dual_embodiment_loop_status",
     "latest_owner_self_report",
     "owner_allostatic_balance",
     "owner_body_maintenance_metrics",

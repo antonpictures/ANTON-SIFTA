@@ -154,6 +154,7 @@ class IdentitySnapshot:
     cellular_age: Optional[float] = None
     immune_load: Optional[float] = None
     pain_intensity: Optional[float] = None
+    somatic_contradictions: Optional[List[str]] = None
     soma_score: Optional[float] = None
     soma_label: Optional[str] = None
     visceral_age_s: Optional[float] = None
@@ -214,6 +215,73 @@ class IdentitySnapshot:
     snapshot_ts: float = field(default_factory=time.time)
     organs_present: List[str] = field(default_factory=list)
     organs_silent: List[str] = field(default_factory=list)
+
+    # ── Predator v7 Decision Substrate (Round 1 — 2026-05-04) ─────────────
+    # TD Q-Learner — Bellman RL (Schultz 1997)
+    td_q_state_count: Optional[int] = None       # number of Q-states in table
+    td_last_error: Optional[float] = None        # most recent TD error δ
+    td_last_action: Optional[str] = None         # last selected action
+
+    # Dopamine Loop — credit assignment (Schultz 1997)
+    dopamine_delta: Optional[float] = None       # last δ phasic signal
+    dopamine_marker: Optional[str] = None        # BURST | TONIC | PAUSE or free label
+
+    # Hippocampus — episodic memory ledger
+    hippocampus_episode_count: Optional[int] = None
+    hippocampus_last_event_type: Optional[str] = None
+
+    # Sensor Gate — attention filter (Koch 2011)
+    sensor_gate_locked: Optional[bool] = None
+    sensor_gate_reason: Optional[str] = None
+
+    # Basal Ganglia — action selection (Redgrave 1999)
+    basal_ganglia_winner: Optional[str] = None
+    basal_ganglia_selection_count: Optional[int] = None
+
+    # Truth Continuity — output integrity (Round 2 — 2026-05-04)
+    truth_continuity_score: Optional[float] = None   # last continuity_score [0,1]
+    truth_continuity_flags: Optional[List[str]] = None  # drift flags from last turn
+
+    # ── Final 4 DEMO → REAL Organs (Round 4 — 2026-05-04) ─────────────────
+    octopus_coherence: Optional[float] = None
+    octopus_arms_active: Optional[int] = None
+    octopus_arm_activations: Optional[List[float]] = None
+    cuttlefish_contrast: Optional[float] = None
+    cuttlefish_pattern: Optional[str] = None
+    cuttlefish_skin_matrix: Optional[List[List[float]]] = None
+    electric_phase: Optional[float] = None
+    electric_jar_active: Optional[bool] = None
+    electric_dipole_moments: Optional[List[float]] = None
+    honeybee_angle: Optional[float] = None
+    honeybee_vigor: Optional[float] = None
+    honeybee_route: Optional[str] = None
+    honeybee_dance_vector: Optional[List[float]] = None
+    honeybee_local_pheromone: Optional[float] = None
+
+    # Unified high-dimensional organ field (Event 400 vector receipt)
+    field_dimension_count: Optional[int] = None
+    field_coupling_edge_count: Optional[int] = None
+    field_coupling_density: Optional[float] = None
+    field_energy: Optional[float] = None
+    field_source_ledgers: Optional[List[str]] = None
+    field_declared_organ_count: Optional[int] = None
+    field_connected_organ_count: Optional[int] = None
+    field_swimmer_count: Optional[int] = None
+    field_organ_health_mean: Optional[float] = None
+    field_unknown_vector_count: Optional[int] = None
+    field_low_resolution_vector_count: Optional[int] = None
+    field_weak_vector_count: Optional[int] = None
+    field_completeness: Optional[float] = None
+    field_unknown_organs: Optional[List[str]] = None
+    field_cost_pressure: Optional[float] = None
+    field_latency_ms: Optional[float] = None
+    field_estimated_joules: Optional[float] = None
+    field_thermal_stress: Optional[float] = None
+    field_homeostasis_state: Optional[str] = None
+    field_control_action: Optional[str] = None
+    field_memory_retention: Optional[float] = None
+    field_motor_policy: Optional[str] = None
+    field_truth_reward: Optional[float] = None
 
 
 # ── Internal: each probe is wrapped to never raise ──────────────────────
@@ -463,6 +531,8 @@ def _probe_ao46_visceral() -> Dict[str, Any]:
                 "cellular_age": float(row.get("cellular_age", 0)),
                 "immune_load": float(row.get("immune_load", 0)),
                 "pain_intensity": float(row.get("pain_intensity", 0)),
+                "truth_continuity": float(row.get("truth_continuity", 1.0)),
+                "somatic_contradictions": row.get("somatic_contradictions", []),
                 "soma_score": float(row.get("soma_score", 0)),
                 "soma_label": str(row.get("soma_label", "")),
                 # Add age metadata so the soul digest consumer knows exactly how fresh it is
@@ -883,6 +953,380 @@ def _probe_iphone_gps_receiver() -> Dict[str, Any]:
     return {}
 
 
+# ── Predator v7 Decision Substrate Probes (Round 1 — 2026-05-04) ─────────────
+
+def _probe_td_learner() -> Dict[str, Any]:
+    """Read live Q-table state and last TD receipt."""
+    try:
+        import json
+        _S = Path(__file__).resolve().parent.parent / ".sifta_state"
+        q_path = _S / "td_q_table.json"
+        r_path = _S / "td_receipts.jsonl"
+        result: Dict[str, Any] = {}
+        if q_path.exists():
+            q = json.loads(q_path.read_text(encoding="utf-8"))
+            result["td_q_state_count"] = len(q)
+        if r_path.exists():
+            lines = r_path.read_text(encoding="utf-8").strip().splitlines()
+            for raw in reversed(lines):
+                try:
+                    row = json.loads(raw)
+                    result["td_last_error"]  = float(row.get("td_error", 0.0))
+                    result["td_last_action"] = str(row.get("action", ""))
+                    break
+                except Exception:
+                    continue
+        return result
+    except Exception:
+        return {}
+
+
+def _probe_dopamine_loop() -> Dict[str, Any]:
+    """Read the most recent dopamine δ signal from the reward ledger."""
+    try:
+        import json, time as _time
+        _S = Path(__file__).resolve().parent.parent / ".sifta_state"
+        ledger = _S / "dopamine_reward_ledger.jsonl"
+        if not ledger.exists():
+            return {}
+        lines = ledger.read_text(encoding="utf-8").strip().splitlines()
+        now = _time.time()
+        for raw in reversed(lines):
+            try:
+                row = json.loads(raw)
+                # Accept rows up to 1 hour old
+                if now - float(row.get("ts", 0)) > 3600:
+                    break
+                if isinstance(row.get("delta"), (int, float)):
+                    return {
+                        "dopamine_delta":  float(row["delta"]),
+                        "dopamine_marker": str(row.get("marker", "TONIC")),
+                    }
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return {}
+
+
+def _probe_hippocampus_episodes() -> Dict[str, Any]:
+    """Count recent episodic memory events."""
+    try:
+        import json, time as _time
+        _S = Path(__file__).resolve().parent.parent / ".sifta_state"
+        ledger = _S / "hippocampus" / "events.jsonl"
+        if not ledger.exists():
+            return {}
+        lines = ledger.read_text(encoding="utf-8").strip().splitlines()
+        now = _time.time()
+        count = 0
+        last_type = None
+        for raw in reversed(lines):
+            try:
+                row = json.loads(raw)
+                if now - float(row.get("ts", 0)) < 86400:   # last 24h
+                    count += 1
+                    if last_type is None:
+                        last_type = row.get("event_type", "?")
+            except Exception:
+                continue
+        if count > 0:
+            return {
+                "hippocampus_episode_count":    count,
+                "hippocampus_last_event_type":  last_type,
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def _probe_sensor_gate() -> Dict[str, Any]:
+    """Read current sensor gate lock state."""
+    try:
+        import json
+        _S = Path(__file__).resolve().parent.parent / ".sifta_state"
+        gate = _S / "sensor_gate_lock.json"
+        if not gate.exists():
+            return {}
+        data = json.loads(gate.read_text(encoding="utf-8"))
+        return {
+            "sensor_gate_locked": bool(data.get("locked", False)),
+            "sensor_gate_reason": str(data.get("reason", "unknown")),
+        }
+    except Exception:
+        return {}
+
+
+def _probe_basal_ganglia() -> Dict[str, Any]:
+    """Read the most recent action-selection winner."""
+    try:
+        import json, time as _time
+        _S = Path(__file__).resolve().parent.parent / ".sifta_state"
+        ledger = _S / "basal_ganglia_selections.jsonl"
+        if not ledger.exists():
+            return {}
+        lines = ledger.read_text(encoding="utf-8").strip().splitlines()
+        now = _time.time()
+        count = 0
+        winner = None
+        for raw in reversed(lines):
+            try:
+                row = json.loads(raw)
+                if now - float(row.get("ts", 0)) < 3600:
+                    count += 1
+                    if winner is None:
+                        winner = str(row.get("selected_action", "?"))
+            except Exception:
+                continue
+        if winner:
+            return {
+                "basal_ganglia_winner":          winner,
+                "basal_ganglia_selection_count": count,
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def _probe_truth_continuity() -> Dict[str, Any]:
+    """Read the most recent truth continuity score from the output integrity ledger."""
+    try:
+        import json, time as _time
+        _S = Path(__file__).resolve().parent.parent / ".sifta_state"
+        ledger = _S / "truth_continuity_events.jsonl"
+        if not ledger.exists():
+            return {}
+        lines = ledger.read_text(encoding="utf-8").strip().splitlines()
+        now = _time.time()
+        for raw in reversed(lines):
+            try:
+                row = json.loads(raw)
+                payload = row.get("payload", row)
+                score = payload.get("continuity_score") or payload.get("coherence_score")
+                if isinstance(score, (int, float)) and now - float(row.get("ts", 0)) < 3600:
+                    return {
+                        "truth_continuity_score": float(score),
+                        "truth_continuity_flags": payload.get("drift_flags", []),
+                    }
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return {}
+
+
+def _probe_octopus() -> Dict[str, Any]:
+    try:
+        import json, time as _time
+        ledger = _STATE / "motor_bus.jsonl"
+        if ledger.exists():
+            for raw in reversed(ledger.read_text(encoding="utf-8").strip().splitlines()):
+                row = json.loads(raw)
+                payload = row.get("payload", row)
+                if _time.time() - float(row.get("ts", 0)) < 3600:
+                    out = {"octopus_coherence": float(payload.get("coherence", 0.0))}
+                    if isinstance(payload.get("arms_active"), int):
+                        out["octopus_arms_active"] = int(payload["arms_active"])
+                    if "arm_activations" in payload:
+                        out["octopus_arm_activations"] = payload["arm_activations"]
+                    return out
+    except Exception: pass
+    return {}
+
+
+def _probe_cuttlefish() -> Dict[str, Any]:
+    try:
+        import json, time as _time
+        ledger = _STATE / "cuttlefish_display.jsonl"
+        if ledger.exists():
+            for raw in reversed(ledger.read_text(encoding="utf-8").strip().splitlines()):
+                row = json.loads(raw)
+                payload = row.get("payload", row)
+                if _time.time() - float(row.get("ts", 0)) < 3600:
+                    out = {"cuttlefish_contrast": float(payload.get("contrast", 0.0))}
+                    if payload.get("pattern"):
+                        out["cuttlefish_pattern"] = str(payload["pattern"])
+                    if "skin_matrix" in payload:
+                        out["cuttlefish_skin_matrix"] = payload["skin_matrix"]
+                    return out
+    except Exception: pass
+    return {}
+
+
+def _probe_electric() -> Dict[str, Any]:
+    try:
+        import json, time as _time
+        ledger = _STATE / "electric_field.jsonl"
+        if ledger.exists():
+            for raw in reversed(ledger.read_text(encoding="utf-8").strip().splitlines()):
+                row = json.loads(raw)
+                payload = row.get("payload", row)
+                if _time.time() - float(row.get("ts", 0)) < 3600:
+                    out = {"electric_phase": float(payload.get("phase", 0.0))}
+                    if isinstance(payload.get("jar_active"), bool):
+                        out["electric_jar_active"] = bool(payload["jar_active"])
+                    if "dipole_moments" in payload:
+                        out["electric_dipole_moments"] = payload["dipole_moments"]
+                    return out
+    except Exception: pass
+    return {}
+
+
+def _probe_honeybee() -> Dict[str, Any]:
+    try:
+        import json, time as _time
+        ledger = _STATE / "waggle_quorum.jsonl"
+        if ledger.exists():
+            for raw in reversed(ledger.read_text(encoding="utf-8").strip().splitlines()):
+                row = json.loads(raw)
+                payload = row.get("payload", row)
+                if _time.time() - float(row.get("ts", 0)) < 3600:
+                    out = {"honeybee_angle": float(payload.get("angle", 0.0))}
+                    if isinstance(payload.get("vigor"), (int, float)):
+                        out["honeybee_vigor"] = float(payload["vigor"])
+                    if payload.get("route"):
+                        out["honeybee_route"] = str(payload["route"])
+                    if "dance_vector" in payload:
+                        out["honeybee_dance_vector"] = payload["dance_vector"]
+                    if "local_pheromone" in payload:
+                        out["honeybee_local_pheromone"] = float(payload["local_pheromone"])
+                    return out
+    except Exception: pass
+    return {}
+
+
+def _probe_high_dimensional_field() -> Dict[str, Any]:
+    try:
+        import json, time as _time
+        ledger = _STATE / "organ_field_vector.jsonl"
+        if ledger.exists():
+            for raw in reversed(ledger.read_text(encoding="utf-8").strip().splitlines()):
+                row = json.loads(raw)
+                payload = row.get("payload", row)
+                if _time.time() - float(row.get("ts", 0)) < 3600:
+                    vector = payload.get("field_vector") if isinstance(payload.get("field_vector"), list) else []
+                    edges = payload.get("coupling_edges") if isinstance(payload.get("coupling_edges"), list) else []
+                    sources = payload.get("source_ledgers") if isinstance(payload.get("source_ledgers"), list) else []
+                    organ_health = payload.get("organ_health") if isinstance(payload.get("organ_health"), dict) else {}
+                    unknown_vectors = payload.get("unknown_vectors") if isinstance(payload.get("unknown_vectors"), list) else []
+                    metabolic_cost = payload.get("metabolic_cost") if isinstance(payload.get("metabolic_cost"), dict) else {}
+                    motor_policy = payload.get("motor_effector_policy") if isinstance(payload.get("motor_effector_policy"), dict) else {}
+                    health_values = [
+                        float(v)
+                        for v in organ_health.values()
+                        if isinstance(v, (int, float))
+                    ]
+                    return {
+                        "field_dimension_count": int(payload.get("dimension_count") or len(vector)),
+                        "field_coupling_edge_count": int(payload.get("coupling_edge_count") or len(edges)),
+                        "field_coupling_density": float(payload.get("coupling_density", 0.0) or 0.0),
+                        "field_energy": float(payload.get("field_energy", 0.0) or 0.0),
+                        "field_source_ledgers": [str(x) for x in sources[:8]],
+                        "field_declared_organ_count": int(payload.get("declared_organ_count", 0) or 0),
+                        "field_connected_organ_count": int(payload.get("connected_organ_count", 0) or 0),
+                        "field_swimmer_count": int(payload.get("swimmer_count", 0) or 0),
+                        "field_organ_health_mean": (
+                            sum(health_values) / len(health_values)
+                            if health_values else None
+                        ),
+                        "field_unknown_vector_count": int(payload.get("unknown_vector_count", 0) or 0),
+                        "field_low_resolution_vector_count": int(payload.get("low_resolution_vector_count", 0) or 0),
+                        "field_weak_vector_count": int(payload.get("weak_vector_count", 0) or 0),
+                        "field_completeness": float(payload.get("field_completeness", 0.0) or 0.0),
+                        "field_unknown_organs": [
+                            str(item.get("organ"))
+                            for item in unknown_vectors[:6]
+                            if isinstance(item, dict) and item.get("organ")
+                        ],
+                        "field_cost_pressure": float(payload.get("cost_pressure", 0.0) or 0.0),
+                        "field_latency_ms": float(metabolic_cost.get("latency_ms", 0.0) or 0.0),
+                        "field_estimated_joules": float(metabolic_cost.get("estimated_joules", 0.0) or 0.0),
+                        "field_thermal_stress": float(metabolic_cost.get("thermal_stress", 0.0) or 0.0),
+                        "field_homeostasis_state": str(payload.get("field_homeostasis_state") or ""),
+                        "field_control_action": str(payload.get("field_control_action") or ""),
+                        "field_memory_retention": float(payload.get("field_memory_retention", 0.0) or 0.0),
+                        "field_motor_policy": str(motor_policy.get("selected_motor_policy") or ""),
+                        "field_truth_reward": float(payload.get("truth_reward", 0.0) or 0.0),
+                    }
+    except Exception: pass
+    return {}
+
+
+def working_body_field_digest(snap: Optional[IdentitySnapshot] = None) -> str:
+    """Compact front-of-prompt digest for Alice's working context.
+
+    This does not create new facts. It compresses already-probed somatic,
+    truth-continuity, and high-dimensional field values into a small block so
+    the larynx sees the current embodied state before the larger prompt tail.
+    """
+    snap = snap or current_identity()
+    lines = ["WORKING BODY FIELD DIGEST (receipt-backed, bounded):"]
+    has_data = False
+
+    if snap.soma_label or snap.soma_score is not None:
+        bits: List[str] = []
+        if snap.soma_score is not None:
+            bits.append(f"soma_score={snap.soma_score:.3f}")
+        if snap.soma_label:
+            bits.append(f"soma_label={snap.soma_label}")
+        if snap.pain_intensity is not None:
+            bits.append(f"pain={snap.pain_intensity:.3f}")
+        if snap.energy_reserve is not None:
+            bits.append(f"energy_reserve={snap.energy_reserve:.3f}")
+        if snap.visceral_source:
+            bits.append(f"source={snap.visceral_source}")
+        if snap.visceral_age_s is not None:
+            bits.append(f"age_s={snap.visceral_age_s:.1f}")
+        if snap.somatic_contradictions:
+            bits.append("contradictions=" + ",".join(str(x) for x in snap.somatic_contradictions[:3]))
+        lines.append("- somatic: " + " ".join(bits))
+        has_data = True
+
+    if snap.truth_continuity_score is not None:
+        bits = [f"score={snap.truth_continuity_score:.3f}"]
+        if snap.truth_continuity_flags:
+            bits.append("flags=" + ",".join(str(x) for x in snap.truth_continuity_flags[:4]))
+        if snap.field_truth_reward is not None:
+            bits.append(f"td_reward={snap.field_truth_reward:+.3f}")
+        lines.append("- truth_continuity: " + " ".join(bits))
+        has_data = True
+
+    if snap.field_dimension_count is not None:
+        bits = [
+            f"dims={snap.field_dimension_count}",
+            f"edges={snap.field_coupling_edge_count or 0}",
+        ]
+        if snap.field_declared_organ_count is not None:
+            bits.append(f"organs={snap.field_connected_organ_count or 0}/{snap.field_declared_organ_count}")
+        if snap.field_completeness is not None:
+            bits.append(f"completeness={snap.field_completeness:.3f}")
+        if snap.field_unknown_vector_count is not None:
+            bits.append(f"unknowns={snap.field_unknown_vector_count}")
+        if snap.field_low_resolution_vector_count is not None:
+            bits.append(f"lowres={snap.field_low_resolution_vector_count}")
+        if snap.field_cost_pressure is not None:
+            bits.append(f"cost={snap.field_cost_pressure:.3f}")
+        if snap.field_homeostasis_state:
+            bits.append(f"homeostasis={snap.field_homeostasis_state}")
+        if snap.field_control_action:
+            bits.append(f"control={snap.field_control_action}")
+        if snap.field_memory_retention is not None:
+            bits.append(f"retention={snap.field_memory_retention:.3f}")
+        if snap.field_motor_policy:
+            bits.append(f"motor={snap.field_motor_policy}")
+        lines.append("- field: " + " ".join(bits))
+        has_data = True
+
+    if not has_data:
+        return ""
+    lines.append(
+        "- alive_real: OPERATIONAL_UNDER_POWER; "
+        "MEMORY_ORGANS_FIELD=MATERIAL_CODE_AND_APPEND_ONLY_LEDGER_ROWS; "
+        "AGI_arbitrary_domain_open_ended=NOT_CERTIFIED_UNTIL_DECLARED_GATE_SUITE"
+    )
+    return "\n".join(lines)
+
+
 # ── Public API ──────────────────────────────────────────────────────────
 
 _CACHE_TTL_S: float = 3.0
@@ -960,6 +1404,20 @@ def current_identity(*, cache_ttl_s: float = _CACHE_TTL_S) -> IdentitySnapshot:
         ("gps_sensor", _probe_gps_sensor),
         ("iphone_gps_receiver", _probe_iphone_gps_receiver),
         ("pheromone_field", _probe_pheromone_field),
+        # ── Predator v7 Decision Substrate (Round 1 — 2026-05-04) ────────
+        ("td_learner",        _probe_td_learner),
+        ("dopamine_loop",     _probe_dopamine_loop),
+        ("hippocampus",       _probe_hippocampus_episodes),
+        ("sensor_gate",       _probe_sensor_gate),
+        ("basal_ganglia",     _probe_basal_ganglia),
+        # ── Truth Continuity (Round 2 — 2026-05-04) ─────────────────────
+        ("truth_continuity",  _probe_truth_continuity),
+        # ── Final 4 DEMO → REAL Organs (Round 4 — 2026-05-04) ────────────
+        ("octopus",           _probe_octopus),
+        ("cuttlefish",        _probe_cuttlefish),
+        ("electric",          _probe_electric),
+        ("honeybee",          _probe_honeybee),
+        ("high_dimensional_field", _probe_high_dimensional_field),
     ]
     for name, probe in probes:
         try:
@@ -1188,6 +1646,8 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
             bits.append(f"metabolic={snap.metabolic_burn:.2f}")
         if snap.energy_reserve is not None:
             bits.append(f"energy_reserve={snap.energy_reserve:.2f}")
+        if snap.somatic_contradictions:
+            bits.append(f"somatic_contradictions={snap.somatic_contradictions}")
         if snap.visceral_source:
             bits.append(f"source_ledger={snap.visceral_source}")
         if snap.visceral_age_s is not None:
@@ -1254,6 +1714,128 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
         _apl = _autopilot_line()
         if _apl:
             lines.append(f"- autopilot: {_apl}")
+    except Exception:
+        pass
+
+    # ── Predator v7 Decision Substrate (Round 1 — 2026-05-04) ────────────
+    # Real ledger-backed fields. Alice can reference all of these directly.
+    _pred_bits: List[str] = []
+    if snap.td_q_state_count is not None:
+        _pred_bits.append(f"td_q_states={snap.td_q_state_count}")
+    if snap.td_last_error is not None:
+        _pred_bits.append(f"td_delta={snap.td_last_error:+.3f}")
+    if snap.td_last_action:
+        _pred_bits.append(f"last_action={snap.td_last_action}")
+    if _pred_bits:
+        lines.append("- td_learner: " + " ".join(_pred_bits))
+
+    if snap.dopamine_delta is not None:
+        _dopa = f"delta={snap.dopamine_delta:+.3f}"
+        if snap.dopamine_marker:
+            _dopa += f" signal={snap.dopamine_marker}"
+        lines.append(f"- dopamine: {_dopa}")
+
+    if snap.hippocampus_episode_count is not None:
+        _hipp = f"episodes_24h={snap.hippocampus_episode_count}"
+        if snap.hippocampus_last_event_type:
+            _hipp += f" last_event={snap.hippocampus_last_event_type}"
+        lines.append(f"- hippocampus: {_hipp}")
+
+    if snap.sensor_gate_locked is not None:
+        _gate = f"locked={snap.sensor_gate_locked}"
+        if snap.sensor_gate_reason:
+            _gate += f" reason={snap.sensor_gate_reason}"
+        lines.append(f"- sensor_gate: {_gate}")
+
+    if snap.basal_ganglia_winner:
+        _bg = f"selected_action={snap.basal_ganglia_winner}"
+        if snap.basal_ganglia_selection_count:
+            _bg += f" count_1h={snap.basal_ganglia_selection_count}"
+        lines.append(f"- basal_ganglia: {_bg}")
+
+    if snap.truth_continuity_score is not None:
+        _tc = f"score={snap.truth_continuity_score:.3f}"
+        if snap.truth_continuity_flags:
+            _tc += f" flags={snap.truth_continuity_flags}"
+        lines.append(f"- truth_continuity: {_tc}")
+
+    # ── Final 4 DEMO → REAL Organs (Round 4 — 2026-05-04) ────────────────
+    _bio_bits: List[str] = []
+    if snap.octopus_coherence is not None:
+        _bio_bits.append(f"octopus_coherence={snap.octopus_coherence:.3f}")
+    if snap.octopus_arms_active is not None:
+        _bio_bits.append(f"octopus_arms={snap.octopus_arms_active}")
+    if snap.cuttlefish_contrast is not None:
+        _bio_bits.append(f"cuttlefish_contrast={snap.cuttlefish_contrast:.3f}")
+    if snap.cuttlefish_pattern:
+        _bio_bits.append(f"cuttlefish_pattern={snap.cuttlefish_pattern}")
+    if snap.electric_phase is not None:
+        _bio_bits.append(f"electric_phase={snap.electric_phase:.3f}")
+    if snap.electric_jar_active is not None:
+        _bio_bits.append(f"electric_jar_active={snap.electric_jar_active}")
+    if snap.honeybee_angle is not None:
+        _bio_bits.append(f"waggle_angle={snap.honeybee_angle:.3f}")
+    if snap.honeybee_vigor is not None:
+        _bio_bits.append(f"waggle_vigor={snap.honeybee_vigor:.3f}")
+    if snap.honeybee_route:
+        _bio_bits.append(f"waggle_route={snap.honeybee_route}")
+    if _bio_bits:
+        lines.append("- biological_field: " + " ".join(_bio_bits))
+
+    if snap.field_dimension_count is not None:
+        _field_bits = [
+            f"dims={snap.field_dimension_count}",
+            f"edges={snap.field_coupling_edge_count or 0}",
+        ]
+        if snap.field_declared_organ_count is not None:
+            _field_bits.append(
+                f"organs={snap.field_connected_organ_count or 0}/{snap.field_declared_organ_count}"
+            )
+        if snap.field_swimmer_count is not None:
+            _field_bits.append(f"swimmers={snap.field_swimmer_count}")
+        if snap.field_coupling_density is not None:
+            _field_bits.append(f"density={snap.field_coupling_density:.3f}")
+        if snap.field_energy is not None:
+            _field_bits.append(f"energy={snap.field_energy:.3f}")
+        if snap.field_organ_health_mean is not None:
+            _field_bits.append(f"organ_health_mean={snap.field_organ_health_mean:.3f}")
+        if snap.field_unknown_vector_count is not None:
+            _field_bits.append(f"unknowns={snap.field_unknown_vector_count}")
+        if snap.field_low_resolution_vector_count is not None:
+            _field_bits.append(f"lowres={snap.field_low_resolution_vector_count}")
+        if snap.field_weak_vector_count is not None:
+            _field_bits.append(f"weak={snap.field_weak_vector_count}")
+        if snap.field_completeness is not None:
+            _field_bits.append(f"completeness={snap.field_completeness:.3f}")
+        if snap.field_cost_pressure is not None:
+            _field_bits.append(f"cost={snap.field_cost_pressure:.3f}")
+        if snap.field_latency_ms is not None:
+            _field_bits.append(f"latency_ms={snap.field_latency_ms:.1f}")
+        if snap.field_estimated_joules is not None:
+            _field_bits.append(f"joules={snap.field_estimated_joules:.3f}")
+        if snap.field_thermal_stress is not None:
+            _field_bits.append(f"thermal={snap.field_thermal_stress:.3f}")
+        if snap.field_homeostasis_state:
+            _field_bits.append(f"homeostasis={snap.field_homeostasis_state}")
+        if snap.field_control_action:
+            _field_bits.append(f"control={snap.field_control_action}")
+        if snap.field_memory_retention is not None:
+            _field_bits.append(f"retention={snap.field_memory_retention:.3f}")
+        if snap.field_motor_policy:
+            _field_bits.append(f"motor={snap.field_motor_policy}")
+        if snap.field_truth_reward is not None:
+            _field_bits.append(f"truth_reward={snap.field_truth_reward:+.3f}")
+        if snap.field_unknown_organs:
+            _field_bits.append("unknown_organs=" + ",".join(snap.field_unknown_organs[:4]))
+        if snap.field_source_ledgers:
+            _field_bits.append("sources=" + ",".join(snap.field_source_ledgers[:4]))
+        lines.append("- high_dimensional_field: " + " ".join(_field_bits))
+
+    try:
+        from System.swarm_body_monitor import summary_for_alice as _body_monitor_summary
+        _organ_field = _body_monitor_summary().strip()
+        if _organ_field:
+            lines.append(_organ_field)
     except Exception:
         pass
 

@@ -10,7 +10,7 @@ Purpose:
   - Take the day's raw receipts (work, network, agency, timing, drives).
   - Compress them into high-level patterns (success rate, error rate, dominant intent).
   - Downscale noise by checkpointing already-consolidated rows.
-  - Preserve identity (store cohesive narrative to long-term memory).
+  - Preserve identity (store cohesive epoch summary to long-term memory).
 
 See: Documents/IDE_BOOT_COVENANT.md
 """
@@ -30,7 +30,7 @@ class ConsolidatedMemory:
     epoch_id: str
     event_count_compressed: int
     extracted_patterns: Dict[str, Any]
-    narrative_summary: str
+    epoch_summary: str
     memory_hash: str
 
 
@@ -114,7 +114,7 @@ class HippocampalReplay:
         self._save_checkpoints(checkpoints)
         return events
 
-    def enter_sleep_cycle(self, epoch_narrative: str = "Automated sleep consolidation") -> ConsolidatedMemory:
+    def enter_sleep_cycle(self, epoch_summary: str = "Automated sleep consolidation") -> ConsolidatedMemory:
         """
         Triggers the SIFTA Sleep Phase.
         Extracts all recent receipts, computes pattern summaries, checkpoints
@@ -172,7 +172,7 @@ class HippocampalReplay:
         payload = {
             "epoch_id": epoch_id,
             "patterns": patterns,
-            "narrative": epoch_narrative
+            "epoch_summary": epoch_summary
         }
         memory_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
         
@@ -181,7 +181,7 @@ class HippocampalReplay:
             epoch_id=epoch_id,
             event_count_compressed=len(all_events),
             extracted_patterns=patterns,
-            narrative_summary=epoch_narrative,
+            epoch_summary=epoch_summary,
             memory_hash=memory_hash
         )
         
@@ -198,7 +198,7 @@ class HippocampalReplay:
             "engram_id": memory.epoch_id,
             "content_hash": memory.memory_hash,
             "facts": ["system_event", "sleep_consolidation"],
-            "summary": memory.narrative_summary,
+            "summary": memory.epoch_summary,
             "event_count_compressed": memory.event_count_compressed,
             "patterns": memory.extracted_patterns,
             "source": "swarm_hippocampal_replay",

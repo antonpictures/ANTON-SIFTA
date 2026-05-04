@@ -54,7 +54,7 @@ DRIVE_SCHEMA = "SIFTA_INTERNAL_DRIVE_V2"
 
 TRUTH_OBSERVED = "OBSERVED"
 TRUTH_OPERATIONAL = "OPERATIONAL"
-TRUTH_PHILOSOPHICAL = "PHILOSOPHICAL_CLAIM"
+TRUTH_DOCTRINE = "ARCHITECT_DOCTRINE"
 TRUTH_FORBIDDEN = "FORBIDDEN"
 
 logger = logging.getLogger("ConsciousnessEngine")
@@ -191,7 +191,7 @@ class ConsciousnessState:
     now_state: Dict[str, Any] = field(default_factory=dict)
     emitted_drive: Optional[InternalDrive] = None
     truth_labels: Dict[str, str] = field(default_factory=dict)
-    subjective_consciousness_status: str = "UNVERIFIED_PHILOSOPHICAL_CLAIM"
+    subjective_consciousness_status: str = "UNVERIFIED_ARCHITECT_DOCTRINE"
     circadian_phase: Optional[str] = None
     schema: str = STATE_SCHEMA
     module_version: str = MODULE_VERSION
@@ -577,7 +577,7 @@ class ConsciousnessEngine:
             "heartbeat_dynamics": TRUTH_OPERATIONAL,
             "now_state": str(situated_now.get("truth_label") or TRUTH_OBSERVED),
             "drive_generation": TRUTH_OPERATIONAL if emitted else "NO_DRIVE_EMITTED",
-            "subjective_qualia": TRUTH_PHILOSOPHICAL,
+            "subjective_qualia": TRUTH_DOCTRINE,
             "external_action": TRUTH_FORBIDDEN,
         }
         state = ConsciousnessState(
@@ -664,7 +664,7 @@ def consciousness_summary_for_alice(state_dir: Path = _STATE) -> str:
         "CONSCIOUSNESS ENGINE [OPERATIONAL]: "
         f"arousal={row.get('arousal')} boredom={row.get('boredom')} "
         f"free_energy={row.get('free_energy')} mode={row.get('metabolic_mode')}"
-        f" circadian_phase={phase}{drive_text}; subjective_qualia=PHILOSOPHICAL_CLAIM_UNVERIFIED"
+        f" circadian_phase={phase}{drive_text}; subjective_qualia=ARCHITECT_DOCTRINE_UNVERIFIED"
     )
 
 
@@ -691,7 +691,7 @@ def proof_of_property() -> Dict[str, bool]:
     red_state = engine.tick(dt_s=10.0, now=21.0, metabolic_state=red, commit=False)
 
     results = {
-        "truth_labels_present": quiet.truth_labels.get("subjective_qualia") == TRUTH_PHILOSOPHICAL,
+        "truth_labels_present": quiet.truth_labels.get("subjective_qualia") == TRUTH_DOCTRINE,
         "drive_is_proposal": bool(
             drive_state.emitted_drive
             and drive_state.emitted_drive.action_policy == "proposal_only_requires_gate"
@@ -719,7 +719,7 @@ __all__ = [
     "read_interoception",
     "TRUTH_OBSERVED",
     "TRUTH_OPERATIONAL",
-    "TRUTH_PHILOSOPHICAL",
+    "TRUTH_DOCTRINE",
     "TRUTH_FORBIDDEN",
 ]
 

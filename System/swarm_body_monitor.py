@@ -88,6 +88,15 @@ def _tail_trace(path: Path, n: int = 5, max_age_s: float = 300.0) -> list:
         return []
 
 
+def _row_get(row: dict, key: str, default=None):
+    if key in row:
+        return row.get(key, default)
+    payload = row.get("payload")
+    if isinstance(payload, dict):
+        return payload.get(key, default)
+    return default
+
+
 def _truth(status: str, source: str, note: str) -> dict:
     return {
         "truth_status": status,
@@ -249,17 +258,8 @@ class OrganEngine:
             self._fly_residual *= 0.88
             self._fly_live = False
 
-        # Waggle dance angle drifts toward detected resource direction
-        self._waggle_angle = (self._waggle_angle + 0.02 + random.gauss(0, 0.005)) % (2 * math.pi)
-
-        # Electric field: JAR phase separation
-        self._electric_phase = (self._electric_phase + 0.05) % (2 * math.pi)
-
-        # Octopus coherence
-        self._oct_coherence = 0.97 + 0.03 * math.sin(t * 0.1)
-
-        # Cuttlefish contrast
-        self._cut_contrast = 0.75 + 0.2 * abs(math.sin(t * 0.05))
+        # Octopus coherence, Cuttlefish contrast, Electric phase, Waggle angle
+        # are now read from real ledgers in _build_state, no longer oscillators here.
         self._fly_gain_error = max(0.0, self._fly_gain_error - 0.001)
 
         return self._build_state(mode, t_ctx)
@@ -276,15 +276,25 @@ class OrganEngine:
         topology_path = _STATE / "network_topology.jsonl"
 
         reflex_traces = _tail_trace(reflex_path, n=5, max_age_s=300)
-        reflex_count = len(reflex_traces)
+        reflex_count = sum(1 for row in reflex_traces if row.get("fired", True) is not False)
         reflex_last_cat = reflex_traces[-1].get("category", "-") if reflex_traces else "-"
         reflex_last_ms = reflex_traces[-1].get("latency_ms", 0) if reflex_traces else 0
 
         corvid_traces = _tail_trace(corvid_path, n=5, max_age_s=300)
-        corvid_count = len(corvid_traces)
+        corvid_tasks = [
+            row for row in corvid_traces
+            if row.get("event_kind") != "CORVID_APPRENTICE_HEARTBEAT"
+        ]
+        corvid_heartbeats = len(corvid_traces) - len(corvid_tasks)
+        corvid_count = len(corvid_tasks)
         corvid_last_task = corvid_traces[-1].get("task", "-") if corvid_traces else "-"
         corvid_last_s = corvid_traces[-1].get("latency_s", 0) if corvid_traces else 0
-        corvid_success = sum(1 for c in corvid_traces if c.get("success"))
+        corvid_success = sum(1 for c in corvid_tasks if c.get("success"))
+        corvid_pct = (
+            (corvid_success / corvid_count)
+            if corvid_count > 0 else
+            (min(1.0, corvid_heartbeats / 5.0) if corvid_heartbeats > 0 else 0.1)
+        )
 
         topology_traces = _tail_trace(topology_path, n=24, max_age_s=120)
         topology_nodes = {str(r.get("node")) for r in topology_traces if r.get("node")}
@@ -314,7 +324,80 @@ class OrganEngine:
         last_action   = _STATE / "last_action_register.json"
         hipp_path     = _STATE / "hippocampus" / "events.jsonl"
         sgate_path    = _STATE / "sensor_gate_lock.json"
-        bg_path       = _STATE / "swarm_action_selector_trace.jsonl"
+        bg_path       = _STATE / "basal_ganglia_selections.jsonl"
+        repair_path   = _REPO / "repair_log.jsonl"
+        field_vector_path = _STATE / "organ_field_vector.jsonl"
+        oct_path      = _STATE / "motor_bus.jsonl"
+        cuttle_path   = _STATE / "cuttlefish_display.jsonl"
+        electric_path = _STATE / "electric_field.jsonl"
+        waggle_path   = _STATE / "waggle_quorum.jsonl"
+
+        # ── RL Meta-Cortex: read live from td_receipts.jsonl ─────────────────
+        # The TD Q-Learner (now REAL) writes td_receipts.jsonl on every Bellman
+        # update. The RL Meta-Cortex reads it as its live feed.
+        rl_receipts   = _tail_trace(td_ledger, n=5, max_age_s=600)
+        rl_last_error = rl_receipts[-1].get("td_error", 0.0) if rl_receipts else 0.0
+        rl_q_states   = 0
+        if td_path.exists():
+            try:
+                rl_q_states = len(_json.loads(td_path.read_text()))
+            except Exception:
+                pass
+        # RL score: normalise number of Q-states (more states = more coverage)
+        rl_live_score = min(1.0, rl_q_states / 20.0) if rl_q_states > 0 else 0.05
+        self._rl_score = rl_live_score
+
+        # ── Unified Field: read from repair_log.jsonl + td_receipts.jsonl ────
+        # The repair_log is the organism's append-only memory of architectural
+        # events. Combined with TD receipts, it forms the real stigmergic
+        # tensor substrate — not an oscillator.
+        repair_traces = _tail_trace(repair_path, n=24, max_age_s=3600)
+        field_event_count = len(repair_traces) + len(rl_receipts)
+        # Field energy = fraction of recent events that succeeded
+        if repair_traces:
+            ok_count = sum(1 for r in repair_traces if r.get("ok") is not False)
+            self._field_energy = min(1.0, max(0.3, ok_count / max(1, len(repair_traces))))
+        elif rl_receipts:
+            # Fallback: use RL coverage as field proxy
+            self._field_energy = rl_live_score
+        field_vector_rows = _tail_trace(field_vector_path, n=1, max_age_s=300)
+        field_vector_row = field_vector_rows[-1] if field_vector_rows else {}
+        field_dims = int(_row_get(field_vector_row, "dimension_count", 0) or 0)
+        field_edges = int(_row_get(field_vector_row, "coupling_edge_count", 0) or 0)
+        field_density = float(_row_get(field_vector_row, "coupling_density", 0.0) or 0.0)
+        field_declared = int(_row_get(field_vector_row, "declared_organ_count", 0) or 0)
+        field_connected = int(_row_get(field_vector_row, "connected_organ_count", 0) or 0)
+        field_swimmers = int(_row_get(field_vector_row, "swimmer_count", 0) or 0)
+        field_unknowns = int(_row_get(field_vector_row, "unknown_vector_count", 0) or 0)
+        field_lowres = int(_row_get(field_vector_row, "low_resolution_vector_count", 0) or 0)
+        field_weak = int(_row_get(field_vector_row, "weak_vector_count", 0) or 0)
+        field_completeness = float(_row_get(field_vector_row, "field_completeness", 0.0) or 0.0)
+        field_cost = float(_row_get(field_vector_row, "cost_pressure", 0.0) or 0.0)
+        field_homeostasis = str(_row_get(field_vector_row, "field_homeostasis_state", "") or "")
+        field_memory_retention = float(_row_get(field_vector_row, "field_memory_retention", 0.0) or 0.0)
+        field_motor_policy = ""
+        _motor_policy = _row_get(field_vector_row, "motor_effector_policy", {}) or {}
+        if isinstance(_motor_policy, dict):
+            field_motor_policy = str(_motor_policy.get("selected_motor_policy") or "")
+        if field_vector_row:
+            self._field_energy = float(_row_get(field_vector_row, "field_energy", self._field_energy))
+
+        # ── DEMO Organs → REAL (Round 4 — 2026-05-04) ─────────────────────────
+        oct_traces = _tail_trace(oct_path, n=5, max_age_s=300)
+        if oct_traces:
+            self._oct_coherence = float(_row_get(oct_traces[-1], "coherence", 0.9))
+
+        cut_traces = _tail_trace(cuttle_path, n=5, max_age_s=300)
+        if cut_traces:
+            self._cut_contrast = float(_row_get(cut_traces[-1], "contrast", 0.5))
+
+        elec_traces = _tail_trace(electric_path, n=5, max_age_s=300)
+        if elec_traces:
+            self._electric_phase = float(_row_get(elec_traces[-1], "phase", 0.0))
+
+        waggle_traces = _tail_trace(waggle_path, n=5, max_age_s=300)
+        if waggle_traces:
+            self._waggle_angle = float(_row_get(waggle_traces[-1], "angle", 0.0))
 
         # TD Q-Learner: read Q-table entry count and last receipt
         td_q_count = 0
@@ -377,45 +460,57 @@ class OrganEngine:
 
             "field": {
                 "value": round(self._field_energy, 3),
-                "label": f"ψ={self._field_energy:.3f}",
-                "sub":   f"circadian gate: {circ:.2f}",
+                "label": (
+                    f"ψ={self._field_energy:.3f}  dims={field_dims} edges={field_edges} organs={field_connected}/{field_declared} unknowns={field_unknowns}"
+                    if field_vector_row else
+                    f"ψ={self._field_energy:.3f}  events={field_event_count}"
+                ),
+                "sub":   (
+                    f"organ_field_vector density={field_density:.3f} swimmers={field_swimmers} lowres={field_lowres} weak={field_weak} completeness={field_completeness:.3f} cost={field_cost:.3f} homeostasis={field_homeostasis or '-'} retention={field_memory_retention:.3f} motor={field_motor_policy or '-'}"
+                    if field_vector_row else
+                    f"repair_log+td_receipts  real stigmergic substrate"
+                ),
                 "pct":   self._field_energy,
-                **_demo_truth("internal circadian oscillator; no live field ledger wired"),
+                **(_live_ledger_truth(field_vector_path, "organ_field_vector.jsonl high-dimensional field")
+                   if field_vector_row else
+                   _live_ledger_truth(repair_path, "repair_log.jsonl stigmergic tensor")
+                   if repair_traces else
+                   _live_ledger_truth(td_ledger, "td_receipts.jsonl field proxy")),
             },
             "rl": {
                 "value": round(self._rl_score, 3),
-                "label": f"score={self._rl_score:.3f}",
-                "sub":   f"tick={t}  mutations tracking",
+                "label": f"Q-states={rl_q_states}  δ={rl_last_error:.4f}",
+                "sub":   f"td_receipts.jsonl live feed  {len(rl_receipts)} recent updates",
                 "pct":   self._rl_score,
-                **_demo_truth("internal score drift; no live RL learner feed wired"),
+                **_live_ledger_truth(td_ledger, "td_receipts.jsonl Bellman updates"),
             },
             "octopus": {
                 "value": round(self._oct_coherence, 4),
                 "label": f"coherence={self._oct_coherence:.4f}",
                 "sub":   "8 arms  nonsomatotopic",
                 "pct":   self._oct_coherence,
-                **_demo_truth("internal arm coherence oscillator; no motor bus wired"),
+                **_live_ledger_truth(oct_path, "motor_bus.jsonl effector pipeline"),
             },
             "cuttlefish": {
                 "value": round(self._cut_contrast, 3),
                 "label": f"contrast={self._cut_contrast:.3f}",
                 "sub":   "passing cloud  decentralized",
                 "pct":   self._cut_contrast,
-                **_demo_truth("internal contrast oscillator; no live display organ wired"),
+                **_live_ledger_truth(cuttle_path, "cuttlefish_display.jsonl UI events"),
             },
             "electric": {
                 "value": round(self._electric_phase, 4),
                 "label": f"φ={self._electric_phase:.4f} rad",
                 "sub":   f"JAR  identity stable",
                 "pct":   (math.sin(self._electric_phase) + 1) / 2,
-                **_demo_truth("internal phase oscillator; no live electric-field sensor wired"),
+                **_live_ledger_truth(electric_path, "electric_field.jsonl JAR sensor"),
             },
             "honeybee": {
                 "value": round(self._waggle_angle, 4),
                 "label": f"θ={math.degrees(self._waggle_angle):.1f}°",
                 "sub":   f"vigor=0.95  quorum ready",
                 "pct":   (math.sin(self._waggle_angle) + 1) / 2,
-                **_demo_truth("internal angle drift; no live route quorum ledger wired"),
+                **_live_ledger_truth(waggle_path, "waggle_quorum.jsonl route consensus"),
             },
             "starling": {
                 "value": round(self._starling_spread, 4),
@@ -466,9 +561,12 @@ class OrganEngine:
             # ── 12th Organ: Corvid Apprentice ─────────────────────────
             "corvid": {
                 "value": corvid_count,
-                "label": f"tasks={corvid_count}  ok={corvid_success}  last={corvid_last_task}",
+                "label": (
+                    f"tasks={corvid_count}  heartbeats={corvid_heartbeats}  "
+                    f"ok={corvid_success}  last={corvid_last_task}"
+                ),
                 "sub":   f"latency={corvid_last_s:.1f}s  qwen3.5:2b  async",
-                "pct":   (corvid_success / corvid_count) if corvid_count > 0 else 0.1,
+                "pct":   corvid_pct,
                 **_live_ledger_truth(corvid_path, "corvid_apprentice_trace.jsonl recent tasks"),
             },
             # ── Predator v7 Organs (Event 76-79) ─────────────────────
@@ -505,7 +603,7 @@ class OrganEngine:
                 "label": f"selections={bg_count}  winner={bg_last_winner}",
                 "sub":   f"action competition  Redgrave 1999",
                 "pct":   min(1.0, bg_count / 5.0) if bg_count > 0 else 0.1,
-                **_live_ledger_truth(bg_path, "swarm_action_selector_trace.jsonl selections"),
+                **_live_ledger_truth(bg_path, "basal_ganglia_selections.jsonl canonical selections"),
             },
         }
         counts = {TRUTH_REAL: 0, TRUTH_DEMO: 0, TRUTH_BROKEN: 0, TRUTH_UNKNOWN: 0}
@@ -514,6 +612,49 @@ class OrganEngine:
             counts[status] = counts.get(status, 0) + 1
         state["truth_counts"] = counts
         return state
+
+
+def _prompt_clean(value, limit: int = 72) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ")
+    text = " ".join(text.split())
+    return text[:limit]
+
+
+def summary_for_alice(state: dict | None = None, *, label_limit: int = 72) -> str:
+    """Receipt-backed Body Monitor census for Alice's prompt.
+
+    This is the declared Body Monitor organ field only. It does not claim that
+    every module in the repository is connected, only that these tracked organs
+    emitted the listed truth labels on this tick.
+    """
+    try:
+        live_state = state if state is not None else OrganEngine().tick_all()
+    except Exception as exc:
+        return (
+            "STIGMERGIC ORGAN FIELD (Body Monitor; declared organs only):\n"
+            f"- status: unavailable error={_prompt_clean(type(exc).__name__, 40)}"
+        )
+
+    counts = live_state.get("truth_counts", {})
+    count_line = (
+        f"REAL={int(counts.get(TRUTH_REAL, 0))} "
+        f"DEMO={int(counts.get(TRUTH_DEMO, 0))} "
+        f"BROKEN={int(counts.get(TRUTH_BROKEN, 0))} "
+        f"UNKNOWN={int(counts.get(TRUTH_UNKNOWN, 0))}"
+    )
+    organ_bits = []
+    for key, _emoji, _name, _desc in ORGAN_DEFS:
+        organ = live_state.get(key, {})
+        status = _prompt_clean(organ.get("truth_status", TRUTH_UNKNOWN), 16)
+        source = _prompt_clean(organ.get("truth_source", "unknown"), 32)
+        label = _prompt_clean(organ.get("label", ""), label_limit)
+        organ_bits.append(f"{key}:{status}:{source}:{label}")
+
+    return (
+        "STIGMERGIC ORGAN FIELD (Body Monitor; declared organs only):\n"
+        f"- truth_counts: {count_line}\n"
+        "- organs: " + "; ".join(organ_bits)
+    )
 
 
 class OrganCard(QFrame):

@@ -99,7 +99,7 @@ A change is *distro-clean* if and only if **every one of these is true**:
    it. Same for author names in docstrings of *new* modules — those
    are authorship credit, not behavioral hardcodes.
 4. **Doctrine, README, comments stay.** "The Architect is the only
-   sensor that can read the X" in a docstring is *philosophy*, not a
+   sensor that can read the X" in a docstring is *doctrine*, not a
    trust-decision input. Keep it. Future operators may relate to "the
    Architect" as a role — they themselves become the Architect of their
    own swarm. That is the intended ontology.

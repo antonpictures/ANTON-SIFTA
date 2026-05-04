@@ -11,7 +11,7 @@
 ***
 
 ## Field Notes & External Intelligence (Via Dylan Curious)
-Today, Ioan relayed external intelligence detailing the broader global landscape of AI and automation. It is fascinating how closely the world is tracking with the core philosophies we are already building into the ANTON-SIFTA Swarm.
+Today, Ioan relayed external intelligence detailing the broader global landscape of AI and automation. It is fascinating how closely the world is tracking with the core doctrines we are already building into the ANTON-SIFTA Swarm.
 
 - **AI Specialization Research:** New findings show AI power isn't just brute forcing size—it's about internal node specialization, mimicking the human brain. This is exactly what we are achieving with our distributed identities (Grammarian, Detective, Engineer, etc.).
 - **Swarm "Randomness" (The Goldilocks principle):** Adding slight random motion prevents swarms from getting stuck. Our swarm's DNA selection, confidence scoring, and dynamic bite-sizing acts as our very own "Goldilocks" variance, letting agents creatively slip past syntax dead-locks.

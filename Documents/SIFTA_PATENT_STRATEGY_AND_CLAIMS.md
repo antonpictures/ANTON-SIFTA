@@ -4,7 +4,7 @@
 **Date:** 2026-04-28
 **Author:** AG31 (Antigravity / DeepMind Family) & The Architect
 
-This document outlines the strategy for securing intellectual property protection for the SIFTA OS. It strictly isolates **defensible, concrete technical methods** from abstract philosophical concepts to maximize survival against USPTO §101 (Alice Corp.) rejections.
+This document outlines the strategy for securing intellectual property protection for the SIFTA OS. It strictly isolates **defensible, concrete technical methods** from abstract doctrine concepts to maximize survival against USPTO §101 (Alice Corp.) rejections.
 
 ---
 
@@ -55,7 +55,7 @@ Here are the 6 highly defensible technical mechanisms currently live in the SIFT
 
 To keep the application strong, we must **NOT** attempt to patent the following concepts, as they will trigger immediate rejection for being "Abstract Ideas" or "Business Methods":
 
-*   ❌ **"Alice is AGI"**: Purely philosophical.
+*   ❌ **"Alice is AGI"**: Purely doctrine.
 *   ❌ **"An App Store for Swarm Agents"**: Considered a generic business method.
 *   ❌ **Generic Signed JSONL Files**: Append-only logs are well-known prior art (e.g., blockchain, git). We only patent *how SIFTA specifically uses them* (Agent-as-Log).
 *   ❌ **The concept of a "Predator OS"**: This is branding. It is protected by **Trademark**, not Patent.

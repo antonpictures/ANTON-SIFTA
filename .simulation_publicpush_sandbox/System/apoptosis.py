@@ -72,7 +72,7 @@ class DeathReason(str, Enum):
 class DeathCertificate:
     """
     Written by the swimmer itself, not the OS.
-    This distinction matters philosophically and architecturally.
+    This distinction matters doctrinally and architecturally.
     """
     swimmer_id:    str
     reason:        str

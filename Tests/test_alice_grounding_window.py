@@ -108,6 +108,7 @@ def test_prompt_does_not_inject_ghost_possession_or_metaphor_body_truth():
     assert "possess" not in prompt.casefold()
     assert "spooky" not in prompt.casefold()
     assert "[DECLARED_METAPHOR]" not in prompt
+    assert "[ARCHITECT_RUNTIME_DOCTRINE]" not in prompt
     assert "TRANSFER LEARNING METAPHORS" not in prompt
     assert "one configured model for that turn" in prompt
     assert "Do not treat unreceipted language as live body truth" in prompt

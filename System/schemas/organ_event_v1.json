@@ -1,0 +1,74 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://sifta.local/schemas/organ_event_v1.json",
+    "title": "SIFTA organ event row (base v1)",
+    "description": "Canonical envelope for append-only organ JSONL rows. Optional top-level \"schema\" may be set to ORGAN_EVENT_V1 for explicit versioning. The truth_continuity ledger uses a separate frozen shape (TRUTH_CONTINUITY_EVENT_V1 in swarm_truth_continuity.py) until Architect GO to unify.",
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+        "schema": {
+            "type": "string",
+            "const": "ORGAN_EVENT_V1",
+            "description": "Optional explicit marker for new writers."
+        },
+        "ts": {
+            "type": "number",
+            "description": "Unix epoch seconds (float allowed for sub-second ordering)."
+        },
+        "trace_id": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "description": "Unique per event; UUID4 string recommended."
+        },
+        "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Writer label, e.g. swarm_td_learner, owner_voice."
+        },
+        "homeworld_serial": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Node silicon anchor from owner_silicon() or covenant serial."
+        },
+        "organ": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Logical organ id, e.g. td_learner, octopus, owner_body."
+        },
+        "event_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Verb-like category: update, reward, episode, state_change, score, ..."
+        },
+        "payload": {
+            "type": "object",
+            "description": "Organ-specific factual fields only; keep small.",
+            "additionalProperties": true
+        },
+        "truth_label": {
+            "type": "string",
+            "enum": [
+                "OBSERVED",
+                "OPERATIONAL",
+                "HYPOTHESIS",
+                "ARCHITECT_DOCTRINE"
+            ],
+            "description": "ARCHITECT_DOCTRINE reserved for rows that state doctrine or non-measured claims explicitly."
+        }
+    },
+    "required": [
+        "ts",
+        "trace_id",
+        "source",
+        "homeworld_serial",
+        "organ",
+        "event_type",
+        "payload",
+        "truth_label"
+    ]
+}

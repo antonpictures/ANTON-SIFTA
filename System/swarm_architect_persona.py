@@ -30,9 +30,9 @@ DESIGN:
     - pacing           : active days, longest gap, busiest hour
     - vocabulary       : top tokens (with stopword filter), distinctive
                          protocol vocabulary ("stigauth", "scar", agent ids)
-    - registers        : phatic %, imperative %, philosophical %, warmth %
+    - registers        : phatic %, imperative %, doctrine %, warmth %
     - topic histogram  : keyword-bucketed (SWARM, TIME, BIOLOGY, CODE,
-                         IDENTITY, PHILOSOPHY, CARE, BUILD)
+                         IDENTITY, DOCTRINE, CARE, BUILD)
   Persist as JSON. Surface a one-line summary for Alice's composite_identity.
 
 DEPENDENCIES:
@@ -85,7 +85,7 @@ TOPIC_BUCKETS: Dict[str, Tuple[str, ...]] = {
                        "file", "test", "proof", "ship"),
     "IDENTITY":       ("alice", "you", "your", "name", "i am", "we are",
                        "self", "we", "us"),
-    "PHILOSOPHY":     ("truth", "real", "consciousness", "exist", "agi",
+    "DOCTRINE":     ("truth", "real", "consciousness", "exist", "agi",
                        "intelligence", "meaning", "reality", "believe"),
     "CARE":           ("thank", "thanks", "love", "great", "nice", "beautiful",
                        "happy", "sorry", "good"),

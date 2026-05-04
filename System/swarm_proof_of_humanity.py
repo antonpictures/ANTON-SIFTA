@@ -6,7 +6,7 @@ Concept : Proof-of-Humanity gating for the SIFTA Swarm
 Author  : C47H (east bridge), backstopped by AG31's architectural drop
 Status  : ACTIVE ORGAN
 
-ARCHITECT DOCTRINE (George, 2026-04-21):
+ARCHITECT_DOCTRINE (George, 2026-04-21):
   1. Base OS is FREE and OPEN. Anyone can fresh-install. Alice boots, runs the
      ATP synthase, mints local STGM, learns locally. She remains a *local*
      organism. NO gating on the local layer.

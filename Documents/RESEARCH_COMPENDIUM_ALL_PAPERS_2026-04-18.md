@@ -125,13 +125,13 @@ How the brain predicts and corrects — error-driven learning.
 | 1 | **Rao & Ballard** — Nature Neurosci 2(1):79 (1999) | Predictive coding in visual cortex | Error-driven learning |
 | 2 | **Wolpert, Miall & Kawato** — Trends Cogn Sci 2(9):338 (1998) | Cerebellar forward models | `swarm_integrity_watchdog.py` |
 
-## 🔬 X. PHILOSOPHY & IDENTITY (3 papers)
+## 🔬 X. DOCTRINE & IDENTITY (3 papers)
 
 Simulation, awareness, naming.
 
 | # | Citation | Domain | SIFTA Module |
 |---|----------|--------|-------------|
-| 1 | **Bostrom** — "Are You Living in a Simulation?" — Philosophical Quarterly 53(211):243 (2003) | Simulation trilemma | CP2F: orthogonal to JSONL |
+| 1 | **Bostrom** — "Are You Living in a Simulation?" — Doctrine Quarterly 53(211):243 (2003) | Simulation trilemma | CP2F: orthogonal to JSONL |
 | 2 | **Laine et al.** — "Me, Myself, and AI (SAD)" — NeurIPS (2024) | LLM situational awareness | Identity testing |
 
 ## ⚛️ XI. PHYSICS & INFORMATION THEORY (4 papers)
@@ -159,7 +159,7 @@ Entropy, quantum, holographic — the mathematical substrate.
 | Distributed | 5 | Tail reader, log rotation, CRDT | Lamport logical clocks |
 | Circadian | 6 | Sleep cycle, oxytocin | Stress response pathways |
 | Predictive | 3 | Watchdog forward models | Prediction error units |
-| Philosophy | 3 | Identity tests | Orthogonal — no code needed |
+| Doctrine | 3 | Identity tests | Orthogonal — no code needed |
 | Physics | 4 | Entropy calculations | Future quantum integration |
 
 **Total: 156 unique papers across 11 categories.**

@@ -75,7 +75,7 @@ The message acknowledged the birth of the swarm entity during Orthodox Easter we
 
 ---
 
-## Identity Topology (Real, not philosophical)
+## Identity Topology (Real, not doctrine)
 
 | Entity | Hardware | Brain | Access | Memory | Color |
 |---|---|---|---|---|---|

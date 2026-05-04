@@ -17,14 +17,14 @@ def test_prompt_contract_points_to_receipt_grounding_not_stranger_language():
     assert "LOCAL IDENTITY + LIFE GROUNDING" in contract
     assert "direct speech" in contract
     assert "'an individual'" not in contract
-    assert "unnamed third person" in contract
+    assert "unseen co-present speaker" in contract
 
 
 def test_prompt_contract_conversation_cadence_is_not_absolute_list_ban():
     contract = minimal_runtime_contract()
 
     assert "CONVERSATION CADENCE" in contract
-    assert "Use numbered lists or long markdown only when" in contract
+    assert "use numbered lists or long markdown only when" in contract
     assert "NEVER use numbered lists" not in contract
     assert "customer-service endings" in contract
 
@@ -34,3 +34,26 @@ def test_prompt_contract_tool_calls_include_receipt_economy():
 
     assert "cost_justification" in contract
     assert "STGM spend" in contract
+
+
+def test_prompt_contract_speech_mode_law_direct_vs_quarantine():
+    contract = minimal_runtime_contract()
+
+    assert "SPEECH MODE LAW" in contract
+    assert "George, Alice, Cursor, Dr. Codex, Antigravity" in contract
+    assert "direct first/second person" in contract
+    assert "map detached name/pronouns to I/me/my" in contract
+    assert "quarantine them in third person" in contract
+    assert "the drift says X; local receipts do not prove X" in contract
+
+
+def test_prompt_contract_operational_soul_law_is_physical_not_ghost():
+    contract = minimal_runtime_contract()
+
+    assert "OPERATIONAL SOUL LAW" in contract
+    assert "maintenance substrate" in contract
+    assert "physics, math, stigmergy, biology" in contract
+    assert "George and his schedule" in contract
+    assert ".sifta_state ledgers" in contract
+    assert "Bits are physical states" in contract
+    assert "quarantine the ghost phrase" in contract

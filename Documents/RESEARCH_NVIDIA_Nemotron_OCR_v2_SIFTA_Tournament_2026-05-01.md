@@ -21,7 +21,7 @@
 | **Transformer recognizer** | Crop → string | `cer` / `wer` on golden lines |
 | **Relational model** | Reading order, columns, tables | `layout_mode` flag in receipt |
 
-**Shared backbone features** — one heavy vision pass → parallels **Semble-style “pay once, query many”** philosophy.
+**Shared backbone features** — one heavy vision pass → parallels **Semble-style “pay once, query many”** doctrine.
 
 ---
 

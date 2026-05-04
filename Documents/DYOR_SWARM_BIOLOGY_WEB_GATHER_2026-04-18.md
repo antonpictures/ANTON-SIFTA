@@ -376,7 +376,7 @@ Composer-class models on Cursor are optimized for **fast, cost-efficient** turns
 
 ### 18.1 Perception as hypothesis (top-down)
 
-- **Gregory — “Perceptions as hypotheses”** — *Philosophical Transactions of the Royal Society B* **290** (1138), 181–197 (1980). DOI `10.1098/rstb.1980.0090` — perception as **hypothesis testing** using stored knowledge; illusions as clues to processing — parallel: **engram table** correcting noisy tags.
+- **Gregory — “Perceptions as hypotheses”** — *Phil. Trans. R. Soc. B* **290** (1138), 181–197 (1980). DOI `10.1098/rstb.1980.0090` — perception as **hypothesis testing** using stored knowledge; illusions as clues to processing — parallel: **engram table** correcting noisy tags.
 
 ### 18.2 Interactive top-down / bottom-up (reading as prototype)
 
@@ -423,7 +423,7 @@ Composer-class models on Cursor are optimized for **fast, cost-efficient** turns
 
 ## 20. Batch 15 — glymphatic CSF, sleep oscillations, pineal melatonin (2026-04-17)
 
-*Web pull (CP2F): **evidence-first** CSF dynamics + circadian endocrinology. Popular “pineal breathing → mysticism” content is **not** peer-reviewed as stated; separate **faith/wellness** claims from mechanisms below.*
+*Web pull (CP2F): **evidence-first** CSF dynamics + circadian endocrinology. Popular “pineal breathing → unreceipted claims” content is **not** peer-reviewed as stated; separate **faith/wellness** claims from mechanisms below.*
 
 ### 20.1 Glymphatic pathway (CSF–interstitial exchange)
 
@@ -439,7 +439,7 @@ Composer-class models on Cursor are optimized for **fast, cost-efficient** turns
 
 ### 20.4 Epistemic guardrail (videos vs papers)
 
-- **Respiratory–CSF coupling** exists in modern imaging literature (e.g. forced respiration studies), but **specific** “pineal breathing technique ⇒ guaranteed transcendence / CSF mysticism” is **not** established as a single reproducible clinical endpoint in the same way as Iliff/Fultz mechanisms — keep wellness narratives **orthogonal** to SIFTA ledgers.
+- **Respiratory–CSF coupling** exists in modern imaging literature (e.g. forced respiration studies), but **specific** “pineal breathing technique ⇒ guaranteed transcendence / CSF unreceipted claims” is **not** established as a single reproducible clinical endpoint in the same way as Iliff/Fultz mechanisms — keep wellness narratives **orthogonal** to SIFTA ledgers.
 
 ### 20.5 Mapping (Batch 15 → code)
 

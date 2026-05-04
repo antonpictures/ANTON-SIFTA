@@ -4,14 +4,14 @@ Wave II, §10.14.20 — Antigravity lane.
 
 Bio-math provenance (proven literature only — Architect directive):
     Fleming, S.M. & Dolan, R.J. (2012). The neural basis of metacognitive
-        ability. Philosophical Transactions of the Royal Society B, 367,
+        ability. Phil. Trans. R. Soc. B, 367,
         1338–1349.
         [meta-d', confidence calibration, type-2 signal detection theory]
     Nelson, T.O. (1990). Metamemory: A theoretical framework and new
         findings. Psychology of Learning and Motivation, 26, 125–173.
         [monitoring (confidence) vs control (correction) metacognition]
-    Friston, K. (2005). A theory of cortical responses. Philosophical
-        Transactions of the Royal Society B, 360, 815–836.
+    Friston, K. (2005). A theory of cortical responses. Phil. Trans.
+        R. Soc. B, 360, 815–836.
         [free energy, epistemic surprise = KL(posterior || prior)]
     Yeung, N. & Summerfield, C. (2012). Metacognition in human decision-
         making: confidence and error monitoring. Phil Trans R Soc B, 367,

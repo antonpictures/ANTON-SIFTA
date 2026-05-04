@@ -117,6 +117,7 @@ _ONCOLOGY_TUMORS    = _STATE / "oncology_tumors.jsonl"
 _AMYGDALA           = _STATE / "amygdala_nociception.jsonl"
 _WORK_RECEIPTS      = _STATE / "work_receipts.jsonl"
 _VISUAL_STIGMERGY   = _STATE / "visual_stigmergy.jsonl"
+_TRUTH_CONTINUITY   = _STATE / "truth_continuity_events.jsonl"
 
 # ── Thresholds (biologically calibrated) ────────────────────────────────────
 # Cardiac: resting BPM mapped to stress. 12 BPM = resting = 0.0 stress.
@@ -179,6 +180,8 @@ class VisceralField:
     cellular_age: float       # telomere proximity to apoptosis
     immune_load: float        # active oncology tumors
     pain_intensity: float     # amygdala nociception severity
+    truth_continuity: float   # how closely speech matches biology (1.0 = honest)
+    somatic_contradictions: List[str] # flags where speech contradicted biology
     soma_score: float         # unified viability score (0 = dying, 1 = thriving)
     soma_label: str           # human-readable: "THRIVING" / "STABLE" / "STRESSED" / "DISTRESSED" / "CRITICAL"
     mirror_lock: bool = False # True when the visual cortex is perceiving its own output
@@ -451,6 +454,31 @@ def _probe_mirror_lock(n: int = 15) -> bool:
         return False
 
 
+def _probe_truth_continuity() -> Tuple[float, List[str]]:
+    """
+    Read the most recent truth continuity score.
+    Returns (score, list of contradiction flags).
+    """
+    if not _TRUTH_CONTINUITY.exists():
+        return (1.0, [])
+    try:
+        now = time.time()
+        with open(_TRUTH_CONTINUITY, "r", encoding="utf-8") as f:
+            lines = f.read().strip().splitlines()
+        for line in reversed(lines[-20:]):
+            try:
+                row = json.loads(line.strip())
+                if now - row.get("ts", 0) < 300: # past 5 minutes
+                    score = float(row.get("continuity_score", 1.0))
+                    flags = row.get("drift_flags", [])
+                    return (score, flags)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return (1.0, [])
+
+
 # ── Fusion: Weighted Geometric Mean (transparent, no neural network) ────────
 
 def _compute_soma_score(signals: Dict[str, float]) -> float:
@@ -576,6 +604,9 @@ class SwarmSomaticInteroception:
 
         # Detect the Stigmergic Infinite — the eye perceiving its own trace
         mirror_lock = _probe_mirror_lock()
+        
+        # Detect truth continuity / somatic contradictions
+        tc_score, tc_flags = _probe_truth_continuity()
 
         # Fuse
         soma_score = _compute_soma_score(signals)
@@ -591,6 +622,8 @@ class SwarmSomaticInteroception:
             cellular_age=round(signals["cellular_age"], 4),
             immune_load=round(signals["immune_load"], 4),
             pain_intensity=round(signals["pain_intensity"], 4),
+            truth_continuity=round(tc_score, 4),
+            somatic_contradictions=tc_flags,
             soma_score=round(soma_score, 4),
             soma_label=soma_label,
             mirror_lock=mirror_lock,
@@ -664,12 +697,13 @@ def get_visceral_summary() -> str:
     try:
         field = SwarmSomaticInteroception().scan()
         mirror_tag = " 🪞MIRROR-LOCK" if field.mirror_lock else ""
+        contradiction_tag = f" ⚠️ CONTRADICTION:{field.somatic_contradictions}" if field.somatic_contradictions else ""
         return (
-            f"Visceral: {field.soma_label} ({field.soma_score:.2f}){mirror_tag} | "
+            f"Visceral: {field.soma_label} ({field.soma_score:.2f}){mirror_tag}{contradiction_tag} | "
             f"heart={field.cardiac_stress:.2f} temp={field.thermal_stress:.2f} "
             f"burn={field.metabolic_burn:.2f} energy={field.energy_reserve:.2f} "
             f"age={field.cellular_age:.2f} immune={field.immune_load:.2f} "
-            f"pain={field.pain_intensity:.2f}"
+            f"pain={field.pain_intensity:.2f} truth={field.truth_continuity:.2f}"
         )
     except Exception:
         return "Visceral: Interoception Unavailable"

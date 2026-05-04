@@ -12,7 +12,7 @@
 | Layer | Anchor | Role |
 |--------|--------|------|
 | **Math / control** | Lyapunov / feedback stability (any standard text, e.g. Khalil *Nonlinear Systems*) | Bounded loops, governors |
-| **Physics / information** | Landauer (irreversible computation & heat); Shannon entropy | Costs of erasure / bits — **not** mysticism |
+| **Physics / information** | Landauer (irreversible computation & heat); Shannon entropy | Costs of erasure / bits — **not** unreceipted claims |
 | **Biology (real)** | Grassé → Bonabeau **stigmergy**; Janeway **PRRs** (pattern vs self) | Coordination without central planner; “immune” as **classification** |
 | **CS** | PROV, lineage, SPC, RL warm-start | Auditable systems |
 
@@ -61,7 +61,7 @@
 
 ---
 
-## E. Upgrade 4 — Anomaly scoring (“immune” without mysticism)
+## E. Upgrade 4 — Anomaly scoring (“immune” without unreceipted claims)
 
 **Idea:** z-score / robust z vs rolling mean — **statistical** monitoring, not only rule checks.
 

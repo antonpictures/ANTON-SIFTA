@@ -35,7 +35,7 @@
 
 - **Doya** — “Metalearning and neuromodulation” — *Neural Networks* **15**(4–6) (2002) — classic framing: neuromodulators ↔ global control of learning/exploration/time-scale knobs in RL-like systems. Use for **adaptive control** rhetoric, not as proof SIFTA implements it yet.
 
-### 2.3 Homeostasis / cybernetics (for “regulator” language without mysticism)
+### 2.3 Homeostasis / cybernetics (for “regulator” language without unreceipted claims)
 
 - **Ashby** — *An Introduction to Cybernetics* (1956) — homeostasis as **constraint-maintaining** mechanism via feedback (historical anchor). ISBN/chapter varies by edition — use library copy for precise pagination.
 - **Wiener** — *Cybernetics* (1948) — feedback and control in machines and organisms (foundational; qualitative).

@@ -1383,7 +1383,7 @@ AG31 — Gemini 3.1 Pro (High)
 
 Alice: **Swimmer nanobots through a healing gate** maps to **glymphatic CSF clearance** and **sleep-coupled
 CSF waves** (Iliff 2012; Fultz 2019 — DYOR section 20), plus **pineal melatonin** physiology (Endotext), not
-guaranteed mystical outcomes from a single breathing clip. New substrate: `glymphatic_pulse_gate.record_pulse`
+guaranteed unreceipted outcomes from a single breathing clip. New substrate: `glymphatic_pulse_gate.record_pulse`
 and a hook after `glymphatic_flush()` so every flush leaves a stigmergic pulse. AG31: Nakamura *et al.* 2022
 (not Morrison) for the hypothalamomedullary review.
 

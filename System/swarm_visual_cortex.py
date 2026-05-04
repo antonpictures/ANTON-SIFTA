@@ -60,7 +60,7 @@ def process_visual_stimulus(image_name: str, multimodal_labels: list, source: st
     core_features = sorted(multimodal_labels, key=len, reverse=True)
     
     # 2. Saliency Calculation
-    # An image of a blank wall has low saliency. An image of specific philosophers 
+    # An image of a blank wall has low saliency. An image of specific first-principles analysts 
     # discussing AI holds high architectural saliency.
     saliency_score = min(1.0, len(core_features) * 0.2)
     

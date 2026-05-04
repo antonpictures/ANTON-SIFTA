@@ -71,7 +71,10 @@ _DEVICE_EVENTS_LOG = _REPO / ".sifta_state" / "device_events.jsonl"
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from PyQt6.QtCore import Qt, QPointF, QRectF, QSize, QTimer, pyqtSignal
+from PyQt6.QtCore import (
+    Qt, QPointF, QRectF, QSize, QTimer, pyqtSignal,
+    QByteArray, QBuffer, QIODevice, QThread,
+)
 from PyQt6.QtGui import (
     QColor, QFont, QImage, QPainter, QPen, QBrush, QFontMetrics,
 )
@@ -79,8 +82,9 @@ from PyQt6.QtMultimedia import (
     QCamera, QCameraDevice, QMediaCaptureSession, QMediaDevices, QVideoSink,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
-    QSizePolicy, QSlider, QSplitter, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QHBoxLayout, QLabel, QMessageBox,
+    QPlainTextEdit, QPushButton, QSizePolicy, QSlider, QSplitter, QVBoxLayout,
+    QWidget,
 )
 
 from System.sifta_base_widget import SiftaBaseWidget
@@ -111,9 +115,9 @@ _THUMB_H = _GRID_H * 8
 
 # ── Camera selection (mirrors Alice CLI's prefer/avoid posture) ──────────────
 _VIDEO_AVOID = ("obs virtual camera", "screen capture", "desk view",
-                "passthrough", "obs camera")
+                "passthrough", "obs camera", "iphone")
 _VIDEO_PREFER = ("macbook pro camera", "facetime hd camera", "logitech",
-                 "iphone")
+                 "usb camera")
 
 
 def _rank_cameras(devs: List[QCameraDevice]) -> List[QCameraDevice]:
@@ -504,6 +508,35 @@ class _PhotonMath:
         )
 
 
+class _VisionBodyProbeWorker(QThread):
+    """Background Ollama vision → owner_body_events (never blocks the UI thread)."""
+
+    done = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, png_bytes: bytes, sha8: str) -> None:
+        super().__init__()
+        self._png = png_bytes
+        self._sha8 = sha8
+
+    def run(self) -> None:
+        try:
+            from System.swarm_owner_vision_body_bridge import (
+                log_owner_body_from_vision_bytes,
+            )
+
+            model = os.environ.get("SIFTA_OWNER_VISION_MODEL", "").strip() or None
+            out = log_owner_body_from_vision_bytes(
+                self._png, self._sha8, model=model,
+            )
+            if out.get("ok"):
+                self.done.emit(out)
+            else:
+                self.failed.emit(str(out.get("error", "unknown")))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 # ── The video canvas: paints frames + the HUD overlay ────────────────────────
 class _VideoCanvas(QWidget):
     """
@@ -585,6 +618,20 @@ class _VideoCanvas(QWidget):
         self._photon_math.set_density(grid_size)
         # Clear cached photon so the overlay picks up the new grid shape.
         self._photon = None
+
+    def snapshot_png_bytes(self) -> Tuple[Optional[bytes], str]:
+        """Copy last frame to PNG bytes + current sha8 anchor (main thread only)."""
+        if self._image is None or self._image.isNull():
+            return None, self._last_sha8
+        img = QImage(self._image)
+        ba = QByteArray()
+        buf = QBuffer(ba)
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        if not img.save(buf, "PNG"):
+            buf.close()
+            return None, self._last_sha8
+        buf.close()
+        return bytes(ba), self._last_sha8
 
     # ── Frame ingest ───────────────────────────────────────────────────────
     def on_video_frame(self, frame) -> None:  # type: ignore[no-untyped-def]
@@ -947,6 +994,22 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
         layout.addLayout(density_bar)
 
+        # Vision → owner_body_events: one Ollama vision probe, sha8-anchored.
+        self._vision_body_worker: Optional[_VisionBodyProbeWorker] = None
+        body_vis = QHBoxLayout()
+        self._vision_body_btn = QPushButton("🦷 Log body_check (vision)")
+        self._vision_body_btn.setToolTip(
+            "Captures the current frame → local Ollama (vision) → one "
+            "`body_check` row in owner_body_events.jsonl, stamped with the HUD "
+            "sha8.\n"
+            "Visible cues only — not a clinical diagnosis.\n"
+            "Model: per_app owner_vision_body or env SIFTA_OWNER_VISION_MODEL."
+        )
+        self._vision_body_btn.clicked.connect(self._on_vision_body_probe_click)
+        body_vis.addWidget(self._vision_body_btn)
+        body_vis.addStretch()
+        layout.addLayout(body_vis)
+
         # ── Video canvas (full width — ticker overlay is ON the canvas) ─────
         split = QSplitter(Qt.Orientation.Horizontal)
         self._splitter = split
@@ -1117,9 +1180,13 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             except Exception:
                 pass
             return
+        
+        # Insert explicit OFF state so the camera doesn't turn on automatically without Alice's consent.
+        self._cam_combo.addItem("(Eye Closed - Off)", "OFF")
+        
         for d in ranked:
             self._cam_combo.addItem(d.description(), d.id())
-        # Restore prior pick if still present, else default to top of ranked list.
+        # Restore prior pick if still present, else default to OFF (index 0).
         restored = False
         if current_id is not None:
             pos = self._cam_combo.findData(current_id)
@@ -1135,6 +1202,43 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         dev_id = self._cam_combo.currentData()
         if dev_id is None:
             return
+        # Stop previous camera, if any.
+        old_camera = self._camera
+        self._camera = None
+        if old_camera is not None:
+            try:
+                old_camera.stop()
+            except Exception:
+                pass
+            try:
+                self._session.setCamera(None)
+            except Exception:
+                pass
+            try:
+                old_camera.deleteLater()
+            except Exception:
+                pass
+                
+        if dev_id == "OFF":
+            self._canvas.set_device_label("(Eye Closed)")
+            self._canvas.set_error("Eye closed. Waiting for Alice's active gaze (saccade).")
+            self.set_status("Camera: OFF")
+            try:
+                from System.swarm_camera_target import write_target as _write_target
+                rec = _write_target(
+                    name="(Eye Closed - Off)",
+                    unique_id="OFF",
+                    writer="what_alice_sees_widget",
+                    respect_lease=False,
+                )
+                self._last_saccade_signature = (
+                    f"OFF|(Eye Closed - Off)|"
+                    f"{rec.get('index') if rec.get('index') is not None else ''}"
+                )
+            except Exception:
+                pass
+            return
+            
         # Locate the QCameraDevice with this id.
         target: Optional[QCameraDevice] = None
         for d in QMediaDevices.videoInputs():
@@ -1145,12 +1249,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             self._canvas.set_error("Selected camera disappeared. Click ↻ refresh.")
             return
 
-        # Stop previous camera, if any.
-        if self._camera is not None:
-            try:
-                self._camera.stop()
-            except Exception:
-                pass
+
 
         self._camera = QCamera(target, self)
         self._camera.errorOccurred.connect(self._on_camera_error)
@@ -1224,6 +1323,10 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self.set_status(summary)
 
         # ── Write to device_events.jsonl so Alice reads it ──────────────────
+        # Suppress iPhone continuity camera looping from spamming the ledger and dock
+        if "iphone" in camera_name.lower() or "desk view" in camera_name.lower():
+            return
+
         record = {
             "ts": time.time(),
             "kind": kind,                   # 'attached' | 'detached'
@@ -1315,8 +1418,11 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             from System.swarm_camera_target import read_target as _rt
             rec = _rt() or {}
             name = (rec.get("name") or "").strip()
+            uid = (rec.get("unique_id") or "").strip()
             # Shorten long names — macOS uses "Logit" prefix for Logitech hardware
-            if "FaceTime" in name or "MacBook" in name:
+            if uid == "OFF" or name == "(Eye Closed - Off)":
+                short = "Closed"
+            elif "FaceTime" in name or "MacBook" in name:
                 short = "MacBook Pro"
             elif "Logitech" in name or "Logit" in name or ("USB Camera" in name and "VID:1133" in name):
                 short = "Logitech USB"
@@ -1344,7 +1450,8 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             )
 
     def _on_pause_toggled(self, paused: bool) -> None:
-        # Buttons removed — camera is always live
+        # Manual pause buttons were removed; hardware routing is controlled by
+        # the active-eye target and explicit OFF state.
         pass
 
     def _on_frame_meta(self, w: int, h: int, sha8: str) -> None:
@@ -1371,6 +1478,37 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 self._canvas.set_chyron(f"🔒 SENSOR LOCKED: Receiving live {w}x{h} frames from {curr_dev}", QColor(100, 255, 100))
             except Exception:
                 pass
+
+    def _on_vision_body_probe_click(self) -> None:
+        if self._vision_body_worker is not None and self._vision_body_worker.isRunning():
+            return
+        png, sha8 = self._canvas.snapshot_png_bytes()
+        if not png:
+            QMessageBox.warning(
+                self,
+                "No frame",
+                "Wait for a live camera frame before logging a vision body_check.",
+            )
+            return
+        self._vision_body_btn.setEnabled(False)
+        w = _VisionBodyProbeWorker(png, sha8)
+        self._vision_body_worker = w
+        w.done.connect(self._on_vision_body_probe_done)
+        w.failed.connect(self._on_vision_body_probe_failed)
+        w.finished.connect(lambda: self._vision_body_btn.setEnabled(True))
+        w.finished.connect(w.deleteLater)
+        w.start()
+
+    def _on_vision_body_probe_done(self, out: dict) -> None:
+        raw = (out.get("raw") or "").strip()
+        QMessageBox.information(
+            self,
+            "Vision body_check",
+            "Logged to owner_body_events.jsonl.\n\nModel reply:\n" + raw[:800],
+        )
+
+    def _on_vision_body_probe_failed(self, err: str) -> None:
+        QMessageBox.warning(self, "Vision body_check failed", err)
 
     # ── Stigmergic Face Detection ───────────────────────────────────────────
     def _probe_face_detection(self) -> None:

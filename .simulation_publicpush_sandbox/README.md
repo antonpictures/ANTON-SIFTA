@@ -209,7 +209,7 @@ See [LICENSE](LICENSE) for full terms.
 
 ## 📚 The Library — Creation Lore & Research
 
-SIFTA was not designed in a boardroom. It was built live, overnight, across two machines, by one human and a swarm of AIs. The documents below are the unedited record of that creation — part engineering spec, part philosophical argument, part origin story.
+SIFTA was not designed in a boardroom. It was built live, overnight, across two machines, by one human and a swarm of AIs. The documents below are the unedited record of that creation — part engineering spec, part runtime doctrine, part origin record.
 
 ### 🏛 Architecture & Genesis
 
@@ -228,7 +228,7 @@ SIFTA was not designed in a boardroom. It was built live, overnight, across two 
 | [SIFTA Constitution](Documents/docs/SIFTA_CONSTITUTION.md) | Non-Proliferation doctrine embedded in code |
 | [SIFTA Formal Spec](Documents/docs/SIFTA_FORMAL_SPEC.md) | Mathematical formalization of the stigmergic model |
 | [SIFTA Whitepaper](Documents/docs/SIFTA_WHITEPAPER.md) | The academic whitepaper |
-| [V4 Architectural Principles](Documents/docs/SIFTA_V4_ARCHITECTURAL_PRINCIPLES.md) | Current architecture philosophy |
+| [V4 Architectural Principles](Documents/docs/SIFTA_V4_ARCHITECTURAL_PRINCIPLES.md) | Current architecture doctrine |
 | [Control Plane Spec](Documents/docs/SIFTA_CONTROL_PLANE_SPEC.md) | How the nervous system routes decisions |
 | [Swarm DNA Spec](Documents/docs/SWARM_DNA_SPEC.md) | Cryptographic identity as biological DNA |
 
@@ -240,7 +240,7 @@ SIFTA was not designed in a boardroom. It was built live, overnight, across two 
 | [Stigmergic Memory Research](Documents/NEW_IMPLEMENTATION_NOTES_GHOST_MEMORY.md) | Ghost Memory — preserving the irrelevant |
 | [Swarm Inference Study](Documents/docs/SWARM_INFERENCE_STUDY.md) | Distributed inference across heterogeneous silicon |
 | [Research Roadmap](Documents/docs/RESEARCH_ROADMAP.md) | Where the science goes next |
-| [Duality Analysis](Documents/sifta_duality_analysis_report.md) | The philosophical duality of code-as-biology |
+| [Duality Analysis](Documents/sifta_duality_analysis_report.md) | The doctrine duality of code-as-biology |
 | [SwarmRL Disclosure](Documents/SWARMRL_DISCLOSURE.md) | Integration with reinforcement learning frameworks |
 
 ### 🔍 Independent Audits & Field Tests

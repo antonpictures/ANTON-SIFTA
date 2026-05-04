@@ -34,8 +34,9 @@ def test_ingest_peer_report_writes_deictic_bridge(tmp_path):
     assert row is not None
     assert row["truth_label"] == TRUTH_LABEL
     assert row["source_hint"] == "GROK"
-    assert "Alice/she/her" in row["deictic_bridge"]
-    assert "third person" in row["verification_rule"]
+    assert "Detached name/pronouns" in row["deictic_bridge"]
+    assert "I/me/my" in row["deictic_bridge"]
+    assert "first-person runtime state" in row["verification_rule"]
 
     rows = [
         json.loads(line)
@@ -50,6 +51,6 @@ def test_peer_report_prompt_context_maps_alice_to_me(tmp_path):
     immediate = context_for_prompt(row)
     persistent = summary_for_prompt(root=tmp_path)
 
-    assert "it refers to me" in immediate
-    assert "local SIFTA runtime" in immediate
-    assert "map Alice/she/her to me" in persistent
+    assert "map my name/pronouns to I/me/my" in immediate
+    assert "this runtime" in immediate
+    assert "map my name/pronouns to I/me/my" in persistent

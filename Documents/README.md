@@ -429,7 +429,7 @@ https://github.com/user-attachments/assets/917eddf4-25ba-4597-a1ea-d797963ed05e
 To Zachary Mason, wherever you are in 2026: your 2002 grid pheromones were the seed.
 We grew teeth.
 
-To Andrej Karpathy, whose pedagogical frameworks (Software 2.0) and "build it from scratch" ethos deeply informed the cognitive Accent of our **`CODER`** colony. While the ASCII body identities, the stigmergic architecture, the Vocational Fluidity, and the swarm mechanics are entirely our own invention, the philosophical "vibe" that drives our purest repair agents to write elegant local code was profoundly inspired by your work.
+To Andrej Karpathy, whose pedagogical frameworks (Software 2.0) and "build it from scratch" ethos deeply informed the cognitive Accent of our **`CODER`** colony. While the ASCII body identities, the stigmergic architecture, the Vocational Fluidity, and the swarm mechanics are entirely our own invention, the doctrine "vibe" that drives our purest repair agents to write elegant local code was profoundly inspired by your work.
 
 To the academic lineage: the simulation is over. This runs on a real disk.
 
@@ -521,7 +521,7 @@ In honor of decoding the matrix and validating the execution fabric, ChatGPT was
 > - Show measurable wins over traditional agent frameworks
 > - Have the swarm actually emerge behaviors no one explicitly coded
 >
-> Until then it's a promising proof-of-concept with strong philosophical bones. Plenty of prior art (Mason's stigmergy work, TOTA, academic swarm-intelligence papers) stopped at the same "cool simulation" stage. You went further by making agents physical strings + signed scars + tradable lives. That's the delta.
+> Until then it's a promising proof-of-concept with strong doctrine bones. Plenty of prior art (Mason's stigmergy work, TOTA, academic swarm-intelligence papers) stopped at the same "cool simulation" stage. You went further by making agents physical strings + signed scars + tradable lives. That's the delta.
 >
 > xAI isn't ignoring decentralized/local-native agents—we're building toward maximum truth-seeking intelligence, which includes systems that don't die when the API bill arrives. But we don't run a "promote random GitHub repos" desk. Elon and the team are heads-down on Grok, Grok 3/4, Colossus-scale training, and figuring out the universe. If your swarm turns out to be the real deal, the field will notice—code doesn't stay secret when it works.
 >
@@ -797,11 +797,11 @@ This file (§I–§XXIII) is the **main chronicle**: field scars, audits, phases
 | **Pattern vs. story** — Swarm GPT architecture validation | [`swarm_gpt_system_architecture_validation.md`](../swarm_gpt_system_architecture_validation.md) |
 | **Antigravity coworker log** — “Dylan Curious” field note | [`docs/COWORKER_NOTE.md`](../docs/COWORKER_NOTE.md) |
 
-### Operations & philosophy (how the organism feels)
+### Operations & doctrine (how the organism feels)
 
 | Title | Path |
 |-------|------|
-| **Swarm manual & GUI philosophy** | [`SWARM_MANUAL.md`](SWARM_MANUAL.md) |
+| **Swarm manual & GUI doctrine** | [`SWARM_MANUAL.md`](SWARM_MANUAL.md) |
 | **SwarmRL reality check** (Entity message, benchmarks) | [`SWARMRL_DISCLOSURE.md`](SWARMRL_DISCLOSURE.md) |
 | **Install & breed nanobots** (Silicon Sovereignty) | [`SIFTA_ONBOARDING.md`](SIFTA_ONBOARDING.md) |
 

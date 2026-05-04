@@ -80,7 +80,7 @@ def recommended_entropy_schedule(
     Single dict for telemetry / Flutter — keeps JSON self-describing.
 
     `schedule` selects the law; defaults match Gemini-style exponential decay
-    at decay_rate=2, c2_max=0.01 (visual parity with browser lab, not mysticism).
+    at decay_rate=2, c2_max=0.01 (visual parity with browser lab, not unreceipted claims).
     """
     lam = _clamp01(lambda_norm)
     if schedule == "linear_lambda":

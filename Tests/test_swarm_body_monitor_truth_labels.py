@@ -18,21 +18,132 @@ def test_all_organs_emit_truth_labels():
         assert organ["truth_note"]
 
 
-def test_internal_oscillator_organs_are_marked_demo():
+def test_summary_for_alice_surfaces_declared_organ_census():
     state = body.OrganEngine().tick_all()
-    # Fly is excluded: it reads from active_window.jsonl (REAL when present, DEMO when absent)
-    demo_organs = {
-        "field",
-        "rl",
+    summary = body.summary_for_alice(state)
+
+    assert "STIGMERGIC ORGAN FIELD" in summary
+    assert "truth_counts:" in summary
+    assert "declared organs only" in summary
+    for key, *_ in body.ORGAN_DEFS:
+        assert f"{key}:" in summary
+
+
+def test_round4_organs_are_unknown_when_ledgers_are_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(body, "_STATE", tmp_path)
+    state = body.OrganEngine().tick_all()
+    round4_organs = {
         "octopus",
         "cuttlefish",
         "electric",
         "honeybee",
     }
 
-    for key in demo_organs:
-        assert state[key]["truth_status"] == body.TRUTH_DEMO
-        assert state[key]["truth_source"] == body.DEMO_SOURCE
+    for key in round4_organs:
+        assert state[key]["truth_status"] == body.TRUTH_UNKNOWN
+        assert state[key]["truth_source"] == "missing_ledger"
+
+
+def test_field_and_rl_are_real_when_stigmergic_ledgers_exist(tmp_path, monkeypatch):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "td_q_table.json").write_text('{"s||listen": 0.25}', encoding="utf-8")
+    (state_dir / "td_receipts.jsonl").write_text(
+        '{"ts": 9999999999, "td_error": 0.12, "action": "listen"}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "repair_log.jsonl").write_text(
+        '{"ts": 9999999999, "ok": true, "kind": "test_repair"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(body, "_STATE", state_dir)
+    monkeypatch.setattr(body, "_REPO", tmp_path)
+
+    state = body.OrganEngine().tick_all()
+
+    assert state["field"]["truth_status"] == body.TRUTH_REAL
+    assert state["field"]["truth_source"] == "live_ledger"
+    assert state["rl"]["truth_status"] == body.TRUTH_REAL
+    assert state["rl"]["truth_source"] == "live_ledger"
+
+
+def test_field_prefers_high_dimensional_organ_vector(tmp_path, monkeypatch):
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "organ_field_vector.jsonl").write_text(
+        '{"ts": 9999999999, "payload": {"dimension_count": 49, "field_energy": 0.42, "coupling_edge_count": 31, "coupling_density": 0.633, "declared_organ_count": 17, "connected_organ_count": 17, "swimmer_count": 45, "unknown_vector_count": 2, "low_resolution_vector_count": 9, "weak_vector_count": 1, "field_completeness": 0.882352}}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(body, "_STATE", state_dir)
+    monkeypatch.setattr(body, "_REPO", tmp_path)
+
+    state = body.OrganEngine().tick_all()
+
+    assert state["field"]["truth_status"] == body.TRUTH_REAL
+    assert state["field"]["truth_source"] == "live_ledger"
+    assert state["field"]["value"] == 0.42
+    assert "dims=49" in state["field"]["label"]
+    assert "edges=31" in state["field"]["label"]
+    assert "organs=17/17" in state["field"]["label"]
+    assert "unknowns=2" in state["field"]["label"]
+    assert "density=0.633" in state["field"]["sub"]
+    assert "swimmers=45" in state["field"]["sub"]
+    assert "lowres=9" in state["field"]["sub"]
+    assert "weak=1" in state["field"]["sub"]
+    assert "completeness=0.882" in state["field"]["sub"]
+
+
+def test_round4_organs_are_real_when_ledgers_exist(tmp_path, monkeypatch):
+    monkeypatch.setattr(body, "_STATE", tmp_path)
+    (tmp_path / "motor_bus.jsonl").write_text(
+        '{"ts": 9999999999, "coherence": 0.88, "arms_active": 8}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "cuttlefish_display.jsonl").write_text(
+        '{"ts": 9999999999, "contrast": 0.71, "pattern": "mottle"}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "electric_field.jsonl").write_text(
+        '{"ts": 9999999999, "phase": 0.2, "jar_active": true}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "waggle_quorum.jsonl").write_text(
+        '{"ts": 9999999999, "angle": 1.1, "vigor": 0.93}\n',
+        encoding="utf-8",
+    )
+
+    state = body.OrganEngine().tick_all()
+
+    for key in ("octopus", "cuttlefish", "electric", "honeybee"):
+        assert state[key]["truth_status"] == body.TRUTH_REAL
+        assert state[key]["truth_source"] == "live_ledger"
+
+
+def test_round4_organs_read_organ_event_payloads(tmp_path, monkeypatch):
+    monkeypatch.setattr(body, "_STATE", tmp_path)
+    (tmp_path / "motor_bus.jsonl").write_text(
+        '{"ts": 9999999999, "schema": "ORGAN_EVENT_V1", "payload": {"coherence": 0.77, "arms_active": 8}}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "cuttlefish_display.jsonl").write_text(
+        '{"ts": 9999999999, "schema": "ORGAN_EVENT_V1", "payload": {"contrast": 0.66, "pattern": "mottle"}}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "electric_field.jsonl").write_text(
+        '{"ts": 9999999999, "schema": "ORGAN_EVENT_V1", "payload": {"phase": 0.55, "jar_active": true}}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "waggle_quorum.jsonl").write_text(
+        '{"ts": 9999999999, "schema": "ORGAN_EVENT_V1", "payload": {"angle": 0.44, "vigor": 0.93}}\n',
+        encoding="utf-8",
+    )
+
+    state = body.OrganEngine().tick_all()
+
+    assert "coherence=0.7700" in state["octopus"]["label"]
+    assert "contrast=0.660" in state["cuttlefish"]["label"]
+    assert "φ=0.5500" in state["electric"]["label"]
+    assert "θ=25.2°" in state["honeybee"]["label"]
 
 
 def test_fly_efference_is_real_when_active_window_exists():
@@ -142,7 +253,7 @@ def test_predator_v7_organs_use_real_ledger_paths_when_sources_exist(tmp_path, m
         '{"ts": 9999999999, "locked": true, "reason": "lock_success"}',
         encoding="utf-8",
     )
-    (state_dir / "swarm_action_selector_trace.jsonl").write_text(
+    (state_dir / "basal_ganglia_selections.jsonl").write_text(
         '{"ts": 9999999999, "winner": "ENGAGE"}\n',
         encoding="utf-8",
     )
