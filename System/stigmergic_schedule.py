@@ -353,7 +353,7 @@ def add_task(
             ok=True,
             status="WRITTEN",
             row=row,
-            truth_note="Alice wrote a schedule item to .sifta_state/stigmergic_schedule.jsonl",
+            truth_note="I wrote a schedule item to .sifta_state/stigmergic_schedule.jsonl",
         )
     return row
 
@@ -450,7 +450,7 @@ def summary_for_alice(limit: int = 6, path: Path = _SCHEDULE) -> str:
         return "STIGMERGIC SCHEDULE:\n- no pending schedule entries visible in .sifta_state/stigmergic_schedule.jsonl"
     lines = [
         "STIGMERGIC SCHEDULE:",
-        "- source=.sifta_state/stigmergic_schedule.jsonl; this is Alice's schedule memory, not a guess.",
+        "- source=.sifta_state/stigmergic_schedule.jsonl; this is my schedule memory, not a guess.",
     ]
     for row in tasks:
         text = str(row.get("text") or "").strip()

@@ -153,7 +153,7 @@ def summary_for_prompt(*, root: Optional[Path] = None) -> str:
     if not row.get("triggered"):
         return ""
     return (
-        "CONVERSATION SHAPE RECEIPT: last Alice output looked non-human "
+        "CONVERSATION SHAPE RECEIPT: my last output looked non-human "
         f"(score={row.get('non_human_shape_score')}); answer shorter and more room-natural next turn."
     )
 
