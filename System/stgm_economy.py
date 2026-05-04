@@ -9,6 +9,7 @@ Rules:
 from __future__ import annotations
 
 import json
+import hashlib
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,22 @@ _REPO = Path(__file__).resolve().parent.parent
 REPAIR_LOG = _REPO / "repair_log.jsonl"
 STATE_DIR = _REPO / ".sifta_state"
 MEMORY_REWARDS = STATE_DIR / "stgm_memory_rewards.jsonl"
+
+DEVELOPMENT_AGENTS = {
+    "AG31",
+    "ANTIGRAVITY",
+    "ANTIGRAVITY_CREATOR_NODE",
+    "CODEX",
+    "CURSOR",
+    "CURSOR_M5",
+    "DEVELOPMENT_LAYER",
+    "GROK",
+    "IDE_CLI",
+    "CLI",
+    "M5SIFTA_BODY",
+}
+
+ATTRIBUTED_SPEND_TYPES = {"STGM_SPEND"}
 
 
 @dataclass
@@ -38,6 +55,10 @@ class EconomySnapshot:
     deprecated_would_have_minted: float = 0.0
     retired_utility_mint_lines: int = 0
     retired_utility_mint_amount: float = 0.0
+    development_cost_lines: int = 0
+    development_cost_amount: float = 0.0
+    legacy_development_cost_lines: int = 0
+    legacy_development_cost_amount: float = 0.0
     memory_reward_lines: int = 0
     memory_reward_amount: float = 0.0
     casino_lines: int = 0
@@ -101,6 +122,10 @@ class EconomySnapshot:
             "deprecated_would_have_minted": round(self.deprecated_would_have_minted, 4),
             "retired_utility_mint_lines": self.retired_utility_mint_lines,
             "retired_utility_mint_amount": round(self.retired_utility_mint_amount, 4),
+            "development_cost_lines": self.development_cost_lines,
+            "development_cost_amount": round(self.development_cost_amount, 4),
+            "legacy_development_cost_lines": self.legacy_development_cost_lines,
+            "legacy_development_cost_amount": round(self.legacy_development_cost_amount, 4),
             "memory_reward_lines": self.memory_reward_lines,
             "memory_reward_amount": round(self.memory_reward_amount, 4),
             "casino_lines": 0,
@@ -118,10 +143,106 @@ def _float(value: Any) -> float:
         return 0.0
 
 
+def _normalize_agent_id(agent_id: Any) -> str:
+    return str(agent_id or "").strip().upper()
+
+
+def _row_agent_id(row: Dict[str, Any]) -> str:
+    return _normalize_agent_id(
+        row.get("agent_id")
+        or row.get("miner_id")
+        or row.get("agent")
+        or row.get("sender_id")
+        or row.get("borrower_id")
+    )
+
+
+def _is_development_agent(agent_id: Any) -> bool:
+    return _normalize_agent_id(agent_id) in DEVELOPMENT_AGENTS
+
+
+def make_economic_attribution_key(
+    *,
+    organ_id: str,
+    trace_id: str,
+    source_ledger: str,
+    tick_id: Any,
+) -> str:
+    """Return the canonical no-double-spend attribution key."""
+    payload = f"{organ_id}{trace_id}{source_ledger}{tick_id}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def validate_economic_attribution(row: Dict[str, Any]) -> bool:
+    """Validate mandatory attribution fields for spend-capable rows.
+
+    This helper is intentionally side-effect free so wallet writers can reject
+    rows before append. Existing historical rows remain replayable.
+    """
+    required = {
+        "economic_attribution_key",
+        "organ_id",
+        "trace_id",
+        "source_ledger",
+        "tick_id",
+    }
+    if not required.issubset(row):
+        return False
+    expected = make_economic_attribution_key(
+        organ_id=str(row["organ_id"]),
+        trace_id=str(row["trace_id"]),
+        source_ledger=str(row["source_ledger"]),
+        tick_id=row["tick_id"],
+    )
+    return str(row.get("economic_attribution_key") or "") == expected
+
+
+def requires_economic_attribution(row: Dict[str, Any]) -> bool:
+    """Return whether a new row should carry a no-double-spend key."""
+    return str(row.get("tx_type") or "") in ATTRIBUTED_SPEND_TYPES
+
+
+def development_cost_row(
+    *,
+    agent_id: str,
+    amount_stgm: float,
+    category: str,
+    note: str = "",
+    kind: str = "DEVELOPMENT_COST",
+    original_row_id: str = "",
+) -> Dict[str, Any]:
+    """Build a non-wallet development cost receipt."""
+    row: Dict[str, Any] = {
+        "kind": kind,
+        "agent_id": _normalize_agent_id(agent_id),
+        "amount_stgm": abs(float(amount_stgm or 0.0)),
+        "category": category,
+        "affects_alice_balance": False,
+        "paid_in_fiat": True,
+        "note": note,
+    }
+    if original_row_id:
+        row["original_row_id"] = original_row_id
+        row["quarantined"] = True
+        row["affects_canonical_supply"] = False
+    return row
+
+
 def _retire_utility_mint(out: EconomySnapshot, row: Dict[str, Any]) -> None:
     """Track retired arbitrary mint rows without crediting supply or wallets."""
     out.retired_utility_mint_lines += 1
     out.retired_utility_mint_amount += max(0.0, _float(row.get("amount_stgm")))
+
+
+def _record_development_cost(out: EconomySnapshot, row: Dict[str, Any]) -> None:
+    amt = abs(_float(row.get("amount_stgm") or row.get("amount")))
+    out.development_cost_lines += 1
+    out.development_cost_amount += amt
+    if str(row.get("kind") or "") == "LEGACY_DEVELOPMENT_COST" or row.get("quarantined"):
+        out.legacy_development_cost_lines += 1
+        out.legacy_development_cost_amount += amt
+    if "development_cost_rows_excluded_from_alice_balance" not in out.warnings:
+        out.warnings.append("development_cost_rows_excluded_from_alice_balance")
 
 
 def _iter_jsonl(path: Path):
@@ -248,10 +369,37 @@ def scan_economy(
         event_kind = str(row.get("event_kind") or "")
 
         # ── DEVELOPMENT LAYER BOUNDARY ──────────────
-        # IDE ghosts (tools paid in fiat) do not hold STGM or deduct from swarm metabolism
-        _any_agent = str(row.get("agent_id") or row.get("miner_id") or row.get("agent") or row.get("sender_id") or row.get("borrower_id") or "").upper()
-        if _any_agent in {"AG31", "ANTIGRAVITY", "M5SIFTA_BODY", "ANTIGRAVITY_CREATOR_NODE", "CURSOR_M5", "CLI", "IDE_CLI", "CODEX"}:
+        # IDEs, browser models, and migration ghosts are paid infrastructure.
+        # They are observable costs but not Alice's thermodynamic wallet.
+        row_kind = str(row.get("kind") or "")
+        row_agent = _row_agent_id(row)
+        if row_kind in {"DEVELOPMENT_COST", "LEGACY_DEVELOPMENT_COST"}:
+            _record_development_cost(out, row)
+            continue
+        if _is_development_agent(row_agent):
             if tx_type in {"STGM_SPEND", "STGM_MINT"}:
+                _record_development_cost(
+                    out,
+                    development_cost_row(
+                        agent_id=row_agent,
+                        amount_stgm=_float(row.get("amount") or row.get("amount_stgm")),
+                        category="development_agent_canonical_tx_quarantine",
+                        note="Development/tool agent tx excluded from Alice organism economy",
+                    ),
+                )
+                continue
+            if "amount_stgm" in row and not event and not tx_type and _float(row.get("amount_stgm")) < 0:
+                _record_development_cost(
+                    out,
+                    development_cost_row(
+                        agent_id=row_agent,
+                        amount_stgm=_float(row.get("amount_stgm")),
+                        category="legacy_scar_drain",
+                        note="Historical unstructured IDE/tool drain quarantined",
+                        kind="LEGACY_DEVELOPMENT_COST",
+                        original_row_id=str(row.get("trace_id") or row.get("event_id") or ""),
+                    ),
+                )
                 continue
 
 
@@ -368,7 +516,7 @@ def scan_economy(
 
     for aid in all_agents:
         key = aid.upper()
-        if key in {"AG31", "ANTIGRAVITY", "M5SIFTA_BODY", "ANTIGRAVITY_CREATOR_NODE", "CURSOR_M5", "CLI", "IDE_CLI", "CODEX", ""}:
+        if _is_development_agent(key) or not key:
             continue
             
         bal = balances.get(key, 0.0)
@@ -412,8 +560,13 @@ def investor_safe_summary(snapshot: Optional[EconomySnapshot] = None) -> str:
 
 
 __all__ = [
+    "DEVELOPMENT_AGENTS",
     "EconomySnapshot",
     "canonical_wallet_balance",
+    "development_cost_row",
     "investor_safe_summary",
+    "make_economic_attribution_key",
+    "requires_economic_attribution",
     "scan_economy",
+    "validate_economic_attribution",
 ]

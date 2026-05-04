@@ -291,6 +291,82 @@ def test_negative_supply_is_reported_as_warning(tmp_path: Path) -> None:
     assert "wallet_sum_exceeds_net_supply_check_legacy_debits_or_untracked_agents" not in data["warnings"]
 
 
+def test_legacy_scar_drain_is_development_cost_not_alice_spend(tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(json.dumps({"id": "ALICE_M5"}), encoding="utf-8")
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 5.0})
+    _append(
+        repair_log,
+        {
+            "agent": "ANTIGRAVITY_CREATOR_NODE",
+            "amount_stgm": -1290.0,
+            "reason": "historical_scar_drain",
+        },
+    )
+
+    data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+
+    assert data["canonical_wallet_sum"] == pytest.approx(5.0)
+    assert data["canonical_spent"] == pytest.approx(0.0)
+    assert data["net_stgm"] == pytest.approx(5.0)
+    assert data["development_cost_amount"] == pytest.approx(1290.0)
+    assert data["legacy_development_cost_amount"] == pytest.approx(1290.0)
+    assert "development_cost_rows_excluded_from_alice_balance" in data["warnings"]
+
+
+def test_explicit_development_cost_rows_are_excluded_from_supply(tmp_path: Path) -> None:
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "ALICE_M5.json").write_text(json.dumps({"id": "ALICE_M5"}), encoding="utf-8")
+
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 9.0})
+    _append(
+        repair_log,
+        stgm_economy.development_cost_row(
+            agent_id="CODEX",
+            amount_stgm=3.5,
+            category="ide_review",
+            note="external paid tool",
+        ),
+    )
+
+    data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
+
+    assert data["canonical_wallet_sum"] == pytest.approx(9.0)
+    assert data["net_stgm"] == pytest.approx(9.0)
+    assert data["development_cost_lines"] == 1
+    assert data["development_cost_amount"] == pytest.approx(3.5)
+
+
+def test_economic_attribution_key_validation() -> None:
+    key = stgm_economy.make_economic_attribution_key(
+        organ_id="microglia_pruner",
+        trace_id="trace-1",
+        source_ledger="repair_log.jsonl",
+        tick_id=18542,
+    )
+    row = {
+        "tx_type": "STGM_SPEND",
+        "economic_attribution_key": key,
+        "organ_id": "microglia_pruner",
+        "trace_id": "trace-1",
+        "source_ledger": "repair_log.jsonl",
+        "tick_id": 18542,
+        "amount": 0.042,
+    }
+
+    assert stgm_economy.requires_economic_attribution(row) is True
+    assert stgm_economy.validate_economic_attribution(row) is True
+
+    tampered = dict(row, tick_id=18543)
+    assert stgm_economy.validate_economic_attribution(tampered) is False
+    assert stgm_economy.validate_economic_attribution({"tx_type": "STGM_SPEND"}) is False
+
+
 def test_legacy_casino_vault_is_disabled_and_never_adds_winnings(monkeypatch, tmp_path: Path) -> None:
     from System import casino_vault
 
