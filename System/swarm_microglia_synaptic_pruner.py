@@ -582,22 +582,27 @@ def compute_two_signal_pressure(
         "activation_signal":    round(activation_signal, 4),
         "net_pruning_pressure": net,
         "net_signal":           net,
-        # Rich fractalkine fields (§10.14.25)
-        "fractalkine":          fractalkine,
-        "fractalkine_analog":   fractalkine,          # legacy alias
-        "stability_dwell_score": round(_dwell, 4),
-        "goal_alignment":       round(_goal, 4),
-        "owner_frustration":    round(_frustr, 4),
+        # Rich fractalkine fields (§10.14.25 + §10.14.28)
+        "fractalkine":            fractalkine,
+        "fractalkine_analog":     fractalkine,          # legacy alias
+        "il34_boost":             round(il34_boost, 4),
+        "resilience_floor":       round(resilience_floor, 4),
+        "fractalkine_overridden": fractalkine_overridden,
+        "stability_dwell_score":  round(_dwell, 4),
+        "goal_alignment":         round(_goal, 4),
+        "owner_frustration":      round(_frustr, 4),
         "clearance_net_threshold": round(net_delete_threshold, 4),
-        "net_clearance_bias":   round(net_clearance_bias, 4),
-        "clearance_bias_applied": bool(net_clearance_bias > 0.0),
-        "clearance_mode":       clearance_mode,
-        "stress_brake_applied": stress_brake_applied,
+        "net_clearance_bias":      round(net_clearance_bias, 4),
+        "clearance_bias_applied":  bool(net_clearance_bias > 0.0),
+        "clearance_mode":          clearance_mode,
+        "stress_brake_applied":    stress_brake_applied,
         **sleep_state,
         "provenance": (
             "Stevens2007Cell; Schafer2012Neuron; Jonsson2013NEJM; Griciuc2013Neuron; "
-            "Keren-Shaul2017Cell; Cardona2006NatNeurosci; Paolicelli2011Science; "
-            "Ransohoff2009Nature; Tononi&Cirelli2014Neuron"
+            "Keren-Shaul2017Cell; Deczkowska2018Cell; Bhatt2020NatCommun; "
+            "Cardona2006NatNeurosci; Paolicelli2011Science; Ransohoff2009Nature; "
+            "Wang2012JExpMed(IL-34); Bialas&Stevens2013Neuron(C1q/C3); "
+            "Tononi&Cirelli2014Neuron"
         ),
     }
 
