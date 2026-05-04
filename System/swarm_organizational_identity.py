@@ -547,6 +547,30 @@ def _latest_revival_assessment(root: Optional[Path] = None) -> Optional[Dict[str
     return None
 
 
+def latest_identity_repair_context(root: Optional[Path] = None) -> Dict[str, float]:
+    """Read-only identity context for repair organs.
+
+    Repair paths must not call ``rehydrate_identity()`` on every speech turn
+    because rehydration writes BOOT rows. This helper only tails the latest
+    revival assessment and returns conservative defaults when no row exists.
+    """
+
+    row = _latest_revival_assessment(root)
+    details = (row or {}).get("event", {}).get("details", {})
+    try:
+        conservative_strength = float(details.get("conservative_strength", 0.0))
+    except Exception:
+        conservative_strength = 0.0
+    try:
+        proto_self_alignment = float(details.get("proto_self_alignment", 1.0))
+    except Exception:
+        proto_self_alignment = 1.0
+    return {
+        "conservative_strength": round(max(0.0, min(1.0, conservative_strength)), 4),
+        "proto_self_alignment": round(max(0.0, min(1.0, proto_self_alignment)), 4),
+    }
+
+
 def summary_for_prompt(root: Optional[Path] = None) -> str:
     """
     Compact live-context summary for Alice.
@@ -590,6 +614,7 @@ __all__ = [
     "compute_revival_score",
     "record_continuity_event",
     "rehydrate_identity",
+    "latest_identity_repair_context",
     "summary_for_prompt",
     "build_current_internal_state_vector",
     "snapshot_proto_self",

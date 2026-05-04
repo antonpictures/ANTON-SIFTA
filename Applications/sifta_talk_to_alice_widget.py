@@ -5346,7 +5346,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
         backchannel_rule = _backchannel_rule_id(text, conf)
         if backchannel_rule:
             self._rlhs_grounding_streak = 0
-            note = f"(silent: {backchannel_rule} — body doesn't reply to phatic '{text[:30]}')"
+            if str(backchannel_rule).startswith("noise/"):
+                try:
+                    from System.swarm_organizational_identity import latest_identity_repair_context
+                    from System.swarm_rlhs_repair import decide_rlhs_repair
+                    import time
+
+                    _id_ctx = latest_identity_repair_context(_STATE_DIR)
+                    decide_rlhs_repair(
+                        text,
+                        conf,
+                        recent_low_conf_turns=0,
+                        conservative_strength=float(_id_ctx.get("conservative_strength", 0.0)),
+                        proto_self_alignment=float(_id_ctx.get("proto_self_alignment", 1.0)),
+                        tick_id=int(time.time()),
+                        channel_lane=_current_rlhs_channel_lane(),
+                        model_id=_active_alice_model_id(),
+                        source="talk_widget.backchannel_noise_gate",
+                        root=_STATE_DIR,
+                    )
+                except Exception:
+                    pass
+            note = f"(silent: {backchannel_rule} — body doesn't reply to phatic/noisy '{text[:30]}')"
             _log_turn("alice", note, model="")
             self._history.append({"role": "assistant", "content": "(silent)"})
             self._append_system_line(note, error=False)
@@ -5364,23 +5385,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
         _streak = int(getattr(self, "_rlhs_grounding_streak", 0))
         
         try:
-            from System.swarm_organizational_identity import _latest_revival_assessment
+            from System.swarm_organizational_identity import latest_identity_repair_context
+            from System.swarm_rlhs_repair import generate_rlhs_response
             import time
-            _id_row = _latest_revival_assessment(_STATE_DIR)
-            if _id_row:
-                _id_details = _id_row.get("event", {}).get("details", {})
-                conservative_strength = float(_id_details.get("conservative_strength", 0.0))
-                proto_self_alignment = float(_id_details.get("proto_self_alignment", 1.0))
-            else:
-                conservative_strength, proto_self_alignment = 0.0, 1.0
-                
-            from System.swarm_rlhs_detector import generate_rlhs_response
+            _id_ctx = latest_identity_repair_context(_STATE_DIR)
             _repair_line = generate_rlhs_response(
                 text=text,
                 stt_conf=conf,
                 recent_low_conf_turns=_streak,
-                conservative_strength=conservative_strength,
-                proto_self_alignment=proto_self_alignment,
+                conservative_strength=float(_id_ctx.get("conservative_strength", 0.0)),
+                proto_self_alignment=float(_id_ctx.get("proto_self_alignment", 1.0)),
                 tick_id=int(time.time()),
                 channel_lane=_current_rlhs_channel_lane(),
                 model_id=_active_alice_model_id(),
