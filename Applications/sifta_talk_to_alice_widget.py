@@ -1527,6 +1527,15 @@ def _current_system_prompt(
         parts.append(_ocs_prompt)
 
     try:
+        from System.swarm_owner_allostasis import format_owner_allostasis_for_prompt
+
+        _owner_allostasis = format_owner_allostasis_for_prompt().strip()
+        if _owner_allostasis:
+            parts.append(_owner_allostasis)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_replay_job import summary_for_prompt as _replay_digest_for_prompt
         from System.swarm_replay_policy_hook import (
             apply_replay_bias as _apply_replay_bias,
