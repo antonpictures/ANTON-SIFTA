@@ -1604,6 +1604,14 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_organizational_identity import summary_for_prompt as _org_identity_summary
+        _org_id = _org_identity_summary().strip()
+        if _org_id:
+            parts.append(_org_id)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_active_inference_world_model import summary_for_prompt as _wm_summary
         _wm = _wm_summary().strip()
         if _wm:

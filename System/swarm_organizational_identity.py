@@ -321,6 +321,50 @@ def rehydrate_identity(
         "recommended_genome_blend": round(recommended_genome_blend, 4)
     }
 
+
+def _latest_revival_assessment(root: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    for row in reversed(_all_identity_rows(root)):
+        if row.get("kind") == "REVIVAL_ASSESSMENT":
+            return row
+    return None
+
+
+def summary_for_prompt(root: Optional[Path] = None) -> str:
+    """
+    Compact live-context summary for Alice.
+
+    This is intentionally read-only: prompt construction must not append boot rows
+    on every inference. body_brain_tick/boot paths own rehydration writes.
+    """
+    row = _latest_revival_assessment(root)
+    if not row:
+        return ""
+
+    continuity = row.get("continuity") or {}
+    event_details = (row.get("event") or {}).get("details") or {}
+    personality = row.get("personality_vector") or {}
+    anchor = str(row.get("identity_anchor", "unknown_anchor"))
+    anchor_short = anchor[:12] if anchor else "unknown"
+    revival_score = float(continuity.get("revival_score", 0.0) or 0.0)
+    conservative_mode = bool(event_details.get("conservative_mode", False))
+    blend = float(event_details.get("recommended_genome_blend", 1.0) or 1.0)
+    gap_ticks = int(float(continuity.get("gap_duration_ticks", 0) or 0))
+
+    lines = [
+        "ORGANIZATIONAL IDENTITY CONTINUITY:",
+        f"- identity_anchor: {anchor_short}... | revival_score={revival_score:.3f} | conservative_mode={conservative_mode}",
+        f"- gap_ticks={gap_ticks} | recommended_genome_blend={blend:.3f}",
+    ]
+    genome_hash = personality.get("genome_row_hash")
+    if genome_hash:
+        lines.append(f"- current_genome_hash: {str(genome_hash)[:12]}...")
+    if personality.get("recent_regimes"):
+        regimes = ", ".join(str(x) for x in personality.get("recent_regimes", [])[:5])
+        lines.append(f"- recent_metacog_regimes: {regimes}")
+    if conservative_mode:
+        lines.append("- boot policy: speak and act cautiously until continuity recalibrates.")
+    return "\n".join(lines)
+
 __all__ = [
     "compute_identity_anchor",
     "snapshot_personality",
@@ -328,4 +372,5 @@ __all__ = [
     "compute_revival_score",
     "record_continuity_event",
     "rehydrate_identity",
+    "summary_for_prompt",
 ]

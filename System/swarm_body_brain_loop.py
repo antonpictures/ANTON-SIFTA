@@ -532,6 +532,29 @@ class SwarmPhysiology:
         except Exception:
             logger.debug("Active causal prober revert sweep skipped (non-fatal)")
 
+        # 0c. Organizational Identity Rehydration (Priority #1)
+        # Runs once per body tick so long gaps / genome drift can temporarily
+        # tighten probing and pruning until the organism recalibrates.
+        _identity_receipt: Dict[str, Any] = {
+            "revival_score": 1.0,
+            "conservative_mode": False,
+            "recommended_genome_blend": 1.0,
+        }
+        try:
+            from System.swarm_organizational_identity import rehydrate_identity
+            _identity_receipt = rehydrate_identity(
+                root=_STATE_DIR,
+                current_tick=causal_probe_tick if causal_probe_tick is not None else int(time.time()),
+            )
+            if _identity_receipt.get("conservative_mode"):
+                logger.warning(
+                    "[Identity] conservative_mode revival=%.3f blend=%.3f",
+                    float(_identity_receipt.get("revival_score", 0.0) or 0.0),
+                    float(_identity_receipt.get("recommended_genome_blend", 1.0) or 1.0),
+                )
+        except Exception:
+            logger.debug("Organizational identity rehydration skipped (non-fatal)")
+
         # 0b. Event 110 — Reset Recovery Immunity (post-reset wound scan)
         reset_recovery: Optional[Dict[str, Any]] = None
         if _RESET_RECOVERY_AVAILABLE:
@@ -1069,6 +1092,9 @@ class SwarmPhysiology:
                 _probe_threshold += min(0.08, abs(_valence) * 0.08)
             elif _valence >= 0.20:
                 _probe_threshold -= min(0.04, _valence * 0.04)
+            if bool(_identity_receipt.get("conservative_mode", False)):
+                _revival = float(_identity_receipt.get("revival_score", 1.0) or 1.0)
+                _probe_threshold += min(0.20, max(0.0, 1.0 - _revival) * 0.25)
             _probe_threshold = min(0.85, max(0.15, _probe_threshold))
 
             # Poll biological stress state (§10.14.28 integration)
@@ -1168,14 +1194,24 @@ class SwarmPhysiology:
                         _owner_frustr = float(
                             (_tom_receipt.get("owner_state") or {}).get("frustration", 0.0) or 0.0
                         )
+                        _identity_conservative = bool(_identity_receipt.get("conservative_mode", False))
+                        _identity_revival = float(_identity_receipt.get("revival_score", 1.0) or 1.0)
+                        _max_prunes = _clamp_overrides.get("max_prunes_override")
+                        if _identity_conservative:
+                            _max_prunes = 0
+                        _pruning_conservatism = float(
+                            _tom_receipt.get("pruning_conservatism", 0.0) or 0.0
+                        )
+                        if _identity_conservative:
+                            _pruning_conservatism += min(0.5, max(0.0, 1.0 - _identity_revival) * 0.5)
                         _microglia.prune(
                             _candidates,
                             ledger_type="replay",
                             stability_ok=_stability_ok,
-                            max_prunes_override=_clamp_overrides.get("max_prunes_override"),
+                            max_prunes_override=_max_prunes,
                             tail_lines_read=_tail_take,
                             # Two-signal inhibition (Griciuc 2013 CD33)
-                            pruning_conservatism=float(_tom_receipt.get("pruning_conservatism", 0.0) or 0.0),
+                            pruning_conservatism=_pruning_conservatism,
                             clamp_level=_clamp_lv,
                             na_level=float(
                                 _lc_na_receipt.get(

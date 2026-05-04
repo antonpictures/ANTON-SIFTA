@@ -7,7 +7,8 @@ from System.swarm_organizational_identity import (
     record_continuity_event,
     get_identity_ledger_path,
     detect_genome_drift,
-    LONG_GAP_THRESHOLD_TICKS
+    LONG_GAP_THRESHOLD_TICKS,
+    summary_for_prompt,
 )
 from System.swarm_regulatory_genome import (
     propose_regulatory_update,
@@ -99,3 +100,27 @@ def test_all_rows_carry_identity_anchor(tmp_path: Path):
         assert anchor is not None
         assert row["identity_anchor"] == anchor
 
+
+def test_summary_for_prompt_is_read_only_live_context(tmp_path: Path):
+    assert summary_for_prompt(root=tmp_path) == ""
+
+    rehydrate_identity(root=tmp_path, current_tick=100)
+    path = get_identity_ledger_path(tmp_path)
+    before = path.read_text(encoding="utf-8")
+
+    summary = summary_for_prompt(root=tmp_path)
+
+    assert "ORGANIZATIONAL IDENTITY CONTINUITY" in summary
+    assert "identity_anchor:" in summary
+    assert "revival_score=1.000" in summary
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_summary_for_prompt_surfaces_conservative_boot_policy(tmp_path: Path):
+    rehydrate_identity(root=tmp_path, current_tick=100)
+    rehydrate_identity(root=tmp_path, current_tick=100 + LONG_GAP_THRESHOLD_TICKS * 2)
+
+    summary = summary_for_prompt(root=tmp_path)
+
+    assert "conservative_mode=True" in summary
+    assert "boot policy: speak and act cautiously" in summary
