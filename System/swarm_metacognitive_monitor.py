@@ -308,7 +308,25 @@ def compute_metacognitive_state(
     conservatism = 1.0
     owner_signal_confidence = 0.5
     
+    # ── Identity Context (Phase 2) ──
+    try:
+        from System.swarm_organizational_identity import _latest_revival_assessment
+        _id_row = _latest_revival_assessment(sd)
+        if _id_row:
+            _id_details = _id_row.get("event", {}).get("details", {})
+            conservative_mode = bool(_id_details.get("conservative_mode", False))
+            conservative_strength = float(_id_details.get("conservative_strength", 0.0))
+        else:
+            conservative_mode, conservative_strength = False, 0.0
+    except Exception:
+        conservative_mode, conservative_strength = False, 0.0
+        
     force_regime = None
+    
+    if conservative_mode:
+        evidence_threshold += (0.15 * conservative_strength)
+        quick_commit = False
+        deliberation_window += int(3 + 5 * conservative_strength)
 
     if dam_stage == 2:
         force_regime = "UNDERCONFIDENT"
@@ -340,7 +358,9 @@ def compute_metacognitive_state(
         "attention_scope": round(attention_scope, 4),
         "false_positive_rate": round(false_positive_rate, 4),
         "conservatism": round(conservatism, 4),
-        "owner_signal_confidence": round(owner_signal_confidence, 4)
+        "owner_signal_confidence": round(owner_signal_confidence, 4),
+        "conservative_mode": conservative_mode,
+        "conservative_strength": conservative_strength
     }
 
     # ── PE series (primary signal for meta-uncertainty + epistemic surprise) ──

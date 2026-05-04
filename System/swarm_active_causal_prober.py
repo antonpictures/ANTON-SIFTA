@@ -166,6 +166,27 @@ class ActiveCausalProber:
         reg_hash = get_latest_genome_hash(self.root)
         uncertainty_threshold = reg_params.get("causal_prober_uncertainty_threshold", uncertainty_threshold)
 
+        # ── Identity Context (Phase 2) ──
+        try:
+            from System.swarm_organizational_identity import _latest_revival_assessment, build_current_internal_state_vector
+            _id_row = _latest_revival_assessment(self.root)
+            if _id_row:
+                _id_details = _id_row.get("event", {}).get("details", {})
+                conservative_mode = bool(_id_details.get("conservative_mode", False))
+                conservative_strength = float(_id_details.get("conservative_strength", 0.0))
+            else:
+                conservative_mode, conservative_strength = False, 0.0
+                
+            proto_self_before = build_current_internal_state_vector(self.root)
+        except Exception:
+            conservative_mode, conservative_strength = False, 0.0
+            proto_self_before = {}
+            
+        if conservative_mode:
+            uncertainty_threshold += (0.08 * conservative_strength)
+            max_effect_size = max(0.01, max_effect_size - (0.2 * conservative_strength))
+            duration_ticks = max(1, duration_ticks - 1)
+
         # ── Biological Steering (§10.14.28) ──────────────────────────────────
         if dam_stage == 2:
             # Stage 2 (committed) microglia indicates severe brain inflammation and
@@ -234,12 +255,33 @@ class ActiveCausalProber:
                 "dam_stage":            dam_stage,
                 "tme_phase":            tme_phase,
                 "na_level":             round(na_level, 4),
+                "conservative_mode":    conservative_mode,
+                "conservative_strength": conservative_strength
             },
             organ=organ,
             truth_label="CAUSAL_PROBE_INTERVENTION",
         )
         row["active_regulatory_parameters"] = reg_params
         row["regulatory_genome_row_hash"] = reg_hash
+        
+        # Core Self Interaction trace (Phase 2)
+        try:
+            if not dry_run and proto_self_before:
+                from System.swarm_organizational_identity import build_current_internal_state_vector, record_core_self_interaction
+                proto_self_after = build_current_internal_state_vector(self.root)
+                salience = min(1.0, max(0.0, effect_size * 2.0)) # proxy for probe salience
+                record_core_self_interaction(
+                    interaction_type="CAUSAL_PROBE",
+                    salience=salience,
+                    proto_self_before=proto_self_before,
+                    proto_self_after=proto_self_after,
+                    summary=f"Probe on {target} with effect_size={effect_size:.2f}",
+                    root=self.root,
+                    tick_id=tick_id
+                )
+        except Exception:
+            pass
+            
         return row
 
     def apply_pending_reverts(self, current_tick: Any) -> int:

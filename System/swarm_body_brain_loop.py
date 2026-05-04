@@ -1277,6 +1277,15 @@ class SwarmPhysiology:
         dream_cycle = self._maybe_sleep(body_state, danger,
                                         crystallizer_weight=crystallizer_weight)
         
+        # 10. Snapshot Proto-Self (Phase 2 Damasio Alignment)
+        try:
+            from System.swarm_organizational_identity import snapshot_proto_self
+            _tick_val = causal_probe_tick if causal_probe_tick is not None else int(time.time())
+            if _tick_val % 5 == 0:
+                snapshot_proto_self(root=_STATE_DIR, tick_id=_tick_val)
+        except Exception:
+            logger.debug("Proto-self snapshot skipped")
+        
         return {
             "action":             action,
             "value":              value,

@@ -188,14 +188,42 @@ class PFCBasalGangliaArbiter:
             same_tick_receipt=stability_same_tick_receipt,
         )
         
+        # ── Identity Context (Phase 2) ──
+        try:
+            from System.swarm_organizational_identity import _latest_revival_assessment, build_current_internal_state_vector
+            _id_row = _latest_revival_assessment(self.root)
+            if _id_row:
+                _id_details = _id_row.get("event", {}).get("details", {})
+                conservative_mode = bool(_id_details.get("conservative_mode", False))
+                conservative_strength = float(_id_details.get("conservative_strength", 0.0))
+                revival_score = float(_id_row.get("continuity", {}).get("revival_score", 1.0))
+                was_mid_interaction = bool(_id_row.get("core_self_continuity", {}).get("was_mid_interaction", False))
+            else:
+                conservative_mode, conservative_strength, revival_score, was_mid_interaction = False, 0.0, 1.0, False
+                
+            proto_self_before = build_current_internal_state_vector(self.root)
+        except Exception:
+            conservative_mode, conservative_strength, revival_score, was_mid_interaction = False, 0.0, 1.0, False
+            proto_self_before = {}
+
         # ── Biological Steering Weight Modulators ──
         base_risk_weight = reg_params.get("arbiter_risk_weight", 1.0)
         base_expl_temp = reg_params.get("arbiter_exploration_temperature", 1.0)
         
+        if conservative_mode:
+            base_expl_temp *= (1.0 - 0.35 * conservative_strength)
+
         risk_weight = base_risk_weight
         cost_weight = 1.0
         gw_weight = 0.5 * na_global_gain * base_expl_temp
         owner_weight = 0.2
+        
+        if conservative_mode:
+            risk_weight *= (1.0 + 0.6 * conservative_strength)
+            gw_weight *= (1.0 - 0.25 * conservative_strength)
+            
+        if was_mid_interaction and revival_score < 0.75:
+            risk_weight += 0.2
 
         if dam_stage == 2:
             stability_clamp["block_new_gates"] = True
@@ -340,10 +368,31 @@ class PFCBasalGangliaArbiter:
             "all_details": option_details,
             "stability_clamp": stability_clamp,
             "biological_steering": bio_steering,
+            "conservative_mode": conservative_mode,
+            "conservative_strength": conservative_strength,
             "active_regulatory_parameters": reg_params,
             "regulatory_genome_row_hash": reg_hash,
         }
         append_line_locked(self.log_path, json.dumps(selection) + "\n", encoding="utf-8")
+        
+        # Core Self Interaction trace (Phase 2)
+        try:
+            salience = min(1.0, max(0.0, abs(winner_score) * 0.4 + 0.3))
+            if salience >= 0.6 and proto_self_before:
+                from System.swarm_organizational_identity import build_current_internal_state_vector, record_core_self_interaction
+                proto_self_after = build_current_internal_state_vector(self.root)
+                record_core_self_interaction(
+                    interaction_type="ARBITER_DECISION",
+                    salience=salience,
+                    proto_self_before=proto_self_before,
+                    proto_self_after=proto_self_after,
+                    summary=f"Chose {winner_name} (risk={option_details.get(winner_name, {}).get('risk', 0.0)})",
+                    root=self.root,
+                    tick_id=tick_id
+                )
+        except Exception:
+            pass
+
         if tick_id is not None:
             try:
                 from System.swarm_regulatory_genome import maybe_append_from_arbiter_tick

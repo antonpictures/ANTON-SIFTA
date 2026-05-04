@@ -466,6 +466,10 @@ def rehydrate_identity(
     current_internal_state = build_current_internal_state_vector(root)
     last_proto_self_vector = load_latest_proto_self_vector(root)
 
+    proto_self_alignment = 0.75
+    if current_internal_state and last_proto_self_vector:
+        proto_self_alignment = _cosine_similarity(current_internal_state, last_proto_self_vector)
+
     revival_score = compute_revival_score(
         last_seen_tick, 
         current_tick, 
@@ -482,6 +486,15 @@ def rehydrate_identity(
         
     conservative_mode = revival_score < 0.6
     
+    conservative_strength = 0.0
+    if conservative_mode:
+        conservative_strength = max(0.0, min(1.0, (0.75 - revival_score) * 2.0))
+        
+    # If things are looking great, reduce conservative bias
+    if revival_score > 0.90 and proto_self_alignment > 0.85:
+        conservative_mode = False
+        conservative_strength = 0.0
+
     recommended_genome_blend = max(0.2, min(1.0, revival_score + 0.1))
 
     row = {
@@ -502,6 +515,8 @@ def rehydrate_identity(
             "type": "BOOT",
             "details": {
                 "conservative_mode": conservative_mode,
+                "conservative_strength": round(conservative_strength, 4),
+                "proto_self_alignment": round(proto_self_alignment, 4),
                 "recommended_genome_blend": round(recommended_genome_blend, 4)
             }
         }
@@ -518,6 +533,8 @@ def rehydrate_identity(
         "revival_score": round(revival_score, 4),
         "personality_vector": current_personality,
         "conservative_mode": conservative_mode,
+        "conservative_strength": round(conservative_strength, 4),
+        "proto_self_alignment": round(proto_self_alignment, 4),
         "recommended_genome_blend": round(recommended_genome_blend, 4),
         "core_self_continuity": core_self_continuity
     }
