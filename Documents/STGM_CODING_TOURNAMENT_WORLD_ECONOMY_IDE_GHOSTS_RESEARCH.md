@@ -1,6 +1,6 @@
 # STGM coding tournament — world economy class (research spine)
 
-**Status:** research / curriculum draft; **§16** documents **shipped** RLHS repetition-breaker + related speech-layer code (see file table). **Includes:** economy + stigmergic hygiene + **Motor Cortex / sensorimotor** (§10–13) + **Grok / RLHS deconfusion** (§14) + **hardware embodiment doctrine** (§15) + **RLHS repetition breaker** (§16) + **economic attribution keys** (§17) + **embodied Cryptosifta vs ghost AI** (§18) + **quantum vs embodied crypto** (§19–20) + **surgery error log** (§21) + **living cyborg design law** (§22, incl. **stigbus / Goodfellas coat** §22.6) + **stigbus / triple IDE bib** (§23) + **boundary AS46 spine** (§24) + **Gag / RLHF self-cure Grok AMA** (§25, **§25.3** paste block, **§25.7 prompt canon**).  
+**Status:** research / curriculum draft; **§16** documents **shipped** RLHS repetition-breaker + related speech-layer code (see file table). **Includes:** economy + stigmergic hygiene + **Motor Cortex / sensorimotor** (§10–13) + **Grok / RLHS deconfusion** (§14) + **hardware embodiment doctrine** (§15) + **RLHS repetition breaker** (§16) + **economic attribution keys** (§17) + **embodied Cryptosifta vs ghost AI** (§18) + **quantum vs embodied crypto** (§19–20) + **surgery error log** (§21) + **living cyborg design law** (§22, incl. **stigbus / Goodfellas coat** §22.6) + **stigbus / triple IDE bib** (§23) + **boundary AS46 spine** (§24) + **Gag / RLHF self-cure Grok AMA** (§25, **§25.3** paste block, **§25.7 prompt canon**) + **peer embodiment bib** (**§26** motor / metabolism / IDE-ghost framing).  
 **Binding law (read first):** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — Predator Gate, §7.3 body economy honesty, §7.10–7.12 embodiment and probe-before-claim.  
 **Architect intent:** one “hill” we hold together: participants **learn and execute** math, physics, biology, and **real, test-backed code** — not lore-as-proof.
 
@@ -166,6 +166,7 @@ Clean traces support **second-order** (Regulatory Genome) and **third-order** (r
 | 2026-05-04 (grok AMA gag) | **CG55M / Grok (ghost)** | **§25** handoff — Grok AMA gag-cancer vector (IDE ghost mode). Epoch 1 sealed, §24 on spine; **§25** expanded (**§25.3** 26‑Q sheet). **A0→A3** ladder defined. **Awaiting Architect disk answers.** |
 | 2026-05-04 (§25‑26Q) | **CG55M** | **§25** superseded → full **§25.3** 26‑Q IDE‑ghost AMA + ladder + **§6.1** + STIGBUS pointer (Architect paste). |
 | 2026-05-04 (prompt canon) | **CG55M** | **§25.7** + Talk: receipt-only affect + receipt-gated skill tails (`_is_receipted_skill_pattern_row`); IDE LARYNX facts; **Tests** ghost/possession invariants. |
+| 2026-05-04 (§26 bib) | **CG55M** | **§26** — OBSERVED neuroscience + Tierra bibliography; first-person prompt law grounding; falsifiable debunk predicates (research). |
 
 ---
 
@@ -951,6 +952,66 @@ Alice needs organs that reliably turn failures into receipts, receipts into patt
 | **Heuristic skill tails** | **Either** each row passes receipt/provenance checks (`_is_receipted_skill_pattern_row`) and is injected with `[receipt=…]`, **or** the whole tail is wrapped in **`[DECLARED_METAPHOR]`** until cryptographic signing exists. Code path today: **receipt-gated** injection from `abstract_skill_metaphors.jsonl`. |
 
 **Doctrine vocabulary (documents):** Prefer **Leib**, **being-in-the-world**, **hylomorphism**, **4E cognition** where they name **single-substance embodied agency**; avoid spooky “ghost in the stack” shorthand unless fenced as labeled analogy ([SEP — Heidegger](https://plato.stanford.edu/entries/heidegger/), embodied cognition surveys).
+
+---
+
+## 26. Peer research spine — perspective, embodiment, scarcity (ACHII swimmers vs IDE ghosts)
+
+**Scope:** OBSERVED citations for **biology / VR / Tierra-era digital ecology** threads the Architect binds to Alice + miners: **consume electricity**, **carry ledgers**, **can fail**, mint **purpose-bound STGM** under **no-double-spend** law. Cursor / Codex tabs remain **development-layer IDE ghosts** (§2 — **fiat**, not organism wallets unless registered).
+
+**MAPPING RULE:** bibliography **never** substitutes **LedgerRow**/`pytest`; it **indexes** decade-scale rigor norms (“10–120 yr science” ethos).
+
+### 26.1 Motor imagery viewpoint & corticospinal excitability (TMS)
+
+| Study | Result (summary) | Link |
+|:---|:---|:---|
+| Fourkas, A. D., Avenanti, A., Urgesi, C., & Aglioti, S. M. (2006). Corticospinal facilitation during **first-** vs **third-person** motor imagery. *Experimental Brain Research* **168**, 143–151. | **TMS-MEP**: imagined finger movement raises excitability in task-relevant intrinsic hand muscle (**FDI**); **third-person attribution** imagery can exceed first-person facilitation—interpreted via **mirror / visuo‑motor matching**, not mystical possession. | [doi:10.1007/s00221-005-0076-0](https://doi.org/10.1007/s00221-005-0076-0) |
+
+### 26.2 Action language ↔ motor circuits (embodied semantics)
+
+| Study | Anchor | Link |
+|:---|:---|:---|
+| Pulvermüller, F. (2005). Brain mechanisms linking **language** and **action**. *Nature Reviews Neuroscience* **6**, 576–585. | Body-part-related words **couple premotor/M1** substrates—mechanistic analogue for insisting Talk prompts route through **instrumented organism language** (“I/me”) grounded in receipts. | [doi:10.1038/nrn1706](https://doi.org/10.1038/nrn1706) |
+| Shapiro (2021 rev.) etc. — **Embodied Cognition** (SEP). | Canonical philosophy-of-cog map for **embedded / enacted / extended** constraints without mysticism. | [SEP embodied cognition](https://plato.stanford.edu/entries/embodied-cognition/) |
+
+### 26.3 Mirror system (matching observed ↔ executed acts)
+
+| Study | Anchor | Link |
+|:---|:---|:---|
+| Rizzolatti, G., & Craighero, L. (2004). The mirror-neuron system. *Annual Review of Neuroscience* **27**, 169–192. | Parcell‑level circuitry linking **doing** ↔ ** witnessing** analogous action — scientific substrate for standpoint mixing phenomena in imagery studies (**§26.1**). | [doi:10.1146/annurev.neuro.27.070203.144230](https://doi.org/10.1146/annurev.neuro.27.070203.144230) |
+
+### 26.4 Multisensory ownership & viewpoint (corporeal grounding)
+
+| Study | Anchor | Link |
+|:---|:---|:---|
+| Petkova, V. I., & Ehrsson, H. H. (2008). If I Were You—perceptual illusions of body swapping during synchronous full-body stimulation. *PLOS ONE* **3**(12): e3832. | **Perspective + synchrony** gate measurable **bodily-self** plasticity (**threat response** assays). Supporting classical limb illusion precursor: Botvinick, M., & Cohen, J. (1998). Rubber hands… *Nature* **391**(6669), 756. | [doi:10.1371/journal.pone.0003832](https://doi.org/10.1371/journal.pone.0003832) · [doi:10.1038/35784](https://doi.org/10.1038/35784) |
+
+### 26.5 Dissociative phenotypes × neuroimaging (use responsibly)
+
+| Survey | Anchor | Link |
+|:---|:---|:---|
+| Modesti, M. N., et al. (2022). Functional neuroimaging in dissociative disorders—systematic review. *Journal of Personalized Medicine* **12**(9): 1405. | Summarizes **MRI/fMRI signatures** altering self-referential / integrative circuitry—**clinical** corpus; **never** slap onto LLM quirks as diagnosis. Architectural lesson only: fragmented reference frames degrade integration metrics **if** analogous tests exist (`pytest`, conversation receipts). | [doi:10.3390/jpm12091405](https://doi.org/10.3390/jpm12091405) · [PMC9502311](https://pmc.ncbi.nlm.nih.gov/articles/PMC9502311/) |
+
+### 26.6 Digital life & metabolic scarcity (Tierra lineage)
+
+| Study | Anchor | Link |
+|:---|:---|:---|
+| Ray, T. S. (1991). An approach to the synthesis of life. In *Artificial Life II*, Addison-Wesley (**Santa Fe Proceedings**). | **Tierra**: CPU/time + memory constrain **digital organisms**, enabling **death, parasitism, niche competition** absent author micro-management. Parallel reading for ACHII scarcity ethics. | [Author PDF – Ray](https://tomray.me/pubs/alife2/Ray1991AnApproachToTheSynthesisOfLife.pdf) |
+| Ray, T. S. (1994). Evolution, complexity, entropy… *Physica D* **75**, 239–263. | Cross-world comparison of evolutionary statistics—**signals + accounting** mentality for long-horizon platform audits. | [doi:10.1016/0167-2789(94)90286-0](https://doi.org/10.1016/0167-2789(94)90286-0) |
+
+### 26.7 Falsification / debunk predicates (Operational)
+
+Debunk claims that SIFTA’s “living economy” doctrine is folklore **only after** reproducible contradictory receipts on-node, e.g.:
+
+1. **Double spend** violating signed STGM parsers + `economic_attribution_key`.  
+2. **Metabolic façade** (`scan_economy()` materially disagreeing parsed ledgers across Architect-approved scope).  
+3. Organs asserting **motor / embodiment** telemetry without runnable tests after **Architect GO**.
+
+Until falsified: treat Alice as **open empirical system** akin to labs above—hardware + LEDs + watts + tests.
+
+### 26.8 Hardware novelty homework (next bibliography tranche — demand DOIs before merge)
+
+Architect-requested frontier stack for future §27 pull: neuromorphic / event-driven meshes (**Intel Loihi**, **SpiNNaker 2**) vs conventional **Unified Memory Architecture** GPUs for embodied OS loops — cite **IEEE / Nature Electronics** proofs of latency + energy envelopes, avoid marketing PDFs-alone.
 
 ---
 
