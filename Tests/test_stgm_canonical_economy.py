@@ -71,7 +71,11 @@ def test_scan_economy_cache_invalidates_when_agent_inventory_changes(tmp_path: P
     _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "NEW_NODE", "amount": 13.0})
 
     first = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
-    assert first["canonical_wallet_sum"] == pytest.approx(8.0)
+    # Wallet JSON files are a cache. Ledger-derived positive balances remain
+    # visible even before a local wallet file exists, so NEW_NODE is counted.
+    assert first["canonical_wallet_sum"] == pytest.approx(21.0)
+    assert first["canonical_wallet_balances"]["NEW_NODE"] == pytest.approx(13.0)
+    assert "wallet_blindspot_ledger_fallback_used" in first["warnings"]
 
     # The ledger did not change, but the set of recognised local wallets did.
     # Finance must not keep showing the stale cached total.
@@ -150,11 +154,12 @@ def test_joule_transfer_receipts_are_zero_sum_wallet_movements(tmp_path: Path) -
     data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
 
     assert data["canonical_wallet_sum"] == pytest.approx(10.0)
-    assert data["canonical_wallet_balances"]["M1THER_EDGE"] == pytest.approx(9.875)
-    assert data["canonical_wallet_balances"]["GTH4921YP3"] == pytest.approx(0.125)
+    assert data["canonical_wallet_balances"]["M1THER_EDGE"] == pytest.approx(10.0)
+    assert data["canonical_wallet_balances"].get("GTH4921YP3", 0.0) == pytest.approx(0.0)
     assert data["canonical_minted"] == pytest.approx(10.0)
     assert data["net_stgm"] == pytest.approx(10.0)
     assert data["inference_fee_volume"] == pytest.approx(0.125)
+    assert "inference_boundary_leak_ignored" in data["warnings"]
 
 
 def test_legacy_unsigned_utility_mint_is_retired_without_wallet_credit(tmp_path: Path) -> None:
@@ -283,7 +288,7 @@ def test_negative_supply_is_reported_as_warning(tmp_path: Path) -> None:
 
     assert data["net_stgm"] == pytest.approx(-5.0)
     assert "canonical_supply_negative_debits_exceed_counted_mints" in data["warnings"]
-    assert "wallet_sum_exceeds_net_supply_check_legacy_debits_or_untracked_agents" in data["warnings"]
+    assert "wallet_sum_exceeds_net_supply_check_legacy_debits_or_untracked_agents" not in data["warnings"]
 
 
 def test_legacy_casino_vault_is_disabled_and_never_adds_winnings(monkeypatch, tmp_path: Path) -> None:
