@@ -930,7 +930,11 @@ class SwarmPhysiology:
         }
         try:
             from System.swarm_metacognitive_monitor import compute_metacognitive_state
-            _metacog_receipt = compute_metacognitive_state(root=_STATE_DIR, write_ledger=True)
+            _metacog_receipt = compute_metacognitive_state(
+                root=_STATE_DIR,
+                write_ledger=True,
+                tick_id=causal_probe_tick,
+            )
             logger.debug(
                 "[Event145] Metacog regime=%s bias=%.3f monitoring=%.3f efficiency=%.3f",
                 _metacog_receipt.get("metacog_regime"),

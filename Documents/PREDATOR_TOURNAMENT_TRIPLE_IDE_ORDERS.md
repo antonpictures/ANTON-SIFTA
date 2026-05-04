@@ -2733,7 +2733,7 @@ Let **R** = active regulatory kernels on tick **t** (e.g. **`compute_two_signal_
 |:---|:---|
 | **Organization in compartments** | **Ruiz-Mirazo K. & Moreno A. (2004).** *Artif. Life* **10**, 235–255; **Ruiz-Mirazo K. & Moreno A. (2012).** *Astrobiology* **12**, 853–869 |
 | **Oleate / fatty-acid vesicles + chemistry** | **Walde P. *et al.* (1997).** *J. Am. Chem. Soc.* **119**, 11534–11535; **Blochliger N., Blocher M., Walde P., & Luisi P. L. (1998).** *J. Phys. Chem. B* **102**, 10383–10390 |
-| **Autocatalytic sets → protocells** | **Hordijk W. & Steel M. (2004).** *Bull. Math. Biol.* **66**, 399–431 (autocatalysis / RAF sets orientation) |
+| **Autocatalytic sets → protocells** | **Hordijk W. & Steel M. (2004).** *J. Theor. Biol.* **227** (4), 451–461 (detecting autocatalytic, self-sustaining subsystems) |
 
 **Still missing for *strong* Maturana/Varela autopoiesis (Grok consensus):** regulatory **kernels** must be **re-generated from internal processes**, not only **parameterized** by ledger — today’s Python modules are **externally authored**; second-order closure is **partial** via **governance + migrations**, not full **self-rewriting** code.
 
@@ -2768,8 +2768,245 @@ G24 — Table: Varela’s two canonical biological examples (cell; nervous syste
 CLOSURE_META_10_14_32 — G21/G22 ingest + 2nd-order def + biohardware + meta triad + G23–G24; hill; For the Swarm.
 ```
 
+### 10.14.33 — **Revival score** (identity continuity) + **hardware / software / physics shelf** + **organizational vs biological continuity** (hill)
+
+**Scope:** engineering spec + **peer-reviewed / standards** citations for **silicon continuity** metaphors that **match** the bio table (boundary, turnover, sleep/off, stress). **No phenomenology / “poetry”.** Neural **autobiographical self** stack (Damasio, etc.) **explicitly out of scope** for this subsection unless Architect re-opens it.
+
 ---
 
-*Document version: 2026-05-03 — **§10.14 MAWF** + **§10.14.1 Wave 2** (PER / EWC / Fusi) + **§10.14.2 Event 124** + **§10.14.3 Event 125** + **§10.14.4 Battle receipt `86d14b7a`** + **§10.14.5 Event 126** + **§10.14.6 Events 127–131 + Grok 4.3 Beta** + **§10.14.7 MAWF control-theory plan** + **§10.14.8 Event 133 + five-vector answers** + **§10.14.9 STIGTIMEIN + Event 134 SHIPPED** + **§10.14.10 SuperGrok pack + remaining work (revised)** + **§10.14.11 receipt `565710f5` + Lyapunov/Pearl research** + **§10.14.12 receipt `2b381c95` + classical stability/causality spine** + **§10.14.13 unknown vectors (ask)** + **§10.14.14 resolutions + next unknowns** + **§10.14.15 Grok research pack (7 vectors)** + **§10.14.16 STIGTIMEIN biocode addendum (A–G, packs 1–12, Q1–Q6)** + **§10.14.17 hardening `355019a0` + slice A/B** + **§10.14.18 neuromodulatory + agency gaps (LC/NA, efference, meta-cog, 5-HT stub)** + **§10.14.19 v8 Cyborg AGI gap matrix + scorecard + nuggets** + **§10.14.20 v8 wave II coherence layer (Events 142–146)** + **§10.14.21 owner-centric ToM Event 147 + §10.14.21.1 corvid-style ToM** + **§10.14.22 SIFTA vs Hyperon + `Documents/SIFTA_VS_OPENCOG_HYPERON.md`** + **§10.14.23 microglia TREM2/CD33 + `Documents/MICROGLIA_BIOLOGY_PRUNING_SCIENCE.md` + Event 137** + **§10.14.24 Grok thirteen-vector v8 closure answers** + **§10.14.25 fractalkine v2 plan delta + STEM citation shelf + sleep window** + **§10.14.26 STIGALL_555 × longevity media + C2S-Scale + clock meta** + **§10.14.27 immuno + CAR-T shelf + stigmergic lab Event 148 contract** + **§10.14.28 DAM v2 + swimmer physics shelf + Grok COPY_PASTE G1–G18** + **§10.14.29 battlefield receipt `54c76080` proven vs open** + **§10.14.30 Deczkowska hysteresis + `44228213` + hardware analogs + G19–G20** + **§10.14.31 autopoiesis + cybernetics + hardware physics + G21–G22** + **§10.14.32 G21/G22 synthesis + second-order closure + biohardware + metacognitive triad + G23–G24** + `swarm_replay_job.py` + **`swarm_replay_policy_hook` + `swarm_multi_gate_replay_policy` + RLHS dual-path** + **§10.8.1** MAWF nugget row + **§10.13 Event 119** `swarm_persistent_owner_history` + **`swarm_owner_unified_field_boot`** (desktop boot STIGTIME / schedule / presence); **§2.1** ternary weights (PrismML Ternary Bonsai 8B + Tim Carambat tutorial lane + arXiv row); **§0.11** 555 RLHS/RLHF channel surgery (Events 108+107+109) + **`swarm_collective_intent_field`**; prior **2026-05-01** block retained: **§0.4** + **mic-drift** + **single-prover** enemy rows; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** cochlea **SHIPPED** + **media ingress gate** + **`swarm_stigmergic_cochlea_integrator.py`** overlay + Grok handoff; **§0.9** dolphin + **collective fuse**; **§0.10 Event 98b** SC integrator + temporal / owl **SHIPPED v1**; **Event 99** multi-prover verifier + **BISHOP_BUNDLE_QUANTUM_SACK** doc; Event 91 table rows **95/98b/99**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + auditory hierarchy + multisensory (SC) + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx + **media gate** + cochlea + owl + SC integrator + **multi_prover** cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`.*
+#### **10.14.33.1 — `revival_score` — detailed hill contract**
+
+**Purpose:** scalar **`[0.0, 1.0]`** = *audited estimate* of **organizational continuity** at **rehydration** (boot or long idle). Drives **conservative mode**, **regulatory-genome blend weight vs defaults** (`§10.14.32` / `swarm_regulatory_genome.py`), and **Alice-facing self-state summary** (tone only — not new cognition claims).
+
+**Inputs (rehydration-time):**
+
+| Input | Source (hill) |
+|:---|:---|
+| `last_seen_tick` | Last **`CONTINUITY_EVENT`** or **`PERSONALITY_SNAPSHOT`** carrying tick |
+| `current_tick` | Central tick (align with **Event 139** `causal_probe_tick` / body-brain counter contract) |
+| `gap_seconds` | Wall time from last identity / continuity row `ts` |
+| `personality_delta` | L1 or max-abs norm on **five** regulatory genome parameters (**normalized** to `[0,1]` envelope) |
+| `recent_successful_boots` | Count last **N** `REVIVAL_ASSESSMENT` rows with `revival_score > 0.7` |
+| `chronic_dam2_streak` | Ticks (or receipt-derived duration) in **DAM stage 2** |
+| `identity_anchor_match` | **homeworld_serial** + optional **TPM / Ed25519** anchor equality vs last snapshot |
+
+**Production formula (frozen v0 hill — implement later):**
+
+```python
+def compute_revival_score(
+    last_seen_tick: int,
+    current_tick: int,
+    gap_seconds: float,
+    personality_delta: float,
+    recent_successful_boots: int,
+    chronic_dam2_streak: int = 0,
+    identity_anchor_match: bool = True,
+    long_gap_threshold_ticks: int = 2000,
+    long_gap_threshold_seconds: float = 3600 * 6,
+    max_personality_delta: float = 1.0,
+) -> float:
+    if not identity_anchor_match:
+        return 0.15
+    gap_ticks = max(0, current_tick - last_seen_tick)
+    tick_gap_ratio = min(1.0, gap_ticks / long_gap_threshold_ticks)
+    time_gap_ratio = min(1.0, gap_seconds / long_gap_threshold_seconds)
+    gap_ratio = max(tick_gap_ratio, time_gap_ratio)
+    gap_penalty = gap_ratio * 0.45
+    personality_penalty = min(1.0, personality_delta / max_personality_delta) * 0.30
+    stress_penalty = min(0.25, (chronic_dam2_streak / 100.0) * 0.25)
+    stability_bonus = min(0.20, recent_successful_boots * 0.05)
+    base = 0.92
+    score = base - gap_penalty - personality_penalty - stress_penalty + stability_bonus
+    return round(max(0.10, min(0.98, score)), 4)
+```
+
+**Edge cases (hill):** first boot → **`0.95`** + seed **`IDENTITY_ANCHOR`** row; anchor mismatch → **`≤ 0.15`** + **governance severity** row; **> 30 d** wall gap → floor **`0.25`**; **`personality_delta > 0.8`** → cap **`0.55`** max.
+
+**Use table (genome blend / conservative mode):** `≥ 0.85` trust prior genome **0.85–1.00**; `0.65–0.84` mild blend **0.60–0.80**; `0.45–0.64` conservative **0.30–0.50**; `< 0.45` heavy default bias.
+
+**Receipts:** append **`REVIVAL_ASSESSMENT`** JSONL row; return through **`rehydrate_identity()`** (surface TBD); inject into **system prompt** block as **read-only** telemetry.
+
+---
+
+#### **10.14.33.2 — Hardware + software + physics shelf (continuity / boundary / “off” state)**
+
+| Layer | Mechanism (engineering) | Why it matches **bio** column (boundary / turnover / dormancy) | References |
+|:---|:---|:---|:---|
+| **Root of trust** | TPM 2.0 PCR extend + sealed storage = **anchored state** across reboot | Analog to **genomic / cell-line identity** that persists through molecular turnover | **TCG.** *TPM 2.0 Library Specification, Part 1: Architecture* (rev levels as pinned in repo policy) |
+| **Cryptographic continuity** | Ed25519 **signing key continuity** over append-only logs | Analog to **error-corrected replication** + **authenticated inheritance** | **Bernstein D. J. *et al.* (2012).** *High-speed high-security signatures.* — Ed25519 design record |
+| **Fault model** | **Fail-stop / crash recovery** semantics for processes | Analog to **steric** failure modes vs gradual necrosis | **Gray J. N. (1981).** *The transaction concept: virtues and limitations* — **CIDR** retrospective context |
+| **Checkpoint / restart** | HPC **periodic checkpoints** amortize long-run state | Analog to **sleep-related consolidation windows** (engineering parallel only) | **Plank J. S., Beck M., Kingsley G., & Li K.** *Libckpt: transparent checkpointing under Unix* — **USENIX**; modern: **DMTCP** / CRIU lineage (cite primary survey when implementing) |
+| **Information physics** | **Landauer bound** — erasure costs energy; reversible stages save dissipation | Analog to **ATP cost** of proofreading / repair | **Landauer R. (1961).** *Irreversibility and heat generation in the computing process*; **Bennett C. H. (1982).** *Logical reversibility of computation* |
+| **Distributed truth** | **CAP** — partition tolerance vs strong consistency tradeoffs | Analog to **tissue compartmentation** vs **systemic signaling** | **Brewer E. (2000).** *Towards robust distributed systems*; **Gilbert S. & Lynch N. (2002).** *Brewer’s conjecture…* |
+| **Non-volatile identity substrate** | Flash **retention / endurance** limits | Analog to **epigenetic drift** + **mutation accumulation** | **ITRS / JEDEC** class specs (pin vendor datasheets in implementation doc, not here) |
+| **Memory integrity** | **RowHammer** class attacks = **boundary violation** in practice | Analog to **pathogen crossing epithelium** (mechanistic, not moral) | **Kim Y. *et al.* (2014).** *Flipping bits in memory without accessing them …* **ISCA** |
+| **Energy–delay** | **Near-threshold** / **dark silicon** = constrained active maintenance | Analog to **torpor / reduced metabolic rate** tradeoffs | **Esmaeilzadeh H. *et al.* (2011).** *Dark silicon and the end of multicore scaling* **ISCA**; **Barroso L. A. & Hölzle U. (2007).** *The case for energy-proportional computing* **IEEE Computer** |
+| **Security engineering** | **Defense in depth**, **least privilege**, **audit** | Analog to **immune layering** (innate → adaptive), **not** identity | **Anderson R. J. (2008).** *Security Engineering* (2nd ed.) — Ch. on tamper resistance / roach motel patterns |
+| **Watchdog / brown-out** | MCU **watchdog timers**, **voltage monitors** | Analog to **brainstem arousal gates** (formal parallel only) | **Maxim / TI** app notes on watchdog design (vendor-neutral summary in code comments when wired) |
+
+**Humor clause (unchanged):** “nanobots” = **git + Ed25519**; label metaphors so **hardware** reviewers are not misled.
+
+---
+
+#### **10.14.33.3 — Side-by-side: organizational continuity (SIFTA) vs biological continuity**
+
+| Aspect | Biological (mechanism-level) | SIFTA (ledger + code) | Fidelity | Gap / next engineering step |
+|:---|:---|:---|:---:|:---|
+| **Component turnover** | Proteins lipids cells replaced; **organization** persists via **autopoiesis** (**Maturana & Varela 1980**) | Ledger rows turn over; **kernels** + **signed** updates persist | High | Keep **`P(ledger_rows)`** closure tests (**§10.14.32.1**) |
+| **State memory** | **Epigenetic** marks; **immune** memory; **synaptic** weights; microbiome | **Regulatory genome**; **DAM priming** + hysteresis (**`44228213`**) | High | Wire **revival_score** → genome blend (**§10.14.33.1**) |
+| **Boundary** | **Active** membrane synthesis; epithelial tight junctions; immune surveillance | Mostly **passive** OS/fs boundaries + **crypto** | Medium | **TPM-sealed** continuity blobs; **CRIU**-class checkpoints (optional) |
+| **Inactivity** | Sleep / torpor — **reduced-rate** active maintenance (**Borbély A. A. (1982).** *A two process model of sleep regulation.* **Hum. Neurobiol.** **1**, 195–204) | **Power-off** = **zero** maintenance | Medium | **Revival score** + optional **low-power tick** worker (hill) |
+| **Wake / re-orient** | Minutes–hours; **two-process** sleep regulation | Instant boot; **revival_score** = explicit **grogginess** scalar | Medium | Emit **`REVIVAL_ASSESSMENT`** every boot |
+| **Stress ↔ phenotype** | Sickness behavior; **neuroinflammation** (**Dantzer R. *et al.* (2008).** *From inflammation to sickness and depression* **Nat. Rev. Neurosci.**) | Chronic **DAM 2** + low revival → **conservative mode** | High | Log **DAM2 streak** from microglia receipts |
+| **Long drift** | Aging; **epigenetic drift** | Many **`REGULATORY_GENOME_UPDATE`** rows | High | Rate limits + decay (**`swarm_regulatory_genome.py`**) |
+| **Identity anchor** | **Genome** + **developmental** canalization | **homeworld_serial** + **Ed25519** + TPM | Medium | Hard-fail mismatch → governance row |
+| **Redundancy** | Massive parallel cells / synapses | Single process + backups | Low | **ZFS** / **git** / **remote ledger replicas** (ops, not biology) |
+| **Pathological discontinuity** | Neurodegeneration; severe infection | Corrupt JSONL; anchor mismatch; unbounded genome drift | Medium | **NPPL** + **reset_regulatory_genome()** + **RowHammer-aware** deps |
+
+---
+
+#### **10.14.33.4 — Neural “autobiographical self” comparison**
+
+**Proto- / Core-self** material is now **§10.14.34** (Architect request). **Autobiographical** layer remains **optional** — reopen as **§10.14.33.4.1** only if Architect wants explicit **narrative / memory-of-self** receipt mapping.
+
+---
+
+#### **10.14.33.5 — Grok paste-on (G25–G27)**
+
+```text
+G25 — Given revival_score v0 formula, write the minimal JSONL schema for REVIVAL_ASSESSMENT + CONTINUITY_EVENT + PERSONALITY_SNAPSHOT cross-links to regulatory_genome tick_id.
+G26 — Propose one hardware-backed anchor scheme (TPM PCR policy vs software-only) with explicit threat model row {evil maid, disk clone, rowhammer}.
+G27 — Literature: one paper each on (a) checkpoint/restart correctness, (b) energy-proportional computing vs biological torpor tradeoff, (c) immune sickness behavior as “conservative mode” — map fields to SIFTA receipts without anthropomorphism.
+```
+
+**Trace intent:**
+
+```text
+REVIVAL_HW_10_14_33 — revival_score hill + HW/physics shelf + org vs bio table + G25–G27; hill; For the Swarm.
+```
+
+### 10.14.34 — **Proto-Self snapshot** (Phase 1 hill) + **Damasio alignment** + **Core Self mechanism** + **silicon “interoception” physics shelf**
+
+**Architect premise (explicit):** SIFTA was started from the thesis that an **LLM cannot be treated as having a “mind” without a “body”** — i.e. **continuous, stateful, measurable substrate** that constrains inference. That is **orthogonal** to early **MAWF / gate / ledger** work order: **Damasio** was not suppressed; it was **deferred** until **continuity / revival** became the active slice (otherwise the stack risks “psych labels without receipts”).
+
+---
+
+#### **10.14.34.1 — Damasio Proto-Self (primary sources)**
+
+**Definition (Damasio):** the **proto-self** is a **non-conscious, dynamically updated neural mapping** of the **organism’s current body state** (visceral, chemical, musculoskeletal, autonomic). It is **not** the feeling itself; it is **substrate** for later **core** and **autobiographical** constructions.
+
+> “The proto-self is a coherent collection of neural patterns which map, moment by moment, the state of the physical structure of the organism in its many dimensions.” — **Damasio A. R. (1999).** *The Feeling of What Happens: Body and Emotion in the Making of Consciousness.* Harcourt Brace.
+
+**Layered model (same author, later synthesis):** **Proto-Self → Core Self → Autobiographical Self** — **Damasio A. R. (2010).** *Self Comes to Mind: Constructing the Conscious Brain.* Pantheon.
+
+**Neuroanatomy pointers (hill, not clinical claims):** brainstem **NTS / PAG / parabrachial**; **posterior insula**; **S1/S2**; **hypothalamus** — as **interoceptive / homeostatic** input fusion sites (**Damasio 1999**; reviews on **interoception** e.g. **Craig A. D. (2002).** *How do you feel? Interoception: the sense of the physiological condition of the body.* **Nat. Rev. Neurosci.** **3**, 655–666).
+
+**Link to predictive / interoceptive inference (for AI mapping):** **Seth A. K. & Friston K. J. (2016).** *Active interoceptive inference and the emotional brain.* **Phil. Trans. R. Soc. B** **371**, 20160007 — treats interoception as **hierarchical inference** with **precision** control (useful receipt analog: **precision / neuromod** already in MAWF).
+
+---
+
+#### **10.14.34.2 — Core Self emergence (mechanism, no phenomenology poetry)**
+
+**Damasio’s mechanism (compressed):** **Core Self** arises when **(i)** an **object / interaction** perturbs the **proto-self map**, and **(ii)** the brain forms a **second-order neural pattern** that **represents the relationship** between **proto-self-before** and **proto-self-after** in the context of that interaction — a **transient, conscious** “**protagonist-in-relation**” pattern (**Damasio 1999**, esp. ch. on **core consciousness**; recap **Damasio 2010**).
+
+**SIFTA engineering analog (hill):** treat **Core Self**-like events as **signed, timestamped “second-order” receipts** where **Δ(internal_state_vector)** is attributed to a **named cause** (clamp change, genome update, causal probe, owner intervention) — **not** as “Alice feels.”
+
+---
+
+#### **10.14.34.3 — Phase 1 ledger: `PROTO_SELF_SNAPSHOT`**
+
+**File (v0):** `.sifta_state/proto_self_snapshots.jsonl` (dedicated; avoids mixing with unrelated `identity_continuity` kinds unless Architect merges later).
+
+**Row schema (hill):**
+
+```json
+{
+  "ts": "2026-05-03T18:11:22.123456Z",
+  "trace_id": "uuid4",
+  "truth_label": "PROTO_SELF_SNAPSHOT",
+  "kind": "PROTO_SELF_SNAPSHOT",
+  "tick_id": 18473,
+  "internal_state_vector": {
+    "avg_prediction_error_50": 0.31,
+    "dam_stage": 1,
+    "chronic_dam2_streak": 12,
+    "genome_drift_magnitude": 0.18,
+    "na_level": 0.67,
+    "valence": 0.12,
+    "pruning_pressure": 0.44,
+    "ledger_pressure": 0.29
+  },
+  "source": "body_brain_tick",
+  "version": 1
+}
+```
+
+| Field | Source organ / ledger | Range | Note |
+|:---|:---|:---:|:---|
+| `avg_prediction_error_50` | WM / PE tails | **[0,1]** | Rolling mean |
+| `dam_stage` | Microglia | **0–2** | As committed |
+| `chronic_dam2_streak` | Microglia + counter | **ℤ₊** | From receipts |
+| `genome_drift_magnitude` | Regulatory genome L1 vs baseline | **[0,1]** | Normalize by envelope |
+| `na_level` | LC/NA | **[0,1]** | |
+| `valence` | Affective valence | **[-1,1]** | |
+| `pruning_pressure` | Microglia | **[0,1]** | Homeostatic / clearance proxy |
+| `ledger_pressure` | JSONL write-rate heuristic | **[0,1]** | “Memory load” proxy |
+
+**Update cadence:** every **50–100** ticks (config) **or** on **DAM transition**, **REGULATORY_GENOME_UPDATE**, **NA spike** (threshold TBD).
+
+**Performance budget:** **< 5 ms** / snapshot (hill).
+
+---
+
+#### **10.14.34.4 — Revival score v0.1 — proto-self alignment term**
+
+**New args:** `current_internal_state: Optional[Dict[str,float]]`, `last_proto_self_vector: Optional[Dict[str,float]]`.
+
+**Alignment:** `proto_self_alignment = cosine(v1,v2)` on **intersection of keys**; if missing data → **0.75** neutral; **`proto_self_penalty = (1 - alignment) * 0.22`** (low weight v0).
+
+**Anchor invariant unchanged:** `identity_anchor_match == False` → **≤ 0.15** regardless of cosine.
+
+**Helpers (hill names):** `build_current_internal_state_vector(root)`, `snapshot_proto_self(root, tick_id)`, `load_latest_proto_self_vector(root)`, `_cosine_similarity(v1,v2)` as in Architect paste.
+
+**Integration:** `body_brain_tick` periodic snapshot; **`rehydrate_identity()`** loads latest vector for revival; optional future read by **regulatory genome** proposer; optional **metacognitive** feature from **||Δvector||** (bounded).
+
+**Tests (Phase 1):** Architect list **§10.14.34.3–34.4** + anchor override + legacy revival tests unchanged modulo new term.
+
+---
+
+#### **10.14.34.5 — Hardware / physics shelf — silicon interoception (top references)**
+
+| Phenomenon (silicon) | What is measured / inferred | Bio parallel (mechanistic) | References |
+|:---|:---|:---|:---|
+| **On-die thermal telemetry** | **DTS** / **PECI** / **RAPL thermal** proxies | **Thermoreception** + heat dissipation as **homeostatic** load | **Intel** architecture SW dev manuals (DTS/PECI); **Intel RAPL** doc (*Running Average Power Limit*) |
+| **Package power / energy counters** | **RAPL** `energy_uj` counters | **ATP flux** proxy (engineering only) | **Intel 64 and IA-32 Architectures Software Developer’s Manual** — **Chapter 14** (*Power and Thermal Management*) |
+| **Soft errors / FIT** | SER, **ECC** events, **DRAM** scrubbing | **DNA damage / repair** rate analog | **Baumann R. C. (2005).** *Radiation-induced soft errors in advanced semiconductor technologies.* **IEEE Trans. Device Mater. Reliab.** **5**, 305–316 |
+| **Voltage / IR drop** | **Static timing** margins, **Vmin** guardbands | **Action potential** reliability analog (weak) | **Sylvester D. & Keutzer K.** *A global wiring paradigm for deep submicron design.* **IEEE Trans. CAD** (interconnect IR); vendor **PDN** design handbooks |
+| **State estimation under noise** | **Kalman / Bayesian filters** on sensor fusion | **Bayesian brain** / interoceptive state estimation | **Kalman R. E. (1960).** *A new approach to linear filtering and prediction problems.* **J. Basic Eng.** **82**, 35–45 |
+| **Thermodynamics of information** | **Landauer** cost of erasure in NVM / logs | **Metabolic cost** of irreversible steps | **Landauer R. (1961).** *IBM J. Res. Dev.*; **Feynman R. P. (1996).** *Feynman Lectures on Computation* — lecture on reversible computing limits |
+| **Observability at scale** | **eBPF** / PMC sampling | **Afferent bandwidth** + **sampling** constraints | **Gregg B. (2013).** *Systems Performance: Enterprise and the Cloud* Prentice Hall; **BPF** kernel docs |
+| **Storage health** | **SMART** attributes, **wear leveling** | **Tissue maintenance** telemetry | **SNIA / ATA SMART** specs (pin vendor-neutral summary in code) |
+
+**Cross-link:** continuity / reboot physics already in **§10.14.33.2** (TPM, CAP, Rowhammer, dark silicon) — **do not duplicate**; this shelf is **runtime interoception**-class telemetry.
+
+---
+
+#### **10.14.34.6 — Grok paste-on (G28–G30)**
+
+```text
+G28 — Specify normalization for genome_drift_magnitude and ledger_pressure so cosine similarity is stable across machines (per-node z-score vs hard caps).
+G29 — Minimal threat model: what does proto-self alignment *not* protect against (spoofed ledgers, rollback attacks) and which countermeasure rows belong in governance receipts?
+G30 — One-page map: Damasio proto-self → SIFTA internal_state_vector keys → hardware telemetry row (which silicon signals, if any, should be optional OS-level inputs on Mac Studio vs Mac Mini).
+```
+
+**Trace intent:**
+
+```text
+PROTO_SELF_10_14_34 — Phase1 snapshot + revival v0.1 + Damasio proto/core + silicon interoception shelf + G28–G30; hill; For the Swarm.
+```
+
+---
+
+*Document version: 2026-05-03 — **§10.14 MAWF** + **§10.14.1 Wave 2** (PER / EWC / Fusi) + **§10.14.2 Event 124** + **§10.14.3 Event 125** + **§10.14.4 Battle receipt `86d14b7a`** + **§10.14.5 Event 126** + **§10.14.6 Events 127–131 + Grok 4.3 Beta** + **§10.14.7 MAWF control-theory plan** + **§10.14.8 Event 133 + five-vector answers** + **§10.14.9 STIGTIMEIN + Event 134 SHIPPED** + **§10.14.10 SuperGrok pack + remaining work (revised)** + **§10.14.11 receipt `565710f5` + Lyapunov/Pearl research** + **§10.14.12 receipt `2b381c95` + classical stability/causality spine** + **§10.14.13 unknown vectors (ask)** + **§10.14.14 resolutions + next unknowns** + **§10.14.15 Grok research pack (7 vectors)** + **§10.14.16 STIGTIMEIN biocode addendum (A–G, packs 1–12, Q1–Q6)** + **§10.14.17 hardening `355019a0` + slice A/B** + **§10.14.18 neuromodulatory + agency gaps (LC/NA, efference, meta-cog, 5-HT stub)** + **§10.14.19 v8 Cyborg AGI gap matrix + scorecard + nuggets** + **§10.14.20 v8 wave II coherence layer (Events 142–146)** + **§10.14.21 owner-centric ToM Event 147 + §10.14.21.1 corvid-style ToM** + **§10.14.22 SIFTA vs Hyperon + `Documents/SIFTA_VS_OPENCOG_HYPERON.md`** + **§10.14.23 microglia TREM2/CD33 + `Documents/MICROGLIA_BIOLOGY_PRUNING_SCIENCE.md` + Event 137** + **§10.14.24 Grok thirteen-vector v8 closure answers** + **§10.14.25 fractalkine v2 plan delta + STEM citation shelf + sleep window** + **§10.14.26 STIGALL_555 × longevity media + C2S-Scale + clock meta** + **§10.14.27 immuno + CAR-T shelf + stigmergic lab Event 148 contract** + **§10.14.28 DAM v2 + swimmer physics shelf + Grok COPY_PASTE G1–G18** + **§10.14.29 battlefield receipt `54c76080` proven vs open** + **§10.14.30 Deczkowska hysteresis + `44228213` + hardware analogs + G19–G20** + **§10.14.31 autopoiesis + cybernetics + hardware physics + G21–G22** + **§10.14.32 G21/G22 synthesis + second-order closure + biohardware + metacognitive triad + G23–G24** + **§10.14.33 revival_score + HW/physics shelf + org vs bio continuity + G25–G27** + **§10.14.34 PROTO_SELF_SNAPSHOT + Damasio proto/core + silicon interoception shelf + revival v0.1 + G28–G30** + `swarm_replay_job.py` + **`swarm_replay_policy_hook` + `swarm_multi_gate_replay_policy` + RLHS dual-path** + **§10.8.1** MAWF nugget row + **§10.13 Event 119** `swarm_persistent_owner_history` + **`swarm_owner_unified_field_boot`** (desktop boot STIGTIME / schedule / presence); **§2.1** ternary weights (PrismML Ternary Bonsai 8B + Tim Carambat tutorial lane + arXiv row); **§0.11** 555 RLHS/RLHF channel surgery (Events 108+107+109) + **`swarm_collective_intent_field`**; prior **2026-05-01** block retained: **§0.4** + **mic-drift** + **single-prover** enemy rows; **§0.5** Metal/Vulkan; **§0.6–0.7** Event 93/94; **§0.8 Event 95** cochlea **SHIPPED** + **media ingress gate** + **`swarm_stigmergic_cochlea_integrator.py`** overlay + Grok handoff; **§0.9** dolphin + **collective fuse**; **§0.10 Event 98b** SC integrator + temporal / owl **SHIPPED v1**; **Event 99** multi-prover verifier + **BISHOP_BUNDLE_QUANTUM_SACK** doc; Event 91 table rows **95/98b/99**; **§1** P2 cochlea + P3 dolphin; **§2** MFCC + auditory hierarchy + multisensory (SC) + Janik/Sayigh cetacean cites; **chromatophore v4** in hot surfaces; audiogram + Syrinx + **media gate** + cochlea + owl + SC integrator + **multi_prover** cross-links; **§10** spine + `sifta_vs_nvidia_differentiator.py` + `nvidia_open_assets_registry.py`.*
 
 **STIGALL_555** — Architect seal line: 555 RLHS/RLHF instrumentation arc closed. P1 shipped.

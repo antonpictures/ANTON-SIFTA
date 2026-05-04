@@ -123,3 +123,65 @@ def test_active_causal_probe_disable_env(tmp_path, monkeypatch):
 
     assert row is None
     assert not (tmp_path / "causal_intervention_log.jsonl").exists()
+
+# ============================================================
+# PART 3: Biological Steering (§10.14.28)
+# DAM Stage 2 blocks, TME Escape drops threshold, NA>0.8 drives exploration
+# ============================================================
+
+def test_biological_steering_dam_stage2_blocks_probe(tmp_path):
+    """DAM Stage 2 implies severe brain inflammation; no active experiments."""
+    receipt = propose_and_execute_runtime_intervention(
+        tick_id=1,
+        current_uncertainty=0.9,
+        current_clamp_level="NONE",
+        root=tmp_path,
+        uncertainty_threshold=0.1,
+        dam_stage=2,
+    )
+    assert receipt is None, "Should block probe in DAM stage 2"
+
+def test_biological_steering_dam_stage1_allows_probe(tmp_path):
+    """DAM Stage 1 is reactive but allows probing."""
+    receipt = propose_and_execute_runtime_intervention(
+        tick_id=1,
+        current_uncertainty=0.9,
+        current_clamp_level="NONE",
+        root=tmp_path,
+        uncertainty_threshold=0.1,
+        dam_stage=1,
+    )
+    assert receipt is not None, "Should allow probe in DAM stage 1"
+    assert receipt["confounder_check"]["dam_stage"] == 1
+
+def test_biological_steering_tme_escape_desperation(tmp_path):
+    """TME ESCAPE triggers short, high-variance probes by lowering uncertainty_threshold."""
+    # Base threshold is 0.5; uncertainty 0.45 < 0.5 -> normally blocks.
+    # But ESCAPE drops threshold by 0.15 -> 0.35. Now 0.45 > 0.35 -> allows probe.
+    receipt = propose_and_execute_runtime_intervention(
+        tick_id=1,
+        current_uncertainty=0.45,
+        current_clamp_level="NONE",
+        root=tmp_path,
+        uncertainty_threshold=0.50,
+        tme_phase="ESCAPE",
+    )
+    assert receipt is not None, "ESCAPE should lower threshold and allow probe"
+    assert receipt["confounder_check"]["tme_phase"] == "ESCAPE"
+    # Verify duration_ticks is 1
+    assert receipt["intervention"]["do"]["duration_ticks"] == 1
+
+def test_biological_steering_high_na_drives_exploration(tmp_path):
+    """High NA (>0.8) lowers uncertainty threshold by 0.10."""
+    # Base 0.5, uncertainty 0.45 -> blocked. NA drops threshold to 0.40 -> allows probe.
+    receipt = propose_and_execute_runtime_intervention(
+        tick_id=1,
+        current_uncertainty=0.45,
+        current_clamp_level="NONE",
+        root=tmp_path,
+        uncertainty_threshold=0.50,
+        na_level=0.85,
+    )
+    assert receipt is not None, "High NA should lower threshold and allow probe"
+    assert receipt["confounder_check"]["na_level"] == 0.85
+

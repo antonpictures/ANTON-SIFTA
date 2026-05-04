@@ -276,3 +276,89 @@ def test_summary_contains_key_fields(tmp_path):
     assert "regime" in s
     assert "Fleming" in s
     assert "monitoring" in s
+
+
+# ============================================================
+# PART 3: Biological Steering (§10.14.31)
+# DAM Stage 2, TME Escape, NA>0.8, Resilience, Owner Alignment
+# ============================================================
+
+def test_metacog_biological_steering_dam_stage2_underconfident():
+    """DAM Stage 2 forces UNDERCONFIDENT regime and raises threshold."""
+    # Normally 0 bias is CALIBRATED
+    receipt_normal = compute_metacognitive_state(
+        _pe_series=[0.1, 0.1, 0.1, 0.1],
+        _confidence=[0.5, 0.5, 0.5],
+        _correctness=[0.5, 0.5, 0.5],
+        write_ledger=False
+    )
+    
+    receipt_inflamed = compute_metacognitive_state(
+        dam_stage=2,
+        _pe_series=[0.1, 0.1, 0.1, 0.1],
+        _confidence=[0.5, 0.5, 0.5],
+        _correctness=[0.5, 0.5, 0.5],
+        write_ledger=False
+    )
+    
+    assert receipt_normal['metacog_regime'] == 'CALIBRATED'
+    assert receipt_inflamed['metacog_regime'] == 'UNDERCONFIDENT', "DAM Stage 2 must force UNDERCONFIDENT"
+    
+    bs_norm = receipt_normal['biological_steering']
+    bs_inf = receipt_inflamed['biological_steering']
+    assert bs_inf['evidence_threshold'] > bs_norm['evidence_threshold']
+    assert bs_inf['quick_commit'] is False
+
+def test_metacog_biological_steering_tme_escape_overconfident():
+    """TME ESCAPE forces OVERCONFIDENT regime and lowers threshold."""
+    receipt = compute_metacognitive_state(
+        tme_phase='ESCAPE',
+        _pe_series=[0.1, 0.1, 0.1, 0.1],
+        _confidence=[0.5, 0.5],
+        _correctness=[0.5, 0.5],
+        write_ledger=False
+    )
+    
+    assert receipt['metacog_regime'] == 'OVERCONFIDENT'
+    assert receipt['biological_steering']['evidence_threshold'] < 0.5
+    assert receipt['biological_steering']['deliberation_window'] < 10
+
+def test_metacog_biological_steering_hyperarousal():
+    """NA > 0.8 increases distractibility and false positive rate."""
+    receipt = compute_metacognitive_state(
+        na_level=0.85,
+        _pe_series=[0.1, 0.1, 0.1, 0.1],
+        _confidence=[0.5, 0.5],
+        _correctness=[0.5, 0.5],
+        write_ledger=False
+    )
+    bs = receipt['biological_steering']
+    assert bs['distractibility'] > 0.1
+    assert bs['attention_scope'] > 1.0
+    assert bs['false_positive_rate'] > 0.05
+
+def test_metacog_biological_steering_resilience_floor():
+    """High resilience floor increases conservatism."""
+    receipt = compute_metacognitive_state(
+        resilience_floor=0.10,
+        _pe_series=[0.1, 0.1, 0.1, 0.1],
+        _confidence=[0.5, 0.5],
+        _correctness=[0.5, 0.5],
+        write_ledger=False
+    )
+    bs = receipt['biological_steering']
+    assert bs['conservatism'] > 1.0
+
+def test_metacog_biological_steering_owner_aligned():
+    """Low frustration + high alignment boosts owner_signal_confidence."""
+    receipt = compute_metacognitive_state(
+        owner_frustration=0.1,
+        goal_alignment=0.9,
+        _pe_series=[0.1, 0.1, 0.1, 0.1],
+        _confidence=[0.5, 0.5],
+        _correctness=[0.5, 0.5],
+        write_ledger=False
+    )
+    bs = receipt['biological_steering']
+    assert bs['owner_signal_confidence'] > 0.5
+    assert bs['evidence_threshold'] > 0.5

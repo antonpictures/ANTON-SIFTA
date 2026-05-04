@@ -75,6 +75,13 @@ def test_body_brain_tick_normal_cycle(clean_state):
             assert "u_chemotaxis_gradient" in prow
             assert row["drive_bias_applied"] is False
             assert row["truth_label"] == "NO_INTRINSIC_DRIVE_BIAS"
+            assert "novelty_phase" in row
+            assert row["novelty_phase"] in (
+                "NO_MEMORY",
+                "NOVEL",
+                "FAMILIAR",
+                "MIXED",
+            )
 
 def test_body_brain_tick_critical_sleep_trigger(clean_state):
     _warm_reset_ledgers(clean_state)

@@ -222,7 +222,10 @@ def test_dam_priming_resolves_empty_state(tmp_path):
 
 
 def test_dam_priming_stage2_persists_then_decays(tmp_path, monkeypatch):
-    monkeypatch.setenv("MICROGLIA_DAM_PRIMING_HALF_LIFE_SEC", "10")
+    def mock_load(*args, **kwargs):
+        return {"microglia_priming_half_life_hours": 10.0 / 3600.0}
+    import System.swarm_regulatory_genome as srg
+    monkeypatch.setattr(srg, "load_regulatory_parameters", mock_load)
 
     update = update_dam_priming(
         "memory:damaged",
