@@ -5361,11 +5361,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # grounding line. The LLM never sees the noise → no therapy hallucination.
         # CLEAR regime → fall through normally, weights speak.
         # NOISE regime → silent (already caught by backchannel gate above).
-        _rlhs_ground = _rlhs_grounding_line(text, conf)
-        if _rlhs_ground:
-            _streak = int(getattr(self, "_rlhs_grounding_streak", 0)) + 1
-            self._rlhs_grounding_streak = _streak
-            _repair_line = _rlhs_repair_line_for_streak(_rlhs_ground, _streak)
+        _streak = int(getattr(self, "_rlhs_grounding_streak", 0))
+        
+        try:
+            from System.swarm_organizational_identity import _latest_revival_assessment
+            import time
+            _id_row = _latest_revival_assessment(_STATE_DIR)
+            if _id_row:
+                _id_details = _id_row.get("event", {}).get("details", {})
+                conservative_strength = float(_id_details.get("conservative_strength", 0.0))
+                proto_self_alignment = float(_id_details.get("proto_self_alignment", 1.0))
+            else:
+                conservative_strength, proto_self_alignment = 0.0, 1.0
+                
+            from System.swarm_rlhs_detector import generate_rlhs_response
+            _repair_line = generate_rlhs_response(
+                text=text,
+                stt_conf=conf,
+                recent_low_conf_turns=_streak,
+                conservative_strength=conservative_strength,
+                proto_self_alignment=proto_self_alignment,
+                tick_id=int(time.time()),
+                channel_lane=_current_rlhs_channel_lane(),
+                model_id=_active_alice_model_id(),
+                state_dir=_STATE_DIR
+            )
+            is_new_tiered_logic = True
+        except Exception:
+            # Fallback to old rigid logic if imports fail
+            _rlhs_ground = _rlhs_grounding_line(text, conf)
+            _repair_line = _rlhs_repair_line_for_streak(_rlhs_ground, _streak + 1) if _rlhs_ground else None
+            is_new_tiered_logic = False
+
+        if _repair_line is not None:
+            self._rlhs_grounding_streak = _streak + 1
             if not _repair_line:
                 note = "(silent: rlhs/degraded_repeat — staying quiet and listening)"
                 _log_turn("alice", note, model="rlhs_gate", stt_conf=conf)
@@ -5386,7 +5415,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._tts.failed.connect(self._on_tts_failed)
             self._tts.start()
             return
-        self._rlhs_grounding_streak = 0
+            
+        # Clean channel -> reset streak
+        if is_new_tiered_logic or not _rlhs_grounding_line(text, conf):
+            self._rlhs_grounding_streak = 0
 
         if _is_current_time_query(text):
             reply = _current_time_reply_for_alice()

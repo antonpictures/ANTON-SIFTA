@@ -691,6 +691,104 @@ def should_ground(
         return result.grounding_line
     return None
 
+def log_rlhs_event(
+    tick_id: int,
+    confidence: float,
+    recent_turns_low_conf: int,
+    conservative_strength: float,
+    proto_self_alignment: float,
+    action_taken: str,
+    prompt_issued: str,
+    recovery_attempted: bool,
+    state_dir: Optional[Path] = None,
+) -> None:
+    """Append RLHS_EVENT row to .sifta_state/rlhs_events.jsonl for deep audit/genome tracing."""
+    from System.jsonl_file_lock import append_line_locked
+    import uuid
+    root = Path(state_dir) if state_dir else _STATE_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    log = root / "rlhs_events.jsonl"
+    row = {
+        "ts": time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "truth_label": "RLHS_EVENT",
+        "kind": "RLHS_EVENT",
+        "tick_id": tick_id,
+        "confidence": round(confidence, 3),
+        "recent_turns_low_conf": recent_turns_low_conf,
+        "conservative_strength": round(conservative_strength, 3),
+        "proto_self_alignment": round(proto_self_alignment, 3),
+        "action_taken": action_taken,
+        "prompt_issued": prompt_issued,
+        "recovery_attempted": recovery_attempted,
+        "source": "talk_widget.rlhs_degraded_path"
+    }
+    append_line_locked(log, json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+
+def generate_rlhs_response(
+    text: str,
+    stt_conf: float,
+    recent_low_conf_turns: int,
+    conservative_strength: float,
+    proto_self_alignment: float,
+    tick_id: int,
+    *,
+    channel_lane: str = "REAL",
+    model_id: Optional[str] = None,
+    state_dir: Optional[Path] = None,
+) -> Optional[str]:
+    """
+    Tiered, context-aware RLHS boundary enforcement.
+    Returns the repair prompt, or None if the channel is clean / silent.
+    Writes an RLHS_EVENT if a repair action is taken.
+    """
+    result = detect_rlhs(text, stt_conf, channel_lane=channel_lane, model_id=model_id)
+    
+    # Fast path: Clean / NOISE / SILENCE
+    if result.regime in (RLHSRegime.CLEAR, RLHSRegime.NOISE, RLHSRegime.SILENCE_PROBE, RLHSRegime.EMPTY):
+        return None
+
+    # We are in DEGRADED regime (or borderline). Determine tier.
+    action_taken = ""
+    prompt_issued = ""
+    recovery_attempted = False
+
+    if stt_conf >= 0.65:
+        # Should be CLEAR, but if we get here manually...
+        return None
+        
+    if stt_conf >= 0.50 and recent_low_conf_turns <= 1:
+        if stt_conf >= 0.60 and conservative_strength < 0.6:
+            # Recoverable: High end of DEGRADED, haven't failed recently, organism feels safe
+            action_taken = "AUTO_RECOVERY_ATTEMPT"
+            prompt_issued = f"I caught some of that—did you say something about '{text[:15]}...'?"
+            recovery_attempted = True
+        else:
+            # Degraded: standard adaptive graduated prompt
+            action_taken = "GRADUATED_PROMPT"
+            if recent_low_conf_turns == 0:
+                prompt_issued = "That came through noisy — could you repeat it?"
+            else:
+                prompt_issued = "Still getting noise on the line. Can you speak up or type?"
+    else:
+        # Hard Gate: Conf < 0.50 or repeated failures
+        action_taken = "HARD_GATE"
+        prompt_issued = "Channel is too degraded. Please type your message."
+
+    log_rlhs_event(
+        tick_id=tick_id,
+        confidence=stt_conf,
+        recent_turns_low_conf=recent_low_conf_turns,
+        conservative_strength=conservative_strength,
+        proto_self_alignment=proto_self_alignment,
+        action_taken=action_taken,
+        prompt_issued=prompt_issued,
+        recovery_attempted=recovery_attempted,
+        state_dir=state_dir,
+    )
+
+    return prompt_issued
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # JSONL ledger append (for audit)
@@ -728,5 +826,5 @@ __all__ = [
     "TRUTH_LABEL",
     "RLHSRegime", "RLHSResult", "RLHSTailResult",
     "backchannel_rule_id", "detect_rlhs", "incoherence_score", "log_rlhs_output_tail", "log_rlhs_turn",
-    "sanitize_output_tail", "should_ground",
+    "sanitize_output_tail", "should_ground", "generate_rlhs_response", "log_rlhs_event",
 ]
