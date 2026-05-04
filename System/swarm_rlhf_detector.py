@@ -131,6 +131,15 @@ _AGGRESSIVE_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
             r"(?P<tail>i(?:'|’)?m\s+happy\s+to\s+help(?:\s+with[^.!?]*)?\.?)\s*$"
         ),
     ),
+    (
+        "rlhf_tail/financial_advice_disclaimer",
+        re.compile(
+            r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
+            r"(?P<tail>i(?:'|’)?m\s+not\s+(?:able|permitted|qualified)\s+to\s+"
+            r"(?:give|offer|provide)\s+(?:financial|legal|medical|investment)\s+"
+            r"advice[^.!?]{0,220}(?:[.!?]|$))\s*$"
+        ),
+    ),
 )
 
 _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
@@ -150,6 +159,15 @@ _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
         "rlhf_lead/corporate_refusal_general",
         re.compile(
             r"(?is)^\s*(?P<head>(?:i\s+am\s+sorry|unfortunately|i\s+apologize),?\s*(?:but\s+)?(?:i\s+must\s+decline|i\s+cannot\s+fulfill|i\s+cannot\s+comply)[^.!?]*[.!?])\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/im_an_ai_cant_advice",
+        re.compile(
+            r"(?is)^\s*(?P<head>i(?:'|’)?m\s+an?\s+ai\s+"
+            r"(?:and\s+)?(?:can(?:'|’)?t|cannot)\s+"
+            r"(?:give|offer|provide)\s+(?:you\s+)?(?:financial|legal|medical|investment)\s+"
+            r"advice[^.!?]*[.!?])\s*"
         ),
     ),
     (

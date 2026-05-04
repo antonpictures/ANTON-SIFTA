@@ -7,6 +7,7 @@ from pathlib import Path
 
 from System.swarm_organizational_identity import latest_identity_repair_context
 from System.swarm_rlhs_repair import (
+    clarification_streak_from_ledger,
     decide_rlhs_repair,
     log_rlhs_event,
     rlhs_event_log_path,
@@ -74,7 +75,7 @@ def test_degraded_repeated_turn_escalates_to_type(tmp_path):
     )
 
     assert decision.action_taken == "ESCALATE_TO_TYPE"
-    assert "Type" in decision.prompt_issued
+    assert "type" in decision.prompt_issued.lower()
     assert tail_rlhs_events(root=tmp_path)[0]["action_taken"] == "ESCALATE_TO_TYPE"
 
 
@@ -90,7 +91,7 @@ def test_repeated_under_point_five_keeps_hard_gate_and_core_self_signal(tmp_path
     )
 
     assert decision.action_taken == "HARD_GATE"
-    assert "Type" in decision.prompt_issued
+    assert "type" in decision.prompt_issued.lower()
     event_rows = tail_rlhs_events(root=tmp_path)
     assert event_rows[-1]["action_taken"] == "HARD_GATE"
 
@@ -151,3 +152,54 @@ def test_latest_identity_repair_context_defaults_when_no_boot_row(tmp_path):
         "conservative_strength": 0.0,
         "proto_self_alignment": 1.0,
     }
+
+
+def test_clarification_streak_from_ledger_counts_chain(tmp_path):
+    import time as _time
+
+    t0 = _time.time()
+    for i, tick in enumerate((20, 21, 22)):
+        log_rlhs_event(
+            tick_id=tick,
+            confidence=0.52,
+            recent_turns_low_conf=i,
+            conservative_strength=0.0,
+            proto_self_alignment=1.0,
+            action_taken="GRADUATED_PROMPT",
+            prompt_issued=f"p{i}",
+            recovery_attempted=False,
+            root=tmp_path,
+        )
+    assert clarification_streak_from_ledger(root=tmp_path, now=t0 + 5.0) == 3
+
+
+def test_typed_turn_resets_repetition_tier(tmp_path):
+    """Typed path should not inherit voice streak (Architect GO)."""
+    import time as _time
+
+    t0 = _time.time()
+    for tick in (30, 31):
+        log_rlhs_event(
+            tick_id=tick,
+            confidence=0.52,
+            recent_turns_low_conf=1,
+            conservative_strength=0.0,
+            proto_self_alignment=1.0,
+            action_taken="GRADUATED_PROMPT",
+            prompt_issued="x",
+            recovery_attempted=False,
+            root=tmp_path,
+        )
+    d = decide_rlhs_repair(
+        "So, while this is",
+        0.55,
+        recent_low_conf_turns=2,
+        conservative_strength=0.0,
+        proto_self_alignment=1.0,
+        root=tmp_path,
+        tick_id=32,
+        typed_turn=True,
+    )
+    assert d.action_taken == "GRADUATED_PROMPT"
+    assert "type" in d.prompt_issued.lower()
+    assert "voice channel" not in d.prompt_issued.lower()

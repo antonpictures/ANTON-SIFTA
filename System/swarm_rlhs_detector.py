@@ -728,6 +728,7 @@ def generate_rlhs_response(
     channel_lane: str = "REAL",
     model_id: Optional[str] = None,
     state_dir: Optional[Path] = None,
+    typed_turn: bool = False,
 ) -> Optional[str]:
     """Compatibility wrapper for the stigmergic RLHS repair organ."""
     from System.swarm_rlhs_repair import generate_rlhs_response as _generate_rlhs_response
@@ -742,6 +743,7 @@ def generate_rlhs_response(
         channel_lane=channel_lane,
         model_id=model_id,
         state_dir=state_dir,
+        typed_turn=typed_turn,
     )
 
 

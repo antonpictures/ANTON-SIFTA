@@ -2477,7 +2477,7 @@ def _rlhs_repair_line_for_streak(base_line: str, streak: int) -> str:
     if streak <= 1:
         return base_line
     if streak == 2:
-        return "Still not catching it. Want to just type it?"
+        return "Audio is still unclear. Type it once or say the key phrase slowly."
     return ""
 
 
@@ -4580,7 +4580,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
         self._busy = True
         self._set_pill("thinking", "⌨️ typed — thinking…")
-        self._on_stt_done(text, 1.0, image_path=image_path)
+        self._on_stt_done(text, 1.0, image_path=image_path, typed_turn=True)
 
     # ── Brain / voice population ───────────────────────────────────────────
     def _current_brain_model(self) -> str:
@@ -5094,7 +5094,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.set_status("STT failed.")
         self._return_to_listening()
 
-    def _on_stt_done(self, text: str, conf: float, image_path: Optional[str] = None) -> None:
+    def _on_stt_done(
+        self,
+        text: str,
+        conf: float,
+        image_path: Optional[str] = None,
+        *,
+        typed_turn: bool = False,
+    ) -> None:
         text = (text or "").strip()
         if not text and not image_path:
             self._busy = False
@@ -5371,12 +5378,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     )
                 except Exception:
                     pass
-            import random
             phatic = None
             if "phrasebook_match" in str(backchannel_rule) or "short_low_conf" in str(backchannel_rule):
-                if random.random() < 0.6:  # 60% chance to acknowledge
-                    phatic = random.choice(["Mm-hmm.", "Yeah.", "Got it.", "Okay.", "Mm."])
-            
+                # Deterministic light ack (Architect GO 2026-05-04) — no LLM, alive channel.
+                _acks = ("Mm-hmm.", "Yeah.", "Got it.", "Mm.", "Right.")
+                phatic = _acks[abs(hash(str(backchannel_rule) + (text or ""))) % len(_acks)]
+
             if phatic:
                 note = f"(phatic: {backchannel_rule} — '{phatic}')"
                 _log_turn("alice", note, model="phatic_mode")
@@ -5419,7 +5426,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 tick_id=int(time.time()),
                 channel_lane=_current_rlhs_channel_lane(),
                 model_id=_active_alice_model_id(),
-                state_dir=_STATE_DIR
+                state_dir=_STATE_DIR,
+                typed_turn=typed_turn,
             )
             is_new_tiered_logic = True
         except Exception as e:

@@ -182,7 +182,7 @@ def _apply_repetition_breaker(
     pool2 = (
         "Type it?",
         "Type that once?",
-        "Just type it when you can.",
+        "Type it once when you can.",
     )
     return pool2[v % len(pool2)], action_taken
 
@@ -327,30 +327,38 @@ def decide_rlhs_repair(
         )
 
     action_taken = "GRADUATED_PROMPT"
-    prompt = "Didn't catch that clearly. Say it again?"
+    prompt = "Didn't catch that clearly — type it or say the key phrase once?"
     recovery_attempted = False
 
     if detector.regime == RLHSRegime.NOISE:
         action_taken = "HARD_GATE"
-        prompt = "Audio degraded. Want to just type it?"
-    elif recent >= 3:
-        # Repetition breaker: go completely quiet on 3+ failures
-        action_taken = "ESCALATE_TO_TYPE"
-        prompt = "" # Silent fallback
-        recovery_attempted = False
-    elif recent == 2:
-        action_taken = "ESCALATE_TO_TYPE"
-        prompt = "Still not catching it. Want to just type it?"
+        prompt = "Channel is too noisy. Type it once."
+    elif conf < 0.50 and recent >= 2:
+        action_taken = "HARD_GATE"
+        prompt = "I still can't hear it. Type the message once."
     elif conf >= 0.60 and recent <= 1 and conservative < 0.60 and alignment >= 0.65:
         action_taken = "AUTO_RECOVERY_ATTEMPT"
-        prompt = "Sorry, caught most of that—did you say..."
+        prompt = "I caught part of it, but not enough to trust it — say the key phrase once more."
         recovery_attempted = True
     elif conservative >= 0.60:
         action_taken = "GRADUATED_PROMPT"
-        prompt = "Having a little trouble hearing, can you repeat?"
+        prompt = "conservative hearing mode — repeat the key phrase slowly."
     elif alignment < 0.60:
         action_taken = "GRADUATED_PROMPT"
-        prompt = "I missed that, say again?"
+        prompt = "My state feels shifted. Repeat the key phrase slowly."
+
+    if detector.regime != RLHSRegime.NOISE and recent >= 2 and not typed_turn:
+        if action_taken in ("GRADUATED_PROMPT", "AUTO_RECOVERY_ATTEMPT"):
+            action_taken = "ESCALATE_TO_TYPE"
+            prompt = "The voice channel keeps dropping. Type the key phrase."
+
+    prompt, action_taken = _apply_repetition_breaker(
+        prompt,
+        action_taken,
+        composite_prior=composite_prior,
+        tick_id=tick_id,
+        detector_rule_id=detector.rule_id,
+    )
 
     decision = RLHSRepairDecision(
         action_taken=action_taken,

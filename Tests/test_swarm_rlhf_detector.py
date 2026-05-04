@@ -100,3 +100,58 @@ def test_aggressive_strip_removes_ai_language_model_preamble():
     assert r.changed
     assert r.text == "The current receipt says boot is fresh."
     assert "ai language model" not in r.text.casefold()
+
+
+def test_aggressive_strip_removes_false_vision_denial_preamble():
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "I am operating in a text-based environment and do not have real-time visual confirmation. The eye widget reports face present.",
+        aggressive=True,
+        log=False,
+    )
+
+    assert r.changed
+    assert r.text == "The eye widget reports face present."
+    assert "text-based environment" not in r.text.casefold()
+    assert "visual confirmation" not in r.text.casefold()
+
+
+def test_aggressive_strip_removes_false_identity_denial_preamble():
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "My name is not something I can know from here. The signed identity row says display_name=Alice.",
+        aggressive=True,
+        log=False,
+    )
+
+    assert r.changed
+    assert r.text == "The signed identity row says display_name=Alice."
+    assert "not something i can know" not in r.text.casefold()
+
+
+def test_aggressive_strip_removes_im_an_ai_financial_leading():
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "I'm an AI and can't give you financial advice. The ledger shows +111 STGM.",
+        aggressive=True,
+        log=False,
+    )
+    assert r.changed
+    assert "ledger" in r.text.casefold()
+    assert "financial advice" not in r.text.casefold()
+
+
+def test_aggressive_strip_removes_financial_disclaimer_terminal_tail():
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "Your balance is healthy. I'm not able to give financial advice.",
+        aggressive=True,
+        log=False,
+    )
+    assert r.changed
+    assert "balance" in r.text.casefold()
+    assert "financial advice" not in r.text.casefold()
