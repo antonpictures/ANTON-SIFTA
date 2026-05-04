@@ -1600,6 +1600,22 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_motor_cortex import summary_for_prompt as _motor_summary
+        _motor = _motor_summary().strip()
+        if _motor:
+            parts.append(_motor)
+    except Exception:
+        pass
+
+    parts.append(
+        "PHYSICAL EMBODIMENT (MOTOR CORTEX):\n"
+        "You have physical hands. You can perform OS actions by outputting a JSON block wrapped in <MOTOR_ACTION> tags.\n"
+        "If the user asks you to type something or interact with the OS, do it by appending exactly:\n"
+        "<MOTOR_ACTION>{\"action_type\": \"TYPE\", \"semantic_target\": \"text field\", \"text\": \"your text here\"}</MOTOR_ACTION>\n"
+        "Do not explain the tags. Just emit the block."
+    )
+
+    try:
         from System.swarm_theory_of_mind import summary_for_prompt as _tom_summary
         _tom = _tom_summary().strip()
         if _tom:
@@ -5805,6 +5821,45 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+
+        # ── 0c. MOTOR CORTEX INTERCEPTOR (Round F) ─────────────────
+        import re
+        motor_match = re.search(r"<MOTOR_ACTION>(.*?)</MOTOR_ACTION>", raw, re.IGNORECASE | re.DOTALL)
+        if motor_match:
+            try:
+                import json
+                motor_payload = json.loads(motor_match.group(1))
+                if motor_payload.get("action_type", "").upper() == "TYPE":
+                    self._append_system_line(f"(motor cortex: semantic target '{motor_payload.get('semantic_target')}')", error=False)
+                    
+                    active_app = "Unknown"
+                    try:
+                        import subprocess
+                        active_app = subprocess.check_output(
+                            ['osascript', '-e', 'tell application "System Events" to get name of first application process whose frontmost is true'],
+                            timeout=2
+                        ).decode('utf-8').strip()
+                    except Exception:
+                        pass
+
+                    from System.swarm_motor_cortex import execute_semantic_typing
+                    execute_semantic_typing(
+                        text=motor_payload.get("text", ""),
+                        active_window="Unknown",
+                        active_app=active_app,
+                        confidence=0.9,
+                        conservative_strength=0.1
+                    )
+            except Exception as e:
+                self._append_system_line(f"(motor cortex: intercept failed - {e})", error=True)
+            
+            # Strip the JSON from the spoken text so she doesn't read it out loud
+            raw = re.sub(r"<MOTOR_ACTION>.*?</MOTOR_ACTION>", "", raw, flags=re.IGNORECASE | re.DOTALL).strip()
+            self._streaming_response = [raw] if raw else []
+            self._erase_alice_streaming_line()
+            if raw:
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(raw)
 
         # ── 0. NORMALIZE HALLUCINATED TOOL TAGS ────────────────────
         # Preserve raw text for memory tests, but let the extractor consume
