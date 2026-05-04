@@ -8,6 +8,7 @@ rehydration semantics.
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
 from pathlib import Path
@@ -191,15 +192,118 @@ def detect_genome_drift(previous: Dict[str, Any], current: Dict[str, Any]) -> Op
     return None
 
 
+def build_current_internal_state_vector(root: Optional[Path] = None) -> Dict[str, float]:
+    """Collects the 8 fields from relevant organs / ledgers."""
+    vec: Dict[str, float] = {
+        "avg_prediction_error_50": 0.5,
+        "dam_stage": 0.0,
+        "chronic_dam2_streak": 0.0,
+        "genome_drift_magnitude": 0.0,
+        "na_level": 0.5,
+        "valence": 0.0,
+        "pruning_pressure": 0.0,
+        "ledger_pressure": 0.0
+    }
+    try:
+        mc_path = state_dir(root) / "metacognitive_state.jsonl"
+        if mc_path.exists():
+            lines = read_text_locked(mc_path, encoding="utf-8").splitlines()
+            valid_rows = []
+            for l in reversed(lines[-50:]):
+                if l.strip():
+                    try:
+                        valid_rows.append(json.loads(l))
+                    except Exception:
+                        pass
+            if valid_rows:
+                recent = valid_rows[0]
+                vec["dam_stage"] = float(recent.get("dam_stage", 0))
+                vec["na_level"] = float(recent.get("na_level", 0.5))
+                vec["valence"] = float(recent.get("valence", 0.0))
+                
+                streak = 0
+                for r in valid_rows:
+                    if int(r.get("dam_stage", 0)) >= 2:
+                        streak += 1
+                    else:
+                        break
+                vec["chronic_dam2_streak"] = float(streak)
+    except Exception:
+        pass
+        
+    try:
+        from System.swarm_regulatory_genome import load_regulatory_parameters, default_regulatory_parameters
+        params = load_regulatory_parameters(root)
+        defaults = default_regulatory_parameters()
+        total_drift = 0.0
+        keys = ["metacog_evidence_threshold", "arbiter_risk_weight"]
+        for k in keys:
+            total_drift += abs(params.get(k, defaults[k]) - defaults[k])
+        vec["genome_drift_magnitude"] = min(1.0, total_drift)
+    except Exception:
+        pass
+        
+    try:
+        log_size = (state_dir(root) / "metacognitive_state.jsonl").stat().st_size
+        vec["ledger_pressure"] = min(1.0, log_size / (10 * 1024 * 1024))
+    except Exception:
+        pass
+
+    return vec
+
+
+def snapshot_proto_self(root: Optional[Path] = None, tick_id: Optional[int] = None) -> None:
+    """Builds vector + writes PROTO_SELF_SNAPSHOT row."""
+    vec = build_current_internal_state_vector(root)
+    row = {
+        "ts": time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "truth_label": "PROTO_SELF_SNAPSHOT",
+        "kind": "PROTO_SELF_SNAPSHOT",
+        "tick_id": tick_id,
+        "internal_state_vector": vec,
+        "source": "body_brain_tick",
+        "version": 1
+    }
+    append_line_locked(
+        get_identity_ledger_path(root),
+        json.dumps(row, sort_keys=True) + "\n",
+        encoding="utf-8"
+    )
+
+
+def load_latest_proto_self_vector(root: Optional[Path] = None) -> Optional[Dict[str, float]]:
+    """Returns the internal_state_vector from the most recent PROTO_SELF_SNAPSHOT."""
+    for row in reversed(_all_identity_rows(root)):
+        if row.get("kind") == "PROTO_SELF_SNAPSHOT":
+            return row.get("internal_state_vector")
+    return None
+
+
+def _cosine_similarity(v1: Dict[str, float], v2: Dict[str, float]) -> float:
+    """Simple cosine similarity over the shared keys of two state vectors."""
+    keys = set(v1.keys()) & set(v2.keys())
+    if not keys:
+        return 0.5
+    dot = sum(v1[k] * v2[k] for k in keys)
+    norm1 = math.sqrt(sum(v1[k]**2 for k in keys))
+    norm2 = math.sqrt(sum(v2[k]**2 for k in keys))
+    if norm1 == 0 or norm2 == 0:
+        return 0.5
+    return dot / (norm1 * norm2)
+
+
 def compute_revival_score(
     last_seen_tick: int, 
     current_tick: int,
     personality_delta: float,
-    recent_boots: int
+    recent_boots: int,
+    current_internal_state: Optional[Dict[str, float]] = None,
+    last_proto_self_vector: Optional[Dict[str, float]] = None,
 ) -> float:
     """
     Calculate scalar [0,1] indicating how 'alive / continuous' the organism feels on boot.
-    revival_score = clamp(0.0, 1.0, base_continuity - gap_penalty - personality_penalty + boot_bonus)
+    revival_score = clamp(0.0, 1.0, base_continuity - gap_penalty - personality_penalty + boot_bonus - proto_self_penalty)
     """
     gap_ticks = max(0, current_tick - last_seen_tick)
     base_continuity = 1.0
@@ -207,8 +311,15 @@ def compute_revival_score(
     personality_penalty = abs(personality_delta) * 0.3
     boot_bonus = recent_boots * 0.1
 
-    score = base_continuity - gap_penalty - personality_penalty + boot_bonus
-    return max(0.0, min(1.0, score))
+    if current_internal_state and last_proto_self_vector:
+        proto_self_alignment = _cosine_similarity(current_internal_state, last_proto_self_vector)
+    else:
+        proto_self_alignment = 0.75
+        
+    proto_self_penalty = (1.0 - proto_self_alignment) * 0.22
+
+    score = base_continuity - gap_penalty - personality_penalty + boot_bonus - proto_self_penalty
+    return max(0.10, min(0.98, score))
 
 
 def record_continuity_event(
@@ -280,7 +391,17 @@ def rehydrate_identity(
     gap_ticks = max(0, current_tick - last_seen_tick)
     gap_seconds = max(0.0, time.time() - last_ts)
 
-    revival_score = compute_revival_score(last_seen_tick, current_tick, personality_delta, recent_boots)
+    current_internal_state = build_current_internal_state_vector(root)
+    last_proto_self_vector = load_latest_proto_self_vector(root)
+
+    revival_score = compute_revival_score(
+        last_seen_tick, 
+        current_tick, 
+        personality_delta, 
+        recent_boots,
+        current_internal_state=current_internal_state,
+        last_proto_self_vector=last_proto_self_vector
+    )
     conservative_mode = revival_score < 0.6
     
     recommended_genome_blend = max(0.2, min(1.0, revival_score + 0.1))
@@ -373,4 +494,7 @@ __all__ = [
     "record_continuity_event",
     "rehydrate_identity",
     "summary_for_prompt",
+    "build_current_internal_state_vector",
+    "snapshot_proto_self",
+    "load_latest_proto_self_vector",
 ]
