@@ -1,0 +1,13 @@
+{
+  "epoch": 1,
+  "sealed_at": 1777903536.002572,
+  "sealed_at_iso": "2026-05-04T14:05:36.004865+00:00",
+  "ledger_file": "repair_log.jsonl",
+  "line_count": 26556,
+  "sha256": "76ead56be99e4c9215d2a23b5062add6e64697ffb42f4d00fd4860ab06563d4a",
+  "agent": "AS46",
+  "model": "claude-sonnet-4-6",
+  "homeworld_serial": "GTH4921YP3",
+  "note": "Epoch 1 sealed. All future entries go to repair_log_epoch2.jsonl. This seal is immutable.",
+  "epoch2_file": "repair_log_epoch2.jsonl"
+}
