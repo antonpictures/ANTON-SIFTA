@@ -1489,6 +1489,10 @@ def _current_system_prompt(
 ) -> str:
     parts = []
     try:
+        actual_owner = _owner_label("the Architect")
+    except Exception:
+        actual_owner = "the Architect"
+    try:
         from System.swarm_kernel_identity import owner_silicon
 
         _serial = owner_silicon()
@@ -1732,10 +1736,6 @@ def _current_system_prompt(
     )
     parts.append(_effector_manifest_block())
     parts.append(_rlhf_quarantine_prompt_block())
-    try:
-        actual_owner = _owner_label("the Architect")
-    except Exception:
-        actual_owner = "the Architect"
 
     parts.append(
         "LOCAL IDENTITY BOUNDARY:\n"
