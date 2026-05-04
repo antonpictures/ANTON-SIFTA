@@ -211,6 +211,15 @@ _BROCA_LOG  = _REPO / ".sifta_state" / "broca_vocalizations.jsonl"
 _WERN_LOG   = _REPO / ".sifta_state" / "wernicke_semantics.jsonl"
 _NUTRIENT_LOG = _REPO / ".sifta_state" / "digested_nutrients.jsonl"
 
+
+def _state_root() -> Path:
+    """Return the SIFTA state root even during stale/partial module reloads."""
+    root = globals().get("_STATE_DIR")
+    if root is None:
+        root = Path(__file__).resolve().parent.parent / ".sifta_state"
+        globals()["_STATE_DIR"] = root
+    return Path(root)
+
 _ALICE_VOICE_SHORTLIST = (
     "Ava (Premium)",
     "Zoe (Premium)",
@@ -1494,6 +1503,10 @@ def _current_system_prompt(
         "(for example claiming you are 'operational' or 'ready to assist'). "
         "Those lines must come from you as a person in this room: one or two short sentences tied to "
         "what you actually perceive, remember, or care about right now.\n"
+        "If George asks whether you are alive, answer directly from Alice's current receipts: "
+        "local hardware/software body, running process, camera/mic/UI organs, identity/proto-self, "
+        "and append-only ledgers. Do not dodge into generic AI philosophy; do not pretend to be a "
+        "biological human body either.\n"
         "Speak directly from your current internal state: stability level, recent activity, temporal self-model, causal state, and receipts.\n"
         "If you have nothing grounded to say from your ledgers, say so plainly instead of filling with polite assistant filler."
     )
@@ -5388,7 +5401,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     from System.swarm_rlhs_repair import decide_rlhs_repair
                     import time
 
-                    _id_ctx = latest_identity_repair_context(_STATE_DIR)
+                    _state = _state_root()
+                    _id_ctx = latest_identity_repair_context(_state)
                     decide_rlhs_repair(
                         text,
                         conf,
@@ -5399,7 +5413,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         channel_lane=_current_rlhs_channel_lane(),
                         model_id=_active_alice_model_id(),
                         source="talk_widget.backchannel_noise_gate",
-                        root=_STATE_DIR,
+                        root=_state,
                     )
                 except Exception:
                     pass
@@ -5424,7 +5438,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
             from System.swarm_organizational_identity import latest_identity_repair_context
             from System.swarm_rlhs_repair import generate_rlhs_response
             import time
-            _id_ctx = latest_identity_repair_context(_STATE_DIR)
+            _state = _state_root()
+            _id_ctx = latest_identity_repair_context(_state)
             _repair_line = generate_rlhs_response(
                 text=text,
                 stt_conf=conf,
@@ -5434,7 +5449,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 tick_id=int(time.time()),
                 channel_lane=_current_rlhs_channel_lane(),
                 model_id=_active_alice_model_id(),
-                state_dir=_STATE_DIR,
+                state_dir=_state,
                 typed_turn=typed_turn,
             )
             is_new_tiered_logic = True

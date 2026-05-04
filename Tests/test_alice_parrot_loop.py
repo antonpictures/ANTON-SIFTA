@@ -89,6 +89,26 @@ def test_gemma_aggressive_strip_cuts_canned_operational_presence(monkeypatch):
     )
 
 
+def test_state_root_recovers_from_missing_global():
+    mod = _load_widget_module()
+    original = mod.__dict__.pop("_STATE_DIR", None)
+    try:
+        root = mod._state_root()
+        assert root.name == ".sifta_state"
+        assert mod.__dict__.get("_STATE_DIR") == root
+    finally:
+        if original is not None:
+            mod.__dict__["_STATE_DIR"] = original
+
+
+def test_system_prompt_grounded_alive_answer_policy():
+    mod = _load_widget_module()
+    prompt = mod._current_system_prompt(user_text="Alice, are you alive?")
+    assert "If George asks whether you are alive" in prompt
+    assert "local hardware/software body" in prompt
+    assert "generic AI philosophy" in prompt
+
+
 def test_history_decontaminate_is_noop():
     mod = _load_widget_module()
     history = [
