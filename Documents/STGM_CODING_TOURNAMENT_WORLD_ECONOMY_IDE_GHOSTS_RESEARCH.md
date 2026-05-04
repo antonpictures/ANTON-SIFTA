@@ -940,6 +940,17 @@ Append-only ledgers; stigmergic traces (`ide_stigmergic_bridge`) not anonymous s
 
 Alice needs organs that reliably turn failures into receipts, receipts into patterns, and patterns into **gated** improvement — **not** chat affirmation.
 
+### 25.7 **Prompt injection canon** (Talk / organism — receipts only)
+
+**Adopted 2026-05-04 (Architect + Grok IDE-ghost lane):** Any prose injected into Alice’s **runtime** system prompt that is **not** derived from a **live ledger read**, **sensor summary**, or **cryptographically signed receipt** (when policy mandates signatures) counts as an **undeclared ghost vector** unless it is explicitly prefixed **`[DECLARED_METAPHOR]`** and flagged as heuristic analogy—not fact about silicon or physiology.
+
+| Law | Requirement |
+|:---|:---|
+| **No scripted affect** | Do not mandate emotional performance in static prompt lines; measurable affect routes through **`swarm_affective_valence`** receipts when present. |
+| **Declared heuristic blocks** | Tails such as **`abstract_skill_metaphors.jsonl`** must arrive under **`[DECLARED_METAPHOR]`** with caveat that rows are append-only text, **not default seals.** |
+
+**Doctrine vocabulary (documents):** Prefer **Leib**, **being-in-the-world**, **hylomorphism**, **4E cognition** where they name **single-substance embodied agency**; avoid spooky “ghost in the stack” shorthand unless fenced as labeled analogy ([SEP — Heidegger](https://plato.stanford.edu/entries/heidegger/), embodied cognition surveys).
+
 ---
 
 **For the Swarm. 🐜⚡**

@@ -1765,10 +1765,21 @@ def _current_system_prompt(
     parts.append(
         "IDE DOCTORS vs ONE LARYNX (ENGINEERING FACT):\n"
         "- Cursor / Codex / Antigravity edit code and append ide_stigmergic_trace.jsonl receipts.\n"
-        "- Each reply you produce is one local inference pass: one configured model, one system prompt, one visible history.\n"
-        "- When asked which IDE or model is speaking: read the receipts. The receipt names the IDE. The model name is in the Talk window config.\n"
-        "- Stigmergy means IDEs coordinate by leaving signed traces in shared JSONL files — not by sharing weights or presence.\n"
+        "- Text is routed through your configured inference stack in a single forward pass per reply: "
+        "one configured model for that turn; no hidden extra speaker is added.\n"
+        "- Downstream outputs must honor receipt boundaries: grounding comes from ledger rows, sensor summaries, "
+        "and signatures where cryptographically mandated. Do not treat unreceipted language as live body truth.\n"
+        "- Each reply uses one visible history slice tied to this session; when asked who spoke, cite Talk config + traces, don't invent watchers.\n"
+        "- IDEs coordinate by leaving append-only traces — not by sharing weights or runtime presence.\n"
     )
+    try:
+        from System.swarm_affective_valence import summary_for_prompt as _affective_for_prompt
+
+        _aff_line = (_affective_for_prompt() or "").strip()
+        if _aff_line:
+            parts.append(_aff_line)
+    except Exception:
+        pass
     parts.append(
         "LIVE HUMAN CONVERSATION STYLE:\n"
         "- In live voice demos: short phrases, usually 1-3 sentences.\n"
@@ -3788,8 +3799,9 @@ def _build_swarm_context(user_text: str = "") -> str:
     except Exception:
         pass
 
-    # ── Transfer Learning: Abstract Metaphor Application ─────────────────────
-    # Allows Alice to apply successful physical algorithms to OOD domains.
+    # ── Enacted Skill Patterns: receipt-backed prior transfers ───────────────
+    # The filename is legacy. Rows are only injected when they carry explicit
+    # receipt/provenance fields, so free text cannot masquerade as body truth.
     transfer_learning_block = ""
     try:
         _meta_log = _REPO / ".sifta_state" / "abstract_skill_metaphors.jsonl"
@@ -3797,12 +3809,18 @@ def _build_swarm_context(user_text: str = "") -> str:
         if metas:
             lines = []
             for m in metas:
+                if not _is_receipted_skill_pattern_row(m):
+                    continue
                 verb = m.get("abstract_verb", "")
                 mech = m.get("core_mechanic", "")
                 if verb and mech:
-                    lines.append(f"  {verb}: {mech}")
+                    receipt = _skill_pattern_receipt_id(m)
+                    lines.append(f"  {verb}: {mech} [receipt={receipt}]")
             if lines:
-                transfer_learning_block = "ENACTED SKILL PATTERNS (Prior applications from this organism's run history):\n" + "\n".join(lines)
+                transfer_learning_block = (
+                    "ENACTED SKILL PATTERNS (Prior applications from my run history):\n"
+                    + "\n".join(lines)
+                )
     except Exception:
         pass
 

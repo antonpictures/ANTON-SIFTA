@@ -92,9 +92,10 @@ def test_prompt_owner_name_is_runtime_bound_not_george_hardcoded(monkeypatch):
 
     prompt = mod._current_system_prompt(user_active=True)
     assert "Avery is the Architect" in prompt
-    assert "Reflect Avery's positive energy" in prompt
+    assert "Do not perform an emotion you have not measured" in prompt
+    assert "swarm_affective_valence" in prompt
     assert "If Avery asks for the current time" in prompt
-    assert "Reflect George's positive energy" not in prompt
+    assert "- Emotional State: You are happy" not in prompt
     assert "If George asks for the current time" not in prompt
     assert "George is your owner" not in prompt
 
