@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -30,10 +31,13 @@ STATE_DIR = REPO_ROOT / ".sifta_state"
 LEDGER_NAME = "owner_allostatic_balance.jsonl"
 NEED_TRUTH = "OWNER_BODY_SCHEDULE_NEED_V1"
 BALANCE_TRUTH = "OWNER_ALLOSTATIC_BALANCE_V1"
+MAINTENANCE_TRUTH = "OWNER_BODY_MAINTENANCE_EVENT_V1"
+METRICS_TRUTH = "OWNER_BODY_MAINTENANCE_METRICS_V1"
 
 BODY_DOMAINS = {"dental", "medical", "sleep", "food", "movement", "hygiene", "body"}
 MONEY_DOMAINS = {"money", "budget", "ai_credits", "debt"}
 OPEN_STATUSES = {"open", "planned", "deferred", "unknown"}
+MAINTENANCE_CATEGORIES = {"hydration", "sleep", "food", "care_appointment"}
 
 
 def _state_dir(state_dir: Path | None = None) -> Path:
@@ -87,6 +91,15 @@ def _tail_jsonl(path: Path, n: int = 256, *, max_bytes: int = 512 * 1024) -> lis
 def _need_id(task: str, domain: str, source: str) -> str:
     material = f"{task.strip().lower()}|{domain.strip().lower()}|{source.strip().lower()}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def _event_id(category: str, ts: float, source: str, notes: str) -> str:
+    material = f"{category.strip().lower()}|{ts:.3f}|{source.strip().lower()}|{notes[:80]}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def _local_date(ts: float) -> str:
+    return datetime.fromtimestamp(float(ts)).date().isoformat()
 
 
 def _body_need_pressure(row: dict[str, Any], now_ts: float) -> float:
@@ -145,6 +158,50 @@ def record_owner_need(
     return row
 
 
+def record_owner_maintenance_event(
+    category: str,
+    *,
+    amount: float = 1.0,
+    quality: float | None = None,
+    duration_hours: float | None = None,
+    completed: bool = True,
+    source: str = "owner_statement",
+    notes: str = "",
+    state_dir: Path | None = None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Append a concrete body-maintenance event receipt.
+
+    Categories are hydration, sleep, food, and care_appointment. This is a
+    metric event, not advice: it records what happened so Alice can compare
+    body maintenance against baseline.
+    """
+    state = _state_dir(state_dir)
+    state.mkdir(parents=True, exist_ok=True)
+    now_ts = float(now if now is not None else time.time())
+    clean_category = str(category or "").strip().lower()
+    if clean_category not in MAINTENANCE_CATEGORIES:
+        raise ValueError(f"unsupported maintenance category: {category!r}")
+    clean_source = str(source or "owner_statement").strip()[:80]
+    clean_notes = " ".join(str(notes or "").split())[:480]
+    row = {
+        "ts": now_ts,
+        "truth_label": MAINTENANCE_TRUTH,
+        "event_id": _event_id(clean_category, now_ts, clean_source, clean_notes),
+        "local_date": _local_date(now_ts),
+        "category": clean_category,
+        "amount": round(_money(amount), 4),
+        "quality": round(_clamp01(quality), 4) if quality is not None else None,
+        "duration_hours": round(_money(duration_hours), 4) if duration_hours is not None else None,
+        "completed": bool(completed),
+        "source": clean_source,
+        "notes": clean_notes,
+        "rule": "Body maintenance metrics are observed receipts; no diagnosis, no shame, no invented completion.",
+    }
+    append_line_locked(_ledger(state), json.dumps(row, sort_keys=True) + "\n")
+    return row
+
+
 def _latest_needs(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -162,6 +219,116 @@ def _latest_needs(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _load_open_needs(state_dir: Path | None = None) -> list[dict[str, Any]]:
     return _latest_needs(_tail_jsonl(_ledger(state_dir), 512))
+
+
+def _load_maintenance_events(state_dir: Path | None = None, *, now: float | None = None, window_days: int = 7) -> list[dict[str, Any]]:
+    now_ts = float(now if now is not None else time.time())
+    start_ts = now_ts - max(1, int(window_days)) * 86400
+    rows = []
+    for row in _tail_jsonl(_ledger(state_dir), 2048, max_bytes=1024 * 1024):
+        if row.get("truth_label") != MAINTENANCE_TRUTH:
+            continue
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except Exception:
+            continue
+        if start_ts <= ts <= now_ts:
+            rows.append(row)
+    return rows
+
+
+def _latest_metrics(state_dir: Path | None = None) -> dict[str, Any] | None:
+    for row in reversed(_tail_jsonl(_ledger(state_dir), 256)):
+        if row.get("truth_label") == METRICS_TRUTH:
+            return row
+    return None
+
+
+def owner_body_maintenance_metrics(
+    *,
+    state_dir: Path | None = None,
+    now: float | None = None,
+    window_days: int = 7,
+    baseline_score: float | None = None,
+    write_ledger: bool = False,
+) -> dict[str, Any]:
+    """Compute the falsifiable body-maintenance product metric."""
+    state = _state_dir(state_dir)
+    state.mkdir(parents=True, exist_ok=True)
+    now_ts = float(now if now is not None else time.time())
+    days = max(1, int(window_days))
+    events = _load_maintenance_events(state, now=now_ts, window_days=days)
+
+    hydration_count = sum(_money(r.get("amount")) for r in events if r.get("category") == "hydration" and r.get("completed", True))
+    sleep_hours = sum(_money(r.get("duration_hours") if r.get("duration_hours") is not None else r.get("amount")) for r in events if r.get("category") == "sleep" and r.get("completed", True))
+    food_scores = [
+        _clamp01(r.get("quality"))
+        for r in events
+        if r.get("category") == "food" and r.get("quality") is not None and r.get("completed", True)
+    ]
+    care_completed = sum(1 for r in events if r.get("category") == "care_appointment" and r.get("completed", True))
+
+    component_scores = {
+        "hydration": round(min(1.0, hydration_count / (4.0 * days)), 4),
+        "sleep": round(min(1.0, sleep_hours / (7.0 * days)), 4),
+        "food_quality": round(sum(food_scores) / len(food_scores), 4) if food_scores else 0.0,
+        "care_appointments": 1.0 if care_completed > 0 else 0.0,
+    }
+    score = round(
+        0.25 * component_scores["hydration"]
+        + 0.30 * component_scores["sleep"]
+        + 0.20 * component_scores["food_quality"]
+        + 0.25 * component_scores["care_appointments"],
+        4,
+    )
+    if baseline_score is None:
+        previous = _latest_metrics(state)
+        try:
+            baseline_score = float(previous["body_maintenance_score"]) if previous else None
+        except Exception:
+            baseline_score = None
+
+    if baseline_score is None:
+        delta = None
+        status = "BASELINE_PENDING"
+    else:
+        delta = round(score - _clamp01(baseline_score), 4)
+        if delta >= 0.05:
+            status = "IMPROVING"
+        elif delta <= -0.05:
+            status = "WORSE"
+        else:
+            status = "FLAT"
+
+    lowest = min(component_scores.items(), key=lambda kv: kv[1])[0]
+    next_receipt = {
+        "hydration": "record_hydration_receipt",
+        "sleep": "record_sleep_block_receipt",
+        "food_quality": "record_food_quality_receipt",
+        "care_appointments": "record_care_appointment_receipt",
+    }[lowest]
+    row = {
+        "ts": now_ts,
+        "truth_label": METRICS_TRUTH,
+        "window_days": days,
+        "event_count": len(events),
+        "body_maintenance_score": score,
+        "baseline_score": round(_clamp01(baseline_score), 4) if baseline_score is not None else None,
+        "delta_vs_baseline": delta,
+        "metric_status": status,
+        "component_scores": component_scores,
+        "raw_counts": {
+            "hydration_count": round(hydration_count, 4),
+            "sleep_hours": round(sleep_hours, 4),
+            "food_events": len(food_scores),
+            "care_completed": care_completed,
+        },
+        "next_receipt": next_receipt,
+        "rule": "This is the product test: body maintenance receipts must improve versus baseline or the hypothesis is failing.",
+    }
+    if write_ledger:
+        append_line_locked(_ledger(state), json.dumps(row, sort_keys=True) + "\n")
+    return row
 
 
 def owner_allostatic_balance(
@@ -255,6 +422,10 @@ def latest_owner_allostatic_balance(*, state_dir: Path | None = None) -> dict[st
     return None
 
 
+def latest_owner_body_maintenance_metrics(*, state_dir: Path | None = None) -> dict[str, Any] | None:
+    return _latest_metrics(state_dir)
+
+
 def format_owner_allostasis_for_prompt(*, state_dir: Path | None = None) -> str:
     state = _state_dir(state_dir)
     balance = latest_owner_allostatic_balance(state_dir=state)
@@ -275,12 +446,36 @@ def format_owner_allostasis_for_prompt(*, state_dir: Path | None = None) -> str:
     return "\n".join(lines)
 
 
+def format_owner_body_maintenance_for_prompt(*, state_dir: Path | None = None) -> str:
+    state = _state_dir(state_dir)
+    metrics = latest_owner_body_maintenance_metrics(state_dir=state)
+    if not metrics:
+        events = _load_maintenance_events(state)
+        if not events:
+            return ""
+        metrics = owner_body_maintenance_metrics(state_dir=state, write_ledger=False)
+    lines = [
+        "OWNER BODY MAINTENANCE METRICS:",
+        f"- truth_label={metrics.get('truth_label')} score={metrics.get('body_maintenance_score')} status={metrics.get('metric_status')} delta={metrics.get('delta_vs_baseline')}",
+        f"- window_days={metrics.get('window_days')} event_count={metrics.get('event_count')} next_receipt={metrics.get('next_receipt')}",
+        f"- components={json.dumps(metrics.get('component_scores', {}), sort_keys=True)}",
+        "- rule=use this to move hydration, sleep, food quality, and care appointment receipts; do not narrate improvement without receipts.",
+    ]
+    return "\n".join(lines)
+
+
 __all__ = [
     "BALANCE_TRUTH",
+    "MAINTENANCE_TRUTH",
+    "METRICS_TRUTH",
     "NEED_TRUTH",
     "format_owner_allostasis_for_prompt",
+    "format_owner_body_maintenance_for_prompt",
     "latest_owner_allostatic_balance",
+    "latest_owner_body_maintenance_metrics",
     "owner_allostatic_balance",
+    "owner_body_maintenance_metrics",
+    "record_owner_maintenance_event",
     "record_owner_need",
 ]
 

@@ -1527,11 +1527,17 @@ def _current_system_prompt(
         parts.append(_ocs_prompt)
 
     try:
-        from System.swarm_owner_allostasis import format_owner_allostasis_for_prompt
+        from System.swarm_owner_allostasis import (
+            format_owner_allostasis_for_prompt,
+            format_owner_body_maintenance_for_prompt,
+        )
 
         _owner_allostasis = format_owner_allostasis_for_prompt().strip()
         if _owner_allostasis:
             parts.append(_owner_allostasis)
+        _owner_body_metrics = format_owner_body_maintenance_for_prompt().strip()
+        if _owner_body_metrics:
+            parts.append(_owner_body_metrics)
     except Exception:
         pass
 

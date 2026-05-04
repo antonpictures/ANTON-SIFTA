@@ -3,9 +3,14 @@ import json
 from System.swarm_concept_context_builder import build_concept_context
 from System.swarm_owner_allostasis import (
     BALANCE_TRUTH,
+    MAINTENANCE_TRUTH,
+    METRICS_TRUTH,
     NEED_TRUTH,
     format_owner_allostasis_for_prompt,
+    format_owner_body_maintenance_for_prompt,
+    owner_body_maintenance_metrics,
     owner_allostatic_balance,
+    record_owner_maintenance_event,
     record_owner_need,
 )
 
@@ -109,3 +114,83 @@ def test_concept_context_includes_owner_allostasis_source(tmp_path):
     assert "owner_allostasis" in packet
     assert "OWNER_ALLOSTATIC_BALANCE_V1" in packet
     assert "OWNER_BODY" in packet
+
+
+def test_record_owner_maintenance_event_writes_metric_receipt(tmp_path):
+    state = tmp_path / ".sifta_state"
+    row = record_owner_maintenance_event(
+        "hydration",
+        amount=2,
+        source="owner_tap",
+        notes="two glasses of water",
+        state_dir=state,
+        now=1000.0,
+    )
+
+    assert row["truth_label"] == MAINTENANCE_TRUTH
+    assert row["category"] == "hydration"
+    assert row["amount"] == 2
+    assert row["completed"] is True
+    assert _rows(state / "owner_allostatic_balance.jsonl")[-1]["event_id"] == row["event_id"]
+
+
+def test_body_maintenance_metrics_compare_against_baseline(tmp_path):
+    state = tmp_path / ".sifta_state"
+    day = 24 * 3600
+    record_owner_maintenance_event("hydration", amount=28, state_dir=state, now=1000.0)
+    record_owner_maintenance_event("sleep", duration_hours=49, state_dir=state, now=1000.0 + day)
+    record_owner_maintenance_event("food", quality=0.8, state_dir=state, now=1000.0 + 2 * day)
+    record_owner_maintenance_event("care_appointment", completed=True, state_dir=state, now=1000.0 + 3 * day)
+
+    metrics = owner_body_maintenance_metrics(
+        state_dir=state,
+        now=1000.0 + 4 * day,
+        window_days=7,
+        baseline_score=0.4,
+        write_ledger=True,
+    )
+
+    assert metrics["truth_label"] == METRICS_TRUTH
+    assert metrics["metric_status"] == "IMPROVING"
+    assert metrics["body_maintenance_score"] > 0.8
+    assert metrics["delta_vs_baseline"] > 0.4
+    assert metrics["component_scores"]["hydration"] == 1.0
+    assert metrics["component_scores"]["sleep"] == 1.0
+    assert metrics["component_scores"]["care_appointments"] == 1.0
+
+
+def test_body_maintenance_metrics_names_lowest_next_receipt(tmp_path):
+    state = tmp_path / ".sifta_state"
+    record_owner_maintenance_event("hydration", amount=28, state_dir=state, now=1000.0)
+    record_owner_maintenance_event("sleep", duration_hours=49, state_dir=state, now=1001.0)
+
+    metrics = owner_body_maintenance_metrics(
+        state_dir=state,
+        now=2000.0,
+        window_days=7,
+        baseline_score=0.9,
+    )
+
+    assert metrics["metric_status"] == "WORSE"
+    assert metrics["next_receipt"] in {"record_food_quality_receipt", "record_care_appointment_receipt"}
+
+
+def test_body_maintenance_prompt_and_concept_context_surface_metrics(tmp_path):
+    state = tmp_path / ".sifta_state"
+    record_owner_maintenance_event("hydration", amount=1, state_dir=state, now=1000.0)
+    owner_body_maintenance_metrics(
+        state_dir=state,
+        now=1000.0,
+        window_days=7,
+        baseline_score=0.2,
+        write_ledger=True,
+    )
+
+    prompt = format_owner_body_maintenance_for_prompt(state_dir=state)
+    packet = build_concept_context(state_dir=state)
+
+    assert "OWNER BODY MAINTENANCE METRICS" in prompt
+    assert "next_receipt=" in prompt
+    assert "do not narrate improvement without receipts" in prompt
+    assert "OWNER_BODY_MAINTENANCE_METRICS_V1" in packet
+    assert "body_maintenance_score" in packet
