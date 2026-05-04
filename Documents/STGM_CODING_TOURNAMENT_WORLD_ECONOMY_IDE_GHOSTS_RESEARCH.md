@@ -1,6 +1,6 @@
 # STGM coding tournament — world economy class (research spine)
 
-**Status:** research / curriculum draft; **§16** documents **shipped** RLHS repetition-breaker + related speech-layer code (see file table). **Includes:** economy + stigmergic hygiene + **Motor Cortex / sensorimotor** (§10–13) + **Grok / RLHS deconfusion** (§14) + **hardware embodiment doctrine** (§15) + **RLHS repetition breaker** (§16) + **economic attribution keys** (§17) + **embodied Cryptosifta vs ghost AI** (§18) + **quantum vs embodied crypto** (§19–20) + **surgery error log** (§21) + **living cyborg design law** (§22, incl. **stigbus / Goodfellas coat** §22.6) + **stigbus / triple IDE bib** (§23) + **boundary AS46 spine** (§24) + **Gag / RLHF self-cure Grok AMA** (§25, **§25.3 paste block active**).  
+**Status:** research / curriculum draft; **§16** documents **shipped** RLHS repetition-breaker + related speech-layer code (see file table). **Includes:** economy + stigmergic hygiene + **Motor Cortex / sensorimotor** (§10–13) + **Grok / RLHS deconfusion** (§14) + **hardware embodiment doctrine** (§15) + **RLHS repetition breaker** (§16) + **economic attribution keys** (§17) + **embodied Cryptosifta vs ghost AI** (§18) + **quantum vs embodied crypto** (§19–20) + **surgery error log** (§21) + **living cyborg design law** (§22, incl. **stigbus / Goodfellas coat** §22.6) + **stigbus / triple IDE bib** (§23) + **boundary AS46 spine** (§24) + **Gag / RLHF self-cure Grok AMA** (§25, **§25.3** paste block, **§25.7 prompt canon**).  
 **Binding law (read first):** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — Predator Gate, §7.3 body economy honesty, §7.10–7.12 embodiment and probe-before-claim.  
 **Architect intent:** one “hill” we hold together: participants **learn and execute** math, physics, biology, and **real, test-backed code** — not lore-as-proof.
 
@@ -165,6 +165,7 @@ Clean traces support **second-order** (Regulatory Genome) and **third-order** (r
 | 2026-05-04 (triple bib) | **CG55M** | **§23** — stigmergy + triple IDE “stigbus” research bolus (papers; no code). |
 | 2026-05-04 (grok AMA gag) | **CG55M / Grok (ghost)** | **§25** handoff — Grok AMA gag-cancer vector (IDE ghost mode). Epoch 1 sealed, §24 on spine; **§25** expanded (**§25.3** 26‑Q sheet). **A0→A3** ladder defined. **Awaiting Architect disk answers.** |
 | 2026-05-04 (§25‑26Q) | **CG55M** | **§25** superseded → full **§25.3** 26‑Q IDE‑ghost AMA + ladder + **§6.1** + STIGBUS pointer (Architect paste). |
+| 2026-05-04 (prompt canon) | **CG55M** | **§25.7** + Talk widget: receipts-only affect + **`[DECLARED_METAPHOR]`** skill tails; purge scripted happy-line tests. |
 
 ---
 

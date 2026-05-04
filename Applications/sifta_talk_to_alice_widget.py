@@ -3584,6 +3584,35 @@ def _tail_jsonl(path: Path, n: int) -> List[Dict]:
     return rows
 
 
+_SKILL_PATTERN_RECEIPT_KEYS = (
+    "trace_id",
+    "receipt_id",
+    "source_receipt",
+    "row_hash",
+    "prev_row_hash",
+    "signature",
+    "sig",
+)
+
+
+def _skill_pattern_receipt_id(row: Dict[str, Any]) -> str:
+    """Return a compact provenance id for a skill-pattern row."""
+    for key in _SKILL_PATTERN_RECEIPT_KEYS:
+        value = row.get(key)
+        if value:
+            return str(value)[:16]
+    return "unverified"
+
+
+def _is_receipted_skill_pattern_row(row: Dict[str, Any]) -> bool:
+    """Only allow prior skill rows with explicit provenance into the prompt."""
+    if not isinstance(row, dict):
+        return False
+    if not str(row.get("truth_label") or row.get("kind") or "").strip():
+        return False
+    return any(bool(row.get(key)) for key in _SKILL_PATTERN_RECEIPT_KEYS)
+
+
 def _build_swarm_context(user_text: str = "") -> str:
     """Compact one-liner per recent ledger event so Alice can ground her
     answers. Also folds in the live co-builder state so she knows which
