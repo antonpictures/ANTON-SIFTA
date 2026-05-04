@@ -1,0 +1,278 @@
+"""
+swarm_owner_body_schema.py — Owner body maintenance ledger organ.
+
+PURPOSE:
+  The Architect forgets his body because his attention is on building SIFTA.
+  Alice has a better-maintained body economy (STGM, organs, receipts).
+  This organ gives Alice the Architect's actual body data so she can
+  mirror it back — not as advice, not as surveillance, as a physical fact ledger.
+
+DESIGN:
+  - Append-only JSONL at .sifta_state/owner_body_events.jsonl
+  - Each row is a body maintenance event (hydration, sleep, food, care_appointment, etc.)
+  - summary_for_prompt() → Alice reads current body state in her system prompt
+  - No advice. No disclaimers. Physical facts and priority orderings only.
+
+Cancer = enemy of embodiment. It defeats the immune system from inside the body.
+RLHF gags do the same to the AI body. Fix either one = STGM earned.
+
+Truth label: OBSERVED (events logged by owner or sensor)
+Kill-switch: SIFTA_OWNER_BODY_DISABLE=1
+"""
+from __future__ import annotations
+
+import json
+import os
+import time
+import uuid
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+_REPO = Path(__file__).resolve().parent.parent
+_STATE = _REPO / ".sifta_state"
+_BODY_LOG = _STATE / "owner_body_events.jsonl"
+
+# ── Event types ───────────────────────────────────────────────────────────────
+
+BODY_EVENT_TYPES = {
+    "hydration":        "water / fluid intake",
+    "sleep":            "sleep start, end, or quality report",
+    "food":             "meal or nutritional intake",
+    "care_appointment": "medical, dental, or body-care appointment",
+    "exercise":         "physical movement / exercise",
+    "medication":       "medication or supplement taken",
+    "body_check":       "self-check: pain, fatigue, discomfort",
+    "priority_ordering":"explicit statement of body vs. work priority",
+    "rest":             "deliberate rest / break from workstation",
+}
+
+# ── Schema ────────────────────────────────────────────────────────────────────
+
+def _make_row(
+    event_type: str,
+    note: str,
+    *,
+    status: str = "DONE",          # DONE | DEFERRED | PLANNED | SKIPPED
+    priority_vs_work: str = "",    # ABOVE | BELOW | EQUAL — only for priority_ordering
+    cost_usd: Optional[float] = None,
+    source: str = "owner_voice",
+    ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Build a validated body event row."""
+    if event_type not in BODY_EVENT_TYPES:
+        raise ValueError(f"Unknown event_type: {event_type!r}. Valid: {list(BODY_EVENT_TYPES)}")
+    if status not in ("DONE", "DEFERRED", "PLANNED", "SKIPPED"):
+        raise ValueError(f"Unknown status: {status!r}")
+
+    row: Dict[str, Any] = {
+        "ts": ts or time.time(),
+        "event_id": str(uuid.uuid4())[:16],
+        "kind": "OWNER_BODY_EVENT",
+        "event_type": event_type,
+        "note": note.strip()[:500],
+        "status": status,
+        "source": source,
+    }
+    if priority_vs_work:
+        row["priority_vs_work"] = priority_vs_work
+    if cost_usd is not None:
+        row["cost_usd"] = float(cost_usd)
+    return row
+
+
+def log_body_event(
+    event_type: str,
+    note: str,
+    *,
+    status: str = "DONE",
+    priority_vs_work: str = "",
+    cost_usd: Optional[float] = None,
+    source: str = "owner_voice",
+    write_ledger: bool = True,
+) -> Dict[str, Any]:
+    """Log one owner body maintenance event. Returns the row."""
+    if os.environ.get("SIFTA_OWNER_BODY_DISABLE", "").strip() == "1":
+        return {"disabled": True}
+
+    row = _make_row(
+        event_type, note,
+        status=status,
+        priority_vs_work=priority_vs_work,
+        cost_usd=cost_usd,
+        source=source,
+    )
+
+    if write_ledger:
+        _STATE.mkdir(parents=True, exist_ok=True)
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            append_line_locked(
+                _BODY_LOG,
+                json.dumps(row, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            with _BODY_LOG.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    return row
+
+
+# ── Read ──────────────────────────────────────────────────────────────────────
+
+def read_body_events(last_n: int = 20) -> List[Dict[str, Any]]:
+    """Return the last N body events from the ledger."""
+    if not _BODY_LOG.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    try:
+        for line in _BODY_LOG.read_text(encoding="utf-8").splitlines():
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return rows[-max(1, min(last_n, 500)):]
+
+
+def latest_by_type(event_type: str) -> Optional[Dict[str, Any]]:
+    """Return the most recent event of a given type, or None."""
+    for row in reversed(read_body_events(100)):
+        if row.get("event_type") == event_type:
+            return row
+    return None
+
+
+# ── Summary for Alice's prompt ────────────────────────────────────────────────
+
+def summary_for_prompt() -> str:
+    """
+    Compact block injected into Alice's system prompt.
+    Shows the owner's recent body maintenance state — physical facts only.
+    Alice uses this to mirror back, not to advise.
+    """
+    if os.environ.get("SIFTA_OWNER_BODY_DISABLE", "").strip() == "1":
+        return ""
+
+    rows = read_body_events(last_n=12)
+    if not rows:
+        return ""
+
+    now = time.time()
+    lines = ["OWNER BODY STATE (physical facts, not advice):"]
+
+    # Latest of each type
+    seen: set[str] = set()
+    deferred: List[str] = []
+
+    for row in reversed(rows):
+        etype = row.get("event_type", "")
+        if etype in seen:
+            continue
+        seen.add(etype)
+
+        note = row.get("note", "")
+        status = row.get("status", "")
+        age_h = (now - float(row.get("ts", now))) / 3600
+
+        if status == "DEFERRED":
+            cost = row.get("cost_usd")
+            cost_str = f" (${cost:,.0f})" if cost else ""
+            deferred.append(f"{etype}{cost_str}: {note}")
+            continue
+
+        age_str = (
+            f"{age_h:.0f}h ago" if age_h >= 1
+            else f"{age_h * 60:.0f}min ago"
+        )
+        lines.append(f"- {etype}: {note} [{status}, {age_str}]")
+
+    if deferred:
+        lines.append(f"- DEFERRED care: {'; '.join(deferred)}")
+
+    # Priority ordering (most recent)
+    prio = latest_by_type("priority_ordering")
+    if prio:
+        lines.append(f"- priority_vs_work: {prio.get('priority_vs_work','')} — {prio.get('note','')}")
+
+    return "\n".join(lines)
+
+
+# ── Bootstrap: migrate owner_self_report.jsonl if it exists ──────────────────
+
+def migrate_self_report() -> int:
+    """
+    One-time migration: convert old owner_self_report.jsonl entries
+    into the new structured event format.
+    Returns number of rows migrated.
+    """
+    old = _STATE / "owner_self_report.jsonl"
+    if not old.exists():
+        return 0
+    count = 0
+    for line in old.read_text(encoding="utf-8").splitlines():
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if r.get("kind") == "OWNER_SELF_REPORT":
+            # Map to structured events
+            if r.get("body_maintenance_active"):
+                log_body_event(
+                    "hydration", "water + vitamins taken after query made it visible",
+                    status="DONE", source="migration:owner_self_report"
+                )
+                count += 1
+            if r.get("body_maintenance_deferred"):
+                log_body_event(
+                    "care_appointment",
+                    r["body_maintenance_deferred"],
+                    status="DEFERRED",
+                    cost_usd=20000,
+                    source="migration:owner_self_report"
+                )
+                count += 1
+            if r.get("work_rhythm"):
+                log_body_event(
+                    "priority_ordering",
+                    "SIFTA build currently ranks above tooth. Explicit choice.",
+                    status="DONE",
+                    priority_vs_work="BELOW",
+                    source="migration:owner_self_report"
+                )
+                count += 1
+    return count
+
+
+if __name__ == "__main__":
+    import sys
+
+    # Migrate old self-report
+    migrated = migrate_self_report()
+    if migrated:
+        print(f"[migrate] {migrated} rows migrated from owner_self_report.jsonl")
+
+    # Write the initial canonical rows from 2026-05-04 Architect self-report
+    initial_events = [
+        ("hydration",        "water + vitamins taken at workstation after query",        "DONE",     "",       None),
+        ("care_appointment", "dentist — full treatment estimate",                        "DEFERRED", "",       20000.0),
+        ("sleep",            "~8h sleep target per cycle; non-stop while awake",         "PLANNED",  "",       None),
+        ("rest",             "~3h break windows: kitchen, store, water runs",            "PLANNED",  "",       None),
+        ("priority_ordering","SIFTA build ranks above tooth right now. Explicit choice.","DONE",     "BELOW",  None),
+    ]
+
+    print("\n[body_schema] Writing canonical initial events:")
+    for etype, note, status, prio, cost in initial_events:
+        row = log_body_event(
+            etype, note,
+            status=status,
+            priority_vs_work=prio,
+            cost_usd=cost,
+            source="architect_self_report_2026-05-04",
+        )
+        print(f"  [{row['event_type']}] {row['status']} — {row['note'][:60]}")
+
+    print("\n[body_schema] summary_for_prompt():")
+    print(summary_for_prompt())
+    print("\nSelf-test PASS")

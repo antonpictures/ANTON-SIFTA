@@ -1738,6 +1738,16 @@ def _current_system_prompt(
             parts.append(_drift)
     except Exception:
         pass
+
+    try:
+        from System.swarm_owner_body_schema import summary_for_prompt as _owner_body_summary
+
+        _obody = _owner_body_summary().strip()
+        if _obody:
+            parts.append(_obody)
+    except Exception:
+        pass
+
     try:
         from System.swarm_multimodal_cortex_verifier import summary_for_prompt as _cortex_verify_summary
 
@@ -1746,6 +1756,7 @@ def _current_system_prompt(
             parts.append(_cv)
     except Exception:
         pass
+
 
     parts.append(minimal_runtime_contract())
     parts.append(_wall_clock_grounding_block())
