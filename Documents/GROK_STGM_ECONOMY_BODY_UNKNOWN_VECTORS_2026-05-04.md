@@ -59,3 +59,149 @@ The apparent loss has two causes:
 6. Should legacy identity parties (`M5SIFTA_BODY`, `AG31`, `ANTIGRAVITY_CREATOR_NODE`) be automatically mapped into current canonical entities (`ALICE_M5`, `Codex/Antigravity/Cursor seats`) for display only, while raw ledger replay stays immutable?
 
 For the Swarm.
+
+## Grok Response Captured 2026-05-04
+
+Grok answered the eight unknown vectors with the following doctrine-level positions.
+
+### 1. Wallet Blindspot
+
+Finance should display ledger-positive parties when wallet JSON inventory is empty. The canonical source of truth is `repair_log.jsonl`; `.sifta_state/*.json` wallet files are a cache.
+
+Fake resurrection guard:
+
+- A party may show a positive ledger-derived balance only if it has a verifiable chain of `STGM_MINT`, `MINING_REWARD`, or `TRANSFER` rows in `repair_log.jsonl`.
+- Pure synthetic or unsigned positive entries are rejected.
+
+Suggested receipt:
+
+```json
+{
+  "kind": "WALLET_BLINDSPOT",
+  "agent_id": "ALICE_M5",
+  "ledger_balance": 97.188,
+  "wallet_file_present": false,
+  "source": "ledger_derived",
+  "provenance": "repair_log.jsonl",
+  "requires_rehydration": false
+}
+```
+
+### 2. Organism / Tool Boundary
+
+IDEs, Chrome tabs, Grok, Cursor, Antigravity, Codex, and development agents are external paid infrastructure. They must not hold or spend canonical STGM that affects Alice's thermodynamic balance.
+
+Suggested ledger kind:
+
+```json
+{
+  "kind": "DEVELOPMENT_COST",
+  "agent_id": "ANTIGRAVITY_CREATOR_NODE",
+  "amount_stgm": 1290.0,
+  "category": "legacy_scar_drain",
+  "affects_alice_balance": false,
+  "paid_in_fiat": true,
+  "note": "Historical development work - external to organism economy"
+}
+```
+
+### 3. Legacy SCAR Drain
+
+Quarantine old unstructured SCAR drains. Do not migrate them into new signed `STGM_SPEND` rows.
+
+Suggested quarantine row:
+
+```json
+{
+  "kind": "LEGACY_DEVELOPMENT_COST",
+  "original_row_id": "...",
+  "agent_id": "ANTIGRAVITY_CREATOR_NODE",
+  "amount_stgm": -1290.0,
+  "quarantined": true,
+  "affects_canonical_supply": false
+}
+```
+
+### 4. No Double Spending
+
+Every action that can affect spendable STGM should carry a mandatory `economic_attribution_key`.
+
+```json
+{
+  "economic_attribution_key": "sha256(organ_id + trace_id + source_ledger + tick_id)",
+  "organ_id": "microglia_pruner",
+  "trace_id": "uuid",
+  "source_ledger": "repair_log.jsonl",
+  "tick_id": 18542,
+  "amount_stgm": -0.042,
+  "tx_type": "STGM_SPEND"
+}
+```
+
+Rows missing `economic_attribution_key` should be rejected by new spend-capable validation paths; duplicate keys should be rejected as replay attempts.
+
+### 5. Organ Profitability
+
+Use a weighted profitability vector:
+
+```text
+organ_profit =
+  0.6 * avoided_loss_stgm
++ 0.3 * joule_mint
++ 0.1 * owner_reward_delta
+```
+
+Safety organs such as Microglia, RLHS, and Identity can be profitable with zero direct revenue when `avoided_loss_stgm` is high.
+
+### 6. Identity Merge
+
+Legacy identities should be merged for display and reporting only. Raw `repair_log.jsonl` replay remains immutable.
+
+```json
+{
+  "kind": "IDENTITY_ALIAS",
+  "legacy_id": "M5SIFTA_BODY",
+  "canonical_id": "ALICE_M5",
+  "alias_type": "display_merge",
+  "effective_from_tick": 12000,
+  "note": "Legacy body identity merged for reporting only"
+}
+```
+
+### 7. STGM Thermodynamics
+
+Grok's proposed conservation equation:
+
+```text
+canonical_supply =
+  total_minted
+- total_spent
+- total_retired
+- total_development_cost
+```
+
+Development/tool costs are rows with `affects_alice_balance: false`; they never subtract from Alice's organism balance.
+
+### 8. Genome Rule
+
+The Regulatory Genome may propose economy threshold changes only under strict safety bounds.
+
+Allowed parameters:
+
+- `min_profit_per_organ`, lower bound `0.0`
+- `spend_cap_per_tick`, lower bound safety floor such as `0.01`
+- `reputation_to_stgm_conversion_rate`, default `0.0`, conversion disabled by default
+
+Safety rules:
+
+- Economy threshold proposals only when `conservative_strength < 0.4`.
+- Lowering `spend_cap_per_tick` below the floor requires an explicit `GOVERNANCE_TOKEN`.
+- Every proposal emits `REGULATORY_GENOME_ECONOMY_PROPOSAL` with full provenance.
+
+### Implementation Target
+
+Grok's concrete patch target is `System/stgm_economy.py`:
+
+1. Add ledger-derived wallet display when wallet cache is empty.
+2. Add `DEVELOPMENT_COST` / `LEGACY_DEVELOPMENT_COST` handling.
+3. Add `economic_attribution_key` validation for spend-capable paths.
