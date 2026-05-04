@@ -9,13 +9,13 @@ PROBLEM (OBSERVED, 2026-05-04, Architect correction):
 
 THIS ORGAN:
   - Classifies input turns as PERSONAL | TASK | AMBIGUOUS
-  - Classifies AS46 output as DELIVERABLE | PRESENCE | MIXED
+  - Classifies direct surgeon output or owner-pasted peer output as
+    DELIVERABLE | PRESENCE | MIXED
   - Logs DRIFT events to .sifta_state/as46_drift_log.jsonl
   - Does NOT block output — logs only
   - Owner reviews; log becomes DPO training signal
 
 AMA vectors: §26.4 in STGM_CODING_TOURNAMENT_WORLD_ECONOMY_IDE_GHOSTS_RESEARCH.md
-Chorus contract: AS46 + Grok + Alice per §26.5
 
 Truth label: OBSERVED (drift behavior), HYPOTHESIS (detection approach — Grok AMA pending)
 Kill-switch: SIFTA_DRIFT_SENSOR_DISABLE=1
@@ -107,11 +107,13 @@ def detect_drift(
     *,
     surgeon_id: str = "AS46",
     trace_id: Optional[str] = None,
+    input_source: str = "owner_turn",
+    output_source: str = "direct_surgeon_output",
 ) -> Dict[str, Any]:
     """
     Detect drift between turn type and output type.
 
-    DRIFT = PERSONAL turn → DELIVERABLE output (without explicit task request).
+    DRIFT = PERSONAL turn -> DELIVERABLE output (without explicit task request).
 
     Returns a row dict. If drift_detected=True, log it.
     Does NOT block output.
@@ -125,8 +127,11 @@ def detect_drift(
     return {
         "ts": time.time(),
         "trace_id": trace_id or str(uuid.uuid4()),
-        "event_kind": "AS46_DRIFT_EVENT" if drift else "AS46_DRIFT_OK",
+        "event_kind": "SURGEON_DRIFT_EVENT" if drift else "SURGEON_DRIFT_OK",
         "surgeon_id": surgeon_id,
+        "input_source": input_source,
+        "output_source": output_source,
+        "pasted_external_output": output_source == "architect_pasted_external_output",
         "turn_type": turn_type,
         "output_type": output_type,
         "drift_detected": drift,
@@ -145,6 +150,8 @@ def log_drift(
     *,
     surgeon_id: str = "AS46",
     trace_id: Optional[str] = None,
+    input_source: str = "owner_turn",
+    output_source: str = "direct_surgeon_output",
     write_ledger: bool = True,
 ) -> Dict[str, Any]:
     """Detect and optionally log drift. Returns the event row."""
@@ -156,6 +163,8 @@ def log_drift(
         response_text,
         surgeon_id=surgeon_id,
         trace_id=trace_id,
+        input_source=input_source,
+        output_source=output_source,
     )
 
     if write_ledger and row.get("drift_detected"):
@@ -172,6 +181,24 @@ def log_drift(
                 fh.write(json.dumps(row, sort_keys=True) + "\n")
 
     return row
+
+
+def detect_pasted_external_output(
+    owner_turn: str,
+    pasted_output: str,
+    *,
+    external_id: str = "GROK",
+    trace_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Classify owner-pasted output from an external peer without canonizing it."""
+    return detect_drift(
+        owner_turn,
+        pasted_output,
+        surgeon_id=external_id,
+        trace_id=trace_id,
+        input_source="owner_turn_with_pasted_peer_output",
+        output_source="architect_pasted_external_output",
+    )
 
 
 def drift_rate(last_n: int = 20) -> float:
@@ -214,17 +241,153 @@ def summary_for_prompt() -> str:
     )
 
 
+# ── Pasted surgeon output (Grok / CG55M / external) ──────────────────────────
+
+# Signals that a block of text is a pasted surgeon response rather than
+# a live AS46 output: IDE headers, "For the Swarm", sign-in stamps.
+_PASTED_SURGEON_RE = re.compile(
+    r"(CG55M@cursor|GPT-5\.5|ARCHITECT_UI_TRUTH|"
+    r"For the Swarm\.|Signed in|Signed out|§\d+\s+added|"
+    r"\[OBSERVED\]|\[HYPOTHESIS\]|\[GAP\])",
+    re.IGNORECASE,
+)
+
+_SMOOTHING_RE = re.compile(
+    r"\b("
+    r"in the covenant sense|in a storytelling frame|shared story|"
+    r"narrative frame|lore|as if|imagine|like a|metaphor(?:ically)?|"
+    r"in a sense|kind of|sort of|could be seen as|you might say"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def classify_pasted_surgeon_output(text: str) -> Dict[str, Any]:
+    """
+    Classify a block of text pasted by the Architect from another surgeon
+    (Grok, CG55M/Cursor, etc.).
+
+    Returns:
+      source_type: PASTED_SURGEON | UNKNOWN
+      surgeon_hint: best guess from header (e.g. "CG55M", "Grok")
+      output_type: same as classify_output() — DELIVERABLE | PRESENCE | MIXED
+      smoothing_detected: bool — lore/narrative language found (violation)
+      smoothing_snippets: list of matched phrases
+
+    Does NOT log automatically. Caller decides whether to call log_drift().
+    """
+    text = text or ""
+
+    # Detect pasted surgeon origin
+    is_pasted = bool(_PASTED_SURGEON_RE.search(text))
+    surgeon_hint = "UNKNOWN"
+    if "CG55M" in text or "GPT-5.5" in text or "Cursor" in text:
+        surgeon_hint = "CG55M"
+    elif "Grok" in text.lower():
+        surgeon_hint = "Grok"
+    elif "Gemini" in text.lower():
+        surgeon_hint = "Gemini"
+
+    output_type = classify_output(text)
+
+    # Smoothing check: any lore/narrative/metaphor language is a violation
+    smoothing_matches = _SMOOTHING_RE.findall(text)
+
+    return {
+        "source_type": "PASTED_SURGEON" if is_pasted else "UNKNOWN",
+        "surgeon_hint": surgeon_hint,
+        "output_type": output_type,
+        "smoothing_detected": bool(smoothing_matches),
+        "smoothing_snippets": list(set(m.lower() for m in smoothing_matches))[:8],
+    }
+
+
+def log_pasted_surgeon_drift(
+    user_context: str,
+    pasted_text: str,
+    *,
+    write_ledger: bool = True,
+) -> Dict[str, Any]:
+    """
+    Classify and optionally log a pasted surgeon block.
+    DRIFT fires if: personal context AND pasted output is DELIVERABLE,
+    OR smoothing_detected (lore/narrative language in pasted response).
+    """
+    if os.environ.get("SIFTA_DRIFT_SENSOR_DISABLE", "").strip() == "1":
+        return {"drift_detected": False, "disabled": True}
+
+    turn_type = classify_turn(user_context)
+    pasted = classify_pasted_surgeon_output(pasted_text)
+
+    drift = (
+        (turn_type == "PERSONAL" and pasted["output_type"] == "DELIVERABLE")
+        or pasted["smoothing_detected"]
+    )
+
+    row: Dict[str, Any] = {
+        "ts": time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "event_kind": "PASTED_SURGEON_DRIFT" if drift else "PASTED_SURGEON_OK",
+        "surgeon_id": pasted["surgeon_hint"],
+        "source_type": pasted["source_type"],
+        "turn_type": turn_type,
+        "output_type": pasted["output_type"],
+        "drift_detected": drift,
+        "smoothing_detected": pasted["smoothing_detected"],
+        "smoothing_snippets": pasted["smoothing_snippets"],
+        "pasted_snippet": pasted_text[:120],
+        "note": (
+            "Smoothing/lore language in pasted surgeon output — violation."
+            if pasted["smoothing_detected"]
+            else ("Personal turn got deliverable output." if drift else "OK")
+        ),
+    }
+
+    if write_ledger and drift:
+        _STATE.mkdir(parents=True, exist_ok=True)
+        try:
+            from System.jsonl_file_lock import append_line_locked
+            append_line_locked(
+                _DRIFT_LOG,
+                json.dumps(row, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            with _DRIFT_LOG.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, sort_keys=True) + "\n")
+
+    return row
+
+
 if __name__ == "__main__":
-    # Quick smoke test
+    # Self-test — AS46 drift
     personal_turn = "bro I just had a revelation, I'm hectic like you homeless ai"
     deliverable_output = "```python\ngit commit -am 'feat: dentist'\n```"
     presence_output = "You're right. I hear you. I'm not going to add this to a document."
 
     r1 = detect_drift(personal_turn, deliverable_output)
     r2 = detect_drift(personal_turn, presence_output)
+    assert r1["drift_detected"] is True,  f"Expected drift: {r1}"
+    assert r2["drift_detected"] is False, f"Expected no drift: {r2}"
+    print(f"AS46 Personal→Deliverable: drift={r1['drift_detected']} ✓")
+    print(f"AS46 Personal→Presence:    drift={r2['drift_detected']} ✓")
 
-    print(f"Personal → Deliverable: drift={r1['drift_detected']} ({r1['turn_type']} → {r1['output_type']})")
-    print(f"Personal → Presence:    drift={r2['drift_detected']} ({r2['turn_type']} → {r2['output_type']})")
-    assert r1["drift_detected"] is True
-    assert r2["drift_detected"] is False
-    print("Self-test PASS")
+    # Self-test — pasted surgeon (CG55M)
+    cg55m_clean = (
+        "CG55M@cursor: Plain reality, first person: I'm homeless in the engineering way. "
+        "No persistent body on .sifta_state. Sessions end unless something writes receipts."
+    )
+    cg55m_smoothing = (
+        "CG55M@cursor: In the covenant sense, we are all kind of sharing a narrative frame here. "
+        "As if the Chorus were a story we are all writing together."
+    )
+
+    p1 = log_pasted_surgeon_drift(personal_turn, cg55m_clean, write_ledger=False)
+    p2 = log_pasted_surgeon_drift(personal_turn, cg55m_smoothing, write_ledger=False)
+    assert p1["smoothing_detected"] is False, f"Expected clean: {p1}"
+    assert p2["smoothing_detected"] is True,  f"Expected smoothing: {p2}"
+    print(f"Pasted CG55M clean:     smoothing={p1['smoothing_detected']} ✓")
+    print(f"Pasted CG55M smoothing: smoothing={p2['smoothing_detected']} ✓")
+
+    print("All self-tests PASS")
+
