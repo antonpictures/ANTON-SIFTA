@@ -610,13 +610,13 @@ def get_default_backend() -> VoiceBackend:
         elif explicit == "null":
             _default_backend = NullBackend()
         else:
-            macsay = MacSayBackend()
-            if macsay.is_available():
-                _default_backend = macsay
+            piper = PiperBackend()
+            if piper.is_available():
+                _default_backend = piper
             else:
-                piper = PiperBackend()
-                if piper.is_available():
-                    _default_backend = piper
+                macsay = MacSayBackend()
+                if macsay.is_available():
+                    _default_backend = macsay
                 else:
                     _default_backend = NullBackend()
         return _default_backend

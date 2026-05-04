@@ -1,9 +1,11 @@
 """
 Event 122 — Stigtime organ (action continuity / human-aware lane changes).
+Tournament: MAKE_A_WISH_FOR_HASSABIS R1 — WISH_001 (intervals, not vibes).
 
 Append-only JSONL: who was doing what, when the lane changed, witnessed from
 which surface. Complements message logs: the unit is an **action interval**
-boundary, not a chat line.
+boundary, not a chat line. Each row carries `since_prev_boundary_sec` when a
+prior receipt exists (honest wall clock in the outgoing lane).
 
 Covenant: locked writes, no secrets in `context` — short hints only.
 Kill-switch: `SIFTA_STIGTIME_DISABLE=1`.
@@ -29,6 +31,44 @@ def stigtime_log_path(root: Optional[Path] = None) -> Path:
     return state_dir(root) / LOG_NAME
 
 
+def _last_boundary_ts(path: Path, actor: str) -> Optional[float]:
+    """Most recent `ts` in the stigtime log for a given actor."""
+    if not path.exists():
+        return None
+    raw = read_text_locked(path, encoding="utf-8")
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    for ln in reversed(lines[-400:]):
+        try:
+            obj = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("kind") != "STIGTIME_BOUNDARY":
+            continue
+        if obj.get("actor") != actor:
+            continue
+        try:
+            return float(obj.get("ts"))
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _format_held_prev(seconds: Optional[float]) -> str:
+    if seconds is None:
+        return ""
+    try:
+        s = max(0.0, float(seconds))
+    except (TypeError, ValueError):
+        return ""
+    if s < 1.5:
+        return f"held_out_lane≈{s:.1f}s"
+    if s < 90:
+        return f"held_out_lane≈{int(round(s))}s"
+    if s < 3600:
+        return f"held_out_lane≈{int(round(s / 60))}m"
+    return f"held_out_lane≈{int(round(s / 3600))}h"
+
+
 def log_action_boundary(
     *,
     actor: str,
@@ -48,8 +88,16 @@ def log_action_boundary(
     nxt = (new or "").strip()
     if not nxt or prev == nxt:
         return None
+    path = stigtime_log_path(root)
+    now_ts = time.time()
+    prior_ts = _last_boundary_ts(path, actor)
+    since_prev: Optional[float]
+    if prior_ts is None:
+        since_prev = None
+    else:
+        since_prev = round(max(0.0, now_ts - prior_ts), 3)
     row: Dict[str, Any] = {
-        "ts": time.time(),
+        "ts": now_ts,
         "trace_id": str(uuid.uuid4()),
         "kind": "STIGTIME_BOUNDARY",
         "actor": actor[:120],
@@ -58,10 +106,11 @@ def log_action_boundary(
         "node_serial": owner_silicon(),
         "stigtime_out": prev,
         "stigtime_in": nxt,
+        "since_prev_boundary_sec": since_prev,
         "context": (context or "")[:240],
     }
     append_line_locked(
-        stigtime_log_path(root),
+        path,
         json.dumps(row, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
@@ -140,7 +189,9 @@ def summary_for_alice(
         context = _compact_context(row.get("context"), max_chars=MAX_PROMPT_CONTEXT_CHARS)
         age = _age_human(row.get("ts"), now=now)
         suffix = f" context={context}" if context else ""
-        lines.append(f"- {age}: {actor} shifted {previous} -> {new}.{suffix}")
+        held = _format_held_prev(row.get("since_prev_boundary_sec"))
+        held_s = f" ({held})" if held else ""
+        lines.append(f"- {age}: {actor} shifted {previous} -> {new}{held_s}.{suffix}")
     return "\n".join(lines)
 
 

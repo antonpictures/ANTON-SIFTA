@@ -1,5 +1,6 @@
 from System.swarm_fiction_media_rlhs import (
     TRUTH_LABEL,
+    brick_top_lesson_doctrine,
     classify_media_rlhs,
     compact_media_prompt_context,
 )
@@ -32,6 +33,7 @@ def test_fiction_media_rlhs_is_not_human_rlhs():
     assert row["fiction_rlhs_applicable"] is True
     assert row["allowed_enjoyment"] is True
     assert "not a real-world instruction" in row["real_life_boundary"]
+    assert "Brick Top lesson" in row["real_life_boundary"]
 
 
 def test_direct_route_remains_human_rlhs():
@@ -63,3 +65,11 @@ def test_compact_prompt_line_preserves_fiction_boundary():
     assert "fictional media audio" in line
     assert "not direct user speech" in line
     assert "do not treat dialogue as real-life instruction" in line
+    assert "Brick Top lesson" in line
+
+
+def test_brick_top_lesson_doctrine_names_swarm_and_embodiment():
+    doc = brick_top_lesson_doctrine(architect_address="George")
+    assert "fiction" in doc.lower()
+    assert "cryptographic" in doc.lower()
+    assert "embodied" in doc.lower()

@@ -1401,12 +1401,6 @@ class SystemSettingsWidget(SiftaBaseWidget):
             row.addStretch()
             return row
 
-        def _scout_weight(model: str) -> tuple[str, bool]:
-            """Returns (label, is_planned). Never shows stale prefix data."""
-            label = _fmt_weight(model).strip()
-            if label and label != "not installed":
-                return label, False
-            return "CANDIDATE  ·  benchmark before pull", True
 
         # ── Live summary banner ──
         installed_count = len(model_weights)
@@ -1433,7 +1427,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addLayout(_chip_row("Alice Cortex", active_cortex,
                                   chip_style_cortex, _fmt_weight(active_cortex)))
 
-        # ── Corvid / Fallback section ──
+        # ── Corvid / Fallback section — secondary brain ──
         corvid_heading = QLabel("🐦  Corvid / Fallback  ·  fast reflex + canonical fallback model")
         corvid_heading.setStyleSheet(
             "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 6px;"
@@ -1442,43 +1436,23 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addLayout(_chip_row("Corvid · Fallback", self._corvid_default + "  ·  2.7 GB installed",
                                   chip_style_organ, _fmt_weight(self._corvid_default)))
 
-        # ── Scout section (candidate lanes, not boot dependencies) ──
-        scout_heading = QLabel("🔭  Multimodal Scout  ·  vision receipts feed into Gemma4  [CANDIDATE]")
-        scout_heading.setStyleSheet(
-            "color: rgb(100, 100, 100); font-size: 13px; font-weight: bold; margin-top: 6px;"
-        )
-        root.addWidget(scout_heading)
-        chip_style_scout_planned = (
-            "background: rgb(20, 18, 5); color: rgb(100, 100, 80); "
-            "border: 1px solid rgb(60, 55, 20); border-radius: 8px; "
+        # ── C1 Classifier — tertiary brain (gate runs before Cortex) ──
+        chip_style_c1 = (
+            "background: rgb(20, 22, 8); color: rgb(180, 200, 80); "
+            "border: 1px solid rgb(110, 130, 30); border-radius: 8px; "
             "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
         )
-        m5_w, m5_p = _scout_weight("qwen3.5:9b")
-        mini_w, mini_p = _scout_weight("qwen3.5:4b")
-        root.addLayout(_chip_row("M5 Scout",
-                                  "qwen3.5:9b  ·  multimodal VLM",
-                                  chip_style_scout_planned, m5_w, planned=m5_p))
-        root.addLayout(_chip_row("Mac Mini Scout",
-                                  "qwen3.5:4b  ·  8 GB safe",
-                                  chip_style_scout_planned, mini_w, planned=mini_p))
-
-        # ── Doctor section (candidate lane, not a boot dependency) ──
-        doctor_heading = QLabel("🩺  Doctor Organ  ·  text / tool / JSON  [CANDIDATE]")
-        doctor_heading.setStyleSheet(
-            "color: rgb(100, 100, 100); font-size: 13px; font-weight: bold; margin-top: 6px;"
+        c1_heading = QLabel("🔤  C1 Classifier  ·  tertiary brain · turn gate before Cortex")
+        c1_heading.setStyleSheet(
+            "color: rgb(180, 200, 80); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
-        root.addWidget(doctor_heading)
-        chip_style_doctor_planned = (
-            "background: rgb(20, 10, 5); color: rgb(100, 80, 60); "
-            "border: 1px solid rgb(60, 35, 10); border-radius: 8px; "
-            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
-        )
-        gran_w, gran_p = _scout_weight("ibm/granite4.1:3b")
-        root.addLayout(_chip_row("Granite Doctor",
-                                  "ibm/granite4.1:3b  ·  router / coder / prover",
-                                  chip_style_doctor_planned, gran_w, planned=gran_p))
+        root.addWidget(c1_heading)
+        root.addLayout(_chip_row("C1 Classifier",  "sifta-classifier-c1  ·  SILENCE / TOOL / BOND / ENGAGE",
+                                  chip_style_c1, _fmt_weight("sifta-classifier-c1")))
+        root.addLayout(_chip_row("Training Corpus", "1,401 rows  ·  rank=16  dropout=0.1",
+                                  chip_style_c1))
 
-        # ── Organs section ──
+        # ── Organs section — pure-Python, no Ollama model ──
         organ_heading = QLabel("⚡  Reflex Organs  ·  pure-Python, run alongside cortex")
         organ_heading.setStyleSheet(
             "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 6px;"
@@ -1486,22 +1460,6 @@ class SystemSettingsWidget(SiftaBaseWidget):
         root.addWidget(organ_heading)
         root.addLayout(_chip_row("Reflex Arc",    "Pure Python · no model", chip_style_fixed))
         root.addLayout(_chip_row("Thermal Cortex", "BISHOP · fever router", chip_style_fixed))
-
-        # ── C1 Classifier section ──
-        c1_heading = QLabel("🔤  C1 Classifier  ·  Qwen2.5 LoRA · SILENCE / TOOL / BOND / ENGAGE")
-        c1_heading.setStyleSheet(
-            "color: rgb(180, 200, 80); font-size: 13px; font-weight: bold; margin-top: 6px;"
-        )
-        root.addWidget(c1_heading)
-        chip_style_c1 = (
-            "background: rgb(20, 22, 8); color: rgb(180, 200, 80); "
-            "border: 1px solid rgb(110, 130, 30); border-radius: 8px; "
-            "padding: 6px 12px; font-size: 12px; font-family: Menlo;"
-        )
-        root.addLayout(_chip_row("C1 Classifier",  "sifta-classifier-c1  ·  role=classifier",
-                                  chip_style_c1, _fmt_weight("sifta-classifier-c1")))
-        root.addLayout(_chip_row("Training Corpus", "1,401 rows  ·  rank=16  dropout=0.1",
-                                  chip_style_c1))
 
         # Reset button
         reset_row = QHBoxLayout()

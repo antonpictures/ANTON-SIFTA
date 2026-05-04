@@ -333,6 +333,21 @@ _AVFOUNDATION_MAX_IDX = 8   # 9 devices detected on this machine (0..8)
 # Current impl is POSITION-based: skip index 0 in pass 1, probe last in
 # pass 2. Correct on this machine; documents accurately here.
 
+def _log_camera_probe(idx: int, status: str, reason: str = "") -> None:
+    """Log camera hardware probe per Covenant §7.1 / P1 order."""
+    log_file = _STATE / "camera_hardware_probe.jsonl"
+    try:
+        import time, json
+        row = {
+            "ts": time.time(),
+            "camera_index": idx,
+            "status": status,
+            "reason": reason
+        }
+        append_line_locked(log_file, json.dumps(row) + "\n")
+    except Exception:
+        pass
+
 def _discover_real_camera_index() -> int:
     """
     Probe cv2 indices 0.._AVFOUNDATION_MAX_IDX and return the first that
@@ -363,11 +378,16 @@ def _discover_real_camera_index() -> int:
         try:
             cap = _cv2.VideoCapture(idx)
             if not cap.isOpened():
+                _log_camera_probe(idx, "open_failed", "cap.isOpened() returned False")
                 continue
             ok, frame = cap.read()
             if ok and frame is not None:
+                _log_camera_probe(idx, "lock", "successful frame read")
                 return idx
-        except Exception:
+            else:
+                _log_camera_probe(idx, "read_failed", "cap.read() returned empty frame")
+        except Exception as e:
+            _log_camera_probe(idx, "exception", f"{type(e).__name__}: {e}")
             continue
         finally:
             if cap is not None:

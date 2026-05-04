@@ -722,6 +722,37 @@ def execute_tool_call(
         _log_trace({"event": "TOOL_CALL_REJECTED", "tool": call.tool_name, "missing": missing})
         return result
 
+    # ── NPPL hard gate (Event 141) — before any executor / subprocess ─────
+    try:
+        from System.swarm_nppl_gate import check_tool as _nppl_tool_check
+        from System.swarm_stability_audit import get_current_clamp_overrides
+
+        _clamp_ov = get_current_clamp_overrides(root=_REPO)
+        _nppl = _nppl_tool_check(
+            call.tool_name,
+            clamp_level=str(_clamp_ov.get("clamp_level", "NONE")),
+            stability_ok=bool(_clamp_ov.get("stability_ok", True)),
+            root=_REPO,
+            context={"organ": "swarm_tool_router.execute_tool_call", "tool": call.tool_name},
+            write_ledger=True,
+        )
+        if not _nppl.get("permitted", True):
+            result = ToolResult(
+                tool_name=call.tool_name,
+                params=call.params,
+                executed=False,
+                result={"error": _nppl.get("reason", "NPPL blocked"), "nppl_receipt": _nppl},
+                status="REJECTED_NPPL",
+                feedback_for_alice=(
+                    f"NPPL safety gate blocked {call.tool_name}: "
+                    f"{str(_nppl.get('reason', 'no reason'))[:300]}"
+                ),
+            )
+            _log_trace({"event": "TOOL_CALL_REJECTED_NPPL", "tool": call.tool_name, "nppl": _nppl})
+            return result
+    except Exception as exc:
+        _log_trace({"event": "TOOL_NPPL_CHECK_ERROR", "tool": call.tool_name, "error": str(exc)})
+
     # ── Execute ─────────────────────────────────────────────────────
     executor = _EXECUTORS.get(call.tool_name)
     if executor is None:

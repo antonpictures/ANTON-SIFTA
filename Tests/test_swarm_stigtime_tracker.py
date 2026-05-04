@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from System import swarm_stigtime_tracker as st
 
 
@@ -19,6 +21,7 @@ def test_log_writes_boundary(tmp_path: Path, monkeypatch) -> None:
     assert row is not None
     assert row["stigtime_out"] == "idle"
     assert row["stigtime_in"] == "thinking"
+    assert row.get("since_prev_boundary_sec") is None
     p = st.stigtime_log_path(tmp_path)
     assert p.exists()
     line = p.read_text(encoding="utf-8").strip().splitlines()[-1]
@@ -38,6 +41,29 @@ def test_tail_parses(tmp_path: Path, monkeypatch) -> None:
     rows = st.tail_stigtime_rows(10, root=tmp_path)
     assert len(rows) == 2
     assert rows[-1]["stigtime_in"] == "bash"
+    assert rows[0].get("since_prev_boundary_sec") is None
+    assert rows[1].get("since_prev_boundary_sec") is not None
+
+
+def test_since_prev_boundary_sec_follows_wall_clock(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(st, "state_dir", lambda explicit=None: tmp_path)
+    t0 = 1_700_000_000.0
+
+    class _T:
+        v = t0
+
+        @classmethod
+        def time(cls) -> float:
+            return cls.v
+
+    monkeypatch.setattr(st, "time", _T)
+    r1 = st.log_action_boundary(actor="alice_talk", previous="idle", new="thinking")
+    assert r1 is not None
+    assert r1.get("since_prev_boundary_sec") is None
+    _T.v = t0 + 42.5
+    r2 = st.log_action_boundary(actor="alice_talk", previous="thinking", new="bash")
+    assert r2 is not None
+    assert r2["since_prev_boundary_sec"] == pytest.approx(42.5)
 
 
 def test_summary_for_alice_empty(tmp_path: Path, monkeypatch) -> None:
@@ -59,7 +85,7 @@ def test_summary_for_alice_surfaces_recent_boundaries(tmp_path: Path, monkeypatc
 
     assert "STIGTIME ACTION CONTINUITY" in summary
     assert "recent_boundaries=1" in summary
-    assert "1m ago: alice_talk shifted idle -> thinking" in summary
+    assert "1m ago: alice_talk shifted idle -> thinking." in summary
     assert "cortex=sifta-gemma4-alice" in summary
     assert "do not say you lack past-24h memory" in summary
 

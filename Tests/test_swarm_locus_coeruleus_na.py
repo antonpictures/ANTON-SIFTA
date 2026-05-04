@@ -224,3 +224,92 @@ def test_provenance_contains_all_citations(tmp_path):
     assert "Yu&Dayan2005" in prov
     assert "Aston-Jones" in prov
     assert "Yerkes" in prov
+
+
+# ── Integration: two-phase suppression (Grok spec) ───────────────────────────
+
+def test_na_suppressed_under_emergency():
+    """Phase B: EMERGENCY clamp should suppress NA toward resting level 0.3."""
+    # High uncertainty that would normally drive NA=0.8+
+    stable   = compute_lc_na(_na_override=0.8, clamp_level="NONE", write_ledger=False)
+    emergency = compute_lc_na(_na_override=0.8, clamp_level="EMERGENCY", write_ledger=False)
+    assert emergency["na_level"] < stable["na_level"]
+    assert emergency["na_suppressed"] is True
+    assert stable["na_suppressed"] is False
+
+
+def test_na_not_suppressed_when_stable():
+    """Phase A: clamp_level=NONE should not suppress NA."""
+    row = compute_lc_na(_na_override=0.7, clamp_level="NONE", write_ledger=False)
+    assert row["na_suppressed"] is False
+    # NA should be the requested 0.7, unsuppressed
+    assert row["na_level"] == pytest.approx(0.7, abs=0.01)
+
+
+def test_suppression_scales_with_severity():
+    """RATE_LIMIT suppresses less than BLOCK_NEW suppresses less than EMERGENCY."""
+    base_na = 0.9
+    na_rl  = compute_lc_na(_na_override=base_na, clamp_level="RATE_LIMIT", write_ledger=False)["na_level"]
+    na_bn  = compute_lc_na(_na_override=base_na, clamp_level="BLOCK_NEW",  write_ledger=False)["na_level"]
+    na_em  = compute_lc_na(_na_override=base_na, clamp_level="EMERGENCY",  write_ledger=False)["na_level"]
+    assert na_rl > na_bn > na_em
+
+
+def test_na_suppressed_key_in_output():
+    row = compute_lc_na(write_ledger=False, clamp_level="RATE_LIMIT")
+    assert "na_suppressed" in row
+    assert "clamp_level" in row
+
+# ============================================================
+# TME arousal integration (§10.14.28 Priority 2)
+# Dantzer et al. (2008) Neuron 61:760
+# Capuron & Miller (2011) Nat Rev Immunol 11:738
+# ============================================================
+
+def test_tme_escape_boosts_na():
+    """
+    Dantzer (2008): immune escape signals cytokine-mediated LC activation.
+    ESCAPE phase + negative net_immune_pressure -> higher NA than baseline.
+    """
+    from System.swarm_locus_coeruleus_na import compute_lc_na
+    baseline = compute_lc_na(uncertainty=0.3, write_ledger=False,
+                              tme_phase="EQUILIBRIUM", tme_net_immune_pressure=0.0)
+    escaped  = compute_lc_na(uncertainty=0.3, write_ledger=False,
+                              tme_phase="ESCAPE", tme_net_immune_pressure=-0.4)
+    assert escaped["na_level"] > baseline["na_level"]
+
+
+def test_tme_boost_in_sub_signals():
+    """TME arousal boost reported in sub_signals for receipt observability."""
+    from System.swarm_locus_coeruleus_na import compute_lc_na
+    r = compute_lc_na(write_ledger=False,
+                      tme_phase="ESCAPE", tme_net_immune_pressure=-0.5)
+    subs = r.get("sub_signals", {})
+    assert "tme_arousal_boost" in subs
+    assert subs["tme_arousal_boost"] > 0.0
+
+
+def test_tme_equilibrium_no_boost():
+    """Equilibrium phase -> no TME arousal boost."""
+    from System.swarm_locus_coeruleus_na import compute_lc_na
+    r = compute_lc_na(write_ledger=False,
+                      tme_phase="EQUILIBRIUM", tme_net_immune_pressure=0.05)
+    assert r["sub_signals"]["tme_arousal_boost"] == 0.0
+
+
+def test_tme_elimination_mild_boost():
+    """Capuron (2011): active elimination generates mild inflammatory heat -> small NA boost."""
+    from System.swarm_locus_coeruleus_na import compute_lc_na
+    r = compute_lc_na(write_ledger=False,
+                      tme_phase="ELIMINATION", tme_net_immune_pressure=0.5)
+    boost = r["sub_signals"]["tme_arousal_boost"]
+    assert 0.0 < boost <= 0.08
+
+
+def test_tme_na_bounded():
+    """NA level always in [0, 1] even with max TME escape boost."""
+    from System.swarm_locus_coeruleus_na import compute_lc_na
+    r = compute_lc_na(uncertainty=1.0, astrocyte_heat_norm=1.0,
+                      tme_phase="ESCAPE", tme_net_immune_pressure=-1.0,
+                      write_ledger=False)
+    assert 0.0 <= r["na_level"] <= 1.0

@@ -560,7 +560,7 @@ stigmergic state of the Swarm in real time. Open them via **SIFTA → Swarm Inte
 - **Key principle:** You are *speaking* to the OS, not clicking checkboxes.
   The conversation is the interface.
 
-### Stigmergic Unified Shazam
+### SIFTA Media Shazam
 
 - **What it is:** One unified stigmergic media recognizer for co-watching. Alice
   listens to receipts from YouTube context, watch memory, observed media ingress,

@@ -8,7 +8,7 @@ Four-tab PyQt6 app that reads live stigmergic data to keep the
 Architect optimized in life, health, and computing.
 
 Tab 1: CONTACTS — WhatsApp social graph + interaction recency
-Tab 2: SCHEDULE — Circadian rhythm + task queue + reminders
+Tab 2: LIFE COCKPIT — George day segments · Alice stigtime · Shared agenda (was one mixed Schedule view)
 Tab 3: HEALTH   — Owner vitals, thermal, energy, pheromone score
 Tab 4: SWARM    — Event 104/106/107 ledgers + nightly audit + BioSIFTA (live refresh)
 ═══════════════════════════════════════════════════════════════
@@ -97,6 +97,41 @@ def _ago(ts: float) -> str:
     if d < 86400:
         return f"{int(d/3600)}h ago"
     return f"{int(d/86400)}d ago"
+
+
+def _format_george_segment_line(row: dict) -> str:
+    tl = f"{row.get('start_time', '?')}–{row.get('end_time', '?')}"
+    lab = row.get("label") or "?"
+    loc = (row.get("location") or "").strip()
+    note = " ".join(str(row.get("context_note") or "").split())[:72]
+    loc_s = f" @{loc}" if loc else ""
+    return f"• {tl}  {lab}{loc_s}  {note}"
+
+
+def _format_alice_stigtime_line(row: dict) -> str:
+    if row.get("kind") != "STIGTIME_BOUNDARY":
+        return ""
+    ts = float(row.get("ts") or 0.0)
+    out = row.get("stigtime_out") or "?"
+    inn = row.get("stigtime_in") or "?"
+    ctx = " ".join(str(row.get("context") or "").split())[:56]
+    ctx_s = f"  {ctx}" if ctx else ""
+    sp = row.get("since_prev_boundary_sec")
+    dur_s = ""
+    if sp is not None:
+        try:
+            s = float(sp)
+            if s >= 3600:
+                dur_s = f"  (~{int(round(s / 3600))}h in {out})"
+            elif s >= 60:
+                dur_s = f"  (~{int(round(s / 60))}m in {out})"
+            elif s >= 1:
+                dur_s = f"  (~{int(round(s))}s in {out})"
+            else:
+                dur_s = f"  (~{s:.1f}s in {out})"
+        except (TypeError, ValueError):
+            pass
+    return f"• {_ago(ts)}: {out} → {inn}{dur_s}{ctx_s}"
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -206,13 +241,24 @@ class ScheduleTab(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout(self)
-        hdr = QLabel("📅 STIGMERGIC SCHEDULE")
+        hdr = QLabel("📅 LIFE COCKPIT — George · Alice · Shared")
         hdr.setFont(QFont("Menlo", 16, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {_GREEN};")
         hdr.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(hdr)
 
-        # Circadian phase
+        sub = QLabel(
+            "Lane 1: architect_day_segments.jsonl (your body trace)  ·  "
+            "Lane 2: stigtime_log.jsonl (Alice lane changes)  ·  "
+            "Lane 3: stigmergic_schedule.jsonl (tasks / intent)"
+        )
+        sub.setWordWrap(True)
+        sub.setFont(QFont("Menlo", 10))
+        sub.setStyleSheet(f"color: {_DIM};")
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(sub)
+
+        # Circadian phase (George / wall-clock context — not the swarm regime strip)
         self.circadian_label = QLabel("☀️ Circadian Phase: loading...")
         self.circadian_label.setFont(QFont("Menlo", 13))
         layout.addWidget(self.circadian_label)
@@ -222,10 +268,59 @@ class ScheduleTab(QWidget):
         self.energy_bar.setFixedHeight(16)
         layout.addWidget(self.energy_bar)
 
-        # Quick-add task
+        # ── Two-up: George vs Alice timelines ───────────────────────────────
+        lanes = QHBoxLayout()
+        lanes.setSpacing(10)
+
+        george_frame = QFrame()
+        george_frame.setStyleSheet(
+            f"QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT}; border-radius: 8px; }}"
+        )
+        gfl = QVBoxLayout(george_frame)
+        g_title = QLabel("🧑 George's life")
+        g_title.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
+        g_title.setStyleSheet(f"color: {_CYAN};")
+        gfl.addWidget(g_title)
+        self._george_log = QTextEdit()
+        self._george_log.setReadOnly(True)
+        self._george_log.setPlaceholderText(
+            "No architect_day_segments yet — sleep / desk / kitchen / YouTube blocks land here."
+        )
+        self._george_log.setMinimumHeight(160)
+        self._george_log.setFont(QFont("Menlo", 10))
+        gfl.addWidget(self._george_log)
+
+        alice_frame = QFrame()
+        alice_frame.setStyleSheet(
+            f"QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT}; border-radius: 8px; }}"
+        )
+        afl = QVBoxLayout(alice_frame)
+        a_title = QLabel("🐜 Alice's life (stigtime)")
+        a_title.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
+        a_title.setStyleSheet(f"color: {_AMBER};")
+        afl.addWidget(a_title)
+        self._alice_log = QTextEdit()
+        self._alice_log.setReadOnly(True)
+        self._alice_log.setPlaceholderText(
+            "No stigtime_log boundaries yet — Talk widget records lane changes here."
+        )
+        self._alice_log.setMinimumHeight(160)
+        self._alice_log.setFont(QFont("Menlo", 10))
+        afl.addWidget(self._alice_log)
+
+        lanes.addWidget(george_frame, stretch=1)
+        lanes.addWidget(alice_frame, stretch=1)
+        layout.addLayout(lanes)
+
+        ag_hdr = QLabel("📋 Shared agenda (stigmergic_schedule.jsonl)")
+        ag_hdr.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
+        ag_hdr.setStyleSheet(f"color: {_GREEN};")
+        layout.addWidget(ag_hdr)
+
+        # Quick-add task → shared agenda only
         add_row = QHBoxLayout()
         self.task_input = QLineEdit()
-        self.task_input.setPlaceholderText("Add a task or reminder...")
+        self.task_input.setPlaceholderText("Add a task or reminder to shared agenda…")
         add_row.addWidget(self.task_input)
         self.priority_combo = QComboBox()
         self.priority_combo.addItems(["🟢 Low", "🟡 Med", "🔴 High"])
@@ -234,96 +329,6 @@ class ScheduleTab(QWidget):
         btn.clicked.connect(self._add_task)
         add_row.addWidget(btn)
         layout.addLayout(add_row)
-
-        # Swarm Regime strip (Phase Detector)
-        regime_frame = QFrame()
-        regime_frame.setStyleSheet(
-            f"QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT};"
-            f" border-radius: 6px; padding: 6px 10px; }}"
-        )
-        rl = QHBoxLayout(regime_frame)
-        rl.setContentsMargins(0, 0, 0, 0)
-        self.regime_label = QLabel("🌌 Regime: loading...")
-        self.regime_label.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
-        rl.addWidget(self.regime_label)
-        rl.addStretch()
-        self.cusum_label = QLabel("")
-        self.cusum_label.setFont(QFont("Menlo", 10))
-        self.cusum_label.setStyleSheet(f"color: {_DIM};")
-        rl.addWidget(self.cusum_label)
-        layout.addWidget(regime_frame)
-
-        # Allostatic Load strip (Event 102)
-        al_frame = QFrame()
-        al_frame.setStyleSheet(
-            f"QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT};"
-            f" border-radius: 6px; padding: 4px 10px; }}"
-        )
-        al_layout = QHBoxLayout(al_frame)
-        al_layout.setContentsMargins(0, 0, 0, 0)
-        al_layout.setSpacing(8)
-        self.al_label = QLabel("🧠 Load: —")
-        self.al_label.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
-        al_layout.addWidget(self.al_label)
-        self.al_bar = QProgressBar()
-        self.al_bar.setMaximum(100)
-        self.al_bar.setValue(0)
-        self.al_bar.setFixedHeight(10)
-        self.al_bar.setTextVisible(False)
-        al_layout.addWidget(self.al_bar, stretch=1)
-        self.al_policy_label = QLabel("")
-        self.al_policy_label.setFont(QFont("Menlo", 10))
-        self.al_policy_label.setStyleSheet(f"color: {_DIM};")
-        al_layout.addWidget(self.al_policy_label)
-        layout.addWidget(al_frame)
-
-        # ── Event 104/106 Auditor strip ───────────────────────────────────────
-        obs_frame = QFrame()
-        obs_frame.setStyleSheet(
-            f"QFrame {{ background: {_CARD}; border: 1px solid #1a3a5c;"
-            f" border-radius: 6px; padding: 4px 10px; }}"
-        )
-        obs_layout = QHBoxLayout(obs_frame)
-        obs_layout.setContentsMargins(0, 0, 0, 0)
-        obs_layout.setSpacing(8)
-        self.obs_label = QLabel("🔍 Auditor: —")
-        self.obs_label.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
-        obs_layout.addWidget(self.obs_label)
-        self.obs_bar = QProgressBar()
-        self.obs_bar.setMaximum(100)
-        self.obs_bar.setValue(0)
-        self.obs_bar.setFixedHeight(8)
-        self.obs_bar.setTextVisible(False)
-        obs_layout.addWidget(self.obs_bar, stretch=1)
-        self.obs_detail = QLabel("")
-        self.obs_detail.setFont(QFont("Menlo", 9))
-        self.obs_detail.setStyleSheet(f"color: {_DIM};")
-        obs_layout.addWidget(self.obs_detail)
-        layout.addWidget(obs_frame)
-
-        # ── BioSIFTA corpus strip ─────────────────────────────────────────────
-        bio_frame = QFrame()
-        bio_frame.setStyleSheet(
-            f"QFrame {{ background: {_CARD}; border: 1px solid #1a3a5c;"
-            f" border-radius: 6px; padding: 4px 10px; }}"
-        )
-        bio_layout = QHBoxLayout(bio_frame)
-        bio_layout.setContentsMargins(0, 0, 0, 0)
-        bio_layout.setSpacing(8)
-        self.bio_label = QLabel("🧬 BioSIFTA: —")
-        self.bio_label.setFont(QFont("Menlo", 11, QFont.Weight.Bold))
-        bio_layout.addWidget(self.bio_label)
-        self.bio_bar = QProgressBar()
-        self.bio_bar.setMaximum(500)   # LoRA threshold
-        self.bio_bar.setValue(0)
-        self.bio_bar.setFixedHeight(8)
-        self.bio_bar.setTextVisible(False)
-        bio_layout.addWidget(self.bio_bar, stretch=1)
-        self.bio_detail = QLabel("")
-        self.bio_detail.setFont(QFont("Menlo", 9))
-        self.bio_detail.setStyleSheet(f"color: {_DIM};")
-        bio_layout.addWidget(self.bio_detail)
-        layout.addWidget(bio_frame)
 
         self.task_area = QVBoxLayout()
         scroll = QScrollArea()
@@ -360,157 +365,22 @@ class ScheduleTab(QWidget):
             w.deleteLater()
         self._task_widgets.clear()
 
-        # ── Swarm Regime (Phase Detector) ─────────────────────────────────
-        try:
-            import sys as _sys
-            if str(_REPO) not in _sys.path:
-                _sys.path.insert(0, str(_REPO))
-            from System.phase_transition_control import get_ptc
-            ptc = get_ptc()
-            regime = ptc.evaluate_regime()
-            _REGIME_COLORS = {
-                "EXPLORATION":      _GREEN,
-                "CONSOLIDATION":    _AMBER,
-                "CRITICAL_COLLAPSE": _RED,
-            }
-            _REGIME_EMOJI = {
-                "EXPLORATION":      "🌱",
-                "CONSOLIDATION":    "🔄",
-                "CRITICAL_COLLAPSE": "⚠️",
-            }
-            rc = _REGIME_COLORS.get(regime, _DIM)
-            re = _REGIME_EMOJI.get(regime, "🌌")
-            self.regime_label.setText(f"{re} Regime: {regime}")
-            self.regime_label.setStyleSheet(f"color: {rc}; font-weight: bold;")
-            s = ptc.state
-            alarm_txt = " 🚨CUSUM" if s.cusum_alarm else ""
-            self.cusum_label.setText(
-                f"ρ={s.stigmergic_density:.2f}  EWS={s.EWS_score:.2f}  "
-                f"TD={s.td_mean:.3f}  S={s.cusum_score:.2f}{alarm_txt}"
-            )
-            self.cusum_label.setStyleSheet(
-                f"color: {_RED if s.cusum_alarm else _DIM}; font-family: Menlo; font-size: 10px;"
-            )
-        except Exception:
-            self.regime_label.setText("🌌 Regime: —")
-            self.cusum_label.setText("")
+        # ── Lane 1: George (architect day segments) ─────────────────────────
+        seg_rows = _tail_jsonl(_STATE / "architect_day_segments.jsonl", 24)
+        if seg_rows:
+            g_lines = [_format_george_segment_line(r) for r in seg_rows if isinstance(r, dict)]
+            self._george_log.setPlainText("\n".join(g_lines))
+        else:
+            self._george_log.setPlainText("")
 
-        # ── Allostatic Load (Event 102) ───────────────────────────────────
-        try:
-            import sys as _sys
-            if str(_REPO) not in _sys.path:
-                _sys.path.insert(0, str(_REPO))
-            from System.swarm_allostatic_load import compute_allostatic_load
-            al_row = compute_allostatic_load()
-            load = al_row.get("allostatic_load", 0.0)
-            policy = al_row.get("policy", "ALLOW_GROWTH")
-            _AL_COLORS = {
-                "ALLOW_GROWTH":        _GREEN,
-                "SUPPRESS_EXPLORATION": _AMBER,
-                "FORCE_REST_REPAIR":    _RED,
-            }
-            _AL_EMOJI = {
-                "ALLOW_GROWTH":        "🟢",
-                "SUPPRESS_EXPLORATION": "🟡",
-                "FORCE_REST_REPAIR":    "🔴",
-            }
-            al_color = _AL_COLORS.get(policy, _DIM)
-            al_emoji = _AL_EMOJI.get(policy, "⚪")
-            self.al_label.setText(f"🧠 Load: {load:.2f}")
-            self.al_label.setStyleSheet(f"color: {al_color}; font-weight: bold;")
-            self.al_bar.setValue(int(load * 100))
-            # Colour the bar chunk via stylesheet
-            self.al_bar.setStyleSheet(
-                f"QProgressBar::chunk {{ background: {al_color}; border-radius: 3px; }}"
-            )
-            window = al_row.get("window", 0)
-            self.al_policy_label.setText(f"{al_emoji} {policy}  (n={window})")
-            self.al_policy_label.setStyleSheet(
-                f"color: {al_color if policy != 'ALLOW_GROWTH' else _DIM};"
-                f" font-family: Menlo; font-size: 10px;"
-            )
-        except Exception:
-            self.al_label.setText("🧠 Load: —")
-            self.al_bar.setValue(0)
-            self.al_policy_label.setText("")
-
-        # ── Event 104/106 Auditor strip ───────────────────────────────────────
-        try:
-            summary_path = _STATE / "nightly_health_summary.json"
-            if summary_path.exists():
-                summary = json.loads(summary_path.read_text("utf-8"))
-                score = float(summary.get("composite_score", 0.0))
-                obs_sec = summary.get("sections", {}).get("observability", {})
-                ledger_obs = summary.get("ledger_metrics", {}).get("observability", {})
-                confidence = float(
-                    ledger_obs.get("observability_score", obs_sec.get("attribution_confidence", 0.0))
-                )
-                parentage = float(
-                    ledger_obs.get("parentage_score", obs_sec.get("trace_linkage", 0.0))
-                )
-                race = float(ledger_obs.get("race_pressure", obs_sec.get("race_pressure", 0.0)))
-                n_rows = int(
-                    ledger_obs.get(
-                        "n_merged_audit_rows",
-                        obs_sec.get("n_merged_audit_rows", obs_sec.get("n_obs_rows_24h", 0)),
-                    )
-                )
-                cusum_reject = obs_sec.get("cusum_null_reject")
-                cusum_icon = "🔴" if cusum_reject is False else ("🟢" if cusum_reject else "⚪")
-                color = _GREEN if confidence > 0.6 else _AMBER if confidence > 0.3 else _RED
-                self.obs_label.setText(f"🔍 Auditor: {confidence:.2f}")
-                self.obs_label.setStyleSheet(f"color: {color}; font-weight: bold;")
-                self.obs_bar.setValue(int(confidence * 100))
-                self.obs_bar.setStyleSheet(
-                    f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
-                )
-                ts = summary.get("ts", 0)
-                self.obs_detail.setText(
-                    f"parent={parentage:.2f}  race={race:.2f}  rows={n_rows}  "
-                    f"CUSUM={cusum_icon}  score={score:.3f}  [{_ago(ts)}]"
-                )
-            else:
-                # Live fallback from obs log directly
-                obs_rows = _tail_jsonl(_STATE / "stigmergic_observability.jsonl", 50)
-                linked = sum(1 for r in obs_rows if r.get("causal_parent_ids"))
-                linkage = linked / len(obs_rows) if obs_rows else 0.0
-                color = _GREEN if linkage > 0.6 else _AMBER if linkage > 0.3 else _DIM
-                self.obs_label.setText(f"🔍 Auditor: {linkage:.2f}")
-                self.obs_label.setStyleSheet(f"color: {color}; font-weight: bold;")
-                self.obs_bar.setValue(int(linkage * 100))
-                self.obs_detail.setText(f"rows={len(obs_rows)}  link={linkage:.2f}  no audit run yet")
-        except Exception:
-            self.obs_label.setText("🔍 Auditor: —")
-            self.obs_bar.setValue(0)
-            self.obs_detail.setText("")
-
-        # ── BioSIFTA corpus strip ─────────────────────────────────────────────
-        try:
-            def _count_jsonl(name: str) -> int:
-                p = _STATE / name
-                if not p.exists():
-                    return 0
-                return sum(1 for l in p.read_text("utf-8", errors="replace").splitlines() if l.strip())
-            n_papers  = _count_jsonl("bio_papers.jsonl")
-            n_claims  = _count_jsonl("bio_claims.jsonl")
-            n_exp     = _count_jsonl("bio_experiments.jsonl")
-            n_skills  = _count_jsonl("bio_skills.jsonl")
-            lora_ready = n_claims >= 500
-            color = _GREEN if lora_ready else _AMBER if n_claims > 50 else _CYAN
-            self.bio_label.setText(f"🧬 BioSIFTA: {n_claims}c")
-            self.bio_label.setStyleSheet(f"color: {color}; font-weight: bold;")
-            self.bio_bar.setValue(min(n_claims, 500))
-            self.bio_bar.setStyleSheet(
-                f"QProgressBar::chunk {{ background: {color}; border-radius: 3px; }}"
-            )
-            lora_icon = "✅ LoRA ready" if lora_ready else f"📥 {500 - n_claims} to LoRA"
-            self.bio_detail.setText(
-                f"papers={n_papers}  claims={n_claims}  exp={n_exp}  skills={n_skills}  {lora_icon}"
-            )
-        except Exception:
-            self.bio_label.setText("🧬 BioSIFTA: —")
-            self.bio_bar.setValue(0)
-            self.bio_detail.setText("")
+        # ── Lane 2: Alice (stigtime boundaries) ───────────────────────────────
+        st_rows = _tail_jsonl(_STATE / "stigtime_log.jsonl", 24)
+        a_lines = [
+            _format_alice_stigtime_line(r)
+            for r in st_rows
+            if isinstance(r, dict) and _format_alice_stigtime_line(r)
+        ]
+        self._alice_log.setPlainText("\n".join(a_lines) if a_lines else "")
 
         now = datetime.now()
         hour = now.hour
@@ -754,6 +624,15 @@ class SwarmTab(QWidget):
         hdr.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(hdr)
 
+        self.hippo_state = QLabel("Hippocampal State: — …")
+        self.hippo_state.setFont(QFont("Menlo", 13, QFont.Weight.Bold))
+        self.hippo_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hippo_state.setToolTip(
+            "Event 112 — last row of .sifta_state/hippocampal_novelty_map.jsonl "
+            "(SIMULATED_HIPPOCAMPAL_NOVELTY; CA1 comparator metaphor per IDE_BOOT_COVENANT)."
+        )
+        layout.addWidget(self.hippo_state)
+
         self.swarm_grid = QGridLayout()
         self.swarm_grid.setSpacing(10)
         layout.addLayout(self.swarm_grid)
@@ -773,6 +652,7 @@ class SwarmTab(QWidget):
             "skills": "Event 105 — bio_skills.jsonl shipped receipts",
             "composite": "Event 107 — composite_nightly_score from ledgers + tests",
             "last_audit": "nightly_health_summary.json ts field",
+            "gaze": "Event 114 — ema_architect_share from architect_screen_gaze_balance.jsonl (ledger fusion)",
         }
         metrics = [
             ("🔍 Observability",  "attribution"),
@@ -789,6 +669,7 @@ class SwarmTab(QWidget):
             ("🎓 Skills Shipped", "skills"),
             ("🏆 Composite",      "composite"),
             ("⏱  Last Audit",    "last_audit"),
+            ("👁 Gaze EMA",      "gaze"),
         ]
         self._swarm_labels: dict[str, QLabel] = {}
         for i, (label, key) in enumerate(metrics):
@@ -893,6 +774,26 @@ class SwarmTab(QWidget):
 
     def refresh(self):
         L = self._swarm_labels
+
+        # ── Event 112 — Hippocampal novelty phase (CA1 comparator metaphor) ─
+        hrows = _tail_jsonl(_STATE / "hippocampal_novelty_map.jsonl", 5)
+        if hrows:
+            last = hrows[-1]
+            phase = str(last.get("phase") or "NO_MEMORY")
+            score = float(last.get("novelty_score") or 0.0)
+            if phase == "NOVEL":
+                icon, color = "⚡", _AMBER
+            elif phase == "FAMILIAR":
+                icon, color = "💤", _GREEN
+            elif phase == "NO_MEMORY":
+                icon, color = "·", _DIM
+            else:
+                icon, color = "~", _CYAN
+            self.hippo_state.setText(f"Hippocampal State: {icon} {phase}  (score={score:.2f})")
+            self.hippo_state.setStyleSheet(f"color: {color}; background: transparent;")
+        else:
+            self.hippo_state.setText("Hippocampal State: — no novelty ledger rows yet")
+            self.hippo_state.setStyleSheet(f"color: {_DIM}; background: transparent;")
 
         # ── Read nightly_health_summary.json ────────────────────────────────
         summary_path = _STATE / "nightly_health_summary.json"
@@ -1004,6 +905,24 @@ class SwarmTab(QWidget):
         L["reset"].setToolTip(f"phase={reset_phase}, score={reset_score:.3f}")
         L["reset"].setStyleSheet(f"color: {reset_color};")
 
+        # Event 114 — Architect vs screen gaze balance (interest-weighted proxy)
+        grows = _tail_jsonl(_STATE / "architect_screen_gaze_balance.jsonl", 1)
+        if grows:
+            g = grows[-1]
+            ema = float(g.get("ema_architect_share", 0.5) or 0.5)
+            dr = g.get("drivers") or {}
+            L["gaze"].setText(f"{ema:.2f}")
+            L["gaze"].setToolTip(
+                f"ema_architect={ema:.3f} instant p_arch={g.get('p_architect_proxy')} "
+                f"face={dr.get('face_audience')} stale={dr.get('face_stale')} "
+                f"yt={dr.get('youtube_context_hint')} novelty={dr.get('novelty_score')}"
+            )
+            L["gaze"].setStyleSheet(f"color: {_GREEN if ema > 0.55 else _AMBER if ema > 0.35 else _CYAN};")
+        else:
+            L["gaze"].setText("—")
+            L["gaze"].setToolTip(_TT.get("gaze", ""))
+            L["gaze"].setStyleSheet(f"color: {_DIM};")
+
         # BioSIFTA corpus metrics (live from files — faster than waiting for audit)
         def _count(name: str) -> int:
             p = _STATE / name
@@ -1075,7 +994,7 @@ class StigmergicLifeDashboard(QWidget):
         layout.addWidget(title)
 
         subtitle = QLabel(
-            "Contacts • Schedule • Health • Swarm — pheromone traces + nightly ledgers"
+            "Contacts • Life cockpit • Health • Swarm — pheromone traces + nightly ledgers"
         )
         subtitle.setFont(QFont("Menlo", 10))
         subtitle.setStyleSheet(f"color: {_DIM};")
@@ -1090,7 +1009,7 @@ class StigmergicLifeDashboard(QWidget):
         self.swarm_tab = SwarmTab()
 
         self.tabs.addTab(self.contacts_tab, "🌐 Contacts")
-        self.tabs.addTab(self.schedule_tab, "📅 Schedule")
+        self.tabs.addTab(self.schedule_tab, "📅 Life cockpit")
         self.tabs.addTab(self.health_tab, "❤️ Health")
         self.tabs.addTab(self.swarm_tab, "🐜 Swarm")
         layout.addWidget(self.tabs)

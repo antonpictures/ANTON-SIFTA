@@ -151,14 +151,14 @@ def test_viability_writes_jsonl(tmp_path):
     assert row["truth_label"] == "AUTOPOIESIS_VIABILITY"
 
 
-def test_q3_q5_stubs_present(tmp_path):
-    """Q3 and Q5 must be explicitly stubbed (not silently absent)."""
+def test_q3_q5_keys_present_and_numeric(tmp_path):
+    """Q3 and Q5 are now live computed values (not None stubs)."""
     row = compute_viability(root=tmp_path, write_ledger=False)
     assert "phi_hat" in row
     assert "emergence_synergy" in row
-    # They should be None until joint-ledger sweep is built
-    assert row["phi_hat"] is None
-    assert row["emergence_synergy"] is None
+    # Both should now be floats (Φ̂ ≥ 0, synergy ≥ 0)
+    assert row["phi_hat"] is not None and isinstance(row["phi_hat"], float)
+    assert row["emergence_synergy"] is not None and isinstance(row["emergence_synergy"], float)
 
 
 def test_disable_env(tmp_path, monkeypatch):

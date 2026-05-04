@@ -3,7 +3,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from System.jsonl_file_lock import append_line_locked, read_text_locked, rewrite_text_locked
 from System.swarm_persistent_owner_history import state_dir
@@ -58,7 +58,14 @@ class AstrocyteGlialModulator:
             encoding="utf-8",
         )
 
-    def observe_global_state(self, new_surprise: float, compute_expended: float) -> Dict[str, Any]:
+    def observe_global_state(
+        self,
+        new_surprise: float,
+        compute_expended: float,
+        *,
+        lr_ceiling: Optional[float] = None,
+        exploration_bias_cap: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         Ingest the latest prediction error (surprise) from the World Model 
         and the compute expended. Astrocyte modulates the parameters globally.
@@ -104,6 +111,17 @@ class AstrocyteGlialModulator:
         heat_factor = min(1.0, 1000.0 / max(1.0, self.state["metabolic_heat"]))
         new_budget = self.base_compute_budget * heat_factor
 
+        if lr_ceiling is not None:
+            try:
+                new_lr = min(new_lr, float(lr_ceiling))
+            except (TypeError, ValueError):
+                pass
+        if exploration_bias_cap is not None:
+            try:
+                new_epistemic = min(new_epistemic, float(exploration_bias_cap))
+            except (TypeError, ValueError):
+                pass
+
         self.state["current_lr"] = new_lr
         self.state["current_epistemic_weight"] = new_epistemic
         self.state["current_compute_budget"] = new_budget
@@ -123,6 +141,8 @@ class AstrocyteGlialModulator:
             "modulated_epistemic_weight": round(new_epistemic, 4),
             "modulated_budget": round(new_budget, 4),
             "disabled": False,
+            "stability_lr_ceiling_applied": lr_ceiling,
+            "stability_exploration_bias_cap_applied": exploration_bias_cap,
         }
         append_line_locked(self.log_file, json.dumps(trace) + "\n", encoding="utf-8")
         return trace

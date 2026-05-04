@@ -70,3 +70,31 @@ def test_write_motor_policy_row(tmp_path: Path) -> None:
     ledger = tmp_path / "motor_policy.jsonl"
     assert ledger.exists()
     assert row["truth_label"] == mp.TRUTH_LABEL
+
+
+def test_novelty_explore_mass_tilts_empty_skill_band(tmp_path: Path) -> None:
+    """Event 112 — CA1 bias: with only epsilon floors, extra explore mass wins."""
+    low, _ = mp.select_action_type_from_skills(
+        ("explore", "forage"),
+        "observe",
+        state_dir=tmp_path,
+        novelty_explore_mass=0.0,
+    )
+    high, bias = mp.select_action_type_from_skills(
+        ("explore", "forage"),
+        "observe",
+        state_dir=tmp_path,
+        novelty_explore_mass=2.5,
+    )
+    assert low == "explore"
+    assert high == "explore"
+    assert bias["explore"] > bias["forage"]
+
+    forage_pick, fb = mp.select_action_type_from_skills(
+        ("explore", "forage"),
+        "observe",
+        state_dir=tmp_path,
+        novelty_forage_mass=3.0,
+    )
+    assert forage_pick == "forage"
+    assert fb["forage"] > fb["explore"]

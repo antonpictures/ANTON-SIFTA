@@ -203,3 +203,25 @@ def test_reward_markers_are_phrase_safe(isolated_state):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+def test_process_architect_reaction_structured_score(tmp_path):
+    import System.dopamine_reward_loop as drl
+    from System.swarm_multi_gate_replay_policy import current_gate_state
+    
+    # 1. Neutral text but has structured_score
+    result = drl.process_architect_reaction(
+        "neutral text that would normally be ignored",
+        alice_preceding_text="Test Alice",
+        structured_score=1.0
+    )
+    assert result is not None, "structured_score should force processing even on neutral text"
+    assert result.get("delta") == 1.0
+    
+    # 2. Text that might normally be negative, but structured_score is positive
+    result2 = drl.process_architect_reaction(
+        "bad bad bad",
+        alice_preceding_text="Test Alice",
+        structured_score=1.0
+    )
+    assert result2 is not None
+    assert result2.get("delta") == 1.0

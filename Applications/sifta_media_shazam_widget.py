@@ -177,7 +177,7 @@ class MediaShazamApp(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Stigmergic Unified Shazam")
+        self.setWindowTitle("SIFTA Media Shazam")
         self.setMinimumSize(900, 640)
         self.setStyleSheet(_STYLE)
 
@@ -187,7 +187,7 @@ class MediaShazamApp(QWidget):
 
         header = QHBoxLayout()
         title_box = QVBoxLayout()
-        title = QLabel("Stigmergic Unified Shazam")
+        title = QLabel("SIFTA Media Shazam")
         title.setObjectName("Title")
         subtitle = QLabel("One media organ: YouTube categories, acoustic scene, source family, and receipt evidence.")
         subtitle.setObjectName("Subtle")
@@ -199,6 +199,12 @@ class MediaShazamApp(QWidget):
         self.guess_btn = QPushButton("Guess Now")
         self.guess_btn.clicked.connect(self.refresh)
         header.addWidget(self.guess_btn)
+
+        btn_help = QPushButton("?")
+        btn_help.setFixedWidth(28)
+        btn_help.setToolTip("Help — SIFTA Media Shazam")
+        btn_help.clicked.connect(self._show_help)
+        header.addWidget(btn_help)
 
         self.scene_badge = QLabel("● SCENE")
         self.scene_badge.setFont(QFont("SF Mono", 10, QFont.Weight.Bold))
@@ -324,6 +330,67 @@ class MediaShazamApp(QWidget):
             )
         self.evidence.setPlainText("\n".join(lines))
 
+        # Stigmergic app-focus: Talk-to-Alice injects get_focus_context() into the
+        # system prompt — without this, the ledger may show Shazam guesses in
+        # CONCEPT CONTEXT while APP FOCUS still names another MDI window.
+        try:
+            from System.swarm_app_focus import publish_focus
+
+            _detail_parts = [
+                f"category={category}",
+                f"conf={float(row.get('confidence', 0.0) or 0.0):.2f}",
+            ]
+            if scene:
+                _detail_parts.append(f"acoustic_scene={scene}({scene_conf:.0%})")
+            sl = row.get("source_label") or row.get("source_type")
+            if sl:
+                _detail_parts.append(f"source={sl}")
+            publish_focus(
+                "SIFTA Media Shazam",
+                "; ".join(_detail_parts),
+                tab="Co-watch guess",
+                selection=str(row.get("title_guess") or row.get("source_work") or "")[:160],
+                metadata={
+                    "primary_category": category,
+                    "confidence": float(row.get("confidence", 0.0) or 0.0),
+                    "acoustic_scene": scene,
+                    "acoustic_scene_confidence": scene_conf,
+                    "evidence_rows": int(row.get("evidence_rows", 0) or 0),
+                },
+            )
+        except Exception:
+            pass
+
+        # ── PREDATOR UNIFIED FIELD (Event 122) ──────────────────────────────
+        # Write to sovereign organ file — separate from app_focus.jsonl.
+        # This is never overwritten by host-OS window changes.
+        try:
+            from System.swarm_unified_cowatch_field import write_organ_focus
+            import json as _json
+            _yt_title = ""
+            _yt_file = _STATE / "youtube_context_latest.json"
+            if _yt_file.exists():
+                try:
+                    _yt_title = _json.loads(_yt_file.read_text()).\
+                        get("title", "")
+                except Exception:
+                    pass
+            write_organ_focus(
+                "SIFTA Media Shazam",
+                guess=category,
+                confidence=float(row.get("confidence", 0.0) or 0.0),
+                acoustic_scene=scene,
+                acoustic_confidence=scene_conf,
+                youtube_title=_yt_title,
+                extra={
+                    "source_label": row.get("source_label") or row.get("source_type") or "",
+                    "title_guess": row.get("title_guess") or row.get("source_work") or "",
+                    "evidence_rows": int(row.get("evidence_rows", 0) or 0),
+                },
+            )
+        except Exception:
+            pass
+
         # Acoustic scene badge (Event 121b)
         if scene_frame is not None:
             _scene_colours = {
@@ -334,6 +401,44 @@ class MediaShazamApp(QWidget):
             col = _scene_colours.get(scene_frame.scene, _DIM)
             self.scene_badge.setText(f"● {scene_frame.scene}  {scene_frame.confidence:.0%}")
             self.scene_badge.setStyleSheet(f"color: {col}; margin-left: 8px;")
+
+    # ── Help ────────────────────────────────────────────────────────────────
+    def _show_help(self) -> None:
+        """Load help text from APP_HELP.md and display in a popup."""
+        help_file = _REPO / "Documents" / "APP_HELP.md"
+        text = f"Help — SIFTA Media Shazam\n\nNo APP_HELP.md found at {help_file}"
+        if help_file.exists():
+            raw = help_file.read_text(encoding="utf-8", errors="replace")
+            marker = "### SIFTA Media Shazam"
+            fallback_marker = "### SIFTA Media Shazam"
+            idx = raw.find(marker)
+            if idx == -1:
+                idx = raw.find(fallback_marker)
+                marker = fallback_marker
+            if idx != -1:
+                snippet = raw[idx + len(marker):]
+                end = snippet.find("\n### ")
+                text = snippet[:end].strip() if end != -1 else snippet.strip()
+            else:
+                text = "No help entry found for 'SIFTA Media Shazam' in APP_HELP.md."
+
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QScrollArea
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Help — SIFTA Media Shazam")
+        dlg.resize(560, 420)
+        dlg.setStyleSheet(f"background: {_BG}; color: {_TEXT}; font-family: 'SF Mono', monospace; font-size: 12px;")
+        layout = QVBoxLayout(dlg)
+        body = QTextEdit()
+        body.setReadOnly(True)
+        body.setPlainText(text)
+        body.setStyleSheet(f"background: {_PANEL}; border: 1px solid #2c3748; border-radius: 6px; padding: 8px;")
+        layout.addWidget(body)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btns.rejected.connect(dlg.close)
+        btns.setStyleSheet(f"color: {_CYAN};")
+        layout.addWidget(btns)
+        self._help_dlg = dlg  # prevent GC
+        dlg.show()
 
 
 def create_widget(parent: QWidget | None = None) -> MediaShazamApp:

@@ -315,10 +315,13 @@ def scan_economy(
             out.inference_fee_volume += fee
             borrower = str(row.get("borrower_id") or "").upper()
             lender = str(row.get("lender_ip") or row.get("lender_node_id") or "").upper()
-            if borrower:
-                balances[borrower] = balances.get(borrower, 0.0) - fee
-            if lender:
-                balances[lender] = balances.get(lender, 0.0) + fee
+            
+            # ── INFRASTRUCTURE BOUNDARY (AMA Protocol) ──────────────
+            # Local hardware inference is infrastructure paid in fiat USD. 
+            # Charging the biological organism STGM for it is a boundary leak.
+            # We track the volume for accounting but do NOT deduct from internal wallets.
+            if "inference_boundary_leak_ignored" not in out.warnings:
+                out.warnings.append("inference_boundary_leak_ignored")
         elif tx_type == "STGM_MINT":
             amt = _float(row.get("amount"))
             out.canonical_minted += amt

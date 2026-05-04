@@ -132,7 +132,20 @@ def _alice_stigtime(state: Path, max_rows: int, now: Optional[float]) -> List[st
         new = _compact(row.get("stigtime_in"), 30) or "unknown"
         context = _compact(row.get("context"), 70)
         suffix = f" | {context}" if context else ""
-        out.append(f"{_age(row.get('ts'), now=now)} | {prev} -> {new}{suffix}")
+        sp = row.get("since_prev_boundary_sec")
+        held = ""
+        if sp is not None:
+            try:
+                sec = float(sp)
+                if sec >= 60:
+                    held = f" | prev_lane≈{int(round(sec / 60))}m"
+                elif sec >= 1:
+                    held = f" | prev_lane≈{int(round(sec))}s"
+                else:
+                    held = f" | prev_lane≈{sec:.1f}s"
+            except (TypeError, ValueError):
+                pass
+        out.append(f"{_age(row.get('ts'), now=now)} | {prev} -> {new}{held}{suffix}")
     return out
 
 

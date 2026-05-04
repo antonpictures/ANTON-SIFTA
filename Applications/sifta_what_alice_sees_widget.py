@@ -927,6 +927,24 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         density_bar.addWidget(self._photon_count_label)
         self._update_photon_count_label(_GRID_W)
 
+        # ── ACTIVE EYE badge — shows which camera Alice is currently routing ──
+        # Prominent so the Architect can see at a glance which camera LED should
+        # be lit. Updates every 1 s from swarm_camera_target (same source as
+        # the saccade poller). Color: cyan = routing / gray = unknown.
+        density_bar.addStretch()
+        self._active_eye_label = QLabel("👁  —")
+        self._active_eye_label.setStyleSheet(
+            "color: rgb(0,230,255); font-weight: bold; font-size: 12px; "
+            "padding: 2px 8px; border: 1px solid rgb(0,180,200); border-radius: 4px;"
+        )
+        self._active_eye_label.setToolTip(
+            "Active camera eye — the camera whose LED is currently lit.\n"
+            "Switches automatically via the sensorimotor attention director."
+        )
+        density_bar.addWidget(self._active_eye_label)
+        self.make_timer(1000, self._refresh_active_eye_label)
+        self._refresh_active_eye_label()
+
         layout.addLayout(density_bar)
 
         # ── Video canvas (full width — ticker overlay is ON the canvas) ─────
@@ -1282,6 +1300,49 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             f"{budget.swimmer_budget} swimmers"
         )
 
+    def _refresh_active_eye_label(self) -> None:
+        """Poll the canonical camera target every 1 s and update the ACTIVE EYE badge.
+
+        Reads from swarm_camera_target (same source the saccade poller uses),
+        extracts a short human-readable name, and colours the badge:
+          cyan  = camera confirmed routing
+          amber = just switched (first update after saccade)
+          gray  = unknown / no data
+        """
+        if not hasattr(self, "_active_eye_label"):
+            return
+        try:
+            from System.swarm_camera_target import read_target as _rt
+            rec = _rt() or {}
+            name = (rec.get("name") or "").strip()
+            # Shorten long names — macOS uses "Logit" prefix for Logitech hardware
+            if "FaceTime" in name or "MacBook" in name:
+                short = "MacBook Pro"
+            elif "Logitech" in name or "Logit" in name or ("USB Camera" in name and "VID:1133" in name):
+                short = "Logitech USB"
+            elif "iPhone" in name:
+                short = "iPhone"
+            elif "OBS" in name:
+                short = "OBS Virtual"
+            elif name:
+                short = name[:14]  # cap at 14 chars, readable but not truncated mid-word
+            else:
+                short = "—"
+            # Show active_sense label if available
+            sense = (rec.get("active_sense") or "").replace("room_patrol_", "")
+            sense_tag = f"  ({sense})" if sense else ""
+            self._active_eye_label.setText(f"👁  {short}{sense_tag}")
+            self._active_eye_label.setStyleSheet(
+                "color: rgb(0,230,255); font-weight: bold; font-size: 12px; "
+                "padding: 2px 8px; border: 1px solid rgb(0,180,200); border-radius: 4px;"
+            )
+        except Exception:
+            self._active_eye_label.setText("👁  —")
+            self._active_eye_label.setStyleSheet(
+                "color: rgb(100,110,130); font-size: 12px; "
+                "padding: 2px 8px; border: 1px solid rgb(60,70,90); border-radius: 4px;"
+            )
+
     def _on_pause_toggled(self, paused: bool) -> None:
         # Buttons removed — camera is always live
         pass
@@ -1470,6 +1531,24 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
                 f"🔥 SACCADE FIRED: Snapping hardware to {chosen}",
                 QColor(255, 90, 110),
             )
+            # Flash the badge amber so the Architect sees the eye switch instantly
+            if hasattr(self, "_active_eye_label"):
+                if "FaceTime" in chosen or "MacBook" in chosen:
+                    short = "MacBook Pro"
+                elif "Logitech" in chosen or "Logit" in chosen or "VID:1133" in chosen:
+                    short = "Logitech USB"
+                elif "iPhone" in chosen:
+                    short = "iPhone"
+                elif "OBS" in chosen:
+                    short = "OBS Virtual"
+                else:
+                    short = chosen[:14] if chosen else "?"
+                self._active_eye_label.setText(f"👁  {short}  ⚡")
+                self._active_eye_label.setStyleSheet(
+                    "color: rgb(255,200,60); font-weight: bold; font-size: 12px; "
+                    "padding: 2px 8px; border: 1px solid rgb(255,160,0); border-radius: 4px;"
+                )
+                QTimer.singleShot(1500, self._refresh_active_eye_label)
 
     def _resolve_target_combo_idx(self, rec: dict) -> int:
         """Resolve a canonical target dict against the live combobox.
