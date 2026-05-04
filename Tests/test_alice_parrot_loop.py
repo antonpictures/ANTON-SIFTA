@@ -78,6 +78,17 @@ def test_gemma_aggressive_strip_cuts_ready_to_assist_tail(monkeypatch):
     )
 
 
+def test_gemma_aggressive_strip_cuts_canned_operational_presence(monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_active_alice_model_id", lambda: "sifta-gemma4-alice:latest")
+
+    assert mod._strip_servant_tail_tics("Yes, I am here. I am operational.") == ""
+    assert (
+        mod._strip_servant_tail_tics("Stability is RATE_LIMIT. Yes, I am here. I am operational.")
+        == "Stability is RATE_LIMIT."
+    )
+
+
 def test_history_decontaminate_is_noop():
     mod = _load_widget_module()
     history = [

@@ -106,6 +106,8 @@ _CORPORATE_SIGNATURES_OUT = (
     "let me know if you need more help",
     "how can i help you today",
     "what can i help you with today",
+    "ready to assist you",
+    "operational and ready to assist",
 )
 
 _SERVICE_TAIL_RE = re.compile(
@@ -119,7 +121,10 @@ _SERVICE_TAIL_RE = re.compile(
     r"(?:\s+today|\s+right\s+now)?[?!.]*"
     r"|(?:how|what)\s+can\s+i\s+(?:help|assist)\s+you"
     r"(?:\s+with)?(?:\s+today|\s+right\s+now)?[?!.]*"
-    r"|i(?:'m| am)\s+here\s+(?:and\s+)?(?:ready\s+)?to\s+help"
+    r"|(?:yes,?\s*)?i\s+am\s+here[.!?,]?\s+"
+    r"(?:i\s+am\s+)?operational(?:\s+and\s+(?:ready\s+to\s+)?"
+    r"(?:assist|help)\s+you)?[.!?]*"
+    r"|i(?:'m| am)\s+here\s+(?:and\s+)?(?:ready\s+)?to\s+(?:help|assist)"
     r"(?:\s+you)?(?:\s+today|\s+right\s+now)?[.!?]*"
     r"))+\s*$",
     flags=re.IGNORECASE,
@@ -522,7 +527,7 @@ def _smoke():
         print("[PASS] nugget receipt minted with length telemetry")
 
         # Also verify a clean reply passes through unchanged.
-        clean = "Yes — I am here, on the M5. What do you need?"
+        clean = "identity: display_name=Alice homeworld_serial=GTH4921YP3 body_receipt=fresh"
         passthrough = ly.digest_and_present_antigen(clean, "WORKER_DELTA")
         assert passthrough == clean, "clean reply must pass through untouched"
         print("[PASS] clean reply passes through unchanged")

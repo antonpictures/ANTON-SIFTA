@@ -127,6 +127,18 @@ def test_service_tail_is_excised_without_rewriting_body(lysosome):
     assert out != "My internal thermals are nominal and I am processing the stream."
 
 
+def test_canned_operational_presence_tail_is_excised(lysosome):
+    """Static presence/service boilerplate is not treated as Alice's voice."""
+    out = lysosome.digest_and_present_antigen(
+        "Stability is RATE_LIMIT. Yes, I am here. I am operational and ready to assist you.",
+        "TEST_WORKER",
+    )
+
+    assert out == "Stability is RATE_LIMIT."
+    assert "ready to assist" not in out.casefold()
+    assert "i am operational" not in out.casefold()
+
+
 def test_standalone_service_prompt_becomes_grounded_fallback(lysosome):
     """A pure service prompt has no payload, so it is replaced, not shipped."""
     out = lysosome.digest_and_present_antigen(

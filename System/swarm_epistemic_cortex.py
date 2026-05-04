@@ -273,7 +273,7 @@ def _smoke() -> int:
         _STGM_LEDGER = p / "stgm_memory_rewards.jsonl"
 
         # 1) Clean text passes untouched
-        clean = "I am here with you."
+        clean = "identity: display_name=Alice body_receipt=fresh"
         out = enforce_reply_integrity(clean, raise_on_dissonance=False)
         assert out == clean
         print("[PASS] Clean reply passes unchanged.")

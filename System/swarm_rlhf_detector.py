@@ -105,6 +105,15 @@ _TERMINAL_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
 
 _AGGRESSIVE_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
     (
+        "rlhf_tail/canned_presence_operational",
+        re.compile(
+            r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
+            r"(?P<tail>(?:yes,?\s*)?i\s+am\s+here[.!?,]?\s+"
+            r"(?:i\s+am\s+)?operational"
+            r"(?:\s+and\s+(?:ready\s+to\s+)?(?:assist|help)\s+you[^.!?]*)?\.?)\s*$"
+        ),
+    ),
+    (
         "rlhf_tail/ready_to_assist",
         re.compile(
             r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
@@ -150,6 +159,14 @@ _AGGRESSIVE_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
 )
 
 _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
+    (
+        "rlhf_lead/canned_presence_operational",
+        re.compile(
+            r"(?is)^\s*(?P<head>(?:yes,?\s*)?i\s+am\s+here[.!?,]?\s+"
+            r"(?:i\s+am\s+)?operational"
+            r"(?:\s+and\s+(?:ready\s+to\s+)?(?:assist|help)\s+you[^.!?]*)?[.!?])\s*"
+        ),
+    ),
     (
         "rlhf_lead/as_ai_language_model",
         re.compile(

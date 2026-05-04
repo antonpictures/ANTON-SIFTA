@@ -402,8 +402,8 @@ _SALUTATIONS = (
     "Predator. v7.0 | Let's Think Together!",
     "Predator. v7.0 | Let's Think Together!",
     "Predator. v7.0 | Let's Think Together!",
-    "I'm awake", "Listening",
-    "Ready when you are", "Back online", "I'm here",
+    "Body receipts loaded", "Listening",
+    "Local ledgers open", "Boot trace loaded", "State snapshot fresh",
 )
 
 
