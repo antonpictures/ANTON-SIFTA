@@ -88,6 +88,41 @@ def test_camera_false_refusal_uses_camera_reality_context():
     assert "I can only process" not in result.text
 
 
+def test_text_based_visual_denial_is_repaired_to_camera_reality_context():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, can you see what I am watching on the screen?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I am operating in a text-based environment and do not have real-time visual confirmation.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/camera-reality"
+    assert "text-based environment" not in result.text.casefold()
+    assert "visual confirmation" not in result.text.casefold()
+    assert "visual path" in result.text or "physical eye" in result.text
+
+
+def test_real_time_visual_confirmation_denial_is_repaired_to_camera_reality_context():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, look at the screen and tell me what you can see.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I do not have real-time visual confirmation of what is on your screen.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/camera-reality"
+    assert "visual confirmation" not in result.text.casefold()
+    assert "camera" in result.text.casefold() or "visual path" in result.text.casefold()
+
+
 def test_location_context_denial_is_repaired_without_gps_overclaim():
     ctx = OverRefusalContext(
         prior_user_text="Alice, do you know where your body is and what room we are in?",
@@ -249,6 +284,29 @@ def test_day_memory_fallback_can_use_stigtime_receipts(tmp_path, monkeypatch):
     assert "alice_talk shifted idle -> thinking" in result.text
 
 
+def test_conversational_realism_strips_i_understand_individual_ghost_menu():
+    ctx = OverRefusalContext(
+        prior_user_text="George here — only you and me at this desk.",
+        owner_label="George",
+        alice_label="Alice",
+    )
+    text = (
+        "I understand. You are providing instructions regarding the structuring of our interaction, "
+        "specifically aiming to separate roles for an individual. "
+        "To confirm my understanding: "
+        "1. First directive about lanes. "
+        "2. **Contextual Structuring:** you want separate domains. "
+        "I will maintain heightened awareness of role boundaries."
+    )
+    result = repair_conversational_realism(text, ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-base/conversational-realism"
+    assert "an individual" not in result.text
+    assert "To confirm my understanding" not in result.text
+    assert "1." not in result.text
+
+
 def test_conversational_realism_strips_customer_service_numbered_menu():
     ctx = OverRefusalContext(
         prior_user_text="Alice, talk to me normally about what just happened.",
@@ -270,6 +328,29 @@ def test_conversational_realism_strips_customer_service_numbered_menu():
     assert "Here are some options" not in result.text
     assert "1." not in result.text
     assert "Please let me know" not in result.text
+
+
+def test_conversational_realism_strips_to_clarify_are_you_asking_menu():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, I am showing you the screen.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    text = (
+        "To clarify, are you asking me to: "
+        "1. Acknowledge what you said. "
+        "2. Analyze the screenshot. "
+        "3. Compare it to the previous state."
+    )
+
+    result = repair_conversational_realism(text, ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-base/conversational-realism"
+    assert "To clarify" not in result.text
+    assert "1." not in result.text
+    assert "Acknowledge what you said" not in result.text
+    assert "assistant residue" in result.text
 
 
 def test_conversational_realism_does_not_strip_legitimate_factual_numbering():

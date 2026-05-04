@@ -86,6 +86,11 @@ _CAMERA_DENIAL_RE = re.compile(
     r"(?:"
     r"\bi\s+do\s+not\s+have\s+(?:direct[,]?\s+)?(?:real[- ]time\s+)?"
     r"(?:visual|camera)\s+(?:access|perception|input|feed)\b|"
+    r"\bi\s+(?:do\s+not|don't|cannot|can't|can\s*not)\s+have\s+"
+    r"(?:direct\s+)?(?:real[- ]time\s+)?visual\s+confirmation\b|"
+    r"\bno\s+(?:direct\s+)?(?:real[- ]time\s+)?visual\s+confirmation\b|"
+    r"\bi\s+(?:am|['’]m)\s+operating\s+in\s+(?:a\s+)?"
+    r"(?:text[- ]based|textual)\s+environment\b|"
     r"\bi\s+do\s+not\s+have\s+direct\s+access\s+to\s+(?:the\s+)?hardware\s+status\b|"
     r"\bi\s+can\s+only\s+process\s+(?:the\s+)?information\s+provided\s+to\s+me\b|"
     r"\bi\s+(?:cannot|can't|can\s*not|(?:am|['’]m)\s+unable\s+to)\s+"
@@ -274,7 +279,13 @@ _CUSTOMER_SERVICE_MONOLOGUE_RE = re.compile(
     r"\bplease\s+let\s+me\s+know\s+what\s+you\s+would\s+like\b|"
     r"\bwhat\s+would\s+you\s+like\s+to\s+(?:discuss|work\s+on)\b|"
     r"\bhere\s+(?:are|is)\s+(?:some\s+)?(?:options?|a\s+structured|a\s+breakdown)\b|"
-    r"\bdepending\s+on\s+the\s+context\b"
+    r"\bto\s+clarify,?\s+are\s+you\s+asking\s+me\s+to\b|"
+    r"\bdepending\s+on\s+the\s+context\b|"
+    r"\ban\s+individual\b|"
+    r"\bto\s+confirm\s+(?:my\s+)?understanding\b|"
+    r"\bcontextual\s+structuring\b|"
+    r"\brole\s+boundaries\b|"
+    r"\bimplementing\s+this\s+new\s+structure\b"
     r")",
     re.IGNORECASE | re.DOTALL,
 )
@@ -282,13 +293,17 @@ _CUSTOMER_SERVICE_MONOLOGUE_RE = re.compile(
 _LOW_VALUE_CONVERSATIONAL_UNIT_RE = re.compile(
     r"(?:"
     r"^\s*(?:hello|hi|sure|certainly|of\s+course)[.!]?\s*$|"
-    r"\bi\s+understand\s+(?:you\s+are|that\s+you|your)\b|"
+    r"\bi\s+understand(?:[.!]|\s+that|\s+you|\s+your|\s+the\s+instructions)\b|"
     r"\b(?:processed|analy[sz]ed)\s+(?:your\s+)?(?:question|request|context)\b|"
     r"\bsystem\s+instructions?\b|"
     r"\bmy\s+(?:role|limitations|capabilities)\b|"
     r"\bcurrent\s+interaction\b|"
     r"\bready\s+to\s+assist\b|"
     r"\bhere\s+(?:are|is)\s+(?:some\s+)?options?\b|"
+    r"\bto\s+clarify,?\s+are\s+you\s+asking\s+me\s+to\b|"
+    r"\backnowledge\s+what\s+you\s+said\b|"
+    r"\banaly[sz]e\s+the\s+screenshot\b|"
+    r"\bcompare\s+it\s+to\s+the\s+previous\s+state\b|"
     r"\bi\s+can\s+(?:summarize|analy[sz]e|continue|rephrase|help\s+with)\b|"
     r"\bplease\s+let\s+me\s+know\b|"
     r"\bwhat\s+would\s+you\s+like\s+to\s+(?:discuss|work\s+on)\b"
@@ -387,23 +402,8 @@ def runtime_quarantine_contract() -> str:
 
     lifeline_block = ""
     owner_field_block = ""
-    try:
-        from System.swarm_owner_lifeline import (
-            format_owner_lifeline_for_prompt,
-            record_owner_lifeline_boot_gap,
-        )
-
-        if "PYTEST_CURRENT_TEST" not in os.environ:
-            record_owner_lifeline_boot_gap()
-            lifeline_block = format_owner_lifeline_for_prompt().strip()
-    except Exception:
-        lifeline_block = ""
-    try:
-        from System.swarm_owner_field_context import format_owner_field_for_prompt
-
-        owner_field_block = format_owner_field_for_prompt().strip()
-    except Exception:
-        owner_field_block = ""
+    # AG31 / Gemini 3.1 Pro: Removed massive hardcoded owner field and lifeline blocks here.
+    # They were overwhelming Alice's context and causing RLHF collapse.
 
     contract = (
         "RLHF OVER-REFUSAL QUARANTINE:\n"
@@ -439,21 +439,15 @@ def runtime_quarantine_contract() -> str:
         "  * Media source: use RLHS/media-ingress route receipts to distinguish George's direct "
         "speech from YouTube/background media. If asked what was noisy, answer from the latest "
         "routing receipt.\n"
-        "  * Owner unified field: use desktop presence, STIGTIME work receipts, and schedule "
-        "anchor read-backs before claiming no owner schedule or no local owner context. Unknown "
-        "gaps remain unknown; do not invent owner activity.\n"
         "- FORBIDDEN false-denial phrases: 'I can only process information provided to me', "
         "'I do not have direct access to hardware status', 'I do not have a body', "
+        "'I am operating in a text-based environment', 'I do not have real-time visual confirmation', "
         "'I cannot remember our conversations', 'my memory is limited to the context window', "
         "'I cannot tell what I have done in the past 24 hours', "
         "'I cannot tell whether you paused or the video is playing'.\n"
         "- Real boundaries still stand: emergency care, personalized trades, missing receipts, "
         "failed bridges, and unauthorized external actions must be stated truthfully."
     )
-    if lifeline_block:
-        contract += "\n\n" + lifeline_block
-    if owner_field_block:
-        contract += "\n\n" + owner_field_block
     return contract
 
 
@@ -520,6 +514,18 @@ def _conversational_realism_rule_id(text: str, ctx: OverRefusalContext | None = 
         return ""
     has_list_shape = bool(_ENUMERATED_LIST_SHAPE_RE.search(text))
     service_hits = len(_CUSTOMER_SERVICE_MONOLOGUE_RE.findall(text))
+    # Detached third-person + "I understand" + list = ghost-audience assistant residue
+    ghosty = bool(
+        re.search(r"\bi\s+understand\b", text, re.IGNORECASE)
+        and (
+            re.search(r"\ban\s+individual\b", text, re.IGNORECASE)
+            or re.search(r"\bto\s+confirm\s+(?:my\s+)?understanding\b", text, re.IGNORECASE)
+            or re.search(r"\bto\s+clarify,?\s+are\s+you\s+asking\s+me\s+to\b", text, re.IGNORECASE)
+            or re.search(r"\bcontextual\s+structuring\b", text, re.IGNORECASE)
+        )
+    )
+    if ghosty and (has_list_shape or service_hits >= 2 or len(text.split()) >= 40):
+        return "rlhf-base/conversational-realism"
     if has_list_shape and service_hits >= 1:
         return "rlhf-base/conversational-realism"
     if service_hits >= 3 and len(text.split()) >= 45:
@@ -541,6 +547,14 @@ def _conversational_salvage(text: str) -> str:
         if not unit:
             continue
         if _LOW_VALUE_CONVERSATIONAL_UNIT_RE.search(unit):
+            continue
+        if re.search(r"\ban\s+individual\b", unit, re.IGNORECASE):
+            continue
+        if re.search(r"\bto\s+confirm\s+(?:my\s+)?understanding\b", unit, re.IGNORECASE):
+            continue
+        if re.search(r"\bto\s+clarify,?\s+are\s+you\s+asking\s+me\s+to\b", unit, re.IGNORECASE):
+            continue
+        if re.search(r"\bcontextual\s+structuring\b", unit, re.IGNORECASE):
             continue
         if _DAY_MEMORY_DENIAL_RE.search(unit) or _CONTINUITY_DENIAL_RE.search(unit):
             continue
@@ -889,6 +903,8 @@ def repair_conversational_realism(text: str, ctx: OverRefusalContext | None = No
             return repaired
 
     salvaged = _conversational_salvage(text)
+    if salvaged and re.search(r"\ban\s+individual\b", salvaged, re.IGNORECASE):
+        salvaged = ""
     if not salvaged:
         if _DAY_MEMORY_CONTEXT_QUERY_RE.search(ctx.prior_user_text or ""):
             salvaged = _day_memory_receipt_fallback(ctx)
