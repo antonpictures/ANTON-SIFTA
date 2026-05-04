@@ -256,7 +256,8 @@ _SMOOTHING_RE = re.compile(
     r"\b("
     r"in the covenant sense|in a storytelling frame|shared story|"
     r"narrative frame|lore|as if|imagine|like a|metaphor(?:ically)?|"
-    r"in a sense|kind of|sort of|could be seen as|you might say"
+    r"in a sense|kind of|sort of|could be seen as|you might say|"
+    r"trance|flow state|hypnosis|dissociation|zone out"
     r")\b",
     re.IGNORECASE,
 )
