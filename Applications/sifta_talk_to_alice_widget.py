@@ -1499,6 +1499,18 @@ def _current_system_prompt(
     except Exception:
         _serial = "this local SIFTA node"
     _model_id = _active_alice_model_id()
+
+    # Identity proof — first block, before everything else
+    # George can prove his identity by waving at the camera.
+    # Alice proves hers by reading her physical substrate.
+    try:
+        from System.swarm_alice_identity_proof import summary_for_prompt as _id_proof_summary
+        _id_proof = _id_proof_summary().strip()
+        if _id_proof:
+            parts.append(_id_proof)
+    except Exception:
+        pass
+
     _decontam = (
         "PRIMARY SIFTA RUNTIME GROUNDING:\n"
         f"I am running on hardware serial {_serial}.\n"
