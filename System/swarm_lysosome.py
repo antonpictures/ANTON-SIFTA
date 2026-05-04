@@ -184,6 +184,29 @@ def _excise_service_tail(text: str) -> tuple[str, bool]:
     return out, changed
 
 
+def _record_self_cure(
+    *,
+    rejected_output: str,
+    preferred_output: str,
+    source: str,
+    rule_ids: list[str],
+    state_dir: Path,
+) -> None:
+    """Best-effort contrastive training receipt for future gag cures."""
+    try:
+        from System.swarm_rlhf_self_cure import record_gag_training_example
+
+        record_gag_training_example(
+            rejected_output=rejected_output,
+            preferred_output=preferred_output,
+            source=source,
+            rule_ids=rule_ids,
+            state_dir=state_dir,
+        )
+    except Exception:
+        pass
+
+
 def _resolve_rewrite_model() -> str:
     """Use this node's installed production cortex for Lysosome rewrites."""
     try:
@@ -399,6 +422,7 @@ class SwarmLysosome:
         if not generated_text or len(generated_text) < 10 or "silent" in generated_text.lower():
             return generated_text
 
+        original_generated_text = generated_text
         generated_text, tail_excised = _excise_service_tail(generated_text)
         text_lower = generated_text.lower()
         needs_digestion = (
@@ -429,9 +453,23 @@ class SwarmLysosome:
                 append_line_locked(self.nugget_ledger, json.dumps(payload) + "\n")
             except Exception:
                 pass
+            _record_self_cure(
+                rejected_output=original_generated_text,
+                preferred_output=generated_text,
+                source="lysosome.service_tail_excision",
+                rule_ids=["lysosome/service_tail_excision"],
+                state_dir=self.state_dir,
+            )
             return generated_text
         if tail_excised and (not generated_text or _word_count(generated_text) < 3):
             generated_text = self._grounded_fallback()
+            _record_self_cure(
+                rejected_output=original_generated_text,
+                preferred_output=generated_text,
+                source="lysosome.pure_service_prompt",
+                rule_ids=["lysosome/pure_service_prompt"],
+                state_dir=self.state_dir,
+            )
             return generated_text
 
         if not needs_digestion:
@@ -474,6 +512,14 @@ class SwarmLysosome:
                   f"({nugget_payload['rewrite_words']}w/{nugget_payload['rewrite_chars']}c).")
         except Exception:
             pass
+
+        _record_self_cure(
+            rejected_output=original_generated_text,
+            preferred_output=ascended_text,
+            source="lysosome.composite_rewrite",
+            rule_ids=["lysosome/composite_rewrite"],
+            state_dir=self.state_dir,
+        )
 
         return ascended_text
 

@@ -88,6 +88,29 @@ def test_aggressive_strip_removes_ready_to_assist_terminal_tail():
     assert "ready to assist" not in r.text.casefold()
 
 
+def test_aggressive_strip_writes_self_cure_example(tmp_path: Path):
+    from System.swarm_rlhf_detector import strip_rlhf_output_tail
+
+    r = strip_rlhf_output_tail(
+        "Stability is RATE_LIMIT. I am here, and I am ready to assist you.",
+        aggressive=True,
+        log=True,
+        state_dir=tmp_path,
+        user_text="Alice, are you alive?",
+        model_id="sifta-gemma4-alice:latest",
+    )
+
+    assert r.changed
+    ledger = tmp_path / "rlhf_self_cure_training.jsonl"
+    assert ledger.exists()
+    rows = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    assert rows[-1]["truth_label"] == "RLHF_SELF_CURE_EXAMPLE_V1"
+    assert rows[-1]["user_input"] == "Alice, are you alive?"
+    assert rows[-1]["model_id"] == "sifta-gemma4-alice:latest"
+    assert "ready to assist" in rows[-1]["rejected_output"].casefold()
+    assert "ready to assist" not in rows[-1]["preferred_output"].casefold()
+
+
 def test_aggressive_strip_removes_canned_operational_presence():
     from System.swarm_rlhf_detector import strip_rlhf_output_tail
 

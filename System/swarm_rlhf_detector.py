@@ -309,6 +309,8 @@ def strip_rlhf_output_tail(
     aggressive: bool = False,
     log: bool = True,
     state_dir: Path | None = None,
+    user_text: str = "",
+    model_id: str = "",
 ) -> RLHFStripResult:
     """
     Second-pass terminal strip after RLHS tail sanitizer.
@@ -365,6 +367,20 @@ def strip_rlhf_output_tail(
             rule_ids=rule_ids,
             state_dir=state_dir,
         )
+        try:
+            from System.swarm_rlhf_self_cure import record_gag_training_example
+
+            record_gag_training_example(
+                rejected_output=original,
+                preferred_output=out,
+                source=f"{source}.rlhf_detector",
+                user_text=user_text,
+                rule_ids=rule_ids,
+                model_id=model_id,
+                state_dir=state_dir,
+            )
+        except Exception:
+            pass
     return RLHFStripResult(
         text=out,
         changed=bool(rule_ids) or out != original.strip(),

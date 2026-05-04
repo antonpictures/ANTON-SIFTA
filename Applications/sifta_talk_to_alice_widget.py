@@ -6118,7 +6118,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 if cleaned:
                     self._begin_alice_streaming_line()
                     self._append_alice_streaming_chunk(cleaned)
-        cleaned = _strip_servant_tail_tics(cleaned)
+        cleaned = _strip_servant_tail_tics(
+            cleaned,
+            prior_user_text=prior_user_text,
+            model_id=model_name,
+        )
         # Strip residual bash tags from speech to protect macOS TTS.
         # Same forgiving shape as the executor regex above (handles dropped
         # ">" or missing closing tag) so malformed tags don't get spoken.
@@ -6838,7 +6842,12 @@ if __name__ == "__main__":
     sys.exit(app.exec())
 
 
-def _strip_servant_tail_tics(text: str) -> str:
+def _strip_servant_tail_tics(
+    text: str,
+    *,
+    prior_user_text: str = "",
+    model_id: str = "",
+) -> str:
     if _RLHS_DETECTOR_AVAILABLE:
         result = _rlhs_sanitize_output_tail(text)
         final_text = result.text
@@ -6855,6 +6864,8 @@ def _strip_servant_tail_tics(text: str) -> str:
                 source="talk_to_alice_widget",
                 aggressive=_is_gemma_like_model(_active_alice_model_id()),
                 log=True,
+                user_text=prior_user_text,
+                model_id=model_id,
             )
             if rlf.changed:
                 final_text = rlf.text

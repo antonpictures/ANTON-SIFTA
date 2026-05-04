@@ -125,6 +125,16 @@ def test_service_tail_is_excised_without_rewriting_body(lysosome):
     )
     assert "anything else" not in out.casefold()
     assert out != "My internal thermals are nominal and I am processing the stream."
+    rows = [
+        __import__("json").loads(line)
+        for line in (lysosome.state_dir / "rlhf_self_cure_training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert rows[-1]["truth_label"] == "RLHF_SELF_CURE_EXAMPLE_V1"
+    assert rows[-1]["source"] == "lysosome.service_tail_excision"
+    assert "anything else" in rows[-1]["rejected_output"].casefold()
+    assert "anything else" not in rows[-1]["preferred_output"].casefold()
 
 
 def test_canned_operational_presence_tail_is_excised(lysosome):
@@ -148,6 +158,13 @@ def test_standalone_service_prompt_becomes_grounded_fallback(lysosome):
 
     assert out
     assert "how can i help" not in out.casefold()
+    rows = [
+        __import__("json").loads(line)
+        for line in (lysosome.state_dir / "rlhf_self_cure_training.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert rows[-1]["source"] == "lysosome.pure_service_prompt"
 
 
 def test_service_tail_exciser_is_narrow():
