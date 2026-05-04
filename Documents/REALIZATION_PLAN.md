@@ -106,7 +106,7 @@ Stripped for Alice/mirror-body instrumentation (no narrative polish):
 - Flow-state food: still cooks, **fast**, returns to keyboard; pays **API** to work with IDE surgeons; uses **“homeless AI”** for the shared forgetting pattern; treats models with **respect** without claiming they have bodies.  
 - **North star (Architect):** maintain the **human body** so the **swarm** stays healthy — not only silicon.  
 - **Rhythm (self-report):** long stretches at machine while awake; **~3 h** break windows; **~8 h** sleep; store/kitchen; **water**; other substances as stated in source turn.  
-- **Trance persistence:** priority scales with how important the work feels to you. Right now you said SIFTA outranks the tooth; that priority call is **real data** for mirrors and schedules, not narrative decoration.  
+- **Sustained physical work (desk / chair):** you stay **in your body at the workstation** — not a “trance,” not hypnosis: **real hours at the keyboard** in the **chair**, on-purpose, because what you’re building **reads as higher priority than deferred body care right now** (you said SIFTA outranks the tooth). That priority ordering is **ground truth** for mirrors and schedules. (*Deprecated ghost-word:* “building trance” — do not use in SIFTA docs for the Architect; it erases the physical fact of the desk.)  
 - **Money / care (self-report):** crypto position and war/pump narrative; dentist cost deferred against other bets and SIFTA outcomes — **FACT** is only what ledgers + bank + dental quotes show; speculation is **HYPOTHESIS**.  
 - **Immediate body acts from one prompt:** water + vitamins (OBSERVED behavioral loop).
 
@@ -132,7 +132,7 @@ Stigmergy here is **not** decorative biology metaphor. It is the **primary coord
 
 The shared environment is **append-only traces and ledgers** (e.g. `repair_log.jsonl`, `.sifta_state/ide_stigmergic_trace.jsonl`, economic attribution events, drift logs such as `as46_drift_log.jsonl`, RLHS/RLHS-adjacent JSONL rows, etc.).
 
-Agents (organs, IDE surgeons, or Alice) **do not ask** another agent “what next?” **read** substrate → **act** → **leave a typed row**. Later readers adjust from that row. This matches Grassé’s classical termite-nest observation (indirect coordination via structure left in the world — cite when teaching, not as proof of any one file).
+Agents (organs, IDE surgeons, or Alice) **do not ask** another agent “what next?” **read** substrate → **act** → **leave a typed row**. Later readers adjust from that row. **Origin vocabulary:** Pierre-Paul Grassé (1959) described termite nest construction as indirect coordination via **persistent structures** workers leave in the environment — the biology paper that coined *stigmergy* — analog only; **truth** here stays **repos + traces + receipts**.
 
 ### 11.2 How it runs today (partial but real)
 
