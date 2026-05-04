@@ -1725,6 +1725,14 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_as46_drift_sensor import summary_for_prompt as _drift_summary
+
+        _drift = _drift_summary().strip()
+        if _drift:
+            parts.append(_drift)
+    except Exception:
+        pass
+    try:
         from System.swarm_multimodal_cortex_verifier import summary_for_prompt as _cortex_verify_summary
 
         _cv = _cortex_verify_summary().strip()

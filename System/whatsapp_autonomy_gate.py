@@ -230,7 +230,7 @@ def summary_for_alice(limit: int = 3) -> str:
     rows = list(_iter_jsonl(_AUTONOMY_LEDGER))[-limit:]
     lines = [
         "WHATSAPP AUTONOMY:",
-        "- Alice may send autonomously only through bounded attraction: consent + relevance + timing + urgency - repetition.",
+        "- I may send autonomously only through bounded attraction: consent + relevance + timing + urgency - repetition.",
         "- No consent or group boundary means silence, not a message.",
     ]
     for row in rows:

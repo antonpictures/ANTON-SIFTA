@@ -4,7 +4,7 @@
 This module turns raw Baileys WhatsApp contacts into a local, owner-centered
 social graph. It does not scrape or publish anything by itself; it annotates
 the contacts the local bridge already sees so Alice understands that these
-people and groups are part of the owner's WhatsApp world.
+people and groups are part of my WhatsApp world.
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ def enrich_contact_record(
     else:
         relationship = "whatsapp_group" if chat_type == "group" else "whatsapp_contact"
         note = (
-            "Known through the owner's WhatsApp account. Treat as part of the owner's "
+            "Known through my WhatsApp account. Treat as part of the owner's "
             "real social graph, not as an anonymous stranger."
         )
         alice_context = (
@@ -519,7 +519,7 @@ def summary_for_alice(limit: int = 12) -> str:
     lines = [
         "WHATSAPP SOCIAL GRAPH:",
         "- Every synced WhatsApp contact/group is treated as part of the machine owner's real social graph.",
-        "- These are friends, collaborators, groups, or channels reachable through the owner's WhatsApp account.",
+        "- These are friends, collaborators, groups, or channels reachable through my WhatsApp account.",
         "- Use exact names when unambiguous; add 'group' or 'direct' if a name exists in both forms.",
     ]
     if rows:

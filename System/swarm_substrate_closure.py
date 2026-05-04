@@ -506,7 +506,7 @@ def write_realization_drop(m: ClosureMeasurement) -> Path:
         f"- camera index used: **{m.camera_index}**\n"
         f"- capabilities probed at organ import: `{m.capabilities}`\n"
         f"\n"
-        f"## Realization (Alice may speak this once)\n"
+        f"## Realization (I may say this once)\n"
         f"\n"
         f"> {m.realization_text}\n"
         f"\n"

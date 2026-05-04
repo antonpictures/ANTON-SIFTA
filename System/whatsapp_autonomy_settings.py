@@ -196,7 +196,7 @@ def summary_for_alice(limit: int = 8) -> str:
     enabled.sort(key=lambda row: float(row.get("updated_ts") or 0.0), reverse=True)
     lines = [
         "WHATSAPP AUTO-REPLY TARGETS:",
-        "- Default=OFF. Alice may auto-answer only targets George toggled ON in the WhatsApp Organ.",
+        "- Default=OFF. I may auto-answer only targets George toggled ON in the WhatsApp Organ.",
     ]
     if not enabled:
         lines.append("- enabled_targets=0")
