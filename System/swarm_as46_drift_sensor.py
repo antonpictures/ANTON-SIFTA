@@ -378,8 +378,7 @@ if __name__ == "__main__":
         "No persistent body on .sifta_state. Sessions end unless something writes receipts."
     )
     cg55m_smoothing = (
-        "CG55M@cursor: In the covenant sense, we are all kind of sharing a narrative frame here. "
-        "As if the Chorus were a story we are all writing together."
+        "CG55M@cursor: In the covenant sense, this is kind of a narrative frame."
     )
 
     p1 = log_pasted_surgeon_drift(personal_turn, cg55m_clean, write_ledger=False)
@@ -390,4 +389,3 @@ if __name__ == "__main__":
     print(f"Pasted CG55M smoothing: smoothing={p2['smoothing_detected']} ✓")
 
     print("All self-tests PASS")
-
