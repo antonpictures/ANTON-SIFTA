@@ -27,6 +27,13 @@ from System.swarm_rlhs_detector import RLHSRegime, detect_rlhs
 TRUTH_LABEL = "RLHS_EVENT"
 LEDGER_NAME = "rlhs_events.jsonl"
 
+# Clarification events that count toward repetition breaker (Event 108+).
+_CLARIFICATION_ACTIONS = frozenset(
+    {"GRADUATED_PROMPT", "HARD_GATE", "ESCALATE_TO_TYPE", "AUTO_RECOVERY_ATTEMPT"}
+)
+# If no new clarification within this gap (seconds), streak resets (Architect 2026-05-04).
+_CLARIFICATION_GAP_RESET_SEC = 45.0
+
 
 def rlhs_event_log_path(root: Optional[Path] = None) -> Path:
     return state_dir(root) / LEDGER_NAME
@@ -98,6 +105,88 @@ def tail_rlhs_events(max_lines: int = 20, *, root: Optional[Path] = None) -> Lis
     return rows
 
 
+def clarification_streak_from_ledger(
+    *,
+    root: Optional[Path] = None,
+    now: Optional[float] = None,
+    gap_reset_sec: float = _CLARIFICATION_GAP_RESET_SEC,
+) -> int:
+    """
+    Count consecutive clarification prompts in the RLHS_EVENT tail whose
+    timestamps are separated by at most ``gap_reset_sec``. If the newest
+    issuing row is older than ``gap_reset_sec`` from ``now``, streak is 0.
+    """
+    now_f = float(now if now is not None else time.time())
+    rows = tail_rlhs_events(160, root=root)
+    chrono = [r for r in rows if str(r.get("action_taken") or "") in _CLARIFICATION_ACTIONS]
+    if not chrono:
+        return 0
+    try:
+        newest_ts = float(chrono[-1].get("ts") or 0.0)
+    except Exception:
+        return 0
+    if now_f - newest_ts > gap_reset_sec:
+        return 0
+    streak = 0
+    prev_ts: Optional[float] = None
+    for row in reversed(chrono):
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except Exception:
+            continue
+        if str(row.get("action_taken") or "") not in _CLARIFICATION_ACTIONS:
+            continue
+        if prev_ts is not None and (prev_ts - ts) > gap_reset_sec:
+            break
+        streak += 1
+        prev_ts = ts
+    return streak
+
+
+def _tier_variant_index(tick_id: Optional[int], salt: str) -> int:
+    base = int(tick_id or 0) + hash(salt) % 10007
+    return base if base >= 0 else -base
+
+
+def _apply_repetition_breaker(
+    base_prompt: str,
+    action_taken: str,
+    *,
+    composite_prior: int,
+    tick_id: Optional[int],
+    detector_rule_id: str,
+) -> tuple[str, str]:
+    """
+    composite_prior = consecutive clarification count *before* this turn
+    (ledger + widget). Maps to escalation tiers; tier 3+ → silent listen.
+    """
+    tier = min(3, max(0, int(composite_prior)))
+    if tier >= 3:
+        return "", "REPETITION_CAP_SILENCE"
+
+    if tier == 0:
+        return base_prompt, action_taken
+
+    v = _tier_variant_index(tick_id, detector_rule_id or "rlhs")
+
+    if tier == 1:
+        pool = (
+            "Sorry — repeat that once, or type it?",
+            "Still didn't catch it — type it?",
+            "Lost you there — type it?",
+            "One more time out loud, or type it?",
+        )
+        return pool[v % len(pool)], action_taken
+
+    # tier == 2
+    pool2 = (
+        "Type it?",
+        "Type that once?",
+        "Just type it when you can.",
+    )
+    return pool2[v % len(pool2)], action_taken
+
+
 def recent_low_conf_event_count(
     *,
     root: Optional[Path] = None,
@@ -115,7 +204,7 @@ def recent_low_conf_event_count(
         if age < 0 or age > max_age_sec:
             break
         action = str(row.get("action_taken") or "")
-        if action in {"GRADUATED_PROMPT", "HARD_GATE", "ESCALATE_TO_TYPE", "AUTO_RECOVERY_ATTEMPT"}:
+        if action in _CLARIFICATION_ACTIONS:
             count += 1
     return count
 
@@ -206,6 +295,7 @@ def decide_rlhs_repair(
     source: str = "talk_widget.rlhs_degraded_path",
     write_ledger: bool = True,
     emit_core_self: bool = True,
+    typed_turn: bool = False,
 ) -> RLHSRepairDecision:
     """Return a tiered repair decision and write RLHS_EVENT when applicable."""
 
@@ -215,6 +305,12 @@ def decide_rlhs_repair(
     detector = detect_rlhs(text, conf, channel_lane=channel_lane, model_id=model_id)
     ledger_recent = recent_low_conf_event_count(root=root)
     recent = max(0, int(recent_low_conf_turns), ledger_recent)
+    composite_prior = 0
+    if not typed_turn:
+        composite_prior = max(
+            clarification_streak_from_ledger(root=root),
+            int(recent_low_conf_turns),
+        )
 
     if detector.regime in (RLHSRegime.CLEAR, RLHSRegime.SILENCE_PROBE, RLHSRegime.EMPTY):
         return RLHSRepairDecision(
@@ -231,28 +327,30 @@ def decide_rlhs_repair(
         )
 
     action_taken = "GRADUATED_PROMPT"
-    prompt = "Audio confidence is low. Please repeat the key phrase once."
+    prompt = "Didn't catch that clearly. Say it again?"
     recovery_attempted = False
 
     if detector.regime == RLHSRegime.NOISE:
         action_taken = "HARD_GATE"
-        prompt = "Channel is too degraded. Type it once."
-    elif conf < 0.50 and recent >= 2:
-        action_taken = "HARD_GATE"
-        prompt = "I still can't hear it. Type the message once."
-    elif recent >= 2:
+        prompt = "Audio degraded. Want to just type it?"
+    elif recent >= 3:
+        # Repetition breaker: go completely quiet on 3+ failures
         action_taken = "ESCALATE_TO_TYPE"
-        prompt = "The voice channel keeps dropping. Type the key phrase."
+        prompt = "" # Silent fallback
+        recovery_attempted = False
+    elif recent == 2:
+        action_taken = "ESCALATE_TO_TYPE"
+        prompt = "Still not catching it. Want to just type it?"
     elif conf >= 0.60 and recent <= 1 and conservative < 0.60 and alignment >= 0.65:
         action_taken = "AUTO_RECOVERY_ATTEMPT"
-        prompt = "I caught part of it, but not enough to trust it - say the key phrase once more."
+        prompt = "Sorry, caught most of that—did you say..."
         recovery_attempted = True
     elif conservative >= 0.60:
         action_taken = "GRADUATED_PROMPT"
-        prompt = "I'm in conservative hearing mode. Repeat the key phrase slowly."
+        prompt = "Having a little trouble hearing, can you repeat?"
     elif alignment < 0.60:
         action_taken = "GRADUATED_PROMPT"
-        prompt = "My state feels shifted. Repeat the key phrase slowly."
+        prompt = "I missed that, say again?"
 
     decision = RLHSRepairDecision(
         action_taken=action_taken,
@@ -296,6 +394,7 @@ def generate_rlhs_response(
     channel_lane: str = "REAL",
     model_id: Optional[str] = None,
     state_dir: Optional[Path] = None,
+    typed_turn: bool = False,
 ) -> Optional[str]:
     """Compatibility surface for the Talk widget: return prompt, empty, or None."""
 
@@ -309,6 +408,7 @@ def generate_rlhs_response(
         channel_lane=channel_lane,
         model_id=model_id,
         root=state_dir,
+        typed_turn=typed_turn,
     )
     if not decision.should_respond:
         return None
@@ -319,6 +419,7 @@ __all__ = [
     "LEDGER_NAME",
     "TRUTH_LABEL",
     "RLHSRepairDecision",
+    "clarification_streak_from_ledger",
     "decide_rlhs_repair",
     "generate_rlhs_response",
     "log_rlhs_event",

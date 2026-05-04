@@ -2477,7 +2477,7 @@ def _rlhs_repair_line_for_streak(base_line: str, streak: int) -> str:
     if streak <= 1:
         return base_line
     if streak == 2:
-        return "Audio is still unclear. Type it once or say the key phrase slowly."
+        return "Still not catching it. Want to just type it?"
     return ""
 
 
@@ -5371,13 +5371,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     )
                 except Exception:
                     pass
-            note = f"(silent: {backchannel_rule} — body doesn't reply to phatic/noisy '{text[:30]}')"
-            _log_turn("alice", note, model="")
-            self._history.append({"role": "assistant", "content": "(silent)"})
-            self._append_system_line(note, error=False)
-            self._busy = False
-            self._return_to_listening()
-            return
+            import random
+            phatic = None
+            if "phrasebook_match" in str(backchannel_rule) or "short_low_conf" in str(backchannel_rule):
+                if random.random() < 0.6:  # 60% chance to acknowledge
+                    phatic = random.choice(["Mm-hmm.", "Yeah.", "Got it.", "Okay.", "Mm."])
+            
+            if phatic:
+                note = f"(phatic: {backchannel_rule} — '{phatic}')"
+                _log_turn("alice", note, model="phatic_mode")
+                self._history.append({"role": "assistant", "content": phatic})
+                self._append_system_line(f"[PHATIC] {phatic}", error=False)
+                self._tts = _TTSWorker(phatic, voice=self._selected_voice_name() or None, parent=self)
+                self._tts.spoken.connect(self._on_tts_done)
+                self._tts.failed.connect(self._on_tts_failed)
+                self._tts.start()
+                return
+            else:
+                note = f"(silent: {backchannel_rule} — body doesn't reply to phatic/noisy '{text[:30]}')"
+                _log_turn("alice", note, model="")
+                self._history.append({"role": "assistant", "content": "(silent)"})
+                self._append_system_line(note, error=False)
+                self._busy = False
+                self._return_to_listening()
+                return
 
         # Media ingress already ran before user/RLHS logging above.
 

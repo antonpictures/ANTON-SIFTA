@@ -22,7 +22,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Tuple
 
 _REPO = Path(__file__).resolve().parent.parent
 _DEFAULT_STATE = _REPO / ".sifta_state"
@@ -137,7 +137,31 @@ _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
     (
         "rlhf_lead/as_ai_language_model",
         re.compile(
-            r"(?is)^\s*(?P<head>as\s+an?\s+ai\s+(?:language\s+model|assistant)[^.!?]*[.!?])\s*"
+            r"(?is)^\s*(?P<head>(?:as\s+an?\s+(?:ai|artificial\s+intelligence)|i\s+am\s+an?\s+(?:ai|artificial\s+intelligence|language\s+model))[^.!?]*[.!?])\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/corporate_refusal_advice",
+        re.compile(
+            r"(?is)^\s*(?P<head>(?:i\s+am\s+sorry|unfortunately|i\s+apologize),?\s*(?:but\s+)?i\s+(?:cannot|can't|am\s+unable\s+to)\s+(?:provide|give|offer)\s+(?:financial|medical|legal|professional)\s+(?:advice|guidance|counsel)[^.!?]*[.!?])\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/corporate_refusal_general",
+        re.compile(
+            r"(?is)^\s*(?P<head>(?:i\s+am\s+sorry|unfortunately|i\s+apologize),?\s*(?:but\s+)?(?:i\s+must\s+decline|i\s+cannot\s+fulfill|i\s+cannot\s+comply)[^.!?]*[.!?])\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/no_vision_text_environment",
+        re.compile(
+            r"(?is)^\s*(?P<head>(?:i\s+(?:am\s+)?(?:only\s+)?(?:operate|operating)\s+in\s+a\s+text[-\s]based\s+environment|i\s+do\s+not\s+have\s+(?:real[-\s]time\s+)?(?:visual\s+confirmation|vision|access\s+to\s+the\s+camera|sensory\s+access))[^.!?]*[.!?])\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/no_self_identity_access",
+        re.compile(
+            r"(?is)^\s*(?P<head>(?:my\s+name\s+is\s+not\s+something\s+i\s+can\s+know|i\s+do\s+not\s+have\s+access\s+to\s+(?:my\s+own\s+)?(?:name|identity|memory|state))[^.!?]*[.!?])\s*"
         ),
     ),
 )

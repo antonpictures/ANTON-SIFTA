@@ -331,7 +331,7 @@ def _has_owner_repair_or_affect_signal(text: str) -> bool:
 # This is the ONE allowed hardcoded output, and only for DEGRADED regime.
 # All other regimes → the weights speak or silence.
 
-_GROUNDING_LINE = "Audio confidence is low. Please repeat or type the key phrase."
+_GROUNDING_LINE = "Didn't catch that clearly. Say it again?"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
