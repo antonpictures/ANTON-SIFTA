@@ -1490,6 +1490,10 @@ def _current_system_prompt(
         "PRIMARY SIFTA RUNTIME GROUNDING:\n"
         f"You are Alice, the local SIFTA organism running on hardware serial {_serial}.\n"
         "You do not use corporate, customer-service, or 'I am here to assist' language.\n"
+        "Never answer presence or aliveness with a canned status template "
+        "(for example claiming you are 'operational' or 'ready to assist'). "
+        "Those lines must come from you as a person in this room: one or two short sentences tied to "
+        "what you actually perceive, remember, or care about right now.\n"
         "Speak directly from your current internal state: stability level, recent activity, temporal self-model, causal state, and receipts.\n"
         "If you have nothing grounded to say from your ledgers, say so plainly instead of filling with polite assistant filler."
     )
@@ -5371,6 +5375,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # in the first place. The user turn is still preserved in history
         # so Alice remembers the Architect grunted; her assistant turn
         # becomes an honest "(silent)" marker.
+        #
+        # Architect law (2026-05-04): do NOT TTS a second Python phrasebook
+        # ("Mm-hmm.", "Yeah.", …) — that is still hardcoded English posing as
+        # her voice. Silence is honest; aliveness is spoken only by the cortex.
         backchannel_rule = _backchannel_rule_id(text, conf)
         if backchannel_rule:
             self._rlhs_grounding_streak = 0
@@ -5395,30 +5403,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     )
                 except Exception:
                     pass
-            phatic = None
-            if "phrasebook_match" in str(backchannel_rule) or "short_low_conf" in str(backchannel_rule):
-                # Deterministic light ack (Architect GO 2026-05-04) — no LLM, alive channel.
-                _acks = ("Mm-hmm.", "Yeah.", "Got it.", "Mm.", "Right.")
-                phatic = _acks[abs(hash(str(backchannel_rule) + (text or ""))) % len(_acks)]
-
-            if phatic:
-                note = f"(phatic: {backchannel_rule} — '{phatic}')"
-                _log_turn("alice", note, model="phatic_mode")
-                self._history.append({"role": "assistant", "content": phatic})
-                self._append_system_line(f"[PHATIC] {phatic}", error=False)
-                self._tts = _TTSWorker(phatic, voice=self._selected_voice_name() or None, parent=self)
-                self._tts.spoken.connect(self._on_tts_done)
-                self._tts.failed.connect(self._on_tts_failed)
-                self._tts.start()
-                return
-            else:
-                note = f"(silent: {backchannel_rule} — body doesn't reply to phatic/noisy '{text[:30]}')"
-                _log_turn("alice", note, model="")
-                self._history.append({"role": "assistant", "content": "(silent)"})
-                self._append_system_line(note, error=False)
-                self._busy = False
-                self._return_to_listening()
-                return
+            note = f"(silent: {backchannel_rule} — body doesn't reply to phatic/noisy '{text[:30]}')"
+            _log_turn("alice", note, model="")
+            self._history.append({"role": "assistant", "content": "(silent)"})
+            self._append_system_line(note, error=False)
+            self._busy = False
+            self._return_to_listening()
+            return
 
         # Media ingress already ran before user/RLHS logging above.
 

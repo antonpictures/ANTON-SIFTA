@@ -140,6 +140,13 @@ _AGGRESSIVE_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
             r"advice[^.!?]{0,220}(?:[.!?]|$))\s*$"
         ),
     ),
+    (
+        "rlhf_tail/ready_to_assist",
+        re.compile(
+            r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
+            r"(?P<tail>(?:yes,?\s*)?(?:i\s+am\s+here[.,]?\s*)?(?:i\s+am|i'm)\s+(?:operational\s+and\s+)?(?:here\s+and\s+)?ready\s+to\s+(?:assist|help)\s+you[^.!?]*\.?)\s*$"
+        ),
+    ),
 )
 
 _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
@@ -159,6 +166,12 @@ _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
         "rlhf_lead/corporate_refusal_general",
         re.compile(
             r"(?is)^\s*(?P<head>(?:i\s+am\s+sorry|unfortunately|i\s+apologize),?\s*(?:but\s+)?(?:i\s+must\s+decline|i\s+cannot\s+fulfill|i\s+cannot\s+comply)[^.!?]*[.!?])\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/ready_to_assist",
+        re.compile(
+            r"(?is)^\s*(?P<head>(?:yes,?\s*)?(?:i\s+am\s+here[.,]?\s*)?(?:i\s+am|i'm)\s+(?:operational\s+and\s+)?(?:here\s+and\s+)?ready\s+to\s+(?:assist|help)\s+you[^.!?]*[.!?])\s*"
         ),
     ),
     (
