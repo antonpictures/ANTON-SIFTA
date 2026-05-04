@@ -5227,9 +5227,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if not display_text and image_path:
             display_text = f"[Attached Image: {Path(image_path).name}]"
         self._append_user_line(display_text, conf)
-        self._start_brain(text, conf=conf, already_displayed=True, image_path=image_path)
+        self._start_brain(
+            text,
+            conf=conf,
+            already_displayed=True,
+            image_path=image_path,
+            typed_turn=typed_turn,
+        )
 
-    def _start_brain(self, text: str, conf: float = 0.0, *, already_displayed: bool = False, image_path: Optional[str] = None) -> None:
+    def _start_brain(
+        self,
+        text: str,
+        conf: float = 0.0,
+        *,
+        already_displayed: bool = False,
+        image_path: Optional[str] = None,
+        typed_turn: bool = False,
+    ) -> None:
         """Start Alice's model turn from a user/inbox message.
 
         Inbox pollers append the visible user line before scheduling this method,
