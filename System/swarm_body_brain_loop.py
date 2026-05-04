@@ -95,6 +95,44 @@ _STATE_DIR = Path(".sifta_state")
 DRIVE_BIAS_SCORE_FLOOR = 0.05
 
 
+def _clip01(value: Any, default: float = 0.0) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except Exception:
+        return default
+
+
+def _core_self_salience(
+    *,
+    action_confidence: Any = 0.0,
+    causal_effect_size: Any = 0.0,
+    uncertainty: Any = 0.0,
+    valence: Any = 0.0,
+    na_level: Any = 0.5,
+    clamp_level: str = "NONE",
+) -> float:
+    """
+    Damasio Phase 2 salience proxy for Core Self interaction receipts.
+
+    High salience means an event plausibly changed the organism's body-state
+    map enough to matter for later revival/autobiographical continuity.
+    """
+    confidence_term = _clip01(action_confidence)
+    effect_term = _clip01(abs(float(causal_effect_size or 0.0)) * 3.0)
+    uncertainty_term = _clip01(uncertainty)
+    valence_term = _clip01(abs(float(valence or 0.0)))
+    arousal_term = _clip01(max(0.0, float(na_level or 0.5) - 0.5) * 2.0)
+    clamp_term = 0.75 if str(clamp_level) in ("BLOCK_NEW", "EMERGENCY") else 0.0
+    return round(max(
+        confidence_term,
+        effect_term,
+        uncertainty_term,
+        valence_term,
+        arousal_term,
+        clamp_term,
+    ), 4)
+
+
 def _receipt_value(receipt: Any, key: str, default: Any = None) -> Any:
     """Read a field from a DriveReceipt dataclass or a synthetic test dict."""
     if receipt is None:
@@ -540,6 +578,10 @@ class SwarmPhysiology:
             "conservative_mode": False,
             "recommended_genome_blend": 1.0,
         }
+        _core_self_before_event: Optional[Dict[str, float]] = None
+        _core_self_event_type: Optional[str] = None
+        _core_self_event_summary = ""
+        _core_self_event_salience = 0.0
         try:
             from System.swarm_organizational_identity import rehydrate_identity
             _identity_receipt = rehydrate_identity(
@@ -1071,6 +1113,7 @@ class SwarmPhysiology:
         _causal_probe_receipt: Optional[Dict[str, Any]] = None
         try:
             from System.swarm_active_causal_prober import propose_and_execute_runtime_intervention
+            from System.swarm_organizational_identity import build_current_internal_state_vector
 
             _terms = _stability_snapshot.get("terms", {}) if isinstance(_stability_snapshot, dict) else {}
             _uncertainty = max(
@@ -1100,6 +1143,7 @@ class SwarmPhysiology:
                 _revival = float(_identity_receipt.get("revival_score", 1.0) or 1.0)
                 _probe_threshold += min(0.20, max(0.0, 1.0 - _revival) * 0.25)
             _probe_threshold = min(0.85, max(0.15, _probe_threshold))
+            _proto_before_probe = build_current_internal_state_vector(root=_STATE_DIR)
 
             # Poll biological stress state (§10.14.28 integration)
             _dam_stage = 0
@@ -1131,11 +1175,28 @@ class SwarmPhysiology:
                 na_level=float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
             )
             if _causal_probe_receipt:
+                _effect = float(_causal_probe_receipt.get("causal_effect_size", 0.0) or 0.0)
+                _target = _causal_probe_receipt.get("intervention", {}).get("do", {}).get("target")
+                _dry_run = _causal_probe_receipt.get("intervention", {}).get("do", {}).get("dry_run")
+                _core_self_before_event = _proto_before_probe
+                _core_self_event_type = "CAUSAL_PROBE"
+                _core_self_event_salience = _core_self_salience(
+                    action_confidence=(action or {}).get("confidence", 0.5),
+                    causal_effect_size=_effect,
+                    uncertainty=_uncertainty,
+                    valence=_valence,
+                    na_level=float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
+                    clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
+                )
+                _core_self_event_summary = (
+                    f"causal_probe target={_target} effect={_effect:.3f} "
+                    f"dry_run={_dry_run} threshold={_probe_threshold:.3f}"
+                )
                 logger.info(
                     "[Event139] Active causal probe target=%s effect=%.3f dry_run=%s metacog_regime=%s valence=%.3f threshold=%.3f",
-                    _causal_probe_receipt.get("intervention", {}).get("do", {}).get("target"),
-                    float(_causal_probe_receipt.get("causal_effect_size", 0.0) or 0.0),
-                    _causal_probe_receipt.get("intervention", {}).get("do", {}).get("dry_run"),
+                    _target,
+                    _effect,
+                    _dry_run,
                     _metacog_regime,
                     _valence,
                     _probe_threshold,
@@ -1277,14 +1338,29 @@ class SwarmPhysiology:
         dream_cycle = self._maybe_sleep(body_state, danger,
                                         crystallizer_weight=crystallizer_weight)
         
-        # 10. Snapshot Proto-Self (Phase 2 Damasio Alignment)
+        # 10. Snapshot Proto-Self + Core Self Interaction (Damasio Phase 1/2)
         try:
-            from System.swarm_organizational_identity import snapshot_proto_self
+            from System.swarm_organizational_identity import (
+                build_current_internal_state_vector,
+                record_core_self_interaction,
+                snapshot_proto_self,
+            )
             _tick_val = causal_probe_tick if causal_probe_tick is not None else int(time.time())
+            if _core_self_before_event is not None and _core_self_event_type:
+                _proto_after_event = build_current_internal_state_vector(root=_STATE_DIR)
+                record_core_self_interaction(
+                    interaction_type=_core_self_event_type,
+                    salience=_core_self_event_salience,
+                    proto_self_before=_core_self_before_event,
+                    proto_self_after=_proto_after_event,
+                    summary=_core_self_event_summary,
+                    root=_STATE_DIR,
+                    tick_id=_tick_val,
+                )
             if _tick_val % 5 == 0:
                 snapshot_proto_self(root=_STATE_DIR, tick_id=_tick_val)
         except Exception:
-            logger.debug("Proto-self snapshot skipped")
+            logger.debug("Proto/Core-self identity producer skipped")
         
         return {
             "action":             action,

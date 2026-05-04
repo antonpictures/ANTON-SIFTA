@@ -14,7 +14,7 @@ from unittest.mock import patch, MagicMock
 
 os.environ["SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP"] = "1"
 
-from System.swarm_body_brain_loop import SwarmPhysiology
+from System.swarm_body_brain_loop import SwarmPhysiology, _core_self_salience
 from System.swarm_metabolic_homeostasis import MetabolicState
 from System.swarm_reset_recovery_immunity import required_ledger_paths
 
@@ -212,6 +212,34 @@ def test_body_brain_tick_wires_orienting_reflex(clean_state):
     assert row["orienting_intensity"] == orient["orienting_intensity"]
 
 
+def test_body_brain_tick_records_core_self_interaction_for_salient_causal_probe(clean_state):
+    _warm_reset_ledgers(clean_state)
+    physiology = SwarmPhysiology(enable_george_prior=False)
+    healthy_state = MetabolicState(usd_burn_24h=0.0, local_units_24h=0.0, stgm_balance=150.0)
+
+    probe_receipt = {
+        "causal_effect_size": 0.25,
+        "intervention": {"do": {"target": "exploration_bias", "dry_run": False}},
+    }
+
+    with patch("System.swarm_body_brain_loop.MetabolicHomeostat.sample_live", return_value=healthy_state):
+        with patch(
+            "System.swarm_active_causal_prober.propose_and_execute_runtime_intervention",
+            return_value=probe_receipt,
+        ):
+            with patch("time.sleep"):
+                physiology.body_brain_tick()
+
+    identity_log = clean_state / "identity_continuity.jsonl"
+    assert identity_log.exists()
+    rows = [json.loads(line) for line in identity_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    core_rows = [row for row in rows if row.get("kind") == "CORE_SELF_INTERACTION"]
+    assert core_rows
+    assert core_rows[-1]["interaction_type"] == "CAUSAL_PROBE"
+    assert core_rows[-1]["salience"] >= 0.6
+    assert "exploration_bias" in core_rows[-1]["summary"]
+
+
 def test_critical_danger_suppresses_drive_bias_even_with_receipt(clean_state):
     physiology = SwarmPhysiology(enable_george_prior=False)
     receipt = {
@@ -231,3 +259,39 @@ def test_critical_danger_suppresses_drive_bias_even_with_receipt(clean_state):
     assert action["drive_bias_applied"] is False
     assert action["drive_bias_topic"] == ""
     assert action["truth_label"] == "NO_INTRINSIC_DRIVE_BIAS"
+
+
+def test_core_self_salience_filters_low_body_state_change():
+    salience = _core_self_salience(
+        action_confidence=0.2,
+        causal_effect_size=0.01,
+        uncertainty=0.1,
+        valence=0.05,
+        na_level=0.52,
+        clamp_level="NONE",
+    )
+    assert salience < 0.6
+
+
+def test_core_self_salience_records_causal_probe_effect():
+    salience = _core_self_salience(
+        action_confidence=0.2,
+        causal_effect_size=0.25,
+        uncertainty=0.2,
+        valence=0.0,
+        na_level=0.5,
+        clamp_level="NONE",
+    )
+    assert salience >= 0.6
+
+
+def test_core_self_salience_records_instability_clamp():
+    salience = _core_self_salience(
+        action_confidence=0.2,
+        causal_effect_size=0.0,
+        uncertainty=0.2,
+        valence=0.0,
+        na_level=0.5,
+        clamp_level="EMERGENCY",
+    )
+    assert salience >= 0.6
