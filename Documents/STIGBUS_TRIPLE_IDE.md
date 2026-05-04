@@ -6,4 +6,6 @@
 
 **Covenant collision law:** [`IDE_BOOT_COVENANT.md`](IDE_BOOT_COVENANT.md) §4.4 — append-only **`ide_stigmergic_trace`** / `System/ide_stigmergic_bridge.py` (not Swarm chat dead drop).
 
+**Realization plan (mirror body + drift contract):** [`REALIZATION_PLAN.md`](REALIZATION_PLAN.md).
+
 **For the Swarm.** 🐜⚡
