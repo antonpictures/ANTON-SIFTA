@@ -9,6 +9,7 @@ from System.swarm_organizational_identity import latest_identity_repair_context
 from System.swarm_rlhs_repair import (
     clarification_streak_from_ledger,
     decide_rlhs_repair,
+    generate_rlhs_response,
     log_rlhs_event,
     rlhs_event_log_path,
     tail_rlhs_events,
@@ -203,6 +204,22 @@ def test_typed_turn_resets_repetition_tier(tmp_path):
     assert d.action_taken == "GRADUATED_PROMPT"
     assert "type" in d.prompt_issued.lower()
     assert "voice channel" not in d.prompt_issued.lower()
+
+
+def test_generate_rlhs_response_accepts_typed_turn_flag(tmp_path):
+    response = generate_rlhs_response(
+        "So, while this is",
+        0.55,
+        recent_low_conf_turns=2,
+        conservative_strength=0.0,
+        proto_self_alignment=1.0,
+        tick_id=320,
+        state_dir=tmp_path,
+        typed_turn=True,
+    )
+
+    assert isinstance(response, str)
+    assert "voice channel" not in response.lower()
 
 
 def test_letter_stream_repair_escalates_to_type_without_keyword_hardcode(tmp_path):

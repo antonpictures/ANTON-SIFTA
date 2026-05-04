@@ -1595,6 +1595,28 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_hardware_identity_anchor import (
+            compute_identity_anchor as _compute_hardware_identity_anchor,
+            summary_for_prompt as _hardware_identity_summary,
+        )
+
+        _hw_identity = (_hardware_identity_summary() or "").strip()
+        if not _hw_identity:
+            _hw_row = _compute_hardware_identity_anchor(write_ledger=False)
+            if _hw_row and not _hw_row.get("disabled"):
+                _hw_identity = (
+                    "HARDWARE IDENTITY ANCHOR (live read, not roleplay):\n"
+                    f"- anchor={str(_hw_row.get('identity_anchor', '?'))[:12]}… "
+                    f"| causal_chain_valid={_hw_row.get('causal_chain_valid')}\n"
+                    f"- self_model_hash={_hw_row.get('self_model_hash')} "
+                    f"| boot_lineage_root={_hw_row.get('boot_lineage_root')}"
+                )
+        if _hw_identity:
+            parts.append("LOCAL IDENTITY PROOF I CAN CITE:\n" + _hw_identity)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_identity_life_grounding import summary_for_alice as _identity_life_summary
 
         _identity_life_prompt = _identity_life_summary(max_rows=6).strip()
@@ -1752,6 +1774,15 @@ def _current_system_prompt(
         _drift = _drift_summary().strip()
         if _drift:
             parts.append(_drift)
+    except Exception:
+        pass
+
+    try:
+        from System.swarm_peer_mirror_ingest import summary_for_prompt as _peer_mirror_summary
+
+        _peer_mirror = _peer_mirror_summary().strip()
+        if _peer_mirror:
+            parts.append(_peer_mirror)
     except Exception:
         pass
 
@@ -5261,6 +5292,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         Inbox pollers append the visible user line before scheduling this method,
         while STT/text entry delegates here after its own display path.
         """
+        _typed_turn = bool(typed_turn)
         text = (text or "").strip()
         if not text and not image_path:
             self._busy = False
@@ -5319,6 +5351,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+
+        # ── Peer mirror ingest ─────────────────────────────────────────
+        # George often pastes Grok/Cursor/IDE output that says "Alice has ..."
+        # while he is talking to Alice. That is third-person mirror text about
+        # this local runtime, not a third person in the room. Give the current
+        # model turn an explicit deictic bridge and leave a receipt.
+        try:
+            from System.swarm_peer_mirror_ingest import context_for_prompt, ingest_peer_mirror_report
+
+            _peer_row = ingest_peer_mirror_report(
+                text,
+                root=_state_root(),
+                source="talk_widget.owner_paste",
+                write_ledger=True,
+            )
+            if _peer_row:
+                self._history.append({"role": "system", "content": context_for_prompt(_peer_row)})
+        except Exception:
+            pass
 
         _log_turn("user", text if text else "[Image]", stt_conf=conf)
         user_msg = {"role": "user", "content": text if text else "What is in this image?"}
@@ -5558,7 +5609,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 channel_lane=_current_rlhs_channel_lane(),
                 model_id=_active_alice_model_id(),
                 state_dir=_state,
-                typed_turn=typed_turn,
+                typed_turn=_typed_turn,
             )
             is_new_tiered_logic = True
         except Exception as e:

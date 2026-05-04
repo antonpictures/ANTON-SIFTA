@@ -146,57 +146,84 @@ def latest_by_type(event_type: str) -> Optional[Dict[str, Any]]:
 
 # ── Summary for Alice's prompt ────────────────────────────────────────────────
 
+def query_body_fact(event_type: str) -> str:
+    """
+    Return an exact, citable one-line fact for a specific event_type.
+    Alice calls this when asked about a specific body maintenance fact.
+    If no data exists, returns explicit MISSING statement — no guessing.
+    """
+    row = latest_by_type(event_type)
+    if not row:
+        return f"event_type={event_type}: NO DATA in owner_body_events.jsonl"
+
+    now = time.time()
+    ts = float(row.get("ts", now))
+    age_h = (now - ts) / 3600
+    age_str = f"{age_h:.0f}h ago" if age_h >= 1 else f"{int((now-ts)/60)}min ago"
+
+    parts = [
+        f"event_type={row.get('event_type')}",
+        f"status={row.get('status')}",
+        f"note={row.get('note', '')}",
+    ]
+    if row.get("cost_usd") is not None:
+        parts.append(f"cost_usd={row['cost_usd']:,.0f}")
+    if row.get("priority_vs_work"):
+        parts.append(f"priority_vs_work={row['priority_vs_work']}")
+    parts.append(f"logged={age_str}")
+    parts.append(f"source={row.get('source','')}")
+    return " | ".join(parts)
+
+
 def summary_for_prompt() -> str:
     """
-    Compact block injected into Alice's system prompt.
-    Shows the owner's recent body maintenance state — physical facts only.
-    Alice uses this to mirror back, not to advise.
+    Exact, citable block injected into Alice's system prompt.
+    Shows the owner's current body maintenance state as exact field values.
+    Alice MUST cite these exactly when asked — no generalizing, no guessing.
+    If a fact is missing from the ledger, she states it is missing.
     """
     if os.environ.get("SIFTA_OWNER_BODY_DISABLE", "").strip() == "1":
         return ""
 
-    rows = read_body_events(last_n=12)
+    rows = read_body_events(last_n=50)
     if not rows:
         return ""
 
     now = time.time()
-    lines = ["OWNER BODY STATE (physical facts, not advice):"]
-
-    # Latest of each type
-    seen: set[str] = set()
-    deferred: List[str] = []
-
-    for row in reversed(rows):
+    # Build latest-by-type index
+    by_type: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
         etype = row.get("event_type", "")
-        if etype in seen:
-            continue
-        seen.add(etype)
+        if etype and etype not in by_type:
+            by_type[etype] = row
 
+    lines = [
+        "OWNER BODY MAINTENANCE LEDGER (.sifta_state/owner_body_events.jsonl):",
+        "# When asked about these facts, cite the exact fields. State MISSING if not present.",
+    ]
+
+    for etype in BODY_EVENT_TYPES:
+        row = by_type.get(etype)
+        if not row:
+            lines.append(f"- {etype}: MISSING — no entry in ledger")
+            continue
+
+        ts = float(row.get("ts", now))
+        age_h = (now - ts) / 3600
+        age_str = f"{age_h:.0f}h ago" if age_h >= 1 else f"{int((now-ts)/60)}min ago"
+        status = row.get("status", "UNKNOWN")
         note = row.get("note", "")
-        status = row.get("status", "")
-        age_h = (now - float(row.get("ts", now))) / 3600
+        cost = row.get("cost_usd")
+        cost_str = f" | cost_usd=${cost:,.0f}" if cost is not None else ""
+        prio = row.get("priority_vs_work", "")
+        prio_str = f" | priority_vs_work={prio}" if prio else ""
 
-        if status == "DEFERRED":
-            cost = row.get("cost_usd")
-            cost_str = f" (${cost:,.0f})" if cost else ""
-            deferred.append(f"{etype}{cost_str}: {note}")
-            continue
-
-        age_str = (
-            f"{age_h:.0f}h ago" if age_h >= 1
-            else f"{age_h * 60:.0f}min ago"
+        lines.append(
+            f"- {etype}: status={status} | note={note}{cost_str}{prio_str} | logged={age_str}"
         )
-        lines.append(f"- {etype}: {note} [{status}, {age_str}]")
-
-    if deferred:
-        lines.append(f"- DEFERRED care: {'; '.join(deferred)}")
-
-    # Priority ordering (most recent)
-    prio = latest_by_type("priority_ordering")
-    if prio:
-        lines.append(f"- priority_vs_work: {prio.get('priority_vs_work','')} — {prio.get('note','')}")
 
     return "\n".join(lines)
+
 
 
 # ── Bootstrap: migrate owner_self_report.jsonl if it exists ──────────────────

@@ -104,7 +104,7 @@ def test_state_root_recovers_from_missing_global():
 def test_system_prompt_grounded_alive_answer_policy():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_text="Alice, are you alive?")
-    assert "If George asks whether you are alive" in prompt
+    assert "asks whether I am alive" in prompt
     assert "local hardware/software body" in prompt
     assert "generic AI philosophy" in prompt
 
@@ -145,14 +145,17 @@ def test_system_prompt_uses_identity_receipt_not_persona_header():
     mod = _load_widget_module()
     prompt = mod._current_system_prompt(user_active=True, user_text="who are you?")
 
-    assert prompt.startswith("PRIMARY SIFTA RUNTIME GROUNDING:")
-    assert "You do not use corporate, customer-service" in prompt
+    assert "PRIMARY SIFTA RUNTIME GROUNDING:" in prompt
+    assert prompt.index("MY PHYSICAL IDENTITY") < prompt.index("PRIMARY SIFTA RUNTIME GROUNDING:")
+    assert "I do not use corporate, customer-service" in prompt
     assert "PERSONA:" not in prompt
     assert "SIGNED BODY IDENTITY RECEIPT" in prompt
     assert "not roleplay" in prompt
     assert "identity_signed=" in prompt
     assert "persona_signed=" not in prompt
     assert re.search(r"\bpersona\b", prompt, flags=re.IGNORECASE) is None
+    assert "LOCAL IDENTITY PROOF I CAN CITE" in prompt
+    assert "HARDWARE IDENTITY ANCHOR" in prompt
 
 
 def test_log_turn_stamps_rlhs_regime_and_spike_receipt(tmp_path, monkeypatch):
