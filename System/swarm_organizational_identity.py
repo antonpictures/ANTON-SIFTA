@@ -354,6 +354,78 @@ def record_continuity_event(
     )
 
 
+def record_core_self_interaction(
+    interaction_type: str,
+    salience: float,
+    proto_self_before: Dict[str, float],
+    proto_self_after: Dict[str, float],
+    summary: str = "",
+    root: Optional[Path] = None,
+    tick_id: Optional[int] = None
+) -> Optional[Dict[str, Any]]:
+    """If salience >= threshold, write CORE_SELF_INTERACTION row and update in-memory buffer."""
+    if salience < 0.6:
+        return None
+
+    delta = {}
+    keys = set(proto_self_before.keys()) | set(proto_self_after.keys())
+    for k in keys:
+        before_val = proto_self_before.get(k, 0.0)
+        after_val = proto_self_after.get(k, 0.0)
+        if abs(after_val - before_val) > 0.001:
+            delta[k] = round(after_val - before_val, 4)
+
+    row = {
+        "ts": time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "truth_label": "CORE_SELF_INTERACTION",
+        "kind": "CORE_SELF_INTERACTION",
+        "tick_id": tick_id,
+        "interaction_type": interaction_type,
+        "salience": salience,
+        "proto_self_delta": delta,
+        "summary": summary
+    }
+
+    append_line_locked(
+        get_identity_ledger_path(root),
+        json.dumps(row, sort_keys=True) + "\n",
+        encoding="utf-8"
+    )
+    return row
+
+
+def get_recent_core_self_context(max_items: int = 5, root: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Returns the most recent high-salience interactions (from buffer + ledger tail)."""
+    interactions = []
+    for row in reversed(_all_identity_rows(root)):
+        if row.get("kind") == "CORE_SELF_INTERACTION":
+            interactions.append(row)
+            if len(interactions) >= max_items:
+                break
+    return interactions
+
+
+def build_core_self_continuity_on_revival(root: Optional[Path] = None) -> Dict[str, Any]:
+    """Used by rehydrate_identity() to answer: 'What was I doing when I went down?'"""
+    recent = get_recent_core_self_context(max_items=3, root=root)
+    if not recent:
+        return {
+            "was_mid_interaction": False,
+            "last_interaction_type": None,
+            "last_interaction_summary": None,
+            "proto_self_shift": {}
+        }
+    
+    last = recent[0]
+    return {
+        "was_mid_interaction": True,
+        "last_interaction_type": last.get("interaction_type"),
+        "last_interaction_summary": last.get("summary"),
+        "proto_self_shift": last.get("proto_self_delta", {})
+    }
+
+
 def rehydrate_identity(
     root: Optional[Path] = None, 
     *, 
@@ -402,6 +474,12 @@ def rehydrate_identity(
         current_internal_state=current_internal_state,
         last_proto_self_vector=last_proto_self_vector
     )
+    
+    core_self_continuity = build_core_self_continuity_on_revival(root)
+    if core_self_continuity.get("was_mid_interaction"):
+        # Tweak revival score slightly downward if interrupted mid high-salience interaction
+        revival_score = max(0.10, min(0.98, revival_score - 0.05))
+        
     conservative_mode = revival_score < 0.6
     
     recommended_genome_blend = max(0.2, min(1.0, revival_score + 0.1))
@@ -419,6 +497,7 @@ def rehydrate_identity(
             "gap_duration_seconds": gap_seconds,
             "revival_score": round(revival_score, 4)
         },
+        "core_self_continuity": core_self_continuity,
         "event": {
             "type": "BOOT",
             "details": {
@@ -439,7 +518,8 @@ def rehydrate_identity(
         "revival_score": round(revival_score, 4),
         "personality_vector": current_personality,
         "conservative_mode": conservative_mode,
-        "recommended_genome_blend": round(recommended_genome_blend, 4)
+        "recommended_genome_blend": round(recommended_genome_blend, 4),
+        "core_self_continuity": core_self_continuity
     }
 
 
@@ -497,4 +577,7 @@ __all__ = [
     "build_current_internal_state_vector",
     "snapshot_proto_self",
     "load_latest_proto_self_vector",
+    "record_core_self_interaction",
+    "get_recent_core_self_context",
+    "build_core_self_continuity_on_revival",
 ]
