@@ -126,7 +126,14 @@ class PFCBasalGangliaArbiter:
         hysteresis_margin: float = 0.15,
         min_dwell_time: float = 2.0,
         stability_same_tick_receipt: Optional[Dict[str, Any]] = None,
-        na_global_gain: float = 1.0,   # NEW: LC/NA gain modulates arbiter temperature
+        na_global_gain: float = 1.0,   # LC/NA gain modulates arbiter temperature
+        # Biological Steering (§10.14.28 closed loop)
+        dam_stage: int = 0,
+        tme_phase: str = "EQUILIBRIUM",
+        na_level: float = 0.5,
+        resilience_floor: float = 0.0,
+        owner_frustration: float = 0.0,
+        goal_alignment: float = 0.5,
     ) -> Tuple[str, float, Dict[str, Any]]:
         """
         2. Select among options under uncertainty using Active Inference (Event 134).
@@ -139,10 +146,81 @@ class PFCBasalGangliaArbiter:
 
         from System.swarm_stability_audit import get_current_clamp_overrides
 
+        # Poll latest biological state if not explicitly provided
+        try:
+            if dam_stage == 0:
+                _m_log = self.root / "microglia_synaptic_prunes.jsonl"
+                if _m_log.exists():
+                    _lines = [l for l in _m_log.read_text(errors="replace").splitlines() if l.strip()]
+                    if _lines:
+                        dam_stage = int(json.loads(_lines[-1]).get("dam_stage", 0))
+            if tme_phase == "EQUILIBRIUM":
+                _tme_log = self.root / "tumor_immune_stigmergic_lab.jsonl"
+                if _tme_log.exists():
+                    _lines = [l for l in _tme_log.read_text(errors="replace").splitlines() if l.strip()]
+                    if _lines:
+                        tme_phase = str(json.loads(_lines[-1]).get("phase", "EQUILIBRIUM"))
+            if na_level == 0.5:
+                _na_log = self.root / "noradrenergic_arousal.jsonl"
+                if _na_log.exists():
+                    _lines = [l for l in _na_log.read_text(errors="replace").splitlines() if l.strip()]
+                    if _lines:
+                        na_level = float(json.loads(_lines[-1]).get("na_level", 0.5))
+            if owner_frustration == 0.0 and goal_alignment == 0.5:
+                _tom_log = self.root / "owner_mental_model.jsonl"
+                if _tom_log.exists():
+                    _lines = [l for l in _tom_log.read_text(errors="replace").splitlines() if l.strip()]
+                    if _lines:
+                        _last = json.loads(_lines[-1])
+                        owner_frustration = float(_last.get("frustration", 0.0))
+                        goal_alignment = float(_last.get("goal_alignment", 0.5))
+        except Exception:
+            pass
+
         stability_clamp = get_current_clamp_overrides(
             root=self.root,
             same_tick_receipt=stability_same_tick_receipt,
         )
+        
+        # ── Biological Steering Weight Modulators ──
+        risk_weight = 1.0
+        cost_weight = 1.0
+        gw_weight = 0.5 * na_global_gain
+        owner_weight = 0.2
+
+        if dam_stage == 2:
+            stability_clamp["block_new_gates"] = True
+            risk_weight *= 2.0  # Increased risk aversion
+            gw_weight *= 0.5    # Reduced exploration / salience noise
+
+        if tme_phase == "ESCAPE":
+            risk_weight *= 0.5  # Existential threat -> desperation tolerance
+            cost_weight *= 0.5  # Shortened planning horizon -> ignore high cost
+
+        if na_level > 0.8:
+            gw_weight *= 1.5    # Hyperarousal -> broader option sampling
+
+        if resilience_floor > 0.05:
+            # Protect high-resilience structures: increase conservatism on risk
+            risk_weight += (resilience_floor * 5.0)
+
+        if owner_frustration < 0.2 and goal_alignment > 0.8:
+            # Owner is calm + aligned: boost owner-aligned options
+            owner_weight *= 1.5
+
+        bio_steering = {
+            "dam_stage": dam_stage,
+            "tme_phase": tme_phase,
+            "na_level": round(na_level, 4),
+            "resilience_floor": round(resilience_floor, 4),
+            "owner_frustration": round(owner_frustration, 4),
+            "goal_alignment": round(goal_alignment, 4),
+            "risk_weight": round(risk_weight, 4),
+            "cost_weight": round(cost_weight, 4),
+            "gw_weight": round(gw_weight, 4),
+            "owner_weight": round(owner_weight, 4),
+        }
+
         avail = list(available_options)
         if stability_clamp.get("block_new_gates"):
             avail = [o for o in avail if not _option_name_suggests_new_gate(o)]
@@ -187,12 +265,10 @@ class PFCBasalGangliaArbiter:
 
             competition_score = (
                 -g_pi
-                # GW salience scaled by NA gain: high arousal amplifies signal saliency
-                # (Aston-Jones & Cohen 2005: LC/NA boosts signal-to-noise in cortex)
-                + (0.5 * na_global_gain * gw_salience)
-                + (0.2 * owner_signal)
-                - (1.0 * risk)
-                - (1.0 * cost)
+                + (gw_weight * gw_salience)
+                + (owner_weight * owner_signal)
+                - (risk_weight * risk)
+                - (cost_weight * cost)
             )
 
             # Apply hysteresis margin if this option is NOT the currently active one
@@ -252,7 +328,9 @@ class PFCBasalGangliaArbiter:
             "active_option_before": active_opt,
             "can_switch": can_switch,
             "details": option_details.get(winner_name, {}),
+            "all_details": option_details,
             "stability_clamp": stability_clamp,
+            "biological_steering": bio_steering,
         }
         append_line_locked(self.log_path, json.dumps(selection) + "\n", encoding="utf-8")
         return winner_name, winner_score, selection
