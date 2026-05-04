@@ -134,6 +134,7 @@ class PFCBasalGangliaArbiter:
         resilience_floor: float = 0.0,
         owner_frustration: float = 0.0,
         goal_alignment: float = 0.5,
+        tick_id: Optional[int] = None,
     ) -> Tuple[str, float, Dict[str, Any]]:
         """
         2. Select among options under uncertainty using Active Inference (Event 134).
@@ -145,6 +146,11 @@ class PFCBasalGangliaArbiter:
             return "idle", 0.0, {}
 
         from System.swarm_stability_audit import get_current_clamp_overrides
+
+        # ── Regulatory Genome ──
+        from System.swarm_regulatory_genome import load_regulatory_parameters, get_latest_genome_hash
+        reg_params = load_regulatory_parameters(self.root, current_tick=tick_id)
+        reg_hash = get_latest_genome_hash(self.root)
 
         # Poll latest biological state if not explicitly provided
         try:
@@ -183,9 +189,12 @@ class PFCBasalGangliaArbiter:
         )
         
         # ── Biological Steering Weight Modulators ──
-        risk_weight = 1.0
+        base_risk_weight = reg_params.get("arbiter_risk_weight", 1.0)
+        base_expl_temp = reg_params.get("arbiter_exploration_temperature", 1.0)
+        
+        risk_weight = base_risk_weight
         cost_weight = 1.0
-        gw_weight = 0.5 * na_global_gain
+        gw_weight = 0.5 * na_global_gain * base_expl_temp
         owner_weight = 0.2
 
         if dam_stage == 2:
@@ -331,8 +340,17 @@ class PFCBasalGangliaArbiter:
             "all_details": option_details,
             "stability_clamp": stability_clamp,
             "biological_steering": bio_steering,
+            "active_regulatory_parameters": reg_params,
+            "regulatory_genome_row_hash": reg_hash,
         }
         append_line_locked(self.log_path, json.dumps(selection) + "\n", encoding="utf-8")
+        if tick_id is not None:
+            try:
+                from System.swarm_regulatory_genome import maybe_append_from_arbiter_tick
+
+                maybe_append_from_arbiter_tick(self.root, int(tick_id), float(resilience_floor))
+            except Exception:
+                pass
         return winner_name, winner_score, selection
 
     def update_generalization_trial(

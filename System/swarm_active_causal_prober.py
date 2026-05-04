@@ -160,6 +160,12 @@ class ActiveCausalProber:
         if stability_level in ("EMERGENCY", "BLOCK_NEW"):
             return None
 
+        # ── Regulatory Genome ──
+        from System.swarm_regulatory_genome import load_regulatory_parameters, get_latest_genome_hash
+        reg_params = load_regulatory_parameters(self.root)
+        reg_hash = get_latest_genome_hash(self.root)
+        uncertainty_threshold = reg_params.get("causal_prober_uncertainty_threshold", uncertainty_threshold)
+
         # ── Biological Steering (§10.14.28) ──────────────────────────────────
         if dam_stage == 2:
             # Stage 2 (committed) microglia indicates severe brain inflammation and
@@ -232,6 +238,8 @@ class ActiveCausalProber:
             organ=organ,
             truth_label="CAUSAL_PROBE_INTERVENTION",
         )
+        row["active_regulatory_parameters"] = reg_params
+        row["regulatory_genome_row_hash"] = reg_hash
         return row
 
     def apply_pending_reverts(self, current_tick: Any) -> int:

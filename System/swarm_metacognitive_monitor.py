@@ -217,6 +217,7 @@ def compute_metacognitive_state(
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
+    tick_id: Optional[int] = None,
     # Biological Steering (§10.14.31 closed loop)
     dam_stage: int = 0,
     tme_phase: str = "EQUILIBRIUM",
@@ -257,6 +258,15 @@ def compute_metacognitive_state(
 
     sd = state_dir(root)
 
+    # ── Regulatory Genome ──
+    from System.swarm_regulatory_genome import (
+        load_regulatory_parameters,
+        get_latest_genome_hash,
+        maybe_append_from_metacognitive_tick,
+    )
+    reg_params = load_regulatory_parameters(root, current_tick=tick_id)
+    reg_hash = get_latest_genome_hash(root)
+
     # ── Biological Steering Polling (§10.14.31) ──
     try:
         if dam_stage == 0:
@@ -289,7 +299,7 @@ def compute_metacognitive_state(
         pass
 
     # ── Biological Steering Weight Modulators ──
-    evidence_threshold = 0.5
+    evidence_threshold = reg_params.get("metacog_evidence_threshold", 0.5)
     quick_commit = True
     deliberation_window = 10
     distractibility = 0.1
@@ -410,6 +420,9 @@ def compute_metacognitive_state(
         "monitoring_score":   monitoring_score,
         "metacog_efficiency": metacog_efficiency,
         "metacog_regime":     regime,
+        "dam_stage":          int(dam_stage),
+        "tme_phase":          str(tme_phase),
+        "na_level":           round(float(na_level), 4),
         "n_pe_samples":       len(pe_series),
         "n_conf_samples":     len(confs) if confs else 0,
         "n_monitor_samples":  len(detections) if detections else 0,
@@ -419,7 +432,11 @@ def compute_metacognitive_state(
             "Friston+2021SophisticatedInference"
         ),
         "biological_steering": bio_steering,
+        "active_regulatory_parameters": reg_params,
+        "regulatory_genome_row_hash": reg_hash,
     }
+    if tick_id is not None:
+        row["tick_id"] = int(tick_id)
 
     if write_ledger:
         append_line_locked(
@@ -427,6 +444,18 @@ def compute_metacognitive_state(
             json.dumps(row, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        if tick_id is not None:
+            try:
+                maybe_append_from_metacognitive_tick(
+                    sd,
+                    int(tick_id),
+                    regime,
+                    int(dam_stage),
+                    str(tme_phase),
+                    float(na_level),
+                )
+            except Exception:
+                pass
     return row
 
 

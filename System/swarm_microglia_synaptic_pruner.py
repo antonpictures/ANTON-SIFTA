@@ -254,7 +254,13 @@ def resolve_dam_priming(
     except (TypeError, ValueError):
         last_ts = ts
     age_sec = max(0.0, ts - last_ts)
-    strength = _decay_priming_strength(float(item.get("priming_strength", 0.0) or 0.0), age_sec)
+    
+    # ── Regulatory Genome ──
+    from System.swarm_regulatory_genome import load_regulatory_parameters
+    reg_params = load_regulatory_parameters(root)
+    hl = reg_params.get("microglia_priming_half_life_hours", 48.0) * 3600.0
+
+    strength = _decay_priming_strength(float(item.get("priming_strength", 0.0) or 0.0), age_sec, half_life_sec=hl)
     stored_stage = int(item.get("dam_stage", 0) or 0)
     if stored_stage >= 2 and strength >= 0.42:
         prev_stage = 2
@@ -744,6 +750,14 @@ def compute_two_signal_pressure(
             "Tononi&Cirelli2014Neuron"
         ),
     }
+    
+    # ── Regulatory Genome Receipt Augmentation ──
+    from System.swarm_regulatory_genome import load_regulatory_parameters, get_latest_genome_hash
+    reg_params = load_regulatory_parameters(root)
+    receipt["active_priming_half_life"] = reg_params.get("microglia_priming_half_life_hours", 48.0)
+    receipt["regulatory_genome_row_hash"] = get_latest_genome_hash(root)
+    
+    return receipt
 
 
 def evaluate_prune_candidate(
