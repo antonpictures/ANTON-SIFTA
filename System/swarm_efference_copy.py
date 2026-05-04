@@ -302,6 +302,142 @@ def compute_efference_copy(
     return row
 
 
+def efference_copy_path(root: Optional[Path] = None) -> Path:
+    """Backwards-compatible ledger path for older body-loop callers."""
+    return state_dir(root) / LOG_NAME
+
+
+def predict_action_effect(action: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Predict a compact action-effect signature for legacy corollary discharge.
+
+    The newer Event 143 path predicts low-dimensional tick features directly.
+    Older body-brain loops hand us an action/result pair, so this helper produces
+    the expected reafference template consumed by `compare_action_effect()`.
+    """
+    action = action or {}
+    action_type = str(action.get("type") or action.get("name") or "unknown")
+    target = str(action.get("target") or action.get("drive") or action.get("name") or "unknown")
+    try:
+        intensity = max(0.0, min(1.0, float(action.get("action_intensity", action.get("intensity", 0.5)) or 0.5)))
+    except (TypeError, ValueError):
+        intensity = 0.5
+    return {
+        "action_type": action_type,
+        "target": target,
+        "status": "completed",
+        "latency": round(0.1 + 0.4 * intensity, 4),
+        "energy_used": round(0.02 + 0.05 * intensity, 4),
+    }
+
+
+def _status_score(status: Any) -> float:
+    text = str(status or "").lower()
+    return 1.0 if text in {"ok", "completed", "success", "succeeded", "done"} else 0.0
+
+
+def _effect_vectors(
+    predicted: Dict[str, Any],
+    result: Dict[str, Any],
+    action: Dict[str, Any],
+) -> Tuple[List[float], List[float], Dict[str, Any]]:
+    result = result or {}
+    observed_action = result.get("action") if isinstance(result.get("action"), dict) else {}
+    expected_type = str(predicted.get("action_type") or "unknown")
+    observed_type = str(
+        observed_action.get("type")
+        or observed_action.get("name")
+        or result.get("action_type")
+        or action.get("type")
+        or "unknown"
+    )
+    action_match = 1.0 if observed_type == expected_type else 0.0
+    try:
+        latency = max(0.0, float(result.get("latency", predicted.get("latency", 0.5)) or 0.0))
+    except (TypeError, ValueError):
+        latency = 0.5
+    try:
+        energy = max(0.0, min(1.0, float(result.get("energy_used", predicted.get("energy_used", 0.05)) or 0.0)))
+    except (TypeError, ValueError):
+        energy = float(predicted.get("energy_used", 0.05) or 0.05)
+    status_score = _status_score(result.get("status", predicted.get("status")))
+
+    predicted_energy = max(0.0, min(1.0, float(predicted.get("energy_used", 0.05) or 0.05)))
+    predicted_latency = max(0.0, float(predicted.get("latency", 0.5) or 0.5))
+    predicted_vec = [
+        1.0,                                # expected completion
+        0.2,                                # low uncertainty if self-command succeeds
+        max(0.0, min(1.0, 1.0 - predicted_latency / 3.0)),
+        predicted_energy,
+        0.5,
+        0.7,
+    ]
+    observed_vec = [
+        status_score,
+        0.2 if action_match else 0.95,
+        max(0.0, min(1.0, 1.0 - latency / 3.0)),
+        energy,
+        0.5,
+        0.7 if status_score > 0.0 else 0.2,
+    ]
+    observed_effect = {
+        "action_type": observed_type,
+        "status": str(result.get("status", "unknown")),
+        "latency": round(latency, 4),
+        "energy_used": round(energy, 4),
+        "action_match": bool(action_match),
+    }
+    return predicted_vec, observed_vec, observed_effect
+
+
+def compare_action_effect(
+    action: Dict[str, Any],
+    result: Dict[str, Any],
+    *,
+    root: Optional[Path] = None,
+    tick_id: Optional[Any] = None,
+    write_ledger: bool = True,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Legacy Event 143 bridge: compare a motor command with its observed effect.
+
+    This keeps older `SwarmBodyBrainLoop.run_cycle()` paths from silently skipping
+    agency accounting while the newer tick path uses `compute_efference_copy()`
+    directly.
+    """
+    action = action or {}
+    predicted = predict_action_effect(action)
+    predicted_vec, observed_vec, observed = _effect_vectors(predicted, result or {}, action)
+    row = compute_efference_copy(
+        action_kind=str(predicted.get("action_type") or "unknown"),
+        action_payload={
+            "target": predicted.get("target"),
+            "tick_id": str(tick_id) if tick_id is not None else "",
+        },
+        root=root,
+        write_ledger=False,
+        now=now,
+        _predicted_features=predicted_vec,
+        _observed_features=observed_vec,
+    )
+    row.update({
+        "event_id": 143,
+        "action": predicted.get("action_type"),
+        "tick_id": tick_id,
+        "predicted_effect": predicted,
+        "observed_effect": observed,
+        "sensorimotor_pe": row.get("prediction_error", 0.0),
+    })
+    if write_ledger:
+        append_line_locked(
+            state_dir(root) / LOG_NAME,
+            json.dumps(row, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return row
+
+
 def get_latest_efference_row(*, root: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """Return the most recent EFFERENCE_COPY receipt."""
     path = state_dir(root) / LOG_NAME
@@ -342,8 +478,11 @@ def summary_for_prompt(*, root: Optional[Path] = None) -> str:
 
 
 __all__ = [
+    "compare_action_effect",
     "compute_efference_copy",
+    "efference_copy_path",
     "get_latest_efference_row",
+    "predict_action_effect",
     "summary_for_prompt",
     "_feature_vector",
     "_l2",
