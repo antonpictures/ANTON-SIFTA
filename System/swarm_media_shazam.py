@@ -69,7 +69,8 @@ _CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "Film & Animation": (
         "movie", "film", "scene", "clip", "trailer", "cinema", "actor",
         "actress", "director", "snatch", "john wick", "scarface", "batman",
-        "gangs of new york", "warner bros", "boxoffice", "binge society",
+        "gangs of new york", "goodfellas", "scorsese", "warner bros",
+        "boxoffice", "binge society",
     ),
     "Autos & Vehicles": ("car", "truck", "tesla", "engine", "vehicle", "driving", "motor"),
     "Music": ("music", "song", "album", "live performance", "lyrics", "concert", "remix"),
@@ -102,7 +103,7 @@ _CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 _SOURCE_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("movie_or_fiction_clip", "fiction/movie clip", ("movie", "film", "scene", "clip", "snatch", "john wick", "scarface", "trailer")),
+    ("movie_or_fiction_clip", "fiction/movie clip", ("movie", "film", "scene", "clip", "snatch", "goodfellas", "john wick", "scarface", "trailer")),
     ("news_network", "news network / politics", ("cnn", "fox news", "msnbc", "bbc", "reuters", "associated press", "cnbc", "bloomberg", "sky news", "al jazeera")),
     ("tech_interview", "technology interview / keynote", ("nvidia", "jensen", "gpu", "cuda", "tsmc", "supercomputer", "ai factory", "compute")),
     ("science_documentary", "science / philosophy documentary", ("parallel universe", "multiverse", "quantum", "physics", "experiment", "experiments", "consciousness", "perception", "cosmology")),
@@ -132,6 +133,7 @@ _SCENE_SOURCE_HINTS: dict[str, tuple[str, str]] = {
 
 _KNOWN_WORKS: tuple[tuple[str, str, str], ...] = (
     ("snatch", "Snatch", "Guy Ritchie"),
+    ("goodfellas", "Goodfellas", "Martin Scorsese"),
     ("john wick", "John Wick", "Chad Stahelski"),
     ("scarface", "Scarface", "Brian De Palma"),
     ("the dark knight", "The Dark Knight", "Christopher Nolan"),
@@ -153,7 +155,13 @@ _SELF_SHAZAM_CONTEXT_RE = re.compile(
     r"\bprimary_category:\s*[^\n]*|"
     r"\bmedia_guess\s*=[^|\n]*|"
     r"\bacoustic_scene\s*=\s*[^;|\n]*|"
-    r"\bsource\s*=\s*(?:gaming|movie|fiction|news|music|sports|podcast)[^;|\n]*"
+    r"\b(?:Science\s*&\s*Technology|Film\s*&\s*Animation|News\s*&\s*Politics|"
+    r"Autos\s*&\s*Vehicles|Pets\s*&\s*Animals|Travel\s*&\s*Events|"
+    r"People\s*&\s*Blogs|Howto\s*&\s*Style|Entertainment|Comedy|Gaming|Music|"
+    r"Sports|Education)\s+source\s*:\s*[^|.\n]*|"
+    r"\bsource\s*[:=]\s*(?:technology\s+interview\s*/\s*keynote|gaming|movie|"
+    r"fiction|news|music|sports|podcast)[^;|\n]*|"
+    r"\bSIFTA\s+Media\s+Shazam\b"
     r")",
     re.IGNORECASE,
 )
@@ -168,6 +176,23 @@ def _clean_self_referential_focus(text: str) -> str:
     creates a runaway loop where one wrong category becomes overwhelming proof.
     """
     return _SELF_SHAZAM_CONTEXT_RE.sub(" ", str(text or ""))
+
+
+def _contains_term(text: str, term: str) -> bool:
+    """Match category/source terms without substring bleed.
+
+    The old scorer used raw substring checks, so ``compute`` matched
+    ``computer speakers`` and helped mislabel a Goodfellas movie clip as
+    Science & Technology. Multi-word phrases still use substring matching;
+    single-token terms require token boundaries.
+    """
+    haystack = str(text or "").lower()
+    needle = str(term or "").lower().strip()
+    if not needle:
+        return False
+    if re.search(r"\s", needle):
+        return needle in haystack
+    return re.search(rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", haystack) is not None
 
 
 def youtube_categories(*, include_legacy: bool = True) -> list[dict[str, Any]]:
@@ -281,6 +306,12 @@ def _score_categories(blob: str, evidence: list[Mapping[str, Any]]) -> list[dict
     low = blob.lower()
     scores: Counter[str] = Counter()
     terms: dict[str, set[str]] = {c["name"]: set() for c in YOUTUBE_CATEGORIES}
+    known = _known_work(blob)
+    if known:
+        scores["Film & Animation"] += 8
+        scores["Entertainment"] += 2
+        terms["Film & Animation"].add(f"known_work:{known['source_work']}")
+        terms["Entertainment"].add("known_work:fiction_media")
     latest_scene_row = next(
         (
             row
@@ -321,7 +352,7 @@ def _score_categories(blob: str, evidence: list[Mapping[str, Any]]) -> list[dict
 
     for category, keywords in _CATEGORY_KEYWORDS.items():
         for kw in keywords:
-            if kw in low:
+            if _contains_term(low, kw):
                 bump = 2 if " " in kw else 1
                 scores[category] += bump
                 terms.setdefault(category, set()).add(kw)
@@ -349,7 +380,7 @@ def _source_guesses(blob: str) -> list[dict[str, Any]]:
     low = blob.lower()
     guesses: list[dict[str, Any]] = []
     for source_type, label, needles in _SOURCE_RULES:
-        hits = [n for n in needles if n in low]
+        hits = [n for n in needles if _contains_term(low, n)]
         if not hits:
             continue
         guesses.append(

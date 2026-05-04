@@ -128,6 +128,40 @@ def test_shazam_self_feedback_does_not_turn_science_video_into_gaming():
     assert guess["category_candidates"][0]["name"] != "Gaming"
 
 
+def test_goodfellas_self_feedback_does_not_turn_movie_into_science():
+    evidence = [
+        {
+            "source": "media_ingress_gate",
+            "focus_preview": (
+                "SIFTA Media Shazam Science & Technology "
+                "source: technology interview / keynote | acoustic: receipts: 71 rows | "
+                "title: Goodfellas - Don't Buy Anything - YouTube "
+                "Evidence terms: don't, buy, anything, goodfellas, dialogue, you, "
+                "sifta, empty, captions, fictional, selected, active, focus, unknown"
+            ),
+            "text_preview": (
+                "Goodfellas - Don't Buy Anything movie scene playing from the computer speakers"
+            ),
+        },
+        {
+            "source": "youtube_context_latest",
+            "title": "Goodfellas - Don't Buy Anything - YouTube",
+            "page_context": (
+                "movie scene playing from the computer speakers transcript Jimmy "
+                "what did I tell you don't buy anything"
+            ),
+        },
+    ]
+
+    guess = guess_media_identity(evidence, now=1000.0)
+
+    assert guess["primary_category"] == "Film & Animation"
+    assert guess["source_type"] == "movie_or_fiction_clip"
+    assert guess["source_work"] == "Goodfellas"
+    assert guess["director"] == "Martin Scorsese"
+    assert guess["category_candidates"][0]["name"] != "Science & Technology"
+
+
 def test_acoustic_scene_receipts_narrow_category_before_text_guess():
     evidence = [
         {

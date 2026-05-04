@@ -49,6 +49,13 @@ KNOWN_FICTION_WORKS: tuple[dict[str, str], ...] = (
         "content_category": "Film & Animation",
     },
     {
+        "match": "goodfellas",
+        "work_title": "Goodfellas",
+        "director": "Martin Scorsese",
+        "release_year": "1990",
+        "content_category": "Film & Animation",
+    },
+    {
         "match": "scarface",
         "work_title": "Scarface",
         "director": "Brian De Palma",
@@ -59,7 +66,7 @@ KNOWN_FICTION_WORKS: tuple[dict[str, str], ...] = (
 
 FICTION_TERMS = re.compile(
     r"\b(?:movie|film|scene|clip|deleted scene|cinema|character|gangster|villain|"
-    r"snatch|scarface|john wick|matrix|dark knight|inglourious basterds)\b",
+    r"snatch|goodfellas|scarface|john wick|matrix|dark knight|inglourious basterds)\b",
     re.IGNORECASE,
 )
 NONFICTION_TERMS = re.compile(
