@@ -1071,12 +1071,34 @@ class SwarmPhysiology:
                 _probe_threshold -= min(0.04, _valence * 0.04)
             _probe_threshold = min(0.85, max(0.15, _probe_threshold))
 
+            # Poll biological stress state (§10.14.28 integration)
+            _dam_stage = 0
+            _tme_phase = "EQUILIBRIUM"
+            try:
+                import json
+                _microglia_log = _STATE_DIR / "microglia_synaptic_prunes.jsonl"
+                if _microglia_log.exists():
+                    _lines = [l for l in _microglia_log.read_text(errors="replace").splitlines() if l.strip()]
+                    if _lines:
+                        _dam_stage = int(json.loads(_lines[-1]).get("dam_stage", 0))
+                
+                _tme_log = _STATE_DIR / "tumor_immune_stigmergic_lab.jsonl"
+                if _tme_log.exists():
+                    _lines = [l for l in _tme_log.read_text(errors="replace").splitlines() if l.strip()]
+                    if _lines:
+                        _tme_phase = str(json.loads(_lines[-1]).get("phase", "EQUILIBRIUM"))
+            except Exception:
+                pass
+
             _causal_probe_receipt = propose_and_execute_runtime_intervention(
                 tick_id=causal_probe_tick if causal_probe_tick is not None else str(mem_row.get("tick_id") or ""),
                 current_uncertainty=min(1.0, max(0.0, _uncertainty)),
                 current_clamp_level=str(_clamp_receipt.get("clamp_level", "NONE")),
                 root=_STATE_DIR,
                 uncertainty_threshold=_probe_threshold,
+                dam_stage=_dam_stage,
+                tme_phase=_tme_phase,
+                na_level=float(_lc_na_receipt.get("na_level", 0.5) or 0.5),
             )
             if _causal_probe_receipt:
                 logger.info(

@@ -136,6 +136,10 @@ class ActiveCausalProber:
         uncertainty_threshold: float = 0.35,
         organ: str = "active_causal_prober",
         duration_ticks: int = 3,
+        # Biological Stress Modulators (§10.14.28 integration)
+        dam_stage: int = 0,
+        tme_phase: str = "EQUILIBRIUM",
+        na_level: float = 0.5,
     ) -> Optional[Dict[str, Any]]:
         """
         Gate + execute a runtime causal intervention.
@@ -155,6 +159,28 @@ class ActiveCausalProber:
         # Safety gate — never probe under high-risk stability levels
         if stability_level in ("EMERGENCY", "BLOCK_NEW"):
             return None
+
+        # ── Biological Steering (§10.14.28) ──────────────────────────────────
+        if dam_stage == 2:
+            # Stage 2 (committed) microglia indicates severe brain inflammation and
+            # active debris clearance. The organism must prioritize stabilization,
+            # not active behavioral experimentation.
+            return None
+
+        # TME Escape triggers desperation: fast, high-variance probes
+        if tme_phase == "ESCAPE":
+            max_effect_size = min(0.35, max_effect_size * 2.0)
+            duration_ticks = 1   # extremely short fast probes
+            uncertainty_threshold = max(0.15, uncertainty_threshold - 0.15)
+        elif tme_phase == "ELIMINATION":
+            # Active immune clearance tolerates slightly more variance
+            max_effect_size = min(0.20, max_effect_size * 1.2)
+            uncertainty_threshold = max(0.25, uncertainty_threshold - 0.05)
+
+        # High arousal (NA > 0.8) drives high exploration
+        if na_level > 0.8:
+            max_effect_size = min(0.30, max_effect_size * 1.5)
+            uncertainty_threshold = max(0.20, uncertainty_threshold - 0.10)
 
         # Epistemic gate — only probe when genuinely uncertain
         if current_uncertainty < uncertainty_threshold:
@@ -199,6 +225,9 @@ class ActiveCausalProber:
                 "uncertainty_at_probe": round(current_uncertainty, 4),
                 "owner_switch":         False,
                 "metabolic_critical":   False,
+                "dam_stage":            dam_stage,
+                "tme_phase":            tme_phase,
+                "na_level":             round(na_level, 4),
             },
             organ=organ,
             truth_label="CAUSAL_PROBE_INTERVENTION",
@@ -406,6 +435,9 @@ def propose_and_execute_runtime_intervention(
     root: Optional[Path] = None,
     dry_run: Optional[bool] = None,
     uncertainty_threshold: float = 0.35,
+    dam_stage: int = 0,
+    tme_phase: str = "EQUILIBRIUM",
+    na_level: float = 0.5,
 ) -> Optional[Dict[str, Any]]:
     """Convenience wrapper matching the body-brain tick integration surface."""
     return ActiveCausalProber(root=root, dry_run=dry_run).propose_and_execute(
@@ -413,6 +445,9 @@ def propose_and_execute_runtime_intervention(
         current_uncertainty=current_uncertainty,
         stability_level=current_clamp_level,
         uncertainty_threshold=uncertainty_threshold,
+        dam_stage=dam_stage,
+        tme_phase=tme_phase,
+        na_level=na_level,
     )
 
 
