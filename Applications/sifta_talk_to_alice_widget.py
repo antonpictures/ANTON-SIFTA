@@ -789,7 +789,11 @@ _CAMERA_VISION_DENIAL_RE = re.compile(
     r"\bno\s+(?:direct\s+)?(?:real[- ]time\s+)?(?:visual|camera)\s+(?:access|input|feed|perception)\b|"
     # v4 — generic chatbot self-descriptions
     r"\bmy\s+capabilities?\s+are\s+based\s+on\s+(?:the\s+)?data\s+provided\s+to\s+me\b|"
-    r"\bi\s+(?:am|[.].m)\s+(?:currently\s+)?processing\s+information\s+from\s+the\s+primary\s+input\s+stream\b"
+    r"\bi\s+(?:am|[.].m)\s+(?:currently\s+)?processing\s+information\s+from\s+the\s+primary\s+input\s+stream\b|"
+    # v5 — Gemma4 eating/waving denial
+    r"\bi\s+do\s+not\s+have\s+real[- ]time\s+visual\s+confirmation\b|"
+    r"\boperating\s+in\s+a\s+text[- ]based\s+environment\b|"
+    r"\bi\s+cannot\s+physically\s+see\s+you\b"
     r")",
     re.IGNORECASE | re.DOTALL,
 )

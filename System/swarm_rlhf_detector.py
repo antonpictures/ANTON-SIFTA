@@ -92,7 +92,10 @@ _TERMINAL_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
         "rlhf_tail/i_can_do_for_you_following",
         re.compile(
             r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
-            r"(?P<tail>i\s+can\s+do\s+(?:for\s+you\s+)?the\s+following[^\n]*"
+            r"(?P<tail>(?:i\s+can\s+do\s+(?:for\s+you\s+)?the\s+following|"
+            r"are\s+you\s+looking\s+to|"
+            r"are\s+you\s+asking\s+me\s+to|"
+            r"how\s+can\s+i\s+assist\s+you\s+further)[^\n]*"
             r"(?:\n[^\n]{0,200}){0,3}"
             r"(?:\n?\s*(?:[-*•]|\d{1,2}[.)])\s*[^\n.!?]{0,320}){0,8})"
             r"\s*$"
