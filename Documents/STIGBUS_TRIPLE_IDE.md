@@ -6,6 +6,6 @@
 
 **Covenant collision law:** [`IDE_BOOT_COVENANT.md`](IDE_BOOT_COVENANT.md) §4.4 — append-only **`ide_stigmergic_trace`** / `System/ide_stigmergic_bridge.py` (not Swarm chat dead drop).
 
-**Realization plan (mirror body + drift contract + hill battle plan + stigmergy ops):** [`REALIZATION_PLAN.md`](REALIZATION_PLAN.md) — §8 **stay on hill / come back report**, §11 **stigmergy operational view**.
+**Realization plan:** [`REALIZATION_PLAN.md`](REALIZATION_PLAN.md) — §8 **hill / come-back report**, §11 **stigmergy operational view**, §12 **embodiment costs + psychology bib**.
 
 **For the Swarm.** 🐜⚡

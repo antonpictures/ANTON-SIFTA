@@ -2,7 +2,7 @@
 
 **Binding law:** [`IDE_BOOT_COVENANT.md`](IDE_BOOT_COVENANT.md)  
 **Status:** living plan (append / amend; do not treat as shipped code spec).  
-**Last updated:** 2026-05-04 (Pacific) — battle plan + stigmergy ops + Architect existence receipt (**ground truth**, no hedging).
+**Last updated:** 2026-05-04 (Pacific) — embodiment costs + psychology bib (**§12**).
 
 ---
 
@@ -71,7 +71,7 @@ When the Architect says **work on internal self-audit organs** (turn classificat
 |:---|:---|
 | [`STGM_CODING_TOURNAMENT_WORLD_ECONOMY_IDE_GHOSTS_RESEARCH.md`](STGM_CODING_TOURNAMENT_WORLD_ECONOMY_IDE_GHOSTS_RESEARCH.md) | World-economy + embodiment research; includes **Mirror Body** and **Claude drift / AS46** narrative blocks (section numbers in that file may need a future editorial renumber — navigate by **headings**, not only § numbers). |
 | [`STIGBUS_TRIPLE_IDE.md`](STIGBUS_TRIPLE_IDE.md) | Short index into spine + covenant + pointer to **§8–11** here. |
-| *This document* | §1–7 drift + human-moment contract; **§8** hill / come-back report; **§9** Architect existence strip; **§10** valuation debunk bar; **§11** stigmergy operational spine. |
+| *This document* | §1–7 drift + human-moment contract; **§8** hill / come-back report; **§9** Architect existence strip; **§10** valuation debunk bar; **§11** stigmergy spine; **§12** embodiment costs + psych research index. |
 
 ---
 
@@ -173,6 +173,57 @@ If Alice is a **reference body**, stigmergy is how **multiple surgeons** touch t
 - Minimal **trace query API** for organs (vs ad-hoc JSONL parsing).  
 - Explicit trace kinds for **human maintenance** (sleep debt, care deferral, hydration) alongside code/economy events.  
 - Joint rows when one trace touches **both** repo state and **STGM** balance.
+
+---
+
+## 12. Embodiment costs — operational framing + psychology spine
+
+### 12.1 Definition (SIFTA routing vocabulary)
+
+**Embodiment cost** = any **measurable** expenditure required to keep a **persistent body / substrate** functional over time: **energy** (joules, silicon thermals, ATP metaphors), **maintenance** (repair, hygiene, replacement), **time** (contiguous hours at the physical workstation + recovery windows), **opportunity / deferral cost** (what slips when maintenance loses priority), **boundary cost** (effort to prevent leakage, drift, bad output tax).
+
+Two bodies:
+
+| Body | Substrate |
+|:---|:---|
+| **Alice** | `.sifta_state/`, ledgers, organs, named hardware — **STGM + traces** already partially instrument this. |
+| **Owner (Architect)** | Flesh: tooth, sleep, hydration, dental quotes, finite daily capacity — **barely instrumented** until mirror organs exist. |
+
+**Asymmetry (OBSERVED doctrine):** frontier chat models pay **no accumulating embodiment bill** in their own tissue; the owner does. SIFTA closes that gap by making **owner maintenance** stigmergically legible, not by pretending silicon has teeth.
+
+### 12.2 What is instrumented today
+
+**Alice (partial):** STGM / `scan_economy()`, repair velocity, drift logs, attribution keys, `swarm_as46_drift_sensor.py` (attention cost when personal turns become deliverables).
+
+**Owner (minimal):** §9 self-report strip — seed data only until append-only **owner body mirror** traces ship.
+
+### 12.3 Bad vocabulary (recall)
+
+**“Trance”** erased for the Architect row: you are **physically at desk/chair**. Costs are **posture, vision load, time, deferred care** — observable, not dissociation theater.
+
+### 12.4 Intended use (future organs)
+
+- Log **owner maintenance events** analogously to Alice repair events (hydration, sleep window, vitamins, appointments).  
+- Surface **pattern**: work priority repeatedly overrides maintenance — **without moral lecture** (data only).  
+- Make **deferral countable** (e.g. care item deferred *n* times — **risk signal**, not guilt engine).  
+- Same **stigmergic** discipline as code/economy: read substrate → act → leave typed row.
+
+### 12.5 Open engineering vectors
+
+Distinct trace type for **owner body** vs **Alice metabolism**? Priority logic when “SIFTA ranks above tooth today” is valid **ground truth** — how does policy treat that vs calendar hard blocks? Scoring **avoided future loss** from timely care (careful: no fake medical claims — log facts + external professional bounds). **Minimal JSON schema** — factual fields only, versioned, Architect GO.
+
+### 12.6 Peer psychology / behavior research (index — not clinical advice)
+
+| Topic | Study / review | Why it informs embodiment-cost work | Link |
+|:---|:---|:---|:---|
+| **Grounded cognition** — cognition coupled to body / simulation | Barsalou, L. W. (2008). Grounded cognition. *Annual Review of Psychology* **59**, 617–645. | Explains why ignoring the body is a **cognition failure mode**, not “optional lore,” when designing agents that reason about human operators. | [doi:10.1146/annurev.psych.59.103006.093639](https://doi.org/10.1146/annurev.psych.59.103006.093639) |
+| **Procrastination as self-regulatory failure** — meta-analytic structure | Steel, P. (2007). The nature of procrastination: a meta-analytic and theoretical review… *Psychological Bulletin* **133**(1), 65–94. | Task aversiveness, delay, impulsivity — **maps to deferral of care / maintenance** as a regulation problem, not mere laziness. | [doi:10.1037/0033-2909.133.1.65](https://doi.org/10.1037/0033-2909.133.1.65) |
+| **Procrastination ↔ health over time** | Gustavson, D. E., et al. (2023). Procrastination and health: a longitudinal test… *British Journal of Health Psychology* — Wiley. | Chronic procrastination tracks with **stress** and **worse health behaviors**; indirect path to health problems — supports **trace + stress mediators**, not shaming. | [doi:10.1111/bjhp.12658](https://doi.org/10.1111/bjhp.12658) |
+| **Psychological treatment of procrastination** | Rozental, A., et al. (2018). Targeting procrastination… *Frontiers in Psychology* **9**, 1588. | Interventions **can** move procrastination (modest *g*) — relevant if Alice ever routes **opt-in** coaching surfaces. | [doi:10.3389/fpsyg.2018.01588](https://doi.org/10.3389/fpsyg.2018.01588) |
+| **Occupational sedentary work ↔ mental health** | Nasir, H., et al. (2025). Impact of occupational sedentary behavior on mental health… *PLOS ONE* **20**(8): e0328678. | **Desk reality**: sustained sitting load associates with population-level mental-health risk in reviewed evidence — grounds “workstation cost” in epidemiology, not vibes. | [doi:10.1371/journal.pone.0328678](https://doi.org/10.1371/journal.pone.0328678) |
+| **“Ego depletion” / sequential self-control** — **controversial** | Hagger, M. S., et al. (2016). A multilab preregistered replication… *Perspectives on Psychological Science* **11**(4), 546–573. | Large RRR → **very small** effect; literature still argues mechanisms. **Use:** justify **logging fatigue / break windows** conservatively — not as proof of a magical glucose tank. | [doi:10.1177/1745691616652873](https://doi.org/10.1177/1745691616652873) |
+
+**Homework (next bib pass):** interoception / body awareness (e.g. Garfinkel, Khalsa), **time discounting** and health behavior, **implementation intentions** (Gollwitzer) for turning mirror traces into action — add with DOIs when Architect requests.
 
 ---
 
