@@ -5,10 +5,13 @@ from System.swarm_microglia_synaptic_pruner import (
     MicrogliaSynapticPruner,
     batch_evaluate,
     compute_two_signal_pressure,
+    dam_priming_state_path,
     evaluate_prune_candidate,
     microglia_sleep_window_receipt,
     prune_log_path,
+    resolve_dam_priming,
     summary_for_prompt,
+    update_dam_priming,
 )
 
 
@@ -208,6 +211,112 @@ def test_evaluate_prune_candidate_records_two_signal_receipt(tmp_path):
     ):
         assert key in row
     assert row["prune_recommended"] is True
+
+
+def test_dam_priming_resolves_empty_state(tmp_path):
+    priming = resolve_dam_priming("memory:new", root=tmp_path, now=1000.0)
+
+    assert priming["prev_dam_stage"] == 0
+    assert priming["priming_strength"] == 0.0
+    assert priming["priming_source"] == "none"
+
+
+def test_dam_priming_stage2_persists_then_decays(tmp_path, monkeypatch):
+    monkeypatch.setenv("MICROGLIA_DAM_PRIMING_HALF_LIFE_SEC", "10")
+
+    update = update_dam_priming(
+        "memory:damaged",
+        dam_stage=2,
+        base_pathology=0.8,
+        root=tmp_path,
+        now=0.0,
+    )
+    fresh = resolve_dam_priming("memory:damaged", root=tmp_path, now=0.0)
+    one_half_life = resolve_dam_priming("memory:damaged", root=tmp_path, now=10.0)
+    three_half_lives = resolve_dam_priming("memory:damaged", root=tmp_path, now=30.0)
+
+    assert update["priming_strength"] == 1.0
+    assert fresh["prev_dam_stage"] == 2
+    assert one_half_life["priming_strength"] == pytest.approx(0.5)
+    assert one_half_life["prev_dam_stage"] == 2
+    assert three_half_lives["priming_strength"] == pytest.approx(0.125)
+    assert three_half_lives["prev_dam_stage"] == 0
+
+
+def test_evaluate_prune_candidate_uses_persistent_dam_priming(tmp_path):
+    evaluate_prune_candidate(
+        "memory:persistent_pathology",
+        age_hours=12.0,
+        usage_count=0,
+        recent_regret=0.9,
+        wm_contradiction_pe=0.9,
+        root=tmp_path,
+        now=1000.0,
+    )
+
+    row = evaluate_prune_candidate(
+        "memory:persistent_pathology",
+        usage_count=4,
+        recent_reward_mean=0.0,
+        recent_regret=0.0,
+        wm_contradiction_pe=0.65,
+        root=tmp_path,
+        now=1001.0,
+    )
+
+    assert row["dam_priming"]["source"] == "persistent"
+    assert row["dam_priming"]["prev_stage"] == 2
+    assert row["dam_stage"] == 2
+    assert row["base_pathology"] < 0.58
+
+
+def test_explicit_prev_dam_stage_overrides_persistent_priming(tmp_path):
+    evaluate_prune_candidate(
+        "memory:override_pathology",
+        age_hours=12.0,
+        usage_count=0,
+        recent_regret=0.9,
+        wm_contradiction_pe=0.9,
+        root=tmp_path,
+        now=2000.0,
+    )
+
+    row = evaluate_prune_candidate(
+        "memory:override_pathology",
+        usage_count=4,
+        recent_reward_mean=0.0,
+        wm_contradiction_pe=0.65,
+        prev_dam_stage=0,
+        root=tmp_path,
+        now=2001.0,
+    )
+
+    assert row["dam_priming"]["source"] == "explicit"
+    assert row["dam_priming"]["prev_stage"] == 0
+    assert row["dam_stage"] == 1
+
+
+def test_pruner_receipts_include_dam_priming_update(tmp_path):
+    p = MicrogliaSynapticPruner(root=tmp_path)
+    receipts = p.prune(
+        [{
+            "key": "memory:receipt_pathology",
+            "usage_count": 0,
+            "age_hours": 120,
+            "recent_reward_mean": -0.8,
+            "recent_regret": 0.8,
+            "wm_contradiction_pe": 0.9,
+            "unsafe": True,
+        }],
+        ledger_type="replay",
+        stability_ok=True,
+    )
+
+    assert receipts
+    receipt = receipts[0]
+    assert receipt["dam_priming"]["update"]["updated"] is True
+    assert receipt["dam_priming"]["update"]["target_key"] == "memory:receipt_pathology"
+    assert dam_priming_state_path(tmp_path).exists()
 
 
 def test_cd33_like_protection_blocks_stale_low_usage(tmp_path):

@@ -33,13 +33,14 @@ Thresholds:
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from System.jsonl_file_lock import append_line_locked, read_text_locked
+from System.jsonl_file_lock import append_line_locked, read_text_locked, rewrite_text_locked
 from System.swarm_persistent_owner_history import state_dir
 
 _DISABLE_ENV = "SIFTA_MICROGLIA_DISABLE"
@@ -48,6 +49,7 @@ _SLEEP_WINDOW_ENV = "MICROGLIA_SLEEP_WINDOW"
 MAX_PRUNES_PER_CYCLE = 10
 EVENT_LOG_NAME = "microglia_synaptic_prunes.jsonl"
 LEGACY_CLASS_LOG_NAME = "microglia_prune.jsonl"
+DAM_PRIMING_STATE_NAME = "microglia_dam_priming_state.json"
 
 PruneAction = Literal["keep", "depress", "delete"]
 
@@ -177,6 +179,143 @@ def prune_log_path(root: Optional[Path] = None) -> Path:
 
 def _legacy_class_log_path(root: Optional[Path] = None) -> Path:
     return state_dir(root) / LEGACY_CLASS_LOG_NAME
+
+
+def dam_priming_state_path(root: Optional[Path] = None) -> Path:
+    return state_dir(root) / DAM_PRIMING_STATE_NAME
+
+
+def _dam_target_key(target: Any) -> str:
+    text = str(target or "unknown").strip() or "unknown"
+    return text[:240]
+
+
+def _load_dam_priming_state(root: Optional[Path] = None) -> Dict[str, Any]:
+    path = dam_priming_state_path(root)
+    try:
+        raw = read_text_locked(path, encoding="utf-8", errors="replace")
+        if not raw.strip():
+            return {}
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_dam_priming_state(state: Dict[str, Any], root: Optional[Path] = None) -> None:
+    rewrite_text_locked(
+        dam_priming_state_path(root),
+        json.dumps(state, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _decay_priming_strength(
+    strength: float,
+    elapsed_sec: float,
+    *,
+    half_life_sec: Optional[float] = None,
+) -> float:
+    half_life = half_life_sec or _env_float("MICROGLIA_DAM_PRIMING_HALF_LIFE_SEC", 21600.0)
+    if half_life <= 0:
+        return 0.0
+    elapsed = max(0.0, float(elapsed_sec))
+    return round(_clamp01(float(strength)) * math.pow(0.5, elapsed / half_life), 6)
+
+
+def resolve_dam_priming(
+    target: Any,
+    *,
+    root: Optional[Path] = None,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Read persistent DAM priming memory for one target and decay it by elapsed time.
+
+    Stage 2 persists only while decayed strength remains above the hysteresis
+    release zone; stage 1 persists with a lower floor. This makes `prev_dam_stage`
+    a real memory instead of a caller-supplied hint.
+    """
+    ts = float(now if now is not None else time.time())
+    key = _dam_target_key(target)
+    store = _load_dam_priming_state(root)
+    item = store.get(key) if isinstance(store.get(key), dict) else {}
+    if not item:
+        return {
+            "target_key": key,
+            "prev_dam_stage": 0,
+            "priming_strength": 0.0,
+            "priming_age_sec": None,
+            "priming_source": "none",
+        }
+    raw_last_ts = item.get("updated_ts")
+    try:
+        last_ts = float(raw_last_ts) if raw_last_ts is not None else ts
+    except (TypeError, ValueError):
+        last_ts = ts
+    age_sec = max(0.0, ts - last_ts)
+    strength = _decay_priming_strength(float(item.get("priming_strength", 0.0) or 0.0), age_sec)
+    stored_stage = int(item.get("dam_stage", 0) or 0)
+    if stored_stage >= 2 and strength >= 0.42:
+        prev_stage = 2
+    elif stored_stage >= 1 and strength >= 0.18:
+        prev_stage = 1
+    else:
+        prev_stage = 0
+    return {
+        "target_key": key,
+        "prev_dam_stage": prev_stage,
+        "priming_strength": round(strength, 6),
+        "priming_age_sec": round(age_sec, 4),
+        "priming_source": "persistent",
+    }
+
+
+def update_dam_priming(
+    target: Any,
+    *,
+    dam_stage: int,
+    base_pathology: float,
+    root: Optional[Path] = None,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Persist one target's DAM priming trace with decay.
+
+    Stage 2 writes full priming. Stage 1 writes a medium trace. Stage 0 decays
+    any previous trace instead of deleting immediately, mirroring slow resolution.
+    """
+    ts = float(now if now is not None else time.time())
+    key = _dam_target_key(target)
+    prev = resolve_dam_priming(key, root=root, now=ts)
+    decayed = float(prev.get("priming_strength", 0.0) or 0.0)
+    stage = max(0, min(2, int(dam_stage or 0)))
+    if stage == 2:
+        strength = 1.0
+    elif stage == 1:
+        strength = max(0.55, decayed * 0.85)
+    else:
+        strength = decayed * 0.50
+
+    store = _load_dam_priming_state(root)
+    if strength < 0.05 and stage == 0:
+        store.pop(key, None)
+    else:
+        store[key] = {
+            "target_key": key,
+            "dam_stage": stage,
+            "base_pathology": round(_clamp01(base_pathology), 4),
+            "priming_strength": round(_clamp01(strength), 6),
+            "updated_ts": ts,
+        }
+    _write_dam_priming_state(store, root)
+    return {
+        "target_key": key,
+        "dam_stage": stage,
+        "base_pathology": round(_clamp01(base_pathology), 4),
+        "priming_strength": round(_clamp01(strength), 6),
+        "updated": True,
+    }
 
 
 STAGE1_THRESHOLD = 0.32
@@ -633,7 +772,7 @@ def evaluate_prune_candidate(
     stability_dwell_score: float = 0.0,
     goal_alignment: float = 0.5,
     owner_frustration: float = 0.0,
-    prev_dam_stage: int = 0,
+    prev_dam_stage: Optional[int] = None,
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
@@ -656,6 +795,14 @@ def evaluate_prune_candidate(
 
     conservatism = max(_clamp01(tom_pruning_conservatism), _clamp01(pruning_conservatism))
     sleep_state = microglia_sleep_window_receipt(now=now)
+    now_ts = float(now if now is not None else time.time())
+    priming = resolve_dam_priming(target, root=root, now=now_ts)
+    if prev_dam_stage is None:
+        effective_prev_stage = int(priming.get("prev_dam_stage", 0) or 0)
+        priming_source = str(priming.get("priming_source", "persistent"))
+    else:
+        effective_prev_stage = int(prev_dam_stage or 0)
+        priming_source = "explicit"
     two_signal = compute_two_signal_pressure(
         age_hours=age_hours,
         usage_count=usage_count,
@@ -679,10 +826,19 @@ def evaluate_prune_candidate(
         stability_dwell_score=stability_dwell_score,
         goal_alignment=goal_alignment,
         owner_frustration=owner_frustration,
-        prev_dam_stage=prev_dam_stage,
+        prev_dam_stage=effective_prev_stage,
         sleep_window=sleep_state,
-        now=now,
+        now=now_ts,
     )
+    priming_update: Dict[str, Any] = {}
+    if write_ledger:
+        priming_update = update_dam_priming(
+            target,
+            dam_stage=int(two_signal.get("dam_stage", 0) or 0),
+            base_pathology=float(two_signal.get("base_pathology", 0.0) or 0.0),
+            root=root,
+            now=now_ts,
+        )
 
     stale_hours = _env_float("MICROGLIA_STALE_HOURS", 72.0)
     low_reward_mean = _env_float("MICROGLIA_LOW_REWARD_MEAN", -0.1)
@@ -740,7 +896,7 @@ def evaluate_prune_candidate(
 
     execute = bool(prune_recommended and _execute_enabled())
     row: Dict[str, Any] = {
-        "ts": now or time.time(),
+        "ts": now_ts,
         "trace_id": str(uuid.uuid4()),
         "truth_label": "MICROGLIA_PRUNE",
         "kind": "MICROGLIA_PRUNE",
@@ -768,6 +924,13 @@ def evaluate_prune_candidate(
         "executed": execute,
         "execute_mode": "receipt_only" if execute else "dry_run",
         "two_signal_model": "TREM2_CD33",
+        "dam_priming": {
+            "source": priming_source,
+            "prev_stage": effective_prev_stage,
+            "strength": priming.get("priming_strength", 0.0),
+            "age_sec": priming.get("priming_age_sec"),
+            "update": priming_update,
+        },
         "provenance": (
             "Stevens2007_Cell; Schafer2012_Neuron; Hong2016_Science; "
             "Jonsson2013_NEJM_TREM2; Griciuc2013_Nature_CD33; Tononi_Cirelli2014_SHY"
@@ -941,7 +1104,7 @@ class MicrogliaSynapticPruner:
         stability_dwell_score: float = 0.0,
         goal_alignment: float = 0.5,
         owner_frustration: float = 0.0,
-        prev_dam_stage: int = 0,
+        prev_dam_stage: Optional[int] = None,
         sleep_window: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, float | bool | str]:
         return compute_two_signal_pressure(
@@ -1036,7 +1199,7 @@ class MicrogliaSynapticPruner:
         stability_dwell_score: float = 0.0,
         goal_alignment: float = 0.5,
         owner_frustration: float = 0.0,
-        prev_dam_stage: int = 0,
+        prev_dam_stage: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         if _disabled():
             return []
@@ -1063,6 +1226,15 @@ class MicrogliaSynapticPruner:
                 or ledger_type == "owner"
                 or entry.get("invariant", False)
             )
+            target_key = entry.get("key", entry.get("kind", "unknown"))
+            entry_now = time.time()
+            priming = resolve_dam_priming(target_key, root=self.root, now=entry_now)
+            if prev_dam_stage is None:
+                effective_prev_stage = int(priming.get("prev_dam_stage", 0) or 0)
+                priming_source = str(priming.get("priming_source", "persistent"))
+            else:
+                effective_prev_stage = int(prev_dam_stage or 0)
+                priming_source = "explicit"
             score, dominant = self.score_entry(entry)
             two_signal = self.two_signal_entry(
                 entry,
@@ -1077,7 +1249,7 @@ class MicrogliaSynapticPruner:
                 stability_dwell_score=stability_dwell_score,
                 goal_alignment=goal_alignment,
                 owner_frustration=owner_frustration,
-                prev_dam_stage=prev_dam_stage,
+                prev_dam_stage=effective_prev_stage,
                 sleep_window=sleep_state,
             )
             action = self.decide_action(score, is_safety)
@@ -1096,11 +1268,19 @@ class MicrogliaSynapticPruner:
             if action == "keep":
                 continue
 
+            priming_update = update_dam_priming(
+                target_key,
+                dam_stage=int(two_signal.get("dam_stage", 0) or 0),
+                base_pathology=float(two_signal.get("base_pathology", 0.0) or 0.0),
+                root=self.root,
+                now=entry_now,
+            )
+
             receipt: Dict[str, Any] = {
-                "ts": time.time(),
+                "ts": entry_now,
                 "kind": "MICROGLIA_PRUNE",
                 "ledger_type": ledger_type,
-                "target_key": entry.get("key", entry.get("kind", "unknown")),
+                "target_key": target_key,
                 "prune_score": round(score, 4),
                 "dominant_criterion": dominant,
                 "age_hours": entry.get("age_hours", 0.0),
@@ -1114,6 +1294,13 @@ class MicrogliaSynapticPruner:
                 "max_prunes_override_applied": max_prunes_override,
                 "tail_lines_read": tail_lines_read,
                 "two_signal_model": "TREM2_CD33",
+                "dam_priming": {
+                    "source": priming_source,
+                    "prev_stage": effective_prev_stage,
+                    "strength": priming.get("priming_strength", 0.0),
+                    "age_sec": priming.get("priming_age_sec"),
+                    "update": priming_update,
+                },
                 "pruning_conservatism": round(conservatism, 4),
                 "tom_pruning_conservatism": round(conservatism, 4),
                 "clamp_level": str(clamp_level),
@@ -1135,11 +1322,14 @@ __all__ = [
     "MicrogliaSynapticPruner",
     "batch_evaluate",
     "compute_two_signal_pressure",
+    "dam_priming_state_path",
     "evaluate_prune_candidate",
     "microglia_sleep_window_receipt",
     "prune_log_path",
+    "resolve_dam_priming",
     "summary_for_prompt",
     "tail_prune_rows",
+    "update_dam_priming",
     "_compute_damage_score",
     "_compute_inhibition_signal",
 ]

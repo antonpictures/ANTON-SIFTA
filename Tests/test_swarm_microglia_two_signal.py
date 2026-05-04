@@ -764,9 +764,9 @@ def test_hysteresis_stage1_resolves_below_release():
 def test_no_hysteresis_from_stage0():
     """From Stage 0 base, standard thresholds apply (no history bias)."""
     from System.swarm_microglia_synaptic_pruner import _compute_dam_stage
-    # base=0.25 from Stage 0 -> Stage 1 (normal entry)
+    # base=0.40 >= STAGE1_THRESHOLD (0.32) -> Stage 1 from Stage 0
     stage = _compute_dam_stage(
-        0.25, age_hours=0.0, recent_regret=0.0, wm_contradiction_pe=0.0,
+        0.40, age_hours=0.0, recent_regret=0.0, wm_contradiction_pe=0.0,
         prev_dam_stage=0,
     )
     assert stage == 1
