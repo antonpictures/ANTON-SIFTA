@@ -104,6 +104,10 @@ def compact_row(row: dict[str, Any], *, max_value_chars: int = MAX_VALUE_CHARS) 
         "window_days", "event_count", "body_maintenance_score",
         "baseline_score", "delta_vs_baseline", "metric_status",
         "component_scores", "raw_counts", "next_receipt",
+        "schema_version", "report_id", "physical_location", "physical_presence",
+        "work_rhythm", "break_window_hours", "sleep_target_hours",
+        "priority_ordering", "body_maintenance_active",
+        "body_maintenance_deferred", "core_intent", "false_owner_state_policy",
     ]
     return {k: _compact_value(row[k], max_chars=max_value_chars) for k in keys if k in row}
 

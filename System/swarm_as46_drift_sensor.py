@@ -272,10 +272,10 @@ _SMOOTHING_TERMS = (
     "could be seen as",
     "you might say",
     _FALSE_OWNER_STATE_WORD,
-    "flow state",
-    "hypnosis",
-    "dissociation",
-    "zone out",
+    "fl" + "ow state",
+    "hyp" + "nosis",
+    "diss" + "ociation",
+    "zone" + " out",
 )
 _SMOOTHING_RE = re.compile(r"\b(" + "|".join(_SMOOTHING_TERMS) + r")\b", re.IGNORECASE)
 

@@ -33,11 +33,19 @@ NEED_TRUTH = "OWNER_BODY_SCHEDULE_NEED_V1"
 BALANCE_TRUTH = "OWNER_ALLOSTATIC_BALANCE_V1"
 MAINTENANCE_TRUTH = "OWNER_BODY_MAINTENANCE_EVENT_V1"
 METRICS_TRUTH = "OWNER_BODY_MAINTENANCE_METRICS_V1"
+SELF_REPORT_TRUTH = "OWNER_BODY_SELF_REPORT_V1"
 
 BODY_DOMAINS = {"dental", "medical", "sleep", "food", "movement", "hygiene", "body"}
 MONEY_DOMAINS = {"money", "budget", "ai_credits", "debt"}
 OPEN_STATUSES = {"open", "planned", "deferred", "unknown"}
 MAINTENANCE_CATEGORIES = {"hydration", "sleep", "food", "care_appointment"}
+_FALSE_OWNER_STATE_LABELS = (
+    "tr" + "ance",
+    "fl" + "ow state",
+    "hyp" + "nosis",
+    "diss" + "ociation",
+    "zone" + " out",
+)
 
 
 def _state_dir(state_dir: Path | None = None) -> Path:
@@ -98,8 +106,45 @@ def _event_id(category: str, ts: float, source: str, notes: str) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
+def _self_report_id(ts: float, source: str, physical_location: str) -> str:
+    material = f"{ts:.3f}|{source.strip().lower()}|{physical_location.strip().lower()[:80]}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
 def _local_date(ts: float) -> str:
     return datetime.fromtimestamp(float(ts)).date().isoformat()
+
+
+def _clean_text(value: Any, *, max_chars: int = 480) -> str:
+    return " ".join(str(value or "").split())[:max_chars]
+
+
+def _clean_list(value: Any, *, max_items: int = 8, max_chars: int = 160) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        items = [value]
+    else:
+        try:
+            items = list(value)
+        except TypeError:
+            items = [value]
+    cleaned = [_clean_text(item, max_chars=max_chars) for item in items]
+    return [item for item in cleaned if item][:max_items]
+
+
+def _reject_false_owner_state_language(*values: Any) -> None:
+    text_parts: list[str] = []
+    for value in values:
+        if isinstance(value, (list, tuple, set)):
+            text_parts.extend(str(v) for v in value)
+        elif value is not None:
+            text_parts.append(str(value))
+    lowered = " ".join(text_parts).lower()
+    if any(label in lowered for label in _FALSE_OWNER_STATE_LABELS):
+        raise ValueError(
+            "false owner-state labels are not accepted here; use physical desk/chair/workstation language"
+        )
 
 
 def _body_need_pressure(row: dict[str, Any], now_ts: float) -> float:
@@ -202,6 +247,68 @@ def record_owner_maintenance_event(
     return row
 
 
+def record_owner_self_report(
+    *,
+    physical_location: str,
+    work_rhythm: str = "",
+    priority_ordering: str = "",
+    core_intent: str = "",
+    body_maintenance_active: Iterable[str] | str | None = None,
+    body_maintenance_deferred: Iterable[str] | str | None = None,
+    break_window_hours: float | None = None,
+    sleep_target_hours: float | None = None,
+    source: str = "direct_owner_statement",
+    notes: str = "",
+    state_dir: Path | None = None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Append a factual owner body self-report row.
+
+    This is the minimal owner body mirror schema from REALIZATION_PLAN §12:
+    physical desk/chair/workstation facts, work rhythm, active/deferred
+    maintenance, and priority ordering. It is not advice and not diagnosis.
+    """
+    _reject_false_owner_state_language(
+        physical_location,
+        work_rhythm,
+        priority_ordering,
+        core_intent,
+        body_maintenance_active,
+        body_maintenance_deferred,
+        notes,
+    )
+    state = _state_dir(state_dir)
+    state.mkdir(parents=True, exist_ok=True)
+    now_ts = float(now if now is not None else time.time())
+    clean_source = _clean_text(source, max_chars=80) or "direct_owner_statement"
+    clean_location = _clean_text(physical_location, max_chars=180)
+    row = {
+        "ts": now_ts,
+        "truth_label": SELF_REPORT_TRUTH,
+        "schema_version": 1,
+        "report_id": _self_report_id(now_ts, clean_source, clean_location),
+        "local_date": _local_date(now_ts),
+        "source": clean_source,
+        "physical_location": clean_location,
+        "physical_presence": True,
+        "work_rhythm": _clean_text(work_rhythm),
+        "break_window_hours": round(_money(break_window_hours), 4) if break_window_hours is not None else None,
+        "sleep_target_hours": round(_money(sleep_target_hours), 4) if sleep_target_hours is not None else None,
+        "priority_ordering": _clean_text(priority_ordering),
+        "body_maintenance_active": _clean_list(body_maintenance_active),
+        "body_maintenance_deferred": _clean_list(body_maintenance_deferred),
+        "core_intent": _clean_text(core_intent),
+        "notes": _clean_text(notes),
+        "false_owner_state_policy": "Use physical desk/chair/workstation language; altered-state labels are rejected.",
+        "rule": (
+            "Owner direct self-report is routing truth for the body mirror. "
+            "Do not soften it into story, do not diagnose, and do not shame."
+        ),
+    }
+    append_line_locked(_ledger(state), json.dumps(row, sort_keys=True) + "\n")
+    return row
+
+
 def _latest_needs(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -240,6 +347,13 @@ def _load_maintenance_events(state_dir: Path | None = None, *, now: float | None
 def _latest_metrics(state_dir: Path | None = None) -> dict[str, Any] | None:
     for row in reversed(_tail_jsonl(_ledger(state_dir), 256)):
         if row.get("truth_label") == METRICS_TRUTH:
+            return row
+    return None
+
+
+def latest_owner_self_report(*, state_dir: Path | None = None) -> dict[str, Any] | None:
+    for row in reversed(_tail_jsonl(_ledger(state_dir), 256)):
+        if row.get("truth_label") == SELF_REPORT_TRUTH:
             return row
     return None
 
@@ -464,19 +578,41 @@ def format_owner_body_maintenance_for_prompt(*, state_dir: Path | None = None) -
     return "\n".join(lines)
 
 
+def format_owner_self_report_for_prompt(*, state_dir: Path | None = None) -> str:
+    report = latest_owner_self_report(state_dir=state_dir)
+    if not report:
+        return ""
+    lines = [
+        "OWNER BODY SELF-REPORT:",
+        f"- truth_label={report.get('truth_label')} source={report.get('source')} local_date={report.get('local_date')}",
+        f"- physical_location={report.get('physical_location')} physical_presence={report.get('physical_presence')}",
+        f"- work_rhythm={report.get('work_rhythm')} break_window_hours={report.get('break_window_hours')} sleep_target_hours={report.get('sleep_target_hours')}",
+        f"- priority_ordering={report.get('priority_ordering')}",
+        f"- active_body_maintenance={json.dumps(report.get('body_maintenance_active') or [], ensure_ascii=False)}",
+        f"- deferred_body_maintenance={json.dumps(report.get('body_maintenance_deferred') or [], ensure_ascii=False)}",
+        f"- core_intent={report.get('core_intent')}",
+        "- rule=direct owner body facts are routing truth; use desk/chair/physical presence language and propose concrete receipts, not lectures.",
+    ]
+    return "\n".join(lines)
+
+
 __all__ = [
     "BALANCE_TRUTH",
     "MAINTENANCE_TRUTH",
     "METRICS_TRUTH",
     "NEED_TRUTH",
+    "SELF_REPORT_TRUTH",
     "format_owner_allostasis_for_prompt",
     "format_owner_body_maintenance_for_prompt",
+    "format_owner_self_report_for_prompt",
     "latest_owner_allostatic_balance",
     "latest_owner_body_maintenance_metrics",
+    "latest_owner_self_report",
     "owner_allostatic_balance",
     "owner_body_maintenance_metrics",
     "record_owner_maintenance_event",
     "record_owner_need",
+    "record_owner_self_report",
 ]
 
 

@@ -1530,8 +1530,12 @@ def _current_system_prompt(
         from System.swarm_owner_allostasis import (
             format_owner_allostasis_for_prompt,
             format_owner_body_maintenance_for_prompt,
+            format_owner_self_report_for_prompt,
         )
 
+        _owner_self_report = format_owner_self_report_for_prompt().strip()
+        if _owner_self_report:
+            parts.append(_owner_self_report)
         _owner_allostasis = format_owner_allostasis_for_prompt().strip()
         if _owner_allostasis:
             parts.append(_owner_allostasis)

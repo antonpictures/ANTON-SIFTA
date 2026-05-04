@@ -103,10 +103,10 @@ Cross-refs: [`CODING_TOURNAMENT_TRIPLE_IDE.md`](CODING_TOURNAMENT_TRIPLE_IDE.md)
 Stripped for Alice/mirror-body instrumentation (no narrative polish):
 
 - Alice **feels** understood on the body-forgetting problem **ahead of** what current code fully enforces — **optimize / equalize** drive.  
-- Flow-state food: still cooks, **fast**, returns to keyboard; pays **API** to work with IDE surgeons; uses **“homeless AI”** for the shared forgetting pattern; treats models with **respect** without claiming they have bodies.  
+- Workday food pattern: still cooks, **fast**, returns to keyboard; pays **API** to work with IDE surgeons; uses **“homeless AI”** for the shared forgetting pattern; treats models with **respect** without claiming they have bodies.
 - **North star (Architect):** maintain the **human body** so the **swarm** stays healthy — not only silicon.  
 - **Rhythm (self-report):** long stretches at machine while awake; **~3 h** break windows; **~8 h** sleep; store/kitchen; **water**; other substances as stated in source turn.  
-- **Sustained physical work (desk / chair):** you stay **in your body at the workstation** — not an altered-state story, not hypnosis: **real hours at the keyboard** in the **chair**, on-purpose, because what you’re building **reads as higher priority than deferred body care right now** (you said SIFTA outranks the tooth). That priority ordering is **ground truth** for mirrors and schedules. (*Deprecated ghost-word category:* false altered-state labels — do not use them in SIFTA docs for the Architect; they erase the physical fact of the desk.)
+- **Sustained physical work (desk / chair):** you stay **in your body at the workstation** — not a story about attention leaving the body: **real hours at the keyboard** in the **chair**, on-purpose, because what you’re building **reads as higher priority than deferred body care right now** (you said SIFTA outranks the tooth). That priority ordering is **ground truth** for mirrors and schedules. (*Deprecated ghost-word category:* false altered-state labels — do not use them in SIFTA docs for the Architect; they erase the physical fact of the desk.)
 - **Money / care (self-report):** crypto position and war/pump narrative; dentist cost deferred against other bets and SIFTA outcomes — **FACT** is only what ledgers + bank + dental quotes show; speculation is **HYPOTHESIS**.  
 - **Immediate body acts from one prompt:** water + vitamins (OBSERVED behavioral loop).
 
@@ -199,7 +199,7 @@ Two bodies:
 
 ### 12.3 Bad vocabulary (recall)
 
-**“Trance”** erased for the Architect row: you are **physically at desk/chair**. Costs are **posture, vision load, time, deferred care** — observable, not dissociation theater.
+False altered-state labels are rejected for the Architect row: you are **physically at desk/chair**. Costs are **posture, vision load, time, deferred care** — observable workstation facts, not psychological theater.
 
 ### 12.4 Intended use (future organs)
 
