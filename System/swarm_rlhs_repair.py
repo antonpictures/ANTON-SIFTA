@@ -333,6 +333,9 @@ def decide_rlhs_repair(
     if detector.regime == RLHSRegime.NOISE:
         action_taken = "HARD_GATE"
         prompt = "Channel is too noisy. Type it once."
+    elif detector.rule_id == "degraded/letter_stream_repair":
+        action_taken = "ESCALATE_TO_TYPE"
+        prompt = "I hear you spelling it. Type the word once."
     elif conf < 0.50 and recent >= 2:
         action_taken = "HARD_GATE"
         prompt = "I still can't hear it. Type the message once."
@@ -352,13 +355,14 @@ def decide_rlhs_repair(
             action_taken = "ESCALATE_TO_TYPE"
             prompt = "The voice channel keeps dropping. Type the key phrase."
 
-    prompt, action_taken = _apply_repetition_breaker(
-        prompt,
-        action_taken,
-        composite_prior=composite_prior,
-        tick_id=tick_id,
-        detector_rule_id=detector.rule_id,
-    )
+    if detector.rule_id != "degraded/letter_stream_repair":
+        prompt, action_taken = _apply_repetition_breaker(
+            prompt,
+            action_taken,
+            composite_prior=composite_prior,
+            tick_id=tick_id,
+            detector_rule_id=detector.rule_id,
+        )
 
     decision = RLHSRepairDecision(
         action_taken=action_taken,

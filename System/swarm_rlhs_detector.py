@@ -173,6 +173,7 @@ _BACKCHANNEL_RE = re.compile(
 )
 
 _WAKE_WORD_RE = re.compile(r"\b(?:alice|george|architect)\b", re.IGNORECASE)
+_LETTER_STREAM_TOKEN_RE = re.compile(r"(?<![A-Za-z])[A-Za-z](?![A-Za-z])")
 
 _ARCHITECT_SELF_MARKER_RE = re.compile(
     r"\b(?:"
@@ -321,6 +322,27 @@ def _has_owner_repair_or_affect_signal(text: str) -> bool:
     """
 
     return _OWNER_REPAIR_OR_AFFECT_RE.search(text or "") is not None
+
+
+def _looks_like_letter_stream_repair(text: str, stt_conf: float) -> bool:
+    """Detect spelling-ladder repair turns without hardcoding any target word.
+
+    When a human starts spelling through a noisy channel, short single-letter
+    streams such as "L I F E" or "L-I-F-E" are not reliable semantic content
+    for the model. Treat them as a channel-repair event unless confidence is
+    very high.
+    """
+
+    if float(stt_conf or 0.0) >= 0.78:
+        return False
+    letters = _LETTER_STREAM_TOKEN_RE.findall(text or "")
+    if len(letters) < 3:
+        return False
+    tokens = re.findall(r"[A-Za-z0-9']+", text or "")
+    if not tokens:
+        return False
+    single_letters = sum(1 for token in tokens if len(token) == 1 and token.isalpha())
+    return single_letters / max(1, len(tokens)) >= 0.45
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -594,6 +616,17 @@ def detect_rlhs(
     # when Whisper confidence lands in the 0.45-0.60 band. Without this narrow
     # bypass Alice loops on the same RLHS prompt while the owner is clearly
     # repairing the channel.
+    if lane == "REAL" and _looks_like_letter_stream_repair(text, conf):
+        return RLHSResult(
+            regime=RLHSRegime.DEGRADED,
+            stt_conf=conf,
+            text_tokens=n_tokens,
+            incoherence=max(inc, 0.5),
+            rule_id="degraded/letter_stream_repair",
+            grounding_line=_GROUNDING_LINE,
+            channel_lane=lane,
+        )
+
     if (
         lane == "REAL"
         and not has_wake_word

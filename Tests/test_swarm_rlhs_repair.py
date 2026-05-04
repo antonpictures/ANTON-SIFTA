@@ -203,3 +203,21 @@ def test_typed_turn_resets_repetition_tier(tmp_path):
     assert d.action_taken == "GRADUATED_PROMPT"
     assert "type" in d.prompt_issued.lower()
     assert "voice channel" not in d.prompt_issued.lower()
+
+
+def test_letter_stream_repair_escalates_to_type_without_keyword_hardcode(tmp_path):
+    d = decide_rlhs_repair(
+        "I said L I F E not ice",
+        0.61,
+        recent_low_conf_turns=1,
+        conservative_strength=0.0,
+        proto_self_alignment=1.0,
+        root=tmp_path,
+        tick_id=33,
+    )
+
+    assert d.action_taken == "ESCALATE_TO_TYPE"
+    assert "spelling" in d.prompt_issued.lower()
+    assert "type" in d.prompt_issued.lower()
+    assert "life" not in d.prompt_issued.lower()
+    assert tail_rlhs_events(root=tmp_path)[-1]["detector_rule_id"] == "degraded/letter_stream_repair"

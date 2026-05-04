@@ -202,6 +202,7 @@ except Exception:
     _SSP_AVAILABLE = False
 
 # ── Constants ────────────────────────────────────────────────────────────────
+_STATE_DIR = _REPO / ".sifta_state"
 _CONVO_LOG = _REPO / ".sifta_state" / "alice_conversation.jsonl"
 _CONVO_LOG.parent.mkdir(parents=True, exist_ok=True)
 

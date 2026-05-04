@@ -133,6 +133,14 @@ def test_real_lane_promotes_mid_conf_owner_repair_statement():
     assert r.grounding_line == ""
 
 
+def test_real_lane_letter_stream_repair_is_degraded_not_content():
+    """Spelling through a noisy channel should not feed letter soup to the model."""
+    r = detect_rlhs("I said L I F E not ice", 0.61, channel_lane="REAL")
+    assert r.regime == RLHSRegime.DEGRADED
+    assert r.rule_id == "degraded/letter_stream_repair"
+    assert r.grounding_line != ""
+
+
 def test_real_lane_direct_promotion_keeps_confidence_floor():
     """Very low-confidence direct-looking text still does not route to the LLM."""
     # No fuzzy/regex wake tokens — directed shape alone is not enough below REAL promote conf.
