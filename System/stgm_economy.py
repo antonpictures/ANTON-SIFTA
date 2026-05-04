@@ -247,6 +247,14 @@ def scan_economy(
         tx_type = str(row.get("tx_type") or "")
         event_kind = str(row.get("event_kind") or "")
 
+        # ── DEVELOPMENT LAYER BOUNDARY ──────────────
+        # IDE ghosts (tools paid in fiat) do not hold STGM or deduct from swarm metabolism
+        _any_agent = str(row.get("agent_id") or row.get("miner_id") or row.get("agent") or row.get("sender_id") or row.get("borrower_id") or "").upper()
+        if _any_agent in {"AG31", "ANTIGRAVITY", "M5SIFTA_BODY", "ANTIGRAVITY_CREATOR_NODE", "CURSOR_M5", "CLI", "IDE_CLI", "CODEX"}:
+            if tx_type in {"STGM_SPEND", "STGM_MINT"}:
+                continue
+
+
         if event in {"MINING_REWARD", "FOUNDATION_GRANT"}:
             amt = _float(row.get("amount_stgm"))
             out.canonical_minted += amt
@@ -351,10 +359,23 @@ def scan_economy(
         out.memory_reward_lines += 1
         out.memory_reward_amount += _float(row.get("amount"))
 
-    for aid in canonical_agent_ids:
+    # ── WALLET BLINDSPOT FIX ──────────────
+    # Combine agents with explicit wallet files AND anyone with a ledger balance.
+    all_agents = set(canonical_agent_ids) | set(balances.keys())
+
+    for aid in all_agents:
         key = aid.upper()
+        if key in {"AG31", "ANTIGRAVITY", "M5SIFTA_BODY", "ANTIGRAVITY_CREATOR_NODE", "CURSOR_M5", "CLI", "IDE_CLI", "CODEX", ""}:
+            continue
+            
         bal = balances.get(key, 0.0)
         out.canonical_wallet_sum += bal
+        
+        # Track blindspots
+        if key not in canonical_agent_ids and bal > 0:
+            if "wallet_blindspot_ledger_fallback_used" not in out.warnings:
+                out.warnings.append("wallet_blindspot_ledger_fallback_used")
+                
         out.canonical_wallet_balances[key] = round(max(0.0, bal), 4)
 
     if out.memory_reward_amount:
