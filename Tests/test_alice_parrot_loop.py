@@ -28,12 +28,29 @@ def test_backchannel_gate_silences_phatic_grunts():
 
 def test_rlhs_repair_line_escalates_then_quiet_listens():
     mod = _load_widget_module()
-    base = "That came through noisy — one word or type it?"
+    base = "Audio confidence is low. Please repeat or type the key phrase."
 
     assert mod._rlhs_repair_line_for_streak(base, 1) == base
-    assert mod._rlhs_repair_line_for_streak(base, 2) == "Still noisy - say the key phrase slowly."
+    assert (
+        mod._rlhs_repair_line_for_streak(base, 2)
+        == "Audio is still unclear. Type it once or say the key phrase slowly."
+    )
     assert mod._rlhs_repair_line_for_streak(base, 3) == ""
     assert mod._rlhs_repair_line_for_streak(base, 9) == ""
+
+
+def test_rlhs_repair_line_does_not_emit_retired_noisy_phrases():
+    mod = _load_widget_module()
+    base = "Audio confidence is low. Please repeat or type the key phrase."
+    combined = " ".join(
+        [
+            mod._rlhs_repair_line_for_streak(base, 1),
+            mod._rlhs_repair_line_for_streak(base, 2),
+        ]
+    )
+
+    assert "That came through noisy" not in combined
+    assert "Still noisy" not in combined
 
 
 def test_rlhf_gag_is_disabled():

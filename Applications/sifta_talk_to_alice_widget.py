@@ -2477,7 +2477,7 @@ def _rlhs_repair_line_for_streak(base_line: str, streak: int) -> str:
     if streak <= 1:
         return base_line
     if streak == 2:
-        return "Still noisy - say the key phrase slowly."
+        return "Audio is still unclear. Type it once or say the key phrase slowly."
     return ""
 
 
@@ -5405,7 +5405,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 state_dir=_STATE_DIR
             )
             is_new_tiered_logic = True
-        except Exception:
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._append_system_line(f"[RLHS EXCEPTION] {e}", error=True)
             # Fallback to old rigid logic if imports fail
             _rlhs_ground = _rlhs_grounding_line(text, conf)
             _repair_line = _rlhs_repair_line_for_streak(_rlhs_ground, _streak + 1) if _rlhs_ground else None

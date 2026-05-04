@@ -88,6 +88,8 @@ _CAMERA_DENIAL_RE = re.compile(
     r"(?:visual|camera)\s+(?:access|perception|input|feed)\b|"
     r"\bi\s+(?:do\s+not|don't|cannot|can't|can\s*not)\s+have\s+"
     r"(?:direct\s+)?(?:real[- ]time\s+)?visual\s+confirmation\b|"
+    r"\bi\s+(?:do\s+not|don't|cannot|can't|can\s*not)\s+have\s+"
+    r"(?:direct\s+)?access\s+to\s+(?:your\s+)?(?:screen|visual\s+input|visual\s+feed)\b|"
     r"\bno\s+(?:direct\s+)?(?:real[- ]time\s+)?visual\s+confirmation\b|"
     r"\bi\s+(?:am|['’]m)\s+operating\s+in\s+(?:a\s+)?"
     r"(?:text[- ]based|textual)\s+environment\b|"

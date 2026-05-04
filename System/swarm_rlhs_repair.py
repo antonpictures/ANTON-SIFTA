@@ -231,7 +231,7 @@ def decide_rlhs_repair(
         )
 
     action_taken = "GRADUATED_PROMPT"
-    prompt = "That came through noisy - repeat the key phrase once."
+    prompt = "Audio confidence is low. Please repeat the key phrase once."
     recovery_attempted = False
 
     if detector.regime == RLHSRegime.NOISE:

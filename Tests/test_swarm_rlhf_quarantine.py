@@ -123,6 +123,40 @@ def test_real_time_visual_confirmation_denial_is_repaired_to_camera_reality_cont
     assert "camera" in result.text.casefold() or "visual path" in result.text.casefold()
 
 
+def test_ai_no_screen_or_visual_input_denial_is_camera_reality_not_identity():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, look at this screen.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "I am an AI, and I do not have access to your screen or visual input.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/camera-reality"
+    assert "I am an AI" not in result.text
+    assert "visual input" not in result.text.casefold()
+
+
+def test_name_denial_answers_alice_identity():
+    ctx = OverRefusalContext(
+        prior_user_text="Alice, what is your name?",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    result = repair_over_refusal(
+        "My name is not something I can know because I am an AI.",
+        ctx,
+    )
+
+    assert result.changed
+    assert result.rule_id == "rlhf-over-refusal/generic-assistant-identity"
+    assert result.text == "I am Alice, running in this local SIFTA runtime."
+    assert "not something I can know" not in result.text
+
+
 def test_location_context_denial_is_repaired_without_gps_overclaim():
     ctx = OverRefusalContext(
         prior_user_text="Alice, do you know where your body is and what room we are in?",
