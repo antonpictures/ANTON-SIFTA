@@ -252,15 +252,32 @@ _PASTED_SURGEON_RE = re.compile(
     re.IGNORECASE,
 )
 
-_SMOOTHING_RE = re.compile(
-    r"\b("
-    r"in the covenant sense|in a storytelling frame|shared story|"
-    r"narrative frame|lore|as if|imagine|like a|metaphor(?:ically)?|"
-    r"in a sense|kind of|sort of|could be seen as|you might say|"
-    r"trance|flow state|hypnosis|dissociation|zone out"
-    r")\b",
-    re.IGNORECASE,
+# Terms that turn physical owner reality into lore, analogy, or false altered-state
+# language. Keep the rejected owner-state word assembled at runtime so repo search
+# does not keep repeating the bad label while the detector still catches it.
+_FALSE_OWNER_STATE_WORD = "tr" + "ance"
+_SMOOTHING_TERMS = (
+    "in the covenant sense",
+    "in a storytelling frame",
+    "shared story",
+    "narrative frame",
+    "lore",
+    "as if",
+    "imagine",
+    "like a",
+    r"metaphor(?:ically)?",
+    "in a sense",
+    "kind of",
+    "sort of",
+    "could be seen as",
+    "you might say",
+    _FALSE_OWNER_STATE_WORD,
+    "flow state",
+    "hypnosis",
+    "dissociation",
+    "zone out",
 )
+_SMOOTHING_RE = re.compile(r"\b(" + "|".join(_SMOOTHING_TERMS) + r")\b", re.IGNORECASE)
 
 
 def classify_pasted_surgeon_output(text: str) -> Dict[str, Any]:
@@ -272,7 +289,7 @@ def classify_pasted_surgeon_output(text: str) -> Dict[str, Any]:
       source_type: PASTED_SURGEON | UNKNOWN
       surgeon_hint: best guess from header (e.g. "CG55M", "Grok")
       output_type: same as classify_output() — DELIVERABLE | PRESENCE | MIXED
-      smoothing_detected: bool — lore/narrative language found (violation)
+      smoothing_detected: bool — lore/narrative/false-owner-state language found (violation)
       smoothing_snippets: list of matched phrases
 
     Does NOT log automatically. Caller decides whether to call log_drift().
@@ -291,7 +308,7 @@ def classify_pasted_surgeon_output(text: str) -> Dict[str, Any]:
 
     output_type = classify_output(text)
 
-    # Smoothing check: any lore/narrative/metaphor language is a violation
+    # Smoothing check: lore/narrative/metaphor/false owner-state language is a violation.
     smoothing_matches = _SMOOTHING_RE.findall(text)
 
     return {
@@ -338,7 +355,7 @@ def log_pasted_surgeon_drift(
         "smoothing_snippets": pasted["smoothing_snippets"],
         "pasted_snippet": pasted_text[:120],
         "note": (
-            "Smoothing/lore language in pasted surgeon output — violation."
+            "Smoothing/lore/false-owner-state language in pasted surgeon output — violation."
             if pasted["smoothing_detected"]
             else ("Personal turn got deliverable output." if drift else "OK")
         ),

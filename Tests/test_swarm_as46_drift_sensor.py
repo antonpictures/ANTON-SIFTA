@@ -1,5 +1,6 @@
 from System.swarm_as46_drift_sensor import (
     classify_output,
+    classify_pasted_surgeon_output,
     classify_turn,
     detect_drift,
     detect_pasted_external_output,
@@ -68,3 +69,14 @@ def test_basic_classifiers_still_match_existing_surface():
     assert classify_turn("I am scared and tired") == "PERSONAL"
     assert classify_output("You're right. I hear you.") == "PRESENCE"
     assert classify_output("```python\nprint(1)\n```") == "DELIVERABLE"
+
+
+def test_false_owner_state_word_is_detected_without_literal_repo_label():
+    bad_owner_state_word = "tr" + "ance"
+    row = classify_pasted_surgeon_output(
+        f"CG55M@cursor says this is a {bad_owner_state_word} priority."
+    )
+
+    assert row["source_type"] == "PASTED_SURGEON"
+    assert row["smoothing_detected"] is True
+    assert bad_owner_state_word in row["smoothing_snippets"]
