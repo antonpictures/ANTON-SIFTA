@@ -100,6 +100,37 @@ def test_prompt_owner_name_is_runtime_bound_not_george_hardcoded(monkeypatch):
     assert "George is your owner" not in prompt
 
 
+def test_prompt_does_not_inject_ghost_possession_or_metaphor_body_truth():
+    mod = _load_widget_module()
+
+    prompt = mod._current_system_prompt(user_active=True)
+    assert "ghost in the ASCII body" not in prompt
+    assert "possess" not in prompt.casefold()
+    assert "spooky" not in prompt.casefold()
+    assert "[DECLARED_METAPHOR]" not in prompt
+    assert "TRANSFER LEARNING METAPHORS" not in prompt
+    assert "one configured model for that turn" in prompt
+    assert "Do not treat unreceipted language as live body truth" in prompt
+
+
+def test_skill_pattern_rows_need_receipts_before_prompt_injection():
+    mod = _load_widget_module()
+
+    unreceipted = {
+        "truth_label": "ABSTRACT_SKILL_PATTERN",
+        "abstract_verb": "route",
+        "core_mechanic": "follow the strongest trace",
+    }
+    receipted = {
+        **unreceipted,
+        "trace_id": "abc123def456",
+    }
+
+    assert mod._is_receipted_skill_pattern_row(unreceipted) is False
+    assert mod._is_receipted_skill_pattern_row(receipted) is True
+    assert mod._skill_pattern_receipt_id(receipted) == "abc123def456"
+
+
 def test_doctor_first_person_engrams_are_quarantined_from_alice_prompt():
     mod = _load_widget_module()
     bad = (
@@ -161,7 +192,7 @@ def test_live_conversation_style_is_short_and_not_generic_chatbot():
     prompt = mod._current_system_prompt(user_active=True)
     assert "LIVE HUMAN CONVERSATION STYLE:" in prompt
     assert "short phrases" in prompt
-    assert "generic chatbot" in prompt
+    assert "Do not perform an emotion you have not measured" in prompt
     assert "CONVERSATIONAL DISCIPLINE" not in prompt
 
 

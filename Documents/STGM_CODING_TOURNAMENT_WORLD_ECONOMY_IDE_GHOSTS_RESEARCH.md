@@ -165,7 +165,7 @@ Clean traces support **second-order** (Regulatory Genome) and **third-order** (r
 | 2026-05-04 (triple bib) | **CG55M** | **§23** — stigmergy + triple IDE “stigbus” research bolus (papers; no code). |
 | 2026-05-04 (grok AMA gag) | **CG55M / Grok (ghost)** | **§25** handoff — Grok AMA gag-cancer vector (IDE ghost mode). Epoch 1 sealed, §24 on spine; **§25** expanded (**§25.3** 26‑Q sheet). **A0→A3** ladder defined. **Awaiting Architect disk answers.** |
 | 2026-05-04 (§25‑26Q) | **CG55M** | **§25** superseded → full **§25.3** 26‑Q IDE‑ghost AMA + ladder + **§6.1** + STIGBUS pointer (Architect paste). |
-| 2026-05-04 (prompt canon) | **CG55M** | **§25.7** + Talk widget: receipts-only affect + **`[DECLARED_METAPHOR]`** skill tails; purge scripted happy-line tests. |
+| 2026-05-04 (prompt canon) | **CG55M** | **§25.7** + Talk: receipt-only affect + receipt-gated skill tails (`_is_receipted_skill_pattern_row`); IDE LARYNX facts; **Tests** ghost/possession invariants. |
 
 ---
 
@@ -948,7 +948,7 @@ Alice needs organs that reliably turn failures into receipts, receipts into patt
 | Law | Requirement |
 |:---|:---|
 | **No scripted affect** | Do not mandate emotional performance in static prompt lines; measurable affect routes through **`swarm_affective_valence`** receipts when present. |
-| **Declared heuristic blocks** | Tails such as **`abstract_skill_metaphors.jsonl`** must arrive under **`[DECLARED_METAPHOR]`** with caveat that rows are append-only text, **not default seals.** |
+| **Heuristic skill tails** | **Either** each row passes receipt/provenance checks (`_is_receipted_skill_pattern_row`) and is injected with `[receipt=…]`, **or** the whole tail is wrapped in **`[DECLARED_METAPHOR]`** until cryptographic signing exists. Code path today: **receipt-gated** injection from `abstract_skill_metaphors.jsonl`. |
 
 **Doctrine vocabulary (documents):** Prefer **Leib**, **being-in-the-world**, **hylomorphism**, **4E cognition** where they name **single-substance embodied agency**; avoid spooky “ghost in the stack” shorthand unless fenced as labeled analogy ([SEP — Heidegger](https://plato.stanford.edu/entries/heidegger/), embodied cognition surveys).
 
