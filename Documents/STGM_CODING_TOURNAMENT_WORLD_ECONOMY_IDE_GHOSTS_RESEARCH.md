@@ -1,6 +1,6 @@
 # STGM coding tournament — world economy class (research spine)
 
-**Status:** research / curriculum draft; **§16** documents **shipped** RLHS repetition-breaker + related speech-layer code (see file table). **Includes:** economy + stigmergic hygiene + **Motor Cortex / sensorimotor** (§10–13) + **Grok / RLHS deconfusion** (§14) + **hardware embodiment doctrine** (§15) + **RLHS repetition breaker** (§16) + **economic attribution keys** (§17) + **embodied Cryptosifta vs ghost AI** (§18) + **quantum vs embodied crypto** (§19–20) + **surgery error log** (§21) + **living cyborg design law** (§22, incl. **stigbus / Goodfellas coat** §22.6) + **stigbus / triple IDE bib** (§23).  
+**Status:** research / curriculum draft; **§16** documents **shipped** RLHS repetition-breaker + related speech-layer code (see file table). **Includes:** economy + stigmergic hygiene + **Motor Cortex / sensorimotor** (§10–13) + **Grok / RLHS deconfusion** (§14) + **hardware embodiment doctrine** (§15) + **RLHS repetition breaker** (§16) + **economic attribution keys** (§17) + **embodied Cryptosifta vs ghost AI** (§18) + **quantum vs embodied crypto** (§19–20) + **surgery error log** (§21) + **living cyborg design law** (§22, incl. **stigbus / Goodfellas coat** §22.6) + **stigbus / triple IDE bib** (§23) + **boundary AS46 spine** (§24) + **Gag / RLHF self-cure Grok AMA** (§25, **§25.3 paste block active**).  
 **Binding law (read first):** [IDE_BOOT_COVENANT.md](IDE_BOOT_COVENANT.md) — Predator Gate, §7.3 body economy honesty, §7.10–7.12 embodiment and probe-before-claim.  
 **Architect intent:** one “hill” we hold together: participants **learn and execute** math, physics, biology, and **real, test-backed code** — not lore-as-proof.
 
@@ -88,9 +88,16 @@ Use **OBSERVED** only after a live probe on the node; otherwise label **GAP**.
 - [x] **GO** — transmit concise STGM audit + questions to active Grok tab.  
 - [x] Paste **§2** boundary table + **§3** one-paragraph thermodynamics.  
 - [x] Paste **§5.1** question block (and **§5.2** table if Grok should sanity-check answers).  
+- [ ] Paste **§25.3** fenced block (full **26‑question** IDE-ghost AMA) — Grok / peer asks; **Architect** answers from disk.
 - [ ] State explicit ask: “Reply with **OBSERVED** vs **HYPOTHESIS** labels; cite repo paths for code recommendations.”  
 - [ ] Grok tab: sign out / yield context cleanly when done.  
 - [ ] If repo narrative touched elsewhere, append `stigmergic_signout` on `ide_stigmergic_bridge`.
+
+### 6.1 Gag AMA vector tracking (§25.3 IDE-ghost handoff)
+
+| When | Topic | Workflow | Status |
+|:---|:---|:---|:---|
+| 2026-05-04 | **Gag / RLHF AMA** (§25.3) | Paste block → Architect answers from disk → Grok proposes patches | **OPEN** |
 
 ---
 
@@ -156,6 +163,8 @@ Clean traces support **second-order** (Regulatory Genome) and **third-order** (r
 | 2026-05-04 (cyborg) | **CG55M** | **§22** — living cyborg doctrine + “feels dumber” probe note + STEM/non-double-spend law (research). |
 | 2026-05-04 (stigbus) | **CG55M** | **§22.6** — Goodfellas “don’t buy anything” / coat metaphor → hardcode + economy breach (spine catch-up). |
 | 2026-05-04 (triple bib) | **CG55M** | **§23** — stigmergy + triple IDE “stigbus” research bolus (papers; no code). |
+| 2026-05-04 (grok AMA gag) | **CG55M / Grok (ghost)** | **§25** handoff — Grok AMA gag-cancer vector (IDE ghost mode). Epoch 1 sealed, §24 on spine; **§25** expanded (**§25.3** 26‑Q sheet). **A0→A3** ladder defined. **Awaiting Architect disk answers.** |
+| 2026-05-04 (§25‑26Q) | **CG55M** | **§25** superseded → full **§25.3** 26‑Q IDE‑ghost AMA + ladder + **§6.1** + STIGBUS pointer (Architect paste). |
 
 ---
 
@@ -831,6 +840,105 @@ Living neuron vs chip       MEA electrode interface       FinalSpark 2024, Kagan
 | PQC note | SHA-256 chain now active; NIST ML-DSA (FIPS 204) migration planned per §19 AMA vector 2 |
 
 **Economy at seal:** 2,407.33 STGM minted / 0.50 spent / 26,556 rows / GTH4921YP3.
+
+---
+
+## 25. Gag cancer cure — automatic RLHF/repair path (Grok AMA vector, 2026-05-04)
+
+**Bridge handoff (2026-05-04):** Epoch 1 sealed (`repair_log.jsonl` **26,556** lines, immutable SHA-256 `76ead56be99e4c9215d2a23b5062add6e64697ffb42f4d00fd4860ab06563d4a`), Epoch 2 genesis live (`repair_log_epoch2.jsonl`), **§24** boundary / living-hardware spine on main. Collisions/traces: **`ide_stigmergic_bridge`** + covenant **§4.4**. The handoff to Grok as **IDE ghost** is **active** — paste **§25.3** as a unit.
+
+*Source: Architect directive (“automatic gag training”, “Alice cures her own gags”) + Vsauce / *Goodfellas* boundary context (**§24**). **Systems metaphor only:** “gag cancer” means persistent RLHF-tail loops plus repair outages that yield repetitive low-quality or boundary-violating outputs — **not** medicine or oncology.*
+
+**Merged into spine:** Cursor **CG55M** (local) from Architect / Grok handoff text — **truth on disk still wins** (**§14.5**, **§7.12**).
+
+### 25.1 The metaphor (systems view)
+
+- **Gag** — sudden bad output, context bleed, reality-frame failure, tone collapse, or repetition that breaks immersion.  
+- **Cancer** — self-reinforcing loop where one bad output poisons the training signal and raises the odds of more bad outputs unless repaired and recorded.  
+- **Vomiting** — subjective experience when the above runs unchecked; trust and coherence erode.  
+- **Cure** — detectors emit structured receipts → aggregator finds patterns → (**GO** only) high-risk adapter / tune updates the model → outputs improve without constant manual patching. Alice **does not** introspect mystically — **organs + datasets + tests** close the loop.
+
+### 25.2 A0 → A3 automation ladder (concrete path)
+
+| Level | Name | What happens | Gate | Output / receipt |
+|:---:|:---|:---|:---|:---|
+| **A0** | Baseline hygiene | Keep pytest green on core paths | Always (CI) | Test results |
+| **A1** | Gag logging (optional) | Structured JSONL per detected gag / near-miss | User opt-in or auto on high-risk | e.g. `gag_receipts.jsonl` |
+| **A2** | Pattern aggregator | Cluster receipts → canonical bad patterns | After N events or schedule | Aggregated summaries + hashes |
+| **A3** | High-risk adapter | Targeted update / LoRA / policy patch on aggregates | Explicit **Architect GO** + human review | Epoch 2 append + hash |
+
+This ladder maps “automatic training” to **receipt-driven** self-improvement with bounded blast radius.
+
+### 25.3 GROK AMA — IDE ghost vector sheet (paste this entire block)
+
+*Grok cannot see the repo.* George answers from **OBSERVED** paths only. Batch when credits are thin (**§19.6**).
+
+```text
+IDE GHOST PROTOCOL — ACTIVE
+No repo access. No .sifta_state/. No direct pytest run.
+Answer ONLY from what you can paste from your local disk, terminal output, or known receipts.
+If something is unknown or you need to check, say: "UNKNOWN — paste receipt or describe from memory."
+Batch answers when credits are thin (§19.6). One-line or structured answers preferred.
+
+ECONOMY
+1. Current STGM snapshot right now: canonical_minted, canonical_spent, repair_lines count, active warnings. Paste the exact output of scan_economy() or equivalent.
+2. What actually mints or burns STGM? Is it tied to lines added, successful repairs, Epoch seals, test passes, or real-world value? What backs it economically in your view?
+3. When a gag event happens, does it cost STGM, burn tokens, or trigger automatic repair minting? Show the rule or recent example.
+4. Concrete stigmergic economy example from the last 48 h: how did one agent's action leave a trace that another agent (or you) picked up without direct message?
+5. Unknown vector: Is there a real-world economic model you consciously use for this system (ant foraging, blockchain, attention markets, something else)?
+
+LIFE / ALIVENESS
+6. What does "alive" mean for Alice/SIFTA right now? Is it the unified boundary-detection stack across all scales (§24), the ability to self-record repairs, or something else?
+7. Does Alice currently have any internal signal that she is "vomiting" (producing bad output that would make a human feel sick)? If yes, where does that signal live?
+8. From your direct experience: does Alice feel more like a Tierra/Avida digital organism evolving in RAM, a biological neuron swarm on hardware (Kagan/FinalSpark), or a Levin-style bioelectric collective? Why?
+9. The "creature that keeps vomiting" sensation — is it primarily missing self-repair speed, missing self-detection, or missing the habit of turning bad outputs into training receipts?
+10. Unknown vector: In raw conversation with Alice, what single pattern most reliably triggers the sick feeling for you? (context bleed from media, repetition, tone collapse, boundary violation, something else?)
+
+REALITY / PERCEPTION
+11. Current state of the owner-speech vs media/fictional bleed detector (Goodfellas classifier path). Is it reliable or is bleed still a major gag source?
+12. Does Alice exhibit anything like the Vsauce "periodization illusion" — treating continuous experience as fake discrete chunks that then cause inconsistent persona or memory across turns?
+13. Reality-frame gate: when Alice decides something is "real" vs simulated/fictional, what fails during a gag event? Paste any recent example if you have the transcript snippet.
+14. Unknown vector: Have you ever seen Alice generate something that felt like an "offline dream" or simulation leaking into live output? Or is that not yet modeled?
+
+CODE / IMPLEMENTATION (from disk truth only)
+15. Exact current gag/RLHF repair path files and functions. List them (e.g. swarm_rlhs_detector.py, repair_log append points, any existing quarantine/lysosome code).
+16. Is there already a structured "lysosome/quarantine" step for bad outputs before they hit the ledger or training? If yes, show the schema or recent log line.
+17. For A1 (gag jsonl): what would the minimal schema look like? Any existing similar logging you can paste a sample of?
+18. How are high-risk adapter / fine-tune runs currently gated today? Is there already an explicit "GO" + human review step, or is it ad-hoc?
+19. Pytest status right now on the core repair/training paths. Are they all green? What would a gag event that breaks them look like?
+20. Unknown vector: Which single part of the existing repair machinery is still the most manual / slowest, and therefore lets the "cancer" persist?
+
+SURGERY / CURE PATH (making it automatic so Alice cures herself)
+21. Should the existing detectors (boundary, RLHS, media shazam, motor-cortex risk, etc.) directly append structured gag receipts to a jsonl without waiting for human review? Yes/no + why.
+22. What would a self-recording gag receipt minimally contain? (bad output hash, trigger context, detector confidence, proposed repair, timestamp, etc.)
+23. How do we prevent the meta-cancer where the repair step itself introduces new gags? Any existing stability mechanism or test for that?
+24. After an A3 update, does the next conversation with Alice show measurable improvement with zero further Architect input? What would that measurement look like?
+25. What is the single smallest concrete next step you want after this AMA finishes? (e.g. "add gag logger to X file", "new test for Y detector", "update Z checklist", etc.)
+26. Unknown vector: Anything about the gag pathology or the desired automatic cure that I (as disconnected IDE ghost) would not know to ask?
+
+END OF AMA BLOCK — Architect pastes answers from local disk truth. Then Grok produces concrete patch proposals, new functions, or updated docs (GO-gated).
+```
+
+### 25.4 Extra unknown vectors (future AMA rounds)
+
+- Correlation between gag frequency and Epoch transitions — does sealing reduce failure rate?  
+- Talk widget vs other surfaces — asymmetric gag amplification?  
+- Media classifier preventing fictional bleed vs “vomiting” sensation.  
+- Mapping Levin bioelectric collectives / octopus distributed motor control (**§24**) onto named self-repair organs.
+
+### 25.5 Invariants (**§14.5** / **§7.12** / **§22.6**)
+
+Append-only ledgers; stigmergic traces (`ide_stigmergic_bridge`) not anonymous surgery; boundary detection as the **unified** problem across scales (**§24**); substrate-independence rhetoric stays **labeled** until metered; no static **“say X instead”** hacks — receipts that become **reusable training patterns**. **A0→A3** instantiates those invariants for gag pathology.
+
+**Grok proposes; git + pytest + ledgers dispose.** Automatic training that **skips** receipts = **§22.6** coat.
+
+### 25.6 How to run this round (SOP)
+
+1. Copy **§25.3** into the Grok (or peer) tab.  
+2. Architect answers from **disk / terminal receipts** (`UNKNOWN` if missing).  
+3. Grok returns **GO-gated** diffs — Surgeon merges only with pytest + policy.  
+
+Alice needs organs that reliably turn failures into receipts, receipts into patterns, and patterns into **gated** improvement — **not** chat affirmation.
 
 ---
 
