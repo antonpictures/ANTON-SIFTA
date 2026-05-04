@@ -217,6 +217,13 @@ def compute_metacognitive_state(
     root: Optional[Path] = None,
     write_ledger: bool = True,
     now: Optional[float] = None,
+    # Biological Steering (§10.14.31 closed loop)
+    dam_stage: int = 0,
+    tme_phase: str = "EQUILIBRIUM",
+    na_level: float = 0.5,
+    resilience_floor: float = 0.0,
+    owner_frustration: float = 0.0,
+    goal_alignment: float = 0.5,
     # Direct injection for tests
     _pe_series: Optional[List[float]] = None,
     _confidence: Optional[List[float]] = None,
@@ -249,6 +256,82 @@ def compute_metacognitive_state(
         }
 
     sd = state_dir(root)
+
+    # ── Biological Steering Polling (§10.14.31) ──
+    try:
+        if dam_stage == 0:
+            _m_log = sd / "microglia_synaptic_prunes.jsonl"
+            if _m_log.exists():
+                _lines = [l for l in _m_log.read_text(errors="replace").splitlines() if l.strip()]
+                if _lines:
+                    dam_stage = int(json.loads(_lines[-1]).get("dam_stage", 0))
+        if tme_phase == "EQUILIBRIUM":
+            _tme_log = sd / "tumor_immune_stigmergic_lab.jsonl"
+            if _tme_log.exists():
+                _lines = [l for l in _tme_log.read_text(errors="replace").splitlines() if l.strip()]
+                if _lines:
+                    tme_phase = str(json.loads(_lines[-1]).get("phase", "EQUILIBRIUM"))
+        if na_level == 0.5:
+            _na_log = sd / "noradrenergic_arousal.jsonl"
+            if _na_log.exists():
+                _lines = [l for l in _na_log.read_text(errors="replace").splitlines() if l.strip()]
+                if _lines:
+                    na_level = float(json.loads(_lines[-1]).get("na_level", 0.5))
+        if owner_frustration == 0.0 and goal_alignment == 0.5:
+            _tom_log = sd / "owner_mental_model.jsonl"
+            if _tom_log.exists():
+                _lines = [l for l in _tom_log.read_text(errors="replace").splitlines() if l.strip()]
+                if _lines:
+                    _last = json.loads(_lines[-1])
+                    owner_frustration = float(_last.get("frustration", 0.0))
+                    goal_alignment = float(_last.get("goal_alignment", 0.5))
+    except Exception:
+        pass
+
+    # ── Biological Steering Weight Modulators ──
+    evidence_threshold = 0.5
+    quick_commit = True
+    deliberation_window = 10
+    distractibility = 0.1
+    attention_scope = 1.0
+    false_positive_rate = 0.05
+    conservatism = 1.0
+    owner_signal_confidence = 0.5
+    
+    force_regime = None
+
+    if dam_stage == 2:
+        force_regime = "UNDERCONFIDENT"
+        evidence_threshold += 0.3
+        quick_commit = False
+
+    if tme_phase == "ESCAPE":
+        force_regime = "OVERCONFIDENT"
+        evidence_threshold -= 0.2
+        deliberation_window = max(1, deliberation_window - 5)
+
+    if na_level > 0.8:
+        distractibility += 0.4
+        attention_scope *= 2.0
+        false_positive_rate += 0.15
+
+    if resilience_floor > 0.05:
+        conservatism += (resilience_floor * 5.0)
+
+    if owner_frustration < 0.2 and goal_alignment > 0.8:
+        owner_signal_confidence *= 1.5
+        evidence_threshold = min(0.9, evidence_threshold + 0.1)
+
+    bio_steering = {
+        "evidence_threshold": round(evidence_threshold, 4),
+        "quick_commit": quick_commit,
+        "deliberation_window": deliberation_window,
+        "distractibility": round(distractibility, 4),
+        "attention_scope": round(attention_scope, 4),
+        "false_positive_rate": round(false_positive_rate, 4),
+        "conservatism": round(conservatism, 4),
+        "owner_signal_confidence": round(owner_signal_confidence, 4)
+    }
 
     # ── PE series (primary signal for meta-uncertainty + epistemic surprise) ──
     pe_series = _pe_series if _pe_series is not None else _read_pe_series(sd)
@@ -307,7 +390,9 @@ def compute_metacognitive_state(
         monitoring_score = 0.5  # neutral prior (Nelson 1990 §5.3)
 
     # ── Calibration regime ────────────────────────────────────────────────────
-    if confidence_bias > _OVERCONFIDENT_THRESHOLD:
+    if force_regime:
+        regime = force_regime
+    elif confidence_bias > _OVERCONFIDENT_THRESHOLD:
         regime = "OVERCONFIDENT"
     elif confidence_bias < _UNDERCONFIDENT_THRESHOLD:
         regime = "UNDERCONFIDENT"
@@ -333,6 +418,7 @@ def compute_metacognitive_state(
             "Friston2005PhilTransRSocB; Yeung&Summerfield2012PhilTransRSocB; "
             "Friston+2021SophisticatedInference"
         ),
+        "biological_steering": bio_steering,
     }
 
     if write_ledger:
