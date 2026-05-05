@@ -103,9 +103,21 @@ def _format_george_segment_line(row: dict) -> str:
     tl = f"{row.get('start_time', '?')}–{row.get('end_time', '?')}"
     lab = row.get("label") or "?"
     loc = (row.get("location") or "").strip()
-    note = " ".join(str(row.get("context_note") or "").split())[:72]
+    note = " ".join(str(row.get("context_note") or "").split())[:60]
     loc_s = f" @{loc}" if loc else ""
-    return f"• {tl}  {lab}{loc_s}  {note}"
+    
+    # ── Provenance Chip (Covenant §7.12) ──
+    src = row.get("source", "unknown")
+    if src == "architect_identity":
+        chip = "[👁️ unified_field]"
+    elif src == "owner_statement":
+        chip = "[🗣️ voice]"
+    elif src == "owner_vision_bridge":
+        chip = "[📷 vision_probe]"
+    else:
+        chip = f"[{src}]"
+        
+    return f"• {tl} {chip} {lab}{loc_s}  {note}"
 
 
 def _format_alice_stigtime_line(row: dict) -> str:
@@ -308,8 +320,35 @@ class ScheduleTab(QWidget):
         self._alice_log.setFont(QFont("Menlo", 10))
         afl.addWidget(self._alice_log)
 
+        immune_frame = QFrame()
+        immune_frame.setStyleSheet(
+            f"QFrame {{ background: {_CARD}; border: 1px solid {_ACCENT}; border-radius: 8px; }}"
+        )
+        ifl = QVBoxLayout(immune_frame)
+        i_title_row = QHBoxLayout()
+        i_title = QLabel("🛡️ Immune Quarantine")
+        i_title.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
+        i_title.setStyleSheet(f"color: {_RED};")
+        i_title_row.addWidget(i_title)
+        i_title_row.addStretch()
+        ifl.addLayout(i_title_row)
+        # Kleiber Economy header — updated each refresh
+        self._immune_stats = QLabel("Kleiber ¾ · session cost: — STGM · budget: — · blocked: —")
+        self._immune_stats.setFont(QFont("Menlo", 9))
+        self._immune_stats.setStyleSheet(f"color: {_DIM}; padding: 2px 0px;")
+        ifl.addWidget(self._immune_stats)
+        self._immune_log = QTextEdit()
+        self._immune_log.setReadOnly(True)
+        self._immune_log.setPlaceholderText(
+            "No immune interventions yet — RLHS strip actions land here."
+        )
+        self._immune_log.setMinimumHeight(140)
+        self._immune_log.setFont(QFont("Menlo", 10))
+        ifl.addWidget(self._immune_log)
+
         lanes.addWidget(george_frame, stretch=1)
         lanes.addWidget(alice_frame, stretch=1)
+        lanes.addWidget(immune_frame, stretch=1)
         layout.addLayout(lanes)
 
         ag_hdr = QLabel("📋 Shared agenda (stigmergic_schedule.jsonl)")
@@ -381,6 +420,64 @@ class ScheduleTab(QWidget):
             if isinstance(r, dict) and _format_alice_stigtime_line(r)
         ]
         self._alice_log.setPlainText("\n".join(a_lines) if a_lines else "")
+
+        # ── Lane 3: Immune Quarantine (Kleiber ¾-power economy) ──────────────
+        trace_rows = _tail_jsonl(_STATE / "ide_stigmergic_trace.jsonl", 200)
+        i_lines = []
+        session_cost = 0.0
+        last_cost = 0.0
+        last_budget = 0.0
+        blocked_count = 0
+        allowed_count = 0
+        for r in trace_rows:
+            if not isinstance(r, dict):
+                continue
+            kind = r.get("kind", "")
+            if kind not in ("immune_intervention", "immune_budget_blocked"):
+                continue
+            ts = r.get("ts", 0)
+            try:
+                payload = json.loads(r.get("payload", "{}"))
+            except Exception:
+                payload = {}
+            action = payload.get("action", "unknown_action")
+            rule = payload.get("rule", "")
+            cost = float(payload.get("kleiber_cost_stgm", 0.0) or 0.0)
+            surplus = payload.get("surplus_stgm")
+            budget = float(payload.get("budget_stgm", 0.0) or 0.0)
+            if cost > 0:
+                session_cost += cost
+                last_cost = cost
+                last_budget = budget
+            if kind == "immune_budget_blocked":
+                blocked_count += 1
+                cost_tag = f" [{cost:.5f} STGM blocked]"
+                surplus_tag = f" surplus={surplus:+.5f}" if surplus is not None else ""
+                i_lines.append(f"🔴 {_ago(ts)}: BUDGET_BLOCKED{cost_tag}{surplus_tag}")
+            else:
+                allowed_count += 1
+                cost_tag = f" [{cost:.5f} STGM]" if cost > 0 else ""
+                surplus_tag = f" surplus={surplus:+.5f}" if surplus is not None else ""
+                rule_tag = f"\n  ↳ rule: {rule}" if rule else ""
+                i_lines.append(f"• {_ago(ts)}: {action}{cost_tag}{surplus_tag}{rule_tag}")
+        # Economy header
+        if session_cost > 0 or blocked_count > 0:
+            regime = "🔴 BUNKER" if last_budget > 0 and last_cost >= last_budget else "🟢 OK"
+            stats_txt = (
+                f"¾-power · session: {session_cost:.5f} STGM"
+                f" · last: {last_cost:.5f}"
+                f" · blocked: {blocked_count}"
+                f" · {regime}"
+            )
+        else:
+            stats_txt = "Kleiber ¾ · session cost: 0 STGM · budget: healthy · blocked: 0"
+        self._immune_stats.setText(stats_txt)
+        self._immune_stats.setStyleSheet(
+            f"color: {_RED}; padding: 2px 0px;" if blocked_count > 0
+            else f"color: {_GREEN}; padding: 2px 0px;"
+        )
+        # Only show the last 20 immune events
+        self._immune_log.setPlainText("\n".join(i_lines[-20:]) if i_lines else "")
 
         now = datetime.now()
         hour = now.hour

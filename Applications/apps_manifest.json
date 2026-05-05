@@ -66,7 +66,7 @@
     "window_height": 820,
     "signature": "UNVERIFIED",
     "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine A \u2014 Lennard-Jones / Langevin)."
+    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine A — Lennard-Jones / Langevin)."
   },
   "C55M Dr Codex - Physarum Contradiction Lab": {
     "category": "Simulations",
@@ -91,7 +91,7 @@
     "window_height": 820,
     "signature": "CG55M-DR-CURSOR-OPUS47",
     "description": "Cursor/Opus graphics-forward Carlton demo: real Tero Physarum solver, semantic PoUW gate, mint visuals.",
-    "_note": "Carlton's marketing demo \u2014 runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts.",
+    "_note": "Carlton's marketing demo — runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts.",
     "doctor": "CG55M",
     "co_doctors": [],
     "doctor_protocol_version": 1,
@@ -179,7 +179,7 @@
     "window_height": 920,
     "signature": "UNVERIFIED"
   },
-  "Stigmergic Fold Swarm (C\u03b1 / Go)": {
+  "Stigmergic Fold Swarm (Cα / Go)": {
     "category": "Simulations",
     "entry_point": "Applications/fold_swarm_widget.py",
     "widget_class": "FoldSwarmWidget",
@@ -215,7 +215,7 @@
     "_retired_reason": "AG31 audit 2026-04-27: wraps system browser with no physics/data value. File kept on disk."
   },
   "Finance": {
-    "category": "Utilities",
+    "category": "Economy",
     "entry_point": "Applications/sifta_finance.py",
     "widget_class": "FinanceDashboard",
     "doctor": "C55M-DR-CODEX-MATH + CG55M-DR-CURSOR-OPUS47-GFX",
@@ -345,7 +345,7 @@
     "window_height": 860,
     "signature": "UNVERIFIED",
     "_retired": true,
-    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine B \u2014 Lattice-Boltzmann). Routing metaphor replaced with real Navier-Stokes."
+    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine B — Lattice-Boltzmann). Routing metaphor replaced with real Navier-Stokes."
   },
   "Bauwens Regenerative Factory": {
     "category": "Simulations",
@@ -469,8 +469,8 @@
       "AG31"
     ],
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Living-page writing app. Pause 3 seconds and the swarm suggests a continuation in faded ghost text \u2014 Tab accepts. Ask Swarm rewrites a selection. Full territory history and PDF export.",
-    "_synthesis_note": "Backend (real): Ollama-driven ghost text + Ask Swarm worker, memory bus recall, .territory.jsonl history per document. Graphics polish (CG55M / Opus 4.7): paper feel with installed serif body font (Iowan Old Style \u2192 New York \u2192 Charter \u2192 Georgia), warmer ink on a deep desk background, frosted macOS-feel toolbar with a purple-accent Ask Swarm button, Doctor Sigil header at the top, polished scrollbar, accent selection color."
+    "description": "Living-page writing app. Pause 3 seconds and the swarm suggests a continuation in faded ghost text — Tab accepts. Ask Swarm rewrites a selection. Full territory history and PDF export.",
+    "_synthesis_note": "Backend (real): Ollama-driven ghost text + Ask Swarm worker, memory bus recall, .territory.jsonl history per document. Graphics polish (CG55M / Opus 4.7): paper feel with installed serif body font (Iowan Old Style → New York → Charter → Georgia), warmer ink on a deep desk background, frosted macOS-feel toolbar with a purple-accent Ask Swarm button, Doctor Sigil header at the top, polished scrollbar, accent selection color."
   },
   "Alice": {
     "category": "Alice",
@@ -482,7 +482,7 @@
     "autostart_order": 0,
     "autostart_delay_ms": 400,
     "signature": "AG31_ANTIGRAVITY_2026-04-28",
-    "_note": "Alice IS the OS body. autostart=true boots her ear+eye together at desktop launch. \u00a77.6 \u2014 she is the organism, not an app inside it. \u00a77.7 \u2014 must remain MDI-embedded. \u00a77.8 \u2014 camera starts open."
+    "_note": "Alice IS the OS body. autostart=true boots her ear+eye together at desktop launch. §7.6 — she is the organism, not an app inside it. §7.7 — must remain MDI-embedded. §7.8 — camera starts open."
   },
   "Terminal": {
     "category": "Utilities",
@@ -584,7 +584,7 @@
     "doctor": "AG31",
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
-    "description": "Engine A: Lennard-Jones colloidal thermodynamics \u2014 V_LJ=4\u03b5[(\u03c3/r)\u00b9\u00b2\u2212(\u03c3/r)\u2076], Langevin, phase transitions, live T [K] / P [Pa] / S [J/mol\u00b7K] / g(r).  Engine B: D2Q9 Lattice-Boltzmann fluid dynamics \u2014 BGK collision-streaming, live Re, Ma, vorticity \u03c9_z, drag C_D. PoUW STGM minting via swarm_atp_synthase."
+    "description": "Engine A: Lennard-Jones colloidal thermodynamics — V_LJ=4ε[(σ/r)¹²−(σ/r)⁶], Langevin, phase transitions, live T [K] / P [Pa] / S [J/mol·K] / g(r).  Engine B: D2Q9 Lattice-Boltzmann fluid dynamics — BGK collision-streaming, live Re, Ma, vorticity ω_z, drag C_D. PoUW STGM minting via swarm_atp_synthase."
   },
   "Research Simulators (Quantum & Epi)": {
     "category": "Simulations",
@@ -610,7 +610,7 @@
     "doctor_protocol_version": 1,
     "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md"
   },
-  "Sara Imari Walker \u2014 Assembly Theory Lab": {
+  "Sara Imari Walker — Assembly Theory Lab": {
     "entry_point": "Applications/sara_imari_walker_widget.py",
     "widget_class": "SaraImariWalkerWidget",
     "category": "Simulations",
@@ -628,7 +628,7 @@
       "Marshall et al. Entropy 2022 doi:10.3390/e24070884",
       "Cronin & Walker arXiv:2206.02279",
       "Chemputation arXiv:2408.09171",
-      "Sara Imari Walker \u2014 Life as No One Knows It (2024) ISBN 9780593191897",
+      "Sara Imari Walker — Life as No One Knows It (2024) ISBN 9780593191897",
       "Documents/SARA_IMARI_WALKER_ASSEMBLY_THEORY_RESEARCH.md",
       "Documents/PREDATOR_V7_RESEARCH_SPINE.md"
     ]
@@ -642,7 +642,7 @@
     "signature": "QT-CONTRACT-VERIFIED",
     "description": "Qt biological body dashboard for Alice's organ status. Kept as the canonical System Settings health surface; no Tk import path."
   },
-  "SIFTA \u2225 OpenAI \u2014 Math Benchmarks": {
+  "SIFTA ∥ OpenAI — Math Benchmarks": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_openai_math_benchmark_widget.py",
     "widget_class": "MathBenchmarkWidget",
@@ -651,7 +651,7 @@
     "signature": "AG_MATH_BENCH_03e9fa29a678",
     "doctor": "AG-ANTIGRAVITY-OPUS46-THINKING",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Math-first AGI benchmark dashboard mapping OpenAI capability markers (Bubeck & Ryu) to SIFTA-verifiable work. Five capability cards, scoped problem classes, live proof inventory, and honest gap acknowledgment. No in-app Alice chat (\u00a77.6)."
+    "description": "Math-first AGI benchmark dashboard mapping OpenAI capability markers (Bubeck & Ryu) to SIFTA-verifiable work. Five capability cards, scoped problem classes, live proof inventory, and honest gap acknowledgment. No in-app Alice chat (§7.6)."
   },
   "Sense Forge": {
     "category": "System Settings",
@@ -659,8 +659,8 @@
     "widget_class": "SenseForgeWidget",
     "window_width": 1180,
     "window_height": 760,
-    "description": "Animal-to-hardware stigmergic sense bus. REAL/DEMO/BROKEN/UNKNOWN truth tags per \u00a78 Covenant. No sensor becomes REAL until it writes a live receipt.",
-    "emoji": "\ud83e\uddec",
+    "description": "Animal-to-hardware stigmergic sense bus. REAL/DEMO/BROKEN/UNKNOWN truth tags per §8 Covenant. No sensor becomes REAL until it writes a live receipt.",
+    "emoji": "🧬",
     "signature": "C55M-SENSE-FORGE-20260428",
     "doctor": "C55M-CODEX-GPT55",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
@@ -671,14 +671,14 @@
     "autostart": false,
     "_retired": false
   },
-  "NVIDIA \u00d7 SIFTA": {
+  "NVIDIA × SIFTA": {
     "category": "Developer",
     "entry_point": "Applications/sifta_nvidia_join_widget.py",
     "widget_class": "NvidiaJoinWidget",
     "window_width": 1240,
     "window_height": 780,
     "description": "One canonical NVIDIA join console: truth-labeled local readiness for GR00T, Isaac Lab, cuRobo, Warp, and Cosmos. REAL only when local package/cache exists; ONLINE is not runtime access.",
-    "emoji": "\ud83d\udfe2",
+    "emoji": "🟢",
     "signature": "TRIPLE-IDE-NVIDIA-JOIN-20260428",
     "doctor": "C55M-CODEX-GPT55",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
@@ -713,11 +713,11 @@
     "widget_class": "CosmosLoopWidget",
     "window_width": 1200,
     "window_height": 720,
-    "emoji": "\ud83d\udc3e",
+    "emoji": "🐾",
     "signature": "AG31_COGLOOP_2026-04-28",
     "doctor": "AG31",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "End-to-end cognitive loop: camera frame \u2192 Cosmos vision inference \u2192 TD Q-learning decision \u2192 reward signal \u2192 Q-table update. Three-stage pipeline view. Run the full Gecko+Bat+Cosmos+Rat loop in one click.",
+    "description": "End-to-end cognitive loop: camera frame → Cosmos vision inference → TD Q-learning decision → reward signal → Q-table update. Three-stage pipeline view. Run the full Gecko+Bat+Cosmos+Rat loop in one click.",
     "autostart": false,
     "_retired": false,
     "nppl": "cognitive_loop"
@@ -729,10 +729,10 @@
     "window_width": 960,
     "window_height": 640,
     "signature": "MANIFEST-CANONICAL",
-    "description": "Alice social nerve \u2014 WhatsApp inbox viewer, contact browser, and message sender. Routes through the real Baileys effector with truth labels.",
+    "description": "Alice social nerve — WhatsApp inbox viewer, contact browser, and message sender. Routes through the real Baileys effector with truth labels.",
     "doctor": "AG31"
   },
-  "Alice's Will \u2014 Intrinsic Drive Monitor": {
+  "Alice's Will — Intrinsic Drive Monitor": {
     "category": "Neuroscience",
     "entry_point": "Applications/sifta_intrinsic_drive_monitor.py",
     "widget_class": "AliceWillApp",
@@ -782,7 +782,7 @@
     "widget_class": "NvidiaSiftaBridgeWidget",
     "window_width": 1100,
     "window_height": 720,
-    "description": "NVIDIA \u00d7 SIFTA Integration Dashboard. Asset Scanner, Contrast Tab, Live Stigmergic Field, HF Models.",
+    "description": "NVIDIA × SIFTA Integration Dashboard. Asset Scanner, Contrast Tab, Live Stigmergic Field, HF Models.",
     "autostart": false
   },
   "Control Center": {
@@ -852,12 +852,99 @@
     "category": "Neuroscience",
     "entry_point": "Applications/sifta_agi_cognition_dashboard.py",
     "widget_class": "AGICognitionDashboard",
-    "description": "Viability index V_t (Event 140 \u2014 Varela 1974). Q2/Q3/Q5 autopoiesis metrics.",
+    "description": "Viability index V_t (Event 140 — Varela 1974). Q2/Q3/Q5 autopoiesis metrics.",
     "truth_label": "AUTOPOIESIS_VIABILITY",
     "doctor": "Antigravity",
     "autostart": false,
     "requires": [
       "PyQt6"
     ]
+  },
+  "Voice Identity Organ": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_voice_identity_widget.py",
+    "widget_class": "VoiceIdentityWidget",
+    "window_width": 660,
+    "window_height": 760,
+    "description": "Stigmergic voice identity training: record audio blocks, tag source (George / YouTube / Phone / Room / Keyboard), Alice learns the acoustic fingerprint via nearest-neighbor swimmer vote.",
+    "truth_label": "VOICE_IDENTITY_ORGAN_V1",
+    "emoji": "🎙",
+    "doctor": "Antigravity",
+    "autostart": false,
+    "requires": [
+      "PyQt6",
+      "sounddevice",
+      "numpy"
+    ]
+  },
+  "Alice Browser": {
+    "entry_point": "Applications/sifta_alice_browser_widget.py",
+    "widget_class": "AliceBrowserWidget",
+    "emoji": "🌐",
+    "category": "Alice",
+    "description": "Chromium-based web browser for Alice. Full JS/CSS rendering. Stigmergic browse receipts → alice_browse_history.jsonl.",
+    "window_width": 1100,
+    "window_height": 820,
+    "autostart": false,
+    "_retired": false
+  },
+  "Cool Worlds × SIFTA — Contact Inequality": {
+    "category": "Simulations",
+    "entry_point": "Applications/cool_worlds_contact.py",
+    "widget_class": "ContactInequalityApp",
+    "window_width": 760,
+    "window_height": 520,
+    "signature": "GTH4921YP3-ANTIGRAVITY",
+    "doctor": "vanguard_antigravity",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Monte Carlo simulation connecting David Kipping's Contact Inequality and Eschatian Hypothesis to SIFTA's stigmergic ledger reliability. All numbers computed locally. Tweet-ready output."
+  },
+  "SIFTA Skill Browser": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_skill_browser.py",
+    "window_width": 1100,
+    "window_height": 700,
+    "signature": "CG55M-ANTIGRAVITY-VERIFIED",
+    "doctor": "vanguard_antigravity",
+    "co_doctors": [
+      "CG55M"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Three-tier swimmer skill explorer. Shows SIFTA skill index, Tier 2 procedure bodies (skills/*.md), affect circuit bias, DPO dataset stats, and LoRA training status. Compatible with agentskills.io SKILL.md community format. Includes the IDE Boot Covenant as Tier-0 meta-skill. Submit skills to hub from within the app.",
+    "autostart": false,
+    "icon": "🐜",
+    "github": "https://github.com/antonpictures/ANTON-SIFTA",
+    "help_file": "Applications/sifta_skill_browser.py",
+    "widget_class": "SkillBrowserApp"
+  },
+  "SIFTA Tournament Briefing": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_tournament_briefing_widget.py",
+    "widget_class": "TournamentBriefingWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "C55M-CODEX-TERRITORY-MAP-20260505",
+    "doctor": "C55M Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "OS briefing surface for external benchmark maps: IBM Agents, Agent Skills, NVIDIA contrast, Chamath/JRE narrative, and Codex harness lessons. Loads repo docs as territory, not chat vapor.",
+    "autostart": false,
+    "icon": "📍"
+  },
+  "STGM Immune Economy": {
+    "category": "Economy",
+    "entry_point": "Applications/sifta_immune_economy_widget.py",
+    "widget_class": "ImmuneEconomyApp",
+    "window_width": 1060,
+    "window_height": 740,
+    "icon": "🛡️",
+    "signature": "ANTIGRAVITY-KLEIBER-VERIFIED",
+    "doctor": "Antigravity",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Live STGM Immune Economy monitor. Shows Kleiber ¾-power session cost, budget gate status (ALLOWED/BLOCKED/RED_CONSERVE), per-event log with cost/surplus/rule data, anti-double-spend audit, Kleiber reference table, and budget gate thresholds. Reads live from ide_stigmergic_trace.jsonl. Satisfies §7.3 Body Economy Honesty.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "IMMUNE_ECONOMY_V1"
   }
 }
