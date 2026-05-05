@@ -228,3 +228,6 @@ test_report.py
 
 # Nested clones
 ANTON-SIFTA/
+*.safetensors
+Archive/alice_cortex_v2_fused/
+Archive/REM_Sleep_Engrams/pruned_visual_stigmergy*
