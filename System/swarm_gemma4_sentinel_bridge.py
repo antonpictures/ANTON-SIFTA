@@ -75,6 +75,14 @@ def tensor_to_fp32_matrix(tensor: Any) -> np.ndarray:
     if name == "F32":
         arr = np.frombuffer(tensor.data, dtype=np.float32).copy()
         arr = arr.reshape(shape)
+    elif name == "F16":
+        arr = np.frombuffer(tensor.data, dtype=np.float16).astype(np.float32)
+        arr = arr.reshape(shape)
+    elif name == "BF16":
+        # reinterpret as uint16, zero-pad to uint32, then view as float32
+        raw = np.frombuffer(tensor.data, dtype=np.uint16).astype(np.uint32)
+        arr = (raw << 16).view(np.float32)
+        arr = arr.reshape(shape)
     else:
         arr = np.asarray(quants.dequantize(tensor.data, tensor.tensor_type), dtype=np.float32)
         if arr.ndim != len(shape):
@@ -155,7 +163,7 @@ def scan_gemma4_sentinels(
             continue
         if not any(ns in tensor.name for ns in needles):
             continue
-        if tensor.tensor_type.name not in ("F32", "Q4_K", "Q6_K", "Q4_0", "Q8_0"):
+        if tensor.tensor_type.name not in ("F16", "F32", "Q4_K", "Q6_K", "Q4_0", "Q8_0", "BF16"):
             continue
         try:
             W = tensor_to_fp32_matrix(tensor)
