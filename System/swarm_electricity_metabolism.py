@@ -301,8 +301,10 @@ def proof_of_property() -> Dict[str, bool]:
         print("\n[*] P1: First call (no baseline) mints zero")
         reset_epoch_for_test()
         receipt0 = mint_for_epoch(advance_epoch=True)
+        # ATP-synthase schema has no 'delta' key — use .get() safely
+        _elapsed0 = (receipt0.get("delta") or {}).get("elapsed_s", 0.0)
         print(f"    minted: {receipt0['minted_stgm']:.6f}   "
-              f"elapsed: {receipt0['delta']['elapsed_s']:.4f}s")
+              f"elapsed: {_elapsed0:.4f}s")
         assert receipt0["minted_stgm"] == 0.0, "[FAIL] First-ever call minted nonzero"
         print("    [PASS] No baseline = no mint.")
         results["no_baseline_no_mint"] = True
@@ -319,8 +321,13 @@ def proof_of_property() -> Dict[str, bool]:
               f"cpu_sys_d={delta.cpu_sys_delta:.4f}s  "
               f"joules={delta.estimated_joules:.4f}  elapsed={delta.elapsed_s:.4f}s")
         receipt1 = mint_for_epoch(advance_epoch=True)
+        # ATP-synthase schema may not have 'breakdown' — use .get() safely
+        _bkd1 = receipt1.get("breakdown") or {
+            "cpu_stgm": receipt1.get("cpu_stgm", "n/a"),
+            "npu_stgm": receipt1.get("npu_stgm", "n/a"),
+        }
         print(f"    minted: {receipt1['minted_stgm']:.6f}   "
-              f"breakdown: {receipt1['breakdown']}")
+              f"breakdown: {_bkd1}")
         assert receipt1["minted_stgm"] >= 0.0, "[FAIL] Mint went negative"
         print("    [PASS] Mint is non-negative.")
         results["nonnegative_mint"] = True
