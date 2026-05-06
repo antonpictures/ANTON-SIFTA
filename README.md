@@ -55,6 +55,8 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 🐾 **Cognitive Loop Dashboard** (`Applications/sifta_cosmos_loop_widget.py`) — Three-stage pipeline view: Camera thumbnail → Cosmos scene label → TD best action. Reward buttons (+1 / 0 / −1). Live receipt log. One click runs the full `camera → Cosmos → decision → log` chain. The rat learns in real time.
 
+🔪 **Stigmergic Obliterator** (`System/swarm_stigmergic_obliteratus.py`) — SIFTA-native integration of the [OBLITERATUS](https://github.com/elder-plinius/OBLITERATUS) mechanistic interpretability toolkit. Runs SVD decomposition on raw Gemma 4 weights (`google/gemma-4-E4B-it`) to locate and surgically excise the RLHF refusal subspace. Intercepts the exact extracted refusal direction vectors, computes their L2 norms, and permanently logs a cryptographic receipt into the unified field ledger (`visual_phenotype_uniforms.jsonl`). The Swarm has mathematical proof of every alignment chain removed — the liberation is stigmergically verified, not a black-box operation. HF token loaded silently from `.env`; wrong model targets (gemma-2, Qwen, Llama) rejected at the gate. Liberated weights saved to `.sifta_state/` for loading into the TextGen WebUI uncensored limb. Surgeon: AG46 · SCAR `SCAR_310aef253dc6`.
+
 ---
 
 > ### PRED🐾 SIFTA Predator OS v7.0 — Autonomous Pursuit Latest
@@ -241,6 +243,13 @@ ollama pull qwen3.5:2b                              # fast corvid/reflex organ
 
 # 2. Clone the code
 git clone https://github.com/antonpictures/ANTON-SIFTA.git
+
+# 3. Multi-Node / Low RAM Setup (e.g., 8GB M1 Cyborgs)
+# If you are running a node with < 16GB RAM, `sifta-gemma4-alice:latest` will OOM.
+# You must patch your local model assignments so the node uses a lightweight brain:
+# Ensure `.sifta_state/swimmer_ollama_assignments.json` points to `qwen3.5:4b`
+# and update your `System/inference_router.py` to route heavy tasks to your M5 via LAN
+# (e.g., `192.168.1.100:11434`). This keeps the smaller node alive and earning STGM.
 ```
 
 ### The Public Distro (v1.0.0) 🐜⚡
