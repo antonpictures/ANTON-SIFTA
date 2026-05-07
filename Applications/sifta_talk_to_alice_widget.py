@@ -6848,11 +6848,42 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass  # If reflex fails, fall through to brain
 
 
+        # ── Phone call tracker (AG46 2026-05-06) ──────────────────────────────
+        # Detect "I'm on the phone / that was a phone call" and log to
+        # owner_body_events.jsonl + stigmergic_schedule.jsonl.
+        try:
+            from System.swarm_phone_call_tracker import handle_phone_declaration, handle_call_end
+            _phone_event_type, _phone_reply = handle_phone_declaration(
+                text,
+                stt_conf=float(stt_conf or 0.0),
+            )
+            if _phone_reply:
+                self._history.append({"role": "assistant", "content": _phone_reply})
+                _log_turn("alice", _phone_reply, model="phone_call_tracker")
+                self._append_alice_line(_phone_reply)
+                self._busy = False
+                self._return_to_listening()
+                return
+            # Even if no explicit reply, fall through — LLM picks it up naturally
+            # Also check for call-end declarations
+            _call_end_reply = handle_call_end(text)
+            if _call_end_reply:
+                self._history.append({"role": "assistant", "content": _call_end_reply})
+                _log_turn("alice", _call_end_reply, model="phone_call_tracker")
+                self._append_alice_line(_call_end_reply)
+                self._busy = False
+                self._return_to_listening()
+                return
+        except Exception:
+            pass
+
+
         try:
             from System.stigmergic_schedule import answer_query_for_alice
             schedule_reply = answer_query_for_alice(text)
         except Exception:
             schedule_reply = ""
+
         if schedule_reply:
             self._history.append({"role": "assistant", "content": schedule_reply})
             _log_turn("alice", schedule_reply, model="local_schedule_protocol")
