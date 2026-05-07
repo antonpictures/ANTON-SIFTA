@@ -2716,6 +2716,14 @@ def _current_system_prompt(
             parts.append(_diary_prompt)
     except Exception:
         pass
+    try:
+        from System.swarm_episodic_narrator import format_narrative_for_prompt
+        _narrative_prompt = format_narrative_for_prompt(max_rows=10, max_age_hours=4.0).strip()
+        if _narrative_prompt:
+            parts.append(_narrative_prompt)
+    except Exception:
+        pass
+
 
     try:
         pass # AG31: Amputated 6KB concept context (caused silent Ollama failures)
@@ -7886,7 +7894,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
+        # ── Episodic Narrator (AG46 2026-05-06) ─────────────────────────────────
+        # Write a short first-person journal entry: what George said, what I replied,
+        # what sensors show. Grounded, append-only, no LLM call needed.
+        try:
+            from System.swarm_episodic_narrator import write_narrative_entry
+            write_narrative_entry(
+                user_text=prior_user_text or "",
+                alice_text=cleaned or "",
+                stt_conf=float(stt_conf or 0.0),
+                event_type="turn",
+            )
+        except Exception:
+            pass
+
         self._end_alice_streaming_line()
+
         if getattr(self, "_pending_whatsapp_reply", None):
             mute_tts_override = True
         self._send_pending_whatsapp_reply(cleaned)
