@@ -281,8 +281,14 @@ return "sent"
 def send_whatsapp_native(target: str, message: str, *, dry_run: bool = False) -> Dict[str, Any]:
     """
     Send a WhatsApp message via the installed WhatsApp Desktop app.
-    Uses the whatsapp:// URL scheme which opens the app and pre-fills the
-    conversation, then osascript types and sends the message.
+
+    Strategy (AG46 2026-05-07 fix):
+      1. ALWAYS try visible-name search first (Cmd+F in WhatsApp sidebar).
+         This finds any contact OR group by display name — no phone number needed.
+         Phone deep-links fail when the Contacts.app number differs from the
+         WhatsApp-registered number (e.g. "+17622222220 isn't on WhatsApp").
+      2. Only fall back to phone deep-link if name search returns a hard error
+         (e.g. WhatsApp not running at all).
 
     Requires: WhatsApp Desktop installed and logged in as George.
     """
@@ -297,9 +303,20 @@ def send_whatsapp_native(target: str, message: str, *, dry_run: bool = False) ->
             "WhatsApp.app is not installed at /Applications/WhatsApp.app",
         )
 
+    # ── Step 1: visible-name search (preferred — works for contacts AND groups) ─
+    result = _send_whatsapp_by_visible_name(target, message, dry_run=dry_run)
+    if result.get("ok") or result.get("status") == "DRY_RUN":
+        return result
+
+    # ── Step 2: phone deep-link fallback (only if name search hard-failed) ──────
+    # Only attempt if we actually have a phone number AND the name search didn't
+    # find the chat (not just a timeout).  A "phone isn't on WhatsApp" error from
+    # the deep-link is worse than a visible-name timeout, so we only use this as
+    # a last resort.
     phone = resolve_contact(target)
     if not phone:
-        return _send_whatsapp_by_visible_name(target, message, dry_run=dry_run)
+        # Nothing more to try — return the name-search failure receipt
+        return result
 
     if dry_run:
         return _log_send(
@@ -309,7 +326,7 @@ def send_whatsapp_native(target: str, message: str, *, dry_run: bool = False) ->
             message,
             True,
             "DRY_RUN",
-            f"Would open WhatsApp deep link for {target}.",
+            f"Would open WhatsApp deep link for {target} (fallback after name-search miss).",
             transport="whatsapp_deeplink",
         )
 
@@ -341,7 +358,9 @@ return "sent"
             capture_output=True, text=True, timeout=15
         )
         if r.returncode == 0 and "sent" in r.stdout:
-            return _log_send("whatsapp", target, phone, message, True, "SENT", transport="whatsapp_deeplink")
+            return _log_send("whatsapp", target, phone, message, True, "SENT",
+                             "deep-link fallback after name-search miss",
+                             transport="whatsapp_deeplink")
         else:
             err = (r.stderr or r.stdout or "unknown").strip()[:200]
             return _log_send("whatsapp", target, phone, message, False,
@@ -352,6 +371,8 @@ return "sent"
     except Exception as e:
         return _log_send("whatsapp", target, phone, message, False,
                          "EXCEPTION", str(e)[:200], transport="whatsapp_deeplink")
+
+
 
 
 # ─── iMessage ────────────────────────────────────────────────────────────────
