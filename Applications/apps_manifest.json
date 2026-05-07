@@ -926,9 +926,11 @@
     "signature": "C55M-CODEX-TERRITORY-MAP-20260505",
     "doctor": "C55M Codex",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "OS briefing surface for external benchmark maps: IBM Agents, Agent Skills, NVIDIA contrast, Chamath/JRE narrative, and Codex harness lessons. Loads repo docs as territory, not chat vapor.",
+    "description": "Retired manifest surface. Use the canonical Stigmerobotics app, which includes the tournament briefing plus live proof/economy/audit panels.",
     "autostart": false,
-    "icon": "📍"
+    "icon": "📍",
+    "_retired": true,
+    "hidden": true
   },
   "STGM Immune Economy": {
     "category": "Economy",
@@ -941,10 +943,38 @@
     "doctor": "Antigravity",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "autostart": false,
-    "description": "Live STGM Immune Economy monitor. Shows Kleiber ¾-power session cost, budget gate status (ALLOWED/BLOCKED/RED_CONSERVE), per-event log with cost/surplus/rule data, anti-double-spend audit, Kleiber reference table, and budget gate thresholds. Reads live from ide_stigmergic_trace.jsonl. Satisfies §7.3 Body Economy Honesty.",
+    "description": "Live STGM Immune Economy monitor. Shows canonical wallet reserve, charged immune burn, burn/hour, blocked would-cost, budget gate status (ALLOWED/BLOCKED/RED_CONSERVE), per-event log with cost/surplus/rule data, anti-double-spend audit, Kleiber reference table, and budget gate thresholds. Reads live from ide_stigmergic_trace.jsonl. Satisfies §7.3 Body Economy Honesty.",
     "requires": [
       "PyQt6"
     ],
     "truth_label": "IMMUNE_ECONOMY_V1"
+  },
+  "Stigmerobotics": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_stigmerobotics_widget.py",
+    "widget_class": "StigmeroboticsWidget",
+    "window_width": 1240,
+    "window_height": 820,
+    "icon": "ST",
+    "signature": "CODEX-STIGMEROBOTICS-SINGLETON-20260505",
+    "doctor": "Codex Desktop",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Canonical single Stigmerobotics OS app. Visual ROB 501 proof matrix, E03 state-vector panel, E33 pheromone-field panel, E34 safety-graph panel, E35 observability / Markov-blanket panel, E45 bounded-chaos escape panel, E46 segmental-coupling panel, E47 bio-hybrid boundary panel, E48+ research-only wet/dry map, tournament document, live ledger audit, and STGM immune economy summary in one Python/Qt surface.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "STIGMEROBOTICS_OS_SINGLETON_V1"
+  },
+  "Alice Journal": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_alice_journal_viewer.py",
+    "widget_class": "__terminal__",
+    "description": "Alice's first-person explorer journal — daily timestamped entries of what George said, what Alice observed, sensor context (clothing, phone calls, co-watch). One file per day.",
+    "icon": "📓",
+    "window_width": 900,
+    "window_height": 600,
+    "autostart": false,
+    "signature": "AG46_2026-05-06"
   }
 }

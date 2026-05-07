@@ -34,6 +34,13 @@ if str(_REPO) not in sys.path:
 if str(_SYS) not in sys.path:
     sys.path.insert(0, str(_SYS))
 
+try:
+    from System.qt_webengine_bootstrap import bootstrap_qt_webengine
+
+    _WEBENGINE_BOOTSTRAP = bootstrap_qt_webengine()
+except Exception as _webengine_boot_exc:
+    _WEBENGINE_BOOTSTRAP = None
+
 from app_fitness import ranked_apps, record_crash, record_launch  # noqa: E402
 from stigmergic_wm import neighbors as wm_neighbors  # noqa: E402
 from stigmergic_wm import record_open as wm_record_open  # noqa: E402
@@ -773,13 +780,20 @@ class SiftaMdiArea(QMdiArea):
             return
         self._pred_last_read = now
         try:
-            from System.swarm_body_monitor import ORGAN_DEFS
-            self._pred_data["alive"] = len(ORGAN_DEFS)
+            from System.swarm_boot_census import boot_census
+            census = boot_census()
+            self._pred_data["alive"] = int(census.get("body_real_organs", 0) or 0)
+            self._pred_data["identity_total"] = int(census.get("identity_total", 0) or 0)
+            self._pred_data["field_dimensions"] = int(census.get("field_dimensions", 0) or 0)
+            self._pred_data["field_swimmers"] = int(census.get("field_swimmers", 0) or 0)
             from System.stgm_economy import scan_economy
             snap = scan_economy()
             self._pred_data["stgm"] = snap.canonical_wallet_sum
         except Exception:
             self._pred_data["alive"] = 0
+            self._pred_data["identity_total"] = 0
+            self._pred_data["field_dimensions"] = 0
+            self._pred_data["field_swimmers"] = 0
             self._pred_data["stgm"] = 0.0
 
     def _draw_predator_sigil(self, painter: "QPainter", w: int, h: int) -> None:
@@ -799,8 +813,18 @@ class SiftaMdiArea(QMdiArea):
 
         # One whisper line with real data — 40s pulse between 20 and 35 alpha
         alive = self._pred_data.get("alive", 0)
+        identity_total = self._pred_data.get("identity_total", 0)
+        dims = self._pred_data.get("field_dimensions", 0)
+        swimmers = self._pred_data.get("field_swimmers", 0)
         stgm  = self._pred_data.get("stgm", 0.0)
-        sub = f"SIFTA Predator v7.0  ·  {alive} organs  ·  STGM {stgm:.0f}  ·  Let’s Think Together!"
+        census_bits = [f"{alive} REAL body organs"]
+        if identity_total:
+            census_bits.append(f"{identity_total} identity probes")
+        if dims:
+            census_bits.append(f"{dims} field dims")
+        if swimmers:
+            census_bits.append(f"{swimmers} swimmers")
+        sub = f"SIFTA Predator v7.0  ·  {' · '.join(census_bits)}  ·  STGM {stgm:.0f}"
         pulse = 0.5 + 0.5 * _m.sin(t * 0.16)  # 40 s period
         painter.setFont(QFont("Menlo", 11))
         painter.setPen(QColor(0, 180, 80, int(20 + 15 * pulse)))
@@ -908,9 +932,52 @@ def _publish_sifta_active_window_focus(app_title: str, display_name: str) -> Non
 #    the module’s execution order matches import introspection and one source of truth.) ──
 
 class LaunchpadButton(QPushButton):
-    def __init__(self, text, app_name, parent=None):
-        super().__init__(text, parent)
+    """Icon tile: large emoji + short name. macOS Launchpad style."""
+    def __init__(self, icon: str, name: str, app_name: str, parent=None):
+        super().__init__(parent)
         self.app_name = app_name
+        self.setFixedSize(100, 100)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(name)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(4, 8, 4, 6)
+        lay.setSpacing(2)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_lbl = QLabel(icon)
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet("font-size: 32px; background: transparent; border: none;")
+        icon_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        # Truncate name to ~12 chars for tile
+        short = name if len(name) <= 14 else name[:12] + "…"
+        name_lbl = QLabel(short)
+        name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_lbl.setWordWrap(True)
+        name_lbl.setStyleSheet(
+            "color: #c0caf5; font-size: 10px; font-weight: 600;"
+            " background: transparent; border: none;"
+        )
+        name_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        lay.addWidget(icon_lbl)
+        lay.addWidget(name_lbl)
+
+        self.setStyleSheet("""
+            QPushButton {
+                background: rgba(36, 40, 59, 0.55);
+                border: 1px solid rgba(65, 72, 104, 0.5);
+                border-radius: 18px;
+            }
+            QPushButton:hover {
+                background: rgba(187, 154, 247, 0.35);
+                border: 1px solid rgba(187, 154, 247, 0.75);
+            }
+            QPushButton:pressed {
+                background: rgba(187, 154, 247, 0.55);
+            }
+        """)
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -921,55 +988,85 @@ class LaunchpadButton(QPushButton):
             pass
 
 class LaunchpadWidget(QWidget):
+    """macOS-style icon grid launchpad overlay.
+
+    NOT full-screen. Floats as a centered panel over the MDI area.
+    5-column icon grid, large emoji icons, name below each tile.
+    Esc or click-outside closes it.
+    """
 
     _TAB_BASE = (
         "QPushButton { background: rgba(36,40,59,0.7); color: #a9b1d6; "
         "border: 1px solid #414868; border-radius: 12px; "
-        "padding: 4px 16px; font-size: 13px; font-weight: bold; }"
+        "padding: 4px 14px; font-size: 12px; font-weight: bold; }"
         "QPushButton:hover { background: rgba(187,154,247,0.25); color: #c0caf5; }"
     )
     _TAB_ACTIVE = (
         "QPushButton { background: rgba(187,154,247,0.45); color: #ffffff; "
         "border: 1px solid #bb9af7; border-radius: 12px; "
-        "padding: 4px 16px; font-size: 13px; font-weight: bold; }"
+        "padding: 4px 14px; font-size: 12px; font-weight: bold; }"
     )
+
+    _COLS = 5
+    _TILE_W = 110  # tile spacing
 
     def __init__(self, desktop):
         super().__init__(desktop)
         self.desktop = desktop
         self._active_cat = "All"
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("background-color: rgba(10, 10, 15, 0.92);")
+        # Frosted-glass dark panel — NOT full-screen
+        self.setStyleSheet(
+            "LaunchpadWidget { background: rgba(8, 10, 18, 0.94);"
+            " border: 1px solid rgba(65,72,104,0.6);"
+            " border-radius: 16px; }"
+        )
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(50, 30, 50, 40)
-        root.setSpacing(14)
+        root.setContentsMargins(24, 18, 24, 22)
+        root.setSpacing(10)
 
-        title = QLabel("Launchpad")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # ── Header: title + close ────────────────────────────────────────
+        hdr = QHBoxLayout()
+        title = QLabel("⚡  Launchpad")
         title.setStyleSheet(
-            "color: #ffffff; font-size: 30px; font-weight: 700;"
+            "color: #c0caf5; font-size: 16px; font-weight: 700;"
             " font-family: 'Helvetica Neue', Helvetica, sans-serif;"
+            " background: transparent;"
         )
-        root.addWidget(title)
+        hdr.addWidget(title)
+        hdr.addStretch()
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(22, 22)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            "QPushButton { background: rgba(255,68,68,0.22); color: #ff6b6b;"
+            " border: none; border-radius: 11px; font-size: 11px; font-weight: bold; }"
+            "QPushButton:hover { background: rgba(255,68,68,0.55); color: #fff; }"
+        )
+        close_btn.clicked.connect(self.hide)
+        hdr.addWidget(close_btn)
+        root.addLayout(hdr)
 
+        # ── Search bar ───────────────────────────────────────────────────
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Search apps")
-        self.search_bar.setFixedWidth(420)
+        self.search_bar.setPlaceholderText("🔍  Search apps…")
         self.search_bar.setStyleSheet(
-            "QLineEdit { background: rgba(36, 40, 59, 0.86); color: #ffffff;"
-            " border: 1px solid #414868; border-radius: 12px; padding: 10px 14px;"
-            " font-size: 18px; }"
+            "QLineEdit { background: rgba(36, 40, 59, 0.80); color: #ffffff;"
+            " border: 1px solid #414868; border-radius: 9px; padding: 6px 11px;"
+            " font-size: 13px; }"
+            "QLineEdit:focus { border: 1px solid #bb9af7; }"
         )
-        self.search_bar.textChanged.connect(lambda _text: self._rebuild_grid(self._active_cat))
-        root.addWidget(self.search_bar, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.search_bar.textChanged.connect(lambda _: self._rebuild_grid(self._active_cat))
+        root.addWidget(self.search_bar)
+
         esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         esc_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         esc_shortcut.activated.connect(self.hide)
 
-        # ── Category tab bar ──────────────────────────────────────────────
+        # ── Category tab bar ─────────────────────────────────────────────
         tab_row = QHBoxLayout()
-        tab_row.setSpacing(8)
+        tab_row.setSpacing(5)
         tab_row.addStretch()
 
         cats = ["All"] + sorted({
@@ -981,7 +1078,7 @@ class LaunchpadWidget(QWidget):
         self._tab_btns: dict[str, QPushButton] = {}
         for cat in cats:
             btn = QPushButton(cat)
-            btn.setFixedHeight(26)
+            btn.setFixedHeight(22)
             btn.setStyleSheet(self._TAB_ACTIVE if cat == "All" else self._TAB_BASE)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _=False, c=cat: self._set_category(c))
@@ -991,26 +1088,28 @@ class LaunchpadWidget(QWidget):
         tab_row.addStretch()
         root.addLayout(tab_row)
 
-        # ── App list ──────────────────────────────────────────────────────
+        # ── Icon grid ────────────────────────────────────────────────────
         self.grid_container = QWidget()
-        self.grid_container.setAutoFillBackground(False)
         self.grid_container.setStyleSheet("background: transparent;")
-        self.grid_layout = QVBoxLayout(self.grid_container)
-        self.grid_layout.setContentsMargins(0, 8, 0, 8)
+        self.grid_layout = QGridLayout(self.grid_container)
+        self.grid_layout.setContentsMargins(4, 4, 4, 4)
         self.grid_layout.setSpacing(8)
-        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.grid_container)
+        scroll.setFrameShape(scroll.Shape.NoFrame)
         scroll.setStyleSheet(
             "QScrollArea { border: none; background: transparent; }"
             "QScrollArea > QWidget > QWidget { background: transparent; }"
+            "QScrollBar:vertical { width: 5px; background: transparent; }"
+            "QScrollBar::handle:vertical { background: rgba(187,154,247,0.4); border-radius: 2px; }"
         )
         scroll.viewport().setStyleSheet("background: transparent;")
         root.addWidget(scroll)
 
-        self._app_buttons: list[tuple[str, str, QPushButton]] = []
+        self._app_buttons: list[tuple[str, str, LaunchpadButton]] = []
         self._populate_grid()
 
     def _populate_grid(self):
@@ -1018,48 +1117,29 @@ class LaunchpadWidget(QWidget):
             if dat.get("_retired") or dat.get("hidden"):
                 continue
             cat = _macos_app_category(name, dat)
-            icon = self._icon_for(name, cat)
-            btn = LaunchpadButton(f"{icon}  {name}    {cat}", name)
-            btn.setMinimumHeight(44)
-            btn.setMaximumWidth(760)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background: rgba(10, 10, 15, 0.42);
-                    color: #c0caf5;
-                    font-size: 14px;
-                    font-weight: 650;
-                    border: 1px solid rgba(65, 72, 104, 0.72);
-                    border-radius: 10px;
-                    padding: 9px 14px;
-                    text-align: left;
-                }
-                QPushButton:hover {
-                    background: rgba(187,154,247,0.32);
-                    border: 1px solid rgba(187,154,247,0.72);
-                    color: #ffffff;
-                }
-            """)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setToolTip(f"{name} — {cat}")
+            # Manifest icon field takes priority over heuristic
+            icon = dat.get("icon") or self._icon_for(name, cat)
+            btn = LaunchpadButton(icon, name, name)
             btn.clicked.connect(lambda _=False, n=name: self._launch(n))
             self._app_buttons.append((name, cat, btn))
         self._rebuild_grid("All")
 
     def _rebuild_grid(self, category: str):
-        # Remove widgets from grid WITHOUT reparenting to None (that kills PyQt6 signals)
         while self.grid_layout.count():
             item = self.grid_layout.takeAt(0)
-            if item.widget():
+            if item and item.widget():
                 item.widget().hide()
         query = self.search_bar.text().strip().casefold()
-        for name, cat, btn in self._app_buttons:
-            if category != "All" and cat != category:
-                continue
-            if query and query not in name.casefold():
-                continue
-            self.grid_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        visible = [
+            (name, cat, btn)
+            for name, cat, btn in self._app_buttons
+            if (category == "All" or cat == category)
+            and (not query or query in name.casefold() or query in cat.casefold())
+        ]
+        for idx, (name, cat, btn) in enumerate(visible):
+            row, col = divmod(idx, self._COLS)
+            self.grid_layout.addWidget(btn, row, col, Qt.AlignmentFlag.AlignCenter)
             btn.show()
-        self.grid_layout.addStretch(1)
 
     def _set_category(self, category: str):
         self._active_cat = category
@@ -1078,6 +1158,8 @@ class LaunchpadWidget(QWidget):
     @staticmethod
     def _icon_for(name: str, category: str) -> str:
         n = name.casefold()
+        if "journal" in n:
+            return "📓"
         if "alice" in n:
             return "🧜‍♀️"
         if "conversation" in n or "chat" in n:
@@ -1086,8 +1168,10 @@ class LaunchpadWidget(QWidget):
             return "📚"
         if "file" in n:
             return "📁"
-        if "terminal" in n:
-            return "👩‍💻"
+        if "terminal" in n or "shell" in n:
+            return "🖥️"
+        if "schedule" in n or "life" in n or "cockpit" in n:
+            return "📅"
         if "settings" in n or category == "System Settings":
             return "⚙️"
         if category == "Games":
@@ -1100,6 +1184,16 @@ class LaunchpadWidget(QWidget):
             return "🌐"
         if category == "Developer":
             return "🧰"
+        if category == "Economy":
+            return "💎"
+        if "simulation" in n or category == "Simulations":
+            return "🧬"
+        if "safety" in n or "tracker" in n:
+            return "🛡️"
+        if "browser" in n:
+            return "🔭"
+        if "gaze" in n or "vision" in n:
+            return "👁️"
         return "◼︎"
 
     def keyPressEvent(self, event):
@@ -1107,6 +1201,9 @@ class LaunchpadWidget(QWidget):
             self.hide()
             return
         super().keyPressEvent(event)
+
+
+
 
 
 
@@ -2597,13 +2694,19 @@ class SiftaDesktop(QMainWindow):
             return
         if hasattr(self, "_spotlight"):
             self._spotlight.hide()
-        surface = self.centralWidget() if self._launchpad.parentWidget() is self else (self._launchpad.parentWidget() or self)
-        self._launchpad.setGeometry(surface.geometry() if surface is self.centralWidget() else surface.rect())
+        # Show as compact centered panel over the MDI area — NOT full-screen
+        mdi_rect = self.mdi.rect()
+        mdi_pos = self.mdi.mapTo(self, self.mdi.pos())
+        panel_w, panel_h = 640, 520
+        x = mdi_pos.x() + (mdi_rect.width() - panel_w) // 2
+        y = mdi_pos.y() + max(40, (mdi_rect.height() - panel_h) // 4)
+        self._launchpad.setGeometry(x, y, panel_w, panel_h)
         self._launchpad.reset_view()
         self._launchpad.show()
         self._launchpad.raise_()
         self._launchpad.activateWindow()
         self._launchpad.search_bar.setFocus()
+
 
     def _cycle_windows(self):
         """macOS-style window cycling for the MDI desktop (Cmd+` / Cmd+Tab)."""
