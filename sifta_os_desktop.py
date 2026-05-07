@@ -2694,13 +2694,14 @@ class SiftaDesktop(QMainWindow):
             return
         if hasattr(self, "_spotlight"):
             self._spotlight.hide()
-        # Show as compact centered panel over the MDI area — NOT full-screen
+        # Anchor to left edge of MDI area — right beside Alice camera panel
         mdi_rect = self.mdi.rect()
         mdi_pos = self.mdi.mapTo(self, self.mdi.pos())
         panel_w, panel_h = 640, 520
-        x = mdi_pos.x() + (mdi_rect.width() - panel_w) // 2
-        y = mdi_pos.y() + max(40, (mdi_rect.height() - panel_h) // 4)
+        x = mdi_pos.x() + 12          # 12px gap from Alice panel edge
+        y = mdi_pos.y() + 36          # just below the MDI title bar
         self._launchpad.setGeometry(x, y, panel_w, panel_h)
+
         self._launchpad.reset_view()
         self._launchpad.show()
         self._launchpad.raise_()
