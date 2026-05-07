@@ -16,6 +16,7 @@
 import AVFoundation
 import CoreImage
 import Foundation
+import ImageIO
 import Vision
 
 // ─── JSON output ─────────────────────────────────────────────────────────────
@@ -26,6 +27,7 @@ struct FaceResult: Codable {
     var confidence: Double
     var bounding_boxes: [[Double]]
     var source: String
+    var frame_path: String?
     var error: String?
 }
 
@@ -46,6 +48,7 @@ func emitError(_ reason: String) {
         confidence: 0.0,
         bounding_boxes: [],
         source: "webcam",
+        frame_path: nil,
         error: reason
     ))
     exit(1)
@@ -120,6 +123,34 @@ guard waitResult == .success, let buf = delegate.buf,
 // ─── Vision face detection ────────────────────────────────────────────────────
 
 let ts = Date().timeIntervalSince1970
+let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+let ciContext = CIContext()
+var savedFramePath: String? = nil
+
+if let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let framesDir = root
+        .appendingPathComponent(".sifta_state", isDirectory: true)
+        .appendingPathComponent("owner_body_vision_frames", isDirectory: true)
+    do {
+        try FileManager.default.createDirectory(at: framesDir, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let stamp = formatter.string(from: Date(timeIntervalSince1970: ts))
+        let filename = "\(stamp)_face_detect.png"
+        let outputURL = framesDir.appendingPathComponent(filename)
+        if let destination = CGImageDestinationCreateWithURL(outputURL as CFURL, "public.png" as CFString, 1, nil) {
+            CGImageDestinationAddImage(destination, cgImage, nil)
+            if CGImageDestinationFinalize(destination) {
+                savedFramePath = outputURL.path
+            }
+        }
+    } catch {
+        // Frame saving is receipt context. Detection can still proceed.
+    }
+}
+
 let request = VNDetectFaceRectanglesRequest()
 let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
 
@@ -150,6 +181,7 @@ emit(FaceResult(
     confidence: maxConf,
     bounding_boxes: boxes,
     source: "webcam",
+    frame_path: savedFramePath,
     error: nil
 ))
 exit(0)

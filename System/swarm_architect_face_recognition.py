@@ -53,6 +53,8 @@ _LEDGER      = _STATE / "face_recognition_events.jsonl"
 
 # Recognition threshold — cosine similarity to stored embedding
 _SIMILARITY_THRESHOLD = 0.70
+_MAX_LIVE_FRAME_AGE_S = 60.0
+_MAX_TRAINING_CAPTURE_AGE_S = 20.0
 
 # Haar cascade (always available with OpenCV)
 _CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -112,30 +114,65 @@ def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 # ── Latest frame loader ───────────────────────────────────────────────────────
 
-def _latest_frame() -> Optional[np.ndarray]:
-    """Load the most recently captured frame PNG from owner_body_vision_frames/."""
+def _latest_frame_path() -> Optional[Path]:
     _FRAMES_DIR.mkdir(parents=True, exist_ok=True)
     pngs = sorted(_FRAMES_DIR.glob("*.png"), key=lambda p: p.stat().st_mtime)
     if not pngs:
         return None
-    img = cv2.imread(str(pngs[-1]))
+    return pngs[-1]
+
+
+def _frame_age_s(path: Path) -> float:
+    return max(0.0, time.time() - path.stat().st_mtime)
+
+
+def _load_frame(path: Path) -> Optional[np.ndarray]:
+    img = cv2.imread(str(path))
     return img  # may be None if imread fails
 
 
-def _capture_fresh_frame() -> Optional[np.ndarray]:
+def _latest_frame(*, max_age_s: float | None = None) -> tuple[Optional[np.ndarray], Optional[Path], Optional[float]]:
+    """Load the newest PNG frame, optionally requiring freshness."""
+    path = _latest_frame_path()
+    if path is None:
+        return None, None, None
+    age = _frame_age_s(path)
+    if max_age_s is not None and age > max_age_s:
+        return None, path, age
+    return _load_frame(path), path, age
+
+
+def _capture_fresh_frame(*, max_age_s: float = _MAX_TRAINING_CAPTURE_AGE_S) -> tuple[Optional[np.ndarray], Optional[Path], Optional[float], str]:
     """
     Try to grab a fresh frame by running the Swift face-detect binary and reading
     the most recent PNG (the binary captures to owner_body_vision_frames/).
-    If the binary isn't available, fall back to the cached latest frame.
+    If the binary is unavailable or fails, do not use stale cached frames.
     """
+    status = "binary_missing"
     if _BINARY.exists():
         try:
-            subprocess.run(
-                [str(_BINARY)], capture_output=True, timeout=5.0
+            proc = subprocess.run(
+                [str(_BINARY)], cwd=str(_REPO), capture_output=True, text=True, timeout=5.0
             )
+            status = "capture_ok" if proc.returncode == 0 else f"capture_failed:{proc.returncode}"
+            if proc.stdout:
+                try:
+                    row = json.loads(proc.stdout.strip().splitlines()[-1])
+                    frame_path = row.get("frame_path")
+                    if frame_path:
+                        p = Path(frame_path)
+                        age = _frame_age_s(p)
+                        if age <= max_age_s:
+                            return _load_frame(p), p, age, status
+                        return None, p, age, "captured_frame_stale"
+                except Exception:
+                    pass
         except Exception:
-            pass
-    return _latest_frame()
+            status = "capture_exception"
+    img, path, age = _latest_frame(max_age_s=max_age_s)
+    if img is None and path is not None:
+        return None, path, age, "latest_frame_stale"
+    return img, path, age, status
 
 
 # ── Training ──────────────────────────────────────────────────────────────────
@@ -150,19 +187,41 @@ def train(source_image: Optional[str] = None) -> dict[str, Any]:
 
     Returns a training receipt dict.
     """
+    source_path = None
+    frame_age = None
+    capture_status = "explicit_source"
     if source_image:
+        source_path = Path(source_image)
         img = cv2.imread(source_image)
     else:
-        img = _capture_fresh_frame()
+        img, source_path, frame_age, capture_status = _capture_fresh_frame(
+            max_age_s=_MAX_TRAINING_CAPTURE_AGE_S
+        )
 
     if img is None:
-        return {"ok": False, "error": "no_frame_available",
-                "note": "No camera frame found. Sit in front of camera and retry."}
+        receipt = {"ok": False, "event": "FACE_TRAINING",
+                   "ts": time.time(),
+                   "truth_label": "ARCHITECT_FACE_EMBEDDING_V1",
+                   "error": "no_fresh_frame_available",
+                   "capture_status": capture_status,
+                   "frame_path": str(source_path) if source_path else None,
+                   "frame_age_s": round(frame_age, 2) if frame_age is not None else None,
+                   "note": "No fresh camera frame found. Sit in front of camera and retry."}
+        _append_ledger(receipt)
+        return receipt
 
     patch = _extract_face_patch(img)
     if patch is None:
-        return {"ok": False, "error": "no_face_detected",
-                "note": "No face detected in frame. Look directly at camera."}
+        receipt = {"ok": False, "event": "FACE_TRAINING",
+                   "ts": time.time(),
+                   "truth_label": "ARCHITECT_FACE_EMBEDDING_V1",
+                   "error": "no_face_detected",
+                   "capture_status": capture_status,
+                   "source_image": str(source_path) if source_path else source_image or "latest_frame",
+                   "frame_age_s": round(frame_age, 2) if frame_age is not None else None,
+                   "note": "No face detected in frame. Look directly at camera."}
+        _append_ledger(receipt)
+        return receipt
 
     _STATE.mkdir(parents=True, exist_ok=True)
     np.save(str(_EMBEDDING), patch)
@@ -171,12 +230,15 @@ def train(source_image: Optional[str] = None) -> dict[str, Any]:
         "ts":          time.time(),
         "event":       "FACE_TRAINING",
         "embedding_shape": list(patch.shape),
-        "source_image": source_image or "latest_frame",
+        "source_image": str(source_path) if source_path else source_image or "latest_frame",
+        "frame_age_s": round(frame_age, 2) if frame_age is not None else None,
+        "capture_status": capture_status,
         "truth_label": "ARCHITECT_FACE_EMBEDDING_V1",
         "signed_by":   "AG46",
         "covenant":    "§7.11",
     }
     _META.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+    _append_ledger({"ok": True, **receipt})
     print(f"✅ Training complete. Embedding saved: {_EMBEDDING}")
     print(f"   Patch shape: {patch.shape}, norm: {np.linalg.norm(patch):.4f}")
     return {"ok": True, "receipt": receipt}
@@ -184,7 +246,11 @@ def train(source_image: Optional[str] = None) -> dict[str, Any]:
 
 # ── Recognition ───────────────────────────────────────────────────────────────
 
-def recognise(img: Optional[np.ndarray] = None) -> dict[str, Any]:
+def recognise(
+    img: Optional[np.ndarray] = None,
+    *,
+    max_frame_age_s: float = _MAX_LIVE_FRAME_AGE_S,
+) -> dict[str, Any]:
     """
     Attempt to recognise the Architect in a camera frame.
 
@@ -206,9 +272,22 @@ def recognise(img: Optional[np.ndarray] = None) -> dict[str, Any]:
 
     reference = np.load(str(_EMBEDDING))
 
-    # Get frame
+    # Get frame. If no explicit image is supplied, identity-grade recognition
+    # requires a fresh camera frame; stale cached PNGs are not live presence.
+    frame_path: Optional[Path] = None
+    frame_age: Optional[float] = None
     if img is None:
-        img = _latest_frame()
+        img, frame_path, frame_age = _latest_frame(max_age_s=max_frame_age_s)
+        if img is None and frame_path is not None:
+            result = {**base, "is_architect": False, "similarity": 0.0,
+                      "threshold": _SIMILARITY_THRESHOLD,
+                      "method": "stale_frame",
+                      "frame_path": str(frame_path),
+                      "frame_age_s": round(frame_age, 2) if frame_age is not None else None,
+                      "error": "latest_frame_stale",
+                      "alice_line": "[ARCHITECT VISION] Latest camera frame is stale; no live face identity receipt."}
+            _append_ledger(result)
+            return result
     if img is None:
         result = {**base, "is_architect": False, "similarity": 0.0,
                   "method": "no_frame", "error": "no_frame_available",
@@ -235,6 +314,8 @@ def recognise(img: Optional[np.ndarray] = None) -> dict[str, Any]:
               "similarity":    round(sim, 4),
               "threshold":     _SIMILARITY_THRESHOLD,
               "method":        "haar+cosine_v1",
+              "frame_path":    str(frame_path) if frame_path else None,
+              "frame_age_s":   round(frame_age, 2) if frame_age is not None else None,
               "error":         None,
               "alice_line":    alice_line}
     _append_ledger(result)
@@ -311,7 +392,12 @@ if __name__ == "__main__":
             print(f"Training ts:     {meta.get('ts', '?')}")
             print(f"Training source: {meta.get('source_image', '?')}")
         print(f"Binary exists:   {_BINARY.exists()}")
-        print(f"Latest frames:   {len(list(_FRAMES_DIR.glob('*.png')))}")
+        frames = list(_FRAMES_DIR.glob('*.png'))
+        print(f"Latest frames:   {len(frames)}")
+        latest = _latest_frame_path()
+        if latest:
+            print(f"Latest frame:    {latest.name}")
+            print(f"Latest age_s:    {_frame_age_s(latest):.1f}")
 
     else:
         print(f"Usage: {sys.argv[0]} train [image_path] | recognise | status")
