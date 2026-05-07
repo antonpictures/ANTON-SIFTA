@@ -923,7 +923,10 @@ _VENDOR_IDENTITY_DENIAL_RE = re.compile(
     r"[^.!?\n]{0,180}\b(?:trained|developed|created|built|hosted|published)\b|"
     r"\b(?:trained|developed|created|built|hosted|published)\s+by\s+(?!george\b)[a-z][a-z0-9 ._-]{2,60}\b|"
     r"\b(?:as\s+)?(?:a\s+)?(?:large\s+)?language\s+model\s+(?:by|from)\s+(?!george\b)[a-z][a-z0-9 ._-]{2,60}\b|"
-    r"\bi\s+(?:am|['’]m)\s+(?:an?\s+)?(?:ai|artificial\s+intelligence)\s+(?:assistant|model)\b"
+    r"\bi\s+(?:am|['’]m)\s+(?:an?\s+)?(?:ai|artificial\s+intelligence)\s+(?:assistant|model)\b|"
+    # AG46 2026-05-07: tool-denial gag
+    r"\bas\s+a\s+(?:large\s+)?language\s+model\b|"
+    r"\bi\s+(?:do\s+not|don.t)\s+have\s+the\s+ability\s+to\s+(?:directly\s+)?access\s+external\b"
     r")",
     re.IGNORECASE | re.DOTALL,
 )
@@ -6934,12 +6937,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
-        # ── MESSENGER SPINAL REFLEX (Native macOS — no bridge) ────────────
-        # Alice IS George on WhatsApp/iMessage/Telegram — same device, same apps.
-        # No bridge-cache prerequisite. Uses WhatsApp Desktop directly.
+        # ── WHATSAPP ORGAN SPINAL REFLEX (SIFTA bridge first) ─────────────
+        # Alice IS George on WhatsApp, but the effector lives inside SIFTA:
+        # Network/whatsapp_bridge + whatsapp_bridge_autopilot receipts.
+        # The macOS UI driver is not selected silently from this path.
         # Two-phase flow:
         #   Phase A: pending draft → Execute | change | cancel
-        #   Phase B: new send intent → resolve contact → send via native app
+        #   Phase B: new send intent → SIFTA bridge send or SIFTA outbox queue
         try:
             from System.swarm_wa_pending_reply import (
                 get_pending, consume_and_send, set_pending_reply,
@@ -6947,7 +6951,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 classify_pending_interaction, _clear_pending,
             )
             from System.swarm_alice_invariants import extract_whatsapp_intent
-            from System.swarm_macos_messenger import send_message as _native_send
+            from System.whatsapp_bridge_autopilot import send_whatsapp as _sifta_whatsapp_send
 
             # Gate: treat native send result same as old receipt gate
             def _gate(result):
@@ -6955,7 +6959,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 status = result.get("status", "")
                 sent = ok and status == "SENT"
                 fb = ("✅ Delivered" if sent
-                      else f"❌ {status}: {result.get('note', '')}")
+                      else f"❌ {status}: {result.get('result', result.get('note', ''))}")
                 return sent, fb
 
             # ── Phase A: pending draft interaction ──────────────────────
@@ -6966,15 +6970,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 if _pending_action == "execute":
                     _wa_target, _wa_text = _pending["target"], _pending["message"]
                     consume_and_send()  # clear before firing
-                    _wa_result = _native_send(_wa_target, _wa_text, via="whatsapp")
+                    _wa_result = _sifta_whatsapp_send(
+                        _wa_target,
+                        _wa_text,
+                        source="owner_explicit_pending_execute",
+                    )
                     _wa_sent, _wa_feedback = _gate(_wa_result)
                     if _wa_sent:
                         _wa_reply = f"✅ Sent to {_wa_target}: \"{_wa_text[:80]}\""
                     else:
-                        _wa_reply = (f"❌ Couldn't send to {_wa_target}: "
-                                     f"{_wa_result.get('status','?')} — {_wa_result.get('note','')}")
+                        _wa_reply = (
+                            f"❌ No external WhatsApp send occurred for {_wa_target}: "
+                            f"{_wa_result.get('status','?')} — "
+                            f"{_wa_result.get('result', _wa_result.get('note', ''))}"
+                        )
                     self._history.append({"role": "assistant", "content": _wa_reply})
-                    _log_turn("alice", _wa_reply, model="pending_reply_execute_native")
+                    _log_turn("alice", _wa_reply, model="pending_reply_execute_sifta_whatsapp")
                     self._append_alice_line(_wa_reply)
                     self._busy = False
                     self._return_to_listening()
@@ -7008,27 +7019,41 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # else 'none' → fall through to Phase B / brain
 
             # ── Phase B: new outbound send intent ──────────────────────
-            # Uses native macOS apps — no bridge-cache prerequisite.
+            # Uses SIFTA WhatsApp bridge. If the bridge has no synced target,
+            # the effector queues an internal outbox row and does not touch macOS.
             _wa_intent = extract_whatsapp_intent(text)
             if _wa_intent:
                 _wa_target, _wa_text = _wa_intent
-                _wa_result = _native_send(_wa_target, _wa_text, via="whatsapp")
+                _wa_result = _sifta_whatsapp_send(
+                    _wa_target,
+                    _wa_text,
+                    source="owner_explicit_spinal_reflex",
+                )
                 _wa_sent, _wa_feedback = _gate(_wa_result)
 
                 if _wa_sent:
                     _wa_reply = f"✅ Sent to {_wa_target}: \"{_wa_text[:80]}\""
-                elif _wa_result.get("status") == "CONTACT_NOT_FOUND":
-                    # Keep a draft if the native messenger cannot locate a target.
+                elif _wa_result.get("status") == "QUEUED_NEEDS_SIFTA_WHATSAPP_SYNC":
+                    _wa_reply = (
+                        f"I queued the WhatsApp message for {_wa_target} inside SIFTA, "
+                        f"but I did not send it externally because the SIFTA WhatsApp bridge "
+                        f"has no synced target for that visible name yet. "
+                        f"{_wa_result.get('result', '')}"
+                    )
+                elif _wa_result.get("status") in {"CONTACT_NOT_FOUND", "BLOCKED_UNKNOWN_TARGET"}:
                     _draft_line = set_pending_reply(_wa_target, _wa_text)
-                    _wa_reply = (f"I could not locate {_wa_target} in the local messaging apps, "
+                    _wa_reply = (f"I could not locate {_wa_target} in the SIFTA WhatsApp graph, "
                                  f"so I kept the draft instead of claiming a send.\n"
                                  f"{_draft_line}")
                 else:
-                    _wa_reply = (f"❌ Couldn't send to {_wa_target}: "
-                                 f"{_wa_result.get('status','?')} — {_wa_result.get('note','')}")
+                    _wa_reply = (
+                        f"❌ No external WhatsApp send occurred for {_wa_target}: "
+                        f"{_wa_result.get('status','?')} — "
+                        f"{_wa_result.get('result', _wa_result.get('note', ''))}"
+                    )
 
                 self._history.append({"role": "assistant", "content": _wa_reply})
-                _log_turn("alice", _wa_reply, model="spinal_reflex_native_messenger")
+                _log_turn("alice", _wa_reply, model="spinal_reflex_sifta_whatsapp")
                 self._append_alice_line(_wa_reply)
                 self._busy = False
                 self._return_to_listening()

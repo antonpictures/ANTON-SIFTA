@@ -12,7 +12,8 @@ Implements the "draft → Execute" natural language flow George described:
   George says "change it to: we're celebrating" → Alice updates draft
   George says "send it" / "execute" / "yes send" → Alice fires send_whatsapp
 
-Alice IS George on WhatsApp. Her identity IS his identity on the bridge.
+Alice IS George on WhatsApp. Her identity IS his identity in the local
+WhatsApp account/app surface.
 No consent gate for outbound — consent was given at "send" / "execute".
 
 STGM: every send is receipt-backed. No STGM cost for drafts. Cost on SENT.
@@ -104,7 +105,11 @@ def consume_and_send() -> Optional[Tuple[str, str]]:
 
 _EXECUTE_PATTERNS = re.compile(
     r"\b(execute|send\s+it|yes\s+send|go\s+ahead|send\s+(?:it\s+)?(?:to\s+\w+\s+)?(?:now|please)?|"
-    r"just\s+send|send\s+alice|send\s+that|ok\s+send|do\s+it|fire\s+it|confirm)\b",
+    r"just\s+send|send\s+alice|send\s+that|ok\s+send|do\s+it|fire\s+it|confirm|"
+    # AG46 2026-05-07: catch 'draft it and send it', 'send it on WhatsApp'
+    r"draft\s+(?:it\s+)?and\s+send(?:\s+it)?|"
+    r"send\s+(?:it\s+)?on\s+(?:what[''s]*app|whatsapp|iMessage|telegram)|"
+    r"go\s+send|just\s+send\s+it|please\s+send\s+it)\b",
     re.IGNORECASE,
 )
 
