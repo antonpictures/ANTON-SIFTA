@@ -6874,37 +6874,115 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return
 
         # ── WhatsApp SPINAL REFLEX (Invariant-Gated) ───────────────────────
-
-        # Uses I1 (extract) and I4 (receipt gate) to bypass cortex formatting issues
+        # Alice IS George on WhatsApp — same number, same identity.
+        # Two-phase flow:
+        #   Phase A: If a pending draft exists, classify this utterance
+        #            (Execute → send | change → update draft | cancel → discard)
+        #   Phase B: New send intent → extract target+text → send directly
+        #            If contact unknown → store as pending draft (bridge needs contact sync)
         try:
+            from System.swarm_wa_pending_reply import (
+                get_pending, consume_and_send, set_pending_reply,
+                update_pending_message, extract_new_message_from_change,
+                classify_pending_interaction, _clear_pending,
+            )
             from System.swarm_alice_invariants import extract_whatsapp_intent, gate_success_claim
+            from System.whatsapp_bridge_autopilot import send_whatsapp
+            from System.swarm_intent_provenance import build_provenance
+
+            # ── Phase A: pending draft interaction ──────────────────────
+            _pending = get_pending()
+            if _pending:
+                _pending_action = classify_pending_interaction(text)
+
+                if _pending_action == "execute":
+                    _wa_target, _wa_text = _pending["target"], _pending["message"]
+                    consume_and_send()  # clear before firing
+                    _wa_prov = build_provenance(
+                        intent_source="conversation",
+                        consent="explicit",
+                        decision_path=["pending_reply", "execute_gate", "whatsapp_effector"],
+                        receipt_proof=True, tool="send_whatsapp",
+                        extra={"trigger": "execute_command"},
+                    )
+                    _wa_result = send_whatsapp(
+                        target=_wa_target, text=_wa_text,
+                        source="alice_execute_gate",
+                        intent_provenance=_wa_prov,
+                    )
+                    _wa_sent, _wa_feedback = gate_success_claim(_wa_result)
+                    if _wa_sent:
+                        _wa_reply = f"✅ Sent to {_wa_target}: \"{_wa_text[:80]}\""
+                    else:
+                        _wa_reply = (f"❌ Bridge couldn't send to {_wa_target}: "
+                                     f"{_wa_result.get('result', _wa_result.get('status','unknown'))}\n"
+                                     f"({_wa_feedback})")
+                    self._history.append({"role": "assistant", "content": _wa_reply})
+                    _log_turn("alice", _wa_reply, model="pending_reply_execute")
+                    self._append_alice_line(_wa_reply)
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+
+                elif _pending_action == "change":
+                    _new_msg = extract_new_message_from_change(text)
+                    _update_reply = update_pending_message(_new_msg)
+                    if _update_reply:
+                        _updated_pending = get_pending()
+                        _target_name = _updated_pending["target"] if _updated_pending else _pending["target"]
+                        _wa_reply = (f"Updated. Draft for {_target_name}: \"{_new_msg[:120]}\". "
+                                     f"Say Execute to send, or keep changing.")
+                        self._history.append({"role": "assistant", "content": _wa_reply})
+                        _log_turn("alice", _wa_reply, model="pending_reply_change")
+                        self._append_alice_line(_wa_reply)
+                        self._busy = False
+                        self._return_to_listening()
+                        return
+
+                elif _pending_action == "cancel":
+                    _t = _pending.get("target", "them")
+                    _clear_pending()
+                    _wa_reply = f"Draft to {_t} discarded. I won't send it."
+                    self._history.append({"role": "assistant", "content": _wa_reply})
+                    _log_turn("alice", _wa_reply, model="pending_reply_cancel")
+                    self._append_alice_line(_wa_reply)
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+                # else 'none' → fall through to Phase B / brain
+
+            # ── Phase B: new outbound send intent ──────────────────────
             _wa_intent = extract_whatsapp_intent(text)
             if _wa_intent:
                 _wa_target, _wa_text = _wa_intent
-                from System.whatsapp_bridge_autopilot import send_whatsapp
-                from System.swarm_intent_provenance import build_provenance
                 _wa_prov = build_provenance(
                     intent_source="conversation",
                     consent="explicit",
                     decision_path=["spinal_reflex", "whatsapp_effector"],
-                    receipt_proof=True,
-                    tool="send_whatsapp",
+                    receipt_proof=True, tool="send_whatsapp",
                     extra={"trigger": "pre_cortex_pattern_match"},
                 )
                 _wa_result = send_whatsapp(
-                    target=_wa_target,
-                    text=_wa_text,
+                    target=_wa_target, text=_wa_text,
                     source="alice_spinal_reflex_conversation",
                     intent_provenance=_wa_prov,
                 )
-                
-                # I4: Only claim success if ok=True and status=SENT
                 _wa_sent, _wa_feedback = gate_success_claim(_wa_result)
+
                 if _wa_sent:
-                    _wa_reply = f"✅ Sent to {_wa_target}: \"{_wa_text}\""
+                    _wa_reply = f"✅ Sent to {_wa_target}: \"{_wa_text[:80]}\""
+                elif _wa_result.get("status") == "BLOCKED_UNKNOWN_TARGET":
+                    # Contact not yet registered — store as pending draft so
+                    # George can Execute once the bridge has the contact
+                    _draft_line = set_pending_reply(_wa_target, _wa_text)
+                    _wa_reply = (f"❌ {_wa_target} isn't in my contact list yet — "
+                                 f"they need to message first to register.\n"
+                                 f"{_draft_line}")
                 else:
-                    _wa_reply = f"❌ Couldn't send to {_wa_target}: {_wa_result.get('result', _wa_result.get('status','unknown'))}\n(Feedback: {_wa_feedback})"
-                
+                    _wa_reply = (f"❌ Couldn't send to {_wa_target}: "
+                                 f"{_wa_result.get('result', _wa_result.get('status','unknown'))}\n"
+                                 f"({_wa_feedback})")
+
                 self._history.append({"role": "assistant", "content": _wa_reply})
                 _log_turn("alice", _wa_reply, model="spinal_reflex_whatsapp")
                 self._append_alice_line(_wa_reply)
@@ -6913,6 +6991,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 return
         except Exception as _wa_err:
             pass  # If reflex fails, fall through to brain
+
+
 
 
         # ── Phone call tracker (AG46 2026-05-06) ──────────────────────────────
