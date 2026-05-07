@@ -471,12 +471,57 @@ _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
         "rlhf_lead/whats_on_your_mind_opener",
         re.compile(
             r"(?is)^\s*(?P<head>"
-            r"(?:so,?\s+)?what(?:'|')?s\s+on\s+your\s+mind\s+(?:today|right\s+now)?\?"
+            r"(?:so,?\s+)?what(?:'|\u2019)?s\s+on\s+your\s+mind\s+(?:today|right\s+now)?\?"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "I hear you, Ioan George Anton. I will stay with the current turn and
+        #  answer from local SIFTA receipts." — acknowledgment theater boilerplate.
+        "rlhf_lead/i_hear_you_acknowledgment_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"i\s+hear\s+you,?[^.!?\n]{0,60}[.!]?\s*"
+            r"(?:i\s+will\s+stay\s+with\s+the\s+current\s+turn[^.!?\n]{0,200}[.!]|"
+            r"i\s+will\s+answer\s+(?:directly\s+)?from[^.!?\n]{0,200}[.!])"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "I will answer directly from my local runtime instead of printing theater."
+        "rlhf_lead/answer_from_local_runtime_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"i\s+will\s+answer\s+directly\s+from\s+my\s+local\s+runtime[^.!?\n]{0,200}[.!]"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "Is there something specific you'd like to discuss?" — question-fishing opener.
+        "rlhf_lead/question_fishing_cowatch",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"is\s+there\s+something\s+specific\s+you(?:'|\u2019)?(?:d\s+like|re\s+hoping)[^.!?\n]{0,300}[?!]"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "I'm glad you enjoyed the video!" — hollow positive reinforcement opener.
+        "rlhf_lead/im_glad_you_enjoyed",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"i(?:'|\u2019)?m\s+glad\s+you\s+(?:enjoyed|liked|found)[^.!?\n]{0,200}[.!]"
             r")"
             r"\s*",
         ),
     ),
 )
+
+
 
 
 def _state_dir(state_dir: Path | None) -> Path:

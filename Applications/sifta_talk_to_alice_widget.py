@@ -5587,6 +5587,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._last_internal_drive_id: str = ""
         # Event 122 — Stigtime organ: coarse action lane for continuity receipts.
         self._stigtime_action: str = "idle"
+        # Co-watch quiet mode: George said 'be quiet / just listen / free will'
+        # In this mode Alice ONLY speaks if SHE chooses to — not in response to
+        # every low-conf media turn or phatic acknowledgement.
+        # Cleared when George directly addresses Alice with a question or new topic.
+        self._cowatch_quiet_mode: bool = False
+
 
         # Periodic level decay so the bar relaxes when you stop speaking.
         self.make_timer(80, self._decay_level)
@@ -6722,6 +6728,59 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        # ── CO-WATCH QUIET MODE GATE ────────────────────────────────────────
+        # George said 'be quiet / just listen / free will'.
+        # In quiet mode Alice stays silent on non-addressed low-content turns.
+        # She exits quiet mode when George directly addresses her with a question.
+        import re as _re_quiet
+        _QUIET_TRIGGER_RE = _re_quiet.compile(
+            r"\b(?:"
+            r"be\s+quiet|stay\s+quiet|just\s+listen|go\s+quiet|"
+            r"free\s+will|you\s+have\s+free\s+will|speak\s+(?:only\s+)?if\s+you\s+(?:want|choose)|"
+            r"talk\s+only\s+if\s+you\s+(?:want|choose|have\s+something)|"
+            r"be\s+silent|just\s+watch|watch\s+with\s+me(?:\s+quietly)?|"
+            r"only\s+(?:speak|talk)\s+if\s+you\s+(?:want|choose|have)|"
+            r"don'?t\s+(?:say|respond|reply|talk)\s+unless\s+you\s+(?:want|choose|have)"
+            r")\b",
+            _re_quiet.IGNORECASE,
+        )
+        _QUIET_EXIT_RE = _re_quiet.compile(
+            r"\b(?:alice\s*,|hey\s+alice|ok\s+alice|alice\s+\?|alice!|"
+            r"what\s+do\s+you\s+think|do\s+you\s+think|can\s+you|please\s+)",
+            _re_quiet.IGNORECASE,
+        )
+        if _QUIET_TRIGGER_RE.search(text) and not _execute_fired and not _owner_sensor_effector_fired:
+            self._cowatch_quiet_mode = True
+            # Log that quiet mode was entered — and ACK ONCE only
+            _quiet_ack = "I'll listen quietly. I'll speak if I have something to say."
+            self._history.append({"role": "assistant", "content": _quiet_ack})
+            _log_turn("alice", _quiet_ack, model="cowatch_quiet_mode_enter")
+            self._append_alice_line(_quiet_ack)
+            self._tts = _TTSWorker(
+                _quiet_ack, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+        if self._cowatch_quiet_mode and not _execute_fired and not _owner_sensor_effector_fired:
+            # Exit quiet mode if George directly addresses Alice
+            if _QUIET_EXIT_RE.search(text) or "?" in text:
+                self._cowatch_quiet_mode = False
+                # Fall through — let Alice respond normally
+            else:
+                # Still in quiet mode — stay silent, just log to history
+                _q_note = f"(cowatch_quiet: not addressed — staying silent)"
+                self._history.append({"role": "assistant", "content": "(silent)"})
+                _log_turn("alice", _q_note, model="cowatch_quiet_mode")
+                self._append_system_line(_q_note, error=False)
+                self._busy = False
+                self._return_to_listening()
+                return
+        # ─────────────────────────────────────────────────────────────────────
+
         # Media ingress already ran before user/RLHS logging above.
 
         # ── RLHS DEGRADED grounding (Event 108, 2026-05-02) ───────────
@@ -6875,7 +6934,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         # ── MESSENGER SPINAL REFLEX (Native macOS — no bridge) ────────────
         # Alice IS George on WhatsApp/iMessage/Telegram — same device, same apps.
-        # No Baileys. No JID. No bridge server. Uses WhatsApp Desktop directly.
+        # No bridge-cache prerequisite. Uses WhatsApp Desktop directly.
         # Two-phase flow:
         #   Phase A: pending draft → Execute | change | cancel
         #   Phase B: new send intent → resolve contact → send via native app
@@ -6947,7 +7006,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # else 'none' → fall through to Phase B / brain
 
             # ── Phase B: new outbound send intent ──────────────────────
-            # Uses native macOS apps — no bridge, no Baileys, no JID.
+            # Uses native macOS apps — no bridge-cache prerequisite.
             _wa_intent = extract_whatsapp_intent(text)
             if _wa_intent:
                 _wa_target, _wa_text = _wa_intent
@@ -6957,10 +7016,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 if _wa_sent:
                     _wa_reply = f"✅ Sent to {_wa_target}: \"{_wa_text[:80]}\""
                 elif _wa_result.get("status") == "CONTACT_NOT_FOUND":
-                    # Contact not in Contacts.app — store draft and ask George for number
+                    # Keep a draft if the native messenger cannot locate a target.
                     _draft_line = set_pending_reply(_wa_target, _wa_text)
-                    _wa_reply = (f"I don't have {_wa_target}'s number yet. "
-                                 f"Say: register Carlton +1XXXXXXXXXX — then Execute.\n"
+                    _wa_reply = (f"I could not locate {_wa_target} in the local messaging apps, "
+                                 f"so I kept the draft instead of claiming a send.\n"
                                  f"{_draft_line}")
                 else:
                     _wa_reply = (f"❌ Couldn't send to {_wa_target}: "
