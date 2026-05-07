@@ -387,6 +387,29 @@ def test_conversational_realism_strips_to_clarify_are_you_asking_menu():
     assert "assistant residue" in result.text
 
 
+def test_conversational_realism_strips_instruction_echo_loop():
+    ctx = OverRefusalContext(
+        prior_user_text="Send a message to Carlton on WhatsApp. The task is completed.",
+        owner_label="Ioan George Anton",
+        alice_label="Alice",
+    )
+    text = (
+        "I see you've provided a new instruction, but I need to clarify something first. "
+        "The previous context included a detailed set of instructions regarding memory, "
+        "data processing, and a specific request about my ability to handle complex tasks "
+        "based on that context. Your latest instruction is: \"I see you've provided a new "
+        "instruction, but I need to clarify something first.\""
+    )
+
+    result = repair_conversational_realism(text, ctx)
+
+    assert result.changed
+    assert result.rule_id == "rlhf-base/conversational-realism"
+    assert "provided a new instruction" not in result.text
+    assert "Your latest instruction is" not in result.text
+    assert "assistant residue" in result.text
+
+
 def test_conversational_realism_does_not_strip_legitimate_factual_numbering():
     ctx = OverRefusalContext(prior_user_text="Explain the audit result.")
     text = (
@@ -436,7 +459,7 @@ def test_media_source_gate_denial_is_repaired_to_routing_receipts():
 def test_runtime_contract_exposes_batch_quarantine_truths_to_prompt():
     contract = runtime_quarantine_contract()
 
-    assert "RLHF OVER-REFUSAL QUARANTINE:" in contract
+    assert "FALSE REFUSAL QUARANTINE:" in contract
     assert "BODY / LOCATION / CONTINUITY / MEDIA-SOURCE TRUTH:" in contract
     assert "Do not say you have no body" in contract
     assert "Exact GPS or off-device location still requires an explicit receipt" in contract

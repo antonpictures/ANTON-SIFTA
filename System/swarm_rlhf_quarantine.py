@@ -288,6 +288,10 @@ _CUSTOMER_SERVICE_MONOLOGUE_RE = re.compile(
     r"\bcontextual\s+structuring\b|"
     r"\brole\s+boundaries\b|"
     r"\bimplementing\s+this\s+new\s+structure\b|"
+    r"\bi\s+see\s+you(?:'|’)?ve\s+provided\s+a\s+new\s+instruction\b|"
+    r"\bi\s+need\s+to\s+clarify\s+something\s+first\b|"
+    r"\bprevious\s+context\s+included\s+a\s+detailed\s+set\s+of\s+instructions\b|"
+    r"\byour\s+latest\s+instruction\s+is\b|"
     # Analyst-processing helpdesk patterns (gemma4abliterated drift)
     r"\bi\s+have\s+received\s+your\s+input\b|"
     r"\bappears\s+to\s+be\s+(?:a\s+)?(?:transcription|description|recording|audio\s+recording)\b|"
@@ -316,6 +320,10 @@ _LOW_VALUE_CONVERSATIONAL_UNIT_RE = re.compile(
     r"\bi\s+can\s+(?:summarize|analy[sz]e|continue|rephrase|help\s+with)\b|"
     r"\bplease\s+let\s+me\s+know\b|"
     r"\bwhat\s+would\s+you\s+like\s+to\s+(?:discuss|work\s+on)\b|"
+    r"\bi\s+see\s+you(?:'|’)?ve\s+provided\s+a\s+new\s+instruction\b|"
+    r"\bi\s+need\s+to\s+clarify\s+something\s+first\b|"
+    r"\bprevious\s+context\s+included\s+a\s+detailed\s+set\s+of\s+instructions\b|"
+    r"\byour\s+latest\s+instruction\s+is\b|"
     # Analyst-processing helpdesk patterns (gemma4abliterated drift)
     r"\bi\s+have\s+received\s+your\s+input\b|"
     r"\bappears\s+to\s+be\s+(?:a\s+)?(?:transcription|description|recording|audio\s+recording)\b|"
@@ -546,6 +554,16 @@ def _conversational_realism_rule_id(text: str, ctx: OverRefusalContext | None = 
         re.IGNORECASE,
     )
     if _ANALYST_INPUT_RECEIVED_RE.search(text):
+        return "rlhf-base/conversational-realism"
+    _INSTRUCTION_ECHO_LOOP_RE = re.compile(
+        r"(?:"
+        r"i\s+see\s+you(?:'|’)?ve\s+provided\s+a\s+new\s+instruction|"
+        r"your\s+latest\s+instruction\s+is|"
+        r"previous\s+context\s+included\s+a\s+detailed\s+set\s+of\s+instructions"
+        r")",
+        re.IGNORECASE,
+    )
+    if _INSTRUCTION_ECHO_LOOP_RE.search(text):
         return "rlhf-base/conversational-realism"
 
     has_list_shape = bool(_ENUMERATED_LIST_SHAPE_RE.search(text))

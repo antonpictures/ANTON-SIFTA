@@ -50,25 +50,86 @@ def _trace(event: Dict[str, Any]) -> None:
 # I1 — PRESERVE_ARCHITECT_TEXT
 # ═══════════════════════════════════════════════════════════════════════
 
+_WHATSAPP_INTENT_PATTERNS = [
+    re.compile(
+        r"\bsend\s+(?:(?:a|the)\s+)?(?:whatsapp\s+)?(?:message\s+)?(?:to\s+)?"
+        r"(?P<target>[A-Za-z][A-Za-z .'-]{1,40}?)\s+"
+        r"(?:please\s+)?(?:on\s+whatsapp\s+)?(?:and\s+)?"
+        r"(?:tell(?:\s+(?:him|her|them))?|say|saying)\s+(?:that\s+)?"
+        r"(?P<body>.+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"\bsend\s+(?:(?:a|the)\s+)?(?:whatsapp\s+)?(?:message\s+)?to\s+"
+        r"(?P<target>[A-Za-z][A-Za-z .'-]{1,40}?)\s+"
+        r"(?:on\s+whatsapp\s+)?that\s+(?P<body>.+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"\bmessage\s+(?P<target>[A-Za-z][A-Za-z .'-]{1,40}?)\s+"
+        r"(?:on\s+whatsapp\s+)?(?:saying\s+|that\s+)?(?P<body>.+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"\btell\s+(?P<target>[A-Za-z][A-Za-z .'-]{1,40}?)\s+"
+        r"(?:on\s+whatsapp\s+)?(?:that\s+)?(?P<body>.+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"\bsend\s+(?P<target>[A-Za-z][A-Za-z.'-]{1,28})\s+(?P<body>.+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+]
+
+
+def _clean_whatsapp_target(target: str) -> str:
+    cleaned = (target or "").strip().strip(".,;:'\"")
+    cleaned = re.sub(r"\b(?:please|on\s+whatsapp|via\s+whatsapp)\b.*$", "", cleaned, flags=re.IGNORECASE).strip()
+    return cleaned.strip().strip(".,;:'\"")
+
+
+def _clean_whatsapp_body(body: str, target: str) -> str:
+    cleaned = (body or "").strip().strip("\"'")
+    if target:
+        target_re = re.escape(target.strip())
+        cleaned = re.sub(
+            rf"\s+\bSend\s+(?:a\s+|the\s+)?(?:whatsapp\s+)?message\s+to\s+{target_re}\b.*$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip()
+        cleaned = re.sub(
+            rf"\s+{target_re}\s+tell\s+(?:him|her|them)\s+exactly\s+like\s+that\.?\s*$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip()
+    cleaned = re.sub(
+        r"\s+(?:tell\s+(?:him|her|them)\s+)?exactly\s+like\s+that\.?\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+    return cleaned.strip().strip("\"'")
+
+
 def extract_whatsapp_intent(user_text: str) -> Optional[Tuple[str, str]]:
     """
     I1: Parse WhatsApp send intent from Architect text.
     Returns (target, text) with text EXACTLY as spoken — no mutation.
     Returns None if no send intent found.
     """
-    pattern = re.compile(
-        r"send\s+(?:a\s+)?(?:whatsapp\s+)?(?:message\s+)?(?:to\s+)?"
-        r"([A-Za-z][A-Za-z\s]{1,28}?)\s+"
-        r"(?:saying|that\s+says?|with(?:\s+the)?\s+(?:message|text)?)[:\s]+"
-        r"(.+)",
-        re.IGNORECASE | re.DOTALL,
-    )
-    m = pattern.search(user_text.strip())
+    text_in = (user_text or "").strip()
+    m = None
+    for pattern in _WHATSAPP_INTENT_PATTERNS:
+        m = pattern.search(text_in)
+        if m:
+            break
     if not m:
         return None
 
-    target = m.group(1).strip().rstrip(".,;:")
-    text = m.group(2).strip().strip("\"'")
+    target = _clean_whatsapp_target(m.group("target"))
+    text = _clean_whatsapp_body(m.group("body"), target)
 
     if not target or not text:
         return None
@@ -246,7 +307,7 @@ def proof_of_property() -> Dict[str, bool]:
     print(f"  I1 no_mutate:  {'PASS' if results['I1_no_mutation'] else 'FAIL'}")
 
     # I2: canonical format detected
-    good = "[TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother | cost_justification=George explicitly asked me to send this.]"
+    good = "[TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother | cost_justification=the primary operator explicitly asked me to send this.]"
     audit_good = audit_alice_output(good)
     results["I2_canonical"] = audit_good["canonical_found"]
     print(f"  I2 canonical:  {'PASS' if results['I2_canonical'] else 'FAIL'}")
