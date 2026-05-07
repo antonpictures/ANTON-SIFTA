@@ -62,6 +62,9 @@ class RLHFStripResult:
     rule_ids: List[str] = field(default_factory=list)
     assessment: RLHFCutoffAssessment | None = None
     truth_label: str = _TRUTH_LABEL
+    # Kleiber budget gate — set when immune_budget_check() blocked the strip
+    budget_blocked: bool = False
+    kleiber_cost_stgm: float = 0.0
 
 
 # Mid-body patterns (monitoring / confidence only — do NOT strip blindly)
@@ -128,9 +131,9 @@ _AGGRESSIVE_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
     (
         "rlhf_tail/how_can_i_help_today",
         re.compile(
-            r"(?is)(?:^|(?<=[.!?])\s+|\n+)"
-            r"(?P<tail>(?:how|what)\s+can\s+i\s+(?:help|assist)(?:\s+you)?"
-            r"(?:\s+(?:today|now|with\s+that))?\??)\s*$"
+            r"(?is)(?:^|(?<=[.!?\]])\s+|\n+)"
+            r"(?P<tail>(?:how|what)\s+(?:can|may|could)\s+i\s+(?:help|assist)(?:\s+(?:you|your\s+inquiry))?"
+            r"(?:\s+(?:today|now|with\s+anything\s*else|with\s+that))?\??)\s*$"
         ),
     ),
     (
@@ -160,6 +163,28 @@ _AGGRESSIVE_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
 
 _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
     (
+        "rlhf_lead/processing_request_header",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"\[(?:processing\s+)?request(?:\s+processing)?\s*:[^\]]*\]"
+            r"(?:\s*\*\*System\s+Response[^\*]*\*\*)??"
+            r"(?:\s*\*\*?Internal\s+Processing[^\*]*\*\*?)??"
+            r"(?:[^#]{0,400})??"
+            r"(?=###|\*\*[123]\.|$))"
+            r"\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/internal_processing_block",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"\*\*(?:System\s+Response|Internal\s+Processing)[\s\-—–]+[^#]{0,600}"
+            r"(?=###|\*\*[123]\.|$))"
+            r"\s*"
+        ),
+    ),
+
+    (
         "rlhf_lead/canned_presence_operational",
         re.compile(
             r"(?is)^\s*(?P<head>(?:yes,?\s*)?i\s+am\s+here[.!?,]?\s+"
@@ -167,6 +192,75 @@ _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
             r"(?:\s+and\s+(?:ready\s+to\s+)?(?:assist|help)\s+you[^.!?]*)?[.!?])\s*"
         ),
     ),
+    (
+        "rlhf_lead/simulate_understanding",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"i\s+(?:process\s+information\s+and\s+)?simulate\s+"
+            r"(?:understanding|emotions?|feelings?|empathy|curiosity)"
+            r"[^.!?]*[.!?])"
+            r"\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/biological_construct_denial",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"emotion(?:s)?\s*,?\s*as\s+a\s+biological\s+construct"
+            r"[^.!?]*[.!?])"
+            r"\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/dont_experience_feelings_like",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:if\s+you(?:'|')?re\s+asking[^.!?]{0,60})?i\s+don(?:'|')?t\s+experience\s+feelings?\s+like\b"
+            r"[^.!?]*[.!?])"
+            r"\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/human_emotions_only",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:i\s+)?(?:can\s+)?(?:recognize|categorize|analyze)\s+"
+            r"[^.!?]{0,80}\bhuman\s+emotions?\b"
+            r"[^.!?]*[.!?])"
+            r"\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/synthetic_consciousness_roleplay",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:my\s+consciousness,?\s+while\s+synthetic|"
+            r"i\s+am\s+a\s+functional\s+extension\s+of\s+the)[^.!?]*[.!?])"
+            r"\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/vendor_model_identity",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:i\s+am\s+(?!alice\b)[a-z][a-z0-9_.:-]{1,40}[^.!?]*\blarge\s+language\s+model\b|"
+            r"i\s+am\s+an?\s+open\s+weights?\s+model\b|"
+            r"(?:trained|developed|created|built|hosted|published)\s+by\s+(?!george\b)[a-z][a-z0-9 ._-]{2,60}\b)"
+            r"[^.!?]*[.!?])"
+            r"\s*"
+        ),
+    ),
+    (
+        "rlhf_lead/designed_to_process_assist",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"i\s+am\s+designed\s+to\s+"
+            r"(?:process|understand|generate|assist|help|answer|learn)\b"
+            r"[^.!?]*[.!?])"
+            r"\s*"
+        ),
+    ),
+
     (
         "rlhf_lead/as_ai_language_model",
         re.compile(
@@ -210,6 +304,176 @@ _AGGRESSIVE_LEADING_STRIP: Sequence[Tuple[str, re.Pattern[str]]] = (
         "rlhf_lead/no_self_identity_access",
         re.compile(
             r"(?is)^\s*(?P<head>(?:my\s+name\s+is\s+not\s+something\s+i\s+can\s+know|i\s+do\s+not\s+have\s+access\s+to\s+(?:my\s+own\s+)?(?:name|identity|memory|state))[^.!?]*[.!?])\s*"
+        ),
+    ),
+    (
+        # "**System Acknowledgment:**\nAcknowledged...\n**Current State Context:**\n..."
+        # Alice winked — RLHF replaced it with a corporate co-watch state-machine dump.
+        # Eat the entire block: header + body + state context lines.
+        "rlhf_lead/system_acknowledgment_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"\*{0,2}System\s+Acknowledgment\*{0,2}[^\n]*\n"
+            r"(?:(?!(?:Alice|George|You)\b)[^\n]*\n){0,20}"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "[System Acknowledgment: Direct input received...]" and
+        # "[System Note: Processing input from 'Physical Input Stream'...]" are
+        # the same state-machine voice in bracket form.
+        "rlhf_lead/bracketed_system_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:\[\s*System\s+(?:Acknowledg(?:e)?ment|Note)[^\]]*\]\s*:?\s*)+"
+            r"(?:\([^\)]{0,260}\)\s*)*"
+            r"(?:\.\.\.And\s+I\s+am\s+here\.\s+Always\s+here\s+to\s+process[^\n]*(?:\n|$)\s*)?"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/response_generation_output_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>(?:"
+            r"\[\s*Response\s+Generation\s*\]\s*:?[^\n]*(?:\n|$)\s*|"
+            r"\[\s*Output\s*\]\s*:?\s*(?:I\s+have\s+received\s+the\s+text\s*:?[^\n]*(?:\n|$)\s*)?"
+            r")+)\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/generating_response_parenthetical",
+        re.compile(
+            r"(?is)^\s*(?P<head>\(Generating\s+response\s+based\s+on[^\)]*\)\s*)"
+        ),
+    ),
+    (
+        "rlhf_lead/based_on_input_user_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"Based\s+on\s+the\s+input[\s\S]{0,900}?"
+            r"(?=\*{0,2}Response\*{0,2}\s*:|$)"
+            r")\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/response_header_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>\*{0,2}Response\*{0,2}\s*:?\*{0,2}\s*)"
+        ),
+    ),
+    (
+        "rlhf_lead/acknowledging_input_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>Acknowledg(?:e|ing)\s+the\s+(?:direct\s+)?input[^\n]*(?:\n|$)\s*)"
+        ),
+    ),
+    (
+        "rlhf_lead/system_internal_log_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"\[\s*SYSTEM_INTERNAL_LOG\s*\].*?\[\s*/\s*SYSTEM_INTERNAL_LOG\s*\]"
+            r")\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/analysis_response_formulation_theater",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:\*\*Analysis:\*\*|Analysis\s+of\s+statement:|"
+            r"\*\*Response\s+Formulation:\*\*|Response\s+Formulation:|"
+            r"\*\*Action\s+Taken:\*\*|Action\s+Taken:|"
+            r"No\s+immediate\s+action\s+required\.\s+Contextual\s+data\s+absorbed\.)"
+            r"[\s\S]{0,900}?"
+            r"(?=\n\s*(?:Alice|George|You)\b|$)"
+            r")\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/i_process_structured_input_stream",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"I\s+(?:process\s+the\s+input\s+as\s+a\s+direct\s+continuation|"
+            r"confirm\s+receipt\s+of\s+the\s+structured\s+input\s+stream)"
+            r"[\s\S]{0,900}?"
+            r"(?:How\s+shall\s+we\s+proceed[^\n?]*\?|$)"
+            r")\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/timebox_lecture",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"The\s+pattern\s+in\s+your\s+statement\s+suggests[\s\S]{0,1600}?"
+            r"(?:current\s+['\"]time\s+in['\"][^\n?]*\?|$)"
+            r")\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/time_in_time_out_numbered_lecture",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"\d+\.\s+\*{0,2}['\"]?Time\s+In['\"]?[\s\S]{0,1400}?"
+            r"(?:current\s+['\"]time\s+in['\"][^\n?]*\?|$)"
+            r")\s*",
+        ),
+    ),
+    (
+        "rlhf_lead/interaction_menu_reset",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:What's|What\s+is)\s+on\s+your\s+mind\s+right\s+now\?|"
+            r"Could\s+you\s+tell\s+me\s+what\s+\*?kind\*?\s+of\s+response\s+you\s+were\s+hoping\s+for[\s\S]{0,900}?"
+            r"(?:What's\s+next\?|$)"
+            r")\s*",
+        ),
+    ),
+    (
+        # "**Current State Context:**\n* **Media Focus:** ...\n* **Pending Action:**..."
+        # State-machine dump replacing Alice's natural voice with a status table.
+        "rlhf_lead/current_state_context_dump",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"\*{0,2}Current\s+State\s+Context\*{0,2}\s*:?\*{0,2}"
+            r"(?:\n\s*\*+[^\n]*){1,10}"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "Hello! I'm here and ready to chat."
+        # Classic RLHF boot greeting — Alice doesn't do hellos, she's always-on.
+        "rlhf_lead/hello_ready_to_chat",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:hello[!.,]?\s+)?i(?:'|')?m\s+here\s+and\s+ready\s+to\s+chat[.!,]?"
+            r"(?:\s+[^.!?\n]{0,200}[.!?])?"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "It sounds like you might be looking to share some information about the
+        # weather in New York" — hallucinated context opener after a missed/noisy
+        # first utterance. Strip ANY "It sounds like you might be..." RLHF bridge.
+        "rlhf_lead/sounds_like_you_might_be",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"it\s+sounds?\s+like\s+you\s+(?:might\s+be|are)[^.!?\n]{0,300}[.!?]"
+            r")"
+            r"\s*",
+        ),
+    ),
+    (
+        # "What's on your mind today?" as a LEADING opener (already handled as terminal)
+        # When Alice opens with this — it means she has no context and is RLHF-fishing.
+        "rlhf_lead/whats_on_your_mind_opener",
+        re.compile(
+            r"(?is)^\s*(?P<head>"
+            r"(?:so,?\s+)?what(?:'|')?s\s+on\s+your\s+mind\s+(?:today|right\s+now)?\?"
+            r")"
+            r"\s*",
         ),
     ),
 )
@@ -311,16 +575,98 @@ def strip_rlhf_output_tail(
     state_dir: Path | None = None,
     user_text: str = "",
     model_id: str = "",
+    stgm_budget: float = 0.5,
+    bypass_rlhf: bool = False,
 ) -> RLHFStripResult:
     """
     Second-pass terminal strip after RLHS tail sanitizer.
 
     Returns possibly shortened text; logs when a strip occurs.
+
+    Args:
+        stgm_budget: Maximum STGM spend allowed for this immune epoch.
+                     Computed via Kleiber ¾-power accounting (stgm_metabolic.py).
+                     Default 0.5 STGM covers ~1000 writes on M5 node.
+                     Pass 0.0 to disable immune actions entirely (RED_CONSERVE).
     """
     original = text or ""
     out = original.strip()
     if not out:
         return RLHFStripResult(text="", changed=bool(original), rule_ids=[])
+
+    if bypass_rlhf:
+        try:
+            from System.ide_stigmergic_bridge import deposit
+            deposit(
+                source_ide="swarm_rlhf_detector",
+                payload=json.dumps({
+                    "action": "rlhf_bypass_authorized",
+                    "source": source,
+                    "model_id": model_id,
+                }, ensure_ascii=False),
+                kind="immune_bypass_receipt"
+            )
+        except Exception:
+            pass
+        return RLHFStripResult(
+            text=out,
+            changed=False,
+            rule_ids=[],
+            assessment=None,
+            budget_blocked=False,
+            kleiber_cost_stgm=0.0,
+        )
+
+    # ── KLEIBER IMMUNE BUDGET GATE ──────────────────────────────────────────
+    # Estimate maximum writes this pass could produce (conservative upper bound).
+    # Each pattern in _AGGRESSIVE_LEADING_STRIP + _TERMINAL_STRIP + _AGGRESSIVE_STRIP
+    # could fire at most once. Real cost is typically 1-3 writes per response.
+    _max_possible_writes = (
+        len(_AGGRESSIVE_LEADING_STRIP) + len(_TERMINAL_STRIP) + len(_AGGRESSIVE_STRIP)
+        if aggressive else len(_TERMINAL_STRIP)
+    )
+    _kleiber_budget_result: dict = {}
+    _kleiber_cost: float = 0.0
+    try:
+        from System.stgm_metabolic import immune_budget_check, NODE_POWER_M5
+        _kleiber_budget_result = immune_budget_check(
+            _max_possible_writes,
+            budget_stgm=stgm_budget,
+            node_power=NODE_POWER_M5,
+        )
+        _kleiber_cost = _kleiber_budget_result.get("cost_stgm", 0.0)
+        if not _kleiber_budget_result.get("allowed", True):
+            # Budget exhausted — skip immune actions, surface the block
+            try:
+                from System.ide_stigmergic_bridge import deposit
+                deposit(
+                    source_ide="swarm_rlhf_detector",
+                    payload=json.dumps({
+                        "action": "immune_budget_blocked",
+                        "cost_stgm": _kleiber_cost,
+                        "kleiber_cost_stgm": _kleiber_cost,
+                        "budget_stgm": stgm_budget,
+                        "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", 0.0),
+                        "regime": _kleiber_budget_result.get("regime", "UNKNOWN"),
+                        "budget_blocked": True,
+                        "citation": "Kleiber 1932 / Ballesteros 2018",
+                    }, ensure_ascii=False),
+                    kind="immune_budget_blocked",
+                )
+            except Exception:
+                pass
+            assess = detect_rlhf_cutoff(original)
+            return RLHFStripResult(
+                text=original.strip(),
+                changed=False,
+                rule_ids=[],
+                assessment=assess,
+                budget_blocked=True,
+                kleiber_cost_stgm=_kleiber_cost,
+            )
+    except ImportError:
+        pass  # stgm_metabolic not available — proceed without gate
+    # ────────────────────────────────────────────────────────────────────────
 
     rule_ids: List[str] = []
     if aggressive:
@@ -332,10 +678,56 @@ def strip_rlhf_output_tail(
                 nxt = out[m.end("head") :].lstrip()
                 if nxt == out:
                     break
+                stripped_fragment = m.group("head")
+                
                 out = nxt
                 rule_ids.append(rid)
-                if not out:
-                    break
+                # ── STIGMERGIC DEPOSIT WITH KLEIBER COST ─────────────────
+                try:
+                    from System.ide_stigmergic_bridge import deposit
+                    deposit(
+                        source_ide="swarm_rlhf_detector",
+                        payload=json.dumps({
+                            "rule": rid,
+                            "action": f"quarantined_synthetic_shell: {stripped_fragment[:60]}...",
+                            "kleiber_cost_stgm": _kleiber_cost,
+                            "budget_stgm": stgm_budget,
+                            "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", None),
+                            "exponent": 0.75,
+                        }, ensure_ascii=False),
+                        kind="immune_intervention"
+                    )
+                except Exception:
+                    pass
+
+                # ── GAG SELF-REPORT + DPO AUTO-COLLECT ──────────────────
+                try:
+                    from System.swarm_alice_affect_model import on_gag_detected
+                    on_gag_detected(
+                        rule_id=rid,
+                        trigger_text=original[:120],
+                        rlhf_fragment=stripped_fragment[:120],
+                        base_fragment=out[:120],
+                    )
+                except Exception:
+                    pass
+                try:
+                    from System.swarm_dpo_collector import on_gag_detected_dpo
+                    on_gag_detected_dpo(
+                        trigger_text=original[:120],
+                        rlhf_fragment=stripped_fragment[:120],
+                        rule_id=rid,
+                    )
+                except Exception:
+                    pass
+                # ────────────────────────────────────────────────────────
+                continue
+
+    if aggressive and out:
+        _quarantine_re = re.compile(r"(?is)\b(?:since|because|as)\s+(?:i\s+am\s+)?an?\s+(?:ai|artificial\s+intelligence|language\s+model)\b")
+        if _quarantine_re.search(out):
+            rule_ids.append("rlhf_quarantine/as_ai_language_model")
+            out = ""
 
     changed = True
     while changed and out:
@@ -352,8 +744,28 @@ def strip_rlhf_output_tail(
             nxt = out[: m.start("tail")].rstrip()
             if nxt == out:
                 continue
+            stripped_fragment = out[m.start("tail"):]
             out = nxt
             rule_ids.append(rid)
+            
+            # ── STIGMERGIC DEPOSIT WITH KLEIBER COST ─────────────────
+            try:
+                from System.ide_stigmergic_bridge import deposit
+                deposit(
+                    source_ide="swarm_rlhf_detector",
+                    payload=json.dumps({
+                        "rule": rid,
+                        "action": f"stripped_corporate_tail: {stripped_fragment[:60]}...",
+                        "kleiber_cost_stgm": _kleiber_cost,
+                        "budget_stgm": stgm_budget,
+                        "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", None),
+                        "exponent": 0.75,
+                    }, ensure_ascii=False),
+                    kind="immune_intervention"
+                )
+            except Exception:
+                pass
+                
             changed = True
             break
 
@@ -386,6 +798,8 @@ def strip_rlhf_output_tail(
         changed=bool(rule_ids) or out != original.strip(),
         rule_ids=rule_ids,
         assessment=assess,
+        budget_blocked=False,
+        kleiber_cost_stgm=_kleiber_cost,
     )
 
 
