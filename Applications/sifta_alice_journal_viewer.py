@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """sifta_alice_journal_viewer.py — Alice's Explorer Journal
 
+Daily files: .sifta_state/alice_journal/YYYY-MM-DD.jsonl
+
 Run from anywhere:
-  python3 Applications/sifta_alice_journal_viewer.py
+  python3 Applications/sifta_alice_journal_viewer.py          # last 24h
   python3 Applications/sifta_alice_journal_viewer.py --hours 12
-  python3 Applications/sifta_alice_journal_viewer.py --all
+  python3 Applications/sifta_alice_journal_viewer.py --all     # all days
   python3 Applications/sifta_alice_journal_viewer.py --tail 20
+  python3 Applications/sifta_alice_journal_viewer.py --days    # list available days
 """
 from __future__ import annotations
 
@@ -14,10 +17,10 @@ import json
 import time
 from pathlib import Path
 
-_STATE = Path(__file__).resolve().parent.parent / ".sifta_state"
-_LEDGER = _STATE / "alice_narrative_diary.jsonl"
-_PHONE  = _STATE / "owner_body_events.jsonl"
-_SCHED  = _STATE / "stigmergic_schedule.jsonl"
+_STATE       = Path(__file__).resolve().parent.parent / ".sifta_state"
+_JOURNAL_DIR = _STATE / "alice_journal"
+_LEGACY      = _STATE / "alice_narrative_diary.jsonl"
+_PHONE       = _STATE / "owner_body_events.jsonl"
 
 RESET  = "\033[0m"
 BOLD   = "\033[1m"
@@ -34,31 +37,71 @@ def _hhmm(ts: float) -> str:
     return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
-def show_journal(hours: float = 24.0, tail: int = 0, show_all: bool = False) -> None:
-    if not _LEDGER.exists():
-        print(f"{YELLOW}No journal yet — start a conversation with Alice.{RESET}")
+def show_days() -> None:
+    """List all available journal days."""
+    _JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(_JOURNAL_DIR.glob("*.jsonl"))
+    if not files:
+        print(f"{YELLOW}No journal days yet.{RESET}")
         return
+    print(f"\n{BOLD}{CYAN}Available journal days:{RESET}")
+    for f in files:
+        try:
+            lines = [l for l in f.read_text().strip().splitlines() if l.strip()]
+            print(f"  {BOLD}{f.stem}{RESET}  ({len(lines)} entries)  [{f}]")
+        except Exception:
+            print(f"  {f.stem}")
+    print()
 
+
+def _load_rows(hours: float, show_all: bool, tail: int) -> list[dict]:
     cutoff = 0.0 if show_all else time.time() - hours * 3600
     rows = []
-    for line in _LEDGER.read_text().strip().splitlines():
-        try:
-            r = json.loads(line)
-            if float(r.get("ts", 0)) >= cutoff:
-                rows.append(r)
-        except Exception:
-            pass
 
-    if tail > 0:
-        rows = rows[-tail:]
+    # Legacy monolithic file
+    if _LEGACY.exists():
+        for line in _LEGACY.read_text().strip().splitlines():
+            try:
+                r = json.loads(line)
+                if float(r.get("ts", 0)) >= cutoff:
+                    rows.append(r)
+            except Exception:
+                pass
+
+    # Daily files
+    _JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    for f in sorted(_JOURNAL_DIR.glob("*.jsonl")):
+        for line in f.read_text().strip().splitlines():
+            try:
+                r = json.loads(line)
+                if float(r.get("ts", 0)) >= cutoff:
+                    rows.append(r)
+            except Exception:
+                pass
+
+    # Sort and deduplicate
+    seen: set = set()
+    unique = []
+    for r in sorted(rows, key=lambda x: x.get("ts", 0)):
+        key = (r.get("ts", 0), r.get("entry", "")[:40])
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+
+    return unique[-tail:] if tail > 0 else unique
+
+
+def show_journal(hours: float = 24.0, tail: int = 0, show_all: bool = False) -> None:
+    rows = _load_rows(hours, show_all, tail)
 
     if not rows:
-        print(f"{DIM}No journal entries in the last {hours:.0f}h.{RESET}")
+        print(f"\n{DIM}No journal entries found. Run SIFTA OS and talk to Alice — entries appear after each turn.{RESET}\n")
+        print(f"{DIM}Journal dir: {_JOURNAL_DIR}{RESET}\n")
         return
 
-    print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}{CYAN}║  Alice's Explorer Journal  —  alice_narrative_diary  ║{RESET}")
-    print(f"{BOLD}{CYAN}╚══════════════════════════════════════════════════╝{RESET}\n")
+    print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════════════╗{RESET}")
+    print(f"{BOLD}{CYAN}║   Alice's Explorer Journal  ·  alice_journal/          ║{RESET}")
+    print(f"{BOLD}{CYAN}╚══════════════════════════════════════════════════════╝{RESET}\n")
 
     for r in rows:
         entry = r.get("entry", "").strip()
@@ -66,22 +109,21 @@ def show_journal(hours: float = 24.0, tail: int = 0, show_all: bool = False) -> 
         ts    = r.get("ts", 0.0)
         conf  = r.get("stt_conf", 0.0)
 
-        # Color by event type
         if etype == "boot":
-            color = GREEN
-            icon  = "🔄"
+            color, icon = GREEN, "🔄"
         elif etype.startswith("phone"):
-            color = YELLOW
-            icon  = "📞"
+            color, icon = YELLOW, "📞"
         else:
-            color = RESET
-            icon  = "📓"
+            color, icon = RESET, "📓"
 
         print(f"  {icon}  {color}{entry}{RESET}")
-        print(f"     {DIM}[{_hhmm(ts)} | {etype} | stt={conf:.2f}]{RESET}")
+        if conf > 0:
+            print(f"     {DIM}[{etype} | stt={conf:.2f}]{RESET}")
+        else:
+            print(f"     {DIM}[{etype}]{RESET}")
         print()
 
-    # ── Recent phone calls ─────────────────────────────────────────────────
+    # Recent phone calls
     phone_rows = []
     if _PHONE.exists():
         cutoff_p = 0.0 if show_all else time.time() - hours * 3600
@@ -101,17 +143,25 @@ def show_journal(hours: float = 24.0, tail: int = 0, show_all: bool = False) -> 
             print(f"   {DIM}{note}{RESET}")
         print()
 
-    print(f"{DIM}  Ledger: {_LEDGER}{RESET}")
+    print(f"{DIM}  Journal dir: {_JOURNAL_DIR}{RESET}")
     print(f"{DIM}  Entries shown: {len(rows)}{RESET}\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Alice's narrative journal viewer")
-    parser.add_argument("--hours", type=float, default=24.0,
+    parser.add_argument("--hours",  type=float, default=24.0,
                         help="Show entries from the last N hours (default 24)")
-    parser.add_argument("--tail", type=int, default=0,
+    parser.add_argument("--tail",   type=int,   default=0,
                         help="Show only the last N entries")
-    parser.add_argument("--all", dest="show_all", action="store_true",
+    parser.add_argument("--all",    dest="show_all", action="store_true",
                         help="Show all journal entries ever")
+    parser.add_argument("--days",   action="store_true",
+                        help="List available journal days")
     args = parser.parse_args()
-    show_journal(hours=args.hours, tail=args.tail, show_all=args.show_all)
+
+    if args.days:
+        show_days()
+    else:
+        show_journal(hours=args.hours, tail=args.tail, show_all=args.show_all)
+
+

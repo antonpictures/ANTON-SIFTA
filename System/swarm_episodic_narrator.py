@@ -6,7 +6,7 @@ turn. Like an explorer's journal — not mechanical logs, not category tags,
 but actual first-person observations: what happened, who said what, what
 Alice noticed, what the time was.
 
-Written to: .sifta_state/alice_narrative_diary.jsonl
+Written to: .sifta_state/alice_journal/YYYY-MM-DD.jsonl  (one file per day)
 Read back by: format_narrative_for_prompt() → injected into Alice's system prompt
 
 Design principles:
@@ -14,13 +14,14 @@ Design principles:
 - Grounded: only writes facts that exist in ledgers or the current turn
 - First-person: "I heard George say..." not "User input was..."
 - Short: 1-3 sentences per entry maximum
-- Append-only: §7.10.1 compliant
+- Append-only: §7.10.1 compliant — one file per day, named by date
 - Silent fail: never crashes the talk widget
 
 Covenant §7.10.1: all entries truth_label=OBSERVED.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import time
@@ -30,15 +31,33 @@ from typing import Optional
 try:
     from System.jsonl_file_lock import append_line_locked
     def _append(path: Path, row: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         append_line_locked(path, json.dumps(row, ensure_ascii=False) + "\n")
 except Exception:
     def _append(path: Path, row: dict) -> None:  # type: ignore[misc]
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
-_LEDGER = _STATE / "alice_narrative_diary.jsonl"
+_JOURNAL_DIR = _STATE / "alice_journal"   # daily files: YYYY-MM-DD.jsonl
+_LEGACY_LEDGER = _STATE / "alice_narrative_diary.jsonl"  # backward compat
+
+
+def _today_ledger() -> Path:
+    """Today's journal file: alice_journal/YYYY-MM-DD.jsonl"""
+    _JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    return _JOURNAL_DIR / f"{date_str}.jsonl"
+
+
+def _ledger_for_ts(ts: float) -> Path:
+    """Journal file for a given unix timestamp."""
+    _JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+    return _JOURNAL_DIR / f"{date_str}.jsonl"
+
 
 # ── Sensor readers (all silent-fail) ──────────────────────────────────────────
 
@@ -50,13 +69,8 @@ def _owner_name() -> str:
         return "George"
 
 
-def _local_hhmm() -> str:
-    import datetime
-    return datetime.datetime.now().strftime("%H:%M")
-
-
-def _local_datetime() -> str:
-    import datetime
+def _local_dt() -> str:
+    """Full datetime string for journal entries."""
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
@@ -73,7 +87,6 @@ def _clothing_observation() -> Optional[str]:
                 tags = r.get("tags", r.get("metadata", {}).get("tags", []))
                 text = r.get("text", r.get("content", ""))
                 if "clothing" in tags and text:
-                    # Extract a short clothing phrase
                     m = re.search(
                         r"(?:wearing|shirt|jacket|hoodie|top|clothes?)[^.!?\n]{0,60}",
                         text, re.IGNORECASE
@@ -110,26 +123,6 @@ def _cowatch_context() -> Optional[str]:
     return None
 
 
-def _phone_active() -> bool:
-    """Return True if a phone call is in progress (no end logged after start)."""
-    try:
-        be = _STATE / "owner_body_events.jsonl"
-        if not be.exists():
-            return False
-        last_phone_event = None
-        for line in be.read_text().strip().splitlines()[-30:]:
-            try:
-                r = json.loads(line)
-                et = r.get("event_type", "")
-                if et.startswith("phone_call"):
-                    last_phone_event = et
-            except Exception:
-                pass
-        return last_phone_event in ("phone_call_active", "phone_call_start")
-    except Exception:
-        return False
-
-
 def _recent_phone_note() -> Optional[str]:
     """Return the most recent phone call note if within last 30 min."""
     try:
@@ -152,8 +145,7 @@ def _recent_phone_note() -> Optional[str]:
 
 # ── Narrative synthesis ───────────────────────────────────────────────────────
 
-def _truncate_user_text(text: str, max_words: int = 18) -> str:
-    """Return a truncated, readable paraphrase of what the user said."""
+def _truncate_user_text(text: str, max_words: int = 20) -> str:
     text = (text or "").strip()
     words = text.split()
     if len(words) <= max_words:
@@ -171,7 +163,7 @@ def _build_entry(
 ) -> str:
     """Synthesize a 1-3 sentence first-person narrative entry."""
     owner = _owner_name()
-    t = _local_hhmm()
+    t = _local_dt()
     parts: list[str] = []
 
     # ── What George said ──────────────────────────────────────────────
@@ -193,19 +185,17 @@ def _build_entry(
     # ── What Alice did ────────────────────────────────────────────────
     if alice_text and not alice_text.startswith("(silent"):
         alice_short = _truncate_user_text(alice_text, max_words=16)
-        # Only write if alice actually said something substantive
         if len(alice_short.split()) >= 4:
             parts.append(f"I replied: \"{alice_short}\"")
 
-    # ── Sensor context: clothing, media, phone ─────────────────────────
+    # ── Sensor context ────────────────────────────────────────────────
     context_bits: list[str] = []
     clothing = _clothing_observation()
     if clothing:
         context_bits.append(clothing)
     cowatch = _cowatch_context()
     if cowatch and "youtube" in cowatch.lower():
-        # Trim URL/noise to just a readable note
-        context_bits.append(f"watching YouTube co-watch")
+        context_bits.append("watching YouTube co-watch")
     elif cowatch:
         context_bits.append(f"co-watch: {cowatch[:60]}")
     phone_note = _recent_phone_note()
@@ -229,10 +219,10 @@ def write_narrative_entry(
     event_type: str = "turn",
     extra_facts: Optional[list[str]] = None,
 ) -> Optional[str]:
-    """Write one narrative entry to alice_narrative_diary.jsonl.
+    """Write one narrative entry to today's daily journal file.
 
-    Returns the entry string written, or None if nothing was written.
-    Silent fail — never raises.
+    File: .sifta_state/alice_journal/YYYY-MM-DD.jsonl
+    Returns the entry string written, or None. Silent fail.
     """
     try:
         entry = _build_entry(
@@ -245,8 +235,9 @@ def write_narrative_entry(
         if not entry:
             return None
 
+        ts = time.time()
         row = {
-            "ts": time.time(),
+            "ts": ts,
             "kind": "EPISODIC_NARRATIVE",
             "narrator": "ALICE_M5",
             "entry": entry,
@@ -254,7 +245,7 @@ def write_narrative_entry(
             "event_type": event_type,
             "truth_label": "OBSERVED",
         }
-        _append(_LEDGER, row)
+        _append(_ledger_for_ts(ts), row)
         return entry
     except Exception:
         return None
@@ -263,47 +254,67 @@ def write_narrative_entry(
 def write_boot_entry() -> Optional[str]:
     """Write a boot narrative entry when SIFTA restarts."""
     try:
-        t = _local_datetime()
+        t = _local_dt()
         owner = _owner_name()
         parts = [f"{t} — System restarted. I came back online."]
         cowatch = _cowatch_context()
         if cowatch:
             parts.append(f"Last known co-watch context: {cowatch[:80]}.")
         entry = " ".join(parts)
+        ts = time.time()
         row = {
-            "ts": time.time(),
+            "ts": ts,
             "kind": "EPISODIC_NARRATIVE",
             "narrator": "ALICE_M5",
             "entry": entry,
             "event_type": "boot",
             "truth_label": "OBSERVED",
         }
-        _append(_LEDGER, row)
+        _append(_ledger_for_ts(ts), row)
         return entry
     except Exception:
         return None
 
 
 def format_narrative_for_prompt(max_rows: int = 8, max_age_hours: float = 24.0) -> str:
-    """Return recent narrative entries for Alice's system prompt.
-
-    This is Alice's first-person diary — she reads her own observations.
-    """
+    """Return recent narrative entries from daily journal files for Alice's system prompt."""
     try:
-        if not _LEDGER.exists():
-            return ""
         cutoff = time.time() - max_age_hours * 3600
         rows = []
-        for line in _LEDGER.read_text().strip().splitlines():
-            try:
-                r = json.loads(line)
-                if float(r.get("ts", 0)) >= cutoff:
-                    rows.append(r)
-            except Exception:
-                pass
-        if not rows:
+
+        # Read legacy monolithic file for old entries
+        if _LEGACY_LEDGER.exists():
+            for line in _LEGACY_LEDGER.read_text().strip().splitlines():
+                try:
+                    r = json.loads(line)
+                    if float(r.get("ts", 0)) >= cutoff:
+                        rows.append(r)
+                except Exception:
+                    pass
+
+        # Read daily files
+        _JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+        for f in sorted(_JOURNAL_DIR.glob("*.jsonl")):
+            for line in f.read_text().strip().splitlines():
+                try:
+                    r = json.loads(line)
+                    if float(r.get("ts", 0)) >= cutoff:
+                        rows.append(r)
+                except Exception:
+                    pass
+
+        # Sort by ts and deduplicate
+        seen: set[tuple] = set()
+        unique_rows = []
+        for r in sorted(rows, key=lambda x: x.get("ts", 0)):
+            key = (r.get("ts", 0), r.get("entry", "")[:40])
+            if key not in seen:
+                seen.add(key)
+                unique_rows.append(r)
+
+        if not unique_rows:
             return ""
-        recent = rows[-max_rows:]
+        recent = unique_rows[-max_rows:]
         lines_out = ["MY JOURNAL (first-person narrative memory — append-only):"]
         for r in recent:
             entry = r.get("entry", "").strip()
