@@ -191,99 +191,91 @@ def _log_send(channel: str, target: str, phone: str, message: str,
 
 def _send_whatsapp_by_visible_name(target: str, message: str, *, dry_run: bool = False) -> Dict[str, Any]:
     """
-    Search WhatsApp.app by visible contact/group name and press send.
+    Find a WhatsApp chat (individual OR group) by visible name using the
+    WhatsApp Desktop sidebar search (Cmd+F), then send the message.
 
-    This is the no-bridge path George asked for: it does not require the
-    contact to exist in the synced bridge cache or local Contacts.app.
+    This handles groups correctly — groups have no phone number but DO appear
+    in WhatsApp's search results by their display name.
+
+    Flow:
+      1. Activate WhatsApp Desktop
+      2. Cmd+F → sidebar search opens
+      3. Paste contact/group name → first result appears
+      4. Return → opens that chat
+      5. Paste message into the message field
+      6. Return → sends
     """
     if dry_run:
         return _log_send(
-            "whatsapp",
-            target,
-            "",
-            message,
-            True,
-            "DRY_RUN",
-            f"Would search WhatsApp.app for visible name '{target}' and send.",
-            transport="whatsapp_visible_name_ui",
+            "whatsapp", target, "", message, True, "DRY_RUN",
+            f"Would search WhatsApp.app sidebar for '{target}' and send.",
+            transport="whatsapp_search_ui",
         )
 
     target_s = _as_applescript_string(target)
     message_s = _as_applescript_string(message)
+
     script = f'''
 set _oldClipboard to the clipboard
 tell application "WhatsApp" to activate
 delay 0.8
 tell application "System Events"
-    if not (exists process "WhatsApp") then error "WhatsApp process is not available"
+    if not (exists process "WhatsApp") then error "WhatsApp process not found"
     tell process "WhatsApp"
         set frontmost to true
-        keystroke "n" using command down
-        delay 0.45
+        -- Open sidebar search (Cmd+F) to find any chat or group by name
+        keystroke "f" using command down
+        delay 0.6
+        -- Clear any previous search then paste the target name
+        keystroke "a" using command down
+        delay 0.1
         set the clipboard to {target_s}
         keystroke "v" using command down
-        delay 0.90
+        delay 1.0
+        -- Press Return to open the first matching result
         key code 36
-        delay 0.55
+        delay 0.6
+        -- Now we're in the chat/group. Paste the message.
         set the clipboard to {message_s}
         keystroke "v" using command down
-        delay 0.20
+        delay 0.3
+        -- Send
         key code 36
     end tell
 end tell
-delay 0.10
+delay 0.2
 set the clipboard to _oldClipboard
 return "sent"
 '''
     try:
         r = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=18
+            capture_output=True, text=True, timeout=20
         )
         if r.returncode == 0 and "sent" in r.stdout:
             return _log_send(
-                "whatsapp",
-                target,
-                "",
-                message,
-                True,
-                "SENT",
-                "WhatsApp.app visible-name send sequence completed.",
-                transport="whatsapp_visible_name_ui",
+                "whatsapp", target, "", message, True, "SENT",
+                f"WhatsApp.app sidebar-search send completed for '{target}'.",
+                transport="whatsapp_search_ui",
             )
         err = (r.stderr or r.stdout or "unknown").strip()[:240]
         return _log_send(
-            "whatsapp",
-            target,
-            "",
-            message,
-            False,
-            "OSASCRIPT_ERROR",
-            err,
-            transport="whatsapp_visible_name_ui",
+            "whatsapp", target, "", message, False, "OSASCRIPT_ERROR", err,
+            transport="whatsapp_search_ui",
         )
     except subprocess.TimeoutExpired:
         return _log_send(
-            "whatsapp",
-            target,
-            "",
-            message,
-            False,
-            "TIMEOUT",
-            "WhatsApp.app visible-name send timed out after 18s",
-            transport="whatsapp_visible_name_ui",
+            "whatsapp", target, "", message, False, "TIMEOUT",
+            "WhatsApp.app search-send timed out after 20s",
+            transport="whatsapp_search_ui",
         )
     except Exception as e:
         return _log_send(
-            "whatsapp",
-            target,
-            "",
-            message,
-            False,
-            "EXCEPTION",
-            str(e)[:240],
-            transport="whatsapp_visible_name_ui",
+            "whatsapp", target, "", message, False, "EXCEPTION",
+            str(e)[:240], transport="whatsapp_search_ui",
         )
+
+
 
 
 def send_whatsapp_native(target: str, message: str, *, dry_run: bool = False) -> Dict[str, Any]:

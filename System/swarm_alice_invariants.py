@@ -51,6 +51,18 @@ def _trace(event: Dict[str, Any]) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 _WHATSAPP_INTENT_PATTERNS = [
+    # Pattern 0: "send ... to GROUP/NAME ... say|saying BODY"
+    # Handles: "send a WhatsApp message to AGI Kings? say hello everybody"
+    # Note: (?P<target>) uses greedy up to the say/saying/tell separator.
+    re.compile(
+        r"\bsend\s+(?:(?:a|the)\s+)?(?:whatsapp\s+)?(?:message\s+)?(?:to\s+)"
+        r"(?P<target>[A-Za-z][A-Za-z0-9 .'-]{1,50}?)\??\s+"
+        r"(?:please\s+)?(?:on\s+whatsapp\s+)?(?:and\s+)?"
+        r"(?:tell(?:\s+(?:him|her|them))?|say|saying)\s+(?:that\s+)?"
+        r"(?P<body>.+)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    # Pattern 1: original — "send ... [to] TARGET ... say BODY" (optional 'to')
     re.compile(
         r"\bsend\s+(?:(?:a|the)\s+)?(?:whatsapp\s+)?(?:message\s+)?(?:to\s+)?"
         r"(?P<target>[A-Za-z][A-Za-z .'-]{1,40}?)\s+"
@@ -80,6 +92,14 @@ _WHATSAPP_INTENT_PATTERNS = [
         re.IGNORECASE | re.DOTALL,
     ),
 ]
+
+# Targets that are plain English stopwords — never a valid contact name
+_TARGET_STOPWORDS = frozenset({
+    "a", "an", "the", "to", "in", "on", "at", "it", "me", "us", "him",
+    "her", "them", "my", "your", "our", "his", "their", "this", "that",
+    "some", "any", "all", "now", "out", "off", "up", "down", "here",
+    "there", "just", "also", "via", "with", "for", "from",
+})
 
 
 def _clean_whatsapp_target(target: str) -> str:
@@ -118,17 +138,43 @@ def extract_whatsapp_intent(user_text: str) -> Optional[Tuple[str, str]]:
     I1: Parse WhatsApp send intent from Architect text.
     Returns (target, text) with text EXACTLY as spoken — no mutation.
     Returns None if no send intent found.
+
+    Bugs fixed (AG46 2026-05-06):
+    - Stopword guard: 'to', 'a', 'the' can never be a contact name.
+    - Group name parsing: 'AGI Kings' now correctly extracted from
+      'send a WhatsApp message to owner group AGI Kings? say hello everybody'
     """
     text_in = (user_text or "").strip()
+    # Strip leading address like "Alice, " before parsing
+    text_in = re.sub(r"^(?:alice|hey\s+alice|ok\s+alice)[,\s]+", "", text_in, flags=re.IGNORECASE).strip()
+
     m = None
     for pattern in _WHATSAPP_INTENT_PATTERNS:
         m = pattern.search(text_in)
         if m:
+            target_raw = _clean_whatsapp_target(m.group("target"))
+            # Stopword guard: reject single-word stop words as targets
+            if target_raw.lower().strip() in _TARGET_STOPWORDS:
+                m = None
+                continue
+            # Minimum target length: at least 2 chars
+            if len(target_raw.replace(" ", "")) < 2:
+                m = None
+                continue
             break
+
     if not m:
         return None
 
     target = _clean_whatsapp_target(m.group("target"))
+    # Final stopword check
+    if target.lower().strip() in _TARGET_STOPWORDS or len(target.replace(" ", "")) < 2:
+        return None
+
+    # Strip "group" prefix if present: "owner group AGI Kings" → "AGI Kings"
+    target = re.sub(r"^(?:owner\s+)?(?:group|chat|channel)\s+", "", target, flags=re.IGNORECASE).strip()
+    target = target.strip().strip("?!.,;")
+
     text = _clean_whatsapp_body(m.group("body"), target)
 
     if not target or not text:
