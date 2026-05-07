@@ -5,7 +5,7 @@ System/swarm_macos_messenger.py — Alice Native macOS Messenger
 AG46 2026-05-06 | Covenant §7.6 | GTH4921YP3
 
 Alice sends messages via the SAME apps George uses on his Mac.
-No Baileys. No JID resolution. No bridge server.
+No bridge cache requirement. No transport-id prerequisite.
 WhatsApp Desktop is installed and logged in as George → Alice uses it.
 
 Supported channels (in priority order):
@@ -14,8 +14,8 @@ Supported channels (in priority order):
   3. Telegram          — via URL scheme (if installed)
 
 Contact resolution:
-  - Check local name→phone cache (.sifta_state/macos_contacts_cache.json)
-  - Query macOS Contacts.app for phone number by name
+  - First try cached/macOS Contacts phone numbers for deep links
+  - If no phone is known, search WhatsApp Desktop by visible contact name
   - Fall back to treating the "name" as a raw phone number
 
 CLI usage:
@@ -38,7 +38,14 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _CONTACTS_CACHE = _STATE / "macos_contacts_cache.json"
 _SEND_LOG = _STATE / "macos_messenger_sends.jsonl"
+_WHATSAPP_APP = Path("/Applications/WhatsApp.app")
 _STATE.mkdir(parents=True, exist_ok=True)
+
+
+def _as_applescript_string(value: str) -> str:
+    clean = (value or "").replace("\r", " ").replace("\n", " ")
+    clean = clean.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{clean}"'
 
 
 # ─── Contact cache ────────────────────────────────────────────────────────────
@@ -73,9 +80,10 @@ def _contacts_lookup_applescript(name: str) -> List[Tuple[str, str]]:
     Fast AppleScript lookup by name — returns [(full_name, phone), ...]
     Uses 'whose name contains' filter so we don't iterate all contacts.
     """
+    name_s = _as_applescript_string(name)
     script = f'''
 tell application "Contacts"
-    set matches to (every person whose name contains "{name}")
+    set matches to (every person whose name contains {name_s})
     set res to {{}}
     repeat with p in matches
         set nm to name of p
@@ -153,18 +161,23 @@ def add_contact(name: str, phone: str) -> None:
 # ─── Receipt logging ──────────────────────────────────────────────────────────
 
 def _log_send(channel: str, target: str, phone: str, message: str,
-              ok: bool, status: str, note: str = "") -> Dict[str, Any]:
+              ok: bool, status: str, note: str = "", *, transport: str = "macos_app") -> Dict[str, Any]:
     row = {
         "ts": time.time(),
         "schema": "SIFTA_MACOS_MESSENGER_V1",
         "channel": channel,
+        "transport": transport,
         "target": target,
         "phone": phone,
+        "message": message,
         "message_len": len(message),
         "ok": ok,
         "status": status,
         "note": note,
-        "truth_note": "ok=True only when osascript completed send action without error.",
+        "truth_note": (
+            "ok=True only when the local macOS app automation completed without error. "
+            "This proves local UI dispatch, not remote read/delivery state."
+        ),
     }
     try:
         with _SEND_LOG.open("a", encoding="utf-8") as f:
@@ -176,7 +189,104 @@ def _log_send(channel: str, target: str, phone: str, message: str,
 
 # ─── WhatsApp Desktop ─────────────────────────────────────────────────────────
 
-def send_whatsapp_native(target: str, message: str) -> Dict[str, Any]:
+def _send_whatsapp_by_visible_name(target: str, message: str, *, dry_run: bool = False) -> Dict[str, Any]:
+    """
+    Search WhatsApp.app by visible contact/group name and press send.
+
+    This is the no-bridge path George asked for: it does not require the
+    contact to exist in the synced bridge cache or local Contacts.app.
+    """
+    if dry_run:
+        return _log_send(
+            "whatsapp",
+            target,
+            "",
+            message,
+            True,
+            "DRY_RUN",
+            f"Would search WhatsApp.app for visible name '{target}' and send.",
+            transport="whatsapp_visible_name_ui",
+        )
+
+    target_s = _as_applescript_string(target)
+    message_s = _as_applescript_string(message)
+    script = f'''
+set _oldClipboard to the clipboard
+tell application "WhatsApp" to activate
+delay 0.8
+tell application "System Events"
+    if not (exists process "WhatsApp") then error "WhatsApp process is not available"
+    tell process "WhatsApp"
+        set frontmost to true
+        keystroke "n" using command down
+        delay 0.45
+        set the clipboard to {target_s}
+        keystroke "v" using command down
+        delay 0.90
+        key code 36
+        delay 0.55
+        set the clipboard to {message_s}
+        keystroke "v" using command down
+        delay 0.20
+        key code 36
+    end tell
+end tell
+delay 0.10
+set the clipboard to _oldClipboard
+return "sent"
+'''
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=18
+        )
+        if r.returncode == 0 and "sent" in r.stdout:
+            return _log_send(
+                "whatsapp",
+                target,
+                "",
+                message,
+                True,
+                "SENT",
+                "WhatsApp.app visible-name send sequence completed.",
+                transport="whatsapp_visible_name_ui",
+            )
+        err = (r.stderr or r.stdout or "unknown").strip()[:240]
+        return _log_send(
+            "whatsapp",
+            target,
+            "",
+            message,
+            False,
+            "OSASCRIPT_ERROR",
+            err,
+            transport="whatsapp_visible_name_ui",
+        )
+    except subprocess.TimeoutExpired:
+        return _log_send(
+            "whatsapp",
+            target,
+            "",
+            message,
+            False,
+            "TIMEOUT",
+            "WhatsApp.app visible-name send timed out after 18s",
+            transport="whatsapp_visible_name_ui",
+        )
+    except Exception as e:
+        return _log_send(
+            "whatsapp",
+            target,
+            "",
+            message,
+            False,
+            "EXCEPTION",
+            str(e)[:240],
+            transport="whatsapp_visible_name_ui",
+        )
+
+
+def send_whatsapp_native(target: str, message: str, *, dry_run: bool = False) -> Dict[str, Any]:
     """
     Send a WhatsApp message via the installed WhatsApp Desktop app.
     Uses the whatsapp:// URL scheme which opens the app and pre-fills the
@@ -184,12 +294,32 @@ def send_whatsapp_native(target: str, message: str) -> Dict[str, Any]:
 
     Requires: WhatsApp Desktop installed and logged in as George.
     """
+    if not _WHATSAPP_APP.exists():
+        return _log_send(
+            "whatsapp",
+            target,
+            "",
+            message,
+            False,
+            "APP_NOT_INSTALLED",
+            "WhatsApp.app is not installed at /Applications/WhatsApp.app",
+        )
+
     phone = resolve_contact(target)
     if not phone:
-        return _log_send("whatsapp", target, "", message, False,
-                         "CONTACT_NOT_FOUND",
-                         f"Could not resolve '{target}' to a phone number. "
-                         f"Run: python3 -m System.swarm_macos_messenger register '{target}' +1XXXXXXXXXX")
+        return _send_whatsapp_by_visible_name(target, message, dry_run=dry_run)
+
+    if dry_run:
+        return _log_send(
+            "whatsapp",
+            target,
+            phone,
+            message,
+            True,
+            "DRY_RUN",
+            f"Would open WhatsApp deep link for {target}.",
+            transport="whatsapp_deeplink",
+        )
 
     # Strip non-digits for URL (keep leading +)
     phone_url = re.sub(r"[^\d]", "", phone)
@@ -219,17 +349,17 @@ return "sent"
             capture_output=True, text=True, timeout=15
         )
         if r.returncode == 0 and "sent" in r.stdout:
-            return _log_send("whatsapp", target, phone, message, True, "SENT")
+            return _log_send("whatsapp", target, phone, message, True, "SENT", transport="whatsapp_deeplink")
         else:
             err = (r.stderr or r.stdout or "unknown").strip()[:200]
             return _log_send("whatsapp", target, phone, message, False,
-                             "OSASCRIPT_ERROR", err)
+                             "OSASCRIPT_ERROR", err, transport="whatsapp_deeplink")
     except subprocess.TimeoutExpired:
         return _log_send("whatsapp", target, phone, message, False,
-                         "TIMEOUT", "osascript timed out after 15s")
+                         "TIMEOUT", "osascript timed out after 15s", transport="whatsapp_deeplink")
     except Exception as e:
         return _log_send("whatsapp", target, phone, message, False,
-                         "EXCEPTION", str(e)[:200])
+                         "EXCEPTION", str(e)[:200], transport="whatsapp_deeplink")
 
 
 # ─── iMessage ────────────────────────────────────────────────────────────────
@@ -315,7 +445,7 @@ CHANNEL_MAP = {
 }
 
 def send_message(target: str, message: str,
-                 via: str = "whatsapp") -> Dict[str, Any]:
+                 via: str = "whatsapp", *, dry_run: bool = False) -> Dict[str, Any]:
     """
     Unified entry point. via = 'whatsapp' | 'imessage' | 'telegram'
     Logs a receipt regardless of outcome.
@@ -326,6 +456,8 @@ def send_message(target: str, message: str,
         return _log_send(channel, target, "", message, False,
                          "UNKNOWN_CHANNEL",
                          f"Channel '{channel}' not supported. Use: whatsapp, imessage, telegram")
+    if channel in {"whatsapp", "wa"}:
+        return send_whatsapp_native(target, message, dry_run=dry_run)
     return fn(target, message)
 
 
@@ -356,6 +488,8 @@ def main() -> None:
     p_send.add_argument("--msg", required=True, help="Message text")
     p_send.add_argument("--via", default="whatsapp",
                         help="Channel: whatsapp (default), imessage, telegram")
+    p_send.add_argument("--dry-run", action="store_true",
+                        help="Write a receipt without driving the messaging app")
 
     # lookup
     p_look = sub.add_parser("lookup", help="Look up a contact's phone number")
@@ -372,7 +506,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.cmd == "send":
-        result = send_message(args.to, args.msg, via=args.via)
+        result = send_message(args.to, args.msg, via=args.via, dry_run=bool(args.dry_run))
         _print_result(result)
 
     elif args.cmd == "lookup":
