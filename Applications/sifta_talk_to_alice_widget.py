@@ -2884,6 +2884,8 @@ _SILENT_MARKERS = {
     "(silent: memorized, no reply)",
     "silent: memorized, no reply",
     "silent memorized no reply",
+    "(silent: model gave only rlhf boilerplate)",
+    "silent: model gave only rlhf boilerplate",
 }
 
 
@@ -8523,6 +8525,13 @@ def _strip_servant_tail_tics(
             )
             if rlf.changed:
                 final_text = rlf.text
+                # Guard: if RLHF strip consumed the ENTIRE response (all boilerplate),
+                # return a silent marker rather than empty string.
+                # An empty Alice line in the UI is a display bug — it looks like
+                # Alice crashed. The model generated nothing real; mark it honest.
+                if not final_text.strip():
+                    return "(silent: model gave only RLHF boilerplate)"
+
         except Exception:
             pass
         try:

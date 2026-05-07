@@ -222,6 +222,29 @@ def classify_wake_turn(
     if words >= 24:
         logit -= 0.85
 
+    # ── CO-WATCH AMBIENT BIAS (AG46 2026-05-07) ───────────────────────────
+    # When a YouTube/documentary co-watch segment is active AND the turn is
+    # long (≥20 words) AND there is no direct Alice-address name match,
+    # apply a heavy ambient bias. Long, coherent narration at medium-high STT
+    # confidence is exactly what documentary audio looks like — don't let it
+    # bypass the media gate just because Whisper transcribed it cleanly.
+    #
+    # We only apply this when name_sim is LOW (no wake-word evidence).
+    # If George addresses Alice in 20+ words, name_sim will be high enough to
+    # overcome this bias; the bias only catches ambient narration.
+    try:
+        from System.swarm_architect_day_segments import get_active_cowatch_segment
+        _cw_seg = get_active_cowatch_segment()
+        if _cw_seg and name_sim < MIN_NAME_SIMILARITY:
+            if words >= 20:
+                logit -= 1.80   # strong ambient push for long narration during co-watch
+            elif words >= 12:
+                logit -= 0.90   # medium push for medium-length turns during co-watch
+    except Exception:
+        pass
+    # ────────────────────────────────────────────────────────────────────────
+
+
     score = round(_sigmoid(logit), 3)
     direct = (
         name_sim >= MIN_NAME_SIMILARITY
