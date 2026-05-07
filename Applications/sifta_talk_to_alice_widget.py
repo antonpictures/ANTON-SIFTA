@@ -5128,13 +5128,12 @@ def _build_swarm_context(user_text: str = "") -> str:
 
     # ── Stigmergic Prediction (AG46 2026-05-07, Unified Field Goal §7.9) ────
     # Alice becomes ANTICIPATORY — she knows what's coming before George speaks.
-    # Rolling 7-day window, hour-of-day frequency table. Every prediction is
-    # signed and contestable (Véliz: predictions must be transparent + auditable).
-    # Reads .sifta_state/stigmergic_prediction.json (stale > 20 min → re-run).
+    # Primary injection is at line ~2702 inside _current_system_prompt.
+    # This secondary block uses the Cursor-agent refactored API.
     prediction_block = ""
     try:
-        from System.stigmergic_prediction_engine import alice_context_block as _pred_ctx
-        prediction_block = _pred_ctx() or ""
+        from System.stigmergic_prediction_engine import format_prediction_for_alice as _pred_fmt
+        prediction_block = _pred_fmt() or ""
     except Exception:
         pass
 

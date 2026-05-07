@@ -3,7 +3,7 @@
 
 This organ answers one narrow question before the LLM speaks:
 
-    What is George doing across SIFTA OS, the hosted desktop, and media organs?
+    What is the primary operator doing across SIFTA OS, the hosted desktop, and media organs?
 
 It does not identify media by magic. It fuses bounded receipts from app focus,
 hosted OS focus, YouTube/media ledgers, and Stigmergic Unified Shazam into one
@@ -31,6 +31,7 @@ TRUTH_LABEL = "UNIFIED_STIGMERGIC_FIELD_V1"
 APP_FOCUS_MAX_AGE_S = 5 * 60.0
 HOST_FOCUS_MAX_AGE_S = 5 * 60.0
 MEDIA_MAX_AGE_S = 6 * 3600.0
+PREDICTION_MAX_AGE_S = 30 * 60.0
 
 
 def _clamp01(value: float) -> float:
@@ -181,6 +182,23 @@ def _host_focus_packet(row: Mapping[str, Any], now: float) -> dict[str, Any]:
     return packet
 
 
+def _prediction_packet(row: Mapping[str, Any], now: float) -> dict[str, Any]:
+    """Compact owner schedule prediction packet for the unified field."""
+    if not row:
+        return {}
+    return {
+        "truth_label": row.get("truth_label"),
+        "next_likely_segment": row.get("next_likely_segment"),
+        "confidence": row.get("confidence"),
+        "expected_start_min": row.get("expected_start_min"),
+        "expected_start_time": row.get("expected_start_time"),
+        "basis_days": row.get("basis_days"),
+        "basis_event_count": row.get("basis_event_count"),
+        "age_s": _age_s(row, now),
+        "freshness": round(_freshness(row, now, PREDICTION_MAX_AGE_S), 4),
+    }
+
+
 def _media_packet(row: Mapping[str, Any], now: float) -> dict[str, Any]:
     return {
         "primary_category": str(row.get("primary_category") or ""),
@@ -257,6 +275,12 @@ def _interpret_owner_activity(
     youtube: Mapping[str, Any],
     observed_media: Mapping[str, Any],
 ) -> str:
+    try:
+        from System.swarm_kernel_identity import owner_display_name
+
+        who = owner_display_name("the primary operator")
+    except Exception:
+        who = "the primary operator"
     app_name = str(app_focus.get("app") or "").strip()
     category = str(media.get("primary_category") or "").strip()
     title = str(media.get("title_guess") or media.get("source_work") or youtube.get("title") or "").strip()
@@ -271,17 +295,17 @@ def _interpret_owner_activity(
     if app_name and "shazam" in app_name.casefold() and media_present:
         label = category or "media"
         if title:
-            return f"George has {app_name} open and is co-watching media; current guess is {label}: {title}."
-        return f"George has {app_name} open and is co-watching media; current guess is {label}."
+            return f"{who} has {app_name} open and is co-watching media; current guess is {label}: {title}."
+        return f"{who} has {app_name} open and is co-watching media; current guess is {label}."
     if app_name:
-        return f"George is using {app_name}; use that selected SIFTA app as live context."
+        return f"{who} is using {app_name}; use that selected SIFTA app as live context."
     if media_present:
         label = category or "media"
         if title:
-            return f"George appears to be co-watching media; current guess is {label}: {title}."
-        return f"George appears to be co-watching media; current guess is {label}."
+            return f"{who} appears to be co-watching media; current guess is {label}: {title}."
+        return f"{who} appears to be co-watching media; current guess is {label}."
     if host_title:
-        return f"George's hosted OS focus is {host_title}."
+        return f"{who}'s hosted OS focus is {host_title}."
     return "No fresh owner/OS/media focus receipts are available."
 
 
@@ -325,12 +349,14 @@ def build_unified_field(
     media_raw = _best_media_row(root)
     youtube_raw = _best_youtube_row(root)
     observed_raw = _latest_jsonl(root / "media_ingress_gate.jsonl")
+    prediction_raw = _read_json(root / "stigmergic_prediction.json")
 
     app_focus = _app_focus_packet(app_raw, now_ts) if app_raw else {}
     host_focus = _host_focus_packet(host_raw, now_ts) if host_raw else {}
     media = _media_packet(media_raw, now_ts) if media_raw else {}
     youtube = _youtube_packet(youtube_raw, now_ts) if youtube_raw else {}
     observed_media = _observed_media_packet(observed_raw, now_ts) if observed_raw else {}
+    schedule_prediction = _prediction_packet(prediction_raw, now_ts) if prediction_raw else {}
 
     signals = {
         "sifta_app_focus": float(app_focus.get("freshness", 0.0) or 0.0),
@@ -339,6 +365,8 @@ def build_unified_field(
         * _clamp01(float(media.get("confidence", 0.0) or 0.0)),
         "youtube_context": float(youtube.get("freshness", 0.0) or 0.0),
         "observed_media": float(observed_media.get("freshness", 0.0) or 0.0),
+        "schedule_prediction": float(schedule_prediction.get("freshness", 0.0) or 0.0)
+        * _clamp01(float(schedule_prediction.get("confidence", 0.0) or 0.0)),
     }
     weights = {
         "sifta_app_focus": 0.22,
@@ -346,6 +374,7 @@ def build_unified_field(
         "media_shazam": 0.34,
         "youtube_context": 0.16,
         "observed_media": 0.12,
+        "schedule_prediction": 0.10,
     }
     available_weight = sum(weights[k] for k, v in signals.items() if v > 0.0)
     field_confidence = 0.0
@@ -367,6 +396,7 @@ def build_unified_field(
         "media_guess": media,
         "youtube_context": youtube,
         "observed_media": observed_media,
+        "schedule_prediction": schedule_prediction,
         "signal_freshness": {k: round(_clamp01(v), 4) for k, v in signals.items()},
         "source_ledgers": [
             "app_focus.jsonl",
@@ -376,6 +406,7 @@ def build_unified_field(
             "youtube_context_latest.json",
             "youtube_context.jsonl",
             "media_ingress_gate.jsonl",
+            "stigmergic_prediction.json",
         ],
     }
 
@@ -410,6 +441,7 @@ def format_unified_field_for_prompt(
     host = row.get("hosted_os_focus") or {}
     media = row.get("media_guess") or {}
     youtube = row.get("youtube_context") or {}
+    prediction = row.get("schedule_prediction") or {}
 
     host_label = (
         host.get("frontmost_window")
@@ -434,6 +466,14 @@ def format_unified_field_for_prompt(
         f"- Hosted OS focus: {host_label}",
         f"- Media guess: {media_label}; confidence={guess_conf:.2f}; source={media.get('source_label') or media.get('source_type') or '--'}; acoustic_scene={media.get('acoustic_scene') or '--'}",
     ]
+    if prediction:
+        lines.append(
+            "- Schedule prediction: "
+            f"next={prediction.get('next_likely_segment') or '--'}; "
+            f"confidence={float(prediction.get('confidence') or 0.0):.2f}; "
+            f"expected_in_min={prediction.get('expected_start_min') or '--'}; "
+            f"expected_time={prediction.get('expected_start_time') or '--'}"
+        )
     if youtube:
         lines.append(
             "- YouTube receipt: "
