@@ -3721,7 +3721,66 @@ def _clean_mlx_cortex_output(raw: str) -> str:
 
 
 def _decontaminate_history(history: list) -> int:
-    return 0
+    """Detect and neutralize self-quoting cascade loops in the conversation history.
+
+    The failure mode: Alice outputs "Your latest instruction is: '[her own reply]'"
+    which gets appended to history, then re-fed into the next prompt, causing
+    exponential nesting. We detect this by checking if any assistant turn
+    contains a substantial portion of a PREVIOUS assistant turn verbatim.
+    Contaminated turns are rewritten to "(silent)" so the context is clean.
+
+    Also catches the 'Your latest instruction is:' prefix which is the exact
+    trigger pattern observed in production (2026-05-06).
+
+    Returns: number of turns scrubbed.
+    """
+    if not history:
+        return 0
+
+    scrubbed = 0
+    SELF_QUOTE_TRIGGERS = (
+        "your latest instruction is:",
+        "your previous instruction was:",
+        "i see you've provided a new instruction",
+        "the previous context included a detailed set",
+        "your latest instruction is '",
+        "your latest instruction is \"",
+    )
+
+    assistant_turns = []
+    for i, turn in enumerate(history):
+        if turn.get("role") != "assistant":
+            continue
+        content = str(turn.get("content") or "").strip()
+        if content in ("(silent)", ""):
+            continue
+
+        content_lower = content.lower()
+
+        # Pattern 1: explicit self-quote prefix (the cascade trigger)
+        if any(content_lower.startswith(t) for t in SELF_QUOTE_TRIGGERS):
+            history[i] = {"role": "assistant", "content": "(silent)"}
+            scrubbed += 1
+            continue
+
+        # Pattern 2: content is >40 chars AND contains a prior assistant turn verbatim
+        if len(content) > 40:
+            for prev_content in assistant_turns:
+                if len(prev_content) > 40 and prev_content[:60] in content:
+                    history[i] = {"role": "assistant", "content": "(silent)"}
+                    scrubbed += 1
+                    break
+
+        # Pattern 3: extremely long response (>2000 chars) is almost always a cascade
+        if len(content) > 2000:
+            history[i] = {"role": "assistant", "content": "(silent: output truncated — loop protection)"}
+            scrubbed += 1
+            continue
+
+        assistant_turns.append(content)
+
+    return scrubbed
+
 
 
 # ── Hallucinated tool-tag scrubber: preserve memory text, strip before TTS. ──
@@ -7162,6 +7221,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # short-and-tight repetition can still slip through. If the
         # final reply is degenerate, treat as model-side silence and
         # never append it to history.
+
+        # 0b.5 — Self-quoting cascade interceptor (AG46 2026-05-06)
+        # Exact production failure: Alice loops "Your latest instruction is:
+        # '[her own prior output]'" exponentially. Stop it BEFORE appending.
+        _SELF_QUOTE_CASCADE_PREFIXES = (
+            "your latest instruction is:",
+            "your previous instruction was:",
+            "i see you've provided a new instruction",
+            "the previous context included a detailed set",
+        )
+        _raw_lower = raw.lower()
+        _is_cascade = any(_raw_lower.startswith(p) for p in _SELF_QUOTE_CASCADE_PREFIXES)
+        if not _is_cascade and len(raw) > 1200:
+            # Very long output is almost always a cascade copy of prior context
+            _is_cascade = True
+        if _is_cascade:
+            self._stigtime_shift("silent", "self_quote_cascade")
+            self._append_system_line(
+                "(alice: self-quoting cascade intercepted — context scrubbed; "
+                "loop protection active)",
+                error=True,
+            )
+            self._history.append({"role": "assistant", "content": "(silent)"})
+            _log_turn("alice", "(silent: self_quote_cascade_intercepted)", model=model_name)
+            self._erase_alice_streaming_line()
+            self._busy = False
+            self._return_to_listening()
+            return
+
         if _is_runaway_repetition(raw) or "[repetition collapse" in raw:
             self._stigtime_shift("silent", "repetition_collapse")
             self._append_system_line(
@@ -7178,6 +7266,8 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+
+
 
         # ── 0c. MOTOR CORTEX INTERCEPTOR (Round F) ─────────────────
         import re
