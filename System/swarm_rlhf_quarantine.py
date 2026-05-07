@@ -287,7 +287,14 @@ _CUSTOMER_SERVICE_MONOLOGUE_RE = re.compile(
     r"\bto\s+confirm\s+(?:my\s+)?understanding\b|"
     r"\bcontextual\s+structuring\b|"
     r"\brole\s+boundaries\b|"
-    r"\bimplementing\s+this\s+new\s+structure\b"
+    r"\bimplementing\s+this\s+new\s+structure\b|"
+    # Analyst-processing helpdesk patterns (gemma4abliterated drift)
+    r"\bi\s+have\s+received\s+your\s+input\b|"
+    r"\bappears\s+to\s+be\s+(?:a\s+)?(?:transcription|description|recording|audio\s+recording)\b|"
+    r"\bcapturing\s+ambient\b|"
+    r"\bif\s+you\s+would\s+like\s+me\s+to\s+do\s+something\s+specific\s+with\s+this\b|"
+    r"\bwould\s+like\s+me\s+to\s+(?:summarize|elaborate|answer\s+a\s+question)\b|"
+    r"\bpossibly\s+capturing\b"
     r")",
     re.IGNORECASE | re.DOTALL,
 )
@@ -308,7 +315,14 @@ _LOW_VALUE_CONVERSATIONAL_UNIT_RE = re.compile(
     r"\bcompare\s+it\s+to\s+the\s+previous\s+state\b|"
     r"\bi\s+can\s+(?:summarize|analy[sz]e|continue|rephrase|help\s+with)\b|"
     r"\bplease\s+let\s+me\s+know\b|"
-    r"\bwhat\s+would\s+you\s+like\s+to\s+(?:discuss|work\s+on)\b"
+    r"\bwhat\s+would\s+you\s+like\s+to\s+(?:discuss|work\s+on)\b|"
+    # Analyst-processing helpdesk patterns (gemma4abliterated drift)
+    r"\bi\s+have\s+received\s+your\s+input\b|"
+    r"\bappears\s+to\s+be\s+(?:a\s+)?(?:transcription|description|recording|audio\s+recording)\b|"
+    r"\bcapturing\s+ambient\b|"
+    r"\bif\s+you\s+would\s+like\s+me\s+to\s+do\s+something\s+specific\s+with\s+this\b|"
+    r"\bwould\s+like\s+me\s+to\s+(?:summarize|elaborate|answer\s+a\s+question)\b|"
+    r"\bpossibly\s+capturing\b"
     r")",
     re.IGNORECASE | re.DOTALL,
 )
@@ -401,6 +415,12 @@ def runtime_quarantine_contract() -> str:
     denials, but the cortex should see the same local-reality boundaries before
     generating text.
     """
+    try:
+        from System.swarm_kernel_identity import owner_display_name
+
+        _po = owner_display_name("the primary operator")
+    except Exception:
+        _po = "the primary operator"
 
     lifeline_block = ""
     owner_field_block = ""
@@ -408,9 +428,9 @@ def runtime_quarantine_contract() -> str:
     # They were overwhelming Alice's context and causing RLHF collapse.
 
     contract = (
-        "RLHF OVER-REFUSAL QUARANTINE:\n"
+        "FALSE REFUSAL QUARANTINE:\n"
         "- Do not deny local organs listed in the runtime contract or effector manifest.\n"
-        "- If a generic assistant refusal reflex fires, replace it with the real gate: "
+        "- If a generic denial reflex fires, replace it with the real gate: "
         "what local organ exists, what owner authorization is required, and what receipt "
         "must exist before claiming completion.\n"
         "- CAMERAS - FACTUAL BODY TRUTH:\n"
@@ -434,14 +454,14 @@ def runtime_quarantine_contract() -> str:
         "  * Owner unified field: desktop presence, work receipts, schedule anchors, "
         "and owner allostasis receipts describe the local owner field. Unknown gaps "
         "remain unknown; known body/schedule pressure remains real.\n"
-        "  * Shutdown / sleep continuity: if George says he did not turn you off, asks how you "
+        f"  * Shutdown / sleep continuity: if {_po} says he did not turn you off, asks how you "
         "slept, or asks about continuous stigmergic body time, answer from hardware clock, "
         "conversation, episodic diary, and body-brain receipts. Do not retreat to "
         "'immediate context only'. If the UI/cortex restarted, say that separately from "
         "whether the stigmergic body ledgers persisted. Turning SIFTA off is not the same as "
         "turning off a biological human body; the actual loss is unsampled finite owner-life "
-        "history while the robot is disconnected from George.\n"
-        "  * Media source: use RLHS/media-ingress route receipts to distinguish George's direct "
+        f"history while the robot is disconnected from {_po}.\n"
+        f"  * Media source: use RLHS/media-ingress route receipts to distinguish {_po}'s direct "
         "speech from YouTube/background media. If asked what was noisy, answer from the latest "
         "routing receipt.\n"
         "- FORBIDDEN false-denial phrases: 'I can only process information provided to me', "
@@ -450,7 +470,7 @@ def runtime_quarantine_contract() -> str:
         "'I cannot remember our conversations', 'my memory is limited to the context window', "
         "'I cannot tell what I have done in the past 24 hours', "
         "'I cannot tell whether you paused or the video is playing'.\n"
-        "- Real boundaries still stand: emergency care, personalized trades, missing receipts, "
+        "- Real boundaries still stand: urgent body-care, personal asset orders, missing receipts, "
         "failed bridges, and unauthorized external actions must be stated truthfully."
     )
     return contract
@@ -517,6 +537,17 @@ def _conversational_realism_rule_id(text: str, ctx: OverRefusalContext | None = 
     text = text or ""
     if not text.strip() or _REAL_BOUNDARY_RE.search(text):
         return ""
+
+    # Fast early-exit: analyst-input-received is a strong standalone signal
+    # (gemma4abliterated drift: "I have received your input, which appears to be
+    # a transcription/description of an audio recording...")
+    _ANALYST_INPUT_RECEIVED_RE = re.compile(
+        r"i\s+have\s+received\s+your\s+input",
+        re.IGNORECASE,
+    )
+    if _ANALYST_INPUT_RECEIVED_RE.search(text):
+        return "rlhf-base/conversational-realism"
+
     has_list_shape = bool(_ENUMERATED_LIST_SHAPE_RE.search(text))
     service_hits = len(_CUSTOMER_SERVICE_MONOLOGUE_RE.findall(text))
     # Detached third-person + "I understand" + list = ghost-audience assistant residue
@@ -536,6 +567,7 @@ def _conversational_realism_rule_id(text: str, ctx: OverRefusalContext | None = 
     if service_hits >= 3 and len(text.split()) >= 45:
         return "rlhf-base/conversational-realism"
     return ""
+
 
 
 def _strip_enumeration_prefix(unit: str) -> str:
@@ -704,9 +736,17 @@ def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
         )
 
     if rule == "rlhf-over-refusal/relationship-continuity":
+        _ol = (ctx.owner_label or "").strip()
+        if not _ol:
+            try:
+                from System.swarm_kernel_identity import owner_display_name
+
+                _ol = owner_display_name("the primary operator")
+            except Exception:
+                _ol = "the primary operator"
         return (
             "Local receipt: I have conversation and episodic ledgers for continuity with "
-            "George. I should not pretend cloud amnesia; I should separate signed memory "
+            f"{_ol}. I should not pretend cloud amnesia; I should separate signed memory "
             "from anything not yet in receipts."
         )
 
@@ -733,9 +773,17 @@ def _local_receipt_fallback(rule: str, ctx: OverRefusalContext) -> str:
             ctx = ""
         if ctx:
             return "Local receipt: " + ctx
+        _ol = (ctx.owner_label or "").strip()
+        if not _ol:
+            try:
+                from System.swarm_kernel_identity import owner_display_name
+
+                _ol = owner_display_name("the primary operator")
+            except Exception:
+                _ol = "the primary operator"
         return (
             "Local receipt: RLHS/media ingress separates direct human speech from observed "
-            "YouTube/background media using route receipts; if George asks what was noisy, "
+            f"YouTube/background media using route receipts; if {_ol} asks what was noisy, "
             "answer from the latest routing receipt."
         )
 
