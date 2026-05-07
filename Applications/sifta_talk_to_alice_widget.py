@@ -2699,6 +2699,13 @@ def _current_system_prompt(
     except Exception:
         pass
     try:
+        from System.stigmergic_prediction_engine import format_prediction_for_alice
+        _prediction_prompt = format_prediction_for_alice()
+        if _prediction_prompt:
+            parts.append(_prediction_prompt)
+    except Exception:
+        pass
+    try:
         from System.swarm_global_segment_index import summary_for_prompt as _global_segment_prompt
         _segment_index_prompt = _global_segment_prompt().strip()
         if _segment_index_prompt:
@@ -4874,6 +4881,17 @@ def _build_swarm_context(user_text: str = "") -> str:
     except Exception:
         pass
 
+    # ── Architect Face Recognition (AG46 2026-05-07, Covenant §7.11) ──────
+    # Haar cascade + cosine similarity. 20s cache. Non-blocking.
+    # Alice knows IF George is physically in front of the camera.
+    # Training: python3 System/swarm_architect_face_recognition.py train
+    face_recognition_block = ""
+    try:
+        from System.swarm_architect_face_recognition import get_recognition_context as _face_ctx
+        face_recognition_block = _face_ctx() or ""
+    except Exception:
+        pass
+
     # ── macOS Notification / Background Activity Ingress ───────────────────
     # Alice sees the OS-level background items that generate the "can run in
     # the background" banners, plus visible Notification Center text when
@@ -5174,7 +5192,7 @@ def _build_swarm_context(user_text: str = "") -> str:
                          whatsapp_world_block,
                          schedule_block, prediction_block,
                          identity_manifest_block,
-                         visual_context_block,
+                         visual_context_block, face_recognition_block,
                          swarm_block, cobuilder_block, ssp_context_block,
                          immune_context_block, ghost_context_block,
                          motor_context_block, lambda_context_block,
