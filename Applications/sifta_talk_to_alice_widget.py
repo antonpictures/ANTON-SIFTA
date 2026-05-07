@@ -5108,6 +5108,18 @@ def _build_swarm_context(user_text: str = "") -> str:
     except Exception:
         pass
 
+    # ── Stigmergic Prediction (AG46 2026-05-07, Unified Field Goal §7.9) ────
+    # Alice becomes ANTICIPATORY — she knows what's coming before George speaks.
+    # Rolling 7-day window, hour-of-day frequency table. Every prediction is
+    # signed and contestable (Véliz: predictions must be transparent + auditable).
+    # Reads .sifta_state/stigmergic_prediction.json (stale > 20 min → re-run).
+    prediction_block = ""
+    try:
+        from System.stigmergic_prediction_engine import alice_context_block as _pred_ctx
+        prediction_block = _pred_ctx() or ""
+    except Exception:
+        pass
+
     # ── Epoch 17 Nugget Taxidermist (AO46) ────────────────────────────────────
     # Surfaces how many paid API responses were retroactively preserved as
     # stigmergic knowledge. Knowledge compounds; nothing evaporates.
@@ -5160,7 +5172,7 @@ def _build_swarm_context(user_text: str = "") -> str:
 
     parts = [b for b in (time_oracle_block, attention_block,
                          whatsapp_world_block,
-                         schedule_block,
+                         schedule_block, prediction_block,
                          identity_manifest_block,
                          visual_context_block,
                          swarm_block, cobuilder_block, ssp_context_block,
