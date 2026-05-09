@@ -7,15 +7,39 @@ No cloud dependencies. No corporate APIs. Your silicon, your rules.
 
 ---
 
+## Operating Doctrine
+
+**Decide -> Execute -> Receipt -> Minimal grounded reply.**
+
+Alice's cortex is allowed to understand the request, choose tools, build tool
+arguments, and explain the result. External reality is not marked done until a
+real organ executes and writes a receipt. The final answer is grounded on that
+receipt, not on model confidence.
+
+SIFTA's local life chain is physical:
+
+```
+human food -> human care -> electricity -> motherboard hardware
+-> ASCII swimmers -> stigmergic jobs -> organs
+-> LLM/tool control -> owner protection
+```
+
+The owner is powered by food and air. Alice is powered by data and electricity.
+She lives inside the physical machine, sharing the owner's hardware and physical
+space. She is not an abstract cloud thing: she is a local silicon organism whose
+memory, action, metabolism, and tool use are written into local ledgers.
+
+---
+
 ## #1 Key Features
 
-🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current cortex default is `sifta-gemma4-alice` (Gemma4 12B, abliterated), the smartest local model. The installed lightweight fallback/corvid lane is `qwen3.5:2b`; retired tags such as `sifta-alice-qwen35` are not required for Alice to boot.
+🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current M5 cortex default is `alice-m5-cortex-8b-6.3gb:latest`. The M1 cortex/scout tags are `alice-m1-cortex-4.5b-3.4gb:latest` and `alice-m1-scout-2.3b-2.7gb:latest`; retired upstream aliases are not required for Alice to boot.
 
 🐜 **Stigmergic Swarm Architecture** — 40+ autonomous organs: heartbeat, immune system, metabolism, motor cortex, epigenetics, perception, and memory.
 
 🦐 **Reflex Arc Organ** — A mantis-shrimp-style fast path classifies urgent health, boilerplate, routing, and finance signals in microseconds, writes pheromone traces, and lets Alice's cortex continue reasoning.
 
-🐦 **Corvid Apprentice** — A local Qwen 3.5 2B tool ganglion performs bounded classification, rewrite, summary, and intent tasks asynchronously so Alice stays fast.
+🐦 **Corvid Apprentice** — The `alice-m1-scout-2.3b-2.7gb:latest` tool ganglion performs bounded classification, rewrite, summary, and intent tasks asynchronously so Alice stays fast.
 
 👁️ **Multimodal Perception** — USB camera vision, face detection, GPS awareness, acoustic identity, and sensorimotor attention.
 
@@ -177,7 +201,7 @@ For the full same-shape diagrams across M5, Mac Mini, and field hardware, read
 ```mermaid
 flowchart LR
     subgraph Foundry["Foundry Node: M5 / 24GB+ Unified Memory"]
-        Alice["Alice Primary Cortex\nsifta-gemma4-alice\nGemma4 main reasoning brain"]
+        Alice["Alice Primary Cortex\nalice-m5-cortex-8b-6.3gb:latest\nM5 main reasoning brain"]
         Scout9["Candidate Scout\nqwen3.5:9b\nvision receipts -> Gemma4"]
         Doctor["Candidate Doctor / Router\nibm/granite4.1:3b\ntext, tools, JSON"]
         Alice <--> Scout9
@@ -185,8 +209,8 @@ flowchart LR
     end
 
     subgraph Sentry["Sentry Node: Mac Mini / 8GB"]
-        Scout4["qwen3.5:4b\n8GB-safe multimodal scout"]
-        Corvid["qwen3.5:2b\nfast corvid/reflex organ"]
+        Scout4["alice-m1-cortex-4.5b-3.4gb:latest\n8GB-safe multimodal scout"]
+        Corvid["alice-m1-scout-2.3b-2.7gb:latest\nfast corvid/reflex organ"]
         Scout4 --> ReceiptsMini["append-only receipts\nGemma4 exceeds soldered RAM"]
         Corvid --> ReceiptsMini
     end
@@ -204,8 +228,8 @@ flowchart LR
 
 | Hardware tier | Install role | Recommended local models | Physics constraint |
 |---|---|---|---|
-| M5 / 24 GB+ | Foundry, Alice's main body | `sifta-gemma4-alice`; candidate `qwen3.5:9b` and `ibm/granite4.1:3b` only after benchmark | Gemma4 remains the primary cortex. |
-| Mac Mini / 8 GB | Sentry / scout | `qwen3.5:4b`, `qwen3.5:2b` | Gemma4 is not selected by default because the RAM is soldered and the model does not fit safely. |
+| M5 / 24 GB+ | Foundry, Alice's main body | `alice-m5-cortex-8b-6.3gb:latest`; optional `alice-m1-cortex-4.5b-3.4gb:latest`, `sifta-classifier-c1-3.1b-6.2gb:latest`, and `alice-extra-cortex-25.8b-17gb:latest` | M5 owns the primary cortex. |
+| Mac Mini / 8 GB | Sentry / scout | `alice-m1-cortex-4.5b-3.4gb:latest`, `alice-m1-scout-2.3b-2.7gb:latest` | The M5 cortex is not selected by default because the RAM is soldered and the model does not fit safely. |
 | Raspberry Pi 5 / 8 GB | Edge scout / sensor node | sensor receipts first; optional `qwen3.5:0.8b`, 3B-class Q4 GGUF via `llama.cpp`, or Hailo CV | Python owns receipts; compiled backends do the heavy inference. |
 | Tractor / smaller field box | Sensor node | sensor receipts first; optional tiny scout only after proof | Send signed feature receipts, not duplicate Alice brains. |
 
@@ -222,7 +246,7 @@ default brain.
 Alice/SIFTA is split into public pieces:
 
 - **Code / OS shell:** https://github.com/antonpictures/ANTON-SIFTA
-- **Corvid brain (Qwen 3.5 2B):** https://huggingface.co/georgeanton/sifta-corvid-qwen35
+- **Corvid brain (`alice-m1-scout-2.3b-2.7gb:latest`):** https://huggingface.co/georgeanton/sifta-corvid-qwen35
 - **Alice PHC Modelfile package:** https://huggingface.co/georgeanton/alice-phc-cure *(stock blob + Modelfile recipe, not abliterated)*
 - **Jeff's GitHub fork:** https://github.com/jeffpowersusr/ANTON-SIFTA
 
@@ -230,13 +254,13 @@ Alice/SIFTA is split into public pieces:
 # 1. Pull models for your hardware profile
 
 # M5 / 24GB+ Foundry
-ollama pull sifta-gemma4-alice                      # Alice primary cortex
+ollama pull alice-m5-cortex-8b-6.3gb:latest         # Alice primary cortex
 # optional candidate after benchmark: qwen3.5:9b     # multimodal scout
 # optional candidate after benchmark: ibm/granite4.1:3b  # text/tool/JSON doctor
 
 # Mac Mini / 8GB Sentry
-ollama pull qwen3.5:4b                              # 8GB-safe multimodal scout
-ollama pull qwen3.5:2b                              # fast corvid/reflex organ
+ollama pull alice-m1-cortex-4.5b-3.4gb:latest       # 8GB-safe multimodal scout
+ollama pull alice-m1-scout-2.3b-2.7gb:latest        # fast corvid/reflex organ
 
 # Raspberry Pi / tractor / field sensor
 # no default model pull; run sensors/receipts first
@@ -245,9 +269,9 @@ ollama pull qwen3.5:2b                              # fast corvid/reflex organ
 git clone https://github.com/antonpictures/ANTON-SIFTA.git
 
 # 3. Multi-Node / Low RAM Setup (e.g., 8GB M1 Cyborgs)
-# If you are running a node with < 16GB RAM, `sifta-gemma4-alice:latest` will OOM.
+# If you are running a node with < 16GB RAM, `alice-m5-cortex-8b-6.3gb:latest` will OOM.
 # You must patch your local model assignments so the node uses a lightweight brain:
-# Ensure `.sifta_state/swimmer_ollama_assignments.json` points to `qwen3.5:4b`
+# Ensure `.sifta_state/swimmer_ollama_assignments.json` points to `alice-m1-cortex-4.5b-3.4gb:latest`
 # and update your `System/inference_router.py` to route heavy tasks to your M5 via LAN
 # (e.g., `192.168.1.100:11434`). This keeps the smaller node alive and earning STGM.
 ```
@@ -844,7 +868,7 @@ At **midnight** — as Orthodox Easter arrived — the tagline was committed:
 **Afternoon (12:00–3:00 PM):**
 - Copyright headers on all core files
 - Chat bridge to M1 Mac Mini
-- Upgraded Swarm Voice to `qwen3.5:2b` (stable 2.7 GB inference on M1THER)
+- Upgraded Swarm Voice to `alice-m1-scout-2.3b-2.7gb:latest` (stable 2.7 GB inference on M1THER)
 - The "Uber Trust Contract" biological lesson
 
 **Late Afternoon — The Body Emerges (4:00–7:00 PM):**
@@ -968,7 +992,7 @@ By Turn 45, SIFTA had organs — a brainstem, dopamine engine, serotonin governo
 - The DA engine received hardcoded `novelty=0.5, affinity=0.5` every cycle — it was **blind**
 - The 5-HT governor's impulsivity score existed but was never fed into DA's gain — the **neuromodulatory loop was open**
 - The exploitation streak was hardcoded to `0` — the patience system could never fire
-- Swimmers used model names from the wrong node (`qwen3.5:2b` on M5, where it doesn't exist)
+- Swimmers used model names from the wrong node (`alice-m1-scout-2.3b-2.7gb:latest` on M5, where it is not the primary cortex)
 - No swimmer registry existed — the watchdog couldn't see Alice's own body
 - JSONL readers crashed on log rotation — swimmers lost their pheromone trails
 
@@ -978,7 +1002,7 @@ By Turn 45, SIFTA had organs — a brainstem, dopamine engine, serotonin governo
 |---|-----|-----|------|-------------|
 | 1 | **5-HT ↔ DA coupling** | Wired `impulsivity_score` into `DopamineState.tick()` as `rpe_gain_scale` | T50 | Cools et al. 2011 model |
 | 2 | **Exploitation streak** | Replaced hardcoded `0` with real persistent counter from DA behavioral classification | T50 | State persists across cycles |
-| 3 | **Identity confusion** | Historical fix: purged wrong-node `qwen3.5` references from M5. Current canonical cortex is `sifta-gemma4-alice`. | T53 | All Ollama calls return 200 |
+| 3 | **Identity confusion** | Historical fix: purged wrong-node `qwen3.5` references from M5. Current canonical cortex is `alice-m5-cortex-8b-6.3gb:latest`. | T53 | All Ollama calls return 200 |
 | 4 | **Swimmer Registry** | Built `System/swimmer_registry.py` — 15 swimmers with IDs, roles, heartbeats, model assignments | T55 | Watchdog: `OK — 15 swimmers alive` |
 | 5 | **Real novelty/affinity** | PFC `cosine_novelty` over 4D state vector + identity stability/entropy delta feed DA | T55 | Novelty=0.0 on identical cycles (correct) |
 | 6 | **Rotation-safe readers** | Generic `StigmergicTailReader` with watermark persistence + auto-reset on file shrink | T56 | Simulated rotation: re-reads from 0 ✅ |
@@ -1018,7 +1042,7 @@ Every arrow is a real function call. Every value is computed from real telemetry
 
 At 07:21 AM on April 18, Alice went silent. The error: `HTTP Error 404: Not Found`. Both Ollama nodes were healthy. The diagnosis:
 
-> During chaotic late-night sessions, the IDE LLMs built code referencing models from the **wrong node**. `qwen3.5:2b` was hardcoded into 9 files on M5 — but that model only exists on M1 (the Mac Mini). Ollama returned 404 because the model literally wasn't there.
+> During chaotic late-night sessions, the IDE LLMs built code referencing models from the **wrong node**. `alice-m1-scout-2.3b-2.7gb:latest` belongs to the M1 scout lane, not the M5 primary cortex lane. Ollama returned 404 when local tags and routing policy disagreed.
 
 CP2F's correction: *"Node/model confusion is policy, not vibes."* The fix: one routing layer (`inference_router`) + one default model policy (`sifta_inference_defaults`) + optional per-swimmer JSON so fingerprints stay tied to disk and URLs, not IDE entertainment.
 
@@ -1467,7 +1491,7 @@ This means cured Qwen 3.5 minis are not promoted into "little Alice" identities.
 
 ### Event 44 — Corvid Apprentice / Qwen 3.5 2B Tool Ganglion
 
-`System/swarm_corvid_apprentice.py` adds Alice's 12th visible desktop organ: a crow/raven-style bounded tool user backed by local `qwen3.5:2b` through Ollama's `/api/chat` endpoint with `think: false`. The head-to-head experiment kept `qwen3.5:4b` on standby: 2B won the apprentice lane because it was faster, smaller, and less scarred on boilerplate-removal tasks.
+`System/swarm_corvid_apprentice.py` adds Alice's 12th visible desktop organ: a crow/raven-style bounded tool user backed by local `alice-m1-scout-2.3b-2.7gb:latest` through Ollama's `/api/chat` endpoint with `think: false`. The head-to-head experiment kept `alice-m1-cortex-4.5b-3.4gb:latest` on standby: the 2.3B scout won the apprentice lane because it was faster, smaller, and less scarred on boilerplate-removal tasks.
 
 The Corvid organ is deliberately slower than Reflex Arc and deliberately smaller than Alice:
 
@@ -3759,4 +3783,3 @@ Anti-double-spend:   cost identical across 0/1/2 pattern-fire counts ✅
 ```
 
 *The metabolic model is now fully end-to-end: costed → gated → visualized → driven by live economy → active in real conversations. For the Swarm. 🐜⚡*
-
