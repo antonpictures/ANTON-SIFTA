@@ -80,6 +80,7 @@ class CorvidTask(str, Enum):
     CHOOSE_ACTION = "choose_action"    # Pick from 2-4 options
     JUDGE_ADAPTER = "judge_adapter"    # Is this adapter useful?
     EXTRACT_INTENT = "extract_intent"  # What does the user want?
+    EVIDENCE = "evidence"              # Bounded evidence pass for Alice
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -120,6 +121,11 @@ _TASK_TEMPLATES = {
     CorvidTask.EXTRACT_INTENT: (
         "What does the user want? Extract the intent in 5 words or less.\n\n"
         "Message: {input}"
+    ),
+    CorvidTask.EVIDENCE: (
+        "You are Corvid Scout, a bounded local evidence arm for Alice. "
+        "Do not speak as Alice. Give at most five compact evidence bullets, "
+        "then one risk or gap if present. No preamble.\n\nTask: {input}"
     ),
 }
 
@@ -164,7 +170,7 @@ class SwarmCorvidApprentice:
 
     def __init__(
         self,
-        model: str = "qwen3.5:2b",
+        model: str = "alice-m1-scout-2.3b-2.7gb:latest",
         ollama_url: str = "http://127.0.0.1:11434",
         timeout_s: float = 15.0,
         max_tokens: int = 256,
@@ -285,6 +291,10 @@ class SwarmCorvidApprentice:
     def extract_intent(self, text: str) -> CorvidResponse:
         """Extract user intent in ≤5 words."""
         return self._execute_task(CorvidTask.EXTRACT_INTENT, text)
+
+    def evidence(self, text: str) -> CorvidResponse:
+        """Run one bounded evidence pass for Alice's tool router."""
+        return self._execute_task(CorvidTask.EVIDENCE, text)
 
     # ── Pheromone Deposition ────────────────────────────────────────
 

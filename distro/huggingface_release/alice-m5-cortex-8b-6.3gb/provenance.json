@@ -1,0 +1,17 @@
+{
+  "truth_label": "SIFTA_PUBLIC_MODEL_PROVENANCE",
+  "tag": "alice-m5-cortex-8b-6.3gb:latest",
+  "hf_repo": "georgeanton/alice-m5-cortex-8b-6.3gb",
+  "ollama_blob": "sha256-ef5523975d644e47293960b8b87c83b11a6d50253a544e35addca72af33e13c6",
+  "architecture": "gemma4",
+  "parameters": "8B",
+  "quantization": "Q4_K_M",
+  "capabilities": ["completion", "vision", "audio", "tools", "thinking"],
+  "verified_at": "2026-05-09",
+  "verified_by": "C55M@codex",
+  "notes": [
+    "Promoted M5 primary cortex.",
+    "Use /api/chat with think:false in SIFTA Talk.",
+    "Retired LoRA candidate is not production because it broke multimodal/architecture fit."
+  ]
+}

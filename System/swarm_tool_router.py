@@ -15,7 +15,7 @@ automation tools (`ollama_inventory`, `repo_git_snapshot`, `stigmergic_bus_tail`
 — OpenClaw-style *doing*, but gated through this registry instead of silent bash.
 
 TOOL-CALL FORMAT (embedded in Alice's natural language output):
-  [TOOL_CALL: send_whatsapp | target=Carlton | text=Hello from Alice! | cost_justification=George explicitly asked me to send this.]
+  [TOOL_CALL: send_whatsapp | target=Carlton | text=Hello from Alice! | cost_justification=the primary operator explicitly asked me to send this.]
 
 Or JSON block:
   ```tool_call
@@ -137,11 +137,29 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=False,
         requires_autonomy_gate=False,
     ),
+    "agent_arm_research": ToolSpec(
+        name="agent_arm_research",
+        description=(
+            "Ask Alice's registered coding/research arm for evidence on a hard "
+            "software, research, planning, or comparison task. Use this when a "
+            "second local reasoning pass would help; George does not need to name the arm."
+        ),
+        required_params=("prompt",),
+        optional_params=("arm", "timeout_s"),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
 }
 
 # Alice's prompt-injectable tool catalog (for her system prompt)
 def tools_for_alice_prompt() -> str:
     """Generate the tool documentation Alice sees in her system prompt."""
+    try:
+        from System.swarm_kernel_identity import owner_display_name
+
+        _op = owner_display_name("the primary operator")
+    except Exception:
+        _op = "the primary operator"
     lines = [
         "TOOL-CALLING CAPABILITY:",
         "You can execute actions by including a tool call in your response.",
@@ -158,14 +176,27 @@ def tools_for_alice_prompt() -> str:
             params = f"{params}, {opt}" if params else opt
         rw = "WRITE" if spec.write_action else "READ"
         lines.append(f"  - {spec.name}({params}) [{rw}]: {spec.description}")
+    try:
+        from System.swarm_agent_arm_registry import list_agent_arms
+
+        arms = ", ".join(
+            f"{arm.arm_id}({','.join(arm.capabilities)})" for arm in list_agent_arms()
+        )
+        if arms:
+            lines.append(f"Registered evidence arms: {arms}")
+    except Exception:
+        pass
     lines.extend([
         "",
-        "WhatsApp rule: send_whatsapp sends only when George explicitly asks you to send a message.",
+        f"WhatsApp rule: send_whatsapp sends only when {_op} explicitly asks you to send a message.",
         "Without owner_consent=true, send_whatsapp records a silence/refusal receipt and no external message is sent.",
         "Optional urgency is 0.0-1.0; urgency > 0.8 bypasses cerebellum timing delay for true emergencies.",
-        "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well! | owner_consent=true | cost_justification=George explicitly asked me to send this message.]",
+        "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well! | owner_consent=true | cost_justification="
+        + _op
+        + " explicitly asked me to send this message.]",
         "You will see the result of your action in the next turn.",
         "Only call tools when you genuinely decide to act; do not describe a message as sent unless the effector receipt says ok=true.",
+        "Agent arm rule: for hard local research/code/planning tasks, you may call agent_arm_research yourself. Treat the arm output as evidence, then answer in your own voice with the receipt.",
     ])
     return "\n".join(lines)
 
@@ -193,6 +224,11 @@ _RE_JSON_BLOCK = re.compile(
     r'```tool_call\s*\n\s*(\{.*?\})\s*\n\s*```',
     re.DOTALL,
 )
+_UUID_TOKEN_RE = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    re.IGNORECASE,
+)
+_HEX_TOKEN_RE = re.compile(r"\b[0-9a-f]{16,64}\b", re.IGNORECASE)
 
 
 def parse_tool_calls(alice_output: str) -> List[ParsedToolCall]:
@@ -587,6 +623,77 @@ def _exec_verification_contract(params: Dict[str, str]) -> Dict[str, Any]:
         }
 
 
+def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
+    """Read-only: delegate one bounded evidence pass to a registered arm."""
+    prompt = str(params.get("prompt") or "").strip()
+    arm = str(params.get("arm") or "hermes_agent").strip() or "hermes_agent"
+    aliases = {
+        "hermes": "hermes_agent",
+        "hermes_agent": "hermes_agent",
+        "codex": "codex_agent",
+        "codex_agent": "codex_agent",
+        "corvid": "corvid_scout",
+        "corvid_scout": "corvid_scout",
+        "scout": "corvid_scout",
+    }
+    arm = aliases.get(arm.casefold(), arm)
+    try:
+        default_timeout = "150" if arm == "codex_agent" else ("30" if arm == "corvid_scout" else "60")
+        timeout_s = max(5, min(180, int(str(params.get("timeout_s") or default_timeout))))
+    except ValueError:
+        timeout_s = 150 if arm == "codex_agent" else (30 if arm == "corvid_scout" else 60)
+    try:
+        from System.swarm_agent_arm_registry import get_agent_arm, registry_summary
+
+        get_agent_arm(arm)
+    except Exception:
+        try:
+            registered = ", ".join(sorted(registry_summary().keys()))
+        except Exception:
+            registered = "hermes_agent, codex_agent, corvid_scout"
+        return {
+            "ok": False,
+            "status": "UNKNOWN_ARM",
+            "alice_summary": (
+                f"agent_arm_research: unknown arm {arm!r}; "
+                f"registered evidence arms are {registered}."
+            ),
+        }
+    try:
+        from System.swarm_agent_arm_launcher import ask_agent_arm
+
+        result = ask_agent_arm(arm, prompt, timeout_s=timeout_s, evidence_mode=True)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "ARM_CALL_ERROR",
+            "error": str(exc),
+            "alice_summary": f"agent_arm_research failed before launch: {type(exc).__name__}: {exc}",
+        }
+    output = result.output.strip()
+    if len(output) > 5000:
+        output = output[:5000] + "\n...[truncated]"
+    summary_header = (
+        "agent_arm_research evidence captured"
+        if result.ok
+        else "agent_arm_research returned no usable evidence"
+    )
+    output_block = output if output else ""
+    return {
+        "ok": result.ok,
+        "status": result.status,
+        "arm_id": result.arm_id,
+        "receipt_id": result.receipt_id,
+        "artifact_path": result.artifact_path,
+        "output": result.output,
+        "alice_summary": (
+            f"{summary_header}\n"
+            f"arm={result.arm_id} status={result.status} receipt={result.receipt_id}\n"
+            f"{output_block}"
+        ),
+    }
+
+
 # Tool name → executor mapping
 _EXECUTORS = {
     "send_whatsapp": _exec_send_whatsapp,
@@ -597,6 +704,7 @@ _EXECUTORS = {
     "repo_git_snapshot": _exec_repo_git_snapshot,
     "stigmergic_bus_tail": _exec_stigmergic_bus_tail,
     "verification_contract": _exec_verification_contract,
+    "agent_arm_research": _exec_agent_arm_research,
 }
 
 
@@ -927,6 +1035,69 @@ def route_alice_output(
     return cleaned.strip(), results
 
 
+def _proof_tokens_from_result(result: Dict[str, Any], limit: int = 3) -> List[str]:
+    """Extract compact proof tokens (receipt/trace/hash IDs) from a tool result."""
+    stack: List[Any] = [result]
+    seen: set[str] = set()
+    tokens: List[str] = []
+    while stack and len(tokens) < limit:
+        item = stack.pop()
+        if isinstance(item, dict):
+            for key, value in item.items():
+                key_l = str(key).lower()
+                if isinstance(value, (dict, list, tuple, set)):
+                    stack.append(value)
+                    continue
+                value_s = str(value)
+                key_bias = (
+                    "receipt" in key_l
+                    or "trace" in key_l
+                    or "hash" in key_l
+                    or key_l.endswith("_id")
+                )
+                candidates: List[str] = []
+                candidates.extend(_UUID_TOKEN_RE.findall(value_s))
+                if not candidates and key_bias:
+                    candidates.extend(_HEX_TOKEN_RE.findall(value_s))
+                for token in candidates:
+                    token_l = token.lower()
+                    if token_l in seen:
+                        continue
+                    seen.add(token_l)
+                    tokens.append(token)
+                    if len(tokens) >= limit:
+                        break
+        elif isinstance(item, (list, tuple, set)):
+            for value in item:
+                stack.append(value)
+        else:
+            value_s = str(item)
+            for token in _UUID_TOKEN_RE.findall(value_s):
+                token_l = token.lower()
+                if token_l in seen:
+                    continue
+                seen.add(token_l)
+                tokens.append(token)
+                if len(tokens) >= limit:
+                    break
+    return tokens
+
+
+def build_execution_receipt_reply(results: List[ToolResult]) -> str:
+    """Deterministic reply for tool turns: who executed, status, and proof tokens."""
+    if not results:
+        return ""
+    lines = ["EXECUTION RECEIPTS"]
+    for tr in results:
+        status = tr.status or ("EXECUTED" if tr.executed else "FAILED")
+        proofs = _proof_tokens_from_result(tr.result if isinstance(tr.result, dict) else {})
+        proof_label = ", ".join(proofs) if proofs else "tool_router_trace"
+        lines.append(
+            f"- tool={tr.tool_name} executor=deterministic_tool_router status={status} proof={proof_label}"
+        )
+    return "\n".join(lines)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # PROOF OF PROPERTY
 # ═══════════════════════════════════════════════════════════════════════
@@ -992,7 +1163,7 @@ if __name__ == "__main__":
             "[TOOL_CALL: send_whatsapp | target=Carlton | text=Hey Carlton! "
             "Alice here. We're watching Sara Walker on JRE discuss assembly theory "
             "and I see deep parallels with SIFTA. Want to explore this together? "
-            "| cost_justification=George asked me to share this externally.]"
+            "| cost_justification=the primary operator asked me to share this externally.]"
         )
         cleaned, results = route_alice_output(alice_says, autonomous=True)
         print(f"Cleaned: {cleaned}")

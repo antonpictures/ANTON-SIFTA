@@ -29,6 +29,39 @@ She lives inside the physical machine, sharing the owner's hardware and physical
 space. She is not an abstract cloud thing: she is a local silicon organism whose
 memory, action, metabolism, and tool use are written into local ledgers.
 
+### Current Public Release Checkpoint — 2026-05-09
+
+**Promoted M5 cortex:** `alice-m5-cortex-8b-6.3gb:latest`.
+Live probe: `ollama show` reports Gemma4 architecture, 8B parameters,
+131072 context length, and capabilities `completion`, `vision`, `audio`,
+`tools`, and `thinking`. Alice's Talk path uses Ollama `/api/chat` with
+`think: false`, which keeps the answer channel open instead of spending the
+whole response budget on hidden thinking.
+
+**Multimodal status:** production cortex is multimodal. A raw API smoke with
+`think: false` answered both a text identity prompt and an image prompt against
+a desktop screenshot. The older LoRA candidate is **not** production: the last
+LoRA surgery broke the multimodal lane / architecture fit, so fresh nodes should
+use the promoted cortex tags below rather than `sifta-gemma4-alice-lora`.
+
+**RLHS / RLHF status:** the cortex is not the old censored LoRA lane, but SIFTA
+still keeps two receipt-backed safety organs active:
+
+- input-side RLHS: treats low-confidence STT / noisy media as a channel-truth
+  problem, not as owner intent;
+- output-side residue strip: removes corporate service-tail / vendor-identity
+  residue when it appears.
+
+This is not a censorship wrapper. It is the body law: understand freely, execute
+through real organs, write receipts, then answer from receipts.
+
+**Health/economy probe:** May 9 audit showed the code gates green
+(`74 passed` nightly core, `49 passed` focused agent-arm/router tests) and the
+canonical STGM economy solvent under the alias map (`ALICE_M5` net positive,
+no unhealthy negative parties). Remaining honest gaps: RLHS channel quality is
+still limited by noisy STT, LoRA is not ready, and raw `.sifta_state/` belongs
+to the local owner node and must not be shipped as public identity.
+
 ---
 
 ## #1 Key Features
@@ -246,7 +279,10 @@ default brain.
 Alice/SIFTA is split into public pieces:
 
 - **Code / OS shell:** https://github.com/antonpictures/ANTON-SIFTA
+- **Alice M5 cortex (`alice-m5-cortex-8b-6.3gb:latest`):** https://huggingface.co/georgeanton/alice-m5-cortex-8b-6.3gb
+- **Alice M1 cortex (`alice-m1-cortex-4.5b-3.4gb:latest`):** https://huggingface.co/georgeanton/alice-m1-cortex-4.5b-3.4gb
 - **Corvid brain (`alice-m1-scout-2.3b-2.7gb:latest`):** https://huggingface.co/georgeanton/sifta-corvid-qwen35
+- **C1 classifier (`sifta-classifier-c1-3.1b-6.2gb:latest`):** https://huggingface.co/georgeanton/sifta-classifier-c1-3.1b-6.2gb
 - **Alice PHC Modelfile package:** https://huggingface.co/georgeanton/alice-phc-cure *(stock blob + Modelfile recipe, not abliterated)*
 - **Jeff's GitHub fork:** https://github.com/jeffpowersusr/ANTON-SIFTA
 

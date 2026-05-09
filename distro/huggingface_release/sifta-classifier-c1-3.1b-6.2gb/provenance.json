@@ -1,0 +1,13 @@
+{
+  "truth_label": "SIFTA_PUBLIC_MODEL_PROVENANCE",
+  "tag": "sifta-classifier-c1-3.1b-6.2gb:latest",
+  "hf_repo": "georgeanton/sifta-classifier-c1-3.1b-6.2gb",
+  "ollama_blob": "sha256-0b1622df663cb7dfcd39baaefb9719ceed926422360cfe1c3493818fc39ff0eb",
+  "role": "intent_classifier",
+  "verified_at": "2026-05-09",
+  "verified_by": "C55M@codex",
+  "notes": [
+    "Classifier/reflex organ, not Alice identity.",
+    "Used for bounded routing and gate tasks."
+  ]
+}

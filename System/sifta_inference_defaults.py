@@ -3,19 +3,31 @@
 sifta_inference_defaults.py — Single source of truth for local model selection.
 
 Architect policy (2026-04-30):
-  - **Default Alice cortex:** `sifta-gemma4-alice` (Ollama Gemma4 12B),
-    the smartest local model. Overridable via `SIFTA_DEFAULT_OLLAMA_MODEL`
+  - **Default Alice cortex:** `alice-m5-cortex-8b-6.3gb:latest`, the
+    SIFTA-wrapped Gemma4 Aggressive E4B cortex with native vision/audio/tool
+    capability reported by Ollama. The upstream display label is not used in
+    Alice Talk; the public local tag is SIFTA-owned.
+    Overridable via
+    `SIFTA_DEFAULT_OLLAMA_MODEL`
     or `.sifta_state/swimmer_ollama_assignments.json`.
   - **MLX cortex v1:** `.sifta_state/cortex/alice_cortex_v1_fused`
     won tournament 408/459 but produced degenerate output in production
     ("That's true" loop). Archived for tournament re-runs, not live default.
     Fix planned for v2: rank 16, dropout 0.1, DPO pass.
-  - **Reflex model:** `sifta-classifier-c1:latest` for fast local
+  - **Reflex model:** `sifta-classifier-c1-3.1b-6.2gb:latest` for fast local
     classifier/reflex work such as lysosome, truth duel, and RLHF gates.
     This is not a primary cortex; it should not be selected as Alice's voice.
-  - **Generative fallback/probe:** `qwen3.5:2b` for cheap off-thread
-    generative scaffolding such as Corvid or arXiv claim extraction when
-    Gemma is too expensive and the classifier is the wrong tool.
+  - **M1 Alice cortex:** `alice-m1-cortex-4.5b-3.4gb:latest` is the SIFTA-owned tag
+    for the 4B Qwen-derived cortex when Gemma4 does not fit safely.
+    No upstream alias is used at runtime; the local SIFTA tag is canonical.
+  - **Generative fallback/probe:** `alice-m1-scout-2.3b-2.7gb:latest` stays on disk as the tiny
+    M1 recommendation for cheap off-thread generative scaffolding such as
+    Corvid or arXiv claim extraction when the primary cortex is too expensive
+    and the classifier is the wrong tool.
+  - **LoRA surgery candidate:** `sifta-gemma4-alice-lora:latest` is retired
+    from the primary Talk path unless `ALICE_LORA_RUNTIME_RECEIPT_V1` marks a
+    future candidate READY. The current gemma2 LoRA smoke failed and must not
+    be selected as Alice's voice.
   - **Other models:** use for stigmergic testing, probes, or per-app tuning — never pretend
     one node's API is another node's fingerprint; routing goes through `inference_router`.
 
@@ -33,17 +45,36 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _ASSIGNMENTS = _STATE / "swimmer_ollama_assignments.json"
 
+def _detect_node() -> str:
+    hint = os.environ.get("SIFTA_NODE_ID", "").upper()
+    if hint in ("M1", "M1THER"):
+        return "M1"
+    if hint in ("M5", "ALICE_M5"):
+        return "M5"
+    import socket
+    hostname = socket.gethostname().lower()
+    if "macmini" in hostname or "mini" in hostname:
+        return "M1"
+    return "M5"
+
+_THIS_NODE = _detect_node()
+
 # MLX cortex — tournament winner but degenerate in production. Archived.
 ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
 # Canonical Ollama models.
-CANONICAL_OLLAMA_DEFAULT = "sifta-gemma4-alice"
+# Hardware-adaptive: 8GB M1s swap to death on Gemma4. Force lightweight brain.
+# M5 production Talk currently uses the SIFTA-wrapped Gemma4 Aggressive cortex.
+CANONICAL_OLLAMA_LOW_RAM = "alice-m1-cortex-4.5b-3.4gb:latest"
+CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_LOW_RAM
+CANONICAL_OLLAMA_DEFAULT = CANONICAL_OLLAMA_LOW_RAM if _THIS_NODE == "M1" else "alice-m5-cortex-8b-6.3gb:latest"
 # AG31: Ternary Architecture (Event 122).
-# Gemma = Primary Cortex, Bonsai 8B = Spinal Reflex, Qwen 2B = Cheap Probe/Fallback.
-CANONICAL_OLLAMA_REFLEX = "sifta-classifier-c1:latest"
-CANONICAL_OLLAMA_FALLBACK = "qwen3.5:2b"
+# Primary cortex, spinal reflex, and cheap probe/fallback roles.
+CANONICAL_OLLAMA_REFLEX = "sifta-classifier-c1-3.1b-6.2gb:latest"
+CANONICAL_OLLAMA_FALLBACK = "alice-m1-scout-2.3b-2.7gb:latest"
+CANONICAL_OLLAMA_LORA_CANDIDATE = "sifta-gemma4-alice-lora:latest"
 
-# Primary default — Ollama Gemma4. Keep this synchronized with the policy above.
+# Primary default. Keep this synchronized with the policy above.
 DEFAULT_OLLAMA_MODEL = os.environ.get(
     "SIFTA_DEFAULT_OLLAMA_MODEL",
     CANONICAL_OLLAMA_DEFAULT,
@@ -64,8 +95,8 @@ def _default_assignments_dict() -> Dict[str, Any]:
         "per_swimmer": {},
         "per_app": {
             "stigmergic_probe": "llama3:latest",
-            "talk_to_alice": "sifta-gemma4-alice",
-            "owner_vision_body": "sifta-gemma4-alice:latest",
+            "talk_to_alice": CANONICAL_OLLAMA_DEFAULT,
+            "owner_vision_body": CANONICAL_OLLAMA_DEFAULT,
             "truth_duel": CANONICAL_OLLAMA_REFLEX,
             "lysosome": CANONICAL_OLLAMA_REFLEX,
         },
@@ -174,6 +205,9 @@ def sanitize_model_name(ui_label: str) -> str:
 __all__ = [
     "ALICE_CORTEX_V1_MODEL",
     "CANONICAL_OLLAMA_FALLBACK",
+    "CANONICAL_OLLAMA_LORA_CANDIDATE",
+    "CANONICAL_OLLAMA_LOW_RAM",
+    "CANONICAL_OLLAMA_LOW_RAM_SOURCE",
     "CANONICAL_OLLAMA_REFLEX",
     "DEFAULT_OLLAMA_MODEL",
     "STIGMERGIC_TEST_MODEL_PRESETS",

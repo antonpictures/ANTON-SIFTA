@@ -1,0 +1,13 @@
+{
+  "truth_label": "SIFTA_PUBLIC_MODEL_PROVENANCE",
+  "tag": "alice-m1-cortex-4.5b-3.4gb:latest",
+  "hf_repo": "georgeanton/alice-m1-cortex-4.5b-3.4gb",
+  "ollama_blob": "sha256-464c1dda6a052d909b11d20c31bcb21060e969e334716ba8ed7abf64ca1be10f",
+  "renderer": "qwen3.5",
+  "verified_at": "2026-05-09",
+  "verified_by": "C55M@codex",
+  "notes": [
+    "8GB-safe M1/Sentry cortex lane.",
+    "Use as scout/fallback on smaller nodes."
+  ]
+}
