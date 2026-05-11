@@ -22,6 +22,17 @@ Use this as the lighter daily dialogue/reasoning cortex when the full M5 cortex
 is unnecessary or the node should conserve memory. It is still a cortex lane:
 tool execution and external claims must pass through SIFTA organs and receipts.
 
+## SIFTA Field Breakthrough
+
+The current SIFTA public repo includes a stigmergic field breakthrough brief:
+https://github.com/antonpictures/ANTON-SIFTA/blob/main/Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md
+
+The cortex is only one organ in that system. The field mechanism itself runs in
+the Python body: Bell analogue simulator, kernel scheduler, and hippocampus.
+Credit boundary: Bell/CHSH/Hall/pilot-wave/stigmergy literature grounds the
+analogy; SIFTA claims a receipt-backed classical contextual analogue, not a
+proof of the physical cause of quantum nonlocality.
+
 ## Local State Boundary
 
 This model package is public species DNA. It must not include raw `.sifta_state/`

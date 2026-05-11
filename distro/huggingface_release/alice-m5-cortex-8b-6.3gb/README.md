@@ -27,6 +27,17 @@ Alice's Talk path uses `/api/chat` with `think:false`. Raw calls that omit this
 can spend the whole output budget in the thinking field and return blank
 assistant content.
 
+## SIFTA Field Breakthrough
+
+The current SIFTA public repo includes a stigmergic field breakthrough brief:
+https://github.com/antonpictures/ANTON-SIFTA/blob/main/Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md
+
+The cortex is only one organ in that system. The field mechanism itself runs in
+the Python body: Bell analogue simulator, kernel scheduler, and hippocampus.
+Credit boundary: Bell/CHSH/Hall/pilot-wave/stigmergy literature grounds the
+analogy; SIFTA claims a receipt-backed classical contextual analogue, not a
+proof of the physical cause of quantum nonlocality.
+
 ## Local State Boundary
 
 This model package is public species DNA. It must not include a node's raw

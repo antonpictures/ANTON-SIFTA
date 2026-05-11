@@ -118,6 +118,50 @@ cortex unless a candidate passes the LoRA/runtime gates and an explicit
 verified switch is allowed. This prevents another broken LoRA from replacing
 the working cortex.
 
+### Stigmergic Field Breakthrough — 2026-05-11
+
+SIFTA now exposes the same stigmergic field principle in three concrete places:
+
+| Surface | File | What the field does |
+|---|---|---|
+| Bell analogue simulator | `Applications/sifta_bell_theorem_widget.py` | Reproduces Bell-like CHSH statistics in a classical contextual model using persistent shared field memory + nonlinear agent response |
+| Kernel scheduler | `System/swarm_kernel_process_table.py` | Rewards successful task categories with routing pheromone and lets old traces evaporate |
+| Hippocampus / memory | `System/swarm_hippocampus.py` | Selects durable engrams by a salience field instead of simple recency tail reads |
+
+The reusable mechanism lives in `System/stigmergic_field.py`:
+
+```text
+field evolution:  d phi / dt = D laplacian(phi) - lambda phi + f(agents)
+agent coupling:   response is a function of phi and its gradient
+```
+
+Public marketing/reference brief:
+[`Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md`](Documents/CARLTON_STIGMERGIC_FIELD_BREAKTHROUGH_2026-05-11.md)
+
+Source discipline matters here. Credit goes first to the scientific spine this
+work builds on:
+
+- Bell's 1964 theorem and the 1969 CHSH formulation for the classical bound and
+  Bell-test framing.
+- Michael J. W. Hall's measurement-dependence work for the known classical
+  route where hidden variables and measurement settings are not independent.
+- Papatryfonos, Vervoort, Nachbin, Labousse, and Bush's 2024 pilot-wave
+  hydrodynamic Bell analogue for the closest classical wave-mediated reference.
+- Dzhafarov's Contextuality-by-Default work for assumption-aware contextuality
+  criteria.
+- Sulis and Khan's collective-intelligence contextuality work for the biological
+  caution: swarm contextuality is a testable hypothesis, not a slogan.
+- Grassé, Theraulaz, Bonabeau, Dorigo, and swarm-intelligence literature for the
+  stigmergic field idea itself.
+
+Honest boundary: this does **not** prove the physical cause of quantum
+nonlocality. It proves a receipt-backed classical contextual analogue inside
+SIFTA: past actions leave traces in a shared field, future agents read that
+field, and the resulting memory-dependent behavior can reproduce Bell-like
+statistics while explicitly breaking Bell assumptions. The commercial value is
+the general mechanism: local, auditable coordination and memory without cloud
+control.
+
 ---
 
 ## #1 Key Features
