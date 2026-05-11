@@ -1,0 +1,14 @@
+{
+  "truth_label": "SIFTA_PUBLIC_MODEL_PROVENANCE",
+  "tag": "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest",
+  "hf_repo": "georgeanton/alice-gemma4-e2b-cortex-5.1b-4.4gb",
+  "ollama_blob": "sha256-cc4ff226a10e0a2f31c7ec78549932a13a58aa7156f3865edcb4f853927716e9",
+  "architecture": "gemma4",
+  "role": "small_daily_cortex",
+  "verified_at": "2026-05-10",
+  "verified_by": "C55M@codex",
+  "notes": [
+    "Small daily Gemma4 cortex lane.",
+    "External action claims remain receipt-gated through SIFTA organs."
+  ]
+}

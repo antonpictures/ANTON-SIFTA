@@ -2,6 +2,10 @@
 
 > **A crow/raven-style bounded tool ganglion for the SIFTA Living OS.**
 
+> **Legacy package name:** this repo remains for continuity. The current public
+> Ollama tag and release package are `alice-Q-m1-scout-2.3b-2.7gb:latest` at
+> `georgeanton/alice-Q-m1-scout-2.3b-2.7gb`.
+
 This package provides the Ollama-ready Qwen 3.5 2B model that powers Alice's **Corvid Apprentice** organ — a local reasoning layer that sits between the microsecond Reflex Arc and the full Alice/Gemma4 cortex.
 
 ## What's inside
@@ -31,8 +35,8 @@ The 2B won the head-to-head. It's faster, smaller, and has fewer RLHF scars. The
 ## Quick Install
 
 ```bash
-# 1. Pull the corvid brain (or use the GGUF file in this repo)
-ollama pull qwen3.5:2b
+# 1. Pull the corvid brain (or use the GGUF file in the current release repo)
+ollama pull alice-Q-m1-scout-2.3b-2.7gb:latest
 
 # 2. Clone the SIFTA OS
 git clone https://github.com/antonpictures/ANTON-SIFTA.git
@@ -48,7 +52,7 @@ Qwen 3.5's thinking mode consumes all `num_predict` tokens in `<think>` blocks, 
 
 ```bash
 curl http://127.0.0.1:11434/api/chat -d '{
-  "model": "qwen3.5:2b",
+  "model": "alice-Q-m1-scout-2.3b-2.7gb:latest",
   "messages": [{"role": "user", "content": "classify: I broke my hand"}],
   "stream": false,
   "think": false,

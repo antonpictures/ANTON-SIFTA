@@ -1,0 +1,14 @@
+{
+  "truth_label": "SIFTA_PUBLIC_MODEL_PROVENANCE",
+  "tag": "alice-Q-m1-scout-2.3b-2.7gb:latest",
+  "hf_repo": "georgeanton/alice-Q-m1-scout-2.3b-2.7gb",
+  "ollama_blob": "sha256-b709d81508a078a686961de6ca07a953b895d9b286c46e17f00fb267f4f2d297",
+  "architecture": "qwen3.5",
+  "role": "corvid_scout",
+  "verified_at": "2026-05-10",
+  "verified_by": "C55M@codex",
+  "notes": [
+    "Fast Q/Corvid scout lane.",
+    "Use /api/chat with think:false for bounded scout tasks."
+  ]
+}

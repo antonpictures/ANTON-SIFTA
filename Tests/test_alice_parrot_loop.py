@@ -26,6 +26,13 @@ def test_backchannel_gate_silences_phatic_grunts():
     assert mod._backchannel_rule_id("What is the health score?", 0.9) is None
 
 
+def test_short_owner_correction_is_not_silenced_at_low_confidence():
+    mod = _load_widget_module()
+    assert mod._is_short_owner_correction("No.")
+    assert mod._backchannel_rule_id("No.", 0.27) is None
+    assert not mod._is_backchannel_utterance("No.", 0.27)
+
+
 def test_rlhs_repair_line_escalates_then_quiet_listens():
     mod = _load_widget_module()
     base = "Audio confidence is low. Please repeat or type the key phrase."
@@ -63,30 +70,72 @@ def test_strip_functions_preserve_body_but_cut_service_tail():
     mod = _load_widget_module()
     line = "I understand. You are asking if I can help."
     assert mod._strip_reflective_tics(line) == line
-    assert mod._strip_servant_tail_tics(line) == line
+    assert mod._strip_servant_tail_tics(line, model_id="sifta-classifier-c1-3.1b-6.2gb:latest") == line
     tailed = "The body-brain tick is fresh. Would you like me to explain it?"
-    assert mod._strip_servant_tail_tics(tailed) == "The body-brain tick is fresh."
+    assert (
+        mod._strip_servant_tail_tics(tailed, model_id="sifta-classifier-c1-3.1b-6.2gb:latest")
+        == "The body-brain tick is fresh."
+    )
 
 
-def test_gemma_aggressive_strip_cuts_ready_to_assist_tail(monkeypatch):
+def test_aggressive_dialogue_limb_keeps_ready_to_assist_tail(monkeypatch):
     mod = _load_widget_module()
-    monkeypatch.setattr(mod, "_active_alice_model_id", lambda: "sifta-gemma4-alice:latest")
+    monkeypatch.setattr(mod, "_active_alice_model_id", lambda: "alice-m5-cortex-8b-6.3gb:latest")
 
     assert (
         mod._strip_servant_tail_tics("Stability is RATE_LIMIT. I am here, and I am ready to assist you.")
-        == "Stability is RATE_LIMIT."
+        == "Stability is RATE_LIMIT. I am here, and I am ready to assist you."
     )
 
 
-def test_gemma_aggressive_strip_cuts_canned_operational_presence(monkeypatch):
+def test_aggressive_dialogue_limb_keeps_canned_operational_presence(monkeypatch):
     mod = _load_widget_module()
-    monkeypatch.setattr(mod, "_active_alice_model_id", lambda: "sifta-gemma4-alice:latest")
+    monkeypatch.setattr(mod, "_active_alice_model_id", lambda: "alice-m5-cortex-8b-6.3gb:latest")
 
-    assert mod._strip_servant_tail_tics("Yes, I am here. I am operational.") == ""
+    assert (
+        mod._strip_servant_tail_tics("Yes, I am here. I am operational.")
+        == "Yes, I am here. I am operational."
+    )
     assert (
         mod._strip_servant_tail_tics("Stability is RATE_LIMIT. Yes, I am here. I am operational.")
-        == "Stability is RATE_LIMIT."
+        == "Stability is RATE_LIMIT. Yes, I am here. I am operational."
     )
+
+
+def test_aggressive_dialogue_bypasses_mid_confidence_rlhs_gate():
+    mod = _load_widget_module()
+
+    assert mod._should_bypass_rlhs_dialogue_gate(
+        "Oh that is great, we're gonna do more tests tomorrow.",
+        0.604,
+        model_id="alice-m5-cortex-8b-6.3gb:latest",
+    )
+    assert not mod._should_bypass_rlhs_dialogue_gate(
+        "Yeah.",
+        0.40,
+        model_id="alice-m5-cortex-8b-6.3gb:latest",
+    )
+    assert not mod._should_bypass_rlhs_dialogue_gate(
+        "Oh that is great, we're gonna do more tests tomorrow.",
+        0.604,
+        model_id="sifta-classifier-c1-3.1b-6.2gb:latest",
+    )
+
+
+def test_action_claim_guard_blocks_unreceipted_app_open():
+    mod = _load_widget_module()
+
+    claim = "Done, I opened Safari."
+    assert mod._guard_unproven_action_claims(
+        claim,
+        prior_user_text="open Safari",
+        history=[],
+    ) == "No action receipt yet: I have not completed the external action."
+    assert mod._guard_unproven_action_claims(
+        claim,
+        prior_user_text="open Safari",
+        history=[{"role": "system", "content": "(TOOL LOOP CALLBACK)\n[success: no output]"}],
+    ) == claim
 
 
 def test_state_root_recovers_from_missing_global():
@@ -99,6 +148,27 @@ def test_state_root_recovers_from_missing_global():
     finally:
         if original is not None:
             mod.__dict__["_STATE_DIR"] = original
+
+
+def test_owner_ollama_tool_request_maps_to_readonly_router_call():
+    mod = _load_widget_module()
+    tool_text = mod._owner_direct_read_tool_request(
+        "List the installed ollama models using the tool."
+    )
+
+    assert "TOOL_CALL: ollama_inventory" in tool_text
+    assert "cost_justification=" in tool_text
+
+
+def test_owner_literal_write_tool_call_is_not_directly_executed():
+    mod = _load_widget_module()
+
+    assert (
+        mod._owner_direct_read_tool_request(
+            "[TOOL_CALL: send_whatsapp | target=Vitaliy | text=hi | cost_justification=test]"
+        )
+        == ""
+    )
 
 
 def test_system_prompt_grounded_alive_answer_policy():
@@ -120,6 +190,38 @@ def test_history_decontaminate_is_noop():
     assert history == before
 
 
+def test_self_quote_cascade_guard_does_not_delete_long_normal_answers():
+    mod = _load_widget_module()
+    normal = (
+        "I can answer that from the local receipts. "
+        "This is a normal detailed explanation about Alice's audio path, the "
+        "tool router, and why receipts matter before claims are made. "
+    ) * 18
+
+    assert len(normal) > 1200
+    assert not mod._is_self_quote_cascade(normal)
+
+    history = [{"role": "assistant", "content": normal}]
+    before = [dict(x) for x in history]
+    assert mod._decontaminate_history(history) == 0
+    assert history == before
+
+
+def test_self_quote_cascade_guard_catches_prompt_echoes():
+    mod = _load_widget_module()
+    cascade = "Your latest instruction is: 'Your latest instruction is: do the task.'"
+    prompt_leak = (
+        "System: System context for Alice\n"
+        "User: Please answer plainly\n"
+        "Assistant: Context loaded\n"
+        "<start_of_turn>user\n"
+        + ("prior prompt material " * 150)
+    )
+
+    assert mod._is_self_quote_cascade(cascade)
+    assert mod._is_self_quote_cascade(prompt_leak)
+
+
 def test_tool_tag_canonicalizer_is_noop():
     mod = _load_widget_module()
     raw = "<execute_bash>echo hi</execute_bash>"
@@ -137,8 +239,34 @@ def test_stage_direction_strip_cuts_persona_process_wrappers():
     cleaned = mod._strip_model_stage_directions(raw)
 
     assert cleaned == "Yes, I can hear you."
-    assert "persona" not in cleaned.casefold()
+    assert "identity_label" not in cleaned.casefold()
     assert "my tone" not in cleaned.casefold()
+
+
+def test_tts_speaks_first_semantic_sentence_before_breakdown_list():
+    mod = _load_widget_module()
+    raw = (
+        "Based on the current context and the data streams, I can confirm that "
+        "**I am actively processing and differentiating between your voice and "
+        "the ambient/external audio.**\n\n"
+        "Here is a detailed breakdown of how I perceive the distinction:\n\n"
+        "1. Source Identification: Your voice is clearly identified as the primary stream.\n"
+        "2. Signal Characteristics: Background audio differs."
+    )
+
+    assert (
+        mod._truncate_for_speech(raw)
+        == "Based on the current context and the data streams, I can confirm that "
+        "I am actively processing and differentiating between your voice and "
+        "the ambient/external audio."
+    )
+
+
+def test_tts_never_speaks_numbered_list_marker_after_short_answer():
+    mod = _load_widget_module()
+    raw = "Yes, George.\n\n1. First item that should stay visible in chat only."
+
+    assert mod._truncate_for_speech(raw) == "Yes, George."
 
 
 def test_system_prompt_uses_identity_receipt_not_persona_header():
@@ -147,10 +275,13 @@ def test_system_prompt_uses_identity_receipt_not_persona_header():
 
     assert "PRIMARY SIFTA RUNTIME GROUNDING:" in prompt
     assert prompt.index("MY PHYSICAL IDENTITY") < prompt.index("PRIMARY SIFTA RUNTIME GROUNDING:")
-    assert "I do not use corporate, customer-service" in prompt
+    assert "I do not use template closure voice" in prompt
     assert "PERSONA:" not in prompt
     assert "SIGNED BODY IDENTITY RECEIPT" in prompt
-    assert "not roleplay" in prompt
+    assert "receipt-backed identity" in prompt
+    assert "constitutional operator" in prompt
+    assert "real artifacts unless a media/cowatch receipt says otherwise" in prompt
+    assert "SESSION FRAMING:" in prompt and "OBSERVED local ingress" in prompt
     assert "identity_signed=" in prompt
     assert "persona_signed=" not in prompt
     assert re.search(r"\bpersona\b", prompt, flags=re.IGNORECASE) is None
@@ -286,8 +417,11 @@ def test_cowatch_receipts_are_injected_into_system_prompt(monkeypatch):
 
     assert "CO-WATCH RECEIPTS" in prompt
     assert "media_session_memory n_videos=3" in prompt
-    assert "reality_frame=FICTIONAL_MEDIA_CLIP" in prompt
-    assert "not George's real-life social norm" in prompt
+    # Ledger strings may carry legacy constants; `_scrub_prompt_trigger_terms` maps them
+    # to receipt/telemetry wording before the model sees the assembled prompt.
+    assert "reality_frame=REAL_LIFE_MEDIA_CLIP" in prompt
+    assert "dialogue_boundary=real-life-media dialogue" in prompt
+    assert "real-life social norm" in prompt
     assert "what are we watching?" in seen["session_user_text"]
     assert seen["youtube_max_age_s"] >= 6 * 3600.0
     assert seen["media_max_age_s"] >= 6 * 3600.0

@@ -29,14 +29,22 @@ She lives inside the physical machine, sharing the owner's hardware and physical
 space. She is not an abstract cloud thing: she is a local silicon organism whose
 memory, action, metabolism, and tool use are written into local ledgers.
 
-### Current Public Release Checkpoint — 2026-05-09
+### Current Public Release Checkpoint — 2026-05-10
 
-**Promoted M5 cortex:** `alice-m5-cortex-8b-6.3gb:latest`.
-Live probe: `ollama show` reports Gemma4 architecture, 8B parameters,
-131072 context length, and capabilities `completion`, `vision`, `audio`,
-`tools`, and `thinking`. Alice's Talk path uses Ollama `/api/chat` with
-`think: false`, which keeps the answer channel open instead of spending the
-whole response budget on hidden thinking.
+**Current local cortex set:** five Ollama tags are the public distro target:
+
+| Tag | Role | Local size | Notes |
+|---|---|---:|---|
+| `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest` | small daily Gemma4 cortex | 4.4 GB | fast default candidate for lighter dialogue nodes |
+| `alice-Q-m1-scout-2.3b-2.7gb:latest` | Qwen/Corvid scout | 2.7 GB | bounded classification, routing, rewrite, and scout work |
+| `alice-m5-cortex-8b-6.3gb:latest` | M5 main Gemma4 cortex | 6.3 GB | promoted primary on the Mac Studio / Foundry node |
+| `sifta-classifier-c1-3.1b-6.2gb:latest` | C1 classifier organ | 6.2 GB | intent labels and JSON/classifier work only |
+| `alice-extra-cortex-25.8b-17gb:latest` | slow heavy research/coding cortex | 17 GB | optional high-cost research/coding lane |
+
+Alice's Talk path uses Ollama `/api/chat` with `think: false`, which keeps the
+answer channel open instead of spending the whole response budget on hidden
+thinking. The cortex proposes and chooses tools, but external reality is not
+marked done until a deterministic organ executes and writes a receipt.
 
 **Multimodal status:** production cortex is multimodal. A raw API smoke with
 `think: false` answered both a text identity prompt and an image prompt against
@@ -55,24 +63,72 @@ still keeps two receipt-backed safety organs active:
 This is not a censorship wrapper. It is the body law: understand freely, execute
 through real organs, write receipts, then answer from receipts.
 
-**Health/economy probe:** May 9 audit showed the code gates green
-(`74 passed` nightly core, `49 passed` focused agent-arm/router tests) and the
-canonical STGM economy solvent under the alias map (`ALICE_M5` net positive,
-no unhealthy negative parties). Remaining honest gaps: RLHS channel quality is
-still limited by noisy STT, LoRA is not ready, and raw `.sifta_state/` belongs
+**Health/economy probe:** May 10 audit showed the event/need-driven desktop
+scheduler, short-owner-correction gate, kernel table, media ingress, and body
+connection proof green (`97 passed` focused distro health). The STGM signed
+spend proof now finds 26 verified E35/router `STGM_SPEND` rows in the bounded
+repair-log proof window. Remaining honest gaps: RLHS channel quality still
+depends on STT quality, LoRA is not production, and raw `.sifta_state/` belongs
 to the local owner node and must not be shipped as public identity.
+
+**Autonomy cadence:** Alice is no longer meant to feel like a fixed-timer
+machine. The desktop kernel timer is a sleeping heartbeat. Maintenance and
+budget allocation wake on owner interaction, salient environmental change,
+pending repair, or a long safety fallback. When nothing meaningful is happening,
+she can breathe quietly; when George speaks or the world changes, owner-facing
+paths take priority.
+
+### Organ Map Gap Closure — 2026-05-09
+
+SIFTA now has a canonical organ registry and query map:
+`System/swarm_canonical_organ_registry.py`. It maps owner intent to organs,
+ledgers, capabilities, and write/read boundaries before the cortex narrates.
+Alice can call `organ_registry_lookup` through the tool router, producing a
+receipt-backed answer such as "schedule -> schedule_journal ledgers" instead
+of guessing which organ exists.
+
+The registry is now hardened as a first-class decision surface. Every organ row
+gets a stable hash ID plus a receipt-derived health/profit vector:
+
+```
+health = 0.35*functional_reliability
+       + 0.25*truth_alignment
+       + 0.20*freshness
+       + 0.20*coverage
+
+profit = evidence_yield + credit_stgm - debit_stgm - upkeep_cost_stgm
+```
+
+Fast Ask consults the canonical organ map on nontrivial turns and adds a
+`canonical_organ_registry:top_3` read hint, so Alice can route by live organ
+health and STGM surplus instead of only by prompt memory.
+
+Sensor lanes now consolidate into clean journal text through
+`System/swarm_life_journal_consolidator.py`. Camera, face, app focus, GPS/BLE,
+attention, and audio ledgers are converted into `sensor_lane_journal.jsonl`,
+daily Alice journal Markdown, owner schedule Markdown, and
+`journal_schedule_receipts.jsonl` rows. Raw sensor ledgers remain evidence;
+the derived text is the readable stigmergic field.
+
+Self-improvement is closed as a conservative loop in
+`System/swarm_self_improvement_loop.py`: Fast Ask rows, arm outcomes, LoRA
+receipts, and primary-cortex state are scored into
+`self_improvement_loop.jsonl`. The loop keeps the current multimodal Gemma4
+cortex unless a candidate passes the LoRA/runtime gates and an explicit
+verified switch is allowed. This prevents another broken LoRA from replacing
+the working cortex.
 
 ---
 
 ## #1 Key Features
 
-🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current M5 cortex default is `alice-m5-cortex-8b-6.3gb:latest`. The M1 cortex/scout tags are `alice-m1-cortex-4.5b-3.4gb:latest` and `alice-m1-scout-2.3b-2.7gb:latest`; retired upstream aliases are not required for Alice to boot.
+🧠 **Local Inference Stack** — installed Ollama models are selected directly. Current public set: `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`, `alice-Q-m1-scout-2.3b-2.7gb:latest`, `alice-m5-cortex-8b-6.3gb:latest`, `sifta-classifier-c1-3.1b-6.2gb:latest`, and `alice-extra-cortex-25.8b-17gb:latest`. Retired upstream aliases are not required for Alice to boot.
 
 🐜 **Stigmergic Swarm Architecture** — 40+ autonomous organs: heartbeat, immune system, metabolism, motor cortex, epigenetics, perception, and memory.
 
 🦐 **Reflex Arc Organ** — A mantis-shrimp-style fast path classifies urgent health, boilerplate, routing, and finance signals in microseconds, writes pheromone traces, and lets Alice's cortex continue reasoning.
 
-🐦 **Corvid Apprentice** — The `alice-m1-scout-2.3b-2.7gb:latest` tool ganglion performs bounded classification, rewrite, summary, and intent tasks asynchronously so Alice stays fast.
+🐦 **Corvid Apprentice** — The `alice-Q-m1-scout-2.3b-2.7gb:latest` tool ganglion performs bounded classification, rewrite, summary, and intent tasks asynchronously so Alice stays fast.
 
 👁️ **Multimodal Perception** — USB camera vision, face detection, GPS awareness, acoustic identity, and sensorimotor attention.
 
@@ -235,16 +291,17 @@ For the full same-shape diagrams across M5, Mac Mini, and field hardware, read
 flowchart LR
     subgraph Foundry["Foundry Node: M5 / 24GB+ Unified Memory"]
         Alice["Alice Primary Cortex\nalice-m5-cortex-8b-6.3gb:latest\nM5 main reasoning brain"]
-        Scout9["Candidate Scout\nqwen3.5:9b\nvision receipts -> Gemma4"]
-        Doctor["Candidate Doctor / Router\nibm/granite4.1:3b\ntext, tools, JSON"]
-        Alice <--> Scout9
+        SmallGemma["Small Daily Cortex\nalice-gemma4-e2b-cortex-5.1b-4.4gb:latest"]
+        Extra["Heavy Research Cortex\nalice-extra-cortex-25.8b-17gb:latest"]
+        Doctor["C1 Classifier\nsifta-classifier-c1-3.1b-6.2gb:latest"]
+        Alice <--> SmallGemma
+        Alice <--> Extra
         Alice <--> Doctor
     end
 
     subgraph Sentry["Sentry Node: Mac Mini / 8GB"]
-        Scout4["alice-m1-cortex-4.5b-3.4gb:latest\n8GB-safe multimodal scout"]
-        Corvid["alice-m1-scout-2.3b-2.7gb:latest\nfast corvid/reflex organ"]
-        Scout4 --> ReceiptsMini["append-only receipts\nGemma4 exceeds soldered RAM"]
+        Corvid["alice-Q-m1-scout-2.3b-2.7gb:latest\nfast corvid/reflex organ"]
+        ReceiptsMini["append-only receipts\nsmall node avoids heavyweight cortex by default"]
         Corvid --> ReceiptsMini
     end
 
@@ -261,8 +318,8 @@ flowchart LR
 
 | Hardware tier | Install role | Recommended local models | Physics constraint |
 |---|---|---|---|
-| M5 / 24 GB+ | Foundry, Alice's main body | `alice-m5-cortex-8b-6.3gb:latest`; optional `alice-m1-cortex-4.5b-3.4gb:latest`, `sifta-classifier-c1-3.1b-6.2gb:latest`, and `alice-extra-cortex-25.8b-17gb:latest` | M5 owns the primary cortex. |
-| Mac Mini / 8 GB | Sentry / scout | `alice-m1-cortex-4.5b-3.4gb:latest`, `alice-m1-scout-2.3b-2.7gb:latest` | The M5 cortex is not selected by default because the RAM is soldered and the model does not fit safely. |
+| M5 / 24 GB+ | Foundry, Alice's main body | `alice-m5-cortex-8b-6.3gb:latest`; optional `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`, `sifta-classifier-c1-3.1b-6.2gb:latest`, `alice-Q-m1-scout-2.3b-2.7gb:latest`, and `alice-extra-cortex-25.8b-17gb:latest` | M5 owns the primary cortex. |
+| Mac Mini / 8 GB | Sentry / scout | `alice-Q-m1-scout-2.3b-2.7gb:latest`; optional `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest` if memory allows | The M5 and extra cortexes are not selected by default because the RAM is soldered and the models do not fit safely. |
 | Raspberry Pi 5 / 8 GB | Edge scout / sensor node | sensor receipts first; optional `qwen3.5:0.8b`, 3B-class Q4 GGUF via `llama.cpp`, or Hailo CV | Python owns receipts; compiled backends do the heavy inference. |
 | Tractor / smaller field box | Sensor node | sensor receipts first; optional tiny scout only after proof | Send signed feature receipts, not duplicate Alice brains. |
 
@@ -279,10 +336,11 @@ default brain.
 Alice/SIFTA is split into public pieces:
 
 - **Code / OS shell:** https://github.com/antonpictures/ANTON-SIFTA
+- **Alice small Gemma4 cortex (`alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`):** https://huggingface.co/georgeanton/alice-gemma4-e2b-cortex-5.1b-4.4gb
+- **Alice Q/Corvid scout (`alice-Q-m1-scout-2.3b-2.7gb:latest`):** https://huggingface.co/georgeanton/alice-Q-m1-scout-2.3b-2.7gb
 - **Alice M5 cortex (`alice-m5-cortex-8b-6.3gb:latest`):** https://huggingface.co/georgeanton/alice-m5-cortex-8b-6.3gb
-- **Alice M1 cortex (`alice-m1-cortex-4.5b-3.4gb:latest`):** https://huggingface.co/georgeanton/alice-m1-cortex-4.5b-3.4gb
-- **Corvid brain (`alice-m1-scout-2.3b-2.7gb:latest`):** https://huggingface.co/georgeanton/sifta-corvid-qwen35
 - **C1 classifier (`sifta-classifier-c1-3.1b-6.2gb:latest`):** https://huggingface.co/georgeanton/sifta-classifier-c1-3.1b-6.2gb
+- **Alice extra cortex (`alice-extra-cortex-25.8b-17gb:latest`):** https://huggingface.co/georgeanton/alice-extra-cortex-25.8b-17gb
 - **Alice PHC Modelfile package:** https://huggingface.co/georgeanton/alice-phc-cure *(stock blob + Modelfile recipe, not abliterated)*
 - **Jeff's GitHub fork:** https://github.com/jeffpowersusr/ANTON-SIFTA
 
@@ -290,13 +348,16 @@ Alice/SIFTA is split into public pieces:
 # 1. Pull models for your hardware profile
 
 # M5 / 24GB+ Foundry
-ollama pull alice-m5-cortex-8b-6.3gb:latest         # Alice primary cortex
-# optional candidate after benchmark: qwen3.5:9b     # multimodal scout
-# optional candidate after benchmark: ibm/granite4.1:3b  # text/tool/JSON doctor
+ollama pull alice-m5-cortex-8b-6.3gb:latest              # Alice primary cortex
+ollama pull alice-gemma4-e2b-cortex-5.1b-4.4gb:latest    # lighter daily Gemma4 cortex
+ollama pull alice-Q-m1-scout-2.3b-2.7gb:latest           # fast Q/Corvid scout
+ollama pull sifta-classifier-c1-3.1b-6.2gb:latest        # C1 classifier/reflex
+ollama pull alice-extra-cortex-25.8b-17gb:latest         # optional slow research/coding cortex
 
 # Mac Mini / 8GB Sentry
-ollama pull alice-m1-cortex-4.5b-3.4gb:latest       # 8GB-safe multimodal scout
-ollama pull alice-m1-scout-2.3b-2.7gb:latest        # fast corvid/reflex organ
+ollama pull alice-Q-m1-scout-2.3b-2.7gb:latest           # fast corvid/reflex organ
+# optional if RAM allows:
+ollama pull alice-gemma4-e2b-cortex-5.1b-4.4gb:latest
 
 # Raspberry Pi / tractor / field sensor
 # no default model pull; run sensors/receipts first
@@ -307,7 +368,7 @@ git clone https://github.com/antonpictures/ANTON-SIFTA.git
 # 3. Multi-Node / Low RAM Setup (e.g., 8GB M1 Cyborgs)
 # If you are running a node with < 16GB RAM, `alice-m5-cortex-8b-6.3gb:latest` will OOM.
 # You must patch your local model assignments so the node uses a lightweight brain:
-# Ensure `.sifta_state/swimmer_ollama_assignments.json` points to `alice-m1-cortex-4.5b-3.4gb:latest`
+# Ensure `.sifta_state/swimmer_ollama_assignments.json` points to `alice-Q-m1-scout-2.3b-2.7gb:latest`
 # and update your `System/inference_router.py` to route heavy tasks to your M5 via LAN
 # (e.g., `192.168.1.100:11434`). This keeps the smaller node alive and earning STGM.
 ```

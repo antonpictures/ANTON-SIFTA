@@ -5,10 +5,11 @@ distro/push_huggingface.py
 Push the current public SIFTA model blobs + metadata to HuggingFace.
 
 Core repos pushed:
-  1. georgeanton/alice-m5-cortex-8b-6.3gb   — M5 primary multimodal cortex
-  2. georgeanton/alice-m1-cortex-4.5b-3.4gb — 8GB-safe M1 cortex
-  3. georgeanton/sifta-corvid-qwen35        — fast Corvid scout/reflex arm
-  4. georgeanton/sifta-classifier-c1-3.1b-6.2gb — C1 intent classifier
+  1. georgeanton/alice-gemma4-e2b-cortex-5.1b-4.4gb — small Gemma4 cortex
+  2. georgeanton/alice-Q-m1-scout-2.3b-2.7gb        — fast Q/Corvid scout
+  3. georgeanton/alice-m5-cortex-8b-6.3gb            — M5 primary cortex
+  4. georgeanton/sifta-classifier-c1-3.1b-6.2gb      — C1 intent classifier
+  5. georgeanton/alice-extra-cortex-25.8b-17gb       — heavy research/coding cortex
 
 Usage:
   python3 distro/push_huggingface.py           # dry-run (shows what would be pushed)
@@ -33,6 +34,20 @@ _DISTRO = _REPO / "distro" / "huggingface_release"
 
 # ── Model definitions ─────────────────────────────────────────────────
 MODELS = {
+    "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest": {
+        "blob_sha": "sha256-cc4ff226a10e0a2f31c7ec78549932a13a58aa7156f3865edcb4f853927716e9",
+        "output_name": "alice-gemma4-e2b-cortex-5.1b-4.4gb.gguf",
+        "hf_repo": "georgeanton/alice-gemma4-e2b-cortex-5.1b-4.4gb",
+        "local_dir": _DISTRO / "alice-gemma4-e2b-cortex-5.1b-4.4gb",
+        "size_hint": "~4.4 GB",
+    },
+    "alice-Q-m1-scout-2.3b-2.7gb:latest": {
+        "blob_sha": "sha256-b709d81508a078a686961de6ca07a953b895d9b286c46e17f00fb267f4f2d297",
+        "output_name": "alice-Q-m1-scout-2.3b-2.7gb.gguf",
+        "hf_repo": "georgeanton/alice-Q-m1-scout-2.3b-2.7gb",
+        "local_dir": _DISTRO / "alice-Q-m1-scout-2.3b-2.7gb",
+        "size_hint": "~2.7 GB",
+    },
     "alice-m5-cortex-8b-6.3gb:latest": {
         "blob_sha": "sha256-ef5523975d644e47293960b8b87c83b11a6d50253a544e35addca72af33e13c6",
         "output_name": "alice-m5-cortex-8b-6.3gb.gguf",
@@ -40,26 +55,19 @@ MODELS = {
         "local_dir": _DISTRO / "alice-m5-cortex-8b-6.3gb",
         "size_hint": "~6.3 GB",
     },
-    "alice-m1-cortex-4.5b-3.4gb:latest": {
-        "blob_sha": "sha256-464c1dda6a052d909b11d20c31bcb21060e969e334716ba8ed7abf64ca1be10f",
-        "output_name": "alice-m1-cortex-4.5b-3.4gb.gguf",
-        "hf_repo": "georgeanton/alice-m1-cortex-4.5b-3.4gb",
-        "local_dir": _DISTRO / "alice-m1-cortex-4.5b-3.4gb",
-        "size_hint": "~3.4 GB",
-    },
-    "alice-m1-scout-2.3b-2.7gb:latest": {
-        "blob_sha": "sha256-b709d81508a078a686961de6ca07a953b895d9b286c46e17f00fb267f4f2d297",
-        "output_name": "qwen35-2b-corvid.gguf",
-        "hf_repo": "georgeanton/sifta-corvid-qwen35",
-        "local_dir": _DISTRO / "sifta-corvid-qwen35",
-        "size_hint": "~2.6 GB",
-    },
     "sifta-classifier-c1-3.1b-6.2gb:latest": {
         "blob_sha": "sha256-0b1622df663cb7dfcd39baaefb9719ceed926422360cfe1c3493818fc39ff0eb",
         "output_name": "sifta-classifier-c1-3.1b-6.2gb.gguf",
         "hf_repo": "georgeanton/sifta-classifier-c1-3.1b-6.2gb",
         "local_dir": _DISTRO / "sifta-classifier-c1-3.1b-6.2gb",
         "size_hint": "~6.2 GB",
+    },
+    "alice-extra-cortex-25.8b-17gb:latest": {
+        "blob_sha": "sha256-2c5e15b64dbc6dad11bdc75cd94597058f8aded0970ba123f2a62bb227192e96",
+        "output_name": "alice-extra-cortex-25.8b-17gb.gguf",
+        "hf_repo": "georgeanton/alice-extra-cortex-25.8b-17gb",
+        "local_dir": _DISTRO / "alice-extra-cortex-25.8b-17gb",
+        "size_hint": "~17 GB",
     },
 }
 
@@ -168,7 +176,7 @@ def push_repos(staging: Path, repos: dict, dry_run: bool):
             folder_path=str(repo_dir),
             repo_id=repo_id,
             repo_type="model",
-            commit_message="SIFTA public cortex distro update - 2026-05-09",
+            commit_message="SIFTA public cortex distro update - 2026-05-10",
         )
         print(f"  ✅ Pushed to https://huggingface.co/{repo_id}")
 

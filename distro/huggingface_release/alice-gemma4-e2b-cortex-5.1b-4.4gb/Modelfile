@@ -1,0 +1,7 @@
+FROM ./alice-gemma4-e2b-cortex-5.1b-4.4gb.gguf
+TEMPLATE {{ .Prompt }}
+RENDERER gemma4
+PARSER gemma4
+PARAMETER temperature 1
+PARAMETER top_k 64
+PARAMETER top_p 0.95

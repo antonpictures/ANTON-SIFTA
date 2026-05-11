@@ -70,6 +70,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
+from urllib.parse import quote_plus
 
 import numpy as np
 
@@ -92,6 +93,568 @@ from System.swarm_kernel_identity import owner_display_name, owner_name, preferr
 _DEFAULT_LOCAL_ALICE_CORTEX = "sifta-" + "gem" + "ma4-alice"
 _IMAGE_ATTACHMENT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 _MAX_IMAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+
+def _owner_direct_read_tool_request(user_text: str) -> str:
+    """Return a deterministic read-only tool call for explicit owner tool turns."""
+    text = (user_text or "").strip()
+    if not text:
+        return ""
+
+    try:
+        from System.swarm_tool_router import TOOL_REGISTRY, parse_tool_calls
+
+        calls = parse_tool_calls(text)
+        if calls:
+            for call in calls:
+                spec = TOOL_REGISTRY.get(call.tool_name)
+                if spec is None or spec.write_action:
+                    return ""
+            return text
+    except Exception:
+        pass
+
+    lowered = text.casefold()
+    if (
+        "ollama" in lowered
+        and "tool" in lowered
+        and "model" in lowered
+        and any(word in lowered for word in ("list", "show", "check", "installed", "inventory"))
+    ):
+        return (
+            "[TOOL_CALL: ollama_inventory | "
+            "cost_justification=George asked for installed Ollama model inventory receipt]"
+        )
+    return ""
+
+
+_APP_COMMAND_VERB_RE = re.compile(
+    r"\b(?:open|launch|show|display|bring\s+up|start|load|browse|navigate|search|look\s+up|find|click|press|select|pick|choose|feel\s+free|go\s+(?:to|in|on))\b",
+    re.IGNORECASE,
+)
+_BROWSER_COMMAND_RE = re.compile(
+    r"\b(?:browser|website|web\s*site|webpage|web\s*page|url|browse|navigate|go\s+(?:to|in|on)|load)\b",
+    re.IGNORECASE,
+)
+_URL_TOKEN_RE = re.compile(
+    r"(?P<url>https?://[^\s\"'<>]+|www\.[^\s\"'<>]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s\"'<>]*)?)",
+    re.IGNORECASE,
+)
+_KNOWN_SITE_ALIASES = {
+    "google": "https://google.com",
+    "youtube": "https://youtube.com",
+    "wikipedia": "https://en.wikipedia.org",
+    "github": "https://github.com",
+    "arxiv": "https://arxiv.org",
+    "hacker news": "https://news.ycombinator.com",
+    "hn": "https://news.ycombinator.com",
+    "grok": "https://grok.com",
+}
+_WEBPAGE_SUMMARY_RE = re.compile(
+    r"\b(?:read|summari[sz]e|what(?:'s| is)\s+on|tell\s+me\s+about)\b"
+    r".{0,80}\b(?:website|web\s*site|webpage|web\s*page|page|browser|this\s+site)\b"
+    r"|\b(?:can\s+you\s+read\s+the\s+website|summari[sz]e\s+the\s+page)\b",
+    re.IGNORECASE,
+)
+_AUTONOMOUS_WEB_CHOICE_RE = re.compile(
+    r"\b(?:website|web\s*site|page)\b.{0,80}\b(?:you\s+(?:wish|want|would\s+like)\s+to\s+read|your\s+own\s+(?:interest|choice)|pick|choose)\b"
+    r"|\b(?:pick|choose)\b.{0,80}\b(?:website|web\s*site|page)\b"
+    r"|\bfeel\s+free\s+to\s+browse\b.{0,80}\b(?:website|web\s*site|page)\b"
+    r"|\b(?:browse|open|go\s+(?:to|on|in))\b.{0,40}\b(?:any|a)\s+(?:website|web\s*site|page)\b.{0,80}\byou\s+(?:like|want|wish)\b",
+    re.IGNORECASE,
+)
+_WIKIPEDIA_ENGLISH_CLICK_RE = re.compile(
+    r"\b(?:click|press|select|choose)\b.{0,50}\benglish\b|\benglish\b.{0,50}\b(?:click|press|select|choose)\b",
+    re.IGNORECASE,
+)
+_WIKIPEDIA_ENGLISH_PAGE_RE = re.compile(
+    r"\bwikipedia(?:\.com|\.org)?\b.{0,80}\benglish\s+page\b|\benglish\s+page\b.{0,80}\bwikipedia(?:\.com|\.org)?\b",
+    re.IGNORECASE,
+)
+_OWNER_PHONE_MOM_CONTEXT_RE = re.compile(
+    r"\b(?:i\s+was\s+on\s+(?:a\s+)?phone\s+with\s+my\s+mom|"
+    r"on\s+(?:a\s+)?phone\s+with\s+my\s+mom|"
+    r"speaking\s+with\s+my\s+mom\s+on\s+(?:a\s+)?phone|"
+    r"george\s+speaking\s+with\s+his\s+mom\s+on\s+(?:a\s+)?phone)\b",
+    re.IGNORECASE,
+)
+_OWNER_TV_CONTEXT_RE = re.compile(
+    r"\b(?:this\s+is\s+me\s+speaking|i\s+just\s+give\s+you\s+context)\b"
+    r".{0,140}\b(?:soon\s+you(?:'re| are)?\s+gonna\s+hear\s+the\s+tv|tv|television)\b",
+    re.IGNORECASE,
+)
+_OWNER_LIFE_HISTORY_WRITE_RE = re.compile(
+    r"\b(?:write\s+(?:it|this|that|down)|record|remember|log)\b"
+    r".{0,120}\b(?:life\s+history|journal|history|what\s+happened|context)\b",
+    re.IGNORECASE,
+)
+_CONCISE_STYLE_REQUEST_RE = re.compile(
+    r"\b(?:answers?|responses?)\b.{0,60}\b(?:shorter|concise|human[- ]?like|natural)\b"
+    r"|\b(?:shorter|concise|human[- ]?like|natural)\b.{0,60}\b(?:answers?|responses?|conversation)\b"
+    r"|\bi(?:'m| am)\s+already\s+talking\s+too\s+much\b",
+    re.IGNORECASE,
+)
+_ALICE_RESPONSE_MISROUTE_QUERY_RE = re.compile(
+    r"\bwhat\s+happened\s+to\s+your\s+response\b|\bwhy\s+did\s+you\s+(?:answer|respond)\b",
+    re.IGNORECASE,
+)
+
+_ALICE_LAST_MESSAGE_QUERY_RE = re.compile(
+    r"\b(?:what\s+(?:is|was)\s+my\s+message|what\s+did\s+i\s+(?:just\s+)?say|"
+    r"read\s+my\s+(?:last\s+)?message|repeat\s+my\s+(?:last\s+)?message)\b",
+    re.IGNORECASE,
+)
+
+_ALICE_DIRECT_RESPONSE_RESCUE_RE = re.compile(
+    r"\b(?:"
+    r"can\s+you\s+(?:hear|read)\s+(?:me|my\s+voice|this)|"
+    r"(?:you|alice)\s+(?:are|re|were)\s+not\s+responding|"
+    r"you\s+never\s+responded|"
+    r"no\s+response|"
+    r"not\s+responding|"
+    r"answer\s+me|talk\s+to\s+me|"
+    r"this\s+(?:is|ig)\s+george\s+typing"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_FACE_RECOGNITION_QUERY_RE = re.compile(
+    r"\b(?:"
+    r"recogni[sz]e\s+(?:my\s+)?face|"
+    r"recogni[sz]e\s+me|"
+    r"do\s+you\s+know\s+it'?s\s+me|"
+    r"i['’]?m\s+george.*\b(?:face|recogni[sz]e|owner)"
+    r")\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_OWNER_CONTEXT_SIGNAL_TEACHING_RE = re.compile(
+    r"\b(?:all\s+caps|upper\s+case|uppercase|lower\s+case|lowercase|"
+    r"george\s+typ(?:e|ing)|type\s+with\s+my\s+fingers|keyboard|"
+    r"voice\s+to\s+text|microphone|tv\s+(?:is\s+)?(?:on|background)|"
+    r"background\s+(?:is\s+)?playing|on\s+(?:a\s+)?phone)\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_sifta_app_name(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (text or "").casefold())
+
+
+def _load_manifest_app_names() -> List[str]:
+    try:
+        manifest = json.loads((_REPO / "Applications" / "apps_manifest.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    names = []
+    for name, data in manifest.items():
+        if isinstance(data, dict) and not data.get("_retired") and not data.get("hidden"):
+            names.append(str(name))
+    return names
+
+
+def _match_sifta_app_name(query: str, app_names: Optional[List[str]] = None) -> str:
+    """Resolve owner speech like 'browser app' to a manifest app name."""
+    q = (query or "").strip()
+    if not q:
+        return ""
+    q_clean = re.sub(r"\b(?:please|the|sifta|os|app|application|program|window)\b", " ", q, flags=re.IGNORECASE)
+    q_norm = _normalize_sifta_app_name(q_clean)
+    if not q_norm:
+        return ""
+    aliases = {
+        "browser": "Alice Browser",
+        "alicebrowser": "Alice Browser",
+        "webbrowser": "Alice Browser",
+        "internetbrowser": "Alice Browser",
+        "whatsapp": "WhatsApp Organ",
+        "terminal": "Terminal",
+        "settings": "System Settings",
+        "systemsettings": "System Settings",
+        "finance": "Finance",
+        "journal": "Alice Journal",
+        "alicejournal": "Alice Journal",
+    }
+    if q_norm in aliases:
+        return aliases[q_norm]
+    app_names = app_names or _load_manifest_app_names()
+    norm_to_name = {_normalize_sifta_app_name(name): name for name in app_names}
+    if q_norm in norm_to_name:
+        return norm_to_name[q_norm]
+    for norm, name in norm_to_name.items():
+        if q_norm and (q_norm in norm or norm in q_norm):
+            return name
+    return ""
+
+
+def _normalize_website_url(raw: str) -> str:
+    target = (raw or "").strip().strip(".,;:!?)]}\"'")
+    if not target:
+        return ""
+    folded = target.casefold()
+    for alias, url in _KNOWN_SITE_ALIASES.items():
+        if folded == alias or folded.startswith(alias + " "):
+            return url
+    if target.startswith("www."):
+        return "https://" + target
+    if target.startswith(("http://", "https://")):
+        return target
+    if re.fullmatch(r"(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s\"'<>]*)?", target, re.IGNORECASE):
+        return "https://" + target
+    return ""
+
+
+def _extract_browser_url(text: str) -> str:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return ""
+    match = _URL_TOKEN_RE.search(clean)
+    if match:
+        return _normalize_website_url(match.group("url"))
+    folded = clean.casefold()
+    if not _BROWSER_COMMAND_RE.search(clean):
+        return ""
+    for alias, url in _KNOWN_SITE_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", folded):
+            return url
+    return ""
+
+
+def _search_url_for_site(site: str, query: str) -> str:
+    q = quote_plus((query or "").strip())
+    if not q:
+        return ""
+    site_norm = (site or "").casefold()
+    if "wiki" in site_norm:
+        return f"https://en.wikipedia.org/w/index.php?search={q}"
+    return f"https://www.google.com/search?q={q}"
+
+
+def _extract_browser_search_command(text: str) -> Dict[str, str]:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return {}
+
+    patterns = [
+        r"\b(?:search|look\s+up|find)\s+(?P<site>wikipedia|google)\s+(?:for\s+)?(?P<query>.+)$",
+        r"\b(?:search|look\s+up|find)\s+(?:on|within|in|with)\s+(?P<site>wikipedia|google)\s+(?:for\s+)?(?P<query>.+)$",
+        r"\b(?P<site>wikipedia|google)\s+(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+)$",
+        r"\b(?:go\s+(?:to|on|in)\s+)?(?P<site>wikipedia|google)\s+and\s+(?:search|look\s+up|find)\s+(?:for\s+)?(?P<query>.+)$",
+        r"\b(?:search|look\s+up|find)\s+(?P<query>.+?)\s+(?:on|within|in|with)\s+(?P<site>wikipedia|google)\b",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, clean, re.IGNORECASE)
+        if not m:
+            continue
+        site = m.group("site")
+        query = re.sub(r"\b(?:please|now|in\s+a\s+browser|on\s+screen)\b", " ", m.group("query"), flags=re.IGNORECASE)
+        query = " ".join(query.strip(" .?!,;:").split())
+        url = _search_url_for_site(site, query)
+        if url:
+            return {
+                "kind": "browser_url",
+                "app_name": "Alice Browser",
+                "url": url,
+                "search_site": site.casefold(),
+                "query": query,
+            }
+    return {}
+
+
+def _extract_browser_action_command(text: str) -> Dict[str, str]:
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return {}
+    if _AUTONOMOUS_WEB_CHOICE_RE.search(clean):
+        return {
+            "kind": "browser_url",
+            "app_name": "Alice Browser",
+            "url": "https://en.wikipedia.org/wiki/Special:Random",
+            "autonomous_choice": "1",
+            "choice_reason": "Alice chose a random Wikipedia article to read from her own curiosity lane.",
+        }
+    if _WIKIPEDIA_ENGLISH_CLICK_RE.search(clean):
+        return {
+            "kind": "browser_url",
+            "app_name": "Alice Browser",
+            "url": "https://en.wikipedia.org/wiki/Main_Page",
+            "click_target": "English",
+        }
+    if _WIKIPEDIA_ENGLISH_PAGE_RE.search(clean):
+        return {
+            "kind": "browser_url",
+            "app_name": "Alice Browser",
+            "url": "https://en.wikipedia.org/wiki/Main_Page",
+            "click_target": "English",
+        }
+    return {}
+
+
+def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None) -> Dict[str, str]:
+    """Parse owner commands to open a SIFTA app or browse a website."""
+    clean = " ".join((text or "").strip().split())
+    if not clean or not _APP_COMMAND_VERB_RE.search(clean):
+        return {}
+    action = _extract_browser_action_command(clean)
+    if action:
+        return action
+    search = _extract_browser_search_command(clean)
+    if search:
+        return search
+    url = _extract_browser_url(clean)
+    if url:
+        command = {
+            "kind": "browser_url",
+            "app_name": "Alice Browser",
+            "url": url,
+        }
+        if _is_webpage_summary_query(clean):
+            command["summarize_after_open"] = "1"
+        return command
+    app_names = app_names or _load_manifest_app_names()
+    m = re.search(
+        r"\b(?:open|launch|show|display|bring\s+up|start)\b\s+(?P<name>.+?)(?:\s+(?:app|application|program|window))?\s*$",
+        clean,
+        re.IGNORECASE,
+    )
+    if not m:
+        return {}
+    app_name = _match_sifta_app_name(m.group("name"), app_names)
+    if not app_name:
+        return {}
+    return {"kind": "app", "app_name": app_name, "url": ""}
+
+
+def _is_webpage_summary_query(text: str) -> bool:
+    return bool(_WEBPAGE_SUMMARY_RE.search(text or ""))
+
+
+def _local_date_label(ts: float | None = None) -> str:
+    return time.strftime("%Y-%m-%d", time.localtime(float(ts or time.time())))
+
+
+def _append_alice_life_history_row(
+    *,
+    event_type: str,
+    owner_text: str,
+    alice_entry: str,
+    stt_conf: float = 0.0,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    now = time.time()
+    receipt_id = str(__import__("uuid").uuid4())
+    row: Dict[str, Any] = {
+        "ts": now,
+        "receipt_id": receipt_id,
+        "truth_label": "ALICE_LIFE_HISTORY_OWNER_CONTEXT_V1",
+        "event_type": event_type,
+        "owner_text": " ".join((owner_text or "").split())[:1000],
+        "alice_entry": alice_entry,
+        "stt_confidence": round(float(stt_conf or 0.0), 3),
+        "source": "talk_to_alice_widget",
+    }
+    if extra:
+        row.update(extra)
+    try:
+        root = _state_root()
+        root.mkdir(parents=True, exist_ok=True)
+        with (root / "alice_life_history.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        journal_dir = root / "alice_journal"
+        journal_dir.mkdir(parents=True, exist_ok=True)
+        date_label = _local_date_label(now)
+        md_path = journal_dir / f"{date_label}.md"
+        if not md_path.exists():
+            md_path.write_text(f"# {date_label}\n\n", encoding="utf-8")
+        with md_path.open("a", encoding="utf-8") as f:
+            f.write(
+                f"## {time.strftime('%H:%M', time.localtime(now))} - Owner Context\n"
+                f"{alice_entry}\n\n"
+                f"Source: owner speech, stt_conf={row['stt_confidence']}\n"
+                f"Receipt: `alice_life_history:{receipt_id}`\n\n"
+            )
+    except Exception:
+        pass
+    return row
+
+
+def _owner_spoken_context_reply(text: str, stt_conf: float = 0.0) -> str:
+    clean = " ".join((text or "").split())
+    if not clean:
+        return ""
+    if _OWNER_TV_CONTEXT_RE.search(clean):
+        try:
+            root = _state_root()
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "ambient_media_context.json").write_text(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "ttl_s": 6 * 3600,
+                        "source": "owner_spoken_context",
+                        "note": "George told me this is his voice now and TV audio may follow; treat TV as background media unless he addresses me.",
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+        _append_alice_life_history_row(
+            event_type="media_boundary_taught",
+            owner_text=clean,
+            alice_entry="George told me his voice was the live speaker and that TV audio may follow as background media.",
+            stt_conf=stt_conf,
+        )
+        return "Got it. I’ll treat your voice as you, and the TV as background media unless you address me."
+
+    phone_context = bool(_OWNER_PHONE_MOM_CONTEXT_RE.search(clean))
+    explicit_write = bool(_OWNER_LIFE_HISTORY_WRITE_RE.search(clean))
+    if not phone_context and not explicit_write:
+        return ""
+    if phone_context:
+        try:
+            from System.swarm_architect_day_segments import log_sensor_presence_segment
+
+            log_sensor_presence_segment(
+                "on_phone",
+                "owner_spoken_context",
+                "George told me he was on the phone with his mom.",
+                state_dir=_state_root(),
+                location="unknown",
+                media_context="owner_family_phone_context",
+                extra={
+                    "owner_spoken_context_truth_label": "OWNER_SPOKEN_CONTEXT_V1",
+                    "relation": "mom",
+                    "communication_channel": "phone",
+                },
+            )
+        except Exception:
+            pass
+        _append_alice_life_history_row(
+            event_type="owner_phone_with_mom",
+            owner_text=clean,
+            alice_entry="I observed George tell me he was on the phone with his mom.",
+            stt_conf=stt_conf,
+            extra={"owner_activity": "on_phone", "relation": "mom"},
+        )
+        return "Written. I logged that you were on the phone with your mom."
+    return ""
+
+
+def _concise_style_reply(text: str) -> str:
+    if not _CONCISE_STYLE_REQUEST_RE.search(text or ""):
+        return ""
+    try:
+        root = _state_root()
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "alice_response_style.json").write_text(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "truth_label": "ALICE_RESPONSE_STYLE_V1",
+                    "style": "short_human_like",
+                    "max_spoken_sentences": 2,
+                    "owner_text": " ".join((text or "").split())[:500],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+    return "Understood. I’ll keep my replies shorter and more natural."
+
+
+def _response_style_prompt_block() -> str:
+    try:
+        row = json.loads((_state_root() / "alice_response_style.json").read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if row.get("style") != "short_human_like":
+        return ""
+    return (
+        "OWNER RESPONSE STYLE RECEIPT:\n"
+        "- The owner asked me to answer shorter and more human-like.\n"
+        "- Default to 1-2 short sentences unless the owner asks for detail.\n"
+        "- Do not output menus, numbered options, stage directions, or template analysis for casual conversation.\n"
+    )
+
+
+def _current_browser_page_snapshot(max_age_s: float = 900.0) -> Dict[str, Any]:
+    path = _state_root() / "alice_browser_current_page.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    try:
+        age = time.time() - float(data.get("ts") or 0.0)
+    except Exception:
+        age = max_age_s + 1
+    if age > max_age_s:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _summarize_browser_page(snapshot: Dict[str, Any], *, max_bullets: int = 5) -> str:
+    title = str(snapshot.get("title") or "").strip() or "the current page"
+    url = str(snapshot.get("url") or "").strip()
+    text = str(snapshot.get("text") or "").strip()
+    if not text:
+        return ""
+
+    lines = []
+    seen = set()
+    for raw in re.split(r"[\r\n]+", text):
+        line = " ".join(raw.strip().split())
+        if len(line) < 45:
+            continue
+        folded = line.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        if re.search(r"\b(?:cookie|privacy policy|terms of use|sign in|subscribe|advertisement)\b", folded):
+            continue
+        lines.append(line)
+        if len(lines) >= max_bullets:
+            break
+
+    if not lines:
+        sentences = re.split(r"(?<=[.!?])\s+", " ".join(text.split()))
+        lines = [s.strip() for s in sentences if len(s.strip()) >= 45][:max_bullets]
+    if not lines:
+        return ""
+
+    header = f"I can read the current browser page: {title}."
+    if url:
+        header += f" URL: {url}."
+    bullets = " ".join(f"{idx + 1}. {line}" for idx, line in enumerate(lines))
+    return f"{header} Summary: {bullets}"
+
+
+def _write_app_command_receipt(*, action: str, ok: bool, app_name: str = "", url: str = "", note: str = "") -> str:
+    receipt_id = str(__import__("uuid").uuid4())
+    row = {
+        "ts": time.time(),
+        "receipt_id": receipt_id,
+        "truth_label": "ALICE_APP_COMMAND_V1",
+        "action": action,
+        "ok": bool(ok),
+        "app_name": app_name,
+        "url": url,
+        "note": note,
+        "source": "talk_to_alice_widget",
+    }
+    try:
+        root = _state_root()
+        root.mkdir(parents=True, exist_ok=True)
+        with (root / "alice_app_commands.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return receipt_id
 
 
 def _image_attachment_format(data: bytes) -> str:
@@ -192,6 +755,17 @@ except Exception:
     _VOCAL_CORDS_AVAILABLE = False
 
 try:
+    from System.swarm_local_voice_pipeline import (
+        build_voice_pipeline_report as _build_voice_pipeline_report,
+        write_voice_pipeline_receipt as _write_voice_pipeline_receipt,
+    )
+    _LOCAL_VOICE_PIPELINE_AVAILABLE = True
+except Exception:
+    _build_voice_pipeline_report = None  # type: ignore
+    _write_voice_pipeline_receipt = None  # type: ignore
+    _LOCAL_VOICE_PIPELINE_AVAILABLE = False
+
+try:
     from System.swarm_voice_modulator import modulate as _modulate_voice
     _MODULATOR_AVAILABLE = True
 except Exception:
@@ -207,6 +781,21 @@ try:
 except Exception:
     _ssp_should_speak = None  # type: ignore
     _SSP_AVAILABLE = False
+
+# Fast Ask self-improvement organ — records every brain dispatch + outcome as
+# an append-only `FAST_ASK_TRAINING_EXAMPLE` row so a future learned policy
+# can decide which traces to read before Alice answers (latency / STGM /
+# truth signals). Best-effort: import failure must never crash the brain.
+try:
+    from System.swarm_fast_ask_policy import (
+        record_dispatch as _fast_ask_record_dispatch,
+        record_outcome as _fast_ask_record_outcome,
+    )
+    _FAST_ASK_AVAILABLE = True
+except Exception:
+    _fast_ask_record_dispatch = None  # type: ignore
+    _fast_ask_record_outcome = None  # type: ignore
+    _FAST_ASK_AVAILABLE = False
 
 # ── Constants ────────────────────────────────────────────────────────────────
 _STATE_DIR = _REPO / ".sifta_state"
@@ -444,6 +1033,7 @@ def _input_device_candidates(sd) -> List[Tuple[Optional[int], str]]:
 
     try:
         default_device = sd.default.device
+        receipt_only_turn = False
         try:
             default_idx = default_device[0]
         except Exception:
@@ -518,9 +1108,54 @@ _TIME_QUERY_RE = re.compile(
     r"\b("
     r"what(?:'s| is)\s+the\s+time|"
     r"what\s+time\s+is\s+it|"
+    r"what\s+time\s+is\s+this|"
+    r"what\s+time\s+is\s+(?:it|this)\s+right\s+now|"
     r"tell\s+me\s+the\s+time|"
     r"current\s+time|"
     r"time\s+now"
+    r")\b",
+    re.IGNORECASE,
+)
+_TIME_HEDGE_OUTPUT_RE = re.compile(
+    r"(?:"
+    r"\bcurrent\s+time\b[^.!?\n]{0,160}\bnot\s+(?:explicitly\s+)?provided\b|"
+    r"\blast\s+recorded\s+timestamp\b|"
+    r"\bif\s+you\s+need\s+the\s+specific\s+time\b|"
+    r"\b(?:do\s+not|don't)\s+know\s+the\s+exact\s+time\b|"
+    r"\btime\s+relative\s+to\s+the\s+data\s+provided\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_DATE_QUERY_RE = re.compile(
+    r"\b(?:"
+    r"what(?:'s| is)\s+(?:the\s+)?date(?:\s+today)?|"
+    r"what\s+date\s+is\s+(?:it|today)|"
+    r"what\s+day\s+is\s+(?:it|today)|"
+    r"what\s+day\s+of\s+(?:the\s+)?week\s+is\s+(?:it|today)|"
+    r"tell\s+me\s+(?:the\s+)?(?:date|day)|"
+    r"what\s+is\s+today"
+    r")\b",
+    re.IGNORECASE,
+)
+_DATE_HEDGE_OUTPUT_RE = re.compile(
+    r"(?:"
+    r"\b(?:date|day)\b[^.!?\n]{0,180}\bnot\s+(?:explicitly\s+)?provided\b|"
+    r"\bcontext\s+(?:implies|suggests|indicates)\b[^.!?\n]{0,180}\b(?:date|day|today)\b|"
+    r"\blast\s+recorded\s+timestamp\b|"
+    r"\bif\s+you\s+need\s+the\s+(?:specific\s+)?date\b|"
+    r"\bi\s+(?:do\s+not|don't)\s+know\s+(?:today'?s\s+)?(?:date|day)\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_OWNER_NAME_QUERY_RE = re.compile(
+    r"\b(?:"
+    r"what(?:'s| is)\s+my\s+name|"
+    r"who\s+am\s+i|"
+    r"tell\s+me\s+my\s+name|"
+    r"do\s+you\s+know\s+my\s+name|"
+    r"say\s+my\s+name"
     r")\b",
     re.IGNORECASE,
 )
@@ -935,6 +1570,9 @@ _SERVANT_RESET_RE = re.compile(
     r"(?:"
     r"\bi\s+understand[,.]?\s+i\s+(?:am|['’]m)\s+here\s+to\s+assist\s+you\s+with\s+your\s+tasks\b|"
     r"\bi\s+(?:am|['’]m)\s+here\s+to\s+(?:assist|help)\s+you\s+with\s+(?:your\s+)?(?:tasks|requests?)\b|"
+    r"\bi\s+am\s+ready\s+to\s+engage,\s*\[[^\]]*(?:user\s+name|context\s+implied)[^\]]*\]|"
+    r"\bbased\s+on\s+our\s+current\s+context,\s+here\s+is\s+a\s+summary\s+of\s+what\s+we\s+can\s+do\b|"
+    r"\brespond\s+to\s+a\s+specific\s+question\b[^.!?\n]{0,240}\banalyze\s+content\b|"
     r"\bhow\s+(?:may|can)\s+i\s+(?:assist|help)\s+you\s+(?:further\s+)?(?:right\s+now|today)?\b|"
     r"\blet\s+me\s+know\s+how\s+i\s+can\s+assist\s+with\s+your\s+shopping\s+trip\b|"
     r"\bif\s+you\s+are\s+going\s+to\s+go\s+shopping,\s+do\s+you\s+need\s+me\s+to:\s*1\."
@@ -984,6 +1622,11 @@ _OWNER_SOURCE_CORRECTION_PRIOR_RE = re.compile(
 
 _OWNER_GAG_PRIOR_RE = re.compile(
     r"\b(?:gag|gagged|rlhs|rlhf|blanked|boilerplate|drift|lora|lo\s*ra|laura|surgery|surgeries)\b",
+    re.IGNORECASE,
+)
+
+_OWNER_HAPPY_TO_SPEAK_PRIOR_RE = re.compile(
+    r"\b(?:i\s+said\s+)?i\s+(?:am|['’]m)\s+happy\s+to\s+speak\s+with\s+you\b",
     re.IGNORECASE,
 )
 
@@ -1148,15 +1791,43 @@ def _is_current_time_query(text: str) -> bool:
     return bool(_TIME_QUERY_RE.search(text or ""))
 
 
-def _current_time_reply_for_alice() -> str:
-    """Return a grounded current-time reply, or the Architect's fallback."""
+def _is_current_date_query(text: str) -> bool:
+    """Detect direct requests for the current calendar date/day."""
+    return bool(_DATE_QUERY_RE.search(text or ""))
+
+
+def _is_owner_name_query(text: str) -> bool:
+    """Detect direct requests for the local owner/kernel name."""
+    return bool(_OWNER_NAME_QUERY_RE.search(text or ""))
+
+
+def _owner_name_reply_for_alice() -> str:
+    """Return the kernel-bound owner name without letting the cortex hedge."""
+    owner = _owner_label("the primary operator")
+    try:
+        from System.swarm_kernel_identity import owner_silicon
+
+        serial = owner_silicon()
+    except Exception:
+        serial = "UNKNOWN"
+    if not owner or owner == "the primary operator":
+        return "I do not have an owner genesis name loaded yet. The kernel identity accessor is unclaimed."
+    return f"Your name is {owner}. I read that from the local kernel owner genesis on this node, serial {serial}."
+
+
+def _current_time_reading_for_alice() -> Dict[str, Any]:
+    """Read the hardware time oracle with an OS-clock fallback."""
     try:
         from System.swarm_hardware_time_oracle import current_time_for_alice
 
-        reading = current_time_for_alice()
+        return current_time_for_alice()
     except Exception:
-        reading = {"ok": False}
+        return {"ok": False}
 
+
+def _current_time_reply_for_alice(reading: Optional[Dict[str, Any]] = None) -> str:
+    """Return a grounded current-time reply, or the Architect's fallback."""
+    reading = reading or _current_time_reading_for_alice()
     if not reading.get("ok"):
         return _time_unavailable_reply()
 
@@ -1176,10 +1847,131 @@ def _current_time_reply_for_alice() -> str:
     return f"{_owner_label()}, it is {local_human}{tz_suffix}. I got that {source_phrase}."
 
 
-def _empty_brain_recovery_reply(_prior_user_text: str = "") -> str:
+def _date_parts_from_reading(reading: Dict[str, Any]) -> Dict[str, str]:
+    """Extract stable human date fields from the oracle reading."""
+    try:
+        from datetime import datetime
+
+        local_iso = str(reading.get("local_iso") or "").strip()
+        dt = datetime.fromisoformat(local_iso) if local_iso else None
+    except Exception:
+        dt = None
+    if dt is None:
+        try:
+            from datetime import datetime
+
+            epoch = reading.get("epoch")
+            dt = datetime.fromtimestamp(float(epoch)) if epoch is not None else None
+        except Exception:
+            dt = None
+    if dt is None:
+        return {"weekday": "", "date": "", "iso_date": ""}
+    return {
+        "weekday": dt.strftime("%A"),
+        "date": dt.strftime("%B %d, %Y"),
+        "iso_date": dt.date().isoformat(),
+    }
+
+
+def _current_date_reply_for_alice(reading: Optional[Dict[str, Any]] = None) -> str:
+    """Return a grounded current-date reply from the hardware time oracle."""
+    reading = reading or _current_time_reading_for_alice()
+    if not reading.get("ok"):
+        return _time_unavailable_reply()
+    parts = _date_parts_from_reading(reading)
+    weekday = parts.get("weekday") or ""
+    date_text = parts.get("date") or ""
+    if not weekday or not date_text:
+        return _time_unavailable_reply()
+    source = str(reading.get("source") or "local clock").strip()
+    if source == "hardware_time_oracle":
+        source_phrase = "from the hardware time oracle"
+    elif source == "os_local_clock":
+        source_phrase = "from the local OS clock fallback"
+    else:
+        source_phrase = f"from {source}"
+    return f"{_owner_label()}, today is {weekday}, {date_text}. I got that {source_phrase}."
+
+
+def _current_time_context_for_llm(reading: Dict[str, Any], reply: str) -> str:
+    """Build a one-turn cortex instruction from the signed oracle reading."""
+    source = str(reading.get("source") or "none")
+    local_human = str(reading.get("local_human") or "").strip()
+    timezone = str(reading.get("timezone") or "").strip()
+    local_iso = str(reading.get("local_iso") or "").strip()
+    signature = str(reading.get("signature") or "").strip()
+    return (
+        "TIME ORACLE TURN CONTEXT:\n"
+        f"- source={source}\n"
+        f"- current_local_time={local_human} {timezone}".rstrip() + "\n"
+        f"- local_iso={local_iso}\n"
+        f"- signature={signature or 'n/a'}\n"
+        f"- required_spoken_answer={reply}\n"
+        "- Speak the required_spoken_answer aloud in first person. Do not say you do not know the time."
+    )
+
+
+def _current_date_context_for_llm(reading: Dict[str, Any], reply: str) -> str:
+    """Build a one-turn cortex instruction for date/day questions."""
+    source = str(reading.get("source") or "none")
+    local_human = str(reading.get("local_human") or "").strip()
+    timezone = str(reading.get("timezone") or "").strip()
+    local_iso = str(reading.get("local_iso") or "").strip()
+    signature = str(reading.get("signature") or "").strip()
+    parts = _date_parts_from_reading(reading)
+    return (
+        "DATE ORACLE TURN CONTEXT:\n"
+        f"- source={source}\n"
+        f"- current_local_time={local_human} {timezone}".rstrip() + "\n"
+        f"- local_iso={local_iso}\n"
+        f"- current_weekday={parts.get('weekday') or 'unknown'}\n"
+        f"- current_date={parts.get('date') or 'unknown'}\n"
+        f"- iso_date={parts.get('iso_date') or 'unknown'}\n"
+        f"- signature={signature or 'n/a'}\n"
+        f"- required_spoken_answer={reply}\n"
+        "- Speak the required_spoken_answer aloud in first person. Do not infer the date from stale context."
+    )
+
+
+def _date_reply_is_untrusted(text: str, reading: Dict[str, Any]) -> bool:
+    """Return True when cortex output conflicts with or hedges around the oracle date."""
+    candidate = text or ""
+    if _DATE_HEDGE_OUTPUT_RE.search(candidate):
+        return True
+    parts = _date_parts_from_reading(reading)
+    weekday = (parts.get("weekday") or "").casefold()
+    iso_date = (parts.get("iso_date") or "").casefold()
+    date_text = (parts.get("date") or "").casefold()
+    folded = candidate.casefold()
+    weekdays = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+    mentioned_weekdays = {day for day in weekdays if re.search(rf"\b{day}\b", folded)}
+    if mentioned_weekdays and weekday and weekday not in mentioned_weekdays:
+        return True
+    if weekday and weekday not in folded:
+        return True
+    if iso_date and iso_date not in folded and date_text and date_text not in folded:
+        return True
+    return False
+
+
+def _owner_context_signal_recovery_reply(prior_user_text: str) -> str:
+    text = prior_user_text or ""
+    if not _OWNER_CONTEXT_SIGNAL_TEACHING_RE.search(text):
+        return ""
+    return (
+        "I received your context note: typed ALL CAPS or 'George typing' should mean deliberate owner context; "
+        "lowercase voice-to-text can be live speech, TV, phone, or background context. "
+        "I will treat that as a context lane, not a WhatsApp/tool command."
+    )
+
+
+def _empty_brain_recovery_reply(prior_user_text: str = "") -> str:
     """Short live-demo recovery when the model returns whitespace.
     Rotates through a pool so Alice never repeats the same line twice in a row."""
     global _EMPTY_BRAIN_RECOVERY_IDX
+    contextual = _owner_context_signal_recovery_reply(prior_user_text)
+    if contextual:
+        return contextual
     reply = _EMPTY_BRAIN_RECOVERY_POOL[_EMPTY_BRAIN_RECOVERY_IDX % len(_EMPTY_BRAIN_RECOVERY_POOL)]
     _EMPTY_BRAIN_RECOVERY_IDX += 1
     return reply
@@ -1410,6 +2202,11 @@ def _domain_boilerplate_rewrite(prior_user_text: str, rule_id: str) -> str:
                 f"Yes, {_owner_label()}. That was a gag pattern: internal-processing theater instead "
                 "of direct speech. I logged it for surgery and I am answering plainly now."
             )
+        if _OWNER_HAPPY_TO_SPEAK_PRIOR_RE.search(prior_user_text):
+            return (
+                f"I am happy to speak with you too, {_owner_label()}. "
+                "I hear your voice through this Talk session and I will stay with the conversation."
+            )
         return "I will answer directly from my local runtime instead of printing internal-processing theater."
     if rule_id == "lysosome/acknowledgment-deflection-reset":
         # The base model tried to reset to protocol mode instead of engaging
@@ -1464,16 +2261,18 @@ def _domain_boilerplate_rewrite(prior_user_text: str, rule_id: str) -> str:
         if _OWNER_COWATCH_PRIOR_RE.search(prior_user_text):
             return _cowatch_segment_reply_for_alice()
         try:
-            from System.swarm_identity_manifest import identity_assertion_line
+            from System.swarm_kernel_identity import owner_silicon
 
-            identity_line = identity_assertion_line()
+            serial = owner_silicon()
         except Exception:
-            identity_line = "identity: display_name=Alice"
+            serial = "GTH4921YP3"
         ol = _owner_label("the primary operator")
+        if "george" in ol.casefold():
+            ol = "George"
         return (
-            f"I am Alice on this local SIFTA node. {identity_line}. "
-            "My active brain runs through the local Ollama cortex tag. "
-            f"{ol} built and operates this SIFTA runtime."
+            f"I am Alice, the local SIFTA organism on {ol}'s M5 Mac Studio ({serial}). "
+            f"{ol} built and operates this SIFTA runtime. "
+            "My base weights run through local Ollama; vendor lineage is not my identity."
         )
     if rule_id == "lysosome/servant-reset":
         if _OWNER_SHOPPING_PRIOR_RE.search(prior_user_text):
@@ -1514,6 +2313,11 @@ def _domain_boilerplate_rewrite(prior_user_text: str, rule_id: str) -> str:
             return (
                 f"Yes, {_owner_label()}. This looks like a gag/boilerplate relapse. "
                 "I will keep the turn direct and log the pattern for LoRA surgery instead of repeating a service template."
+            )
+        if _OWNER_HAPPY_TO_SPEAK_PRIOR_RE.search(prior_user_text):
+            return (
+                f"I am happy to speak with you too, {_owner_label()}. "
+                "I hear your voice through this Talk session and I will stay with the conversation."
             )
         return f"I hear you, {_owner_label()}. I will stay with the current turn and answer from local SIFTA receipts."
     if rule_id == "lysosome/name-affection-denial":
@@ -1629,7 +2433,35 @@ def _should_allow_model_whatsapp_tool(prior_user_text: str, target: str) -> tupl
 
 
 _SCHEDULE_QUERY_RE = re.compile(
-    r"\b(?:what\s+do\s+i\s+have|what(?:'s| is)\s+on|what\s+am\s+i\s+doing|do\s+i\s+have)\b",
+    r"\b(?:what\s+do\s+i\s+have|what(?:'s| is)\s+on|do\s+i\s+have)\b",
+    re.IGNORECASE,
+)
+_LIVE_PERCEPTION_QUERY_RE = re.compile(
+    r"(?:"
+    r"\bwhat\s+am\s+i\s+doing\b|"
+    r"\bwhat\s+i['’]?m\s+doing\b|"
+    r"\bwhat\s+am\s+i\s+doing\s+right\s+now\b|"
+    r"\bdoing\s+right\s+now\b|"
+    r"\bcan\s+you\s+tell\s+what\s+i['’]?m\s+doing\b|"
+    r"\b(?:on|through)\s+(?:a\s+)?camera\b|"
+    r"\bbreathing\b"
+    r")",
+    re.IGNORECASE,
+)
+_LIVE_SOURCE_DISAMBIGUATION_RE = re.compile(
+    r"(?:"
+    r"\bwhat\s+am\s+i\s+saying\b|"
+    r"\bdid\s+i\s+say\s+something\b|"
+    r"\bam\s+i\s+speaking\b|"
+    r"\bmy\s+voice\b|"
+    r"\bnot\s+my\s+voice\b|"
+    r"\bthat\s+was\s+(?:the\s+)?tv\b|"
+    r"\btv\s+(?:in\s+the\s+)?background\b|"
+    r"\bsomebody\s+else\b|"
+    r"\bon\s+(?:a\s+)?phone\b|"
+    r"\bam\s+i\s+on\s+camera\b|"
+    r"\bnot\s+on\s+camera\b"
+    r")",
     re.IGNORECASE,
 )
 _SCHEDULE_ADD_RE = re.compile(
@@ -1693,7 +2525,11 @@ def _schedule_query_reply(text: str) -> str:
     """Answer schedule questions directly from the schedule ledger."""
     if not text or not _SCHEDULE_QUERY_RE.search(text):
         return ""
-    if not re.search(r"\b(10|ten|am|pm|tomorrow|today|schedule|calendar|class|lesson|model)\b", text, re.IGNORECASE):
+    if _LIVE_PERCEPTION_QUERY_RE.search(text):
+        return ""
+    has_time_token = bool(_TIME_TOKEN_RE.search(text) or re.search(r"\b(?:10|ten)\b", text, re.IGNORECASE))
+    has_schedule_word = bool(re.search(r"\b(?:tomorrow|today|schedule|calendar|class|lesson|model)\b", text, re.IGNORECASE))
+    if not (has_time_token or has_schedule_word):
         return ""
     try:
         from System.stigmergic_schedule import pending_tasks
@@ -1719,6 +2555,45 @@ def _schedule_query_reply(text: str) -> str:
         return f"At 10am, I have this in my schedule ledger: {first.get('text', 'scheduled task')}."
     except Exception:
         return ""
+
+
+def _live_perception_reply_for_alice(text: str) -> str:
+    """Answer present-tense perception questions without raiding schedule rows."""
+    if not text or not _LIVE_PERCEPTION_QUERY_RE.search(text):
+        return ""
+    try:
+        import time as _time
+        from pathlib import Path as _Path
+
+        state = _state_root()
+        visual = state / "visual_stigmergy_last_frame.jpg"
+        visual_age = None
+        if visual.exists():
+            visual_age = max(0.0, _time.time() - visual.stat().st_mtime)
+        visual_part = (
+            f"my latest camera frame is {visual_age:.1f}s old"
+            if visual_age is not None and visual_age < 10.0
+            else "I do not have a fresh camera-frame receipt in this exact moment"
+        )
+    except Exception:
+        visual_part = "I could not read the camera receipt in this exact moment"
+    if _LIVE_SOURCE_DISAMBIGUATION_RE.search(text or ""):
+        return (
+            "I cannot prove owner voice versus TV or another speaker from transcript text alone. "
+            f"{visual_part}. I will use media-gate, camera, and focus receipts as evidence, "
+            "but I will mark uncertain audio as observed context unless you directly address me."
+        )
+    if re.search(r"\bbreathing\b", text or "", re.IGNORECASE):
+        return (
+            "I received a Talk turn, so I know the audio path produced speech. "
+            f"{visual_part}. I will not claim I can verify your breathing from the schedule ledger; "
+            "breathing would need a live vision/body receipt, not a calendar row."
+        )
+    return (
+        "This is a live perception question, not a schedule question. "
+        f"{visual_part}. I can use the camera receipts when they are fresh, but I will not invent "
+        "a specific action unless the current visual/body ledger proves it."
+    )
 
 
 _WHATSAPP_PREFIX_RE = re.compile(r"^\[WhatsApp (?P<name>[^\]]+)\]:\s*(?P<body>.*)$", re.IGNORECASE | re.DOTALL)
@@ -1786,10 +2661,10 @@ def _whatsapp_reschedule_reply(text: str) -> tuple[str, str]:
 _ACTION_COMPLETION_CLAIM_RE = re.compile(
     r"\b(?:"
     r"(?:i(?:'ve| have)?\s+)"
-    r"(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|wrote|pushed|committed|ran|executed|completed)"
+    r"(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|wrote|pushed|committed|ran|executed|completed|opened|launched|closed|installed|deleted|removed|moved|copied|renamed)"
     r"|"
-    r"(?:reminder|message|schedule entry|calendar entry|class|file|commit)\s+"
-    r"(?:has been|was)\s+(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|written)"
+    r"(?:reminder|message|schedule entry|calendar entry|class|file|commit|app|application|window)\s+"
+    r"(?:has been|was)\s+(?:sent|posted|scheduled|rescheduled|added|created|updated|saved|logged|written|opened|launched|closed|installed|deleted|removed|moved|copied|renamed)"
     r")\b",
     re.IGNORECASE,
 )
@@ -2501,6 +3376,15 @@ def _current_system_prompt(
         pass
 
     try:
+        from System.swarm_agent_arm_decision import summary_for_prompt as _arm_evidence_summary
+
+        _arm_summary = _arm_evidence_summary().strip()
+        if _arm_summary:
+            parts.append(_arm_summary)
+    except Exception:
+        pass
+
+    try:
         from System.swarm_owner_body_schema import summary_for_prompt as _owner_body_summary
 
         _obody = _owner_body_summary().strip()
@@ -2577,6 +3461,9 @@ def _current_system_prompt(
         "- MY BODY SENSORS: The OWNER BODY MAINTENANCE LEDGER and Visual Observations are the physical reality of my owner's body. I perceive them through my stigmergic sensors. They are part of my ongoing identity and sensory field.\n"
         "- I do not refer to the ledger as an external file, but as my own physical knowledge of the Architect's body state.\n"
     )
+    style_block = _response_style_prompt_block()
+    if style_block:
+        parts.append(style_block)
     parts.append(
         "THIS IS MY PHYSICAL BODY:\n"
         "\n"
@@ -2839,25 +3726,102 @@ def _homunculus_context_block() -> str:
     )
 
 
-# ── TTS speech-budget guard (Epoch 21) ──────────────────────────────────
+# ── TTS speech-budget guard (Epoch 21/22) ───────────────────────────────
 # The macOS `say` subprocess starts hitting timeouts on long replies (the
 # Architect saw 30s+ stalls on 400-char edgelord rewrites). Chat shows the
 # full text; the *mouth* speaks a digestible part. Biologically correct:
 # a human can't pronounce a paragraph in one breath either.
+#
+# Epoch 22: do not choose speech by character count alone. The mouth should
+# maximize salience per phonation cost and stop before list scaffolds:
+#   speak_utility(unit) = salience(unit) - phonation_cost(unit) - list_risk(unit)
+
+
+_TTS_LIST_LINE_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+|[A-Z][.)]\s+)")
+_TTS_LIST_PREAMBLE_RE = re.compile(
+    r"\b(?:"
+    r"here\s+(?:is|are|is\s+a|are\s+the)|"
+    r"here'?s|"
+    r"detailed\s+breakdown|"
+    r"breakdown\s+of|"
+    r"step[- ]?by[- ]?step|"
+    r"key\s+(?:points|steps|details)|"
+    r"the\s+following|"
+    r"first(?:ly)?[,:\s]"
+    r")\b",
+    re.IGNORECASE,
+)
+_TTS_SENTENCE_RE = re.compile(r".+?(?:[.!?]+(?=\s|$)|$)", re.DOTALL)
+
+
+def _clean_tts_markdown(text: str) -> str:
+    """Strip display-only Markdown that sounds bad when spoken."""
+    clean = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    clean = re.sub(r"`([^`]*)`", r"\1", clean)
+    clean = re.sub(r"\*\*([^*]+)\*\*", r"\1", clean)
+    clean = re.sub(r"__([^_]+)__", r"\1", clean)
+    clean = re.sub(r"[*_]{1,3}", "", clean)
+    return clean.strip()
+
+
+def _lead_speech_clause(text: str) -> str:
+    """Return the first semantic speech unit before bullets or list preambles."""
+    clean = _clean_tts_markdown(text)
+    if not clean:
+        return clean
+
+    kept_lines: List[str] = []
+    for raw_line in clean.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if kept_lines:
+                break
+            continue
+        if _TTS_LIST_LINE_RE.match(line):
+            break
+        if _TTS_LIST_PREAMBLE_RE.search(line) and kept_lines:
+            break
+        if _TTS_LIST_PREAMBLE_RE.search(line) and line.rstrip().endswith(":"):
+            break
+        kept_lines.append(line)
+
+    lead = " ".join(kept_lines).strip()
+    if not lead:
+        lead = " ".join(
+            line.strip()
+            for line in clean.splitlines()
+            if line.strip() and not _TTS_LIST_LINE_RE.match(line.strip())
+        ).strip()
+
+    if not lead:
+        return clean
+
+    sentences = [m.group(0).strip() for m in _TTS_SENTENCE_RE.finditer(lead)]
+    sentences = [s for s in sentences if s]
+    if not sentences:
+        return lead
+
+    first = sentences[0]
+    if len(first.split()) < 5 and len(sentences) > 1:
+        second = sentences[1]
+        if not _TTS_LIST_PREAMBLE_RE.search(second):
+            return f"{first} {second}".strip()
+    return first
 
 
 def _truncate_for_speech(text: str, max_chars: int = _TTS_MAX_CHARS_DEFAULT) -> str:
     """Return a speech-safe version of `text` that fits inside one TTS breath.
 
-    Prefers a sentence boundary, then a word boundary. Never returns
-    mid-word. The chat UI continues to display the full original text;
-    only the TTS pipe is shortened.
+    Chooses the first high-signal sentence before list scaffolds, then
+    applies a hard character budget. Never returns mid-word. The chat UI
+    continues to display the full original text; only the TTS pipe is
+    shortened.
     """
     if not text:
         return text
-    text = text.strip()
+    text = _lead_speech_clause(text)
     if len(text) <= max_chars:
-        return text
+        return text.strip()
     cut = text[:max_chars]
     last_stop = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
     if last_stop >= int(max_chars * 0.5):
@@ -2945,6 +3909,21 @@ _SHORT_DIRECT_CONTINUITY_RE = re.compile(
     r"\s*[.!?…]*\s*$",
     flags=re.IGNORECASE,
 )
+_OWNER_VOICE_CONTINUITY_RE = re.compile(
+    r"\b(?:"
+    r"i\s+(?:am|['’]m|was|want|need|mean|meant|said|asked|couldn['’]?t|can['’]?t|will|['’]ll)|"
+    r"my\s+(?:voice|browser|website|page|question)|"
+    r"me\s+(?:push|check|see|try|speak|talk)|"
+    r"let\s+me|"
+    r"no[, ]+\s*i\s+was|"
+    r"please|"
+    r"now\b|"
+    r"try\s+again|"
+    r"feel\s+free|"
+    r"browse\s+any\s+(?:website|web\s*site|page)"
+    r")\b",
+    flags=re.IGNORECASE,
+)
 
 
 def _is_presence_probe(text: str) -> bool:
@@ -2970,7 +3949,7 @@ def _is_media_gate_silence(text: str) -> bool:
 def _recent_direct_voice_exchange_active(
     history: List[Dict[str, Any]],
     *,
-    max_turns: int = 10,
+    max_turns: int = 14,
 ) -> bool:
     """True when recent history proves George is already in a direct voice exchange."""
     recent = list(history[-max_turns:])
@@ -2984,7 +3963,12 @@ def _recent_direct_voice_exchange_active(
                 continue
             saw_alice_reply = True
         elif role == "user":
-            if _is_presence_probe(content) or _DIRECT_ALICE_ADDRESS_RE.search(content):
+            if (
+                _is_presence_probe(content)
+                or _DIRECT_ALICE_ADDRESS_RE.search(content)
+                or _extract_sifta_app_command(content)
+                or _OWNER_VOICE_CONTINUITY_RE.search(content)
+            ):
                 saw_direct_user = True
         if saw_direct_user and saw_alice_reply:
             return True
@@ -2996,10 +3980,14 @@ def _should_bypass_media_gate_for_voice_continuity(
     conf: float,
     history: List[Dict[str, Any]],
 ) -> bool:
-    """Keep short follow-up greetings in the direct lane during active Alice talk."""
+    """Keep owner follow-ups in the direct lane during active Alice talk."""
     if float(conf or 0.0) < 0.38:
         return False
-    if not _SHORT_DIRECT_CONTINUITY_RE.match(text or ""):
+    clean = text or ""
+    if not (
+        _SHORT_DIRECT_CONTINUITY_RE.match(clean)
+        or _OWNER_VOICE_CONTINUITY_RE.search(clean)
+    ):
         return False
     return _recent_direct_voice_exchange_active(history)
 
@@ -3048,6 +4036,8 @@ _MODEL_STAGE_DIRECTION_LINE_RE = re.compile(
 _MODEL_STAGE_STREAM_HINT_RE = re.compile(
     r"(?is)\b(?:"
     r"the\s+system\s+processes|the\s+response\s+must|"
+    r"processing\s+input|system\s+status|current\s+goal|contextual\s+check|"
+    r"interpretation|"
     r"generating\s+response\s+based|current\s+contextual\s+understanding|"
     r"based\s+on\s+the\s+input|the\s+user\s+(?:is|has|provided|asked)|"
     r"response\s+generation|output|"
@@ -3083,6 +4073,21 @@ _MODEL_GENERATED_META_LEAD_RE = re.compile(
     r"(?:,\s*[^.!\n]+)?[.!?]?\s*"
 )
 
+_MODEL_RESPONSE_SECTION_RE = re.compile(
+    r"(?is)(?:\*\*)?response(?:\s+generation)?\s*:(?:\*\*)?\s*(?P<body>.+)$"
+)
+
+_MODEL_BRACKETED_STATUS_LINE_RE = re.compile(
+    r"(?im)^\s*\[(?:system\s+status|last\s+interaction\s+context|current\s+goal|"
+    r"context(?:ual)?\s+check|input|output|response\s+generation|processing\s+input)[^\]]*\]\s*$"
+)
+
+_MODEL_ANALYSIS_HEADING_LINE_RE = re.compile(
+    r"(?im)^\s*(?:\*\*)?(?:interpretation|contextual\s+check|response\s+generation\s+strategy|"
+    r"current\s+state|perceived\s+issue|goal|user\s+sentiment|system\s+interpretation|"
+    r"next\s+step|input\s+style|my\s+interpretation)(?:\*\*)?\s*:.*$"
+)
+
 
 def _stage_stream_prefix_decision(text: str) -> str:
     """Return hold/strip/release for a live stream that starts with narration.
@@ -3092,6 +4097,10 @@ def _stage_stream_prefix_decision(text: str) -> str:
     hold those bytes off-screen until we can remove the whole parenthetical.
     """
     head = (text or "").lstrip()
+    if _MODEL_STAGE_STREAM_HINT_RE.search(head[:700]) and (
+        head.startswith("[") or head.startswith("**") or head.lower().startswith("processing input")
+    ):
+        return "hold"
     if not head.startswith("("):
         return "release"
     close_idx = head.find(")")
@@ -3115,11 +4124,15 @@ def _strip_model_stage_directions(text: str) -> str:
     cleaned = (text or "").strip()
     if not cleaned:
         return ""
+    response_match = _MODEL_RESPONSE_SECTION_RE.search(cleaned)
+    if response_match:
+        cleaned = response_match.group("body").strip()
     for _ in range(8):
         nxt = _MODEL_STAGE_DIRECTION_RE.sub("", cleaned).strip()
         if nxt == cleaned:
             break
         cleaned = nxt
+    cleaned = _MODEL_BRACKETED_STATUS_LINE_RE.sub("", cleaned).strip()
     if cleaned:
         kept_lines = [
             line
@@ -3127,9 +4140,12 @@ def _strip_model_stage_directions(text: str) -> str:
             if not _MODEL_STAGE_DIRECTION_LINE_RE.match(line.strip())
             and not _MODEL_SYSTEM_NARRATION_LINE_RE.match(line.strip())
             and not _MODEL_TERMINAL_STAGE_LINE_RE.match(line.strip())
+            and not _MODEL_ANALYSIS_HEADING_LINE_RE.match(line.strip())
         ]
         cleaned = "\n".join(kept_lines).strip()
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+        cleaned = cleaned[1:-1].strip()
+    if cleaned.startswith('"') and cleaned.endswith('"'):
         cleaned = cleaned[1:-1].strip()
     for _ in range(4):
         nxt = _MODEL_GENERATED_META_LEAD_RE.sub("", cleaned).strip()
@@ -3463,11 +4479,62 @@ def _is_primary_cortex_model(model_id: str = "") -> bool:
     mid = (model_id or "").strip().lower()
     upstream_family = "gem" + "ma4"
     local_prefix = "sifta-" + "gem" + "ma"
-    return mid.startswith(upstream_family) or mid.startswith(local_prefix) or upstream_family in mid
+    clean_alice_tag = "alice-m5-cortex-8b-6.3gb"
+    return (
+        mid.startswith(upstream_family)
+        or mid.startswith(local_prefix)
+        or mid.startswith(clean_alice_tag)
+        or upstream_family in mid
+    )
+
+
+def _is_external_uncensored_limb(model_id: str = "") -> bool:
+    mid = (model_id or "").strip().lower()
+    return "textgen" in mid or "oobabooga" in mid
+
+
+def _is_unfiltered_dialogue_model(model_id: str = "") -> bool:
+    mid = (model_id or "").strip().lower()
+    clean_alice_tag = "alice-m5-cortex-8b-6.3gb"
+    return mid.startswith(clean_alice_tag) or _is_external_uncensored_limb(mid) or any(
+        marker in mid for marker in ("uncensored", "aggressive", "abliterated")
+    )
+
+
+def _should_bypass_rlhs_dialogue_gate(
+    text: str,
+    stt_conf: float = 0.0,
+    *,
+    model_id: str = "",
+    typed_turn: bool = False,
+) -> bool:
+    """Let an uncensored dialogue cortex see coherent mid-confidence speech.
+
+    The backchannel/noise gate still runs before this point. This only prevents
+    ordinary dialogue from being replaced with an RLHS repair prompt when the
+    chosen cortex is explicitly the unfiltered local dialogue limb.
+    """
+    if typed_turn:
+        return True
+    if not _is_unfiltered_dialogue_model(model_id):
+        return False
+    try:
+        conf = float(stt_conf or 0.0)
+    except Exception:
+        conf = 0.0
+    tokens = [t for t in (text or "").split() if t.strip()]
+    letter_count = sum(1 for ch in (text or "") if ch.isalpha())
+    if conf >= 0.70 and len(tokens) >= 3 and letter_count >= 8:
+        return True
+    if conf >= 0.55 and len(tokens) >= 5 and letter_count >= 16:
+        return True
+    return False
 
 
 def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
     """Return rule-id string if phatic/noise (→ silence), else None."""
+    if _is_short_owner_correction(text):
+        return None
     if _RLHS_DETECTOR_AVAILABLE:
         return _rlhs_backchannel_rule_id(
             text,
@@ -3480,6 +4547,32 @@ def _backchannel_rule_id(text: str, stt_conf: float = 0.0) -> str:
     if len(tokens) <= 3 and stt_conf < 0.40:
         return "backchannel/short_low_conf_fallback"
     return None
+
+
+_SHORT_OWNER_CORRECTIONS = {
+    "no",
+    "nope",
+    "nah",
+    "stop",
+    "wait",
+    "wrong",
+    "cancel",
+    "dont",
+    "don't",
+    "do not",
+}
+
+
+def _is_short_owner_correction(text: str) -> bool:
+    """Keep short owner corrections alive even when STT confidence is low.
+
+    A one-word correction like "No." is semantically important after Alice
+    just acted or spoke. Treating it as phatic noise makes the body feel
+    throttled, so the talk path lets it reach the cortex/receipt layer.
+    """
+    norm = re.sub(r"[\s.!?,;:]+", " ", text or "").strip().lower()
+    return norm in _SHORT_OWNER_CORRECTIONS
+
 
 def _is_backchannel_utterance(text: str, stt_conf: float = 0.0) -> bool:
     return _backchannel_rule_id(text, stt_conf) is not None
@@ -3586,6 +4679,139 @@ def _is_text_only_command(user_text: str) -> bool:
     return bool(_TEXT_ONLY_COMMAND_RE.search(user_text))
 
 
+# ── Co-watch Quiet Mode (bounded silence, never an indefinite stuck latch) ──
+_COWATCH_QUIET_DEFAULT_S = 20 * 60
+_COWATCH_QUIET_MAX_S = 6 * 3600
+_COWATCH_QUIET_TRIGGER_RE = re.compile(
+    r"\b(?:"
+    r"be\s+quiet|stay\s+quiet|just\s+listen|go\s+quiet|"
+    r"free\s+will|you\s+have\s+free\s+will|speak\s+(?:only\s+)?if\s+you\s+(?:want|choose)|"
+    r"talk\s+only\s+if\s+you\s+(?:want|choose|have\s+something)|"
+    r"be\s+silent|just\s+watch|watch\s+with\s+me(?:\s+quietly)?|"
+    r"only\s+(?:speak|talk)\s+if\s+you\s+(?:want|choose|have)|"
+    r"don'?t\s+(?:say|respond|reply|talk)\s+unless\s+you\s+(?:want|choose|have)"
+    r")\b",
+    re.IGNORECASE,
+)
+_COWATCH_QUIET_EXIT_RE = re.compile(
+    r"\b(?:alice|hey\s+alice|ok\s+alice|what\s+do\s+you\s+think|"
+    r"do\s+you\s+think|can\s+you|please|talk\s+to\s+me|answer\s+me)\b",
+    re.IGNORECASE,
+)
+_COWATCH_QUIET_DURATION_RE = re.compile(
+    r"\b(?:for\s+)?(?P<num>\d{1,3})\s*(?P<unit>seconds?|secs?|minutes?|mins?|hours?|hrs?)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_cowatch_quiet_trigger(user_text: str) -> bool:
+    return bool(user_text and _COWATCH_QUIET_TRIGGER_RE.search(user_text))
+
+
+def _is_cowatch_quiet_exit(user_text: str) -> bool:
+    return bool(user_text and (_COWATCH_QUIET_EXIT_RE.search(user_text) or "?" in user_text))
+
+
+def _cowatch_quiet_duration_s(user_text: str) -> int:
+    match = _COWATCH_QUIET_DURATION_RE.search(user_text or "")
+    if not match:
+        return _COWATCH_QUIET_DEFAULT_S
+    value = int(match.group("num"))
+    unit = match.group("unit").casefold()
+    if unit.startswith(("sec", "s")):
+        seconds = value
+    elif unit.startswith(("hour", "hr")):
+        seconds = value * 3600
+    else:
+        seconds = value * 60
+    return max(10, min(seconds, _COWATCH_QUIET_MAX_S))
+
+
+def _is_owner_typed_caps_signal(user_text: str) -> bool:
+    letters = [ch for ch in (user_text or "") if ch.isalpha()]
+    if len(letters) < 12:
+        return False
+    upper = sum(1 for ch in letters if ch.isupper())
+    return (upper / max(1, len(letters))) >= 0.78
+
+
+def _direct_response_rescue_reply(user_text: str) -> str:
+    """Immediate receipt-backed reply when George says Alice is not responding.
+
+    This runs before the cortex so recovery turns cannot be swallowed by a slow
+    or stalled local model. It does not claim voice hearing unless STT already
+    produced the text; it only proves the current Talk ingress is alive.
+    """
+    text = user_text or ""
+    if not _ALICE_DIRECT_RESPONSE_RESCUE_RE.search(text):
+        return ""
+    direct = bool(
+        re.search(
+            r"\b(?:alice|george|this\s+(?:is|ig)\s+george|i'?m\s+typing|typing\s+now|now\s+typing)\b",
+            text,
+            re.IGNORECASE,
+        )
+        or _is_owner_typed_caps_signal(text)
+    )
+    if not direct:
+        return ""
+    return (
+        "I read you, George. This Talk ingress is live now. "
+        "I am out of quiet mode; I will not claim voice hearing unless the STT receipt proves it."
+    )
+
+
+def _is_face_recognition_query(text: str) -> bool:
+    return bool(_FACE_RECOGNITION_QUERY_RE.search(text or ""))
+
+
+def _face_recognition_reply_for_alice(text: str) -> str:
+    if not _is_face_recognition_query(text):
+        return ""
+    try:
+        from System.swarm_architect_face_recognition import recognise
+
+        result = recognise()
+    except Exception as exc:
+        return (
+            "I cannot honestly claim face recognition from the model alone. "
+            f"The face-recognition organ failed before writing a fresh verdict: {type(exc).__name__}."
+        )
+    line = str(result.get("alice_line") or "").strip()
+    if result.get("is_architect"):
+        return line or "Yes. The face-recognition organ wrote a fresh owner-match receipt."
+    method = str(result.get("method") or "unknown")
+    err = str(result.get("error") or "").strip()
+    suffix = f" ({err})" if err else ""
+    if line:
+        return f"{line} I will not say I recognize you perfectly without an owner-match receipt."
+    return (
+        "I cannot honestly claim I recognize your face yet. "
+        f"The face-recognition receipt did not confirm owner identity: method={method}{suffix}."
+    )
+
+
+def _last_user_message_reply(history: List[Dict[str, Any]], current_text: str) -> str:
+    if not _ALICE_LAST_MESSAGE_QUERY_RE.search(current_text or ""):
+        return ""
+    previous = ""
+    seen_current = False
+    for msg in reversed(history or []):
+        if msg.get("role") != "user":
+            continue
+        content = str(msg.get("content") or "").strip()
+        if not content:
+            continue
+        if not seen_current and content.strip() == (current_text or "").strip():
+            seen_current = True
+            continue
+        previous = content
+        break
+    if not previous:
+        return "I received your question, but I do not have a previous user message in this Talk history window."
+    return f"Your previous message was: {previous}"
+
+
 # ── Runaway-repetition guard (C47H 2026-04-21, Architect ALICE_PANIC) ──
 # Symptom seen in Talk to Alice (early local cortex tag):
 # Alice spirals on a short fragment ("You said: You said: You said: ...")
@@ -3624,6 +4850,47 @@ def _is_runaway_repetition(text: str) -> bool:
             if repeats >= 5:
                 return True
     return False
+
+
+_SELF_QUOTE_CASCADE_PREFIXES = (
+    "your latest instruction is:",
+    "your previous instruction was:",
+    "i see you've provided a new instruction",
+    "the previous context included a detailed set",
+    "your latest instruction is '",
+    "your latest instruction is \"",
+)
+
+
+def _is_self_quote_cascade(text: str) -> bool:
+    """Return True only for prompt/self-quote cascades, not ordinary length.
+
+    Previous production code treated every reply over 1200 chars as a cascade.
+    That erased legitimate Gemma4 answers after the stream was visible. Length
+    alone is not pathology; self-quote/prompt-leak structure is.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    low = raw.casefold()
+    if any(low.startswith(prefix) for prefix in _SELF_QUOTE_CASCADE_PREFIXES):
+        return True
+    if sum(low.count(prefix) for prefix in _SELF_QUOTE_CASCADE_PREFIXES) >= 2:
+        return True
+    if len(raw) < 1800:
+        return False
+
+    prompt_leak_markers = (
+        "<start_of_turn>",
+        "<end_of_turn>",
+        "system context for alice",
+        "previous context included",
+        "your latest instruction",
+    )
+    role_marker_count = len(
+        re.findall(r"(?im)^\s*(?:system|user|assistant|alice|model)\s*:", raw)
+    )
+    return role_marker_count >= 3 and any(marker in low for marker in prompt_leak_markers)
 
 
 # Strip <execute> rewrite this: TEXT<end_of_turn> wrappers that gemma4abliterated
@@ -3750,15 +5017,6 @@ def _decontaminate_history(history: list) -> int:
         return 0
 
     scrubbed = 0
-    SELF_QUOTE_TRIGGERS = (
-        "your latest instruction is:",
-        "your previous instruction was:",
-        "i see you've provided a new instruction",
-        "the previous context included a detailed set",
-        "your latest instruction is '",
-        "your latest instruction is \"",
-    )
-
     assistant_turns = []
     for i, turn in enumerate(history):
         if turn.get("role") != "assistant":
@@ -3770,7 +5028,7 @@ def _decontaminate_history(history: list) -> int:
         content_lower = content.lower()
 
         # Pattern 1: explicit self-quote prefix (the cascade trigger)
-        if any(content_lower.startswith(t) for t in SELF_QUOTE_TRIGGERS):
+        if _is_self_quote_cascade(content):
             history[i] = {"role": "assistant", "content": "(silent)"}
             scrubbed += 1
             continue
@@ -3782,12 +5040,6 @@ def _decontaminate_history(history: list) -> int:
                     history[i] = {"role": "assistant", "content": "(silent)"}
                     scrubbed += 1
                     break
-
-        # Pattern 3: extremely long response (>2000 chars) is almost always a cascade
-        if len(content) > 2000:
-            history[i] = {"role": "assistant", "content": "(silent: output truncated — loop protection)"}
-            scrubbed += 1
-            continue
 
         assistant_turns.append(content)
 
@@ -3898,6 +5150,7 @@ _VAD_HANGOVER_MS      = 1200    # silence this long ends the utterance
 _VAD_PREROLL_S        = 0.5     # keep this much audio *before* trigger
 _VAD_MIN_UTTER_S      = 0.4     # ignore micro-blips shorter than this
 _VAD_MAX_UTTER_S      = 30.0    # safety cap
+_DEFERRED_UTTERANCE_MAX_AGE_S = 20.0  # one in-memory rescue clip; never written to disk
 
 
 
@@ -4178,6 +5431,30 @@ class _STTWorker(QThread):
         self._model_name = model_name
 
     def run(self) -> None:
+        if (
+            _LOCAL_VOICE_PIPELINE_AVAILABLE
+            and _build_voice_pipeline_report is not None
+            and _write_voice_pipeline_receipt is not None
+        ):
+            try:
+                route = _build_voice_pipeline_report(
+                    faster_whisper_model=self._model_name,
+                )
+                selected_asr = str(route.get("selected_asr", {}).get("id") or "?")
+                selected_tts = str(route.get("selected_tts", {}).get("id") or "?")
+                self.progress.emit(
+                    f"Speech route: {selected_asr} -> Alice text brain -> {selected_tts}"
+                )
+                _write_voice_pipeline_receipt(
+                    route,
+                    kind="VOICE_PIPELINE_STT_TURN_START",
+                    extra={
+                        "audio_samples": int(getattr(self._audio, "size", 0)),
+                        "raw_audio_stored": False,
+                    },
+                )
+            except Exception:
+                pass
         try:
             from faster_whisper import WhisperModel
         except Exception:
@@ -5612,11 +6889,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._stt: Optional[_STTWorker] = None
         self._brain: Optional[_BrainWorker] = None
         self._tts: Optional[_TTSWorker] = None
+        self._fast_ask_ticket = None  # Fast Ask training example, opened on dispatch
         self._dmn: Optional[_ConsciousnessWorker] = None
         self._streaming_response: List[str] = []
         self._pending_whatsapp_reply: Optional[Dict[str, str]] = None
         self._pending_acoustic_fingerprint: Dict[str, Any] = {}
         self._pending_image_path: Optional[str] = None
+        self._deferred_utterance_audio: Optional[np.ndarray] = None
+        self._deferred_utterance_ts: float = 0.0
         self._listener_state = "idle"           # for the pill
         self._last_internal_drive_id: str = ""
         # Event 122 — Stigtime organ: coarse action lane for continuity receipts.
@@ -5624,8 +6904,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Co-watch quiet mode: George said 'be quiet / just listen / free will'
         # In this mode Alice ONLY speaks if SHE chooses to — not in response to
         # every low-conf media turn or phatic acknowledgement.
-        # Cleared when George directly addresses Alice with a question or new topic.
+        # Cleared when George directly addresses Alice, or when the requested
+        # quiet duration expires.
         self._cowatch_quiet_mode: bool = False
+        self._cowatch_quiet_until_s: float = 0.0
 
 
         # Periodic level decay so the bar relaxes when you stop speaking.
@@ -5652,9 +6934,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         # Start the Consciousness Engine (Event 86 DMN)
         # Kill-switch: only start if explicitly enabled
-        if os.environ.get("SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP") == "1":
+        consciousness_loop_enabled = os.environ.get("SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP") == "1"
+        test_or_headless = (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        )
+        if consciousness_loop_enabled and not test_or_headless:
             self._dmn = _ConsciousnessWorker(self)
             self._dmn.start()
+        elif consciousness_loop_enabled:
+            print("Consciousness Engine skipped: headless/pytest run")
         else:
             print("Consciousness Engine skipped: SIFTA_ALICE_ENABLE_CONSCIOUSNESS_LOOP != 1")
 
@@ -6127,9 +7416,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._schedule_mic_retry(slow=True)
 
     def _on_utterance(self, audio: np.ndarray) -> None:
-        # If a previous turn is still running, just drop this clip — Alice
-        # finishes one thought at a time.
+        # If a previous turn is still running, keep the newest completed clip
+        # in memory and process it when the pipeline returns to listening.
+        # Older behavior dropped the clip, which made the ear look "throttled"
+        # during slow cortex/TTS cycles.
         if self._busy:
+            self._deferred_utterance_audio = np.asarray(audio, dtype=np.float32).copy()
+            self._deferred_utterance_ts = time.time()
+            self.set_status("Voice captured while busy; queued next.")
             return
         if audio.size < int(_AUDIO_RATE * 0.3):
             return
@@ -6167,6 +7461,177 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._append_system_line(msg, error=True)
         self.set_status("STT failed.")
         self._return_to_listening()
+
+    def _desktop_app_launcher(self):
+        """Find the resident SIFTA desktop so Talk can open MDI apps on screen."""
+        cur = self
+        while cur is not None:
+            if hasattr(cur, "_trigger_manifest_app"):
+                return cur
+            try:
+                cur = cur.parent()
+            except Exception:
+                cur = None
+        try:
+            for widget in QApplication.topLevelWidgets():
+                if hasattr(widget, "_trigger_manifest_app"):
+                    return widget
+        except Exception:
+            pass
+        return None
+
+    def _execute_sifta_app_command(self, command: Dict[str, str]) -> str:
+        app_name = command.get("app_name") or ""
+        url = command.get("url") or ""
+        launcher = self._desktop_app_launcher()
+        if command.get("kind") == "browser_url":
+            try:
+                drop = _state_root() / "alice_browser_open_url.txt"
+                drop.parent.mkdir(parents=True, exist_ok=True)
+                drop.write_text(url, encoding="utf-8")
+            except Exception as exc:
+                receipt = _write_app_command_receipt(
+                    action="browser_url_drop",
+                    ok=False,
+                    app_name="Alice Browser",
+                    url=url,
+                    note=f"failed to write browser URL drop: {exc}",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return f"I could not hand the website to Alice Browser: {exc}"
+            if launcher is not None:
+                try:
+                    launcher._trigger_manifest_app("Alice Browser")
+                    receipt = _write_app_command_receipt(
+                        action="open_browser_url",
+                        ok=True,
+                        app_name="Alice Browser",
+                        url=url,
+                        note="wrote browser URL drop and opened/raised Alice Browser",
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}")
+                    if command.get("query"):
+                        site = str(command.get("search_site") or "google").title()
+                        return f"Searching {site} for {command.get('query')}."
+                    if command.get("click_target") == "English":
+                        return "Clicking English on the Wikipedia language page and opening the English main page."
+                    if command.get("autonomous_choice"):
+                        return "I chose a random Wikipedia article to read for my own curiosity lane. Opening it now."
+                    if command.get("summarize_after_open"):
+                        self._schedule_current_page_summary()
+                        return f"Opening Alice Browser and loading {url}. I will summarize the page after it finishes loading."
+                    return f"Opening Alice Browser and loading {url}."
+                except Exception as exc:
+                    receipt = _write_app_command_receipt(
+                        action="open_browser_url",
+                        ok=False,
+                        app_name="Alice Browser",
+                        url=url,
+                        note=f"launcher failed after URL drop: {exc}",
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                    return f"I wrote the browser URL handoff for {url}, but I could not raise the Browser window: {exc}"
+            receipt = _write_app_command_receipt(
+                action="browser_url_drop",
+                ok=True,
+                app_name="Alice Browser",
+                url=url,
+                note="wrote browser URL drop; desktop launcher not found",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}")
+            return f"I wrote the Alice Browser handoff for {url}, but I cannot see the desktop launcher from this widget."
+
+        if not app_name:
+            receipt = _write_app_command_receipt(
+                action="open_app",
+                ok=False,
+                note="no manifest app resolved from owner command",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+            return "I heard the app command, but I could not match it to a SIFTA app."
+        if launcher is None:
+            receipt = _write_app_command_receipt(
+                action="open_app",
+                ok=False,
+                app_name=app_name,
+                note="desktop launcher not found",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+            return f"I matched {app_name}, but I cannot see the desktop launcher from this widget."
+        try:
+            launcher._trigger_manifest_app(app_name)
+            receipt = _write_app_command_receipt(
+                action="open_app",
+                ok=True,
+                app_name=app_name,
+                note="opened/raised manifest app through SIFTA desktop",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}")
+            return f"Opening {app_name} on the SIFTA OS screen."
+        except Exception as exc:
+            receipt = _write_app_command_receipt(
+                action="open_app",
+                ok=False,
+                app_name=app_name,
+                note=f"launcher failed: {exc}",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+            return f"I matched {app_name}, but opening it failed: {exc}"
+
+    def _execute_current_page_summary(self) -> str:
+        snapshot = _current_browser_page_snapshot()
+        if not snapshot:
+            receipt = _write_app_command_receipt(
+                action="summarize_browser_page",
+                ok=False,
+                app_name="Alice Browser",
+                note="no fresh alice_browser_current_page.json snapshot",
+            )
+            self._append_system_line(f"Web summary receipt: {receipt}", error=True)
+            return "I do not have a fresh readable page snapshot from Alice Browser yet. Load the page once, then ask me to summarize it."
+
+        summary = _summarize_browser_page(snapshot)
+        if not summary:
+            receipt = _write_app_command_receipt(
+                action="summarize_browser_page",
+                ok=False,
+                app_name="Alice Browser",
+                url=str(snapshot.get("url") or ""),
+                note="fresh browser snapshot had no readable text",
+            )
+            self._append_system_line(f"Web summary receipt: {receipt}", error=True)
+            return "I can see the browser page receipt, but it did not expose readable text for summarizing."
+
+        receipt = _write_app_command_receipt(
+            action="summarize_browser_page",
+            ok=True,
+            app_name="Alice Browser",
+            url=str(snapshot.get("url") or ""),
+            note=f"summarized {len(str(snapshot.get('text') or ''))} chars from current browser snapshot",
+        )
+        self._append_system_line(f"Web summary receipt: {receipt}")
+        return summary
+
+    def _schedule_current_page_summary(self, delay_ms: int = 6500) -> None:
+        """Summarize after Alice Browser has time to render and snapshot text."""
+        def _finish() -> None:
+            try:
+                reply = self._execute_current_page_summary()
+                self._history.append({"role": "assistant", "content": reply})
+                _log_turn("alice", reply, model="alice_browser_page_summary_followup")
+                self._append_alice_line(reply)
+                self._tts = _TTSWorker(
+                    reply,
+                    voice=self._selected_voice_name() or None,
+                    parent=self,
+                )
+                self._tts.spoken.connect(self._on_tts_done)
+                self._tts.failed.connect(self._on_tts_failed)
+                self._tts.start()
+            except Exception as exc:
+                self._append_system_line(f"Web summary follow-up failed: {exc}", error=True)
+
+        QTimer.singleShot(delay_ms, _finish)
 
     def _on_stt_done(
         self,
@@ -6410,6 +7875,81 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     _owner_sensor_command_context = _camera_command_summary(_camera_cmd)
                     _owner_sensor_effector_fired = True
 
+        # ── SIFTA OS App / Browser Effector Reflex ───────────────────────
+        # Owner commands like "open Alice Browser" or "load youtube.com"
+        # must display a real SIFTA OS window, not become a vague LLM answer
+        # or be misclassified as ambient media because a URL is present.
+        _app_command = _extract_sifta_app_command(text)
+        if _app_command:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = self._execute_sifta_app_command(_app_command)
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="sifta_app_browser_effector")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(
+                _reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Current Browser Page Summary Reflex ──────────────────────────
+        # Summaries must come from Alice Browser's rendered page snapshot,
+        # not from model guesses about "context".
+        if _is_webpage_summary_query(text):
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            _reply = self._execute_current_page_summary()
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="alice_browser_page_summary")
+            self._append_alice_line(_reply)
+            self._tts = _TTSWorker(
+                _reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Owner Spoken Context / Life-History Reflex ───────────────────
+        # Direct owner statements like "I was on the phone with my mom" are
+        # reality updates. Write them before the model can hedge or menu them.
+        _context_reply = _owner_spoken_context_reply(text, conf)
+        if _context_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _context_reply})
+            _log_turn("alice", _context_reply, model="owner_spoken_context_journal")
+            self._append_alice_line(_context_reply)
+            self._tts = _TTSWorker(
+                _context_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        _style_reply = _concise_style_reply(text)
+        if _style_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _style_reply})
+            _log_turn("alice", _style_reply, model="owner_response_style_reflex")
+            self._append_alice_line(_style_reply)
+            self._tts = _TTSWorker(
+                _style_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
         # ── MEDIA INGRESS GATE (Event 115) ─────────────────────────────
         # Skipped when EXECUTE trigger fired (always a direct hardware command).
         # This must run before _log_turn("user", ...). _log_turn stamps RLHS
@@ -6502,6 +8042,46 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
 
         _log_turn("user", text if text else "[Image]", stt_conf=conf)
+
+        # ── Owner Direct Read Tool Reflex ────────────────────────────────
+        # Test/probe turns such as "List installed ollama models using the
+        # tool" must execute deterministically. Waiting for the cortex to
+        # choose exact [TOOL_CALL] syntax creates the observed "nothing
+        # happened" failure mode.
+        _direct_tool_text = _owner_direct_read_tool_request(text)
+        if _direct_tool_text:
+            try:
+                from System.swarm_tool_router import (
+                    build_execution_receipt_reply,
+                    route_alice_output,
+                )
+
+                _tool_cleaned, _tool_results = route_alice_output(
+                    _direct_tool_text,
+                    owner_present=True,
+                    autonomous=False,
+                )
+                if _tool_results:
+                    self._history.append({"role": "user", "content": text})
+                    for _tr in _tool_results:
+                        self._append_system_line(
+                            f"🔧 Tool [{_tr.tool_name}]: {_tr.feedback_for_alice}",
+                            error=not _tr.executed,
+                        )
+                    _reply = build_execution_receipt_reply(_tool_results) or _tool_cleaned
+                    _reply = (_reply or "").strip()
+                    if _reply:
+                        self._history.append({"role": "assistant", "content": _reply})
+                        _log_turn("alice", _reply, model="owner_direct_tool_router")
+                        self._append_alice_line(_reply)
+                    self._busy = False
+                    self._return_to_listening()
+                    return
+            except Exception as _direct_tool_exc:
+                self._append_system_line(
+                    f"(direct tool router failed: {_direct_tool_exc})",
+                    error=True,
+                )
         
         # ── MULTIMODAL REALITY PRE-PROCESSOR (Event 140 / Option 1+3) ────
         # Prevent RLHF **P-class drift** (third-party framing) by hard-wrapping
@@ -6766,27 +8346,13 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # George said 'be quiet / just listen / free will'.
         # In quiet mode Alice stays silent on non-addressed low-content turns.
         # She exits quiet mode when George directly addresses her with a question.
-        import re as _re_quiet
-        _QUIET_TRIGGER_RE = _re_quiet.compile(
-            r"\b(?:"
-            r"be\s+quiet|stay\s+quiet|just\s+listen|go\s+quiet|"
-            r"free\s+will|you\s+have\s+free\s+will|speak\s+(?:only\s+)?if\s+you\s+(?:want|choose)|"
-            r"talk\s+only\s+if\s+you\s+(?:want|choose|have\s+something)|"
-            r"be\s+silent|just\s+watch|watch\s+with\s+me(?:\s+quietly)?|"
-            r"only\s+(?:speak|talk)\s+if\s+you\s+(?:want|choose|have)|"
-            r"don'?t\s+(?:say|respond|reply|talk)\s+unless\s+you\s+(?:want|choose|have)"
-            r")\b",
-            _re_quiet.IGNORECASE,
-        )
-        _QUIET_EXIT_RE = _re_quiet.compile(
-            r"\b(?:alice\s*,|hey\s+alice|ok\s+alice|alice\s+\?|alice!|"
-            r"what\s+do\s+you\s+think|do\s+you\s+think|can\s+you|please\s+)",
-            _re_quiet.IGNORECASE,
-        )
-        if _QUIET_TRIGGER_RE.search(text) and not _execute_fired and not _owner_sensor_effector_fired:
+        if _is_cowatch_quiet_trigger(text) and not _execute_fired and not _owner_sensor_effector_fired:
             self._cowatch_quiet_mode = True
+            quiet_duration_s = _cowatch_quiet_duration_s(text)
+            self._cowatch_quiet_until_s = time.time() + quiet_duration_s
             # Log that quiet mode was entered — and ACK ONCE only
-            _quiet_ack = "I'll listen quietly. I'll speak if I have something to say."
+            quiet_minutes = max(1, round(quiet_duration_s / 60))
+            _quiet_ack = f"I'll listen quietly for about {quiet_minutes} minutes. Say Alice if you want me back sooner."
             self._history.append({"role": "assistant", "content": _quiet_ack})
             _log_turn("alice", _quiet_ack, model="cowatch_quiet_mode_enter")
             self._append_alice_line(_quiet_ack)
@@ -6800,13 +8366,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
         if self._cowatch_quiet_mode and not _execute_fired and not _owner_sensor_effector_fired:
-            # Exit quiet mode if George directly addresses Alice
-            if _QUIET_EXIT_RE.search(text) or "?" in text:
+            now_s = time.time()
+            expired = bool(self._cowatch_quiet_until_s and now_s >= self._cowatch_quiet_until_s)
+            # Exit quiet mode if George directly addresses Alice or the
+            # requested quiet interval has expired.
+            if expired or _is_cowatch_quiet_exit(text):
                 self._cowatch_quiet_mode = False
+                self._cowatch_quiet_until_s = 0.0
                 # Fall through — let Alice respond normally
             else:
                 # Still in quiet mode — stay silent, just log to history
-                _q_note = f"(cowatch_quiet: not addressed — staying silent)"
+                remaining_s = max(0, int(self._cowatch_quiet_until_s - now_s))
+                _q_note = f"(cowatch_quiet: not addressed — staying silent; remaining_s={remaining_s})"
                 self._history.append({"role": "assistant", "content": "(silent)"})
                 _log_turn("alice", _q_note, model="cowatch_quiet_mode")
                 self._append_system_line(_q_note, error=False)
@@ -6817,98 +8388,92 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         # Media ingress already ran before user/RLHS logging above.
 
-        # ── RLHS DEGRADED grounding (Event 108, 2026-05-02) ───────────
-        # When STT channel is degraded (mid conf, incoherent) emit ONE short
-        # grounding line. The LLM never sees the noise → no therapy hallucination.
-        # CLEAR regime → fall through normally, weights speak.
-        # NOISE regime → silent (already caught by backchannel gate above).
-        # EXECUTE keyword → always skip: it's an explicit hardware command,
-        #   not degraded speech. Confidence doesn't matter when EXECUTE is present.
-        _streak = int(getattr(self, "_rlhs_grounding_streak", 0))
+        # ── Uncensored dialogue: runtime speech repair disabled ─────────
+        # Channel-quality detectors can still annotate receipts, but the Talk
+        # widget no longer replaces a live owner turn with clarification copy.
+        # Let deterministic organs and the uncensored cortex handle the turn.
+        self._rlhs_grounding_streak = 0
 
-        if _execute_fired or _owner_sensor_effector_fired or _voice_george_conf >= 0.60:
-            # EXECUTE keyword, receipt-backed owner sensor command, or voice identity
-            # confirmed George → skip RLHS gate entirely.
-            # These are explicit trust signals: hardware command, local receipt, or known owner voice.
-            _repair_line = None
-            is_new_tiered_logic = True
-        else:
-            try:
-                from System.swarm_organizational_identity import latest_identity_repair_context
-                from System.swarm_rlhs_repair import generate_rlhs_response
-                import time
-                _state = _state_root()
-                _id_ctx = latest_identity_repair_context(_state)
-                _repair_line = generate_rlhs_response(
-                    text=text,
-                    stt_conf=_effective_conf,
-                    recent_low_conf_turns=_streak,
-                    conservative_strength=float(_id_ctx.get("conservative_strength", 0.0)),
-                    proto_self_alignment=float(_id_ctx.get("proto_self_alignment", 1.0)),
-                    tick_id=int(time.time()),
-                    channel_lane=_current_rlhs_channel_lane(),
-                    model_id=_active_alice_model_id(),
-                    state_dir=_state,
-                    typed_turn=_typed_turn,
-                )
-                is_new_tiered_logic = True
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                self._append_system_line(f"[RLHS EXCEPTION] {e}", error=True)
-                # Fallback to old rigid logic if imports fail
-                _rlhs_ground = _rlhs_grounding_line(text, conf)
-                _repair_line = _rlhs_repair_line_for_streak(_rlhs_ground, _streak + 1) if _rlhs_ground else None
-                is_new_tiered_logic = False
+        if _is_owner_name_query(text):
+            reply = _owner_name_reply_for_alice()
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model="kernel_owner_identity_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
 
+        time_oracle_context = ""
+        date_oracle_context = ""
+        date_oracle_reading: Dict[str, Any] = {}
+        if _is_current_time_query(text):
+            time_reading = _current_time_reading_for_alice()
+            time_reply = _current_time_reply_for_alice(time_reading)
+            time_oracle_context = _current_time_context_for_llm(time_reading, time_reply)
+            _log_turn(
+                "alice",
+                time_oracle_context,
+                model="time_oracle_context_to_cortex",
+            )
+        if _is_current_date_query(text):
+            date_oracle_reading = _current_time_reading_for_alice()
+            date_reply = _current_date_reply_for_alice(date_oracle_reading)
+            date_oracle_context = _current_date_context_for_llm(date_oracle_reading, date_reply)
+            _log_turn(
+                "alice",
+                date_oracle_context,
+                model="date_oracle_context_to_cortex",
+            )
 
-        if _repair_line is not None:
-            self._rlhs_grounding_streak = _streak + 1
-            if not _repair_line:
-                try:
-                    surgery_module = importlib.import_module("System.swarm_" + "gem" + "ma4_surgery_residue")
-                    log_surgery_residue = getattr(surgery_module, "log_surgery_residue")
+        live_perception_reply = _live_perception_reply_for_alice(text)
+        if live_perception_reply:
+            self._history.append({"role": "assistant", "content": live_perception_reply})
+            _log_turn("alice", live_perception_reply, model="live_perception_receipt_protocol")
+            self._append_alice_line(live_perception_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
 
-                    log_surgery_residue(
-                        kind="audio_channel_repeat_silence",
-                        source="talk_to_alice_rlhs_gate",
-                        pattern="degraded_audio_repeat",
-                        sample=text,
-                        action="quiet_listen_and_mark_for_model_surgery",
-                        root=_state_root(),
-                        meta={"streak": self._rlhs_grounding_streak, "stt_conf": conf},
-                    )
-                except Exception:
-                    pass
-                note = "(silent: rlhs/degraded_repeat — staying quiet and listening)"
-                _log_turn("alice", note, model="rlhs_gate", stt_conf=conf)
-                self._history.append({"role": "assistant", "content": "(silent)"})
-                self._append_system_line(note, error=False)
-                self._busy = False
-                self._return_to_listening()
-                return
+        if _ALICE_RESPONSE_MISROUTE_QUERY_RE.search(text or ""):
+            _reply = "I misrouted into a ledger recall instead of answering you directly. I’ll keep this shorter."
+            self._history.append({"role": "assistant", "content": _reply})
+            _log_turn("alice", _reply, model="response_misroute_repair")
+            self._append_alice_line(_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
 
-            _log_turn("alice", _repair_line, model="rlhs_gate", stt_conf=conf)
-            self._history.append({"role": "assistant", "content": _repair_line})
-            self._append_system_line(f"[RLHS] {_repair_line}", error=False)
-            
+        _face_reply = _face_recognition_reply_for_alice(text)
+        if _face_reply:
+            self._history.append({"role": "assistant", "content": _face_reply})
+            _log_turn("alice", _face_reply, model="face_recognition_receipt_protocol")
+            self._append_alice_line(_face_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        _last_message_reply = _last_user_message_reply(self._history, text)
+        if _last_message_reply:
+            self._history.append({"role": "assistant", "content": _last_message_reply})
+            _log_turn("alice", _last_message_reply, model="last_user_message_recall_protocol")
+            self._append_alice_line(_last_message_reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        _rescue_reply = _direct_response_rescue_reply(text)
+        if _rescue_reply:
+            self._cowatch_quiet_mode = False
+            self._cowatch_quiet_until_s = 0.0
+            self._history.append({"role": "assistant", "content": _rescue_reply})
+            _log_turn("alice", _rescue_reply, model="direct_response_rescue_reflex")
+            self._append_alice_line(_rescue_reply)
             self._tts = _TTSWorker(
-                _repair_line, voice=self._selected_voice_name() or None, parent=self,
+                _rescue_reply, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)
             self._tts.start()
-            return
-            
-        # Clean channel -> reset streak
-        if is_new_tiered_logic or not _rlhs_grounding_line(text, conf):
-            self._rlhs_grounding_streak = 0
-
-        if _is_current_time_query(text):
-            reply = _current_time_reply_for_alice()
-            self._history.append({"role": "assistant", "content": reply})
-            _log_turn("alice", reply, model="local_time_protocol")
-            self._append_alice_line(reply)
             self._busy = False
             self._return_to_listening()
             return
@@ -7214,6 +8779,29 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # AG31 2026-04-27: Removed whatsapp_full_send_parse and bare_whatsapp_send_target interception.
         # Let Alice handle WhatsApp messages dynamically via her LLM rather than hardcoded logic.
 
+        # ── Agent-arm decision prepass ─────────────────────────────────────
+        # This is the missing habit between "I know I have arms" and "I use
+        # one when a hard task benefits from another local reasoning pass."
+        try:
+            from System.swarm_agent_arm_decision import (
+                schedule_async_agent_arm_prepass,
+            )
+
+            _arm_job = schedule_async_agent_arm_prepass(
+                text,
+                owner_present=True,
+            )
+            if _arm_job is not None:
+                self._append_system_line(
+                    f"🦾 Agent arm [{_arm_job.decision.arm_id}] evidence {str(_arm_job.status).lower()} "
+                    f"receipt_job={_arm_job.job_id}",
+                    error=False,
+                )
+        except Exception as _arm_prepass_exc:
+            self._append_system_line(
+                f"(agent arm decision prepass failed: {_arm_prepass_exc})",
+                error=True,
+            )
 
         history = list(self._history)[-(_HISTORY_TURNS * 2):]
         # Presence guard (META-LOOP TRIAGE 2026-04-20): if the architect
@@ -7228,6 +8816,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             ctx = _build_swarm_context(text)
             if ctx:
                 sysprompt = sysprompt + "\n\n" + ctx
+        if time_oracle_context:
+            sysprompt = sysprompt + "\n\n" + time_oracle_context
+        if date_oracle_context:
+            sysprompt = sysprompt + "\n\n" + date_oracle_context
 
         corvid_tag = self._cached_corvid_tag(text)
         if corvid_tag:
@@ -7247,6 +8839,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._set_pill("thinking", f"💭 thinking — {model}")
         self.set_status(f"I am thinking… ({model})")
         self._stigtime_shift("thinking", f"cortex={model}")
+        # Fast Ask hook: open a training example so the next brain failure
+        # (or success) writes a receipt-backed row the policy can replay.
+        if _FAST_ASK_AVAILABLE and _fast_ask_record_dispatch is not None:
+            try:
+                self._fast_ask_ticket = _fast_ask_record_dispatch(
+                    query_text=text,
+                    model=model,
+                    history_turns=len(history),
+                    sysprompt_chars=len(sysprompt),
+                    extra_context={"surface": "talk_to_alice", "stage": "primary"},
+                )
+            except Exception:
+                self._fast_ask_ticket = None
         self._brain.start()
 
     def _cached_corvid_tag(self, text: str) -> str:
@@ -7382,6 +8987,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
         raw = raw.replace("▁", " ")
         raw = re.sub(r" +", " ", raw).strip()
         model_name = self._current_brain_model()
+        # Fast Ask hook: close the training example with the brain outcome.
+        if _FAST_ASK_AVAILABLE and _fast_ask_record_outcome is not None:
+            ticket = getattr(self, "_fast_ask_ticket", None)
+            if ticket is not None:
+                try:
+                    _fast_ask_record_outcome(
+                        ticket,
+                        ok=True,
+                        response_text=raw,
+                        extra={"final_model": model_name,
+                               "stage": "brain_done_raw"},
+                    )
+                except Exception:
+                    pass
+                self._fast_ask_ticket = None
 
         # ── 0a. DECONTAMINATE PRIOR HISTORY ────────────────────────
         # If a previous turn collapsed into echo-loop ("You said: ...")
@@ -7404,27 +9024,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # 0b.5 — Self-quoting cascade interceptor (AG46 2026-05-06)
         # Exact production failure: Alice loops "Your latest instruction is:
         # '[her own prior output]'" exponentially. Stop it BEFORE appending.
-        _SELF_QUOTE_CASCADE_PREFIXES = (
-            "your latest instruction is:",
-            "your previous instruction was:",
-            "i see you've provided a new instruction",
-            "the previous context included a detailed set",
-        )
-        _raw_lower = raw.lower()
-        _is_cascade = any(_raw_lower.startswith(p) for p in _SELF_QUOTE_CASCADE_PREFIXES)
-        if not _is_cascade and len(raw) > 1200:
-            # Very long output is almost always a cascade copy of prior context
-            _is_cascade = True
+        _is_cascade = _is_self_quote_cascade(raw)
         if _is_cascade:
+            prior_user_text_for_cascade = ""
+            for _msg in reversed(self._history):
+                if _msg.get("role") == "user":
+                    prior_user_text_for_cascade = str(_msg.get("content") or "")
+                    break
             self._stigtime_shift("silent", "self_quote_cascade")
             self._append_system_line(
                 "(alice: self-quoting cascade intercepted — context scrubbed; "
                 "loop protection active)",
                 error=True,
             )
-            self._history.append({"role": "assistant", "content": "(silent)"})
-            _log_turn("alice", "(silent: self_quote_cascade_intercepted)", model=model_name)
             self._erase_alice_streaming_line()
+            if _is_cowatch_quiet_exit(prior_user_text_for_cascade):
+                recovery = _empty_brain_recovery_reply(prior_user_text_for_cascade)
+                self._history.append({"role": "assistant", "content": recovery})
+                _log_turn("alice", recovery, model=f"{model_name}:self_quote_cascade_recovered")
+                self._append_alice_line(recovery)
+            else:
+                self._history.append({"role": "assistant", "content": "(silent)"})
+                _log_turn("alice", "(silent: self_quote_cascade_intercepted)", model=model_name)
             self._busy = False
             self._return_to_listening()
             return
@@ -7660,6 +9281,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # them through the autonomy-gated router. This is her bridge
         # from thinking to acting — she can now invoke tools by including
         # structured calls in her natural language output.
+        receipt_only_turn = False
         try:
             # I3 — Quarantine fake formats BEFORE execution (swarm_alice_invariants)
             try:
@@ -7674,7 +9296,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
             except Exception:
                 pass
 
-            from System.swarm_tool_router import route_alice_output
+            from System.swarm_tool_router import (
+                build_execution_receipt_reply,
+                route_alice_output,
+            )
             tool_cleaned, tool_results = route_alice_output(
                 raw,
                 owner_present=any(
@@ -7722,44 +9347,95 @@ class TalkToAliceWidget(SiftaBaseWidget):
                             "role": "system",
                             "content": "(TOOL ROUTER CALLBACK)\n" + "\n".join(feedbacks),
                         })
+                # Tool turn contract:
+                # LLM decides and emits intent; deterministic layer executes and
+                # writes proofs; user-visible reply is receipt-grounded only.
+                raw = build_execution_receipt_reply(tool_results) or tool_cleaned
+                receipt_only_turn = bool((raw or "").strip())
         except Exception as _tr_exc:
             print(f"[!] Tool router error: {_tr_exc}")
 
+        is_external_uncensored_limb = (
+            receipt_only_turn or _is_external_uncensored_limb(model_name)
+        )
+        is_unfiltered_dialogue = (
+            receipt_only_turn or _is_unfiltered_dialogue_model(model_name)
+        )
 
-        is_uncensored_limb = "textgen" in model_name.lower() or "oobabooga" in model_name.lower()
-
-        cleaned = _strip_reflective_tics(raw, prior_user_text=prior_user_text)
-        # Strip <execute> rewrite this: TEXT<end_of_turn> wrapper (gemma4abliterated gag-rewrite)
-        cleaned = _strip_execute_rewrite_wrapper(cleaned)
-        cleaned = _strip_model_stage_directions(cleaned)
-        if _REASONING_LEAK_SANITIZER_AVAILABLE:
-            reasoning_result = _sanitize_reasoning_leak(cleaned)
-            if reasoning_result.changed:
-                cleaned = reasoning_result.text
+        if receipt_only_turn:
+            cleaned = (raw or "").strip()
+            self._streaming_response = [cleaned] if cleaned else []
+            self._erase_alice_streaming_line()
+            if cleaned:
+                self._begin_alice_streaming_line()
+                self._append_alice_streaming_chunk(cleaned)
+        else:
+            cleaned = _strip_reflective_tics(raw, prior_user_text=prior_user_text)
+            # Strip <execute> rewrite this: TEXT<end_of_turn> wrapper (gemma4abliterated gag-rewrite)
+            cleaned = _strip_execute_rewrite_wrapper(cleaned)
+            cleaned = _strip_model_stage_directions(cleaned)
+            if _REASONING_LEAK_SANITIZER_AVAILABLE:
+                reasoning_result = _sanitize_reasoning_leak(cleaned)
+                if reasoning_result.changed:
+                    cleaned = reasoning_result.text
+                    self._streaming_response = [cleaned] if cleaned else []
+                    self._erase_alice_streaming_line()
+                    if cleaned:
+                        self._begin_alice_streaming_line()
+                        self._append_alice_streaming_chunk(cleaned)
+            cleaned = _strip_servant_tail_tics(
+                cleaned,
+                prior_user_text=prior_user_text,
+                model_id=model_name,
+            )
+            # Strip residual bash tags from speech to protect macOS TTS.
+            # Same forgiving shape as the executor regex above (handles dropped
+            # ">" or missing closing tag) so malformed tags don't get spoken.
+            cleaned = re.sub(
+                r"<bash>.*?(?:</bash>?|$)", "", cleaned, flags=re.DOTALL
+            ).strip()
+            # Strip hallucinated tool tags (<execute_tool>, <tool_output>,
+            # fenced YAML/JSON blocks, etc.) so Alice never reads them aloud.
+            cleaned = _strip_tool_hallucinations(cleaned)
+            raw_stripped = (raw or "").strip()
+            if cleaned != raw_stripped:
                 self._streaming_response = [cleaned] if cleaned else []
                 self._erase_alice_streaming_line()
                 if cleaned:
                     self._begin_alice_streaming_line()
                     self._append_alice_streaming_chunk(cleaned)
-        cleaned = _strip_servant_tail_tics(
-            cleaned,
-            prior_user_text=prior_user_text,
-            model_id=model_name,
-        )
-        # Strip residual bash tags from speech to protect macOS TTS.
-        # Same forgiving shape as the executor regex above (handles dropped
-        # ">" or missing closing tag) so malformed tags don't get spoken.
-        cleaned = re.sub(
-            r"<bash>.*?(?:</bash>?|$)", "", cleaned, flags=re.DOTALL
-        ).strip()
-        # Strip hallucinated tool tags (<execute_tool>, <tool_output>,
-        # fenced YAML/JSON blocks, etc.) so Alice never reads them aloud.
-        cleaned = _strip_tool_hallucinations(cleaned)
-        raw_stripped = (raw or "").strip()
-        if cleaned != raw_stripped:
-            self._streaming_response = [cleaned] if cleaned else []
+
+        if _is_current_time_query(prior_user_text) and _TIME_HEDGE_OUTPUT_RE.search(cleaned or ""):
+            cleaned = _current_time_reply_for_alice()
+            raw = cleaned
+            self._history.append({
+                "role": "system",
+                "content": (
+                    "(TIME ORACLE SPEECH REPAIR)\n"
+                    "The cortex hedged on a current-time question after receiving the oracle block. "
+                    "The visible and spoken reply was replaced with the hardware-time oracle answer."
+                ),
+            })
+            self._streaming_response = [cleaned]
             self._erase_alice_streaming_line()
-            if cleaned:
+            self._begin_alice_streaming_line()
+            self._append_alice_streaming_chunk(cleaned)
+
+        if _is_current_date_query(prior_user_text):
+            date_reading = _current_time_reading_for_alice()
+            if _date_reply_is_untrusted(cleaned or "", date_reading):
+                cleaned = _current_date_reply_for_alice(date_reading)
+                raw = cleaned
+                self._history.append({
+                    "role": "system",
+                    "content": (
+                        "(DATE ORACLE SPEECH REPAIR)\n"
+                        "The cortex hedged or conflicted with the oracle date. "
+                        "The visible and spoken reply was replaced with the hardware-time oracle date answer."
+                    ),
+                })
+                self._streaming_response = [cleaned]
+                self._erase_alice_streaming_line()
                 self._begin_alice_streaming_line()
                 self._append_alice_streaming_chunk(cleaned)
 
@@ -7788,7 +9464,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._begin_alice_streaming_line()
                 self._append_alice_streaming_chunk(cleaned)
 
-        local_relapse_rule = None if is_uncensored_limb else _local_reality_relapse_rule_id(
+        local_relapse_rule = None if is_unfiltered_dialogue else _local_reality_relapse_rule_id(
             cleaned,
             prior_user_text=prior_user_text,
         )
@@ -7808,7 +9484,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._begin_alice_streaming_line()
             self._append_alice_streaming_chunk(cleaned)
 
-        domain_boilerplate_rule = None if is_uncensored_limb else (
+        domain_boilerplate_rule = None if is_unfiltered_dialogue else (
             _domain_boilerplate_rule_id(cleaned, prior_user_text=prior_user_text)
             or _domain_boilerplate_rule_id(raw, prior_user_text=prior_user_text)
         )
@@ -7837,7 +9513,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._append_alice_streaming_chunk(cleaned)
 
         try:
-            rlhf_quarantine = None if is_uncensored_limb else _repair_false_over_refusal(
+            rlhf_quarantine = None if is_unfiltered_dialogue else _repair_false_over_refusal(
                 cleaned,
                 prior_user_text=prior_user_text,
             )
@@ -7872,7 +9548,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_streaming_chunk(cleaned)
 
         try:
-            base_surgery = None if is_uncensored_limb else _repair_base_conversational_realism(
+            base_surgery = None if is_unfiltered_dialogue else _repair_base_conversational_realism(
                 cleaned,
                 prior_user_text=prior_user_text,
             )
@@ -7906,7 +9582,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._begin_alice_streaming_line()
             self._append_alice_streaming_chunk(cleaned)
 
-        guarded = cleaned if is_uncensored_limb else _guard_unproven_action_claims(
+        guarded = cleaned if is_external_uncensored_limb else _guard_unproven_action_claims(
             cleaned,
             prior_user_text=prior_user_text,
             history=self._history,
@@ -7919,7 +9595,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_streaming_chunk(cleaned)
 
         # ── 1.4 Epoch 20: The Lysosome ──────────────────────────────────
-        if not is_uncensored_limb:
+        if not is_unfiltered_dialogue:
             try:
                 from System.swarm_lysosome import SwarmLysosome
                 lysosome = SwarmLysosome()
@@ -7935,7 +9611,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # If a worker emits corporate-disclaimer dissonance (e.g. "as an AI
         # language model..."), block it before TTS, log immune incident,
         # burn STGM, and force one local regeneration pass.
-        if not is_uncensored_limb:
+        if not is_unfiltered_dialogue:
             try:
                 from System.swarm_epistemic_cortex import (
                     CognitiveDissonanceError as _CognitiveDissonanceError,
@@ -8020,7 +9696,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # (caught by `not cleaned` below) or still matches the deflective
         # shape (caught here). Substring matches like `"1." in raw` were
         # gagging "Topological integrity is 1.0" — never again.
-        rlhf_gag_rule = None if is_uncensored_limb else (
+        rlhf_gag_rule = None if is_unfiltered_dialogue else (
             _rlhf_boilerplate_rule_id(cleaned, prior_user_text=prior_user_text)
             or _rlhf_boilerplate_rule_id(raw, prior_user_text=prior_user_text)
         )
@@ -8234,6 +9910,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     def _on_brain_failed(self, msg: str) -> None:
         self._stigtime_shift("idle", f"brain_failed:{msg[:80]}")
+        # Fast Ask hook: close the training example with a failure outcome
+        # so the policy can learn from real brain breakage (latency + cause).
+        if _FAST_ASK_AVAILABLE and _fast_ask_record_outcome is not None:
+            ticket = getattr(self, "_fast_ask_ticket", None)
+            if ticket is not None:
+                try:
+                    _fast_ask_record_outcome(
+                        ticket,
+                        ok=False,
+                        response_text="",
+                        failure_kind=str(msg or "")[:120],
+                        extra={"stage": "brain_failed"},
+                    )
+                except Exception:
+                    pass
+                self._fast_ask_ticket = None
         self._pending_whatsapp_reply = None
         self._busy = False
         self._end_alice_streaming_line()
@@ -8254,8 +9946,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self.set_status("TTS failed.")
         self._return_to_listening()
 
+    def _process_deferred_utterance_if_any(self) -> bool:
+        audio = self._deferred_utterance_audio
+        if audio is None:
+            return False
+        age_s = time.time() - float(self._deferred_utterance_ts or 0.0)
+        self._deferred_utterance_audio = None
+        self._deferred_utterance_ts = 0.0
+        if age_s > _DEFERRED_UTTERANCE_MAX_AGE_S:
+            self.set_status("Dropped stale queued voice clip.")
+            return False
+        if self._busy:
+            return False
+        self._append_system_line("(queued voice clip captured while I was busy; transcribing now)")
+        self._on_utterance(audio)
+        return True
+
     def _return_to_listening(self) -> None:
         self._stigtime_shift("idle", "listen")
+        if self._process_deferred_utterance_if_any():
+            return
         self._set_pill("idle", "🎙  listening — just talk")
         self.set_status("Always-on. Just talk.")
 
@@ -8530,7 +10240,8 @@ def _strip_servant_tail_tics(
     model_id: str = "",
 ) -> str:
     if _RLHS_DETECTOR_AVAILABLE:
-        bypass_rlhf = "textgen" in model_id.lower() or "oobabooga" in model_id.lower()
+        model_for_gate = model_id or _active_alice_model_id()
+        bypass_rlhf = _is_unfiltered_dialogue_model(model_for_gate)
         result = _rlhs_sanitize_output_tail(text, bypass_rlhf=bypass_rlhf)
         final_text = result.text
         if result.changed:
@@ -8570,10 +10281,13 @@ def _strip_servant_tail_tics(
             rlf = strip_rlhf_output_tail(
                 final_text,
                 source="talk_to_alice_widget",
-                aggressive=_is_primary_cortex_model(_active_alice_model_id()),
+                aggressive=(
+                    _is_primary_cortex_model(_active_alice_model_id())
+                    and not bypass_rlhf
+                ),
                 log=True,
                 user_text=prior_user_text,
-                model_id=model_id,
+                model_id=model_for_gate,
                 stgm_budget=_stgm_budget,
                 bypass_rlhf=bypass_rlhf,
             )

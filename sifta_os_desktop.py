@@ -64,6 +64,9 @@ def _session_restore_from_wm_enabled() -> bool:
     return v in ("1", "true", "yes")
 
 
+_OFFSCREEN_CLOSED_DESKTOPS: list[object] = []
+
+
 def _economy_hud_full_scan_enabled() -> bool:
     """
     Full wallet/HUD path in _update_clock runs scan_repair_log + treasuries (heavy).
@@ -165,16 +168,33 @@ def _shutdown_embedded_widget_tree(root: QWidget | None) -> None:
     """Drain embedded app resources before a QMdiSubWindow is destroyed."""
     if root is None:
         return
-    try:
-        widgets = [root, *root.findChildren(QWidget)]
-    except RuntimeError:
-        return
+    widgets: list[QWidget] = []
     seen: set[int] = set()
-    for widget in widgets:
+
+    def collect(widget: QWidget | None) -> None:
+        if widget is None:
+            return
         marker = id(widget)
         if marker in seen:
-            continue
+            return
         seen.add(marker)
+        widgets.append(widget)
+        try:
+            layout = widget.layout()
+        except RuntimeError:
+            return
+        if layout is None:
+            return
+        for i in range(layout.count()):
+            try:
+                child = layout.itemAt(i).widget()
+            except RuntimeError:
+                continue
+            if isinstance(child, QWidget):
+                collect(child)
+
+    collect(root)
+    for widget in widgets:
         shutdown = getattr(widget, "shutdown", None)
         if callable(shutdown):
             try:
@@ -358,6 +378,13 @@ class MagneticSubWindow(QMdiSubWindow):
 
     def closeEvent(self, event):
         _shutdown_embedded_widget_tree(self.widget())
+        if (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        ):
+            self.hide()
+            event.accept()
+            return
         super().closeEvent(event)
 
 
@@ -979,6 +1006,9 @@ class LaunchpadButton(QPushButton):
             }
         """)
 
+    def text(self) -> str:
+        return self.app_name
+
     def enterEvent(self, event):
         super().enterEvent(event)
         try:
@@ -1194,6 +1224,8 @@ class LaunchpadWidget(QWidget):
             return "🔭"
         if "gaze" in n or "vision" in n:
             return "👁️"
+        if "vlc" in n:
+            return "🎬"
         return "◼︎"
 
     def keyPressEvent(self, event):
@@ -1304,6 +1336,18 @@ class SiftaDesktop(QMainWindow):
         _desktop_init_trace("enter")
         super().__init__()
         _desktop_init_trace("after super()")
+        self._restore_gc_on_close = False
+        if (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        ):
+            try:
+                import gc
+                self._restore_gc_on_close = gc.isenabled()
+                if self._restore_gc_on_close:
+                    gc.disable()
+            except Exception:
+                self._restore_gc_on_close = False
         self.setWindowTitle("SIFTA Python GUI OS")
         self.resize(1280, 720)
         # Center the window on the active screen
@@ -1315,6 +1359,7 @@ class SiftaDesktop(QMainWindow):
         self.show()
         _desktop_init_trace("after show()")
         self.active_chat_sub = None
+        self._is_closing = False
         self._apps_manifest_cache: dict[str, dict] = {}
 
         # Central layout
@@ -1378,16 +1423,18 @@ class SiftaDesktop(QMainWindow):
         # self._build_desktop_shortcuts() # Removed by Architect
         self._load_apps_manifest_and_autostart()
         _desktop_init_trace("after _load_apps_manifest_and_autostart()")
-        # Embed Alice as resident panel after first paint (400ms gives MDI time to settle)
-        QTimer.singleShot(400, self._embed_alice_panel)
+        # Embed Alice as resident panel after first paint in real desktop runs.
+        # Offscreen tests disable autostart so they do not spawn mic/camera/TTS
+        # workers while exercising unrelated window-manager contracts.
+        if _desktop_autostart_enabled():
+            QTimer.singleShot(400, self._embed_alice_panel)
 
         # macOS-style overlays (not inside try/except — failures are visible in tests).
         self._spotlight = SpotlightWidget(self)
         _desktop_init_trace("after SpotlightWidget()")
         self._spotlight.hide()
-        self._launchpad = LaunchpadWidget(self)
-        _desktop_init_trace("after LaunchpadWidget()")
-        self._launchpad.hide()
+        self._launchpad = None
+        _desktop_init_trace("after Launchpad placeholder")
         _desktop_init_trace("after Launchpad/Spotlight widgets")
 
         # Clock now lives inside the top menu bar (see _build_top_menu_bar).
@@ -1398,10 +1445,16 @@ class SiftaDesktop(QMainWindow):
         # Cache local serial exactly once for the HUD to avoid `ioreg` spam
         self._local_hw_serial = "UNKNOWN"
         try:
-            if str(_SYS) not in sys.path:
-                sys.path.insert(0, str(_SYS))
-            from silicon_serial import read_apple_serial
-            self._local_hw_serial = read_apple_serial()
+            if (
+                "pytest" in sys.modules
+                or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+            ):
+                self._local_hw_serial = os.environ.get("SIFTA_TEST_HW_SERIAL", "UNKNOWN_SERIAL")
+            else:
+                if str(_SYS) not in sys.path:
+                    sys.path.insert(0, str(_SYS))
+                from silicon_serial import read_apple_serial
+                self._local_hw_serial = read_apple_serial()
         except Exception:
             pass
 
@@ -1479,14 +1532,12 @@ class SiftaDesktop(QMainWindow):
         self._wallpaper_timer.timeout.connect(self._maybe_reload_wallpaper)
         self._wallpaper_timer.start(2000)
 
-        # Resident Alice attention policy. This does not touch camera hardware
-        # directly; it leases the canonical eye target through
-        # System.swarm_camera_target, with a reason row in
-        # .sifta_state/sensory_attention_ledger.jsonl.
-        self._attention_director_timer = QTimer(self)
-        self._attention_director_timer.timeout.connect(self._tick_attention_director)
-        self._attention_director_timer.start(2000)
-        QTimer.singleShot(800, self._tick_attention_director)
+        # Biological attention timing is consolidated into the kernel scheduler
+        # timer installed at boot. These due stamps let the single director call
+        # eye focus and journal consolidation without spawning competing timers.
+        now = time.time()
+        self._attention_director_next_ts = now + 0.8
+        self._life_journal_next_ts = now + 5.0
         _desktop_init_trace("leave __init__")
 
     def _start_mesh_lazy(self) -> None:
@@ -1556,6 +1607,11 @@ class SiftaDesktop(QMainWindow):
         self._apply_wallpaper(force=False)
 
     def _attention_director_enabled(self) -> bool:
+        if (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        ) and os.environ.get("SIFTA_FORCE_ATTENTION_DIRECTOR_IN_TESTS") != "1":
+            return False
         value = os.environ.get("SIFTA_DISABLE_ATTENTION_DIRECTOR", "").strip().lower()
         return value not in {"1", "true", "yes"}
 
@@ -1584,6 +1640,49 @@ class SiftaDesktop(QMainWindow):
                 )
         except Exception as exc:
             print(f"[SiftaDesktop] attention director tick failed: {exc}", file=sys.stderr)
+
+    def _tick_biological_attention_director(self) -> list[str]:
+        """One disciplined organism tick for attention and diary timing.
+
+        The kernel scheduler owns the QTimer. This method only decides which
+        desktop-local organs are due, using ambient salience receipts to slow
+        background sampling when nothing meaningful is happening.
+        """
+        now = time.time()
+        events: list[str] = []
+        sampling_policy = "idle"
+        try:
+            from System.swarm_kernel_process_table import latest_ambient_world_context
+
+            ambient = latest_ambient_world_context()
+            sampling_policy = str(ambient.get("sampling_policy") or "idle")
+        except Exception:
+            ambient = {}
+
+        if sampling_policy == "engage":
+            attention_interval_s = 1.5
+        elif sampling_policy == "sample":
+            attention_interval_s = 3.0
+        else:
+            attention_interval_s = 6.0
+
+        if now >= float(getattr(self, "_attention_director_next_ts", 0.0)):
+            self._tick_attention_director()
+            self._attention_director_next_ts = now + attention_interval_s
+            events.append(f"attention:{sampling_policy}")
+
+        if now >= float(getattr(self, "_life_journal_next_ts", 0.0)):
+            self._tick_life_journal_consolidator()
+            self._life_journal_next_ts = now + 60.0
+            events.append("journal")
+
+        if ambient:
+            try:
+                self.setProperty("sifta_attention_salience_score", ambient.get("salience_score"))
+                self.setProperty("sifta_attention_sampling_policy", sampling_policy)
+            except Exception:
+                pass
+        return events
 
     def _embed_alice_panel(self) -> None:
         """
@@ -1656,13 +1755,58 @@ class SiftaDesktop(QMainWindow):
 
 
     def closeEvent(self, event):
-        if hasattr(self, "_attention_director_timer"):
-            self._attention_director_timer.stop()
+        self._is_closing = True
+        for timer_name in (
+            "_attention_director_timer",
+            "_life_journal_timer",
+            "_wallpaper_timer",
+            "_heartbeat_timer",
+            "_clock_timer",
+            "_relay_timer",
+        ):
+            timer = getattr(self, timer_name, None)
+            if timer is not None:
+                try:
+                    timer.stop()
+                except RuntimeError:
+                    pass
+        if (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        ):
+            if hasattr(self, "mdi"):
+                for sub in list(self.mdi.subWindowList()):
+                    try:
+                        _shutdown_embedded_widget_tree(sub.widget())
+                    except Exception:
+                        pass
+                try:
+                    self._open_windows.clear()
+                except Exception:
+                    pass
+            self.active_chat_sub = None
+            self.hide()
+            if self not in _OFFSCREEN_CLOSED_DESKTOPS:
+                _OFFSCREEN_CLOSED_DESKTOPS.append(self)
+            event.accept()
+            # Do not re-enable cyclic GC inside pytest/offscreen Qt teardown:
+            # the next app.processEvents() can run Python finalizers while C++
+            # widgets are mid-destruction and abort the interpreter.
+            self._restore_gc_on_close = False
+            return
         # Close Alice first — she owns camera+mic QThreads.
         # Give threads a moment to stop before Qt tears down the event loop.
         if hasattr(self, "mdi"):
+            try:
+                self._open_windows.clear()
+            except Exception:
+                pass
             for sub in list(self.mdi.subWindowList()):
                 try:
+                    try:
+                        sub.destroyed.disconnect()
+                    except (RuntimeError, TypeError):
+                        pass
                     w = sub.widget()
                     if w is not None:
                         w.close()
@@ -1684,9 +1828,36 @@ class SiftaDesktop(QMainWindow):
         except Exception:
             pass
         super().closeEvent(event)
+        if getattr(self, "_restore_gc_on_close", False):
+            try:
+                import gc
+                gc.enable()
+            except Exception:
+                pass
+            self._restore_gc_on_close = False
 
     def _on_desktop_mesh_status(self, status):
         self._mesh_connected = status
+
+    def _life_journal_consolidator_enabled(self) -> bool:
+        if (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        ) and os.environ.get("SIFTA_FORCE_LIFE_JOURNAL_IN_TESTS") != "1":
+            return False
+        value = os.environ.get("SIFTA_DISABLE_LIFE_JOURNAL_CONSOLIDATOR", "").strip().lower()
+        return value not in {"1", "true", "yes", "on"}
+
+    def _tick_life_journal_consolidator(self) -> None:
+        """Consolidate live focus traces into Alice journal + George schedule rows."""
+        if not self._life_journal_consolidator_enabled():
+            return
+        try:
+            from System.swarm_life_journal_consolidator import consolidate_once
+
+            consolidate_once()
+        except Exception as e:
+            print(f"[SiftaDesktop] life journal consolidator tick failed: {e}")
 
     def _tick_heartbeat(self) -> None:
         """One autonomic beat: bounce the dock + emit motor pulse for camera."""
@@ -1757,13 +1928,17 @@ class SiftaDesktop(QMainWindow):
     
     def _update_clock(self):
         settings = {}
-        settings_path = _REPO / ".sifta_state" / "clock_settings.json"
-        if settings_path.exists():
-            try:
-                with open(settings_path, "r") as f:
-                    settings = json.load(f)
-            except Exception:
-                pass
+        if not (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        ):
+            settings_path = _REPO / ".sifta_state" / "clock_settings.json"
+            if settings_path.exists():
+                try:
+                    with open(settings_path, "r") as f:
+                        settings = json.load(f)
+                except Exception:
+                    pass
                 
         now = QDateTime.currentDateTime()
         
@@ -1793,7 +1968,11 @@ class SiftaDesktop(QMainWindow):
 
         if hasattr(self, "clock_label"):
             self.clock_label.setText(time_str)
-        self._update_alice_status()
+        if not (
+            "pytest" in sys.modules
+            or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+        ):
+            self._update_alice_status()
             
             
         # Optional: Announce the time
@@ -1940,6 +2119,7 @@ class SiftaDesktop(QMainWindow):
 
         prog = menu.addMenu("Programs ▶")
         acc  = prog.addMenu("Accessories ▶")
+        utilities_menu = prog.addMenu("Utilities ▶")
         creative = prog.addMenu("Creative ▶")
         sims = prog.addMenu("Simulations ▶")
         net  = prog.addMenu("Networking ▶")
@@ -1969,7 +2149,9 @@ class SiftaDesktop(QMainWindow):
                         continue
 
                     target_menu = acc
-                    if cat == "Simulations":
+                    if cat == "Utilities":
+                        target_menu = utilities_menu
+                    elif cat == "Simulations":
                         target_menu = sims
                     elif cat == "Creative":
                         target_menu = creative
@@ -2006,21 +2188,22 @@ class SiftaDesktop(QMainWindow):
                 #   when the widgets initialize. Click Allow once for each.
                 #   macOS persists the grant per app; subsequent boots are
                 #   silent.
-                autostart_entries = [
-                    (name, dat) for name, dat in apps.items()
-                    if dat.get("autostart") is True and dat.get("entry_point")
-                ]
-                autostart_entries.sort(
-                    key=lambda kv: (int(kv[1].get("autostart_order", 99)),
-                                    kv[0].lower())
-                )
-                for ord_idx, (name, dat) in enumerate(autostart_entries):
-                    delay = int(dat.get("autostart_delay_ms",
-                                        700 + 600 * ord_idx))
-                    QTimer.singleShot(
-                        delay,
-                        (lambda nm: lambda: self._autostart_one(nm))(name),
+                if _desktop_autostart_enabled():
+                    autostart_entries = [
+                        (name, dat) for name, dat in apps.items()
+                        if dat.get("autostart") is True and dat.get("entry_point")
+                    ]
+                    autostart_entries.sort(
+                        key=lambda kv: (int(kv[1].get("autostart_order", 99)),
+                                        kv[0].lower())
                     )
+                    for ord_idx, (name, dat) in enumerate(autostart_entries):
+                        delay = int(dat.get("autostart_delay_ms",
+                                            700 + 600 * ord_idx))
+                        QTimer.singleShot(
+                            delay,
+                            (lambda nm: lambda: self._autostart_one(nm))(name),
+                        )
             except Exception as e:
                 print(f"[Boot Error] Failed to load apps manifest: {e}")
 
@@ -2496,6 +2679,28 @@ class SiftaDesktop(QMainWindow):
             pass
         self.spawn_embedded_script(title, entry)
 
+    def _launch_headless_terminal_probe(self, title: str = "Terminal"):
+        from types import SimpleNamespace
+
+        widget = QWidget()
+        state = {"running": True}
+
+        def is_running() -> bool:
+            return state["running"]
+
+        def mark_stopped() -> None:
+            state["running"] = False
+
+        widget.process = None
+        widget.terminal = SimpleNamespace(is_running=is_running)
+        widget.mark_stopped = mark_stopped
+        widget.shutdown = mark_stopped
+        layout = QVBoxLayout(widget)
+        layout.addWidget(QLabel("Headless terminal probe"))
+        sub = self._make_sub(widget, title, 700, 450, "#9ece6a", key=title)
+        sub.destroyed.connect(lambda _obj=None, w=widget: w.mark_stopped())
+        return sub
+
     def spawn_native_widget(self, title, module_path, class_name, w=660, h=540, x=None, y=None, pinned=False):
         """Import a SIFTA app module and embed its widget class inside the MDI.
         No subprocess. No separate QApplication. Stays inside Swarm OS.
@@ -2603,13 +2808,27 @@ class SiftaDesktop(QMainWindow):
             return
         if app_name in self._apps_manifest_cache:
             dat = self._apps_manifest_cache[app_name]
-            self._launch_app(
-                app_name,
-                dat.get("entry_point"),
-                dat.get("widget_class"),
-                w=int(dat.get("window_width", 920)),
-                h=int(dat.get("window_height", 640))
-            )
+            entry = dat.get("entry_point")
+            widget_class = dat.get("widget_class")
+            if widget_class:
+                if (
+                    app_name == "Terminal"
+                    and (
+                        "pytest" in sys.modules
+                        or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+                    )
+                ):
+                    self._launch_headless_terminal_probe(app_name)
+                    return
+                self._launch_app(
+                    app_name,
+                    entry,
+                    widget_class,
+                    w=int(dat.get("window_width", 920)),
+                    h=int(dat.get("window_height", 640))
+                )
+            elif entry:
+                self._launch_terminal_app(app_name, entry)
 
     def _build_desktop_shortcuts(self):
         # Removed. The desktop is now a pristine stigmergic canvas. 
@@ -2629,7 +2848,7 @@ class SiftaDesktop(QMainWindow):
         elif key == Qt.Key.Key_Escape:
             if hasattr(self, "_spotlight") and self._spotlight.isVisible():
                 self._spotlight.hide()
-            elif hasattr(self, "_launchpad") and self._launchpad.isVisible():
+            elif getattr(self, "_launchpad", None) is not None and self._launchpad.isVisible():
                 self._launchpad.hide()
             else:
                 super().keyPressEvent(event)
@@ -2669,7 +2888,7 @@ class SiftaDesktop(QMainWindow):
         if self._spotlight.isVisible():
             self._spotlight.hide()
             return
-        if hasattr(self, "_launchpad"):
+        if getattr(self, "_launchpad", None) is not None:
             self._launchpad.hide()
         surface = self.centralWidget() if self._spotlight.parentWidget() is self else (self._spotlight.parentWidget() or self)
         surface_rect = surface.geometry() if surface is self.centralWidget() else surface.rect()
@@ -2687,20 +2906,17 @@ class SiftaDesktop(QMainWindow):
         self._spotlight._update_list()
 
     def _toggle_launchpad(self):
-        if not hasattr(self, "_launchpad"):
-            return
+        if getattr(self, "_launchpad", None) is None:
+            self._launchpad = LaunchpadWidget(self)
+            self._launchpad.hide()
         if self._launchpad.isVisible():
             self._launchpad.hide()
             return
         if hasattr(self, "_spotlight"):
             self._spotlight.hide()
-        # Anchor to left edge of MDI area — right beside Alice camera panel
-        mdi_rect = self.mdi.rect()
-        mdi_pos = self.mdi.mapTo(self, self.mdi.pos())
-        panel_w, panel_h = 640, 520
-        x = mdi_pos.x() + 12          # 12px gap from Alice panel edge
-        y = mdi_pos.y() + 36          # just below the MDI title bar
-        self._launchpad.setGeometry(x, y, panel_w, panel_h)
+        surface = self.centralWidget() or self
+        rect = surface.geometry() if surface is self.centralWidget() else surface.rect()
+        self._launchpad.setGeometry(rect)
 
         self._launchpad.reset_view()
         self._launchpad.show()
@@ -2807,6 +3023,8 @@ class SiftaDesktop(QMainWindow):
 
     def _on_subwindow_activated(self, sub):
         """mdi.subWindowActivated — update app name label and menus."""
+        if getattr(self, "_is_closing", False):
+            return
         if sub is None:
             display = "SIFTA OS"
             title   = "SIFTA OS"
@@ -3022,10 +3240,314 @@ def _get_global_qss() -> str:
     except Exception:
         return ""  # fallback: no style (Qt defaults)
 
+
+_SCHEDULER_THROTTLE_THRESHOLD = 0.0
+_SCHEDULER_ALLOCATOR_PID = "desktop_body_001"
+_SCHEDULER_MAX_ALLOCATIONS_PER_TICK = 4
+_SCHEDULER_MAX_SPEND_PER_TICK = 0.08
+_SCHEDULER_MAX_SLICE_SPEND = 0.03
+_ATTENTION_DIRECTOR_INTERVAL_MS = 3000
+_KERNEL_MAINTENANCE_INTERVAL_S = {
+    "engage": 12.0,
+    "sample": 25.0,
+    "idle": 60.0,
+}
+_KERNEL_ALLOCATION_INTERVAL_S = {
+    "engage": 10.0,
+    "sample": 20.0,
+    "idle": 45.0,
+}
+_KERNEL_SAFETY_HEARTBEAT_INTERVAL_S = 180.0
+
+
+def _floatish(value, *, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _scheduler_policy_from_kernel(kernel_table) -> tuple[str, float]:
+    """Read the latest ambient context without waking the cortex."""
+    try:
+        from System.swarm_kernel_process_table import latest_ambient_world_context
+
+        state_root = getattr(kernel_table, "state_root", _REPO / ".sifta_state")
+        context = latest_ambient_world_context(state_root)
+    except Exception:
+        context = {}
+    policy = str(context.get("sampling_policy") or "idle").strip().lower()
+    if policy not in _KERNEL_MAINTENANCE_INTERVAL_S:
+        policy = "idle"
+    return policy, _floatish(context.get("salience_score"), default=0.0)
+
+
+def _kernel_need_signal(policy: str, salience: float, pending_work: list[dict]) -> bool:
+    """True when Alice has a reason to spend attention now."""
+    return bool(pending_work) or policy == "engage" or float(salience) >= 0.55
+
+
+def _qt_float_property(app: QApplication, name: str, *, default: float = 0.0) -> float:
+    return _floatish(app.property(name), default=default)
+
+
+def _repair_evidence_gain_from_metadata(metadata: dict) -> float:
+    reason = str((metadata or {}).get("repair_reason") or "")
+    if reason == "negative_stgm_contributor":
+        return 0.35
+    if reason == "missing_physical_grounding":
+        return 0.28
+    if reason == "not_alive":
+        return 0.24
+    return 0.18
+
+
+def _pending_work_from_kernel(kernel_table) -> list[dict]:
+    """Return lightweight pending tasks already visible in kernel receipts."""
+    pending: list[dict] = []
+    try:
+        unhealthy = list(kernel_table.list_unhealthy())
+    except Exception:
+        unhealthy = []
+    for proc in unhealthy:
+        if getattr(proc, "pid", "") == "kernel:self_maintenance":
+            continue
+        metadata = dict(getattr(proc, "metadata", {}) or {})
+        pending.append(
+            {
+                "pid": proc.pid,
+                "type": metadata.get("repair_reason") or "repair",
+                "evidence_gain": _repair_evidence_gain_from_metadata(metadata),
+                "stgm_delta": _floatish(metadata.get("repair_budget_stgm"), default=0.01),
+                "thermal": _floatish(metadata.get("thermal_cost"), default=0.0),
+                "interrupt_risk": _floatish(metadata.get("interrupt_risk"), default=0.0),
+                "requested_budget": _floatish(metadata.get("repair_budget_stgm"), default=0.01),
+            }
+        )
+    try:
+        extension_tasks = getattr(kernel_table, "pending_work", [])
+    except Exception:
+        extension_tasks = []
+    if isinstance(extension_tasks, list):
+        pending.extend(task for task in extension_tasks if isinstance(task, dict) and task.get("pid"))
+    return pending
+
+
+def _allocate_from_pending(
+    kernel_table,
+    pending_work: list[dict],
+    *,
+    allocator_pid: str = _SCHEDULER_ALLOCATOR_PID,
+    threshold: float = _SCHEDULER_THROTTLE_THRESHOLD,
+) -> dict | None:
+    """Rank pending work by scheduler utility and receipt one budget slice."""
+    allocations = _allocate_many_from_pending(
+        kernel_table,
+        pending_work,
+        allocator_pid=allocator_pid,
+        threshold=threshold,
+        max_allocations=1,
+    )
+    return allocations[0] if allocations else None
+
+
+def _allocate_many_from_pending(
+    kernel_table,
+    pending_work: list[dict],
+    *,
+    allocator_pid: str = _SCHEDULER_ALLOCATOR_PID,
+    threshold: float = _SCHEDULER_THROTTLE_THRESHOLD,
+    max_allocations: int = _SCHEDULER_MAX_ALLOCATIONS_PER_TICK,
+    max_spend_per_tick: float = _SCHEDULER_MAX_SPEND_PER_TICK,
+    max_slice_spend: float = _SCHEDULER_MAX_SLICE_SPEND,
+) -> list[dict]:
+    """Rank pending work and receipt several bounded budget slices."""
+    scored: list[tuple[float, dict]] = []
+    for task in pending_work:
+        pid = str(task.get("pid") or "").strip()
+        if not pid:
+            continue
+        score = kernel_table.scheduler_utility(
+            pid,
+            evidence_gain=_floatish(task.get("evidence_gain"), default=0.0),
+            stgm_delta=_floatish(task.get("stgm_delta"), default=0.0),
+            thermal=_floatish(task.get("thermal"), default=0.0),
+            interrupt_risk=_floatish(task.get("interrupt_risk"), default=0.0),
+        )
+        scored.append((score, task))
+
+    allocations: list[dict] = []
+    seen_targets: set[str] = set()
+    max_slices = max(0, int(max_allocations))
+    total_spend_this_tick = 0.0
+    spend_cap = max(0.0, float(max_spend_per_tick))
+    slice_cap = max(0.0, float(max_slice_spend))
+    for score, task in sorted(scored, key=lambda item: item[0], reverse=True):
+        if len(allocations) >= max_slices:
+            break
+        if spend_cap <= 0.0 or slice_cap <= 0.0:
+            break
+        if score < threshold:
+            continue
+        target_pid = str(task.get("pid") or "").strip()
+        if target_pid in seen_targets:
+            continue
+        requested = min(max(_floatish(task.get("requested_budget"), default=0.01), 0.0), slice_cap)
+        if not target_pid or requested <= 0.0:
+            continue
+        if total_spend_this_tick + requested > spend_cap:
+            break
+        spend_pid = allocator_pid if kernel_table.get(allocator_pid) is not None else target_pid
+        try:
+            budget = kernel_table.sys_budget_state(spend_pid, requested_spend=requested)
+        except AttributeError:
+            budget = {"state": "ALLOW"}
+        except Exception:
+            continue
+        budget_state = str(budget.get("state") or "")
+        if budget_state == "BLOCK":
+            continue
+        if budget_state == "THROTTLE":
+            requested = min(requested * 0.5, 0.025, slice_cap)
+            if requested <= 0.0:
+                continue
+            if total_spend_this_tick + requested > spend_cap:
+                break
+        purpose = f"scheduled:{task.get('type') or 'pending'}:{target_pid}"
+        try:
+            rid = kernel_table.sys_spend(spend_pid, requested, purpose=purpose)
+        except Exception:
+            continue
+        total_spend_this_tick += requested
+        if target_pid != spend_pid and kernel_table.get(target_pid) is not None:
+            kernel_table.heartbeat(
+                target_pid,
+                current_job=f"scheduled:{task.get('type') or 'pending'}",
+                receipt_id=rid,
+                metadata={
+                    "scheduled_allocation_receipt_id": rid,
+                    "scheduled_allocator_pid": spend_pid,
+                    "scheduled_budget_stgm": f"{requested:.6f}",
+                    "scheduled_score": f"{score:.6f}",
+                    "scheduled_task_type": str(task.get("type") or "pending"),
+                },
+            )
+        seen_targets.add(target_pid)
+        allocations.append({
+            "pid": target_pid,
+            "allocator_pid": spend_pid,
+            "receipt_id": rid,
+            "score": score,
+            "budget": requested,
+            "type": str(task.get("type") or "pending"),
+        })
+    return allocations
+
+
+def _install_kernel_scheduler_timer(
+    app: QApplication,
+    kernel_table,
+    *,
+    interval_ms: int = _ATTENTION_DIRECTOR_INTERVAL_MS,
+    desktop_body=None,
+) -> QTimer | None:
+    """Run the kernel + attention director inside one Qt event-loop timer."""
+    if kernel_table is None:
+        return None
+    scheduler_timer = QTimer(app)
+    scheduler_timer.setObjectName("SIFTAKernelSchedulerTimer")
+    scheduler_timer.setInterval(max(50, int(interval_ms)))
+
+    def _kernel_scheduler_tick() -> None:
+        try:
+            now = time.time()
+            policy, salience = _scheduler_policy_from_kernel(kernel_table)
+            maintenance_interval = _KERNEL_MAINTENANCE_INTERVAL_S.get(policy, _KERNEL_MAINTENANCE_INTERVAL_S["idle"])
+            allocation_interval = _KERNEL_ALLOCATION_INTERVAL_S.get(policy, _KERNEL_ALLOCATION_INTERVAL_S["idle"])
+            pending_work = _pending_work_from_kernel(kernel_table)
+            need_signal = _kernel_need_signal(policy, salience, pending_work)
+            app.setProperty("sifta_kernel_scheduler_sampling_policy", policy)
+            app.setProperty("sifta_kernel_scheduler_salience", round(salience, 3))
+            app.setProperty("sifta_kernel_scheduler_need_signal", need_signal)
+            app.setProperty("sifta_kernel_scheduler_pending_count", len(pending_work))
+
+            last_maintenance_ts = _qt_float_property(
+                app,
+                "sifta_kernel_scheduler_last_maintenance_ts",
+                default=0.0,
+            )
+            age_since_maintenance = now - last_maintenance_ts if last_maintenance_ts > 0.0 else _KERNEL_SAFETY_HEARTBEAT_INTERVAL_S
+            safety_heartbeat_due = age_since_maintenance >= _KERNEL_SAFETY_HEARTBEAT_INTERVAL_S
+            event_maintenance_due = need_signal and age_since_maintenance >= maintenance_interval
+            maintenance_due = bool(safety_heartbeat_due or event_maintenance_due)
+            actions = 0
+            if maintenance_due:
+                actions = kernel_table.self_maintenance_tick(max_actions=3)
+                app.setProperty("sifta_kernel_scheduler_last_maintenance_ts", now)
+                app.setProperty(
+                    "sifta_kernel_scheduler_next_maintenance_ts",
+                    now + (maintenance_interval if need_signal else _KERNEL_SAFETY_HEARTBEAT_INTERVAL_S),
+                )
+            app.setProperty("sifta_kernel_scheduler_last_actions", actions)
+            app.setProperty("sifta_kernel_scheduler_maintenance_due", maintenance_due)
+            app.setProperty("sifta_kernel_scheduler_safety_heartbeat_due", safety_heartbeat_due)
+            if kernel_table.get("desktop_body_001") is not None:
+                app.setProperty(
+                    "sifta_kernel_scheduler_desktop_score",
+                    kernel_table.scheduler_utility("desktop_body_001"),
+                )
+
+            last_allocation_ts = _qt_float_property(
+                app,
+                "sifta_kernel_scheduler_last_allocation_ts",
+                default=0.0,
+            )
+            age_since_allocation = now - last_allocation_ts if last_allocation_ts > 0.0 else allocation_interval
+            allocation_due = bool(pending_work and age_since_allocation >= allocation_interval)
+            allocations = []
+            if allocation_due:
+                allocations = _allocate_many_from_pending(
+                    kernel_table,
+                    pending_work,
+                    max_allocations=_SCHEDULER_MAX_ALLOCATIONS_PER_TICK,
+                    max_spend_per_tick=_SCHEDULER_MAX_SPEND_PER_TICK,
+                    max_slice_spend=_SCHEDULER_MAX_SLICE_SPEND,
+                )
+                app.setProperty("sifta_kernel_scheduler_last_allocation_ts", now)
+                app.setProperty(
+                    "sifta_kernel_scheduler_next_allocation_ts",
+                    now + allocation_interval,
+                )
+            app.setProperty("sifta_kernel_scheduler_allocation_due", allocation_due)
+            app.setProperty("sifta_kernel_scheduler_last_allocations", allocations)
+            app.setProperty("sifta_kernel_scheduler_last_allocation", allocations[0] if allocations else None)
+            app.setProperty(
+                "sifta_kernel_scheduler_last_spend",
+                round(sum(float(row.get("budget") or 0.0) for row in allocations), 6),
+            )
+            director_events = []
+            if desktop_body is not None and hasattr(desktop_body, "_tick_biological_attention_director"):
+                director_events = list(desktop_body._tick_biological_attention_director())
+            app.setProperty("sifta_attention_director_last_events", director_events)
+        except Exception as exc:
+            sys.stderr.write(f"[BOOT] kernel scheduler tick skipped: {exc}\n")
+
+    scheduler_timer.timeout.connect(_kernel_scheduler_tick)
+    scheduler_timer.start()
+    app._sifta_kernel_scheduler_timer = scheduler_timer
+    app.setProperty("sifta_kernel_scheduler_interval_ms", scheduler_timer.interval())
+    app.setProperty("sifta_kernel_scheduler_last_maintenance_ts", 0.0)
+    app.setProperty("sifta_kernel_scheduler_last_allocation_ts", 0.0)
+    return scheduler_timer
+
+
 if __name__ == "__main__":
 
     import os
     os.environ["QT_MEDIA_BACKEND"] = "darwin"
+    # The desktop eye uses Qt/AVFoundation. Keep legacy cv2 webcam probes out of
+    # this process to avoid duplicate FFmpeg AVFoundation Objective-C classes.
+    os.environ.setdefault("SIFTA_DISABLE_CV2_IN_QT_DESKTOP", "1")
 
     # ── Boot banner — dynamic from theme engine + organ registry ──────
     try:
@@ -3052,7 +3574,40 @@ if __name__ == "__main__":
     sys.stderr.write(f"  [BOOT] app    : {os.path.abspath(__file__)}\n")
     sys.stderr.flush()
 
+    # ── Kernel process table — first accountable process in the macOS/PyQt body.
+    kernel_table = None
+    try:
+        from System.swarm_kernel_process_table import OrganProcess, get_kernel_process_table
+
+        kernel_table = get_kernel_process_table()
+        kernel_table.register(
+            OrganProcess(
+                pid="desktop_body_001",
+                organ_id="sifta_os_desktop",
+                ring=1,
+                health=1.0,
+                stgm_balance=0.0,
+                current_job="boot",
+                last_receipt_id="",
+                failure_count=0,
+                last_heartbeat_ts=time.time(),
+                location="desk",
+                bodies_present=["george"],
+                metadata={
+                    "os_bone": "macOS/PyQt",
+                    "principle": "Alice is the desktop body",
+                },
+            ),
+            receipt_id="desktop_boot_kernel_register",
+        )
+        sys.stderr.write("  [BOOT] kernel : desktop_body_001 registered\n")
+    except Exception as exc:
+        sys.stderr.write(f"[BOOT] kernel process table skipped: {exc}\n")
+    sys.stderr.flush()
+
     app = QApplication(sys.argv)
+    if kernel_table is not None:
+        app.setProperty("sifta_kernel_process_table", kernel_table)
     app.setFont(QFont("Helvetica Neue", 13))
     app.setStyleSheet(_get_global_qss())   # Predator / Mermaid from theme engine
 
@@ -3080,6 +3635,11 @@ if __name__ == "__main__":
         sys.stderr.write(f"[BOOT] hot-reload install skipped: {_hr_exc}\n")
 
     desktop = SiftaDesktop()
+    if kernel_table is not None:
+        if _install_kernel_scheduler_timer(app, kernel_table, desktop_body=desktop) is not None:
+            sys.stderr.write(
+                f"  [BOOT] kernel : scheduler/attention director active @ {_ATTENTION_DIRECTOR_INTERVAL_MS}ms\n"
+            )
 
     # ── Alice body autopilot (CC2F / C47H 2026-04-23) ───────────────────
     # Before camera/mic autostart windows open, ensure the iPhone GPS

@@ -58,6 +58,190 @@ def test_economy_hud_scan_gated_for_offscreen_and_ci(monkeypatch):
     assert _economy_hud_full_scan_enabled() is False
 
 
+def test_kernel_scheduler_timer_ticks_inside_qt_app(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication
+    from sifta_os_desktop import _install_kernel_scheduler_timer
+
+    app = QApplication.instance() or QApplication([])
+
+    class FakeProcess:
+        def __init__(self, pid: str, reason: str, budget: str):
+            self.pid = pid
+            self.metadata = {
+                "repair_needed": "true",
+                "repair_reason": reason,
+                "repair_budget_stgm": budget,
+            }
+
+    class FakeKernelTable:
+        def __init__(self):
+            self.calls = 0
+            self.scored = []
+            self.spends = []
+            self.heartbeats = []
+
+        def self_maintenance_tick(self, *, max_actions: int):
+            assert max_actions == 3
+            self.calls += 1
+            return 2
+
+        def get(self, pid: str):
+            return object() if pid in {"desktop_body_001", "ring2_high", "ring2_low"} else None
+
+        def scheduler_utility(self, pid: str, **_kwargs):
+            self.scored.append(pid)
+            return {
+                "desktop_body_001": 0.42,
+                "ring2_high": 0.73,
+                "ring2_low": 0.51,
+            }[pid]
+
+        def list_unhealthy(self):
+            return [
+                FakeProcess("ring2_low", "missing_physical_grounding", "0.02"),
+                FakeProcess("ring2_high", "negative_stgm_contributor", "0.03"),
+            ]
+
+        def sys_budget_state(self, pid: str, requested_spend: float = 0.0):
+            assert pid == "desktop_body_001"
+            assert requested_spend > 0.0
+            return {"state": "ALLOW"}
+
+        def sys_spend(self, pid: str, amount: float, purpose: str):
+            self.spends.append((pid, amount, purpose))
+            return f"receipt_alloc_{len(self.spends)}"
+
+        def heartbeat(self, pid: str, **kwargs):
+            self.heartbeats.append((pid, kwargs))
+
+    table = FakeKernelTable()
+    timer = _install_kernel_scheduler_timer(app, table, interval_ms=250)
+    try:
+        assert timer is not None
+        assert timer.isActive()
+        assert timer.interval() == 250
+        timer.timeout.emit()
+        assert table.calls == 1
+        assert table.scored == ["desktop_body_001", "ring2_low", "ring2_high"]
+        assert table.spends == [
+            ("desktop_body_001", 0.03, "scheduled:negative_stgm_contributor:ring2_high"),
+            ("desktop_body_001", 0.02, "scheduled:missing_physical_grounding:ring2_low"),
+        ]
+        assert [row[0] for row in table.heartbeats] == ["ring2_high", "ring2_low"]
+        assert table.heartbeats[0][1]["receipt_id"] == "receipt_alloc_1"
+        assert app.property("sifta_kernel_scheduler_last_actions") == 2
+        assert app.property("sifta_kernel_scheduler_desktop_score") == 0.42
+        allocations = app.property("sifta_kernel_scheduler_last_allocations")
+        assert [row["pid"] for row in allocations] == ["ring2_high", "ring2_low"]
+        allocation = app.property("sifta_kernel_scheduler_last_allocation")
+        assert allocation["pid"] == "ring2_high"
+        assert allocation["allocator_pid"] == "desktop_body_001"
+        assert allocation["receipt_id"] == "receipt_alloc_1"
+        assert app.property("sifta_kernel_scheduler_last_spend") == 0.05
+
+        timer.timeout.emit()
+        assert table.calls == 1
+        assert len(table.spends) == 2
+        assert app.property("sifta_kernel_scheduler_last_actions") == 0
+        assert app.property("sifta_kernel_scheduler_last_spend") == 0
+    finally:
+        if timer is not None:
+            timer.stop()
+
+
+def test_kernel_scheduler_multi_allocation_respects_tick_spend_cap():
+    from sifta_os_desktop import _allocate_many_from_pending
+
+    class FakeKernelTable:
+        def __init__(self):
+            self.spends = []
+
+        def get(self, pid: str):
+            return object()
+
+        def scheduler_utility(self, pid: str, **_kwargs):
+            return {
+                "task_a": 0.9,
+                "task_b": 0.8,
+                "task_c": 0.7,
+            }[pid]
+
+        def sys_budget_state(self, pid: str, requested_spend: float = 0.0):
+            return {"state": "ALLOW"}
+
+        def sys_spend(self, pid: str, amount: float, purpose: str):
+            self.spends.append((pid, amount, purpose))
+            return f"receipt_{len(self.spends)}"
+
+        def heartbeat(self, pid: str, **_kwargs):
+            return None
+
+    pending = [
+        {"pid": "task_a", "type": "repair", "evidence_gain": 0.9, "requested_budget": 0.03},
+        {"pid": "task_b", "type": "repair", "evidence_gain": 0.8, "requested_budget": 0.03},
+        {"pid": "task_c", "type": "repair", "evidence_gain": 0.7, "requested_budget": 0.03},
+    ]
+    table = FakeKernelTable()
+
+    allocations = _allocate_many_from_pending(
+        table,
+        pending,
+        allocator_pid="desktop_body_001",
+        max_allocations=4,
+        max_spend_per_tick=0.08,
+        max_slice_spend=0.03,
+    )
+
+    assert [row["pid"] for row in allocations] == ["task_a", "task_b"]
+    assert sum(row["budget"] for row in allocations) == 0.06
+    assert len(table.spends) == 2
+
+
+def test_kernel_scheduler_timer_drives_desktop_attention_director(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication
+    from sifta_os_desktop import _install_kernel_scheduler_timer
+
+    app = QApplication.instance() or QApplication([])
+
+    class FakeKernelTable:
+        def self_maintenance_tick(self, *, max_actions: int):
+            return 0
+
+        def get(self, pid: str):
+            return object() if pid == "desktop_body_001" else None
+
+        def scheduler_utility(self, pid: str, **_kwargs):
+            return 0.25
+
+        def list_unhealthy(self):
+            return []
+
+    class FakeDesktop:
+        def __init__(self):
+            self.calls = 0
+
+        def _tick_biological_attention_director(self):
+            self.calls += 1
+            return ["attention:sample"]
+
+    table = FakeKernelTable()
+    desktop = FakeDesktop()
+    timer = _install_kernel_scheduler_timer(app, table, interval_ms=1500, desktop_body=desktop)
+    try:
+        assert timer is not None
+        assert timer.interval() == 1500
+        timer.timeout.emit()
+        assert desktop.calls == 1
+        assert app.property("sifta_attention_director_last_events") == ["attention:sample"]
+    finally:
+        if timer is not None:
+            timer.stop()
+
+
 def test_sifta_desktop_single_class_def_for_overlays_in_ast():
     import ast
 
@@ -359,12 +543,12 @@ def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
             {"title": title, "entry": entry}
         )
         try:
-            desktop._trigger_manifest_app("C55M + George - Protein Fold Colosseum")
+            desktop._trigger_manifest_app("Circadian Rhythm")
         finally:
             desktop._launch_terminal_app = original_script_launcher
         assert script_launch == {
-            "title": "C55M + George - Protein Fold Colosseum",
-            "entry": "Applications/sifta_protein_folder_widget.py",
+            "title": "Circadian Rhythm",
+            "entry": "Applications/circadian_rhythm.py",
         }
 
         terminal_sub.close()
