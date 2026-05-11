@@ -1,3 +1,14 @@
+---
+license: apache-2.0
+tags:
+  - sifta
+  - ollama
+  - classifier
+  - intent-routing
+  - local-ai
+library_name: ollama
+---
+
 # SIFTA Classifier C1 3.1B 6.2GB
 
 Classifier/reflex tag:

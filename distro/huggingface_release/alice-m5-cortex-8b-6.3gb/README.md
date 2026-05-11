@@ -1,3 +1,14 @@
+---
+license: apache-2.0
+tags:
+  - sifta
+  - ollama
+  - gemma4
+  - multimodal
+  - local-ai
+library_name: ollama
+---
+
 # Alice M5 Cortex 8B 6.3GB
 
 Primary M5 SIFTA cortex tag:
