@@ -423,6 +423,16 @@
     "signature": "MANIFEST-CANONICAL",
     "description": "GUI reader for curated SIFTA library nuggets in .sifta_state/stigmergic_library.jsonl."
   },
+  "Stigmergic VLC Bridge": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_stigmergic_vlc.py",
+    "widget_class": "StigmergicVlcBridge",
+    "window_width": 680,
+    "window_height": 560,
+    "icon": "🎬",
+    "signature": "UNVERIFIED",
+    "description": "macOS VideoLAN VLC handoff with File/Help menus and append-only .sifta_state/stigmergic_vlc_effector.jsonl receipts."
+  },
   "Brain Gas-Station Meter": {
     "category": "System Settings",
     "entry_point": "Applications/sifta_gasstation_meter.py",
@@ -966,15 +976,59 @@
     ],
     "truth_label": "STIGMEROBOTICS_OS_SINGLETON_V1"
   },
+  "Mondaloy Stigmergic Research Field": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_mondaloy_research_widget.py",
+    "widget_class": "MondaloyResearchFieldApp",
+    "window_width": 1240,
+    "window_height": 820,
+    "icon": "MO",
+    "signature": "C55M-CODEX-MONDALOY-FIELD-20260507",
+    "doctor": "C55M Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Local Mondaloy 100/200 process-field simulation. Deposits primary-source facts, scores heat/powder/HIP/oxygen-service hypotheses with a bounded gamma-prime and burn-resistance surrogate, visualizes decaying hypothesis strength, and writes append-only mondaloy_process_field.jsonl receipts.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "MONDALOY_PROCESS_FIELD_V1"
+  },
+  "SIFTA Interstellar Evidence Crucible": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_interstellar_evidence_crucible.py",
+    "widget_class": "InterstellarEvidenceCrucibleApp",
+    "window_width": 1280,
+    "window_height": 840,
+    "icon": "3I",
+    "signature": "CG55M-CURSOR-INTERSTELLAR-EVIDENCE-20260507",
+    "doctor": "CG55M Cursor",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "3I/ATLAS public-data evidence crucible. Seeds JPL Horizons, MPC, MPEC, Hubble, JWST, SPHEREx, and Sentinel-style claim rows into an append-only stigmergic evidence field; visualizes orbit proxy, decaying claim strength, source weighting, falsifiers, and STGM reward hints. Live JPL Horizons pulls write hash receipts.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "INTERSTELLAR_3I_EVIDENCE_FIELD_V1"
+  },
   "Alice Journal": {
     "category": "Alice",
     "entry_point": "Applications/sifta_alice_journal_viewer.py",
-    "widget_class": "__terminal__",
     "description": "Alice's first-person explorer journal — daily timestamped entries of what George said, what Alice observed, sensor context (clothing, phone calls, co-watch). One file per day.",
     "icon": "📓",
     "window_width": 900,
     "window_height": 600,
     "autostart": false,
     "signature": "AG46_2026-05-06"
+  },
+  "Bell's Theorem — Classical Analogue": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_bell_theorem_widget.py",
+    "widget_class": "BellTheoremWidget",
+    "window_width": 1340,
+    "window_height": 880,
+    "description": "Bell's Theorem Stigmergic Simulator — Two-timescale pheromone field (fast volatile + slow persistent) with gradient coupling (chemotaxis/quantum potential analog). ABLATION FINDING: self-feedback WITHOUT teacher violates Bell 100% (field learns cosine correlation from own traces). Slow field alone sufficient. kappa=0 confirms field coupling is necessary. 24 research papers (physics + biology + bridge). General principle extracted to System/stigmergic_field.py. Formal ablation function (run_ablation_experiment). SIM_ONLY classical analogue.",
+    "icon": "⚛️",
+    "autostart": false,
+    "signature": "CG55M-CURSOR-2026-05-11-v4"
   }
 }

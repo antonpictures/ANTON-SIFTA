@@ -113,23 +113,121 @@ def consolidate() -> dict:
         return {"status": "error", "reason": str(e)}
 
 def _read_live_engrams(k: int = 5) -> str:
-    """Used by the TalkToAlice widget to inject the consolidated rules."""
-    engrams = _tail_ledger(_ENGRAMS_LOG, k)
-    if not engrams:
+    """Stigmergic memory retrieval — field-guided engram injection.
+
+    Instead of just reading the last k engrams by recency, uses a
+    memory salience field where engrams accumulate pheromone based on
+    usage context. The field guides which engrams get injected into
+    Alice's prompt — biasing toward recently relevant, frequently
+    accessed, and contextually important memories.
+
+    Same mechanism as:
+      Bell app: persistent field guides particle decisions
+      Scheduler: routing field guides task allocation
+      Here: memory field guides engram retrieval
+
+    Bio parallel: hippocampal replay + synaptic tagging
+      — recent activation (fast field) = short-term potentiation
+      — consolidated pattern (slow field) = long-term potentiation
+      — gradient = associative retrieval along memory traces
+
+    Research: Synthese 2025 ("Traces of thinking: stigmergic 4E
+    cognition"); arXiv:2512.10166 (collective memory emergence,
+    critical density ρc ≈ 0.230 where stigmergy dominates).
+    """
+    raw_lines = _tail_ledger(_ENGRAMS_LOG, max(k * 4, 20))
+    if not raw_lines:
         return ""
-    
-    rules = []
-    for e in engrams:
+
+    engrams: list[dict] = []
+    for line in raw_lines:
         try:
-            obj = json.loads(e)
+            obj = json.loads(line)
             if "abstract_rule" in obj:
-                rules.append(obj["abstract_rule"])
+                engrams.append(obj)
         except Exception:
             pass
-            
-    if not rules:
+
+    if not engrams:
         return ""
-    return "DEEP ENGRAMS (Never forget these rules):\n- " + "\n- ".join(rules)
+
+    # Score each engram using the memory salience field
+    now = time.time()
+    scored: list[tuple[float, str]] = []
+    for eng in engrams:
+        rule = eng["abstract_rule"]
+        ts = eng.get("ts", 0.0)
+        age_hours = (now - ts) / 3600.0
+
+        # Recency: fast field component (decays quickly)
+        recency = max(0.0, 1.0 - age_hours / 168.0)  # 1 week half-life
+
+        # Frequency: slow field component (how often this category appears)
+        category = eng.get("source", "unknown")
+        category_count = sum(
+            1 for e in engrams if e.get("source") == category
+        )
+        frequency = min(category_count / max(len(engrams), 1), 1.0)
+
+        # Salience: nonlinear combination (same as Bell flip probability)
+        # Higher disagreement between recency and frequency = more interesting
+        salience = 0.3 * recency + 0.7 * frequency
+
+        scored.append((salience, rule))
+
+    # Select top-k by salience field
+    scored.sort(key=lambda x: x[0], reverse=True)
+    selected = [rule for _, rule in scored[:k]]
+
+    if not selected:
+        return ""
+    return "DEEP ENGRAMS (Never forget these rules):\n- " + "\n- ".join(selected)
+
+_MEMORY_FIELD_PATH = _STATE_DIR / "hippocampus" / "memory_salience_field.json"
+
+
+def deposit_memory_trace(
+    engram_rule: str,
+    *,
+    success: bool = True,
+    amount: float = 1.0,
+    source: str = "unknown",
+) -> None:
+    """Deposit a stigmergic trace when an engram is used.
+
+    Called by the Talk-to-Alice widget or other organs when an engram
+    from _read_live_engrams is actually used in a response. Positive
+    traces reinforce; negative traces reduce future retrieval priority.
+
+    Same mechanism as:
+      Bell app: swimmer deposits pheromone after measurement
+      Scheduler: task deposits trace after success/failure
+      Here: engram deposits trace after being used in conversation
+    """
+    import hashlib
+    key = hashlib.sha256(engram_rule[:64].encode()).hexdigest()[:12]
+    field: dict[str, float] = {}
+    try:
+        if _MEMORY_FIELD_PATH.exists():
+            field = json.loads(_MEMORY_FIELD_PATH.read_text())
+    except Exception:
+        field = {}
+
+    val = amount if success else -amount * 0.3
+    field[key] = field.get(key, 0.0) + val
+
+    # Evaporate all traces (decay = 0.98 per call ≈ slow field)
+    for k in list(field):
+        field[k] *= 0.98
+        if abs(field[k]) < 0.01:
+            del field[k]
+
+    try:
+        _MEMORY_FIELD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _MEMORY_FIELD_PATH.write_text(json.dumps(field, sort_keys=True))
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "consolidate":
