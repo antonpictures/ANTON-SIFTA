@@ -783,16 +783,56 @@ class SiftaMdiArea(QMdiArea):
         self.viewport().update()
 
     def _scaled_wallpaper(self, width, height):
+        """Return the wallpaper pixmap sized for the viewport.
+
+        Architect 2026-05-12 01:10: when the user drops a small bee
+        JPEG, we DON'T stretch it to fill the screen — that turns a
+        100×100 icon into a blurry 4 K rectangle. Paint behavior is
+        controlled by ``SIFTA_DESKTOP_WALLPAPER_MODE``:
+
+          ``center`` (default) — paint native size centered. A small
+                                 bee stays small in the middle of the
+                                 dark desktop.
+          ``fill``             — original behavior, expand to fill the
+                                 viewport keeping aspect ratio.
+          ``fit``              — keep aspect ratio, fit inside viewport
+                                 (letterboxed).
+
+        The cache key includes the mode so changing the env var
+        invalidates the right entry.
+        """
         if self._wallpaper_source.isNull() or width <= 0 or height <= 0:
             return QPixmap()
-        size_key = (int(width), int(height), self._wallpaper_source.cacheKey())
+        import os as _os
+        mode = _os.environ.get("SIFTA_DESKTOP_WALLPAPER_MODE", "center").strip().lower()
+        size_key = (int(width), int(height), mode, self._wallpaper_source.cacheKey())
         if self._wallpaper_cache_size != size_key or self._wallpaper_cache.isNull():
-            self._wallpaper_cache = self._wallpaper_source.scaled(
-                width,
-                height,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+            src = self._wallpaper_source
+            if mode == "fill":
+                self._wallpaper_cache = src.scaled(
+                    width, height,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            elif mode == "fit":
+                self._wallpaper_cache = src.scaled(
+                    width, height,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            else:
+                # center / native-size: only down-scale if the source
+                # is bigger than the viewport in either dimension; never
+                # blow a small icon up. paintEvent already centers via
+                # (w - pm.width())/2 math.
+                if src.width() > width or src.height() > height:
+                    self._wallpaper_cache = src.scaled(
+                        width, height,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                else:
+                    self._wallpaper_cache = src
             self._wallpaper_cache_size = size_key
         return self._wallpaper_cache
 
@@ -1128,11 +1168,24 @@ class SiftaMdiArea(QMdiArea):
         wallpaper = self._scaled_wallpaper(w, h)
         has_wallpaper = not wallpaper.isNull()
         if has_wallpaper:
+            # Architect 2026-05-12 01:10: paint the dark bg FIRST so a
+            # small centered wallpaper (his bee JPEG) sits on dark, not
+            # transparent. Also kills the old cream veil that washed
+            # everything out for the legacy light-cream BeeSon palette.
+            _wp_bg = "#0d0c0a"
+            try:
+                _pal_for_bg = getattr(self, "_pal", None)
+                if _pal_for_bg is None:
+                    from System.sifta_desktop_themes import active_palette as _ap
+                    _pal_for_bg = _ap()
+                if _pal_for_bg is not None and getattr(_pal_for_bg, "bg_deep", ""):
+                    _wp_bg = str(_pal_for_bg.bg_deep)
+            except Exception:
+                pass
+            painter.fillRect(rect, QColor(_wp_bg))
             x = int((w - wallpaper.width()) / 2)
             y = int((h - wallpaper.height()) / 2)
             painter.drawPixmap(x, y, wallpaper)
-            # Warm honey veil — not the old “midnight blue mud” filter.
-            painter.fillRect(rect, QColor(255, 248, 235, 52))
         else:
             _bg = "#080a0f"
             try:
@@ -1148,15 +1201,18 @@ class SiftaMdiArea(QMdiArea):
 
         # No grid — clean desktop.
 
-        # ── Architect 2026-05-11 23:25: clean desktop ─────────────────
-        # No particles, no field heatmap, no census text, no animation.
-        # Just one bee in the middle, painted as a static emoji glyph.
-        # The heatmap / particles / census remain available via env vars:
+        # ── Architect 2026-05-12 01:10: clean desktop, no emoji bee ──
+        # No particles, no field heatmap, no census text, no animation,
+        # no emoji glyph. The desktop is just bg + (optional) wallpaper.
+        # Architect drops his own small bee JPEG via
+        #   Settings → Appearance → Wallpaper → Choose custom file…
+        # and the paint mode below renders it centered at native size,
+        # not stretched.
+        #
+        # Heatmap / particles / census still available behind env vars:
         #   SIFTA_DESKTOP_FIELD_HEATMAP=1
         #   SIFTA_DESKTOP_FIELD_TICK=1 (+ SIFTA_DESKTOP_PHOTONS>0)
         #   SIFTA_DESKTOP_CENSUS_LINE=1
-        # All three default OFF so the UI thread stays free.
-        self._paint_one_bee(painter, w, h)
 
         # Field heatmap — runs only if env asks for it (default off).
         try:
@@ -1915,18 +1971,13 @@ class SiftaDesktop(QMainWindow):
         something the worker re-checks the relay). No hot spin while idle.
         """
         try:
-            import socket as _socket
-            from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
+            from System.global_cognitive_interface import (
+                _SwarmMeshClientWorker,
+                SWARM_RELAY_URI,
+                _relay_tcp_available,
+            )
 
-            def _probe_relay() -> bool:
-                try:
-                    host, port = "127.0.0.1", 8765
-                    with _socket.create_connection((host, port), timeout=0.4):
-                        return True
-                except Exception:
-                    return False
-
-            if not _probe_relay():
+            if not _relay_tcp_available(SWARM_RELAY_URI, timeout=0.4):
                 # Relay not up. Skip the worker. Hook BehaviorClock so we
                 # retry on real owner activity rather than on a fixed timer.
                 self._desktop_mesh = None
@@ -1950,9 +2001,9 @@ class SiftaDesktop(QMainWindow):
         if getattr(self, "_desktop_mesh", None) is not None:
             return
         try:
-            import socket as _socket
-            with _socket.create_connection(("127.0.0.1", 8765), timeout=0.3):
-                pass
+            from System.global_cognitive_interface import _relay_tcp_available, SWARM_RELAY_URI
+            if not _relay_tcp_available(SWARM_RELAY_URI, timeout=0.3):
+                return
         except Exception:
             return
         # Relay came up. Start the worker now.
