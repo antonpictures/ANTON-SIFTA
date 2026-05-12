@@ -682,7 +682,10 @@ from PyQt6.QtGui import QBrush, QPainter, QPen, QPixmap
 class SiftaMdiArea(QMdiArea):
     def __init__(self):
         super().__init__()
-        self.setBackground(QBrush(QColor("#0d0e17")))
+        # Filled again from active palette on first wallpaper pass — avoid pure
+        # black boot flash when BeeSon is light honey.
+        self.setBackground(QBrush(QColor("#f4ead8")))
+        self._pal = None  # set from SiftaDesktop._apply_wallpaper (theme truth)
         self._wallpaper_source = QPixmap()
         self._wallpaper_cache = QPixmap()
         self._wallpaper_cache_size = None
@@ -700,10 +703,9 @@ class SiftaMdiArea(QMdiArea):
             
         self.particles = []
         import os as _os
-        # Default 30 particles — barely visible drift, near-zero GPU cost.
-        # Override with SIFTA_DESKTOP_PHOTONS env var for more.
-        _n_particles = int(_os.environ.get("SIFTA_DESKTOP_PHOTONS", "30"))
-        
+        # Default 0 — decorative drift only; set SIFTA_DESKTOP_PHOTONS >0 for field viz.
+        _n_particles = int(_os.environ.get("SIFTA_DESKTOP_PHOTONS", "0"))
+
         import random
         for _ in range(_n_particles):
             if self.use_engine:
@@ -718,11 +720,22 @@ class SiftaMdiArea(QMdiArea):
                     random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3),
                     random.uniform(2, 8)
                 ])
-            
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.tick)
-        # 500 ms = 2 fps — subtle drift, not animation. Saves ~90% repaint CPU.
-        self.timer.start(500)
+
+        # Architect 2026-05-11 23:50: "I don't want hard coding. ... when
+        # something is happening the behavior of the creature is changing
+        # too based on my behavior whatever I do."
+        #
+        # No 500 ms wall clock. The field engine ticks when the OWNER does
+        # something — keypress, mouse move, voice, wake-word, camera frame,
+        # app focus — debounced internally by Alice's live heart period
+        # (12–30 BPM clinical range read from swarm_motor_cortex). Nothing
+        # happening = no tick. The creature is silent when the room is silent.
+        self.timer = None  # legacy attribute kept for compatibility
+        try:
+            from System.swarm_behavior_clock import behavior_clock
+            behavior_clock().tick.connect(self._on_behavior_tick)
+        except Exception:
+            pass
 
         self.watermark_font = QFont("Helvetica Neue", 110, QFont.Weight.Black)
         self.watermark_sub = QFont("Courier New", 18, QFont.Weight.Bold)
@@ -732,6 +745,36 @@ class SiftaMdiArea(QMdiArea):
         self._pred_data: dict = {}
         self._pred_last_read: float = 0.0
         self._pred_mtime: float = 0.0
+
+        # Wake-word camera flash. Owner directive: when Alice hears
+        # her name, ONE camera frame flashes on the desktop. No
+        # streaming, no live feed — just a brief still, ~600 ms.
+        self._wake_flash_pixmap: QPixmap = QPixmap()
+        self._wake_flash_until: float = 0.0
+        self._wake_flash_total_ms: int = 600
+        try:
+            from System.swarm_wake_event_bus import wake_bus
+            wake_bus().frame_ready.connect(self._on_wake_frame_ready)
+        except Exception:
+            pass
+
+    def _on_wake_frame_ready(self, path: str) -> None:
+        """Load the freshly-saved camera frame and trigger a brief flash."""
+        import time as _t
+        try:
+            pm = QPixmap(path)
+        except Exception:
+            pm = QPixmap()
+        if pm.isNull():
+            return
+        self._wake_flash_pixmap = pm
+        self._wake_flash_until = _t.monotonic() + (self._wake_flash_total_ms / 1000.0)
+        # Schedule a single repaint at the end of the flash window.
+        try:
+            QTimer.singleShot(self._wake_flash_total_ms + 30, self.viewport().update)
+        except Exception:
+            pass
+        self.viewport().update()
 
     def set_wallpaper_pixmap(self, pixmap):
         self._wallpaper_source = pixmap if isinstance(pixmap, QPixmap) else QPixmap()
@@ -753,6 +796,20 @@ class SiftaMdiArea(QMdiArea):
             self._wallpaper_cache_size = size_key
         return self._wallpaper_cache
 
+    def _on_behavior_tick(self, source: str = "") -> None:
+        """BehaviorClock fired. Run one field-engine update if enabled."""
+        import os as _os
+        if _os.environ.get("SIFTA_DESKTOP_FIELD_TICK", "0").strip().lower() not in (
+            "1", "true", "yes", "on",
+        ):
+            return
+        if not self.particles:
+            return
+        try:
+            self.tick()
+        except Exception:
+            pass
+
     def tick(self):
         w, h = self.viewport().width(), self.viewport().height()
         if w == 0 or h == 0:
@@ -760,7 +817,7 @@ class SiftaMdiArea(QMdiArea):
 
         if self.use_engine:
             import numpy as np
-            
+
             salience = np.zeros((self.cfg.grid_size, self.cfg.grid_size), dtype=np.float32)
             
             for win in self.subWindowList():
@@ -776,13 +833,18 @@ class SiftaMdiArea(QMdiArea):
                 blob = np.exp(-(((x_grid - ix) ** 2 + (y_grid - iy) ** 2) / 8.0)).astype(np.float32)
                 salience += blob * 2.0
                 
-            positions = np.array([[float(p[0]), float(p[1])] for p in self.particles], dtype=np.float32)
-            
             memory_field = getattr(self, "_engine_memory", np.zeros((self.cfg.grid_size, self.cfg.grid_size), dtype=np.float32))
             memory_field *= 0.92
-            for pos in positions:
-                i, j = self.engine._idx(pos)
-                memory_field[i, j] += 0.3
+            if self.particles:
+                positions = np.array(
+                    [[float(p[0]), float(p[1])] for p in self.particles],
+                    dtype=np.float32,
+                ).reshape((-1, 2))
+                for pos in positions:
+                    i, j = self.engine._idx(pos)
+                    memory_field[i, j] += 0.3
+            else:
+                positions = None
             self._engine_memory = memory_field
             
             self.engine.update(
@@ -795,9 +857,9 @@ class SiftaMdiArea(QMdiArea):
             for p in self.particles:
                 pos = np.array([float(p[0]), float(p[1])], dtype=np.float32)
                 grad = self.engine.gradient_at(pos)
-                
+
                 eta_x, eta_y = np.random.normal(0, 0.006, 2)
-                
+
                 p[0] = float(np.clip(p[0] + grad[0] * 0.012 + eta_x, 0.0, 1.0))
                 p[1] = float(np.clip(p[1] + grad[1] * 0.012 + eta_y, 0.0, 1.0))
     def _refresh_pred_data(self) -> None:
@@ -807,12 +869,18 @@ class SiftaMdiArea(QMdiArea):
             return
         self._pred_last_read = now
         try:
-            from System.swarm_boot_census import boot_census
+            from System.swarm_boot_census import boot_census, boot_census_lines
             census = boot_census()
             self._pred_data["alive"] = int(census.get("body_real_organs", 0) or 0)
             self._pred_data["identity_total"] = int(census.get("identity_total", 0) or 0)
             self._pred_data["field_dimensions"] = int(census.get("field_dimensions", 0) or 0)
             self._pred_data["field_swimmers"] = int(census.get("field_swimmers", 0) or 0)
+            # Pre-rendered census lines — exact format Architect's reference
+            # image shows. boot_census_lines emits e.g.
+            #   "🐜  15 REAL body organs  |  DEMO 2  BROKEN 0  UNKNOWN 0"
+            #   "🧬  35 identity probes  |  18 present now"
+            #   "🌊  53 field dims  |  12 swimmers  |  46 coupling edges"
+            self._pred_data["census_lines"] = list(boot_census_lines(census))
             from System.stgm_economy import scan_economy
             snap = scan_economy()
             self._pred_data["stgm"] = snap.canonical_wallet_sum
@@ -821,44 +889,231 @@ class SiftaMdiArea(QMdiArea):
             self._pred_data["identity_total"] = 0
             self._pred_data["field_dimensions"] = 0
             self._pred_data["field_swimmers"] = 0
+            self._pred_data["census_lines"] = []
             self._pred_data["stgm"] = 0.0
 
-    def _draw_predator_sigil(self, painter: "QPainter", w: int, h: int) -> None:
-        """Single whisper line + ghost PREDATOR text. Human predator: you feel it.
-        Data refresh every 30 s, paint cost = 2 drawText calls.
+    def _paint_swarm_field_heatmap(self, painter: "QPainter", w: int, h: int) -> None:
+        """Paint the live UnifiedFieldEngine memory grid as a honey-amber heatmap.
+
+        What this paints
+        ----------------
+        `self._engine_memory` is the running stigmergic memory field maintained
+        by `self.tick()`: deposits at every particle position with 0.92/tick
+        decay. Cells with strong recent activity glow; cells the swarm has
+        ignored fade to transparent. This is the same field UnifiedFieldEngine
+        sees — there is no synthetic data on this canvas.
+
+        Visual contract
+        ---------------
+        - BeeSon palette → honey-amber cell glow (gold→amber) on cream bg.
+        - Other palettes → particle_color_a from the active palette.
+        - Cells with normalized energy < ``floor`` (default 0.06) draw NOTHING
+          so the desktop stays calm.
+        - Cell alpha is multiplied by a global gain (``SIFTA_DESKTOP_FIELD_GAIN``,
+          default 1.0) so the Architect can dim/brighten without code.
+
+        Off-switch
+        ----------
+        ``SIFTA_DESKTOP_FIELD_HEATMAP=0`` (or ``false`` / ``no`` / ``off``)
+        skips the entire paint pass — same discipline as the census line.
         """
+        import os as _os
+        # Architect 2026-05-11 22:43: "WHAT ARE THE DOTS REPRESENT? FOR WHAT?"
+        # The heatmap is real (UnifiedFieldEngine.memory) but has no on-screen
+        # legend yet, so we default OFF. The Architect can opt in once he
+        # wants to see the swarm's stigmergic trace:
+        #   SIFTA_DESKTOP_FIELD_HEATMAP=1   → paint the gold cells
+        #   SIFTA_DESKTOP_FIELD_HEATMAP=0   → invisible (default)
+        _on = _os.environ.get("SIFTA_DESKTOP_FIELD_HEATMAP", "0").strip().lower()
+        if _on not in ("1", "true", "yes", "on"):
+            return
+        if not getattr(self, "use_engine", False):
+            return
+        mem = getattr(self, "_engine_memory", None)
+        if mem is None:
+            return
+        try:
+            import numpy as _np
+        except Exception:
+            return
+        # Snapshot once; tick() may overwrite while we paint.
+        try:
+            grid = _np.asarray(mem, dtype=_np.float32)
+        except Exception:
+            return
+        if grid.size == 0:
+            return
+        peak = float(grid.max()) if grid.size else 0.0
+        if peak <= 1e-6:
+            return  # Field is empty — paint nothing.
+
+        # Theme: honey-amber on BeeSon, otherwise palette particle_color_a.
+        _hot = QColor("#ffb300")   # honey gold
+        _cool = QColor("#ff8f00")  # deep amber
+        try:
+            pal = getattr(self, "_pal", None)
+            if pal is None:
+                from System.sifta_desktop_themes import active_palette
+                pal = active_palette()
+            if pal is not None:
+                _hot = QColor(getattr(pal, "particle_color_a", "#ffb300") or "#ffb300")
+                _cool = QColor(getattr(pal, "particle_color_b", "#ff8f00") or "#ff8f00")
+        except Exception:
+            pass
+
+        try:
+            gain = float(_os.environ.get("SIFTA_DESKTOP_FIELD_GAIN", "1.0"))
+        except Exception:
+            gain = 1.0
+        gain = max(0.05, min(3.0, gain))
+
+        floor = 0.06   # below 6% of peak → invisible
+        gy, gx = grid.shape if grid.ndim == 2 else (grid.size, 1)
+        # Cell footprint in viewport pixels. Slight overlap for smooth glow.
+        cw = w / float(gx)
+        ch = h / float(gy)
+        # Use bilinear-style overlap so the heatmap reads as continuous gold
+        # rather than a 64-pixel chessboard.
+        pad = max(1.0, 0.6 * max(cw, ch))
+
+        painter.save()
+        painter.setPen(Qt.PenStyle.NoPen)
+        # Iterate in linear scan; 64×64 = 4096 cells max, well under one
+        # frame budget at 2 fps (the tick rate).
+        norm = grid / peak
+        # `norm` is now in [0, 1]; multiply by gain and clip for alpha mapping.
+        for j in range(gy):
+            row = norm[j]
+            for i in range(gx):
+                v = float(row[i]) * gain
+                if v < floor:
+                    continue
+                if v > 1.0:
+                    v = 1.0
+                # Interpolate honey-gold → deep amber as intensity climbs.
+                t = (v - floor) / max(1e-6, 1.0 - floor)
+                r = int(_hot.red()   * (1.0 - t) + _cool.red()   * t)
+                g = int(_hot.green() * (1.0 - t) + _cool.green() * t)
+                b = int(_hot.blue()  * (1.0 - t) + _cool.blue()  * t)
+                # Alpha: faint cells barely visible, peak cells ~150/255.
+                a = int(28 + 122 * v)
+                c = QColor(r, g, b, a)
+                painter.setBrush(c)
+                x = i * cw - (pad - cw) * 0.5
+                y = j * ch - (pad - ch) * 0.5
+                painter.drawEllipse(QRectF(x, y, pad, pad))
+        painter.restore()
+
+    def _paint_one_bee(self, painter: "QPainter", w: int, h: int) -> None:
+        """Paint one 🐝 glyph at the center of the desktop. That's it.
+
+        Architect directive 2026-05-11 23:25: "ZERO BEES ON A DESKTOP I
+        WANT A CLEAN DESKTOP ONLY KEEP ONLY ONE BEE IN THE MIDDLE." So:
+        one bee, static, no animation, no timer. Renders as a real Unicode
+        emoji glyph from the system font; no PNG, no SVG, no QPixmap, no
+        per-paint allocation beyond the QFont.
+
+        Size adapts to viewport but caps at 256 px so it never dominates.
+        Disable with SIFTA_DESKTOP_BEE=0.
+        """
+        import os as _os
+        if _os.environ.get("SIFTA_DESKTOP_BEE", "1").strip().lower() in (
+            "0", "false", "no", "off",
+        ):
+            return
+        size = max(72, min(256, int(min(w, h) * 0.16)))
+        bee_font = QFont("Apple Color Emoji", size)
+        bee_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        painter.setFont(bee_font)
+        # Pen color is irrelevant for color emoji on macOS but set for
+        # fallback rendering on platforms that draw the glyph monochrome.
+        painter.setPen(QColor("#ffb300"))
+        painter.drawText(
+            0, 0, w, h,
+            Qt.AlignmentFlag.AlignCenter,
+            "🐝",
+        )
+
+    def _draw_predator_sigil(self, painter: "QPainter", w: int, h: int) -> None:
+        """Live census status strip (organs / field / STGM). Optional giant ghost watermark only if env + palette ask for it."""
         import math as _m, time as _t
         self._refresh_pred_data()
         t = _t.monotonic()
 
-        # Ghost PREDATOR — large, ultra-faint (opacity 8/255)
-        painter.setFont(QFont("Helvetica Neue", 96, QFont.Weight.Black))
-        painter.setPen(QColor(0, 255, 100, 8))
+        import os as _os
+        pal = getattr(self, "_pal", None)
+        try:
+            if pal is None:
+                from System.sifta_desktop_themes import active_palette
+                pal = active_palette()
+        except Exception:
+            pal = None
+        _wmark = (getattr(pal, "watermark_text", None) or "").strip()
+        # Vanity billboard — opt-in only (Architect UX: default is utility, not logo spam).
+        if (
+            _os.environ.get("SIFTA_DESKTOP_GIANT_WATERMARK", "").strip() == "1"
+            and _wmark
+        ):
+            painter.setFont(QFont("Helvetica Neue", 96, QFont.Weight.Black))
+            painter.setPen(QColor(0, 255, 100, 8))
+            painter.drawText(
+                self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, _wmark
+            )
+
+        # Census status block — neon-green terminal readout.
+        # Architect 2026-05-11 23:25: "ALL THAT TEXTY IN THE DESKTOP — REMOVE
+        # IT ALL." Default OFF now. Re-enable with SIFTA_DESKTOP_CENSUS_LINE=1
+        # for boot debug; the boot banner still prints it to stderr regardless.
+        _census = _os.environ.get("SIFTA_DESKTOP_CENSUS_LINE", "0").strip().lower()
+        if _census not in ("1", "true", "yes", "on"):
+            return
+
+        os_tag = getattr(pal, "os_line", "🐝 SIFTA BeeSon OS v8.0") if pal else "🐝 SIFTA BeeSon OS v8.0"
+        lines = list(self._pred_data.get("census_lines") or [])
+        if not lines:
+            # Fallback if pre-render didn't populate (first paint before
+            # _refresh_pred_data ran). One inline line keeps the desktop
+            # informative on cold boot.
+            alive = self._pred_data.get("alive", 0)
+            lines = [f"🐜  {alive} REAL body organs  |  Body Panel live"]
+
+        pulse = 0.5 + 0.5 * _m.sin(t * 0.16)  # 40 s breath
+
+        # Neon terminal green on the BeeSon (dark) theme; warm brown on
+        # light themes (legacy mermaid daytime); palette-driven so future
+        # themes can override.
+        _neon = QColor(124, 255, 124)   # #7CFF7C — matrix terminal green
+        _dim_neon = QColor(70, 200, 70, int(190 + 50 * pulse))
+        _light = bool(pal and getattr(pal, "theme_id", "") in ("mermaid_light", "beeson_daylight"))
+        if _light:
+            _neon = QColor(130, 95, 45)
+            _dim_neon = QColor(130, 95, 45, int(180 + 50 * pulse))
+
+        # Header — "🐝 SIFTA BeeSon OS v8.0" big bold neon
+        header_font = QFont("Menlo", 22, QFont.Weight.Bold)
+        header_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        painter.setFont(header_font)
+        painter.setPen(_neon)
+        header_y = 56
         painter.drawText(
-            self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, "PREDATOR"
+            0, header_y, w, 36,
+            Qt.AlignmentFlag.AlignHCenter,
+            os_tag,
         )
 
-        # One whisper line with real data — 40s pulse between 20 and 35 alpha
-        alive = self._pred_data.get("alive", 0)
-        identity_total = self._pred_data.get("identity_total", 0)
-        dims = self._pred_data.get("field_dimensions", 0)
-        swimmers = self._pred_data.get("field_swimmers", 0)
-        stgm  = self._pred_data.get("stgm", 0.0)
-        census_bits = [f"{alive} REAL body organs"]
-        if identity_total:
-            census_bits.append(f"{identity_total} identity probes")
-        if dims:
-            census_bits.append(f"{dims} field dims")
-        if swimmers:
-            census_bits.append(f"{swimmers} swimmers")
-        sub = f"SIFTA Predator v7.0  ·  {' · '.join(census_bits)}  ·  STGM {stgm:.0f}"
-        pulse = 0.5 + 0.5 * _m.sin(t * 0.16)  # 40 s period
-        painter.setFont(QFont("Menlo", 11))
-        painter.setPen(QColor(0, 180, 80, int(20 + 15 * pulse)))
-        painter.drawText(
-            0, h // 2 + 76, w, 22,
-            Qt.AlignmentFlag.AlignHCenter, sub,
-        )
+        # Census lines — monospace neon, pulsing soft. One per row.
+        line_font = QFont("Menlo", 13)
+        line_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        painter.setFont(line_font)
+        painter.setPen(_dim_neon)
+        line_h = 22
+        block_y = header_y + 44
+        for i, ln in enumerate(lines):
+            painter.drawText(
+                0, block_y + i * line_h, w, line_h,
+                Qt.AlignmentFlag.AlignHCenter,
+                ln,
+            )
 
 
 
@@ -876,23 +1131,98 @@ class SiftaMdiArea(QMdiArea):
             x = int((w - wallpaper.width()) / 2)
             y = int((h - wallpaper.height()) / 2)
             painter.drawPixmap(x, y, wallpaper)
-            painter.fillRect(rect, QColor(3, 6, 12, 58))
+            # Warm honey veil — not the old “midnight blue mud” filter.
+            painter.fillRect(rect, QColor(255, 248, 235, 52))
         else:
-            painter.fillRect(rect, QColor("#080a0f"))
-        
+            _bg = "#080a0f"
+            try:
+                pal = getattr(self, "_pal", None)
+                if pal is None:
+                    from System.sifta_desktop_themes import active_palette
+                    pal = active_palette()
+                if pal is not None and getattr(pal, "bg_deep", ""):
+                    _bg = str(pal.bg_deep)
+            except Exception:
+                pass
+            painter.fillRect(rect, QColor(_bg))
+
         # No grid — clean desktop.
 
-        if not has_wallpaper:
-            self._draw_predator_sigil(painter, w, h)
+        # ── Architect 2026-05-11 23:25: clean desktop ─────────────────
+        # No particles, no field heatmap, no census text, no animation.
+        # Just one bee in the middle, painted as a static emoji glyph.
+        # The heatmap / particles / census remain available via env vars:
+        #   SIFTA_DESKTOP_FIELD_HEATMAP=1
+        #   SIFTA_DESKTOP_FIELD_TICK=1 (+ SIFTA_DESKTOP_PHOTONS>0)
+        #   SIFTA_DESKTOP_CENSUS_LINE=1
+        # All three default OFF so the UI thread stays free.
+        self._paint_one_bee(painter, w, h)
 
-        painter.setPen(Qt.PenStyle.NoPen)
-        for p in self.particles:
-            px = float(p[0] * w) if self.use_engine else float(p[0])
-            py = float(p[1] * h) if self.use_engine else float(p[1])
-            if 0 <= px <= w and 0 <= py <= h:
-                c = QColor(125, 207, 255, 45) if p[4] > 5 else QColor(187, 154, 247, 40)
-                painter.setBrush(c)
-                painter.drawEllipse(QRectF(px, py, float(p[4]), float(p[4])))
+        # Field heatmap — runs only if env asks for it (default off).
+        try:
+            self._paint_swarm_field_heatmap(painter, w, h)
+        except Exception:
+            pass
+
+        # Census text — runs only if env asks for it (default off; see
+        # _draw_predator_sigil's gate).
+        self._draw_predator_sigil(painter, w, h)
+
+        # Optional decorative drift particles (env-gated; default 0 anyway).
+        if self.particles:
+            painter.setPen(Qt.PenStyle.NoPen)
+            _pa = "#ffb300"
+            _pb = "#ff8f00"
+            try:
+                pal = getattr(self, "_pal", None)
+                if pal is None:
+                    from System.sifta_desktop_themes import active_palette
+                    pal = active_palette()
+                if pal is not None:
+                    _pa = getattr(pal, "particle_color_a", _pa) or _pa
+                    _pb = getattr(pal, "particle_color_b", _pb) or _pb
+            except Exception:
+                pass
+            for p in self.particles:
+                px = float(p[0] * w) if self.use_engine else float(p[0])
+                py = float(p[1] * h) if self.use_engine else float(p[1])
+                if 0 <= px <= w and 0 <= py <= h:
+                    _pc = QColor(_pa) if p[4] > 5 else QColor(_pb)
+                    _pc.setAlpha(38 if p[4] > 5 else 32)
+                    painter.setBrush(_pc)
+                    painter.drawEllipse(QRectF(px, py, float(p[4]), float(p[4])))
+
+        # ── Wake-flash overlay ──────────────────────────────────────
+        # When the wake-ear receipt fires, the camera widget saves a
+        # fresh JPEG and emits frame_ready. We paint that frame here,
+        # centered, fading out across ~600 ms. One picture, one flash,
+        # then back to a clean desktop.
+        import time as _t_flash
+        _now = _t_flash.monotonic()
+        if (
+            not self._wake_flash_pixmap.isNull()
+            and _now < self._wake_flash_until
+        ):
+            remain = max(0.0, self._wake_flash_until - _now)
+            frac = remain / max(1e-6, self._wake_flash_total_ms / 1000.0)
+            # Ease-out alpha: peaks at first paint, fades to 0.
+            alpha = int(220 * frac)
+            # Scale frame to ~28% of the smaller viewport dimension.
+            target_h = max(120, int(min(w, h) * 0.28))
+            scaled = self._wake_flash_pixmap.scaledToHeight(
+                target_h, Qt.TransformationMode.SmoothTransformation
+            )
+            fw, fh = scaled.width(), scaled.height()
+            fx = (w - fw) // 2
+            fy = (h - fh) // 2
+            painter.setOpacity(alpha / 255.0)
+            painter.drawPixmap(fx, fy, scaled)
+            painter.setOpacity(1.0)
+            # Thin honey-gold ring to mark "Alice heard you".
+            _ring = QColor(255, 179, 0, max(40, alpha))
+            painter.setPen(QPen(_ring, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRectF(fx - 6, fy - 6, fw + 12, fh + 12))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1392,7 +1722,7 @@ class SiftaDesktop(QMainWindow):
         self._body_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._body_splitter.setHandleWidth(2)
         self._body_splitter.setStyleSheet(
-            "QSplitter::handle { background: rgba(255,68,68,0.18); }"
+            "QSplitter::handle { background: rgba(255, 179, 0, 0.30); }"
         )
 
         # Alice resident panel — loaded after the app is shown to avoid
@@ -1407,8 +1737,8 @@ class SiftaDesktop(QMainWindow):
 
         self._body_splitter.addWidget(self._alice_panel)
         self._body_splitter.addWidget(self.mdi)
-        # Default split: 38% Alice, 62% MDI
-        self._body_splitter.setSizes([480, 800])
+        # Default split: ~42% Alice (Talk-first), ~58% MDI workspace.
+        self._body_splitter.setSizes([540, 740])
         self._body_splitter.setStretchFactor(0, 0)   # Alice panel: fixed ratio
         self._body_splitter.setStretchFactor(1, 1)   # MDI: takes all extra space
 
@@ -1461,6 +1791,9 @@ class SiftaDesktop(QMainWindow):
         # Owner-field heartbeat — touch presence JSON no faster than 15 min.
         self._last_owner_alive_touch = time.time()
 
+        # 1 Hz wall clock — definition of seconds, not a perf knob. But
+        # pause it when the window is hidden so we don't tick a label
+        # nobody is reading. Architect 00:14 perf push.
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._update_clock)
         self._clock_timer.start(1000)
@@ -1528,9 +1861,40 @@ class SiftaDesktop(QMainWindow):
 
         self._wallpaper_state = None
         self._apply_wallpaper(force=True)
-        self._wallpaper_timer = QTimer(self)
-        self._wallpaper_timer.timeout.connect(self._maybe_reload_wallpaper)
-        self._wallpaper_timer.start(2000)
+        # Architect 2026-05-11 23:50: no hardcoded poll. The wallpaper
+        # reloader fires on three real events:
+        #   1. QFileSystemWatcher signals from the wallpaper file / its
+        #      parent directory (filesystem actually changed).
+        #   2. Application focus return (we came back to the OS window).
+        #   3. BehaviorClock tick (owner is interacting — re-check stale
+        #      state once, debounced by Alice's heart period).
+        self._wallpaper_timer = None  # legacy attr; no QTimer.start anywhere.
+        try:
+            from PyQt6.QtCore import QFileSystemWatcher
+            self._wallpaper_watcher = QFileSystemWatcher(self)
+            self._wallpaper_watcher.fileChanged.connect(self._maybe_reload_wallpaper)
+            self._wallpaper_watcher.directoryChanged.connect(self._maybe_reload_wallpaper)
+            # Watch the bundled wallpapers folder so dropping a new file
+            # in is detected immediately.
+            wp_dir = str(_REPO / "Library" / "Desktop Pictures")
+            try:
+                self._wallpaper_watcher.addPath(wp_dir)
+            except Exception:
+                pass
+            # Also watch the .sifta_state file so the Settings picker
+            # change reloads instantly.
+            state_file = str(_REPO / ".sifta_state" / "desktop_wallpaper.json")
+            try:
+                self._wallpaper_watcher.addPath(state_file)
+            except Exception:
+                pass
+        except Exception:
+            self._wallpaper_watcher = None
+        try:
+            from System.swarm_behavior_clock import behavior_clock
+            behavior_clock().tick.connect(lambda *_: self._maybe_reload_wallpaper())
+        except Exception:
+            pass
 
         # Biological attention timing is consolidated into the kernel scheduler
         # timer installed at boot. These due stamps let the single director call
@@ -1541,7 +1905,57 @@ class SiftaDesktop(QMainWindow):
         _desktop_init_trace("leave __init__")
 
     def _start_mesh_lazy(self) -> None:
-        """Start the swarm mesh relay worker ~5 s after boot (P0 perf fix)."""
+        """Start the swarm mesh relay worker ~5 s after boot, but ONLY if the
+        relay is actually answering.
+
+        Architect 2026-05-12 00:06: the worker was hammering
+        ws://127.0.0.1:8765 on a 100 ms reconnect-poll when the relay
+        wasn't running. Now we TCP-probe first; if down, defer the start
+        and retry once per BehaviorClock tick (i.e., when the owner does
+        something the worker re-checks the relay). No hot spin while idle.
+        """
+        try:
+            import socket as _socket
+            from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
+
+            def _probe_relay() -> bool:
+                try:
+                    host, port = "127.0.0.1", 8765
+                    with _socket.create_connection((host, port), timeout=0.4):
+                        return True
+                except Exception:
+                    return False
+
+            if not _probe_relay():
+                # Relay not up. Skip the worker. Hook BehaviorClock so we
+                # retry on real owner activity rather than on a fixed timer.
+                self._desktop_mesh = None
+                try:
+                    from System.swarm_behavior_clock import behavior_clock
+                    behavior_clock().tick.connect(self._maybe_attach_mesh)
+                except Exception:
+                    pass
+                return
+
+            self._desktop_mesh = _SwarmMeshClientWorker(
+                uri=SWARM_RELAY_URI, architect_id="DESKTOP_HUD"
+            )
+            self._desktop_mesh.connection_status.connect(self._on_desktop_mesh_status)
+            self._desktop_mesh.start()
+        except Exception:
+            self._desktop_mesh = None
+
+    def _maybe_attach_mesh(self, *_args) -> None:
+        """BehaviorClock tick — if relay is now up, attach the worker once."""
+        if getattr(self, "_desktop_mesh", None) is not None:
+            return
+        try:
+            import socket as _socket
+            with _socket.create_connection(("127.0.0.1", 8765), timeout=0.3):
+                pass
+        except Exception:
+            return
+        # Relay came up. Start the worker now.
         try:
             from System.global_cognitive_interface import _SwarmMeshClientWorker, SWARM_RELAY_URI
             self._desktop_mesh = _SwarmMeshClientWorker(
@@ -1577,15 +1991,48 @@ class SiftaDesktop(QMainWindow):
     def _apply_wallpaper(self, force=False):
         """Load the desktop wallpaper once; SiftaMdiArea paints it as one image.
 
-        QMdiArea.setBackground(QBrush(QPixmap(...))) tiles the pixmap. That is
-        why the live desktop looked like repeated panels instead of one macOS-like
-        desktop surface. The MDI area now owns the single scaled/cropped paint.
+        Architect directive 2026-05-11 22:43 (second time): hates the honeycomb
+        wallpaper. Default is now OFF for **every** theme. The desktop reads
+        the swarm field heatmap, not a static texture. Set
+        ``SIFTA_DESKTOP_WALLPAPER_ON=1`` to opt in. Set ``=0`` (or leave
+        empty) to keep it off.
         """
         try:
             from PyQt6.QtGui import QBrush, QColor, QPixmap
 
+            from System.sifta_desktop_themes import (
+                active_palette,
+                load_custom_wallpaper_path,
+            )
+
+            pal = active_palette()
+            if hasattr(self.mdi, "_pal"):
+                self.mdi._pal = pal
+
+            # Architect's explicit choice wins (Settings → Appearance →
+            # Wallpaper). Three states:
+            #   None  → no choice made yet, follow env flag (default OFF)
+            #   ""    → explicit "no wallpaper"
+            #   path  → use that file
+            custom = load_custom_wallpaper_path()
+            if custom is None:
+                raw = os.environ.get("SIFTA_DESKTOP_WALLPAPER_ON", "").strip()
+                wallpaper_on = raw == "1"
+            else:
+                wallpaper_on = bool(custom)
+
+            _bg = QColor(pal.bg_deep) if getattr(pal, "bg_deep", "") else QColor("#f4ead8")
+
+            if not wallpaper_on:
+                if hasattr(self.mdi, "set_wallpaper_pixmap"):
+                    self.mdi.set_wallpaper_pixmap(QPixmap())
+                self.mdi.setBackground(QBrush(_bg))
+                self._wallpaper_state = (None, None, None)
+                return
+
             state = self._selected_wallpaper_state()
             if not force and state == self._wallpaper_state:
+                self.mdi.setBackground(QBrush(_bg))
                 return
             self._wallpaper_state = state
 
@@ -1593,13 +2040,13 @@ class SiftaDesktop(QMainWindow):
             if wp_path:
                 pm = QPixmap(wp_path)
                 if not pm.isNull():
-                    self.mdi.setBackground(QBrush(QColor("#080a0f")))
+                    self.mdi.setBackground(QBrush(_bg))
                     if hasattr(self.mdi, "set_wallpaper_pixmap"):
                         self.mdi.set_wallpaper_pixmap(pm)
                     return
             if hasattr(self.mdi, "set_wallpaper_pixmap"):
                 self.mdi.set_wallpaper_pixmap(QPixmap())
-            self.mdi.setBackground(QBrush(QColor("#0a0a0f")))
+            self.mdi.setBackground(QBrush(_bg))
         except Exception as exc:
             print(f"[SiftaDesktop] wallpaper reload failed: {exc}", file=sys.stderr)
 
@@ -1753,6 +2200,28 @@ class SiftaDesktop(QMainWindow):
             traceback.print_exc()
 
 
+
+    def showEvent(self, event):
+        """Resume the 1 Hz wall-clock when the OS window comes back."""
+        try:
+            ct = getattr(self, "_clock_timer", None)
+            if ct is not None and not ct.isActive():
+                ct.start(1000)
+        except Exception:
+            pass
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        """Pause the wall-clock when the OS window is hidden — nobody's
+        reading the label, so don't tick a label nobody sees. Architect
+        00:14 fan-drop pass."""
+        try:
+            ct = getattr(self, "_clock_timer", None)
+            if ct is not None:
+                ct.stop()
+        except Exception:
+            pass
+        super().hideEvent(event)
 
     def closeEvent(self, event):
         self._is_closing = True
@@ -2084,9 +2553,29 @@ class SiftaDesktop(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Clock is layout-managed inside _build_top_menu_bar — no manual positioning needed.
+        # Clock is layout-managed inside _build_top_menu_bar — no manual
+        # positioning needed.
+        #
+        # Architect 2026-05-12 00:35: window resize was taking 30 s because
+        # the previous version called `self._apply_wallpaper(force=True)`
+        # on every single resize event. Dragging the window handle fires
+        # ~60 of those per second; each one re-reads the wallpaper file
+        # from disk (141 KB SVG / 700 KB JPG), decodes it, and forces a
+        # SmoothTransformation rescale on the QPixmap.
+        #
+        # `SiftaMdiArea._scaled_wallpaper` already caches the scaled
+        # pixmap keyed by (width, height) and re-scales when the cache
+        # key changes — no disk read needed on resize. So we just let
+        # Qt's normal paintEvent flow handle it, and DEBOUNCE the
+        # filesystem re-check to ~150 ms after the user stops resizing.
         if hasattr(self, "mdi") and hasattr(self, "_wallpaper_state"):
-            self._apply_wallpaper(force=True)
+            wpd = getattr(self, "_wallpaper_resize_debounce", None)
+            if wpd is None:
+                wpd = QTimer(self)
+                wpd.setSingleShot(True)
+                wpd.timeout.connect(lambda: self._apply_wallpaper(force=True))
+                self._wallpaper_resize_debounce = wpd
+            wpd.start(150)
 
 
     # ── Taskbar ────────────────────────────────────────────
@@ -2249,10 +2738,25 @@ class SiftaDesktop(QMainWindow):
         )
         layout.addWidget(self._relay_indicator)
 
-        # Heartbeat timer to check GCI mesh status
-        self._relay_timer = QTimer(self)
+        # Mesh status indicator — was a 2 s poll, now signal-driven.
+        # Architect 00:14: the mesh worker already emits connection_status;
+        # the indicator updates on that event plus on BehaviorClock ticks
+        # so it stays fresh when the owner is doing something.
+        self._relay_timer = QTimer(self)  # kept for API compat, never started
         self._relay_timer.timeout.connect(self._update_relay_indicator)
-        self._relay_timer.start(2000)
+        try:
+            dm = getattr(self, "_desktop_mesh", None)
+            if dm is not None:
+                dm.connection_status.connect(lambda *_a: self._update_relay_indicator())
+        except Exception:
+            pass
+        try:
+            from System.swarm_behavior_clock import behavior_clock
+            behavior_clock().tick.connect(lambda *_a: self._update_relay_indicator())
+        except Exception:
+            pass
+        # One initial paint so the indicator isn't blank at first show.
+        QTimer.singleShot(0, self._update_relay_indicator)
 
         btn_power = QPushButton("⏻")
         btn_power.setStyleSheet(
@@ -3089,10 +3593,21 @@ class SiftaDesktop(QMainWindow):
             "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 6px;"
         )
         layout.addWidget(self._relay_indicator)
+        # Signal-driven now (Architect 00:14 fan-drop). No 2 s poll.
         if not hasattr(self, "_relay_timer"):
             self._relay_timer = QTimer(self)
             self._relay_timer.timeout.connect(self._update_relay_indicator)
-            self._relay_timer.start(2000)
+        try:
+            dm = getattr(self, "_desktop_mesh", None)
+            if dm is not None:
+                dm.connection_status.connect(lambda *_a: self._update_relay_indicator())
+        except Exception:
+            pass
+        try:
+            from System.swarm_behavior_clock import behavior_clock
+            behavior_clock().tick.connect(lambda *_a: self._update_relay_indicator())
+        except Exception:
+            pass
         self._update_relay_indicator()
 
         _BTN_SS = (
@@ -3532,7 +4047,30 @@ def _install_kernel_scheduler_timer(
         except Exception as exc:
             sys.stderr.write(f"[BOOT] kernel scheduler tick skipped: {exc}\n")
 
-    scheduler_timer.timeout.connect(_kernel_scheduler_tick)
+    # Adaptive interval — Architect 00:14 fan-drop. When the kernel
+    # reports policy='engage' or 'sample', the scheduler runs at the base
+    # 3 s cadence (it has real pending work). When policy='idle' nobody
+    # is asking for cycles, so we slow to 30 s — still well within the
+    # 60 s idle-maintenance interval and the 180 s safety heartbeat.
+    _IDLE_INTERVAL_MS = 30_000
+    _ENGAGE_INTERVAL_MS = max(50, int(interval_ms))
+
+    def _adapt_interval() -> None:
+        try:
+            policy, _ = _scheduler_policy_from_kernel(kernel_table)
+        except Exception:
+            policy = "idle"
+        target = _IDLE_INTERVAL_MS if policy == "idle" else _ENGAGE_INTERVAL_MS
+        if scheduler_timer.interval() != target:
+            scheduler_timer.setInterval(target)
+            app.setProperty("sifta_kernel_scheduler_interval_ms", target)
+
+    def _kernel_scheduler_tick_with_adapt() -> None:
+        _kernel_scheduler_tick()
+        _adapt_interval()
+
+    scheduler_timer.timeout.connect(_kernel_scheduler_tick_with_adapt)
+    _adapt_interval()  # set the right interval *before* first start.
     scheduler_timer.start()
     app._sifta_kernel_scheduler_timer = scheduler_timer
     app.setProperty("sifta_kernel_scheduler_interval_ms", scheduler_timer.interval())
@@ -3556,10 +4094,10 @@ if __name__ == "__main__":
         _pal = active_palette()
         _n_organs = len(ORGAN_DEFS)
         _n_swimmers = int(os.environ.get("SIFTA_VISION_SWIMMERS", "1800"))
-        _n_photons = int(os.environ.get("SIFTA_DESKTOP_PHOTONS", "200"))
+        _n_photons = int(os.environ.get("SIFTA_DESKTOP_PHOTONS", "0"))
     except Exception:
         class _pal:
-            os_line = "SIFTA Mermaid OS v6.0"
+            os_line = "🐝 SIFTA BeeSon OS v8.0"
         # Dynamic fallback: count System/*.py organ modules
         try:
             _sys_dir = Path(__file__).resolve().parent / "System"
@@ -3567,7 +4105,7 @@ if __name__ == "__main__":
         except Exception:
             _n_organs = 0
         _n_swimmers = 1800
-        _n_photons = 200
+        _n_photons = 0
 
     # Shell script already printed the full banner with live theme+organ data.
     # Python only emits the app path so crash logs are traceable.
@@ -3610,6 +4148,21 @@ if __name__ == "__main__":
         app.setProperty("sifta_kernel_process_table", kernel_table)
     app.setFont(QFont("Helvetica Neue", 13))
     app.setStyleSheet(_get_global_qss())   # Predator / Mermaid from theme engine
+
+    # ── BehaviorClock — Alice ticks on owner behavior, not on a fixed
+    # millisecond grid. Architect 2026-05-11 23:50. Install global event
+    # filter so every keypress / mouse / focus event becomes a tick;
+    # link the wake-bus and app-focus signal so non-UI stimulus also
+    # counts. Debounce is the Architect's own clinical heart period —
+    # not a magic number.
+    try:
+        from System.swarm_behavior_clock import behavior_clock
+        _clock = behavior_clock()
+        _clock.attach_to_qapp(app)
+        _clock.link_wake_bus()
+        _clock.link_app_focus()
+    except Exception as exc:
+        sys.stderr.write(f"[BOOT] behavior_clock not installed: {exc}\n")
 
     # ── Owner unified field — STIGTIME + schedule + presence (Event 119+) ─
     try:
