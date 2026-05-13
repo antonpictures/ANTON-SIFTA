@@ -68,6 +68,7 @@ except Exception as exc:
 
 _STATE = REPO / ".sifta_state"
 _BROWSE_LEDGER = _STATE / "alice_browse_history.jsonl"
+_CURRENT_PAGE_SNAPSHOT = _STATE / "alice_browser_current_page.json"
 
 _HOME_URL = "sifta://home"
 
@@ -208,6 +209,32 @@ def _write_browse_receipt(
     }
     with open(_BROWSE_LEDGER, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _write_current_page_snapshot(
+    *,
+    url: str,
+    title: str,
+    text: str,
+    duration_s: float = 0.0,
+) -> None:
+    """Expose the rendered page text to Alice's Talk organ for summaries."""
+    _STATE.mkdir(parents=True, exist_ok=True)
+    row = {
+        "ts": time.time(),
+        "trace_id": str(uuid.uuid4()),
+        "truth_label": "ALICE_BROWSER_PAGE_TEXT_V1",
+        "url": url,
+        "title": title,
+        "domain": _domain(url),
+        "duration_s": round(duration_s, 1),
+        "text": (text or "")[:120_000],
+        "text_chars": len(text or ""),
+    }
+    _CURRENT_PAGE_SNAPSHOT.write_text(
+        json.dumps(row, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _domain(url: str) -> str:
@@ -478,7 +505,29 @@ class AliceBrowserWidget(QMainWindow):
         title = self._view.title() if self._view else ""
         duration = round(time.time() - self._page_load_ts, 2)
         if ok and url and url not in (_HOME_URL, "sifta://home", "about:blank", ""):
-            _write_browse_receipt(url, title, duration_s=duration)
+            # Architect 2026-05-13 06:35 — disk writes (browse receipt +
+            # up-to-120KB page text snapshot) ran on the Qt main thread on
+            # every page load, freezing QWebEngineView for seconds. Push
+            # both to a daemon worker so the UI stays responsive.
+            import threading as _th
+            def _async_receipt(_u=url, _t=title, _d=duration):
+                try:
+                    _write_browse_receipt(_u, _t, duration_s=_d)
+                except Exception as _e:
+                    print(f"[AliceBrowser] receipt write failed: {_e}")
+            _th.Thread(target=_async_receipt, daemon=True, name="BrowseReceipt").start()
+            if self._view is not None:
+                def _async_snapshot(text, u=url, t=title, d=duration):
+                    def _worker():
+                        try:
+                            _write_current_page_snapshot(
+                                url=u, title=t, text=text, duration_s=d,
+                            )
+                        except Exception as _e:
+                            print(f"[AliceBrowser] page snapshot failed: {_e}")
+                    _th.Thread(target=_worker, daemon=True,
+                               name="BrowsePageSnapshot").start()
+                self._view.page().toPlainText(_async_snapshot)
             domain = _domain(url)
             self._receipt_lbl.setText(f"✅ receipt → {domain} ({duration}s)")
             self._status.showMessage(f"Loaded: {title[:60]}" if title else "Loaded")

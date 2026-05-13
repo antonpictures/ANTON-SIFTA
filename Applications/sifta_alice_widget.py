@@ -5,15 +5,16 @@ sifta_alice_widget.py — Alice (unified ear + eye + mesh, single window)
 Architect doctrine (2026-04-19, C47H):
 The Talk-to-Alice and What-Alice-Sees widgets are two organs of the SAME
 entity (Alice). They were autostarting as TWO separate MDI windows; the
-Architect asked for ONE app. By default the **ear** (talk + mic path) still
-loads on autostart, but the **eye** (camera / QCamera) stays off until the
-Architect explicitly enables vision — no surprise TCC / green LED on boot.
+Architect asked for ONE app. By default the **ear** (talk + mic path) and
+**eye** (camera / QCamera) both come online so Alice can inhabit the local
+machine. The eye *panel* is collapsed by default; the camera organ keeps
+running unless `SIFTA_ALICE_UNIFIED_DEFER_EYE=1` is set for a broken TCC host.
 
 Env overrides (Architect-tunable, no hardcoding):
-    SIFTA_ALICE_UNIFIED_DEFER_EYE=0
-        Legacy: construct WhatAliceSeesWidget immediately (camera may start on boot).
-    SIFTA_ALICE_UNIFIED_DEFER_EYE=1   (default)
-        Show a one-tap “Enable camera & vision” strip instead of starting QCamera.
+    SIFTA_ALICE_UNIFIED_DEFER_EYE=0   (default)
+        Construct WhatAliceSeesWidget immediately; camera may start on boot.
+    SIFTA_ALICE_UNIFIED_DEFER_EYE=1
+        Emergency fallback: show a one-tap “Enable camera & vision” strip.
 
 Layout
 ──────
@@ -57,10 +58,10 @@ Env overrides (Architect-tunable, no hardcoding):
         Skip the unified spoken greeting entirely.
     SIFTA_ALICE_UNIFIED_GREETING="custom string"
         Override the auto-generated telemetry greeting.
-    SIFTA_ALICE_UNIFIED_SPLIT="960,1100"
-        Initial QSplitter sizes (top, bottom). Defaults to 450,400.
+    SIFTA_ALICE_UNIFIED_SPLIT="180,700"
+        Vertical splitter (eye, talk). Default favors Talk; override e.g. ``200,640``.
     SIFTA_ALICE_UNIFIED_DEFER_EYE=1
-        Default: camera/vision off until Architect taps Enable (see module header).
+        Emergency fallback: camera/vision off until Architect taps Enable.
 """
 from __future__ import annotations
 
@@ -81,7 +82,16 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget
+from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSplitter,
+    QStackedLayout,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Child widgets — imported AFTER the env-var suppression above.
 from Applications.sifta_talk_to_alice_widget import (  # noqa: E402
@@ -90,6 +100,9 @@ from Applications.sifta_talk_to_alice_widget import (  # noqa: E402
 )
 from Applications.sifta_what_alice_sees_widget import (  # noqa: E402
     WhatAliceSeesWidget,
+)
+from System.swarm_camera_unified_field_proof import (  # noqa: E402
+    build_camera_unified_field_proof,
 )
 
 
@@ -124,39 +137,81 @@ class AliceWidget(QWidget):
         title = QLabel("Alice OS body")
         title.setStyleSheet("color:#00ffc8; font-weight:700; font-size:12px;")
         controls.addWidget(title)
+        self._camera_proof_label = QLabel("eye proof: checking unified field…")
+        self._camera_proof_label.setToolTip(
+            "Receipt-backed proof from visual_stigmergy, active_eye_identity_frames, "
+            "face_detection_events, and kernel_process_table. No fresh receipts means no health claim."
+        )
+        self._camera_proof_label.setStyleSheet(
+            "color:#ffd166; font-weight:700; font-size:11px; padding-left:8px;"
+        )
+        controls.addWidget(self._camera_proof_label, 1)
         controls.addStretch(1)
 
+        # Architect 2026-05-12 20:25: "Please remove that button and hide eye
+        # — I don't know why do I have to hide the eye when I don't even see
+        # the eye." Removed the hide/show toggle entirely. The eye panel is
+        # always visible. Camera capture, photon hashing, and saliency
+        # overlay all run continuously; the user sees the dot view (raw is
+        # off by default — see sifta_what_alice_sees_widget.py).
+        import os as _os
         self._eye_visible = True
         self._photon_overlay_visible = True
         self._event_ticker_visible = True
-        self._raw_video_visible = True   # False = stigmergic-only (dark canvas)
+        self._raw_video_visible = False  # stigmergic-only (dark canvas + dots)
 
-        self._btn_eye = QPushButton("hide eye")
-        self._btn_eye.setToolTip("Hide/show Alice's camera/photon organ. The desktop panel remains embedded.")
-        self._btn_eye.clicked.connect(self._toggle_eye_panel)
-        controls.addWidget(self._btn_eye)
+        # No 'show eye' / 'hide eye' button. The eye is the body — you don't
+        # toggle your own eye. Developer chrome (photons/ticker/raw) stays
+        # gated behind SIFTA_EYE_DEV_CONTROLS=1 for debugging only.
+        _show_dev = _os.environ.get("SIFTA_EYE_DEV_CONTROLS", "0").strip() == "1"
 
         self._btn_photons = QPushButton("hide photons")
         self._btn_photons.setToolTip("Hide/show photon overlay only; camera and ledgers remain real.")
+        self._btn_photons.setMinimumWidth(120)
         self._btn_photons.clicked.connect(self._toggle_photon_overlay)
+        self._btn_photons.setVisible(_show_dev)
         controls.addWidget(self._btn_photons)
 
         self._btn_events = QPushButton("hide ticker")
         self._btn_events.setToolTip("Hide/show the live ledger ticker inside the eye monitor.")
+        self._btn_events.setMinimumWidth(110)
         self._btn_events.clicked.connect(self._toggle_event_ticker)
+        self._btn_events.setVisible(_show_dev)
         controls.addWidget(self._btn_events)
 
+        # `show raw` is developer chrome (Architect 2026-05-11 22:43:
+        # "WHAT IS THAT FOR WHY DO I NEED TO CLICK?"). The raw-vs-stigmergic
+        # toggle stays available but is hidden from the toolbar unless
+        # SIFTA_EYE_DEV_CONTROLS=1. The button is still constructed so
+        # _sync_eye_controls / _toggle_raw_video don't crash on attribute
+        # access.
         self._btn_raw = QPushButton("hide raw")
         self._btn_raw.setToolTip(
             "Stigmergic-only mode: hide raw camera, show only the entropy/saliency overlay.\n"
             "Real photons are still hashed. Just no mirror."
         )
+        self._btn_raw.setMinimumWidth(100)
         self._btn_raw.clicked.connect(self._toggle_raw_video)
+        self._btn_raw.setVisible(_show_dev)
         controls.addWidget(self._btn_raw)
 
         layout.addLayout(controls)
 
-        self._splitter = QSplitter(Qt.Orientation.Vertical, self)
+        # ── Eye-behind-chat overlay layout ─────────────────────────────────
+        # Architect 2026-05-11 22:43: "WHAT IF THE EYES ARE INSIDE THE CHAT
+        # WINDOW BEHIND THE TEXT?" Yes — Qt does this with QStackedLayout
+        # in StackAll mode. The eye widget fills the panel; the talk
+        # widget sits on top with a translucent dark backing so the camera
+        # bleeds through behind the conversation. One pane, two organs,
+        # zero splitter to grab.
+        #
+        # Env kill-switch: SIFTA_ALICE_EYE_OVERLAY=0 reverts to the old
+        # vertical splitter for users who hate the new layout.
+        # SIFTA_EYE_CHAT_OVERLAY_ALPHA (0..255, default 165 ≈ 65% opaque)
+        # dials how much eye shows through the chat panel.
+        _overlay_on = os.environ.get(
+            "SIFTA_ALICE_EYE_OVERLAY", "1"
+        ).strip().lower() not in ("0", "false", "no", "off")
 
         self._talk = TalkToAliceWidget()
         # ALICE IS FREE — camera starts on boot by default.
@@ -187,24 +242,75 @@ class AliceWidget(QWidget):
             btn.clicked.connect(self._enable_vision)
             ph.addWidget(btn)
             ph.addStretch()
-            self._splitter.addWidget(self._eye_placeholder)
         else:
             self._sees = WhatAliceSeesWidget()
-            self._splitter.addWidget(self._sees)
 
-        # Talk panel on bottom (same as before)
-        self._splitter.addWidget(self._talk)
+        # Used by toggle code regardless of layout mode.
+        self._splitter = None  # legacy attribute; set only if overlay disabled
+        self._overlay = None
+        self._overlay_layout = None
+        self._overlay_on = _overlay_on
 
-        try:
-            split_str = os.environ.get(
-                "SIFTA_ALICE_UNIFIED_SPLIT", "260,520"
+        if _overlay_on:
+            # Stack: eye (bottom) + talk (top with translucent backing).
+            self._overlay = QWidget(self)
+            self._overlay_layout = QStackedLayout(self._overlay)
+            self._overlay_layout.setStackingMode(
+                QStackedLayout.StackingMode.StackAll
             )
-            top, bottom = (int(x) for x in split_str.split(","))
-            self._splitter.setSizes([top, bottom])
-        except Exception:
-            self._splitter.setSizes([260, 520])
+            self._overlay_layout.setContentsMargins(0, 0, 0, 0)
 
-        layout.addWidget(self._splitter)
+            _eye_widget = self._sees if self._sees is not None else self._eye_placeholder
+            if _eye_widget is not None:
+                self._overlay_layout.addWidget(_eye_widget)
+            # Talk on top — apply a translucent dark backing through a palette
+            # so the eye widget below is visible around the chat scroll area.
+            try:
+                _alpha = int(os.environ.get("SIFTA_EYE_CHAT_OVERLAY_ALPHA", "165"))
+            except Exception:
+                _alpha = 165
+            _alpha = max(60, min(230, _alpha))
+            self._talk.setAutoFillBackground(True)
+            _pal = self._talk.palette()
+            _pal.setColor(QPalette.ColorRole.Window, QColor(8, 12, 20, _alpha))
+            self._talk.setPalette(_pal)
+            self._overlay_layout.addWidget(self._talk)
+            # CRITICAL z-order fix (2026-05-11 23:01): QStackedLayout in
+            # StackAll mode paints the *current* widget on top. Without
+            # this line, the eye (added first → currentIndex 0) hides the
+            # whole chat. Make the talk the current widget so chat reads
+            # over the eye.
+            self._overlay_layout.setCurrentWidget(self._talk)
+            self._talk.raise_()
+            layout.addWidget(self._overlay)
+        else:
+            # Legacy splitter layout. Kept reachable via env kill-switch.
+            self._splitter = QSplitter(Qt.Orientation.Vertical, self)
+            self._splitter.setHandleWidth(8)
+            self._splitter.setChildrenCollapsible(False)
+            self._splitter.setStyleSheet(
+                "QSplitter::handle:vertical { "
+                "background: rgba(255, 179, 0, 0.35); margin: 1px 8px; border-radius: 2px; "
+                "}"
+            )
+            _eye_widget = self._sees if self._sees is not None else self._eye_placeholder
+            if _eye_widget is not None:
+                self._splitter.addWidget(_eye_widget)
+            self._splitter.addWidget(self._talk)
+            try:
+                split_str = os.environ.get(
+                    "SIFTA_ALICE_UNIFIED_SPLIT", "160,640"
+                )
+                top, bottom = (int(x) for x in split_str.split(","))
+                self._splitter.setSizes([top, bottom])
+            except Exception:
+                self._splitter.setSizes([180, 700])
+            layout.addWidget(self._splitter)
+
+        # Apply the boot-time eye-visibility default — collapse the eye
+        # pane so the desktop is the dominant view. Architect 2026-05-12.
+        self._apply_eye_visibility()
+        self._apply_eye_subcontrols()
         self._sync_eye_controls()
 
         # ── Strip duplicated chrome from children ──────────────────────
@@ -217,6 +323,11 @@ class AliceWidget(QWidget):
         # both inner title rows. Each can be re-enabled live with the
         # 💬 / chrome toggle buttons inside the children.
         QTimer.singleShot(0, self._dedupe_inner_chrome)
+        self._camera_proof_timer = QTimer(self)
+        self._camera_proof_timer.setInterval(2000)
+        self._camera_proof_timer.timeout.connect(self._refresh_camera_proof)
+        self._camera_proof_timer.start()
+        QTimer.singleShot(250, self._refresh_camera_proof)
 
         # ── Unified boot greeting (telemetry sweep) ────────────────────
         # Deferred so child widgets paint and their listeners/mic
@@ -227,15 +338,61 @@ class AliceWidget(QWidget):
             )
             QTimer.singleShot(delay_ms, self._announce_boot)
 
+    def _refresh_camera_proof(self) -> None:
+        """Render the desktop-visible unified-field eye proof."""
+        try:
+            now = __import__("time").time()
+            last_ts = float(getattr(self, "_last_camera_proof_receipt_ts", 0.0) or 0.0)
+            proof = build_camera_unified_field_proof(
+                write_receipt=(now - last_ts) >= 30.0
+            )
+            if (now - last_ts) >= 30.0:
+                self._last_camera_proof_receipt_ts = now
+            text = proof.summary
+            if proof.device:
+                text = f"{text} · {proof.device}"
+            if proof.frame_sha8:
+                text = f"{text} · sha={proof.frame_sha8}"
+            self._camera_proof_label.setText(text)
+            color = "#00c853" if proof.status == "OWNER_RECOGNIZED" else (
+                "#ffd166" if proof.ok else "#ff5c8a"
+            )
+            self._camera_proof_label.setStyleSheet(
+                f"color:{color}; font-weight:700; font-size:11px; padding-left:8px;"
+            )
+            self._camera_proof_label.setToolTip(
+                f"{proof.truth_label}\n"
+                f"status={proof.status}\n"
+                f"receipt={proof.receipt_id}\n"
+                f"face_age={proof.face_age_s}\n"
+                f"frame_age={proof.frame_age_s}\n"
+                f"visual_age={proof.visual_age_s}\n"
+                f"vision_health={proof.vision_health}"
+            )
+        except Exception as exc:
+            self._camera_proof_label.setText(f"eye proof failed: {type(exc).__name__}")
+            self._camera_proof_label.setStyleSheet(
+                "color:#ff5c8a; font-weight:700; font-size:11px; padding-left:8px;"
+            )
+
     def _enable_vision(self) -> None:
         """Construct the eye organ on demand so QCamera never starts implicitly."""
         if self._sees is not None or self._eye_placeholder is None:
             return
         self._sees = WhatAliceSeesWidget()
-        idx = self._splitter.indexOf(self._eye_placeholder)
-        if idx < 0:
-            idx = 0
-        self._splitter.replaceWidget(idx, self._sees)
+        if self._overlay_on and self._overlay_layout is not None:
+            # Replace the placeholder inside the stacked overlay.
+            idx = self._overlay_layout.indexOf(self._eye_placeholder)
+            if idx < 0:
+                idx = 0
+            self._overlay_layout.removeWidget(self._eye_placeholder)
+            # Re-insert eye at the bottom of the stack (index 0).
+            self._overlay_layout.insertWidget(0, self._sees)
+        elif self._splitter is not None:
+            idx = self._splitter.indexOf(self._eye_placeholder)
+            if idx < 0:
+                idx = 0
+            self._splitter.replaceWidget(idx, self._sees)
         self._eye_placeholder.deleteLater()
         self._eye_placeholder = None
         self._apply_eye_visibility()
@@ -246,7 +403,10 @@ class AliceWidget(QWidget):
         return self._sees if self._sees is not None else self._eye_placeholder
 
     def _toggle_eye_panel(self) -> None:
-        self._eye_visible = not self._eye_visible
+        """Defanged 2026-05-12 20:25 — Architect removed the hide-eye toggle.
+        Method kept for backward compat in case anything still calls it.
+        Always forces the eye visible — does NOT flip the state."""
+        self._eye_visible = True
         self._apply_eye_visibility()
         self._sync_eye_controls()
 
@@ -267,9 +427,37 @@ class AliceWidget(QWidget):
 
     def _apply_eye_visibility(self) -> None:
         eye = self._visible_eye_widget()
-        if eye is not None:
-            eye.setVisible(self._eye_visible)
-        self._splitter.setSizes([260, 520] if self._eye_visible else [0, 780])
+        if eye is None:
+            return
+        if self._overlay_on and self._overlay_layout is not None:
+            # Architect 2026-05-12 17:35: "HIDE EYE SHOW EYE DOES NOTHING".
+            # Cause: QStackedLayout in StackAll mode renders every child
+            # regardless of per-widget setVisible(False) — Qt manages
+            # visibility itself. So we evacuate the eye from the layout
+            # entirely when hiding, and re-insert it at index 0 (behind
+            # talk) when showing. Talk stays current widget either way.
+            if self._eye_visible:
+                if self._overlay_layout.indexOf(eye) < 0:
+                    self._overlay_layout.insertWidget(0, eye)
+                eye.setVisible(True)
+                # Keep talk painted on top
+                if hasattr(self, "_talk") and self._talk is not None:
+                    self._overlay_layout.setCurrentWidget(self._talk)
+                    self._talk.raise_()
+            else:
+                # Pull the eye out of the stack — nothing left under talk.
+                if self._overlay_layout.indexOf(eye) >= 0:
+                    self._overlay_layout.removeWidget(eye)
+                eye.setParent(None)
+                eye.setVisible(False)
+            return
+        # Legacy splitter layout (overlay disabled via env).
+        eye.setVisible(self._eye_visible)
+        if self._splitter is not None:
+            # Eye small, chat big (Architect 2026-05-11 22:43).
+            self._splitter.setSizes(
+                [160, 640] if self._eye_visible else [0, 800]
+            )
 
     def _apply_eye_subcontrols(self) -> None:
         if self._sees is None:
@@ -439,7 +627,12 @@ class AliceWidget(QWidget):
             pass
 
         if not clauses:
-            return "Hi. I'm Alice. Sensors warming up."
+            try:
+                from System.swarm_kernel_identity import ai_lineage_title
+
+                return f"Hi. I'm {ai_lineage_title()}. Sensors warming up."
+            except Exception:
+                return "Hi. I'm the local SIFTA runtime. Sensors warming up."
 
         # Capitalize the first clause; lowercase the rest as a list.
         head = clauses[0]

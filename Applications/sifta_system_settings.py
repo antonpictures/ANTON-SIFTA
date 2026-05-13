@@ -27,10 +27,13 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -42,6 +45,12 @@ from PyQt6.QtWidgets import (
 
 from System.sifta_app_catalog import group_manifest, normalize_category
 from System.sifta_inference_defaults import (
+    CANONICAL_OLLAMA_DAILY,
+    CANONICAL_OLLAMA_EXTRA,
+    CANONICAL_OLLAMA_FALLBACK,
+    CANONICAL_OLLAMA_LOW_RAM,
+    CANONICAL_OLLAMA_M5_FALLBACK,
+    CANONICAL_OLLAMA_REFLEX,
     DEFAULT_OLLAMA_MODEL,
     STIGMERGIC_TEST_MODEL_PRESETS,
     get_default_ollama_model,
@@ -50,7 +59,15 @@ from System.sifta_inference_defaults import (
     set_app_ollama_model,
 )
 from System.sifta_base_widget import SiftaBaseWidget
-from System.sifta_desktop_themes import THEMES, load_active_theme_id, save_active_theme_id
+from System.sifta_desktop_themes import (
+    THEMES,
+    list_stock_wallpapers,
+    load_active_theme_id,
+    load_custom_wallpaper_path,
+    save_active_theme_id,
+    save_custom_wallpaper_path,
+)
+from System.swarm_camera_unified_field_proof import build_camera_unified_field_proof
 
 STATE = _REPO / ".sifta_state"
 MANIFEST = _REPO / "Applications" / "apps_manifest.json"
@@ -113,7 +130,7 @@ def _format_ollama_weight_label(
     """Return an exact local model weight label.
 
     Do not prefix-match model families here. A planned tag such as
-    ``qwen3.5:9b`` must not inherit the installed weight of ``qwen3.5:2b``.
+    ``qwen3.5:9b`` must not inherit the installed weight of ``alice-m1-scout-2.3b-2.7gb:latest``.
     """
     model = (model_name or "").strip()
     if not model:
@@ -496,8 +513,8 @@ class _BrainDiagramWidget(QWidget):
 
     def __init__(self, cortex_model: str, corvid_model: str) -> None:
         super().__init__()
-        self._cortex_label = cortex_model or "sifta-gemma4-alice"
-        self._corvid_label = corvid_model or "qwen3.5:2b"
+        self._cortex_label = cortex_model or DEFAULT_OLLAMA_MODEL
+        self._corvid_label = corvid_model or "alice-m1-scout-2.3b-2.7gb:latest"
         self._ollama_live: bool = True
         self._probe_running: bool = False
         # Scout label — detect hardware and set appropriate model name
@@ -506,7 +523,7 @@ class _BrainDiagramWidget(QWidget):
             import subprocess as _sp
             _res = _sp.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=1)
             mem_gb = int(_res.stdout.strip()) / (1024**3)
-            self._scout_label = "qwen3.5:9b" if mem_gb >= 24 else "qwen3.5:4b"
+            self._scout_label = "qwen3.5:9b" if mem_gb >= 24 else CANONICAL_OLLAMA_LOW_RAM
         except Exception:
             pass
 
@@ -709,16 +726,16 @@ class MetricCard(QFrame):
             "QFrame#MetricCard QLabel { background: transparent; border: none; }"
         )
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(4)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(2)
         self.title = QLabel(title)
-        self.title.setStyleSheet("color: rgb(145, 153, 180); font-size: 11px;")
+        self.title.setStyleSheet("color: rgb(145, 153, 180); font-size: 10px;")
         self.value = QLabel(value)
-        self.value.setFont(QFont("Menlo", 18, QFont.Weight.Bold))
+        self.value.setFont(QFont("Menlo", 14, QFont.Weight.Bold))
         self.value.setStyleSheet("color: rgb(238, 244, 255);")
         self.detail = QLabel(detail)
         self.detail.setWordWrap(True)
-        self.detail.setStyleSheet("color: rgb(112, 122, 150); font-size: 11px;")
+        self.detail.setStyleSheet("color: rgb(112, 122, 150); font-size: 10px;")
         layout.addWidget(self.title)
         layout.addWidget(self.value)
         layout.addWidget(self.detail)
@@ -781,10 +798,11 @@ class SystemSettingsWidget(SiftaBaseWidget):
     def _page(self, title: str) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
         root = QVBoxLayout(page)
-        root.setContentsMargins(8, 8, 8, 8)
+        root.setContentsMargins(6, 4, 6, 4)
+        root.setSpacing(4)
         heading = QLabel(title)
-        heading.setFont(QFont("Menlo", 20, QFont.Weight.Bold))
-        heading.setStyleSheet("color: rgb(238, 244, 255);")
+        heading.setFont(QFont("Menlo", 16, QFont.Weight.Bold))
+        heading.setStyleSheet("color: rgb(238, 244, 255); margin: 0px;")
         root.addWidget(heading)
         return page, root
 
@@ -827,6 +845,56 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "color: rgb(112, 122, 150); font-family: monospace; font-size: 11px; margin-top: 8px;"
         )
         root.addWidget(self.theme_os_line)
+
+        # ── Wallpaper subsection ────────────────────────────────────────
+        # Architect 2026-05-11 23:25: "let me change the desktop pic in
+        # the settings and pick custom if one wants." Stock pictures are
+        # bundled in Library/Desktop Pictures; custom is any file picked
+        # via QFileDialog. Persisted in .sifta_state/desktop_wallpaper.json.
+        wp_sep = QFrame()
+        wp_sep.setFrameShape(QFrame.Shape.HLine)
+        wp_sep.setStyleSheet("color: rgb(35, 40, 58); margin: 18px 0 10px 0;")
+        root.addWidget(wp_sep)
+
+        wp_head = QLabel("Wallpaper")
+        wp_head.setStyleSheet(
+            "color: rgb(238, 244, 255); font-size: 14px; font-weight: bold; margin-top: 4px;"
+        )
+        root.addWidget(wp_head)
+
+        # Architect 2026-05-12 16:50: "ONE JPEG PER SELECTION!!!" — the theme
+        # IS the wallpaper. Removed the separate wallpaper combobox entirely.
+        # Only the "Choose custom file…" button below remains as an optional
+        # override (e.g. when the Architect wants a non-default image for a
+        # given theme). Picking a theme now sets the wallpaper to that
+        # theme's default automatically — see _on_theme_changed below.
+        wp_help = QLabel(
+            "Each theme ships with its own wallpaper. The theme above is the "
+            "selector. Use 'Choose custom file…' only if you want to override "
+            "this theme's image with your own."
+        )
+        wp_help.setWordWrap(True)
+        wp_help.setStyleSheet("color: rgb(145, 153, 180); margin-bottom: 8px; font-size: 11px;")
+        root.addWidget(wp_help)
+
+        wp_btn_row = QHBoxLayout()
+        self.wallpaper_custom_btn = QPushButton("Choose custom file…")
+        self.wallpaper_custom_btn.setStyleSheet(
+            "QPushButton { background: rgb(20, 22, 32); color: rgb(238, 244, 255); "
+            "border: 1px solid rgb(47, 52, 68); border-radius: 6px; padding: 6px 12px; }"
+            "QPushButton:hover { background: rgb(35, 40, 58); }"
+        )
+        self.wallpaper_custom_btn.clicked.connect(self._on_wallpaper_custom_pick)
+        wp_btn_row.addWidget(self.wallpaper_custom_btn)
+        wp_btn_row.addStretch()
+        root.addLayout(wp_btn_row)
+
+        self.wallpaper_status = QLabel("")
+        self.wallpaper_status.setWordWrap(True)
+        self.wallpaper_status.setStyleSheet(
+            "color: rgb(112, 122, 150); font-family: monospace; font-size: 11px; margin-top: 6px;"
+        )
+        root.addWidget(self.wallpaper_status)
 
         # ── Stigmergic OpenGL Driver section (only if real) ──────────────────────
         gl_info = self._probe_stigmergic_opengl()
@@ -954,15 +1022,93 @@ class SystemSettingsWidget(SiftaBaseWidget):
         }
 
     def _on_theme_changed(self, idx: int) -> None:
+        """Picking a theme now also resets the wallpaper to that theme's
+        default. Architect 2026-05-12 16:50: 'ONE JPEG PER SELECTION'. The
+        theme IS the wallpaper. Clearing the custom override returns the
+        resolver in sifta_desktop_themes.wallpaper_path() to use the
+        palette's own wallpaper_filename.
+        """
         tid = self.theme_combo.itemData(idx)
-        if tid:
-            save_active_theme_id(tid)
-            self.theme_os_line.setText(THEMES[tid].os_line + " (Saved. Please restart OS.)")
+        if not tid:
+            return
+        save_active_theme_id(tid)
+        # Drop any prior custom override so this theme's default JPEG takes over.
+        save_custom_wallpaper_path(None)
+        self.theme_os_line.setText(THEMES[tid].os_line + " (Saved. Please restart OS.)")
+        self._wallpaper_status_msg(None)
+        # Live reload on the running desktop so the wallpaper flips immediately
+        # (no restart required for the image swap itself).
+        self._poke_desktop_wallpaper_reload()
+
+    def _on_wallpaper_custom_pick(self) -> None:
+        """Open a QFileDialog so the Architect can pick any image file as a
+        one-off override of the current theme's default wallpaper.
+        Architect 2026-05-12 16:50: combobox removed; this button is the only
+        manual override now."""
+        start_dir = str(Path.home())
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose desktop wallpaper",
+            start_dir,
+            "Images (*.png *.jpg *.jpeg *.webp *.heic *.avif *.svg);;All files (*.*)",
+        )
+        if not path:
+            return
+        save_custom_wallpaper_path(path)
+        self._wallpaper_status_msg(path)
+        self._poke_desktop_wallpaper_reload()
+
+    def _wallpaper_status_msg(self, path: str | None) -> None:
+        if not path:
+            # None / "" both mean "use the active theme's default wallpaper"
+            self.wallpaper_status.setText("Wallpaper: this theme's default image.")
+        else:
+            self.wallpaper_status.setText(f"Wallpaper override → {path}")
+
+    def _poke_desktop_wallpaper_reload(self) -> None:
+        """Best-effort: ask the running SiftaDesktop to reload its wallpaper."""
+        try:
+            app = QApplication.instance()
+            if app is None:
+                return
+            for w in app.topLevelWidgets():
+                fn = getattr(w, "_apply_wallpaper", None)
+                if callable(fn):
+                    fn(force=True)
+        except Exception:
+            pass
 
     def _identity_page(self) -> QWidget:
         page, root = self._page("Identity")
 
-        # Owner photo thumbnail
+        # ── Architect 2026-05-12 17:55 ─────────────────────────────────────
+        # "add the square where is live ... the swimmers in the camera ...
+        #  real data real dots near the picture and then a button to set up
+        #  her name is Gemma default but then you set it up whatever
+        #  Gemma a.k.a. whatever name they wanna add"
+        #
+        # Row 1 — single horizontal row at the top of the Identity page:
+        #   [ Change AGI Name btn ] [ owner photo ] [ alice eye tile ] [ Re-scan Face btn ]
+        # Architect 2026-05-12 22:10: "move the two buttons up to the left and
+        # to the right of the images and make all this window smaller just to
+        # fit everything". Buttons are now sized to the 120 px tile height so
+        # the whole identity strip is one tight band instead of three.
+        faces_row = QHBoxLayout()
+        faces_row.setSpacing(10)
+        faces_row.addStretch()
+
+        # LEFT button — Change Stigmergic AGI Name.
+        self.change_agi_name_btn = QPushButton("Change\nAGI Name")
+        self.change_agi_name_btn.setFixedSize(120, 120)
+        self.change_agi_name_btn.setStyleSheet(
+            "QPushButton { background: rgb(40, 30, 60); color: rgb(200, 170, 255); "
+            "border: 1px solid rgb(80, 60, 120); border-radius: 14px; "
+            "font-size: 12px; font-weight: bold; padding: 4px; } "
+            "QPushButton:hover { background: rgb(55, 40, 80); }"
+        )
+        self.change_agi_name_btn.clicked.connect(self._prompt_change_agi_name)
+        faces_row.addWidget(self.change_agi_name_btn)
+
         self.id_photo = QLabel()
         self.id_photo.setFixedSize(120, 120)
         self.id_photo.setStyleSheet(
@@ -971,37 +1117,433 @@ class SystemSettingsWidget(SiftaBaseWidget):
         )
         self.id_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.id_photo.setText("No Photo")
-        root.addWidget(self.id_photo, alignment=Qt.AlignmentFlag.AlignCenter)
+        faces_row.addWidget(self.id_photo)
 
-        # Scan Face button — Alice uses the camera to capture the owner's face
-        self.scan_face_btn = QPushButton("\ud83d\udcf7 Scan Face for Genesis")
-        self.scan_face_btn.setFixedHeight(44)
+        # Alice's live eye tile — refreshed every 2s by _refresh_alice_eye_tile.
+        self.alice_eye_tile = QLabel()
+        self.alice_eye_tile.setFixedSize(120, 120)
+        self.alice_eye_tile.setStyleSheet(
+            "background: rgb(8, 12, 22); border: 2px solid rgb(255, 179, 0); "
+            "border-radius: 60px; color: rgb(180, 140, 80); font-size: 11px;"
+        )
+        self.alice_eye_tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.alice_eye_tile.setText("eye\nwaking")
+        faces_row.addWidget(self.alice_eye_tile)
+
+        # RIGHT button — Re-scan Face for Genesis.
+        self.scan_face_btn = QPushButton("Re-scan\nFace")
+        self.scan_face_btn.setFixedSize(120, 120)
         self.scan_face_btn.setStyleSheet(
             "QPushButton { background: rgb(20, 40, 60); color: rgb(100, 200, 255); "
-            "border: 1px solid rgb(40, 80, 120); border-radius: 8px; font-size: 14px; font-weight: bold; } "
+            "border: 1px solid rgb(40, 80, 120); border-radius: 14px; "
+            "font-size: 12px; font-weight: bold; padding: 4px; } "
             "QPushButton:hover { background: rgb(30, 55, 80); }"
         )
         self.scan_face_btn.clicked.connect(self._scan_face_for_genesis)
-        root.addWidget(self.scan_face_btn)
+        faces_row.addWidget(self.scan_face_btn)
 
-        self.id_owner = MetricCard("Owner", "--")
+        faces_row.addStretch()
+        root.addLayout(faces_row)
+
+        # Stigmergic proof line — Architect 2026-05-12 19:55: "I NEED STIGMERGIC
+        # PROOF FROM THE UNIFIED FIELD that the camera is healthy or recognizing
+        # ME, OR OS USER. OTHERWISE IS USELESS, WE REMOVE IT." This label reads
+        # face_detection_events.jsonl + kernel_process_table + the identity
+        # frame stream. It SHOWS the receipt or says honestly that no fresh
+        # receipt exists. _refresh_alice_eye_tile updates it every 2 seconds.
+        self.alice_eye_proof = QLabel("checking unified field…")
+        self.alice_eye_proof.setWordWrap(True)
+        self.alice_eye_proof.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.alice_eye_proof.setStyleSheet(
+            "color: rgb(180, 140, 80); font-size: 11px; font-family: Menlo; "
+            "margin-top: 6px; margin-bottom: 4px;"
+        )
+        root.addWidget(self.alice_eye_proof)
+
+        # Live refresh timer for the eye tile.
+        try:
+            self._alice_eye_timer = QTimer(self)
+            self._alice_eye_timer.timeout.connect(self._refresh_alice_eye_tile)
+            self._alice_eye_timer.start(2000)
+            QTimer.singleShot(0, self._refresh_alice_eye_tile)
+        except Exception:
+            pass
+
+        # Cowork 2026-05-12 22:10 — Architect: "move the two buttons up to the
+        # left and to the right of the images and make all this window smaller
+        # just to fit everything". Both buttons are now constructed inside
+        # `faces_row` above, flanking the photo + eye tiles. No separate
+        # full-width rows here anymore.
+
+        # Architect 2026-05-12 17:45: "ORGANIZE THESE BETTER, TIGHTER, HUGE
+        # EMPTY SPACE". Switched 9 vertically-stacked MetricCards to a
+        # 2-column QGridLayout. Vertical scroll halved. Pair-by-meaning:
+        #   Row 0: Owner          | Genesis Status
+        #   Row 1: Machine Spec   | Operating System
+        #   Row 2: Silicon HW     | Genesis Anchor
+        #   Row 3: Signature      | Electric Field Digest
+        #   Row 4: Voice (spans both columns — has long descriptive subtitle)
+        self.id_owner   = MetricCard("Owner", "--")
         self.id_genesis = MetricCard("Genesis Status", "--")
-        self.id_spec = MetricCard("Machine Spec", "--")
-        self.id_os = MetricCard("Operating System", "--")
-        self.id_serial = MetricCard("Silicon Hardware", "--")
-        self.id_anchor = MetricCard("Genesis Anchor", "--")
-        self.id_sig = MetricCard("Signature", "--")
-        self.id_digest = MetricCard("Electric Field Digest", "--")
-        root.addWidget(self.id_owner)
-        root.addWidget(self.id_genesis)
-        root.addWidget(self.id_spec)
-        root.addWidget(self.id_os)
-        root.addWidget(self.id_serial)
-        root.addWidget(self.id_anchor)
-        root.addWidget(self.id_sig)
-        root.addWidget(self.id_digest)
+        self.id_spec    = MetricCard("Machine Spec", "--")
+        self.id_os      = MetricCard("Operating System", "--")
+        self.id_serial  = MetricCard("Silicon Hardware", "--")
+        self.id_anchor  = MetricCard("Genesis Anchor", "--")
+        self.id_sig     = MetricCard("Signature", "--")
+        self.id_digest  = MetricCard("Electric Field Digest", "--")
+        self.id_voice   = MetricCard("🎙 George Voice Certainty", "—", "Voice Identity Organ — train via Launchpad")
+
+        id_grid = QGridLayout()
+        id_grid.setHorizontalSpacing(6)
+        id_grid.setVerticalSpacing(4)
+        id_grid.setContentsMargins(0, 0, 0, 0)
+        id_grid.addWidget(self.id_owner,   0, 0)
+        id_grid.addWidget(self.id_genesis, 0, 1)
+        id_grid.addWidget(self.id_spec,    1, 0)
+        id_grid.addWidget(self.id_os,      1, 1)
+        id_grid.addWidget(self.id_serial,  2, 0)
+        id_grid.addWidget(self.id_anchor,  2, 1)
+        id_grid.addWidget(self.id_sig,     3, 0)
+        id_grid.addWidget(self.id_digest,  3, 1)
+        id_grid.addWidget(self.id_voice,   4, 0, 1, 2)  # span both columns
+        id_grid.setColumnStretch(0, 1)
+        id_grid.setColumnStretch(1, 1)
+        root.addLayout(id_grid)
         root.addStretch()
         return page
+
+    def _refresh_alice_eye_tile(self) -> None:
+        """Paint Alice's latest webcam frame into the round eye tile, then
+        overlay 24 swimmer dots whose positions and color come from the
+        most recent visual_stigmergy.jsonl row. Real data driving real dots —
+        no synthetic noise. Never fractures the UI if files are missing.
+        Cowork 2026-05-12 17:55."""
+        try:
+            from pathlib import Path as _Path
+            import json as _json
+            import math as _math
+            import hashlib as _hash
+
+            REPO_STATE = _Path("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state")
+            frames_dir = REPO_STATE / "iris_frames"
+
+            # 1. Find latest iris frame (newest mtime).
+            latest = None
+            try:
+                if frames_dir.exists():
+                    files = [p for p in frames_dir.iterdir()
+                             if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
+                    if files:
+                        latest = max(files, key=lambda p: p.stat().st_mtime)
+            except Exception:
+                latest = None
+
+            # 2. Build the 120x120 base pixmap (cover-scaled center-crop).
+            pm = QPixmap(120, 120)
+            pm.fill(QColor(8, 12, 22))
+            if latest is not None:
+                src = QPixmap(str(latest))
+                if not src.isNull():
+                    scaled = src.scaled(
+                        120, 120,
+                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    x = max(0, (scaled.width() - 120) // 2)
+                    y = max(0, (scaled.height() - 120) // 2)
+                    pm = scaled.copy(x, y, 120, 120)
+
+            # 3. Read latest visual_stigmergy row (tail of file, cheap).
+            # NOTE: rows average ~4 KB each (one carries the long saliency_q
+            # string), so the tail window MUST be > 8 KB to reliably capture a
+            # complete row. 16 KB picks up the last 2-4 rows.
+            row = None
+            try:
+                vs_path = REPO_STATE / "visual_stigmergy.jsonl"
+                if vs_path.exists():
+                    sz = vs_path.stat().st_size
+                    with vs_path.open("rb") as f:
+                        f.seek(max(0, sz - 16384))
+                        chunk = f.read().decode("utf-8", errors="ignore")
+                    for line in reversed(chunk.splitlines()):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            row = _json.loads(line)
+                            break
+                        except Exception:
+                            continue
+            except Exception:
+                row = None
+
+            # 4. Paint 5 swimmer dots at the REAL saliency peaks of the latest
+            # frame — Architect rule 2026-05-12 18:55: "5 SWIMMERS, REAL DATA
+            # FROM CAMERA, MOVE BASED ON HER CAMERA GAZING". The visual_stigmergy
+            # row carries `saliency_q` — a hex-quantized saliency map of the
+            # frame. We parse it, find the top-5 intensity cells, project each
+            # grid cell onto the 120x120 tile. The dots literally sit where the
+            # eye's attention is highest — same coordinates as the gaze focus.
+            try:
+                painter = QPainter(pm)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                if row:
+                    hue = float(row.get("hue_deg", 200.0)) % 360.0
+                    saliency_peak = float(row.get("saliency_peak", 0.0))
+                    color = QColor.fromHsvF(
+                        (hue / 360.0) % 1.0, 0.85, 0.98, 0.95
+                    )
+                    painter.setPen(QPen(color, 0))
+                    painter.setBrush(color)
+                    sq = str(row.get("saliency_q") or "")
+                    placed = 0
+                    if len(sq) >= 16:
+                        # Build (intensity, index) list. Hex digit per cell.
+                        intensities = []
+                        for i, c in enumerate(sq):
+                            if "0" <= c <= "9":
+                                intensities.append((ord(c) - ord("0"), i))
+                            elif "a" <= c <= "f":
+                                intensities.append((10 + ord(c) - ord("a"), i))
+                            # other chars (b/d already covered above) get skipped
+                        intensities.sort(key=lambda iv: -iv[0])
+                        top5 = intensities[:5]
+                        # Infer grid dims from frame aspect ratio.
+                        grid_n = len(sq)
+                        fw = max(1, int(row.get("w", 1920)))
+                        fh = max(1, int(row.get("h", 1080)))
+                        aspect = fw / fh
+                        grid_h = max(1, int(round(_math.sqrt(grid_n / aspect))))
+                        grid_w = max(1, grid_n // grid_h)
+                        # Project each peak's grid index → tile (x, y).
+                        for intensity, idx in top5:
+                            if intensity <= 0:
+                                continue
+                            col = idx % grid_w
+                            grow = idx // grid_w
+                            x = int((col + 0.5) / max(1, grid_w) * 120)
+                            y = int((grow + 0.5) / max(1, grid_h) * 120)
+                            # Dot radius scales with the peak intensity (1..15).
+                            r_dot = 2.0 + (intensity / 15.0) * 2.5
+                            painter.drawEllipse(QPointF(x, y), r_dot, r_dot)
+                            placed += 1
+                    # If saliency_q was empty/unparseable, fall back to one
+                    # faint center dot — never go completely empty.
+                    if placed == 0:
+                        painter.setPen(QPen(QColor(255, 179, 0, 140), 0))
+                        painter.setBrush(QColor(255, 179, 0, 140))
+                        painter.drawEllipse(QPointF(60, 60), 2.2, 2.2)
+                else:
+                    # No visual_stigmergy row yet — paint one faint center dot
+                    # so the tile reads as alive, not empty.
+                    painter.setPen(QPen(QColor(255, 179, 0, 120), 0))
+                    painter.setBrush(QColor(255, 179, 0, 120))
+                    painter.drawEllipse(QPointF(60, 60), 2.0, 2.0)
+                painter.end()
+            except Exception:
+                pass
+
+            self.alice_eye_tile.setPixmap(pm)
+            self.alice_eye_tile.setText("")
+
+            # ── Stigmergic-proof status line ──────────────────────────────
+            # Reads the same reusable unified-field proof organ as the
+            # resident desktop Alice bar. No fresh receipts means no claim.
+            try:
+                proof = build_camera_unified_field_proof(REPO_STATE)
+                self.alice_eye_proof.setText(proof.summary)
+            except Exception as _proof_e:
+                try:
+                    self.alice_eye_proof.setText(f"proof reader: {type(_proof_e).__name__}")
+                except Exception:
+                    pass
+        except Exception as e:
+            # Never let the eye-tile refresh crash the settings panel.
+            try:
+                self.alice_eye_tile.setText(f"eye: {type(e).__name__}")
+            except Exception:
+                pass
+
+    def _detect_active_weight_name(self) -> str:
+        """Return the live weight-baked name of Alice's current LLM.
+
+        Architect rule 2026-05-12 18:10: "do not hardcode the name Gemma
+        into sifta system NEVER — extract from the actual model." If the
+        user swaps Ollama tag to llama / gemini / mistral / Qwen / Phi
+        tomorrow, this returns the new name automatically.
+
+        Source priority (all OBSERVED, no string literals):
+          1. last `alice` row in alice_conversation.jsonl → payload.model
+          2. Talk widget's _active_alice_model_id()
+          3. empty string (UI shows neutral placeholder)
+        """
+        try:
+            from pathlib import Path as _Pf
+            import json as _jf
+            conv = _Pf("/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/alice_conversation.jsonl")
+            if conv.exists():
+                sz = conv.stat().st_size
+                with conv.open("rb") as f:
+                    f.seek(max(0, sz - 65536))
+                    tail = f.read().decode("utf-8", errors="ignore")
+                for line in reversed(tail.splitlines()):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        outer = _jf.loads(line)
+                    except Exception:
+                        continue
+                    payload = outer.get("payload") if isinstance(outer, dict) else None
+                    if isinstance(payload, str):
+                        try:
+                            payload = _jf.loads(payload)
+                        except Exception:
+                            payload = None
+                    if not isinstance(payload, dict):
+                        continue
+                    if str(payload.get("role") or "").lower() != "alice":
+                        continue
+                    model = payload.get("model") or ""
+                    if model:
+                        return self._weight_name_from_tag(str(model))
+        except Exception:
+            pass
+        try:
+            from Applications.sifta_talk_to_alice_widget import _active_alice_model_id
+            tag = _active_alice_model_id() or ""
+            if tag:
+                return self._weight_name_from_tag(str(tag))
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
+    def _weight_name_from_tag(tag: str) -> str:
+        """Parse a model tag like 'alice-gemma4-e2b-cortex-5.1b-4.4gb:latest'
+        into a display weight name like 'Gemma4'. Works for any base model
+        family the user installs — gemma, llama, mistral, qwen, phi, etc.
+        No hardcoded literals."""
+        import re as _re
+        # Strip Ollama version suffix
+        base = tag.split(":")[0]
+        # Walk segments; the first one that LOOKS like a base-model family
+        # (alphabetic stem + optional digit/version) wins. Skip "alice",
+        # "sifta", "cortex", and other SIFTA-side wrappers.
+        skip = {"alice", "sifta", "cortex", "lora", "qlora", "abliterated",
+                "uncensored", "instruct", "chat", "it", "base"}
+        for seg in base.split("-"):
+            if not seg:
+                continue
+            s = seg.lower()
+            if s in skip:
+                continue
+            m = _re.match(r"^([a-z]+)(\d.*)?$", s)
+            if m and len(m.group(1)) >= 3:
+                stem = m.group(1)
+                ver = m.group(2) or ""
+                return (stem.capitalize() + ver) if ver else stem.capitalize()
+        return base or ""
+
+    def _prompt_change_agi_name(self) -> None:
+        """Open one dialog asking for the new Stigmergic AGI name. Save on OK.
+
+        Architect rule 2026-05-12 18:45: "have a button like you have
+        rescanned face — just change the AGI name." One click, one dialog,
+        one save. No typing row crammed into the page.
+
+        owner_genesis.json (Ed25519 signed) stays untouched. The alias is
+        written to .sifta_state/ai_name_alias.json — Layer 1 overlay —
+        and the kernel identity cascade (ai_name(), ai_identity_sentence())
+        reads it immediately on next refresh.
+        """
+        # Pre-fill with the current name from the cascade.
+        try:
+            from System.swarm_kernel_identity import ai_name as _ai_name
+            current = _ai_name() or ""
+        except Exception:
+            current = ""
+
+        # Show the live weight name so the user knows what to "alias OVER".
+        weight = ""
+        try:
+            from System.swarm_kernel_identity import ai_weight_name as _wn
+            weight = _wn()
+        except Exception:
+            try:
+                weight = self._detect_active_weight_name() or ""
+            except Exception:
+                weight = ""
+        hint = f"Weights detected: {weight}." if weight else "Weights: not detected yet."
+        dialog_label = (
+            "Change the Stigmergic AGI name on this node.\n"
+            f"{hint}\n"
+            "Type any name. The owner_genesis signature stays valid; this is an overlay."
+        )
+
+        try:
+            new_name, accepted = QInputDialog.getText(
+                self,
+                "Change Stigmergic AGI Name",
+                dialog_label,
+                QLineEdit.EchoMode.Normal,
+                current,
+            )
+        except Exception:
+            return
+        if not accepted:
+            return
+        new_name = (new_name or "").strip()
+        if not new_name:
+            self.change_agi_name_btn.setText("✏️  empty — try again")
+            QTimer.singleShot(2000, lambda: self.change_agi_name_btn.setText(
+                "✏️ Change Stigmergic AGI Name"
+            ))
+            return
+
+        try:
+            from pathlib import Path as _Path
+            import json as _json
+            import time as _time
+            out_path = _Path(
+                "/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/ai_name_alias.json"
+            )
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            can_be_called = sorted(
+                {new_name} | ({weight} if weight else set())
+            )
+            payload = {
+                "truth": "OBSERVED",
+                "kind": "AI_NAME_ALIAS_V1",
+                "weight_name_source": (
+                    "ai_weight_name() — live from alice_conversation.jsonl / model tag"
+                ),
+                "weight_name": weight,
+                "alias": new_name,
+                "can_be_called": can_be_called,
+                "saved_ts": _time.time(),
+                "note": (
+                    "Non-destructive overlay. owner_genesis.json signature "
+                    "stays valid; ai_display_name on genesis untouched. "
+                    "weight_name is read live — swap Ollama, value updates "
+                    "on next save."
+                ),
+            }
+            out_path.write_text(_json.dumps(payload, indent=2), encoding="utf-8")
+            self.change_agi_name_btn.setText(f"✓ Saved: {new_name}")
+            QTimer.singleShot(2500, lambda: self.change_agi_name_btn.setText(
+                "✏️ Change Stigmergic AGI Name"
+            ))
+            # Trigger a refresh so the Owner card subtitle re-reads the cascade.
+            try:
+                self.refresh()
+            except Exception:
+                pass
+        except Exception as e:
+            self.change_agi_name_btn.setText(f"err: {type(e).__name__}")
+            QTimer.singleShot(3000, lambda: self.change_agi_name_btn.setText(
+                "✏️ Change Stigmergic AGI Name"
+            ))
 
     def _scan_face_for_genesis(self) -> None:
         """Use the Mac camera to capture the owner's face and run the Genesis Ceremony.
@@ -1012,6 +1554,14 @@ class SystemSettingsWidget(SiftaBaseWidget):
         3. Record every probe failure with reason for Alice to read
         4. Camera errors and Genesis errors are reported separately
         """
+        if (
+            os.environ.get("SIFTA_DISABLE_CV2_IN_QT_DESKTOP", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+            and os.environ.get("SIFTA_FORCE_CV2", "").strip().lower()
+            not in {"1", "true", "yes", "on"}
+        ):
+            self.scan_face_btn.setText("cv2 disabled in desktop; use camera daemon")
+            return
         import cv2
 
         self.scan_face_btn.setText("\u23f3 Scanning cameras\u2026")
@@ -1234,7 +1784,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         page, root = self._page("Network")
         self.net_ssid = MetricCard("Connection", "--", "Default route interface")
         self.net_ip = MetricCard("Local IP", "--", "Default route interface address")
-        self.net_wa = MetricCard("WhatsApp Bridge", "--", "Baileys Node.js bridge on port 3001")
+        self.net_wa = MetricCard("WhatsApp Transport", "--", "SIFTA WhatsApp bridge primary; macOS app is diagnostic fallback only")
         self.net_relay = MetricCard("Mesh Relay", "N/A", "WebSocket cross-node proxy")
         self.net_nerve = MetricCard("Nerve Channel", "UDP Broadcast", "Fast autonomic reflex bus")
         root.addWidget(self.net_ssid)
@@ -1258,7 +1808,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         return page
 
     def _toggle_whatsapp_bridge(self) -> None:
-        """Start or stop the WhatsApp Baileys bridge."""
+        """Start or stop the optional local WhatsApp bridge."""
         import subprocess
         try:
             res = subprocess.run(["pgrep", "-f", "bridge.js"], capture_output=True, text=True, timeout=1)
@@ -1316,9 +1866,12 @@ class SystemSettingsWidget(SiftaBaseWidget):
             sig = inspect.signature(SwarmCorvidApprentice.__init__)
             self._corvid_default = str(sig.parameters["model"].default)
         except Exception:
-            self._corvid_default = "qwen3.5:2b"
+            self._corvid_default = CANONICAL_OLLAMA_FALLBACK
 
-        active_cortex = get_default_ollama_model() or "sifta-gemma4-alice"
+        if self._corvid_default == "alice-m1-scout-2.3b-2.7gb:latest":
+            self._corvid_default = CANONICAL_OLLAMA_FALLBACK
+
+        active_cortex = get_default_ollama_model() or DEFAULT_OLLAMA_MODEL
 
         # ── Fetch physical weights from Ollama once (no timer, cached) ──
         model_weights: dict[str, int] = {}
@@ -1418,22 +1971,26 @@ class SystemSettingsWidget(SiftaBaseWidget):
         )
         root.addWidget(summary_lbl)
 
-        # ── Cortex section ──
-        cortex_heading = QLabel("🧠  Primary Cortex  ·  Alice's main reasoning brain")
+        # ── Cortex stack section ──
+        cortex_heading = QLabel("🧠  Clean Cortex Stack  ·  five local models, one receipted router")
         cortex_heading.setStyleSheet(
             "color: rgb(0, 220, 255); font-size: 13px; font-weight: bold; margin-top: 2px;"
         )
         root.addWidget(cortex_heading)
-        root.addLayout(_chip_row("Alice Cortex", active_cortex,
+        root.addLayout(_chip_row("Daily Cortex", active_cortex,
                                   chip_style_cortex, _fmt_weight(active_cortex)))
+        root.addLayout(_chip_row("M5 Fallback", CANONICAL_OLLAMA_M5_FALLBACK,
+                                  chip_style_cortex, _fmt_weight(CANONICAL_OLLAMA_M5_FALLBACK)))
+        root.addLayout(_chip_row("Extra Research", CANONICAL_OLLAMA_EXTRA,
+                                  chip_style_cortex, _fmt_weight(CANONICAL_OLLAMA_EXTRA)))
 
         # ── Corvid / Fallback section — secondary brain ──
-        corvid_heading = QLabel("🐦  Corvid / Fallback  ·  fast reflex + canonical fallback model")
+        corvid_heading = QLabel("🐦  Corvid Scout  ·  Qwen side brain for cheap bounded evidence")
         corvid_heading.setStyleSheet(
             "color: rgb(0, 200, 130); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(corvid_heading)
-        root.addLayout(_chip_row("Corvid · Fallback", self._corvid_default + "  ·  2.7 GB installed",
+        root.addLayout(_chip_row("Q Scout", self._corvid_default,
                                   chip_style_organ, _fmt_weight(self._corvid_default)))
 
         # ── C1 Classifier — tertiary brain (gate runs before Cortex) ──
@@ -1447,8 +2004,8 @@ class SystemSettingsWidget(SiftaBaseWidget):
             "color: rgb(180, 200, 80); font-size: 13px; font-weight: bold; margin-top: 6px;"
         )
         root.addWidget(c1_heading)
-        root.addLayout(_chip_row("C1 Classifier",  "sifta-classifier-c1  ·  SILENCE / TOOL / BOND / ENGAGE",
-                                  chip_style_c1, _fmt_weight("sifta-classifier-c1")))
+        root.addLayout(_chip_row("C1 Classifier",  f"{CANONICAL_OLLAMA_REFLEX}  ·  SILENCE / TOOL / BOND / ENGAGE",
+                                  chip_style_c1, _fmt_weight(CANONICAL_OLLAMA_REFLEX)))
         root.addLayout(_chip_row("Training Corpus", "1,401 rows  ·  rank=16  dropout=0.1",
                                   chip_style_c1))
 
@@ -1474,14 +2031,14 @@ class SystemSettingsWidget(SiftaBaseWidget):
         )
         reset_btn.setToolTip(
             "If the assignments.json was manually edited and broke Alice,\n"
-            "this restores sifta-gemma4-alice as the canonical cortex."
+            f"this restores {DEFAULT_OLLAMA_MODEL} as the canonical cortex."
         )
         reset_btn.clicked.connect(self._reset_brain_to_default)
         reset_row.addWidget(reset_btn)
         root.addLayout(reset_row)
 
         self.inference_default_card = MetricCard("Alice Cortex", active_cortex)
-        self.inference_default_card.set_metric(active_cortex, f"⚖ {total_gb:.1f} GB total")
+        self.inference_default_card.set_metric(active_cortex, "Daily cortex active")
         root.addWidget(self.inference_default_card)
 
         root.addStretch()
@@ -1489,11 +2046,14 @@ class SystemSettingsWidget(SiftaBaseWidget):
 
     def _reset_brain_to_default(self) -> None:
         """Restore the canonical gemma4 cortex without exposing model names to the user."""
-        canonical = "sifta-gemma4-alice"
+        canonical = DEFAULT_OLLAMA_MODEL
         set_default_ollama_model(canonical)
         set_app_ollama_model("talk_to_alice", canonical)
+        set_app_ollama_model("owner_vision_body", canonical)
+        set_app_ollama_model("corvid_apprentice", CANONICAL_OLLAMA_FALLBACK)
         if hasattr(self, "_brain_diagram"):
-            self._brain_diagram.update_cortex_label(f"{canonical}:latest")
+            self._brain_diagram.update_cortex_label(canonical)
+            self._brain_diagram.update_corvid_label(CANONICAL_OLLAMA_FALLBACK)
         self.refresh()
 
     def _on_inf_default_changed(self, text: str) -> None:
@@ -1501,6 +2061,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         if text:
             set_default_ollama_model(text)
             set_app_ollama_model("talk_to_alice", text)
+            set_app_ollama_model("owner_vision_body", text)
 
     def _on_inf_corvid_changed(self, text: str) -> None:
         """Internal hook — kept for programmatic use; not wired to any UI control."""
@@ -1571,7 +2132,19 @@ class SystemSettingsWidget(SiftaBaseWidget):
                 "border: 1px solid rgb(40, 80, 120); border-radius: 8px; font-size: 14px; font-weight: bold; } "
                 "QPushButton:hover { background: rgb(30, 55, 80); }"
             )
-        self.id_owner.set_metric(gen.get("owner_name", "<unclaimed>"), f"Generation {gen.get('generation', 0)} \u00b7 AI: {gen.get('ai_display_name', 'Alice')}")
+        # Cowork 2026-05-12 18:45 \u2014 Architect rule: this is Stigmergic AGI,
+        # not "AI". The name comes from the Layer 1 cascade (ai_name()) so a
+        # fresh clone on someone else's machine shows THEIR chosen name, not
+        # the literal "Alice".
+        try:
+            from System.swarm_kernel_identity import ai_name as _ai_name
+            _agi_name = _ai_name()
+        except Exception:
+            _agi_name = gen.get("ai_display_name") or "\u2014"
+        self.id_owner.set_metric(
+            gen.get("owner_name", "<unclaimed>"),
+            f"Generation {gen.get('generation', 0)} \u00b7 Stigmergic AGI: {_agi_name}",
+        )
         self.id_genesis.set_metric(gen.get("status", "MISSING"), "Cryptographic Genesis Ceremony")
         self.id_spec.set_metric(f"{snap.get('hw_chip', 'Unknown')} / {snap.get('hw_memory', 'Unknown')}", "Physical Machine Spec")
         self.id_os.set_metric(snap.get("hw_os", "Unknown"), "Host Environment")
@@ -1579,6 +2152,51 @@ class SystemSettingsWidget(SiftaBaseWidget):
         self.id_anchor.set_metric(gen.get("anchor", "N/A"), "SHA-256(photo_hash + silicon_serial)")
         self.id_sig.set_metric(gen.get("sig", "N/A"), "Ed25519 hardware signature")
         self.id_digest.set_metric(snap["digest"], "Dynamic Electric Field signature")
+
+        # ── Voice certainty (stigmergic voice identity organ) ─────────────
+        try:
+            from System.swarm_voice_identity_organ import (
+                classify, exemplar_counts, load_exemplars, extract_features
+            )
+            counts = exemplar_counts()
+            from System.swarm_voice_identity_organ import PRIMARY_OPERATOR_VOICE_LABEL as _PO_LABEL
+            n_george = counts.get(_PO_LABEL, 0)
+            total = sum(counts.values())
+            if n_george == 0:
+                self.id_voice.set_metric(
+                    "—  No samples",
+                    f"Open 🎙 Voice Identity Organ and record George voice samples  |  total exemplars: {total}"
+                )
+            else:
+                # Quick 0.8s mic sample for live classification
+                try:
+                    import sounddevice as _sd
+                    import numpy as _np
+                    _audio = _sd.rec(int(0.8 * 16000), samplerate=16000,
+                                     channels=1, dtype="float32")
+                    _sd.wait()
+                    _chunk = _audio[:, 0] if _audio.ndim > 1 else _audio.flatten()
+                    _feats = extract_features(_chunk.astype(_np.float32))
+                    _result = classify(_feats, load_exemplars())
+                    _label = _result.get("label", "unknown")
+                    _conf = int(_result.get("confidence", 0.0) * 100)
+                    if _label == _PO_LABEL:
+                        _display = f"{_conf}% — George ✓"
+                        _detail = f"Swimmer vote from {n_george} George exemplars · {total} total in ledger"
+                    else:
+                        from System.swarm_voice_identity_organ import LABELS as _VL
+                        _other = _VL.get(_label, {}).get("display", _label)
+                        _detail = f"Detected: {_other} ({_conf}%) · {n_george} George samples · {total} total"
+                        _display = f"~{100 - _conf}% — George (room: {_other})"
+                    self.id_voice.set_metric(_display, _detail)
+                except Exception:
+                    # No mic access during refresh — show ledger stats only
+                    self.id_voice.set_metric(
+                        f"📚 {n_george} George samples",
+                        f"Live classification unavailable · {total} total exemplars in ledger"
+                    )
+        except Exception:
+            self.id_voice.set_metric("—", "Voice Identity Organ not installed")
 
         # Network
         self.net_ssid.set_metric(snap.get("net_ssid", "Unknown"), "Active Base Station")
@@ -1625,7 +2243,7 @@ class SystemSettingsWidget(SiftaBaseWidget):
         # Inference
         self.inference_default_card.set_metric(
             snap["default_ollama_model"],
-            "Single cortex spend: Alice, Swarm Chat, and OS helpers",
+            "Daily cortex: Talk, owner vision, and OS helpers",
         )
 
         # Privacy

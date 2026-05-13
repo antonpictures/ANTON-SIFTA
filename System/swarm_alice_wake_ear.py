@@ -29,11 +29,121 @@ TRUTH_LABEL = "ALICE_WAKE_EAR_WISH_003"
 DIRECT_THRESHOLD = 0.66
 MIN_NAME_SIMILARITY = 0.72
 
-_TARGET_NAMES = ("alice", "george")
-_WAKE_PREFIXES = {
-    "alice": ("ali", "aly", "ale", "all", "ell", "el"),
+# Architect 2026-05-13 02:10 — these were hardcoded "alice" / "george"
+# literals, which broke when the owner renamed her in Layer 1 (any node
+# where she is "Sophia", "Lola", etc. would have a dead wake-ear). They
+# now seed only the *phonetic prefix table* for known stems. The active
+# wake targets are computed dynamically from the kernel cascade via
+# `_active_target_names()`.
+_PHONETIC_PREFIXES = {
+    "alice":  ("ali", "aly", "ale", "all", "ell", "el"),
     "george": ("geo", "geor", "jor", "jorj"),
+    "sophia": ("sof", "soph", "sofi"),
+    "lola":   ("lol", "lo"),
+    "jeff":   ("jef", "jeff"),
+    "daniel": ("dan", "dani", "danl"),
 }
+
+
+def _active_target_names() -> tuple[str, ...]:
+    """Live wake targets read from Layer 1 cascade — `ai_can_be_called()`
+    plus owner's first-name vocative. Falls back to ('alice','george')
+    only if the cascade can't be imported (e.g. very early boot)."""
+    try:
+        from System.swarm_kernel_identity import (
+            ai_can_be_called, owner_vocative_for_talk
+        )
+        names: list[str] = []
+        for n in (ai_can_be_called() or []):
+            s = str(n or "").strip().lower()
+            if s and s not in names:
+                names.append(s)
+        try:
+            voc = (owner_vocative_for_talk() or "").strip().lower()
+        except Exception:
+            voc = ""
+        if voc:
+            # Owner often has multiple given names ("Ioan George Anton")
+            # — accept ALL tokens of length >= 3 as wake targets so any
+            # of them spoken alone wakes her. Skip very short stop-words.
+            for tok in voc.split():
+                tok = tok.strip().lower()
+                if len(tok) >= 3 and tok not in names:
+                    names.append(tok)
+        if not names:
+            return ("alice", "george")
+        return tuple(names)
+    except Exception:
+        return ("alice", "george")
+
+
+def _prefixes_for_target(target: str) -> tuple[str, ...]:
+    """Prefix list for a target. Known stems get their phonetic-collapse
+    rescues; unknown stems get the first three letters as a weak fallback."""
+    t = target.lower()
+    if t in _PHONETIC_PREFIXES:
+        return _PHONETIC_PREFIXES[t]
+    return (t[:3],) if len(t) >= 3 else ()
+# ── Architect 2026-05-13 05:20 — Media-context awareness ─────────────────
+# When the OS user has a media-producing app frontmost (Safari/Chrome with
+# YouTube open, QuickTime, Spotify, etc.), nearfield audio is most likely
+# the *content* of that app, NOT direct speech. The wake-ear already
+# accepted focus_context but only downweighted it by -0.15; that was too
+# weak. We now (1) classify the active app explicitly via this set, and
+# (2) apply a much stronger -1.50 logit penalty so media audio stops
+# waking Alice unless her Layer-1 name is unambiguously present.
+_KNOWN_MEDIA_APPS = frozenset({
+    # Browsers — usually a tab is showing a video/audio context
+    "safari", "chrome", "google chrome", "firefox", "brave", "arc",
+    "edge", "microsoft edge", "opera", "vivaldi", "tor browser",
+    # macOS native media apps
+    "quicktime player", "quicktime", "music", "tv", "podcasts", "books",
+    "photos",
+    # Third-party media apps
+    "spotify", "vlc", "iina", "mpv", "plex", "kodi", "netflix",
+    "youtube", "youtube music", "soundcloud", "audible",
+    # Communication apps that play remote audio
+    "zoom", "facetime", "teams", "microsoft teams", "google meet",
+    "webex", "skype", "discord", "slack",
+})
+
+
+def _active_app_is_media() -> tuple[bool, str]:
+    """Return (is_media, app_name_lowercase). Reads the most recent
+    app_focus.jsonl row, freshness-gated to 120 s."""
+    try:
+        path = STATE_DIR / "app_focus.jsonl"
+        if not path.exists():
+            return (False, "")
+        with path.open("rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - 8192))
+            tail = fh.read().decode("utf-8", errors="ignore")
+        last_app = ""
+        last_ts = 0.0
+        for line in reversed(tail.splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            last_app = str(r.get("app") or "").strip()
+            last_ts = float(r.get("ts") or 0)
+            if last_app:
+                break
+        if not last_app or last_ts <= 0:
+            return (False, "")
+        if (time.time() - last_ts) > 120.0:
+            return (False, "")
+        low = last_app.lower()
+        return (low in _KNOWN_MEDIA_APPS, low)
+    except Exception:
+        return (False, "")
+
+
 _OWNER_DIRECT_RE = re.compile(
     r"\b(?:"
     r"can\s+you|could\s+you|do\s+you|are\s+you|will\s+you|"
@@ -96,8 +206,14 @@ def _edit_similarity(a: str, b: str) -> float:
 
 
 def _prefix_similarity(candidate: str, target: str) -> float:
-    prefixes = _WAKE_PREFIXES.get(target, ())
+    prefixes = _prefixes_for_target(target)
     if len(candidate) < 4 or len(candidate) > 8:
+        return 0.0
+    if target == "alice" and candidate.startswith("all") and not candidate.startswith(
+        ("alli", "ally", "alis", "alys", "ales", "alle", "alice")
+    ):
+        # "all is" is a real STT collapse for "Alice"; "all and" from
+        # normal narration ("kill us all and...") is not a wake word.
         return 0.0
     for prefix in prefixes:
         if candidate.startswith(prefix):
@@ -115,7 +231,7 @@ def best_wake_name_match(text: str) -> dict[str, Any]:
         "similarity": 0.0,
     }
     for candidate in _candidate_tokens(tokens):
-        for target in _TARGET_NAMES:
+        for target in _active_target_names():
             score = max(
                 _edit_similarity(candidate, target),
                 _prefix_similarity(candidate, target),
@@ -200,7 +316,11 @@ def classify_wake_turn(
     name_sim = float(name_match.get("similarity") or 0.0)
     has_direct_shape = bool(_OWNER_DIRECT_RE.search(clean))
     has_narration_shape = bool(_NARRATION_RE.search(clean))
-    has_media_context = bool(re.search(r"\b(?:youtube|movie|media|video|tv|caption)\b", focus_context or "", re.I))
+    has_media_context = bool(re.search(r"\b(?:youtube|movie|media|video|tv|caption|episode|podcast|stream|watching|listening)\b", focus_context or "", re.I))
+    # Layer 1+ stigmergic awareness: query the live app_focus ledger.
+    _active_media, _active_app_name = _active_app_is_media()
+    if _active_media:
+        has_media_context = True
 
     logit = -2.25
     logit += (conf - 0.42) * 1.15
@@ -216,7 +336,33 @@ def classify_wake_turn(
     if words <= 16:
         logit += 0.35
     if has_media_context:
-        logit -= 0.15
+        # Architect 2026-05-13 05:25: media penalty scales with how
+        # ambiguous the name match is. Strong direct address (e.g.
+        # "Alice, what time is it?") still wakes — only ambient
+        # narration with no clear name is silenced.
+        if name_sim >= 0.85:
+            # Clear name match in the transcript — only a tiny bias.
+            logit -= 0.10
+        elif name_sim >= MIN_NAME_SIMILARITY:  # fuzzy name match
+            logit -= 0.50
+        else:
+            # No name match at all — full penalty.
+            logit -= 1.50
+        # If the active app is a *known* media producer (not just a tab
+        # keyword) AND there's no plausible name match, hard-route
+        # ambient — short-circuit so we don't waste the cortex on a
+        # likely YouTube clip / podcast / Zoom audio.
+        if _active_media and name_sim < MIN_NAME_SIMILARITY:
+            return {
+                "truth_label": TRUTH_LABEL,
+                "route": "ambient",
+                "reason": f"active_media_app:{_active_app_name}",
+                "confidence": 0.95,
+                "wake_score": 0.0,
+                "name_match": dict(name_match),
+                "media_context": True,
+                "active_media_app": _active_app_name,
+            }
     if has_narration_shape:
         logit -= 0.90
     if words >= 24:

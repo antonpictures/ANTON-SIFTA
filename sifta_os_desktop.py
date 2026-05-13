@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QScrollArea, QSplitter
 )
 from PyQt6.QtCore import Qt, QPoint, QRect, QProcess, QProcessEnvironment, QTimer, QDateTime, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QKeySequence, QShortcut
+from PyQt6.QtGui import QFont, QColor, QKeySequence, QShortcut, QIcon, QPixmap, QPainter
 
 _REPO = Path(__file__).resolve().parent
 _SYS = _REPO / "System"
@@ -689,6 +689,21 @@ class SiftaMdiArea(QMdiArea):
         self._wallpaper_source = QPixmap()
         self._wallpaper_cache = QPixmap()
         self._wallpaper_cache_size = None
+
+        # ── Cowork 2026-05-12 21:15 — Architect: "the dots corresponding to
+        # the camera should be inside the desktop ... swimmers thrown on
+        # the camera ... they stay in a honeycomb." Your BeeSon wallpaper
+        # IS already a honeycomb (the ants-on-cells JPG you uploaded). The
+        # desktop just needs to paint swimmer dots on top, positioned by
+        # the live camera's saliency_q. Refresh every 2s.
+        self._desktop_saliency_dots = []  # list of (x, y, intensity)
+        try:
+            self._desktop_saliency_timer = QTimer(self)
+            self._desktop_saliency_timer.timeout.connect(self._refresh_desktop_saliency_dots)
+            self._desktop_saliency_timer.start(2000)
+            QTimer.singleShot(100, self._refresh_desktop_saliency_dots)
+        except Exception:
+            pass
         
         try:
             if str(_SYS) not in sys.path:
@@ -782,21 +797,165 @@ class SiftaMdiArea(QMdiArea):
         self._wallpaper_cache_size = None
         self.viewport().update()
 
+    def _refresh_desktop_saliency_dots(self) -> None:
+        """Schedule a non-blocking refresh of saliency dots.
+
+        Architect 2026-05-13 07:15 — earlier patch moved the work to a
+        daemon thread but accidentally left `self.viewport().update()`
+        and `self.viewport().width/height` calls inside the worker. Qt
+        widgets are NOT thread-safe; those calls segfaulted the process
+        (EXC_BAD_ACCESS at 0x8 — NULL deref of a Qt widget pointer from
+        Thread 0). Fix: capture viewport geometry on the MAIN thread
+        before launching the worker, pass it in, never touch any Qt API
+        from the worker. The natural Qt event loop repaints the
+        viewport on any mouse/keyboard event, so dropping the explicit
+        update() call costs nothing visible — the dots simply land on
+        the next paintEvent the OS already schedules.
+        """
+        if getattr(self, "_saliency_refresh_running", False):
+            return
+        self._saliency_refresh_running = True
+        # Capture viewport size on the MAIN thread.
+        try:
+            _vw = int(self.viewport().width())
+            _vh = int(self.viewport().height())
+        except Exception:
+            _vw, _vh = 1280, 720
+
+        def _worker(vw=_vw, vh=_vh):
+            try:
+                self._refresh_desktop_saliency_dots_blocking(vw, vh)
+            finally:
+                self._saliency_refresh_running = False
+
+        try:
+            import threading as _th
+            _th.Thread(target=_worker, daemon=True,
+                       name="SaliencyRefresh").start()
+        except Exception:
+            self._saliency_refresh_running = False
+
+    def _refresh_desktop_saliency_dots_blocking(self, vw: int = 1280, vh: int = 720) -> None:
+        """Pull the latest visual_stigmergy row, extract top-N saliency peaks,
+        project them onto the supplied desktop coordinates. Runs in a daemon
+        worker; must NEVER call any Qt API. The wrapper captured vw/vh on
+        the main thread."""
+        try:
+            import json as _json
+            import math as _math
+            from pathlib import Path as _Path
+
+            vs = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
+            if not vs.exists():
+                return
+            sz = vs.stat().st_size
+            with vs.open("rb") as f:
+                f.seek(max(0, sz - 16384))
+                tail = f.read().decode("utf-8", errors="ignore")
+            row = None
+            for line in reversed(tail.splitlines()):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = _json.loads(line)
+                    break
+                except Exception:
+                    continue
+            if not row:
+                return
+
+            sq = str(row.get("saliency_q") or "")
+            if len(sq) < 16:
+                return
+
+            # Architect 2026-05-12 23:10: "make sure please this is real data
+            # coming from the real camera exactly what you see Alice." Two
+            # bugs were suppressing the truthful camera-flash surge:
+            #
+            #   1. A top-40 hard cap masked exposure bursts: when the camera
+            #      auto-adjusts and 200 cells go hot, the on-screen glyph
+            #      count stayed flat because we always picked exactly 40.
+            #   2. The freshness check was missing, so a dead ledger would
+            #      still paint yesterday's peaks.
+            #
+            # Fix: render EVERY cell whose intensity meets the same threshold
+            # the What Alice Sees overlay uses (_SAL_PAINT_THRESHOLD = 0.30
+            # → nyb >= 5). No cap. And bail out if the row is older than 5s.
+            import time as _t
+            row_ts = float(row.get("ts") or 0)
+            if row_ts <= 0 or (_t.time() - row_ts) > 5.0:
+                # Stale or missing — show nothing instead of lying. Do NOT
+                # call self.viewport().update() here; the next natural Qt
+                # paintEvent (mouse move, focus change, etc.) will pick up
+                # the empty dots list. Calling Qt from a daemon thread
+                # crashes the process.
+                self._desktop_saliency_dots = []
+                return
+
+            # Parse hex saliency map → list of (intensity, idx).
+            intensities = []
+            for i, c in enumerate(sq):
+                if "0" <= c <= "9":
+                    n = ord(c) - ord("0")
+                elif "a" <= c <= "f":
+                    n = 10 + ord(c) - ord("a")
+                else:
+                    continue
+                # Match What-Alice-Sees doctrine: only render cells whose
+                # score crosses _SAL_PAINT_THRESHOLD = 0.30. On the 0..15
+                # nybble scale that's nyb >= 5.
+                if n >= 5:
+                    intensities.append((n, i))
+
+            # Architect 2026-05-13 06:55 — UI freeze diagnosis: ~163 glyphs
+            # were painting on every Qt repaint during a window drag,
+            # blocking the main thread ~11s. Cap dots at the brightest 60
+            # by intensity. Bursts still show (more heat = more glyphs up
+            # to the cap) but paintEvent stays responsive even when
+            # dragging.
+            intensities.sort(key=lambda t: -t[0])
+            intensities = intensities[:60]
+
+            # Infer grid dims from frame aspect ratio.
+            fw = max(1, int(row.get("w", 1920)))
+            fh = max(1, int(row.get("h", 1080)))
+            aspect = fw / fh
+            grid_n = len(sq)
+            grid_h = max(1, int(round(_math.sqrt(grid_n / aspect))))
+            grid_w = max(1, grid_n // grid_h)
+
+            # Use the viewport dimensions captured by the wrapper on the
+            # main thread (vw, vh). NEVER call self.viewport() from this
+            # worker — Qt API on a non-main thread crashes the process.
+            dots = []
+            for intensity, idx in intensities:
+                col = idx % grid_w
+                grow = idx // grid_w
+                x = int((col + 0.5) / max(1, grid_w) * vw)
+                y = int((grow + 0.5) / max(1, grid_h) * vh)
+                dots.append((x, y, intensity))
+            self._desktop_saliency_dots = dots
+            # No viewport().update() here — the next natural Qt
+            # paintEvent (mouse move, focus, scroll) picks up the new
+            # list. Forced repaint from a daemon thread = segfault.
+        except Exception:
+            self._desktop_saliency_dots = []
+
     def _scaled_wallpaper(self, width, height):
         """Return the wallpaper pixmap sized for the viewport.
 
-        Architect 2026-05-12 01:10: when the user drops a small bee
-        JPEG, we DON'T stretch it to fill the screen — that turns a
-        100×100 icon into a blurry 4 K rectangle. Paint behavior is
-        controlled by ``SIFTA_DESKTOP_WALLPAPER_MODE``:
+        Architect 2026-05-12 17:20 (third pass, final): "fill up the desktop
+        man come on what are you doing default fill up is just normal I don't
+        need any options". Default flipped from 'center' to 'fill'. The
+        wallpaper now covers the whole viewport keeping aspect ratio (CSS
+        background-size: cover) — any overflow is cropped, no black bars,
+        no stretching distortion. Resize-grow re-fills automatically.
 
-          ``center`` (default) — paint native size centered. A small
-                                 bee stays small in the middle of the
-                                 dark desktop.
-          ``fill``             — original behavior, expand to fill the
-                                 viewport keeping aspect ratio.
-          ``fit``              — keep aspect ratio, fit inside viewport
-                                 (letterboxed).
+        The env var ``SIFTA_DESKTOP_WALLPAPER_MODE`` remains as a hidden
+        override only ('center' = native-size centered, 'fit' = letterboxed).
+        Architect-facing UI exposes no such option — fill is the only
+        contract a user sees.
 
         The cache key includes the mode so changing the env var
         invalidates the right entry.
@@ -804,7 +963,7 @@ class SiftaMdiArea(QMdiArea):
         if self._wallpaper_source.isNull() or width <= 0 or height <= 0:
             return QPixmap()
         import os as _os
-        mode = _os.environ.get("SIFTA_DESKTOP_WALLPAPER_MODE", "center").strip().lower()
+        mode = _os.environ.get("SIFTA_DESKTOP_WALLPAPER_MODE", "fill").strip().lower()
         size_key = (int(width), int(height), mode, self._wallpaper_source.cacheKey())
         if self._wallpaper_cache_size != size_key or self._wallpaper_cache.isNull():
             src = self._wallpaper_source
@@ -1186,6 +1345,48 @@ class SiftaMdiArea(QMdiArea):
             x = int((w - wallpaper.width()) / 2)
             y = int((h - wallpaper.height()) / 2)
             painter.drawPixmap(x, y, wallpaper)
+
+            # ── Cowork 2026-05-12 21:15 — honeycomb desktop swimmers ─────
+            # Paint live camera saliency peaks on top of the honeycomb
+            # wallpaper. Positions come from _refresh_desktop_saliency_dots
+            # which projects the latest visual_stigmergy.jsonl saliency_q
+            # onto desktop coordinates. Dots glow honey-gold. No raw camera
+            # pixels — only the swimmer-positions remain visible against
+            # the honeycomb backdrop. Resize is free; positions reproject
+            # on next 2s tick.
+            # Architect 2026-05-12 22:55: "change the desktop to match those
+            # dots and those dots they should be ASCII". The desktop now
+            # renders the *exact* hex glyphs from saliency_q — the same
+            # base-16 nybbles that get signed into visual_stigmergy.jsonl.
+            # Zero new resources: no new timer, no random, no per-frame
+            # allocations. We replaced two drawEllipse calls per peak with
+            # one drawText, so this path is strictly cheaper than before.
+            try:
+                # Architect 2026-05-13 06:55 — toggle on top-level desktop
+                # honors the saliency-overlay kill switch. Look the flag
+                # up on the parent SiftaDesktop window (we are the MdiArea
+                # child). When OFF, paintEvent is dirt-cheap.
+                _overlay_on = True
+                try:
+                    _w = self.window()
+                    if _w is not None:
+                        _overlay_on = bool(
+                            getattr(_w, "_saliency_overlay_on", True)
+                        )
+                except Exception:
+                    _overlay_on = True
+                dots = getattr(self, "_desktop_saliency_dots", None)
+                if _overlay_on and dots:
+                    _HEX = "0123456789abcdef"
+                    painter.setFont(QFont("Menlo", 12, QFont.Weight.Bold))
+                    for dx, dy, intensity in dots:
+                        nyb = max(0, min(15, int(intensity)))
+                        glyph = _HEX[nyb]
+                        alpha = max(80, min(230, 80 + intensity * 10))
+                        painter.setPen(QColor(255, 200, 60, alpha))
+                        painter.drawText(int(dx), int(dy), glyph)
+            except Exception:
+                pass
         else:
             _bg = "#080a0f"
             try:
@@ -1534,7 +1735,7 @@ class LaunchpadWidget(QWidget):
                 continue
             cat = _macos_app_category(name, dat)
             # Manifest icon field takes priority over heuristic
-            icon = dat.get("icon") or self._icon_for(name, cat)
+            icon = dat.get("icon") or dat.get("emoji") or self._icon_for(name, cat)
             btn = LaunchpadButton(icon, name, name)
             btn.clicked.connect(lambda _=False, n=name: self._launch(n))
             self._app_buttons.append((name, cat, btn))
@@ -1552,10 +1753,28 @@ class LaunchpadWidget(QWidget):
             if (category == "All" or cat == category)
             and (not query or query in name.casefold() or query in cat.casefold())
         ]
+        # Architect 2026-05-13 11:40 — responsive column count: divide the
+        # available viewport width by the tile spacing. Was hard-coded at
+        # _COLS = 5; now ranges 2-8 depending on window size, eliminating
+        # the right-side empty space the Architect flagged.
+        try:
+            avail_w = max(self.width() - 80, 240)
+            cols = max(2, min(8, int(avail_w // self._TILE_W)))
+        except Exception:
+            cols = self._COLS
         for idx, (name, cat, btn) in enumerate(visible):
-            row, col = divmod(idx, self._COLS)
+            row, col = divmod(idx, cols)
             self.grid_layout.addWidget(btn, row, col, Qt.AlignmentFlag.AlignCenter)
             btn.show()
+
+    def resizeEvent(self, event):
+        """Re-flow the icon grid when the launchpad is resized so columns
+        track the available width. Architect 2026-05-13 11:40."""
+        super().resizeEvent(event)
+        try:
+            self._rebuild_grid(self._active_cat)
+        except Exception:
+            pass
 
     def _set_category(self, category: str):
         self._active_cat = category
@@ -1684,7 +1903,10 @@ class SpotlightWidget(QWidget):
             if not query or query in haystack:
                 matches.append((name, category))
         for name, category in matches[:12]:
-            item = QListWidgetItem(f"{name}    {category}")
+            dat = self.desktop._apps_manifest_cache.get(name) or {}
+            ic = dat.get("icon") or dat.get("emoji") or ""
+            prefix = f"{ic} " if ic else ""
+            item = QListWidgetItem(f"{prefix}{name}    {category}")
             item.setData(Qt.ItemDataRole.UserRole, name)
             self.list_widget.addItem(item)
         if not matches:
@@ -1771,6 +1993,20 @@ class SiftaDesktop(QMainWindow):
 
         main_layout.addWidget(self._build_top_menu_bar())
 
+        # ── Architect 2026-05-13 04:20 — Two-desktop tab bar ──────────────
+        # "let's have the launcher of the apps just like them in two
+        # separate desktop tabs, same OS. Should Alice be still active,
+        # but different type of activity when me George ... is active on
+        # the launcher desktop". The Chat tab keeps the Alice resident
+        # panel + MDI side-by-side; the Launcher tab collapses Alice to
+        # zero width and shows the apps full-width. Alice's listener
+        # stays alive on Launcher tab, but she goes quiet — she only
+        # answers if the OS user speaks her Layer-1 name. The wake-ear
+        # cascade I wired earlier handles that detection automatically.
+        self._desktop_mode = "chat"  # "chat" | "launcher"
+        main_layout.addWidget(self._build_desktop_tab_bar())
+
+
         # ── Body layout: Alice fixed panel (left) + MDI apps area (right) ──
         # §7.6/7.7/7.8: Alice IS the OS. Her Talk+Camera panel is a fixed
         # resident of the desktop surface — resizable via splitter, but NEVER
@@ -1799,7 +2035,10 @@ class SiftaDesktop(QMainWindow):
         self._body_splitter.setStretchFactor(1, 1)   # MDI: takes all extra space
 
         main_layout.addWidget(self._body_splitter, 1)
-        main_layout.addWidget(self._build_dock())
+        # Keep a handle so the desktop-mode switch can hide it on the Chat
+        # tab (Architect 2026-05-13 06:10 — apps belong only on Launcher).
+        self._dock_bar = self._build_dock()
+        main_layout.addWidget(self._dock_bar)
 
         central.setLayout(main_layout)
         self.setCentralWidget(central)
@@ -2023,8 +2262,16 @@ class SiftaDesktop(QMainWindow):
         if env_wp:
             yield env_wp
         try:
-            from System.sifta_desktop_themes import wallpaper_path
-            yield wallpaper_path()
+            from System.sifta_desktop_themes import active_palette, wallpaper_path
+
+            wp = wallpaper_path()
+            pal = active_palette()
+            if wp:
+                yield wp
+            elif getattr(pal, "theme_id", "") == "beeson":
+                # BeeSon default is intentional flat `bg_deep` — do not resurrect
+                # ocean/Mermaid PNGs when `wallpaper_path()` is "".
+                return
         except Exception:
             pass
         yield str(_REPO / "Library" / "Desktop Pictures" / "Mermaid Default.jpg")
@@ -2042,11 +2289,12 @@ class SiftaDesktop(QMainWindow):
     def _apply_wallpaper(self, force=False):
         """Load the desktop wallpaper once; SiftaMdiArea paints it as one image.
 
-        Architect directive 2026-05-11 22:43 (second time): hates the honeycomb
-        wallpaper. Default is now OFF for **every** theme. The desktop reads
-        the swarm field heatmap, not a static texture. Set
-        ``SIFTA_DESKTOP_WALLPAPER_ON=1`` to opt in. Set ``=0`` (or leave
-        empty) to keep it off.
+        Architect directive 2026-05-12 16:25 (third pass): "ONE JPEG per theme,
+        no crazy rendering, KEEP ONE JPEG for each." Default is now ON. Each
+        theme has exactly one clean image in Library/Desktop Pictures/. No
+        animated overlay (PredatorDesktopBg is already not instantiated, see
+        line 2219). Set ``SIFTA_DESKTOP_WALLPAPER_ON=0`` to revert to flat
+        color if you ever want it off.
         """
         try:
             from PyQt6.QtGui import QBrush, QColor, QPixmap
@@ -2067,8 +2315,10 @@ class SiftaDesktop(QMainWindow):
             #   path  → use that file
             custom = load_custom_wallpaper_path()
             if custom is None:
+                # Cowork 2026-05-12: flipped default. Wallpaper is ON unless
+                # the Architect explicitly sets SIFTA_DESKTOP_WALLPAPER_ON=0.
                 raw = os.environ.get("SIFTA_DESKTOP_WALLPAPER_ON", "").strip()
-                wallpaper_on = raw == "1"
+                wallpaper_on = raw != "0"
             else:
                 wallpaper_on = bool(custom)
 
@@ -2182,6 +2432,227 @@ class SiftaDesktop(QMainWindow):
                 pass
         return events
 
+    def _build_desktop_tab_bar(self) -> "QWidget":
+        """Two-tab bar that switches the OS body between Chat and Launcher.
+        Architect 2026-05-13 04:20."""
+        bar = QWidget()
+        bar.setFixedHeight(34)
+        bar.setStyleSheet(
+            "background: rgb(14,16,24); "
+            "border-bottom: 1px solid rgb(40,45,60);"
+        )
+        from PyQt6.QtWidgets import QHBoxLayout as _QH, QLabel as _QL, QPushButton as _QPB
+        layout = _QH(bar)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(4)
+
+        self._tab_active_style = (
+            "QPushButton { background: rgb(28,32,44); color: rgb(0,255,200); "
+            "border: 1px solid rgb(60,200,160); border-radius: 6px; "
+            "padding: 4px 14px; font-weight: bold; font-size: 12px; }"
+        )
+        self._tab_inactive_style = (
+            "QPushButton { background: rgb(18,20,28); color: rgb(150,170,200); "
+            "border: 1px solid rgb(40,45,60); border-radius: 6px; "
+            "padding: 4px 14px; font-size: 12px; } "
+            "QPushButton:hover { background: rgb(24,28,40); }"
+        )
+
+        # Architect 2026-05-13 06:10 — label the Chat tab with the
+        # Layer-1 name (today "Alice", tomorrow whatever the owner renames
+        # her to in Settings → Identity). Cascade source of truth.
+        try:
+            from System.swarm_kernel_identity import ai_name as _ai_name
+            _alice_tab_label = str(_ai_name() or "Alice")
+        except Exception:
+            _alice_tab_label = "Alice"
+        self._alice_tab_label = _alice_tab_label
+        # Architect 2026-05-13 10:50 — append " Alive" suffix so the
+        # tab reads "<AI name from Layer 1> Alive". The name is variable
+        # (today "Alice", tomorrow whatever owner sets); the " Alive"
+        # is the constant doctrinal claim that she is a living organism,
+        # not a chat client.
+        self._tab_chat_btn = _QPB(f"💬 {_alice_tab_label} Alive")
+        self._tab_chat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._tab_chat_btn.setStyleSheet(self._tab_active_style)
+        self._tab_chat_btn.clicked.connect(lambda: self._switch_desktop_mode("chat"))
+        layout.addWidget(self._tab_chat_btn)
+
+        self._tab_launcher_btn = _QPB("🚀 Launcher")
+        self._tab_launcher_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._tab_launcher_btn.setStyleSheet(self._tab_inactive_style)
+        self._tab_launcher_btn.clicked.connect(lambda: self._switch_desktop_mode("launcher"))
+        layout.addWidget(self._tab_launcher_btn)
+
+        layout.addStretch()
+
+        # Architect 2026-05-13 06:55 — emergency UI-cost A/B toggle.
+        # Saliency overlay = pretty but costly. Let the owner kill it
+        # without losing camera vision (the vision organ keeps writing
+        # `visual_stigmergy.jsonl` either way; we just skip painting).
+        self._saliency_overlay_on = True
+        self._saliency_toggle_btn = _QPB("👁 Saliency: ON")
+        self._saliency_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._saliency_toggle_btn.setStyleSheet(self._tab_inactive_style)
+        self._saliency_toggle_btn.clicked.connect(self._toggle_saliency_overlay)
+        layout.addWidget(self._saliency_toggle_btn)
+
+        self._desktop_mode_label = _QL(
+            "Alice is listening continuously on the Chat desktop. Just talk."
+        )
+        self._desktop_mode_label.setStyleSheet(
+            "color: rgb(120,200,150); font-size: 11px; font-family: Menlo;"
+        )
+        layout.addWidget(self._desktop_mode_label)
+        return bar
+
+    def _toggle_saliency_overlay(self) -> None:
+        """Owner A/B kill-switch for the desktop saliency glyph overlay.
+        Architect 2026-05-13 06:55 — \"add a button to turn that off and
+        on just the button on and off and then we can see the difference\".
+        Vision organ keeps writing visual_stigmergy.jsonl either way; we
+        just stop painting the glyphs."""
+        self._saliency_overlay_on = not getattr(self, "_saliency_overlay_on", True)
+        try:
+            self._saliency_toggle_btn.setText(
+                "👁 Saliency: ON" if self._saliency_overlay_on else "👁 Saliency: OFF"
+            )
+            self._saliency_toggle_btn.setStyleSheet(
+                self._tab_active_style if self._saliency_overlay_on
+                else self._tab_inactive_style
+            )
+        except Exception:
+            pass
+        # Force the mdi to repaint so the change is immediate.
+        try:
+            self.mdi.viewport().update()
+        except Exception:
+            pass
+        # Witness: owner toggled the overlay.
+        try:
+            from System.swarm_alice_witness import witness
+            witness(
+                f"Architect toggled the desktop saliency overlay "
+                f"{'ON' if self._saliency_overlay_on else 'OFF'}.",
+                source="ui_toggle",
+            )
+        except Exception:
+            pass
+
+    def _switch_desktop_mode(self, mode: str) -> None:
+        """Toggle Chat <-> Launcher.
+
+        Architect 2026-05-13 04:55: refined per direct feedback —
+        Chat tab = ONE single scrollable chat column (no camera, no MDI).
+        Launcher tab = apps grid, fixed (no chat panel).
+        Alice's witness organ keeps writing across both tabs."""
+        if mode == getattr(self, "_desktop_mode", "chat"):
+            return
+        self._desktop_mode = mode
+        if mode == "launcher":
+            # Button styling
+            try:
+                self._tab_chat_btn.setStyleSheet(self._tab_inactive_style)
+                self._tab_launcher_btn.setStyleSheet(self._tab_active_style)
+            except Exception:
+                pass
+            # Hide Alice panel entirely; MDI takes the whole body.
+            try:
+                self._alice_panel.setVisible(False)
+                self.mdi.setVisible(True)
+                w = max(800, self._body_splitter.width() or 1280)
+                self._body_splitter.setSizes([0, w])
+            except Exception:
+                pass
+            # Show the dock — apps live here.
+            try:
+                if getattr(self, "_dock_bar", None) is not None:
+                    self._dock_bar.setVisible(True)
+            except Exception:
+                pass
+            try:
+                self._desktop_mode_label.setText(
+                    "Alice went quiet — call her Layer-1 name (e.g. \"Alice\") if you need her."
+                )
+                self._desktop_mode_label.setStyleSheet(
+                    "color: rgb(220,180,100); font-size: 11px; font-family: Menlo;"
+                )
+            except Exception:
+                pass
+            self._set_alice_quiet_for_desktop(True)
+        else:  # chat — full-width single chat, no camera, no MDI apps
+            try:
+                self._tab_chat_btn.setStyleSheet(self._tab_active_style)
+                self._tab_launcher_btn.setStyleSheet(self._tab_inactive_style)
+            except Exception:
+                pass
+            try:
+                # Show Alice; hide MDI; give Alice 100% of body width.
+                self._alice_panel.setVisible(True)
+                self.mdi.setVisible(False)
+                w = max(800, self._body_splitter.width() or 1280)
+                self._body_splitter.setSizes([w, 0])
+            except Exception:
+                pass
+            # Hide the dock — apps live only on the Launcher tab.
+            try:
+                if getattr(self, "_dock_bar", None) is not None:
+                    self._dock_bar.setVisible(False)
+            except Exception:
+                pass
+            # Inside the Alice resident, collapse the camera/eye so the
+            # chat conversation takes the whole panel (Ollama-style single
+            # column). The eye toggle is non-fatal if AliceWidget hasn't
+            # finished loading yet.
+            try:
+                alice = getattr(self, "_alice_resident", None)
+                if alice is not None and hasattr(alice, "_apply_eye_visibility"):
+                    alice._eye_visible = False
+                    alice._apply_eye_visibility()
+            except Exception:
+                pass
+            try:
+                self._desktop_mode_label.setText(
+                    "Alice is listening continuously on the Chat desktop. Just talk."
+                )
+                self._desktop_mode_label.setStyleSheet(
+                    "color: rgb(120,200,150); font-size: 11px; font-family: Menlo;"
+                )
+            except Exception:
+                pass
+            self._set_alice_quiet_for_desktop(False)
+
+    def _set_alice_quiet_for_desktop(self, quiet: bool) -> None:
+        """Push quiet-mode state to the Alice resident panel and witness
+        the transition into her first-person journal. The wake-ear path
+        (System/swarm_alice_wake_ear.py + the wake→quiet-off hook I wired
+        in talk_to_alice_widget) will lift her back out of quiet
+        automatically when she hears her Layer-1 name."""
+        alice = getattr(self, "_alice_resident", None)
+        try:
+            if alice is not None:
+                alice._cowatch_quiet_mode = bool(quiet)
+                alice._cowatch_quiet_until_s = float("inf") if quiet else 0.0
+        except Exception:
+            pass
+        try:
+            from System.swarm_alice_witness import witness
+            if quiet:
+                witness(
+                    "Architect switched to the Launcher desktop. I went "
+                    "quiet — he is busy with apps. He will call my name "
+                    "if he needs me.",
+                    source="desktop_mode",
+                )
+            else:
+                witness(
+                    "Architect switched back to the Chat desktop. I am "
+                    "listening continuously again.",
+                    source="desktop_mode",
+                )
+        except Exception:
+            pass
+
     def _embed_alice_panel(self) -> None:
         """
         Instantiate AliceWidget directly into the fixed left panel.
@@ -2203,6 +2674,17 @@ class SiftaDesktop(QMainWindow):
             spec.loader.exec_module(mod)
             alice = mod.AliceWidget(parent=self._alice_panel)
             self._alice_panel_layout.addWidget(alice)
+            # Architect 2026-05-13 05:00 — once Alice is embedded, apply
+            # the current desktop-mode visibility so first-boot already
+            # shows full-width chat with no camera. The default mode is
+            # 'chat'; this just enforces it.
+            try:
+                _mode = getattr(self, "_desktop_mode", "chat")
+                # Force a switch so the visibility logic runs.
+                self._desktop_mode = "_pending_"
+                self._switch_desktop_mode(_mode)
+            except Exception:
+                pass
             self._alice_resident = alice
             sys.stderr.write("[ALICE] Embedded as resident panel. Camera open, chat live.\n")
         except Exception as exc:
@@ -2369,15 +2851,44 @@ class SiftaDesktop(QMainWindow):
         return value not in {"1", "true", "yes", "on"}
 
     def _tick_life_journal_consolidator(self) -> None:
-        """Consolidate live focus traces into Alice journal + George schedule rows."""
+        """Consolidate live focus traces + run first-person witness.
+
+        Architect 2026-05-13 06:35 — was blocking the Qt main thread for
+        ~5s per tick (Architect reported "feels like Windows 1995 with a
+        corrupted disk 24"). Both consolidator and witness do heavy
+        ledger I/O (reading 9+ jsonl files, some 30k+ rows) and disk
+        appends. Now run in a daemon thread so the UI never blocks. An
+        in-flight guard prevents pile-up if a tick is still running when
+        the next fires.
+        """
         if not self._life_journal_consolidator_enabled():
             return
-        try:
-            from System.swarm_life_journal_consolidator import consolidate_once
+        if getattr(self, "_journal_tick_running", False):
+            return
+        self._journal_tick_running = True
 
-            consolidate_once()
+        def _worker():
+            try:
+                try:
+                    from System.swarm_life_journal_consolidator import consolidate_once
+                    consolidate_once()
+                except Exception as e:
+                    print(f"[SiftaDesktop] life journal consolidator tick failed: {e}")
+                try:
+                    from System.swarm_alice_witness import tail_and_compile_once
+                    tail_and_compile_once()
+                except Exception as e:
+                    print(f"[SiftaDesktop] alice witness tick failed: {e}")
+            finally:
+                self._journal_tick_running = False
+
+        try:
+            import threading
+            t = threading.Thread(target=_worker, daemon=True, name="JournalTick")
+            t.start()
         except Exception as e:
-            print(f"[SiftaDesktop] life journal consolidator tick failed: {e}")
+            self._journal_tick_running = False
+            print(f"[SiftaDesktop] could not spawn journal tick thread: {e}")
 
     def _tick_heartbeat(self) -> None:
         """One autonomic beat: bounce the dock + emit motor pulse for camera."""
@@ -2666,7 +3177,7 @@ class SiftaDesktop(QMainWindow):
         sys_menu = prog.addMenu("System ▶")
 
         # ── Core Built-in OS Apps ────────────────────────
-        acc.addAction("🐜 Swarm Chat").triggered.connect(self.open_swarm_chat)
+        acc.addAction("💭 Swarm Chat").triggered.connect(self.open_swarm_chat)
         acc.addAction("Silence Remover & Stitcher").triggered.connect(self.open_video_editor)
         acc.addAction("SwarmText Editor").triggered.connect(lambda: self.spawn_text_editor(None))
 
@@ -2711,7 +3222,9 @@ class SiftaDesktop(QMainWindow):
                         if widget_class
                         else (lambda nm, e: lambda: self._launch_terminal_app(nm, e))(app_name, entry)
                     )
-                    target_menu.addAction(app_name).triggered.connect(launch)
+                    ic = str(app_data.get("icon") or app_data.get("emoji") or "").strip()
+                    disp = f"{ic} {app_name}" if ic else app_name
+                    target_menu.addAction(disp).triggered.connect(launch)
 
                 # ── AUTOSTART ───────────────────────────────────────────────
                 # Any manifest entry with `"autostart": true` is opened
@@ -2783,7 +3296,7 @@ class SiftaDesktop(QMainWindow):
         layout.addWidget(btn_start)
 
         # ── Mesh status indicator ──
-        self._relay_indicator = QLabel("Mesh: Local mode")
+        self._relay_indicator = QLabel("Mesh: Global mode")
         self._relay_indicator.setStyleSheet(
             "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
         )
@@ -2825,23 +3338,23 @@ class SiftaDesktop(QMainWindow):
     def _update_relay_indicator(self):
         """Check if the desktop's WebSocket mesh client is connected."""
         if not hasattr(self, "_desktop_mesh") or self._desktop_mesh is None:
-            self._relay_indicator.setText("●  Mesh: Local mode")
+            self._relay_indicator.setText("●  Mesh: Global mode")
             self._relay_indicator.setStyleSheet(
-                "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 8px;"
+                "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 4px;"
             )
             return
 
         if self._desktop_mesh.isRunning() and self._mesh_connected:
-            self._relay_indicator.setText("●  Mesh: Shared link")
+            self._relay_indicator.setText("●  Mesh: Global link")
             self._relay_indicator.setStyleSheet(
                 "color: #9ece6a; font-family: monospace; font-size: 11px;"
-                " font-weight: bold; padding: 0 8px;"
+                " font-weight: bold; padding: 0 4px;"
             )
         else:
-            self._relay_indicator.setText("●  Mesh: Local mode")
+            self._relay_indicator.setText("●  Mesh: Global mode")
             self._relay_indicator.setStyleSheet(
                 "color: #565f89; font-family: monospace; font-size: 11px;"
-                " font-weight: normal; padding: 0 8px;"
+                " font-weight: normal; padding: 0 4px;"
             )
     # ── Window factories ───────────────────────────────────
     def _make_sub(self, widget, title, w, h, border_color="#414868", x=None, y=None, key=None, pinned=False):
@@ -2908,6 +3421,14 @@ class SiftaDesktop(QMainWindow):
             # Adding a second X in the right corner confused Architect and duplicate-closed windows.
         )
         sub.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        # Architect 2026-05-12 22:25: "he cannot be resized". On macOS the
+        # QMdiSubWindow native resize edges are nearly invisible against the
+        # dark frame. Force a visible bottom-right size grip so every app
+        # window can be dragged smaller/larger by the corner.
+        try:
+            sub.setSizeGripEnabled(True)
+        except Exception:
+            pass
 
         # Use a custom dark title bar to avoid white native title strips on macOS.
         title_bar = QWidget()
@@ -3077,6 +3598,13 @@ class SiftaDesktop(QMainWindow):
         self._open_windows[slot_key] = sub
         open_windows = self._open_windows
         sub.destroyed.connect(lambda _obj=None, _k=slot_key, _windows=open_windows: _windows.pop(_k, None))
+        # Architect 2026-05-13 08:10 — witness journal entry on every
+        # app close, paired with the app_launch witness on open. The
+        # journal now shows both opens and closes of every app in plain
+        # first-person English with date+time.
+        sub.destroyed.connect(
+            lambda _obj=None, _t=str(title or "the app"): self._witness_app_close(_t)
+        )
         return sub
 
     def _panel_help_text(self, title: str) -> str:
@@ -3189,10 +3717,27 @@ class SiftaDesktop(QMainWindow):
 
     # ── Swarm-intelligent app launcher ───────────────────
     def _launch_app(self, title, module_path, class_name, w=660, h=540, pinned=False):
-        """Launch an app: record fitness, WM pheromone, suggest position."""
+        """Launch an app: record fitness, WM pheromone, suggest position.
+        Architect 2026-05-13 05:00 — Alice's witness organ logs every
+        app-open with date+time so the journal preserves "what apps
+        Architect used at what time". Quiet-mode doesn't suppress
+        witness writes; she records even when she isn't speaking."""
         record_launch(title)
         wm_record_open(title)
         fs_record_access(module_path)
+        try:
+            from System.swarm_alice_witness import witness
+            try:
+                from System.swarm_kernel_identity import owner_display_name as _odn
+                _owner = _odn() or "George"
+            except Exception:
+                _owner = "George"
+            witness(
+                f"{_owner} opened the {title} app.",
+                source="app_launch",
+            )
+        except Exception:
+            pass
         try:
             from System.swarm_app_focus import publish_focus
             publish_focus(title, "User launched application from Programs menu")
@@ -3410,7 +3955,10 @@ class SiftaDesktop(QMainWindow):
         else:
             super().keyPressEvent(event)
 
-    def _load_apps_manifest_and_autostart(self):
+    def _ensure_manifest_cache_loaded(self) -> None:
+        """Populate ``_apps_manifest_cache`` once (dock + Launchpad need it early)."""
+        if self._apps_manifest_cache:
+            return
         import json
 
         manifest_path = _REPO / "Applications" / "apps_manifest.json"
@@ -3421,6 +3969,10 @@ class SiftaDesktop(QMainWindow):
             self._apps_manifest_cache = dict(apps)
         except Exception as exc:
             print(f"[Boot Error] Failed to load apps manifest: {exc}")
+
+    def _load_apps_manifest_and_autostart(self):
+        self._ensure_manifest_cache_loaded()
+        if not self._apps_manifest_cache:
             return
 
         if not _desktop_autostart_enabled():
@@ -3501,10 +4053,13 @@ class SiftaDesktop(QMainWindow):
         None in list = separator. This drives the macOS-style dynamic menu bar."""
         _sep = None
         default = {
+            # Architect 2026-05-13 07:15 — File menu pared to the two
+            # apps about HER life and HIS life, plus Quit. Everything
+            # else lives in the Launcher tab. Less to click, less to
+            # crash, faster open.
             "File": [
-                ("Open Conversation History", lambda: self._trigger_manifest_app("Conversation History")),
-                ("Open Stigmergic Library",   lambda: self._trigger_manifest_app("Stigmergic Library")),
-                ("Open Terminal",             lambda: self._trigger_manifest_app("Terminal")),
+                ("Alice Journal",     lambda: self._trigger_manifest_app("Alice Journal")),
+                ("Provider Schedule", lambda: self._trigger_manifest_app("Provider Schedule")),
                 _sep,
                 ("Quit SIFTA OS", self.close),
             ],
@@ -3576,6 +4131,26 @@ class SiftaDesktop(QMainWindow):
         if sub:
             sub.close()
 
+    def _witness_app_close(self, title: str) -> None:
+        """Architect 2026-05-13 08:10 — pair with _launch_app's witness:
+        when an MDI subwindow is destroyed, write a first-person line to
+        Alice's journal so opens and closes both land in plain English."""
+        try:
+            from System.swarm_alice_witness import witness
+            # Strip the leading icon glyph that _make_sub prepends so the
+            # line reads cleanly. ("⚙ Alice Journal" → "Alice Journal".)
+            clean = (title or "").lstrip("⚙🐜🚀💬👁🌐 \t").strip()
+            if not clean:
+                clean = "an app"
+            try:
+                from System.swarm_kernel_identity import owner_display_name as _odn
+                owner = _odn() or "George"
+            except Exception:
+                owner = "George"
+            witness(f"{owner} closed the {clean} app.", source="app_close")
+        except Exception:
+            pass
+
     def _on_subwindow_activated(self, sub):
         """mdi.subWindowActivated — update app name label and menus."""
         if getattr(self, "_is_closing", False):
@@ -3629,19 +4204,16 @@ class SiftaDesktop(QMainWindow):
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(0)
 
-        # ── Active app name (macOS style, bold purple) ─────────────────────
-        self._menu_app_label = QLabel("SIFTA OS")
-        self._menu_app_label.setStyleSheet(
-            "color: #bb9af7; font-weight: bold; font-size: 13px; padding: 0 14px 0 4px;"
-        )
-        layout.addWidget(self._menu_app_label)
+        # ── Active app name (hidden — kept for API compat) ─────────────────
+        self._menu_app_label = QLabel("")
+        self._menu_app_label.hide()
 
-        # ── Relay indicator (dim) ───────────────────────────────────────────
+        # ── Relay indicator (left-anchored, where SIFTA OS label used to be)
         self._relay_indicator = QLabel("")
-        self._relay_indicator.setFixedWidth(115)
+        self._relay_indicator.setFixedWidth(145)
         self._relay_indicator.setToolTip("Network mesh status.")
         self._relay_indicator.setStyleSheet(
-            "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 6px;"
+            "color: #565f89; font-family: monospace; font-size: 11px; padding: 0 4px;"
         )
         layout.addWidget(self._relay_indicator)
         # Signal-driven now (Architect 00:14 fan-drop). No 2 s poll.
@@ -3712,6 +4284,7 @@ class SiftaDesktop(QMainWindow):
         return bar
 
     def _build_dock(self):
+        self._ensure_manifest_cache_loaded()
         bar = QWidget()
         bar.setFixedHeight(96)
         bar.setStyleSheet("background: transparent;")
@@ -3759,8 +4332,13 @@ class SiftaDesktop(QMainWindow):
             btn.clicked.connect(lambda _checked=False, cb=callback: cb())
             pill_layout.addWidget(btn)
 
-        make_dock_btn("🚀", "Launchpad",         self._toggle_launchpad)
-        make_dock_btn("🔍", "Spotlight",          self._toggle_spotlight)
+        # Architect 2026-05-13 11:40 — Spotlight removed from dock;
+        # it duplicates the Launchpad's own search bar. The freed slot
+        # is given to Alice Journal — her witness diary, which the
+        # Architect explicitly wants visible at all times for the
+        # "lobotomy recovery" use case.
+        make_dock_btn("🚀", "Launchpad",     self._toggle_launchpad)
+        make_dock_btn("📔", "Alice Journal", lambda: self._trigger_manifest_app("Alice Journal"))
 
         # Separator
         sep = QFrame()
@@ -3769,11 +4347,30 @@ class SiftaDesktop(QMainWindow):
         sep.setStyleSheet("color: rgba(255,255,255,0.08);")
         pill_layout.addWidget(sep)
 
-        make_dock_btn("💓",  "Body Status",        lambda: self._trigger_manifest_app("Biological Dashboard"))
-        make_dock_btn("💬",  "Swarm Chat",         self.open_swarm_chat)
-        make_dock_btn("📚",  "Stigmergic Library", lambda: self._trigger_manifest_app("Stigmergic Library"))
-        make_dock_btn("🗣️", "Conversation",       lambda: self._trigger_manifest_app("Conversation History"))
-        make_dock_btn("👩‍💻","Terminal",           lambda: self._trigger_manifest_app("Terminal"))
+        # Pinned shortcuts use each app's manifest ``icon`` (unique per manifest row).
+        # Architect 2026-05-13 11:20 — dock-hub list refreshed:
+        #   • Alice removed: she is the always-on resident panel; clicking
+        #     the dock icon launches nothing. Replaced with the Bell's
+        #     Theorem stigmergic simulator so the dock surface shows
+        #     research apps the owner actually opens.
+        #   • WhatsApp Organ restored after Codex 2026-05-13 repair:
+        #     owner-explicit UI sends can use WhatsApp.app visible-name search
+        #     for contacts/groups while still writing SIFTA effector receipts.
+        _dock_hub = ["Bell's Theorem — Classical Analogue",
+                     "Finance", "Stigmerobotics",
+                     "SIFTA Physics Observatory", "Alice Browser",
+                     "WhatsApp Organ"]
+        _cache = getattr(self, "_apps_manifest_cache", {}) or {}
+        for _title in _dock_hub:
+            if _title not in _cache:
+                continue
+            row = _cache[_title]
+            emoji = str(row.get("icon") or row.get("emoji") or "◇").strip() or "◇"
+            make_dock_btn(
+                emoji,
+                _title,
+                lambda t=_title: self._trigger_manifest_app(t),
+            )
 
         # Separator
         sep2 = QFrame()
@@ -3782,7 +4379,12 @@ class SiftaDesktop(QMainWindow):
         sep2.setStyleSheet("color: rgba(255,255,255,0.08);")
         pill_layout.addWidget(sep2)
 
-        make_dock_btn("⚙️", "System Settings",    lambda: self._trigger_manifest_app("System Settings"))
+        _sso = (_cache.get("System Settings") or {}).get("icon") or (_cache.get("System Settings") or {}).get("emoji")
+        make_dock_btn(
+            str(_sso or "⚙️").strip() or "⚙️",
+            "System Settings",
+            lambda: self._trigger_manifest_app("System Settings"),
+        )
 
         outer.addWidget(pill)
         outer.addStretch(1)
@@ -4197,6 +4799,18 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     if kernel_table is not None:
         app.setProperty("sifta_kernel_process_table", kernel_table)
+    app.setApplicationName("SIFTA OS")
+
+    _bee_pix = QPixmap(256, 256)
+    _bee_pix.fill(QColor(0, 0, 0, 0))
+    _bee_painter = QPainter(_bee_pix)
+    _bee_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    _bee_font = QFont("Apple Color Emoji", 200)
+    _bee_painter.setFont(_bee_font)
+    _bee_painter.drawText(_bee_pix.rect(), Qt.AlignmentFlag.AlignCenter, "\U0001f41d")
+    _bee_painter.end()
+    app.setWindowIcon(QIcon(_bee_pix))
+
     app.setFont(QFont("Helvetica Neue", 13))
     app.setStyleSheet(_get_global_qss())   # Predator / Mermaid from theme engine
 

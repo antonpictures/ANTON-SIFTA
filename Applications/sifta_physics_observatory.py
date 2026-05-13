@@ -332,6 +332,30 @@ class PhysicsObservatoryWidget(SiftaBaseWidget):
         self._pouw_timer = self.make_timer(30_000, self._try_pouw_mint)
         self._last_mint_ops = 0
 
+        # Architect 2026-05-13 11:00 — auto-seed first frame on open so
+        # the canvases show real physics fields instead of blank axes.
+        # Was: empty plots until owner clicked Run/Reset. The 3 LJ axes
+        # and 4 LBM axes now have meaningful initial content from frame 0.
+        # Owner still clicks Run to start the time-stepping loop; this
+        # just paints the t=0 snapshot.
+        try:
+            QTimer.singleShot(0, self._seed_first_frames)
+        except Exception:
+            pass
+
+    def _seed_first_frames(self) -> None:
+        """Render frame-zero for both engines so opening the app shows
+        live data instead of empty axes. Idempotent: re-seeding wipes
+        any running state, which is the same contract as Reset."""
+        try:
+            self._reset_lj()
+        except Exception as e:
+            print(f"[PhysicsObservatory] LJ seed failed: {e}")
+        try:
+            self._reset_lbm()
+        except Exception as e:
+            print(f"[PhysicsObservatory] LBM seed failed: {e}")
+
     # ── Engine A controls ─────────────────────────────────────────────────────
 
     def _build_colloid_controls(self, layout: QVBoxLayout) -> None:

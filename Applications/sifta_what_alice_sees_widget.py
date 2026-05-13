@@ -18,7 +18,7 @@ your own eyes:
         — 8×8 motion magnitude grid (per-cell mean absolute pixel delta
           frame-to-frame)
         — global motion energy + dominant hue centroid
-    Each frame's compact summary is appended (≤5 Hz, throttled) to
+    A compact summary is appended at a low-stress cadence (1 Hz by default) to
     `.sifta_state/visual_stigmergy.jsonl` — a real photon-derived
     stigmergic trail any other swimmer can react to;
   • the saliency map is drawn ON TOP of the frame as semi-transparent
@@ -100,6 +100,7 @@ _REPAIR_LEDGER = Path("/Users/ioanganton/Music/ANTON_SIFTA/repair_log.jsonl")
 # ── Photon-derived stigmergic ledger ─────────────────────────────────────────
 _VISUAL_STIGMERGY_LOG = _REPO / ".sifta_state" / "visual_stigmergy.jsonl"
 _VISUAL_STIGMERGY_LOG.parent.mkdir(parents=True, exist_ok=True)
+_LAST_KERNEL_VISION_HEARTBEAT_TS = 0.0
 
 # Saliency / motion grid resolution. These serve as the default; the live
 # slider overrides them per-session. Each cell is fed by an 8x8 source patch.
@@ -111,6 +112,27 @@ _GRID_W = configured_default_acuity()
 _GRID_H = _GRID_W
 _THUMB_W = _GRID_W * 8
 _THUMB_H = _GRID_H * 8
+
+
+def _env_float(name: str, default: float, *, lo: float, hi: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)) or default)
+    except Exception:
+        value = default
+    return max(lo, min(hi, value))
+
+
+# The camera can emit ~30 frames/sec. Alice does not need to hash, grid,
+# ledger-write, and kernel-heartbeat every visible frame while George is idle.
+# Default to one real visual sample per second; developers can opt in higher.
+_EYE_FRAME_PERIOD_S = _env_float("SIFTA_EYE_FRAME_PERIOD_S", 1.0, lo=0.1, hi=5.0)
+_KERNEL_VISION_HEARTBEAT_PERIOD_S = _env_float(
+    "SIFTA_KERNEL_VISION_HEARTBEAT_PERIOD_S", 5.0, lo=1.0, hi=60.0
+)
+_APP_FOCUS_LEDGER = _REPO / ".sifta_state" / "app_focus.jsonl"
+_APP_FOCUS_CACHE_LOCK = threading.Lock()
+_APP_FOCUS_CACHE_TS = 0.0
+_APP_FOCUS_CACHE_VALUE = ""
 
 
 # ── Camera selection (mirrors Alice CLI's prefer/avoid posture) ──────────────
@@ -140,15 +162,33 @@ def _rank_cameras(devs: List[QCameraDevice]) -> List[QCameraDevice]:
     return preferred + other_real + virt
 
 
+def _short_camera_label(name: str, uid: str = "") -> str:
+    """Human-readable label for the active eye badge."""
+    text = str(name or "").strip()
+    token = f"{text} {uid}".lower()
+    if not text:
+        return "—"
+    if text == "(Eye Closed - Off)" or uid == "OFF":
+        return "Closed"
+    if "facetime" in token or "macbook" in token or "built-in" in token:
+        return "MacBook Pro"
+    if "logitech" in token or "logit" in token or ("usb camera" in token and "vid:1133" in token):
+        return "Logitech USB"
+    if "iphone" in token:
+        return "iPhone"
+    if "obs" in token:
+        return "OBS Virtual"
+    return text[:18]
+
+
 # ── Ledger writer for our own photon-derived stigmergy ──────────────────────
 def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
-    """Append one compact JSONL row. Throttled by the canvas to ~5 Hz.
+    """Append one compact JSONL row. Throttled by the canvas.
 
-    Compact on purpose — at 5 Hz this is ~700 B/sec on a long session.
+    Compact on purpose; this runs on the Qt video-frame path.
     """
     try:
-        from System.swarm_app_focus import get_focus_context
-        app_focus = get_focus_context(max_age_s=30.0) or ""
+        app_focus = _cached_app_focus(max_age_s=30.0) or ""
         with _VISUAL_STIGMERGY_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps({
                 "ts": ph.ts,
@@ -168,6 +208,110 @@ def _write_visual_stigmergy(ph: "PhotonStigmergy") -> None:
                 "active_app_focus": app_focus,
             }, separators=(",", ":")) + "\n")
     except OSError:
+        pass
+    _heartbeat_kernel_vision(ph)
+
+
+def _read_last_jsonl_dict(path: Path, *, max_bytes: int = 65536) -> Optional[dict]:
+    """Read only the tail of a JSONL ledger and return the last valid row."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return None
+    try:
+        with path.open("rb") as f:
+            f.seek(max(0, size - max_bytes))
+            data = f.read()
+    except OSError:
+        return None
+    for raw in reversed(data.splitlines()):
+        if not raw.strip():
+            continue
+        try:
+            row = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+        if isinstance(row, dict):
+            return row
+    return None
+
+
+def _cached_app_focus(*, max_age_s: float, refresh_s: float = 10.0) -> str:
+    """Cheap focus context for the camera frame path.
+
+    The full `swarm_app_focus.get_focus_context()` can rank history and parse
+    more ledger data. That belongs before a cortex turn, not inside
+    `QVideoSink.videoFrameChanged`.
+    """
+    global _APP_FOCUS_CACHE_TS, _APP_FOCUS_CACHE_VALUE
+    now = time.time()
+    with _APP_FOCUS_CACHE_LOCK:
+        if now - _APP_FOCUS_CACHE_TS < refresh_s:
+            return _APP_FOCUS_CACHE_VALUE
+        _APP_FOCUS_CACHE_TS = now
+        _APP_FOCUS_CACHE_VALUE = ""
+        row = _read_last_jsonl_dict(_APP_FOCUS_LEDGER)
+        if not row:
+            return ""
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except Exception:
+            ts = 0.0
+        if ts and now - ts > max_age_s:
+            return ""
+        pieces = []
+        for key in ("app", "tab", "selection", "detail"):
+            value = str(row.get(key) or "").strip()
+            if value:
+                pieces.append(value[:80])
+        _APP_FOCUS_CACHE_VALUE = " | ".join(pieces)[:240]
+        return _APP_FOCUS_CACHE_VALUE
+
+
+def _heartbeat_kernel_vision(ph: "PhotonStigmergy") -> None:
+    """Throttle E35/Vision heartbeats so signing never runs at frame speed."""
+    global _LAST_KERNEL_VISION_HEARTBEAT_TS
+    now = time.time()
+    if now - _LAST_KERNEL_VISION_HEARTBEAT_TS < _KERNEL_VISION_HEARTBEAT_PERIOD_S:
+        return
+    _LAST_KERNEL_VISION_HEARTBEAT_TS = now
+    try:
+        from System.swarm_kernel_process_table import KernelProcessTable, OrganProcess
+
+        table = KernelProcessTable(state_root=_REPO / ".sifta_state")
+        table.ensure_registered(
+            OrganProcess(
+                pid="e35_vision_001",
+                organ_id="organs/vision/e35",
+                ring=1,
+                health=1.0,
+                stgm_balance=0.0,
+                current_job="vision_bootstrap",
+                last_receipt_id="",
+                failure_count=0,
+                last_heartbeat_ts=now,
+                location="desk",
+                bodies_present=["alice_eye"],
+                metadata={"source": "visual_stigmergy", "os_body": "sifta_os_desktop"},
+            ),
+            receipt_id=f"e35_vision_register:{ph.sha8}",
+        )
+        table.heartbeat(
+            "e35_vision_001",
+            health=1.0 if ph.width > 0 and ph.height > 0 else 0.75,
+            stgm_delta=0.003,
+            current_job=f"vision_frame:{ph.sha8}",
+            location="desk",
+            bodies_present=["alice_eye"],
+            receipt_id=f"e35_vision_heartbeat:{ph.sha8}",
+            metadata={
+                "frame_sha8": ph.sha8,
+                "entropy_bits": f"{ph.entropy_bits:.3f}",
+                "motion_mean": f"{ph.motion_mean:.3f}",
+                "saliency_peak": f"{ph.saliency_peak:.3f}",
+            },
+        )
+    except Exception:
         pass
 
 
@@ -333,7 +477,7 @@ class PhotonStigmergy:
 def _quantize_grid_hex(g: np.ndarray) -> str:
     """Pack an N×N grid in [0..1] into a hex string (1 nybble per cell).
 
-    Lossy by design — keeps ledger rows compact at 5 Hz so we don't
+    Lossy by design — keeps ledger rows compact so we don't
     burn the SSD just to remember what the camera saw five seconds ago.
     For the default 16×16 grid this is 256 hex chars (~128 bytes).
     """
@@ -551,9 +695,9 @@ class _VideoCanvas(QWidget):
     # Public signals (used by the parent widget to update titlebar status).
     frameReceived = pyqtSignal(int, int, str)  # width, height, sha8
 
-    # Throttle: write at most 5 photon-stigmergy rows per second to the ledger
+    # Throttle: write at most one photon-stigmergy row per second by default
     # (the camera fires at ~30 fps; the swarm doesn't need every frame).
-    _LEDGER_PERIOD_S = 0.20
+    _LEDGER_PERIOD_S = _EYE_FRAME_PERIOD_S
     # Don't paint a saliency cell unless it's at least this fraction of peak —
     # keeps the overlay quiet on flat scenes instead of strobing.
     _SAL_PAINT_THRESHOLD = 0.30
@@ -579,10 +723,39 @@ class _VideoCanvas(QWidget):
         self._chyron_color: QColor = QColor(180, 200, 240)
         self._error: Optional[str] = None
         self._show_overlay: bool = True   # toggled by the parent toolbar
-        self._show_raw_video: bool = True  # False = stigmergic-only (dark canvas)
+        # Architect 2026-05-12 20:35 (reversal of 20:10): "BRING THE CAMERA
+        # BACK AND PUT THE DOTS ON IT AND I TEACH YOU TO DESABLE IT LATER."
+        # Boot default is now RAW VIDEO ON — the saliency dots are painted
+        # on top of the live camera frame. He'll show me the right disable
+        # path when he wants stigmergic-only mode.
+        self._show_raw_video: bool = True
         # Ticker overlay: latest 3 ledger rows painted transparently ON the video
         self._ticker_lines: list = []    # list of (text_str, QColor) tuples, max 3
         self._show_ticker: bool = True
+        # Wake-bus subscription: when Alice's name is heard, save a fresh
+        # frame to disk and broadcast its path so the desktop can flash
+        # one image. Owner directive: "ONE camera frame flashes when
+        # 'Alice' is heard" — no streaming, no live video on the canvas.
+        try:
+            from System.swarm_wake_event_bus import wake_bus
+            wake_bus().wake_fired.connect(self._on_wake_fired)
+        except Exception:
+            pass
+
+    def _on_wake_fired(self, _row: dict) -> None:
+        """Save the freshest in-memory frame as a wake-flash JPEG."""
+        try:
+            from pathlib import Path as _Path
+            from System.swarm_wake_event_bus import wake_bus
+            img = self._image
+            if img is None or img.isNull():
+                return
+            out = _REPO / ".sifta_state" / "wake_flash_frame.jpg"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            img.save(str(out), "JPEG", quality=82)
+            wake_bus().frame_ready.emit(str(out))
+        except Exception:
+            pass
 
     # ── Public mutators (called by parent widget) ──────────────────────────
     def set_device_label(self, text: str) -> None:
@@ -665,6 +838,31 @@ class _VideoCanvas(QWidget):
                 try:
                     _frame_path = _REPO / ".sifta_state" / "visual_stigmergy_last_frame.jpg"
                     img.save(str(_frame_path), "JPEG", quality=85)
+                except Exception:
+                    pass
+            try:
+                _identity_period = float(
+                    os.environ.get("SIFTA_EYE_IDENTITY_FRAME_PERIOD_S", "10") or "10"
+                )
+            except Exception:
+                _identity_period = 10.0
+            if _identity_period > 0 and _now - getattr(self, "_last_identity_frame_save_ts", 0.0) >= _identity_period:
+                self._last_identity_frame_save_ts = _now
+                try:
+                    _id_dir = _REPO / ".sifta_state" / "owner_body_vision_frames"
+                    _id_dir.mkdir(parents=True, exist_ok=True)
+                    _id_path = _id_dir / "active_eye_latest.png"
+                    img.save(str(_id_path), "PNG")
+                    with (_REPO / ".sifta_state" / "active_eye_identity_frames.jsonl").open("a", encoding="utf-8") as f:
+                        f.write(json.dumps({
+                            "ts": _now,
+                            "event": "ACTIVE_EYE_IDENTITY_FRAME",
+                            "path": str(_id_path),
+                            "device": self._device_label,
+                            "w": int(img.width()),
+                            "h": int(img.height()),
+                            "sha8": self._last_sha8,
+                        }, separators=(",", ":")) + "\n")
                 except Exception:
                     pass
 
@@ -806,19 +1004,34 @@ class _VideoCanvas(QWidget):
 
     def _paint_saliency_overlay(self, p: QPainter, frame_rect: QRectF,
                                  ph: PhotonStigmergy) -> None:
-        """Draw the N×N saliency grid as semi-transparent cells over the frame.
+        """Draw the saliency grid as the **actual hex glyphs Alice writes to
+        her ledger** — one base-16 char per cell, `0` = cold … `f` = hot.
+
+        Architect 2026-05-12 22:35: "Instead of making up stuff why don't we
+        look at what the system already processes and provides and just show
+        that". The ledger row `visual_stigmergy.jsonl::saliency_q` IS already
+        an ASCII map produced by `_quantize_grid_hex()` (1 nybble per cell).
+        We render that exact map — no invented characters, no random
+        arrays. What you see on screen IS what gets signed into the
+        stigmergic ledger.
 
         Honest labeling: this is **center-surround on luminance**, not a
-        semantic detector. A bright doorway will pop; a stationary face won't.
-        Cells below `_SAL_PAINT_THRESHOLD` are not drawn so flat scenes stay
-        visually quiet.
+        semantic detector. Cells below `_SAL_PAINT_THRESHOLD` are blank so
+        flat scenes stay quiet.
         """
         grid_h, grid_w = ph.saliency_grid.shape
         cell_w = frame_rect.width() / grid_w
         cell_h = frame_rect.height() / grid_h
         sal = ph.saliency_grid
         mot = ph.motion_grid
-        # Combined "interestingness" score: bias toward saliency, add motion.
+
+        # Size the glyph to the cell. Use the same per-cell font for every
+        # draw call so QPainter doesn't have to re-resolve the font.
+        glyph_px = max(7, int(min(cell_w, cell_h) * 0.78))
+        font = QFont("Menlo", glyph_px, QFont.Weight.Bold)
+        p.setFont(font)
+        _HEX = "0123456789abcdef"
+
         for gy in range(grid_h):
             for gx in range(grid_w):
                 s = float(sal[gy, gx])
@@ -826,19 +1039,25 @@ class _VideoCanvas(QWidget):
                 score = max(s, m * 1.5)  # motion is small numerically; amplify
                 if score < self._SAL_PAINT_THRESHOLD:
                     continue
+                # Quantize *exactly* the way the ledger does — single
+                # source of truth via _quantize_grid_hex's formula.
+                nyb = max(0, min(15, int(score * 15.0 + 0.5)))
+                glyph = _HEX[nyb]
                 cx = frame_rect.x() + gx * cell_w
                 cy = frame_rect.y() + gy * cell_h
                 # Color by score: green (calm) → amber → red (hot).
                 if score < 0.5:
-                    c = QColor(0, 255, 200, int(70 + 100 * score))
+                    c = QColor(0, 255, 200, int(170 + 60 * score))
                 elif score < 0.75:
-                    c = QColor(255, 200, 90, int(80 + 120 * score))
+                    c = QColor(255, 200, 90, int(180 + 60 * score))
                 else:
-                    c = QColor(255, 90, 110, int(100 + 130 * score))
-                p.fillRect(QRectF(cx + 1, cy + 1, cell_w - 2, cell_h - 2), c)
-                # Thin outline so the grid stays legible on bright frames.
-                p.setPen(QColor(0, 0, 0, 90))
-                p.drawRect(QRectF(cx + 0.5, cy + 0.5, cell_w - 1, cell_h - 1))
+                    c = QColor(255, 90, 110, int(200 + 55 * score))
+                p.setPen(c)
+                p.drawText(
+                    QRectF(cx, cy, cell_w, cell_h),
+                    int(Qt.AlignmentFlag.AlignCenter),
+                    glyph,
+                )
 
     def _paint_math_line(self, p: QPainter, rect) -> None:  # type: ignore[no-untyped-def]
         """Second HUD line below the top strip: photon-derived math readout."""
@@ -857,7 +1076,7 @@ class _VideoCanvas(QWidget):
                 f"saliency_peak={ph.saliency_peak:0.2f}   "
                 f"motion={ph.motion_mean:0.3f}   "
                 f"hue={ph.hue_centroid_deg:5.1f}°   "
-                f"→  visual_stigmergy.jsonl @ 5 Hz"
+                f"→  visual_stigmergy.jsonl @ {1.0 / max(self._LEDGER_PERIOD_S, 1e-6):0.1f} Hz"
             )
             p.setPen(QColor(255, 200, 90))
         p.drawText(QRectF(bar.x() + 10, bar.y(), bar.width() - 20, bar.height()),
@@ -928,13 +1147,19 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         bar.addStretch()
         layout.addLayout(bar)
 
+        import os as _os_dev
+        _eye_dev_on = _os_dev.environ.get("SIFTA_EYE_DEV_CONTROLS", "0").strip() == "1"
+
         # ── Photon Density Slider (Architect 2026-04-20: "she sees big
         # pixels, too big — add a slider so I can increase or decrease
         # the photon/swimmers input density") ─────────────────────────────
         density_bar = QHBoxLayout()
-        density_bar.addWidget(QLabel("🔬 acuity"))
+        self._density_title_label = QLabel("🔬 acuity")
+        self._density_title_label.setVisible(_eye_dev_on)
+        density_bar.addWidget(self._density_title_label)
         self._density_label_lo = QLabel(f"{_GRID_MIN}×{_GRID_MIN}")
         self._density_label_lo.setStyleSheet("color: rgb(120,130,160); font-size: 11px;")
+        self._density_label_lo.setVisible(_eye_dev_on)
         density_bar.addWidget(self._density_label_lo)
 
         self._density_slider = QSlider(Qt.Orientation.Horizontal)
@@ -953,6 +1178,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             f"Default: {_GRID_W}×{_GRID_W}; max sends {_GRID_MAX*_GRID_MAX} cells into the ledger"
         )
         self._density_slider.valueChanged.connect(self._on_density_changed)
+        self._density_slider.setVisible(_eye_dev_on)
         density_bar.addWidget(self._density_slider, 1)
 
         self._density_value_label = QLabel(f"{_GRID_W}×{_GRID_H}")
@@ -960,10 +1186,12 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             "color: rgb(0,255,200); font-weight: bold; font-size: 13px; "
             "min-width: 60px;"
         )
+        self._density_value_label.setVisible(_eye_dev_on)
         density_bar.addWidget(self._density_value_label)
 
         self._density_label_hi = QLabel(f"{_GRID_MAX}×{_GRID_MAX}")
         self._density_label_hi.setStyleSheet("color: rgb(120,130,160); font-size: 11px;")
+        self._density_label_hi.setVisible(_eye_dev_on)
         density_bar.addWidget(self._density_label_hi)
 
         # Photon count readout (how many cells × how many source pixels)
@@ -971,6 +1199,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._photon_count_label.setStyleSheet(
             "color: rgb(180,190,220); font-size: 11px; margin-left: 12px;"
         )
+        self._photon_count_label.setVisible(_eye_dev_on)
         density_bar.addWidget(self._photon_count_label)
         self._update_photon_count_label(_GRID_W)
 
@@ -1006,6 +1235,9 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             "Model: per_app owner_vision_body or env SIFTA_OWNER_VISION_MODEL."
         )
         self._vision_body_btn.clicked.connect(self._on_vision_body_probe_click)
+        # Hidden by default — developer/diagnostic surface. Set
+        # SIFTA_EYE_DEV_CONTROLS=1 to expose. Architect 2026-05-12.
+        self._vision_body_btn.setVisible(_eye_dev_on)
         body_vis.addWidget(self._vision_body_btn)
         body_vis.addStretch()
         layout.addLayout(body_vis)
@@ -1028,6 +1260,10 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         layout.addWidget(split, 1)
 
         # ── Camera + capture session (Qt's built-in ffmpeg backend) ────────
+        # Qt/macOS can emit the same TCC denial on every frame tick — debounce
+        # so the canvas is not spammed with identical "Access to camera not granted".
+        self._last_camera_err_norm: str = ""
+        self._last_camera_err_at: float = 0.0
         self._camera: Optional[QCamera] = None
         self._sink = QVideoSink(self)
         self._session = QMediaCaptureSession(self)
@@ -1052,14 +1288,18 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             self._root / ".sifta_state" / "active_saccade_target.txt"
         )
         self._yield_lock_path = self._root / ".sifta_state" / "camera_yield.lock"
+        self._acuity_target_json_path = (
+            self._root / ".sifta_state" / "active_visual_acuity.json"
+        )
         self._last_saccade_signature: Optional[str] = None
+        self._last_acuity_signature: Optional[str] = None
         self._applying_saccade_target: bool = False
         self._yielded = False
 
         # ── Pollers for external state ─────────────────────────────────────
         self._poll_timer = QTimer(self)
-        self._poll_timer.timeout.connect(self._poll_ledgers)
         self._poll_timer.timeout.connect(self._poll_saccade_target)
+        self._poll_timer.timeout.connect(self._poll_acuity_target)
         self._poll_timer.timeout.connect(self._poll_camera_yield)
         self._poll_timer.start(800)
 
@@ -1076,7 +1316,12 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
         # ── Ledger tailers ─────────────────────────────────────────────────
         self._tails: List[Tuple[_LedgerTail, _LedgerSpec]] = []
+        tail_self = os.environ.get("SIFTA_EYE_TAIL_SELF_LEDGER", "0").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
         for fname, label, icon, (r, g, b) in self._LEDGERS:
+            if fname == "visual_stigmergy.jsonl" and not tail_self:
+                continue
             spec = _LedgerSpec(
                 path=_REPO / ".sifta_state" / fname,
                 label=label, color=QColor(r, g, b), icon=icon,
@@ -1087,7 +1332,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._recent: Deque[Tuple[float, str, str, QColor]] = deque(maxlen=24)
 
         # Polling timers (parented to widget; stopped on close by base widget).
-        self.make_timer(400, self._poll_ledgers)
+        self.make_timer(1000, self._poll_ledgers)
         self.make_timer(1000, self._cycle_chyron)
 
         # Frame-received → update title status.
@@ -1126,6 +1371,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         # Now reads the canonical JSON target and resolves by
         # unique_id → name → index against the live combobox itemData/text.
         self.make_timer(500, self._poll_saccade_target)
+        self.make_timer(500, self._poll_acuity_target)
 
     # ── Camera plumbing ────────────────────────────────────────────────────
     def _refresh_cameras(self) -> None:
@@ -1257,6 +1503,7 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         self._canvas.set_device_label(target.description())
         self._camera.start()
         self.set_status(f"Camera: {target.description()}")
+        self._refresh_active_eye_label()
 
         if self._applying_saccade_target:
             return
@@ -1284,7 +1531,25 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
 
     def _on_camera_error(self, _err, msg: str) -> None:  # type: ignore[no-untyped-def]
         err_str = f"{msg or _err}"
-        self._canvas.set_error(f"Camera error: {err_str}")
+        now = time.time()
+        norm = err_str.strip().casefold()
+        if norm and norm == self._last_camera_err_norm and (now - self._last_camera_err_at) < 5.0:
+            return
+        self._last_camera_err_norm = norm
+        self._last_camera_err_at = now
+
+        hint = ""
+        low = err_str.casefold()
+        if "not granted" in low or "permission" in low or "denied" in low:
+            hint = (
+                "\n\nTCC: macOS grants Camera per **exact app binary**, not by vibe.\n"
+                f"This process: `{sys.executable}`\n"
+                "System Settings → Privacy & Security → Camera → enable **that** "
+                "interpreter (and Terminal.app if you launch from Terminal). "
+                "A grant for Cursor, another venv, or an older Python path does **not** "
+                "transfer."
+            )
+        self._canvas.set_error(f"Camera error: {err_str}{hint}")
         self.set_status(f"Camera error: {err_str}")
         
         try:
@@ -1417,27 +1682,24 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
         try:
             from System.swarm_camera_target import read_target as _rt
             rec = _rt() or {}
-            name = (rec.get("name") or "").strip()
+            target_name = (rec.get("name") or "").strip()
             uid = (rec.get("unique_id") or "").strip()
-            # Shorten long names — macOS uses "Logit" prefix for Logitech hardware
-            if uid == "OFF" or name == "(Eye Closed - Off)":
-                short = "Closed"
-            elif "FaceTime" in name or "MacBook" in name:
-                short = "MacBook Pro"
-            elif "Logitech" in name or "Logit" in name or ("USB Camera" in name and "VID:1133" in name):
-                short = "Logitech USB"
-            elif "iPhone" in name:
-                short = "iPhone"
-            elif "OBS" in name:
-                short = "OBS Virtual"
-            elif name:
-                short = name[:14]  # cap at 14 chars, readable but not truncated mid-word
-            else:
-                short = "—"
+            actual_name = (
+                self._cam_combo.currentText().strip()
+                if getattr(self, "_camera", None) is not None
+                else ""
+            )
+            name = actual_name or target_name
+            short = _short_camera_label(name, uid)
             # Show active_sense label if available
             sense = (rec.get("active_sense") or "").replace("room_patrol_", "")
             sense_tag = f"  ({sense})" if sense else ""
             self._active_eye_label.setText(f"👁  {short}{sense_tag}")
+            self._active_eye_label.setToolTip(
+                f"Actual QCamera: {actual_name or 'not open'}\n"
+                f"Target ledger: {target_name or 'none'}\n"
+                f"writer={rec.get('writer')} lease_until={rec.get('lease_until')}"
+            )
             self._active_eye_label.setStyleSheet(
                 "color: rgb(0,230,255); font-weight: bold; font-size: 12px; "
                 "padding: 2px 8px; border: 1px solid rgb(0,180,200); border-radius: 4px;"
@@ -1671,22 +1933,47 @@ class WhatAliceSeesWidget(SiftaBaseWidget):
             )
             # Flash the badge amber so the Architect sees the eye switch instantly
             if hasattr(self, "_active_eye_label"):
-                if "FaceTime" in chosen or "MacBook" in chosen:
-                    short = "MacBook Pro"
-                elif "Logitech" in chosen or "Logit" in chosen or "VID:1133" in chosen:
-                    short = "Logitech USB"
-                elif "iPhone" in chosen:
-                    short = "iPhone"
-                elif "OBS" in chosen:
-                    short = "OBS Virtual"
-                else:
-                    short = chosen[:14] if chosen else "?"
+                short = _short_camera_label(chosen)
                 self._active_eye_label.setText(f"👁  {short}  ⚡")
                 self._active_eye_label.setStyleSheet(
                     "color: rgb(255,200,60); font-weight: bold; font-size: 12px; "
                     "padding: 2px 8px; border: 1px solid rgb(255,160,0); border-radius: 4px;"
                 )
                 QTimer.singleShot(1500, self._refresh_active_eye_label)
+
+    def _poll_acuity_target(self) -> None:
+        """Poll the canonical visual-acuity target and move the slider.
+
+        This is the physical endpoint for owner speech such as
+        "increase camera resolution one step": the command writes
+        active_visual_acuity.json, and this widget applies it to the photon
+        grid. The sensor mode itself is unchanged.
+        """
+        if not self._acuity_target_json_path.exists():
+            return
+        try:
+            from System.swarm_visual_acuity_target import read_acuity_target
+            rec = read_acuity_target(state_dir=self._root / ".sifta_state")
+        except Exception:
+            return
+        if not rec:
+            return
+        signature = f"{rec.get('trace_id') or ''}|{rec.get('grid_size') or ''}|{rec.get('ts') or ''}"
+        if signature == self._last_acuity_signature:
+            return
+        self._last_acuity_signature = signature
+        try:
+            grid = int(rec.get("grid_size"))
+        except Exception:
+            return
+        grid = max(_GRID_MIN, min(_GRID_MAX, grid))
+        if hasattr(self, "_density_slider") and self._density_slider.value() != grid:
+            self._density_slider.setValue(grid)
+        if hasattr(self, "_canvas"):
+            self._canvas.set_chyron(
+                f"🔬 ACUITY TARGET: {grid}×{grid} photon grid",
+                QColor(0, 255, 200),
+            )
 
     def _resolve_target_combo_idx(self, rec: dict) -> int:
         """Resolve a canonical target dict against the live combobox.

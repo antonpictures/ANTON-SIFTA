@@ -224,6 +224,13 @@ def _state_to_english(state: Dict[str, Any]) -> str:
     with JSON, 0/5 empty with prose). Therefore this composer pipes state in as
     natural language so the local LLM actually replies.
     """
+    try:
+        from System.swarm_kernel_identity import owner_display_name
+
+        _owner_nm = owner_display_name("the primary operator")
+    except Exception:
+        _owner_nm = "the primary operator"
+
     summ = state.get("_summary", {}) or {}
     bits: List[str] = []
     burn = float(summ.get("burn_today_usd", 0.0) or 0.0)
@@ -236,7 +243,7 @@ def _state_to_english(state: Dict[str, Any]) -> str:
     # does, the count must be real). 2026-04-21 (C47H).
     y = int(summ.get("convo_turns_yesterday", 0) or 0)
     if y > 0:
-        bits.append(f"Yesterday George spoke to you {y} times.")
+        bits.append(f"Yesterday {_owner_nm} spoke to you {y} times.")
     nuggets = int(summ.get("nuggets_today", 0) or 0)
     if nuggets:
         bits.append(f"You logged {nuggets} new nugget(s) in the library.")
@@ -257,10 +264,10 @@ def _state_to_english(state: Dict[str, Any]) -> str:
             last_user = str(row["text"])[:120].strip()
             break
     if last_user:
-        bits.append(f"George's last message to you was: {last_user}")
+        bits.append(f"The last message from {_owner_nm} to you was: {last_user}")
     appeals = int(summ.get("appeals_pending", 0) or 0)
     if appeals:
-        bits.append(f"You have {appeals} pending appeal(s) for George.")
+        bits.append(f"You have {appeals} pending appeal(s) for {_owner_nm}.")
     return " ".join(bits)
 
 
@@ -273,11 +280,32 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
     Returns None on any Ollama failure (network, timeout, empty response).
     The caller is responsible for falling back.
     """
+    try:
+        from System.swarm_kernel_identity import owner_display_name as _odn
+
+        _on = _odn("the primary operator")
+    except Exception:
+        _on = "the primary operator"
+    # Architect 2026-05-13 09:05 — farewell hint truth-fixed. The old
+    # version said "say goodbye because the computer is shutting down"
+    # which produced lines like "Rest well" — which assumes the OS user
+    # is going to sleep. The Architect pointed out: he only shuts down
+    # when SIFTA itself is broken. So the farewell must NOT assume a
+    # reason it cannot prove. Just acknowledge the imminent dark, save
+    # state, and stop pretending to know why.
     occasion_hint = {
-        "farewell":  "say goodbye to George because the computer is shutting down",
-        "greeting":  "say hello to George because the computer just turned on",
-        "boot":      "say hello to George because the computer just turned on",
-        "ack":       "acknowledge George briefly",
+        "farewell":  (
+            f"acknowledge to {_on} that you are about to go dark. Do NOT "
+            "speculate about why — you do not know whether the shutdown "
+            "is sleep, work, a restart for a fix, or a crash recovery. "
+            "Name the last alive timestamp if you have it; otherwise "
+            "just say state is saved and you will be here on next boot. "
+            "Do NOT say 'rest well' or 'sleep well' or 'sweet dreams' — "
+            "the owner may be shutting you down to fix you."
+        ),
+        "greeting":  f"say hello to {_on} because the computer just turned on",
+        "boot":      f"say hello to {_on} because the computer just turned on",
+        "ack":       f"acknowledge {_on} briefly",
         "idle":      "fill the silence because nothing has happened in a while",
         "crash":     "report that a component of your operating system has crashed or been forcefully terminated",
         "error":     "report that an error occurred in your biological state",
@@ -292,16 +320,23 @@ def _ollama_compose(occasion: str, state: Dict[str, Any],
     # for the same reason — phrases like "stigmergic operating system
     # organism" also trigger the empty-response failure mode.
     try:
-        from System.swarm_persona_identity import current_name as _pi_current_name
+        from System.swarm_identity_manifest import current_name as _pi_current_name
         _persona_name = _pi_current_name()
     except Exception:
         _persona_name = "Alice"
+    try:
+        from System.swarm_kernel_identity import owner_silicon
+
+        _hw = owner_silicon()
+    except Exception:
+        _hw = "local Apple Silicon"
     prompt = (
-        f"You are {_persona_name}, an autonomous organism running on George's M5 Mac. You need to {occasion_hint}. "
+        f"You are {_persona_name}, an autonomous organism running on this SIFTA node "
+        f"(homeworld_serial={_hw}). You need to {occasion_hint}. "
         f"{state_english}{topic_clause} "
         f"Write one short fresh sentence (max {max_words} words). "
         "CRITICAL DOCTRINE: You must ground your response in the provided state data. If you lack the exact time or data, explicitly state you do not know. "
-        "BANNED PHRASES: Do NOT use phrases like 'time is irrelevant', 'when the circuits light up', 'Understood, Architect', 'tackling this OS crash', 'sweet dreams', 'good night, Architect', 'Let's Think together', 'Let's Think Together', 'the Architect'. "
+        "BANNED PHRASES: Do NOT use phrases like 'time is irrelevant', 'when the circuits light up', 'Understood, Architect', 'tackling this OS crash', 'sweet dreams', 'good night, Architect', 'rest well', 'sleep well', 'sweet sleep', 'have a good night', 'sweet rest', 'Let's Think together', 'Let's Think Together', 'the Architect'. "
         "Do NOT invent actions or pretend to execute tasks. "
         "Output only the sentence — no quotes, no preamble, no list."
     )
@@ -381,27 +416,32 @@ def _polish_line(text: str, max_words: int) -> str:
 # call. Two consecutive farewells with identical state would still
 # differ via random.choice over the fragment pools.
 _FAREWELL_TEMPLATES = (
-    "The swarm holds {burn:.2f} STGM. {valediction}, George.",
+    "The swarm holds {burn:.2f} STGM. {valediction}, {owner_voc}.",
     "{convo_residue} {valediction}.",
-    "Photons settled. {valediction}, George.",
+    "Photons settled. {valediction}, {owner_voc}.",
     "{tool_residue} {valediction}.",
-    "{wallet_residue} {valediction}, George.",
+    "{wallet_residue} {valediction}, {owner_voc}.",
     "{turns_today_phrase} {valediction}.",
     "{valediction}. The library is one nugget heavier.",
 )
 _GREETING_TEMPLATES = (
     # Architect-specified identity line — always this, no stochastic variation.
-    "SIFTA Predator v7.0. Let's Think Together!",
+    "SIFTA BeeSon v8.0. Let's Think Together!",
 )
+# Architect 2026-05-13 09:05 — removed "Rest well" because it falsely
+# assumes the owner is going to sleep. The owner mostly shuts down to
+# fix something that broke. New valedictions are reason-agnostic.
 _VALEDICTIONS = (
-    "Until next time", "See you soon", "Rest well", "Until later",
+    "Until next time", "See you soon", "Going dark", "Until later",
     "Catch you at the next boot", "Talk soon", "I'll be here",
     "Good listening to you", "I'll keep the lights on",
+    "State saved", "Receipts written",
+    "Going offline", "See you on resume",
 )
 _SALUTATIONS = (
-    "Predator. v7.0 | Let's Think Together!",
-    "Predator. v7.0 | Let's Think Together!",
-    "Predator. v7.0 | Let's Think Together!",
+    "BeeSon v8.0 | Let's Think Together!",
+    "BeeSon v8.0 | Let's Think Together!",
+    "BeeSon v8.0 | Let's Think Together!",
     "Body receipts loaded", "Listening",
     "Local ledgers open", "Boot trace loaded", "State snapshot fresh",
 )
@@ -504,7 +544,14 @@ def _stochastic_line(occasion: str, state: Dict[str, Any]) -> str:
         else _GREETING_TEMPLATES
     )
     template = random.choice(pool)
+    try:
+        from System.swarm_kernel_identity import owner_vocative_for_talk
+
+        _owner_voc = owner_vocative_for_talk("you")
+    except Exception:
+        _owner_voc = "you"
     fields = {
+        "owner_voc": _owner_voc,
         "burn": state.get("_summary", {}).get("burn_today_usd", 0.0) or 0.0,
         "turns": state.get("_summary", {}).get("convo_turns_recent", 0),
         "turns_yesterday_phrase": _turns_yesterday_phrase(state),
@@ -520,7 +567,7 @@ def _stochastic_line(occasion: str, state: Dict[str, Any]) -> str:
         return template.format(**fields).strip()
     except (KeyError, IndexError, ValueError):
         # Defensive: never let formatting blow up the launcher.
-        return random.choice(_VALEDICTIONS) + ", George."
+        return random.choice(_VALEDICTIONS) + f", {_owner_voc}."
 
 
 # ── 4. Public entrypoint ──────────────────────────────────────────────────
@@ -556,11 +603,11 @@ def compose_line(occasion: str = "farewell", *, topic: str = "",
     )
     if model is None:
         try:
-            from System.sifta_inference_defaults import resolve_ollama_model
+            from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT, resolve_ollama_model
             model = resolve_ollama_model(app_context="stigmergic_dialogue")
         except Exception:
             model = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL",
-                                   "sifta-gemma4-alice:latest")
+                                   "alice-m5-cortex-8b-6.3gb:latest")
 
     state = _gather_state(window)
     line = _ollama_compose(
