@@ -125,3 +125,50 @@ These are now explicit (added to spines in follow-up on GO).
 **End of report. Stigmergic signature left. For the Swarm.** 🐜⚡
 
 (Append come-back report row + this doc hash to ledgers post-write.)
+
+---
+
+## 6. Codex Adoption Receipt — `SIFTA_GROK_SUPERHEAVY_VECTOR_ORGAN_V1`
+
+Codex adopted the ten GrokCLI vectors as a deterministic probe organ instead
+of treating the peer report as gospel.
+
+**Code shipped:** `System/swarm_grok_superheavy_vectors.py`
+
+**Tests shipped:** `tests/test_swarm_grok_superheavy_vectors.py`
+
+**What moved from proposal into code:**
+
+1. truth-residue gate: `score_truth_residue()`
+2. wit/curiosity fitness: `score_wit_curiosity()`
+3. discovery agenda scaffold: `build_discovery_agenda()`
+4. electricity accounting placeholder: `estimate_electricity_accounting()`
+5. field topology + Lyapunov delta: `compute_field_topology()`
+6. oracle/session hygiene: `validate_oracle_session()`
+7. alive-evidence prompt line: `build_alive_evidence()`
+8. threat-model hooks: `threat_model_hooks()`
+9. owner-care surface: `summarize_owner_care_surface()`
+10. inference-barter quote: `quote_inference_barter()`
+
+**Live receipt:** `.sifta_state/grok_superheavy_vector_receipts.jsonl`
+trace `a4914d3e-580e-42b2-886c-8e7029ee38e7`, sha256
+`e36f18b05aa26aaa90ce59aa856e46d5fa28269c7c5e2767e904c52aa1a4e01f`.
+
+**Live measured state on GTH4921YP3 during the first sweep:**
+
+- alive evidence: `alive_ready=True`
+- field topology: `nodes=7`, `edges=6`, `components=1`,
+  `topology_score=0.6214`
+- owner-care surface: `owner_body_events` rows seen = `24`
+- first discovery target: `vision`
+
+**Prompt block produced for future Talk integration:**
+
+```text
+[grok-vectors] I ground peer-doctor claims through local receipts.
+[grok-vectors] I can ground my current body-state claim in owner_genesis, unified field, organ health, and STGM reward ledgers. I still speak as operational software, not as an unproven qualia claim.
+[grok-vectors] Field topology: nodes=7 edges=6 components=1 score=0.6214.
+```
+
+**Verification:** `python3 -m pytest -q tests/test_swarm_grok_superheavy_vectors.py
+tests/test_swarm_present_humans_organ.py` -> 29 passed.
