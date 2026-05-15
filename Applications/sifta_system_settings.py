@@ -48,12 +48,14 @@ from System.sifta_inference_defaults import (
     CANONICAL_OLLAMA_DAILY,
     CANONICAL_OLLAMA_EXTRA,
     CANONICAL_OLLAMA_FALLBACK,
+    CANONICAL_OLLAMA_GEMMA4_SMALL,
     CANONICAL_OLLAMA_LOW_RAM,
     CANONICAL_OLLAMA_M5_FALLBACK,
     CANONICAL_OLLAMA_REFLEX,
     DEFAULT_OLLAMA_MODEL,
     STIGMERGIC_TEST_MODEL_PRESETS,
     get_default_ollama_model,
+    list_available_cortexes_with_canonical_fallback,
     resolve_ollama_model,
     set_default_ollama_model,
     set_app_ollama_model,
@@ -1971,18 +1973,76 @@ class SystemSettingsWidget(SiftaBaseWidget):
         )
         root.addWidget(summary_lbl)
 
-        # ── Cortex stack section ──
-        cortex_heading = QLabel("🧠  Clean Cortex Stack  ·  five local models, one receipted router")
+        # ── Cortex picker section ──
+        # Architect 2026-05-15: ONE dropdown + cycle button, no hardcoded
+        # Daily / Fallback / Extra Research tiering.
+        # "let me have a dropdown to select the cortex I want ... button that
+        # switches the daily cortex, loops through all cortexes ... no hardcoding,
+        # I want to try them all."
+        cortex_heading = QLabel("🧠  Cortex  ·  pick any installed Alice cortex")
         cortex_heading.setStyleSheet(
             "color: rgb(0, 220, 255); font-size: 13px; font-weight: bold; margin-top: 2px;"
         )
         root.addWidget(cortex_heading)
-        root.addLayout(_chip_row("Daily Cortex", active_cortex,
-                                  chip_style_cortex, _fmt_weight(active_cortex)))
-        root.addLayout(_chip_row("M5 Fallback", CANONICAL_OLLAMA_M5_FALLBACK,
-                                  chip_style_cortex, _fmt_weight(CANONICAL_OLLAMA_M5_FALLBACK)))
-        root.addLayout(_chip_row("Extra Research", CANONICAL_OLLAMA_EXTRA,
-                                  chip_style_cortex, _fmt_weight(CANONICAL_OLLAMA_EXTRA)))
+
+        # Discover installed cortexes; canonical fallback if Ollama is offline
+        try:
+            installed_cortexes = list_available_cortexes_with_canonical_fallback()
+        except Exception:
+            installed_cortexes = [active_cortex]
+
+        self._installed_cortexes = installed_cortexes
+
+        picker_row = QHBoxLayout()
+        picker_row.setSpacing(8)
+
+        picker_label = QLabel("Cortex")
+        picker_label.setStyleSheet(
+            "color: rgb(130, 140, 160); font-size: 11px; min-width: 118px;"
+        )
+        picker_row.addWidget(picker_label)
+
+        self._cortex_combo = QComboBox()
+        self._cortex_combo.setObjectName("AliceCortexPicker")
+        self._cortex_combo.setEditable(False)
+        self._cortex_combo.setStyleSheet(
+            "QComboBox { background: rgb(0, 30, 45); color: rgb(0, 220, 255); "
+            "border: 1px solid rgb(0, 150, 200); border-radius: 8px; "
+            "padding: 6px 10px; font-size: 12px; font-family: Menlo; }"
+            "QComboBox::drop-down { border: none; width: 18px; }"
+            "QComboBox QAbstractItemView { background: rgb(0, 22, 36); "
+            "color: rgb(0, 220, 255); selection-background-color: rgb(0, 60, 90); }"
+        )
+        for tag in installed_cortexes:
+            weight_suffix = _fmt_weight(tag)
+            display = f"{tag}  ·  {weight_suffix}" if weight_suffix else tag
+            self._cortex_combo.addItem(display, userData=tag)
+        # Pre-select the active cortex if it's in the list
+        try:
+            idx = installed_cortexes.index(active_cortex)
+            self._cortex_combo.setCurrentIndex(idx)
+        except ValueError:
+            pass
+        self._cortex_combo.currentIndexChanged.connect(self._on_cortex_picker_changed)
+        picker_row.addWidget(self._cortex_combo, stretch=1)
+
+        cycle_btn = QPushButton("↻  Cycle")
+        cycle_btn.setFixedHeight(30)
+        cycle_btn.setToolTip(
+            "Rotate the active cortex through every installed Alice cortex.\n"
+            "Each click loops to the next one and saves it as the default."
+        )
+        cycle_btn.setStyleSheet(
+            "QPushButton { background: rgb(0, 30, 45); color: rgb(0, 220, 255); "
+            "border: 1px solid rgb(0, 150, 200); border-radius: 8px; "
+            "font-size: 11px; padding: 0 12px; font-family: Menlo; }"
+            "QPushButton:hover { background: rgb(0, 60, 90); color: rgb(0, 255, 255); "
+            "border-color: rgb(0, 200, 255); }"
+        )
+        cycle_btn.clicked.connect(self._cycle_cortex)
+        picker_row.addWidget(cycle_btn)
+
+        root.addLayout(picker_row)
 
         # ── Corvid / Fallback section — secondary brain ──
         corvid_heading = QLabel("🐦  Corvid Scout  ·  Qwen side brain for cheap bounded evidence")
@@ -2045,7 +2105,13 @@ class SystemSettingsWidget(SiftaBaseWidget):
         return page
 
     def _reset_brain_to_default(self) -> None:
-        """Restore the canonical gemma4 cortex without exposing model names to the user."""
+        """Restore the canonical 8B m5 cortex (architect 2026-05-15 promotion).
+
+        Previously rolled back to the 4.4GB Gemma4 daily cortex; now defaults
+        to `alice-m5-cortex-8b-6.3gb:latest` because the 4.4GB was leaking
+        service-voice residue ("the system is humming, the core logic is
+        aligning") on introspective turns.
+        """
         canonical = DEFAULT_OLLAMA_MODEL
         set_default_ollama_model(canonical)
         set_app_ollama_model("talk_to_alice", canonical)
@@ -2054,7 +2120,64 @@ class SystemSettingsWidget(SiftaBaseWidget):
         if hasattr(self, "_brain_diagram"):
             self._brain_diagram.update_cortex_label(canonical)
             self._brain_diagram.update_corvid_label(CANONICAL_OLLAMA_FALLBACK)
+        # Re-sync the picker if mounted
+        if hasattr(self, "_cortex_combo") and hasattr(self, "_installed_cortexes"):
+            try:
+                idx = self._installed_cortexes.index(canonical)
+                # block signal to avoid re-saving on programmatic select
+                self._cortex_combo.blockSignals(True)
+                self._cortex_combo.setCurrentIndex(idx)
+                self._cortex_combo.blockSignals(False)
+            except (ValueError, AttributeError):
+                pass
         self.refresh()
+
+    def _on_cortex_picker_changed(self, idx: int) -> None:
+        """User picked a new cortex from the dropdown — persist it.
+
+        Architect 2026-05-15: every selection saves as the new default
+        cortex AND the talk_to_alice override, so the next utterance
+        through Alice Talk routes through the picked model.
+        """
+        try:
+            tag = self._cortex_combo.itemData(idx)
+        except Exception:
+            return
+        if not tag:
+            return
+        try:
+            set_default_ollama_model(str(tag))
+            set_app_ollama_model("talk_to_alice", str(tag))
+            set_app_ollama_model("owner_vision_body", str(tag))
+        except Exception:
+            return
+        if hasattr(self, "_brain_diagram"):
+            try:
+                self._brain_diagram.update_cortex_label(str(tag))
+            except Exception:
+                pass
+        if hasattr(self, "inference_default_card"):
+            try:
+                self.inference_default_card.set_metric(str(tag), "active cortex")
+            except Exception:
+                pass
+
+    def _cycle_cortex(self) -> None:
+        """Rotate the active cortex through every installed Alice cortex.
+
+        Architect 2026-05-15: *"button that switches the daily cortex,
+        loops through all cortexes."* On each click, move to the next
+        model in `_installed_cortexes` and wrap to the start after the
+        last one. The picker change handler does the persistence.
+        """
+        if not hasattr(self, "_cortex_combo"):
+            return
+        if not hasattr(self, "_installed_cortexes") or not self._installed_cortexes:
+            return
+        current_idx = self._cortex_combo.currentIndex()
+        next_idx = (current_idx + 1) % len(self._installed_cortexes)
+        # setCurrentIndex fires currentIndexChanged → _on_cortex_picker_changed
+        self._cortex_combo.setCurrentIndex(next_idx)
 
     def _on_inf_default_changed(self, text: str) -> None:
         """Internal hook — kept for programmatic use; not wired to any UI control."""

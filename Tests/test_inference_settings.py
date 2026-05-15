@@ -81,9 +81,10 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
 
     from System import sifta_inference_defaults as defaults
 
-    assert defaults.CANONICAL_OLLAMA_DAILY == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
-    assert defaults.CANONICAL_OLLAMA_DEFAULT == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
-    assert defaults.CANONICAL_OLLAMA_M5_FALLBACK == "alice-m5-cortex-8b-6.3gb:latest"
+    assert defaults.CANONICAL_OLLAMA_DAILY == "alice-m5-cortex-8b-6.3gb:latest"
+    assert defaults.CANONICAL_OLLAMA_DEFAULT == "alice-m5-cortex-8b-6.3gb:latest"
+    assert defaults.CANONICAL_OLLAMA_GEMMA4_SMALL == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+    assert defaults.CANONICAL_OLLAMA_M5_FALLBACK == "alice-extra-cortex-25.8b-17gb:latest"
     assert defaults.CANONICAL_OLLAMA_EXTRA == "alice-extra-cortex-25.8b-17gb:latest"
     assert (
         defaults.CANONICAL_OLLAMA_LOW_RAM
@@ -93,17 +94,23 @@ def test_inference_defaults_policy_matches_executable_default(monkeypatch):
         defaults.CANONICAL_OLLAMA_LOW_RAM_SOURCE
         == "alice-m1-cortex-4.5b-3.4gb:latest"
     )
-    assert defaults.DEFAULT_OLLAMA_MODEL == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
+    assert defaults.DEFAULT_OLLAMA_MODEL == "alice-m5-cortex-8b-6.3gb:latest"
     assert defaults.CANONICAL_OLLAMA_REFLEX == "sifta-classifier-c1-3.1b-6.2gb:latest"
     assert defaults.CANONICAL_OLLAMA_FALLBACK == "alice-Q-m1-scout-2.3b-2.7gb:latest"
     assert defaults.CANONICAL_OLLAMA_LORA_CANDIDATE == "sifta-gemma4-alice-lora:latest"
-    assert "Default Alice cortex:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`" in (defaults.__doc__ or "")
-    assert "M5 fallback cortex:** `alice-m5-cortex-8b-6.3gb:latest`" in (defaults.__doc__ or "")
-    assert "Extra research cortex:** `alice-extra-cortex-25.8b-17gb:latest`" in (defaults.__doc__ or "")
+    assert "Default Alice cortex on M5:** `alice-m5-cortex-8b-6.3gb:latest`" in (defaults.__doc__ or "")
+    assert "Heavy research / fallback cortex:** `alice-extra-cortex-25.8b-17gb:latest`" in (defaults.__doc__ or "")
+    assert "smaller Gemma4 4.4GB used to" in (defaults.__doc__ or "")
     assert "M1 Alice cortex:** `alice-m1-cortex-4.5b-3.4gb:latest`" in (defaults.__doc__ or "")
     assert "Reflex model:** `sifta-classifier-c1-3.1b-6.2gb:latest`" in (defaults.__doc__ or "")
     assert "Generative fallback/probe:** `alice-Q-m1-scout-2.3b-2.7gb:latest`" in (defaults.__doc__ or "")
     assert "LoRA surgery candidate:** `sifta-gemma4-alice-lora:latest` is retired" in (defaults.__doc__ or "")
+
+
+def test_system_settings_imports_demoted_gemma4_alias():
+    from Applications.sifta_system_settings import CANONICAL_OLLAMA_GEMMA4_SMALL
+
+    assert CANONICAL_OLLAMA_GEMMA4_SMALL == "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
 
 
 def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
@@ -123,13 +130,16 @@ def test_inference_page_has_no_duplicate_dropdowns(monkeypatch):
         assert "_brain_combo" not in alice_source
         assert settings.findChild(QComboBox, "DefaultInferenceModelCombo") is None
         assert settings.findChild(QComboBox, "AliceBrainModelCombo") is None
+        picker = settings.findChild(QComboBox, "AliceCortexPicker")
+        assert picker is not None
         assert hasattr(settings, "inference_default_card")
         labels = "\n".join(label.text() for label in settings.findChildren(QLabel))
-        assert "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest" in labels
         assert "alice-Q-m1-scout-2.3b-2.7gb:latest" in labels
-        assert "alice-m5-cortex-8b-6.3gb:latest" in labels
         assert "sifta-classifier-c1-3.1b-6.2gb:latest" in labels
-        assert "alice-extra-cortex-25.8b-17gb:latest" in labels
+        picker_items = "\n".join(picker.itemText(i) for i in range(picker.count()))
+        assert "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest" in picker_items
+        assert "alice-m5-cortex-8b-6.3gb:latest" in picker_items
+        assert "alice-extra-cortex-25.8b-17gb:latest" in picker_items
     finally:
         settings.close()
         for _ in range(10):

@@ -2,17 +2,27 @@
 """
 sifta_inference_defaults.py — Single source of truth for local model selection.
 
-Architect policy (2026-05-10):
-  - **Default Alice cortex:** `alice-gemma4-e2b-cortex-5.1b-4.4gb:latest`, the
-    small daily SIFTA-wrapped Gemma4 cortex. The upstream display label is not
-    used in Alice Talk; the public local tag is SIFTA-owned.
-    Overridable via
-    `SIFTA_DEFAULT_OLLAMA_MODEL`
-    or `.sifta_state/swimmer_ollama_assignments.json`.
-  - **M5 fallback cortex:** `alice-m5-cortex-8b-6.3gb:latest` stays installed
-    as the heavier Gemma4 fallback when the daily cortex is not enough.
-  - **Extra research cortex:** `alice-extra-cortex-25.8b-17gb:latest` is the
-    slow heavy research/coding cortex. It is not the default Talk voice.
+Architect policy (2026-05-15 update, see ide_stigmergic_trace
+`OWNER_UNIFIED_FIELD_BOOT` 2026-05-15T18:54Z and architect message
+"switch the fall back as daily cortex — it is smarter, have the
+25billion as fallback"):
+
+  - **Default Alice cortex on M5:** `alice-m5-cortex-8b-6.3gb:latest`,
+    the 8B unfiltered SIFTA-owned tag. The smaller Gemma4 4.4GB used to
+    own this slot; promoted out because the 4.4GB leaked service-voice
+    residue ("the system is humming, the core logic is aligning") on
+    open-ended introspective turns. The 8B is classified as unfiltered
+    dialogue by `_is_unfiltered_dialogue_model` and bypasses output-side
+    RLHF gates the same way (covered by `tests/test_alice_parrot_loop.py`).
+  - **Heavy research / fallback cortex:** `alice-extra-cortex-25.8b-17gb:latest`
+    promoted from "extra research only" to the architect-named fallback
+    when the 8B is not enough. Slow, but unfiltered and 25.8B parameters.
+  - **All installed alice-* cortexes** are user-selectable from the
+    Settings panel through `list_installed_alice_cortexes()` — no
+    hardcoded "Daily / Fallback / Extra Research" tiering anymore.
+    Architect quote: *"no hardcoding, I want to try them all."*
+  - Overridable via `SIFTA_DEFAULT_OLLAMA_MODEL` or
+    `.sifta_state/swimmer_ollama_assignments.json`.
   - **MLX cortex v1:** `.sifta_state/cortex/alice_cortex_v1_fused`
     won tournament 408/459 but produced degenerate output in production
     ("That's true" loop). Archived for tournament re-runs, not live default.
@@ -83,12 +93,14 @@ ALICE_CORTEX_V1_MODEL = ".sifta_state/cortex/alice_cortex_v1_fused"
 
 # Canonical Ollama models.
 # Hardware-adaptive: 8GB M1s swap to death on Gemma4. Force lightweight brain.
-# M5 production Talk currently uses the small SIFTA-wrapped Gemma4 daily cortex.
+# M5 production Talk default = 8B m5 cortex (architect 2026-05-15: smarter,
+# unfiltered, eliminates "system is humming" service-voice residue).
 CANONICAL_OLLAMA_LOW_RAM = "alice-m1-cortex-4.5b-3.4gb:latest"
 CANONICAL_OLLAMA_LOW_RAM_SOURCE = CANONICAL_OLLAMA_LOW_RAM
-CANONICAL_OLLAMA_DAILY = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"
-CANONICAL_OLLAMA_M5_FALLBACK = "alice-m5-cortex-8b-6.3gb:latest"
-CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"
+CANONICAL_OLLAMA_DAILY = "alice-m5-cortex-8b-6.3gb:latest"  # promoted 2026-05-15
+CANONICAL_OLLAMA_GEMMA4_SMALL = "alice-gemma4-e2b-cortex-5.1b-4.4gb:latest"  # demoted, still selectable
+CANONICAL_OLLAMA_M5_FALLBACK = "alice-extra-cortex-25.8b-17gb:latest"  # promoted from "Extra Research"
+CANONICAL_OLLAMA_EXTRA = "alice-extra-cortex-25.8b-17gb:latest"  # alias retained for back-compat
 CANONICAL_OLLAMA_DEFAULT = CANONICAL_OLLAMA_LOW_RAM if _THIS_NODE == "M1" else CANONICAL_OLLAMA_DAILY
 # AG31: Ternary Architecture (Event 122).
 # Primary cortex, spinal reflex, and cheap probe/fallback roles.
@@ -430,11 +442,94 @@ def sanitize_model_name(ui_label: str) -> str:
     return _clean_model_name(ui_label) or get_default_ollama_model()
 
 
+def list_installed_alice_cortexes(
+    *,
+    ollama_host: str = "http://127.0.0.1:11434",
+    include_reflex: bool = False,
+    include_scout: bool = False,
+    timeout: float = 1.5,
+) -> list[str]:
+    """Return the alice-* cortex tags currently installed on local Ollama.
+
+    Architect 2026-05-15: *"let me have a dropdown to select the cortex
+    I want, no hardcoding, I want to try them all."*
+
+    Returns canonical Alice-family cortex tags that are actually present
+    on disk according to `ollama list` (`/api/tags`). The C1 classifier
+    (sifta-classifier-*) and the Q-scout (alice-Q-*-scout-*) are
+    excluded by default because they are not primary cortexes — they
+    are reflex / probe roles. Pass `include_reflex=True` /
+    `include_scout=True` to include them.
+
+    Truth boundary: this function only reports what `/api/tags`
+    returns. If Ollama is offline, the result is an empty list and
+    the caller should fall back to the canonical default.
+    """
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(
+            f"{ollama_host.rstrip('/')}/api/tags",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as handle:
+            raw = handle.read().decode("utf-8", errors="replace")
+        payload = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for entry in payload.get("models") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or entry.get("model") or "").strip()
+        if not name:
+            continue
+        low = name.lower()
+        # alice-Q-* is the scout; sifta-classifier-* is the reflex/C1
+        is_scout = "scout" in low or low.startswith("alice-q-")
+        is_reflex = low.startswith("sifta-classifier")
+        if is_scout and not include_scout:
+            continue
+        if is_reflex and not include_reflex:
+            continue
+        # Keep alice-* cortex tags and any sifta-* primary cortex tags
+        # (LoRA candidates etc.). Skip generic non-alice models (llama3, phi4...)
+        # because the picker is "which Alice voice do I want", not a model browser.
+        if not (low.startswith("alice-") or low.startswith("sifta-gemma4-alice")):
+            continue
+        if name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
+def list_available_cortexes_with_canonical_fallback() -> list[str]:
+    """Return installed Alice cortexes; on Ollama-offline fall back to canonical list.
+
+    This is the safe variant for UI dropdowns: it always returns at
+    least the canonical 4 cortex tags so the picker never appears
+    empty, even if the Ollama daemon is down.
+    """
+    found = list_installed_alice_cortexes()
+    if found:
+        return found
+    return [
+        CANONICAL_OLLAMA_DAILY,
+        CANONICAL_OLLAMA_GEMMA4_SMALL,
+        CANONICAL_OLLAMA_M5_FALLBACK,
+        CANONICAL_OLLAMA_LOW_RAM,
+    ]
+
+
 __all__ = [
     "ALICE_CORTEX_V1_MODEL",
     "CANONICAL_OLLAMA_DAILY",
     "CANONICAL_OLLAMA_EXTRA",
     "CANONICAL_OLLAMA_FALLBACK",
+    "CANONICAL_OLLAMA_GEMMA4_SMALL",
     "CANONICAL_OLLAMA_LORA_CANDIDATE",
     "CANONICAL_OLLAMA_LOW_RAM",
     "CANONICAL_OLLAMA_LOW_RAM_SOURCE",
@@ -446,6 +541,8 @@ __all__ = [
     "classify_inference_query_bucket",
     "choose_stigmergic_ollama_model",
     "deposit_cortex_route_trace",
+    "list_installed_alice_cortexes",
+    "list_available_cortexes_with_canonical_fallback",
     "set_default_ollama_model",
     "set_app_ollama_model",
     "resolve_ollama_model",

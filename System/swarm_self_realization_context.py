@@ -60,6 +60,7 @@ class SelfRealizationContext:
     recent_work: tuple[str, ...] = ()
     recent_thinking: tuple[str, ...] = ()
     recent_attachments: tuple[str, ...] = ()
+    recent_camera: str = ""
     presence_context: str = ""
     source_counts: dict[str, int] = field(default_factory=dict)
     prompt_block: str = ""
@@ -274,6 +275,63 @@ def _format_attachment_rows(state: Path, n: int = 3) -> tuple[str, ...]:
     return tuple(out[-max(1, n):])
 
 
+def _format_camera_summary(state: Path, now: float) -> str:
+    """Compact first-person camera proprioception line from the unified-field ledger.
+
+    Reads the tail of `.sifta_state/camera_unified_field_proof.jsonl` and returns a
+    one-line summary like:
+        "Camera (USB VID:1133): frame age 1.7s sha 741b1833, motion_mean 0.014, faces 0, audience nobody, status CAMERA_HEALTHY_NO_FACE."
+    Returns empty string when no camera receipts exist or rows are unreadable.
+    """
+    rows = _tail_jsonl(state / "camera_unified_field_proof.jsonl", 8)
+    if not rows:
+        return ""
+    row = rows[-1]
+    p = _payload(row)
+    if not isinstance(p, Mapping):
+        p = row
+    device = _compact(p.get("device") or row.get("device"), 80)
+    # condense "USB Camera VID:1133 PID:2081" → "USB VID:1133" for the prompt line
+    device_short = device
+    if device:
+        for token in device.split():
+            if token.upper().startswith("VID:"):
+                device_short = token
+                break
+    frame_age = p.get("frame_age_s")
+    frame_sha = _compact(p.get("frame_sha8") or p.get("frame_sha256"), 12)
+    visual = p.get("evidence", {}).get("visual") if isinstance(p.get("evidence"), Mapping) else None
+    motion = None
+    if isinstance(visual, Mapping):
+        motion = visual.get("motion_mean")
+    face_eval = p.get("evidence", {}).get("face") if isinstance(p.get("evidence"), Mapping) else None
+    faces = None
+    if isinstance(face_eval, Mapping):
+        faces = face_eval.get("faces_detected")
+    audience = _compact(p.get("face_audience") or "", 32)
+    status = _compact(p.get("status") or "", 48)
+    age_row = max(0.0, float(now) - _row_ts(row, p))
+    parts: list[str] = []
+    head = "Camera"
+    if device_short:
+        head += f" ({device_short})"
+    parts.append(head)
+    if isinstance(frame_age, (int, float)):
+        parts.append(f"frame age {float(frame_age):.1f}s")
+    if frame_sha:
+        parts.append(f"sha {frame_sha}")
+    if isinstance(motion, (int, float)):
+        parts.append(f"motion_mean {float(motion):.3f}")
+    if isinstance(faces, int):
+        parts.append(f"faces {faces}")
+    if audience:
+        parts.append(f"audience {audience}")
+    if status:
+        parts.append(f"status {status}")
+    parts.append(f"row age {age_row:.0f}s")
+    return _compact(", ".join(parts), 240)
+
+
 def _source_counts(
     state: Path,
     root: Path,
@@ -287,6 +345,7 @@ def _source_counts(
         "attachments": len(_tail_jsonl(state / "attachment_vision_lane.jsonl", 20)),
         "self_screenshot": len(_tail_jsonl(state / "self_screenshot_evidence.jsonl", 20)),
         "present_humans": len(_tail_jsonl(state / "present_humans_probes.jsonl", 20)),
+        "camera": len(_tail_jsonl(state / "camera_unified_field_proof.jsonl", 20)),
     }
 
 
@@ -337,6 +396,8 @@ def _build_prompt_block(ctx: SelfRealizationContext) -> str:
         lines.append("Recent thinking receipts: " + " | ".join(ctx.recent_thinking))
     if ctx.recent_attachments:
         lines.append("Recent attachment evidence: " + " | ".join(ctx.recent_attachments))
+    if ctx.recent_camera:
+        lines.append("Recent camera: " + ctx.recent_camera)
     if ctx.presence_context:
         lines.append(ctx.presence_context)
     reality_fiction = _reality_fiction_block()
@@ -383,6 +444,7 @@ def build_self_realization_context(
         recent_work=_format_work_rows(state),
         recent_thinking=_format_thinking_rows(state),
         recent_attachments=_format_attachment_rows(state),
+        recent_camera=_format_camera_summary(state, ts),
         presence_context=_present_humans_block(repo, ts),
         source_counts=_source_counts(state, repo),
     )
