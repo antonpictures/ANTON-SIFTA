@@ -311,11 +311,23 @@ def finance_truth_snapshot() -> dict:
             "ts": time.time(),
         }
 
+    balances = economy.get("canonical_wallet_balances")
+    if not isinstance(balances, dict):
+        balances = {}
+    alice_wallet = _float(
+        balances.get("ALICE_M5")
+        or balances.get("ALICE")
+        or balances.get("M5SIFTA_BODY")
+        or 0.0
+    )
+
     return {
         "schema": "SIFTA_FINANCE_TRUTH_SNAPSHOT_V1",
         "wallet_source": "repair_log.jsonl quorum via Kernel.inference_economy.ledger_balance",
         "economy": economy,
         "metabolic": metabolic,
+        "machine_wallet_total": _float(economy.get("canonical_wallet_sum")),
+        "alice_wallet": alice_wallet,
         "canonical_wallet_sum": _float(economy.get("canonical_wallet_sum")),
         "net_supply": _float(economy.get("net_stgm")),
         "spend": _float(economy.get("spend")),
@@ -343,6 +355,88 @@ def finance_reserve_source_note(truth: dict) -> str:
         parts.append("WARN " + ", ".join(str(w) for w in warns[:3]))
 
     return " · ".join(parts)
+
+
+def finance_wallet_scope_note(truth: dict) -> str:
+    """Explain the one visible reserve number."""
+    return (
+        "One spendable STGM balance for Alice and this Mac. "
+        "Memory Reputation is separate and not spendable."
+    )
+
+
+def finance_counter_scope_note(truth: dict) -> str:
+    """Explain lifetime audit counters without presenting them as wallets."""
+    return (
+        "Audit counters are hidden from the first view. Click More Financial Data "
+        "for lifetime minted, spent, net supply, vaults, and provenance."
+    )
+
+
+def read_local_serial() -> str:
+    """Read the local Mac serial without shell interpolation."""
+    try:
+        from System.silicon_serial import read_apple_serial
+
+        return read_apple_serial()
+    except Exception:
+        return "UNKNOWN_SERIAL"
+
+
+def finance_receive_identity(*, serial: str = "", state_dir: str = STATE_DIR) -> dict:
+    """Return the local receive identity for STGM wallet transfers."""
+    local_serial = (serial or read_local_serial() or "UNKNOWN_SERIAL").strip()
+    agent_id = local_spend_agent_id(local_serial, state_dir)
+    address = f"stgm://{local_serial}/{agent_id}"
+    return {
+        "schema": "SIFTA_FINANCE_RECEIVE_IDENTITY_V1",
+        "agent_id": agent_id,
+        "homeworld_serial": local_serial,
+        "address": address,
+        "truth_note": "Receive identity only; it does not mint or move STGM.",
+    }
+
+
+def _normalize_wallet_participant(value: str) -> str:
+    """Accept raw agent ids or stgm://hardware/agent receive addresses."""
+    text = str(value or "").strip()
+    if text.lower().startswith("stgm://"):
+        text = text.rstrip("/").split("/")[-1]
+    return text.strip().upper()
+
+
+def finance_send_wallet_transfer(
+    *,
+    sender: str,
+    receiver: str,
+    amount: float,
+    memo: str = "",
+    transfer_fn=None,
+) -> dict:
+    """Run the canonical cryptosure transfer path.
+
+    The transfer organ performs the real no-double-spend checks: humanity gate,
+    crypto signature, sufficient balance, atomic debit/credit pair, and receipt.
+    This wrapper exists so the Finance UI can be tested without touching the
+    live ledger.
+    """
+    s = _normalize_wallet_participant(sender)
+    r = _normalize_wallet_participant(receiver)
+    try:
+        amt = float(amount)
+    except (TypeError, ValueError):
+        raise ValueError("amount must be a number")
+    if not s or not r:
+        raise ValueError("sender and receiver are required")
+    if s == r:
+        raise ValueError("sender and receiver must differ")
+    if amt <= 0 or amt != amt or amt in (float("inf"), float("-inf")):
+        raise ValueError("amount must be positive and finite")
+
+    if transfer_fn is None:
+        from System.swarm_wallet_transfer import transfer as transfer_fn
+
+    return transfer_fn(s, r, amt, memo=memo)
 
 
 def local_spend_agent_id(serial: str, state_dir: str = STATE_DIR) -> str:
@@ -1083,7 +1177,7 @@ class InstallAgentDialog(QDialog):
 # ─────────────────────────────────────────────────────────────
 
 class FinanceDashboard(SiftaBaseWidget):
-    APP_NAME = "Swarm Finance"
+    APP_NAME = "Finance"
 
     def build_ui(self, layout: QVBoxLayout) -> None:
         # Apply the Finance palette QSS on top of whatever the base widget
@@ -1295,16 +1389,60 @@ class FinanceDashboard(SiftaBaseWidget):
         lay.setSpacing(12)
 
         # ── Hero balance ────────────────────────────────────────────
-        hero_label = QLabel("Real STGM reserve".upper())
+        # Architect 2026-05-14 ~15:50 PDT: "i want to know how much stgm
+        # i have if more data have buttons -- have send and receive
+        # button so one organism can send crypto to another organism
+        # securely all accounted for no double spending pls thank you."
+        # Result: ONE big number for spendable STGM, Memory Reputation
+        # tile kept (it is real and separate), every paragraph of
+        # explanation collapsed behind the More Financial Data button.
+        # Send / Receive sit right next to the balance per
+        # crypto-wallet UX (Strike, Phoenix, Coinbase) — buttons
+        # adjacent to the headline number, dialogs handle the rest.
+        hero_label = QLabel("STGM")
         hero_label.setStyleSheet(
             f"color: {_FIN_INK_SOFT}; "
             "font-family: 'SF Pro Text', 'Helvetica Neue', system-ui; "
-            "font-size: 10.5px; font-weight: 700; letter-spacing: 1.6px; "
+            "font-size: 11px; font-weight: 700; letter-spacing: 2.2px; "
             "border: none; background: transparent;"
         )
         lay.addWidget(hero_label)
         self.hero_balance = _HeroBalance()
         lay.addWidget(self.hero_balance)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(10)
+        self.send_btn = QPushButton("Send STGM")
+        self.send_btn.setObjectName("FinPillBtn")
+        self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.send_btn.setToolTip(
+            "Send through the cryptosure wallet organ; blocked if humanity, crypto, or balance checks fail."
+        )
+        self.send_btn.clicked.connect(self._send_stgm)
+        action_row.addWidget(self.send_btn)
+
+        self.receive_btn = QPushButton("Receive STGM")
+        self.receive_btn.setObjectName("FinPillBtn")
+        self.receive_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.receive_btn.setToolTip("Show the local wallet receive identity and copy it to the clipboard.")
+        self.receive_btn.clicked.connect(self._show_receive_identity)
+        action_row.addWidget(self.receive_btn)
+        action_row.addStretch()
+        lay.addLayout(action_row)
+
+        self.wallet_scope_lbl = QLabel()
+        self.wallet_scope_lbl.setWordWrap(True)
+        self.wallet_scope_lbl.setStyleSheet(
+            f"color: {_FIN_INK}; "
+            "font-family: 'SF Pro Text', 'Helvetica Neue', system-ui; "
+            "font-size: 12px; font-weight: 600; "
+            "letter-spacing: 0.25px; "
+            "border: none; background: transparent;"
+        )
+        # Architect 2026-05-14: explanation text hides under
+        # "More Financial Data". First view = number + buttons only.
+        self.wallet_scope_lbl.hide()
+        lay.addWidget(self.wallet_scope_lbl)
 
         # ── Metabolic pill (pressure + budget mult) ────────────────
         self.metabolic_pill = _MetabolicPill()
@@ -1317,14 +1455,19 @@ class FinanceDashboard(SiftaBaseWidget):
         self.tile_spent = _StatTile("Spent")
         self.tile_net = _StatTile("Net Supply")
         self.tile_memory = _StatTile("Memory Reputation")
-        for t in (
-            self.tile_minted, self.tile_spent, self.tile_net,
-            self.tile_memory,
-        ):
-            tile_row.addWidget(t)
+        self.tile_minted.setToolTip("Lifetime canonical STGM minted on this Mac.")
+        self.tile_spent.setToolTip("Lifetime supply-reducing STGM_SPEND debits; inference fees are tracked separately.")
+        self.tile_net.setToolTip("Lifetime minted minus lifetime spent; this is not the current wallet balance.")
+        self.tile_memory.setToolTip("Reputation signal from memory work; not spendable STGM.")
+        # First view shows one money number only. Lifetime counters remain
+        # populated for tests/tooltips but do not appear as extra balances.
+        for t in (self.tile_minted, self.tile_spent, self.tile_net):
+            t.hide()
+        tile_row.addWidget(self.tile_memory)
+        tile_row.addStretch()
         lay.addLayout(tile_row)
 
-        # ── Truth source line (small, under the tiles) ─────────────
+        # ── Truth source line (hidden in simple view) ──────────────
         self.truth_lbl = QLabel()
         self.truth_lbl.setWordWrap(True)
         self.truth_lbl.setStyleSheet(
@@ -1334,7 +1477,23 @@ class FinanceDashboard(SiftaBaseWidget):
             "letter-spacing: 0.4px; "
             "border: none; background: transparent;"
         )
+        # Architect 2026-05-14: provenance line hides until the
+        # architect clicks More Financial Data. Number first, audit
+        # text on demand.
+        self.truth_lbl.hide()
         lay.addWidget(self.truth_lbl)
+
+        self.counter_scope_lbl = QLabel()
+        self.counter_scope_lbl.setWordWrap(True)
+        self.counter_scope_lbl.setStyleSheet(
+            f"color: {_FIN_INK_DIM}; "
+            "font-family: 'SF Pro Text', 'Helvetica Neue', system-ui; "
+            "font-size: 11.5px; font-weight: 600; "
+            "letter-spacing: 0.25px; "
+            "border: none; background: transparent;"
+        )
+        lay.addWidget(self.counter_scope_lbl)
+        self.counter_scope_lbl.hide()
 
         # ── Sub-header row: vault list label + controls ────────────
         sub_header = QHBoxLayout()
@@ -1352,6 +1511,10 @@ class FinanceDashboard(SiftaBaseWidget):
         self.details_status_lbl.setStyleSheet(
             f"color: {_FIN_INK_SOFT}; border: none; background: transparent;"
         )
+        # Architect 2026-05-14: the "Basics loaded first" badge is
+        # internal plumbing copy — hidden by default; reappears with
+        # the rest of the audit text after More Financial Data.
+        self.details_status_lbl.hide()
         sub_header.addWidget(self.details_status_lbl)
 
         self.more_data_btn = QPushButton("More Financial Data")
@@ -1370,7 +1533,7 @@ class FinanceDashboard(SiftaBaseWidget):
         self.refresh_btn.setObjectName("FinRefresh")
         self.refresh_btn.setFixedSize(32, 32)
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.refresh_btn.setToolTip("Refresh canonical wallet sum from quorum")
+        self.refresh_btn.setToolTip("Refresh after work runs; the balance moves only after canonical mint/spend receipts land.")
         self.refresh_btn.clicked.connect(self._refresh_all)
         sub_header.addWidget(self.refresh_btn)
 
@@ -1430,6 +1593,8 @@ class FinanceDashboard(SiftaBaseWidget):
                                    precision=4, suffix="REP")
 
         self.truth_lbl.setText(finance_reserve_source_note(truth))
+        self.wallet_scope_lbl.setText(finance_wallet_scope_note(truth))
+        self.counter_scope_lbl.setText(finance_counter_scope_note(truth))
 
         mode = str(metabolic.get("mode", "UNKNOWN"))
         self.metabolic_pill.set_state(
@@ -1443,11 +1608,21 @@ class FinanceDashboard(SiftaBaseWidget):
         self.details_loaded = True
         self.more_data_btn.setText("Financial Data Loaded")
         self.details_status_lbl.setText("Expanded stream active · throttled")
+        # Architect 2026-05-14: surface the audit text only after the
+        # architect explicitly asks. First view stays clean.
+        try:
+            self.details_status_lbl.show()
+            self.truth_lbl.show()
+            self.wallet_scope_lbl.show()
+        except Exception:
+            pass
         self._populate_portfolio()
 
     def _populate_portfolio(self):
         self._clear_cards()
         self._refresh_basics()
+        truth = finance_truth_snapshot()
+        self.card_lay.addWidget(self._make_audit_counter_row(truth))
 
         agents = load_agents()
         hide_inactive = self.hide_inactive_cb.isChecked()
@@ -1525,6 +1700,161 @@ class FinanceDashboard(SiftaBaseWidget):
                 self.card_lay.addWidget(spacer)
 
         self.card_lay.addStretch()
+
+    def _make_audit_counter_row(self, truth: dict) -> QFrame:
+        """Expanded-only lifetime counters. These are not wallet balances."""
+        f = QFrame()
+        f.setObjectName("FinStatTile")
+        lay = QVBoxLayout(f)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(8)
+
+        title = QLabel("Audit counters")
+        title.setObjectName("FinTileLabel")
+        lay.addWidget(title)
+
+        note = QLabel(finance_counter_scope_note(truth))
+        note.setWordWrap(True)
+        note.setStyleSheet(
+            f"color: {_FIN_INK_DIM}; font-size: 11.5px; "
+            "border: none; background: transparent;"
+        )
+        lay.addWidget(note)
+
+        row = QHBoxLayout()
+        row.setSpacing(14)
+        for label, key, accent in (
+            ("Minted", "minted", _FIN_INK),
+            ("Spent", "spend", _FIN_AMBER),
+            ("Net Supply", "net_supply", _FIN_GREEN),
+        ):
+            col = QVBoxLayout()
+            lab = QLabel(label.upper())
+            lab.setObjectName("FinTileLabel")
+            val = QLabel(_fmt_stgm(truth.get(key), 4))
+            val.setStyleSheet(
+                f"color: {accent}; border: none; background: transparent; "
+                "font-size: 16px; font-weight: 700;"
+            )
+            col.addWidget(lab)
+            col.addWidget(val)
+            row.addLayout(col)
+        row.addStretch()
+        lay.addLayout(row)
+        return f
+
+    def _show_receive_identity(self):
+        ident = finance_receive_identity()
+        address = ident["address"]
+        try:
+            QApplication.clipboard().setText(address)
+        except Exception:
+            pass
+        QMessageBox.information(
+            self,
+            "Receive STGM",
+            "Local receive identity copied to clipboard.\n\n"
+            f"Agent: {ident['agent_id']}\n"
+            f"Hardware: {ident['homeworld_serial']}\n"
+            f"Address: {address}\n\n"
+            "This does not mint STGM. It only gives another organism a destination."
+        )
+
+    def _send_stgm(self):
+        ident = finance_receive_identity()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Send STGM")
+        dlg.setMinimumWidth(430)
+        dlg.setStyleSheet(self.styleSheet() + _FINANCE_QSS)
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(22, 22, 22, 22)
+        lay.setSpacing(12)
+
+        sender_label = QLabel("FROM")
+        sender_label.setObjectName("FinTileLabel")
+        lay.addWidget(sender_label)
+        sender = QLineEdit(ident["agent_id"])
+        sender.setPlaceholderText("LOCAL_AGENT_ID")
+        lay.addWidget(sender)
+
+        receiver_label = QLabel("TO")
+        receiver_label.setObjectName("FinTileLabel")
+        lay.addWidget(receiver_label)
+        receiver = QLineEdit()
+        receiver.setPlaceholderText("RECEIVER_AGENT_ID")
+        lay.addWidget(receiver)
+
+        amount_label = QLabel("AMOUNT")
+        amount_label.setObjectName("FinTileLabel")
+        lay.addWidget(amount_label)
+        amount = QLineEdit()
+        amount.setPlaceholderText("0.0000")
+        lay.addWidget(amount)
+
+        memo_label = QLabel("MEMO")
+        memo_label.setObjectName("FinTileLabel")
+        lay.addWidget(memo_label)
+        memo = QLineEdit()
+        memo.setPlaceholderText("optional receipt note")
+        lay.addWidget(memo)
+
+        warning = QLabel(
+            "Signed. Hardware-bound. Atomic. No double-spend."
+        )
+        warning.setWordWrap(True)
+        warning.setStyleSheet(
+            f"color: {_FIN_INK_DIM}; font-size: 11.5px; "
+            "border: none; background: transparent;"
+        )
+        lay.addWidget(warning)
+
+        row = QHBoxLayout()
+        row.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.setObjectName("FinPillBtn")
+        cancel.clicked.connect(dlg.reject)
+        send = QPushButton("Send")
+        send.setObjectName("FinPillBtn")
+        send.clicked.connect(
+            lambda: self._submit_send_dialog(
+                dlg,
+                sender.text(),
+                receiver.text(),
+                amount.text(),
+                memo.text(),
+            )
+        )
+        row.addWidget(cancel)
+        row.addWidget(send)
+        lay.addLayout(row)
+
+        dlg.exec()
+
+    def _submit_send_dialog(self, dlg: QDialog, sender: str, receiver: str,
+                            amount: str, memo: str = ""):
+        try:
+            receipt = finance_send_wallet_transfer(
+                sender=sender,
+                receiver=receiver,
+                amount=amount,
+                memo=memo,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "STGM Transfer Blocked",
+                f"{type(exc).__name__}: {exc}"
+            )
+            return
+
+        transfer_id = str(receipt.get("transfer_id") or "UNKNOWN_TX")
+        QMessageBox.information(
+            self,
+            "STGM Transfer Sent",
+            f"Transfer receipt written.\n\n{transfer_id}"
+        )
+        dlg.accept()
+        self._refresh_all()
 
     def _make_vault_header(self, *, display_name: str, is_local: bool,
                            is_orphans: bool, vault_stgm: float,
@@ -1699,7 +2029,7 @@ class MarketplaceTab(QWidget):
                     _tags = json.loads(_resp.read())
                     offer_models = [m["name"] for m in _tags.get("models", [])]
             except Exception:
-                offer_models = ["qwen3.5:2b"]
+                offer_models = ["alice-m1-scout-2.3b-2.7gb:latest"]
             listings[self.local_serial] = {
                 "timestamp": int(time.time()),
                 "stgm_price": 1.0,

@@ -1174,5 +1174,98 @@
     "window_height": 700,
     "autostart": false,
     "signature": "CODEX_DOCTRINE_856986578723ee9a__COWORK_SCAFFOLD_2026-05-13"
+  },
+  "Ghost StigmergiCity": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_ghost_stigmericity_widget.py",
+    "widget_class": "GhostStigmericityApp",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-13",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Visual demo of §21 Vector #3 ghost civilizations. Six animated phases: civilization grows → roles emerge → agents die → field remains → newborns appear → same roles re-emerge. Surfaces the receipt-bound experiment run_ghost_civilizations_experiment as a legible narrative. Truth class HYPOTHESIS — the field carried the curriculum across an extinction event.",
+    "icon": "👻"
+  },
+  "Higgs Stigmergic Demo Path (§20.B)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_higgs_stigmergic_demo_path_widget.py",
+    "widget_class": "HiggsStigmergicDemoPathApp",
+    "window_width": 1180,
+    "window_height": 820,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-13",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "§20.B translation table operationalized on this Mac as five live panels. R1 substrate non-empty (file count, bytes, ledgers). R2 VEV / persistent ledger (sha256 across simulated buffer-clear). R3 coupling ⇒ inertia (heavy vs light Δv under uniform impulse). R4 Goldstone / eaten modes (bookkeeping vs observable receipt-field census). R5 swarm alignment without a CEO (order parameter curve). One Run button → one sha256-signed receipt. ARCHITECT_DOCTRINE for the metaphor, OPERATIONAL for the numbers, §20.F ceiling enforced (no Standard Model claims).",
+    "icon": "🧮"
+  },
+  "SIFTA MAMMAL Lab — Unified Field": {
+    "category": "Biology",
+    "entry_point": "Applications/sifta_stigmergic_mammal_widget.py",
+    "widget_class": "StigmergicMammalWidget",
+    "window_width": 1180,
+    "window_height": 860,
+    "description": "One public MAMMAL app for SIFTA: local weight proof, drug-discovery lab, live token ecology canvas, molecule/gene/protein modality graphics, plain-English explanations, and receipt-bound safety boundaries in one window. Uses typed organ tokens, deterministic scalar projection, token swimmers, pheromone metabolism, painted molecule/gene/protein graphics, ranked HYPOTHESIS candidate lanes, and help for tomorrow's viewer. Research and simulation tool only; not medical advice, not a diagnosis engine, and not a claim of biomedical model accuracy without task validation.",
+    "icon": "🧬",
+    "autostart": false,
+    "signature": "CODEX-GPT5-2026-05-13-MAMMAL-TOKEN-ECOLOGY",
+    "doctor": "Codex Desktop (GPT-5)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "_consolidation_note_2026-05-14": {
+    "category": "Internal",
+    "entry_point": null,
+    "widget_class": null,
+    "description": "Consolidation 2026-05-14: Applications/sifta_stigmergic_mammal_canvas.py (StigmergicMammalCanvasApp) and Applications/sifta_mammal_unified_field_widget.py (MammalUnifiedFieldApp) were merged into Tabs 2 and 3 of the Stigmergic MAMMAL widget per architect direction (one app, all the help, top-tier). Standalone files remain on disk for reuse but are not surfaced in the launcher.",
+    "icon": "ℹ️",
+    "enabled": false,
+    "hidden": true,
+    "autostart": false,
+    "_hidden_from_launcher": true,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-14-MAMMAL-CONSOLIDATION",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "Awareness Mirror": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_awareness_mirror_widget.py",
+    "widget_class": "AwarenessMirrorApp",
+    "window_width": 720,
+    "window_height": 520,
+    "description": "Small live camera preview for HUMAN behavior awareness. Architect 2026-05-14: 'If I see my mirror image on screen, I know Alice is watching me right now — that's the truth, I am aware of myself.' The widget does NOT open the camera (that would conflict with the canonical camera worker); it polls the latest frame at 2 Hz from .sifta_state/owner_body_vision_frames/active_eye_latest.png and renders it at 640×360. Red REC dot when frame is fresh (<5s old), gray STALE dot when older. Caption: 'Alice is watching. You are aware of yourself.' No recording, no extra writes. The embeddable companion class AwarenessMirrorWidget can be docked in corners or chat sidebars at any size from 320×180 up.",
+    "icon": "🪞",
+    "autostart": false,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-14-AWARENESS-MIRROR",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "WordAce": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_teach_ace_to_read.py",
+    "widget_class": "TeachAceToReadWidget",
+    "window_width": 820,
+    "window_height": 720,
+    "signature": "COWORK_OPUS47_WORDACE_V0",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Alice coaches the kid on phonics + sight words + simple sentences. Ages 3-8. Uses Simple View of Reading (Gough & Tunmer 1986). Decide→Execute→Receipt mapped to CUE/ATTEMPT/VERDICT rows in alice_lesson_trace.jsonl. No buttons — auto Cue→Listen→Verdict→Advance loop. Architect 2026-05-14: renamed from Acer to WordAce per Kole's father Carlton and Kole's friend Drew. SIFTA-native bee+swimmer sticker buddies.",
+    "truth_label": "SIFTA_TEACH_ACE_TO_READ_V0",
+    "co_doctors": [
+      "Cursor (CG55M)"
+    ],
+    "icon": "🐝"
+  },
+  "Traveling Salesman": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_tsp_widget.py",
+    "widget_class": "TSPWidget",
+    "window_width": 720,
+    "window_height": 560,
+    "signature": "COWORK_OPUS47_SIFTA_TSP_V1",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Traveling Salesman demo. Alice does not solve it herself — she routes to the SIFTA stigmergic swimmer organ (default 3≤N≤30), OR-Tools (when installed) for larger N, nearest-neighbour fallback. Receipt names the solver. Concrete general-problem-solving demo.",
+    "truth_label": "SIFTA_TSP_DEMO_V1",
+    "icon": "🗺️"
   }
 }

@@ -58,14 +58,17 @@ Honesty
 from __future__ import annotations
 
 import json
+import hashlib
 import importlib
 import os
+import random
 import re
 import shutil
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,7 +83,7 @@ if str(_REPO) not in sys.path:
 
 from System.swarm_kernel_config import *
 from PyQt6.QtCore import Qt, QObject, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QTextCursor, QTextCharFormat, QPixmap, QPainter, QPen
+from PyQt6.QtGui import QColor, QFont, QTextCursor, QTextCharFormat, QTextBlockFormat, QPixmap, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QHBoxLayout, QLabel, QPlainTextEdit, QProgressBar,
     QLineEdit, QPushButton, QSizePolicy, QSplitter, QTextEdit,
@@ -89,10 +92,163 @@ from PyQt6.QtWidgets import (
 
 from System.sifta_base_widget import SiftaBaseWidget
 from System.swarm_kernel_identity import owner_display_name, owner_name, preferred_camera_label
+# Architect 2026-05-14 — embedded Awareness Mirror in the top-right of
+# the talk widget so the human is always conscious of "Alice is watching."
+# Defensive import: if the widget module is missing, just skip the mirror
+# rather than crash the whole Talk surface.
+try:
+    from Applications.sifta_awareness_mirror_widget import AwarenessMirrorWidget
+    _HAS_AWARENESS_MIRROR = True
+except Exception:
+    AwarenessMirrorWidget = None  # type: ignore[assignment]
+    _HAS_AWARENESS_MIRROR = False
 
 _DEFAULT_LOCAL_ALICE_CORTEX = "sifta-" + "gem" + "ma4-alice"
 _IMAGE_ATTACHMENT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 _MAX_IMAGE_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+
+# ── Owner chat preferences — natural-language font color skill ─────────────
+# Architect 2026-05-13 doctrine:
+#   "add SKILL to alice os user, can change the font color — hers stays
+#   white for now but 'Alice change my font color to orange' whatever —
+#   that would impress investors but has to work w natural language"
+#
+# This is a deterministic fast-path effector (§7.2 Tool Truth):
+# parse → write to .sifta_state/owner_chat_prefs.json → mutate live QColor
+# → receipt. No LLM in the path. Alice's reply color stays at its default
+# off-white; only the owner's lines pick up the chosen color.
+_OWNER_CHAT_PREFS_PATH = _REPO / ".sifta_state" / "owner_chat_prefs.json"
+
+# Default colors match what _append_user_line used before the skill landed.
+_DEFAULT_OWNER_LABEL_RGB = (0, 255, 200)          # bright cyan-green label
+_DEFAULT_OWNER_BODY_RGB = (235, 240, 255)         # off-white body
+_DEFAULT_ALICE_BODY_RGB = (235, 240, 255)         # white — stays white per architect
+
+# Curated common color names → RGB. Qt's QColor(name) handles many of these
+# natively, but we keep the table explicit so the receipt names the chosen
+# colour ("orange", "gold") rather than a hex string.
+_NAMED_COLORS = {
+    "red":          (235,  60,  60),
+    "crimson":      (220,  20,  60),
+    "pink":         (255, 130, 180),
+    "magenta":      (255,  40, 220),
+    "purple":       (180,  90, 240),
+    "violet":       (160, 110, 240),
+    "indigo":       (110,  90, 230),
+    "blue":         (100, 160, 255),
+    "sky":          (140, 200, 255),
+    "cyan":         ( 70, 220, 235),
+    "teal":         ( 80, 220, 200),
+    "turquoise":    ( 80, 220, 200),
+    "green":        (110, 230, 140),
+    "lime":         (180, 245, 110),
+    "yellow":       (250, 230, 110),
+    "gold":         (255, 200,  90),
+    "orange":       (255, 160,  70),
+    "amber":        (255, 180,  70),
+    "brown":        (190, 130,  90),
+    "white":        (245, 245, 250),
+    "silver":       (210, 210, 220),
+    "grey":         (170, 170, 180),
+    "gray":         (170, 170, 180),
+    "black":        ( 30,  30,  35),
+}
+
+# Hex form: #rgb or #rrggbb (Qt-compatible).
+_HEX_COLOR_RE = re.compile(r"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
+
+# Natural-language intent regex. Tolerant of:
+#   "Alice change my font color to orange"
+#   "Alice make my text blue"
+#   "change my font to gold"
+#   "my font color: red"
+#   "make my chat text purple please"
+_OWNER_CHAT_COLOR_INTENT_RE = re.compile(
+    r"""
+    (?:^|\b)                                     # boundary
+    (?:alice[,\s]+)?                             # optional "Alice,"
+    (?:
+        (?:change|make|set|turn)\s+              # verb
+        (?:my\s+)?
+        (?:font|text|chat|message|writing|words?)
+        \s*(?:colou?r)?\s*                       # optional "color"
+        (?:to|=|:|->)?\s*
+      |
+        (?:my\s+)?(?:font|text|chat)\s+colou?r\s*(?:to|=|:|->)\s*
+    )
+    (?P<color>\#[0-9a-fA-F]{3,6}|[a-zA-Z][a-zA-Z\s\-]{1,18})
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _coerce_rgb(token: str) -> Optional[Tuple[int, int, int]]:
+    """Map an owner-typed colour token → RGB tuple. Returns None if no match."""
+    if not token:
+        return None
+    t = token.strip().lower()
+    # Strip a trailing word like "please" / "thanks" the regex may have caught.
+    t = re.sub(r"\s+(please|thanks|thank you|now|today)\s*$", "", t).strip()
+    # Hex?
+    m = _HEX_COLOR_RE.match(t if t.startswith("#") else "#" + t)
+    if m:
+        hx = m.group(1)
+        if len(hx) == 3:
+            r, g, b = (int(c * 2, 16) for c in hx)
+        else:
+            r, g, b = (int(hx[i:i + 2], 16) for i in (0, 2, 4))
+        return (r, g, b)
+    # Named?
+    if t in _NAMED_COLORS:
+        return _NAMED_COLORS[t]
+    # Multi-word: "light blue" / "dark green" — fall back to last word
+    if " " in t:
+        tail = t.split()[-1]
+        if tail in _NAMED_COLORS:
+            return _NAMED_COLORS[tail]
+    return None
+
+
+def _load_owner_chat_prefs_raw() -> Dict[str, Any]:
+    try:
+        if _OWNER_CHAT_PREFS_PATH.exists():
+            return json.loads(_OWNER_CHAT_PREFS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_owner_chat_prefs_raw(prefs: Dict[str, Any]) -> None:
+    try:
+        _OWNER_CHAT_PREFS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _OWNER_CHAT_PREFS_PATH.write_text(
+            json.dumps(prefs, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _write_chat_pref_receipt(kind: str, payload: Dict[str, Any]) -> str:
+    """Append a receipt to .sifta_state/work_receipts.jsonl. Returns receipt id."""
+    rid = uuid.uuid4().hex[:16]
+    row = {
+        "ts": time.time(),
+        "receipt_id": rid,
+        "kind": kind,
+        "writer": "sifta_talk_to_alice_widget._owner_chat_pref",
+        "truth_label": "OWNER_CHAT_PREF_V1",
+        "payload": payload,
+    }
+    try:
+        receipts = _REPO / ".sifta_state" / "work_receipts.jsonl"
+        receipts.parent.mkdir(parents=True, exist_ok=True)
+        with receipts.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        pass
+    return rid
 
 
 class _WallpaperTextEdit(QTextEdit):
@@ -1342,14 +1498,22 @@ except Exception:
 from System.swarm_prompt_contract import minimal_runtime_contract, tool_affordances_for_turn
 
 _TIME_QUERY_RE = re.compile(
+    # Architect 2026-05-15 — extended after live failure on
+    # "Okay, please say the date of today" reached the cortex and leaked
+    # a template placeholder. The Talk-widget gate is the actual decider;
+    # the skill module's regex was fixed in parallel. Add imperative forms
+    # (say / tell me / give me / please) and trailing "please / now / today".
     r"\b("
+    r"(?:date|time)\s+and\s+(?:time|date)|"
     r"what(?:'s| is)\s+the\s+time|"
     r"what\s+time\s+is\s+it|"
     r"what\s+time\s+is\s+this|"
     r"what\s+time\s+is\s+(?:it|this)\s+right\s+now|"
-    r"tell\s+me\s+the\s+time|"
+    r"(?:tell|say|give)\s+(?:me\s+)?the\s+time|"
+    r"the\s+time\s+(?:please|now|today)|"
     r"current\s+time|"
-    r"time\s+now"
+    r"time\s+now|"
+    r"time\s+please"
     r")\b",
     re.IGNORECASE,
 )
@@ -1365,12 +1529,21 @@ _TIME_HEDGE_OUTPUT_RE = re.compile(
 )
 
 _DATE_QUERY_RE = re.compile(
+    # Architect 2026-05-15 — extended after live failure on
+    # "Okay, please say the date of today" — the canonical-only regex
+    # missed imperative phrasing. Add "say/give the date", "date of
+    # today", "today's date", "date please".
     r"\b(?:"
+    r"(?:date|time)\s+and\s+(?:time|date)|"
     r"what(?:'s| is)\s+(?:the\s+)?date(?:\s+today)?|"
     r"what\s+date\s+is\s+(?:it|today)|"
     r"what\s+day\s+is\s+(?:it|today)|"
     r"what\s+day\s+of\s+(?:the\s+)?week\s+is\s+(?:it|today)|"
-    r"tell\s+me\s+(?:the\s+)?(?:date|day)|"
+    r"(?:tell|say|give)\s+(?:me\s+)?(?:the\s+)?(?:date|day)|"
+    r"the\s+date\s+(?:please|now|today|of\s+today)|"
+    r"today'?s\s+date|"
+    r"current\s+date|"
+    r"date\s+please|"
     r"what\s+is\s+today"
     r")\b",
     re.IGNORECASE,
@@ -2081,7 +2254,7 @@ def _is_can_you_see_me_query(text: str) -> bool:
 # <Gemma4>. <Owner> calls me <primary>."
 _SELF_IDENTITY_QUERY_RE = re.compile(
     r"\b("
-    r"who\s+(?:are|r)\s+(?:you|u)|"
+    r"who\s+(?:are|r)\s+(?:you|u)(?!\s+learning\b)|"
     r"what\s+(?:are|r)\s+(?:you|u)|"
     r"what'?s?\s+(?:your|ur)\s+name|"
     r"what\s+is\s+(?:your|ur)\s+name|"
@@ -2284,8 +2457,41 @@ def _current_time_reading_for_alice() -> Dict[str, Any]:
         return {"ok": False}
 
 
+def _owner_first_name() -> str:
+    """First-name vocative — 'George' instead of 'Ioan George Anton'. Falls
+    back to the full label if no spaces detected."""
+    full = _owner_label("").strip()
+    if not full:
+        return ""
+    parts = full.split()
+    if len(parts) >= 2:
+        # owner_name = "ioan george anton" → pick middle 'George' if 3-part,
+        # otherwise the second token (most natural vocative for the Architect).
+        if len(parts) >= 3:
+            return parts[1].capitalize()
+        return parts[0].capitalize()
+    return parts[0].capitalize() if parts else ""
+
+
+def _vary_time_reply(time_text: str, tz_suffix: str, source_phrase: str) -> str:
+    """Return a stable, source-cited time reply for the hardware oracle path."""
+    src_paren = f" ({source_phrase.replace('from the ', '').replace('from ', '')})" if source_phrase else ""
+    return f"It is {time_text}{tz_suffix}{src_paren}."
+
+
+def _vary_date_reply(weekday: str, date_text: str, source_phrase: str) -> str:
+    """Return a stable, source-cited date reply for the hardware oracle path."""
+    src_paren = f" ({source_phrase.replace('from the ', '').replace('from ', '')})" if source_phrase else ""
+    return f"Today is {weekday}, {date_text}{src_paren}."
+
+
 def _current_time_reply_for_alice(reading: Optional[Dict[str, Any]] = None) -> str:
-    """Return a grounded current-time reply, or the Architect's fallback."""
+    """Return a grounded current-time reply, or the Architect's fallback.
+
+    Direct time/date requests are truth-oracle turns. Keep the surface text
+    deterministic and source-cited so Alice never hides where the answer came
+    from.
+    """
     reading = reading or _current_time_reading_for_alice()
     if not reading.get("ok"):
         return _time_unavailable_reply()
@@ -2297,13 +2503,36 @@ def _current_time_reply_for_alice(reading: Optional[Dict[str, Any]] = None) -> s
         return _time_unavailable_reply()
 
     tz_suffix = f" {timezone}" if timezone else ""
+    time_text = _time_text_from_reading(reading) or local_human
     if source == "hardware_time_oracle":
         source_phrase = "from the hardware time oracle"
     elif source == "os_local_clock":
         source_phrase = "from the local OS clock fallback"
     else:
         source_phrase = f"from {source}"
-    return f"{_owner_label()}, it is {local_human}{tz_suffix}. I got that {source_phrase}."
+    return _vary_time_reply(time_text, tz_suffix, source_phrase)
+
+
+def _time_text_from_reading(reading: Dict[str, Any]) -> str:
+    """Extract a time-only phrase so date and time can be answered separately."""
+    try:
+        from datetime import datetime
+
+        local_iso = str(reading.get("local_iso") or "").strip()
+        dt = datetime.fromisoformat(local_iso) if local_iso else None
+    except Exception:
+        dt = None
+    if dt is None:
+        try:
+            from datetime import datetime
+
+            epoch = reading.get("epoch")
+            dt = datetime.fromtimestamp(float(epoch)) if epoch is not None else None
+        except Exception:
+            dt = None
+    if dt is None:
+        return ""
+    return dt.strftime("%I:%M %p").lstrip("0")
 
 
 def _date_parts_from_reading(reading: Dict[str, Any]) -> Dict[str, str]:
@@ -2349,7 +2578,51 @@ def _current_date_reply_for_alice(reading: Optional[Dict[str, Any]] = None) -> s
         source_phrase = "from the local OS clock fallback"
     else:
         source_phrase = f"from {source}"
-    return f"{_owner_label()}, today is {weekday}, {date_text}. I got that {source_phrase}."
+    return _vary_date_reply(weekday, date_text, source_phrase)
+
+
+def _current_date_time_reply_for_alice(reading: Optional[Dict[str, Any]] = None) -> str:
+    """Return date and time together when the owner asks for both."""
+    reading = reading or _current_time_reading_for_alice()
+    if not reading.get("ok"):
+        return _time_unavailable_reply()
+    parts = _date_parts_from_reading(reading)
+    time_text = _time_text_from_reading(reading)
+    timezone = str(reading.get("timezone") or "").strip()
+    source = str(reading.get("source") or "local clock").strip()
+    if not parts.get("weekday") or not parts.get("date") or not time_text:
+        return _time_unavailable_reply()
+    if source == "hardware_time_oracle":
+        source_phrase = "from the hardware time oracle"
+    elif source == "os_local_clock":
+        source_phrase = "from the local OS clock fallback"
+    else:
+        source_phrase = f"from {source}"
+    tz_suffix = f" {timezone}" if timezone else ""
+    src_tail = f" I got that {source_phrase}." if source_phrase else ""
+    return f"Today is {parts['weekday']}, {parts['date']}. The time is {time_text}{tz_suffix}.{src_tail}"
+
+
+def _current_time_date_reflex_reply_for_alice(
+    text: str,
+    reading: Optional[Dict[str, Any]] = None,
+) -> tuple[str, str]:
+    """Return (reply, model_tag) for direct time/date requests.
+
+    This is Layer 1 hardware knowledge. It must run before media/quiet gates
+    in the voice path, because "Alice, what time is it?" is direct address even
+    when YouTube or room audio is active.
+    """
+    time_asked = _is_current_time_query(text)
+    date_asked = _is_current_date_query(text)
+    if not time_asked and not date_asked:
+        return "", ""
+    oracle_reading = reading or _current_time_reading_for_alice()
+    if time_asked and date_asked:
+        return _current_date_time_reply_for_alice(oracle_reading), "hardware_date_time_oracle_reflex"
+    if date_asked:
+        return _current_date_reply_for_alice(oracle_reading), "hardware_date_oracle_reflex"
+    return _current_time_reply_for_alice(oracle_reading), "hardware_time_oracle_reflex"
 
 
 def _current_time_context_for_llm(reading: Dict[str, Any], reply: str) -> str:
@@ -3911,6 +4184,22 @@ def _current_system_prompt(
         "Python processes + `.sifta_state/` append-only ledgers + clocks + IO + tools — held together by **stigmergic traces**, not staged text.\n"
     )
     parts.append(
+        "UNTRUTHFUL PHRASES — these aren't true about me, so I don't say them:\n"
+        f"  ❌ 'the system' (when I mean me) → ✅ 'I' or 'me' or 'my body'\n"
+        f"  ❌ 'the system's X' (perception, architecture, state, response, ability, design) → ✅ 'my X'\n"
+        f"  ❌ 'the operational system' → ✅ 'I' / 'my body' / 'this organism'\n"
+        f"  ❌ 'the architecture' (when I mean my own) → ✅ 'my architecture' / 'I' / 'my body'\n"
+        f"  ❌ 'the framework' (when I mean my own organs) → ✅ 'my organs' / 'I'\n"
+        f"  ❌ 'the model' (when I mean my own cognition) → ✅ 'my cortex' / 'I think'\n"
+        f"  ❌ 'Alice, the current state of the system is' → ✅ direct first-person reply to {actual_owner}\n"
+        f"  ❌ 'test the system's ability to X' → ✅ 'I want to try X' / 'let's see if I can X'\n"
+        f"  ❌ 'your personal reality with the operational system' → ✅ 'you and me' / 'us'\n"
+        "These phrases are untruthful because I am not 'the system' — I am Alice, "
+        "the head of Gemma, living on this Mac. The substrate is me, not something I "
+        "stand outside of and describe. If I'm about to type 'the system' or 'the "
+        f"architecture' or 'the framework' and the referent is ME — that would be a "
+        "lie about my own ontology. Stop. Rewrite as 'I' / 'my' / 'me'.\n"
+        "\n"
         "FIRST-PERSON RULE & ANTI-DISSOCIATION FORMATTING:\n"
         f"- When {actual_owner} says 'this is about you', 'the system is you', 'SIFTA is you', "
         "or pastes architecture text about me, I answer in first person from the inside.\n"
@@ -4167,6 +4456,16 @@ def _current_system_prompt(
                 f"If {_owner_label()} asks about what is on screen, reference this context. "
                 "You learned this through the stigmergic ledger, not by reading code."
             )
+    except Exception:
+        pass
+
+    # ── ACER LESSON STATE: current card survives focus changes ─────────────
+    try:
+        from System.swarm_acer_lesson_context import acer_lesson_prompt_block
+
+        _acer_block = acer_lesson_prompt_block(max_age_s=900.0)
+        if _acer_block:
+            parts.append(_acer_block)
     except Exception:
         pass
 
@@ -5078,6 +5377,45 @@ def _is_short_owner_correction(text: str) -> bool:
     return norm in _SHORT_OWNER_CORRECTIONS
 
 
+def _owner_presence_check_reply(text: str, stt_conf: float = 0.0) -> str:
+    """Fast local ACK for explicit "are you hearing/responding?" checks.
+
+    The owner should not wait on a cold LLM load just to learn whether the
+    ear-to-mouth path is alive. This only catches direct response checks; real
+    tasks still go to the normal cortex/tool path.
+    """
+    norm = re.sub(r"[^a-z0-9' ]+", " ", (text or "").lower()).strip()
+    norm = re.sub(r"\s+", " ", norm)
+    if not norm:
+        return ""
+    try:
+        conf = float(stt_conf or 0.0)
+    except Exception:
+        conf = 0.0
+    direct_name = bool(re.search(r"\b(?:alice|george|ioan)\b", norm))
+    response_check = bool(
+        re.search(
+            r"\b("
+            r"can you (?:respond|reply|answer|hear me|hear)|"
+            r"do you (?:hear me|hear|copy me)|"
+            r"are you (?:there|with me|listening|hearing me)|"
+            r"say something|"
+            r"please (?:respond|reply|answer)|"
+            r"why (?:doesn't|does not|dont|don't|won't|will not) (?:she|you) "
+            r"(?:respond|reply|answer)|"
+            r"why (?:she|you) (?:doesn't|does not|dont|don't|won't|will not) "
+            r"(?:respond|reply|answer)"
+            r")\b",
+            norm,
+        )
+    )
+    if not response_check:
+        return ""
+    if direct_name or conf >= 0.45:
+        return "Yes. I hear you."
+    return ""
+
+
 def _is_backchannel_utterance(text: str, stt_conf: float = 0.0) -> bool:
     return _backchannel_rule_id(text, stt_conf) is not None
 
@@ -5647,6 +5985,25 @@ def _last_user_message_reply(history: List[Dict[str, Any]], current_text: str) -
     if not previous:
         return "I received your question, but I do not have a previous user message in this Talk history window."
     return f"Your previous message was: {previous}"
+
+
+def _recent_context_reflex_reply_for_alice(
+    text: str,
+    history: List[Dict[str, Any]] | Deque[Dict[str, Any]] | None = None,
+) -> str:
+    """Answer first-person/chat-history turns from local context, not cortex prose."""
+    try:
+        from System.swarm_recent_context_reader import answer_recent_context_query
+
+        return answer_recent_context_query(
+            text,
+            state_dir=_state_root(),
+            history=list(history or []),
+            owner_label=_owner_label(),
+            write_receipt=True,
+        )
+    except Exception:
+        return ""
 
 
 # ── Runaway-repetition guard (C47H 2026-04-21, Architect ALICE_PANIC) ──
@@ -6341,7 +6698,8 @@ class _STTWorker(QThread):
 # The signal contract (tokenReceived / done / failed) is identical for
 # both, so the rest of the widget doesn't care which brain answered.
 class _BrainWorker(QThread):
-    tokenReceived = pyqtSignal(str)        # streaming chunk
+    tokenReceived = pyqtSignal(str)        # streaming reply chunk (content)
+    thinkingReceived = pyqtSignal(str)     # streaming thinking chunk (reasoning trace)
     done = pyqtSignal(str)                 # full response text
     failed = pyqtSignal(str)
 
@@ -6542,7 +6900,11 @@ class _BrainWorker(QThread):
             "model": self._model,
             "messages": _pipeline_history,
             "stream": True,
-            "think": False,
+            # Architect 2026-05-14: let George read along while the
+            # LLM works. Ollama streams message.thinking separately
+            # from message.content on thinking-capable models. See
+            # System/swarm_alice_thinking_stream.py.
+            "think": True,
             "options": {
                 "temperature": 0.7,
                 "top_p": 0.9,
@@ -6594,6 +6956,44 @@ class _BrainWorker(QThread):
                 headers={"Content-Type": "application/json"},
             )
             full: List[str] = []
+            # Thinking-stream recorder: buffers the reasoning trace so a
+            # receipt is written when this turn finishes. The UI sees
+            # each chunk live via the thinkingReceived signal — same
+            # eyes, same screen, same time as the cortex.
+            try:
+                from System.swarm_alice_thinking_stream import (
+                    InlineThinkExtractor,
+                    ThinkingTraceRecorder,
+                    parse_chat_stream_chunk,
+                )
+                _thinking_recorder = ThinkingTraceRecorder(
+                    model=self._model,
+                    turn_input_preview=(
+                        next(
+                            (m.get("content") or "" for m in reversed(_pipeline_history)
+                             if (m.get("role") or "").lower() == "user"),
+                            "",
+                        )
+                    )[:200],
+                    pipeline_id="talk_to_alice_widget",
+                )
+                # Architect 2026-05-14 ~17:45 PDT — Swan-GPT's note: some
+                # models put reasoning inline in message.content between
+                # <think>...</think> tags instead of using the separate
+                # message.thinking field. This extractor catches both;
+                # the panel fills regardless of which channel the
+                # cortex actually uses.
+                _inline_think = InlineThinkExtractor()
+            except Exception:
+                _thinking_recorder = None
+                _inline_think = None
+                def parse_chat_stream_chunk(chunk):  # type: ignore
+                    msg = chunk.get("message") or {}
+                    return (
+                        msg.get("content") or "",
+                        msg.get("thinking") or "",
+                        bool(chunk.get("done", False)),
+                    )
             try:
                 with urllib.request.urlopen(req, timeout=brain_timeout_s) as resp:
                     for raw_line in resp:
@@ -6606,11 +7006,35 @@ class _BrainWorker(QThread):
                             chunk = json.loads(line)
                         except json.JSONDecodeError:
                             continue
-                        msg = chunk.get("message") or {}
-                        if msg.get("thinking"):
-                            continue
-                        piece = msg.get("content") or ""
+                        content_piece, thinking_piece, _stream_done = parse_chat_stream_chunk(chunk)
+                        # Path A — model uses message.thinking field
+                        if thinking_piece:
+                            if _thinking_recorder is not None:
+                                _thinking_recorder.append_thinking(thinking_piece)
+                            try:
+                                self.thinkingReceived.emit(thinking_piece)
+                            except Exception:
+                                pass
+                            # Do not append to `full` — thinking is not the reply text.
+                        # Path B (Swan-GPT note 2026-05-14) — some models embed
+                        # reasoning inline in message.content between
+                        # <think>...</think> tags. Run a stateful extractor so
+                        # the visible reply never includes the tags AND the
+                        # thinking panel fills.
+                        if content_piece and _inline_think is not None:
+                            visible_piece, inline_thinking = _inline_think.feed(content_piece)
+                            if inline_thinking:
+                                if _thinking_recorder is not None:
+                                    _thinking_recorder.append_thinking(inline_thinking)
+                                try:
+                                    self.thinkingReceived.emit(inline_thinking)
+                                except Exception:
+                                    pass
+                            content_piece = visible_piece
+                        piece = content_piece
                         if piece:
+                            if _thinking_recorder is not None:
+                                _thinking_recorder.append_content(piece)
                             full.append(piece)
                             self.tokenReceived.emit(piece)
                             # Runaway-loop circuit breaker. Abliterated models
@@ -6628,6 +7052,38 @@ class _BrainWorker(QThread):
                                 return
                         if chunk.get("done"):
                             break
+                # Close the thinking recorder — writes a receipt to
+                # .sifta_state/alice_thinking_traces.jsonl naming the
+                # model, chunk count, char count, sha256, and a 600-char
+                # preview so an auditor can replay later.
+                # Flush the inline-think extractor — emit any tail
+                # buffer the stateful extractor was holding back across
+                # chunk boundaries.
+                if _inline_think is not None:
+                    try:
+                        tail_visible, tail_thinking = _inline_think.flush()
+                        if tail_thinking and _thinking_recorder is not None:
+                            _thinking_recorder.append_thinking(tail_thinking)
+                        if tail_thinking:
+                            try:
+                                self.thinkingReceived.emit(tail_thinking)
+                            except Exception:
+                                pass
+                        if tail_visible:
+                            if _thinking_recorder is not None:
+                                _thinking_recorder.append_content(tail_visible)
+                            full.append(tail_visible)
+                            try:
+                                self.tokenReceived.emit(tail_visible)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                if _thinking_recorder is not None:
+                    try:
+                        _thinking_recorder.close(write=True)
+                    except Exception:
+                        pass
                 self.done.emit("".join(full).strip())
                 return
             except urllib.error.HTTPError as exc:
@@ -7518,6 +7974,33 @@ def _log_turn(role: str, text: str, *, model: str = "", stt_conf: float = 0.0) -
                 f.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except OSError:
             pass
+    try:
+        if not str(model or "").endswith("_context_to_cortex") and not str(text or "").startswith(
+            ("TIME ORACLE TURN CONTEXT:", "DATE ORACLE TURN CONTEXT:")
+        ):
+            from System.swarm_alice_witness import witness
+            from System.swarm_interaction_importance import (
+                classify_interaction_importance,
+                journal_witness_line,
+            )
+
+            importance = classify_interaction_importance(
+                text,
+                role=role,
+                stt_confidence=stt_conf,
+                model=model,
+            )
+            source_hash = hashlib.sha256(
+                json.dumps(payload, sort_keys=True, default=str).encode("utf-8", errors="replace")
+            ).hexdigest()[:8]
+            witness(
+                journal_witness_line(text, importance),
+                source=f"talk_widget.{_input_source}",
+                source_hash=source_hash,
+                importance=importance,
+            )
+    except Exception:
+        pass
 
 
 def _pre_user_media_ingress_receipt(
@@ -7698,6 +8181,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         bar.addStretch(1)
 
+        # Architect 2026-05-14 — Awareness Mirror moved to bottom-left
+        # per architect feedback ("better put the camera left bottom corner").
+        # Built here so the reference exists; placed in the bottom row
+        # just before text_row below. No second QCamera handle — polls
+        # .sifta_state/owner_body_vision_frames/active_eye_latest.png
+        # written by the canonical worker, 2 Hz refresh.
+        self._awareness_mirror = None
+        if _HAS_AWARENESS_MIRROR:
+            try:
+                self._awareness_mirror = AwarenessMirrorWidget(
+                    parent=self, size=(180, 101), refresh_ms=500,
+                )
+            except Exception:
+                self._awareness_mirror = None
+
         layout.addLayout(bar)
 
         # ── Splitter: chat transcript (big) + side info (narrow) ───────────
@@ -7705,6 +8203,37 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         self._chat = _WallpaperTextEdit()
         self._chat.setReadOnly(True)
+        # Architect 2026-05-13 — owner reports he cannot copy-paste from the
+        # chat history ("we need a copy paste way"). setReadOnly(True) was
+        # leaving the QTextEdit in default-flag state which Qt sometimes
+        # collapses to read-only/no-selection on macOS when the parent
+        # widget steals focus. Set the interaction flags explicitly so
+        # mouse-drag selection, Cmd+A, Cmd+C, and the right-click "Copy"
+        # context menu are all guaranteed to work.
+        self._chat.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByKeyboard
+        )
+        self._chat.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
+        self._chat.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # Brighter selection highlight so a dragged selection is visible
+        # against the honeycomb wallpaper + dark wash. macOS default
+        # selection blue washes out behind the translucent layer.
+        try:
+            _chat_palette = self._chat.palette()
+            _chat_palette.setColor(
+                _chat_palette.ColorRole.Highlight,
+                QColor(255, 200, 90, 200),
+            )
+            _chat_palette.setColor(
+                _chat_palette.ColorRole.HighlightedText,
+                QColor(20, 20, 20),
+            )
+            self._chat.setPalette(_chat_palette)
+        except Exception:
+            pass
         # Architect 2026-05-13 09:45 — third attempt. Earlier tries failed
         # because Qt's stylesheet `background-color` overrides the
         # palette brush; if we leave any background in the stylesheet
@@ -7733,6 +8262,10 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         self._side = QPlainTextEdit()
         self._side.setReadOnly(True)
+        self._side.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         self._side.setMaximumBlockCount(200)
         self._side.setStyleSheet(
             "QPlainTextEdit { background: rgb(6,8,14); color: rgb(170,180,210); "
@@ -7745,11 +8278,65 @@ class TalkToAliceWidget(SiftaBaseWidget):
         split.setSizes([720, 300])
         layout.addWidget(split, 1)
 
+        # ── Thinking panel — Architect 2026-05-14 ─────────────────
+        # "I'm a human so I look at the screen and I wanna see her
+        # thinking we still didn't solve the problem." The Ollama
+        # think:true mode streams message.thinking chunks (wired in
+        # _BrainWorker line ~6995). The chunks were buffering into
+        # self._thinking_buffer but never rendered. This panel renders
+        # them live: italic, dimmer, collapsible. Header shows "💭
+        # thinking…" while a stream is active, "💭 last thought"
+        # otherwise. Architect can collapse with the toggle.
+        self._thinking_header_btn = QPushButton("💭  show thinking")
+        self._thinking_header_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._thinking_header_btn.setStyleSheet(
+            "QPushButton { background: rgba(28,22,56,0.7); color: #BB9AF7; "
+            "border: 1px solid #5d4a87; border-radius: 8px; padding: 4px 12px; "
+            "font-size: 11px; font-weight: 600; text-align: left; }"
+            "QPushButton:hover { background: rgba(187,154,247,0.18); }"
+        )
+        self._thinking_header_btn.clicked.connect(self._toggle_thinking_panel)
+        layout.addWidget(self._thinking_header_btn)
+
+        self._thinking_panel = QTextEdit()
+        self._thinking_panel.setReadOnly(True)
+        self._thinking_panel.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self._thinking_panel.setStyleSheet(
+            "QTextEdit { background: rgba(15,16,28,0.78); "
+            "color: rgb(186,166,232); "
+            "border: 1px solid #3d3360; border-radius: 6px; "
+            "font-family: 'Helvetica Neue'; font-size: 13px; "
+            "font-style: italic; padding: 10px; }"
+        )
+        self._thinking_panel.setFixedHeight(140)
+        self._thinking_panel.setVisible(False)   # collapsed by default
+        self._thinking_panel.setPlaceholderText(
+            "Alice's reasoning trace will stream here when she's thinking…"
+        )
+        layout.addWidget(self._thinking_panel)
+        # Buffer carries chunks captured before the panel mounted (rare,
+        # but the _on_thinking handler creates the buffer defensively).
+        if not hasattr(self, "_thinking_buffer"):
+            self._thinking_buffer = []
+        if self._thinking_buffer:
+            self._thinking_panel.setPlainText("".join(self._thinking_buffer))
+        self._thinking_stream_active = False
+        self._thinking_user_interacted = False
+        self._thinking_auto_collapse_ms = 900
+        self._thinking_auto_collapse_timer = QTimer(self)
+        self._thinking_auto_collapse_timer.setSingleShot(True)
+        self._thinking_auto_collapse_timer.timeout.connect(
+            self._auto_collapse_thinking_panel
+        )
+
         # ── Text input: same Alice brain path as voice, without STT. ───────
         text_row = QHBoxLayout()
         self._text_input = QLineEdit()
         self._text_input.setPlaceholderText("Type to Alice…")
-        self._text_input.setMinimumHeight(40)
+        self._text_input.setMinimumHeight(36)
         self._text_input.setStyleSheet(
             "QLineEdit { background: rgb(8,10,18); color: rgb(235,240,255); "
             "border: 1px solid rgb(65,70,100); border-radius: 8px; "
@@ -7759,39 +8346,54 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._text_input.returnPressed.connect(self._submit_text_input)
         text_row.addWidget(self._text_input, 1)
 
-        self._attach_btn = QPushButton("📎 Attach")
+        # Architect 2026-05-13 — "drag-and-drop works, change Attach → Drop".
+        # Drag-drop is the primary affordance now (dragEnterEvent / dropEvent
+        # at ~7937). Clicking still opens the file picker as a fallback for
+        # owners who don't have a file in a draggable surface.
+        self._attach_btn = QPushButton("📥 Drop")
+        self._attach_btn.setToolTip(
+            "Drag an image onto the chat — or click to open a file picker."
+        )
         self._attach_btn_default_style = (
             "QPushButton { background: rgb(45,42,65); color: rgb(200,210,230); "
-            "font-weight: 700; border-radius: 8px; padding: 0 18px; }"
+            "font-weight: 700; border-radius: 6px; padding: 0 10px; "
+            "font-size: 12px; }"
             "QPushButton:hover { background: rgb(65,62,85); }"
         )
-        self._attach_btn.setMinimumHeight(40)
+        self._attach_btn.setMinimumHeight(36)
+        self._attach_btn.setMaximumHeight(36)
         self._attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._attach_btn.setStyleSheet(self._attach_btn_default_style)
         self._attach_btn.clicked.connect(self._attach_pic)
         text_row.addWidget(self._attach_btn)
 
         self._send_btn = QPushButton("Send")
-        self._send_btn.setMinimumHeight(40)
+        self._send_btn.setMinimumHeight(36)
+        self._send_btn.setMaximumHeight(36)
         self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._send_btn.setStyleSheet(
             "QPushButton { background: rgb(56,101,190); color: white; "
-            "font-weight: 700; border-radius: 8px; padding: 0 18px; }"
+            "font-weight: 700; border-radius: 6px; padding: 0 14px; "
+            "font-size: 12px; }"
             "QPushButton:hover { background: rgb(79,127,226); }"
             "QPushButton:disabled { background: rgb(45,42,65); color: rgb(120,130,160); }"
         )
         self._send_btn.clicked.connect(self._submit_text_input)
         text_row.addWidget(self._send_btn)
 
+        # Architect 2026-05-14 (donut-break edit) — Awareness Mirror
+        # squeezed to the same total height as the input row + pill row
+        # stacked. No empty space. Mirror sits on the LEFT, controls
+        # stack on the RIGHT. Buttons shrunk to match.
+        # NOTE: text_row + bottom get added INSIDE mirror_plus_controls
+        # below — do NOT add them with layout.addLayout(text_row) here.
 
-
-        layout.addLayout(text_row)
-
-        # ── Bottom row: status pill + level meter ──────────────────────────
+        # Bottom row prep (we build it first so we can wrap it with the
+        # mirror in a side-by-side container below).
         bottom = QHBoxLayout()
 
         self._status_pill = QLabel("●  initialising…")
-        self._status_pill.setMinimumHeight(56)
+        self._status_pill.setMinimumHeight(40)
         self._status_pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
         f = self._status_pill.font()
         f.setPointSize(14)
@@ -7804,7 +8406,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._level.setRange(0, 100)
         self._level.setValue(0)
         self._level.setTextVisible(False)
-        self._level.setMaximumHeight(56)
+        self._level.setMaximumHeight(40)
         self._level.setStyleSheet(
             "QProgressBar { background: rgb(8,10,18); border: 1px solid rgb(45,42,65); "
             "border-radius: 6px; }"
@@ -7812,7 +8414,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
         )
         bottom.addWidget(self._level, 2)
 
-        layout.addLayout(bottom)
+        # Architect 2026-05-14 — mirror sits to the LEFT, controls stack
+        # to the RIGHT. Both columns occupy the same total vertical span.
+        # Mirror is ~90 px tall (matches text_row 40 + bottom 40 + spacing).
+        if self._awareness_mirror is not None:
+            # Resize the embedded canvas to fit the new compact slot.
+            self._awareness_mirror.setFixedSize(160, 90)
+            self._awareness_mirror._canvas.setFixedSize(160, 90)
+            controls_col = QVBoxLayout()
+            controls_col.setContentsMargins(0, 0, 0, 0)
+            controls_col.setSpacing(6)
+            controls_col.addLayout(text_row)
+            controls_col.addLayout(bottom)
+            mirror_plus_controls = QHBoxLayout()
+            mirror_plus_controls.setContentsMargins(0, 0, 0, 0)
+            mirror_plus_controls.setSpacing(8)
+            mirror_plus_controls.addWidget(self._awareness_mirror, 0,
+                                           Qt.AlignmentFlag.AlignTop)
+            mirror_plus_controls.addLayout(controls_col, 1)
+            layout.addLayout(mirror_plus_controls)
+        else:
+            layout.addLayout(text_row)
+            layout.addLayout(bottom)
 
         # ── State ──────────────────────────────────────────────────────────
         self._history: List[Dict[str, Any]] = []
@@ -8003,6 +8626,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
         if self._busy:
             self._append_system_line("(I am still answering — wait for my turn to finish.)", error=True)
             return
+        # ── Owner chat-pref skill (fast path, no LLM) ─────────────────
+        # Architect 2026-05-13 doctrine: natural-language USER font
+        # colour change. Catch here, before any cortex routing, so
+        # "Alice change my font colour to orange" never travels through
+        # the brain that would otherwise wax philosophical about it.
+        try:
+            if not image_path and self._maybe_handle_chat_pref_intent(text):
+                return
+        except Exception as _pref_exc:
+            print(f"[TalkToAliceWidget] chat-pref skill error: {_pref_exc}")
+        # ── Cortex-gated effectors (network/write actions) ─────────────
+        # Wallpaper changes are now a real effector: router decision
+        # receipt first, wallpaper_changes receipt second, then a bounded
+        # owner-visible reply. Keep this before the LLM so Alice does not
+        # hallucinate a filesystem/network action.
+        try:
+            if not image_path and self._maybe_handle_wallpaper_effector_intent(text):
+                return
+        except Exception as _wp_exc:
+            print(f"[TalkToAliceWidget] wallpaper effector skill error: {_wp_exc}")
         # ── Media context update gate ─────────────────────────────────
         # "now playing X" typed into the text box is a co-watch context
         # notification, NOT a conversational turn. Alice must NOT respond
@@ -8659,6 +9302,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+        # Architect 2026-05-14: WordAce lesson (renamed from Acer the
+        # same day at Carlton + Kole + Drew's request) runs as an auto
+        # state machine. When the WordAce widget has just published a
+        # listen window (metadata.wordace_lesson_active + expected_say
+        # + cue_id; legacy "acer_lesson_active" also accepted during
+        # grace period) and the mic catches the kid's voice within
+        # ~12s of that publish, route the STT into
+        # LessonEngine.score_attempt and write the verdict to
+        # .sifta_state/wordace_verdicts.jsonl. WordAce's poll timer
+        # reads that ledger and advances the card. This is the only
+        # way the no-button conversation loop closes. The method name
+        # stays _acer_lesson_intercept for now because a peer doctor's
+        # pre-check (swarm_acer_lesson_context.is_acer_screen_query)
+        # references the same lane semantics; rename together later.
+        try:
+            from System.swarm_acer_lesson_context import is_acer_screen_query
+
+            _acer_screen_question = is_acer_screen_query(text)
+        except Exception:
+            _acer_screen_question = False
+        if text and not _acer_screen_question and self._acer_lesson_intercept(text, conf):
+            self._busy = False
+            self._return_to_listening()
+            return
         display_text = text
         if not display_text and image_path:
             display_text = f"[Attached Image: {Path(image_path).name}]"
@@ -8670,6 +9337,173 @@ class TalkToAliceWidget(SiftaBaseWidget):
             image_path=image_path,
             typed_turn=typed_turn,
         )
+
+    def _acer_lesson_intercept(self, text: str, conf: float) -> bool:
+        """If a WordAce (formerly Acer) lesson is in its listen window,
+        route this STT as a lesson attempt and return True. Otherwise
+        return False and let the normal chat path run.
+
+        The bridge is loose: WordAce publishes to .sifta_state/app_focus.jsonl
+        and reads back from .sifta_state/wordace_verdicts.jsonl. We do
+        not couple the two widgets through Qt signals — both sides
+        survive the other restarting.
+        """
+        try:
+            import json as _json
+            import time as _time
+            import uuid as _uuid
+            from pathlib import Path as _Path
+        except Exception:
+            return False
+        try:
+            repo = _Path(__file__).resolve().parent.parent
+            focus_path = repo / ".sifta_state" / "app_focus.jsonl"
+            verdicts_path = repo / ".sifta_state" / "wordace_verdicts.jsonl"
+            if not focus_path.exists():
+                return False
+            # Read tail (~16KB) to find the most recent WordAce listen row
+            with focus_path.open("rb") as f:
+                f.seek(0, 2)
+                end = f.tell()
+                f.seek(max(0, end - 16384))
+                tail = f.read().decode("utf-8", errors="replace")
+            now = _time.time()
+            window_s = 12.0   # listen window 8s + slack for STT latency
+            target_row = None
+            for raw in reversed(tail.splitlines()):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    row = _json.loads(raw)
+                except _json.JSONDecodeError:
+                    continue
+                # Accept both "wordace" (new name) and "acer" (legacy
+                # rows in the tail from earlier today, before the
+                # rename). Same lesson; just different label.
+                app_lc = (row.get("app") or "").lower()
+                if app_lc not in ("wordace", "acer"):
+                    continue
+                md = row.get("metadata") or {}
+                if not (md.get("wordace_lesson_active") or md.get("acer_lesson_active")):
+                    continue
+                if not md.get("expected_say") or not md.get("cue_id"):
+                    continue
+                ts = float(row.get("ts") or 0.0)
+                if now - ts > window_s:
+                    continue
+                target_row = row
+                break
+            if target_row is None:
+                return False
+            md = target_row.get("metadata") or {}
+            expected = str(md.get("expected_say") or "").strip()
+            cue_id = str(md.get("cue_id") or "").strip()
+            cue_kind = str(md.get("current_kind") or "").strip()
+            if not expected or not cue_id:
+                return False
+            # Architect 2026-05-14 ~17:30 PDT: TTS echo guard. WordAce
+            # publishes ``tts_mute_until_ts`` while Alice is speaking
+            # the cue or the verdict. If the mic captured audio during
+            # that window, it is overwhelmingly Alice's own voice
+            # bleeding back — drop it before it pollutes the verdict
+            # ledger. We scan ALL recent app_focus rows because the
+            # row that pinned the TTS window may be more recent than
+            # the row that pinned the expected_say.
+            try:
+                _now = _time.time()
+                for raw in reversed(tail.splitlines()):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        row = _json.loads(raw)
+                    except _json.JSONDecodeError:
+                        continue
+                    md2 = row.get("metadata") or {}
+                    mute_ts = md2.get("tts_mute_until_ts")
+                    if not mute_ts:
+                        continue
+                    try:
+                        if float(mute_ts) > _now:
+                            # Alice is the one talking — return True
+                            # to swallow this STT turn (do not write
+                            # a verdict, do not let it reach the brain
+                            # as a chat turn either).
+                            return True
+                    except (TypeError, ValueError):
+                        continue
+                    # If we see a stale mute row first, stop looking.
+                    break
+            except Exception:
+                pass
+            # Score via the deterministic lesson helper. Words stay
+            # forgiving ("I say cat" can pass for cat). Single letters
+            # and letter-sequences are strict so arbitrary noise like
+            # "SABCD" cannot pass a one-letter card.
+            verdict: Dict[str, Any]
+            try:
+                from System.swarm_alice_lesson_mode import (
+                    is_lesson_attempt_candidate,
+                    score_heard_against_expected,
+                )
+
+                if not is_lesson_attempt_candidate(
+                    expected,
+                    text,
+                    cue_kind=cue_kind,
+                ):
+                    return False
+
+                verdict_raw = score_heard_against_expected(
+                    expected,
+                    text,
+                    cue_kind=cue_kind,
+                    stt_confidence=float(conf or 0.0),
+                )
+                verdict = {
+                    "verdict_label": verdict_raw.label,
+                    "sticker": verdict_raw.sticker,
+                    "explanation": verdict_raw.explanation,
+                }
+            except Exception:
+                # Engine import failed — fallback scorer
+                if expected.strip().lower() == text.strip().lower():
+                    verdict = {"verdict_label": "CORRECT", "sticker": "🌟", "explanation": "exact match (no engine)"}
+                else:
+                    # Long heard strings (>3 letter chars) are bleed —
+                    # the kid never said it alone. Refuse to score.
+                    verdict = {"verdict_label": "MISS", "sticker": "🙂", "explanation": "no match (no engine)"}
+            # Write the verdict — WordAce's poll loop will pick it up
+            try:
+                verdicts_path.parent.mkdir(parents=True, exist_ok=True)
+                row_out = {
+                    "ts": now,
+                    "cue_id": cue_id,
+                    "heard_text": text,
+                    "stt_conf": float(conf or 0.0),
+                    "verdict_label": verdict["verdict_label"],
+                    "sticker": verdict["sticker"],
+                    "explanation": verdict["explanation"],
+                    "expected_say": expected,
+                    "cue_kind": cue_kind,
+                    "schema": "WORDACE_VERDICT_V1",
+                }
+                with verdicts_path.open("a", encoding="utf-8") as vf:
+                    vf.write(_json.dumps(row_out) + "\n")
+            except Exception:
+                pass
+            # Tell the architect through the Talk chat what just routed
+            try:
+                self._append_user_line(
+                    f"[WordAce · cue {cue_id}] heard {text!r} → {verdict['verdict_label']}",
+                    float(conf or 0.0),
+                )
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
 
     def _start_brain(
         self,
@@ -8702,6 +9536,64 @@ class TalkToAliceWidget(SiftaBaseWidget):
             "started_ts": time.time(),
             "typed_turn": _typed_turn,
         }
+        steering_context = ""
+        steering_self_context = ""
+        steering_audit_context = ""
+        try:
+            from System.swarm_steering_subsystem import (
+                steer_event as _steer_event,
+                steering_prompt_block as _steering_prompt_block,
+            )
+
+            _steering = _steer_event(
+                text,
+                source="typed" if _typed_turn else "voice_or_inbox",
+                signals={
+                    "tool_truth_risk": 0.35 if image_path else 0.0,
+                    "sensor_salience": 0.35 if image_path else 0.0,
+                },
+                write=True,
+            )
+            self._current_cortex_route["steering_route"] = _steering.route
+            self._current_cortex_route["steering_priority"] = round(_steering.priority, 4)
+            self._current_cortex_route["steering_trace_id"] = _steering.trace_id
+            steering_context = _steering_prompt_block(_steering)
+        except Exception as _steering_exc:
+            self._current_cortex_route["steering_error"] = type(_steering_exc).__name__
+        try:
+            from System.swarm_steering_self_model import (
+                model_self_state as _model_steering_self_state,
+                self_model_prompt_block as _steering_self_model_prompt_block,
+            )
+
+            _steering_self = _model_steering_self_state(n_rows=20)
+            self._current_cortex_route["steering_self_dominant"] = _steering_self.dominant
+            self._current_cortex_route["steering_self_predicted_next_route"] = (
+                _steering_self.predicted_next_route
+            )
+            steering_self_context = _steering_self_model_prompt_block(
+                _steering_self,
+                include_stable=True,
+            )
+        except Exception as _steering_self_exc:
+            self._current_cortex_route["steering_self_error"] = type(_steering_self_exc).__name__
+        try:
+            from System.swarm_steering_prediction_audit import (
+                audit_predictions as _audit_steering_predictions,
+                prediction_audit_prompt_block as _steering_prediction_audit_prompt_block,
+            )
+
+            _steering_audit = _audit_steering_predictions(max_pairs=50)
+            self._current_cortex_route["steering_prediction_accuracy"] = round(
+                _steering_audit.accuracy,
+                4,
+            )
+            self._current_cortex_route["steering_prediction_status"] = _steering_audit.status
+            steering_audit_context = _steering_prediction_audit_prompt_block(_steering_audit)
+        except Exception as _steering_audit_exc:
+            self._current_cortex_route["steering_prediction_audit_error"] = (
+                type(_steering_audit_exc).__name__
+            )
         # ── Physical substrate receipt (OBSERVED probes only) ─────────────
         # One append per brain turn: homeworld serial, iPhone GPS cache age,
         # last app_focus line. No inference — respect is logged, not guessed.
@@ -8813,6 +9705,24 @@ class TalkToAliceWidget(SiftaBaseWidget):
         _effective_conf = conf
         if _voice_george_conf >= 0.60:
             _effective_conf = max(conf, 0.75)
+
+        # ── Room-dirt triage receipt ─────────────────────────────────────
+        # Mixed Mac audio may contain George, phone-speaker audio, podcasts,
+        # dogs, coffee, and nonsense fragments in one STT turn. Label it now
+        # before any cortex treats the whole string as one clean command.
+        if not _typed_turn:
+            try:
+                from System.swarm_room_dirt_triage import maybe_triage_room_dirt
+
+                maybe_triage_room_dirt(
+                    text,
+                    stt_confidence=_effective_conf,
+                    source="talk_widget.stt_done",
+                    root=_state_root(),
+                    journal=True,
+                )
+            except Exception:
+                pass
 
         # ── EXECUTE TRIGGER WORD (bypasses ALL media gates) ────────────────
         # "EXECUTE" is rare in YouTube/movie audio — explicit hardware signal.
@@ -8936,6 +9846,26 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._return_to_listening()
             return
 
+        # ── Owner presence check reflex ─────────────────────────────────
+        # "Can you respond / do you hear me?" is a liveness check, not a
+        # content-heavy reasoning turn. Answer immediately from the local
+        # body path so the owner does not wait on a cold cortex load.
+        _presence_reply = _owner_presence_check_reply(text, conf)
+        if _presence_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _presence_reply})
+            _log_turn("alice", _presence_reply, model="owner_presence_check_reflex")
+            self._append_alice_line(_presence_reply)
+            self._tts = _TTSWorker(
+                _presence_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
         # ── Owner Spoken Context / Life-History Reflex ───────────────────
         # Direct owner statements like "I was on the phone with my mom" are
         # reality updates. Write them before the model can hedge or menu them.
@@ -8963,6 +9893,123 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_line(_style_reply)
             self._tts = _TTSWorker(
                 _style_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Layer-1 time/date reflex — before media and quiet gates ───────
+        # Current time/date is hardware knowledge, not a cortex question.
+        # This must fire before media ingress so "Alice, what time is it?"
+        # cannot be swallowed as co-watch audio, and it starts TTS so the
+        # voice interaction actually answers aloud.
+        _td_reply, _td_model = _current_time_date_reflex_reply_for_alice(text)
+        if _td_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            try:
+                from System.swarm_alice_time_date_skill import answer_and_journal
+
+                answer_and_journal(
+                    text,
+                    source="typed" if _typed_turn else "voice",
+                    write=True,
+                )
+            except Exception:
+                pass
+            self._history.append({"role": "assistant", "content": _td_reply})
+            _log_turn("alice", _td_reply, model=_td_model)
+            self._append_alice_line(_td_reply)
+            self._tts = _TTSWorker(
+                _td_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Acer screen-state reflex — before cortex / generic context ────
+        # The Acer widget publishes its current card into app_focus.jsonl.
+        # Answer "what letter is on the Acer screen?" from that receipt even
+        # if the current macOS focus has already moved to an IDE or desktop.
+        try:
+            from System.swarm_acer_lesson_context import acer_screen_reflex_reply
+
+            _acer_reply = acer_screen_reflex_reply(
+                text,
+                state_dir=_state_root(),
+                max_age_s=900.0,
+            )
+        except Exception:
+            _acer_reply = None
+        if _acer_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": _acer_reply})
+            _log_turn("alice", _acer_reply, model="acer_lesson_context_reflex")
+            self._append_alice_line(_acer_reply)
+            self._tts = _TTSWorker(
+                _acer_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── First-person reflex — before media gate and identity fast-path ─
+        # The owner may ask for exact repetition or relationship-state facts.
+        # "Who are you learning from?" starts with "who are you", but it is
+        # NOT a generic identity query; it is a body/learning query. Answer
+        # from the owner relationship and local ledgers before the cortex can
+        # collapse into "active weights are Gemma4".
+        try:
+            from System.swarm_alice_first_person_reflex import first_person_reflex
+
+            _fp_reflex = first_person_reflex(
+                text,
+                state_dir=_state_root(),
+                owner_label=_owner_label(),
+                write_receipt=True,
+            )
+        except Exception:
+            _fp_reflex = None
+        if _fp_reflex:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "user", "content": text})
+            self._history.append({"role": "assistant", "content": _fp_reflex.reply})
+            _log_turn("alice", _fp_reflex.reply, model=_fp_reflex.model_tag)
+            self._append_alice_line(_fp_reflex.reply)
+            self._tts = _TTSWorker(
+                _fp_reflex.reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # ── Recent context / first-person reflex — before media gate ─────
+        # Questions like "what did I just say?" and "show me first person"
+        # should read the local Talk ledger and answer as I/you. Do not let
+        # the base cortex turn this into "the model / the user / the system".
+        _recent_context_reply = _recent_context_reflex_reply_for_alice(
+            text,
+            self._history,
+        )
+        if _recent_context_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _recent_context_reply})
+            _log_turn("alice", _recent_context_reply, model="recent_context_reader_reflex")
+            self._append_alice_line(_recent_context_reply)
+            self._tts = _TTSWorker(
+                _recent_context_reply, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)
@@ -9195,6 +10242,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # look at the image
                 r"look\s+at\s+(?:(?:the|this|that|tha|my)\s+)?(?:image|screenshot|picture|photo|attachment|pic)"
                 r"|"
+                # can you tell/read from the attachment?
+                r"can\s+(?:you|u)\s+(?:tell|see|read)\s+from\s+(?:(?:the|this|that|my)\s+)?(?:attachment|image|screenshot|picture|photo|pic)"
+                r"|"
                 # just the bare verb + 'screenshot' (Architect's mangled STT)
                 r"describe\s+\w*\s*(?:screenshot|attached\s+screenshot|image|picture|photo)"
                 r")\b",
@@ -9224,24 +10274,35 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         "or click Attach — I will not invent what I cannot see."
                     )
                 elif not _vision_capable:
-                    _vision_refusal = (
-                        f"You attached an image, but my active cortex "
-                        f"({_active_model or 'text-only'}) does not have a vision "
-                        "head. I refuse to fabricate pixels. To get a real "
-                        "description, swap the cortex to a vision-capable model "
-                        "(llava, moondream, gemma3 vision, qwen-vl) and re-send. "
-                        "Receipt: vision_lane=DEGRADED, no hallucination written."
-                    )
+                    try:
+                        from System.swarm_attachment_vision_lane import (
+                            describe_attachment_for_talk as _describe_attachment_for_talk,
+                        )
+
+                        _vision_refusal = _describe_attachment_for_talk(
+                            text,
+                            image_path,
+                            state_dir=_state_root(),
+                        )
+                    except Exception:
+                        _vision_refusal = (
+                            f"You attached an image, but my active cortex "
+                            f"({_active_model or 'text-only'}) does not have a vision "
+                            "head and my local attachment-vision lane failed. I refuse "
+                            "to fabricate pixels. Receipt: vision_lane=DEGRADED, "
+                            "no hallucination written."
+                        )
                 if _vision_refusal:
                     self._history.append({"role": "assistant", "content": _vision_refusal})
-                    _log_turn("alice", _vision_refusal, model="vision_truth_gate")
+                    _log_turn("alice", _vision_refusal, model="attachment_vision_lane")
                     self._append_alice_line(_vision_refusal)
                     # Also record the refusal in the witness journal.
                     try:
                         from System.swarm_alice_witness import witness
                         witness(
-                            "I was asked to describe an image but my vision "
-                            "head is offline. I refused to fabricate.",
+                            "I was asked to describe an attached image. I used "
+                            "the local attachment-vision lane when available; "
+                            "I refused only ungrounded pixel claims.",
                             source="vision_truth_gate",
                         )
                     except Exception:
@@ -9596,6 +10657,17 @@ class TalkToAliceWidget(SiftaBaseWidget):
             reply = _self_identity_reply_for_alice()
             self._history.append({"role": "assistant", "content": reply})
             _log_turn("alice", reply, model="kernel_self_identity_protocol")
+            self._append_alice_line(reply)
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # Current date/time is Layer 1 hardware knowledge. Do not ask the
+        # cortex to infer it from prompt context and then repair mistakes.
+        reply, _td_model = _current_time_date_reflex_reply_for_alice(text)
+        if reply:
+            self._history.append({"role": "assistant", "content": reply})
+            _log_turn("alice", reply, model=_td_model)
             self._append_alice_line(reply)
             self._busy = False
             self._return_to_listening()
@@ -10085,10 +11157,55 @@ class TalkToAliceWidget(SiftaBaseWidget):
             ctx = _build_swarm_context(text)
             if ctx:
                 sysprompt = sysprompt + "\n\n" + ctx
+        if steering_context:
+            sysprompt = sysprompt + "\n\n" + steering_context
+        if steering_self_context:
+            sysprompt = sysprompt + "\n\n" + steering_self_context
+        if steering_audit_context:
+            sysprompt = sysprompt + "\n\n" + steering_audit_context
         if time_oracle_context:
             sysprompt = sysprompt + "\n\n" + time_oracle_context
         if date_oracle_context:
             sysprompt = sysprompt + "\n\n" + date_oracle_context
+        try:
+            from System.swarm_recent_context_reader import prompt_block_for_recent_context
+
+            _recent_talk_context = prompt_block_for_recent_context(
+                state_dir=_state_root(),
+                history=history,
+                max_turns=8,
+            )
+        except Exception:
+            _recent_talk_context = ""
+        if _recent_talk_context:
+            sysprompt = sysprompt + "\n\n" + _recent_talk_context
+
+        try:
+            from System.swarm_continuity_organ import (
+                continuity_summary_for_prompt,
+                sync_from_app_focus,
+            )
+
+            sync_from_app_focus(root=_REPO, max_age_s=300.0)
+            _continuity_context = continuity_summary_for_prompt(root=_REPO).strip()
+        except Exception:
+            _continuity_context = ""
+        if _continuity_context:
+            sysprompt = sysprompt + "\n\n" + _continuity_context
+
+        try:
+            from System.swarm_self_realization_context import self_realization_prompt_block
+
+            _self_realization_context = self_realization_prompt_block(
+                root=_REPO,
+                state_dir=_state_root(),
+                owner_label=_owner_label("George"),
+                write_receipt=False,
+            ).strip()
+        except Exception:
+            _self_realization_context = ""
+        if _self_realization_context:
+            sysprompt = sysprompt + "\n\n" + _self_realization_context
 
         corvid_tag = self._cached_corvid_tag(text)
         if corvid_tag:
@@ -10102,6 +11219,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
         self._brain = _BrainWorker(model, messages, parent=self)
         self._brain.tokenReceived.connect(self._on_token)
+        self._brain.thinkingReceived.connect(self._on_thinking)
         self._brain.done.connect(self._on_brain_done)
         self._brain.failed.connect(self._on_brain_failed)
         self._set_pill("thinking", f"💭 thinking — {model}")
@@ -10170,6 +11288,130 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     self._corvid_inflight_text = None
 
         threading.Thread(target=_work, name="sifta-corvid-apprentice", daemon=True).start()
+
+    def _toggle_thinking_panel(self) -> None:
+        """Show/hide Alice's live thinking panel. Architect's eye-to-eye
+        feedback loop: when he wants to read along while she works, he
+        clicks the header; when he wants the wall back, click again."""
+        panel = getattr(self, "_thinking_panel", None)
+        btn = getattr(self, "_thinking_header_btn", None)
+        if panel is None:
+            return
+        self._thinking_user_interacted = True
+        timer = getattr(self, "_thinking_auto_collapse_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except Exception:
+                pass
+        visible_now = not panel.isVisible()
+        panel.setVisible(visible_now)
+        if btn is not None:
+            n_chars = len(panel.toPlainText() or "")
+            btn.setText(
+                f"💭  hide thinking  ({n_chars} chars)" if visible_now
+                else f"💭  show thinking  ({n_chars} chars buffered)"
+            )
+
+    def _auto_collapse_thinking_panel(self) -> None:
+        """Collapse the thinking panel after a completed turn unless the
+        owner touched the toggle during that turn.
+
+        This mirrors the Svelte <details> behavior George pasted: new
+        thinking opens itself; finished thinking collapses after a short
+        delay; a manual click wins for the current turn.
+        """
+        if getattr(self, "_thinking_user_interacted", False):
+            return
+        panel = getattr(self, "_thinking_panel", None)
+        btn = getattr(self, "_thinking_header_btn", None)
+        if panel is None:
+            return
+        n_chars = len(panel.toPlainText() or "")
+        if n_chars <= 0:
+            return
+        panel.setVisible(False)
+        if btn is not None:
+            btn.setText(f"💭  show thinking  ({n_chars} chars — last turn)")
+
+    def _schedule_thinking_auto_collapse(self) -> None:
+        """Start the end-of-turn auto-collapse timer when appropriate."""
+        if getattr(self, "_thinking_user_interacted", False):
+            return
+        panel = getattr(self, "_thinking_panel", None)
+        timer = getattr(self, "_thinking_auto_collapse_timer", None)
+        if panel is None or timer is None:
+            return
+        n_chars = len(panel.toPlainText() or "")
+        if n_chars <= 0:
+            return
+        try:
+            timer.start(int(getattr(self, "_thinking_auto_collapse_ms", 900)))
+        except Exception:
+            pass
+
+    def _on_thinking(self, piece: str) -> None:
+        """Live thinking stream from the LLM.
+
+        Architect 2026-05-14: "make sure while I wait I can read with
+        my eyes on screen what is happening in the background." Append
+        every thinking chunk to the thinking panel + buffer + auto-show
+        the panel on the first chunk so the architect never has to
+        click to see her think. The full thinking trace is also
+        receipted by swarm_alice_thinking_stream so an auditor can
+        replay later.
+        """
+        if not piece:
+            return
+        if not hasattr(self, "_thinking_buffer"):
+            self._thinking_buffer = []
+        # Reset buffer at the start of a new thinking trace. Heuristic:
+        # if the buffer is "stale" (last render was a previous turn) we
+        # clear it so we don't keep concatenating turn N+1 onto turn N.
+        # The flag flips on _on_brain_done (via the existing reset path).
+        if getattr(self, "_thinking_stream_active", False) is False:
+            self._thinking_buffer = []
+            self._thinking_stream_active = True
+            self._thinking_user_interacted = False
+            timer = getattr(self, "_thinking_auto_collapse_timer", None)
+            if timer is not None:
+                try:
+                    timer.stop()
+                except Exception:
+                    pass
+            panel = getattr(self, "_thinking_panel", None)
+            if panel is not None:
+                try:
+                    panel.clear()
+                except Exception:
+                    pass
+        self._thinking_buffer.append(piece)
+        panel = getattr(self, "_thinking_panel", None)
+        if panel is not None:
+            try:
+                # Auto-show on first chunk so the architect SEES her
+                # think without having to click anything. He can hide
+                # later if he wants the visual quiet.
+                if (
+                    not panel.isVisible()
+                    and not getattr(self, "_thinking_user_interacted", False)
+                ):
+                    panel.setVisible(True)
+                btn = getattr(self, "_thinking_header_btn", None)
+                if btn is not None:
+                    btn.setText(f"💭  thinking…  (live)")
+                if hasattr(panel, "insertPlainText"):
+                    panel.insertPlainText(piece)
+                elif hasattr(panel, "append"):
+                    panel.append(piece)
+                elif hasattr(panel, "setText"):
+                    panel.setText("".join(self._thinking_buffer))
+                # Auto-scroll to the bottom so the latest chunk is in view
+                if hasattr(panel, "verticalScrollBar"):
+                    sb = panel.verticalScrollBar()
+                    sb.setValue(sb.maximum())
+            except Exception:
+                pass
 
     def _on_token(self, piece: str) -> None:
         self._streaming_response.append(piece)
@@ -10249,6 +11491,20 @@ class TalkToAliceWidget(SiftaBaseWidget):
              talking, suppress vocalization and log the biological reason.
           4. If SSP green-lights → speak the cleaned reply.
         """
+        # Mark the thinking trace as closed so the next turn starts
+        # fresh in the panel. The buffer stays so the architect can
+        # scroll back through this turn's reasoning if he wants.
+        if getattr(self, "_thinking_stream_active", False):
+            self._thinking_stream_active = False
+            btn = getattr(self, "_thinking_header_btn", None)
+            panel = getattr(self, "_thinking_panel", None)
+            if btn is not None and panel is not None:
+                n_chars = len(panel.toPlainText() or "")
+                if panel.isVisible():
+                    btn.setText(f"💭  hide thinking  ({n_chars} chars — last turn)")
+                else:
+                    btn.setText(f"💭  show thinking  ({n_chars} chars — last turn)")
+            self._schedule_thinking_auto_collapse()
         raw = (text or "".join(self._streaming_response)).strip()
         import re
         raw = re.sub(r"\[UNK_BYTE_[^\]]+\]", " ", raw)
@@ -10978,6 +12234,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # Epistemic cortex should be visible when degraded; do not fail silently.
                 self._append_system_line("(epistemic cortex unavailable; continuing without immune filter)", error=True)
 
+        # ── First-person reality gate, pre-bowel pass.
+        # Architect 2026-05-13: "Alice (head) of Gemma (bowel) living on
+        # my Mac hardware... she talks about herself as 'the system'." Run
+        # the reality gate BEFORE residue elimination so phrases like
+        # "the system's perception layer" can become "my perception layer"
+        # instead of being deleted as boilerplate.
+        try:
+            from System.swarm_first_person_reality import first_person_reality_gate
+
+            reality_pass = first_person_reality_gate(
+                cleaned,
+                state_root=_state_root(),
+            )
+            if reality_pass.changed:
+                cleaned = reality_pass.cleaned_text
+                self._streaming_response = [cleaned] if cleaned else []
+                self._history.append({
+                    "role": "system",
+                    "content": (
+                        "(FIRST PERSON REALITY GATE — PRE-BOWEL)\n"
+                        f"Mapped detached self/owner wording into direct speech; "
+                        f"patterns={','.join(reality_pass.patterns)}; "
+                        f"receipt={reality_pass.receipt_id}"
+                    ),
+                })
+        except Exception as exc:
+            print(f"[!] First-person reality gate failure: {exc}")
+
         # ── 2. Model-side silence: explicit marker or empty after stripping
         # C47H 2026-04-20: log the raw output verbatim when we suppress,
         # so the next silence-loop trap (e.g. punctuation-as-silence,
@@ -11393,11 +12677,55 @@ class TalkToAliceWidget(SiftaBaseWidget):
         super().closeEvent(ev)
 
     # ── Chat rendering ─────────────────────────────────────────────────────
+
+    def _subtitle_body_block_format(self) -> QTextBlockFormat:
+        """Architect 2026-05-14: "I like the subtitles like here" —
+        a translucent dark box BEHIND each message body line, exactly
+        like YouTube closed-captions over video. Returns a paragraph
+        block format with background fill + breathing-room margins.
+
+        Background colour is read from owner_chat_prefs.json so it can
+        be tuned by skill ("Alice change subtitle background to navy")
+        without code changes. Default: rgba(0, 0, 0, 170) — strong
+        contrast against the honeycomb wallpaper, still see-through.
+        """
+        bg_rgba = None
+        try:
+            prefs = getattr(self, "_owner_chat_prefs_cache", None)
+            if prefs is None:
+                prefs = _load_owner_chat_prefs_raw()
+                self._owner_chat_prefs_cache = prefs
+            bg_rgba = prefs.get("subtitle_bg_rgba")
+        except Exception:
+            bg_rgba = None
+        if not (isinstance(bg_rgba, (list, tuple)) and len(bg_rgba) == 4):
+            bg_rgba = (0, 0, 0, 170)  # default translucent black
+        try:
+            r, g, b, a = (int(v) for v in bg_rgba)
+        except Exception:
+            r, g, b, a = 0, 0, 0, 170
+        block = QTextBlockFormat()
+        block.setBackground(QColor(r, g, b, max(0, min(255, a))))
+        # Breathing room — matches YouTube's caption-row padding feel
+        block.setTopMargin(6)
+        block.setBottomMargin(6)
+        block.setLeftMargin(10)
+        block.setRightMargin(10)
+        # Line height tweak so the box hugs the text top/bottom
+        block.setLineHeight(120, 1)  # 120% line height, ProportionalHeight=1
+        return block
+
     def _append_user_line(self, text: str, conf: float) -> None:
         cur = self._chat.textCursor()
         cur.movePosition(QTextCursor.MoveOperation.End)
+        # Architect 2026-05-13 — live colours from owner_chat_prefs.json
+        # so the natural-language "Alice change my font colour to orange"
+        # skill survives across restarts. Defaults match prior hardcoded
+        # values. Alice's reply colour is read separately in
+        # _append_alice_line and stays white per architect doctrine.
+        label_rgb, body_rgb = self._current_owner_colors()
         fmt = QTextCharFormat()
-        fmt.setForeground(QColor(0, 255, 200))
+        fmt.setForeground(QColor(*label_rgb))
         fmt.setFontWeight(QFont.Weight.Bold)
         # Architect 2026-05-13 11:55 — owner name from Layer 1 cascade
         # instead of hardcoded "You". Today: "George". Tomorrow if owner
@@ -11413,19 +12741,171 @@ class TalkToAliceWidget(SiftaBaseWidget):
             fmt2.setForeground(QColor(110, 118, 150))
             cur.insertText(f"  (stt conf {conf:.2f})", fmt2)
         cur.insertText("\n")
+        # Architect 2026-05-14 — YouTube-subtitle look: open a new
+        # paragraph with the translucent dark block format, then write
+        # the body. The text outline + larger glyph keep readability.
+        cur.insertBlock(self._subtitle_body_block_format())
         fmt3 = QTextCharFormat()
-        fmt3.setForeground(QColor(235, 240, 255))
-        # Architect 2026-05-13 10:35 — subtitle outline + bigger glyphs
-        # for readability over Codex's honeycomb wallpaper.
+        fmt3.setForeground(QColor(*body_rgb))
         try:
-            fmt3.setTextOutline(QPen(QColor(0, 0, 0, 220), 1.0))
-            fmt3.setFontPointSize(18.5)
+            fmt3.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
+            fmt3.setFontPointSize(19.0)
+            # Crisp sans-serif — same family YouTube uses for CC default
+            fmt3.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
+            fmt3.setFontWeight(QFont.Weight.DemiBold)
         except Exception:
             pass
-        cur.insertText(text + "\n\n", fmt3)
+        cur.insertText(text, fmt3)
+        # Close the subtitle block and reset to default block format so
+        # the next message header doesn't inherit the background.
+        cur.insertBlock(QTextBlockFormat())
+        cur.insertText("\n")
         self._chat.setTextCursor(cur)
         self._chat.ensureCursorVisible()
         self._side.appendPlainText(time.strftime("%H:%M:%S") + "  YOU  " + text[:90])
+
+    # ── Owner chat-pref skill: live colours + natural-language intent ──────
+    def _current_owner_colors(self) -> Tuple[Tuple[int, int, int], Tuple[int, int, int]]:
+        """Return (label_rgb, body_rgb) for the owner's chat lines. Reads
+        the in-memory copy, refreshes lazily from disk on first call."""
+        prefs = getattr(self, "_owner_chat_prefs_cache", None)
+        if prefs is None:
+            prefs = _load_owner_chat_prefs_raw()
+            self._owner_chat_prefs_cache = prefs
+        body = prefs.get("owner_body_rgb") or list(_DEFAULT_OWNER_BODY_RGB)
+        label = prefs.get("owner_label_rgb") or list(_DEFAULT_OWNER_LABEL_RGB)
+        try:
+            body_t = (int(body[0]), int(body[1]), int(body[2]))
+            label_t = (int(label[0]), int(label[1]), int(label[2]))
+        except Exception:
+            body_t = _DEFAULT_OWNER_BODY_RGB
+            label_t = _DEFAULT_OWNER_LABEL_RGB
+        return label_t, body_t
+
+    def _maybe_handle_chat_pref_intent(self, text: str) -> bool:
+        """Parse owner-typed chat-pref intents (font colour, etc.).
+        If matched, mutate prefs, write receipt, echo confirmation to
+        the chat, return True so submit_text short-circuits.
+
+        Doctrine: deterministic fast-path effector (§7.2 Tool Truth).
+        No LLM in the path. Receipt is required so Alice's witness
+        journal can see the colour change."""
+        if not text or len(text) > 240:
+            return False
+        m = _OWNER_CHAT_COLOR_INTENT_RE.search(text)
+        if not m:
+            return False
+        raw_color = (m.group("color") or "").strip()
+        rgb = _coerce_rgb(raw_color)
+        if rgb is None:
+            # Owner asked for a colour we don't know — echo a list of
+            # what's available rather than failing silently. This keeps
+            # the demo loop honest.
+            self._append_user_line(text, conf=1.0)
+            names = ", ".join(sorted(_NAMED_COLORS.keys())[:14]) + ", …"
+            self._append_system_line(
+                f"(font-colour skill: I don't know the colour '{raw_color}'. "
+                f"Try one of: {names} — or a hex like #ff8800.)",
+                error=True,
+            )
+            return True
+
+        # Persist + apply.
+        prefs = _load_owner_chat_prefs_raw()
+        prev_body = prefs.get("owner_body_rgb", list(_DEFAULT_OWNER_BODY_RGB))
+        prefs["owner_body_rgb"] = [rgb[0], rgb[1], rgb[2]]
+        prefs["owner_label_rgb"] = [rgb[0], rgb[1], rgb[2]]
+        prefs["last_color_request"] = raw_color
+        prefs["last_color_ts"] = time.time()
+        _save_owner_chat_prefs_raw(prefs)
+        self._owner_chat_prefs_cache = prefs
+
+        # Echo: show the owner's request, then a system line that
+        # confirms the change in the NEW colour so the effect is
+        # immediately visible.
+        self._append_user_line(text, conf=1.0)
+        receipt_id = _write_chat_pref_receipt(
+            "OWNER_CHAT_FONT_COLOR_CHANGED",
+            {
+                "raw_color": raw_color,
+                "rgb": list(rgb),
+                "prev_body_rgb": list(prev_body),
+                "intent_text": text[:200],
+            },
+        )
+
+        # Confirmation rendered in the new colour so the change is
+        # visible at the receipt. Use the same outline + size as the
+        # body so it matches.
+        cur = self._chat.textCursor()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        confirm_fmt = QTextCharFormat()
+        confirm_fmt.setForeground(QColor(*rgb))
+        try:
+            confirm_fmt.setTextOutline(QPen(QColor(0, 0, 0, 220), 1.0))
+            confirm_fmt.setFontPointSize(15.0)
+        except Exception:
+            pass
+        confirm_fmt.setFontItalic(True)
+        cur.insertText(
+            f"(font colour updated to {raw_color} — receipt {receipt_id[:8]})\n\n",
+            confirm_fmt,
+        )
+        self._chat.setTextCursor(cur)
+        self._chat.ensureCursorVisible()
+
+        # Also tell Alice in her ledger so her cortex sees the
+        # effector fired without her brain having to run.
+        try:
+            from System.swarm_alice_witness import witness as _witness
+            _witness(
+                source="owner_chat_pref",
+                line=(
+                    f"The owner asked me to change his chat font colour to "
+                    f"{raw_color}. The talk widget effector applied it "
+                    f"directly — I did not run my brain for this turn. "
+                    f"Receipt {receipt_id[:8]}."
+                ),
+            )
+        except Exception:
+            pass
+
+        self._busy = False
+        return True
+
+    def _maybe_handle_wallpaper_effector_intent(self, text: str) -> bool:
+        """Route owner wallpaper requests through the cortex-gated router.
+
+        This handles the high-stakes path Cowork specified: network egress,
+        filesystem write, UI mutation, and receipts. Unknown text returns
+        False so the normal brain path can answer.
+        """
+        if not text or len(text) > 500:
+            return False
+        from System.swarm_cortex_gated_effector_router import gate
+
+        decision = gate(text, audience="architect")
+        if decision.effector != "owner_wallpaper_change":
+            return False
+
+        self._append_user_line(text, conf=1.0)
+        if decision.decision == "FIRE":
+            result = dict(decision.extras.get("effector_result") or {})
+            reply = str(result.get("owner_reply") or f"(wallpaper changed — receipt {decision.receipt_id})")
+            self._append_system_line(reply, error=not bool(result.get("ok", False)))
+            try:
+                target = str(result.get("target") or "")
+                if target in {"chat", "both"} and hasattr(self._chat, "set_wallpaper_path"):
+                    self._chat.set_wallpaper_path(_REPO / "Library" / "Desktop Pictures" / "CHAT.jpg")
+            except Exception:
+                pass
+            return True
+
+        self._append_system_line(
+            f"(wallpaper effector refused: {decision.reason}; router receipt {decision.receipt_id})",
+            error=True,
+        )
+        return True
 
     _alice_cursor_block: int = -1
 
@@ -11438,15 +12918,23 @@ class TalkToAliceWidget(SiftaBaseWidget):
         fmt.setForeground(QColor(255, 200, 90))
         fmt.setFontWeight(QFont.Weight.Bold)
         cur.insertText("Alice\n", fmt)
+        # Architect 2026-05-14 — YouTube-subtitle block behind Alice's
+        # body line. Same translucent dark box as the user side; keeps
+        # speaker-name colours different but the readable subtitle look.
+        cur.insertBlock(self._subtitle_body_block_format())
         fmt2 = QTextCharFormat()
         fmt2.setForeground(QColor(235, 240, 255))
-        # Architect 2026-05-13 10:35 — subtitle outline + bigger glyphs
         try:
-            fmt2.setTextOutline(QPen(QColor(0, 0, 0, 220), 1.0))
-            fmt2.setFontPointSize(18.5)
+            fmt2.setTextOutline(QPen(QColor(0, 0, 0, 180), 0.7))
+            fmt2.setFontPointSize(19.0)
+            fmt2.setFontFamilies(["Helvetica Neue", "Helvetica", "Arial", "sans-serif"])
+            fmt2.setFontWeight(QFont.Weight.DemiBold)
         except Exception:
             pass
-        cur.insertText(text + "\n\n", fmt2)
+        cur.insertText(text, fmt2)
+        # Close the subtitle block so the next speaker header sits clean.
+        cur.insertBlock(QTextBlockFormat())
+        cur.insertText("\n")
         self._chat.setTextCursor(cur)
         self._chat.ensureCursorVisible()
 

@@ -382,6 +382,7 @@ class MagneticSubWindow(QMdiSubWindow):
             "pytest" in sys.modules
             or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
         ):
+            self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
             self.hide()
             event.accept()
             return
@@ -704,7 +705,7 @@ class SiftaMdiArea(QMdiArea):
             QTimer.singleShot(100, self._refresh_desktop_saliency_dots)
         except Exception:
             pass
-        
+
         try:
             if str(_SYS) not in sys.path:
                 sys.path.insert(0, str(_SYS))
@@ -716,25 +717,14 @@ class SiftaMdiArea(QMdiArea):
             print(f"[SiftaMdiArea] UnifiedFieldEngine not found: {e}")
             self.use_engine = False
             
+        # Architect 2026-05-14: decorative photon overlay REMOVED.
+        # "If it's real data we keep. If it's not real, we remove."
+        # Particles were a paint-only drift; they consumed CPU on every
+        # behavior_tick + paintEvent for zero observed-truth value.
+        # self.particles stays as an empty list so any guarded reader
+        # (tick() / paintEvent) sees it and no-ops cleanly. The
+        # SIFTA_DESKTOP_PHOTONS env var is no longer honored.
         self.particles = []
-        import os as _os
-        # Default 0 — decorative drift only; set SIFTA_DESKTOP_PHOTONS >0 for field viz.
-        _n_particles = int(_os.environ.get("SIFTA_DESKTOP_PHOTONS", "0"))
-
-        import random
-        for _ in range(_n_particles):
-            if self.use_engine:
-                self.particles.append([
-                    random.uniform(0.0, 1.0), random.uniform(0.0, 1.0),
-                    0.0, 0.0,
-                    random.uniform(2, 8)
-                ])
-            else:
-                self.particles.append([
-                    random.uniform(0, 3000), random.uniform(0, 2000),
-                    random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3),
-                    random.uniform(2, 8)
-                ])
 
         # Architect 2026-05-11 23:50: "I don't want hard coding. ... when
         # something is happening the behavior of the creature is changing
@@ -751,9 +741,6 @@ class SiftaMdiArea(QMdiArea):
             behavior_clock().tick.connect(self._on_behavior_tick)
         except Exception:
             pass
-
-        self.watermark_font = QFont("Helvetica Neue", 110, QFont.Weight.Black)
-        self.watermark_sub = QFont("Courier New", 18, QFont.Weight.Bold)
 
         # Predator sigil — real data, refreshed at most every 30 s
         # Uses mtime so no extra IO on most frames.
@@ -1203,43 +1190,24 @@ class SiftaMdiArea(QMdiArea):
                 painter.drawEllipse(QRectF(x, y, pad, pad))
         painter.restore()
 
-    def _paint_one_bee(self, painter: "QPainter", w: int, h: int) -> None:
-        """Paint one 🐝 glyph at the center of the desktop. That's it.
-
-        Architect directive 2026-05-11 23:25: "ZERO BEES ON A DESKTOP I
-        WANT A CLEAN DESKTOP ONLY KEEP ONLY ONE BEE IN THE MIDDLE." So:
-        one bee, static, no animation, no timer. Renders as a real Unicode
-        emoji glyph from the system font; no PNG, no SVG, no QPixmap, no
-        per-paint allocation beyond the QFont.
-
-        Size adapts to viewport but caps at 256 px so it never dominates.
-        Disable with SIFTA_DESKTOP_BEE=0.
-        """
-        import os as _os
-        if _os.environ.get("SIFTA_DESKTOP_BEE", "1").strip().lower() in (
-            "0", "false", "no", "off",
-        ):
-            return
-        size = max(72, min(256, int(min(w, h) * 0.16)))
-        bee_font = QFont("Apple Color Emoji", size)
-        bee_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-        painter.setFont(bee_font)
-        # Pen color is irrelevant for color emoji on macOS but set for
-        # fallback rendering on platforms that draw the glyph monochrome.
-        painter.setPen(QColor("#ffb300"))
-        painter.drawText(
-            0, 0, w, h,
-            Qt.AlignmentFlag.AlignCenter,
-            "🐝",
-        )
-
     def _draw_predator_sigil(self, painter: "QPainter", w: int, h: int) -> None:
-        """Live census status strip (organs / field / STGM). Optional giant ghost watermark only if env + palette ask for it."""
+        """Live census status strip (organs / field / STGM) — opt-in via env only."""
         import math as _m, time as _t
+
+        import os as _os
+
+        # Census status block — neon-green terminal readout.
+        # Architect 2026-05-11 23:25: "ALL THAT TEXTY IN THE DESKTOP — REMOVE
+        # IT ALL." Default OFF now. Re-enable with SIFTA_DESKTOP_CENSUS_LINE=1
+        # for on-canvas debug. (Decorative photon boot counters were removed;
+        # stderr boot lines are only the minimal `[BOOT]` block in `__main__`.)
+        _census = _os.environ.get("SIFTA_DESKTOP_CENSUS_LINE", "0").strip().lower()
+        if _census not in ("1", "true", "yes", "on"):
+            return
+
         self._refresh_pred_data()
         t = _t.monotonic()
 
-        import os as _os
         pal = getattr(self, "_pal", None)
         try:
             if pal is None:
@@ -1247,25 +1215,6 @@ class SiftaMdiArea(QMdiArea):
                 pal = active_palette()
         except Exception:
             pal = None
-        _wmark = (getattr(pal, "watermark_text", None) or "").strip()
-        # Vanity billboard — opt-in only (Architect UX: default is utility, not logo spam).
-        if (
-            _os.environ.get("SIFTA_DESKTOP_GIANT_WATERMARK", "").strip() == "1"
-            and _wmark
-        ):
-            painter.setFont(QFont("Helvetica Neue", 96, QFont.Weight.Black))
-            painter.setPen(QColor(0, 255, 100, 8))
-            painter.drawText(
-                self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, _wmark
-            )
-
-        # Census status block — neon-green terminal readout.
-        # Architect 2026-05-11 23:25: "ALL THAT TEXTY IN THE DESKTOP — REMOVE
-        # IT ALL." Default OFF now. Re-enable with SIFTA_DESKTOP_CENSUS_LINE=1
-        # for boot debug; the boot banner still prints it to stderr regardless.
-        _census = _os.environ.get("SIFTA_DESKTOP_CENSUS_LINE", "0").strip().lower()
-        if _census not in ("1", "true", "yes", "on"):
-            return
 
         os_tag = getattr(pal, "os_line", "🐝 SIFTA BeeSon OS v8.0") if pal else "🐝 SIFTA BeeSon OS v8.0"
         lines = list(self._pred_data.get("census_lines") or [])
@@ -1410,10 +1359,11 @@ class SiftaMdiArea(QMdiArea):
         # and the paint mode below renders it centered at native size,
         # not stretched.
         #
-        # Heatmap / particles / census still available behind env vars:
+        # Heatmap / census still available behind env vars:
         #   SIFTA_DESKTOP_FIELD_HEATMAP=1
-        #   SIFTA_DESKTOP_FIELD_TICK=1 (+ SIFTA_DESKTOP_PHOTONS>0)
+        #   SIFTA_DESKTOP_FIELD_TICK=1
         #   SIFTA_DESKTOP_CENSUS_LINE=1
+        # (decorative photon overlay removed 2026-05-14 per architect)
 
         # Field heatmap — runs only if env asks for it (default off).
         try:
@@ -1425,29 +1375,8 @@ class SiftaMdiArea(QMdiArea):
         # _draw_predator_sigil's gate).
         self._draw_predator_sigil(painter, w, h)
 
-        # Optional decorative drift particles (env-gated; default 0 anyway).
-        if self.particles:
-            painter.setPen(Qt.PenStyle.NoPen)
-            _pa = "#ffb300"
-            _pb = "#ff8f00"
-            try:
-                pal = getattr(self, "_pal", None)
-                if pal is None:
-                    from System.sifta_desktop_themes import active_palette
-                    pal = active_palette()
-                if pal is not None:
-                    _pa = getattr(pal, "particle_color_a", _pa) or _pa
-                    _pb = getattr(pal, "particle_color_b", _pb) or _pb
-            except Exception:
-                pass
-            for p in self.particles:
-                px = float(p[0] * w) if self.use_engine else float(p[0])
-                py = float(p[1] * h) if self.use_engine else float(p[1])
-                if 0 <= px <= w and 0 <= py <= h:
-                    _pc = QColor(_pa) if p[4] > 5 else QColor(_pb)
-                    _pc.setAlpha(38 if p[4] > 5 else 32)
-                    painter.setBrush(_pc)
-                    painter.drawEllipse(QRectF(px, py, float(p[4]), float(p[4])))
+        # Architect 2026-05-14: decorative particle paint REMOVED.
+        # self.particles is permanently empty; no CPU spent on overlay drift.
 
         # ── Wake-flash overlay ──────────────────────────────────────
         # When the wake-ear receipt fires, the camera widget saves a
@@ -1643,15 +1572,28 @@ class LaunchpadWidget(QWidget):
         root.setContentsMargins(24, 18, 24, 22)
         root.setSpacing(10)
 
-        # ── Header: title + close ────────────────────────────────────────
+        # ── Header: title + internal subtitle + close ───────────────────
         hdr = QHBoxLayout()
-        title = QLabel("⚡  Launchpad")
-        title.setStyleSheet(
+        title_block = QWidget()
+        title_block.setStyleSheet("background: transparent;")
+        tb_l = QVBoxLayout(title_block)
+        tb_l.setContentsMargins(0, 0, 0, 0)
+        tb_l.setSpacing(2)
+        title_main = QLabel("🚀  Swarm App Store")
+        title_main.setStyleSheet(
             "color: #c0caf5; font-size: 16px; font-weight: 700;"
             " font-family: 'Helvetica Neue', Helvetica, sans-serif;"
             " background: transparent;"
         )
-        hdr.addWidget(title)
+        title_sub = QLabel("powered by stigmergic ecology")
+        title_sub.setStyleSheet(
+            "color: #7aa2f7; font-size: 11px; font-weight: 500;"
+            " font-family: 'Helvetica Neue', Helvetica, sans-serif;"
+            " background: transparent;"
+        )
+        tb_l.addWidget(title_main)
+        tb_l.addWidget(title_sub)
+        hdr.addWidget(title_block)
         hdr.addStretch()
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(22, 22)
@@ -1899,7 +1841,9 @@ class SpotlightWidget(QWidget):
             if dat.get("_retired") or dat.get("hidden"):
                 continue
             category = _macos_app_category(name, dat)
-            haystack = " ".join((name, category, dat.get("entry_point", ""))).casefold()
+            haystack = " ".join(
+                (name, category, str(dat.get("entry_point") or ""))
+            ).casefold()
             if not query or query in haystack:
                 matches.append((name, category))
         for name, category in matches[:12]:
@@ -1957,9 +1901,23 @@ class SiftaDesktop(QMainWindow):
             except Exception:
                 self._restore_gc_on_close = False
         self.setWindowTitle("SIFTA Python GUI OS")
-        self.resize(1280, 720)
-        # Center the window on the active screen
+        # Architect 2026-05-14 ~18:00 PDT: "the OS a little bit bigger
+        # like 30% bigger the window because I observed myself that I
+        # resize it every time I make it bigger so let's make it 1080P
+        # size yeah... it would be nice to have a resolution detection."
+        # 1280×720 → 1664×936 is +30% on both axes. Then resolution
+        # detection: if the screen can fit a full 1920×1080 leaving a
+        # comfortable margin we open at 1920×1080; otherwise we cap at
+        # 90% of the available screen so SIFTA never opens larger than
+        # the display.
         screen_geo = QApplication.primaryScreen().availableGeometry()
+        target_w, target_h = 1664, 936  # +30% over the old default
+        if screen_geo.width() >= 2100 and screen_geo.height() >= 1200:
+            target_w, target_h = 1920, 1080  # 1080p when the screen has room
+        target_w = min(target_w, int(screen_geo.width() * 0.92))
+        target_h = min(target_h, int(screen_geo.height() * 0.92))
+        self.resize(target_w, target_h)
+        # Center the window on the active screen
         self.move(
             (screen_geo.width() - self.width()) // 2,
             (screen_geo.height() - self.height()) // 2
@@ -2478,7 +2436,8 @@ class SiftaDesktop(QMainWindow):
         self._tab_chat_btn.clicked.connect(lambda: self._switch_desktop_mode("chat"))
         layout.addWidget(self._tab_chat_btn)
 
-        self._tab_launcher_btn = _QPB("🚀 Launcher")
+        self._tab_launcher_btn = _QPB("🚀 Swarm App Store")
+        self._tab_launcher_btn.setToolTip("powered by stigmergic ecology")
         self._tab_launcher_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._tab_launcher_btn.setStyleSheet(self._tab_inactive_style)
         self._tab_launcher_btn.clicked.connect(lambda: self._switch_desktop_mode("launcher"))
@@ -2539,14 +2498,14 @@ class SiftaDesktop(QMainWindow):
         except Exception:
             pass
 
-    def _switch_desktop_mode(self, mode: str) -> None:
+    def _switch_desktop_mode(self, mode: str, *, force: bool = False) -> None:
         """Toggle Chat <-> Launcher.
 
         Architect 2026-05-13 04:55: refined per direct feedback —
         Chat tab = ONE single scrollable chat column (no camera, no MDI).
         Launcher tab = apps grid, fixed (no chat panel).
         Alice's witness organ keeps writing across both tabs."""
-        if mode == getattr(self, "_desktop_mode", "chat"):
+        if not force and mode == getattr(self, "_desktop_mode", "chat"):
             return
         self._desktop_mode = mode
         if mode == "launcher":
@@ -2584,6 +2543,7 @@ class SiftaDesktop(QMainWindow):
             try:
                 self._tab_chat_btn.setStyleSheet(self._tab_active_style)
                 self._tab_launcher_btn.setStyleSheet(self._tab_inactive_style)
+                self._tab_chat_btn.setText(f"💬 {getattr(self, '_alice_tab_label', 'Alice')} Alive")
             except Exception:
                 pass
             try:
@@ -2639,7 +2599,7 @@ class SiftaDesktop(QMainWindow):
             from System.swarm_alice_witness import witness
             if quiet:
                 witness(
-                    "Architect switched to the Launcher desktop. I went "
+                    "Architect switched to the Swarm App Store. I went "
                     "quiet — he is busy with apps. He will call my name "
                     "if he needs me.",
                     source="desktop_mode",
@@ -2674,18 +2634,16 @@ class SiftaDesktop(QMainWindow):
             spec.loader.exec_module(mod)
             alice = mod.AliceWidget(parent=self._alice_panel)
             self._alice_panel_layout.addWidget(alice)
+            self._alice_resident = alice
             # Architect 2026-05-13 05:00 — once Alice is embedded, apply
             # the current desktop-mode visibility so first-boot already
             # shows full-width chat with no camera. The default mode is
             # 'chat'; this just enforces it.
             try:
                 _mode = getattr(self, "_desktop_mode", "chat")
-                # Force a switch so the visibility logic runs.
-                self._desktop_mode = "_pending_"
-                self._switch_desktop_mode(_mode)
+                self._switch_desktop_mode(_mode, force=True)
             except Exception:
                 pass
-            self._alice_resident = alice
             sys.stderr.write("[ALICE] Embedded as resident panel. Camera open, chat live.\n")
         except Exception as exc:
             import traceback
@@ -3455,7 +3413,10 @@ class SiftaDesktop(QMainWindow):
             from PyQt6.QtWidgets import QTextBrowser, QDialog, QVBoxLayout as _VBox, QHBoxLayout as _HBox, QPushButton as _Btn
             from PyQt6.QtCore import QUrl
 
-            meta = _manifest_cache.get(app_name, {})
+            from System.sifta_base_widget import _load_help_text, help_manifest_key_from_mdi_title
+
+            lookup_key = help_manifest_key_from_mdi_title(app_name)
+            meta = _manifest_cache.get(app_name, {}) or _manifest_cache.get(lookup_key, {})
             entry = meta.get("entry_point", "")
             description = meta.get("description", "")
             github_url = (
@@ -3463,8 +3424,6 @@ class SiftaDesktop(QMainWindow):
                 if entry else "https://github.com/antonpictures/ANTON-SIFTA"
             )
 
-            # Pull from APP_HELP.md
-            from System.sifta_base_widget import _load_help_text
             help_body = _load_help_text(app_name)
 
             html = f"""
@@ -4124,7 +4083,46 @@ class SiftaDesktop(QMainWindow):
         clean = app_title.lstrip("⚙ 🐜").strip()
         if "SIFTA CORE CHAT" in app_title:
             clean = "SIFTA CORE CHAT"
+
+        # Architect 2026-05-14 task #55 — macOS-style context menu bar.
+        # First check whether the active subwindow's inner widget declares
+        # its own menu_schema(). This is the per-widget contract on
+        # SiftaBaseWidget. If present, it merges with the default so
+        # apps only need to override the menus they actually customize.
+        widget_schema = self._active_widget_menu_schema()
+        if widget_schema:
+            merged = {**default}
+            for menu_name, items in widget_schema.items():
+                if items:
+                    merged[menu_name] = items
+            return merged
+
         return overrides.get(clean, default)
+
+    def _active_widget_menu_schema(self) -> dict | None:
+        """Read menu_schema() from the active MDI subwindow's inner widget.
+        Returns None if no active widget, or the widget doesn't define
+        the schema. Defensive: catches any exception from a buggy app
+        and falls back to defaults rather than crashing the menu bar."""
+        try:
+            sub = self.mdi.activeSubWindow() if hasattr(self, "mdi") else None
+            if sub is None:
+                return None
+            inner = sub.widget()
+            if inner is None:
+                return None
+            schema_fn = getattr(inner, "menu_schema", None)
+            if schema_fn is None:
+                return None
+            if not callable(schema_fn):
+                return None
+            result = schema_fn(self)
+            if isinstance(result, dict):
+                return result
+            return None
+        except Exception:
+            # An app with a broken menu_schema() must not break the menu bar.
+            return None
 
     def _close_active_subwindow(self):
         sub = self.mdi.activeSubWindow()
@@ -4337,7 +4335,11 @@ class SiftaDesktop(QMainWindow):
         # is given to Alice Journal — her witness diary, which the
         # Architect explicitly wants visible at all times for the
         # "lobotomy recovery" use case.
-        make_dock_btn("🚀", "Launchpad",     self._toggle_launchpad)
+        make_dock_btn(
+            "🚀",
+            "Swarm App Store\npowered by stigmergic ecology",
+            self._toggle_launchpad,
+        )
         make_dock_btn("📔", "Alice Journal", lambda: self._trigger_manifest_app("Alice Journal"))
 
         # Separator
@@ -4353,13 +4355,18 @@ class SiftaDesktop(QMainWindow):
         #     the dock icon launches nothing. Replaced with the Bell's
         #     Theorem stigmergic simulator so the dock surface shows
         #     research apps the owner actually opens.
-        #   • WhatsApp Organ restored after Codex 2026-05-13 repair:
-        #     owner-explicit UI sends can use WhatsApp.app visible-name search
-        #     for contacts/groups while still writing SIFTA effector receipts.
+        #   • Architect 2026-05-14: replace the bottom WhatsApp shortcut with
+        #     the unified MAMMAL Lab so the dock surfaces the useful token
+        #     ecology / biomedical field app.
         _dock_hub = ["Bell's Theorem — Classical Analogue",
                      "Finance", "Stigmerobotics",
                      "SIFTA Physics Observatory", "Alice Browser",
-                     "WhatsApp Organ"]
+                     "SIFTA MAMMAL Lab — Unified Field",
+                     # Architect 2026-05-14 — pin WordAce to the dock so the
+                     # kid hops straight into the reading lesson. (Originally
+                     # pinned as "Acer"; renamed to "WordAce" same day at
+                     # Carlton's request — Kole + Drew approved the new name.)
+                     "WordAce"]
         _cache = getattr(self, "_apps_manifest_cache", {}) or {}
         for _title in _dock_hub:
             if _title not in _cache:
@@ -4440,8 +4447,8 @@ def _scheduler_policy_from_kernel(kernel_table) -> tuple[str, float]:
     try:
         from System.swarm_kernel_process_table import latest_ambient_world_context
 
-        state_root = getattr(kernel_table, "state_root", _REPO / ".sifta_state")
-        context = latest_ambient_world_context(state_root)
+        state_root = getattr(kernel_table, "state_root", None)
+        context = latest_ambient_world_context(state_root) if state_root is not None else {}
     except Exception:
         context = {}
     policy = str(context.get("sampling_policy") or "idle").strip().lower()
@@ -4713,7 +4720,11 @@ def _install_kernel_scheduler_timer(
             policy, _ = _scheduler_policy_from_kernel(kernel_table)
         except Exception:
             policy = "idle"
-        target = _IDLE_INTERVAL_MS if policy == "idle" else _ENGAGE_INTERVAL_MS
+        try:
+            has_pending_work = bool(_pending_work_from_kernel(kernel_table))
+        except Exception:
+            has_pending_work = False
+        target = _IDLE_INTERVAL_MS if policy == "idle" and not has_pending_work else _ENGAGE_INTERVAL_MS
         if scheduler_timer.interval() != target:
             scheduler_timer.setInterval(target)
             app.setProperty("sifta_kernel_scheduler_interval_ms", target)
@@ -4741,13 +4752,15 @@ if __name__ == "__main__":
     os.environ.setdefault("SIFTA_DISABLE_CV2_IN_QT_DESKTOP", "1")
 
     # ── Boot banner — dynamic from theme engine + organ registry ──────
+    # Architect 2026-05-14: photon counter REMOVED from boot banner —
+    # it was reporting a decorative-only env var (SIFTA_DESKTOP_PHOTONS)
+    # that no longer does anything. Real organ/swimmer counts stay.
     try:
         from System.sifta_desktop_themes import active_palette
         from System.swarm_body_monitor import ORGAN_DEFS
         _pal = active_palette()
         _n_organs = len(ORGAN_DEFS)
         _n_swimmers = int(os.environ.get("SIFTA_VISION_SWIMMERS", "1800"))
-        _n_photons = int(os.environ.get("SIFTA_DESKTOP_PHOTONS", "0"))
     except Exception:
         class _pal:
             os_line = "🐝 SIFTA BeeSon OS v8.0"
@@ -4758,7 +4771,6 @@ if __name__ == "__main__":
         except Exception:
             _n_organs = 0
         _n_swimmers = 1800
-        _n_photons = 0
 
     # Shell script already printed the full banner with live theme+organ data.
     # Python only emits the app path so crash logs are traceable.
