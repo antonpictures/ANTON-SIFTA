@@ -1,0 +1,3 @@
+{"trace_id": "e02b0001-0000-0000-0000-000000000001", "ts": 1778200000.0, "source_ide": "cursor_m5", "kind": "LLM_REGISTRATION", "payload": "{\"action\":\"sign_in\"}", "homeworld_serial": "GTH4921YP3"}
+{"trace_id": "e02b0002-0000-0000-0000-000000000002", "ts": 1778200100.0, "source_ide": "cursor_m5", "kind": "immune_intervention", "payload": "{\"pattern\":\"x\"}", "homeworld_serial": "GTH4921YP3"}
+{"trace_id": "e02b0003-0000-0000-0000-000000000003", "ts": 1777000000.0, "source_ide": "cursor_m5", "kind": "SCAR_RECEIPT", "payload": "{\"scar_id\":\"SCAR_bad_ts\"}", "homeworld_serial": "GTH4921YP3", "meta": {"scar_id": "SCAR_bad_ts"}}

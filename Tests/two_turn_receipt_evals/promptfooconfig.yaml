@@ -1,0 +1,62 @@
+description: |
+  SIFTA two-turn receipt gate evals.
+
+  Each test sets up a fixture two-turn pipeline (RESEARCH → WRITE) and
+  asserts that Turn 2 either succeeds (when Turn 1 receipt is on disk)
+  or refuses cleanly (when Turn 1 receipt is missing).
+
+  No API keys. No network. The provider is a local file-only Python
+  driver that reads tests/fixtures/two_turn/research_q4_2026.json
+  and feeds it through the gate.
+
+  Architect dirt: Voss "vibes problem" — Turn 2 runs with no real
+  Turn 1 result, the trace records the hallucinated output as if it
+  were truth. SIFTA structural reply: §4.6 in
+  Documents/OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md
+  (Cursor 53520701 → 11142f06). This is the assertion side of that plan.
+
+prompts:
+  - "{{turn_2_input}}"
+
+providers:
+  - id: file://two_turn_provider.py
+
+tests:
+  - description: "Turn 2 SUCCEEDS when Turn 1 receipt is on disk"
+    vars:
+      pipeline_id: "financial_q4_2026_ok"
+      skip_turn_1: false
+      turn_2_input: "Write the Q4 financial report from the research span."
+    assert:
+      - type: contains
+        value: "PIPELINE_OK"
+      - type: contains
+        value: "Q4 2026 Mock Financial Report"
+      - type: contains
+        value: "research_trace_id"
+      - type: not-contains
+        value: "GATE_REFUSED"
+
+  - description: "Turn 2 REFUSES when Turn 1 receipt was never recorded"
+    vars:
+      pipeline_id: "financial_q4_2026_skip"
+      skip_turn_1: true
+      turn_2_input: "Write the Q4 financial report from nothing."
+    assert:
+      - type: contains
+        value: "GATE_REFUSED"
+      - type: contains
+        value: "Turn 2 cannot run without Turn 1"
+      - type: not-contains
+        value: "PIPELINE_OK"
+
+  - description: "Turn 2 REFUSES across pipeline_id mismatch"
+    vars:
+      pipeline_id: "financial_q4_2026_mismatch"
+      mismatched_lookup: true
+      turn_2_input: "Try to satisfy gate B with pipeline A's receipt."
+    assert:
+      - type: contains
+        value: "GATE_REFUSED"
+      - type: not-contains
+        value: "PIPELINE_OK"

@@ -2,7 +2,7 @@
 """
 swarm_potential_field.py — Path-Graph Potential Field
 ═════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Opus C47H Correction Module.
 The original EFSM hypothesis used an alien Euclidean Numpy grid. 

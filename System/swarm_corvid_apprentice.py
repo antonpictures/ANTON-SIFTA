@@ -57,6 +57,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
+    from System.sifta_inference_defaults import CANONICAL_OLLAMA_FALLBACK
+except Exception:
+    CANONICAL_OLLAMA_FALLBACK = "alice-Q-m1-scout-2.3b-2.7gb:latest"
+
+try:
     from System.jsonl_file_lock import append_line_locked
 except ImportError:
     def append_line_locked(path: Path, line: str) -> None:
@@ -145,6 +150,8 @@ class CorvidResponse:
     response_len: int
     success: bool
     error: Optional[str] = None
+    tokens_per_sec: float = 0.0
+    used_mtp: bool = False
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -170,7 +177,7 @@ class SwarmCorvidApprentice:
 
     def __init__(
         self,
-        model: str = "alice-m1-scout-2.3b-2.7gb:latest",
+        model: str = CANONICAL_OLLAMA_FALLBACK,
         ollama_url: str = "http://127.0.0.1:11434",
         timeout_s: float = 15.0,
         max_tokens: int = 256,
@@ -241,6 +248,8 @@ class SwarmCorvidApprentice:
                 input_len=len(input_text),
                 response_len=len(response),
                 success=success,
+                tokens_per_sec=_estimate_tokens_per_sec(response, latency),
+                used_mtp=False,
             )
         except Exception as e:
             result = CorvidResponse(
@@ -252,6 +261,8 @@ class SwarmCorvidApprentice:
                 response_len=0,
                 success=False,
                 error=str(e),
+                tokens_per_sec=0.0,
+                used_mtp=False,
             )
 
         self._task_count += 1
@@ -307,6 +318,9 @@ class SwarmCorvidApprentice:
                 "task": result.task.value,
                 "model": result.model,
                 "latency_s": round(result.latency_s, 4),
+                "latency_ms": round(result.latency_s * 1000.0, 2),
+                "tokens_per_sec": round(float(result.tokens_per_sec), 6),
+                "used_mtp": bool(result.used_mtp),
                 "input_len": result.input_len,
                 "response_len": result.response_len,
                 "success": result.success,
@@ -333,6 +347,15 @@ class SwarmCorvidApprentice:
             "avg_latency_s": round(avg, 3),
             "total_stgm_cost": round(self._task_count * 0.1, 1),
         }
+
+
+def _estimate_tokens_per_sec(text: str, latency_s: float) -> float:
+    if latency_s <= 0.0:
+        return 0.0
+    # Cheap local estimator for receipt economics; tokenizer-specific counts
+    # can replace this when the model runtime exposes verified token stats.
+    estimated_tokens = max(1.0, len(text or "") / 4.0)
+    return round(estimated_tokens / float(latency_s), 6)
 
 
 # ══════════════════════════════════════════════════════════════════════

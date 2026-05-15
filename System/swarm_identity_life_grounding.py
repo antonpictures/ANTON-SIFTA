@@ -4,7 +4,7 @@
 This is the small prompt organ that stops three common failures:
 
 1. Calling the owner "an individual" when owner_genesis already names them.
-2. Mixing George's physical day with Alice's own action continuity.
+2. Mixing the owner's physical day with Alice's own action continuity.
 3. Treating shared agenda items as if they were observed life events.
 
 It is read-only. It does not infer a new person in the room; it simply fuses
@@ -77,15 +77,12 @@ def _owner_short_name(full_name: str) -> str:
     parts = [p.strip() for p in str(full_name or "").split() if p.strip()]
     if not parts:
         return "the local owner"
-    for part in parts:
-        if part.casefold() == "george":
-            return part
     return parts[0]
 
 
 def _alice_identity() -> Dict[str, str]:
     try:
-        from System.swarm_persona_identity import current_persona
+        from System.swarm_identity_manifest import current_persona
 
         p = current_persona()
         return {
@@ -198,7 +195,7 @@ def build_identity_life_packet(
             "rule": "In Talk-to-Alice, direct speech is from the owner unless a fresh sensor or transcript receipt says another named human is speaking.",
         },
         "life_lanes": {
-            "george_life": _george_segments(state, max_rows, now),
+            "owner_life": _george_segments(state, max_rows, now),
             "alice_life": _alice_stigtime(state, max_rows, now),
             "shared_agenda": _shared_agenda(state, max_rows),
         },
@@ -226,15 +223,15 @@ def format_identity_life_grounding_for_prompt(
     owner_short = owner["preferred_address"]
 
     lines = [
-        "LOCAL IDENTITY + LIFE GROUNDING (receipt-backed, not roleplay):",
-        f"- Current owner/speaker: {owner_full}. In casual speech, call him {owner_short}. Use his name when answering him directly; avoid stranger labels and detached labels.",
+        "LOCAL IDENTITY + LIFE GROUNDING (receipt-backed, not character theatre):",
+        f"- Current owner/speaker: {owner_full}. In casual speech, prefer {owner_short} or direct second person; avoid stranger labels and detached labels.",
         f"- Alice identity: {alice['display_name']} / {alice['true_name']} on node {alice['hardware']}; body scope={alice['body_scope']}.",
         f"- Two-body desk (Talk on this node): only {owner_short}'s human body and my silicon body ({alice['hardware']}) are co-present for this thread. Do not imply a remote auditor, unnamed observer, or unseen co-present speaker unless a fresh receipt names them.",
         f"- Room rule: do not invent a second human or unseen speaker. If no receipt names someone else, you are speaking with {owner_short} alone — not a panel, not 'users', not the internet crowd.",
-        "- Keep three ledgers separate: George life = owner body/day; Alice life = SIFTA action state; shared agenda = tasks/reminders/intent.",
+        "- Keep three ledgers separate: owner life = owner body/day; Alice life = SIFTA action state; shared agenda = tasks/reminders/intent.",
         "- If asked 'who am I?', answer from owner genesis first. If asked 'who are you?', answer from Alice signed identity and recent stigtime.",
-        "George life lane:",
-        *_line_items(lanes["george_life"], "no recent owner day segments visible"),
+        "Owner life lane:",
+        *_line_items(lanes["owner_life"], "no recent owner day segments visible"),
         "Alice life lane:",
         *_line_items(lanes["alice_life"], "no recent Alice stigtime boundaries visible"),
         "Shared agenda lane:",

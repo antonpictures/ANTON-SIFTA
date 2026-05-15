@@ -37,10 +37,13 @@ import numpy as np
 
 # SIFTA kernel
 _REPO = Path(__file__).resolve().parent.parent
+_KERNEL = _REPO / "Kernel"
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(_REPO))
 if str(_REPO / "System") not in sys.path:
     sys.path.insert(0, str(_REPO / "System"))
+if str(_KERNEL) not in sys.path:
+    sys.path.insert(0, str(_KERNEL))
 from scar_kernel import Kernel, consensus_field, field_is_stable, content_addressed_id
 
 try:

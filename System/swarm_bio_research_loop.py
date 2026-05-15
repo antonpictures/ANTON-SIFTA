@@ -5,7 +5,7 @@ Event 105 — BioSIFTA Research Loop
 
 Pipeline: paper_chunk → register_claim (deterministic claim_id) → organ_mapping
 → test_proposal → experiment receipt; tournament ranks claims by heuristic product.
-Cortex: sifta-gemma4-alice (12B daily driver) | qwen3.5:2b (scout)
+Cortex: promoted Alice default | alice-m1-scout-2.3b-2.7gb:latest (scout)
 Retrieval: TF-IDF cosine over bio_papers.jsonl (no external embed deps)
 Truth label: BIOSIFTA_RESEARCH_EVENT_105
 """
@@ -22,6 +22,10 @@ from typing import Any, Dict, List, Optional
 from urllib import request as _urllib_request
 
 from System.jsonl_file_lock import append_line_locked, read_text_locked
+try:
+    from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT
+except Exception:
+    CANONICAL_OLLAMA_DEFAULT = "alice-m5-cortex-8b-6.3gb:latest"
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
@@ -56,8 +60,8 @@ _ORGAN_KEYWORDS: tuple[str, ...] = (
 
 # ── Ollama config ─────────────────────────────────────────────────────────────
 OLLAMA_BASE     = "http://localhost:11434"
-CORTEX_MODEL    = "sifta-gemma4-alice:latest"   # 12B daily driver
-SCOUT_MODEL     = "qwen3.5:2b"                  # cheap scout
+CORTEX_MODEL    = CANONICAL_OLLAMA_DEFAULT      # promoted Alice cortex
+SCOUT_MODEL     = "alice-m1-scout-2.3b-2.7gb:latest"                  # cheap scout
 OLLAMA_TIMEOUT  = 90
 
 

@@ -2,7 +2,7 @@
 """
 swarm_chat_relay.py — Cross-node dead-drop relay (Cursor Opus 4.7 / 2026-04-17)
 
-Problem (diagnosed on the Mac Mini via DeepMind IDE):
+Problem (diagnosed on the Mac Mini via Antigravity IDE):
   - Applications/sifta_swarm_chat.py writes **every** node's outbound chat to
     ``m5queen_dead_drop.jsonl`` regardless of silicon.  The M1 Sentry's voice
     therefore never lands on its own queen's drop file, and incoming rows are

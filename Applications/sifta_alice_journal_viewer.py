@@ -32,9 +32,19 @@ MAGENTA= "\033[35m"
 BLUE   = "\033[34m"
 
 
-def _hhmm(ts: float) -> str:
+def _journal_label_from_ts(ts: float) -> str:
     import datetime
-    return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+    return datetime.datetime.fromtimestamp(ts).strftime("%m-%d-%y_%H:%M")
+
+
+def _journal_label(row: dict) -> str:
+    label = str(row.get("local_journal_label") or "").strip()
+    if label:
+        return label
+    try:
+        return _journal_label_from_ts(float(row.get("ts") or 0.0))
+    except Exception:
+        return "unknown_time"
 
 
 def show_days() -> None:
@@ -108,6 +118,7 @@ def show_journal(hours: float = 24.0, tail: int = 0, show_all: bool = False) -> 
         etype = r.get("event_type", "turn")
         ts    = r.get("ts", 0.0)
         conf  = r.get("stt_conf", 0.0)
+        label = _journal_label(r)
 
         if etype == "boot":
             color, icon = GREEN, "🔄"
@@ -118,9 +129,9 @@ def show_journal(hours: float = 24.0, tail: int = 0, show_all: bool = False) -> 
 
         print(f"  {icon}  {color}{entry}{RESET}")
         if conf > 0:
-            print(f"     {DIM}[{etype} | stt={conf:.2f}]{RESET}")
+            print(f"     {DIM}[{label} | {etype} | stt={conf:.2f}]{RESET}")
         else:
-            print(f"     {DIM}[{etype}]{RESET}")
+            print(f"     {DIM}[{label} | {etype}]{RESET}")
         print()
 
     # Recent phone calls
@@ -163,5 +174,4 @@ if __name__ == "__main__":
         show_days()
     else:
         show_journal(hours=args.hours, tail=args.tail, show_all=args.show_all)
-
 

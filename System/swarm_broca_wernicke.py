@@ -2,7 +2,7 @@
 """
 System/swarm_broca_wernicke.py — The Human-Swarm Transducer (v2)
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Two cortical analogs:
 

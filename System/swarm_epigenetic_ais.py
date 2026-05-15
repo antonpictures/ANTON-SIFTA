@@ -2,7 +2,7 @@
 """
 swarm_epigenetic_ais.py — Epigenetic Artificial Immune System
 ═════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 ╔══════════════════════════════════════════════════════════════╗
 ║  [SANDBOX] ORPHAN — 2026-04-18                              ║

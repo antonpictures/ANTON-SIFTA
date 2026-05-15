@@ -1879,7 +1879,7 @@ class SwarmPhysiology:
                 "event_kind": "CORVID_APPRENTICE_HEARTBEAT",
                 "ts": now,
                 "task": "idle",
-                "model": "qwen3.5:2b",
+                "model": "alice-m1-scout-2.3b-2.7gb:latest",
                 "latency_s": 0.0,
                 "success": True,
                 "heartbeat_only": True,
@@ -2067,13 +2067,21 @@ class SwarmPhysiology:
             for name in declared_organs
         ]
         swimmer_registry = []
-        for node in organ_nodes:
-            for idx in range(int(node["swimmer_count"])):
-                swimmer_registry.append({
-                    "swimmer_id": f"{node['organ']}:{idx}",
-                    "organ": node["organ"],
-                    "index": idx,
-                })
+        try:
+            from System.swimmer_registry import seed_default_swimmers as _sr_seed
+            _sr_export = _sr_seed().export_for_field()
+            if _sr_export:
+                swimmer_registry = _sr_export
+        except Exception:
+            pass
+        if not swimmer_registry:
+            for node in organ_nodes:
+                for idx in range(int(node["swimmer_count"])):
+                    swimmer_registry.append({
+                        "swimmer_id": f"{node['organ']}:{idx}",
+                        "organ": node["organ"],
+                        "index": idx,
+                    })
         coupling_edges = [
             {"source": "swarm_pheromone_field.py", "target": "honeybee", "variables": ["angle", "vigor", "dance_vector"]},
             {"source": "electric_field.jsonl", "target": "honeybee", "variables": ["prev_electric_phase"]},
@@ -2299,73 +2307,94 @@ class SwarmPhysiology:
             {"source": "field_memory", "target": "field", "variables": ["memory_retention", "evaporation_rate"]},
             {"source": "field", "target": "motor_effector", "variables": ["octopus_coherence", "electric_tone", "homeostasis_state"]},
         ])
-        _append_jsonl(
-            "organ_field_vector.jsonl",
-            _organ_event(
-                organ="unified_field",
-                event_type="high_dimensional_field_vector",
-                payload={
-                    "dimension_count": len(field_vector),
-                    "dimension_names": dimension_names,
-                    "field_vector": [round(float(x), 4) for x in field_vector],
-                    "field_energy": round(field_energy, 6),
-                    "metabolic_cost": metabolic_cost,
-                    "cost_pressure": round(cost_pressure, 6),
-                    "field_homeostasis": field_homeostasis,
-                    "field_homeostasis_state": field_homeostasis_state,
-                    "field_control_action": field_control_action,
-                    "field_decay": field_decay,
-                    "field_memory_vector": field_memory_vector,
-                    "field_memory_energy": round(field_memory_energy, 6),
-                    "field_memory_retention": round(memory_retention, 6),
-                    "motor_effector_policy": motor_effector_policy,
-                    "truth_reward": round(truth_reward, 4),
-                    "coupling_edges": coupling_edges,
-                    "coupling_edge_count": len(coupling_edges),
-                    "coupling_density": round(len(coupling_edges) / len(field_vector), 6),
-                    "declared_organs": declared_organs,
-                    "declared_organ_count": len(declared_organs),
-                    "connected_organ_count": len({edge["source"] for edge in organ_ring_edges} | {edge["target"] for edge in organ_ring_edges}),
-                    "organ_health": {k: round(float(v), 4) for k, v in organ_health.items()},
-                    "organ_nodes": organ_nodes,
-                    "swimmer_registry": swimmer_registry,
-                    "swimmer_count": len(swimmer_registry),
-                    "unknown_vectors": unknown_vectors,
-                    "unknown_vector_count": len(unknown_vectors),
-                    "low_resolution_vectors": low_resolution_vectors,
-                    "low_resolution_vector_count": len(low_resolution_vectors),
-                    "weak_vectors": weak_vectors,
-                    "weak_vector_count": len(weak_vectors),
-                    "field_completeness": round(field_completeness, 6),
-                    "source_ledgers": [
-                        "waggle_quorum.jsonl",
-                        "motor_bus.jsonl",
-                        "electric_field.jsonl",
-                        "cuttlefish_display.jsonl",
-                        "swarm_pheromone_field.py",
-                        "body_brain_memory.jsonl",
-                        "td_receipts.jsonl",
-                        "dopamine_reward_ledger.jsonl",
-                        "hippocampus/events.jsonl",
-                        "reflex_arc_trace.jsonl",
-                        "basal_ganglia_selections.jsonl",
-                        "field_homeostasis.jsonl",
-                        "field_motor_effector.jsonl",
-                        "motor_pulses.jsonl",
-                        "truth_continuity_events.jsonl",
-                    ],
-                    "tensor_shapes": {
-                        "waggle_vector": [2],
-                        "octopus_arms": [8],
-                        "electric_dipole": [3],
-                        "cuttlefish_skin": [4, 4],
-                        "metabolic_context": [7],
-                        "organ_health": [len(declared_organs)],
-                        "field_memory": [len(field_memory_vector)],
-                    },
+        field_event = _organ_event(
+            organ="unified_field",
+            event_type="high_dimensional_field_vector",
+            payload={
+                "dimension_count": len(field_vector),
+                "dimension_names": dimension_names,
+                "field_vector": [round(float(x), 4) for x in field_vector],
+                "field_energy": round(field_energy, 6),
+                "metabolic_cost": metabolic_cost,
+                "cost_pressure": round(cost_pressure, 6),
+                "field_homeostasis": field_homeostasis,
+                "field_homeostasis_state": field_homeostasis_state,
+                "field_control_action": field_control_action,
+                "field_decay": field_decay,
+                "field_memory_vector": field_memory_vector,
+                "field_memory_energy": round(field_memory_energy, 6),
+                "field_memory_retention": round(memory_retention, 6),
+                "motor_effector_policy": motor_effector_policy,
+                "truth_reward": round(truth_reward, 4),
+                "coupling_edges": coupling_edges,
+                "coupling_edge_count": len(coupling_edges),
+                "coupling_density": round(len(coupling_edges) / len(field_vector), 6),
+                "declared_organs": declared_organs,
+                "declared_organ_count": len(declared_organs),
+                "connected_organ_count": len({edge["source"] for edge in organ_ring_edges} | {edge["target"] for edge in organ_ring_edges}),
+                "organ_health": {k: round(float(v), 4) for k, v in organ_health.items()},
+                "organ_nodes": organ_nodes,
+                "swimmer_registry": swimmer_registry,
+                "swimmer_count": len(swimmer_registry),
+                "unknown_vectors": unknown_vectors,
+                "unknown_vector_count": len(unknown_vectors),
+                "low_resolution_vectors": low_resolution_vectors,
+                "low_resolution_vector_count": len(low_resolution_vectors),
+                "weak_vectors": weak_vectors,
+                "weak_vector_count": len(weak_vectors),
+                "field_completeness": round(field_completeness, 6),
+                "source_ledgers": [
+                    "waggle_quorum.jsonl",
+                    "motor_bus.jsonl",
+                    "electric_field.jsonl",
+                    "cuttlefish_display.jsonl",
+                    "swarm_pheromone_field.py",
+                    "body_brain_memory.jsonl",
+                    "td_receipts.jsonl",
+                    "dopamine_reward_ledger.jsonl",
+                    "hippocampus/events.jsonl",
+                    "reflex_arc_trace.jsonl",
+                    "basal_ganglia_selections.jsonl",
+                    "field_homeostasis.jsonl",
+                    "field_motor_effector.jsonl",
+                    "motor_pulses.jsonl",
+                    "truth_continuity_events.jsonl",
+                ],
+                "tensor_shapes": {
+                    "waggle_vector": [2],
+                    "octopus_arms": [8],
+                    "electric_dipole": [3],
+                    "cuttlefish_skin": [4, 4],
+                    "metabolic_context": [7],
+                    "organ_health": [len(declared_organs)],
+                    "field_memory": [len(field_memory_vector)],
                 },
-            ),
+            },
         )
+        _append_jsonl("organ_field_vector.jsonl", field_event)
+        try:
+            from System.swarm_unified_organ_ecology import append_organ_ecology_from_field
+
+            append_organ_ecology_from_field(field_event, state_dir=_state, now=now)
+        except Exception:
+            pass
+
+        # Swimmer Registry heartbeat — pulse all swimmers alive on each tick.
+        # Swimmers know their organs, organs know their swimmers.
+        # Decide → Execute → Receipt.
+        try:
+            from System.swimmer_registry import seed_default_swimmers
+            _sr = seed_default_swimmers()
+            _sr_count = _sr.heartbeat_all()
+            _sr_health = _sr.health_check()
+            logger.info(
+                "Swimmer registry pulsed: %d swimmers, %d alive, %d organs",
+                _sr_count,
+                len(_sr_health.get("alive", [])),
+                len(_sr.organ_summary()),
+            )
+        except Exception:
+            pass
 
         # Truth Continuity (truth_continuity_events)
         from System.swarm_truth_continuity import build_event

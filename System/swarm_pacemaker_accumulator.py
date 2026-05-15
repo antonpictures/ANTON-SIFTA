@@ -30,7 +30,7 @@ WIRING:
   Reads  : .sifta_state/endocrine_glands.jsonl (dopamine level)
   Writes : .sifta_state/pacemaker_accumulator_state.json
   Consumed by: swarm_dopamine_clock_bridge.py (Event 5, C47H)
-               swarm_species_time_persona.py  (Event 6, AG31)
+               swarm_species_time_model.py  (Event 6, AG31)
 
 STGM ECONOMY:
   Reading the clock is free. Registering a new time anchor costs 0.10 STGM.

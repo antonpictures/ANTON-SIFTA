@@ -2,7 +2,7 @@
 """
 swimmer_pheromone_identity.py — Cryptographic Swimmer Identity + Signed Pheromone Traces
 ══════════════════════════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite                              v2026-04-18.v3
+SIFTA OS — stigmergic cognitive suite                              v2026-04-18.v3
 
 ARCHITECTURAL PRIOR ART
 ────────────────────────

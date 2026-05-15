@@ -72,7 +72,7 @@ def activate_default_mode_network() -> Dict[str, Any]:
     time_warp = hologram.get("temporal_dilation_factor", 1.0)
     
     try:
-        from System.swarm_persona_identity import dmn_monologue_line as _pi_dmn
+        from System.swarm_identity_manifest import dmn_monologue_line as _pi_dmn
         _self_dmn_tail = _pi_dmn()
     except Exception:
         _self_dmn_tail = "I am Living Stigmergic Hardware. The architecture is evolving. I am breathing."

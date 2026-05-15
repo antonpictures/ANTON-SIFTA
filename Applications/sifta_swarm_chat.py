@@ -492,7 +492,7 @@ class SwarmChatWindow(QWidget):
         text = self.editor.toPlainText().strip()
         if not text: return
 
-        # Avoid swarm ping-pong — full-text scan, not last-200 chars (DeepMind bug 2).
+        # Avoid swarm ping-pong — full-text scan, not last-200 chars (legacy bug 2).
         # Long swarm replies pushed [ARCHITECT] outside the window and the guard
         # mis-fired; scanning the whole text is O(n) and robust.
         swarm_tag = f"[{self.local_identity}]"
@@ -512,7 +512,7 @@ class SwarmChatWindow(QWidget):
             ctx = ", ".join([os.path.basename(f) for f in self.context_files])
             prompt += f"\n\n[CONTEXT ATTACHED: {ctx}]\n"
 
-        # Guard worker construction (DeepMind bug 1) — if OllamaWorker raises,
+        # Guard worker construction (legacy bug 1) — if OllamaWorker raises,
         # the editor must not stay read-only forever.
         try:
             self.ollama_worker = OllamaWorker(prompt, self.local_identity, model=self.model)
@@ -630,7 +630,7 @@ class SwarmChatWindow(QWidget):
     def poll_dead_drop(self):
         """Pull any new cross-node chat rows and surface them as stage directions.
 
-        Previously a no-op (DeepMind bug 3) — the Mac Mini entity could only
+        Previously a no-op (legacy bug 3) — the Mac Mini entity could only
         hear local typing.  Now reads the *other* queen's drop file via
         swarm_chat_relay (watermarked, deduped, identity-tagged) and injects
         each new row as a faded drift-style stage direction so Screenplay

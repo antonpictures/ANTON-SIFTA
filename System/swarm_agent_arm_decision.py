@@ -132,6 +132,20 @@ def agent_arm_decision_for_turn(user_text: str) -> Optional[AgentArmDecision]:
     if not (task_match or code_match or scout_match):
         return None
 
+    registry_context = ""
+    try:
+        from System.swarm_canonical_organ_registry import route_query
+
+        routed = route_query(text, limit=3, include_dynamic=False)
+        matches = routed.get("matches") or []
+        if matches:
+            registry_context = " Registry organ hints: " + "; ".join(
+                f"{m.get('organ_id')}({m.get('layer')},health={(m.get('health') or {}).get('status', 'unknown')})"
+                for m in matches[:3]
+            )
+    except Exception:
+        registry_context = ""
+
     arm_id = "hermes_agent"
     if code_match:
         arm_id = "codex_agent"
@@ -156,6 +170,7 @@ def agent_arm_decision_for_turn(user_text: str) -> Optional[AgentArmDecision]:
         "Evidence-only pass. Do not speak as Alice. Give concise evidence, "
         "risks, or next-step reasoning for this owner task: "
         + bounded
+        + registry_context
     )
     timeout_s = {"codex_agent": 150, "corvid_scout": 30}.get(arm_id, 75)
     return AgentArmDecision(arm_id=arm_id, prompt=prompt, reason=reason, timeout_s=timeout_s)

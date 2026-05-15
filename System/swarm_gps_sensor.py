@@ -2,7 +2,7 @@
 """
 System/swarm_gps_sensor.py — CoreLocation Sensory Bridge
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Leverages macOS native CoreLocation to extract absolute position data.
 This serves as the Phase 2 'Owner Genesis GPS Anchor' sensory organ.

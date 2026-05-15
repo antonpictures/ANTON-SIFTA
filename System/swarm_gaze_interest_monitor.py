@@ -513,7 +513,37 @@ def run_monitor(
     `iterations=None` runs forever. Tests and one-shot scripts can pass a
     small integer. This loop only writes receipts; it never changes camera
     leases or captures media itself.
+
+    Cowork 2026-05-12 · P4 surprise-driven gaze monitor:
+      The fixed `interval_s` is now the FAST band only. When successive
+      samples are identical (no gaze/focus change), the loop exponentially
+      backs off toward SIFTA_GAZE_SLOW_S so a still Architect costs less
+      bandwidth. The moment a sample differs, snap back to interval_s.
+      Disable adaptive mode with SIFTA_GAZE_ADAPTIVE_OFF=1.
     """
+    import os as _os
+    _GAZE_SLOW_S    = float(_os.environ.get("SIFTA_GAZE_SLOW_S",    "20.0"))
+    _GAZE_BACKOFF_K = float(_os.environ.get("SIFTA_GAZE_BACKOFF_K", "1.5"))
+    _GAZE_ADAPTIVE_OFF = _os.environ.get("SIFTA_GAZE_ADAPTIVE_OFF", "").strip() in ("1", "true", "yes")
+    fast_s = max(0.25, float(interval_s))
+    current_sleep_s = fast_s
+    last_fingerprint: Optional[tuple] = None
+
+    def _row_fingerprint(r: dict) -> str:
+        """Schema-agnostic stable hash of the row, with timestamps stripped so
+        we react to BEHAVIOR change, not clock tick. Returns the empty string
+        on any failure so the comparator treats it as 'changed' and stays fast —
+        safer-side fallback than silently locking into slow band."""
+        try:
+            import hashlib as _hashlib
+            stripped = {k: v for k, v in r.items()
+                        if not (isinstance(k, str) and k.lower() in ("ts", "timestamp", "time", "t"))}
+            return _hashlib.sha1(
+                json.dumps(stripped, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+        except Exception:
+            return ""
+
     rows: list[dict[str, Any]] = []
     count = 0
     while iterations is None or count < iterations:
@@ -524,7 +554,22 @@ def run_monitor(
         count += 1
         if iterations is not None and count >= iterations:
             break
-        time.sleep(max(0.25, float(interval_s)))
+
+        # ── P4 next-interval picker ─────────────────────────────────────────
+        if _GAZE_ADAPTIVE_OFF:
+            next_sleep_s = fast_s
+        else:
+            fp = _row_fingerprint(row)
+            if last_fingerprint is None or fp != last_fingerprint:
+                # Something moved → snap to fast schedule
+                current_sleep_s = fast_s
+            else:
+                # Same as last sample → exponentially back off toward slow band
+                current_sleep_s = min(_GAZE_SLOW_S, current_sleep_s * _GAZE_BACKOFF_K)
+            last_fingerprint = fp
+            next_sleep_s = current_sleep_s
+
+        time.sleep(next_sleep_s)
     return rows
 
 

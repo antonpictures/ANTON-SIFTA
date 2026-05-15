@@ -2,7 +2,7 @@
 """
 swarm_attention_router.py — Scarcity-Based Compute Allocator
 ══════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Routes compute budget mathematically based on attention scarcity.
 Instead of equal distribution, it weights novelty, risk, and expected reward.

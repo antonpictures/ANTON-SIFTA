@@ -34,15 +34,16 @@ TINY_LOCAL_MODELS: tuple[str, ...] = (
 )
 
 SMALL_LOCAL_MODELS: tuple[str, ...] = (
-    "qwen3.5:2b",
+    "alice-m1-cortex-4.5b-3.4gb:latest",
+    "alice-m1-scout-2.3b-2.7gb:latest",
     "qwen2.5:3b",
     "huihui_ai/qwen3.5-abliterated:2b",
     "alice-qwen-phc:latest",
 )
 
 HEAVY_LOCAL_MODELS: tuple[str, ...] = (
+    "alice-m5-cortex-8b-6.3gb:latest",
     "huihui_ai/gemma-4-abliterated:latest",
-    "sifta-gemma4-alice:latest",
     "gemma-4:latest",
 )
 

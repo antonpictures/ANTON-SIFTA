@@ -2,7 +2,7 @@
 """
 swarm_alphastar_league.py — Adversarial Immune Training
 ════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Implements the AlphaStar Protocol. 
 Spawns 'Exploiter' agents during shadow states whose sole mathematical 

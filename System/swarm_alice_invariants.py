@@ -98,8 +98,16 @@ _TARGET_STOPWORDS = frozenset({
     "a", "an", "the", "to", "in", "on", "at", "it", "me", "us", "him",
     "her", "them", "my", "your", "our", "his", "their", "this", "that",
     "some", "any", "all", "now", "out", "off", "up", "down", "here",
-    "there", "just", "also", "via", "with", "for", "from",
+    "there", "just", "also", "via", "with", "for", "from", "what",
+    "you", "yourself", "myself", "everybody", "everyone", "someone",
+    "somebody", "whatever", "whoever",
 })
+
+_WHATSAPP_COMMAND_PREFIX_RE = re.compile(
+    r"^\s*(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+)?"
+    r"(?:send|message|tell)\b",
+    re.IGNORECASE,
+)
 
 
 def _clean_whatsapp_target(target: str) -> str:
@@ -147,11 +155,22 @@ def extract_whatsapp_intent(user_text: str) -> Optional[Tuple[str, str]]:
     text_in = (user_text or "").strip()
     # Strip leading address like "Alice, " before parsing
     text_in = re.sub(r"^(?:alice|hey\s+alice|ok\s+alice)[,\s]+", "", text_in, flags=re.IGNORECASE).strip()
+    lowered = text_in.casefold()
+    if (
+        "whatsapp" not in lowered
+        and not re.search(r"\b(send|message|text)\b", lowered)
+        and not _WHATSAPP_COMMAND_PREFIX_RE.search(text_in)
+    ):
+        return None
 
     m = None
     for pattern in _WHATSAPP_INTENT_PATTERNS:
         m = pattern.search(text_in)
         if m:
+            target_span = m.group("target")
+            if re.search(r"[.!?]", target_span):
+                m = None
+                continue
             target_raw = _clean_whatsapp_target(m.group("target"))
             # Stopword guard: reject single-word stop words as targets
             if target_raw.lower().strip() in _TARGET_STOPWORDS:

@@ -1,0 +1,4 @@
+{"ts": 1778010000.0, "source_ide": "bad_ide", "kind": "LLM_REGISTRATION", "payload": "{\"intent\":\"missing trace_id and homeworld_serial\"}"}
+{"trace_id": "cccc0002-0000-0000-0000-000000000002", "ts": 1778010001.0, "source_ide": "bad_ide", "kind": "SCAR_RECEIPT", "payload": "", "homeworld_serial": "GTH4921YP3"}
+{"trace_id": "cccc0003-0000-0000-0000-000000000003", "ts": "NOT_A_NUMBER", "source_ide": "bad_ide", "kind": "immune_intervention", "payload": "{\"pattern\":\"test\"}", "homeworld_serial": "GTH4921YP3"}
+{"trace_id": "cccc0004-0000-0000-0000-000000000004", "ts": 1778010004.0, "source_ide": "bad_ide", "kind": "LLM_SIGNOUT", "payload": "{\"outcome\":\"test\"}", "homeworld_serial": ""}

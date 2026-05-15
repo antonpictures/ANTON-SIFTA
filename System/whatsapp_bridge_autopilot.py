@@ -2,8 +2,11 @@
 """
 System/whatsapp_bridge_autopilot.py — Outbound WhatsApp Biological Actuator
 ═══════════════════════════════════════════════════════════════════════════
-Alice's WhatsApp arm. Resolves human nicknames to JIDs and injects the message
-into the Baileys Node.js bridge.
+Alice's WhatsApp arm. The primary transport is the SIFTA-local WhatsApp bridge
+running inside this organism (Network/whatsapp_bridge + scripts/whatsapp_alice_server.py).
+
+The macOS WhatsApp.app UI driver is an explicitly requested owner/UI path.
+Default autonomous Alice sends must not silently leave the SIFTA bridge organ.
 """
 
 import hashlib
@@ -26,6 +29,7 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _CONTACTS_FILE = _STATE / "whatsapp_contacts.json"
 _LEDGER = _STATE / "whatsapp_bridge_trace.jsonl"
+_OUTBOX = _STATE / "sifta_whatsapp_outbox.jsonl"
 _INJECT_URL = "http://127.0.0.1:3001/system_inject"
 _HEALTH_URL = "http://127.0.0.1:3001/health"
 
@@ -89,12 +93,24 @@ def _deposit_trace(row: Dict[str, Any]) -> Dict[str, Any]:
     return row
 
 
+def _deposit_outbox(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Queue an unsent SIFTA WhatsApp request without touching macOS WhatsApp."""
+    _OUTBOX.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from System.jsonl_file_lock import append_line_locked
+        append_line_locked(_OUTBOX, json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        with _OUTBOX.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return row
+
+
 def _load_contacts() -> Dict[str, Any]:
     return load_contacts(_CONTACTS_FILE)
 
 
 def _resolve_target(target: str) -> str:
-    """Resolve a target string (JID or nickname) to a JID."""
+    """Resolve a target string to a synced WhatsApp transport id."""
     return resolve_target(target, _load_contacts())
 
 
@@ -150,14 +166,15 @@ def _inject_headers() -> Dict[str, str]:
 def summary_for_alice(limit: int = 12) -> str:
     """Compact WhatsApp world model for Alice's prompt context.
 
-    Raw JIDs stay out of the prompt; Alice only needs names, chat shape, and
-    whether a contact is reachable by the local bridge.
+    Raw transport ids stay out of the prompt; Alice only needs names, chat
+    shape, and which local effector can reach the contact.
     """
     health = bridge_health(timeout=0.35)
     lines = [
         "WHATSAPP WORLD:",
-        "- transport=WhatsApp via local Baileys phone bridge; inbound messages are real external humans queued into Alice.",
-        "- outbound_tool=whatsapp.send; target may be a saved display name or exact WhatsApp JID.",
+        "- primary_transport=SIFTA WhatsApp bridge at 127.0.0.1:3001; outbound sends require a synced WhatsApp JID in whatsapp_contacts.json.",
+        "- macos_whatsapp_app=owner-click UI path for visible names/groups; autonomous sends do not choose it silently.",
+        "- outbound_tool=whatsapp.send; target may be a synced visible WhatsApp contact/group name or exact transport id.",
         f"- bridge_health={health['status']} whatsapp_state={health['whatsapp_state']}.",
         "- autonomy_gate=bounded Gaussian attraction; autonomous sends require consent, relevance, timing, and low repetition.",
         "- group_send_default=blocked unless an explicit group-send override is provided.",
@@ -178,7 +195,7 @@ def summary_for_alice(limit: int = 12) -> str:
     if rows:
         lines.append("- target_examples: " + "; ".join(rows))
     else:
-        lines.append("- known_contacts=0; contacts appear after WhatsApp sync or after a human messages Alice.")
+        lines.append("- known_contacts=0 in synced cache; unsynced sends are queued inside SIFTA and no macOS WhatsApp fallback is used.")
     return "\n".join(lines)
 
 
@@ -188,14 +205,21 @@ def send_whatsapp(
     *,
     allow_group_send: bool = False,
     source: str = "owner_explicit",
+    transport: str = "bridge",
+    dry_run: bool = False,
     autonomy_decision: Optional[Dict[str, Any]] = None,
     intent_provenance: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Transmit a WhatsApp message via the Baileys injection server.
+    Transmit a WhatsApp message with a receipt-backed local effector.
+
+    transport:
+      - "bridge" / "auto" / "sifta": SIFTA-local bridge path.
+      - "macos_app": explicit owner/UI path through WhatsApp Desktop's visible chat search.
     """
     target = (target or "").strip()
     text = (text or "").strip()
+    transport = (transport or "bridge").strip().lower()
     resolved_jid = ""
 
     def finish(
@@ -217,8 +241,9 @@ def send_whatsapp(
             "ok": ok,
             "status": status,
             "result": result,
-            "truth_note": "External WhatsApp send is true only when ok=true and status=SENT.",
+            "truth_note": "External WhatsApp send is true only when ok=true and status contains SENT.",
         }
+        row["transport"] = transport
         if bridge_state:
             row["bridge_health"] = bridge_state
         if autonomy_decision:
@@ -231,13 +256,82 @@ def send_whatsapp(
         return _deposit_trace(row)
 
     if not target:
-        return finish("REJECTED_MISSING_TARGET", False, "Missing target name or JID.")
+        return finish("REJECTED_MISSING_TARGET", False, "Missing target name or transport id.")
     if not text:
         return finish("REJECTED_MISSING_PAYLOAD", False, "Missing message text.")
 
+    if transport in {"macos_app", "local_app", "whatsapp_app", "native", "desktop_app", "whatsapp_desktop"}:
+        from System.swarm_macos_messenger import send_message
+
+        native = send_message(target, text, via="whatsapp", dry_run=dry_run)
+        native_status = str(native.get("status") or "UNKNOWN")
+        native_ok = bool(native.get("ok")) and native_status == "SENT"
+        status = "SENT_MACOS_APP" if native_ok and native_status == "SENT" else f"MACOS_APP_{native_status}"
+        if native_status == "DRY_RUN":
+            status = "DRY_RUN_MACOS_APP"
+        row = {
+            "event_kind": EVENT_KIND,
+            "schema": SCHEMA,
+            "ts": time.time(),
+            "target": target,
+            "resolved_jid": "",
+            "text": text,
+            "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else "",
+            "source": source,
+            "ok": native_ok,
+            "status": status,
+            "result": str(native.get("note") or native.get("status") or native_status),
+            "truth_note": (
+                "External WhatsApp send is true only when ok=true and status is SENT_MACOS_APP. "
+                "This proves local WhatsApp.app UI dispatch, not remote read/delivery state."
+            ),
+            "transport": "macos_app",
+            "native_receipt": native,
+        }
+        if autonomy_decision:
+            row["autonomy_decision"] = autonomy_decision
+        _attach_intent_provenance(
+            row,
+            intent_provenance=intent_provenance,
+            decision_path=["whatsapp_effector", "macos_app", status.lower()],
+        )
+        return _deposit_trace(row)
+
+    if dry_run:
+        return finish(
+            "DRY_RUN_BRIDGE",
+            False,
+            "Would send through the SIFTA WhatsApp bridge if a synced JID and live bridge were present.",
+        )
+
     resolved_jid = _resolve_target(target)
     if not resolved_jid:
-        return finish("BLOCKED_UNKNOWN_TARGET", False, f"Could not resolve '{target}' to a known WhatsApp contact. They must message Alice first to register.")
+        outbox_row = {
+            "event_kind": "SIFTA_WHATSAPP_OUTBOX_QUEUED",
+            "schema": SCHEMA,
+            "ts": time.time(),
+            "target": target,
+            "text": text,
+            "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest() if text else "",
+            "source": source,
+            "transport": "sifta_bridge",
+            "status": "QUEUED_NEEDS_SIFTA_WHATSAPP_SYNC",
+            "truth_note": (
+                "No external WhatsApp action occurred. SIFTA bridge has not synced "
+                "a sendable WhatsApp JID for this visible name yet."
+            ),
+        }
+        _deposit_outbox(outbox_row)
+        return finish(
+            "QUEUED_NEEDS_SIFTA_WHATSAPP_SYNC",
+            False,
+            (
+                f"SIFTA WhatsApp has no synced send target for '{target}' yet. "
+                "Queued the request inside .sifta_state/sifta_whatsapp_outbox.jsonl; "
+                "start/sync the WhatsApp Organ bridge to send from inside SIFTA OS. "
+                "No macOS WhatsApp fallback was used."
+            ),
+        )
     if resolved_jid.endswith("@g.us") and not (allow_group_send or _ALLOW_GROUP_SEND):
         return finish(
             "BLOCKED_GROUP_SEND_DISABLED",
@@ -394,7 +488,7 @@ def autonomous_send_whatsapp(
         return _deposit_trace(row)
 
     if not target:
-        return silent("REJECTED_MISSING_TARGET", "Missing target name or JID.")
+        return silent("REJECTED_MISSING_TARGET", "Missing target name or transport id.")
     if not text:
         return silent("REJECTED_MISSING_PAYLOAD", "Missing message text.")
     if not resolved_jid:

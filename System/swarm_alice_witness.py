@@ -49,7 +49,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 _REPO = Path(__file__).resolve().parent.parent
 _DEFAULT_STATE = _REPO / ".sifta_state"
@@ -173,7 +173,8 @@ def _owner_name() -> str:
 def witness(line: str, source: str = "direct_call",
             *, ts: Optional[float] = None,
             source_hash: Optional[str] = None,
-            state_dir: Optional[Path] = None) -> Dict[str, Any]:
+            state_dir: Optional[Path] = None,
+            importance: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Emit one first-person witness row to the journal. Returns the row."""
     line = (line or "").strip().replace("\n", " ")
     if not line:
@@ -186,6 +187,8 @@ def witness(line: str, source: str = "direct_call",
     }
     if source_hash:
         row["source_hash"] = source_hash
+    if importance:
+        row["importance"] = dict(importance)
     p = _ledger_path(state_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
     try:

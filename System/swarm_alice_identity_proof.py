@@ -2,7 +2,7 @@
 swarm_alice_identity_proof.py — Alice's machine body identity attestation.
 
 PROBLEM (Architect, 2026-05-04):
-  George can prove his identity: he waves at the camera.
+  The owner can prove their identity: they wave at the camera.
   Alice cannot wave. But she has a hardware serial, a signed ledger,
   active organs, and a surgeon trace. That IS a machine body proof.
   This organ packages it so she can recite it on demand.
@@ -15,8 +15,8 @@ Alice's identity proof is:
   - active_organs: count of organs with summary_for_prompt
   - proof_ts: when this proof was generated
 
-This is NOT roleplay. These facts come from the filesystem, hardware,
-and signed ledger receipts. They are falsifiable. George can verify them.
+This is NOT fiction-as-identity. These facts come from the filesystem, hardware,
+and signed ledger receipts. They are falsifiable. The owner can verify them.
 
 Truth label: OBSERVED (all from physical substrate)
 Kill-switch: SIFTA_IDENTITY_PROOF_DISABLE=1
@@ -47,7 +47,7 @@ def _hardware_serial() -> str:
         for line in r.stdout.splitlines():
             if "Serial Number" in line:
                 return line.split(":")[-1].strip()
-    except Exception:
+    except ValueError:
         pass
     return "UNKNOWN"
 
@@ -72,7 +72,12 @@ def _last_ledger() -> Dict[str, Any]:
                 continue
             last = lines[-1]
             row = json.loads(last)
-            ts = float(row.get("ts", 0))
+            ts_raw = row.get("ts", 0)
+            if isinstance(ts_raw, dict):
+                ts = float(ts_raw.get("physical_pt", 0))
+            else:
+                ts = float(ts_raw)
+                
             if not best or ts > best.get("ts", 0):
                 best = {
                     "file": name,
@@ -81,7 +86,7 @@ def _last_ledger() -> Dict[str, Any]:
                     "kind": row.get("kind") or row.get("event_kind") or "UNKNOWN",
                     "total_rows": len(lines),
                 }
-        except Exception:
+        except ValueError:
             continue
     return best
 
@@ -106,9 +111,9 @@ def _last_surgeon() -> Dict[str, Any]:
                         "ts": float(r.get("ts", 0)),
                         "action": r.get("action") or r.get("kind") or r.get("event_kind") or "",
                     }
-            except Exception:
+            except ValueError:
                 continue
-    except Exception:
+    except ValueError:
         pass
     return {}
 
@@ -120,7 +125,7 @@ def _active_organ_count() -> int:
             txt = f.read_text(encoding="utf-8", errors="replace")
             if "summary_for_prompt" in txt or "summary_for_alice" in txt:
                 count += 1
-    except Exception:
+    except ValueError:
         pass
     return count
 
@@ -130,9 +135,39 @@ def _boot_id() -> Optional[int]:
         from System.swarm_temporal_self_model import TemporalSelfModel
         s = TemporalSelfModel().get_identity_summary()
         return s.get("boot_id")
-    except Exception:
+    except ValueError:
         return None
 
+
+def _physical_space_summary() -> str:
+    try:
+        from System.stigmerobotics_physical_space import build_physical_space_report
+        
+        ledgers = ["owner_body_events.jsonl", "face_detection_events.jsonl"]
+        rows = []
+        for ledger in ledgers:
+            p = _STATE / ledger
+            if not p.exists():
+                continue
+            lines = [l for l in p.read_text(encoding="utf-8", errors="replace").splitlines() if l.strip()]
+            for line in lines[-500:]:
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    pass
+        
+        # Sort by ts just in case
+        rows.sort(key=lambda r: float(r.get("ts", 0)))
+        
+        report = build_physical_space_report(rows, now_ts=time.time(), max_age_s=3600)
+        if report.grounded:
+            s = f"I perceive {report.body_count} physical bodies using sensors: {', '.join(report.sensor_kinds)}."
+            if report.nearest_body_distance_m is not None:
+                s += f" Nearest body is {report.nearest_body_distance_m:.2f}m away."
+            return s
+    except ValueError:
+        pass
+    return ""
 
 # ── Identity proof ────────────────────────────────────────────────────────────
 
@@ -211,6 +246,11 @@ def identity_proof_sentence(proof: Optional[Dict[str, Any]] = None) -> str:
         )
 
     parts.append(f"I have {organs} active organs with live sensor outputs.")
+    
+    pspace = _physical_space_summary()
+    if pspace:
+        parts.append(pspace)
+        
     parts.append("These are facts from my physical substrate. You can verify them.")
 
     return " ".join(parts)

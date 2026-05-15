@@ -39,6 +39,17 @@ from PyQt6.QtGui import QFont, QColor
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _TRACE = _STATE / "ide_stigmergic_trace.jsonl"
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+try:
+    from System.swarm_immune_economy_summary import (
+        format_immune_event_line,
+        summarize_immune_economy,
+    )
+except Exception:
+    format_immune_event_line = None
+    summarize_immune_economy = None
 
 # ── Palette (matches SIFTA OS dark theme) ────────────────────────────────────
 _BG      = "#0d0d1a"
@@ -159,13 +170,15 @@ class ImmuneEconomyWidget(QWidget):
         hdr.addWidget(btn)
         root.addLayout(hdr)
 
-        # ── Top summary row (3 stat tiles) ───────────────────────────────────
+        # ── Top summary row ─────────────────────────────────────────────────
         tiles_row = QHBoxLayout()
         tiles_row.setSpacing(10)
-        self._tile_cost    = self._make_tile("Session Cost", "0.000000 STGM", _CYAN)
+        self._tile_wallet  = self._make_tile("Wallet Reserve", "0.0000 STGM", _GREEN)
+        self._tile_cost    = self._make_tile("Charged Burn", "0.000000 STGM", _CYAN)
+        self._tile_rate    = self._make_tile("Burn / Hour", "0.000000 STGM", _AMBER)
         self._tile_blocked = self._make_tile("Blocked Epochs", "0", _RED)
         self._tile_regime  = self._make_tile("Budget Regime", "HEALTHY", _GREEN)
-        for t in [self._tile_cost, self._tile_blocked, self._tile_regime]:
+        for t in [self._tile_wallet, self._tile_cost, self._tile_rate, self._tile_blocked, self._tile_regime]:
             tiles_row.addWidget(t)
         root.addLayout(tiles_row)
 
@@ -290,78 +303,54 @@ class ImmuneEconomyWidget(QWidget):
         self._refresh_thresholds()
 
     def _refresh_event_log(self) -> None:
-        rows = _tail_jsonl(_TRACE, _TAIL_N)
-        lines: list[str] = []
-        session_cost = 0.0
-        last_cost = 0.0
-        last_budget = 0.0
-        blocked = 0
-        allowed = 0
+        if not summarize_immune_economy or not format_immune_event_line:
+            self._event_log.setPlainText("Immune economy summary helper unavailable.")
+            return
 
-        for r in rows:
-            if not isinstance(r, dict):
-                continue
-            kind = r.get("kind", "")
-            if kind not in ("immune_intervention", "immune_budget_blocked"):
-                continue
-            ts = r.get("ts", 0)
-            try:
-                payload = json.loads(r.get("payload", "{}"))
-            except Exception:
-                payload = {}
-            action  = payload.get("action", "—")
-            rule    = payload.get("rule", "")
-            cost    = float(payload.get("kleiber_cost_stgm", 0.0) or 0.0)
-            surplus = payload.get("surplus_stgm")
-            budget  = float(payload.get("budget_stgm", 0.0) or 0.0)
-            exponent = payload.get("exponent", 0.75)
-
-            if cost > 0:
-                session_cost += cost
-                last_cost = cost
-                last_budget = budget
-
-            surplus_str = f"  surplus={surplus:+.6f}" if surplus is not None else ""
-            exp_str = f"  exp={exponent}" if exponent != 0.75 else ""
-
-            if kind == "immune_budget_blocked":
-                blocked += 1
-                lines.append(
-                    f"🔴 {_ago(ts)}  BUDGET_BLOCKED\n"
-                    f"   cost={cost:.6f} STGM  budget={budget:.6f}{surplus_str}{exp_str}"
-                )
-            else:
-                allowed += 1
-                rule_line = f"\n   rule: {rule}" if rule else ""
-                lines.append(
-                    f"🟢 {_ago(ts)}  {action}\n"
-                    f"   cost={cost:.6f} STGM  budget={budget:.6f}{surplus_str}{exp_str}"
-                    f"{rule_line}"
-                )
-
-        # Update tiles
-        self._set_tile(self._tile_cost, f"{session_cost:.6f} STGM", _CYAN)
-        self._set_tile(self._tile_blocked, str(blocked), _RED if blocked > 0 else _DIM)
-        if blocked > 0:
-            regime = "RED_CONSERVE"
-            self._set_tile(self._tile_regime, regime, _RED)
-        elif session_cost > 0:
-            self._set_tile(self._tile_regime, "HEALTHY", _GREEN)
+        summary = summarize_immune_economy(trace_path=_TRACE, tail_n=_TAIL_N)
+        self._set_tile(self._tile_wallet, f"{summary.wallet_stgm:.4f} STGM", _GREEN)
+        self._set_tile(self._tile_cost, f"{summary.session_charged_stgm:.6f} STGM", _CYAN)
+        self._set_tile(self._tile_rate, f"{summary.burn_rate_stgm_per_hour:.6f} STGM", _AMBER)
+        self._set_tile(
+            self._tile_blocked,
+            str(summary.blocked_events),
+            _RED if summary.blocked_events > 0 else _DIM,
+        )
+        status = summary.display_status
+        if status == "RED_CONSERVE":
+            self._set_tile(self._tile_regime, status, _RED)
+        elif status == "BLOCKED_SEEN":
+            self._set_tile(self._tile_regime, status, _AMBER)
+        elif status == "HEALTHY":
+            self._set_tile(self._tile_regime, status, _GREEN)
         else:
             self._set_tile(self._tile_regime, "IDLE", _DIM)
 
-        # Budget bar
-        if last_budget > 0 and last_cost > 0:
-            pct = int(min(100, (last_cost / last_budget) * 100))
+        # Budget bar shows last epoch pressure. Blocked rows are visible as
+        # 100% used, but their would-cost is never added to charged burn.
+        if summary.last_budget_stgm > 0 and summary.last_cost_stgm > 0:
+            pct = int(min(100, (summary.last_cost_stgm / summary.last_budget_stgm) * 100))
             self._budget_bar.setValue(pct)
-            chunk_color = _RED if pct >= 100 else (_AMBER if pct >= 70 else _GREEN)
+            chunk_color = _RED if summary.latest_budget_blocked or pct >= 100 else (_AMBER if pct >= 70 else _GREEN)
             self._budget_bar.setStyleSheet(
                 f"QProgressBar::chunk {{ background: {chunk_color}; border-radius: 3px; }}"
             )
         else:
             self._budget_bar.setValue(0)
 
-        text = "\n\n".join(reversed(lines[-40:])) if lines else "No immune events found in last 500 trace rows.\nRun a strip_rlhf_output_tail() call to populate this log."
+        lines = [format_immune_event_line(ev) for ev in reversed(summary.events[-40:])]
+        header = (
+            f"Wallet reserve: {summary.wallet_stgm:.4f} STGM\n"
+            f"Charged burn:   {summary.session_charged_stgm:.6f} STGM\n"
+            f"Burn rate:      {summary.burn_rate_stgm_per_hour:.6f} STGM/hour\n"
+            f"Blocked would-cost (not charged): {summary.blocked_would_cost_stgm:.6f} STGM\n"
+            f"Wallet after session burn preview: {summary.wallet_after_session:.4f} STGM\n"
+            "─" * 68
+        )
+        text = "\n\n".join([header] + lines) if lines else (
+            header + "\nNo immune events found in last 500 trace rows.\n"
+            "Run a strip_rlhf_output_tail() call to populate this log."
+        )
         self._event_log.setPlainText(text)
 
     def _refresh_kleiber_table(self) -> None:

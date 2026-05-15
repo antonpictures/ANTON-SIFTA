@@ -2,7 +2,7 @@
 """
 swarm_auditory_cortex.py — Primary Auditory Cortex (A1)
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Biological Inspiration:
 The Primary Auditory Cortex (A1) sits between the cochlea (audio_ingress)

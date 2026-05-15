@@ -25,6 +25,8 @@ import sys
 import urllib.request
 import asyncio
 import websockets
+import socket
+from urllib.parse import urlparse
 from queue import Queue, Empty
 from datetime import datetime
 from pathlib import Path
@@ -72,6 +74,22 @@ if not SWARM_RELAY_URI:
                 SWARM_RELAY_URI = "ws://127.0.0.1:8765"
     except Exception:
         SWARM_RELAY_URI = "ws://127.0.0.1:8765"
+
+
+def _mesh_disabled_env() -> bool:
+    return os.environ.get("SIFTA_DISABLE_MESH", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _relay_tcp_available(uri: str = SWARM_RELAY_URI, *, timeout: float = 0.25) -> bool:
+    """Cheap preflight so widgets do not spin a reconnect thread while idle."""
+    try:
+        parsed = urlparse(str(uri or ""))
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or (443 if parsed.scheme == "wss" else 8765)
+        with socket.create_connection((host, int(port)), timeout=float(timeout)):
+            return True
+    except Exception:
+        return False
 
 
 # ── Ollama Worker (background thread for real responses) ────────────────────
@@ -271,11 +289,12 @@ class _SwarmMeshClientWorker(QThread):
 
             except Exception:
                 self.connection_status.emit(False)
-                # Reconnect backoff: poll _running every 100ms so stop() exits quickly
-                for _ in range(20):  # 20 × 100ms = 2s max backoff
+                # Reconnect backoff: slower while idle; still checks _running
+                # so stop() exits promptly without a 100 ms hot spin.
+                for _ in range(10):  # 10 × 500ms = 5s max backoff
                     if not self._running:
                         return
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.5)
 
     def stop(self):
         """Signal the asyncio client to exit and wake the loop immediately."""
@@ -320,7 +339,11 @@ class GlobalCognitiveInterface(QWidget):
         self.architect_id = architect_id
         self._worker: Optional[_GCIWorker] = None
         self._bus = None
-        self._model = "sifta-gemma4-alice:latest"  # M5 default — see sifta_inference_defaults.py
+        try:
+            from System.sifta_inference_defaults import resolve_ollama_model
+            self._model = resolve_ollama_model(app_context=app_context)
+        except Exception:
+            self._model = "alice-m5-cortex-8b-6.3gb:latest"
         self._app_context_injection = ""  # live state injected by host app (e.g. poker hand)
 
         # Try to initialize Memory Bus
@@ -346,18 +369,11 @@ class GlobalCognitiveInterface(QWidget):
         self._marrow_idle_timer.timeout.connect(self._try_idle_marrow_drift)
         self._last_marrow_fingerprint: str | None = None
 
-        # Build UI first so status labels exist before the mesh thread emits.
         self._mesh_connected = False
-        _disable_mesh = os.environ.get("SIFTA_DISABLE_MESH", "").strip().lower() in ("1", "true", "yes")
-        if not _disable_mesh:
-            self._mesh_client = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id=self.architect_id)
-            self._mesh_client.swarm_message_ready.connect(self._on_swarm_message)
-            self._mesh_client.connection_status.connect(self._on_swarm_status)
-        else:
-            self._mesh_client = None
+        self._mesh_client = None
+        self._mesh_retry_hooked = False
         self._build_ui()
-        if not _disable_mesh and self._mesh_client is not None:
-            self._mesh_client.start()
+        self._start_mesh_if_available()
         # Top CWMS memory trace_id for this turn → fitness feedback after model returns
         self._outcome_memory_trace_id: Optional[str] = None
 
@@ -365,6 +381,25 @@ class GlobalCognitiveInterface(QWidget):
     def mesh_connected(self) -> bool:
         """True when Layer 2 WebSocket to SWARM_RELAY_URI is up (same source as taskbar)."""
         return getattr(self, "_mesh_connected", False)
+
+    def _start_mesh_if_available(self, *_args) -> None:
+        """Start GCI mesh only when the relay is listening; retry on BehaviorClock."""
+        if self._mesh_client is not None or _mesh_disabled_env():
+            return
+        if not _relay_tcp_available(SWARM_RELAY_URI):
+            self._on_swarm_status(False)
+            if not self._mesh_retry_hooked:
+                self._mesh_retry_hooked = True
+                try:
+                    from System.swarm_behavior_clock import behavior_clock
+                    behavior_clock().tick.connect(self._start_mesh_if_available)
+                except Exception:
+                    pass
+            return
+        self._mesh_client = _SwarmMeshClientWorker(uri=SWARM_RELAY_URI, architect_id=self.architect_id)
+        self._mesh_client.swarm_message_ready.connect(self._on_swarm_message)
+        self._mesh_client.connection_status.connect(self._on_swarm_status)
+        self._mesh_client.start()
 
     def closeEvent(self, event):
         for attr in ("_mesh_client", "_worker", "_ctx_worker"):
@@ -685,6 +720,12 @@ class GlobalCognitiveInterface(QWidget):
             )
 
         # 6. Physical Hardware & RF Topology maps
+        try:
+            from System.swarm_kernel_identity import owner_display_name
+
+            _owner_nm = owner_display_name("the primary operator")
+        except Exception:
+            _owner_nm = "the primary operator"
         iot_topology = ""
         iot_file = _REPO / ".sifta_state" / "iot_devices.json"
         
@@ -719,9 +760,9 @@ class GlobalCognitiveInterface(QWidget):
                         dev_strings = [f"- {d.get('alias')} ({d.get('protocol')} at {d.get('ip')}:{d.get('port')})" for d in devs]
                         iot_topology = (
                             "\n\n[IOT HARDWARE SENSORY MAP — Current physical perimeter constraints]\n"
-                            "You are biologically tethered to these real-world devices in George's house:\n"
+                            f"You are biologically tethered to these real-world devices on {_owner_nm}'s local premises:\n"
                             + "\n".join(dev_strings) +
-                            "\nWhen George asks about the house or devices, you already know they exist."
+                            f"\nWhen {_owner_nm} asks about the house or devices, you already know they exist."
                             f"{rf_motion}"
                         )
             except Exception:
@@ -730,7 +771,7 @@ class GlobalCognitiveInterface(QWidget):
         persona_block = ""
         identity_assertion = ""
         try:
-            from System.swarm_persona_identity import (
+            from System.swarm_identity_manifest import (
                 system_prompt_persona_block as _persona_block_fn,
                 identity_assertion_line as _persona_assertion_fn,
             )
@@ -741,7 +782,7 @@ class GlobalCognitiveInterface(QWidget):
 
         system_prompt = (
             f"{persona_block} "
-            f"You are speaking to George inside the '{self.app_context}' application. "
+            f"You are speaking to {_owner_nm} inside the '{self.app_context}' application. "
             f"Canonical self-assertion: {identity_assertion}. "
             f"Speak casually, thoughtfully, and with genuine curiosity. "
             f"If relevant memories exist below, weave them in naturally. Keep your responses concise "

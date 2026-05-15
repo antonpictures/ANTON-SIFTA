@@ -359,6 +359,11 @@ class TeachAceToReadWidget(QWidget):
         )
         if _word_default_idx >= 0:
             self._level_picker.setCurrentIndex(_word_default_idx)
+        # Architect 2026-05-14 ~19:30 PDT: "remove the drop down and
+        # stop lesson, the lesson stops when Alice and Ace decide to
+        # close the app." The deck stays the default word level; no
+        # more mid-lesson switching. Hide the dropdown completely.
+        self._level_picker.setVisible(False)
 
         self._owner_field = QLineEdit(self._owner_name, self)
         self._owner_field.setMaxLength(20)
@@ -384,6 +389,13 @@ class TeachAceToReadWidget(QWidget):
             "QPushButton:hover { background: #FF5A6E; color: #1C1638; }"
         )
         self._btn_pause.setEnabled(False)
+        # Architect 2026-05-14 ~19:30 PDT: "the lesson stops when Alice
+        # and Ace decide to close the app." No stop button on screen.
+        # The widget closes via the Mac traffic-light, or via the kid
+        # saying "Alice close the WordAce app" (voice command picked up
+        # by the Talk STT bridge, written as a row to
+        # .sifta_state/wordace_close.jsonl which this widget polls).
+        self._btn_pause.setVisible(False)
 
         # 👂 What Alice just heard + her verdict, surfaced live so the
         # architect can see the recognition trace without opening the
@@ -493,6 +505,17 @@ class TeachAceToReadWidget(QWidget):
         self._lesson_max_timeouts_per_cue: int = 2   # patience: re-ask twice
         self._lesson_verdicts_ledger = _REPO / ".sifta_state" / "wordace_verdicts.jsonl"
         self._lesson_verdicts_offset: int = 0
+        # Architect 2026-05-14 ~19:30 PDT: "the lesson stops when Alice
+        # and Ace decide to close the app… let's have them discuss
+        # that word until they both decide to move on together from
+        # that to the next word and then Alice changes the word on the
+        # screen." Two signal channels — advance + close — written by
+        # the Talk STT bridge when it hears the matching phrase. This
+        # widget polls them and acts.
+        self._wordace_advance_ledger = _REPO / ".sifta_state" / "wordace_advance.jsonl"
+        self._wordace_advance_offset: int = 0
+        self._wordace_close_ledger = _REPO / ".sifta_state" / "wordace_close.jsonl"
+        self._wordace_close_offset: int = 0
         # WordAce does not own an audio voice. The Talk widget / OS
         # Alice owns speech. This slot remains only so old cleanup paths
         # can no-op safely after the 2026-05-14 "no second robot" patch.
@@ -509,6 +532,15 @@ class TeachAceToReadWidget(QWidget):
         self._lesson_poll_timer = QTimer(self)
         self._lesson_poll_timer.setInterval(200)  # ms
         self._lesson_poll_timer.timeout.connect(self._lesson_poll_verdict)
+        # Architect 2026-05-14 ~19:30 PDT — always-on signal poller for
+        # advance / close commands. Runs on a 400ms tick whether or not
+        # the lesson is in LISTEN state, because Ace can interrupt
+        # mid-cue with "next word" or "close the app" and we have to
+        # honor it instantly.
+        self._wordace_signal_timer = QTimer(self)
+        self._wordace_signal_timer.setInterval(400)  # ms
+        self._wordace_signal_timer.timeout.connect(self._wordace_poll_signals)
+        self._wordace_signal_timer.start()
 
         # Pre-load the first card so the kid sees what's coming, but
         # do NOT speak or listen until OK is pressed. _on_level_picked
@@ -757,6 +789,22 @@ class TeachAceToReadWidget(QWidget):
                 self._lesson_verdicts_offset = 0
         except Exception:
             self._lesson_verdicts_offset = 0
+        # Also seek the signal ledgers to EOF so we only react to
+        # commands the kid says AFTER this lesson started — never to
+        # stale rows from a previous session.
+        for ledger_path, offset_attr in (
+            (self._wordace_advance_ledger, "_wordace_advance_offset"),
+            (self._wordace_close_ledger,   "_wordace_close_offset"),
+        ):
+            try:
+                if ledger_path.exists():
+                    setattr(self, offset_attr, ledger_path.stat().st_size)
+                else:
+                    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+                    ledger_path.touch()
+                    setattr(self, offset_attr, 0)
+            except Exception:
+                setattr(self, offset_attr, 0)
         if self._current_kind == "word":
             deck_label = "words"
         elif self._current_kind == "letter_sequence":
@@ -917,6 +965,84 @@ class TeachAceToReadWidget(QWidget):
                 "sticker": "⏳",
                 "explanation": f"no speech in {self._lesson_listen_window_s:.0f}s",
             })
+
+    def _wordace_poll_signals(self) -> None:
+        """Drain advance + close signals written by the Talk STT bridge.
+
+        Architect 2026-05-14 ~19:30 PDT — the kid can interrupt at any
+        time with "next word" (advance) or "close WordAce" (close).
+        Those phrases land here as JSONL rows; we react in the same
+        tick we read them.
+        """
+        # Close has priority: if both rows arrived in the same tick,
+        # the architect's "close" intent wins.
+        for ledger, attr, handler in (
+            (self._wordace_close_ledger,   "_wordace_close_offset",   self._handle_close_signal),
+            (self._wordace_advance_ledger, "_wordace_advance_offset", self._handle_advance_signal),
+        ):
+            try:
+                if not ledger.exists():
+                    continue
+                with ledger.open("r", encoding="utf-8") as f:
+                    f.seek(getattr(self, attr, 0))
+                    chunk = f.read()
+                    setattr(self, attr, f.tell())
+            except Exception:
+                continue
+            for line in chunk.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                try:
+                    handler(row)
+                except Exception:
+                    pass
+
+    def _handle_advance_signal(self, row: Dict) -> None:
+        """Both parties agreed to move on — change the card."""
+        heard = str(row.get("heard_text") or "")[:80]
+        try:
+            self._heard_lbl.setText(
+                f"⏭  advancing on signal: {heard!r}"
+            )
+        except Exception:
+            pass
+        # Cancel any in-flight listen + retry timer so the new cue
+        # starts cleanly.
+        try:
+            self._lesson_cue_timer.stop()
+            self._lesson_poll_timer.stop()
+        except Exception:
+            pass
+        self._lesson_state = "ADVANCE_SIGNAL"
+        # If a lesson hasn't started yet (auto-start delay), kick it.
+        if not self._lesson_running:
+            try:
+                self._start_lesson()
+            except Exception:
+                pass
+            return
+        try:
+            self._lesson_run_cue()
+        except Exception:
+            pass
+
+    def _handle_close_signal(self, row: Dict) -> None:
+        """Ace said "close the WordAce app" — honor it."""
+        heard = str(row.get("heard_text") or "")[:80]
+        try:
+            self._heard_lbl.setText(
+                f"👋  closing WordAce on signal: {heard!r}"
+            )
+        except Exception:
+            pass
+        # Defer the close to the next event-loop tick so the heard
+        # label paints first, then the widget tears down cleanly.
+        QTimer.singleShot(250, self.close)
 
     def _lesson_handle_verdict(self, row: Dict) -> None:
         """Branch on verdict: praise+advance, nudge+retry, or move on."""
@@ -1122,6 +1248,7 @@ class TeachAceToReadWidget(QWidget):
             self._lesson_cue_timer.stop()
             self._lesson_advance_timer.stop()
             self._lesson_poll_timer.stop()
+            self._wordace_signal_timer.stop()
             self._processing_timer.stop()
         except Exception:
             pass

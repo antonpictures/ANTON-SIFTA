@@ -37,7 +37,7 @@ def load_settings():
     except Exception:
         return {
             "active_engine":     "ollama",
-            "ollama_model":      "qwen3.5:2b",
+            "ollama_model":      "alice-m1-scout-2.3b-2.7gb:latest",
             "openrouter_key":    "",
             "openrouter_model":  "meta-llama/llama-4-maverick",
         }

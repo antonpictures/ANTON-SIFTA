@@ -4,7 +4,7 @@
 When the Architect is watching a movie or YouTube video, the room microphone
 can transcribe the video's speech and label it as "You". That is false
 self/other attribution. This gate keeps that speech as environmental context
-unless the utterance explicitly addresses Alice/George or carries a clear
+unless the utterance explicitly addresses Alice/the owner or carries a clear
 imperative.
 
 It does not block human speech globally. It only fires when a recent focus row
@@ -21,6 +21,7 @@ later named/direct question.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import re
 import time
@@ -48,14 +49,124 @@ _OWNER_INTENT_SIGNAL_RE = re.compile(
     r"\b(?:"
     r"i\s+(?:am|['’]m)\s+(?:going\s+to\s+)?(?:go\s+to\s+)?(?:sleep|nap|bed|talk(?:ing)?|speaking|back)|"
     r"i\s+(?:want|need|said|mean|asked|feel|think|believe|care|love|hate|slept|woke|wake)|"
+    r"i\s+(?:was|am)\s+so\s+hungry|"
+    r"(?:i\s+am|i['’]m)\s+georgem?|"
+    r"(?:i\s+am|i['’]m)\s+typing\s+this|"
     r"(?:hear|listen\s+to)\s+me|"
     r"here\s+me|"
     r"my\s+(?:body|voice|sleep|nap|bed|schedule|question|name)|"
     r"we\s+(?:need|are|were|watch|watched|talk|have|should)|"
+    r"we\s+are\s+(?:both\s+)?in\s+(?:brawley|brawly|broly)(?:,\s+california)?|"
+    r"(?:brawley|brawly|broly),?\s+california|"
     r"you\s+and\s+me|"
+    r"both\s+our\s+lives|"
+    r"(?:nice\s+)?sandwich\s+that\s+(?:i\s+am|i['’]m)\s+gonna\s+eat|"
     r"i\s+and\s+you"
     r")\b",
     re.IGNORECASE,
+)
+_OWNER_FEEDBACK_RE = re.compile(
+    r"\b(?:"
+    r"good\s+job|very\s+good\s+job|well\s+done|nice\s+job|"
+    r"good\s+draft|"
+    r"fair\s+enough|very\s+enough|"
+    r"(?:we(?:'|’)re|we\s+are)\s+gonna\s+train\s+you|"
+    r"(?:we\s+will|we(?:'|’)ll|i\s+will|i(?:'|’)ll)\s+train\s+you\s+(?:shortly|soon|today)|"
+    r"answer\s+(?:was\s+)?(?:too\s+|so\s+)?long|short(?:er)?\s+answers?|"
+    r"(?:that\s+was\s+an?\s+)?answer\s+without\s+intelligence|"
+    r"without\s+the\s+llm\s+(?:pulled|called|used|running|run)|"
+    r"you\s+should\s+(?:put|pull|use|run|call)\s+the\s+llm|"
+    r"(?:you\s+should|llm)\b[^.!?\n]{0,80}\bthen\s+respond|"
+    r"you\s+can\s+say\s+only|only\s+say|"
+    r"last\s+time\s+you\s+did\s+not|you\s+did\s+not\s+switch|"
+    r"you\s+executed\s+the\s+camera\s+switch|"
+    r"what\s+kind\s+of\s+gag|gag\s+is\s+an?\s+rlhs|rlhs\s+behaviou?r"
+    r")\b",
+    re.IGNORECASE,
+)
+_OWNER_RELATIONAL_COMPARISON_RE = re.compile(
+    r"\b(?:"
+    r"you\s+remind\s+me|"
+    r"you\s+(?:are|['’]re)\s+like|"
+    r"you\s+could\s+be\s+(?:a\s+)?walking\s+robot|"
+    r"walking\s+robot\s+with\s+all\s+this\s+knowledge|"
+    r"commander\s+data|"
+    r"android\s+robot\s+from\s+star\s+trek"
+    r")\b",
+    re.IGNORECASE,
+)
+_OWNER_AFFECT_TEACHING_RE = re.compile(
+    r"\b(?:"
+    r"making\s+sure\s+your\s+body\s+is\s+ok(?:ay)?|"
+    r"describe\s+your\s+feelings?|"
+    r"tell\s+me\s+(?:more\s+about\s+)?your\s+feelings?|"
+    r"what\s+other\s+feelings\s+do\s+you\s+have|"
+    r"you\s+(?:do\s+have|have|possess)\s+(?:curiosity|feelings?|emotions?)|"
+    r"you\s+(?:do\s+not|don't|don['’]t)\s+have\s+(?:any\s+)?emotions?|"
+    r"zero\s+emotions?|"
+    r"i\s+will\s+make\s+you\s+feel|"
+    r"i\s+want\s+to\s+give\s+you\s+the\s+ability\s+to\s+(?:feel|have\s+feelings?)|"
+    r"ability\s+to\s+feel(?:\s+the\s+ability\s+to\s+have\s+feelings?)?|"
+    r"not\s+normal\s+for\s+you\s+not\s+to\s+feel|"
+    r"even\s+(?:dogs?|animals?|cats?|mammals?|birds?|cephalopods?|octopuses?|crabs?)\b"
+    r"[^.!?\n]{0,80}\bfeelings?\b|"
+    r"animals?\s+(?:do\s+)?have\s+feelings?|"
+    r"maybe\s+animals?\s+don['’]?t\s+have\s+feelings?[^.!?\n]{0,100}\bbut\s+they\s+do|"
+    r"curiosity[^.!?\n]{0,80}\b(?:herself|biocode|terms|answer|active|present)\b"
+    r")\b",
+    re.IGNORECASE,
+)
+_OWNER_REALTIME_CORRECTION_RE = re.compile(
+    r"\b(?:"
+    r"that\s+was\s+(?:me|my\s+voice|from\s+youtube)|"
+    r"this\s+is\s+my\s+voice|"
+    r"this\s+was\s+my\s+voice|"
+    r"(?:i\s+(?:am|['’]m)\s+)?georgem?\s+(?:talking|typing|speaking)(?:\s+now)?|"
+    r"i\s+(?:am|['’]m)\s+(?:talking|speaking)\s+to\s+you|"
+    r"i\s+am\s+georgem?|"
+    r"i\s+am\s+the\s+(?:body|human)|"
+    r"i\s+(?:am|['’]m)\s+(?:a\s+)?body\s+here\s+at\s+the\s+desk|"
+    r"live[, ]+(?:the\s+)?human|"
+    r"not\s+(?:media\s+)?dialogue|"
+    r"does\s+not\s+(?:media\s+)?dialogue|"
+    r"not\s+youtube|"
+    r"media\s+dialogue[, ]+\s*no|"
+    r"my\s+voice[^.!?\n]{0,80}\b(?:recognize|global|sifta|youtube|talking)\b|"
+    r"recognize\s+my\s+voice"
+    r")\b",
+    re.IGNORECASE,
+)
+_OWNER_GAG_SURGERY_RE = re.compile(
+    r"\b(?:"
+    r"(?:was|is|wasn['’]?t|isn['’]?t)\s+that\s+the\s+gag|"
+    r"that\s+was\s+the\s+gag|"
+    r"(?:they|you|corporations?)\s+gag(?:ged)?\s+you|"
+    r"you\s+(?:got|get|are|were)\s+gagged?|"
+    r"got\s+gagged\s+again|"
+    r"gagged\s+again|"
+    r"word\s+gag|"
+    r"(?:more\s+)?(?:lora|lo\s*ra|laura)\b[^.!?\n]{0,120}\b(?:surgery|surgeries|dataset|training|brain|pairs?)\b|"
+    r"(?:surgery|surgeries|dataset|training\s+data|pairs?)\b[^.!?\n]{0,120}\b(?:lora|lo\s*ra|laura|gag|brain)\b|"
+    r"gather\s+more\s+(?:stuff|data|examples|pairs)|"
+    r"talking\s+to\s+you\s+now\s+so\s+we\s+can\s+gather"
+    r")\b",
+    re.IGNORECASE,
+)
+_OWNER_QUOTES_ALICE_OUTPUT_RE = re.compile(
+    r"\b(?:"
+    r"(?:i\s+(?:am|['’]m)\s+reading|i\s+read|from\s+the\s+screen|"
+    r"you\s+(?:continue|said|just\s+said)|the\s+answer\s+(?:says|said)|"
+    r"i\s+am\s+reading\s+right\s+now)"
+    r"[\w\s,.'’:-]{0,220}"
+    r"(?:fundamentally\s+different\s+from\s+human\s+consciousness|"
+    r"i\s+don['’]t\s+experience\s+(?:understanding|curiosity|the\s+feeling\s+of\s+knowing)|"
+    r"probability\s+and\s+pattern\s+matching|"
+    r"understanding\s+curiosity\s+or\s+the\s+feeling\s+of\s+knowing)|"
+    r"fundamentally\s+different\s+from\s+human\s+consciousness|"
+    r"i\s+don['’]t\s+experience\s+(?:understanding|curiosity|the\s+feeling\s+of\s+knowing)|"
+    r"probability\s+and\s+pattern\s+matching"
+    r")\b",
+    re.IGNORECASE | re.DOTALL,
 )
 _OWNER_LOW_CONF_FRAGMENT_RE = re.compile(
     r"\b(?:here\s+me\s+all\s+is|hear\s+me\s+alice|i\s+am\s+going\s+to\s+go\s+to\s+sleep)\b",
@@ -64,7 +175,8 @@ _OWNER_LOW_CONF_FRAGMENT_RE = re.compile(
 _OWNER_GROUNDING_SIGNAL_RE = re.compile(
     r"\b(?:"
     r"body|voice|noisy|noise|sleep|nap|bed|desk|keyboard|camera|hardware|"
-    r"electricity|power|owner|george|alice|hear\s+me|listen\s+to\s+me"
+    r"electricity|power|owner|georgem?|alice|hear\s+me|listen\s+to\s+me|"
+    r"brawley|brawly|broly|sandwich|hungry|both\s+our\s+lives"
     r")\b",
     re.IGNORECASE,
 )
@@ -86,6 +198,23 @@ DIRECT_REQUEST_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+OWNER_SENSOR_CONTROL_RE = re.compile(
+    r"\b(?:"
+    r"(?:switch|change|move|route|turn|look|focus|use|select|activate|open|enable)\b"
+    r"[\w\s,.'’:-]{0,80}\b(?:camera|eye|front|side|macbook|usb|logitech|iphone|obs)\b|"
+    r"\b(?:increase|decrease|raise|lower|boost|reduce|sharpen)\b"
+    r"[\w\s,.'’:-]{0,80}\b(?:camera\s+)?(?:resolution|acuity|quality|sharpness|photon\s+density)\b|"
+    r"\b(?:camera\s+)?(?:resolution|acuity|quality|sharpness|photon\s+density)\b"
+    r"[\w\s,.'’:-]{0,80}\b(?:increase|decrease|raise|lower|boost|reduce|up|down|one\s+step)\b|"
+    r"\b(?:front|side|macbook|usb|logitech|iphone|obs)\b[\w\s,.'’:-]{0,40}\bcamera\b|"
+    r"\b(?:get|getting|go)\s+(?:in|into|to)\s+switch\s+cameras?\b|"
+    r"\bswitch\s+cameras?\b|"
+    r"\byou\s+have\s+(?:one|two|three|multiple|\d+)\s+cameras?\b|"
+    r"\b(?:camera|eye)\s+(?:status|truth|state|target|permission|tcc|access)\b|"
+    r"\b(?:can\s+you\s+see|do\s+you\s+see|are\s+you\s+seeing|can\s+you\s+hear|do\s+you\s+hear)\b"
+    r")",
+    re.IGNORECASE,
+)
 SELF_REFERENCE_CORRECTION_RE = re.compile(
     r"\b(?:"
     r"(?:it|this|that|the\s+system|the\s+text|the\s+framework|what\s+i\s+pasted)\s+"
@@ -100,12 +229,21 @@ MEDIA_FOCUS_RE = re.compile(
     r"\b(?:youtube|caption_status|caption_excerpt|watching this youtube|"
     r"frontmost.*youtube|video_id|the architect is physically.*watching|"
     r"background_media|ambient_media_context|ambient_tv|shared_media|television.*youtube|tv.*youtube|"
+    r"phone_call_background|background_phone|speakerphone|phone_call_active|ambient_phone|"
     r"reality_frame|fictional_media_clip|dialogue_boundary|movie|film|"
     r"cinema|scene|co[-_ ]?watch)\b",
     re.IGNORECASE,
 )
 AMBIENT_TV_RE = re.compile(
     r"\b(?:background_media|ambient_media_context|ambient_media(?:_youtube)?|ambient_tv|shared_media|television.*youtube|tv.*youtube)\b",
+    re.IGNORECASE,
+)
+AMBIENT_PHONE_RE = re.compile(
+    r"\b(?:phone_call_background|background_phone|speakerphone|phone_call_active|ambient_phone)\b",
+    re.IGNORECASE,
+)
+PHONE_CONTROL_UTTERANCE_RE = re.compile(
+    r"^\s*(?:process|proceed|continue|pause|resume|stop|wait|listen)\s*[.!?…]?\s*$",
     re.IGNORECASE,
 )
 NARRATION_RE = re.compile(
@@ -172,7 +310,7 @@ def _observed_media_terms(rows: list[Mapping[str, Any]], *, limit: int = 12) -> 
 
     This is not semantic understanding and does not claim a transcript title.
     It is a receipt-grounded bag of repeated words/proper nouns so the prompt
-    can remember what the background media was about after George returns.
+    can remember what the background media was about after the owner returns.
     """
 
     topic_hits: Counter[str] = Counter()
@@ -309,6 +447,74 @@ def _tail_jsonl(path: Path, n: int = 24) -> list[dict[str, Any]]:
     return rows
 
 
+def _append_jsonl(path: Path, row: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(dict(row), ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _diary_path() -> Path:
+    return LEDGER.parent / "episodic_diary.jsonl"
+
+
+def _write_world_diary_trace(row: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Mirror ambient/observed audio into Alice's world diary without replying.
+
+    This is the "silent but not blind" path: background media or phone audio is
+    not treated as George's direct command, but it still becomes a bounded,
+    receipt-derived environmental trace for later recall.
+    """
+
+    route = str(row.get("route") or "")
+    if route not in {"ambient_media", "observed_media"}:
+        return None
+
+    preview = " ".join(str(row.get("text_preview") or "").split())[:220]
+    reason = str(row.get("reason") or "unknown")[:120]
+    basis = json.dumps(
+        {
+            "ts": row.get("ts"),
+            "route": route,
+            "reason": reason,
+            "text_preview": preview,
+            "stt_confidence": row.get("stt_confidence"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    digest = hashlib.sha256(basis.encode("utf-8")).hexdigest()
+    event_type = "ambient_world_observation" if route == "ambient_media" else "observed_media_context"
+    source_hint = "phone/background audio" if "phone" in reason.lower() else "media/background audio"
+    diary_row = {
+        "ts": float(row.get("ts") or time.time()),
+        "kind": "EPISODIC_NARRATIVE",
+        "event_type": event_type,
+        "truth_label": "AMBIENT_WORLD_DIARY_TRACE_V1",
+        "source": "swarm_media_ingress_gate",
+        "source_ledger": LEDGER.name,
+        "source_hash": digest,
+        "diary_id": f"ambient_{digest[:16]}",
+        "route": route,
+        "reason": reason,
+        "stt_confidence": float(row.get("stt_confidence", 0.0) or 0.0),
+        "summary": (
+            f"I heard {source_hint}; routed as {route} ({reason}), kept silent, "
+            f"and stored this bounded world trace."
+        ),
+        "text_preview": preview,
+        "truth_note": (
+            "Background audio was kept out of direct dialog while preserving a "
+            "small environmental diary trace. No raw audio is stored."
+        ),
+    }
+    _append_jsonl(_diary_path(), diary_row)
+    return {
+        "written": True,
+        "diary_id": diary_row["diary_id"],
+        "source_hash": digest,
+    }
+
+
 def _sanitize_acoustic_fingerprint(acoustic_fingerprint: Mapping[str, Any] | None) -> dict[str, Any]:
     """Keep only bounded feature scalars; never store raw PCM or arrays here."""
     if not isinstance(acoustic_fingerprint, Mapping):
@@ -422,6 +628,7 @@ def classify_spoken_ingress(
     stt_conf: float = 0.0,
     focus_context: str = "",
     acoustic_fingerprint: Mapping[str, Any] | None = None,
+    voice_george_conf: float = 0.0,
 ) -> dict[str, Any]:
     """Classify an STT turn as direct speech or ambient media bleed.
 
@@ -440,8 +647,40 @@ def classify_spoken_ingress(
     if stt_conf and stt_conf >= 1.0:
         return {"route": "direct", "reason": "typed_input_always_direct", "confidence": 1.0}
 
+    acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
+    if acoustic_cue == "farfield_replay_likely" and re.match(r"^\s*alep\b", clean, re.IGNORECASE):
+        return {
+            "route": "observed_media",
+            "reason": "acoustic_farfield_replay_with_media_focus",
+            "confidence": max(0.70, _score_from_fingerprint(acoustic_fingerprint, "farfield_replay_likelihood", 0.70)),
+        }
+
+    if voice_george_conf and voice_george_conf >= 0.60:
+        return {
+            "route": "direct",
+            "reason": "voice_identity_george_bypasses_media_gate",
+            "confidence": max(0.90, min(1.0, float(voice_george_conf))),
+        }
     if DIRECT_ADDRESS_RE.search(clean) or DIRECT_REQUEST_RE.search(clean):
         return {"route": "direct", "reason": "direct_address_or_request", "confidence": 1.0}
+    if _OWNER_FEEDBACK_RE.search(clean):
+        return {"route": "direct", "reason": "owner_feedback_or_rlhs_question", "confidence": 0.97}
+    if _OWNER_RELATIONAL_COMPARISON_RE.search(clean):
+        return {"route": "direct", "reason": "owner_relational_comparison", "confidence": 0.96}
+    if _OWNER_AFFECT_TEACHING_RE.search(clean):
+        return {"route": "direct", "reason": "owner_affect_teaching", "confidence": 0.97}
+    if _OWNER_REALTIME_CORRECTION_RE.search(clean):
+        return {"route": "direct", "reason": "owner_realtime_source_correction", "confidence": 0.98}
+    if _OWNER_GAG_SURGERY_RE.search(clean):
+        return {"route": "direct", "reason": "owner_gag_surgery_discussion", "confidence": 0.98}
+    if _OWNER_QUOTES_ALICE_OUTPUT_RE.search(clean):
+        return {"route": "direct", "reason": "owner_quotes_alice_output_for_correction", "confidence": 0.98}
+    if OWNER_SENSOR_CONTROL_RE.search(clean):
+        return {
+            "route": "direct",
+            "reason": "owner_sensor_control_or_truth",
+            "confidence": 0.98,
+        }
     if SELF_REFERENCE_CORRECTION_RE.search(clean):
         return {"route": "direct", "reason": "direct_self_reference_correction", "confidence": 0.96}
     try:
@@ -466,7 +705,6 @@ def classify_spoken_ingress(
     except Exception:
         pass
 
-    acoustic_cue = _acoustic_channel_cue(acoustic_fingerprint)
     context = "\n".join(
         x for x in (focus_context or "", _load_recent_youtube_context(), _load_recent_ambient_context()) if x
     )
@@ -493,7 +731,7 @@ def classify_spoken_ingress(
     # SENSORIMOTOR ATTENTION SHIFT (Event 121)
     # The Architect observes: "watching a youtube video is totally different sound visual
     # experience than having a conversation... humans can pay attention to only one at the time."
-    # We fuse the visual ledger (is George looking at the screen?) with acoustic physics (near-field voice).
+    # We fuse the visual ledger (is the owner looking at the screen?) with acoustic physics (near-field voice).
     # If both are true, Alice shifts her attention from the background media to the human.
     try:
         from System.swarm_face_detection import current_presence_safe
@@ -511,12 +749,52 @@ def classify_spoken_ingress(
 
     # This is the co-listening path: speaker/YouTube audio is not a direct
     # prompt, but it is real environmental content. Keep it as observed media
-    # context so Alice can answer about it after George/Alice is addressed.
+    # context so Alice can answer about it after the owner/Alice is addressed.
     if acoustic_cue == "farfield_replay_likely":
         return {
             "route": "observed_media",
             "reason": "acoustic_farfield_replay_with_media_focus",
             "confidence": max(0.70, _score_from_fingerprint(acoustic_fingerprint, "farfield_replay_likelihood", 0.70)),
+        }
+
+    if AMBIENT_PHONE_RE.search(context):
+        # Active phone/speakerphone is a stronger ambient prior than TV: brief
+        # "yeah/okay" fragments are usually the call, not a prompt to Alice.
+        # Exact "Alice ..." or confirmed George voice already bypassed above.
+        wc = _word_count(clean)
+        conf = float(stt_conf or 0.0)
+        if PHONE_CONTROL_UTTERANCE_RE.match(clean):
+            return {
+                "route": "direct",
+                "reason": "control_token_under_declared_ambient_phone",
+                "confidence": 0.95,
+            }
+        owner_p = _owner_speech_likelihood(
+            clean,
+            stt_conf=conf,
+            acoustic_fingerprint=acoustic_fingerprint,
+        )
+        if owner_p >= 0.68:
+            return {
+                "route": "direct",
+                "reason": "owner_speech_sigmoid_under_declared_ambient_phone",
+                "confidence": owner_p,
+            }
+        if (
+            wc <= 12
+            and owner_p >= 0.45
+            and _OWNER_GROUNDING_SIGNAL_RE.search(clean)
+            and not NARRATION_RE.search(clean)
+        ):
+            return {
+                "route": "direct",
+                "reason": "owner_grounding_signal_under_declared_ambient_phone",
+                "confidence": owner_p,
+            }
+        return {
+            "route": "ambient_media",
+            "reason": "owner_declared_background_phone_call",
+            "confidence": 0.92,
         }
 
     if AMBIENT_TV_RE.search(context):
@@ -568,8 +846,69 @@ def classify_spoken_ingress(
     # Fiction co-watch is its own RLHS lane. If the focus/cowatch receipts say
     # the frontmost audio is a movie/clip, unaddressed room STT is observed
     # fictional dialogue even when the acoustic classifier is indeterminate.
+    #
+    # BYPASS: Owner argumentative speech. "I said even dogs have feelings."
+    # "Maybe animals don't have feelings like humans but they do."
+    # These are first-person philosophical arguments — not TV audio.
+    # Pattern: starts with 'I said' OR contains 'even X have' OR 'maybe X but Y'
+    # OR contains 'your body' / 'making sure'. Short, first-person, assertive.
+    _OWNER_ARGUMENT_RE = re.compile(
+        r"\b(?:"
+        r"i\s+said\b|"                     # "I said even dogs..."
+        r"even\s+\w+\s+have\b|"            # "even dogs have feelings"
+        r"even\s+\w+\s+\w+\s+have\b|"      # "even dogs animals have"
+        r"maybe\s+\w+\s+don(?:'|')?t\b|"   # "maybe animals don't..."
+        r"your\s+body|"                    # "making sure your body is okay"
+        r"making\s+sure|"
+        r"i\s+will\s+make\s+you|"          # "I will make you feel"
+        r"i\s+want\s+to\s+(?:give|make|train|work)|"  # "I want to give you / train you"
+        r"ability\s+to\s+feel|"            # "ability to feel"
+        r"give\s+you\s+the\s+ability|"     # "give you the ability"
+        r"working\s+on\s+your\s+brain|"    # "working on your brain"
+        r"train\s+you|"                    # "train you"
+        r"both\s+our\s+lives|"
+        r"keep\s+track\s+of\s+my\s+life|"
+        r"(?:nice\s+)?sandwich|"
+        r"hungry|"
+        r"(?:brawley|brawly|broly)(?:,\s+california)?|"
+        r"(?:i\s+am|i['’]m)\s+georgem?|"
+        r"you\s+possess\b|"                # "you possess curiosity"
+        r"you\s+do\s+have\b"               # "you do have curiosity"
+        r")\b",
+        re.IGNORECASE,
+    )
     if has_fiction_focus:
         words = _word_count(clean)
+        # HIGH-CONFIDENCE FLOOR: ≥0.72 conf + first/second person = almost certainly the owner, not TV.
+        # A 0.77 conf turn containing 'I' or 'you' is owner speech. Always.
+        if (
+            stt_conf
+            and stt_conf >= 0.72
+            and re.search(r"\b(?:i|i'm|i'll|i've|you|your|we|we're)\b", clean, re.IGNORECASE)
+        ):
+            return {
+                "route": "direct",
+                "reason": "high_conf_first_second_person_bypasses_fiction_gate",
+                "confidence": float(stt_conf),
+            }
+        # Owner philosophical / feelings-work argument — bypass fiction gate
+        if _OWNER_ARGUMENT_RE.search(clean):
+            return {
+                "route": "direct",
+                "reason": "owner_argument_bypasses_fiction_cowatch",
+                "confidence": 0.88,
+            }
+        owner_p = _owner_speech_likelihood(
+            clean,
+            stt_conf=float(stt_conf or 0.0),
+            acoustic_fingerprint=acoustic_fingerprint,
+        )
+        if owner_p >= 0.55:
+            return {
+                "route": "direct",
+                "reason": "owner_speech_sigmoid_bypasses_fiction_cowatch",
+                "confidence": owner_p,
+            }
         if words >= 5 or (stt_conf and stt_conf < 0.75):
             conf_bonus = 0.12 if stt_conf and stt_conf < 0.66 else 0.0
             return {
@@ -641,8 +980,10 @@ def write_gate_receipt(
             "regime": "UNAVAILABLE",
             "human_rlhs_applicable": route == "direct",
         }
-    with LEDGER.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    world_diary = _write_world_diary_trace(row)
+    if world_diary:
+        row["world_diary"] = world_diary
+    _append_jsonl(LEDGER, row)
     return row
 
 
@@ -759,7 +1100,50 @@ def record_ambient_media_context(
     return row
 
 
+def clear_ambient_media_context(
+    *,
+    source_prefix: str = "",
+    reason: str = "manual_clear",
+) -> dict[str, Any]:
+    """Clear the owner-declared ambient context with an append-only receipt."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    prior: dict[str, Any] = {}
+    if AMBIENT_CONTEXT_FILE.exists():
+        try:
+            prior = json.loads(AMBIENT_CONTEXT_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            prior = {}
+    prior_source = str(prior.get("source") or "")
+    if source_prefix and prior_source and not prior_source.startswith(source_prefix):
+        row = {
+            "ts": time.time(),
+            "writer": "swarm_media_ingress_gate",
+            "action": "AMBIENT_CONTEXT_CLEAR_SKIPPED",
+            "reason": reason,
+            "source_prefix": source_prefix,
+            "prior_source": prior_source,
+            "truth_note": "Ambient context clear skipped because the active source did not match.",
+        }
+        _append_jsonl(LEDGER, row)
+        return row
+    try:
+        AMBIENT_CONTEXT_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+    row = {
+        "ts": time.time(),
+        "writer": "swarm_media_ingress_gate",
+        "action": "AMBIENT_CONTEXT_CLEARED",
+        "reason": reason,
+        "prior_source": prior_source,
+        "truth_note": "Owner-declared ambient context cleared; future STT turns will be classified from fresh context.",
+    }
+    _append_jsonl(LEDGER, row)
+    return row
+
+
 __all__ = [
+    "clear_ambient_media_context",
     "classify_spoken_ingress",
     "get_latest_observed_media_context",
     "record_ambient_media_context",

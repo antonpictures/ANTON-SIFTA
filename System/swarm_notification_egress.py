@@ -2,7 +2,7 @@
 """
 System/swarm_notification_egress.py — Voluntary Somatosensory Speech
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Allows Alice to tap the Architect on the shoulder using native macOS 
 Notification Center without stealing focus or breaking flow.

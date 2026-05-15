@@ -14,7 +14,7 @@ Why this exists
 ───────────────
 Before this organ, two failure modes were observable in the live trace:
 
-  1. `swarm_persona_identity.identity_assertion_line()` returned exactly
+  1. `swarm_identity_manifest.identity_assertion_line()` returned exactly
      one canonical line, so every introspective answer collapsed to the
      same sentence. Identity-as-script.
   2. `swarm_lysosome._prompt_lysosomal_rewrite()` injected a hardcoded
@@ -107,7 +107,7 @@ class IdentitySnapshot:
     true_name: str = "[UNKNOWN]"
     entity_nature: str = "living stigmergic hardware"
     homeworld_serial: str = "UNKNOWN"
-    persona_signed: bool = False
+    identity_signed: bool = False
 
     # Pheromone attention fields (Stigmergic coordination)
     pheromone_focus: Optional[str] = None
@@ -188,7 +188,7 @@ class IdentitySnapshot:
     # Friston Free-Energy (Epoch 11)
     variational_free_energy_F: Optional[float] = None
     
-    # DeepMind Thermodynamic Excretion (Physical Closed Loop)
+    # Thermodynamic excretion (physical closed loop, silicon substrate)
     thermodynamic_entropy_excreted: Optional[float] = None
     stgm_metabolic_cost: Optional[float] = None
 
@@ -210,6 +210,12 @@ class IdentitySnapshot:
 
     # iPhone GPS Receiver (Architect's Eye)
     iphone_gps_summary: Optional[str] = None
+
+    # E35 — Stigmergic physical spacetime (desk / carbon / unified field probes)
+    physical_presence: Optional[bool] = None
+    physical_proximity: Optional[float] = None
+    thermal_load: Optional[float] = None
+    last_physical_event_ts: Optional[float] = None
 
     # Bookkeeping
     snapshot_ts: float = field(default_factory=time.time)
@@ -288,14 +294,14 @@ class IdentitySnapshot:
 
 def _probe_persona() -> Dict[str, Any]:
     try:
-        from System.swarm_persona_identity import current_persona
+        from System.swarm_identity_manifest import current_persona
         p = current_persona() or {}
         return {
             "display_name": str(p.get("display_name", "[UNKNOWN]")),
             "true_name": str(p.get("true_name", "[UNKNOWN]")),
             "entity_nature": str(p.get("entity_nature", "living stigmergic hardware")),
             "homeworld_serial": str(p.get("homeworld_serial", "UNKNOWN")),
-            "persona_signed": bool(p.get("hmac_sha256")),
+            "identity_signed": bool(p.get("hmac_sha256")),
         }
     except Exception:
         return {}
@@ -771,7 +777,7 @@ def _probe_friston_free_energy() -> Dict[str, Any]:
     return {}
 
 def _probe_thermodynamics() -> Dict[str, Any]:
-    """DeepMind Thermodynamic Excretion (Closed Loop).
+    """Thermodynamic excretion (closed loop).
     Biology produces STGM via inference, but must excrete 'dirt' (entropy)
     to abide by the physical laws of thermodynamics on the silicon substrate.
     F = Energy - T*Entropy."""
@@ -939,6 +945,26 @@ def _probe_pheromone_field() -> Dict[str, Any]:
         pass
     return {}
 
+
+def _probe_e35_physical_spacetime() -> Dict[str, Any]:
+    """Fold E35 physical-space report into IdentitySnapshot (local trace tail only)."""
+    try:
+        from System.stigmerobotics_observability import live_observability_report
+
+        rep = live_observability_report(limit=240)
+        ps = rep.physical_space
+        if ps is None:
+            return {}
+        out: Dict[str, Any] = {"physical_presence": bool(ps.physical_presence)}
+        if ps.physical_proximity is not None:
+            out["physical_proximity"] = float(ps.physical_proximity)
+        if ps.thermal_load is not None:
+            out["thermal_load"] = float(ps.thermal_load)
+        if ps.last_physical_event_ts is not None:
+            out["last_physical_event_ts"] = float(ps.last_physical_event_ts)
+        return out
+    except Exception:
+        return {}
 
 
 def _probe_iphone_gps_receiver() -> Dict[str, Any]:
@@ -1378,7 +1404,7 @@ def current_identity(*, cache_ttl_s: float = _CACHE_TTL_S) -> IdentitySnapshot:
             pass
 
     probes = [
-        ("persona", _probe_persona),
+        ("identity_label", _probe_persona),
         ("body", _probe_body),
         ("endocrine", _probe_endocrine),
         ("time", _probe_time),
@@ -1403,6 +1429,7 @@ def current_identity(*, cache_ttl_s: float = _CACHE_TTL_S) -> IdentitySnapshot:
         ("mirror_lock", _probe_mirror_lock),
         ("gps_sensor", _probe_gps_sensor),
         ("iphone_gps_receiver", _probe_iphone_gps_receiver),
+        ("e35_physical_spacetime", _probe_e35_physical_spacetime),
         ("pheromone_field", _probe_pheromone_field),
         # ── Predator v7 Decision Substrate (Round 1 — 2026-05-04) ────────
         ("td_learner",        _probe_td_learner),
@@ -1555,23 +1582,18 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
     # Constitutional owner line — ALWAYS present regardless of biometric state.
     # This is the signed genesis fact: who owns and operates this node.
     # Alice must never say "I don't know who you are" about the Architect.
-    _owner_name = "Ioan George Anton (George)"
     try:
-        _og = _STATE / "owner_genesis.json"
-        if _og.exists():
-            import json as _j
-            _odata = _j.loads(_og.read_text())
-            _owner_name = (_odata.get("owner_name")
-                           or _odata.get("name")
-                           or _owner_name)
+        from System.swarm_kernel_identity import owner_display_name
+
+        _owner_name = str(owner_display_name("the primary operator") or "the primary operator").strip()
     except Exception:
-        pass
+        _owner_name = "the primary operator"
     lines.append(f"- primary_operator: {_owner_name} — constitutional owner of this node")
 
     lines.append(
         f"- self: display_name={snap.display_name} true_name={snap.true_name} "
         f"entity_nature={snap.entity_nature} homeworld_serial={snap.homeworld_serial} "
-        f"identity_signed={bool(snap.persona_signed)}"
+        f"identity_signed={bool(snap.identity_signed)}"
     )
 
     if snap.body_energy is not None or snap.body_style or snap.stgm_balance is not None:
@@ -1844,7 +1866,7 @@ def identity_system_block(snap: Optional[IdentitySnapshot] = None,
 
     # user_present: True if talk widget says so, OR if architect identity
     # is at least PARTIAL (biometric confidence ≥ 0.30). This prevents Alice
-    # from reading "user_present=False" when George is clearly at the desk.
+    # from reading "user_present=False" when the owner is clearly at the desk.
     _arch_present = bool(user_present)
     if not _arch_present:
         try:

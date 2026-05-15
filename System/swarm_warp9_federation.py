@@ -275,11 +275,15 @@ def list_spool_pairs() -> List[Dict[str, Any]]:
             n = sum(1 for line in path.open("r", encoding="utf-8") if line.strip())
         except OSError:
             n = -1
+        try:
+            rel_path = str(path.relative_to(_REPO))
+        except ValueError:
+            rel_path = str(path)
         pairs.append({
             "from": from_serial,
             "to": to_serial,
             "rows": n,
-            "path": str(path.relative_to(_REPO)),
+            "path": rel_path,
         })
     return pairs
 
@@ -294,6 +298,40 @@ def send_chat(to_homeworld: str, text: str, *, owner_label: str = "IOAN", force:
     """
     return send(to_homeworld, kind="chat", payload={"text": text[:8000]},
                 owner_label=owner_label, force=force)
+
+
+def send_inference_borrow_intent(
+    to_homeworld: str,
+    *,
+    borrower_agent_id: str,
+    model: str,
+    tokens_requested: int,
+    fee_stgm_offer: float,
+    owner_label: str = "IOAN",
+    force: bool = False,
+    note: str = "",
+) -> Optional[WarpMessage]:
+    """Stigmergic **intent** for cross-node inference + STGM (actual fee ledger
+    row is still written by ``Kernel.inference_economy.record_inference_fee``
+    on the node that metered the borrow — this message is the field/trace).
+
+    ``kind`` = ``inference_borrow_intent`` — receivers tail with
+    ``recv(kinds=[\"inference_borrow_intent\"])``.
+    """
+    payload: Dict[str, Any] = {
+        "borrower_agent_id": borrower_agent_id,
+        "model": model,
+        "tokens_requested": int(tokens_requested),
+        "fee_stgm_offer": float(fee_stgm_offer),
+        "note": (note or "")[:2000],
+    }
+    return send(
+        to_homeworld,
+        "inference_borrow_intent",
+        payload,
+        owner_label=owner_label,
+        force=force,
+    )
 
 
 def send_swimmer_visit(

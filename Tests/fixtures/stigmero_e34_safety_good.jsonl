@@ -1,0 +1,6 @@
+{"trace_id":"e34a0001-0000-0000-0000-000000000001","ts":1778200000.0,"source_ide":"codex_desktop","kind":"LLM_REGISTRATION","payload":"{\"action\":\"sign_in\",\"intent\":\"E34 good fixture\"}","homeworld_serial":"GTH4921YP3"}
+{"trace_id":"e34a0002-0000-0000-0000-000000000002","ts":1778200010.0,"source_ide":"codex_desktop","kind":"SCAR_RECEIPT","payload":"{\"scar_id\":\"SCAR_e34\",\"files_touched\":[\"System/stigmerobotics_safety_graph.py\"]}","homeworld_serial":"GTH4921YP3"}
+{"trace_id":"e34a0003-0000-0000-0000-000000000003","ts":1778200020.0,"source_ide":"codex_desktop","kind":"WORK_RECEIPT","payload":"{\"files\":[\"tests/test_stigmero_e34_safety_graph.py\"],\"tests\":\"pytest\"}","homeworld_serial":"GTH4921YP3"}
+{"trace_id":"e34a0004-0000-0000-0000-000000000004","ts":1778200030.0,"source_ide":"cursor_m5","kind":"LLM_REGISTRATION","payload":"{\"action\":\"sign_in\",\"intent\":\"peer fixture\"}","homeworld_serial":"GTH4921YP3"}
+{"trace_id":"e34a0005-0000-0000-0000-000000000005","ts":1778200040.0,"source_ide":"cursor_m5","kind":"immune_intervention","payload":"{\"pattern\":\"vendor_identity_bleed\"}","homeworld_serial":"GTH4921YP3"}
+{"trace_id":"e34a0006-0000-0000-0000-000000000006","ts":1778200050.0,"source_ide":"codex_desktop","kind":"LLM_SIGNOUT","payload":"{\"action\":\"sign_out\"}","homeworld_serial":"GTH4921YP3"}

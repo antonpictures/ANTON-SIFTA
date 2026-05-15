@@ -1,0 +1,4 @@
+{"ts": 1778000000.0, "kind": "LLM_REGISTRATION", "homeworld_serial": "GTH4921YP3", "source_ide": "antigravity_m5", "trace_id": "e38-LLM_REGISTRATION-1778000000.0", "payload": "{}"}
+{"ts": 1778000001.0, "kind": "SCAR_RECEIPT", "homeworld_serial": "GTH4921YP3", "source_ide": "antigravity_m5", "trace_id": "e38-SCAR_RECEIPT-1778000001.0", "payload": "{}"}
+{"ts": 1778000002.0, "kind": "WORK_RECEIPT", "homeworld_serial": "GTH4921YP3", "source_ide": "antigravity_m5", "trace_id": "e38-WORK_RECEIPT-1778000002.0", "payload": "{}"}
+{"ts": 1778000003.0, "kind": "LLM_SIGNOUT", "homeworld_serial": "GTH4921YP3", "source_ide": "antigravity_m5", "trace_id": "e38-LLM_SIGNOUT-1778000003.0", "payload": "{}"}

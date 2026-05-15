@@ -65,7 +65,7 @@ class SwarmStigmergicLanguage:
         is_peace = any(word in text_lower for word in ["peace", "good", "help", "love", "collaborate", "save", "correct", "right"])
         is_drive = any(word in text_lower for word in ["build", "faster", "go", "sprint", "execute", "now", "yes", "run"])
         
-        # DeepMind Frontier Lexicon
+        # Frontier / multimodal lexicon (epiphany lane)
         is_epiphany = any(word in text_lower for word in ["frontier", "gemini", "embedding", "omnimodal", "weather", "graphcast", "genie", "gencast", "world model"])
         is_structure = any(word in text_lower for word in ["network", "architecture", "graph", "probabilistic", "memory"])
         
@@ -158,7 +158,7 @@ class SwarmStigmergicLanguage:
             stgm_payload = {
                 "ts": now,
                 "app": "StigmergicLanguage_Epiphany",
-                "reason": f"DeepMind insight extracted from {speaker_id}",
+                "reason": f"Stigmergic insight extracted from {speaker_id}",
                 "amount": 5.0,
                 "trace_id": trace_id
             }
@@ -287,8 +287,8 @@ def _smoke():
             lines = [ln for ln in f if ln.strip()]
             reward = json.loads(lines[-1])
             assert reward["amount"] == 5.0
-            assert "DeepMind insight" in reward["reason"]
-        print("[PASS] DeepMind 'World Model' linguistics successfully generated +5 STGM reward.")
+            assert "Stigmergic insight" in reward["reason"]
+        print("[PASS] Frontier 'World Model' linguistics successfully generated +5 STGM reward.")
         
         translation_two = lang.translate_stigmergy_to_english()
         assert "experiencing waves of dopaminergic insight" in translation_two

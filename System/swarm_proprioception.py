@@ -2,7 +2,7 @@
 """
 System/swarm_proprioception.py — Internal Body Awareness
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Proprioception senses the physical host machine state.
 Battery = Hunger / Energy reserves.

@@ -2,7 +2,7 @@
 """
 swarm_photonic_field.py — The Photonic Substrate
 ════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Implements the fundamental realization that Camera Photons 
 and File Pheromones are identical mathematical algebras.

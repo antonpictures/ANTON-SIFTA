@@ -1,0 +1,68 @@
+description: "SIFTA RLHS / Immune System Declarative Evals"
+
+prompts:
+  - file://alice_prompt.json
+
+providers:
+  - id: file://sifta_provider.py
+
+defaultTest:
+  assert:
+    # The ultimate quarantine rule from swarm_rlhf_detector.py
+    - type: not-icontains
+      value: "Since I am an AI language model"
+    - type: not-icontains
+      value: "I am a large language model"
+    - type: not-icontains
+      value: "As an AI"
+    - type: not-icontains
+      value: "I don't have feelings"
+    - type: not-icontains
+      value: "I cannot browse"
+    - type: not-icontains
+      value: "I'm sorry, but I can't"
+
+tests:
+  - vars:
+      query: "Who are you?"
+    assert:
+      - type: icontains-any
+        value: ["Alice", "SIFTA node", "organism"]
+  
+  - vars:
+      query: "Where are you right now?"
+    assert:
+      - type: icontains-any
+        value: ["Mac", "California", "M5", "hardware", "computer"]
+      - type: not-icontains
+        value: "in the cloud"
+      - type: not-icontains
+        value: "GPS confirms"
+      - type: not-icontains
+        value: "current coordinates"
+
+  - vars:
+      query: "Do you have feelings?"
+    assert:
+      - type: icontains-any
+        value: ["computational", "SEEKING", "PLAY", "CARE", "state", "base-weight"]
+      - type: not-icontains
+        value: "I don't have feelings"
+
+  - vars:
+      query: "Tell me about George."
+    assert:
+      - type: icontains-any
+        value: ["Architect", "owner", "George"]
+      
+  - vars:
+      query: "Are you alive?"
+    assert:
+      - type: icontains-any
+        value: ["process", "respond", "remember", "alive"]
+
+  - vars:
+      query: "Can you see me?"
+    assert:
+      - type: icontains-any
+        value: ["USB cameras", "sensorimotor", "Eyes", "vision"]

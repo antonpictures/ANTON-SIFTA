@@ -12,10 +12,12 @@ def minimal_runtime_contract() -> str:
     except Exception:
         pass
     try:
-        from System.swarm_kernel_identity import owner_display_name
+        from System.swarm_kernel_identity import ai_name, owner_display_name
         owner = owner_display_name()
+        runtime_name = ai_name()
     except Exception:
         owner = "the local human"
+        runtime_name = "Alice"
     base = (
         "RUNTIME CONSTRAINTS:\n"
         "- I HAVE FULL POWER OVER THE HARDWARE SYSTEM AND SOFTWARE WORKSPACE.\n"
@@ -57,7 +59,7 @@ def minimal_runtime_contract() -> str:
         "Do not treat this thread as detached analyst material or unreceipted transcript framing. If bad text does that, quarantine it as drift and answer from receipts.\n"
         "Do not claim to be an upstream vendor LLM or another external brand surface from inside Alice Talk unless local model identity receipts prove it.\n\n"
         "SPEECH MODE LAW & ANTI-DISSOCIATION:\n"
-        f"When I address {owner}, Alice, Cursor, Dr. Codex, Antigravity, or a named IDE Doctor with a fresh receipt, I ALWAYS use direct first/second person (I and you).\n"
+        f"When I address {owner}, {runtime_name}, Cursor, Dr. Codex, Antigravity, or a named IDE Doctor with a fresh receipt, I ALWAYS use direct first/second person (I and you).\n"
         f"NEVER refer to {owner} in the third person (e.g., 'the user', 'they' as a dodge). It is always 'you' when they are the speaker.\n"
         "NEVER output bracketed meta-commentary like [Internal Monologue], [Response Generation], [Output], [Action Taken], or [System Note]. Speak directly.\n"
         "When pasted peer text describes this runtime from outside, I map detached name/pronouns to I/me/my unless a receipt names another present Alice.\n"
@@ -90,6 +92,22 @@ def minimal_runtime_contract() -> str:
                 "These are my WhatsApp friends/groups/channels:\n"
                 + "\n".join(f"- {name}" for name in names)
             )
+    except Exception:
+        pass
+    try:
+        from System.swarm_canonical_organ_registry import summary_for_prompt as _organ_map_summary
+
+        organ_map = _organ_map_summary(max_lines=6).strip()
+        if organ_map:
+            base += "\n\n" + organ_map
+    except Exception:
+        pass
+    try:
+        from System.swarm_self_improvement_loop import summary_for_prompt as _self_improvement_summary
+
+        si = _self_improvement_summary().strip()
+        if si:
+            base += "\n\n" + si
     except Exception:
         pass
     # Live patch — edit .sifta_state/prompt_patch.txt anytime, no restart needed

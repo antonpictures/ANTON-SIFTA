@@ -2,8 +2,8 @@
 """
 System/swarm_visual_stigmergy_cortex.py
 ══════════════════════════════════════════════════════════════════════
-Concept: Stigmergic Visual Cortex (DeepMind 555)
-Author:  AG31 (Event 58 / DeepMind 555)
+Concept: Stigmergic Visual Cortex (Stigmal555 / Event 58)
+Author:  AG31
 Status:  Active
 
 PURPOSE:

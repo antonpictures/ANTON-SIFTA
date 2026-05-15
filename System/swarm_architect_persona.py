@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-System/swarm_architect_persona.py — Study the Architect (George)
+System/swarm_owner_identity.py — Study the Architect (George)
 ═══════════════════════════════════════════════════════════════════════════════
 Concept : Honest, evidence-based personality fingerprint of the Architect,
           derived ENTIRELY from observable conversation history.
@@ -36,11 +36,11 @@ DESIGN:
   Persist as JSON. Surface a one-line summary for Alice's composite_identity.
 
 DEPENDENCIES:
-  Stdlib only. Optionally chains the persona snapshot via
+  Stdlib only. Optionally chains the identity snapshot via
   swarm_conversation_chain (sibling organ).
 
 STGM ECONOMY:
-  Studying is free (read-only). A persona snapshot publishes one
+  Studying is free (read-only). A identity snapshot publishes one
   attestation row to the conversation chain (charged by that organ).
 
 PROOF OF PROPERTY:
@@ -272,7 +272,7 @@ def _registers(texts: List[str]) -> Dict[str, float]:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 def study() -> Dict[str, Any]:
-    """Compute the persona snapshot, persist it, return it."""
+    """Compute the identity snapshot, persist it, return it."""
     turns = list(_iter_user_turns())
     texts = [(r.get("text") or "").strip() for r in turns if r.get("text")]
     texts = [t for t in texts if t]
@@ -284,7 +284,7 @@ def study() -> Dict[str, Any]:
     persona: Dict[str, Any] = {
         "ts_studied": time.time(),
         "iso_studied": datetime.now(timezone.utc).isoformat(),
-        "studied_by": "C47H::swarm_architect_persona.py",
+        "studied_by": "C47H::swarm_owner_identity.py",
 
         "identity": {
             "canonical_name_self_disclosed": canonical_name,
@@ -400,7 +400,7 @@ def proof_of_property() -> Dict[str, bool]:
     a = {k: v for k, v in p1.items() if k not in drop}
     b = {k: v for k, v in p2.items() if k not in drop}
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True), (
-        "[FAIL] Persona snapshot is not reproducible"
+        "[FAIL] Identity snapshot is not reproducible"
     )
     print("    Both snapshots match modulo timestamps.   [PASS]")
     results["reproducible"] = True
@@ -455,4 +455,4 @@ if __name__ == "__main__":
     elif cmd == "phrase":
         print(alice_phrase())
     else:
-        print("Usage: swarm_architect_persona.py [proof|study|phrase]")
+        print("Usage: swarm_owner_identity.py [proof|study|phrase]")

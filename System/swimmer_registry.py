@@ -5,36 +5,30 @@ System/swimmer_registry.py — Swimmer Registry & Health Monitor
 Central registry for all software swimmers in Alice's body.
 
 ╔══════════════════════════════════════════════════════════════╗
-║  [SANDBOX] CEREMONIAL — 2026-04-18                          ║
-║  Status  : Structurally sound. Currently no live consumers. ║
-║  Wiring  : .heartbeat()    — zero callers in repo           ║
-║            .health_check() — zero production callers        ║
-║            .cull_dead()    — zero callers anywhere          ║
-║  State   : 15 swimmers boot-stamped, all 10h+ past idle     ║
-║            threshold. status=ALIVE but unverified by any    ║
-║            runtime. Do NOT trust .status flags downstream   ║
-║            until a real heartbeat writer is wired.          ║
-║  Fix     : Wire .heartbeat() into swarm_autonomic_brainstem ║
-║            OR bump max_idle_s to reflect real cadence       ║
-║            OR keep this tag until a live consumer exists.   ║
+║  [LIVE] WIRED — 2026-05-11                                  ║
+║  Status  : Heartbeat wired into swarm_body_brain_loop.py    ║
+║            organ_heartbeat tick.                             ║
+║  Wiring  : .heartbeat()    — called each body-brain tick    ║
+║            .health_check() — called each body-brain tick    ║
+║            .heartbeat_all()— bulk-pulse all swimmers        ║
+║  State   : Each swimmer has a home_organ + organ awareness  ║
 ║  Owner   : SIFTA swarm — ratified by Architect 2026-04-18  ║
+║            Wiring by Cursor (Opus 4.6) — 2026-05-11         ║
 ╚══════════════════════════════════════════════════════════════╝
 
 A "swimmer" is any autonomous software agent/process that performs work
 on behalf of the Swarm OS. Each swimmer has:
   - swimmer_id:       unique identifier
   - role:             what it does (inference, memory, monitoring, etc.)
+  - home_organ:       which organ this swimmer lives inside
   - ollama_model:     which LLM it uses (from swimmer_ollama_assignments.json)
   - last_pheromone_ts: last time it signaled it was alive
   - max_idle_s:       max seconds of silence before the watchdog marks it dead
   - app_context:      which application hosts it
   - status:           ALIVE / DORMANT / DEAD
 
-This module satisfies the swarm_integrity_watchdog.py contract:
-  swimmer_registry.jsonl must contain JSONL lines with at minimum:
-    {"swimmer_id": "...", "last_pheromone_ts": <float>, "max_idle_s": <float>}
-
 Biology anchor:
+  - electricity → hardware → ASCII swimmers born → stigmergic jobs → form organs
   - Bonabeau, Dorigo & Theraulaz — Swarm Intelligence (OUP 1999) — agent registry
   - Reynolds — "Flocks, herds and schools" SIGGRAPH '87 — boid identity
   - CP2F DYOR §§1-3 (stigmergy + quorum + chemotaxis)
@@ -43,6 +37,11 @@ Architect policy (2026-04-18):
   Swimmers are SOFTWARE agents on DISK. Not nanobots. Not molecules.
   Each swimmer uses the canonical SIFTA inference default unless Alice assigns
   a per-swimmer override via swimmer_ollama_assignments.json.
+
+Architect directive (2026-05-11):
+  All organs unified. All swimmers know their organs. They communicate
+  to keep organs healthy and STGM profitable.
+  Decide → Execute → Receipt → Minimal grounded reply.
 ══════════════════════════════════════════════════════════════════════════════
 """
 from __future__ import annotations
@@ -63,8 +62,8 @@ _REGISTRY = _STATE / "swimmer_registry.jsonl"
 try:
     from System.sifta_inference_defaults import resolve_ollama_model, get_default_ollama_model
 except ImportError:
-    def resolve_ollama_model(**kw): return "sifta-gemma4-alice:latest"
-    def get_default_ollama_model(): return "sifta-gemma4-alice:latest"
+    def resolve_ollama_model(**kw): return "alice-m5-cortex-8b-6.3gb:latest"
+    def get_default_ollama_model(): return "alice-m5-cortex-8b-6.3gb:latest"
 
 
 class SwimmerStatus(str, Enum):
@@ -92,11 +91,16 @@ class Swimmer:
     role: SwimmerRole
     app_context: str
     ollama_model: str
+    home_organ: str = ""
     max_idle_s: float = 7200.0       # 2 hours default max silence
     last_pheromone_ts: float = field(default_factory=time.time)
     status: SwimmerStatus = SwimmerStatus.ALIVE
     registered_ts: float = field(default_factory=time.time)
     heartbeat_count: int = 0
+
+    @property
+    def knows_organ(self) -> bool:
+        return bool(self.home_organ)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -104,6 +108,7 @@ class Swimmer:
             "role": self.role.value,
             "app_context": self.app_context,
             "ollama_model": self.ollama_model,
+            "home_organ": self.home_organ,
             "max_idle_s": self.max_idle_s,
             "last_pheromone_ts": self.last_pheromone_ts,
             "status": self.status.value,
@@ -118,6 +123,7 @@ class Swimmer:
             role=SwimmerRole(d.get("role", "INFERENCE")),
             app_context=str(d.get("app_context", "unknown")),
             ollama_model=str(d.get("ollama_model", get_default_ollama_model())),
+            home_organ=str(d.get("home_organ", "")),
             max_idle_s=float(d.get("max_idle_s", 7200.0)),
             last_pheromone_ts=float(d.get("last_pheromone_ts", 0)),
             status=SwimmerStatus(d.get("status", "ALIVE")),
@@ -170,6 +176,7 @@ class SwimmerRegistry:
         role: SwimmerRole,
         app_context: str,
         ollama_model: Optional[str] = None,
+        home_organ: str = "",
         max_idle_s: float = 7200.0,
     ) -> Swimmer:
         """Register a new swimmer or update an existing one."""
@@ -182,6 +189,7 @@ class SwimmerRegistry:
             sw.role = role
             sw.app_context = app_context
             sw.ollama_model = model
+            sw.home_organ = home_organ or sw.home_organ
             sw.max_idle_s = max_idle_s
             sw.last_pheromone_ts = now
             sw.status = SwimmerStatus.ALIVE
@@ -192,6 +200,7 @@ class SwimmerRegistry:
                 role=role,
                 app_context=app_context,
                 ollama_model=model,
+                home_organ=home_organ,
                 max_idle_s=max_idle_s,
                 last_pheromone_ts=now,
                 registered_ts=now,
@@ -253,6 +262,49 @@ class SwimmerRegistry:
     def get(self, swimmer_id: str) -> Optional[Swimmer]:
         return self._swimmers.get(swimmer_id)
 
+    def heartbeat_all(self) -> int:
+        """Pulse all swimmers alive. Called by body-brain tick."""
+        now = time.time()
+        for sw in self._swimmers.values():
+            sw.last_pheromone_ts = now
+            sw.heartbeat_count += 1
+            sw.status = SwimmerStatus.ALIVE
+        self._persist()
+        return len(self._swimmers)
+
+    def for_organ(self, organ: str) -> List[Swimmer]:
+        """Return all swimmers assigned to a specific organ."""
+        return [sw for sw in self._swimmers.values() if sw.home_organ == organ]
+
+    def organ_summary(self) -> Dict[str, Dict[str, Any]]:
+        """Per-organ swimmer count and status for the organ ecology mesh."""
+        result: Dict[str, Dict[str, Any]] = {}
+        for sw in self._swimmers.values():
+            if not sw.home_organ:
+                continue
+            if sw.home_organ not in result:
+                result[sw.home_organ] = {"count": 0, "alive": 0, "ids": []}
+            result[sw.home_organ]["count"] += 1
+            result[sw.home_organ]["ids"].append(sw.swimmer_id)
+            if sw.status == SwimmerStatus.ALIVE:
+                result[sw.home_organ]["alive"] += 1
+        return result
+
+    def export_for_field(self) -> List[Dict[str, Any]]:
+        """Export swimmer data in the format organ_field_vector expects."""
+        return [
+            {
+                "swimmer_id": sw.swimmer_id,
+                "organ": sw.home_organ,
+                "index": idx,
+                "role": sw.role.value,
+                "status": sw.status.value,
+                "knows_organ": sw.knows_organ,
+            }
+            for idx, sw in enumerate(self._swimmers.values())
+            if sw.home_organ
+        ]
+
     @property
     def count(self) -> int:
         return len(self._swimmers)
@@ -262,31 +314,42 @@ def seed_default_swimmers() -> SwimmerRegistry:
     """
     Seed the registry with Alice's known organ swimmers.
     Called once to bootstrap — safe to re-call (updates existing).
+
+    Each swimmer is born into a home_organ. The swimmer knows its organ,
+    the organ knows its swimmers, and they communicate via the organ ecology
+    mesh to keep the organism healthy and STGM profitable.
+
+    Mapping: electricity → hardware → swimmers born → stigmergic jobs →
+             form organs → control LLM + hardware → protect the owner.
     """
     reg = SwimmerRegistry()
     default_model = get_default_ollama_model()
 
-    # Alice's core swimmers — mapped from real Application/System files
+    # (swimmer_id, role, app_context, model, max_idle_s, home_organ)
     swimmers = [
-        ("sw_swarm_chat",        SwimmerRole.INFERENCE, "swarm_chat",              default_model, 7200),
-        ("sw_writer_widget",     SwimmerRole.CREATIVE,  "writer_widget",           default_model, 7200),
-        ("sw_pheromone_symphony",SwimmerRole.CREATIVE,  "pheromone_symphony",      default_model, 7200),
-        ("sw_desktop_gui",       SwimmerRole.UI,        "desktop_gui",             default_model, 7200),
-        ("sw_cognitive_gci",     SwimmerRole.INFERENCE, "global_cognitive_interface", default_model, 7200),
-        ("sw_brainstem",         SwimmerRole.AUTONOMIC, "brainstem",               default_model, 3600),
-        ("sw_watchdog",          SwimmerRole.MONITORING,"watchdog",                default_model, 3600),
-        ("sw_immune_array",      SwimmerRole.MONITORING,"immune_array",            default_model, 3600),
-        ("sw_memory_bus",        SwimmerRole.MEMORY,    "stigmergic_memory_bus",   default_model, 7200),
-        ("sw_inference_router",  SwimmerRole.NETWORK,   "inference_router",        default_model, 7200),
-        ("sw_chat_relay",        SwimmerRole.NETWORK,   "swarm_chat_relay",        default_model, 7200),
-        ("sw_serotonin_gov",     SwimmerRole.AUTONOMIC, "serotonin_homeostasis",   default_model, 3600),
-        ("sw_dopamine_ou",       SwimmerRole.AUTONOMIC, "dopamine_ou_engine",      default_model, 3600),
-        ("sw_log_rotation",      SwimmerRole.MONITORING,"log_rotation",            default_model, 7200),
-        ("sw_broadcaster",       SwimmerRole.CREATIVE,  "broadcaster",             default_model, 7200),
+        ("sw_swarm_chat",         SwimmerRole.INFERENCE,  "swarm_chat",               default_model, 7200, "honeybee"),
+        ("sw_writer_widget",      SwimmerRole.CREATIVE,   "writer_widget",            default_model, 7200, "cuttlefish"),
+        ("sw_pheromone_symphony", SwimmerRole.CREATIVE,   "pheromone_symphony",       default_model, 7200, "honeybee"),
+        ("sw_desktop_gui",        SwimmerRole.UI,         "desktop_gui",              default_model, 7200, "fly"),
+        ("sw_cognitive_gci",      SwimmerRole.INFERENCE,  "global_cognitive_interface",default_model, 7200, "corvid"),
+        ("sw_brainstem",          SwimmerRole.AUTONOMIC,  "brainstem",                default_model, 3600, "metabolic"),
+        ("sw_watchdog",           SwimmerRole.MONITORING, "watchdog",                 default_model, 3600, "sensor_gate"),
+        ("sw_immune_array",       SwimmerRole.MONITORING, "immune_array",             default_model, 3600, "reflex"),
+        ("sw_memory_bus",         SwimmerRole.MEMORY,     "stigmergic_memory_bus",    default_model, 7200, "hippocampus"),
+        ("sw_inference_router",   SwimmerRole.NETWORK,    "inference_router",         default_model, 7200, "starling"),
+        ("sw_chat_relay",         SwimmerRole.NETWORK,    "swarm_chat_relay",         default_model, 7200, "starling"),
+        ("sw_serotonin_gov",      SwimmerRole.AUTONOMIC,  "serotonin_homeostasis",    default_model, 3600, "metabolic"),
+        ("sw_dopamine_ou",        SwimmerRole.AUTONOMIC,  "dopamine_ou_engine",       default_model, 3600, "dopamine"),
+        ("sw_log_rotation",       SwimmerRole.MONITORING, "log_rotation",             default_model, 7200, "field"),
+        ("sw_broadcaster",        SwimmerRole.CREATIVE,   "broadcaster",              default_model, 7200, "electric"),
+        ("sw_td_learner",         SwimmerRole.INFERENCE,  "td_learning",              default_model, 7200, "td_learner"),
+        ("sw_octopus_motor",      SwimmerRole.AUTONOMIC,  "motor_cortex",             default_model, 3600, "octopus"),
+        ("sw_bg_selector",        SwimmerRole.AUTONOMIC,  "basal_ganglia",            default_model, 3600, "bg_selector"),
     ]
 
-    for sid, role, app_ctx, model, max_idle in swimmers:
-        reg.register(sid, role, app_ctx, ollama_model=model, max_idle_s=max_idle)
+    for sid, role, app_ctx, model, max_idle, organ in swimmers:
+        reg.register(sid, role, app_ctx, ollama_model=model,
+                     home_organ=organ, max_idle_s=max_idle)
 
     return reg
 
@@ -303,13 +366,22 @@ if __name__ == "__main__":
     print(f"  Alive:   {len(health['alive'])}")
     print(f"  Dormant: {len(health['dormant'])}")
     print(f"  Dead:    {len(health['dead'])}")
+    organ_info = reg.organ_summary()
+    print(f"  Organs with swimmers: {len(organ_info)}")
+    knows_count = sum(1 for sw in reg.list_swimmers() if sw.knows_organ)
+    print(f"  Swimmers knowing organ: {knows_count}/{reg.count}")
     print()
 
     for sw in reg.list_swimmers():
         icon = {"ALIVE": "🟢", "DORMANT": "🟡", "DEAD": "🔴"}[sw.status.value]
         age = time.time() - sw.last_pheromone_ts
+        organ_tag = f"organ={sw.home_organ}" if sw.home_organ else "organ=UNASSIGNED"
         print(f"  {icon} {sw.swimmer_id:<25} [{sw.role.value:<12}] "
-              f"model={sw.ollama_model:<20} age={age:.0f}s  ctx={sw.app_context}")
+              f"{organ_tag:<22} age={age:.0f}s  ctx={sw.app_context}")
+
+    print("\n  --- Organ → Swimmer Map ---")
+    for organ, info in sorted(organ_info.items()):
+        print(f"    {organ:<15} swimmers={info['count']}  alive={info['alive']}  ids={info['ids']}")
 
     print()
     sys.exit(0)

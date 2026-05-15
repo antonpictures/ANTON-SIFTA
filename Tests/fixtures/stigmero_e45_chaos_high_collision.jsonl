@@ -1,0 +1,4 @@
+{"trace_id":"e45-high-001","ts":1000.0,"kind":"LLM_REGISTRATION","source_ide":"codex_desktop","homeworld_serial":"GTH4921YP3","payload":"{\"action\":\"sign_in\",\"files_touched\":[\"System/swarm_rlhf_detector.py\"]}"}
+{"trace_id":"e45-high-002","ts":1005.0,"kind":"LLM_REGISTRATION","source_ide":"cursor_m5","homeworld_serial":"GTH4921YP3","payload":"{\"action\":\"sign_in\",\"files_touched\":[\"System/swarm_rlhf_detector.py\"]}"}
+{"trace_id":"e45-high-003","ts":1010.0,"kind":"SCAR_RECEIPT","source_ide":"codex_desktop","homeworld_serial":"GTH4921YP3","payload":"{\"scar_id\":\"SCAR_e45a\",\"files_touched\":[\"System/swarm_rlhf_detector.py\"]}"}
+{"trace_id":"e45-high-004","ts":1015.0,"kind":"SCAR_RECEIPT","source_ide":"cursor_m5","homeworld_serial":"GTH4921YP3","payload":"{\"scar_id\":\"SCAR_e45b\",\"files_touched\":[\"System/swarm_rlhf_detector.py\"]}"}

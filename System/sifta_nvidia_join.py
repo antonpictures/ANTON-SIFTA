@@ -187,6 +187,7 @@ def _probe_asset(
     platform_name: str | None = None,
     isaac_stub_available: bool = True,
     gecko_probe: Callable[[], Mapping[str, Any]] | None = None,
+    cosmos_receipts_path: Path | None = None,
 ) -> NvidiaProbe:
     ts = time.time()
     system = platform_name or platform.system()
@@ -252,23 +253,16 @@ def _probe_asset(
             detail = "warp import missing; keep numpy proof canonical"
 
     elif asset.key == "cosmos":
-        # Dr. Codex audit 2026-04-28: split Reason1 (ungated, CPU) vs Predict2.5 (gated, GPU)
-        reason1_path = _hf_cache_path("nvidia/Cosmos-Reason1-7B", kind="model", cache_root=cache_root)
-        predict_path = _hf_cache_path("nvidia/Cosmos-Predict2.5-2B", kind="model", cache_root=cache_root)
-        has_cosmos_pkg = _has_import("cosmos", import_checker) or _has_import("nvidia_cosmos", import_checker)
-        if reason1_path.exists() or predict_path.exists() or has_cosmos_pkg:
-            truth = "REAL"
-            parts = []
-            if reason1_path.exists(): parts.append("Reason1-7B cached")
-            if predict_path.exists(): parts.append("Predict2.5-2B cached")
-            if has_cosmos_pkg: parts.append("cosmos pkg")
-            detail = f"Cosmos local: {', '.join(parts)}"
-        else:
-            truth = "ONLINE"
-            detail = (
-                "Cosmos-Reason1-7B available ungated at hf:nvidia/Cosmos-Reason1-7B (not downloaded). "
-                "Cosmos-Predict2.5-2B gated (license required). No local runtime."
-            )
+        # Cosmos is stricter than cache/import probes: REAL requires an
+        # inference receipt from the Cosmos truth organ, not just weights.
+        from System.nvidia_cosmos_probe import cosmos_join_truth_row
+
+        row = cosmos_join_truth_row(
+            cache_root=cache_root,
+            receipts_path=cosmos_receipts_path,
+        )
+        truth = "REAL" if row.join_truth == "REAL" else "ONLINE"
+        detail = row.detail
 
     return NvidiaProbe(
         key=asset.key,
@@ -291,6 +285,7 @@ def probe_assets(
     import_checker: Callable[[str], bool] | None = None,
     platform_name: str | None = None,
     gecko_probe: Callable[[], Mapping[str, Any]] | None = None,
+    cosmos_receipts_path: Path | None = None,
 ) -> list[NvidiaProbe]:
     try:
         from System.swarm_isaac_stigmergy_bridge import IsaacStigmergicStub
@@ -307,6 +302,7 @@ def probe_assets(
             platform_name=platform_name,
             isaac_stub_available=isaac_stub_available,
             gecko_probe=gecko_probe,
+            cosmos_receipts_path=cosmos_receipts_path,
         )
         for asset in NVIDIA_ASSETS
     ]

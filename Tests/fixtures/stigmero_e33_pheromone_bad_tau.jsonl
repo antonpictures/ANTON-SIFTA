@@ -1,0 +1,2 @@
+{"trace_id":"e33b0001-0000-0000-0000-000000000001","ts":1778100000.0,"source_ide":"codex_desktop","kind":"LLM_REGISTRATION","payload":"{\"action\":\"sign_in\"}","homeworld_serial":"GTH4921YP3"}
+{"trace_id":"e33b0002-0000-0000-0000-000000000002","ts":1778100060.0,"source_ide":"codex_desktop","kind":"SCAR_RECEIPT","payload":"{\"scar_id\":\"SCAR_bad_tau\",\"files_touched\":[\"System/stigmerobotics_pheromone_field.py\"]}","homeworld_serial":"GTH4921YP3","meta":{"tau_s":0.0}}

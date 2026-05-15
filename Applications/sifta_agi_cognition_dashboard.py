@@ -178,10 +178,36 @@ class AGICognitionDashboard(QWidget):
         self.setStyleSheet(_CSS)
         self._build_ui()
 
+        # Architect 2026-05-12 00:14: no 3 s fan-spin poll. The dashboard
+        # refreshes on owner activity (BehaviorClock tick) and on widget
+        # Show events, only while visible. Tails 16 ledger files; doing
+        # that every 3 s while ignored was the I/O thrash visible in the
+        # audit. The QTimer object is kept for graceful close-event
+        # cleanup but never .start()-ed.
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
-        self._timer.start(3000)
+        try:
+            from System.swarm_behavior_clock import behavior_clock
+            behavior_clock().tick.connect(self._refresh_if_visible)
+        except Exception:
+            pass
         QTimer.singleShot(200, self._refresh)
+
+    def _refresh_if_visible(self, *_args) -> None:
+        """Run a refresh only when this widget is actually being looked at."""
+        try:
+            if self.isVisible():
+                self._refresh()
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        """Force a refresh the moment the dashboard becomes visible."""
+        try:
+            QTimer.singleShot(0, self._refresh)
+        except Exception:
+            pass
+        super().showEvent(event)
 
     # ── Build ──────────────────────────────────────────────────────────────────
 

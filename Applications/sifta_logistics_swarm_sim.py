@@ -32,6 +32,7 @@ import argparse
 import json
 import os
 import random
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +44,10 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SYS_DIR = REPO_ROOT / "System"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(SYS_DIR) not in sys.path:
+    sys.path.insert(0, str(SYS_DIR))
 
 GOODFELLAS_LORE = (
     "GOODFELLAS CHECK: \"Hey, did you see that? Two ... just stole my truck. "
@@ -527,4 +532,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

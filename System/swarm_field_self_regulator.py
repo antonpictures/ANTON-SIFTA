@@ -70,7 +70,18 @@ _COUPLING_RULES: list[tuple[str, str, float, str]] = [
     ("cortex_router", "memory_salience", 0.15, "preserve"),
     # Immune detection fires → attention should narrow (focus on threat)
     ("immune_stability", "attention_gaze", 0.25, "focus"),
+    # Chorum reputation healthy → cortex can explore riskier models
+    ("chorum_gate", "cortex_router", 0.1, "explore"),
+    # Scheduler imbalance → immune sensitivity increases (protect overloaded lanes)
+    ("scheduler_routing", "immune_stability", 0.15, "sensitize"),
+    # Audio salience high → attention should broaden (new environmental input)
+    ("audio_salience", "attention_gaze", 0.2, "broaden"),
+    # Memory salience stagnant → scheduler should explore new task categories
+    ("memory_salience", "scheduler_routing", 0.1, "diversify"),
 ]
+
+# Self-correction hysteresis: minimum ticks between repeated regulation of the same field
+_CORRECTION_COOLDOWN_TICKS = 3
 
 
 @dataclass
@@ -262,6 +273,13 @@ def read_all_fields() -> dict[str, FieldHealthReport]:
             {k: float(v) for k, v in chorum_rep.items() if isinstance(v, (int, float))},
         )
 
+    # Audio salience field — ambient sound energy driving attention
+    audio_sal = _read_field_dict("audio_salience_field.json")
+    if audio_sal:
+        numeric = {k: float(v) for k, v in audio_sal.items() if isinstance(v, (int, float))}
+        if numeric:
+            reports["audio_salience"] = _analyze_field("audio_salience", numeric)
+
     # Attention field — uses StigmergicField (different structure)
     try:
         from System.stigmergic_field import StigmergicField
@@ -312,6 +330,10 @@ def regulate_field(name: str, report: FieldHealthReport, dry_run: bool = False) 
     field's dynamics in response to its current state.
     """
     actions = []
+    state = _load_state()
+
+    if report.health in ("DOMINANT", "STAGNANT") and not _check_correction_cooldown(state, name):
+        return actions
 
     if report.health == "DOMINANT" and report.top_keys:
         top_key, top_val = report.top_keys[0]
@@ -344,40 +366,120 @@ def regulate_field(name: str, report: FieldHealthReport, dry_run: bool = False) 
                 if top_key in msf:
                     msf[top_key] = new_val
                     _write_field_dict(memory_filename, msf)
+            elif name == "chorum_gate":
+                rep = _read_field_dict("swimmer_reputation_field.json")
+                if top_key in rep:
+                    rep[top_key] = new_val
+                    _write_field_dict("swimmer_reputation_field.json", rep)
 
-        actions.append(RegulationAction(
+        action = RegulationAction(
             field_name=name,
             action="dampen",
             target=top_key,
             delta=delta,
             reason=f"dominance ratio {report.dominance_ratio:.1f}x exceeded threshold",
-        ))
+        )
+        if not dry_run:
+            _record_correction(state, name, action.action, report.energy)
+            _save_state(state)
+        actions.append(action)
 
     elif report.health == "STAGNANT":
-        actions.append(RegulationAction(
+        action = RegulationAction(
             field_name=name,
             action="rebalance",
             target="*",
             delta=0.0,
             reason=f"stagnation score {report.stagnation_score:.2f} suggests refresh needed",
-        ))
+        )
+        if not dry_run:
+            _record_correction(state, name, action.action, report.energy)
+            _save_state(state)
+        actions.append(action)
 
     return actions
+
+
+def _check_correction_cooldown(state: dict[str, Any], field_name: str) -> bool:
+    """Returns True if enough ticks have passed since last regulation of this field.
+
+    Prevents oscillatory over-regulation (hysteresis).
+    Bio analog: refractory period — neurons don't fire again immediately.
+    Endocrine analog: 5 circuit classes all exhibit time-gated responses
+    (Nature Comms 2025, Unifying regulatory motifs in endocrine circuits).
+    """
+    last_actions = state.get("last_regulation_per_field", {})
+    if field_name not in last_actions:
+        return True
+    last_tick = last_actions.get(field_name, 0)
+    current_tick = state.get("regulation_count", 0)
+    return (current_tick - last_tick) >= _CORRECTION_COOLDOWN_TICKS
+
+
+def _record_correction(state: dict[str, Any], field_name: str, action: str, energy: float) -> None:
+    """Record that we just regulated this field (for cooldown + outcome tracking)."""
+    state.setdefault("last_regulation_per_field", {})[field_name] = state.get("regulation_count", 0)
+    outcomes = state.setdefault("correction_outcomes", {}).setdefault(field_name, [])
+    outcomes.append({"tick": state.get("regulation_count", 0), "action": action, "pre_energy": energy, "ts": time.time()})
+    state["correction_outcomes"][field_name] = outcomes[-10:]
+
+
+def _evaluate_past_regulation(state: dict[str, Any], field_name: str, current_energy: float) -> str:
+    """Check whether our last regulation action actually helped.
+
+    Returns "improved", "worsened", "unchanged", or "unknown".
+    Bio analog: active inference prediction error — if the action didn't
+    reduce free energy, try a different intervention next time
+    (Frontiers Behav Neurosci 2025, Resilience phenotypes from active inference).
+    """
+    correction_log = state.get("correction_outcomes", {}).get(field_name, [])
+    if not correction_log:
+        return "unknown"
+
+    last_correction = correction_log[-1]
+    last_action = last_correction.get("action", "")
+    pre_energy = last_correction.get("pre_energy", 0.0)
+
+    if pre_energy < 0.01:
+        return "unknown"
+
+    ratio = current_energy / max(pre_energy, 0.001)
+
+    if last_action in ("dampen", "couple"):
+        if ratio < 0.85:
+            return "improved"
+        elif ratio > 1.15:
+            return "worsened"
+    elif last_action == "rebalance":
+        if abs(ratio - 1.0) > 0.1:
+            return "improved"
+
+    return "unchanged"
 
 
 def apply_field_coupling(
     reports: dict[str, FieldHealthReport],
     dry_run: bool = False,
 ) -> list[RegulationAction]:
-    """The novel piece: cross-field coupling.
+    """Cross-field coupling with self-correction and hysteresis.
 
     Each coupling rule fires when the source field's energy crosses a
     threshold. The target field is adjusted in proportion.
 
     This is meta-stigmergy: the same governing equation now operates
     BETWEEN fields, not just within them.
+
+    v2 additions: self-correction loops, hysteresis cooldowns, and 4 new
+    coupling modes (explore, sensitize, broaden, diversify-from-memory).
+
+    Research spine (new):
+        - Nature Comms 2025 — 43 endocrine circuits, 5 circuit classes
+        - Frontiers Behav Neurosci 2025 — resilience phenotypes + active inference
+        - Nature Comms Bio 2025 — integrating allostasis + emerging tech
+        - arXiv 2410.02940 — acoustic signaling in active matter systems
     """
     actions = []
+    state = _load_state()
 
     for source, target, strength, mode in _COUPLING_RULES:
         src_rep = reports.get(source)
@@ -385,9 +487,21 @@ def apply_field_coupling(
         if not src_rep or not tgt_rep:
             continue
 
+        if not _check_correction_cooldown(state, target):
+            continue
+
         normalized = min(src_rep.energy / 10.0, 1.0)
         if normalized < 0.1:
             continue
+
+        past_result = _evaluate_past_regulation(state, target, tgt_rep.energy)
+        correction_scale = 1.0
+        if past_result == "worsened":
+            correction_scale = 0.3
+        elif past_result == "improved":
+            correction_scale = 1.2
+
+        effective_strength = strength * correction_scale
 
         if mode == "stabilize":
             if tgt_rep.top_keys and not dry_run:
@@ -396,46 +510,86 @@ def apply_field_coupling(
                 models = full.get("models", {})
                 top_model = tgt_rep.top_keys[0][0]
                 if top_model in models and src_rep.energy > 1.0:
-                    boost = strength * normalized * 0.5
+                    boost = effective_strength * normalized * 0.5
                     models[top_model] = models[top_model] + boost
                     full["models"] = models
                     _write_field_dict(cortex_filename, full)
+                    _record_correction(state, target, "couple", tgt_rep.energy)
                     actions.append(RegulationAction(
                         field_name=target,
                         action="couple",
                         target=top_model,
                         delta=boost,
-                        reason=f"coupled from {source} (energy={src_rep.energy:.1f}, mode=stabilize)",
+                        reason=f"coupled from {source} (energy={src_rep.energy:.1f}, mode=stabilize, past={past_result})",
                     ))
 
         elif mode == "diversify":
-            if tgt_rep.top_keys and len(tgt_rep.top_keys) > 1 and not dry_run:
+            if tgt_rep.top_keys and len(tgt_rep.top_keys) > 1:
+                _record_correction(state, target, "couple", tgt_rep.energy)
                 actions.append(RegulationAction(
                     field_name=target,
                     action="couple",
                     target="diversify",
-                    delta=-strength * normalized,
-                    reason=f"coupled from {source} energy={src_rep.energy:.1f} — encourage exploration",
+                    delta=-effective_strength * normalized,
+                    reason=f"coupled from {source} energy={src_rep.energy:.1f} — encourage exploration (past={past_result})",
                 ))
 
         elif mode == "preserve":
+            _record_correction(state, target, "couple", tgt_rep.energy)
             actions.append(RegulationAction(
                 field_name=target,
                 action="couple",
                 target="preserve",
-                delta=strength * normalized,
-                reason=f"coupled from {source}: cortex stable → preserve memory salience",
+                delta=effective_strength * normalized,
+                reason=f"coupled from {source}: stable → preserve (past={past_result})",
             ))
 
         elif mode == "focus":
             if src_rep.energy > 2.0:
+                _record_correction(state, target, "couple", tgt_rep.energy)
                 actions.append(RegulationAction(
                     field_name=target,
                     action="couple",
                     target="narrow",
-                    delta=strength * normalized,
-                    reason=f"coupled from {source} (threat detected) — narrow attention",
+                    delta=effective_strength * normalized,
+                    reason=f"coupled from {source} (threat) → narrow attention (past={past_result})",
                 ))
+
+        elif mode == "explore":
+            if src_rep.health == "OK" and src_rep.energy > 0.5:
+                _record_correction(state, target, "couple", tgt_rep.energy)
+                actions.append(RegulationAction(
+                    field_name=target,
+                    action="couple",
+                    target="explore",
+                    delta=effective_strength * normalized * 0.3,
+                    reason=f"coupled from {source}: reputation healthy → cortex can explore (past={past_result})",
+                ))
+
+        elif mode == "sensitize":
+            if src_rep.health in ("DOMINANT", "STAGNANT"):
+                _record_correction(state, target, "couple", tgt_rep.energy)
+                actions.append(RegulationAction(
+                    field_name=target,
+                    action="couple",
+                    target="sensitize",
+                    delta=effective_strength * normalized * 0.4,
+                    reason=f"coupled from {source}: scheduler stress → immune sensitized (past={past_result})",
+                ))
+
+        elif mode == "broaden":
+            if src_rep.energy > 0.5:
+                _record_correction(state, target, "couple", tgt_rep.energy)
+                actions.append(RegulationAction(
+                    field_name=target,
+                    action="couple",
+                    target="broaden",
+                    delta=effective_strength * normalized * 0.3,
+                    reason=f"coupled from {source}: audio active → broaden attention (past={past_result})",
+                ))
+
+    if not dry_run:
+        _save_state(state)
 
     return actions
 
@@ -536,6 +690,51 @@ def alice_self_check() -> str:
     if result["actions"]:
         parts.append(f"would-regulate: {len(result['actions'])}")
     return " | ".join(parts)
+
+
+def alice_self_report() -> dict[str, Any]:
+    """Richer introspection report for Alice's self-regulation visibility.
+
+    Includes per-field health, cross-field coupling state, self-correction
+    history, and actionable recommendations. Designed for the field
+    dashboard terminal output or Alice's deeper self-assessment.
+    """
+    result = regulate_now(dry_run=True)
+    state = _load_state()
+
+    correction_history = {}
+    for field_name, outcomes in state.get("correction_outcomes", {}).items():
+        if outcomes:
+            last = outcomes[-1]
+            current_rep = result["reports"].get(field_name, {})
+            current_energy = current_rep.get("energy", 0.0) if isinstance(current_rep, dict) else 0.0
+            past = _evaluate_past_regulation(state, field_name, current_energy)
+            correction_history[field_name] = {
+                "last_action": last.get("action", "?"),
+                "last_tick": last.get("tick", 0),
+                "outcome": past,
+                "total_corrections": len(outcomes),
+            }
+
+    active_couplings = []
+    for source, target, strength, mode in _COUPLING_RULES:
+        src_rep = result["reports"].get(source)
+        if src_rep and isinstance(src_rep, dict):
+            e = src_rep.get("energy", 0.0)
+            if e > 1.0:
+                active_couplings.append(f"{source} →[{mode}]→ {target} (E={e:.1f})")
+
+    return {
+        "ts": time.time(),
+        "regulation_count": state.get("regulation_count", 0),
+        "summary": alice_self_check(),
+        "reports": result["reports"],
+        "issues": result["issues"],
+        "pending_actions": result["actions"],
+        "correction_history": correction_history,
+        "active_couplings": active_couplings,
+        "coupling_rule_count": len(_COUPLING_RULES),
+    }
 
 
 if __name__ == "__main__":

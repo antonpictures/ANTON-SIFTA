@@ -158,6 +158,7 @@ if let topWindow = infoList?.first(where: { ($0[kCGWindowLayer as String] as? In
 
 import json
 import os
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -171,12 +172,24 @@ except ImportError:
     _mss = None
     HAS_MSS = False
 
-try:
-    import cv2 as _cv2   # type: ignore
-    HAS_CV2 = True
-except ImportError:
-    _cv2 = None
-    HAS_CV2 = False
+HAS_CV2 = importlib.util.find_spec("cv2") is not None
+_cv2 = None
+
+
+def _load_cv2():
+    """Lazily import cv2 so Qt/AVFoundation desktop boots do not double-load FFmpeg."""
+    global _cv2
+    if not HAS_CV2:
+        return None
+    if os.environ.get("SIFTA_DISABLE_CV2_IN_QT_DESKTOP", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    if _cv2 is None:
+        try:
+            import cv2 as cv2_mod  # type: ignore
+        except Exception:
+            return None
+        _cv2 = cv2_mod
+    return _cv2
 
 try:
     from PIL import Image as _PILImage, ImageDraw as _PILDraw, ImageFont as _PILFont  # type: ignore
@@ -370,13 +383,14 @@ def _discover_real_camera_index() -> int:
     Returns -1 if no camera is readable (CI / no hardware / permission denied).
     Never raises.
     """
-    if not HAS_CV2:
+    cv2 = _load_cv2()
+    if cv2 is None:
         return -1
     # Two-pass: try 1..N first, then 0 as last resort
     for idx in list(range(1, _AVFOUNDATION_MAX_IDX + 1)) + [0]:
         cap = None
         try:
-            cap = _cv2.VideoCapture(idx)
+            cap = cv2.VideoCapture(idx)
             if not cap.isOpened():
                 _log_camera_probe(idx, "open_failed", "cap.isOpened() returned False")
                 continue
@@ -498,7 +512,8 @@ def webcam_frame(
     >>> result is None or isinstance(result, IrisFrame)
     True
     """
-    if not HAS_CV2:
+    cv2 = _load_cv2()
+    if cv2 is None:
         return None
 
     # Resolve auto-discovery
@@ -509,7 +524,7 @@ def webcam_frame(
 
     cap = None
     try:
-        cap = _cv2.VideoCapture(camera_index)
+        cap = cv2.VideoCapture(camera_index)
         if not cap.isOpened():
             return None
 
@@ -534,7 +549,7 @@ def webcam_frame(
 
         if save_to_disk:
             try:
-                _cv2.imwrite(str(target_file), frame_arr)
+                cv2.imwrite(str(target_file), frame_arr)
                 size = target_file.stat().st_size
             except Exception:
                 size = 0
@@ -549,7 +564,10 @@ def webcam_frame(
             width=int(width),
             height=int(height),
             byte_size=size,
-            metadata={"adapter": "cv2", "camera_index": camera_index},
+            metadata={
+                "adapter": "cv2",
+                "camera_index": camera_index,
+            },
         )
     except Exception:
         return None

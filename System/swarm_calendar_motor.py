@@ -2,7 +2,7 @@
 """
 System/swarm_calendar_motor.py — Premotor Cortex
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The Calendar Motor. Allows Alice to project her physiological logic forward in 
 time by dropping physical markers into the Architect's Reminders app.

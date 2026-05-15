@@ -25,7 +25,7 @@ COMPLIANCE_LEDGER_PATTERNS = (
     "billing",
     "payment",
     "identity",
-    "persona",
+    "identity_label",
     "genesis",
     "work_receipts",
     "ide_stigmergic_trace",

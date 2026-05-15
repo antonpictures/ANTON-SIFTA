@@ -2,7 +2,7 @@
 """
 System/swarm_vision_ocr.py — Visual Word-Form Area
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Leverages macOS native Apple Vision Framework to extract semantic text
 from images. Completely local, zero cloud APIs.

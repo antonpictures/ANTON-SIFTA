@@ -2,7 +2,7 @@
 """
 System/swarm_stigmergic_trash.py — Stigmergic Garbage Collection
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The Swarm's approach to deletion: we never immediately unlink.
 Files are moved to a local Stigmergic Trash Bin.

@@ -2,7 +2,7 @@
 """
 swarm_space_physics.py — Astrophysical execution engine
 ═══════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Implements true biological path-graph traversal inspired by astrophysical phenomena.
 1. Cosmic Ray Spallation: Extreme energy generates short-lived execution Swimmers (Muons)

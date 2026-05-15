@@ -2,7 +2,7 @@
 """
 System/swarm_shadow_state.py — Copy-on-write JSONL substrate (the dream sandbox)
 ═══════════════════════════════════════════════════════════════════════════════
-Substrate for the DeepMind Dreamer Protocol.
+Substrate for the Dreamer-style latent replay protocol.
 
 Why this exists
 ---------------

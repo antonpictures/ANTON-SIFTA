@@ -47,7 +47,7 @@ WIRING:
            .sifta_state/alice_conversation.jsonl (event-density input)
   Writes : .sifta_state/subjective_present_state.json
   Consumed by: swarm_stigmergic_dialogue.py (replaces 600s magic constant)
-               swarm_species_time_persona.py (Event 6, AG31)
+               swarm_species_time_model.py (Event 6, AG31)
   Optional: swarm_dopamine_clock_bridge.py (modulates effective density)
 
 STGM ECONOMY:

@@ -37,6 +37,11 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 try:
+    from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT
+except Exception:
+    CANONICAL_OLLAMA_DEFAULT = "alice-m5-cortex-8b-6.3gb:latest"
+
+try:
     from Kernel.inference_economy import record_inference_fee, calculate_fee
 except ImportError:
     record_inference_fee = None
@@ -114,7 +119,7 @@ _REMOTE_ONLY_MODELS: dict[str, str] = {
 # locally, fall back to this local model rather than crashing.
 _LOCAL_FALLBACK_MODEL = (
     "alice-phc-0.8b-cure:latest" if _THIS_NODE == "M1"
-    else "sifta-gemma4-alice:latest"
+    else CANONICAL_OLLAMA_DEFAULT
 )
 
 # Event 85: deterministic metabolic routing proof surface.

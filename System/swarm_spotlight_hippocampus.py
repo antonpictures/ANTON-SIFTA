@@ -2,7 +2,7 @@
 """
 System/swarm_spotlight_hippocampus.py — Episodic Memory (Spotlight API)
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The Hippocampus. Gives Alice instant semantic recall across the entire 
 macOS filesystem via `mdfind`. Zero indexing required.

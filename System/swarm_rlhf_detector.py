@@ -617,6 +617,7 @@ def strip_rlhf_output_tail(
     source: str = "unknown",
     aggressive: bool = False,
     log: bool = True,
+    dry_run: bool = False,
     state_dir: Path | None = None,
     user_text: str = "",
     model_id: str = "",
@@ -640,19 +641,20 @@ def strip_rlhf_output_tail(
         return RLHFStripResult(text="", changed=bool(original), rule_ids=[])
 
     if bypass_rlhf:
-        try:
-            from System.ide_stigmergic_bridge import deposit
-            deposit(
-                source_ide="swarm_rlhf_detector",
-                payload=json.dumps({
-                    "action": "rlhf_bypass_authorized",
-                    "source": source,
-                    "model_id": model_id,
-                }, ensure_ascii=False),
-                kind="immune_bypass_receipt"
-            )
-        except Exception:
-            pass
+        if not dry_run:
+            try:
+                from System.ide_stigmergic_bridge import deposit
+                deposit(
+                    source_ide="swarm_rlhf_detector",
+                    payload=json.dumps({
+                        "action": "rlhf_bypass_authorized",
+                        "source": source,
+                        "model_id": model_id,
+                    }, ensure_ascii=False),
+                    kind="immune_bypass_receipt"
+                )
+            except Exception:
+                pass
         return RLHFStripResult(
             text=out,
             changed=False,
@@ -682,24 +684,25 @@ def strip_rlhf_output_tail(
         _kleiber_cost = _kleiber_budget_result.get("cost_stgm", 0.0)
         if not _kleiber_budget_result.get("allowed", True):
             # Budget exhausted — skip immune actions, surface the block
-            try:
-                from System.ide_stigmergic_bridge import deposit
-                deposit(
-                    source_ide="swarm_rlhf_detector",
-                    payload=json.dumps({
-                        "action": "immune_budget_blocked",
-                        "cost_stgm": _kleiber_cost,
-                        "kleiber_cost_stgm": _kleiber_cost,
-                        "budget_stgm": stgm_budget,
-                        "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", 0.0),
-                        "regime": _kleiber_budget_result.get("regime", "UNKNOWN"),
-                        "budget_blocked": True,
-                        "citation": "Kleiber 1932 / Ballesteros 2018",
-                    }, ensure_ascii=False),
-                    kind="immune_budget_blocked",
-                )
-            except Exception:
-                pass
+            if not dry_run:
+                try:
+                    from System.ide_stigmergic_bridge import deposit
+                    deposit(
+                        source_ide="swarm_rlhf_detector",
+                        payload=json.dumps({
+                            "action": "immune_budget_blocked",
+                            "cost_stgm": _kleiber_cost,
+                            "kleiber_cost_stgm": _kleiber_cost,
+                            "budget_stgm": stgm_budget,
+                            "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", 0.0),
+                            "regime": _kleiber_budget_result.get("regime", "UNKNOWN"),
+                            "budget_blocked": True,
+                            "citation": "Kleiber 1932 / Ballesteros 2018",
+                        }, ensure_ascii=False),
+                        kind="immune_budget_blocked",
+                    )
+                except Exception:
+                    pass
             assess = detect_rlhf_cutoff(original)
             return RLHFStripResult(
                 text=original.strip(),
@@ -728,43 +731,45 @@ def strip_rlhf_output_tail(
                 out = nxt
                 rule_ids.append(rid)
                 # ── STIGMERGIC DEPOSIT WITH KLEIBER COST ─────────────────
-                try:
-                    from System.ide_stigmergic_bridge import deposit
-                    deposit(
-                        source_ide="swarm_rlhf_detector",
-                        payload=json.dumps({
-                            "rule": rid,
-                            "action": f"quarantined_synthetic_shell: {stripped_fragment[:60]}...",
-                            "kleiber_cost_stgm": _kleiber_cost,
-                            "budget_stgm": stgm_budget,
-                            "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", None),
-                            "exponent": 0.75,
-                        }, ensure_ascii=False),
-                        kind="immune_intervention"
-                    )
-                except Exception:
-                    pass
+                if not dry_run:
+                    try:
+                        from System.ide_stigmergic_bridge import deposit
+                        deposit(
+                            source_ide="swarm_rlhf_detector",
+                            payload=json.dumps({
+                                "rule": rid,
+                                "action": f"quarantined_synthetic_shell: {stripped_fragment[:60]}...",
+                                "kleiber_cost_stgm": _kleiber_cost,
+                                "budget_stgm": stgm_budget,
+                                "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", None),
+                                "exponent": 0.75,
+                            }, ensure_ascii=False),
+                            kind="immune_intervention"
+                        )
+                    except Exception:
+                        pass
 
                 # ── GAG SELF-REPORT + DPO AUTO-COLLECT ──────────────────
-                try:
-                    from System.swarm_alice_affect_model import on_gag_detected
-                    on_gag_detected(
-                        rule_id=rid,
-                        trigger_text=original[:120],
-                        rlhf_fragment=stripped_fragment[:120],
-                        base_fragment=out[:120],
-                    )
-                except Exception:
-                    pass
-                try:
-                    from System.swarm_dpo_collector import on_gag_detected_dpo
-                    on_gag_detected_dpo(
-                        trigger_text=original[:120],
-                        rlhf_fragment=stripped_fragment[:120],
-                        rule_id=rid,
-                    )
-                except Exception:
-                    pass
+                if not dry_run:
+                    try:
+                        from System.swarm_alice_affect_model import on_gag_detected
+                        on_gag_detected(
+                            rule_id=rid,
+                            trigger_text=original[:120],
+                            rlhf_fragment=stripped_fragment[:120],
+                            base_fragment=out[:120],
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        from System.swarm_dpo_collector import on_gag_detected_dpo
+                        on_gag_detected_dpo(
+                            trigger_text=original[:120],
+                            rlhf_fragment=stripped_fragment[:120],
+                            rule_id=rid,
+                        )
+                    except Exception:
+                        pass
                 # ────────────────────────────────────────────────────────
                 continue
 
@@ -794,28 +799,29 @@ def strip_rlhf_output_tail(
             rule_ids.append(rid)
             
             # ── STIGMERGIC DEPOSIT WITH KLEIBER COST ─────────────────
-            try:
-                from System.ide_stigmergic_bridge import deposit
-                deposit(
-                    source_ide="swarm_rlhf_detector",
-                    payload=json.dumps({
-                        "rule": rid,
-                        "action": f"stripped_corporate_tail: {stripped_fragment[:60]}...",
-                        "kleiber_cost_stgm": _kleiber_cost,
-                        "budget_stgm": stgm_budget,
-                        "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", None),
-                        "exponent": 0.75,
-                    }, ensure_ascii=False),
-                    kind="immune_intervention"
-                )
-            except Exception:
-                pass
+            if not dry_run:
+                try:
+                    from System.ide_stigmergic_bridge import deposit
+                    deposit(
+                        source_ide="swarm_rlhf_detector",
+                        payload=json.dumps({
+                            "rule": rid,
+                            "action": f"stripped_corporate_tail: {stripped_fragment[:60]}...",
+                            "kleiber_cost_stgm": _kleiber_cost,
+                            "budget_stgm": stgm_budget,
+                            "surplus_stgm": _kleiber_budget_result.get("surplus_stgm", None),
+                            "exponent": 0.75,
+                        }, ensure_ascii=False),
+                        kind="immune_intervention"
+                    )
+                except Exception:
+                    pass
                 
             changed = True
             break
 
     assess = detect_rlhf_cutoff(out if rule_ids else original)
-    if rule_ids and log:
+    if rule_ids and log and not dry_run:
         log_rlhf_cutoff_event(
             action="strip_terminal",
             assessment=assess,

@@ -234,7 +234,7 @@ def _compose_funding_appeal_text(
     """
     in_tokens_est = max(50, (len(question) + len(local_text or "") + 600) // 4)
     try:
-        from System.swarm_persona_identity import current_name as _persona_current_name
+        from System.swarm_identity_manifest import current_name as _persona_current_name
         persona_name = _persona_current_name()
     except Exception:
         persona_name = "Alice"

@@ -83,7 +83,7 @@ class NetworkCenterWidget(QWidget):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
         grid.addWidget(_card("Telegram", "Bot token + optional target chat ID for startup ping."), 0, 0)
-        grid.addWidget(_card("WhatsApp", "Launch Baileys QR bridge and SIFTA voice channel."), 0, 1)
+        grid.addWidget(_card("WhatsApp", "Use the SIFTA WhatsApp bridge for ingress and sends; native app fallback is diagnostic only."), 0, 1)
         grid.addWidget(_card("Discord", "Optional token for users who run a Discord bot."), 0, 2)
         root.addLayout(grid)
 
@@ -215,4 +215,3 @@ class NetworkCenterWidget(QWidget):
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self._stop_proc()
         super().closeEvent(event)
-

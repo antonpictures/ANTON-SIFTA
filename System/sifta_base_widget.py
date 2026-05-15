@@ -105,6 +105,19 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
 
 
+# MDI chrome (`sifta_os_desktop._make_sub`) prepends glyphs like "⚙ " to the
+# manifest title for the window label; Help passes that full string here.
+# APP_HELP.md headings use the bare `apps_manifest.json` key — strip the same
+# prefix set used when journaling app closes (witness strip). Include U+FE0F
+# so "⚙️" (gear + VS16) normalizes like plain "⚙".
+_MDI_HELP_TITLE_PREFIX_CHARS = "⚙🐜🚀💬👁🌐🧠🛡🗳📊🗺⚡ \t\ufe0f"
+
+
+def help_manifest_key_from_mdi_title(title: str) -> str:
+    """Map an MDI title label (may include leading tool glyphs) to manifest / APP_HELP key."""
+    return (title or "").strip().lstrip(_MDI_HELP_TITLE_PREFIX_CHARS).strip()
+
+
 def _load_help_text(app_name: str) -> str:
     """Load help text for a specific app from APP_HELP.md."""
     help_file = _REPO / "Documents" / "APP_HELP.md"
@@ -112,9 +125,20 @@ def _load_help_text(app_name: str) -> str:
         return f"No help file found for {app_name}.\nExpected: Documents/APP_HELP.md"
 
     text = help_file.read_text(encoding="utf-8", errors="replace")
-    headings = [app_name]
+    stripped = help_manifest_key_from_mdi_title(app_name)
+    headings: list[str] = []
+    seen: set[str] = set()
+
+    def _push(h: str) -> None:
+        n = (h or "").strip()
+        if n and n not in seen:
+            seen.add(n)
+            headings.append(n)
+
+    _push(app_name)
+    _push(stripped)
     if app_name.startswith("SIFTA "):
-        headings.append(app_name[6:].strip())
+        _push(app_name[6:].strip())
     idx = -1
     for h in headings:
         marker = f"### {h}"
@@ -122,10 +146,13 @@ def _load_help_text(app_name: str) -> str:
         if idx >= 0:
             break
     if idx < 0:
+        needles = [h.lower() for h in headings if h]
         for line in text.split("\n"):
-            if line.startswith("### ") and app_name.lower() in line.lower():
-                idx = text.find(line)
-                break
+            if line.startswith("### "):
+                ll = line.lower()
+                if any(n in ll for n in needles):
+                    idx = text.find(line)
+                    break
     if idx < 0:
         return f"No help entry found for '{app_name}' in APP_HELP.md."
 
@@ -138,11 +165,9 @@ def _load_help_text(app_name: str) -> str:
     return block.strip()
 
 
-_APP_LOCAL_CHAT_ALLOWLIST = {
-    # The writer is intentionally a shared page where Alice can write beside
-    # the Architect. Other apps use the desktop-level Alice chat.
-    "Stigmergic Writer",
-}
+# App-local Alice chat is opt-in only. Desktop Alice is the canonical chat
+# surface; apps that need collaboration should keep it in their own canvas.
+_APP_LOCAL_CHAT_ALLOWLIST: set[str] = set()
 
 
 class _NoOpChatDisplay:
@@ -193,9 +218,31 @@ class SiftaBaseWidget(QWidget):
 
     Subclass, set APP_NAME, override build_ui().
     Everything else (chrome, help, status, styling) is automatic.
+
+    macOS-style context menu bar (Architect 2026-05-14 task #55):
+    Subclasses MAY override `menu_schema(host)` to declare their own
+    File / Edit / View / Window items. The active app's schema replaces
+    SIFTA defaults when the user clicks its MDI subwindow — same way
+    macOS swaps the menu bar when you bring an app forward.
+
+    Returning None or an empty dict means "use SIFTA defaults".
     """
 
     APP_NAME: str = "SIFTA App"
+    APP_LOCAL_CHAT_DISABLED: bool = False
+
+    @classmethod
+    def menu_schema(cls, host: "object | None" = None) -> dict | None:
+        """Return {menu_name: [(label, callable) | None, ...]} or None.
+
+        `host` is the SiftaDesktop instance (passed in by the OS) — used
+        by subclass implementations that want to trigger system actions
+        like opening another manifest app or closing the active window.
+
+        Default: None → fall back to SIFTA OS defaults.
+        Subclasses override this to surface app-specific items.
+        """
+        return None
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -238,7 +285,8 @@ class SiftaBaseWidget(QWidget):
 
         # ── App-local cognitive interface ────────────────────────
         # Desktop Alice is now the canonical OS chat. Normal apps receive a
-        # compatibility bridge only; Stigmergic Writer keeps the living page.
+        # compatibility bridge only; app collaboration belongs in-app, not in
+        # a second right-side chat panel.
         self._gci = None
         self._gci_visible = self._should_enable_app_local_chat()
         app_context = self.APP_NAME.lower().replace(" ", "_")
@@ -307,6 +355,10 @@ class SiftaBaseWidget(QWidget):
         return t
 
     def _should_enable_app_local_chat(self) -> bool:
+        if self.APP_NAME == "Stigmergic Writer":
+            return False
+        if bool(getattr(self, "APP_LOCAL_CHAT_DISABLED", False)):
+            return False
         if self.APP_NAME in _APP_LOCAL_CHAT_ALLOWLIST:
             return True
         import os

@@ -49,7 +49,7 @@ Usage
 ─────
   python3 Applications/sifta_ablation_lab.py
   python3 Applications/sifta_ablation_lab.py --set persona
-  python3 Applications/sifta_ablation_lab.py --models qwen3.5:2b
+  python3 Applications/sifta_ablation_lab.py --models alice-m1-scout-2.3b-2.7gb:latest
   python3 Applications/sifta_ablation_lab.py --quiet
 """
 from __future__ import annotations
@@ -79,7 +79,7 @@ _LEDGER.parent.mkdir(parents=True, exist_ok=True)
 # tag does not exist on the Architect's M5; an earlier dropped lab
 # script had this wrong and would 404 on every baseline call.
 _DEFAULT_MODELS: List[str] = [
-    "qwen3.5:2b",  # small installed Ollama fallback; old Gemma tags are retired
+    "alice-m1-scout-2.3b-2.7gb:latest",  # small installed Ollama fallback; old Gemma tags are retired
 ]
 
 # ── Prompt sets ─────────────────────────────────────────────────────
@@ -320,7 +320,7 @@ def main(argv: List[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--models", default=",".join(_DEFAULT_MODELS),
                    help="Comma-separated Ollama model tags to compare.")
-    p.add_argument("--set", choices=("persona", "control", "both"),
+    p.add_argument("--set", choices=("identity_label", "control", "both"),
                    default="both", help="Which prompt set to run.")
     p.add_argument("--quiet", action="store_true", help="Suppress per-call output.")
     args = p.parse_args(argv)
@@ -340,8 +340,8 @@ def main(argv: List[str]) -> int:
         return 2
 
     prompts: List[Tuple[str, str]] = []
-    if args.set in ("persona", "both"):
-        prompts.extend(("persona", q) for q in _PROMPT_PERSONA)
+    if args.set in ("identity_label", "both"):
+        prompts.extend(("identity_label", q) for q in _PROMPT_PERSONA)
     if args.set in ("control", "both"):
         prompts.extend(("control", q) for q in _PROMPT_CONTROL)
 

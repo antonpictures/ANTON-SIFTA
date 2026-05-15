@@ -4,7 +4,8 @@ SIFTA Desktop Theme Engine
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 Two visual identities for the same organism:
 
-  🐾  Predator v7     — blood-red/amber neural mesh, hunting stance  ← DEFAULT
+  🐝  BeeSon v8       — warm charcoal + honey-gold accents (clean desktop default)
+  🐾  Predator v7     — blood-red/amber neural mesh, hunting stance
   🧜‍♀️  Mermaid OS v6  — oceanic indigo, purple accents, serene
 
 Under the hood Alice is always the same organism. The theme only
@@ -27,7 +28,73 @@ from typing import Optional
 
 _STATE = Path.home() / ".sifta_state"
 _THEME_FILE = _STATE / "desktop_theme.json"
+_WALLPAPER_FILE = _STATE / "desktop_wallpaper.json"
 _REPO = Path(__file__).resolve().parent.parent
+_STOCK_WALLPAPER_DIR = _REPO / "Library" / "Desktop Pictures"
+
+
+# Honeycomb lattice wallpaper revoked by Architect 2026-05-12 — never ship it
+# in the stock picker again; `wallpaper_path` also ignores persisted paths
+# to this filename so the desktop defaults to clean `bg_deep`.
+_REVOKED_STOCK_WALLPAPERS = frozenset({"beeson default.svg"})
+
+
+def list_stock_wallpapers() -> list[tuple[str, str]]:
+    """Return [(display_name, absolute_path), ...] for bundled wallpapers.
+
+    Architect 2026-05-11 23:25 — wallpaper picker should show the four files
+    that ship with the repo plus any extras the Architect drops in. Hidden
+    files and the photon overlay AVIF are filtered out so the picker shows
+    only obvious desktop pictures.
+    """
+    if not _STOCK_WALLPAPER_DIR.exists():
+        return []
+    suffixes = {".jpg", ".jpeg", ".png", ".webp", ".svg", ".heic", ".avif"}
+    out: list[tuple[str, str]] = []
+    for p in sorted(_STOCK_WALLPAPER_DIR.iterdir()):
+        if p.is_file() and p.suffix.lower() in suffixes and not p.name.startswith("."):
+            if p.name.lower() in _REVOKED_STOCK_WALLPAPERS:
+                continue
+            display = p.stem.replace("-", " ").replace("_", " ").strip().title() or p.name
+            out.append((display, str(p.resolve())))
+    return out
+
+
+def _wallpaper_path_revoked(path: str) -> bool:
+    try:
+        return Path(path).name.lower() in _REVOKED_STOCK_WALLPAPERS
+    except Exception:
+        return False
+
+
+def load_custom_wallpaper_path() -> Optional[str]:
+    """Return the Architect-selected wallpaper path, or None to fall back.
+
+    Empty string means "no wallpaper". A real path means use that file.
+    """
+    try:
+        data = json.loads(_WALLPAPER_FILE.read_text(encoding="utf-8"))
+        path = data.get("path")
+        if path is None:
+            return None
+        return str(path)
+    except Exception:
+        return None
+
+
+def save_custom_wallpaper_path(path: Optional[str]) -> None:
+    """Persist the Architect's wallpaper choice. Pass None to clear (use theme default)."""
+    _STATE.mkdir(parents=True, exist_ok=True)
+    payload: dict
+    if path is None:
+        # Clear → remove file so the loader falls back to the theme default.
+        try:
+            _WALLPAPER_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
+    payload = {"path": str(path), "changed_at": time.time()}
+    _WALLPAPER_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -177,9 +244,84 @@ PREDATOR = DesktopPalette(
 
 MERMAID = DesktopPalette()  # defaults = Mermaid
 
+# ──────────────────────────────────────────────────────────────
+#  BEESON PALETTE — v8.0
+#  Honeycomb gold + warm amber. Daylight bee-swarm aesthetic
+#  (utility-first, not "lazy dark desktop").
+# ──────────────────────────────────────────────────────────────
+
+BEESON = DesktopPalette(
+    theme_id="beeson",
+    display_name="🐝 BeeSon v8",
+    os_line="🐝 SIFTA BeeSon OS v8.0",
+
+    # Architect 2026-05-11 23:01: "dark theme is like Steve Jobs do you
+    # think Steve Jobs would like to see this screen looks like an error."
+    # Cream / beige is dead. BeeSon goes dark charcoal with honey-gold
+    # accents — the bees still rule, just at night.
+    bg_deep="#0d0c0a",                  # very dark warm charcoal
+    bg_panel="#15130f",                  # panels one stop lighter
+    bg_card="rgba(28, 24, 18, 0.95)",   # warm graphite card surface
+
+    # Architect 2026-05-12: honeycomb SVG revoked; bundled BeeSon backdrops live
+    # in Library/Desktop Pictures/ (Architect folder on Music → copied in-repo).
+    wallpaper_filename="BeeSon Default.jpg",
+
+    accent_primary="#ffb300",        # honeycomb gold (pops on dark)
+    accent_secondary="#ff8f00",      # deep amber
+    accent_hover="rgba(255,179,0,0.22)",
+    accent_pressed="rgba(255,179,0,0.40)",
+
+    text_primary="#e8ddd0",          # warm bone, readable on charcoal
+    text_secondary="#c4a882",        # parchment
+    text_dim="#6b5a48",              # dark leather
+
+    border_default="#2a2218",
+    border_subtle="#1a1612",
+    border_accent="#ffb300",
+
+    menubar_bg="rgba(10, 9, 7, 0.96)",
+    menubar_border="#2a2218",
+    menubar_app_color="#ffb300",
+
+    dock_pill_bg="rgba(15, 13, 10, 0.88)",
+    dock_pill_border="rgba(255, 179, 0, 0.22)",
+    dock_btn_hover="rgba(255,179,0,0.18)",
+    dock_btn_pressed="rgba(255,143,0,0.32)",
+
+    particle_color_a="#ffb300",     # gold
+    particle_alpha_a=30,
+    particle_color_b="#ff8f00",     # amber
+    particle_alpha_b=25,
+
+    grid_color="#ffb300",
+    grid_alpha=12,
+
+    # Palette watermark_* fields kept for documentation / future surfaces;
+    # the desktop MDI canvas no longer paints a giant center ghost (removed
+    # 2026-05-14 — decorative only).
+    watermark_text="",
+    watermark_sub="SWARM · FIELD · STGM",
+    watermark_alpha=6,
+
+    selection_bg="rgba(255,179,0,0.20)",
+    focus_border="#ffb300",
+
+    progress_start="#ffb300",
+    progress_end="#ff8f00",
+
+    slider_handle="#ffb300",
+    slider_groove="#1f1a14",
+
+    checkbox_checked="#ffb300",
+
+    tooltip_bg="#1a1612",
+)
+
 THEMES: dict[str, DesktopPalette] = {
     "mermaid": MERMAID,
     "predator": PREDATOR,
+    "beeson": BEESON,
 }
 
 
@@ -188,10 +330,10 @@ THEMES: dict[str, DesktopPalette] = {
 # ──────────────────────────────────────────────────────────────
 
 def load_active_theme_id() -> str:
-    """Read persisted theme choice, default to predator (v7 is the canonical release)."""
+    """Read persisted theme choice, default to beeson (v8 is the canonical release)."""
     try:
         data = json.loads(_THEME_FILE.read_text(encoding="utf-8"))
-        tid = str(data.get("theme_id", "predator")).strip().lower()
+        tid = str(data.get("theme_id", "beeson")).strip().lower()
         return tid if tid in THEMES else "predator"
     except Exception:
         return "predator"
@@ -212,12 +354,36 @@ def active_palette() -> DesktopPalette:
 
 
 def wallpaper_path(palette: Optional[DesktopPalette] = None) -> str:
-    """Resolve absolute wallpaper path for the given palette."""
+    """Resolve absolute wallpaper path.
+
+    Priority order:
+      1. Architect-selected path (.sifta_state/desktop_wallpaper.json).
+      2. Active palette's default wallpaper.
+      3. static/ fallback.
+      4. Empty string = no wallpaper.
+    """
+    # 1. Architect override (Settings → Appearance → Wallpaper).
+    custom = load_custom_wallpaper_path()
+    if custom is not None:
+        if not custom:
+            return ""  # explicit "no wallpaper" choice
+        if _wallpaper_path_revoked(custom):
+            # Persisted picker row pointed at revoked lattice asset — drop it.
+            custom = None
+        elif Path(custom).exists():
+            return custom
+        # Path saved but file is missing — fall through to palette default.
+    # 2. Palette default
     p = palette or active_palette()
-    candidate = _REPO / "Library" / "Desktop Pictures" / p.wallpaper_filename
-    if candidate.exists():
-        return str(candidate)
-    # fallback to static
+    fn = str(getattr(p, "wallpaper_filename", "") or "").strip()
+    if fn:
+        candidate = _REPO / "Library" / "Desktop Pictures" / fn
+        if candidate.exists():
+            return str(candidate)
+    # BeeSon ships with empty default — stay clean; do not fall back to ocean PNG.
+    if getattr(p, "theme_id", "") == "beeson":
+        return ""
+    # 3. Final fallback (Mermaid / Predator / legacy)
     fallback = _REPO / "static" / "mermaid_os_wallpaper.png"
     return str(fallback) if fallback.exists() else ""
 
@@ -247,13 +413,13 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: 
 QLineEdit {{ background: {p.bg_card}; border: 1px solid {p.border_default}; border-radius: 8px; padding: 7px 12px; color: {p.text_primary}; selection-background-color: {p.selection_bg}; }}
 QLineEdit:focus {{ border: 1px solid {p.focus_border}; }}
 QTextEdit, QPlainTextEdit {{ background: {p.bg_card}; border: 1px solid {p.border_subtle}; border-radius: 8px; padding: 8px; color: {p.text_primary}; selection-background-color: {p.selection_bg}; }}
-QPushButton {{ background: rgba(59,66,97,0.5); border: 1px solid {p.border_default}; border-radius: 8px; color: {p.text_primary}; padding: 6px 16px; font-weight: 500; }}
-QPushButton:hover {{ background: {p.accent_hover}; border: 1px solid {p.accent_primary}; color: #fff; }}
+QPushButton {{ background: {p.bg_card}; border: 1px solid {p.border_default}; border-radius: 8px; color: {p.text_primary}; padding: 6px 16px; font-weight: 500; }}
+QPushButton:hover {{ background: {p.accent_hover}; border: 1px solid {p.accent_primary}; color: {p.text_primary}; }}
 QPushButton:pressed {{ background: {p.accent_pressed}; }}
 QListWidget, QTreeWidget {{ background: {p.bg_card}; border: 1px solid {p.border_subtle}; border-radius: 8px; color: {p.text_primary}; outline: none; }}
 QListWidget::item, QTreeWidget::item {{ padding: 6px 12px; border-radius: 6px; }}
 QListWidget::item:selected, QTreeWidget::item:selected {{ background: {p.selection_bg}; color: {p.accent_secondary}; }}
-QListWidget::item:hover, QTreeWidget::item:hover {{ background: rgba(59,66,97,0.4); }}
+QListWidget::item:hover, QTreeWidget::item:hover {{ background: {p.selection_bg}; }}
 QTabWidget::pane {{ border: 1px solid {p.border_subtle}; border-radius: 8px; background: {p.bg_card}; }}
 QTabBar::tab {{ background: transparent; color: {p.text_dim}; padding: 7px 16px; border-bottom: 2px solid transparent; }}
 QTabBar::tab:selected {{ color: {p.accent_secondary}; border-bottom: 2px solid {p.accent_secondary}; }}

@@ -2,7 +2,7 @@
 """
 reviewer_registry.py — TUF-Adapted Reviewer Allowlist with Per-Role/Per-Step Thresholds
 ══════════════════════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Provides a stable, never-raises interface to the reviewer registry JSON that
 governs the dual-sig audit gate in MutationGovernor.

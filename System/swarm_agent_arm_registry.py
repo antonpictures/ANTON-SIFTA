@@ -11,6 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+try:
+    from System.sifta_inference_defaults import CANONICAL_OLLAMA_FALLBACK
+except Exception:
+    CANONICAL_OLLAMA_FALLBACK = "alice-Q-m1-scout-2.3b-2.7gb:latest"
+
 
 @dataclass(frozen=True)
 class AgentArmSpec:
@@ -80,7 +85,7 @@ CORVID_SCOUT = AgentArmSpec(
     arm_id="corvid_scout",
     display_name="Corvid Scout",
     command=("internal:corvid_scout",),
-    model="alice-m1-scout-2.3b-2.7gb:latest",
+    model=CANONICAL_OLLAMA_FALLBACK,
     provider_base_url="http://127.0.0.1:11434/api/chat",
     enabled=False,
     live_env_var="SIFTA_AGENT_ARMS_ENABLE",

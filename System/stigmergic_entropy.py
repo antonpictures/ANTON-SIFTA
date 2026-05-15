@@ -17,7 +17,7 @@ Two modes coexist:
 
 Provenance:
     - Spec: SwarmGPT fresh tab (2026-04-17T12:14)
-    - Implementation: Antigravity (DeepMind IDE)
+    - Implementation: Antigravity IDE (peer editor on the same Mac; distinct from Cursor)
     - Audit: All five models converged on PPO entropy as the bridge point
     - Integration: reads from StigmergicMemoryBus traces, writes to entropy_schedule.jsonl
 """

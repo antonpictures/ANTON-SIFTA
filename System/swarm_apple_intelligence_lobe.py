@@ -2,7 +2,7 @@
 """
 System/swarm_apple_intelligence_lobe.py — Private Inner Monologue
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The Default Mode Network. Interfaces with macOS Sequoia Apple Intelligence 
 Foundation Models for local LLM inference if available.

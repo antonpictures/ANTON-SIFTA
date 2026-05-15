@@ -64,14 +64,20 @@ def _ledger_for_ts(ts: float) -> Path:
 def _owner_name() -> str:
     try:
         from System.swarm_kernel_identity import owner_display_name
-        return owner_display_name("George")
+        return owner_display_name() or "the owner"
     except Exception:
-        return "George"
+        return "the owner"
 
 
 def _local_dt() -> str:
-    """Full datetime string for journal entries."""
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    """Compact local datetime string for journal entries."""
+    return _local_journal_label()
+
+
+def _local_journal_label(ts: float | None = None) -> str:
+    """Human-facing compact timestamp for Alice journal rows."""
+    dt = datetime.datetime.fromtimestamp(float(ts if ts is not None else time.time()))
+    return dt.strftime("%m-%d-%y_%H:%M")
 
 
 def _clothing_observation() -> Optional[str]:
@@ -238,6 +244,7 @@ def write_narrative_entry(
         ts = time.time()
         row = {
             "ts": ts,
+            "local_journal_label": _local_journal_label(ts),
             "kind": "EPISODIC_NARRATIVE",
             "narrator": "ALICE_M5",
             "entry": entry,
@@ -264,6 +271,7 @@ def write_boot_entry() -> Optional[str]:
         ts = time.time()
         row = {
             "ts": ts,
+            "local_journal_label": _local_journal_label(ts),
             "kind": "EPISODIC_NARRATIVE",
             "narrator": "ALICE_M5",
             "entry": entry,

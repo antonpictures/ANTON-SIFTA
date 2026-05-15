@@ -146,12 +146,22 @@ def _active_app_is_media() -> tuple[bool, str]:
 
 _OWNER_DIRECT_RE = re.compile(
     r"\b(?:"
-    r"can\s+you|could\s+you|do\s+you|are\s+you|will\s+you|"
-    r"hear\s+me|listen\s+to\s+me|talk\s+to\s+me|answer\s+me|"
+    r"can\s+you|could\s+you|do\s+you|are\s+you|will\s+you|did\s+you|"
+    r"have\s+you|would\s+you|should\s+you|hear\s+me|listen\s+to\s+me|"
+    r"talk\s+to\s+me|answer\s+me|tell\s+me|show\s+me|help\s+me|"
     r"who\s+am\s+i|what(?:'s| is)\s+my\s+name|"
-    r"i\s+(?:am|['’]m|was|want|need|asked|said|mean|feel|think)|"
-    r"my\s+(?:voice|question|name|body)|"
-    r"you\s+and\s+me|we\s+(?:are|were|need|should|watch|watched)"
+    # Architect 2026-05-14 06:40 — expanded verb list. The investor-demo
+    # transcript caught "I have paused", "I just told", "I paused" — all
+    # missed by the prior regex which only covered "i am/was/want/need/...".
+    r"i\s+(?:am|['’]m|was|want|need|asked|said|mean|feel|think|"
+    r"have|told|paused|did|saw|heard|see|hear|read|gave|just|"
+    r"would|will|wanted|needed|noticed|expected)|"
+    r"my\s+(?:voice|question|name|body|video|tab|screen|computer)|"
+    r"you\s+and\s+me|we\s+(?:are|were|need|should|watch|watched)|"
+    # Direct verb-first imperatives addressed to her
+    r"(?:please\s+)?(?:pause|play|stop|start|open|close|change|"
+    r"check|read|show|tell|hear|listen|look|focus|wake|sleep|run|"
+    r"answer|respond|reply)\s+(?:the|my|this|that|it|now|with)"
     r")\b",
     re.IGNORECASE,
 )
@@ -305,6 +315,44 @@ def classify_wake_turn(
             "wake_score": 0.0,
             "name_match": {"target": "", "candidate": "", "similarity": 0.0},
         }
+
+    # ── Layer 1 fast-path ─────────────────────────────────────────
+    # Architect 2026-05-14 06:40: "THE OPERATING SYSTEM NEEDS TO RESPOND
+    # BETTER TO HER NAME REGISTERED IN LAYER 1". Hearing the name at the
+    # start of an utterance is attention — it must wake DIRECT instantly,
+    # bypassing logit / media-context / score-threshold. Required:
+    #   - the first token must match a known wake target (alice / george /
+    #     owner vocative) with similarity ≥ 0.85 (high bar — no fuzzy mishears)
+    #   - the utterance must not be JUST the name alone (those reach the
+    #     normal path so the "Alice." → "What is on your mind?" handshake
+    #     still works)
+    # This is Layer 1 attention, NOT authorization. The cortex still
+    # decides what to do with the turn; the fast-path only guarantees
+    # direct routing so the cortex SEES it.
+    _name_match_early = best_wake_name_match(clean)
+    _name_sim_early = float(_name_match_early.get("similarity") or 0.0)
+    _first_token = (_tokenize(clean)[:1] or [""])[0]
+    _first_token_sim = 0.0
+    if _first_token:
+        for _target in _active_target_names():
+            _s = max(_edit_similarity(_first_token, _target),
+                     _prefix_similarity(_first_token, _target))
+            if _s > _first_token_sim:
+                _first_token_sim = _s
+    _word_count_early = len(_tokenize(clean))
+    if _first_token_sim >= 0.85 and _word_count_early >= 2:
+        # Hearing the name first → instant attention. Skip the logit math.
+        return {
+            "truth_label": TRUTH_LABEL,
+            "route": "direct",
+            "reason": "layer1_name_at_utterance_start",
+            "confidence": 0.98,
+            "wake_score": 0.98,
+            "name_match": dict(_name_match_early),
+            "first_token": _first_token,
+            "first_token_similarity": round(_first_token_sim, 3),
+        }
+    # ──────────────────────────────────────────────────────────────
 
     fp = _sanitize_acoustic(acoustic_fingerprint)
     near = _float01(fp.get("nearfield_voice_likelihood", 0.0))

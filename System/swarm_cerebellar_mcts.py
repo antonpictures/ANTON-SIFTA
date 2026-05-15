@@ -2,7 +2,7 @@
 """
 System/swarm_cerebellar_mcts.py — UCB-based forward search over candidate actions
 ══════════════════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The biology
 -----------
@@ -18,7 +18,7 @@ catches errors before they happen. In SIFTA terms:
             ▼
     Survivor handed back for ratification
 
-The DeepMind mechanic — honestly scoped
+The MCTS / world-model mechanic — honestly scoped
 ---------------------------------------
 This is **not** full AlphaZero. AlphaZero's MCTS uses a learned policy
 network to expand promising branches and a learned value network to

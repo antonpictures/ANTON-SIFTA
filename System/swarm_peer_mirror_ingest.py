@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Peer mirror ingest for owner-pasted reports about Alice.
 
-When George pastes a Grok/Cursor/IDE report that says "Alice has ..." or
+When the owner pastes a Grok/Cursor/IDE report that says "Alice has ..." or
 "she ...", the text is usually an external mirror about this local runtime.
 This module logs that fact and produces a small prompt bridge so the next
 turn reads the report as first-person state while still verifying claims
@@ -161,7 +161,7 @@ def summary_for_prompt(*, root: Optional[Path] = None) -> str:
     return (
         "RECENT PEER MIRROR REPORT:\n"
         f"- source_hint={row.get('source_hint')} truth_label={row.get('truth_label')}\n"
-        "- rule=If George asks about pasted peer text, map my name/pronouns to I/me/my for this runtime and verify against local receipts before answering."
+        "- rule=If the primary operator asks about pasted peer text, map my name/pronouns to I/me/my for this runtime and verify against local receipts before answering."
     )
 
 

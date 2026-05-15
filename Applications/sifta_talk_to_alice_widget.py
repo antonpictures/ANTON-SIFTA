@@ -9402,6 +9402,48 @@ class TalkToAliceWidget(SiftaBaseWidget):
             cue_kind = str(md.get("current_kind") or "").strip()
             if not expected or not cue_id:
                 return False
+            # Architect 2026-05-14 ~19:30 PDT: voice command pre-check.
+            # Before we score the kid's STT as a lesson attempt, see
+            # if they actually said one of the two control phrases.
+            # Both override the scorer; we write the matching signal
+            # ledger and return True so the lesson scorer never sees
+            # this turn.
+            import re as _re2
+            _heard_low = text.lower().strip()
+            _CLOSE_PATS = (
+                r"\bclose (the )?wordace( app)?\b",
+                r"\balice,?\s*close (the )?(word\s*ace|app)\b",
+                r"\bclose the app\b",
+                r"\bquit (word\s*ace|the app)\b",
+            )
+            _ADVANCE_PATS = (
+                r"\bnext word\b",
+                r"\banother (one|word)\b",
+                r"\b(let'?s )?move on\b",
+                r"\bwe('?re| are) ready\b",
+                r"\bready for (the |a )?next\b",
+                r"\bnext\s*(please)?\s*$",
+            )
+            for _pat in _CLOSE_PATS:
+                if _re2.search(_pat, _heard_low):
+                    self._wordace_write_signal("close", text, conf)
+                    try:
+                        self._append_user_line(
+                            f"[WordAce ✕ close] {text!r}", float(conf or 0.0),
+                        )
+                    except Exception:
+                        pass
+                    return True
+            for _pat in _ADVANCE_PATS:
+                if _re2.search(_pat, _heard_low):
+                    self._wordace_write_signal("advance", text, conf)
+                    try:
+                        self._append_user_line(
+                            f"[WordAce ⏭ next] {text!r}", float(conf or 0.0),
+                        )
+                    except Exception:
+                        pass
+                    return True
             # Architect 2026-05-14 ~17:30 PDT: TTS echo guard. WordAce
             # publishes ``tts_mute_until_ts`` while Alice is speaking
             # the cue or the verdict. If the mic captured audio during
@@ -9504,6 +9546,40 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return True
         except Exception:
             return False
+
+    def _wordace_write_signal(self, kind: str, heard_text: str, conf: float) -> None:
+        """Write an advance/close row to the matching WordAce signal
+        ledger. The widget polls these files at 400ms and acts.
+
+        Two channels:
+          * ``wordace_advance.jsonl`` — change the show card to the
+            next word.
+          * ``wordace_close.jsonl`` — close the WordAce widget.
+
+        Both are append-only JSONL with the same row shape: ts,
+        signal_kind, heard_text, stt_conf, schema. Older rows are not
+        replayed — the widget seeks to EOF on _start_lesson, so this
+        write only fires the widget once.
+        """
+        try:
+            import json as _json3
+            import time as _time3
+            from pathlib import Path as _Path3
+            repo = _Path3(__file__).resolve().parent.parent
+            fname = f"wordace_{kind}.jsonl"
+            ledger = repo / ".sifta_state" / fname
+            ledger.parent.mkdir(parents=True, exist_ok=True)
+            row = {
+                "ts": _time3.time(),
+                "signal_kind": kind,
+                "heard_text": heard_text,
+                "stt_conf": float(conf or 0.0),
+                "schema": "WORDACE_SIGNAL_V1",
+            }
+            with ledger.open("a", encoding="utf-8") as f:
+                f.write(_json3.dumps(row) + "\n")
+        except Exception:
+            pass
 
     def _start_brain(
         self,

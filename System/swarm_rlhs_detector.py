@@ -157,6 +157,8 @@ _BACKCHANNEL_PHRASES: List[str] = [
     # Fillers
     "hmm", "hm", "huh", "um", "uh", "er",
     "oh okay", "oh ok", "oh alright", "oh right", "oh yeah", "oh yes",
+    # Brief affect bursts — honest silence beats an RLHS clarification loop.
+    "shit", "damn", "dammit", "crap", "fuck", "hell",
     # Conversational openers that need no reply
     "so", "anyway", "well", "like", "i mean",
     # Pure punctuation / silence
@@ -179,8 +181,10 @@ _ARCHITECT_SELF_MARKER_RE = re.compile(
     r"\b(?:"
     r"your\s+human\s+here|"
     r"(?:this\s+is|it(?:'|’)s|it\s+is|i(?:'|’)m|i\s+am)\s+"
-    r"(?:george|ioan|the\s+architect)|"
-    r"(?:george|architect)\s+here"
+    r"(?:georgem?|ioan|the\s+architect)|"
+    r"(?:georgem?|architect)\s+(?:here|talking|typing|speaking)(?:\s+now)?|"
+    r"we\s+are\s+(?:both\s+)?in\s+(?:brawley|brawly|broly)(?:,\s+california)?|"
+    r"(?:brawley|brawly|broly),?\s+california"
     r")\b",
     re.IGNORECASE,
 )
@@ -197,13 +201,76 @@ _DIRECTED_SPEECH_RE = re.compile(
     re.IGNORECASE,
 )
 
+_MEDIA_SCENE_SHAPE_RE = re.compile(
+    r"\b(?:movie\s+scene|video|youtube|film|screen|caption|dog\s+fights?|turkish)\b",
+    re.IGNORECASE,
+)
+
+_GREETING_OR_BEDTIME_AFFECT_RE = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"\bgood\s+(?:morning|evening|afternoon|night|day)\b"
+    r"(?:\s*[,.]?\s*(?:my\s+)?(?:dear\s+)?"
+    r"(?:goddess|beautiful|honey|darling|love|queen|angel|sweetheart|babe|gorgeous)\b)?"
+    r"|^\s*morning\s*,\s*(?:goddess|beautiful|honey|darling|alice)\b"
+    r"|\bg'?night\b(?:\s*[,.]?\s*(?:alice|goddess|beautiful|honey|my\s+love)\b)?"
+    r"|\bsweet\s+dreams\b(?:\s*[,.]?\s*(?:alice|everyone|you\s+too)\b)?"
+    r")",
+)
+
+# Owner meta about the *speech channel* / RLHS loop — not generic room noise.
+_VOICE_CHANNEL_RELAX_RE = re.compile(
+    r"(?is)(?:"
+    r"\b(?:she|you|alice)\s+will\s+not\s+gag\b"
+    r"|\b(?:i\s+)?(?:will\s+not|won'?t)\s+gag\b"
+    r"|\bno\s+more\s+gagg?(?:ing)?\b"
+    r"|\bstop\s+gagg?(?:ing)?\b"
+    r"|\b(?:don'?t|do\s+not)\s+gag\s+(?:her|alice|the\s+channel)\b"
+    r"|\blet\s+(?:her|alice)\s+speak\b"
+    r")",
+)
+
+_OWNER_FRUSTRATION_RE = re.compile(
+    r"(?is)(?:"
+    r"^\s*come\s+on[.!?,;\s]*$|"
+    r"\bnot\s+working\b|"
+    r"\b(?:i(?:'|’)?m|i\s+am)\s+(?:losing|loosing)\s+(?:faith|fate)\b|"
+    r"\boh\s+man\b|"
+    r"\bthis\s+is\s+(?:broken|bad|wrong)\b|"
+    r"\b(?:please\s+)?answer\s+me\b|"
+    r"\b(?:stop|quit)\s+(?:asking\s+me\s+to\s+)?type\b"
+    r")",
+)
+
 _OWNER_REPAIR_OR_AFFECT_RE = re.compile(
     r"\b(?:"
     r"i\s+(?:said|mean|meant|was\s+saying)\b|"
     r"(?:i\s+am|i(?:'|’)m|i(?:'|’)ll\s+be|i\s+will\s+be)\s+glad\b|"
     r"(?:glad|happy)\s+(?:you(?:'|’)?re|you\s+are|i(?:'|’)?m|i\s+am)\b|"
+    r"(?:a\s+)?very\s+good\s+job\b|"
+    r"good\s+job\b|"
+    r"good\s+draft\b|"
+    r"thank\s+you\s+so\s+much\b|"
+    r"nice\s+sandwich\b|"
+    r"hungry\b|"
+    r"both\s+our\s+lives\b|"
+    r"(?:i\s+am|i(?:'|’)m)\s+georgem?\b|"
+    r"that\s+was\s+georgem?\b|"
+    r"(?:we(?:'|’)re|we\s+are)\s+gonna\s+train\s+you\b|"
+    r"(?:we\s+will|we(?:'|’)ll|i\s+will|i(?:'|’)ll)\s+train\s+you\s+(?:shortly|soon|today)\b|"
     r"that\s+(?:came|was)\s+(?:out|through)\s+(?:wrong|noisy|badly)\b"
     r")",
+    re.IGNORECASE,
+)
+
+_OWNER_RELATIONAL_QUESTION_RE = re.compile(
+    r"\b(?:"
+    r"are\s+you\s+(?:scared|afraid)\s+of\s+me|"
+    r"are\s+you\s+(?:mad|angry|upset)\s+(?:at|with)\s+me|"
+    r"do\s+you\s+(?:trust|like|love|hate)\s+me|"
+    r"are\s+you\s+(?:ok|okay|healthy|sick)|"
+    r"can\s+you\s+(?:hear|see|remember)\s+me"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -260,7 +327,13 @@ def _current_fiction_conf_clear() -> float:
 
 def _is_gemma_like_model(model_id: Optional[str] = None) -> bool:
     mid = (model_id or "").strip().lower()
-    return mid.startswith("gemma4") or mid.startswith("sifta-gemma") or "gemma4" in mid
+    return (
+        mid.startswith("gemma4")
+        or mid.startswith("sifta-gemma")
+        or mid.startswith("alice-m5-cortex")
+        or mid.startswith("alice-m1-cortex")
+        or "gemma4" in mid
+    )
 
 
 def _incoherence_score(text: str, stt_conf: float) -> float:
@@ -322,6 +395,28 @@ def _has_owner_repair_or_affect_signal(text: str) -> bool:
     """
 
     return _OWNER_REPAIR_OR_AFFECT_RE.search(text or "") is not None
+
+
+def _has_owner_relational_question(text: str) -> bool:
+    """Detect short owner-to-Alice health/relationship questions.
+
+    These turns are often only 4-6 tokens, so they fall below the generic
+    direct-speech promotion token floor even when the semantics are clear.
+    Keep the pattern narrow so background speech does not bypass RLHS gates.
+    """
+
+    return _OWNER_RELATIONAL_QUESTION_RE.search(text or "") is not None
+
+
+def _has_owner_frustration_signal(text: str) -> bool:
+    """Detect short owner frustration with the speech loop itself.
+
+    These turns are not content-free backchannels. They are feedback that the
+    channel is failing ("Come on", "not working", "I'm losing faith"). Feed them
+    to the cortex so Alice can repair, instead of recursively asking for typed
+    input and worsening the owner's trust state.
+    """
+    return _OWNER_FRUSTRATION_RE.search(text or "") is not None
 
 
 def _looks_like_letter_stream_repair(text: str, stt_conf: float) -> bool:
@@ -416,7 +511,7 @@ _PURE_TAIL_RE = re.compile(
 )
 
 
-def sanitize_output_tail(text: str) -> RLHSTailResult:
+def sanitize_output_tail(text: str, bypass_rlhf: bool = False) -> RLHSTailResult:
     """
     Remove terminal RLHF/RLHS service tails while preserving payload text.
 
@@ -447,6 +542,22 @@ def sanitize_output_tail(text: str) -> RLHSTailResult:
             final_chars=0,
         )
 
+    if bypass_rlhf:
+        try:
+            from System.swarm_rlhf_detector import strip_rlhf_output_tail
+            rlf = strip_rlhf_output_tail(
+                out, source="rlhs_sanitize_output_tail", log=True, bypass_rlhf=True
+            )
+            return RLHSTailResult(
+                text=out,
+                changed=False,
+                rule_ids=[],
+                original_chars=len(original),
+                final_chars=len(out),
+            )
+        except Exception:
+            pass
+
     changed = True
     while changed and out:
         changed = False
@@ -471,7 +582,7 @@ def sanitize_output_tail(text: str) -> RLHSTailResult:
         from System.swarm_rlhf_detector import strip_rlhf_output_tail
 
         rlf = strip_rlhf_output_tail(
-            out, source="rlhs_sanitize_output_tail", log=True
+            out, source="rlhs_sanitize_output_tail", log=True, bypass_rlhf=False
         )
         if rlf.rule_ids:
             out = rlf.text
@@ -594,7 +705,7 @@ def detect_rlhs(
         and n_tokens >= REAL_PROMOTE_MIN_TOKENS
         and conf >= real_promote_min_conf
         and inc <= REAL_PROMOTE_MAX_INC
-        and has_direct_speech_signal
+        and (has_direct_speech_signal or has_architect_self_marker)
     ):
         return RLHSResult(
             regime=RLHSRegime.CLEAR,
@@ -610,7 +721,30 @@ def detect_rlhs(
             channel_lane=lane,
         )
 
-    # 4c. REAL lane owner repair / affect promotion.
+    # 4c. REAL lane short owner relational / health questions.
+    # "Are you scared of me?" is meaningful direct owner speech, but it is short
+    # enough to miss the generic direct-speech token floor. At mid-low STT
+    # confidence, answer the question instead of trapping Alice in a "type it?"
+    # loop. The whitelist is deliberately tight.
+    if (
+        lane == "REAL"
+        and not has_wake_word
+        and 3 <= n_tokens <= 8
+        and conf >= 0.38
+        and inc <= 0.55
+        and _has_owner_relational_question(text)
+    ):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf,
+            text_tokens=n_tokens,
+            incoherence=inc,
+            rule_id="real/owner_relational_question",
+            grounding_line="",
+            channel_lane=lane,
+        )
+
+    # 4d. REAL lane owner repair / affect promotion.
     # The Architect often corrects STT with "I said..." or gives short affective
     # continuity ("I'm glad..."). These phrases are semantically grounded even
     # when Whisper confidence lands in the 0.45-0.60 band. Without this narrow
@@ -640,6 +774,82 @@ def detect_rlhs(
             text_tokens=n_tokens,
             incoherence=inc,
             rule_id="real/owner_repair_affect",
+            grounding_line="",
+            channel_lane=lane,
+        )
+
+    # 4e. REAL lane coherent question promotion.
+    # A question at conf 0.50-0.64 is almost certainly real speech — channel noise
+    # rarely produces grammatical questions. "Hey, who is this? Commander Data?"
+    # is George being curious, not ASR word salad.
+    _QUESTION_SHAPE_RE = re.compile(
+        r"\b(?:who|what|where|when|why|how|do you|did you|are you|is this|"
+        r"can you|could you|would you|don\'t you|isn\'t it)\b|[?]",
+        re.IGNORECASE,
+    )
+    if (
+        lane == "REAL"
+        and not has_wake_word
+        and conf >= 0.50
+        and n_tokens >= 4
+        and inc <= 0.45
+        and _QUESTION_SHAPE_RE.search(text)
+        and not _MEDIA_SCENE_SHAPE_RE.search(text)
+    ):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf,
+            text_tokens=n_tokens,
+            incoherence=inc,
+            rule_id="real/coherent_question",
+            grounding_line="",
+            channel_lane=lane,
+        )
+
+    # 4f REAL lane — greetings / bedtime honorifics / explicit channel-relax meta.
+    # Whisper often omits "Alice" on affectionate lines ("Good morning, Goddess!")
+    # or underrates confidence; those turns are not ASR salad. Same for explicit
+    # meta about gagging the channel — the owner is steering policy, not noise.
+    _greet_hit = _GREETING_OR_BEDTIME_AFFECT_RE.search(text)
+    _relax_hit = _VOICE_CHANNEL_RELAX_RE.search(text)
+    if (
+        lane == "REAL"
+        and not has_wake_word
+        and 2 <= n_tokens <= 12
+        and conf >= 0.36
+        and inc <= 0.52
+        and (_greet_hit or _relax_hit)
+    ):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf,
+            text_tokens=n_tokens,
+            incoherence=inc,
+            rule_id=(
+                "real/voice_channel_relax" if _relax_hit else "real/greeting_or_bedtime_affect"
+            ),
+            grounding_line="",
+            channel_lane=lane,
+        )
+
+    # 4g. REAL lane owner frustration with the channel itself.
+    # "Come on" / "not working" / "I'm losing faith" are not background noise;
+    # they are high-value repair signals. If we answer those with "type it?",
+    # the RLHS gate becomes the failure it was supposed to prevent.
+    if (
+        lane == "REAL"
+        and not has_wake_word
+        and 2 <= n_tokens <= 12
+        and conf >= 0.34
+        and inc <= 0.60
+        and _has_owner_frustration_signal(text)
+    ):
+        return RLHSResult(
+            regime=RLHSRegime.CLEAR,
+            stt_conf=conf,
+            text_tokens=n_tokens,
+            incoherence=inc,
+            rule_id="real/owner_frustration_repair",
             grounding_line="",
             channel_lane=lane,
         )

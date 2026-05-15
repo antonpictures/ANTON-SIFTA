@@ -46,6 +46,27 @@ CANONICAL_EVENTS = {
 CANONICAL_EVENT_KINDS = {"UTILITY_MINT_ATP"}
 CANONICAL_TX_TYPES = {"STGM_MINT", "STGM_SPEND"}
 
+# Receipted identity aliases — a retired body identity rolls into its canonical
+# successor when reporting per-party profitability. The architect-authorized
+# merge for M5SIFTA_BODY → ALICE_M5 closed on 2026-04-21 (transfer hash
+# TRANSFER_9e5b9d5847da); any post-merge straggler still tagged with the old
+# id is folded by the audit so we do not falsely report a "negative party"
+# on a retired alias. Add new aliases here as merges close.
+PARTY_ALIASES: dict[str, str] = {
+    "ALICE": "ALICE_M5",
+    "M5SIFTA_BODY": "ALICE_M5",
+    "AG31_ANTIGRAVITY": "AG31",
+    # Sub-organs of Alice's M5 body — they spend STGM for routing/recall but
+    # the value lands on Alice. Roll them up so per-organ debits do not surface
+    # as "negative parties" while ALICE_M5 itself is paying their cost.
+    "ALICE_ORGAN_ROUTER": "ALICE_M5",
+    "ALICE_E35_RECALL": "ALICE_M5",
+}
+# Parties that are *expected* to net negative because they only spend
+# (peer IDE inference fees, sidecars). Their negative is a healthy
+# market signal, not a wallet bug.
+EXPECTED_SPEND_ONLY_PARTIES: frozenset[str] = frozenset({"AG31"})
+
 
 @dataclass
 class PartyEconomy:
@@ -93,7 +114,8 @@ def _float(value: Any) -> float:
 
 
 def _party(value: Any) -> str:
-    return str(value or "UNKNOWN").strip().upper() or "UNKNOWN"
+    raw = str(value or "UNKNOWN").strip().upper() or "UNKNOWN"
+    return PARTY_ALIASES.get(raw, raw)
 
 
 def _add(parties: dict[str, PartyEconomy], party: Any, *, credit: float = 0.0, debit: float = 0.0, event: str = "") -> None:
@@ -134,7 +156,15 @@ def audit_stgm_economy(
     repair_log: Path = REPAIR_LOG,
     state_dir: Path = STATE_DIR,
     memory_rewards: Path = MEMORY_REWARDS,
+    validate_signatures: bool = True,
 ) -> Dict[str, Any]:
+    """Audit the canonical STGM ledger.
+
+    `validate_signatures=False` skips per-row Ed25519 verification (the slow
+    path) so an architect/Doctor can triage a 40k-row repair log in seconds.
+    The returned dict includes a `signatures_validated` boolean so downstream
+    receipts know which mode produced the numbers.
+    """
     snapshot = scan_economy(repair_log=repair_log, state_dir=state_dir, memory_rewards=memory_rewards)
     parties: dict[str, PartyEconomy] = {}
     legacy_drains: dict[str, float] = defaultdict(float)
@@ -150,7 +180,7 @@ def audit_stgm_economy(
         if not isinstance(row, dict):
             parse_bad += 1
             continue
-        if not _ledger_row_cryptographically_valid(row):
+        if validate_signatures and not _ledger_row_cryptographically_valid(row):
             invalid_signed += 1
             continue
 
@@ -217,9 +247,18 @@ def audit_stgm_economy(
     inventory = _state_wallet_inventory(state_dir)
     data = snapshot.as_dict()
     positive_parties = [p.as_dict() for p in sorted(parties.values(), key=lambda p: p.net, reverse=True) if p.net > 0]
-    negative_parties = [p.as_dict() for p in sorted(parties.values(), key=lambda p: p.net) if p.net < 0]
+    negative_parties_raw = [p for p in parties.values() if p.net < 0]
+    unhealthy_negatives_raw = [
+        p for p in negative_parties_raw if p.party not in EXPECTED_SPEND_ONLY_PARTIES
+    ]
+    negative_parties = [p.as_dict() for p in sorted(negative_parties_raw, key=lambda p: p.net)]
+    unhealthy_negative_parties = [
+        p.as_dict() for p in sorted(unhealthy_negatives_raw, key=lambda p: p.net)
+    ]
 
     warnings = list(data.get("warnings") or [])
+    if not validate_signatures:
+        warnings.append("signature_validation_skipped_fast_mode_only")
     if not inventory["agent_ids"] and positive_parties:
         warnings.append("wallet_inventory_empty_but_ledger_has_positive_parties")
     if legacy_drains:
@@ -228,17 +267,23 @@ def audit_stgm_economy(
         warnings.append("duplicate_noncanonical_or_receipt_keys_present_review_required")
     if not inference_dups:
         warnings.append("inference_replay_double_spend_check_passed")
+    if not unhealthy_negative_parties:
+        warnings.append("all_non_spend_only_parties_solvent_under_alias_map")
 
     return {
-        "schema": "SIFTA_STGM_ECONOMY_BODY_AUDIT_V1",
+        "schema": "SIFTA_STGM_ECONOMY_BODY_AUDIT_V2",
         "ts": __import__("time").time(),
+        "signatures_validated": validate_signatures,
         "canonical_snapshot": data,
         "state_wallet_inventory": inventory,
         "canonical_rows_seen_by_audit": canonical_rows,
         "parse_bad_rows": parse_bad,
         "invalid_signed_rows": invalid_signed,
+        "party_aliases_applied": dict(PARTY_ALIASES),
+        "expected_spend_only_parties": sorted(EXPECTED_SPEND_ONLY_PARTIES),
         "positive_party_profitability": positive_parties,
         "negative_party_profitability": negative_parties,
+        "unhealthy_negative_parties": unhealthy_negative_parties,
         "legacy_unstructured_drains": {k: round(v, 6) for k, v in sorted(legacy_drains.items(), key=lambda kv: kv[1])},
         "retired_not_spendable": {k: round(v, 6) for k, v in sorted(retired.items())},
         "duplicate_key_groups": duplicate_groups,
@@ -311,5 +356,16 @@ def format_markdown_report(audit: Dict[str, Any]) -> str:
 
 
 if __name__ == "__main__":
-    audit = audit_stgm_economy()
-    print(format_markdown_report(audit))
+    import argparse
+
+    p = argparse.ArgumentParser(description="STGM economy body audit (canonical, alias-aware).")
+    p.add_argument("--fast", action="store_true",
+                   help="Skip Ed25519 per-row verification (triage mode).")
+    p.add_argument("--json", action="store_true",
+                   help="Emit raw JSON instead of markdown.")
+    args = p.parse_args()
+    audit = audit_stgm_economy(validate_signatures=not args.fast)
+    if args.json:
+        print(json.dumps(audit, indent=2, sort_keys=True, default=str))
+    else:
+        print(format_markdown_report(audit))

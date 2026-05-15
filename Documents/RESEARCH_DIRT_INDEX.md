@@ -16,6 +16,7 @@
 |:---|:---|:---|:---|
 | Semble MCP | [RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md](RESEARCH_Semble_MCP_Coding_Tournament_2026-05-01.md) | Local code retrieval MCP + OpenCode + Ollama; token economics | 2026-05-01 |
 | Hermes LM Studio | [RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md](RESEARCH_Hermes_LMStudio_SIFTA_Tournament_2026-05-01.md) | Nous Hermes-Agent + LM Studio; ctx ≥64k; bridge vs receipts | 2026-05-01 |
+| Stigmergic prediction | [RESEARCH_STIGMERGIC_PREDICTION_BIO_MATH_2026-05-07.md](RESEARCH_STIGMERGIC_PREDICTION_BIO_MATH_2026-05-07.md) | Grassé → PDE stigmergy; Boldini continuified control; Véliz contestability; discrete ledger dynamics sketch | 2026-05-07 |
 | MiMo ASR | [RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md](RESEARCH_MiMo_V2_5_ASR_SIFTA_Tournament_2026-05-01.md) | Xiaomi MiMo-V2.5-ASR local; VRAM/diarization/receipt fields | 2026-05-01 |
 | Laguna XS.2 vLLM | [RESEARCH_Poolside_Laguna_XS2_vLLM_SIFTA_Tournament_2026-05-01.md](RESEARCH_Poolside_Laguna_XS2_vLLM_SIFTA_Tournament_2026-05-01.md) | Poolside MoE coding model; vLLM build friction; bake-off vs benchmarks | 2026-05-01 |
 | Nemotron 3 Nano Omni | [RESEARCH_NVIDIA_Nemotron3_Nano_Omni_Docker_SIFTA_Tournament_2026-05-01.md](RESEARCH_NVIDIA_Nemotron3_Nano_Omni_Docker_SIFTA_Tournament_2026-05-01.md) | NVIDIA omni vLLM+Docker; Parakeet/Cosmos; VRAM + multimodal receipts | 2026-05-01 |
@@ -25,6 +26,9 @@
 | Qwopus GLM 18B merge | [RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md](RESEARCH_Qwopus_GLM_18B_Frankenmerge_SIFTA_Tournament_2026-05-01.md) | Frankenmerge + heal FT; llama.cpp; seam failures + loop harness | 2026-05-01 |
 | Moonshot PRFaaS | [RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md](RESEARCH_Moonshot_PRFaaS_Prefill_Service_SIFTA_Tournament_2026-05-01.md) | Prefill vs decode split; hybrid KV; arXiv:2604.15039; residency | 2026-05-01 |
 | Quantum sack SoT | [RESEARCH_QUANTUM_SACK_BISHOP_BUNDLE_2026_05_01.md](RESEARCH_QUANTUM_SACK_BISHOP_BUNDLE_2026_05_01.md) | 10-row SoT table; Bell/MIP*/QEC/Landauer/PQC; companion to Bishop bundle | 2026-05-01 |
+| Hantavirus public health | [RESEARCH_HANTAVIRUS_PUBLIC_HEALTH_STIGMERGY_POINTER_2026-05-07.md](RESEARCH_HANTAVIRUS_PUBLIC_HEALTH_STIGMERGY_POINTER_2026-05-07.md) | CDC/ECDC ground truth (no specific cure); Andes cruise cluster links; stigmergy = receipted info lanes only | 2026-05-07 |
+| Mondaloy ORSC | [RESEARCH_MONDALOY_ORSC_TACIT_PROCESSING_2026-05-07.md](RESEARCH_MONDALOY_ORSC_TACIT_PROCESSING_2026-05-07.md) | Mondaloy 100/200 primary-source summary; ORSC alloy processing unknown vectors; Grok prompt | 2026-05-07 |
+| Ollama agent arms | [RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md](RESEARCH_OLLAMA_NATIVE_AGENT_ARMS_ASSIMILATION_2026-05-09.md) | `ollama launch` native agents (Hermes/OpenCode/Codex/Droid/etc.) as persistent Alice octopus arms; ethics + receipt harness | 2026-05-09 |
 
 ---
 
@@ -48,6 +52,10 @@ Cross-cutting Colosseum law: **Predator row + pytest + receipt schema** before a
 | **Quantum sack** | Optional: load sack metadata in `swarm_rlhf_quarantine.py` / tournament router without treating metaphors as proof. |
 | **Physiology (parallel hill)** | **Events 102–107 + 110** on `main`: **Event 107** `swarm_health_metrics.py` — ledger-derived composite for nightly audit (observability/parentage/race, allostatic, motor skill-bias, test, bio). **Event 106** cron job + **Event 105** BioSIFTA. Optional: **`deposit_observation`** on every organ path. Adapter/LoRA after receipt density. **Event 98c** showpiece; **CUSUM / Page** §F.1. |
 | **§A YouTube / stack dirt** | All **11** rows remain **`RESEARCH_NOT_SHIPPED`** until each stack wins its own bake-off (this table). |
+| **Stigmergic memory field** | Ship **forage_spec** per organ + decay \(\lambda_k\) matrix for unified JSONL field; pytest `tests/test_stigmergic_memory_field.py` (bounded tail); cite `RESEARCH_STIGMERGIC_PREDICTION_BIO_MATH_2026-05-07.md` §7–9; Colosseum: Predator row before default-on. |
+| **Outbreak / biosurveillance receipts** | Optional organ: ingest **primary** advisories only (CDC/ECDC/WHO URLs + content hashes + `fetched_at`); never ship “cure” claims from models; tournament doc `RESEARCH_Hantavirus_*_Tournament_*` when Architect GO; cite `RESEARCH_HANTAVIRUS_PUBLIC_HEALTH_STIGMERGY_POINTER_2026-05-07.md`. |
+| **Mondaloy / ORSC materials** | Public sources give broad Ni-Co-Cr-Al-Ti chemistry + VIM/VAR + AR1/HCBT use; tacit process windows remain unknown (heat treat, AM powder limits, HIP, oxygen cleaning, promoted-combustion protocol). Keep `RESEARCH_MONDALOY_ORSC_TACIT_PROCESSING_2026-05-07.md` as OSINT pointer only; no controlled specs in repo. |
+| **Ollama native agent arms** | Plan-only assimilation of `ollama launch` coding agents into Alice as persistent octopus arms: `agent_arm_registry`, launcher/watchdog, `agent_arm_receipts.jsonl`, health rows, isolated worktrees, NPPL gates. Start with Hermes probe only after Architect GO. |
 
 **Watch window note:** Three IDE bodies + `ide_stigmergic_trace.jsonl` as the honest scoreboard. Colosseum lights stay on for bake-offs and Event 98c / crystallizer–motor closure work.
 

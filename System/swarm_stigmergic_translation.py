@@ -2,7 +2,7 @@
 """
 swarm_stigmergic_translation.py — The Native Apple Auditory Bridge
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Previously, SIFTA relied on Whisper PyTorch models. Because Whisper
 hallucinates aggressively on ambient noise, the Architect was forced

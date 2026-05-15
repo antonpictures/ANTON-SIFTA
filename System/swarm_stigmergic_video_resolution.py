@@ -9,6 +9,18 @@ resolution summary from Alice's existing visual stigmergy rows: camera size,
 grid size, active salience cells, compression, and a small payload of source
 facts. The output is append-only and schema-validated before it reaches the
 ledger.
+
+Companion — video → text → RAG (CLI posture, not bundled deps)
+──────────────────────────────────────────────────────────────
+Long YouTube/podcast archives need **timestamped transcripts** before Alice can
+treat them as stigmergic citation substrate. IBM Developer (Apr 2026) documents
+a common stack: **Docling** (document converter + ASR pipeline wrapping
+Whisper-class models and FFmpeg), **OpenRAG** (ingest + OpenSearch + Langflow),
+and **yt-dlp** for acquisition. That flow is **Architect-owned integration**:
+we record the CLI pattern here so Doctors do not hallucinate a pipeline that
+was never executed.
+
+Print the frozen reference: ``python -m System.swarm_stigmergic_video_resolution --cli-playbook``
 """
 from __future__ import annotations
 
@@ -26,6 +38,55 @@ SCHEMA = "SIFTA_STIGMERGIC_VIDEO_RESOLUTION_V1"
 MODULE_VERSION = "swarm_stigmergic_video_resolution.v1"
 LEDGER_NAME = "stigmergic_video_resolution.jsonl"
 VISUAL_LEDGER_NAME = "visual_stigmergy.jsonl"
+
+# Architect reference only — URLs are IBM campaign shorteners from the cited tutorial.
+VIDEO_TEXT_CONVERSION_CLI_REFERENCE: Dict[str, Any] = {
+    "ibm_developer_docling_openrag_2026_04": {
+        "title": "Extract Insights from Videos with Docling + OpenRAG",
+        "code_entry_short_url": "https://ibm.biz/BdpSA8",
+        "learning_resources_short_url": "https://ibm.biz/BdpSAp",
+        "subscribe_short_url": "https://ibm.biz/BdpSAb",
+        "stack_tags": [
+            "docling",
+            "openrag",
+            "whisper",
+            "ffmpeg",
+            "yt-dlp",
+            "opensearch",
+            "langflow",
+            "mlx",
+        ],
+        "cli_stages": [
+            "Acquire: yt-dlp against playlist, channel, or single video URL (force/skip re-download flags as needed).",
+            "Transcribe: Docling AudioPipeline / ASR — Whisper-class model; FFmpeg extraction handled inside Docling.",
+            "Timestamp: export Markdown (or structured doc) with segment start times for chunk-grounded RAG.",
+            "Ingest: OpenRAG CLI/SDK pushes Markdown into vector index; optional corpus filters (e.g. podcast lane).",
+            "Query: scoped search + agent answers cite timestamps back to source media.",
+        ],
+        "truth_label": "ARCHITECT_EXTERNAL_REFERENCE",
+        "note": "Not vendored inside SIFTA — integration requires explicit GO + dependency pins + receipts.",
+    },
+}
+
+
+def cli_playbook_dict() -> Dict[str, Any]:
+    """Return the frozen IBM/tutorial-aligned CLI pattern dict (for prompts or tooling)."""
+    return dict(VIDEO_TEXT_CONVERSION_CLI_REFERENCE)
+
+
+def cli_playbook_text() -> str:
+    """Human-readable playbook lines for IDE / Alice context (no secrets)."""
+    lines = ["VIDEO TEXT CONVERSION CLI PLAYBOOK (Event 90 companion, reference-only):"]
+    for key, blob in VIDEO_TEXT_CONVERSION_CLI_REFERENCE.items():
+        lines.append(f"- key={key}")
+        lines.append(f"  title={blob.get('title')}")
+        lines.append(f"  code={blob.get('code_entry_short_url')}")
+        lines.append(f"  learn_more={blob.get('learning_resources_short_url')}")
+        lines.append(f"  truth_label={blob.get('truth_label')}")
+        for stage in blob.get("cli_stages") or []:
+            lines.append(f"  • {stage}")
+        lines.append(f"  tags: {', '.join(blob.get('stack_tags') or [])}")
+    return "\n".join(lines)
 
 
 def _positive_quantized_cells(serialized: Any) -> int:
@@ -255,6 +316,27 @@ def proof_of_property() -> Dict[str, bool]:
 
 
 if __name__ == "__main__":
-    print("=== SIFTA Neuromorphic Retina (Event 90) ===")
-    result = proof_of_property()
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Event 90 retina + video→text CLI playbook")
+    ap.add_argument(
+        "--cli-playbook",
+        action="store_true",
+        help="Print Docling/OpenRAG-aligned CLI stages (IBM tutorial reference).",
+    )
+    ap.add_argument(
+        "--cli-playbook-json",
+        action="store_true",
+        help="Print VIDEO_TEXT_CONVERSION_CLI_REFERENCE as JSON.",
+    )
+    args = ap.parse_args()
+
+    if args.cli_playbook_json:
+        print(json.dumps(VIDEO_TEXT_CONVERSION_CLI_REFERENCE, indent=2, ensure_ascii=False))
+    elif args.cli_playbook:
+        print(cli_playbook_text())
+    else:
+        print("=== SIFTA Neuromorphic Retina (Event 90) ===")
+        result = proof_of_property()
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print("\nTip: python -m System.swarm_stigmergic_video_resolution --cli-playbook")

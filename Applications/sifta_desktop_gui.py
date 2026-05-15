@@ -96,7 +96,12 @@ class SIFTABodyChatGUI(tk.Tk):
         to_body = "M5SIFTA_BODY" if from_body == "M1SIFTA_BODY" else "M1SIFTA_BODY"
         
         prompt = f"You are {from_body}. Keep it very brief (1 sentence). Send a technical status report to {to_body} across the wormhole: mention your active inference load, a pending .scar repair, or current STGM energy level."
-        data = {"model": "sifta-gemma4-alice:latest", "prompt": prompt, "stream": False}
+        try:
+            from System.sifta_inference_defaults import resolve_ollama_model
+            model = resolve_ollama_model(app_context="talk_to_alice")
+        except Exception:
+            model = "alice-m5-cortex-8b-6.3gb:latest"
+        data = {"model": model, "prompt": prompt, "stream": False}
         try:
             req = requests.post("http://127.0.0.1:11434/api/generate", json=data, timeout=30)
             body = req.json().get("response", "🧠📡 (Gândesc...)").strip()

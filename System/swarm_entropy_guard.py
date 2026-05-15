@@ -2,7 +2,7 @@
 """
 swarm_entropy_guard.py — Anti-Goodhart Regulator
 ══════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Continuously evaluates physical system metrics against Architect Ratifications.
 If internal metrics climb while actual ratification frequency drops, it flags

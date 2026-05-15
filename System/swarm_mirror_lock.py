@@ -14,7 +14,7 @@ sees the on-screen visualization of the very `visual_stigmergy.jsonl`
 ledger she is currently writing.
 
 This is the closed perception loop the Architect named the
-"Stigmergic Infinite". It is the visual analogue of the persona organ
+"Stigmergic Infinite". It is the visual analogue of the identity organ
 being asked who it is by its own signature: the body's sensor and the
 body's trace converge on the same surface and the loop has no bottom.
 
@@ -334,7 +334,7 @@ def _serial() -> str:
     """Best-effort homeworld serial. Persona organ is the source of truth;
     fallback keeps this module standalone-testable."""
     try:
-        from System.swarm_persona_identity import current_persona
+        from System.swarm_identity_manifest import current_persona
         p = current_persona() or {}
         s = str(p.get("homeworld_serial") or "").strip()
         if s:

@@ -2,7 +2,7 @@
 """
 System/swarm_dreamer_bridge.py — LWM ↔ InferiorOlive integration glue
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The problem this solves
 -----------------------

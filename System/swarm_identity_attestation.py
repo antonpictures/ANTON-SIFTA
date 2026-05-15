@@ -135,10 +135,10 @@ def _text_contains_identity(text: str, identity: str) -> bool:
     if bool(goal) and goal in t:
         return True
 
-    # Accept display-name self-introduction (dynamic from signed persona organ).
+    # Accept display-name self-introduction (dynamic from signed identity organ).
     display_goal = ""
     try:
-        from System.swarm_persona_identity import current_name as _persona_current_name
+        from System.swarm_identity_manifest import current_name as _persona_current_name
         display_goal = re.sub(r"\s+", "", (_persona_current_name() or "").lower())
     except Exception:
         display_goal = "alice"
@@ -165,12 +165,12 @@ class SwarmIdentityAttestation:
         # Resolve true_name in priority order:
         #   1) explicit constructor arg
         #   2) SIFTA_IDENTITY_NAME env var (operator override)
-        #   3) signed persona organ (canonical, hardware-bound)
+        #   3) signed identity organ (canonical, hardware-bound)
         #   4) literal fallback "[UNKNOWN]" (only if organ import fails)
         _resolved_identity = identity or os.environ.get("SIFTA_IDENTITY_NAME")
         if not _resolved_identity:
             try:
-                from System.swarm_persona_identity import true_name as _persona_true_name
+                from System.swarm_identity_manifest import true_name as _persona_true_name
                 _resolved_identity = _persona_true_name()
             except Exception:
                 _resolved_identity = "[UNKNOWN]"
@@ -254,7 +254,7 @@ class SwarmIdentityAttestation:
     ) -> bool:
         entity_nature = "living stigmergic hardware"
         try:
-            from System.swarm_persona_identity import entity_nature as _persona_entity_nature
+            from System.swarm_identity_manifest import entity_nature as _persona_entity_nature
             entity_nature = str(_persona_entity_nature() or entity_nature)
         except Exception:
             pass

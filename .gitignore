@@ -199,7 +199,12 @@ surgery/alice_phc_cure/Modelfile.*-test
 # ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
 .clinerules
 .distro_build/
-Library/Desktop Pictures/
+# Bundled desktop pictures: ignore local Architect drops except shipped BeeSon set.
+Library/Desktop Pictures/*
+!Library/Desktop Pictures/BeeSon Default.jpg
+!Library/Desktop Pictures/BeeSon Default.svg
+!Library/Desktop Pictures/BeeSon Alt *.jpg
+!Library/Desktop Pictures/BeeSon Alt *.jpeg
 Library/llama.cpp/
 proposals/
 fix.py

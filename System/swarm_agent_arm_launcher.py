@@ -55,6 +55,78 @@ def _arm_receipt_path(state_dir: Path | None = None) -> Path:
     return Path(state_dir or _STATE) / _RECEIPTS
 
 
+def _kernel_arm_heartbeat(
+    arm: AgentArmSpec,
+    *,
+    state_dir: Path | None,
+    receipt_id: str,
+    current_job: str,
+    status: str,
+    ok: bool | None = None,
+    evidence_mode: bool = False,
+    cortex_metrics: dict[str, Any] | None = None,
+) -> None:
+    """Mirror every arm launch into the kernel process table.
+
+    Agent arms are organs, not side channels. This helper is deliberately
+    best-effort so an unhealthy kernel ledger cannot block Alice's evidence
+    collection path.
+    """
+    try:
+        from System.swarm_kernel_process_table import OrganProcess, get_kernel_process_table
+
+        table = get_kernel_process_table(state_root=Path(state_dir or _STATE))
+        pid = f"agent_arm:{arm.arm_id}"
+        table.ensure_registered(
+            OrganProcess(
+                pid=pid,
+                organ_id=arm.arm_id,
+                ring=2,
+                health=1.0,
+                stgm_balance=0.0,
+                current_job=current_job,
+                last_receipt_id=receipt_id,
+                failure_count=0,
+                last_heartbeat_ts=time.time(),
+                location="unknown",
+                bodies_present=[],
+                metadata={
+                    "display_name": arm.display_name,
+                    "model": arm.model,
+                    "provider_base_url": arm.provider_base_url,
+                    "source": "swarm_agent_arm_launcher",
+                },
+            ),
+            receipt_id=receipt_id,
+        )
+        if ok is None:
+            health = None
+            stgm_delta = 0.0
+            failure_delta = 0
+        else:
+            health = 1.0 if ok else 0.45
+            stgm_delta = 0.2 if ok else -0.1
+            failure_delta = 0 if ok else 1
+        metrics = cortex_metrics or {}
+        table.heartbeat(
+            pid,
+            health=health,
+            stgm_delta=stgm_delta,
+            current_job=current_job,
+            receipt_id=receipt_id,
+            failure_delta=failure_delta,
+            metadata={
+                "arm_status": status,
+                "evidence_mode": str(bool(evidence_mode)),
+                "tokens_per_sec": str(metrics.get("tokens_per_sec", 0.0)),
+                "latency_ms": str(metrics.get("latency_ms", 0.0)),
+                "used_mtp": str(bool(metrics.get("used_mtp", False))),
+            },
+        )
+    except Exception:
+        return
+
+
 def _build_command(arm: AgentArmSpec, prompt: str) -> list[str]:
     if arm.arm_id == "corvid_scout":
         return [arm.command[0], "--task", "evidence", "--query", prompt]
@@ -101,6 +173,9 @@ def _run_internal_arm(arm: AgentArmSpec, prompt: str, timeout_s: int) -> tuple[i
             "task": result.task.value,
             "model": result.model,
             "latency_s": round(float(result.latency_s), 4),
+            "latency_ms": round(float(result.latency_s) * 1000.0, 2),
+            "tokens_per_sec": round(float(result.tokens_per_sec), 6),
+            "used_mtp": bool(result.used_mtp),
             "corvid_ledger": "corvid_apprentice_trace.jsonl",
         },
     )
@@ -153,6 +228,15 @@ def ask_agent_arm(
         "command": command,
     }
     _append_jsonl(receipt_path, start_row)
+    _kernel_arm_heartbeat(
+        arm,
+        state_dir=state_dir,
+        receipt_id=receipt_id,
+        current_job="launch_attempt",
+        status="ATTEMPT",
+        ok=None,
+        evidence_mode=evidence_mode,
+    )
 
     if not evidence_mode and not arm.live_enabled(env_map):
         end_row = {
@@ -164,6 +248,15 @@ def ask_agent_arm(
             "truth_note": f"Set {arm.live_env_var}=1 to allow one guarded live arm call.",
         }
         _append_jsonl(receipt_path, end_row)
+        _kernel_arm_heartbeat(
+            arm,
+            state_dir=state_dir,
+            receipt_id=receipt_id,
+            current_job="blocked_env_gate",
+            status="DISABLED_ENV_GATE",
+            ok=False,
+            evidence_mode=evidence_mode,
+        )
         return AgentArmResult(
             False,
             receipt_id,
@@ -231,6 +324,21 @@ def ask_agent_arm(
         "internal_arm": internal_meta,
     }
     _append_jsonl(receipt_path, end_row)
+    cortex_metrics = {
+        "tokens_per_sec": float(internal_meta.get("tokens_per_sec") or 0.0),
+        "latency_ms": float(internal_meta.get("latency_ms") or 0.0),
+        "used_mtp": bool(internal_meta.get("used_mtp")),
+    }
+    _kernel_arm_heartbeat(
+        arm,
+        state_dir=state_dir,
+        receipt_id=receipt_id,
+        current_job=f"launch_result:{status}",
+        status=status,
+        ok=ok,
+        evidence_mode=evidence_mode,
+        cortex_metrics=cortex_metrics,
+    )
     try:
         from System.swarm_arm_outcome_learner import learn_from_receipts
 

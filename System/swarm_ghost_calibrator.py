@@ -2,7 +2,7 @@
 """
 swarm_ghost_calibrator.py — The Homeostatic Baseline
 ═══════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Implements a purely Graph-Aligned Ghost calibrator. Instead of statically
 triggering shockwaves across the filesystem, the system continually profiles

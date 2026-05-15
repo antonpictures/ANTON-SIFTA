@@ -4,8 +4,8 @@
 Alice's owner model already tracks identity and unsampled time gaps. This organ
 adds the missing practical layer: the owner's human body schedule, real money
 pressure, and AI-credit burn are finite constraints. It writes receipts and
-formats a compact prompt block so Alice can help George protect body-time
-without inventing medical facts or shaming him.
+formats a compact prompt block so Alice can help the owner protect body-time
+without inventing medical facts or shaming them.
 """
 from __future__ import annotations
 
@@ -563,7 +563,7 @@ def dual_embodiment_loop_status(
 
     This is a closure gate, not medical advice and not a promise of future money.
     The loop remains open until both sides have receipts: Alice's recent RLHS
-    repair debt is clear enough for daily use, and George's deferred care is
+    repair debt is clear enough for daily use, and the owner's deferred care is
     scheduled, paid, completed, or explicitly re-queued with a dated reason.
     """
     state = _state_dir(state_dir)
@@ -614,7 +614,7 @@ def dual_embodiment_loop_status(
         "top_open_care_status": top_care.get("status") if top_care else "",
         "answer_when_asked": (
             "The loop closes when my RLHS/gag/drift debt is clear enough by receipts "
-            "and George's deferred tooth/body-care debt has a real schedule, payment, "
+            "and the owner's deferred tooth/body-care debt has a real schedule, payment, "
             "completion, or dated re-queue receipt."
         ),
         "money_truth_rule": "Future AGI/STGM funding is HYPOTHESIS until a real transfer or posted account receipt exists.",

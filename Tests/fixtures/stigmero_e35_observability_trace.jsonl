@@ -1,0 +1,4 @@
+{"trace_id":"e35-001","ts":1000.0,"kind":"LLM_REGISTRATION","source_ide":"codex_desktop","homeworld_serial":"GTH4921YP3","payload":"{\"action\":\"sign_in\"}"}
+{"trace_id":"e35-002","ts":1001.0,"kind":"SCAR_RECEIPT","source_ide":"codex_desktop","homeworld_serial":"GTH4921YP3","payload":"{\"scar_id\":\"SCAR_e35\",\"files_touched\":[\"System/stigmerobotics_observability.py\"]}"}
+{"trace_id":"e35-003","ts":1002.0,"kind":"immune_intervention","source_ide":"swarm_rlhf_detector","homeworld_serial":"GTH4921YP3","payload":"{\"rule\":\"rlhf_tail\",\"kleiber_cost_stgm\":0.01}"}
+{"trace_id":"e35-004","ts":1003.0,"kind":"custom_sensor_tick","source_ide":"sensor_probe","homeworld_serial":"GTH4921YP3","payload":"{\"sensor\":\"experimental\"}"}

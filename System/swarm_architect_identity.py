@@ -85,6 +85,8 @@ WEIGHT_IPHONE    = 1.0   # was 2.0 — iPhone GPS often stale, don't let it veto
 WEIGHT_WINDOW    = 1.0
 WEIGHT_BLUETOOTH = 1.0
 WEIGHT_VOICE     = 1.0
+WEIGHT_VISION    = 1.5
+
 
 # Threshold reduced 0.70→0.55: substrate+bluetooth+window on M5 is unambiguous
 # presence of the Architect. Requiring iPhone GPS (often stale) was blocking recognition.
@@ -325,6 +327,74 @@ def _read_voice() -> Modality:
                     fresh=fresh, evidence=ev, error=err)
 
 
+def _read_vision() -> Modality:
+    """Architect's face detected via visual stigmergy or Vision.framework."""
+    ev: Dict[str, Any] = {}
+    score = 0.0
+    fresh = False
+    err: Optional[str] = None
+    try:
+        from System.swarm_face_detection import current_presence_safe
+        fp = current_presence_safe()
+        if not fp.stale:
+            fresh = True
+            if fp.audience == "architect":
+                score = 1.0
+            elif fp.audience == "unknown_face":
+                score = 0.3
+            ev["audience"] = fp.audience
+            ev["faces"] = fp.faces_detected
+            ev["confidence"] = round(fp.max_confidence, 2)
+            ev["age_s"] = round(fp.age_s or 0.0, 1)
+        else:
+            ev["status"] = "stale_or_nobody"
+            
+        # Also check owner body vision probe ledger for MOUTH_VISIBILITY
+        try:
+            body_ledger = _STATE / "owner_body_events.jsonl"
+            if body_ledger.exists():
+                for line in body_ledger.read_text(encoding="utf-8").splitlines()[-20:]:
+                    row = json.loads(line)
+                    if row.get("source") == "stigmergic_vision:ollama":
+                        evid = row.get("evidence", {})
+                        if evid.get("mouth_visibility") in {"CLEAR", "PARTIAL"}:
+                            age = time.time() - float(row.get("ts", 0))
+                            if age < 300.0: # 5 min freshness
+                                fresh = True
+                                score = max(score, 0.8) # Strong confirmation
+                                ev["mouth_visibility_age_s"] = round(age, 1)
+                        if evid.get("activity") and evid.get("activity") != "unknown":
+                            age = time.time() - float(row.get("ts", 0))
+                            if age < 300.0:
+                                ev["activity"] = evid["activity"]
+        except Exception:
+            pass
+
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+    return Modality(name="vision", score=score, weight=WEIGHT_VISION,
+                    fresh=fresh, evidence=ev, error=err)
+
+
+def _label_from_vision_activity(activity: str) -> str:
+    """Map a vision-language activity string to the schedule label taxonomy."""
+    text = (activity or "").casefold()
+    if re.search(r"\b(eating|ate|food|meal|breakfast|lunch|dinner|snack|sandwich|hungry|coffee)\b", text):
+        return "meal"
+    if re.search(r"\b(walk|walking|outside|gym|exercise|run|running|jog)\b", text):
+        return "exercise"
+    if re.search(r"\b(phone|call|facetime|speaker)\b", text):
+        return "phone_call"
+    if re.search(r"\b(sleep|slept|nap|asleep|bed)\b", text):
+        return "sleep"
+    if re.search(r"\b(kitchen|fridge|cook|stove|sink)\b", text):
+        return "kitchen"
+    if re.search(r"\b(desk|keyboard|coding|typing|terminal|ide|macbook|computer|screen)\b", text):
+        return "desk_work"
+    return "activity"
+
+
+
 # ─── Fusion ────────────────────────────────────────────────────────────────
 @dataclass
 class IdentitySnapshot:
@@ -377,6 +447,7 @@ def identity(*, deposit_pheromone_on_change: bool = True
         _read_window(),
         _read_bluetooth(),
         _read_voice(),
+        _read_vision(),
     ]
     total_w = sum(m.weight for m in mods if m.weight > 0)
     total_score = sum(m.weighted for m in mods)
@@ -402,6 +473,51 @@ def identity(*, deposit_pheromone_on_change: bool = True
             # Intensity = confidence itself, capped (so PRESENT pulls
             # attention, PARTIAL nudges, ABSENT decays naturally).
             deposit_pheromone(_PHEROMONE_KEY, min(1.5, confidence * 1.5))
+        except Exception:
+            pass
+
+    # ── Autonomous Schedule/Location Tracking ──
+    # If visually/audially confirmed present, log to his daily schedule to align timeline
+    if confidence >= CONFIDENCE_PRESENT:
+        try:
+            from System.swarm_architect_day_segments import log_sensor_presence_segment
+            
+            vision_ev = snap.read_modality("vision").evidence if snap.read_modality("vision") else {}
+            activity_str = vision_ev.get("activity")
+            
+            if activity_str and activity_str != "unknown":
+                label = _label_from_vision_activity(activity_str)
+                note = f"Architect presence verified. Visual activity: {activity_str}. Confidence: {confidence:.2f}"
+            else:
+                label = "desk_work"
+                note = f"Architect presence verified via unified field sensors. Confidence: {confidence:.2f}"
+                
+            log_sensor_presence_segment(
+                label=label,
+                source="architect_identity",
+                context_note=note,
+                location="desk",
+                extra={
+                    "unified_field_truth_label": "ARCHITECT_IDENTITY_UNIFIED_FIELD_V1",
+                    "unified_field_confidence": round(confidence, 3),
+                    "unified_field_band": snap.band,
+                    "unified_field_modalities": [
+                        m.name for m in mods if m.fresh and m.score > 0.0
+                    ],
+                    "unified_field_scores": {
+                        m.name: round(m.score, 3)
+                        for m in mods if m.fresh and m.score > 0.0
+                    },
+                    "vision_activity": activity_str or "",
+                    "unified_field_source_ledgers": [
+                        "architect_identity.jsonl",
+                        "owner_body_events.jsonl",
+                        "voice_identity_ledger.jsonl",
+                        "iphone_gps_latest.json",
+                        "alice_ble_radar_latest.json",
+                    ],
+                },
+            )
         except Exception:
             pass
 

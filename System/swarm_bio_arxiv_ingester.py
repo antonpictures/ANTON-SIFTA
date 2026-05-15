@@ -233,7 +233,7 @@ def ingest_arxiv_query(
     organ_hint: str = "",
     max_results: int = 5,
     run_claim_extraction: bool = False,
-    model: str = "qwen3.5:2b",
+    model: str = "alice-m1-scout-2.3b-2.7gb:latest",
     state_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
@@ -306,7 +306,7 @@ def run_sifta_bio_sweep(
     queries: Optional[List[Dict[str, str]]] = None,
     max_results_per_query: int = 3,
     run_claim_extraction: bool = False,
-    model: str = "qwen3.5:2b",
+    model: str = "alice-m1-scout-2.3b-2.7gb:latest",
 ) -> List[Dict[str, Any]]:
     """
     Run all SIFTA_BIO_QUERIES (or a custom list) and ingest results.

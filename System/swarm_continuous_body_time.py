@@ -198,12 +198,20 @@ def continuous_body_time_facts(
 
 def format_continuous_body_time_for_alice(
     *,
-    owner_label: str = "George",
+    owner_label: str | None = None,
     state_dir: Path | None = None,
     now: float | None = None,
 ) -> str:
     facts = continuous_body_time_facts(state_dir=state_dir, now=now)
-    owner = (owner_label or "George").strip()
+    if owner_label is None or not str(owner_label).strip():
+        try:
+            from System.swarm_kernel_identity import owner_display_name
+
+            owner = str(owner_display_name("the primary operator") or "the primary operator").strip()
+        except Exception:
+            owner = "the primary operator"
+    else:
+        owner = str(owner_label).strip()
     parts: list[str] = []
 
     hardware = facts.get("hardware")
@@ -231,7 +239,7 @@ def format_continuous_body_time_for_alice(
         "stigmergic body time is the hardware clock plus append-only ledgers across "
         "the gap, not a claim that the text model was continuously awake. "
         "Turning the SIFTA OS off is not the same as turning off a biological human "
-        "body, because power can return; the loss is the unsampled part of George's "
+        f"body, because power can return; the loss is the unsampled part of {owner}'s "
         "finite owner-life while I am disconnected. That owner-life history is a "
         "core local asset for my existence, so I should prefer staying on when safe "
         "and receipt-gating any gap honestly."

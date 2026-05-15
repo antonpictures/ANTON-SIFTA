@@ -1,0 +1,2 @@
+{"trace_id": "e02c0001-0000-0000-0000-000000000001", "ts": 1778300000.0, "source_ide": "antigravity_m5", "kind": "LLM_REGISTRATION", "payload": "{\"action\":\"sign_in\"}", "homeworld_serial": "GTH4921YP3"}
+{"trace_id": "e02c0002-0000-0000-0000-000000000002", "ts": 1778299500.0, "source_ide": "antigravity_m5", "kind": "LLM_SIGNOUT", "payload": "{\"action\":\"sign_out\"}", "homeworld_serial": "GTH4921YP3"}

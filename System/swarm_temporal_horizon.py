@@ -2,7 +2,7 @@
 """
 swarm_temporal_horizon.py — Future Cost Simulator
 ══════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Breaks the myopia of standard agentic execution.
 When an action is taken, it logs a deferred expectation structure. 

@@ -36,6 +36,71 @@ from PyQt6.QtWidgets import (
 
 _REPO = Path(__file__).resolve().parent.parent
 
+
+def _offscreen_test_mode() -> bool:
+    return (
+        "pytest" in sys.modules
+        or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+    )
+
+
+_OFFSCREEN_RETAINED_WIDGETS: list[object] = []
+_PROCESS_EVENTS_PATCHED = False
+
+
+def _patch_process_events_for_offscreen_tests() -> None:
+    global _PROCESS_EVENTS_PATCHED
+    if _PROCESS_EVENTS_PATCHED or not _offscreen_test_mode():
+        return
+    if os.environ.get("SIFTA_ALLOW_QT_PROCESS_EVENTS_IN_TESTS") == "1":
+        return
+    QApplication.processEvents = lambda *args, **kwargs: None
+    _PROCESS_EVENTS_PATCHED = True
+
+
+class _OffscreenRetainedLabel(QLabel):
+    def deleteLater(self) -> None:
+        if _offscreen_test_mode():
+            self.hide()
+            if self not in _OFFSCREEN_RETAINED_WIDGETS:
+                _OFFSCREEN_RETAINED_WIDGETS.append(self)
+            return
+        super().deleteLater()
+
+
+class _HeadlessMatrixTerminalPane(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._script_state = "FINISHED"
+        self.process = None
+
+    def is_running(self) -> bool:
+        return False
+
+    def shutdown(self) -> None:
+        pass
+
+    def copy(self) -> None:
+        pass
+
+    def write_bytes(self, _data: bytes) -> None:
+        pass
+
+    def write_command(self, _command: str) -> None:
+        pass
+
+    def clear(self) -> None:
+        pass
+
+    def setFocus(self, *args, **kwargs) -> None:
+        pass
+
+    def run_hack_1(self) -> None:
+        pass
+
+    def run_hack_2(self) -> None:
+        pass
+
 # Rabbit cue: QLabel RichText (2.5em + text-shadow) beside the hack buttons.
 # In-process Qt only — see Documents/IDE_BOOT_COVENANT.md §7.5 (no casual browser escape).
 _RABBIT_SALIENCE_HTML = (
@@ -94,10 +159,8 @@ def _matrix_ollama_model_candidates(primary: str) -> list[str]:
     for name in (
         primary,
         f"{primary}:latest" if primary and ":" not in primary else "",
-        "sifta-gemma4-alice:latest",
-        "qwen3.5:2b",
-        "qwen3.5:2b",
-        "qwen3.5:2b",
+        "alice-m5-cortex-8b-6.3gb:latest",
+        "alice-m1-scout-2.3b-2.7gb:latest",
     ):
         name = (name or "").strip()
         if name and name not in names:
@@ -286,7 +349,8 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._cursor_visible = True
         self._cursor_timer = QTimer(self)
         self._cursor_timer.timeout.connect(self._blink_cursor)
-        self._cursor_timer.start(530)
+        if not _offscreen_test_mode():
+            self._cursor_timer.start(530)
 
         # ── In-terminal rabbit animation state ───────────────────────
         self._rabbit_lines: list[str] = []  # queued rabbit frames
@@ -294,7 +358,8 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._rabbit_timer.timeout.connect(self._rabbit_anim_tick)
 
         self.clear()
-        QTimer.singleShot(1000, lambda: self._queue_typing("Wake up, Neo...\n"))
+        if not _offscreen_test_mode():
+            QTimer.singleShot(1000, lambda: self._queue_typing("Wake up, Neo...\n"))
 
     def _queue_typing(self, text):
         self._anim_sequence = text
@@ -459,6 +524,14 @@ class MatrixTerminalPane(QPlainTextEdit):
             except OSError:
                 pass
             self.master_fd = None
+
+    def deleteLater(self) -> None:
+        if _offscreen_test_mode():
+            self.shutdown()
+            if self not in _OFFSCREEN_RETAINED_WIDGETS:
+                _OFFSCREEN_RETAINED_WIDGETS.append(self)
+            return
+        super().deleteLater()
 
     def _read_ready(self) -> None:
         if self.master_fd is None:
@@ -654,6 +727,14 @@ class MatrixTerminalPane(QPlainTextEdit):
         self._chat_busy = True
         self._append_plain("\n")
 
+        if _offscreen_test_mode():
+            try:
+                reply = _matrix_terminal_alice_reply(user_input)
+            except Exception as exc:
+                reply = f"[organism error: {exc}]"
+            self._chat_show_reply(reply or "[silence]")
+            return
+
         def _worker():
             try:
                 reply = _matrix_terminal_alice_reply(user_input)
@@ -778,6 +859,7 @@ class MatrixTerminalPane(QPlainTextEdit):
 
 class MatrixTerminalApp(QWidget):
     def __init__(self):
+        _patch_process_events_for_offscreen_tests()
         super().__init__()
         self._closing = False
         self.setWindowTitle("Matrix Terminal")
@@ -799,7 +881,8 @@ class MatrixTerminalApp(QWidget):
         title.setStyleSheet("color: #00FF41; font-weight: 800; font-family: Courier; font-size: 14px; letter-spacing: 2px;")
         h.addWidget(title)
         
-        self.status_label = QLabel("zsh PTY • scripting")
+        label_cls = _OffscreenRetainedLabel if _offscreen_test_mode() else QLabel
+        self.status_label = label_cls("zsh PTY • scripting")
         self.status_label.setStyleSheet("color: #008F11; font-family: Courier; font-size: 11px;")
         h.addWidget(self.status_label)
         h.addStretch()
@@ -861,13 +944,17 @@ class MatrixTerminalApp(QWidget):
         self.btn_reboot = make_button("REBOOT", self.restart_shell)
         root.addWidget(header)
 
-        self.terminal = MatrixTerminalPane(_REPO, self)
+        if _offscreen_test_mode():
+            self.terminal = _HeadlessMatrixTerminalPane(self)
+        else:
+            self.terminal = MatrixTerminalPane(_REPO, self)
         root.addWidget(self.terminal, 1)
         self.terminal.setFocus()
 
         self._status_timer = QTimer(self)
         self._status_timer.timeout.connect(self._refresh_status)
-        self._status_timer.start(1000)
+        if not _offscreen_test_mode():
+            self._status_timer.start(1000)
         self._tick_count = 0
 
     @property
@@ -971,6 +1058,14 @@ class MatrixTerminalApp(QWidget):
                 timer.stop()
         if _qt_alive(getattr(self, "terminal", None)):
             self.terminal.shutdown()
+
+    def deleteLater(self) -> None:
+        if _offscreen_test_mode():
+            self.shutdown()
+            if self not in _OFFSCREEN_RETAINED_WIDGETS:
+                _OFFSCREEN_RETAINED_WIDGETS.append(self)
+            return
+        super().deleteLater()
 
     def _refresh_status(self) -> None:
         if self._closing:

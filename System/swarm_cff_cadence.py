@@ -42,7 +42,7 @@ WIRING:
   Reads  : SIFTA_SPECIES env var (default: "human")
   Writes : .sifta_state/cff_cadence_state.json
   Consumed by: swarm_subjective_present.py (Event 4, C47H)
-               swarm_species_time_persona.py (Event 6, AO46)
+               swarm_species_time_model.py (Event 6, AO46)
                swarm_boot.py (asyncio sleep cadence)
 
 STGM ECONOMY:

@@ -2,7 +2,7 @@
 """
 swarm_pain.py — The Damage Signal (R2)
 ════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Integrates biological Pain into the RL architecture.
 When a Swimmer encounters structural damage (Exceptions, 

@@ -47,4 +47,15 @@ If you are a new Architect attempting to spin up a distribution fork or operate 
 - **[AI-designed protein bioswitches — C&EN + *Nat. Biotechnol.* DOI (2026)](research_clippings/2026-04-27_AI_designed_protein_bioswitches_CEN.md)**  
   News summary + canonical `doi.org` link for GitHub / citation handoff.
 
+## Part VI: Tournament Territory Maps
+
+- **[SIFTA Territory Benchmark Map](SIFTA_TERRITORY_BENCHMARK_MAP.md)**  
+  Canonical map from IBM Agents, Agent Skills, NVIDIA contrast, Chamath/JRE, and Codex-harness narratives to repo modules, ledgers, and tests.
+- **[IBM Agents Hub Mapping](IBM_AGENTS_HUB_MAPPING.md)**  
+  IBM / agentskills.io boxes mapped to SIFTA organs, skill files, receipts, and security rules.
+- **[Chamath Institutional Narrative Pack](CHAMATH_NARRATIVE_PACK_V1.md)**  
+  Attention governance, energy sovereignty, dual-review, and reward-hazard notes with repo pointers.
+- **[NVIDIA Differentiator Notes](NVIDIA_DIFFERENTIATOR_NOTES.md)**  
+  Honest local-organism contrast against hyperscale GPU narratives without fake vendor-flex.
+
 We Code Together.

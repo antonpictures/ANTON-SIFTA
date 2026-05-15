@@ -402,6 +402,9 @@ def compute_attention_drive(
     if world.current_target_lease_until is not None and world.current_target_lease_until < world.now:
         desire += 0.10
         reasons.append("eye_lease_expired")
+    if _owner_eye_lock_active(world):
+        desire -= 0.14
+        reasons.append("owner_eye_lock")
 
     desire_field: Optional[dict[str, Any]] = None
     if desire_context is not None:
@@ -460,6 +463,16 @@ def _decision(candidate: SenseCandidate, world: WorldState, reason: str) -> Atte
     )
 
 
+def _owner_eye_lock_active(world: WorldState) -> bool:
+    writer = str(world.current_target_writer or "")
+    if writer not in {"owner_camera_command", "spinal_reflex_camera_switch"}:
+        return False
+    return (
+        world.current_target_lease_until is not None
+        and world.current_target_lease_until > world.now
+    )
+
+
 def decide_attention(
     world: WorldState,
     *,
@@ -470,6 +483,12 @@ def decide_attention(
     reg = registry or default_sensor_registry()
     close_eye = reg["close_owner_eye"]
     room_eye = reg["room_patrol_eye"]
+
+    if _owner_eye_lock_active(world):
+        if world.current_target_index == _ROOM_EYE_INDEX:
+            return _decision(room_eye, world, "owner_eye_lock_active")
+        if world.current_target_index == _CLOSE_EYE_INDEX:
+            return _decision(close_eye, world, "owner_eye_lock_active")
 
     ide_fresh = _fresh(world.ide_ts, world.now, _IDE_FRESH_WINDOW_S)
     visual_fresh = _fresh(world.visual_ts, world.now)

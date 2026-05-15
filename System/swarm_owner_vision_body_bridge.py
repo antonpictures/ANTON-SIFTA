@@ -44,11 +44,12 @@ _VISION_SYSTEM = (
 
 _VISION_USER = """Inspect this single camera frame. The human may be showing their mouth for dental / body maintenance logging.
 
-Reply in EXACTLY these two lines and nothing else:
+Reply in EXACTLY these three lines and nothing else:
 MOUTH_VISIBILITY: CLEAR | PARTIAL | NOT_VISIBLE
 ORAL_NOTES: <one short English clause (max 25 words); visible teeth/gums/lips, OR "mouth not visible", OR "uncertain from pixels">
+ACTIVITY: <one short clause describing what the human is doing, e.g. "typing", "eating at desk", "looking away", "talking", "absent">
 
-Do not output a third line."""
+Do not output a fourth line."""
 
 
 def _strip_thinking_tags(text: str) -> str:
@@ -65,6 +66,7 @@ def parse_vision_body_reply(text: str) -> Dict[str, Any]:
     clean = _strip_thinking_tags(text or "")
     visibility = "UNKNOWN"
     notes = "uncertain from pixels"
+    activity = "unknown"
     for raw_line in clean.splitlines():
         line = raw_line.strip()
         if not line or ":" not in line:
@@ -78,6 +80,8 @@ def parse_vision_body_reply(text: str) -> Dict[str, Any]:
                 visibility = candidate
         elif key == "ORAL_NOTES" and value:
             notes = value[:180]
+        elif key == "ACTIVITY" and value:
+            activity = value[:180]
 
     confidence_by_visibility = {
         "CLEAR": 0.85,
@@ -88,6 +92,7 @@ def parse_vision_body_reply(text: str) -> Dict[str, Any]:
     return {
         "mouth_visibility": visibility,
         "oral_notes": notes,
+        "activity": activity,
         "observation_confidence": confidence_by_visibility[visibility],
         "raw_model_reply": clean[:1000],
     }
@@ -195,6 +200,7 @@ def log_owner_body_from_vision_bytes(
         "model": m,
         "mouth_visibility": parsed["mouth_visibility"],
         "oral_notes": parsed["oral_notes"],
+        "activity": parsed["activity"],
         "observation_confidence": parsed["observation_confidence"],
         "raw_model_reply": parsed["raw_model_reply"],
         "diagnosis_policy": "local visual observation only; no disease/cancer/infection diagnosis",
@@ -203,7 +209,7 @@ def log_owner_body_from_vision_bytes(
         f"vision_probe frame_sha8={sha8} png_sha256={png_sha256[:16]} "
         f"model={m} mouth_visibility={parsed['mouth_visibility']} "
         f"confidence={parsed['observation_confidence']:.2f}; "
-        f"oral_notes={parsed['oral_notes']}"
+        f"oral_notes={parsed['oral_notes']}; activity={parsed['activity']}"
     )[:500]
     row = log_body_event(
         "body_check",

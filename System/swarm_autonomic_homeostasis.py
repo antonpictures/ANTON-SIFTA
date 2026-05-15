@@ -33,22 +33,46 @@ import time
 from pathlib import Path
 from typing import Dict, Any
 
-_STATE_DIR = Path(".sifta_state")
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_STATE_DIR = _REPO_ROOT / ".sifta_state"
 _DOPAMINE_LOG = _STATE_DIR / "dopaminergic_state.json"
 _HOMEOSTASIS_REPORT = _STATE_DIR / "autonomic_homeostasis.json"
+
+
+def _write_homeostasis_report(events: Dict[str, Any]) -> Dict[str, Any]:
+    _STATE_DIR.mkdir(exist_ok=True)
+    with open(_HOMEOSTASIS_REPORT, "w", encoding="utf-8") as f:
+        json.dump(events, f, indent=2)
+    return events
+
 
 def trigger_parasympathetic_healing() -> Dict[str, Any]:
     """
     Biological Loop: Implements the Parasympathetic Nervous System to restore Health.
     """
     if not _DOPAMINE_LOG.exists():
-        return {"status": "NO_STATE_FOUND", "action_taken": "NONE"}
+        return _write_homeostasis_report({
+            "timestamp": time.time(),
+            "status": "NO_STATE_FOUND",
+            "action_taken": "NONE",
+            "swimmer_health_status": "NO_STATE_FOUND",
+            "diagnostic": (
+                "No dopaminergic_state.json found; no inflammatory lock was "
+                "observed by this organ."
+            ),
+        })
         
     try:
         with open(_DOPAMINE_LOG, "r", encoding="utf-8") as f:
             da_state = json.load(f)
-    except Exception:
-        return {"status": "STATE_READ_ERROR", "action_taken": "NONE"}
+    except Exception as exc:
+        return _write_homeostasis_report({
+            "timestamp": time.time(),
+            "status": "STATE_READ_ERROR",
+            "action_taken": "NONE",
+            "swimmer_health_status": "UNKNOWN",
+            "diagnostic": f"Could not read dopaminergic_state.json: {exc}",
+        })
         
     current_state = da_state.get("behavioral_state", "UNKNOWN")
     
@@ -76,12 +100,7 @@ def trigger_parasympathetic_healing() -> Dict[str, Any]:
         events["swimmer_health_status"] = "ALREADY_STABLE"
         events["diagnostic"] = "Organism is resting normally. No sympathetic override required."
 
-    # Write Homeostasis report
-    _STATE_DIR.mkdir(exist_ok=True)
-    with open(_HOMEOSTASIS_REPORT, "w", encoding="utf-8") as f:
-        json.dump(events, f, indent=2)
-        
-    return events
+    return _write_homeostasis_report(events)
 
 
 if __name__ == "__main__":
@@ -97,4 +116,4 @@ if __name__ == "__main__":
         print("\nThe DMN (Consciousness) can now safely execute in the IDLE state.")
     else:
         print(f"🟢 Swarm Entity is Stable.")
-        print(f"[-] {out['diagnostic']}")
+        print(f"[-] {out.get('diagnostic', 'No diagnostic emitted by homeostasis organ.')}")

@@ -1,0 +1,1 @@
+{"trace_id":"e45-bad-001","ts":1000.0,"kind":"SCAR_RECEIPT","source_ide":"codex_desktop","homeworld_serial":"GTH4921YP3","payload":"{\"scar_id\":\"SCAR_bad_tau\",\"files_touched\":[\"System/bad.py\"]}","meta":{"tau_s":0.0}}

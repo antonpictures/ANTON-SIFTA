@@ -25,16 +25,18 @@ echo-loop bug we paid for in v1 of `swarm_broca_wernicke`.
 This module gives both call sites a single `VoiceBackend` interface plus
 a `get_default_backend()` resolver. Backends:
 
+  • `CosyVoice2Backend` — local CosyVoice2 command adapter, when configured
   • `MacSayBackend`  — macOS `say`, auto-prefers Premium/Enhanced voices
   • `PiperBackend`   — cross-platform ONNX TTS (CPU, ~50 MB per voice)
   • `NullBackend`    — no-op, for environments without speakers
 
 Voice quality, in order:
 
-  1. macOS Premium / Enhanced English voices  (Siri-grade, ANE-accelerated)
-  2. macOS Standard English voices             (the 2010 diphone Samantha)
-  3. Piper ONNX models                          (good neural, CPU-only)
-  4. Silence (Null)                             (CI, headless)
+  1. CosyVoice2 command adapter, if explicitly configured
+  2. macOS Premium / Enhanced English voices  (Siri-grade, ANE-accelerated)
+  3. macOS Standard English voices             (the 2010 diphone Samantha)
+  4. Piper ONNX models                          (good neural, CPU-only)
+  5. Silence (Null)                             (CI, headless)
 
 What this module does NOT do
 ────────────────────────────
@@ -70,6 +72,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -86,6 +89,7 @@ _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _VOCAL_CORDS_FAILURES = _STATE / "vocal_cords_failures.jsonl"
 _VOICES_DIR = _REPO / "Voices" / "piper"  # where vendored Piper .onnx live
+_COSYVOICE2_COMMAND_ENV = "SIFTA_COSYVOICE2_COMMAND"
 _STATE.mkdir(parents=True, exist_ok=True)
 
 
@@ -123,7 +127,7 @@ class VoiceInfo:
     name: str           # backend-native name, suitable for VoiceParams.voice
     locale: str         # BCP-47-ish, e.g. "en_US"
     quality: str        # "premium" | "enhanced" | "standard" | "neural" | "novelty"
-    backend: str        # "macsay" | "piper" | "null"
+    backend: str        # "cosyvoice2" | "macsay" | "piper" | "null"
 
 
 # ── Backend protocol ────────────────────────────────────────────────────────
@@ -165,6 +169,151 @@ def _log_failure(stage: str, exc: BaseException, *, backend: str = "?") -> None:
             }, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
+
+# ── CosyVoice2 command backend ──────────────────────────────────────────────
+
+class CosyVoice2Backend:
+    """
+    CosyVoice2 egress through a local command adapter.
+
+    SIFTA keeps the heavy CosyVoice runtime out-of-process because installs
+    often live in their own Conda/Python environment. Configure:
+
+      SIFTA_COSYVOICE2_COMMAND="python /path/to/cosy_say.py --text-file {text_file} --out {wav_path}"
+
+    The command must read UTF-8 text from `{text_file}` and write a WAV file to
+    `{wav_path}`. This class then plays that WAV through the local speaker path
+    while preserving the same half-duplex caller contract as the other mouths.
+    """
+
+    name = "cosyvoice2"
+    DEFAULT_TIMEOUT_S = 90.0
+
+    def __init__(self, *, command: Optional[str] = None,
+                 timeout_s: Optional[float] = None) -> None:
+        self._command = command
+        self._timeout_s = timeout_s if timeout_s is not None else self.DEFAULT_TIMEOUT_S
+        self._lock = threading.Lock()
+
+    def _command_template(self) -> str:
+        return (self._command or os.environ.get(_COSYVOICE2_COMMAND_ENV, "")).strip()
+
+    def is_available(self) -> bool:
+        return bool(self._command_template())
+
+    def enumerate_voices(self) -> List[VoiceInfo]:
+        if not self.is_available():
+            return []
+        return [VoiceInfo(
+            name="cosyvoice2-0.5b",
+            locale="multi",
+            quality="neural",
+            backend=self.name,
+        )]
+
+    def _play_wav(self, wav_path: Path) -> bool:
+        if shutil.which("afplay"):
+            try:
+                proc = subprocess.run(
+                    ["afplay", str(wav_path)],
+                    capture_output=True,
+                    timeout=self._timeout_s,
+                )
+                if proc.returncode == 0:
+                    return True
+                stderr = proc.stderr.decode("utf-8", errors="replace") if isinstance(proc.stderr, bytes) else str(proc.stderr or "")
+                _log_failure(
+                    "cosyvoice2_afplay",
+                    RuntimeError(f"afplay exited {proc.returncode}: {stderr.strip()}"),
+                    backend=self.name,
+                )
+            except Exception as exc:
+                _log_failure("cosyvoice2_afplay", exc, backend=self.name)
+
+        try:
+            import wave
+            import numpy as np
+            import sounddevice as sd
+
+            with wave.open(str(wav_path), "rb") as wf:
+                channels = int(wf.getnchannels())
+                sample_rate = int(wf.getframerate())
+                frames = wf.readframes(wf.getnframes())
+            arr = np.frombuffer(frames, dtype=np.int16)
+            if channels > 1:
+                arr = arr.reshape(-1, channels)
+            sd.play(arr, samplerate=sample_rate, blocking=True)
+            return True
+        except Exception as exc:
+            _log_failure("cosyvoice2_sounddevice", exc, backend=self.name)
+            return False
+
+    def speak(self, text: str, params: Optional[VoiceParams] = None) -> bool:
+        if not text or not text.strip():
+            return False
+        template = self._command_template()
+        if not template:
+            return False
+
+        text_path: Optional[Path] = None
+        wav_path: Optional[Path] = None
+        with self._lock:
+            try:
+                with tempfile.NamedTemporaryFile(
+                    suffix=".txt", delete=False, mode="w", encoding="utf-8"
+                ) as tf:
+                    text_path = Path(tf.name)
+                    tf.write(text)
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wf:
+                    wav_path = Path(wf.name)
+
+                replacements = {
+                    "text_file": str(text_path),
+                    "wav_path": str(wav_path),
+                    "voice": str((params.voice if params else "") or "cosyvoice2-0.5b"),
+                }
+                try:
+                    command_text = template.format(**replacements)
+                except Exception as exc:
+                    _log_failure("cosyvoice2_format", exc, backend=self.name)
+                    return False
+                cmd = shlex.split(command_text)
+                if "{text_file}" not in template and "{wav_path}" not in template:
+                    cmd.extend([str(text_path), str(wav_path)])
+
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=self._timeout_s,
+                )
+                if proc.returncode != 0:
+                    stderr = proc.stderr.decode("utf-8", errors="replace") if isinstance(proc.stderr, bytes) else str(proc.stderr or "")
+                    _log_failure(
+                        "cosyvoice2_command",
+                        RuntimeError(f"command exited {proc.returncode}: {stderr.strip()}"),
+                        backend=self.name,
+                    )
+                    return False
+                if not wav_path.exists() or wav_path.stat().st_size <= 44:
+                    _log_failure(
+                        "cosyvoice2_output",
+                        RuntimeError(f"adapter did not write a valid WAV: {wav_path}"),
+                        backend=self.name,
+                    )
+                    return False
+                return self._play_wav(wav_path)
+            except Exception as exc:
+                _log_failure("cosyvoice2_speak", exc, backend=self.name)
+                return False
+            finally:
+                for path in (text_path, wav_path):
+                    if path is None:
+                        continue
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
 
 
 # ── macOS `say` backend ─────────────────────────────────────────────────────
@@ -590,10 +739,11 @@ def get_default_backend() -> VoiceBackend:
     """
     Process-wide default. Resolution order:
 
-      1. `SIFTA_VOICE_BACKEND` env var: "macsay" | "piper" | "null"
-      2. macOS `say` if available
-      3. Piper if model files + library are present
-      4. NullBackend (degraded but doesn't crash)
+      1. `SIFTA_VOICE_BACKEND` env var: "cosyvoice2" | "macsay" | "piper" | "null"
+      2. CosyVoice2 command adapter if SIFTA_COSYVOICE2_COMMAND is configured
+      3. macOS `say` if available
+      4. Piper if model files + library are present
+      5. NullBackend (degraded but doesn't crash)
 
     Cached per-process; `reset_default_backend()` clears it (mostly for tests).
     """
@@ -603,22 +753,28 @@ def get_default_backend() -> VoiceBackend:
             return _default_backend
 
         explicit = os.environ.get(_BACKEND_OVERRIDE_ENV, "").strip().lower()
-        if explicit == "macsay":
+        if explicit in {"cosyvoice2", "cosyvoice"}:
+            _default_backend = CosyVoice2Backend()
+        elif explicit == "macsay":
             _default_backend = MacSayBackend()
         elif explicit == "piper":
             _default_backend = PiperBackend()
         elif explicit == "null":
             _default_backend = NullBackend()
         else:
-            piper = PiperBackend()
-            if piper.is_available():
-                _default_backend = piper
+            cosyvoice2 = CosyVoice2Backend()
+            if cosyvoice2.is_available():
+                _default_backend = cosyvoice2
             else:
                 macsay = MacSayBackend()
                 if macsay.is_available():
                     _default_backend = macsay
                 else:
-                    _default_backend = NullBackend()
+                    piper = PiperBackend()
+                    if piper.is_available():
+                        _default_backend = piper
+                    else:
+                        _default_backend = NullBackend()
         return _default_backend
 
 

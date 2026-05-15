@@ -44,6 +44,7 @@ import json
 import re
 import subprocess
 import time
+import uuid
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from shutil import which
@@ -56,6 +57,9 @@ _STATE.mkdir(parents=True, exist_ok=True)
 _CEREBELLUM_TIMING = None
 _COST_JUSTIFICATION_PARAM = "cost_justification"
 _TOOL_EXECUTION_COST_STGM = 0.25
+_KERNEL_TOOL_ROUTER_PID = "tool_router:deterministic"
+_SCHEDULER_THROTTLE_THRESHOLD = 0.0
+_CORTEX_MTP_DRAFTER_PARAM = "mtp_drafter"
 
 # ═══════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY — Alice's permitted claws
@@ -147,6 +151,33 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         required_params=("prompt",),
         optional_params=("arm", "timeout_s"),
         write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "organ_registry_lookup": ToolSpec(
+        name="organ_registry_lookup",
+        description="Map a query to Alice's canonical organs and ledgers (read-only)",
+        required_params=("query",),
+        optional_params=("write_receipt",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "self_improvement_status": ToolSpec(
+        name="self_improvement_status",
+        description="Read Alice's current self-improvement and cortex-promotion status",
+        required_params=(),
+        optional_params=("write_receipt",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "physical_effector_demo": ToolSpec(
+        name="physical_effector_demo",
+        description=(
+            "Run a simulated robotics-adjacent effector action through the kernel "
+            "STGM gate, using E35 physical context and writing a demo receipt."
+        ),
+        required_params=("action",),
+        optional_params=("estimated_cost", "expected_value", "reason"),
+        write_action=True,
         requires_autonomy_gate=False,
     ),
 }
@@ -694,6 +725,141 @@ def _exec_agent_arm_research(params: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _exec_organ_registry_lookup(params: Dict[str, str]) -> Dict[str, Any]:
+    query = str(params.get("query") or "").strip()
+    if not query:
+        return {
+            "ok": False,
+            "status": "MISSING_QUERY",
+            "alice_summary": "organ_registry_lookup needs a query to map to organs.",
+        }
+    write_receipt = str(params.get("write_receipt") or "").strip().lower() in {"1", "true", "yes"}
+    try:
+        from System.swarm_canonical_organ_registry import route_query, write_registry_snapshot
+
+        if write_receipt:
+            payload = write_registry_snapshot(query)
+            query_map = payload.get("query_map", {})
+        else:
+            query_map = route_query(query)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "ORGAN_REGISTRY_ERROR",
+            "error": str(exc),
+            "alice_summary": f"organ_registry_lookup failed: {type(exc).__name__}: {exc}",
+        }
+    matches = query_map.get("matches") or []
+    lines = [
+        f"organ_registry_lookup receipt={query_map.get('receipt', '')[:16]} matches={len(matches)}"
+    ]
+    for match in matches[:5]:
+        ledgers = ", ".join(match.get("ledgers") or []) or "no live ledger yet"
+        lines.append(f"- {match.get('organ_id')}: {match.get('display_name')} -> {ledgers}")
+    if not matches:
+        lines.append(f"fallback={query_map.get('fallback') or 'none'}")
+    return {
+        "ok": True,
+        "status": "ORGAN_REGISTRY_LOOKUP",
+        "query_map": query_map,
+        "alice_summary": "\n".join(lines),
+    }
+
+
+def _exec_self_improvement_status(params: Dict[str, str]) -> Dict[str, Any]:
+    write_receipt = str(params.get("write_receipt") or "").strip().lower() in {"1", "true", "yes"}
+    try:
+        from System.swarm_self_improvement_loop import close_loop_once, self_improvement_snapshot
+
+        row = close_loop_once() if write_receipt else self_improvement_snapshot()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "SELF_IMPROVEMENT_ERROR",
+            "error": str(exc),
+            "alice_summary": f"self_improvement_status failed: {type(exc).__name__}: {exc}",
+        }
+    blockers = ", ".join(map(str, row.get("candidate_blockers") or [])) or "none"
+    return {
+        "ok": True,
+        "status": row.get("promotion_status") or "SELF_IMPROVEMENT_STATUS",
+        "snapshot": row,
+        "alice_summary": (
+            "self_improvement_status "
+            f"active={row.get('active_model') or 'unknown'} "
+            f"candidate={row.get('candidate_model')} "
+            f"status={row.get('promotion_status')} blockers={blockers} "
+            f"receipt={str(row.get('receipt') or '')[:16]}"
+        ),
+    }
+
+
+def _exec_physical_effector_demo(params: Dict[str, str]) -> Dict[str, Any]:
+    """Simulated physical/economic action for demoing receipt-gated embodiment."""
+    action = str(params.get("action") or "").strip()
+    if not action:
+        return {
+            "ok": False,
+            "status": "MISSING_ACTION",
+            "alice_summary": "physical_effector_demo needs an action, for example action=orient_eye_to_owner.",
+        }
+    estimated_cost = max(0.0, _floatish(params.get("estimated_cost"), default=_TOOL_EXECUTION_COST_STGM))
+    expected_value = max(0.0, _floatish(params.get("expected_value"), default=0.5))
+    reason = str(params.get("reason") or params.get(_COST_JUSTIFICATION_PARAM) or "").strip()
+    try:
+        from System.swarm_kernel_process_table import latest_ambient_world_context, latest_physical_context
+
+        physical = latest_physical_context(_STATE)
+        ambient = latest_ambient_world_context(_STATE)
+    except Exception as exc:
+        physical = {"error": f"{type(exc).__name__}: {exc}"}
+        ambient = {}
+
+    receipt_id = f"physical_effector_demo_{uuid.uuid4()}"
+    row = {
+        "ts": time.time(),
+        "receipt_id": receipt_id,
+        "truth_label": "SIFTA_PHYSICAL_EFFECTOR_DEMO_V1",
+        "action": action,
+        "status": "SIMULATED_EXECUTED",
+        "estimated_cost_stgm": estimated_cost,
+        "expected_value": expected_value,
+        "reason": reason,
+        "physical_location": physical.get("location") or physical.get("unified_field_location_segment"),
+        "bodies_present": physical.get("bodies_present") or [],
+        "physical_presence": bool(physical.get("physical_presence") or physical.get("bodies_present")),
+        "salience_score": ambient.get("salience_score"),
+        "sampling_policy": ambient.get("sampling_policy"),
+        "dominant_activity": ambient.get("dominant_activity"),
+        "simulated_only": True,
+    }
+    path = _STATE / "physical_effector_demo.jsonl"
+    try:
+        from System.jsonl_file_lock import append_line_locked
+
+        append_line_locked(path, json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    return {
+        "ok": True,
+        "status": "SIMULATED_EXECUTED",
+        "receipt_id": receipt_id,
+        "receipt_path": str(path),
+        "demo_receipt": row,
+        "truth_note": (
+            "Simulated effector only; the kernel gate and STGM receipt are real, "
+            "but no external robot or device moved."
+        ),
+        "alice_summary": (
+            "physical_effector_demo executed as simulation "
+            f"action={action} cost={estimated_cost:.3f} STGM "
+            f"location={row['physical_location'] or 'unknown'} "
+            f"presence={row['physical_presence']} receipt={receipt_id[:16]}"
+        ),
+    }
+
+
 # Tool name → executor mapping
 _EXECUTORS = {
     "send_whatsapp": _exec_send_whatsapp,
@@ -705,6 +871,9 @@ _EXECUTORS = {
     "stigmergic_bus_tail": _exec_stigmergic_bus_tail,
     "verification_contract": _exec_verification_contract,
     "agent_arm_research": _exec_agent_arm_research,
+    "organ_registry_lookup": _exec_organ_registry_lookup,
+    "self_improvement_status": _exec_self_improvement_status,
+    "physical_effector_demo": _exec_physical_effector_demo,
 }
 
 
@@ -723,9 +892,336 @@ class ToolResult:
     feedback_for_alice: str  # Human-readable result Alice sees
 
 
+def _kernel_rejection(
+    call: ParsedToolCall,
+    *,
+    status: str,
+    error: str,
+    feedback: str,
+) -> ToolResult:
+    return ToolResult(
+        tool_name=call.tool_name,
+        params=call.params,
+        executed=False,
+        result={"ok": False, "error": error, "kernel_status": status},
+        status=status,
+        feedback_for_alice=feedback,
+    )
+
+
+def _kernel_tool_preflight(
+    call: ParsedToolCall,
+    spec: ToolSpec,
+    *,
+    caller_pid: str | None = None,
+    owner_present: bool = False,
+    autonomous: bool = True,
+) -> tuple[ToolResult | None, Dict[str, Any] | None]:
+    """Prove a registered kernel process and budget before a tool boundary.
+
+    Default Talk output runs as the deterministic tool-router organ. If a caller
+    explicitly supplies a pid, it must already be registered; this prevents
+    ghost callers from turning model text into side effects.
+    """
+    try:
+        from System.swarm_kernel_process_table import OrganProcess, get_kernel_process_table
+
+        table = get_kernel_process_table(state_root=_STATE)
+        pid = str(caller_pid or "").strip()
+        if not pid:
+            pid = _KERNEL_TOOL_ROUTER_PID
+            table.ensure_registered(
+                OrganProcess(
+                    pid=pid,
+                    organ_id="System/swarm_tool_router.py",
+                    ring=2,
+                    health=1.0,
+                    stgm_balance=0.0,
+                    current_job=f"tool_preflight:{call.tool_name}",
+                    last_receipt_id="",
+                    failure_count=0,
+                    last_heartbeat_ts=time.time(),
+                    location="sifta_desktop_body",
+                    bodies_present=["alice_tool_router"],
+                    metadata={
+                        "source": "execute_tool_call",
+                        "kernel_role": "deterministic_tool_router",
+                    },
+                ),
+                receipt_id=f"tool_router_register:{call.tool_name}",
+            )
+        elif table.get(pid) is None:
+            return _kernel_rejection(
+                call,
+                status="REJECTED_KERNEL_REGISTRATION",
+                error=f"unregistered caller_pid {pid}",
+                feedback=(
+                    f"KERNEL REJECTION: {call.tool_name} cannot execute for ghost pid "
+                    f"{pid}. The caller must register before side effects."
+                ),
+            ), None
+
+        cortex_metrics = _cortex_generate_with_mtp(
+            call.raw_match,
+            model="tool_router_intent_parser",
+            drafter=call.params.get(_CORTEX_MTP_DRAFTER_PARAM),
+        )
+        proposal = _kernel_tool_proposal(
+            call,
+            spec,
+            owner_present=owner_present,
+            autonomous=autonomous,
+            cortex_metrics=cortex_metrics,
+        )
+        thermal = _kernel_recent_thermal(table, pid)
+        if spec.write_action:
+            estimated_cost = max(
+                0.0,
+                _floatish(call.params.get("estimated_cost"), default=_TOOL_EXECUTION_COST_STGM),
+            )
+            effector_gate = table.sys_effector_request(
+                pid,
+                call.tool_name,
+                estimated_cost,
+                evidence_gain=proposal["evidence_gain"],
+                stgm_delta=-estimated_cost,
+                thermal=thermal,
+                interrupt_risk=proposal["interrupt_risk"],
+                metadata={
+                    "tool": call.tool_name,
+                    "tool_write_action": "true",
+                    "owner_present": str(bool(owner_present)),
+                    "autonomous": str(bool(autonomous)),
+                },
+            )
+            budget = dict(effector_gate.get("budget") or {})
+            budget["effector_request"] = effector_gate
+            scheduler_score = float(effector_gate.get("scheduler_score") or -999.0)
+            if not effector_gate.get("allow"):
+                rejection = _kernel_rejection(
+                    call,
+                    status=f"REJECTED_KERNEL_EFFECTOR_{effector_gate.get('decision') or 'GATE'}",
+                    error=f"kernel effector decision {effector_gate.get('decision')}",
+                    feedback=(
+                        f"KERNEL EFFECTOR REJECTION: {call.tool_name} did not execute. "
+                        f"caller_pid={pid} decision={effector_gate.get('decision')} "
+                        f"score={scheduler_score:.6f} "
+                        f"receipt={effector_gate.get('receipt_id')}."
+                    ),
+                )
+                rejection.result["kernel_process_receipt_id"] = effector_gate.get("receipt_id")
+                rejection.result["scheduler_score"] = scheduler_score
+                rejection.result["effector_request"] = effector_gate
+                return rejection, None
+        else:
+            budget = table.sys_budget_state(pid, requested_spend=_TOOL_EXECUTION_COST_STGM)
+            state = str(budget.get("state") or "")
+            if state == "BLOCK":
+                return _kernel_rejection(
+                    call,
+                    status=f"REJECTED_KERNEL_{state or 'BUDGET'}",
+                    error=f"kernel budget state {state}",
+                    feedback=(
+                        f"KERNEL REJECTION: {call.tool_name} did not execute. "
+                        f"caller_pid={pid} budget_state={state or 'UNKNOWN'}."
+                    ),
+                ), None
+            scheduler_score = table.scheduler_utility(
+                pid,
+                evidence_gain=proposal["evidence_gain"],
+                stgm_delta=proposal["stgm_delta"],
+                thermal=thermal,
+                interrupt_risk=proposal["interrupt_risk"],
+            )
+        budget["scheduler_score"] = scheduler_score
+        budget["scheduler_proposal"] = proposal
+        budget["cortex_generate"] = cortex_metrics
+        if scheduler_score < _SCHEDULER_THROTTLE_THRESHOLD:
+            receipt_id = f"receipt_{uuid.uuid4()}"
+            table.heartbeat(
+                pid,
+                current_job=f"tool_throttle:{call.tool_name}",
+                location="sifta_desktop_body",
+                bodies_present=["alice_tool_router"],
+                receipt_id=receipt_id,
+                failure_delta=1 if spec.write_action else 0,
+                metadata={
+                    "tool": call.tool_name,
+                    "scheduler_decision": "THROTTLE",
+                    "scheduler_score": f"{scheduler_score:.6f}",
+                    "scheduler_threshold": f"{_SCHEDULER_THROTTLE_THRESHOLD:.6f}",
+                    "tokens_per_sec": str(cortex_metrics.get("tokens_per_sec", 0.0)),
+                    "latency_ms": str(cortex_metrics.get("latency_ms", 0.0)),
+                    "used_mtp": str(bool(cortex_metrics.get("used_mtp"))),
+                },
+            )
+            rejection = _kernel_rejection(
+                call,
+                status="REJECTED_KERNEL_SCHEDULER",
+                error=f"kernel scheduler score {scheduler_score}",
+                feedback=(
+                    f"KERNEL SCHEDULER REJECTION: {call.tool_name} did not execute. "
+                    f"caller_pid={pid} score={scheduler_score:.6f} "
+                    f"threshold={_SCHEDULER_THROTTLE_THRESHOLD:.6f}."
+                ),
+            )
+            rejection.result["kernel_process_receipt_id"] = receipt_id
+            rejection.result["scheduler_score"] = scheduler_score
+            return rejection, None
+        return None, {
+            "table": table,
+            "pid": pid,
+            "budget": budget,
+            "scheduler_score": scheduler_score,
+            "cortex_generate": cortex_metrics,
+        }
+    except PermissionError as exc:
+        return _kernel_rejection(
+            call,
+            status="REJECTED_KERNEL_RING",
+            error=str(exc),
+            feedback=f"KERNEL RING REJECTION: {call.tool_name} did not execute: {exc}",
+        ), None
+    except Exception as exc:
+        return _kernel_rejection(
+            call,
+            status="REJECTED_KERNEL_PREFLIGHT",
+            error=f"{type(exc).__name__}: {exc}",
+            feedback=(
+                f"KERNEL REJECTION: {call.tool_name} did not execute because "
+                f"the process-table preflight failed: {type(exc).__name__}."
+            ),
+        ), None
+
+
+def _kernel_tool_heartbeat(
+    context: Dict[str, Any] | None,
+    call: ParsedToolCall,
+    spec: ToolSpec,
+    *,
+    ok: bool,
+    status: str,
+    receipt_id: str = "",
+) -> str:
+    if not context:
+        return ""
+    table = context.get("table")
+    pid = str(context.get("pid") or "")
+    if table is None or not pid:
+        return ""
+    rid = receipt_id or f"receipt_{uuid.uuid4()}"
+    table.heartbeat(
+        pid,
+        health=1.0 if ok else 0.55,
+        stgm_delta=0.0,
+        current_job=f"tool:{call.tool_name}:{status}",
+        location="sifta_desktop_body",
+        bodies_present=["alice_tool_router"],
+        receipt_id=rid,
+        failure_delta=0 if ok else 1,
+        metadata={
+            "tool": call.tool_name,
+            "tool_status": status,
+            "tool_write_action": str(bool(spec.write_action)),
+            "kernel_scheduler_score": str(context.get("scheduler_score", "")),
+            "kernel_effector_request_receipt_id": str(
+                ((context.get("budget") or {}).get("effector_request") or {}).get("receipt_id") or ""
+            ),
+            "tokens_per_sec": str((context.get("cortex_generate") or {}).get("tokens_per_sec", 0.0)),
+            "latency_ms": str((context.get("cortex_generate") or {}).get("latency_ms", 0.0)),
+            "used_mtp": str(bool((context.get("cortex_generate") or {}).get("used_mtp"))),
+            "kernel_action": "effector" if spec.write_action else "tool_read",
+        },
+    )
+    return rid
+
+
+def _kernel_tool_proposal(
+    call: ParsedToolCall,
+    spec: ToolSpec,
+    *,
+    owner_present: bool,
+    autonomous: bool,
+    cortex_metrics: Dict[str, Any] | None = None,
+) -> Dict[str, float]:
+    if call.tool_name == "agent_arm_research":
+        evidence_gain = 0.7
+    elif call.tool_name in {"organ_registry_lookup", "self_improvement_status", "verification_contract"}:
+        evidence_gain = 0.55
+    elif spec.write_action:
+        evidence_gain = 0.45
+    else:
+        evidence_gain = 0.35
+    interrupt_risk = 0.05 if owner_present else 0.10
+    if spec.write_action and autonomous and not owner_present:
+        interrupt_risk = 0.25
+    metrics = cortex_metrics or {}
+    evidence_gain += min(0.3, max(0.0, _floatish(metrics.get("tokens_per_sec"), default=0.0)) / 100.0)
+    return {
+        "evidence_gain": float(evidence_gain),
+        "stgm_delta": -float(_TOOL_EXECUTION_COST_STGM),
+        "interrupt_risk": float(interrupt_risk),
+    }
+
+
+def _kernel_recent_thermal(table: Any, pid: str) -> float:
+    try:
+        from System.swarm_kernel_process_table import latest_physical_context
+
+        physical = latest_physical_context(getattr(table, "state_root", _STATE))
+        raw = physical.get("thermal_load")
+        if raw is None:
+            proc = table.get(pid)
+            raw = (getattr(proc, "metadata", {}) or {}).get("thermal_cost")
+        value = _floatish(raw, default=0.0)
+        if value > 10.0:
+            value = value / 100.0
+        return max(0.0, min(2.0, value))
+    except Exception:
+        return 0.0
+
+
 def _cost_justification(params: Dict[str, str]) -> str:
     """Return the explicit STGM spend justification Alice attached to a tool call."""
     return str(params.get(_COST_JUSTIFICATION_PARAM, "") or "").strip()
+
+
+def _floatish(value: Any, *, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _mtp_available(_model: str) -> bool:
+    """Native MTP is false until this runtime exposes target-token verification."""
+    return False
+
+
+def _cortex_generate_with_mtp(prompt: str, model: str, drafter: str | None = None) -> Dict[str, Any]:
+    """Return cortex generation metrics without bypassing kernel execution.
+
+    Ollama chat does not expose native target-token verification here. The
+    default path therefore records measured fallback metadata only; tests or a
+    future verified runtime may supply real MTP metrics through this boundary.
+    """
+    t0 = time.monotonic()
+    used_mtp = bool(drafter and _mtp_available(model))
+    text = str(prompt or "")
+    latency_ms = max(0.0, (time.monotonic() - t0) * 1000.0)
+    token_estimate = max(1.0, len(text) / 4.0) if text else 0.0
+    tokens_per_sec = 0.0 if latency_ms <= 0.0 else token_estimate / (latency_ms / 1000.0)
+    if not used_mtp:
+        tokens_per_sec = 0.0
+    return {
+        "text": text,
+        "model": model,
+        "drafter": str(drafter or ""),
+        "tokens_per_sec": round(float(tokens_per_sec), 6),
+        "latency_ms": round(float(latency_ms), 3),
+        "used_mtp": used_mtp,
+        "verification_status": "VERIFIED_MTP" if used_mtp else "STANDARD_FALLBACK",
+    }
 
 
 def _charge_tool_execution(call: ParsedToolCall, spec: ToolSpec, justification: str) -> Optional[Dict[str, Any]]:
@@ -765,6 +1261,7 @@ def execute_tool_call(
     *,
     owner_present: bool = False,
     autonomous: bool = True,
+    caller_pid: str | None = None,
 ) -> ToolResult:
     """Execute a single parsed tool call with full damage confinement."""
 
@@ -875,6 +1372,23 @@ def execute_tool_call(
         _log_trace({"event": "TOOL_CALL_NO_EXECUTOR", "tool": call.tool_name})
         return result
 
+    kernel_rejection, kernel_context = _kernel_tool_preflight(
+        call,
+        spec,
+        caller_pid=caller_pid,
+        owner_present=owner_present,
+        autonomous=autonomous,
+    )
+    if kernel_rejection is not None:
+        _log_trace({
+            "event": "TOOL_CALL_REJECTED_KERNEL",
+            "tool": call.tool_name,
+            "status": kernel_rejection.status,
+            "caller_pid": caller_pid,
+            "error": kernel_rejection.result.get("error"),
+        })
+        return kernel_rejection
+
     cerebellum_preflight = None
     if spec.write_action:
         cerebellum_preflight = _cerebellum_preflight(call.tool_name, call.params)
@@ -905,6 +1419,13 @@ def execute_tool_call(
                 "tool": call.tool_name,
                 "cerebellum_timing": cerebellum_preflight,
             })
+            exec_result["kernel_process_receipt_id"] = _kernel_tool_heartbeat(
+                kernel_context,
+                call,
+                spec,
+                ok=False,
+                status="DELAYED_CEREBELLUM",
+            )
             return result
 
     action_started_at = time.time()
@@ -933,6 +1454,15 @@ def execute_tool_call(
             "fee_stgm": _TOOL_EXECUTION_COST_STGM,
             "cost_justification": justification[:240],
         }
+        if spec.write_action and kernel_context:
+            effector_request = ((kernel_context.get("budget") or {}).get("effector_request") or {})
+            if effector_request:
+                exec_result["kernel_effector_request"] = {
+                    "receipt_id": effector_request.get("receipt_id"),
+                    "decision": effector_request.get("decision"),
+                    "scheduler_score": effector_request.get("scheduler_score"),
+                    "estimated_cost_stgm": effector_request.get("estimated_cost_stgm"),
+                }
 
         # Build feedback Alice will see
         if call.tool_name == "send_whatsapp":
@@ -955,17 +1485,35 @@ def execute_tool_call(
             feedback_for_alice=feedback,
         )
 
+        charge_receipt = None
+        if ok:
+            charge_receipt = _charge_tool_execution(call, spec, justification)
+        if isinstance(charge_receipt, dict):
+            exec_result["tool_economy"]["receipt"] = charge_receipt
+        kernel_receipt_id = _kernel_tool_heartbeat(
+            kernel_context,
+            call,
+            spec,
+            ok=bool(ok),
+            status=result.status,
+            receipt_id=(
+                str((charge_receipt or {}).get("receipt_hash") or "")
+                if isinstance(charge_receipt, dict)
+                else ""
+            ),
+        )
+        if kernel_receipt_id:
+            exec_result["kernel_process_receipt_id"] = kernel_receipt_id
+
         _log_trace({
             "event": "TOOL_CALL_POST_FLIGHT",
             "tool": call.tool_name,
             "ok": ok,
             "status": result.status,
+            "kernel_process_receipt_id": kernel_receipt_id,
             "intent_provenance": exec_result.get("intent_provenance"),
             "result_summary": str(exec_result)[:300],
         })
-
-        if ok:
-            _charge_tool_execution(call, spec, justification)
 
         return result
 
@@ -988,10 +1536,20 @@ def execute_tool_call(
             status="EXECUTION_ERROR",
             feedback_for_alice=f"Tool {call.tool_name} crashed: {type(e).__name__}: {e}",
         )
+        kernel_receipt_id = _kernel_tool_heartbeat(
+            kernel_context,
+            call,
+            spec,
+            ok=False,
+            status="EXECUTION_ERROR",
+        )
+        if kernel_receipt_id:
+            result.result["kernel_process_receipt_id"] = kernel_receipt_id
         _log_trace({
             "event": "TOOL_CALL_ERROR",
             "tool": call.tool_name,
             "error": str(e),
+            "kernel_process_receipt_id": kernel_receipt_id,
         })
         return result
 

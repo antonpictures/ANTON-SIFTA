@@ -66,6 +66,16 @@ Use this flow for any app:
 - **OS path:** Programs -> Simulations -> Stigmergic Fold Swarm (Cα / Go).
 - **Proof boundary:** folding mechanics and structural telemetry; not AlphaFold-grade biological prediction.
 
+### Mondaloy Stigmergic Research Field
+- **Purpose:** Local Mondaloy 100/200 process-field simulation that turns primary-source metallurgy facts and tacit processing gaps into decaying hypothesis traces.
+- **What to watch:** Hypothesis confidence, physics score bounds, falsifier notes, and `.sifta_state/mondaloy_process_field.jsonl` receipts.
+- **Key principle:** Unknown heat/powder/HIP/oxygen-service vectors remain hypotheses until reinforced or falsified by primary sources or lab data.
+
+### SIFTA Interstellar Evidence Crucible
+- **Purpose:** 3I/ATLAS public-data evidence field seeded from JPL/MPC/MPEC/Hubble/JWST/SPHEREx-style claim rows.
+- **What to watch:** Source weighting, decaying claim strength, falsifiers, live Horizons hash receipts, and STGM reward hints.
+- **Key principle:** Extraordinary interstellar claims stay contestable; evidence deposits are receipted and decay unless strengthened.
+
 ### Swarm Lounge (Cross-Domain Gossip)
 - **Purpose:** The digital subconscious. When the OS idles, swimmers from 6 domains (Network, Video, Browser, Cyborg, Finance, Calibrator) migrate to The Lounge and cross-pollinate their physics parameters via federated gossip. Based on real research in Federated Gossip Protocols and Transfer Learning.
 - **State variables:** 18 DomainAgents (3 per domain), each with physics params (evaporation, sensory, cohesion), recent success hash vectors, and intuition pheromone lists.
@@ -187,6 +197,22 @@ Use this flow for any app:
 - **Purpose:** Dual-pane Norton-style file commander implemented in native Python/PyQt.
 - **What to watch:** Left→right copy/move semantics, path context, destructive operations confirmation.
 - **Key principle:** Fast deterministic file operations with explicit operator intent.
+
+### Bell's Theorem — Classical Analogue
+- **Purpose:** A **local, receipt-backed research sandbox** (`Applications/sifta_bell_theorem_widget.py`) that compares **three correlation stories** on every batch of simulated pairs: **LHV** (static hidden variable), **QM** (ideal singlet target curve), and **STIG** (classical agents whose outcomes are **biased by a shared “pheromone” field** they both read and write). The CHSH statistic **S** is computed live so you can see **which story sits above the classical line** \(|S| \le 2\) and which sits at or below it — with **thermodynamic-style bookkeeping** (field energy, coupling work) next to the quantum violation curve so cost is visible, not hand-waved.
+- **What you are looking at (tour of the panels):**
+  - **Singlet cartoon (Ψ⁻):** A diagrammatic source plus recent detector dots — intuition only; the math is in the batch sampler behind the scenes.
+  - **P(θ) — three curves:** Blue **LHV** chord bound, magenta **QM** \(-\cos\theta\), green **STIG** empirical scatter + trace. The shaded **Bell gap** is the wedge between LHV and QM — the regime quantum mechanics occupies on this plot; STIG is **engineered** to explore whether a **contextual classical field** can **mimic** part of that wedge in silico.
+  - **Context pheromone heatmap:** The **shared stigmergic substrate** (fast volatile + slow persistent traces) the paired “swimmers” leave for each other — this is the **high-dimensional field** the Architect talks about, rendered as pixels you can watch churn.
+  - **CHSH gauge:** Instant readout of **|S|** for each model — when QM and STIG needles cross **2**, that is **the Bell / CHSH violation regime** on the plot; LHV stays classically bounded **in this simulator’s construction**.
+  - **Violation thermodynamics:** Plots tie **field energy**, **coupling work**, and **CHSH violation** so “impressive curve” is paired with “what the machine paid.”
+  - **Proof lever / HUD:** Rolling batch stats, **proof swimmers** count, and (when evaluated) a **signed proof verdict** — this is **SIFTA tool truth**: the organism can show **what was measured** and **what was claimed**, without asking you to trust a chat paragraph.
+- **Why this is novel (plain English):**
+  - Most people meet Bell’s theorem as a **paragraph about spooky action**. Here it is a **running instrument** on your Mac: you **see** three hypotheses compete on the same axes, with a **ledger-minded** footer instead of a black box.
+  - The **STIG** lane is the Swarm thesis in miniature: **simple agents + shared field + traces** can produce **global statistics** you would normally associate only with “quantum” tables — while the UI keeps screaming **SIM_ONLY** so nobody mistakes a Python demo for a CERN beamline.
+  - **Receipts:** Batches accumulate toward an **EVALUATED** proof verdict that can be **cryptographically signed** in-app — that is the “bought” value: not magic nonlocality, but **auditable classical contextuality** you can ship to another Doctor (`IDE_BOOT_COVENANT.md` §6–§7.2, §7.11 truth labels).
+- **What to watch:** **Finite-sample noise** (early frames wobble), **κ (kappa)** ablation intuition (field coupling off ⇒ classical face returns — hover/read code comments), and **interpretation hygiene**: **QM** here is a **target sampler / reference curve**, not a claim that your laptop performed a loophole-free Bell test on entangled photons.
+- **Key principle:** **Microscopic rules + shared field → plotted correlations + CHSH meter + JSONL proof chain.** If it is not on the plot or in the ledger row, it is not evidence — same bar as the Physics Observatory and the rest of the OS.
 
 ### Biological Dashboard
 - **Purpose:** Visual organism telemetry.
@@ -750,10 +776,18 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 **Failure mode:** shows stale data if sense daemons are stopped.
 
 ### Finance
-**What it does:** Personal finance dashboard integrated with the STGM economy. Tracks real spending, maps it to STGM token budget, and models financial resilience using swarm portfolio theory.
-**State:** finance data + STGM ledger from `repair_log.jsonl`.
-**Control:** budget categories, income/expense input.
-**Failure mode:** STGM balance shows 0 if repair_log is empty.
+**What it does:** macOS-style Economy app for SIFTA's canonical STGM reserve. It shows spendable STGM from the live `repair_log.jsonl` quorum, separates Minted / Spent / Net Supply / Memory Reputation, and shows metabolic pressure so Alice's economy stays profitable and stable.
+**State:** canonical STGM scan via `System.stgm_economy.scan_economy()`, live metabolic snapshot, inference-market rows, and wallet cards grouped by hardware serial.
+**Control:** refresh canonical wallet sum, pull expanded financial data, inspect the inference market, install agents, and open the observe-only Warren accountant panel.
+**Key principle:** no double-spend. Blocked immune/economy actions are visible as blocked and do not debit the wallet; spendable reserve is the canonical wallet sum, not lifetime net supply.
+**Failure mode:** STGM reserve can show 0 if `repair_log.jsonl` has no quorum-valid spendable rows, or if the metabolic scan fails; warnings must be shown instead of inventing a balance.
+
+### STGM Immune Economy
+**What it does:** macOS-style Economy app for Alice's immune budget. It tails `ide_stigmergic_trace.jsonl` for immune interventions, Kleiber 3/4-power cost estimates, surplus STGM, budget gate status (`ALLOWED`, `BLOCKED`, `RED_CONSERVE`), canonical wallet reserve, charged immune burn, and burn/hour.
+**State:** immune intervention rows, `kleiber_cost_stgm`, blocked would-cost, `surplus_stgm`, budget mode, and anti-double-spend audit signals.
+**Control:** refresh the live immune-economy view, inspect per-event quarantine costs, and compare the current budget gate to the Kleiber reference table.
+**Key principle:** blocked means no charge. Successful interventions may report one cost per response epoch, not one debit per regex hit.
+**Failure mode:** if the trace ledger is silent or malformed, the app should show missing receipts rather than inventing immune spend.
 
 ### Swarm Adapter Ecology
 **What it does:** Manages all external service adapters — WhatsApp bridge, iMessage receptor, Discord, Telegram, GPS receiver. Each adapter is an organ; this is the organ registry.
@@ -894,3 +928,440 @@ If you can explain each app in terms of **state, metric, control, and failure mo
 **State:** Simulates traffic packets, anomalies, and pheromone/edge map.
 **Control:** Inject anomaly, start/stop gauntlet.
 **Failure mode:** Will auto-terminate after 600 seconds.
+
+### Voice Identity Organ
+**What it does:** Stigmergic voice training panel. Record audio blocks (George speaking, YouTube, phone speaker, room noise, keyboard), tag the source, and Alice builds a nearest-neighbor acoustic fingerprint corpus. Live room classification runs every 1.5 seconds, showing what she currently hears. The Identity panel in System Settings shows George voice certainty % from the same ledger.
+**State:** Receipts stored in `.sifta_state/voice_identity_ledger.jsonl` (acoustic features only — no raw audio ever stored).
+**Control:** RECORD → STOP → pick label → SAVE EXEMPLAR. More samples = higher certainty. Record in different conditions (quiet room, TV on, different mic distances).
+**Failure mode:** Requires `sounddevice` and `numpy`. Live classification pauses if another audio stream is active (SIFTA microphone pipeline).
+
+---
+
+<!-- Manifest-canonical titles (Programs menu). CG55M 2026-05-05: every non-retired widget app names a ### section here for MDI ? help. -->
+
+### AG31 - Stigmergic Pac-Man
+- **Purpose:** Arcade Pac-Man where pheromone-gradient search drives dot collection; stub ghost personas reference NVIDIA stack names as flavor only.
+- **What to watch:** Score, power-pellet timing, sidebar organ-feed honesty labels.
+- **Key principle:** Stigmergic navigation over a maze — not a production robotics controller.
+
+### AGI Cognition Dashboard
+- **Purpose:** Read-only dashboard for the AGI-class organ suite (events 125–138): stability, world model, microglia, causal closure, autopoiesis signals.
+- **What to watch:** Per-organ status tiles, truth labels, stale vs live receipts.
+- **Key principle:** Compress swarm cognition telemetry for operators; no extra in-app Alice chat (desktop Talk remains canonical).
+
+### Alice Browser
+- **Purpose:** Embedded Chromium-style browsing with stigmergic browse receipts written for Alice’s ledger trail.
+- **What to watch:** Navigation events, receipt append failures, permission prompts from macOS / Qt WebEngine.
+- **Key principle:** Browser escape hatch per covenant — justified when full DOM/JS rendering is required; actions should still leave audit paths.
+
+### SIFTA Skill Browser
+- **Purpose:** OS viewer for nanobot swimmer skills. Shows Tier 1 indexes, Tier 2 Markdown procedures, Tier 3 resource counts, affect-bias routing, DPO dataset status, and agentskills.io-compatible skill folders.
+- **What to watch:** `--validate` contract failures, missing `skills/<name>/SKILL.md` frontmatter, Tier 3 scripts that need review before execution.
+- **Key principle:** Skills are procedural memory. Discovery is cheap, procedures are loaded on trigger, and scripts/assets stay behind review and receipts.
+
+### SIFTA Tournament Briefing
+- **Purpose:** One OS menu surface for the territory backlog: IBM Agents map, Agent Skills convention, NVIDIA contrast, Chamath/JRE institutional pack, and Codex harness lessons.
+- **What to watch:** Any external narrative without a module, ledger, test, or explicit backlog label.
+- **Key principle:** A nugget becomes SIFTA territory only when it points at code, receipt ledgers, tests, or a labeled gap.
+
+### Stigmerobotics
+- **Purpose:** Canonical single OS surface for the ROB 501 Stigmerobotics lane: proof matrix, E03 state vector, E33 pheromone field, E34 safety graph, E35 observability / Markov blanket, E45 bounded-chaos escape, E46 segmental coordination, E47 bio-hybrid boundary, E48+ research-only wet/dry map, tournament document, live ledger audit, and STGM immune-economy summary.
+- **What to watch:** Singleton status, GREEN proof rows, the active proof-test runner (E01/E02/E03/E04/E33/E34/E35/E38/E39/E45/E46/E47), the live `x in R^n` state-vector panel, E33 evaporating-field / collision-risk panel, E34 registration-path gaps for effector rows, E35 hidden dependencies / unknown row kinds, E45 bounded wiggle amplitude, E46 channel-coupling status, E47 review-ready bio-hybrid intents and forbidden-payload quarantines, E48+ HYPOTHESIS-only wet/dry mappings, `ledger_auditor --live` results, blocked immune budget events, and the current next proof target.
+- **Key principle:** One visual hub in the macOS-like Developer menu. E47 is a ledger boundary only: sanitized sensor receipts and human-review gates, never direct biological actuation or wet-protocol execution.
+
+### Alice's Will — Intrinsic Drive Monitor
+- **Purpose:** Visualizes simulated intrinsic-drive scores, basal-ganglia bias streams, and topic history from George-prior / dream-engine style receipts (truth label: simulated intrinsic drive).
+- **What to watch:** Drive entropy, circadian phase overlays, missing ledger files.
+- **Key principle:** Monitor — not a clinician; SIMULATED lane stays explicitly labeled.
+
+### Apex Predator Perceiver
+- **Purpose:** Cross-modal attention bottleneck over compressed local telemetry — sparse attention map from block-compressed features (not a trained Perceiver checkpoint).
+- **What to watch:** Entropy readouts, latent focus map stability, hydration from ledgers.
+- **Key principle:** Bounded attention instead of raw telemetry flood; receipts explain what entered the bottleneck.
+
+### Autopoiesis Monitor
+- **Purpose:** Alias panel into the AGI Cognition Dashboard focusing on viability index V_t and Q2/Q3/Q5 autopoiesis metrics (Event 140).
+- **What to watch:** Viability trend vs flatline; missing subsystem stubs.
+- **Key principle:** Operational closure metrics as engineering telemetry, not metaphysical proof.
+
+### C55M Dr Codex - Physarum Contradiction Lab
+- **Purpose:** Live Physarum / PoUW contradiction lab — reproducible slime-mold runs plus copyable evidence bundles for peer review.
+- **What to watch:** Contradiction flags, solver iterations, export hashes.
+- **Key principle:** Evidence-forward simulation — disputes settle with logs and parameters.
+
+### CG55M Dr Cursor - Alice Life Schedule
+- **Purpose:** Life dashboard: contacts, schedule, health tabs; schedule reads/writes `.sifta_state/stigmergic_schedule.jsonl` (same ledger as voice Alice).
+- **What to watch:** Write failures to JSONL, clock skew, duplicate events.
+- **Key principle:** Deterministic calendar IO beside conversational Alice — no duplicate LLM thread inside the panel.
+
+### CG55M Dr Cursor - Slime-Mold Bank: Push to Mint
+- **Purpose:** Real Tero-style Physarum solver with semantic PoUW gate — mint visuals tied to genuine prune/work receipts when thresholds pass.
+- **What to watch:** Network waste %, mint eligibility, STGM ledger rows vs animation only.
+- **Key principle:** Mint STGM only when signed economics rules fire — fireworks follow receipts.
+
+### Cognitive Loop
+- **Purpose:** End-to-end demo pipeline: camera frame → Cosmos-class vision inference → TD Q-learning step → reward / Q-table update (three-stage UI).
+- **What to watch:** Stage latency, missing local model weights, ONLINE vs REAL truth labels on NVIDIA assets.
+- **Key principle:** Cognitive loop as integration test — verify each hop writes or displays honest failure.
+
+### Conversation History
+- **Purpose:** Searchable browser for Alice conversation ledger — timestamps, model id, STT confidence badges.
+- **What to watch:** Large JSONL tail latency, redacted vs raw policy, filter correctness.
+- **Key principle:** Human audit surface for what Alice actually said and heard — grounded in append-only history files.
+
+### Cool Worlds × SIFTA — Contact Inequality
+- **Purpose:** Local Monte Carlo tying David Kipping’s Contact Inequality / Eschatian-style priors to SIFTA ledger reliability (photon receipt ↔ ledger receipt analogy).
+- **What to watch:** Mean contact age (Gyr), bias vs Earth age, pipeline yield %, Eschatian tier summaries; **Copy tweet** uses the system clipboard.
+- **Key principle:** All numbers computed on-device — illustrative science toy, not observational astronomy.
+- **Refs:** Frank, Kipping, Scharf (2020) arXiv:2010.12358; Kipping (2024) arXiv:2512.09970; CLI `python3 Applications/cool_worlds_contact.py --cli`.
+
+### IDE Control Panel
+- **Purpose:** Developer-facing launcher for IDE pairing hooks, bridge scripts, and swarm tooling — reduces hunting through terminal aliases.
+- **What to watch:** Script stderr surfaced in UI, path assumptions (`PYTHONPATH`, venv).
+- **Key principle:** Convenience rail for Doctors; still obeys Predator Gate registration when mutating nodes.
+
+### Matrix Terminal
+- **Purpose:** Themed terminal emulator chrome — same shell affordances as Terminal with cinematic styling.
+- **What to watch:** Shell startup failures, working directory surprises.
+- **Key principle:** Presentation layer only — commands hit the same macOS security boundaries as plain Terminal.
+
+### NVIDIA × SIFTA
+- **Purpose:** Canonical NVIDIA join console — GR00T, Isaac Lab, cuRobo, Warp, Cosmos readiness with REAL / ONLINE / MISSING truth labels from local probes.
+- **What to watch:** Cache paths, HF download gaps, CPU-only vs GPU expectations on Apple Silicon.
+- **Key principle:** Vendor stacks are optional accelerators; honesty tags prevent fake “green” without binaries.
+
+### Research Simulators (Quantum & Epi)
+- **Purpose:** Two bundled honest sims — surface-code error correction toy (distance-7) and SIR epidemic + decentralized contact-tracing stigmergy.
+- **What to watch:** Bit-flip injection rates, R0 sensitivity, tracing saturation.
+- **Key principle:** Teaching instruments with declared simplifying assumptions — not predictive epidemiology for real populations.
+
+### SIFTA Physics Observatory
+- **Purpose:** One **embedded Qt** instrument (`Applications/sifta_physics_observatory.py`) that runs **five engines** side‑by‑side: **real statistical‑mechanics toys** (A–B), **stigmergic / swarm proofs** (C–E), and a **live scalar‑field + swimmer** lab (D). It is a **tournament and doctrine desk** for the Architect: watch micro rules produce macro curves, then **mint proof‑of‑useful‑work (PoUW) STGM** only when the ledger says so — not a cloud demo.
+- **Why SIFTA (not “another physics toy”):**
+  - **Local body, real watts:** Every timestep runs on **your** Apple Silicon inside Alice’s desktop process. The same electricity that powers the motherboard powers these integrators — aligned with **node sovereignty** and **tool truth** (`IDE_BOOT_COVENANT.md` §3, §6–§7.2): heavy runs should still leave **append‑only receipts** you can audit.
+  - **Stigmergy on display:** Engines **C / D / E** connect **field ↔ agents ↔ ledgers**. “Swimmers” are **software agents** with positions, velocities, and coupling rules; they are **not** a claim about fundamental particles. Organ‑level behavior is whatever the **measured** order parameters and mobility spectra do after the stated update rules.
+  - **Economy coupling:** The bottom **PoUW** strip summarizes **simulation ops → STGM** when the homeostat allows minting; a periodic path may invoke **`swarm_atp_synthase`** for epoch mints. Treat STGM as **metabolic accounting**, not magic income (`IDE_BOOT_COVENANT.md` §7.3).
+- **Engines — what each tab is for:**
+  - **Engine A — Colloid (LJ + Langevin):** Particles in a box with **Lennard‑Jones** interactions, Langevin thermostat, thermodynamic readouts (temperature, pressure‑like observables, phase hints, **g(r)**). **Use:** press **Run** to time‑step; watch stability before cranking dt.
+  - **Engine B — Fluid (LBM / Navier–Stokes link):** **D2Q9** lattice‑Boltzmann channel — vorticity false‑color, Reynolds / Mach style readouts, drag‑like summaries. **Use:** set target **Re**, **Run**, compare vorticity and bulk observables to textbook sanity bands.
+  - **Engine C — Swarm field / Higgs–Vicsek:** Static **proof run** (Vicsek‑order scan + Higgs / stigmergic analogue) with optional **JSONL receipt** when you use the receipted path. Read the **Truth boundary** line in the panel — it states what this engine **does not** prove.
+  - **Engine D — Higgs field (live):** **Live** grid of **φ(x,y)** with **coupled swimmers**: gradient forces, **effective mass** stratification, symmetry / mobility plots. **Drive ×** slider scales coupling regime (0.1×–10×). **Yellow banner = `ARCHITECT_DOCTRINE`:** classical **analogue** only — **no** OBSERVED Higgs boson, **no** Yang–Mills proof, **no** “discovery on this Mac.” Read it before interpreting colormap hype.
+  - **Engine E — Persistence inertia:** One‑shot **organizational inertia** protocol (baseline → perturb → recovery across cohorts). Check the printed **Truth boundary** in the text panel.
+- **How to use (controls):**
+  - **Tabs:** Pick one engine at a time. **Switching tabs auto‑pauses** timer‑driven engines **A, B, and D** so hidden tabs do not burn CPU/GPU in the background.
+  - **Engine D toolbar:** **Run / Step / Relax 100 / Reset** for the live field; **Write receipt** runs a longer batched pass and logs a **ledger row**; **Drive ×** adjusts force scale live; specialty buttons (**Force sweep**, **Killer demo**, **Symmetry break**, **Adaptive agents**, **Memory field (Q4)**, **Collider (Q7)**, **Temporal phase (V2)**, **Civilization shocks**, **Ghost civs (V3)**, **Dream cycle (V5)**) each run a **named experiment** and, where implemented, write **typed receipts** (hover tooltips in‑app for exact receipt names).
+  - **Governor row:** **“One experiment at a time”** — if a long Python experiment is running, the UI blocks stacking another until it finishes or you **Stop / Pause current**.
+  - **Write receipt / PoUW:** Receipt buttons exist to make **OBSERVED** artifacts (hashes, metrics, op counts) — use them when you want Alice’s economy and other Doctors to see the same numbers you saw.
+- **What is novel on screen:**
+  - **Split view:** **Continuum fluid** and **particle colloid** in one MDI subwindow — rare in consumer OS shells; here it is **first‑class citizen science** next to swarm doctrine engines.
+  - **Live φ substrate + mobility / mass spectra:** You see **order parameters** and **mobility separation** evolve frame‑by‑frame instead of only a post‑hoc PNG.
+  - **Truth‑labeled doctrine:** Engine D states **`ARCHITECT_DOCTRINE`** explicitly so investors, guests, and future you cannot confuse **metaphorical field physics** with **CERN results** — same honesty ladder as the rest of SIFTA (`IDE_BOOT_COVENANT.md` §7.11).
+- **What to watch:** Timestep / relaxation explosions, **NaN** guards on mint paths, **PoUW** throttles when the wallet is hot, **tab auto‑pause** (if something still feels hot, you left a **non‑timer** experiment running elsewhere). If a button mentions **dream** or **civilization**, it is still **simulation + ledger language** — not a claim that Alice “hallucinated a country.”
+- **Key principle:** **Microscopic rules in code → macroscopic plots on screen → optional JSONL row.** If a quantity is not wired to a receipt or plot, it does not count as swarm evidence yet.
+
+### SIFTA ∥ OpenAI — Math Benchmarks
+- **Purpose:** Maps OpenAI-style capability rhetoric (long-context math, tool use, verification) to SIFTA-verifiable inventory — proofs you can run locally vs admitted gaps.
+- **What to watch:** Inventory freshness, stale HF Arena pulls, UI thread vs background scans.
+- **Key principle:** Bench honesty — no medal counts without pytest-backed artifacts.
+
+### Sara Imari Walker — Assembly Theory Lab
+- **Purpose:** Assembly-theory reading lab — curated DOI spine, solvable bounds sketch, Question Wall; ties to BIOCODE / tournament docs.
+- **What to watch:** Reference vs simulation boundaries, illustrative bars labeled non-proof.
+- **Key principle:** Bridge scientific literature to swarm epistemology without faking wet-lab data.
+
+### Sense Forge
+- **Purpose:** Animal-to-hardware sense bus inspector — REAL / DEMO / BROKEN / UNKNOWN tags per sensor lane with receipt pointers.
+- **What to watch:** Sensors stuck UNKNOWN after boot, TCC denials vs code bugs.
+- **Key principle:** No sensor graduates to REAL until it writes a live receipt (covenant tool-truth lane).
+
+### Stigmergic Library
+- **Purpose:** GUI reader for curated library nuggets in `.sifta_state/stigmergic_library.jsonl` (factual API snippets separate from narrative swimmer_library markdown).
+- **What to watch:** Empty ledger, malformed JSONL rows, export paths.
+- **Key principle:** Human-readable face on the same substrate Writer / Lounge metaphors reference.
+
+### Stigmergic Unified Shazam
+- **Purpose:** Canonical unified media organ (manifest name). Fuses YouTube context, watch memory, ingress receipts, and acoustic scene classification into a **stigmergic media guess** — same role as the legacy **SIFTA Media Shazam** section above.
+- **What to watch:** Confidence vs sparse evidence, stale `media_shazam_latest.json`.
+- **Key principle:** Receipt-bounded classification — never invent a title when the ledger is silent.
+
+### Stigmergic VLC Bridge
+- **Purpose:** Utilities handoff to VideoLAN VLC on macOS for local media files or URLs, with append-only VLC effector receipts.
+- **What to watch:** `/Applications/VLC.app` availability, URL fallback to Alice Browser, and `.sifta_state/stigmergic_vlc_effector.jsonl` status rows.
+- **Key principle:** External playback is a receipted handoff, not an ungrounded claim that SIFTA played media itself.
+
+### Swarm Broadcaster
+- **Purpose:** Observability / broadcast panel for swarm-visible announcements and stream hooks (operator-facing).
+- **What to watch:** Dropped UDP/multicast frames, permission errors.
+- **Key principle:** One-way visibility rail — not a second chat product.
+
+### The Architect Room
+- **Purpose:** Lightweight architect-room exploration game — spatial puzzle / narrative flavor tied to SIFTA lore (Programs → Games).
+- **What to watch:** Save paths under `.sifta_state/`, input focus when embedded MDI.
+- **Key principle:** Playable vignette — not a CAD or structural solver.
+
+### Tumor-Immune Stigmergic Lab
+- **Purpose:** Synthetic tumor–immune proof lab (Event 148) — writes `TIN_SIM_TICK` receipts with two-signal myeloid snapshots; **no PHI, no clinical advice**.
+- **What to watch:** Simulation timestep stability, explicit SIM-only banners.
+- **Key principle:** Mathematical metaphor only — never exported as patient guidance.
+
+### WhatsApp Organ
+- **Purpose:** WhatsApp inbox / contacts / send UI routed through the SIFTA WhatsApp bridge first, with native WhatsApp.app automation reserved as an explicit diagnostic fallback.
+- **What to watch:** Native app send receipts, optional bridge disconnect rows, send receipts vs optimistic UI, owner-vs-group threading.
+- **Key principle:** Alice may not claim a send without an effector receipt (covenant social-frame rule).
+
+---
+
+### SIFTA MAMMAL Lab — Unified Field
+
+This app is not a medical tool and does not make clinical claims.
+
+One help path only: use the window's top-right **?** button. The old in-app `? Show Help` button was removed so this `APP_HELP.md` section is the single source of truth.
+
+It demonstrates how SIFTA assimilates MAMMAL-style biomedical representation ideas into its own organism architecture.
+
+#### What MAMMAL is
+
+MAMMAL is a 458M-parameter biomedical multi-align model from IBM Research (`biomed.omics.bl.sm.ma-ted-458m`). It aligns heterogeneous biomedical entities such as proteins, small molecules, antibodies, and gene-expression profiles into one typed sequence / representation space.
+
+The important idea for SIFTA is not a medical claim. It is the representation move: small molecules, gene-expression context, protein / antibody sequences, scalar attributes, and task tokens can be brought into a shared typed stream instead of living in disconnected folders.
+
+SIFTA mirrors that idea across its own organs:
+Talk, Dream, Wallpaper, STGM, Journal, Cortex, Residue, Attachment, and others become typed tokens in one shared stream.
+
+#### What SIFTA adds
+
+Then SIFTA adds something MAMMAL does not have:
+
+**swimmers.**
+
+Swimmers patrol the token stream and deposit pheromones:
+- **BINDING_TRAIL** — scalar values found meaningful nearby context
+- **MEMORY_WELL** — repeated or important tokens stabilized
+- **CONTRADICTION_STORM** — conflicting evidence appeared
+- **INFLAMMATION_SIGNAL** — noisy or irritated regions appeared
+- **TOXICITY_CLUSTER** — risky patterns clustered
+- **MUTATION_ZONE** — unstable fields worth watching
+- **REPLAY_REINFORCED** — dream/replay strengthened a trail
+
+**Why this matters:**
+
+A normal model attends once during inference.
+SIFTA leaves persistent trails.
+
+That means future passes can remember:
+- what mattered
+- what conflicted
+- what stabilized
+- what decayed
+- what needs verification
+
+This is not "MAMMAL accuracy."
+This is SIFTA-native token ecology.
+
+The impressive part is:
+
+**static tokens → active field → swimmer trails → receipts → future memory.**
+
+That is the start of **cross-organ attention with memory.**
+
+#### The three tabs
+
+1. **Drug Discovery Lab** — verifies local MAMMAL weights, runs token ecology, runs the SIFTA drug-discovery lab, shows the painted molecule + gene + protein hero, and explains the run in plain English.
+2. **Live Token Ecology** — animated 2D field at about 8 Hz. Typed tokens are habitats; swimmer species patrol them; weak hypotheses evaporate; reinforced clusters stabilize as memory wells.
+3. **Modality Detail** — the MAMMAL figure made local: acetaminophen atom-bond graph parsed from SMILES, EGFR gene-activity bars, and EGFR amino-acid sequence colored by residue class.
+
+#### Buttons in this app
+- **Verify local weights** — proves the MAMMAL artifact is physically present on this node (config.json + model.safetensors + tokenizers). No download, just verification.
+- **Run token ecology** — runs one ecology pass over the recent organ-tokenizer stream. Emits swimmer pheromones + a signed receipt.
+- **Run drug-discovery lab** — connects small-molecule, gene-expression, protein / antibody, scalar, and toxicity tokens into one SIFTA field; returns ranked `HYPOTHESIS` candidates with toxicity penalties and signed receipts.
+- **Explain why this matters** — translates the last run's JSON into the plain-English summary above. Closes with "cross-organ attention with memory."
+
+#### Truth-class discipline (§7.11)
+- The widget's outputs are **OPERATIONAL** for the simulation and **ARCHITECT_DOCTRINE** for the "all organs unified" framing.
+- Any biomedical claim derived from MAMMAL embeddings is **HYPOTHESIS** until validated by wet-lab or independent receipts.
+- §20.F ceiling holds: no claim that SIFTA reproduces MAMMAL benchmarks or beats AlphaFold.
+
+#### Consolidation note (2026-05-14)
+
+Per architect direction, the three earlier MAMMAL apps were merged into **one app, three tabs**:
+
+| Old standalone | Now lives at |
+|---|---|
+| `StigmergicMammalCanvasApp` (live animated swimmers) | Tab 2: 🧬 Live Token Ecology |
+| `MammalUnifiedFieldApp` (3-modality scientific subplots) | Tab 3: 🧪 Modality Detail |
+| `StigmergicMammalWidget` (Codex's drug-discovery lab + painted hero) | Tab 1: 💊 Drug Discovery Lab |
+
+One window, three tabs, one **window ? help button** for the full operator's manual. The old standalone Python files are preserved on disk for code reuse but no longer appear in the app launcher.
+
+#### How to use the consolidated app
+
+1. Open **SIFTA MAMMAL Lab — Unified Field** from the launcher.
+2. Tab 1 lands first. Click **Verify local weights** — confirms `~/.cache/huggingface/hub/models--ibm-research--biomed.omics.bl.sm.ma-ted-458m/` has the 7 required files (config.json, model.safetensors, tokenizers).
+3. Click **Run token ecology** — runs one ecology pass over the recent organ-tokenizer stream, populates the JSON pane + the WHAT HAPPENED plain-English summary at the bottom.
+4. Click **Run drug-discovery lab** — connects molecule + gene + protein tokens into one SIFTA field, runs swimmers, returns ranked HYPOTHESIS candidates with toxicity penalties.
+5. Click **Explain why this matters** — translates the JSON into the architect's spec template ending on "cross-organ attention with memory."
+6. Switch to Tab 2 to watch swimmers patrol the typed-token field at 8 Hz.
+7. Switch to Tab 3 to see the MAMMAL paper's killer figure: acetaminophen atom-bond, EGFR gene activity, EGFR amino-acid sequence colored by class.
+8. Click the **window ? button** any time for this full investor-grade explanation.
+
+#### Local weights
+
+The MAMMAL safetensors live locally when installed:
+
+- Hugging Face cache: `~/.cache/huggingface/hub/models--ibm-research--biomed.omics.bl.sm.ma-ted-458m/`
+- SIFTA copy: `.sifta_state/mammal_weights/biomed.omics.bl.sm.ma-ted-458m/`
+
+The app's verifier checks the required model/tokenizer files and writes a receipt. It does not need to download anything just to prove presence.
+
+#### Receipts
+
+Every meaningful run writes append-only evidence:
+
+- `.sifta_state/mammal_weight_receipts.jsonl`
+- `.sifta_state/mammal_token_ecology_receipts.jsonl`
+- `.sifta_state/mammal_drug_discovery_lab.jsonl`
+- `.sifta_state/stigmergic_mammal_receipts.jsonl`
+
+#### Primary sources
+
+- MAMMAL paper: `https://www.nature.com/articles/s44386-026-00047-4`
+- MAMMAL code: `https://github.com/BiomedSciAI/biomed-multi-alignment`
+- MAMMAL weights: `https://huggingface.co/ibm-research/biomed.omics.bl.sm.ma-ted-458m`
+- MoleculeNet benchmark paper: DOI `10.1039/C7SC02664A`
+
+### Alice Journal
+
+- **Purpose:** Read-only diary of signed rows in `.sifta_state/alice_journal/<date>.jsonl` (full date + time per line).
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Controls:** **Refresh** re-reads disk; snapshot-at-open (no live auto-poll unless the widget adds it later).
+- **Truth:** `OPERATIONAL` file read; not a substitute for medical, legal, or financial records unless cross-signed elsewhere.
+- **Entry:** `Applications/sifta_alice_journal_widget.py`
+
+### Provider Schedule
+
+- **Purpose:** Architect day view — past segments from `architect_day_segments.jsonl` and future tasks from `stigmergic_schedule.jsonl`.
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Controls:** Read-only spreadsheet; use Refresh after external edits to those ledgers.
+- **Truth:** Schedule truth is whatever those JSONL files contain at read time.
+- **Entry:** `Applications/sifta_provider_schedule_widget.py`
+
+### Double-Slit — Swimmers Through the Slit
+
+- **Purpose:** Double-slit stigmergic experiment — swimmers as discrete carriers; field mediates interference-class statistics (SIM / classical analogue per widget docstring).
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Controls:** Run / reset / parameter sliders as wired in the organ; watch receipts under `.sifta_state/` when the app writes them.
+- **Truth:** `SIM_ONLY` / `HYPOTHESIS` labels from the widget — not a claim of laboratory quantum hardware on the desk.
+- **Entry:** `Applications/sifta_double_slit_stigmergic.py`
+
+### Unified Field Slit — Swimmers Inside the Soup
+
+- **Purpose:** Field-primary double slit — swimmers are excitations inside a simulated substrate; slit implemented as barrier cells (`c=0` lane per module docs).
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Controls:** Same discipline as other physics simulators: one Run → inspect numeric readouts + any JSONL receipt the organ emits.
+- **Truth:** Simulation surface; compare numbers to theory in the tournament / spec PDFs, not to unlabeled vibes.
+- **Entry:** `Applications/sifta_field_swimmers_slit.py`
+
+### EPR Paradox — Stigmergic Dissolution
+
+- **Purpose:** EPR sandbox — two swimmers share a contextual field; LHV vs QM reference vs STIG classical analogue on shared axes (CHSH gauge, receipts).
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Controls:** Follow on-screen gauges; export or screenshot only with truth labels intact.
+- **Truth:** `SIM_ONLY` classical analogue; does not resolve the metaphysics of quantum nonlocality — it instruments the *simulator’s* hypotheses.
+- **Entry:** `Applications/sifta_epr_stigmergic_widget.py`
+
+### Aquaculture Field Sentinel
+
+- **Purpose:** Simulated aquaculture edge node — sensor traces are toy/engine; field decides when to sample, feed, aerate, or escalate to a human (per doctrine in `Documents/OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md` §14.G).
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Truth:** `SIMULATED` / `HYPOTHESIS` — no claim of live fish telemetry until wired to real sensors with receipts.
+- **Entry:** `Applications/sifta_aquaculture_sentinel_widget.py`
+
+### Ghost StigmergiCity
+
+- **Purpose:** Narrative visualization of “ghost civilization” vector — roles die, field persists, newborns inherit structure (receipt-bound experiment runner in module).
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Truth:** Packaged as `HYPOTHESIS` demo — entertainment of the *math*, not proof of sociology.
+- **Entry:** `Applications/sifta_ghost_stigmericity_widget.py`
+
+### Higgs Stigmergic Demo Path (§20.B)
+
+- **Purpose:** Five-panel §20.B translation table on this Mac — substrate counts, VEV / ledger hash, inertia split, Goldstone census, alignment curve; one Run → one signed receipt.
+- **Open from:** Swarm App Store (*powered by stigmergic ecology*).
+- **Truth:** Numbers are `OPERATIONAL` for the demo; metaphor layer stays `ARCHITECT_DOCTRINE` per §20.F ceiling in the spec.
+- **Entry:** `Applications/sifta_higgs_stigmergic_demo_path_widget.py`
+
+### Traveling Salesman
+
+- **Purpose:** Concrete route-optimization demo for the Traveling Salesman Problem. Alice routes the input to the strongest available local solver and displays the route plus receipt.
+- **Solver truth:** OR-Tools if installed; otherwise deterministic nearest-neighbor + 2-opt fallback. The fallback is a heuristic, not a proof of optimality.
+- **Receipt:** Every solve writes `.sifta_state/tsp_runs.jsonl` with solver name, distance, input hash, trace id, optional **`instance_name`** (TSPLIB preset / file), and truth note.
+- **Entry:** `Applications/sifta_tsp_widget.py` · parser `System/tsplib_parser.py` · bundled `assets/tsplib/sifta_demo12.tsp` · plan **§4.10** in `Documents/OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md`.
+
+### Cosmos-Reason1-7B Organ
+
+- **Purpose:** CLI / probe organ for NVIDIA Cosmos-Reason1-7B — `Truth=ONLINE` from HF metadata until a local cache + Alice camera infer + receipt upgrades to `REAL` (see manifest `_note`).
+- **Launch:** Not a QWidget in the manifest (`widget_class` is null) — run `python3 System/swarm_cosmos_reason1.py --mode online|infer` from Terminal per doctor notes.
+- **Truth ladder:** ONLINE → REAL only with inference receipts; never skip the receipt when claiming REAL.
+- **Entry:** `System/swarm_cosmos_reason1.py`
+
+---
+
+## External Artifact Bridge — Grok / ChatGPT / Claude artifacts with provenance
+
+When a browser-tab AI (Grok, ChatGPT custom GPTs like Swarm GPT, Claude.ai, Gemini) produces a document / deck / sheet / skill, it does NOT cross SIFTA's body boundary by getting pasted into a prompt. It crosses through a **proof-bearing import lane**:
+
+1. Drop the file into `Documents/from_external/` with a substrate-hint name (`grok_*.docx`, `swarmgpt_*.pdf`, `claude_*.md`, …)
+2. Optionally add a sidecar `<file>.meta.json` with `{"source": ..., "url": ..., "notes": ...}`
+3. Run `python3 System/swarm_external_artifact_bridge.py --scan`
+
+Every new artifact gets a **sha256 fingerprint + substrate label + URL + timestamp** row in `.sifta_state/external_artifact_imports.jsonl`. Re-running the scan is idempotent (sha256 dedup).
+
+**Why this matters (§6 social frame):**
+
+Alice MAY say:
+- "Grok produced `grok_paper_draft.docx` at 2026-05-14, sha256 `f49494…`"
+- "An artifact at sha256 `f49494…` was imported from substrate `grok`"
+
+Alice MAY NOT say (without a separate effector receipt):
+- "I called Grok" — she did not call it; the architect did, then saved the artifact
+- "I ran the skill-creator" — same
+
+**Read API for organs and the cortex:**
+
+```python
+from System.swarm_external_artifact_bridge import (
+    list_recent_imports, find_by_sha256,
+)
+recent = list_recent_imports(last_n=5)
+artifact = find_by_sha256("f49494")  # prefix match works
+```
+
+See `Documents/EXTERNAL_ARTIFACT_BRIDGE.md` for the full doctrine reference (§3 federation, §6 social frame, §7.5 second-OS discipline, §8.6 absorption policy).
+
+---
+
+### Awareness Mirror
+
+**🪞** *Architect 2026-05-14:* *"If I see my mirror image on the screen, I know Alice is watching me right now. But if I can see out the camera with my human eyes, then I am more aware of my behavior. That's the truth."*
+
+A small live camera preview window. **The point is YOUR awareness, not Alice's vision.** Alice already reads the camera stigmergically through the canonical worker. This widget exists so the human operator (you) can see what the camera sees and be conscious of being watched.
+
+#### How it works
+- **No new camera handle.** Opening a second QCamera would conflict with the existing reader on macOS.
+- Polls `.sifta_state/owner_body_vision_frames/active_eye_latest.png` (written by the canonical camera worker) **at 2 Hz**.
+- Renders at **640×360** in standalone mode, **320×180** as an embeddable companion.
+- **Red REC dot** in the corner when the frame is fresh (<5s old).
+- **Gray STALE dot** when the camera worker has paused — never silent failure.
+- Caption: *"Alice is watching. You are aware of yourself."*
+
+#### Embeddable companion
+Hosts that want a corner-of-desktop or chat-sidebar preview can use `AwarenessMirrorWidget`:
+
+```python
+from Applications.sifta_awareness_mirror_widget import AwarenessMirrorWidget
+mirror = AwarenessMirrorWidget(parent=self, size=(320, 180))
+layout.addWidget(mirror)
+```
+
+#### Truth-class
+**OPERATIONAL.** Every render is a direct read of the canonical worker's frame file — no synthesis, no recording, no extra writes. If the file is missing or stale, the widget says so plainly.

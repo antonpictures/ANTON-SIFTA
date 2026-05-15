@@ -2,7 +2,7 @@
 """
 swarm_contradiction_engine.py — Internal Debate Detector
 ═════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Scans explicit claim trails left by Swimmers or Subsystems.
 Flags direct semantic collisions where two separate biological modules 

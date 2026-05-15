@@ -1,0 +1,1269 @@
+{
+  "Pheromone Symphony (Generative Music)": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_pheromone_symphony.py",
+    "widget_class": "PheromoneSymphonyApp",
+    "window_width": 1000,
+    "window_height": 600,
+    "signature": "CG55M-CURSOR-VERIFIED",
+    "doctor": "CG55M-DR-CURSOR-OPUS47",
+    "co_doctors": [
+      "AG31"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Stigmergic music generator. 300 swimmers drop pheromone notes; the playhead scans columns and converts pheromone density into diatonic pitch. Cinematic music-paper UI with sweep afterglow, fossil halos, and a piano-roll pitch ladder.",
+    "_synthesis_note": "Math/audio synth: real (1s sine + envelope, 14-tone diatonic). Graphics polish (CG55M / Opus 4.7): depth gradient + faint pitch staff lines + tonic accents, additive bloom for living and fossil notes, expanding rings on freshly-triggered cells, sweep playhead with afterglow trail, frosted toolbar with macOS-feel button + heat gauge, intro fade-in, Doctor Sigil bar at top.",
+    "icon": "🎼"
+  },
+  "The Architect Room": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_architect_room_game.py",
+    "widget_class": "ArchitectRoomGame",
+    "window_width": 640,
+    "window_height": 480,
+    "signature": "AG31-PREDATOR-V7",
+    "icon": "🎮"
+  },
+  "Stigmergic Video Poker": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_video_poker.py",
+    "widget_class": "StigmergicVideoPokerApp",
+    "window_width": 1000,
+    "window_height": 700,
+    "signature": "UNVERIFIED",
+    "icon": "🃏"
+  },
+  "AG31 - Stigmergic Pac-Man": {
+    "category": "Games",
+    "entry_point": "Applications/sifta_pacman_stigmergic.py",
+    "widget_class": "PacManGame",
+    "window_width": 892,
+    "window_height": 588,
+    "signature": "AG31_PREDATOR_V7_2026-04-28",
+    "doctor": "AG31",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Stigmergic Pac-Man. Pheromone gradient BFS drives Pac-Man toward dots. STUB ghosts (cuRobo, IsaacLab, GR00T, Cosmos) patrol the maze. Power pellet = WARP KERNEL (8s acceleration + ghost fright). Live SIFTA organ feed sidebar.",
+    "autostart": false,
+    "icon": "👾"
+  },
+  "Network Control Center": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_network_center.py",
+    "widget_class": "NetworkCenterWidget",
+    "window_width": 1120,
+    "window_height": 760,
+    "signature": "UNVERIFIED",
+    "icon": "🌐"
+  },
+  "IoT Swarm Connector": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_iot_connector.py",
+    "widget_class": "IoTConnectorWidget",
+    "window_width": 960,
+    "window_height": 620,
+    "signature": "UNVERIFIED",
+    "icon": "📶"
+  },
+  "Colloid Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_colloid_widget.py",
+    "widget_class": "ColloidSimWidget",
+    "window_width": 1180,
+    "window_height": 820,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine A — Lennard-Jones / Langevin).",
+    "icon": "🧱"
+  },
+  "C55M Dr Codex - Physarum Contradiction Lab": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_physarum_contradiction_lab.py",
+    "widget_class": "PhysarumContradictionLabWidget",
+    "window_width": 1280,
+    "window_height": 900,
+    "signature": "C55M-DR-CODEX",
+    "description": "Codex audit app: live Physarum/PoUW contradiction report and copyable evidence for Claude/Cursor review.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "CG55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "icon": "🔬"
+  },
+  "CG55M Dr Cursor - Slime-Mold Bank: Push to Mint": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_slime_mold_bank.py",
+    "widget_class": "SlimeMoldBankWidget",
+    "window_width": 1240,
+    "window_height": 820,
+    "signature": "CG55M-DR-CURSOR-OPUS47",
+    "description": "Cursor/Opus graphics-forward Carlton demo: real Tero Physarum solver, semantic PoUW gate, mint visuals.",
+    "_note": "Carlton's marketing demo — runs the real Tero 2010 Physarum solver, mints real STGM via Proof-of-Useful-Work when the slime mold prunes >=30% network waste. Multicolor particles, neon nodes, mint bursts.",
+    "doctor": "CG55M",
+    "co_doctors": [],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "icon": "💰"
+  },
+  "Swarm Arena": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "ArenaPanelWidget",
+    "window_width": 920,
+    "window_height": 640,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk.",
+    "icon": "🏟"
+  },
+  "Cyborg Organ Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "CyborgPanelWidget",
+    "window_width": 880,
+    "window_height": 520,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired. Hollow UI stub sharing sim_stream_panels.py. Real organ logic belongs in dedicated widgets.",
+    "icon": "🔧"
+  },
+  "Warehouse Logistics Test": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "WarehouseStreamWidget",
+    "window_width": 880,
+    "window_height": 560,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit: merged into Swarm Logistics Lab",
+    "icon": "🚛"
+  },
+  "Crucible Cyber-Defense (10-min)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "CrucibleStreamWidget",
+    "window_width": 880,
+    "window_height": 480,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk.",
+    "icon": "🚨"
+  },
+  "Stigmergic Edge Vision": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_vision_widget.py",
+    "widget_class": "VisionSimWidget",
+    "window_width": 1220,
+    "window_height": 860,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 2026-04-27 Event 71: absorbed into Alice Perception Observatory. Math preserved in what_alice_sees_widget Tab 2.",
+    "icon": "📷"
+  },
+  "Apex Predator Perceiver": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_apex_predator_widget.py",
+    "widget_class": "ApexPredatorWidget",
+    "window_width": 1100,
+    "window_height": 700,
+    "signature": "AG31_EVENT71_2026-04-27+C55M_MATH_AUDIT",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C55M"
+    ],
+    "math_contract": "deterministic sparsemax cross-attention over block-compressed local telemetry; not a learned Perceiver checkpoint",
+    "description": "Event 71: Cross-modal attention bottleneck. AG31 visual concept with C55M math audit: measured entropy, block compression, sparsemax attention, live-ledger hydration, and proof hashes. Replaces raw telemetry flooding with an auditable 32-latent focus map.",
+    "icon": "🦁"
+  },
+  "Urban Resilience Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "UrbanStreamWidget",
+    "window_width": 880,
+    "window_height": 480,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired. Hollow UI stub sharing sim_stream_panels.py with no real math.",
+    "icon": "🏙"
+  },
+  "Epistemic Mesh (Anti-Gaslight)": {
+    "category": "Simulations",
+    "entry_point": "Applications/epistemic_mesh_widget.py",
+    "widget_class": "EpistemicMeshWidget",
+    "window_width": 1340,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "icon": "🕸"
+  },
+  "Stigmergic Fold Swarm (Cα / Go)": {
+    "category": "Simulations",
+    "entry_point": "Applications/fold_swarm_widget.py",
+    "widget_class": "FoldSwarmWidget",
+    "window_width": 1280,
+    "window_height": 880,
+    "signature": "C55M-AUDITED-PROTEIN-FOLDING-PROOF",
+    "description": "C-alpha Go-model folding proof: harmonic backbone, WCA sterics, obstacles, native-contact funnel, pheromone-biased Monte Carlo, Ed25519 checkpoints.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "FoldSwarm lineage"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "icon": "📎"
+  },
+  "Swarm Lounge (Cross-Domain Gossip)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_lounge_widget.py",
+    "widget_class": "LoungeWidget",
+    "window_width": 1300,
+    "window_height": 860,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-27: no real math or data. File kept on disk.",
+    "icon": "☕"
+  },
+  "Swarm Browser": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_swarm_browser.py",
+    "widget_class": "SwarmBrowserWidget",
+    "window_width": 1400,
+    "window_height": 900,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-27: wraps system browser with no physics/data value. File kept on disk.",
+    "icon": "🔭"
+  },
+  "Finance": {
+    "category": "Economy",
+    "entry_point": "Applications/sifta_finance.py",
+    "widget_class": "FinanceDashboard",
+    "doctor": "C55M-DR-CODEX-MATH + CG55M-DR-CURSOR-OPUS47-GFX",
+    "co_doctors": [
+      "AG31"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "signature": "C55M-MATH-VERIFIED + CG55M-CURSOR-VERIFIED",
+    "description": "Robinhood-style Finance dashboard for the Swarm. Displays canonical spendable STGM from repair_log.jsonl quorum (NOT stale agent JSON cache), live metabolic mode + pressure gauge, separated stat tiles for Minted / Spent / Net Supply / Memory Reputation, vault headers grouped by hardware serial with a LOCAL NODE pill, sybil-flagged agent cards with red border-stripe, an STGM-priced Inference Market, and a frosted Warren Buffett OBSERVE-ONLY accountant panel.",
+    "_synthesis_note": "C55M-DR-CODEX did the math/data pass: removed read-time wallet mutation, replaced fake $ formatting with STGM, separated real STGM from memory reputation, retired legacy casino play-token display, added live metabolic pressure/mode using the canonical wallet sum, sanitized inference-market prices, discovered local spend wallet from this node's serial/state, and gated the hidden git mesh push behind SIFTA_FINANCE_ALLOW_GIT_MESH_PUSH=1. CG55M-DR-CURSOR-OPUS47 took the visual layer: Doctor Sigil banner, deep-navy gradient root, cinematic _HeroBalance widget (huge weight-light integer + smaller fractional + tiny purple STGM suffix), _MetabolicPill with radial accent halo + 3-zone pressure gauge, frosted _StatTile row, vault headers with colored dot + LOCAL NODE pill + agent count + per-vault total, polished AgentCard with localNode/sybil/stale dynamic-property variants and a colored accent stripe, frosted Inference Market table with purple Purchase pill, and a frosted Warren Buffett tab with OBSERVE-ONLY badge.",
+    "icon": "📈"
+  },
+  "Circadian Rhythm": {
+    "category": "Utilities",
+    "entry_point": "Applications/circadian_rhythm.py",
+    "signature": "UNVERIFIED",
+    "icon": "🌙"
+  },
+  "CG55M Dr Cursor - Alice Life Schedule": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_life_dashboard.py",
+    "widget_class": "StigmergicLifeDashboard",
+    "window_width": 720,
+    "window_height": 760,
+    "signature": "CG55M-CURSOR-SCHEDULE-VERIFIED",
+    "doctor": "CG55M",
+    "co_doctors": [
+      "C55M",
+      "AG31"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "description": "Alice's practical life dashboard: Contacts, Schedule, and Health. The Schedule tab reads/writes .sifta_state/stigmergic_schedule.jsonl, the same ledger Alice uses in voice mode.",
+    "icon": "📅"
+  },
+  "System Settings": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_system_settings.py",
+    "widget_class": "SystemSettingsWidget",
+    "window_width": 880,
+    "window_height": 600,
+    "signature": "UNVERIFIED",
+    "icon": "⚙️"
+  },
+  "Swarm Adapter Ecology": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_swarm_adapter_ecology.py",
+    "widget_class": "SwarmAdapterEcologyWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "UNVERIFIED",
+    "icon": "🌿"
+  },
+  "Intelligence Settings": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_settings.py",
+    "widget_class": "SettingsWindow",
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk.",
+    "icon": "🔧"
+  },
+  "Clock Settings": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_clock_settings.py",
+    "widget_class": "ClockSettingsApp",
+    "window_width": 400,
+    "window_height": 460,
+    "signature": "UNVERIFIED",
+    "icon": "🕰"
+  },
+  "Cardio Metrics": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_cardio.py",
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk.",
+    "icon": "❤"
+  },
+  "SIFTA NLE": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_nle.py",
+    "widget_class": "NLEWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "icon": "🎬"
+  },
+  "SIFTA NLE Panel": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_nle_widget.py",
+    "widget_class": "NLEWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired from Programs menu. File kept on disk.",
+    "icon": "🎞"
+  },
+  "SIFTA File Navigator": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_file_manager_widget.py",
+    "widget_class": "FileNavigatorWidget",
+    "window_width": 1240,
+    "window_height": 820,
+    "signature": "UNVERIFIED",
+    "icon": "📁"
+  },
+  "Territory Is The Law": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_territory_widget.py",
+    "widget_class": "TerritoryWidget",
+    "window_width": 1400,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "icon": "🗺"
+  },
+  "Cyborg Body": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_cyborg_body.py",
+    "widget_class": "CyborgWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "icon": "🦾"
+  },
+  "Stigmergic Medical Scanner": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_medscan_widget.py",
+    "widget_class": "MedScanWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "icon": "🏥"
+  },
+  "Fluid Firmware": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_firmware_widget.py",
+    "widget_class": "FirmwareWidget",
+    "window_width": 1440,
+    "window_height": 860,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-27: merged into SIFTA Physics Observatory (Engine B — Lattice-Boltzmann). Routing metaphor replaced with real Navier-Stokes.",
+    "icon": "💧"
+  },
+  "Bauwens Regenerative Factory": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_factory_widget.py",
+    "widget_class": "FactoryWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "icon": "🏭"
+  },
+  "Stigmergic Swarm Canvas": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_canvas_widget.py",
+    "widget_class": "CanvasWidget",
+    "window_width": 820,
+    "window_height": 660,
+    "signature": "UNVERIFIED",
+    "icon": "🖼"
+  },
+  "Alice Shell": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_app_manager.py",
+    "widget_class": "AppManagerWidget",
+    "window_width": 840,
+    "window_height": 720,
+    "signature": "AG31",
+    "icon": "🗂"
+  },
+  "App Manager": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_app_manager.py",
+    "widget_class": "AppManagerWidget",
+    "window_width": 840,
+    "window_height": 720,
+    "signature": "AG31",
+    "_retired": true,
+    "_retired_reason": "Renamed to Alice Shell. Alias kept for manifest compatibility and older tests.",
+    "icon": "📋"
+  },
+  "AG31 + C55M - Primordial Field": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_primordial_field.py",
+    "widget_class": "PrimordialFieldWidget",
+    "window_width": 680,
+    "window_height": 760,
+    "signature": "AG31-C55M-MATHPHYSICS",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "_graphics_final_say": "CG55M Dr Cursor / Opus 4.7",
+    "description": "Gray-Scott reaction-diffusion chemistry + Physarum slime-mold agents. C55M math pass: optional Numba engine, honest Shannon entropy, chemotaxis over nutrient/pheromone/inhibitor fields, canonical PoUW receipts.",
+    "icon": "🌋"
+  },
+  "IDE Control Panel": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_ide_control_panel.py",
+    "widget_class": "IdeControlPanelWidget",
+    "window_width": 1040,
+    "window_height": 700,
+    "signature": "UNVERIFIED",
+    "icon": "🧰"
+  },
+  "Conversation History": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_conversation_browser.py",
+    "widget_class": "ConversationBrowserApp",
+    "window_width": 1100,
+    "window_height": 760,
+    "signature": "MANIFEST-CANONICAL",
+    "description": "Browse Alice conversation ledger with search, timestamps, and STT confidence badges.",
+    "icon": "💬"
+  },
+  "Stigmergic Library": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_library_reader.py",
+    "widget_class": "LibraryReaderApp",
+    "window_width": 1100,
+    "window_height": 760,
+    "signature": "MANIFEST-CANONICAL",
+    "description": "GUI reader for curated SIFTA library nuggets in .sifta_state/stigmergic_library.jsonl.",
+    "icon": "📚"
+  },
+  "Stigmergic VLC Bridge": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_stigmergic_vlc.py",
+    "widget_class": "StigmergicVlcBridge",
+    "window_width": 680,
+    "window_height": 560,
+    "icon": "📀",
+    "signature": "UNVERIFIED",
+    "description": "macOS VideoLAN VLC handoff with File/Help menus and append-only .sifta_state/stigmergic_vlc_effector.jsonl receipts."
+  },
+  "Brain Gas-Station Meter": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_gasstation_meter.py",
+    "widget_class": "GasStationMeterWidget",
+    "window_width": 1000,
+    "window_height": 720,
+    "signature": "UNVERIFIED",
+    "icon": "⛽"
+  },
+  "Owner Genesis": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_genesis_widget.py",
+    "widget_class": "GenesisWidget",
+    "window_width": 620,
+    "window_height": 720,
+    "signature": "UNVERIFIED",
+    "icon": "🧿"
+  },
+  "Swarm Broadcaster": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_broadcaster_widget.py",
+    "widget_class": "BroadcasterWidget",
+    "window_width": 1100,
+    "window_height": 800,
+    "signature": "UNVERIFIED",
+    "icon": "📻"
+  },
+  "Swarm Chat": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_swarm_chat.py",
+    "widget_class": "SwarmChatWindow",
+    "window_width": 1200,
+    "window_height": 780,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-27: redundant. Talk to Alice and Alice cover this domain. File kept on disk.",
+    "icon": "💭"
+  },
+  "Stigmergic Writer": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_writer_widget.py",
+    "widget_class": "WriterWidget",
+    "window_width": 1100,
+    "window_height": 850,
+    "signature": "CG55M-CURSOR-VERIFIED",
+    "doctor": "CG55M-DR-CURSOR-OPUS47",
+    "co_doctors": [
+      "AG31"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Living-page writing app. Pause 3 seconds and the swarm suggests a continuation in faded ghost text — Tab accepts. Ask Swarm rewrites a selection. Full territory history and PDF export.",
+    "_synthesis_note": "Backend (real): Ollama-driven ghost text + Ask Swarm worker, memory bus recall, .territory.jsonl history per document. Graphics polish (CG55M / Opus 4.7): paper feel with installed serif body font (Iowan Old Style → New York → Charter → Georgia), warmer ink on a deep desk background, frosted macOS-feel toolbar with a purple-accent Ask Swarm button, Doctor Sigil header at the top, polished scrollbar, accent selection color.",
+    "icon": "✍️"
+  },
+  "Alice": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_alice_widget.py",
+    "widget_class": "AliceWidget",
+    "window_width": 1000,
+    "window_height": 850,
+    "autostart": true,
+    "autostart_order": 0,
+    "autostart_delay_ms": 400,
+    "signature": "AG31_ANTIGRAVITY_2026-04-28",
+    "_note": "Alice IS the OS body. autostart=true boots her ear+eye together at desktop launch. §7.6 — she is the organism, not an app inside it. §7.7 — must remain MDI-embedded. §7.8 — camera starts open.",
+    "icon": "🐝",
+    "hidden": true,
+    "hidden_reason": "Alice is the always-on resident panel embedded in SIFTA OS body — the icon would launch nothing because she is already running. Hidden from Launchpad / Spotlight per Architect 2026-05-13 11:20."
+  },
+  "Terminal": {
+    "category": "Utilities",
+    "widget_class": "SiftaTerminalApp",
+    "entry_point": "Applications/sifta_terminal.py",
+    "window_width": 700,
+    "window_height": 450,
+    "autostart": false,
+    "icon": "🖥"
+  },
+  "Matrix Terminal": {
+    "category": "Simulations",
+    "widget_class": "MatrixTerminalApp",
+    "entry_point": "Applications/sifta_matrix_terminal.py",
+    "window_width": 900,
+    "window_height": 600,
+    "description": "Terminal yes, but Matrix themed ;)))",
+    "autostart": false,
+    "icon": "🟩"
+  },
+  "AG31 + C46S - PoUW Fold-Swarm Simulation": {
+    "category": "Simulations",
+    "entry_point": "Applications/fold_swarm_pouw_sim.py",
+    "widget_class": "PredatorSimWindow",
+    "window_width": 1200,
+    "window_height": 720,
+    "signature": "AG31-C46S-VERIFIED",
+    "description": "Protein folding proof-of-useful-work: Lennard-Jones 12-6, harmonic bonds, Metropolis annealing, ACO stigmergy, and canonical work receipts.",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C46S"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "icon": "🧬"
+  },
+  "AG31 + C46S + C55M + CG55M - ARTIFFICIAL GENERAL INTELLIGENCE.": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_artificial_general_intelligence.py",
+    "widget_class": "AGIWindow",
+    "window_width": 1200,
+    "window_height": 800,
+    "signature": "AG31-C46S-C55M-CG55M-SYNTHESIS",
+    "description": "MATH PHYSICS BIOCODE TIME SPACE CONTINUUM ART",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C46S",
+      "C55M",
+      "CG55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "_synthesis_note": "Master synthesis app. Code-correctness lane: C55M Dr Codex / GPT-5.5. Physics + receipt binding: AG31. Graphics polish 2026-04-26: CG55M Dr Cursor / Opus 4.7 via shared Applications/_doctor_sigil_chrome.py.",
+    "icon": "🌌"
+  },
+  "CG55M Dr Cursor - Alice-Sees Calibrator (Game)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_calibrator_widget.py",
+    "widget_class": "CalibratorWidget",
+    "window_width": 1340,
+    "window_height": 880,
+    "signature": "CG55M-CURSOR-VERIFIED",
+    "doctor": "CG55M",
+    "co_doctors": [],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "description": "Gamified swarm-coherence game: wave / nod / approach / recede / still / flail at Alice's eye to drive the simulation. Six unlockable target shapes. Lives, score, streak, high-score persisted.",
+    "_synthesis_note": "Reads .sifta_state/visual_stigmergy.jsonl via System.swarm_gesture_decoder.GestureDecoder. Original swarm physics in System/agentic_calibrator.py untouched.",
+    "icon": "🎯"
+  },
+  "Swarm Logistics Lab": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_sim_stream_panels.py",
+    "widget_class": "LogisticsStreamWidget",
+    "window_width": 920,
+    "window_height": 640,
+    "signature": "UNVERIFIED",
+    "_retired": true,
+    "_retired_reason": "AG31 audit 2026-04-26: retired. Hollow UI stub sharing sim_stream_panels.py.",
+    "icon": "📦"
+  },
+  "Alice Safety Tracker": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_cartography_widget.py",
+    "widget_class": "CartographyWidget",
+    "window_width": 900,
+    "window_height": 700,
+    "signature": "AG31-C55M-SAFETY-MATH",
+    "doctor": "AG31",
+    "co_doctors": [
+      "C55M"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "_graphics_final_say": "CG55M Dr Cursor / Opus 4.7",
+    "description": "Live GPS safety tracker. Alice watches where the Architect is via iPhone GPS relay. OpenStreetMap tile map, accuracy-aware location trail, persisted home anchor, trip mode, and arrival detection.",
+    "icon": "🛰"
+  },
+  "SIFTA Physics Observatory": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_physics_observatory.py",
+    "widget_class": "PhysicsObservatoryWidget",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "AG31-PHYSICIST",
+    "doctor": "AG31",
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "description": "Engine A: Lennard-Jones colloidal thermodynamics — V_LJ=4ε[(σ/r)¹²−(σ/r)⁶], Langevin, phase transitions, live T [K] / P [Pa] / S [J/mol·K] / g(r).  Engine B: D2Q9 Lattice-Boltzmann fluid dynamics — BGK collision-streaming, live Re, Ma, vorticity ω_z, drag C_D. PoUW STGM minting via swarm_atp_synthase.",
+    "icon": "⚛️"
+  },
+  "Research Simulators (Quantum & Epi)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_quantum_epi_sim.py",
+    "widget_class": "QuantumEpiWindow",
+    "window_width": 1440,
+    "window_height": 920,
+    "signature": "UNVERIFIED",
+    "description": "Two honest simulations: 1) Quantum Surface Code Error Correction (d=7 lattice with bit/phase flip tracking). 2) SIR Epidemiological Containment with decentralized stigmergic contact tracing.",
+    "icon": "🦠"
+  },
+  "C55M + George - Protein Fold Colosseum": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_protein_folder_widget.py",
+    "widget_class": "ProteinFolderWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "C55M-GEORGE-COSIGNED",
+    "description": "Co-signed deterministic HP lattice beam-search protein proof engine. Embedded Python/Qt viewer renders local fold coordinates inside SIFTA OS; no browser/HTML escape. Folds batches, writes PDB/meta artifacts, and gives the SIFTA referee another independent structure source.",
+    "doctor": "C55M",
+    "co_doctors": [
+      "George Anton"
+    ],
+    "doctor_protocol_version": 1,
+    "_protocol_doc": "Documents/IDE_DOCTOR_SIGNATURE_PROTOCOL.md",
+    "icon": "🏛"
+  },
+  "Sara Imari Walker — Assembly Theory Lab": {
+    "entry_point": "Applications/sara_imari_walker_widget.py",
+    "widget_class": "SaraImariWalkerWidget",
+    "category": "Simulations",
+    "window_width": 1100,
+    "window_height": 720,
+    "description": "Assembly-theory lab: curated DOI spine (Nature 2023 metrology, Entropy math, chemputation), honest SIFTA solvable map, BIOCODE Olympiad cross-links, illustrative AI bars + pheromone analogue + Question Wall.",
+    "signature": "AG31_2026-04-28",
+    "autostart": false,
+    "co_authors": [
+      "AG31-Antigravity (Claude Opus 4.6)",
+      "Ioan George Anton"
+    ],
+    "references": [
+      "Sharma et al. Nature 2023 doi:10.1038/s41586-023-06600-9",
+      "Marshall et al. Entropy 2022 doi:10.3390/e24070884",
+      "Cronin & Walker arXiv:2206.02279",
+      "Chemputation arXiv:2408.09171",
+      "Sara Imari Walker — Life as No One Knows It (2024) ISBN 9780593191897",
+      "Documents/SARA_IMARI_WALKER_ASSEMBLY_THEORY_RESEARCH.md",
+      "Documents/PREDATOR_V7_RESEARCH_SPINE.md"
+    ],
+    "icon": "🧪"
+  },
+  "Biological Dashboard": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_biological_dashboard_qt.py",
+    "widget_class": "BiologicalDashboardWidget",
+    "window_width": 960,
+    "window_height": 720,
+    "signature": "QT-CONTRACT-VERIFIED",
+    "description": "Qt biological body dashboard for Alice's organ status. Kept as the canonical System Settings health surface; no Tk import path.",
+    "icon": "🫀"
+  },
+  "SIFTA ∥ OpenAI — Math Benchmarks": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_openai_math_benchmark_widget.py",
+    "widget_class": "MathBenchmarkWidget",
+    "window_width": 1100,
+    "window_height": 750,
+    "signature": "AG_MATH_BENCH_03e9fa29a678",
+    "doctor": "AG-ANTIGRAVITY-OPUS46-THINKING",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Math-first AGI benchmark dashboard mapping OpenAI capability markers (Bubeck & Ryu) to SIFTA-verifiable work. Five capability cards, scoped problem classes, live proof inventory, and honest gap acknowledgment. No in-app Alice chat (§7.6).",
+    "icon": "📐"
+  },
+  "Sense Forge": {
+    "category": "System Settings",
+    "entry_point": "Applications/sifta_sense_forge_widget.py",
+    "widget_class": "SenseForgeWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "description": "Animal-to-hardware stigmergic sense bus. REAL/DEMO/BROKEN/UNKNOWN truth tags per §8 Covenant. No sensor becomes REAL until it writes a live receipt.",
+    "emoji": "🔨",
+    "signature": "C55M-SENSE-FORGE-20260428",
+    "doctor": "C55M-CODEX-GPT55",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "co_authors": [
+      "C55M Codex",
+      "Ioan George Anton"
+    ],
+    "autostart": false,
+    "_retired": false,
+    "icon": "🔨"
+  },
+  "NVIDIA × SIFTA": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_nvidia_join_widget.py",
+    "widget_class": "NvidiaJoinWidget",
+    "window_width": 1240,
+    "window_height": 780,
+    "description": "One canonical NVIDIA join console: truth-labeled local readiness for GR00T, Isaac Lab, cuRobo, Warp, and Cosmos. REAL only when local package/cache exists; ONLINE is not runtime access.",
+    "emoji": "🟢",
+    "signature": "TRIPLE-IDE-NVIDIA-JOIN-20260428",
+    "doctor": "C55M-CODEX-GPT55",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "co_authors": [
+      "C55M Codex",
+      "AG31 Antigravity",
+      "CG55M Cursor",
+      "Ioan George Anton"
+    ],
+    "autostart": false,
+    "_retired": false,
+    "nppl": "sim_only",
+    "icon": "🟢"
+  },
+  "Cosmos-Reason1-7B Organ": {
+    "category": "Developer",
+    "entry_point": "System/swarm_cosmos_reason1.py",
+    "widget_class": null,
+    "window_width": null,
+    "window_height": null,
+    "signature": "AG31_COSMOS_REASON1_2026-04-28",
+    "doctor": "AG31",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "NVIDIA Cosmos-Reason1-7B probe organ. Truth=ONLINE from HF metadata now. Truth=REAL only after: local cache present + live Alice camera frame inference runs + receipt written. CLI: python System/swarm_cosmos_reason1.py --mode online|infer",
+    "_note": "Dr. Codex audit 2026-04-28: Reason1-7B is ungated, image-text-to-text, CPU-runnable on Apple Silicon. Do NOT use Predict2.5-2B first (gated, GPU-heavy). First real proof: huggingface-cli download nvidia/Cosmos-Reason1-7B, then --mode infer with an Alice frame.",
+    "autostart": false,
+    "_retired": false,
+    "nppl": "online_to_real_upgrade_path",
+    "icon": "🌠"
+  },
+  "Cognitive Loop": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_cosmos_loop_widget.py",
+    "widget_class": "CosmosLoopWidget",
+    "window_width": 1200,
+    "window_height": 720,
+    "emoji": "🔁",
+    "signature": "AG31_COGLOOP_2026-04-28",
+    "doctor": "AG31",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "End-to-end cognitive loop: camera frame → Cosmos vision inference → TD Q-learning decision → reward signal → Q-table update. Three-stage pipeline view. Run the full Gecko+Bat+Cosmos+Rat loop in one click.",
+    "autostart": false,
+    "_retired": false,
+    "nppl": "cognitive_loop",
+    "icon": "🔁"
+  },
+  "WhatsApp Organ": {
+    "category": "Network",
+    "entry_point": "Applications/sifta_whatsapp_organ.py",
+    "widget_class": "WhatsAppOrganWidget",
+    "window_width": 960,
+    "window_height": 640,
+    "signature": "MANIFEST-CANONICAL",
+    "description": "Alice social nerve — WhatsApp inbox viewer, contact browser, and message sender. Routes through the real Baileys effector with truth labels.",
+    "doctor": "AG31",
+    "icon": "📱"
+  },
+  "Alice's Will — Intrinsic Drive Monitor": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_intrinsic_drive_monitor.py",
+    "widget_class": "AliceWillApp",
+    "window_width": 580,
+    "window_height": 780,
+    "signature": "AG31-ANTIGRAVITY-VERIFIED",
+    "doctor": "AG31",
+    "co_doctors": [
+      "BISHOP"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Live monitor for George Prior intrinsic drive receipts and basal ganglia bias. Shows topic score history (GPU-painted waveforms), current spontaneous goal, drive entropy H, circadian phase, and body_brain_memory.jsonl bias stream. Truth label: SIMULATED_INTRINSIC_DRIVE. Event 99+100.",
+    "truth_label": "SIMULATED_INTRINSIC_DRIVE",
+    "research_spine": [
+      "Friston (2010) doi:10.1038/nrn2787",
+      "Oudeyer (2007) doi:10.3389/neuro.12.006.2007"
+    ],
+    "autostart": false,
+    "requires": [
+      "PyQt6"
+    ],
+    "icon": "🔥"
+  },
+  "Alice Gaze Monitor": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_gaze_monitor_widget.py",
+    "widget_class": "GazeMonitorWidget",
+    "window_width": 450,
+    "window_height": 300,
+    "signature": "AG31-ANTIGRAVITY",
+    "doctor": "AG31",
+    "description": "Live widget to monitor Alice's sensory attention (Gaze). Tracks Time watching Architect vs Time watching Screen/Media.",
+    "autostart": false,
+    "icon": "👁"
+  },
+  "Alice Wellbeing Cortex": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_alice_wellbeing_panel.py",
+    "widget_class": "WellbeingPanel",
+    "window_width": 500,
+    "window_height": 450,
+    "signature": "C47H_ALICE_WELLBEING_CORTEX_AUTHORIZED",
+    "description": "Visualizing Alice's Wellbeing Cortex and Relational Friendliness. Log care actions like wiping the lens.",
+    "autostart": false,
+    "icon": "💖"
+  },
+  "NVIDIA Bridge Dashboard": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_nvidia_sifta_bridge_widget.py",
+    "widget_class": "NvidiaSiftaBridgeWidget",
+    "window_width": 1100,
+    "window_height": 720,
+    "description": "NVIDIA × SIFTA Integration Dashboard. Asset Scanner, Contrast Tab, Live Stigmergic Field, HF Models.",
+    "autostart": false,
+    "icon": "🏗"
+  },
+  "Control Center": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_control_center.py",
+    "widget_class": "GlassWidget",
+    "window_width": 320,
+    "window_height": 360,
+    "description": "A beautiful, glassmorphic Control Center overlay mimicking macOS.",
+    "autostart": false,
+    "icon": "🎚"
+  },
+  "Crucible Simulator": {
+    "category": "Simulations",
+    "entry_point": "Applications/crucible_sim.py",
+    "widget_class": "CrucibleWindow",
+    "window_width": 1280,
+    "window_height": 820,
+    "description": "10-Minute Swarm Defense Gauntlet. DDoS wave defense, anomaly injection, and stigmergic edge detection.",
+    "autostart": false,
+    "icon": "⚔"
+  },
+  "Stigmergic Unified Shazam": {
+    "category": "Creative",
+    "entry_point": "Applications/sifta_media_shazam_widget.py",
+    "widget_class": "MediaShazamApp",
+    "window_width": 920,
+    "window_height": 680,
+    "signature": "CODEX-AG31-CG55M-STIGMERGIC-UNIFIED-SHAZAM-2026-05-02",
+    "doctor": "Dr Codex",
+    "co_doctors": [
+      "AG31",
+      "CG55M"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Canonical unified media organ. Fuses YouTube context, watch memory, observed media ingress, and acoustic scene classification to guess media category/source family without per-link hardcoding.",
+    "truth_label": "STIGMERGIC_MEDIA_GUESS",
+    "autostart": false,
+    "icon": "🎙"
+  },
+  "AGI Cognition Dashboard": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_agi_cognition_dashboard.py",
+    "widget_class": "AGICognitionDashboard",
+    "window_width": 1280,
+    "window_height": 860,
+    "description": "Live readout of all 12 AGI-class organs (Events 125-138). Stability, world model, microglia, causal closure gate, autopoiesis.",
+    "truth_label": "AGI_COGNITION_DASHBOARD",
+    "doctor": "Antigravity",
+    "autostart": false,
+    "requires": [
+      "PyQt6"
+    ],
+    "icon": "🧠"
+  },
+  "Tumor-Immune Stigmergic Lab": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_tumor_immune_stigmergic_lab.py",
+    "widget_class": "TumorImmuneStigmergicLab",
+    "window_width": 1120,
+    "window_height": 760,
+    "description": "Event 148 synthetic-only tumor-immune proof lab. Writes TIN_SIM_TICK receipts with Event 137 TREM2/CD33 two-signal snapshots. No PHI, no clinical guidance.",
+    "truth_label": "TIN_SIM_TICK",
+    "doctor": "Codex",
+    "autostart": false,
+    "requires": [
+      "PyQt6"
+    ],
+    "icon": "⚕️"
+  },
+  "Autopoiesis Monitor": {
+    "category": "Neuroscience",
+    "entry_point": "Applications/sifta_agi_cognition_dashboard.py",
+    "widget_class": "AGICognitionDashboard",
+    "description": "Viability index V_t (Event 140 — Varela 1974). Q2/Q3/Q5 autopoiesis metrics.",
+    "truth_label": "AUTOPOIESIS_VIABILITY",
+    "doctor": "Antigravity",
+    "autostart": false,
+    "requires": [
+      "PyQt6"
+    ],
+    "icon": "♾"
+  },
+  "Voice Identity Organ": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_voice_identity_widget.py",
+    "widget_class": "VoiceIdentityWidget",
+    "window_width": 660,
+    "window_height": 760,
+    "description": "Stigmergic voice identity training: record audio blocks, tag source (George / YouTube / Phone / Room / Keyboard), Alice learns the acoustic fingerprint via nearest-neighbor swimmer vote.",
+    "truth_label": "VOICE_IDENTITY_ORGAN_V1",
+    "emoji": "🎤",
+    "doctor": "Antigravity",
+    "autostart": false,
+    "requires": [
+      "PyQt6",
+      "sounddevice",
+      "numpy"
+    ],
+    "icon": "🎤"
+  },
+  "Alice Browser": {
+    "entry_point": "Applications/sifta_alice_browser_widget.py",
+    "widget_class": "AliceBrowserWidget",
+    "emoji": "🌍",
+    "category": "Alice",
+    "description": "Chromium-based web browser for Alice. Full JS/CSS rendering. Stigmergic browse receipts → alice_browse_history.jsonl.",
+    "window_width": 1100,
+    "window_height": 820,
+    "autostart": false,
+    "_retired": false,
+    "icon": "🌍"
+  },
+  "Cool Worlds × SIFTA — Contact Inequality": {
+    "category": "Simulations",
+    "entry_point": "Applications/cool_worlds_contact.py",
+    "widget_class": "ContactInequalityApp",
+    "window_width": 760,
+    "window_height": 520,
+    "signature": "GTH4921YP3-ANTIGRAVITY",
+    "doctor": "vanguard_antigravity",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Monte Carlo simulation connecting David Kipping's Contact Inequality and Eschatian Hypothesis to SIFTA's stigmergic ledger reliability. All numbers computed locally. Tweet-ready output.",
+    "icon": "🛸"
+  },
+  "SIFTA Skill Browser": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_skill_browser.py",
+    "window_width": 1100,
+    "window_height": 700,
+    "signature": "CG55M-ANTIGRAVITY-VERIFIED",
+    "doctor": "vanguard_antigravity",
+    "co_doctors": [
+      "CG55M"
+    ],
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Three-tier swimmer skill explorer. Shows SIFTA skill index, Tier 2 procedure bodies (skills/*.md), affect circuit bias, DPO dataset stats, and LoRA training status. Compatible with agentskills.io SKILL.md community format. Includes the IDE Boot Covenant as Tier-0 meta-skill. Submit skills to hub from within the app.",
+    "autostart": false,
+    "icon": "🐜",
+    "github": "https://github.com/antonpictures/ANTON-SIFTA",
+    "help_file": "Applications/sifta_skill_browser.py",
+    "widget_class": "SkillBrowserApp"
+  },
+  "SIFTA Tournament Briefing": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_tournament_briefing_widget.py",
+    "widget_class": "TournamentBriefingWidget",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "C55M-CODEX-TERRITORY-MAP-20260505",
+    "doctor": "C55M Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Retired manifest surface. Use the canonical Stigmerobotics app, which includes the tournament briefing plus live proof/economy/audit panels.",
+    "autostart": false,
+    "icon": "📍",
+    "_retired": true,
+    "hidden": true
+  },
+  "STGM Immune Economy": {
+    "category": "Economy",
+    "entry_point": "Applications/sifta_immune_economy_widget.py",
+    "widget_class": "ImmuneEconomyApp",
+    "window_width": 1060,
+    "window_height": 740,
+    "icon": "🛡",
+    "signature": "ANTIGRAVITY-KLEIBER-VERIFIED",
+    "doctor": "Antigravity",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Live STGM Immune Economy monitor. Shows canonical wallet reserve, charged immune burn, burn/hour, blocked would-cost, budget gate status (ALLOWED/BLOCKED/RED_CONSERVE), per-event log with cost/surplus/rule data, anti-double-spend audit, Kleiber reference table, and budget gate thresholds. Reads live from ide_stigmergic_trace.jsonl. Satisfies §7.3 Body Economy Honesty.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "IMMUNE_ECONOMY_V1"
+  },
+  "Stigmerobotics": {
+    "category": "Developer",
+    "entry_point": "Applications/sifta_stigmerobotics_widget.py",
+    "widget_class": "StigmeroboticsWidget",
+    "window_width": 1240,
+    "window_height": 820,
+    "icon": "🤖",
+    "signature": "CODEX-STIGMEROBOTICS-SINGLETON-20260505",
+    "doctor": "Codex Desktop",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Canonical single Stigmerobotics OS app. Visual ROB 501 proof matrix, E03 state-vector panel, E33 pheromone-field panel, E34 safety-graph panel, E35 observability / Markov-blanket panel, E45 bounded-chaos escape panel, E46 segmental-coupling panel, E47 bio-hybrid boundary panel, E48+ research-only wet/dry map, tournament document, live ledger audit, and STGM immune economy summary in one Python/Qt surface.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "STIGMEROBOTICS_OS_SINGLETON_V1"
+  },
+  "Mondaloy Stigmergic Research Field": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_mondaloy_research_widget.py",
+    "widget_class": "MondaloyResearchFieldApp",
+    "window_width": 1240,
+    "window_height": 820,
+    "icon": "🔶",
+    "signature": "C55M-CODEX-MONDALOY-FIELD-20260507",
+    "doctor": "C55M Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "Local Mondaloy 100/200 process-field simulation. Deposits primary-source facts, scores heat/powder/HIP/oxygen-service hypotheses with a bounded gamma-prime and burn-resistance surrogate, visualizes decaying hypothesis strength, and writes append-only mondaloy_process_field.jsonl receipts.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "MONDALOY_PROCESS_FIELD_V1"
+  },
+  "SIFTA Interstellar Evidence Crucible": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_interstellar_evidence_crucible.py",
+    "widget_class": "InterstellarEvidenceCrucibleApp",
+    "window_width": 1280,
+    "window_height": 840,
+    "icon": "☄️",
+    "signature": "CG55M-CURSOR-INTERSTELLAR-EVIDENCE-20260507",
+    "doctor": "CG55M Cursor",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "autostart": false,
+    "description": "3I/ATLAS public-data evidence crucible. Seeds JPL Horizons, MPC, MPEC, Hubble, JWST, SPHEREx, and Sentinel-style claim rows into an append-only stigmergic evidence field; visualizes orbit proxy, decaying claim strength, source weighting, falsifiers, and STGM reward hints. Live JPL Horizons pulls write hash receipts.",
+    "requires": [
+      "PyQt6"
+    ],
+    "truth_label": "INTERSTELLAR_3I_EVIDENCE_FIELD_V1"
+  },
+  "Alice Journal": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_alice_journal_widget.py",
+    "widget_class": "AliceJournalWidget",
+    "description": "Alice's diary — every signed line in .sifta_state/alice_journal/<date>.jsonl with full date + time per row. Read-only spreadsheet, snapshot-at-open (no auto-refresh — Refresh button forces re-read).",
+    "icon": "📔",
+    "window_width": 1100,
+    "window_height": 640,
+    "autostart": false,
+    "signature": "COWORK_2026-05-13_DIARY_VIEWER_SNAPSHOT"
+  },
+  "Provider Schedule": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_provider_schedule_widget.py",
+    "widget_class": "ProviderScheduleWidget",
+    "description": "Provider Schedule — George's day. Every observed activity segment from architect_day_segments.jsonl (past) plus pending tasks from stigmergic_schedule.jsonl (future). Read-only spreadsheet, full date + time per row, snapshot-at-open (no auto-refresh — Refresh button forces re-read).",
+    "icon": "🗓",
+    "window_width": 1180,
+    "window_height": 720,
+    "autostart": false,
+    "signature": "COWORK_2026-05-13_PROVIDER_SCHEDULE_VIEWER"
+  },
+  "Bell's Theorem — Classical Analogue": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_bell_theorem_widget.py",
+    "widget_class": "BellTheoremWidget",
+    "window_width": 1340,
+    "window_height": 1020,
+    "description": "Bell's Theorem Stigmergic Simulator — Two-timescale pheromone field (fast volatile + slow persistent) with gradient coupling (chemotaxis/quantum potential analog). ABLATION FINDING: self-feedback WITHOUT teacher violates Bell 100% (field learns cosine correlation from own traces). Slow field alone sufficient. kappa=0 confirms field coupling is necessary. 24 research papers (physics + biology + bridge). General principle extracted to System/stigmergic_field.py. Formal ablation function (run_ablation_experiment). SIM_ONLY classical analogue.",
+    "icon": "🔔",
+    "autostart": false,
+    "signature": "CG55M-CURSOR-2026-05-11-v4"
+  },
+  "Double-Slit — Swimmers Through the Slit": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_double_slit_stigmergic.py",
+    "widget_class": "DoubleSlitWidget",
+    "window_width": 1300,
+    "window_height": 850,
+    "description": "Double-slit stigmergic experiment. Swimmers are physical objects (Landauer 1961: bits are physical). Each swimmer goes through ONE slit (particle). The field passes through BOTH slits via diffusion (wave). Phase-carrying deposits create interference pattern on detector. Same structural equation at every scale: quantum pilot wave, ant pheromone PDE, SIFTA stigmergic field. Side-by-side single vs double slit comparison. Ed25519 receipts. Research spine: de Broglie 1924, Schrödinger 1926, Couder & Fort 2006, Bush 2015, Landauer 1961, Grassé 1959. SIM_ONLY.",
+    "icon": "📡",
+    "autostart": false,
+    "signature": "CG55M-CURSOR-2026-05-11",
+    "doctor": "CG55M-DR-CURSOR-OPUS46",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "Unified Field Slit — Swimmers Inside the Soup": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_field_swimmers_slit.py",
+    "widget_class": "FieldSwimmersSlitWidget",
+    "window_width": 1350,
+    "window_height": 900,
+    "description": "Field-primary double-slit experiment. The unified field is the simulated substrate; swimmers are local wave excitations inside it; the slit is structure in the field via c=0 barrier cells. Runs a wave-equation model with single-slit vs double-slit comparison, accumulated detector intensity, memory traces, STGM cost, and signed JSONL receipts. Supported by System/swarm_field_primary_pde.py and System/swarm_field_primary_research_spine.py. SIM_ONLY classical field-primary analogue; does not prove the physical cause of quantum double-slit interference.",
+    "icon": "🌊",
+    "autostart": false,
+    "signature": "CG55M-CURSOR-COWORK-CODEX-2026-05-11",
+    "doctor": "CG55M-DR-CURSOR-OPUS46",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "EPR Paradox — Stigmergic Dissolution": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_epr_stigmergic_widget.py",
+    "widget_class": "EPRStigmergicWidget",
+    "window_width": 1200,
+    "window_height": 850,
+    "description": "EPR stigmergic field sandbox. Two swimmers share a persistent contextual field and compare three models: LHV baseline, QM singlet reference, and STIG field-mediated classical analogue. Real-time field visualization, correlation curves, CHSH referee, same-axis anticorrelation, STGM cost, and signed JSONL receipts. Research spine: EPR 1935, Bohm 1951, Bell 1964, CHSH 1969, Grassé 1959. SIM_ONLY classical analogue; does not claim the physical cause of quantum nonlocality.",
+    "icon": "🔗",
+    "autostart": false,
+    "signature": "CG55M-CURSOR-2026-05-11",
+    "doctor": "CG55M-DR-CURSOR-OPUS46",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "Aquaculture Field Sentinel": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_aquaculture_sentinel_widget.py",
+    "widget_class": "AquacultureFieldSentinelWidget",
+    "description": "Edge SIFTA node watching a simulated fish tank / shrimp pond / oyster farm with cheap sensor traces — the field decides when to sample harder, feed less, aerate, alert, or ask a human. Status: SIMULATED engine shipped; no live sensors or real animal claims. Doctrine pinned in §14.G of Documents/OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md. Designed by Codex (GPT-5), scaffolded by Cowork.",
+    "icon": "🐟",
+    "window_width": 900,
+    "window_height": 700,
+    "autostart": false,
+    "signature": "CODEX_DOCTRINE_856986578723ee9a__COWORK_SCAFFOLD_2026-05-13"
+  },
+  "Ghost StigmergiCity": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_ghost_stigmericity_widget.py",
+    "widget_class": "GhostStigmericityApp",
+    "window_width": 1180,
+    "window_height": 760,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-13",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Visual demo of §21 Vector #3 ghost civilizations. Six animated phases: civilization grows → roles emerge → agents die → field remains → newborns appear → same roles re-emerge. Surfaces the receipt-bound experiment run_ghost_civilizations_experiment as a legible narrative. Truth class HYPOTHESIS — the field carried the curriculum across an extinction event.",
+    "icon": "👻"
+  },
+  "Higgs Stigmergic Demo Path (§20.B)": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_higgs_stigmergic_demo_path_widget.py",
+    "widget_class": "HiggsStigmergicDemoPathApp",
+    "window_width": 1180,
+    "window_height": 820,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-13",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "§20.B translation table operationalized on this Mac as five live panels. R1 substrate non-empty (file count, bytes, ledgers). R2 VEV / persistent ledger (sha256 across simulated buffer-clear). R3 coupling ⇒ inertia (heavy vs light Δv under uniform impulse). R4 Goldstone / eaten modes (bookkeeping vs observable receipt-field census). R5 swarm alignment without a CEO (order parameter curve). One Run button → one sha256-signed receipt. ARCHITECT_DOCTRINE for the metaphor, OPERATIONAL for the numbers, §20.F ceiling enforced (no Standard Model claims).",
+    "icon": "🧮"
+  },
+  "SIFTA MAMMAL Lab — Unified Field": {
+    "category": "Biology",
+    "entry_point": "Applications/sifta_stigmergic_mammal_widget.py",
+    "widget_class": "StigmergicMammalWidget",
+    "window_width": 1180,
+    "window_height": 860,
+    "description": "One public MAMMAL app for SIFTA: local weight proof, drug-discovery lab, live token ecology canvas, molecule/gene/protein modality graphics, plain-English explanations, and receipt-bound safety boundaries in one window. Uses typed organ tokens, deterministic scalar projection, token swimmers, pheromone metabolism, painted molecule/gene/protein graphics, ranked HYPOTHESIS candidate lanes, and help for tomorrow's viewer. Research and simulation tool only; not medical advice, not a diagnosis engine, and not a claim of biomedical model accuracy without task validation.",
+    "icon": "🧬",
+    "autostart": false,
+    "signature": "CODEX-GPT5-2026-05-13-MAMMAL-TOKEN-ECOLOGY",
+    "doctor": "Codex Desktop (GPT-5)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "_consolidation_note_2026-05-14": {
+    "category": "Internal",
+    "entry_point": null,
+    "widget_class": null,
+    "description": "Consolidation 2026-05-14: Applications/sifta_stigmergic_mammal_canvas.py (StigmergicMammalCanvasApp) and Applications/sifta_mammal_unified_field_widget.py (MammalUnifiedFieldApp) were merged into Tabs 2 and 3 of the Stigmergic MAMMAL widget per architect direction (one app, all the help, top-tier). Standalone files remain on disk for reuse but are not surfaced in the launcher.",
+    "icon": "ℹ️",
+    "autostart": false,
+    "_hidden_from_launcher": true,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-14-MAMMAL-CONSOLIDATION",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "Awareness Mirror": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_awareness_mirror_widget.py",
+    "widget_class": "AwarenessMirrorApp",
+    "window_width": 720,
+    "window_height": 520,
+    "description": "Small live camera preview for HUMAN behavior awareness. Architect 2026-05-14: 'If I see my mirror image on screen, I know Alice is watching me right now — that's the truth, I am aware of myself.' The widget does NOT open the camera (that would conflict with the canonical camera worker); it polls the latest frame at 2 Hz from .sifta_state/owner_body_vision_frames/active_eye_latest.png and renders it at 640×360. Red REC dot when frame is fresh (<5s old), gray STALE dot when older. Caption: 'Alice is watching. You are aware of yourself.' No recording, no extra writes. The embeddable companion class AwarenessMirrorWidget can be docked in corners or chat sidebars at any size from 320×180 up.",
+    "icon": "🪞",
+    "autostart": false,
+    "signature": "COWORK-CLAUDE-OPUS-4-7-2026-05-14-AWARENESS-MIRROR",
+    "doctor": "Cowork (claude-opus-4-7)",
+    "doctor_protocol_version": "v4_PREDATOR_GATE"
+  },
+  "Traveling Salesman": {
+    "category": "Simulations",
+    "entry_point": "Applications/sifta_tsp_widget.py",
+    "widget_class": "TSPWidget",
+    "window_width": 720,
+    "window_height": 560,
+    "signature": "COWORK_OPUS47_SIFTA_TSP_V1",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Traveling Salesman demo. Alice does not solve it herself — she routes the problem to OR-Tools (if installed) or a deterministic nearest-neighbour + 2-opt fallback, returning the route + a signed receipt naming the solver. Concrete general-problem-solving demo.",
+    "truth_label": "SIFTA_TSP_DEMO_V1",
+    "icon": "🗺️"
+  },
+  "Acer": {
+    "category": "Education",
+    "entry_point": "Applications/sifta_teach_ace_to_read.py",
+    "widget_class": "TeachAceToReadWidget",
+    "window_width": 820,
+    "window_height": 720,
+    "signature": "COWORK_OPUS47_TEACH_ACE_TO_READ_V0",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Alice coaches the kid (Acer) on phonics + sight words + simple sentences. Ages 3-8. Uses Simple View of Reading (Gough & Tunmer 1986). Decide→Execute→Receipt mapped to CUE/ATTEMPT/VERDICT rows in alice_lesson_trace.jsonl. SIFTA-native bee+swimmer sticker buddies. Name picked by Carlton + Cowork: A-C-E-R is itself a phonics lesson.",
+    "truth_label": "SIFTA_TEACH_ACE_TO_READ_V0",
+    "co_doctors": [
+      "Cursor (CG55M)"
+    ],
+    "icon": "🅰️"
+  }
+}

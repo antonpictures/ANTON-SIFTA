@@ -2,7 +2,7 @@
 """
 System/swarm_boot.py — The Master Biological Brainstem (v5.0)
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The central nervous system hub. Wakes up the organism, unlocks the Mic Consent 
 Gate via a cryptographically bound trace, initiates Broca's vocal egress, and 
@@ -14,6 +14,8 @@ At execution, SIFTA is physically alive.
 from __future__ import annotations
 import atexit
 import errno
+import json
+import math
 import os
 import time
 import sys
@@ -127,6 +129,8 @@ class SiftaBrainstem:
         self.iris = None
         self.visual_cortex = None
         self.proprioception = None
+        self.self_proprioception = None  # inward ledger snapshot — swarm_self_proprioception
+        self.residue_organ = None        # inward speech-shape mirror — swarm_residue_organ (Cowork 2026-05-12)
         self.trash = None
         self.egress = None
         self.scout = None
@@ -146,6 +150,25 @@ class SiftaBrainstem:
         self.microbiome = None        # [Epoch-19] microbiome digestion lobe
         self.microbiome_enabled = False
         self.endocrine_system = None  # [Epoch-24] slow hormone clock + parasympathetic recovery
+
+        # Brainstem eye Δ-salience (P0 tournament, 2026-05-12) — in-RAM only.
+        self._last_vision_gray: object | None = None
+        self._eye_baseline_delta: float | None = None
+
+    def _write_visual_stigmergy_row(self, row: dict) -> None:
+        """Append one OBSERVED sample decision to visual_stigmergy.jsonl.
+
+        Bounded write (single JSON line). Must never fracture the heartbeat loop.
+        """
+        try:
+            from System.jsonl_file_lock import append_line_locked
+
+            row.setdefault("kind", "SAMPLE_DECISION")
+            row.setdefault("truth", "OBSERVED")
+            p = _REPO_ROOT / ".sifta_state" / "visual_stigmergy.jsonl"
+            append_line_locked(p, json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+        except Exception:
+            pass
 
     def _unlock_hardware(self):
         """
@@ -257,6 +280,21 @@ class SiftaBrainstem:
             from System.swarm_endocrine_system import EndocrineSystem
             
             self.proprioception = SwarmProprioception()
+            try:
+                from System.swarm_self_proprioception import SwarmSelfProprioception
+
+                self.self_proprioception = SwarmSelfProprioception(state_root=_REPO_ROOT / ".sifta_state")
+            except Exception:
+                self.self_proprioception = None
+            try:
+                # Inward speech-shape mirror. Architect GO 2026-05-12:
+                # "if my intelligence gives me residue, I compare the residue,
+                # think again and talk after rethinking." Sense organ, not leash.
+                from System.swarm_residue_organ import SwarmResidueOrgan
+
+                self.residue_organ = SwarmResidueOrgan(state_root=_REPO_ROOT / ".sifta_state")
+            except Exception:
+                self.residue_organ = None
             self.trash = SwarmStigmergicTrash()
             self.egress = SwarmNotificationEgress()
             self.scout = SwarmTrashScout()
@@ -465,8 +503,30 @@ class SiftaBrainstem:
         last_sympathetic_at = 0.0   # [C47H Epoch 10] Sympathetic Cortex Flow
         last_endocrine_at = 0.0     # [Epoch 24] Endocrine clock + recovery tick
         last_rem_sleep_at = 0.0     # [AO46 Epoch 13] REM Sleep neuroplasticity
+        last_compact_at = 0.0       # [Cowork 2026-05-12 §9.C] ledger compaction tick
+        last_burn_at = 0.0          # [Cowork 2026-05-12 §9.C] per-organ burn sample tick
         MOTOR_INTERVAL_S = 5.0       # 12 BPM resting; motor_cortex reads clinical file for live rate
         BASE_FRAME_INTERVAL_S = 0.2  # ~5 fps when vision is healthy
+        # ── Cowork 2026-05-12 §9.C — compaction + burn cadence ───────────────────
+        # Compaction is heavy-ish (reads the whole file once); only run every few
+        # minutes. Burn sampling is cheap; sample every 30s so STGM/thermal_cost
+        # terms get real OBSERVED inputs.
+        COMPACT_INTERVAL_S = float(os.environ.get("SIFTA_LEDGER_COMPACT_INTERVAL_S", "300"))  # 5 min
+        BURN_INTERVAL_S    = float(os.environ.get("SIFTA_BURN_SAMPLE_INTERVAL_S",   "30"))    # 30 s
+
+        # ── Architect 2026-05-12 · P0 surprise-driven eye ─────────────────────────
+        # Default OFF (SIFTA_EYE_DELTA_ENABLE) — preserves prior metronome exactly.
+        # When ON: L1 Δ on 64×64 gray thumb from last webcam PNG + exp attention law.
+        SIFTA_EYE_DELTA_ENABLE = os.environ.get("SIFTA_EYE_DELTA_ENABLE", "false").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        SIFTA_EYE_DELTA_HIGH = float(os.environ.get("SIFTA_EYE_DELTA_HIGH", "0.08"))
+        SIFTA_EYE_DELTA_LOW = float(os.environ.get("SIFTA_EYE_DELTA_LOW", "0.015"))
+        SIFTA_EYE_FAST_MS = float(os.environ.get("SIFTA_EYE_FAST_MS", "80"))
+        SIFTA_EYE_SLOW_MS = float(os.environ.get("SIFTA_EYE_SLOW_MS", "800"))
+        # SIFTA_EYE_BASE_MS — reserved for hybrid three-band mid target (P0.1); exp law only for P0.
+        SIFTA_EYE_ATTENTION_K = float(os.environ.get("SIFTA_EYE_ATTENTION_K", "8.0"))
+        eye_event_interval_s = None  # None → metronome (BASE_FRAME_INTERVAL_S / mood)
         VISION_OCR_INTERVAL_S = 5.0  # Capturing screen text is natively throttled
         SPATIAL_INTERVAL_S = 60.0    # Check physical disk capacity every 60s
         TELOMERE_INTERVAL_S = 60.0   # Age the organism every 60 seconds
@@ -671,7 +731,20 @@ class SiftaBrainstem:
                         refresh_energy_state()
                     except Exception:
                         pass
-                if (tick_start - last_network_at) > NETWORK_INTERVAL_S:
+                # ── Cowork 2026-05-12 · P3 surprise-driven network ─────────────
+                # Wake immediately when cortex_route_field.json changes
+                # (route flip / peer join / link drop). Otherwise honor the
+                # NETWORK_INTERVAL_S floor so we don't poll for nothing.
+                _route_field_path = _REPO_ROOT / ".sifta_state" / "cortex_route_field.json"
+                _route_event = False
+                try:
+                    _rf_mtime = _route_field_path.stat().st_mtime
+                    if _rf_mtime > getattr(self, "_p3_last_route_mtime", 0.0):
+                        _route_event = True
+                        self._p3_last_route_mtime = _rf_mtime
+                except OSError:
+                    pass
+                if _route_event or (tick_start - last_network_at) > NETWORK_INTERVAL_S:
                     last_network_at = tick_start
                     try:
                         from System.swarm_network_cortex import refresh_network_state
@@ -843,6 +916,32 @@ class SiftaBrainstem:
                     except Exception as e:
                         print(f"[MIRROR-LOCK/skip] {e}")
 
+                # ── Cowork 2026-05-12 · §9.C ledger compaction (slow tick) ─────
+                # Bound JSONL ledgers + emit hourly summaries. Self-gated:
+                # the module's enabled() reads SIFTA_LEDGER_COMPACT_ENABLE,
+                # so when the env var is off this is a single function call
+                # that returns immediately.
+                if (tick_start - last_compact_at) > COMPACT_INTERVAL_S:
+                    last_compact_at = tick_start
+                    try:
+                        from System.swarm_ledger_compactor import run_pass as _compact_run
+                        _compact_run()
+                    except Exception as _ce:
+                        # Never let compaction fracture the heartbeat
+                        pass
+
+                # ── Cowork 2026-05-12 · §9.C burn harness (fast-ish tick) ───────
+                # Periodic CPU/RSS snapshot → .sifta_state/organ_burn.jsonl.
+                # Provides the OBSERVED inputs for the attention law's
+                # thermal_cost / STGM_cost subtractor terms (§8.0).
+                if (tick_start - last_burn_at) > BURN_INTERVAL_S:
+                    last_burn_at = tick_start
+                    try:
+                        from System.swarm_burn_harness import sample_burn as _burn_sample
+                        _burn_sample(organ_id="brainstem", action="heartbeat_tick")
+                    except Exception:
+                        pass
+
                 # 2. Check Disk Limits
                 if (tick_start - last_spatial_check_at) > SPATIAL_INTERVAL_S:
                     last_spatial_check_at = tick_start
@@ -906,7 +1005,12 @@ class SiftaBrainstem:
                     pass  # never let motor fracture kill the heartbeat loop
 
             # Scale intervals based on emotion.
-            current_frame_interval_s = BASE_FRAME_INTERVAL_S / mood_multiplier
+            # P0 (2026-05-12): when Δ-salience schedule is active, `eye_event_interval_s`
+            # holds the next webcam period (before mood division). Otherwise metronome.
+            if eye_event_interval_s is not None:
+                current_frame_interval_s = eye_event_interval_s / max(1.0, mood_multiplier)
+            else:
+                current_frame_interval_s = BASE_FRAME_INTERVAL_S / mood_multiplier
             current_sleep_s = current_base_sleep / mood_multiplier
 
             # ── Acoustic ─────────────────────────────────────────────────────
@@ -956,6 +1060,8 @@ class SiftaBrainstem:
                 and (tick_start - last_frame_at) > current_frame_interval_s):
                 last_frame_at = tick_start
                 healthy = False
+                frame = None
+                used_webcam_branch = False
                 try:
                     # Capture IDE screen if opted in and throtted interval passed
                     if self.iris and self.visual_cortex and vision_pheromone.exists() and (tick_start - last_ocr_at) > VISION_OCR_INTERVAL_S:
@@ -968,6 +1074,7 @@ class SiftaBrainstem:
                         # Otherwise fall back to simple webcam check (no OCR, no full screen grab)
                         frame = webcam_frame(grab_timeout_s=0.2)
                         healthy = frame is not None
+                        used_webcam_branch = healthy
                 except Exception as e:
                     print(f"[HEARTBEAT FRACTURE] Visual exception: "
                           f"{type(e).__name__}: {e}")
@@ -979,6 +1086,87 @@ class SiftaBrainstem:
                               f"{vision_consecutive_fail} consecutive failures.")
                     vision_consecutive_fail = 0
                     vision_next_at = 0.0
+
+                    if not used_webcam_branch:
+                        # IDE OCR path ≠ webcam Δ scheduler — hold metronome for next eye cadence.
+                        eye_event_interval_s = None
+
+                    # ── P0 surprise-driven eye — webcam path, env-gated ─────────
+                    if SIFTA_EYE_DELTA_ENABLE and used_webcam_branch and frame is not None:
+                        fp = (getattr(frame, "file_path", None) or "").strip()
+                        if fp:
+                            try:
+                                import numpy as np
+                                from PIL import Image
+
+                                with Image.open(fp) as img:
+                                    small_img = img.convert("L").resize((64, 64))
+                                    cur = np.asarray(small_img, dtype=np.float32) / 255.0
+                                last = self._last_vision_gray
+                                if last is None or getattr(last, "shape", None) != cur.shape:
+                                    delta = 1.0
+                                    wake_reason_tag = "surprise"
+                                else:
+                                    delta = float(np.mean(np.abs(cur - last)))
+                                    if delta > SIFTA_EYE_DELTA_HIGH:
+                                        wake_reason_tag = "surprise"
+                                    elif delta < SIFTA_EYE_DELTA_LOW:
+                                        wake_reason_tag = "static"
+                                    else:
+                                        wake_reason_tag = "mid"
+                                self._last_vision_gray = cur
+
+                                baseline_for_governor = self._eye_baseline_delta
+                                if self._eye_baseline_delta is None:
+                                    self._eye_baseline_delta = delta
+                                else:
+                                    self._eye_baseline_delta = (
+                                        0.9 * float(self._eye_baseline_delta) + 0.1 * delta
+                                    )
+
+                                governor_row = None
+                                try:
+                                    from System.swarm_field_governor import decide_from_delta
+
+                                    governor = decide_from_delta(
+                                        delta=delta,
+                                        baseline=baseline_for_governor,
+                                        organ_id="brainstem_eye",
+                                        fast_ms=SIFTA_EYE_FAST_MS,
+                                        slow_ms=SIFTA_EYE_SLOW_MS,
+                                        attention_k=SIFTA_EYE_ATTENTION_K,
+                                    )
+                                    attention = float(governor.attention)
+                                    eye_event_interval_s = float(governor.sample_period_s)
+                                    wake_reason_tag = str(governor.wake_reason).split(":", 1)[0]
+                                    governor_row = governor.as_dict()
+                                except Exception:
+                                    # If the shared governor ever fails, preserve the proven P0 law.
+                                    attention = float(delta)
+                                    min_p = SIFTA_EYE_FAST_MS / 1000.0
+                                    max_p = SIFTA_EYE_SLOW_MS / 1000.0
+                                    k = float(SIFTA_EYE_ATTENTION_K)
+                                    period = min_p + (max_p - min_p) * math.exp(-k * attention)
+                                    period = float(max(min_p, min(max_p, period)))
+                                    eye_event_interval_s = period
+
+                                sample_row = {
+                                    "t": tick_start,
+                                    "delta": round(delta, 6),
+                                    "attention": round(attention, 6),
+                                    "baseline": round(float(self._eye_baseline_delta), 6),
+                                    "schedule_ms": int(eye_event_interval_s * 1000),
+                                    "wake_reason": wake_reason_tag,
+                                    "mood_multiplier": round(float(mood_multiplier), 4),
+                                    "source": "webcam",
+                                    "salience": "l1_thumb64",
+                                }
+                                if governor_row:
+                                    sample_row["field_governor"] = governor_row
+                                self._write_visual_stigmergy_row(sample_row)
+                            except Exception:
+                                # perf path only — metronome holds
+                                pass
                 else:
                     vision_consecutive_fail += 1
                     wait = min(

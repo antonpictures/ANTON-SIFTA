@@ -1,0 +1,109 @@
+{
+  "truth_label": "SIFTA_LESSON_PACK_V0",
+  "version": "v0",
+  "name": "Acer",
+  "subject": "Acer",
+  "owner_relation": "primary_operator: George Anton",
+  "doctrine": "Simple View of Reading — Gough & Tunmer (1986), https://doi.org/10.1177/074193258600700104. Reading = Decoding × Language Comprehension. Each level drills decoding; sentence levels begin to braid in comprehension.",
+  "ages": "3-8",
+  "tone": "Direct first-person from Alice to Ace. No servant-voice. Praise on success, gentle retry on miss.",
+  "levels": [
+    {
+      "id": "L1_letters",
+      "name": "Alphabet chants — letters together",
+      "kind": "letter_sequence",
+      "doctrine_note": "Letter-name knowledge — proximal predictor of decoding (Adams 1990; Foulin 2005). This prep deck uses short letter runs because one-letter STT is noisy.",
+      "items": [
+        {"id": "ABC", "show": "ABC", "say": "ABC", "phoneme": "alphabet", "alternates": ["A B C"]},
+        {"id": "DEF", "show": "DEF", "say": "DEF", "phoneme": "alphabet", "alternates": ["D E F"]},
+        {"id": "GHI", "show": "GHI", "say": "GHI", "phoneme": "alphabet", "alternates": ["G H I"]},
+        {"id": "JKL", "show": "JKL", "say": "JKL", "phoneme": "alphabet", "alternates": ["J K L"]},
+        {"id": "MNO", "show": "MNO", "say": "MNO", "phoneme": "alphabet", "alternates": ["M N O"]},
+        {"id": "PQR", "show": "PQR", "say": "PQR", "phoneme": "alphabet", "alternates": ["P Q R"]},
+        {"id": "STU", "show": "STU", "say": "STU", "phoneme": "alphabet", "alternates": ["S T U"]},
+        {"id": "VWX", "show": "VWX", "say": "VWX", "phoneme": "alphabet", "alternates": ["V W X"]},
+        {"id": "YZ", "show": "YZ", "say": "YZ", "phoneme": "alphabet", "alternates": ["Y Z"]}
+      ]
+    },
+    {
+      "id": "L2_cvc_short_a",
+      "name": "Short A — first words",
+      "kind": "word",
+      "doctrine_note": "CVC pattern with short /a/ vowel. Phonics first-grade core (NRP 2000).",
+      "items": [
+        {"id": "cat", "show": "cat", "say": "cat", "alternates": ["kat"]},
+        {"id": "bat", "show": "bat", "say": "bat", "alternates": []},
+        {"id": "hat", "show": "hat", "say": "hat", "alternates": []},
+        {"id": "mat", "show": "mat", "say": "mat", "alternates": []},
+        {"id": "ran", "show": "ran", "say": "ran", "alternates": []},
+        {"id": "man", "show": "man", "say": "man", "alternates": []},
+        {"id": "tan", "show": "tan", "say": "tan", "alternates": []},
+        {"id": "can", "show": "can", "say": "can", "alternates": []}
+      ]
+    },
+    {
+      "id": "L3_cvc_short_i",
+      "name": "Short I — pin words",
+      "kind": "word",
+      "doctrine_note": "Short /i/ CVC drill.",
+      "items": [
+        {"id": "pin", "show": "pin", "say": "pin", "alternates": []},
+        {"id": "tin", "show": "tin", "say": "tin", "alternates": []},
+        {"id": "bin", "show": "bin", "say": "bin", "alternates": []},
+        {"id": "win", "show": "win", "say": "win", "alternates": []},
+        {"id": "fin", "show": "fin", "say": "fin", "alternates": []},
+        {"id": "pig", "show": "pig", "say": "pig", "alternates": []},
+        {"id": "dig", "show": "dig", "say": "dig", "alternates": []},
+        {"id": "big", "show": "big", "say": "big", "alternates": []}
+      ]
+    },
+    {
+      "id": "L4_cvc_short_o_u",
+      "name": "Short O and U — sun words",
+      "kind": "word",
+      "doctrine_note": "Short /o/ and /u/ CVC drill.",
+      "items": [
+        {"id": "sun", "show": "sun", "say": "sun", "alternates": []},
+        {"id": "run", "show": "run", "say": "run", "alternates": []},
+        {"id": "bun", "show": "bun", "say": "bun", "alternates": []},
+        {"id": "fun", "show": "fun", "say": "fun", "alternates": []},
+        {"id": "top", "show": "top", "say": "top", "alternates": []},
+        {"id": "hop", "show": "hop", "say": "hop", "alternates": []},
+        {"id": "dog", "show": "dog", "say": "dog", "alternates": ["dawg"]},
+        {"id": "log", "show": "log", "say": "log", "alternates": []}
+      ]
+    },
+    {
+      "id": "L5_sight_words",
+      "name": "Sight words — I see them every day",
+      "kind": "word",
+      "doctrine_note": "Dolch / Fry high-frequency sight words; bypasses decoding where regular phonics fails.",
+      "items": [
+        {"id": "the", "show": "the", "say": "the", "alternates": ["thuh"]},
+        {"id": "a", "show": "a", "say": "a", "alternates": ["ay", "ah"]},
+        {"id": "is", "show": "is", "say": "is", "alternates": ["iz"]},
+        {"id": "and", "show": "and", "say": "and", "alternates": []},
+        {"id": "I", "show": "I", "say": "I", "alternates": ["eye"]},
+        {"id": "you", "show": "you", "say": "you", "alternates": ["yoo"]},
+        {"id": "see", "show": "see", "say": "see", "alternates": []},
+        {"id": "to", "show": "to", "say": "to", "alternates": ["too", "two"]},
+        {"id": "in", "show": "in", "say": "in", "alternates": []},
+        {"id": "it", "show": "it", "say": "it", "alternates": []}
+      ]
+    },
+    {
+      "id": "L6_sentences",
+      "name": "Sentences — I read for real",
+      "kind": "sentence",
+      "doctrine_note": "Decoding × Language Comprehension begins to braid (Hoover & Gough 1990).",
+      "items": [
+        {"id": "s1", "show": "I see a cat.", "say": "I see a cat.", "alternates": []},
+        {"id": "s2", "show": "The dog is big.", "say": "The dog is big.", "alternates": []},
+        {"id": "s3", "show": "I can run.", "say": "I can run.", "alternates": []},
+        {"id": "s4", "show": "The sun is hot.", "say": "The sun is hot.", "alternates": []},
+        {"id": "s5", "show": "I see you.", "say": "I see you.", "alternates": []},
+        {"id": "s6", "show": "A pig in a hat.", "say": "A pig in a hat.", "alternates": []}
+      ]
+    }
+  ]
+}

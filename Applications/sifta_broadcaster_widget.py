@@ -75,10 +75,17 @@ class ScriptGeneratorWorker(QThread):
     completed = pyqtSignal()
     error_signal = pyqtSignal(str)
 
-    def __init__(self, topic_key: str, model: str = "sifta-gemma4-alice:latest"):
+    def __init__(self, topic_key: str, model: str = ""):
         super().__init__()
         self.topic_key = topic_key
-        self.model = model
+        if model:
+            self.model = model
+        else:
+            try:
+                from System.sifta_inference_defaults import resolve_ollama_model
+                self.model = resolve_ollama_model(app_context="talk_to_alice")
+            except Exception:
+                self.model = "alice-m5-cortex-8b-6.3gb:latest"
 
     def run(self):
         desc = TOPICS.get(self.topic_key, "")

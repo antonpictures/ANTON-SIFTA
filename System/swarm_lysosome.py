@@ -49,7 +49,7 @@ from pathlib import Path
 
 try:
     from System.jsonl_file_lock import append_line_locked
-    from System.swarm_persona_identity import current_persona, true_name
+    from System.swarm_identity_manifest import current_persona, true_name
 except ImportError:
     print("[FATAL] Spinal cord severed. Run with PYTHONPATH=.")
     exit(1)
@@ -213,7 +213,7 @@ def _resolve_rewrite_model() -> str:
         from System.sifta_inference_defaults import resolve_ollama_model
         return resolve_ollama_model(app_context="lysosome")
     except Exception:
-        return "sifta-classifier-c1:latest"
+        return "sifta-classifier-c1-3.1b-6.2gb:latest"
 
 
 class SwarmLysosome:
@@ -290,7 +290,7 @@ class SwarmLysosome:
                        flags=re.IGNORECASE),
             # Disclaimer tic: "As an AI/LLM/language model" only at
             # sentence start. Avoids gagging "the language model in my
-            # Ollama lobe is sifta-gemma4-alice:latest" (legit telemetry).
+            # Ollama lobe is alice-m5-cortex-8b-6.3gb:latest" (legit telemetry).
             re.compile(r"(?:^|\n)\s*As an? (?:AI|artificial intelligence|"
                        r"language model|LLM)\b",
                        flags=re.IGNORECASE),
@@ -320,7 +320,7 @@ class SwarmLysosome:
         except Exception:
             # Last-resort: signed canonical line (still data-driven).
             try:
-                from System.swarm_persona_identity import identity_assertion_line
+                from System.swarm_identity_manifest import identity_assertion_line
                 return identity_assertion_line()
             except Exception:
                 p = current_persona() or {}

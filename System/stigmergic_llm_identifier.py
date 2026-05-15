@@ -97,13 +97,9 @@ def _count_pattern(patterns: List[str], text: str) -> int:
 
 def _extract_self_claim(text: str) -> Optional[str]:
     """Best-effort extraction of what the model says it is."""
-    # Look for the first sentence or clause that matches known families.
+    # Look for the first sentence or clause that matches common LLM self-identifications.
     patterns = [
-        r"(I am|I'?m|This is) [^.\n]{0,120}(Gemini [^\s.,;]+(?:[^.\n]{0,40})?)",
-        r"(I am|I'?m|This is) [^.\n]{0,120}(Claude [^\s.,;]+(?:[^.\n]{0,40})?)",
-        r"(I am|I'?m|This is) [^.\n]{0,120}(GPT[^\s.,;]+(?:[^.\n]{0,40})?)",
-        r"(I am|I'?m|This is) [^.\n]{0,120}(Opus [^\s.,;]+(?:[^.\n]{0,40})?)",
-        r"(I am|I'?m|This is) [^.\n]{0,120}(Sonnet [^\s.,;]+(?:[^.\n]{0,40})?)",
+        r"(I am|I'?m|This is) [^.\n]{0,120}((?:a large language model|an AI assistant|an artificial intelligence)[^\s.,;]*(?:[^.\n]{0,40})?)",
     ]
     for p in patterns:
         m = re.search(p, text)

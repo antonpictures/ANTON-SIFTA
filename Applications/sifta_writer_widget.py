@@ -4,16 +4,18 @@ sifta_writer_widget.py — The Stigmergic Writer
 ════════════════════════════════════════════════
 Not another Office. A living page where the Swarm writes with you.
 
-- The page is never blank: context-seeded from Architect activity.
-- Ghost text: pause 3s and the Swarm suggests a continuation.
-- Tab to accept, keep typing to dismiss.
+- The page is never blank: identity/time seeded, with activity kept in receipts.
+- Inline Alice: pause 3s and Alice continues in the same page.
+- Tab still accepts any legacy faded ghost text.
+- Timestamped file is created on boot and autosaved.
 - One-click PDF export. Full territory history.
-- Steve Jobs simple: one page, four buttons.
+- Steve Jobs simple: one page, Open + Export PDF.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import hashlib
@@ -38,7 +40,13 @@ from PyQt6.QtGui import (
 from PyQt6.QtPrintSupport import QPrinter
 
 from System.sifta_base_widget import SiftaBaseWidget
+from System.sifta_inference_defaults import resolve_ollama_model, sanitize_model_name
 from System.sifta_save_defaults import default_sifta_save_path
+from System.swarm_kernel_identity import owner_display_name
+from System.swarm_stigmergic_writer_memory import (
+    answer_writer_memory_query,
+    is_writer_memory_query,
+)
 
 # Doctor Sigil chrome (canonical Applications/_doctor_sigil_chrome).
 _APP_DIR = Path(__file__).resolve().parent
@@ -81,6 +89,7 @@ _ACCENT2  = "#7aa2f7"
 
 DOCS_DIR = _REPO / ".sifta_documents"
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
+STATE_DIR = _REPO / ".sifta_state"
 
 
 # ── Ghost Text Worker ────────────────────────────────────────────────────────
@@ -93,14 +102,26 @@ except Exception:
     _MEMORY_BUS = None
 
 class GhostWorker(QThread):
-    """Background Ollama call for ghost-text continuation."""
+    """Background Ollama call for inline Alice continuation."""
     ghost_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, context: str, model: str = "qwen3.5:2b"):
+    def __init__(self, context: str, model: str | None = None):
         super().__init__()
         self.context = context
-        self.model = model
+        self.model = model or resolve_ollama_model(
+            app_context="talk_to_alice",
+            query_text=context[-500:],
+        )
+
+    @staticmethod
+    def fallback_reply(context: str) -> str:
+        """Small deterministic page-presence reply if inference is temporarily down."""
+        tail = (context or "")[-700:].lower()
+        direct_alice = bool(re.search(r"\b(hi|hello|hey)\s+alice\b|\balice\s*[,?:]", tail))
+        if direct_alice:
+            return "Yes. I am here with you in this saved page."
+        return ""
 
     def run(self):
         # Recall relevant memories from the territory before generating
@@ -118,23 +139,38 @@ class GhostWorker(QThread):
                 pass
 
         prompt = (
-            "You are a writing assistant inside a desktop text editor. "
-            "The user has paused while writing. Continue their text naturally. "
+            "You are Alice, the same local SIFTA OS entity the user talks to elsewhere. "
+            "This Writer is only a saved document surface, not a new persona. "
+            "The user has paused while writing in your shared page. "
+            "Answer or continue as Alice in first person when directly addressed. "
             "Write 1-3 sentences MAXIMUM. Match their tone and style. "
-            "DO NOT repeat what they already wrote. DO NOT use quotes or explain yourself. "
-            "Just continue the text directly.\n\n"
+            "DO NOT repeat what they already wrote. DO NOT add speaker labels. "
+            "Return only the text Alice should type next.\n\n"
             f"{memory_block}"
             f"Text so far:\n{self.context[-1500:]}\n\n"
             "Continue:"
         )
+        model = sanitize_model_name(self.model)
         data = {
-            "model": self.model,
+            "model": model,
             "prompt": prompt,
             "stream": False,
             "temperature": 0.5,
             "num_predict": 120,
             "keep_alive": "2m",
         }
+        route_error = None
+        try:
+            from System.inference_router import route_inference
+
+            text = route_inference(data, timeout=120).strip()
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            if text:
+                self.ghost_ready.emit(text)
+                return
+        except Exception as e:
+            route_error = e
+
         try:
             req = urllib.request.Request(
                 "http://127.0.0.1:11434/api/generate",
@@ -145,12 +181,24 @@ class GhostWorker(QThread):
                 result = json.loads(resp.read().decode("utf-8"))
                 text = result.get("response", "").strip()
                 # Strip think blocks
-                import re
                 text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
                 if text:
                     self.ghost_ready.emit(text)
+                    return
         except Exception as e:
-            self.error.emit(str(e))
+            fallback = self.fallback_reply(self.context)
+            if fallback:
+                self.ghost_ready.emit(fallback)
+                return
+            detail = f"router={route_error!r}; raw={e!r}" if route_error else str(e)
+            self.error.emit(detail)
+            return
+
+        fallback = self.fallback_reply(self.context)
+        if fallback:
+            self.ghost_ready.emit(fallback)
+            return
+        self.error.emit("empty model response")
 
 
 class SwarmAssistWorker(QThread):
@@ -158,7 +206,7 @@ class SwarmAssistWorker(QThread):
     result_ready = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, selected_text: str, full_context: str, model: str = "qwen3.5:2b"):
+    def __init__(self, selected_text: str, full_context: str, model: str = "alice-m1-scout-2.3b-2.7gb:latest"):
         super().__init__()
         self.selected_text = selected_text
         self.full_context = full_context
@@ -213,9 +261,9 @@ class SwarmAssistWorker(QThread):
 
 class StigmergicTextEdit(QTextEdit):
     """
-    A QTextEdit that supports ghost-text suggestions.
-    Ghost text appears in faded gray when you stop typing for 3 seconds.
-    Press Tab to accept. Any other key dismisses it.
+    A QTextEdit that supports inline Alice continuation.
+    Legacy faded ghost text can still be accepted with Tab, but the normal
+    writer loop appends Alice's response into the same page after idle.
     """
 
     def __init__(self, parent=None):
@@ -272,9 +320,8 @@ class StigmergicTextEdit(QTextEdit):
 
         # Reset idle timer on every keystroke
         self.idle_timer.stop()
-        self.idle_timer.start()
-
         super().keyPressEvent(event)
+        self.idle_timer.start()
 
     def inject_ghost(self, text: str):
         """Insert ghost text at current cursor in faded gray."""
@@ -325,48 +372,15 @@ class StigmergicTextEdit(QTextEdit):
 
 def _seed_from_context() -> str:
     """
-    Read recent Architect activity and generate a contextual starting seed.
-    The page is never blank.
+    Generate a clean contextual starting seed. The document body is for writing;
+    system activity belongs in receipts and Alice's journal, not prefilled prose.
     """
     lines = []
 
-    # Owner name
-    genesis_path = _REPO / ".sifta_state" / "owner_genesis.json"
-    owner_name = "Architect"
-    if genesis_path.exists():
-        try:
-            genesis = json.loads(genesis_path.read_text())
-            owner_name = genesis.get("owner_name", "Architect")
-        except Exception:
-            pass
+    owner_name = owner_display_name(default="Architect")
 
     lines.append(f"# Document — {owner_name}")
     lines.append(f"*{datetime.now().strftime('%B %d, %Y at %I:%M %p')}*\n")
-
-    # Recent ledger activity (last 3 events)
-    ledger_path = _REPO / "repair_log.jsonl"
-    if ledger_path.exists():
-        try:
-            recent = []
-            with open(ledger_path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        recent.append(line)
-            if recent:
-                last_events = recent[-3:]
-                lines.append("**Recent Swarm Activity:**")
-                for entry_str in last_events:
-                    try:
-                        entry = json.loads(entry_str)
-                        event = entry.get("event", entry.get("action", "activity"))
-                        agent = entry.get("miner_id", entry.get("agent", "swarm"))
-                        lines.append(f"- {agent}: {event}")
-                    except Exception:
-                        pass
-                lines.append("")
-        except Exception:
-            pass
 
     lines.append("---\n")
     lines.append("")  # Empty line for the Architect to start writing
@@ -379,22 +393,118 @@ def _seed_from_context() -> str:
 def _log_territory(doc_path: Path, action: str, word_count: int):
     """Append a territory entry alongside the document."""
     territory_path = doc_path.with_suffix(".territory.jsonl")
+    doc_hash = hashlib.sha256(
+        doc_path.read_text(encoding="utf-8").encode()
+    ).hexdigest()[:16] if doc_path.exists() else "empty"
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "action": action,
         "words": word_count,
-        "hash": hashlib.sha256(
-            doc_path.read_text(encoding="utf-8").encode()
-        ).hexdigest()[:16] if doc_path.exists() else "empty",
+        "hash": doc_hash,
     }
     with open(territory_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
+    _journal_writer_document_event(doc_path, action, word_count, doc_hash)
+
+
+def _append_jsonl(path: Path, row: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _append_daily_markdown(path: Path, *, date_label: str, block: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text(f"# {date_label}\n\n", encoding="utf-8")
+    with path.open("a", encoding="utf-8") as f:
+        f.write(block.rstrip() + "\n\n")
+
+
+def _journal_writer_document_event(doc_path: Path, action: str, word_count: int, doc_hash: str) -> None:
+    """Witness document-open/create events in Alice's journal without polluting the page."""
+    if action not in {"BOOT_SAVE", "OPEN"}:
+        return
+    now = datetime.now()
+    ts = time.time()
+    owner = owner_display_name(default="Architect")
+    if action == "BOOT_SAVE":
+        entry = f"I observed {owner} start Stigmergic Writer and create the saved document {doc_path.name}."
+        event_type = "writer_document_created"
+    else:
+        entry = f"I observed {owner} open the saved Writer document {doc_path.name}."
+        event_type = "writer_document_opened"
+
+    evidence = {
+        "app": "Stigmergic Writer",
+        "document_path": str(doc_path),
+        "document_name": doc_path.name,
+        "action": action,
+        "word_count": word_count,
+        "document_hash": doc_hash,
+    }
+    source_hash = hashlib.sha256(json.dumps(evidence, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    local_date = now.strftime("%Y-%m-%d")
+    local_time = now.strftime("%H:%M:%S")
+    local_journal_label = now.strftime("%m-%d-%y_%H:%M")
+
+    first_person = {
+        "ts": ts,
+        "date": local_date,
+        "time": local_time,
+        "line": entry,
+        "source": "stigmergic_writer",
+        "truth_label": "ALICE_FIRST_PERSON_WITNESS_V1",
+        "source_hash": source_hash,
+        "event_type": event_type,
+        "document_path": str(doc_path),
+        "document_name": doc_path.name,
+    }
+    journal = {
+        "ts": ts,
+        "local_journal_label": local_journal_label,
+        "local_date": local_date,
+        "kind": "EPISODIC_NARRATIVE",
+        "narrator": "ALICE_M5",
+        "entry": entry,
+        "event_type": event_type,
+        "truth_label": "ALICE_LOCAL_JOURNAL_V1",
+        "source": "stigmergic_writer",
+        "source_evidence": evidence,
+    }
+    journal["journal_id"] = hashlib.sha256(json.dumps(journal, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    receipt = {
+        "ts": ts,
+        "action": "WRITER_DOCUMENT_JOURNALED",
+        "event_type": event_type,
+        "ok": True,
+        "source": "stigmergic_writer",
+        "journal_id": journal["journal_id"],
+        "source_hash": source_hash,
+        "evidence": evidence,
+    }
+    receipt["receipt_hash"] = hashlib.sha256(json.dumps(receipt, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+    _append_jsonl(STATE_DIR / "alice_first_person_journal.jsonl", first_person)
+    _append_jsonl(STATE_DIR / "alice_journal" / f"{local_date}.jsonl", journal)
+    _append_jsonl(STATE_DIR / "writer_document_receipts.jsonl", receipt)
+    _append_daily_markdown(
+        STATE_DIR / "alice_journal" / f"{local_date}.md",
+        date_label=local_date,
+        block=(
+            f"### {local_journal_label}\n"
+            f"{entry}\n\n"
+            f"Source: app=Stigmergic Writer document={doc_path.name} action={action} hash={doc_hash}\n"
+            f"Receipt: `writer_document_receipts:{receipt['receipt_hash']}`"
+        ),
+    )
 
 
 # ── The Widget ───────────────────────────────────────────────────────────────
 
 class WriterWidget(SiftaBaseWidget):
     APP_NAME = "Stigmergic Writer"
+    APP_LOCAL_CHAT_DISABLED = True
 
     def build_ui(self, layout: QVBoxLayout) -> None:
         self.current_file: Path | None = None
@@ -414,7 +524,7 @@ class WriterWidget(SiftaBaseWidget):
             try:
                 sigil = QLabel(doctor_sigil_html(
                     title="Stigmergic Writer",
-                    subtitle="A living page · Tab to accept ghost text",
+                    subtitle="A living page · pause and Alice continues",
                     doctor="CG55M",
                     co_doctors=("AG31",),
                     signature="CG55M-CURSOR-OPUS47",
@@ -504,41 +614,6 @@ class WriterWidget(SiftaBaseWidget):
         btn_open.clicked.connect(self._open_doc)
         tb_layout.addWidget(btn_open)
 
-        btn_save = QPushButton("Save")
-        btn_save.setStyleSheet(btn_style)
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.clicked.connect(self._save_doc)
-        tb_layout.addWidget(btn_save)
-
-        self.btn_swarm = QPushButton("✦ Ask Swarm")
-        self.btn_swarm.setStyleSheet(
-            "QPushButton {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-            "    stop:0 rgba(168, 107, 255, 250),"
-            "    stop:1 rgba(110, 60, 220, 250));"
-            "  color: #ffffff; border: 1px solid rgba(220, 200, 255, 90);"
-            "  border-radius: 9px; padding: 7px 16px;"
-            "  font-family: 'SF Pro Text', 'Helvetica Neue', system-ui;"
-            "  font-size: 12px; font-weight: 700; letter-spacing: 0.4px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-            "    stop:0 rgba(190, 130, 255, 255),"
-            "    stop:1 rgba(130, 80, 240, 255));"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(95, 50, 200, 255);"
-            "}"
-            "QPushButton:disabled {"
-            "  background: rgba(70, 75, 100, 180);"
-            "  color: rgba(220, 220, 240, 130);"
-            "  border-color: rgba(120, 120, 160, 80);"
-            "}"
-        )
-        self.btn_swarm.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_swarm.clicked.connect(self._ask_swarm)
-        tb_layout.addWidget(self.btn_swarm)
-
         btn_pdf = QPushButton("Export PDF")
         btn_pdf.setStyleSheet(btn_style)
         btn_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -547,17 +622,50 @@ class WriterWidget(SiftaBaseWidget):
 
         layout.addWidget(toolbar)
 
-        # ── Word count updater ───────────────────────────────────────
-        self.editor.textChanged.connect(self._update_word_count)
+        # ── Autosave + word-count updater ───────────────────────────
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(1200)
+        self._autosave_timer.timeout.connect(self._autosave_doc)
+        self._last_saved_text = ""
+        self.editor.textChanged.connect(self._on_editor_text_changed)
 
         # ── Seed the page with context ───────────────────────────────
+        self.current_file = self._new_saved_writer_path()
+        self.path_label.setText(self.current_file.name)
         seed = _seed_from_context()
         self.editor.setPlainText(seed)
         cursor = self.editor.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.editor.setTextCursor(cursor)
+        self._autosave_doc(action="BOOT_SAVE", status_prefix="Saved on open")
 
-        self.set_status("Territory is the Law. The page remembers everything.")
+        self.set_status(f"Saved on open: {self.current_file.name}")
+        QTimer.singleShot(0, self._force_one_page_mode)
+
+    def _force_one_page_mode(self) -> None:
+        """Collapse any legacy app-local chat panel; Writer is one page."""
+        self._gci_visible = False
+        gci = getattr(self, "_gci", None)
+        splitter = getattr(self, "_splitter", None)
+        if gci is None or splitter is None:
+            return
+        try:
+            gci.hide()
+        except Exception:
+            pass
+        try:
+            gci.setMinimumWidth(0)
+            gci.setMaximumWidth(0)
+        except Exception:
+            pass
+        try:
+            sizes = splitter.sizes()
+            total = sum(sizes) or max(self.width(), 900)
+            if splitter.indexOf(gci) >= 0:
+                splitter.setSizes([total, 0])
+        except Exception:
+            pass
 
     # ── Ghost Text ───────────────────────────────────────────────────
 
@@ -572,17 +680,87 @@ class WriterWidget(SiftaBaseWidget):
         if self.ghost_worker and self.ghost_worker.isRunning():
             return
 
+        recent_prompt = self._latest_writer_prompt(text)
+        if is_writer_memory_query(recent_prompt):
+            try:
+                self.set_status("Alice is reading saved Writer memory...")
+                answer = answer_writer_memory_query(
+                    recent_prompt,
+                    docs_dir=DOCS_DIR,
+                    state_dir=STATE_DIR,
+                )
+                self._append_alice_continuation(answer)
+            except Exception as e:
+                self._on_ghost_error(f"writer memory reader failed: {e}")
+            return
+
+        self.set_status("Alice is typing in this page...")
         self.ghost_worker = GhostWorker(text)
         self.ghost_worker.ghost_ready.connect(self._on_ghost_ready)
+        self.ghost_worker.error.connect(self._on_ghost_error)
         self.ghost_worker.start()
 
     def _on_ghost_ready(self, suggestion: str):
-        """Ghost text arrived from Ollama."""
+        """Alice continuation arrived from Ollama."""
         if not suggestion:
             return
         # Only inject if user hasn't started typing again
         if not self.editor.idle_timer.isActive():
-            self.editor.inject_ghost(" " + suggestion)
+            self._append_alice_continuation(suggestion)
+
+    def _on_ghost_error(self, msg: str):
+        """Surface continuation failure instead of silently doing nothing."""
+        self.set_status(f"Alice continuation failed: {msg}")
+
+    def _append_alice_continuation(self, suggestion: str) -> None:
+        clean = self._clean_alice_continuation(suggestion)
+        if not clean:
+            return
+        cursor = self.editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.editor.setTextCursor(cursor)
+
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(218, 225, 255))
+        fmt.setFontItalic(False)
+        cursor.insertText(f"\n\nAlice\n{clean}\n\n---\n", fmt)
+        self.editor.ensureCursorVisible()
+        self._autosave_doc(action="ALICE_CONTINUE", status_prefix="Alice continued and saved")
+
+    @staticmethod
+    def _clean_alice_continuation(text: str) -> str:
+        import re
+
+        clean = (text or "").strip()
+        clean = re.sub(r"<think>.*?</think>", "", clean, flags=re.DOTALL).strip()
+        clean = re.sub(r"^(\[?ALICE(?:_M5)?\]?\s*[:\-]?\s*)", "", clean, flags=re.IGNORECASE).strip()
+        clean = re.sub(r"^(Alice\s*[:\-]\s*)", "", clean, flags=re.IGNORECASE).strip()
+        return clean
+
+    @staticmethod
+    def _latest_writer_prompt(text: str) -> str:
+        """Return the last human-authored block in the one-page Writer."""
+        parts = re.split(r"\n\s*---+\s*\n?", text or "")
+        for part in reversed(parts):
+            block = part.strip()
+            if not block:
+                continue
+            if re.match(r"^Alice\s*(\n|$)", block, flags=re.IGNORECASE):
+                continue
+            lines: list[str] = []
+            for line in block.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith("# Document"):
+                    continue
+                if re.match(r"^\*[^*]+\*$", stripped):
+                    continue
+                lines.append(stripped)
+            candidate = "\n".join(lines).strip()
+            if candidate:
+                return candidate
+        return (text or "").strip()[-700:]
 
     # ── Ask Swarm ────────────────────────────────────────────────────
 
@@ -594,7 +772,6 @@ class WriterWidget(SiftaBaseWidget):
             self.set_status("Highlight text first, then Ask Swarm.")
             return
 
-        self.btn_swarm.setEnabled(False)
         self.set_status("🧠 Swarm is thinking...")
 
         full_text = self.editor.toPlainText()
@@ -612,14 +789,48 @@ class WriterWidget(SiftaBaseWidget):
             # Selection was lost — append at end
             cursor.movePosition(QTextCursor.MoveOperation.End)
             cursor.insertText("\n\n" + improved)
-        self.btn_swarm.setEnabled(True)
-        self.set_status("✅ Swarm assist complete. STGM minted.")
+        self._autosave_doc(action="ASSIST", status_prefix="Swarm assist saved")
 
     def _on_assist_error(self, msg: str):
-        self.btn_swarm.setEnabled(True)
         self.set_status(f"Swarm error: {msg}")
 
     # ── File Operations ──────────────────────────────────────────────
+
+    @staticmethod
+    def _unique_path(path: Path) -> Path:
+        if not path.exists():
+            return path
+        suffix = "".join(path.suffixes)
+        stem = path.name[: -len(suffix)] if suffix else path.stem
+        parent = path.parent
+        i = 2
+        while True:
+            candidate = parent / f"{stem} {i}{suffix}"
+            if not candidate.exists():
+                return candidate
+            i += 1
+
+    def _new_saved_writer_path(self) -> Path:
+        return self._unique_path(default_sifta_save_path(DOCS_DIR))
+
+    def _on_editor_text_changed(self) -> None:
+        self._update_word_count()
+        if self.current_file is not None:
+            self._autosave_timer.start()
+
+    def _autosave_doc(self, action: str = "AUTO_SAVE", status_prefix: str = "Autosaved") -> None:
+        if self.current_file is None:
+            self.current_file = self._new_saved_writer_path()
+            self.path_label.setText(self.current_file.name)
+        text = self.editor.toPlainText()
+        if action == "AUTO_SAVE" and text == self._last_saved_text:
+            return
+        self.current_file.write_text(text, encoding="utf-8")
+        self._last_saved_text = text
+        self.path_label.setText(self.current_file.name)
+        word_count = len(text.split())
+        _log_territory(self.current_file, action, word_count)
+        self.set_status(f"{status_prefix}: {self.current_file.name}")
 
     def _save_doc(self):
         if self.current_file:
@@ -639,6 +850,7 @@ class WriterWidget(SiftaBaseWidget):
 
         text = self.editor.toPlainText()
         path.write_text(text, encoding="utf-8")
+        self._last_saved_text = text
         self.current_file = path
         self.path_label.setText(path.name)
 
@@ -669,6 +881,7 @@ class WriterWidget(SiftaBaseWidget):
         text = path.read_text(encoding="utf-8")
         self.editor.setPlainText(text)
         self.current_file = path
+        self._last_saved_text = text
         self.path_label.setText(path.name)
 
         word_count = len(text.split())

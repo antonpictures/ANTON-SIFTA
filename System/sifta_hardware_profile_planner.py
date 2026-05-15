@@ -137,12 +137,22 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
 
     if facts.os_name == "Darwin" and facts.memory_gb >= 24:
         return HardwarePlan(
-            hardware_role="M5_FOUNDRY",
-            summary="Alice primary body. Gemma4 runs locally; smaller models are scouts/reflexes.",
+            hardware_role="APPLE_SILICON_24GB_LOCAL_BODY",
+            summary=(
+                "Alice local body on Apple silicon with 24GB+ unified memory. "
+                "Gemma4 can run locally; smaller models stay scouts/reflexes. "
+                "This is a capability tier, not a specific-chip requirement."
+            ),
             local_models=[
-                ModelSlot("sifta-gemma4-alice:latest", "Alice primary cortex", "required", "24GB+ unified memory tier"),
-                ModelSlot("qwen3.5:2b", "corvid/reflex", "recommended", "fast small local reflex organ"),
-                ModelSlot("sifta-classifier-c1:latest", "intent classifier", "optional", "only if C1 path is enabled"),
+                ModelSlot(
+                    "alice-m5-cortex-8b-6.3gb:latest",
+                    "Alice primary cortex",
+                    "required",
+                    "24GB+ unified memory tier; model tag is historical, not a hardware lock",
+                ),
+                ModelSlot("alice-m1-cortex-4.5b-3.4gb:latest", "Alice low-RAM cortex/scout", "optional", "SIFTA-owned 4.5B / 3.4GB scout tag"),
+                ModelSlot("sifta-classifier-c1-3.1b-6.2gb:latest", "intent classifier", "optional", "only if C1 path is enabled"),
+                ModelSlot("alice-extra-cortex-25.8b-17gb:latest", "extra main cortex", "optional", "selectable 25.8B / 17GB test cortex from Settings > Inference"),
             ],
             skipped_models=[],
             optional_lanes=[
@@ -150,26 +160,26 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
                 "ibm/granite4.1:3b doctor/tool prover after comparison tests",
             ],
             install_commands=[
-                "ollama pull sifta-gemma4-alice",
-                "ollama pull qwen3.5:2b",
+                "ollama pull sifta-gemma4-abliterated-alice",
             ],
         )
 
     if facts.os_name == "Darwin" and facts.memory_gb >= 8:
         return HardwarePlan(
             hardware_role="MAC_SENTRY",
-            summary="Scout/sentry node. Local Qwen scouts; M5 Foundry handles Gemma4 primary responses.",
+            summary="Scout/sentry node. Local M1 cortex first; can borrow inference from any swarm node by receipt.",
             local_models=[
-                ModelSlot("qwen3.5:4b", "local multimodal scout", "recommended", "8GB-safe scout tier"),
-                ModelSlot("qwen3.5:2b", "corvid/reflex", "recommended", "fast small local reflex organ"),
+                ModelSlot("alice-m1-cortex-4.5b-3.4gb:latest", "Alice main cortex", "recommended", "SIFTA-owned alias for uncensored 4B M1 cortex"),
+                ModelSlot("alice-m1-scout-2.3b-2.7gb:latest", "Alice low-RAM cortex/scout", "recommended", "tiny scout/corvid fallback when the 4B cortex is too expensive"),
             ],
             skipped_models=[
-                ModelSlot("sifta-gemma4-alice:latest", "Alice primary cortex", "skip", "Gemma4 does not fit safely in soldered 8GB RAM"),
+                ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 does not fit safely in soldered 8GB RAM"),
+                ModelSlot("sifta-classifier-c1-3.1b-6.2gb:latest", "intent classifier", "skip", "classifier is too heavy for 8GB; build/use a smaller classifier"),
             ],
-            optional_lanes=["borrow M5 Gemma4 inference over swarm network"],
+            optional_lanes=["borrow receipted inference from any capable SIFTA swarm node"],
             install_commands=[
-                "ollama pull qwen3.5:4b",
-                "ollama pull qwen3.5:2b",
+                "ollama pull alice-m1-cortex-4.5b-3.4gb:latest",
+                "ollama pull alice-m1-scout-2.3b-2.7gb:latest",
             ],
         )
 
@@ -181,13 +191,13 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
                 ModelSlot("qwen3.5:0.8b", "tiny edge scout", "test", "verify runtime footprint before default"),
             ],
             skipped_models=[
-                ModelSlot("sifta-gemma4-alice:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry, not Pi 5 8GB"),
+                ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry, not Pi 5 8GB"),
             ],
             optional_lanes=[
                 "3B-class Q4 GGUF via llama.cpp",
                 "slow 7B-class Q4 GGUF only if latency is acceptable",
                 "Raspberry Pi AI HAT+/Hailo CV lane",
-                "borrow M5 Gemma4 inference over swarm network",
+                "borrow receipted inference from any capable SIFTA swarm node",
             ],
             install_commands=[
                 "# boot sensor/receipt services first",
@@ -203,9 +213,9 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
                 ModelSlot("qwen3.5:0.8b", "tiny local scout", "test", "2GB+ target; verify by receipt"),
             ],
             skipped_models=[
-                ModelSlot("sifta-gemma4-alice:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
+                ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
             ],
-            optional_lanes=["borrow M5 Gemma4 inference over swarm network"],
+            optional_lanes=["borrow receipted inference from any capable SIFTA swarm node"],
             install_commands=[
                 "# no default model pull",
                 "# boot signed sensor/feature receipts first",
@@ -218,9 +228,9 @@ def plan_for_hardware(facts: HardwareFacts) -> HardwarePlan:
         local_models=[],
         skipped_models=[
             ModelSlot("qwen3.5:0.8b", "tiny local scout", "skip", "RAM below 2GB target"),
-            ModelSlot("sifta-gemma4-alice:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
+            ModelSlot("alice-m5-cortex-8b-6.3gb:latest", "Alice primary cortex", "skip", "Gemma4 belongs on Foundry"),
         ],
-        optional_lanes=["signed JSONL feature receipts", "borrow M5 Gemma4 inference if networked"],
+        optional_lanes=["signed JSONL feature receipts", "borrow receipted inference from any capable SIFTA swarm node"],
         install_commands=[
             "# no default model pull",
             "# run Python receipt/sensor services only",

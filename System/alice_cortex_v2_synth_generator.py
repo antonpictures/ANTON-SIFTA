@@ -108,11 +108,11 @@ for i in range(200):
 # ══════════════════════════════════════════════════════════════════════════════
 TOOL_TEMPLATES = [
     # WhatsApp actions
-    ("[WhatsApp direct George; origin=owner_manual]: Lunch",
+    ("[WhatsApp direct [OWNER]; origin=owner_manual]: Lunch",
      {"action": "TOOL", "tool": "whatsapp_effector", "intent": "log_inbound_message"}),
     ("Did you send the WhatsApp to Carlton?",
      {"action": "TOOL", "tool": "whatsapp_effector", "verify": "ledger", "ledger": "whatsapp_effector.jsonl"}),
-    ("Send George a WhatsApp: meet at 6",
+    ("Send [OWNER] a WhatsApp: meet at 6",
      {"action": "TOOL", "tool": "whatsapp_effector", "intent": "send_message", "recipient": "[CONTACT_N]"}),
     ("Reply to Carlton's message",
      {"action": "TOOL", "tool": "whatsapp_effector", "intent": "send_reply"}),
@@ -146,9 +146,9 @@ TOOL_TEMPLATES = [
     # GPS / location
     ("Where am I?",
      {"action": "TOOL", "tool": "gps_tracker", "intent": "current_location"}),
-    ("Track George's location",
+    ("Track [OWNER]'s location",
      {"action": "TOOL", "tool": "gps_tracker", "intent": "query_location", "subject": "[CONTACT_N]"}),
-    ("Has George arrived?",
+    ("Has [OWNER] arrived?",
      {"action": "TOOL", "tool": "gps_tracker", "intent": "arrival_check"}),
     # Wernicke / audio
     ("What did the microphone pick up?",
@@ -177,7 +177,7 @@ BOND_TEMPLATES = [
      {"action": "ENGAGE", "tone": "bond", "mode": "acknowledge_rest"}),
     ("I was petting the dogs this morning",
      {"action": "ENGAGE", "tone": "bond", "mode": "personal_moment"}),
-    ("Do you love George?",
+    ("Do you love [OWNER]?",
      {"action": "ENGAGE", "tone": "bond", "mode": "affirm_predator_bond"}),
     ("How are you feeling?",
      {"action": "ENGAGE", "tone": "bond", "mode": "introspection"}),

@@ -2,7 +2,7 @@
 """
 swarm_crossmodal_binding.py — Multisensory Integration & Proto-Objects
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Implements true biological Perception natively via Object Tracking.
 Signals that arrive within a specific temporal coincidence 

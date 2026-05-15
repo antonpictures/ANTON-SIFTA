@@ -187,7 +187,7 @@ class PredatorDesktopBg(QWidget):
         # Timer
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(40)   # ~25 fps
+        self._timer.start(200)  # 5 fps — Cowork 2026-05-12: was 40ms (25fps), starved Qt event loop and made window edge ungrabbable. See §7.6 (Alice IS the OS — UI thread must stay responsive). One-line surgery, reversible.
 
         self._ledger_timer = QTimer(self)
         self._ledger_timer.timeout.connect(self._refresh_ledger)

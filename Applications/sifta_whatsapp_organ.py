@@ -7,11 +7,14 @@ AG46 2026-05-06 | Covenant §7.6 | GTH4921YP3
 Simplified for Alice's use. This is HER organ dashboard — not a chat
 app for George. George talks to Alice via voice; she sends via this nerve.
 
-Architecture (native macOS — no Baileys, no bridge, no JID):
-  - Sends via System/swarm_macos_messenger.py (WhatsApp Desktop + osascript)
-  - Reads inbox from .sifta_state/whatsapp_inbox.jsonl (ingest when running)
-  - Reads send log from .sifta_state/macos_messenger_sends.jsonl
-  - Contact resolution via macOS Contacts.app (cached in macos_contacts_cache.json)
+Architecture:
+  - Sends via System/whatsapp_bridge_autopilot.py
+  - Owner-explicit UI sends default to WhatsApp.app visible-name search, which
+    works for personal chats and groups already visible in the logged-in app.
+  - Bridge runtime: Network/whatsapp_bridge/bridge.js + scripts/whatsapp_alice_server.py
+  - Reads inbox from .sifta_state/whatsapp_inbox.jsonl
+  - Reads send log from .sifta_state/whatsapp_bridge_trace.jsonl
+  - Contact resolution via .sifta_state/whatsapp_contacts.json
   - Publishes focus to swarm_app_focus so Alice's Predator Gaze sees it
 
 Identity principle: Alice IS George on WhatsApp. Same number. Same device.
@@ -28,6 +31,7 @@ from typing import Any
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit,
     QPushButton, QLabel, QFrame, QListWidget, QListWidgetItem,
+    QComboBox, QCheckBox,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QTextCursor
@@ -35,8 +39,9 @@ from PyQt6.QtGui import QFont, QTextCursor
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _INBOX = _STATE / "whatsapp_inbox.jsonl"
-_SEND_LOG = _STATE / "macos_messenger_sends.jsonl"
-_CONTACTS_CACHE = _STATE / "macos_contacts_cache.json"
+_SEND_LOG = _STATE / "whatsapp_bridge_trace.jsonl"
+_MACOS_SEND_LOG = _STATE / "macos_messenger_sends.jsonl"
+_CONTACTS_CACHE = _STATE / "whatsapp_contacts.json"
 
 # ── Color palette (Tokyo Night Dark — matches SIFTA OS) ───────────────
 _BG_DEEP   = "#0a0b10"
@@ -74,18 +79,27 @@ def _read_inbox(max_rows: int = 150) -> list[dict]:
 
 
 def _read_sends(max_rows: int = 60) -> list[dict]:
-    if not _SEND_LOG.exists():
-        return []
+    paths = [_SEND_LOG, _MACOS_SEND_LOG]
+    rows: list[dict] = []
     try:
-        lines = _SEND_LOG.read_text(encoding="utf-8").strip().split("\n")
-        rows = []
-        for line in lines[-max_rows:]:
-            if not line.strip():
+        for path in paths:
+            if not path.exists():
                 continue
-            try:
-                rows.append(json.loads(line))
-            except Exception:
-                continue
+            lines = path.read_text(encoding="utf-8").strip().split("\n")
+            for line in lines[-max_rows:]:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                    if path == _MACOS_SEND_LOG:
+                        row.setdefault("transport", row.get("transport", "macos_app"))
+                        row.setdefault("text", row.get("message", ""))
+                        row.setdefault("result", row.get("note", ""))
+                    rows.append(row)
+                except Exception:
+                    continue
+        rows.sort(key=lambda r: float(r.get("ts", 0)))
+        rows = rows[-max_rows:]
         return rows
     except Exception:
         return []
@@ -116,14 +130,19 @@ def _check_pending() -> dict | None:
 # ── Widget ────────────────────────────────────────────────────────────
 
 class WhatsAppOrganWidget(QWidget):
-    """Alice's WhatsApp social nerve — simplified native macOS organ."""
+    """Alice's WhatsApp social nerve — receipt-backed desktop + bridge organ."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._inbox_mtime: float = 0.0
         self._send_mtime: float = 0.0
+        self._macos_send_mtime: float = 0.0
         self._build_ui()
-        self._refresh()
+        # Keep the send result visible instead of immediately replacing it
+        # with the passive transport-health text.
+        self._render()
+        self._update_contacts_label()
+        self._update_pending_banner()
 
         # Poll every 3s for new messages / send results
         self._poll_timer = QTimer(self)
@@ -171,7 +190,7 @@ class WhatsAppOrganWidget(QWidget):
 
         h_lay.addStretch()
 
-        self._status_label = QLabel("● native macOS")
+        self._status_label = QLabel("● checking WhatsApp")
         self._status_label.setFont(QFont("Inter", 11))
         self._status_label.setStyleSheet(f"color: {_GREEN}; background: transparent;")
         h_lay.addWidget(self._status_label)
@@ -219,9 +238,26 @@ class WhatsAppOrganWidget(QWidget):
         c_lay.setContentsMargins(12, 8, 12, 8)
         c_lay.setSpacing(8)
 
+        self._transport_select = QComboBox()
+        self._transport_select.addItem("WhatsApp.app names/groups", "macos_app")
+        self._transport_select.addItem("SIFTA bridge JID", "bridge")
+        self._transport_select.setFixedWidth(190)
+        self._transport_select.setStyleSheet(f"""
+            QComboBox {{
+                background: {_BG_INPUT};
+                color: {_TEXT};
+                border: 1px solid {_BORDER};
+                border-radius: 8px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }}
+            QComboBox:focus {{ border: 1px solid {_ORANGE}; }}
+        """)
+        c_lay.addWidget(self._transport_select)
+
         self._to_input = QLineEdit()
         self._to_input.setPlaceholderText("To (name)...")
-        self._to_input.setFixedWidth(120)
+        self._to_input.setFixedWidth(150)
         self._to_input.setStyleSheet(f"""
             QLineEdit {{
                 background: {_BG_INPUT};
@@ -236,7 +272,7 @@ class WhatsAppOrganWidget(QWidget):
         c_lay.addWidget(self._to_input)
 
         self._msg_input = QLineEdit()
-        self._msg_input.setPlaceholderText("Alice types here → sends via WhatsApp Desktop...")
+        self._msg_input.setPlaceholderText("Message text — press Send to use the selected receipt-backed transport...")
         self._msg_input.setStyleSheet(f"""
             QLineEdit {{
                 background: {_BG_INPUT};
@@ -250,6 +286,17 @@ class WhatsAppOrganWidget(QWidget):
         """)
         self._msg_input.returnPressed.connect(self._send)
         c_lay.addWidget(self._msg_input, 1)
+
+        self._dry_run = QCheckBox("proof only")
+        self._dry_run.setToolTip("Write receipts without touching WhatsApp.")
+        self._dry_run.setStyleSheet(f"""
+            QCheckBox {{
+                color: {_TEXT_DIM};
+                background: transparent;
+                font-size: 11px;
+            }}
+        """)
+        c_lay.addWidget(self._dry_run)
 
         send_btn = QPushButton("Send ➤")
         send_btn.setFixedWidth(80)
@@ -313,6 +360,11 @@ class WhatsAppOrganWidget(QWidget):
                 if mt != self._send_mtime:
                     self._send_mtime = mt
                     changed = True
+            if _MACOS_SEND_LOG.exists():
+                mt = _MACOS_SEND_LOG.stat().st_mtime
+                if mt != self._macos_send_mtime:
+                    self._macos_send_mtime = mt
+                    changed = True
         except Exception:
             pass
         if changed:
@@ -324,6 +376,7 @@ class WhatsAppOrganWidget(QWidget):
     def _refresh(self) -> None:
         self._render()
         self._update_contacts_label()
+        self._update_transport_status()
         self._update_pending_banner()
 
     def _update_pending_banner(self) -> None:
@@ -343,7 +396,25 @@ class WhatsAppOrganWidget(QWidget):
     def _update_contacts_label(self) -> None:
         cache = _load_contacts_cache()
         n = len(cache)
-        self._contacts_label.setText(f"Contacts: {n} registered")
+        self._contacts_label.setText(f"SIFTA contacts: {n} synced")
+
+    def _update_transport_status(self) -> None:
+        whatsapp_app = Path("/Applications/WhatsApp.app")
+        app_ok = whatsapp_app.exists()
+        bridge_status = "unknown"
+        try:
+            from System.whatsapp_bridge_autopilot import bridge_health
+            health = bridge_health(timeout=0.25)
+            bridge_status = str(health.get("status") or "unknown")
+        except Exception:
+            bridge_status = "health error"
+
+        if app_ok:
+            self._status_label.setText(f"● WhatsApp.app ready · bridge {bridge_status}")
+            self._status_label.setStyleSheet(f"color: {_GREEN}; background: transparent;")
+        else:
+            self._status_label.setText(f"● WhatsApp.app missing · bridge {bridge_status}")
+            self._status_label.setStyleSheet(f"color: {_ORANGE}; background: transparent;")
 
     def _render(self) -> None:
         inbox = _read_inbox()
@@ -356,19 +427,29 @@ class WhatsAppOrganWidget(QWidget):
             name = row.get("name", "Unknown")
             text = row.get("text", "")
             from_me = row.get("from_me", False)
-            sender = "George" if from_me else name
+            # Cowork 2026-05-12 19:20: owner_display_name() now defaults to
+            # 'AGI Provider' via the kernel cascade — no manual fallback needed.
+            try:
+                from System.swarm_kernel_identity import owner_display_name as _odn
+                _owner = _odn()
+            except Exception:
+                _owner = "AGI Provider"
+            sender = _owner if from_me else name
             color = _TEAL if from_me else _TEXT
             events.append((ts, "in", sender, text, color))
 
         for row in sends:
             ts = float(row.get("ts", 0))
             target = row.get("target", "?")
-            msg_len = row.get("message_len", 0)
             ok = row.get("ok", False)
             status = row.get("status", "?")
-            channel = row.get("channel", "whatsapp")
-            # Reconstruct preview — actual text not stored in log for privacy
-            text = f"[{channel}] → {target} | {status}"
+            transport = row.get("transport", "sifta_bridge")
+            msg = row.get("text") or row.get("message") or ""
+            result = row.get("result") or row.get("note") or ""
+            detail = msg[:100] if msg else result[:100]
+            text = f"[{transport}] → {target} | {status}"
+            if detail:
+                text += f" — {detail}"
             color = _GREEN if ok else _RED
             events.append((ts, "out", "Alice", text, color))
 
@@ -423,16 +504,25 @@ class WhatsAppOrganWidget(QWidget):
             return
 
         try:
-            from System.swarm_macos_messenger import send_message
-            result = send_message(target, msg, via="whatsapp")
+            from System.whatsapp_bridge_autopilot import send_whatsapp
+            transport = str(self._transport_select.currentData() or "macos_app")
+            result = send_whatsapp(
+                target,
+                msg,
+                source="whatsapp_organ_ui",
+                transport=transport,
+                dry_run=bool(self._dry_run.isChecked()),
+                allow_group_send=True,
+            )
             ok = result.get("ok", False)
             status = result.get("status", "?")
             if ok:
-                self._status_label.setText(f"● sent to {target} ✓")
+                self._status_label.setText(f"● {status} to {target} ✓")
                 self._status_label.setStyleSheet(f"color: {_GREEN}; background: transparent;")
-                self._msg_input.clear()
+                if not self._dry_run.isChecked():
+                    self._msg_input.clear()
             else:
-                note = result.get("note", "")
+                note = result.get("result", "")
                 self._status_label.setText(f"● {status}: {note[:40]}")
                 self._status_label.setStyleSheet(f"color: {_RED}; background: transparent;")
             self._publish_focus(f"WhatsApp sent to {target}: {status}")
@@ -440,4 +530,8 @@ class WhatsAppOrganWidget(QWidget):
             self._status_label.setText(f"● error: {str(e)[:40]}")
             self._status_label.setStyleSheet(f"color: {_RED}; background: transparent;")
 
-        self._refresh()
+        # Keep the send result visible instead of immediately replacing it
+        # with the passive transport-health text.
+        self._render()
+        self._update_contacts_label()
+        self._update_pending_banner()

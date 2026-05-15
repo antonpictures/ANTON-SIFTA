@@ -137,9 +137,28 @@ def rf_sensory_loop():
             time.sleep(2)
 
 def arp_loop():
+    """Periodic ARP-table scan to track LAN peers.
+
+    Architect 2026-05-12 00:14: only scan when the peer network is alive.
+    Scanning the kernel ARP table every 60 s makes no sense if no peer
+    relay is connected — the map can't be used. Gate via swarm_peer_gate.
+    """
+    try:
+        from System.swarm_peer_gate import (
+            dormant_sleep_s,
+            peer_network_active,
+        )
+    except Exception:
+        while True:
+            parse_arp_table()
+            time.sleep(60)
+        return
     while True:
-        parse_arp_table()
-        time.sleep(60)
+        if peer_network_active():
+            parse_arp_table()
+            time.sleep(60)
+        else:
+            time.sleep(dormant_sleep_s())
 
 if __name__ == "__main__":
     print("📡 [Electromagnetic Lobe] Booting organic Wi-Fi sensory arrays...")

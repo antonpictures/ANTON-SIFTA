@@ -2,7 +2,7 @@
 """
 System/swarm_trash_scout.py — The Autonomous Quarantine Sweeper
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Hunts for biological noise (caching, temporary metadata) and sweeps
 it into the Stigmergic Trash Bin. Never unlinks directly.

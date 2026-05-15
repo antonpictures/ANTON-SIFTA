@@ -42,6 +42,21 @@ _STATE = _REPO / ".sifta_state"
 _STATE.mkdir(parents=True, exist_ok=True)
 TRACE_PATH = _STATE / "ide_stigmergic_trace.jsonl"
 
+# Lazy import — avoids circular-import issues.  Loaded on first deposit().
+_assert_row_valid = None
+
+
+def _get_auditor():
+    """Return assert_row_valid, loading the module on first call."""
+    global _assert_row_valid
+    if _assert_row_valid is None:
+        try:
+            from System.ledger_auditor import assert_row_valid as _arv
+            _assert_row_valid = _arv
+        except Exception:
+            _assert_row_valid = lambda row, **kw: None  # noqa: E731
+    return _assert_row_valid
+
 # Known IDE labels (any string allowed)
 IDE_CURSOR_M5 = "cursor_m5"
 IDE_ANTIGRAVITY = "antigravity_m5"
@@ -86,6 +101,8 @@ def deposit(
     line = json.dumps(row, ensure_ascii=False) + "\n"
     TRACE_PATH.parent.mkdir(parents=True, exist_ok=True)
     append_line_locked(TRACE_PATH, line, encoding="utf-8")
+    # Auditor organ — soft-mode post-write invariant check (never crashes hot path)
+    _get_auditor()(row, strict=False)
     return row
 
 

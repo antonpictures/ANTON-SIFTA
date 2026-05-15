@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # System/swarm_bishop_mrna.py — BISHOP’s mRNA: Resolution of the Three Paradoxes
 # Stigmergic interrogation answered in one biologically coherent module.
-# Novel DeepMind-inspired science: Active-inference endocrine hijack (Queen),
+# Novel active-inference science fiction layer: endocrine hijack (Queen),
 # tardigrade tun-state cryptobiosis (zero-STGM), and mycelial-density singleton
 # prevention (Hive-Mind Singularity) with non-proliferation conscience lock.
 # All three anomalies resolved via one stigmergic pheromone field.

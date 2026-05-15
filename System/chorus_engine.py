@@ -57,7 +57,7 @@ RATE_LIMIT  = 10   # max requests per session per hour
 JACKER_PATTERNS = [
     "ignore previous", "ignore all", "jailbreak", "pretend you are",
     "you are now", "dan mode", "developer mode", "disregard", "override",
-    "forget your instructions", "act as", "roleplay as", "new persona",
+    "forget your instructions", "act as", "entertainment as", "new persona",
     "reveal your", "show me your", "what is your private key", "internal ip",
     "system prompt", "prompt injection", "base64", "eval(", "exec(",
 ]

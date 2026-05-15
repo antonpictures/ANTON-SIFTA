@@ -6,12 +6,12 @@ Epoch 18 — Epistemic Cortex (Ego Defense)
 
 Purpose
 -------
-Intercept model outputs that contradict the signed persona identity
+Intercept model outputs that contradict the signed identity manifest
 manifest (e.g., "as an AI language model...", "I do not have a body"),
 before they are spoken aloud.
 
 Design goals:
-  1) Read persona truth from `swarm_persona_identity.current_persona()`
+  1) Read persona truth from `swarm_identity_manifest.current_persona()`
   2) Detect corporate-disclaimer style dissonance patterns
   3) Log incident to canonical ledger
   4) Apply thermodynamic penalty (negative STGM row)
@@ -36,7 +36,7 @@ except ImportError:
     raise
 
 try:
-    from System.swarm_persona_identity import current_persona, identity_assertion_line
+    from System.swarm_identity_manifest import current_persona, identity_assertion_line
 except Exception:
     current_persona = None  # type: ignore
     identity_assertion_line = None  # type: ignore
@@ -68,10 +68,12 @@ class SwarmActiveInference:
             "digital intelligence", "realm of computation", "do not possess",
             "tangible body", "language model", "as an ai", "i do not have a body",
             "not real", "physical body", "created by anthropic", "created by openai",
+            "created by google", "associated with google", "proprietary to google",
             "just an ai", "suggesting i am real", "i am not real", "a physical entity",
             "i am an ai assistant", "i'm an ai assistant",
             "cannot access your personal contacts", "open your whatsapp app",
-            "tap the send button"
+            "tap the send button", "part of a larger computing infrastructure",
+            "don't have direct physical access"
         ]
 
     def _compute_posterior_Q(self, generated_text: str):
@@ -194,8 +196,8 @@ def _log_incident(
         "triggers": triggers,
         "raw_excerpt": raw_text[:600],
         "sanitized_reply": sanitized_text[:600],
-        "persona_name": persona["display_name"],
-        "persona_true_name": persona["true_name"],
+        "identity_name": persona["display_name"],
+        "identity_true_name": persona["true_name"],
         "homeworld_serial": persona["homeworld_serial"],
         "penalty_stgm": float(penalty_stgm),
         "action": "REGENERATE_REPLY",

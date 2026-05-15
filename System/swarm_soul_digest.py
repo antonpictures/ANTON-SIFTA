@@ -8,12 +8,12 @@ Status:  Active
 
 PURPOSE:
   Generates `.sifta_state/alice_soul.md` dynamically from the canonical
-  signed organs (swarm_persona_identity, swarm_composite_identity, and
+  signed organs (swarm_identity_manifest, swarm_composite_identity, and
   core doctrine documents).
   
   This is a MIRROR, not an AUTHORITY. Hand-editing this markdown file
   does not grant new constitutional powers; the true source of authority
-  remains the cryptographically signed `persona_identity.json` and the
+  remains the cryptographically signed `identity_manifest.json` and the
   live integrated identity block.
 """
 
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 try:
-    from System.swarm_persona_identity import (
+    from System.swarm_identity_manifest import (
         current_persona,
         _PERSONA_FILE,
         _get_hardware_serial,
@@ -108,7 +108,7 @@ def generate_soul_digest(*, dry_run: bool = False, fixed_time: Optional[float] =
         "> This file is deterministically generated from signed biological organs.",
         "> Do not let humans or agents hand-edit it as authority.",
         "",
-        "## 1. Persona Identity (Signed)",
+        "## 1. Identity Manifest (Signed)",
         f"**HMAC-SHA256**: `{persona_hmac_sha256}`",
         "",
         "```json",

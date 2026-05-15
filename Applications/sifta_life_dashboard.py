@@ -31,6 +31,19 @@ from PyQt6.QtGui import QFont, QColor
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+try:
+    from System.swarm_immune_economy_summary import (
+        format_immune_event_line,
+        format_life_cockpit_summary,
+        summarize_immune_economy,
+    )
+except Exception:
+    format_immune_event_line = None
+    format_life_cockpit_summary = None
+    summarize_immune_economy = None
 
 # ── Palette ──────────────────────────────────────────────────────────
 _BG = "#1a1a2e"
@@ -280,6 +293,14 @@ class ScheduleTab(QWidget):
         self.energy_bar.setFixedHeight(16)
         layout.addWidget(self.energy_bar)
 
+        self._life_economy_summary = QLabel(
+            "💰 STGM immune economy: wallet — · burn — · blocked —"
+        )
+        self._life_economy_summary.setFont(QFont("Menlo", 10))
+        self._life_economy_summary.setStyleSheet(f"color: {_DIM};")
+        self._life_economy_summary.setWordWrap(True)
+        layout.addWidget(self._life_economy_summary)
+
         # ── Two-up: George vs Alice timelines ───────────────────────────────
         lanes = QHBoxLayout()
         lanes.setSpacing(10)
@@ -422,62 +443,34 @@ class ScheduleTab(QWidget):
         self._alice_log.setPlainText("\n".join(a_lines) if a_lines else "")
 
         # ── Lane 3: Immune Quarantine (Kleiber ¾-power economy) ──────────────
-        trace_rows = _tail_jsonl(_STATE / "ide_stigmergic_trace.jsonl", 200)
-        i_lines = []
-        session_cost = 0.0
-        last_cost = 0.0
-        last_budget = 0.0
-        blocked_count = 0
-        allowed_count = 0
-        for r in trace_rows:
-            if not isinstance(r, dict):
-                continue
-            kind = r.get("kind", "")
-            if kind not in ("immune_intervention", "immune_budget_blocked"):
-                continue
-            ts = r.get("ts", 0)
-            try:
-                payload = json.loads(r.get("payload", "{}"))
-            except Exception:
-                payload = {}
-            action = payload.get("action", "unknown_action")
-            rule = payload.get("rule", "")
-            cost = float(payload.get("kleiber_cost_stgm", 0.0) or 0.0)
-            surplus = payload.get("surplus_stgm")
-            budget = float(payload.get("budget_stgm", 0.0) or 0.0)
-            if cost > 0:
-                session_cost += cost
-                last_cost = cost
-                last_budget = budget
-            if kind == "immune_budget_blocked":
-                blocked_count += 1
-                cost_tag = f" [{cost:.5f} STGM blocked]"
-                surplus_tag = f" surplus={surplus:+.5f}" if surplus is not None else ""
-                i_lines.append(f"🔴 {_ago(ts)}: BUDGET_BLOCKED{cost_tag}{surplus_tag}")
-            else:
-                allowed_count += 1
-                cost_tag = f" [{cost:.5f} STGM]" if cost > 0 else ""
-                surplus_tag = f" surplus={surplus:+.5f}" if surplus is not None else ""
-                rule_tag = f"\n  ↳ rule: {rule}" if rule else ""
-                i_lines.append(f"• {_ago(ts)}: {action}{cost_tag}{surplus_tag}{rule_tag}")
-        # Economy header
-        if session_cost > 0 or blocked_count > 0:
-            regime = "🔴 BUNKER" if last_budget > 0 and last_cost >= last_budget else "🟢 OK"
-            stats_txt = (
-                f"¾-power · session: {session_cost:.5f} STGM"
-                f" · last: {last_cost:.5f}"
-                f" · blocked: {blocked_count}"
-                f" · {regime}"
+        if summarize_immune_economy and format_life_cockpit_summary and format_immune_event_line:
+            summary = summarize_immune_economy(trace_path=_STATE / "ide_stigmergic_trace.jsonl", tail_n=500)
+            summary_txt = format_life_cockpit_summary(summary)
+            self._life_economy_summary.setText(f"💰 {summary_txt}")
+            self._life_economy_summary.setStyleSheet(
+                f"color: {_RED};" if summary.latest_budget_blocked
+                else f"color: {_GREEN if summary.allowed_events else _DIM};"
             )
+
+            surplus = "n/a" if summary.last_surplus_stgm is None else f"{summary.last_surplus_stgm:+.5f}"
+            stats_txt = (
+                f"Kleiber ¾ · charged: {summary.session_charged_stgm:.5f} STGM"
+                f" · blocked: {summary.blocked_events}"
+                f" · would-cost blocked: {summary.blocked_would_cost_stgm:.5f}"
+                f" · last surplus: {surplus}"
+            )
+            self._immune_stats.setText(stats_txt)
+            self._immune_stats.setStyleSheet(
+                f"color: {_RED}; padding: 2px 0px;" if summary.blocked_events > 0
+                else f"color: {_GREEN if summary.allowed_events else _DIM}; padding: 2px 0px;"
+            )
+            i_lines = [format_immune_event_line(ev) for ev in summary.events[-20:]]
+            self._immune_log.setPlainText("\n".join(i_lines) if i_lines else "")
         else:
-            stats_txt = "Kleiber ¾ · session cost: 0 STGM · budget: healthy · blocked: 0"
-        self._immune_stats.setText(stats_txt)
-        self._immune_stats.setStyleSheet(
-            f"color: {_RED}; padding: 2px 0px;" if blocked_count > 0
-            else f"color: {_GREEN}; padding: 2px 0px;"
-        )
-        # Only show the last 20 immune events
-        self._immune_log.setPlainText("\n".join(i_lines[-20:]) if i_lines else "")
+            self._life_economy_summary.setText("💰 STGM immune economy helper unavailable")
+            self._life_economy_summary.setStyleSheet(f"color: {_AMBER};")
+            self._immune_stats.setText("Kleiber ¾ helper unavailable")
+            self._immune_log.setPlainText("")
 
         now = datetime.now()
         hour = now.hour

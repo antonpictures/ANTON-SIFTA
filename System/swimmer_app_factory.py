@@ -24,6 +24,11 @@ from typing import Optional
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
+try:
+    from System.sifta_inference_defaults import CANONICAL_OLLAMA_DEFAULT
+except Exception:
+    CANONICAL_OLLAMA_DEFAULT = "alice-m5-cortex-8b-6.3gb:latest"
+
 _REPO = Path(__file__).resolve().parent.parent
 _SYSTEM = _REPO / "System"
 if str(_SYSTEM) not in sys.path:
@@ -238,7 +243,7 @@ class AppFactoryWorker(QThread):
     build_complete = pyqtSignal(str)  # success message
     build_failed = pyqtSignal(str)   # failure message
 
-    def __init__(self, user_request: str, model: str = "sifta-gemma4-alice:latest"):
+    def __init__(self, user_request: str, model: str = CANONICAL_OLLAMA_DEFAULT):
         super().__init__()
         self.user_request = user_request
         self.model = model

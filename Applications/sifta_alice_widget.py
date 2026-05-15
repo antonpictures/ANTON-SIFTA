@@ -134,9 +134,6 @@ class AliceWidget(QWidget):
         controls = QHBoxLayout()
         controls.setContentsMargins(8, 5, 8, 5)
         controls.setSpacing(6)
-        title = QLabel("Alice OS body")
-        title.setStyleSheet("color:#00ffc8; font-weight:700; font-size:12px;")
-        controls.addWidget(title)
         self._camera_proof_label = QLabel("eye proof: checking unified field…")
         self._camera_proof_label.setToolTip(
             "Receipt-backed proof from visual_stigmergy, active_eye_identity_frames, "

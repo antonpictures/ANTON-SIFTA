@@ -33,6 +33,10 @@ class ConsolidatedMemory:
     epoch_summary: str
     memory_hash: str
 
+    @property
+    def narrative_summary(self) -> str:
+        return self.epoch_summary
+
 
 class HippocampalReplay:
     """
@@ -114,13 +118,21 @@ class HippocampalReplay:
         self._save_checkpoints(checkpoints)
         return events
 
-    def enter_sleep_cycle(self, epoch_summary: str = "Automated sleep consolidation") -> ConsolidatedMemory:
+    def enter_sleep_cycle(
+        self,
+        epoch_summary: str = "Automated sleep consolidation",
+        *,
+        epoch_narrative: str | None = None,
+    ) -> ConsolidatedMemory:
         """
         Triggers the SIFTA Sleep Phase.
         Extracts all recent receipts, computes pattern summaries, checkpoints
         processed rows, and saves a dense ConsolidatedMemory representation to
         long-term storage.
         """
+        if epoch_narrative is not None:
+            epoch_summary = epoch_narrative
+
         all_events = []
         patterns = {
             "total_actions": 0,

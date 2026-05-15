@@ -225,7 +225,21 @@ def compute_policy_bias(
     if novelty_forage_mass > 0.0:
         bias["forage"] = bias.get("forage", 0.0) + novelty_forage_mass
 
+    # ── Panksepp affect circuit integration ───────────────────────────
+    # Three-tier skill library adds affective weighting on top of
+    # crystallized skill mass. SEEKING boosts explore/learn,
+    # CARE boosts forage, RAGE/SUPPRESSED_PLAY boosts repair.
+    try:
+        from System.swarm_skill_library import compute_affect_skill_bias
+        affect_bias = compute_affect_skill_bias()
+        for action, weight in affect_bias.items():
+            bias[action] = bias.get(action, 0.0) + weight * gate
+    except Exception:
+        pass
+    # ──────────────────────────────────────────────────────────────────
+
     return bias
+
 
 
 def select_action_type_from_skills(

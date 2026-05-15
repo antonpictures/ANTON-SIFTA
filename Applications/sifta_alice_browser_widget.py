@@ -10,6 +10,8 @@ so the day-segment organ, context system, and George can see what she's seen.
 
 Features:
   • Full Chromium rendering (JS, CSS, modern web)
+  • Clipboard API: JavascriptCanAccessClipboard + ClipboardReadWrite permission
+    so sites like ChatGPT can copy to the system clipboard from toolbar buttons
   • URL bar with address + enter-to-navigate
   • Back / Forward / Refresh / Home
   • SIFTA-themed home page (rendered from HTML string)
@@ -58,7 +60,7 @@ try:
     if _WEBENGINE_BOOTSTRAP is not None and not _WEBENGINE_BOOTSTRAP.available:
         raise RuntimeError(_WEBENGINE_BOOTSTRAP.error)
     from PyQt6.QtWebEngineWidgets import QWebEngineView
-    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+    from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
 
     _HAS_WEBENGINE = True
     _WEBENGINE_IMPORT_ERROR = ""
@@ -280,9 +282,29 @@ class _NoWebEngineWidget(QWidget):
 
 class _AlicePage(QWebEnginePage if _HAS_WEBENGINE else object):
     def __init__(self, profile, parent=None):
-        super().__init__(profile, parent)
+        if _HAS_WEBENGINE:
+            super().__init__(profile, parent)
+            # ChatGPT / modern apps copy via navigator.clipboard (Clipboard API).
+            # Qt WebEngine requires this attribute plus an explicit permission grant
+            # or writeText() silently fails inside the embedded view.
+            s = self.settings()
+            s.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+            s.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
+            self.featurePermissionRequested.connect(self._on_feature_permission_requested)
+        else:
+            super().__init__()
         self._page_load_ts: float = time.time()
         self._page_url: str = ""
+
+    def _on_feature_permission_requested(self, security_origin, feature):
+        if not _HAS_WEBENGINE:
+            return
+        if feature == QWebEnginePage.Feature.ClipboardReadWrite:
+            self.setFeaturePermission(
+                security_origin,
+                feature,
+                QWebEnginePage.PermissionPolicy.PermissionGrantedByUser,
+            )
 
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
         # Suppress console spam silently
@@ -292,6 +314,11 @@ class _AlicePage(QWebEnginePage if _HAS_WEBENGINE else object):
 # ── Main browser widget ───────────────────────────────────────────────────────
 
 class AliceBrowserWidget(QMainWindow):
+    # Architect 2026-05-14 task #55: macOS-style context menu bar.
+    # When Alice Browser is the active MDI subwindow, the SIFTA OS menu bar
+    # reads this schema and rebuilds File/Edit/View/Window. See the
+    # `menu_schema` method below.
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("🌐 Alice Browser")
@@ -360,6 +387,9 @@ class AliceBrowserWidget(QMainWindow):
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36 SIFTA-Alice/1.0"
             )
+            ps = profile.settings()
+            ps.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+            ps.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
             self._page = _AlicePage(profile, self)
             self._view = QWebEngineView()
             self._view.setPage(self._page)
@@ -556,6 +586,78 @@ class AliceBrowserWidget(QMainWindow):
         if url:
             self._navigate(url)
             self._status.showMessage(f"Opened from VLC bridge: {url[:80]}")
+
+    # ── macOS-style menu schema (task #55) ───────────────────────────────────
+
+    def menu_schema(self, host=None) -> dict:
+        """Return per-app File / Edit / View / Window menu spec.
+
+        The SIFTA OS menu bar at the top of the screen will display
+        these items whenever Alice Browser is the active MDI subwindow.
+        `host` is the SiftaDesktop instance — used to trigger system
+        actions like opening another browser window via the manifest.
+        """
+        def _open_new_browser_window():
+            if host is not None and hasattr(host, "_trigger_manifest_app"):
+                try:
+                    host._trigger_manifest_app("Alice Browser")
+                except Exception:
+                    pass
+
+        def _focus_url_bar():
+            if hasattr(self, "_url_bar"):
+                try:
+                    self._url_bar.setFocus()
+                    self._url_bar.selectAll()
+                except Exception:
+                    pass
+
+        def _go_home():
+            self._navigate(_HOME_URL)
+
+        def _reload_page():
+            try:
+                self._view.reload()
+            except Exception:
+                pass
+
+        def _go_back():
+            try:
+                self._view.back()
+            except Exception:
+                pass
+
+        def _go_forward():
+            try:
+                self._view.forward()
+            except Exception:
+                pass
+
+        def _close_this_window():
+            if host is not None and hasattr(host, "_close_active_subwindow"):
+                host._close_active_subwindow()
+
+        return {
+            "File": [
+                ("New Browser Window", _open_new_browser_window),
+                None,  # separator
+                ("Open URL…", _focus_url_bar),
+                ("Home", _go_home),
+                None,
+                ("Close Window", _close_this_window),
+            ],
+            "Edit": [
+                ("Open URL…", _focus_url_bar),
+            ],
+            "View": [
+                ("Back", _go_back),
+                ("Forward", _go_forward),
+                ("Reload", _reload_page),
+                None,
+                ("Home", _go_home),
+            ],
+            # Window menu falls through to SIFTA defaults (Cascade / Tile / Close All)
+        }
 
 
 # ── App manifest entry ────────────────────────────────────────────────────────

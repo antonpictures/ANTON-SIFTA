@@ -35,7 +35,7 @@ MATH (from Matell & Meck 2004, eq. 3-7):
 
 WIRING:
   Writes : .sifta_state/striatal_beat_state.json
-  Consumed by: swarm_species_time_persona.py (Event 6, AG31)
+  Consumed by: swarm_species_time_model.py (Event 6, AG31)
 
 STGM ECONOMY:
   Training a new criterion interval costs 0.25 STGM (memory consolidation).

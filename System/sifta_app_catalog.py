@@ -20,6 +20,7 @@ MACOS_CATEGORY_ORDER = (
     "Creative",
     "Simulations",
     "Games",
+    "Biology",
     "Developer",
     "Economy",
 )
@@ -39,6 +40,7 @@ UTILITY_NAMES = {
     "cartography dashboard",
     "sifta file navigator",
     "circadian rhythm",
+    "stigmergic vlc bridge",
 }
 
 DEVELOPER_NAMES = {

@@ -2,7 +2,7 @@
 """
 swarm_oscillator.py — Decentralized Temporal Entrainment
 ════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Animals do not represent time; they stabilize phase across 
 interacting fields. 

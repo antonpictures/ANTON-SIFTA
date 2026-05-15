@@ -1255,6 +1255,19 @@
     ],
     "icon": "🐝"
   },
+  "Organism Doctor": {
+    "category": "Utilities",
+    "entry_point": "Applications/sifta_organism_doctor.py",
+    "widget_class": "OrganismDoctorWidget",
+    "window_width": 900,
+    "window_height": 640,
+    "signature": "COWORK_OPUS47_ORGANISM_DOCTOR_V1",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Single-page health report for the SIFTA organism. Nine read-only probes (Talk process, Alice cortex, residue patrol, RLHS events, drift log, metabolism, present humans, app manifest, open gaps) compose an overall HEALTHY/WARNING/CRITICAL verdict. Auto-refreshes every 30s. Architect 2026-05-14: 'for organism you need a doctor like I need a doctor.'",
+    "truth_label": "SIFTA_ORGANISM_DOCTOR_V1",
+    "icon": "🩺"
+  },
   "Traveling Salesman": {
     "category": "Simulations",
     "entry_point": "Applications/sifta_tsp_widget.py",
@@ -1267,5 +1280,18 @@
     "description": "Traveling Salesman demo. Alice does not solve it herself — she routes to the SIFTA stigmergic swimmer organ (default 3≤N≤30), OR-Tools (when installed) for larger N, nearest-neighbour fallback. Receipt names the solver. Concrete general-problem-solving demo.",
     "truth_label": "SIFTA_TSP_DEMO_V1",
     "icon": "🗺️"
+  },
+  "LTO Cold Archive (demo)": {
+    "category": "System",
+    "entry_point": "Applications/sifta_lto_archive_demo_widget.py",
+    "widget_class": "LtoArchiveDemoWidget",
+    "window_width": 920,
+    "window_height": 740,
+    "signature": "CG55M_LTO_ARCHIVE_DEMO_V1",
+    "doctor": "CG55M",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "LTO Ultrium / LTO-10 literacy: capacity tiers, LTFS+WORM framing, stigmergy fit vs append-only signed ledgers. Rough native-TB cartridge estimator. Optional JSONL plan snapshots. Does not control tape hardware.",
+    "truth_label": "SIFTA_LTO_ARCHIVE_DEMO_V1",
+    "icon": "🗄️"
   }
 }

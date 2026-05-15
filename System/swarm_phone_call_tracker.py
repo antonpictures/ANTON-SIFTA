@@ -24,9 +24,9 @@ from typing import Optional, Tuple
 try:
     from System.jsonl_file_lock import append_line_locked
 except Exception:
-    def append_line_locked(path: Path, data: dict) -> None:
+    def append_line_locked(path: Path, line: str) -> None:
         with open(path, "a") as f:
-            f.write(json.dumps(data) + "\n")
+            f.write(line)
 
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
@@ -45,6 +45,8 @@ _PHONE_EXPLICIT_RE = re.compile(
     r"|\bi\s+was\s+on\s+a\s+call\b"
     r"|\bjust\s+got\s+off\s+(?:a\s+)?(?:the\s+)?phone\b"
     r"|\bjust\s+finished\s+(?:a\s+)?(?:the\s+)?(?:phone\s+)?call\b"
+    r"|\bi\s+(?:just\s+)?had\s+(?:a\s+)?[^.!?\n]{0,80}\b(?:meeting|conversation|call)\b[^.!?\n]{0,80}\bon\s+(?:a\s+)?(?:the\s+)?phone\b"
+    r"|\bi\s+(?:just\s+)?found\s+out[^.!?\n]{0,80}\bon\s+(?:a\s+)?(?:the\s+)?phone\b"
     r"|\bended\s+the\s+call\b"
     r"|\bgot\s+(?:a\s+)?call\b"
     r"|\banswered\s+(?:a\s+)?(?:the\s+)?call\b"
@@ -64,6 +66,54 @@ _PHONE_LOG_REQUEST_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+_CALL_END_RE = re.compile(
+    r"(?:"
+    r"\bjust\s+got\s+off\s+(?:a\s+)?(?:the\s+)?phone\b"
+    r"|\b(?:phone\s+call|call|phone)\s+ended\b"
+    r"|\boff\s+(?:the\s+)?phone\s+now\b"
+    r"|\bjust\s+finished\s+(?:a\s+)?(?:the\s+)?(?:phone\s+)?call\b"
+    r"|\bfinished\s+(?:the\s+)?(?:call|phone\s+call)\b"
+    r"|\bended\s+the\s+call\b"
+    r"|\b(?:hung|hang|hanged)\s+up\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _append_jsonl(path: Path, row: dict) -> None:
+    append_line_locked(path, json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _mark_phone_call_as_ambient_audio() -> None:
+    """Tell the media ingress gate that room STT is phone background now."""
+    try:
+        from System.swarm_media_ingress_gate import record_ambient_media_context
+
+        record_ambient_media_context(
+            source="phone_call_background",
+            note=(
+                "Phone call is active. Phone-side or speakerphone speech is "
+                "background audio unless Alice is directly addressed, George's "
+                "voice is confirmed, or an explicit owner request is present."
+            ),
+            ttl_s=3 * 3600.0,
+        )
+    except Exception:
+        pass
+
+
+def _clear_phone_call_ambient_audio() -> None:
+    """Clear phone ambient context when the call ends."""
+    try:
+        from System.swarm_media_ingress_gate import clear_ambient_media_context
+
+        clear_ambient_media_context(
+            source_prefix="phone_call",
+            reason="phone_call_end",
+        )
+    except Exception:
+        pass
 
 
 def is_phone_declaration(text: str) -> bool:
@@ -107,7 +157,7 @@ def _write_phone_event(
         "truth_label": "OBSERVED",
     }
     try:
-        append_line_locked(_BODY_EVENTS, json.dumps(row))
+        _append_jsonl(_BODY_EVENTS, row)
     except Exception as e:
         import sys
         print(f"[phone_tracker] write failed: {e}", file=sys.stderr)
@@ -125,7 +175,7 @@ def _write_schedule_entry(note: str, ts: Optional[float] = None) -> None:
         "kind": "phone_call_log",
     }
     try:
-        append_line_locked(_SCHEDULE, json.dumps(row))
+        _append_jsonl(_SCHEDULE, row)
     except Exception:
         pass
 
@@ -144,13 +194,21 @@ def handle_phone_declaration(
     """
     if not is_phone_declaration(text):
         return None, None
+    if _CALL_END_RE.search(text or ""):
+        return None, None
 
     ts = time.time()
     local_time = _local_time_str()
 
     # Was there recent media gate suppression? Those were phone-side audio.
     retroactive = bool(
-        re.search(r"forgot\s+to\s+mention|just\s+heard|that\s+was\s+a", text, re.IGNORECASE)
+        re.search(
+            r"forgot\s+to\s+mention|just\s+heard|that\s+was\s+a|"
+            r"\bi\s+(?:just\s+)?had\s+(?:a\s+)?[^.!?\n]{0,80}\b(?:meeting|conversation|call)\b[^.!?\n]{0,80}\bon\s+(?:a\s+)?(?:the\s+)?phone\b|"
+            r"\bi\s+(?:just\s+)?found\s+out[^.!?\n]{0,80}\bon\s+(?:a\s+)?(?:the\s+)?phone\b",
+            text,
+            re.IGNORECASE,
+        )
     )
 
     wants_log = is_phone_log_request(text)
@@ -167,8 +225,9 @@ def handle_phone_declaration(
         note = f"{local_time} — George is on a phone call."
         event_type = "phone_call_active"
         _write_phone_event(event_type=event_type, note=note, ts=ts)
+        _write_schedule_entry(note, ts=ts)
+        _mark_phone_call_as_ambient_audio()
         if wants_log:
-            _write_schedule_entry(note, ts=ts)
             alice_reply = f"Phone call logged at {local_time[:16]}. I will keep listening and log when it ends — just say 'call ended' or 'I'm off the phone.'"
         else:
             alice_reply = None  # Let the main LLM handle it
@@ -178,16 +237,6 @@ def handle_phone_declaration(
 
 def handle_call_end(text: str, *, call_start_ts: Optional[float] = None) -> Optional[str]:
     """Detect and log call end. Returns alice_reply or None."""
-    _CALL_END_RE = re.compile(
-        r"(?:"
-        r"\bjust\s+got\s+off\s+(?:a\s+)?(?:the\s+)?phone\b"
-        r"|\b(?:call|phone)\s+ended\b"
-        r"|\boff\s+(?:the\s+)?phone\s+now\b"
-        r"|\bfinished\s+(?:the\s+)?(?:call|phone\s+call)\b"
-        r"|\bhanged?\s+up\b"
-        r")",
-        re.IGNORECASE,
-    )
     if not _CALL_END_RE.search(text or ""):
         return None
 
@@ -201,6 +250,7 @@ def handle_call_end(text: str, *, call_start_ts: Optional[float] = None) -> Opti
     note = f"{local_time} — Phone call ended{duration_note}."
     _write_phone_event(event_type="phone_call_end", note=note, ts=ts)
     _write_schedule_entry(note, ts=ts)
+    _clear_phone_call_ambient_audio()
     return f"Call ended. Logged at {local_time[:16]}{duration_note}."
 
 

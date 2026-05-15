@@ -1,0 +1,28 @@
+{
+  "id": "ALICE_M5",
+  "stgm_balance": 97.188,
+  "body_energy": 82.0,
+  "organs_present": [
+    "body",
+    "immune",
+    "gaze",
+    "spine",
+    "hippocampus",
+    "metabolic"
+  ],
+  "organs_silent": [
+    "camera"
+  ],
+  "ts": 1778000000.0,
+  "homeworld_serial": "GTH4921YP3",
+  "style": "ACTIVE",
+  "ascii": "\ud83d\udc1c",
+  "session_cost_stgm": 0.045,
+  "immune_budget": 1.0,
+  "drift_rate": 0.02,
+  "gps_age_s": 42.0,
+  "model_latency_ms": 380.0,
+  "vad_confidence": 0.91,
+  "kleiber_exponent": 0.75,
+  "regime": "NORMAL"
+}

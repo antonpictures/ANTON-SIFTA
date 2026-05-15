@@ -2,7 +2,7 @@
 """
 System/swarm_stigmergic_object_scanner.py — The Stigmergic Object Scanner
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Allows Alice to "look" at physical files on the disk (like images, logs, etc.)
 and extract their stigmergic environmental traces (metadata, creation time,

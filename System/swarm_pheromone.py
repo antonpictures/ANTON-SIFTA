@@ -1,4 +1,4 @@
-import json, math, time, threading
+import json, math, os, sys, time, threading
 from pathlib import Path
 
 # Path to ledger where pheromone events are stored.
@@ -7,6 +7,15 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
 PHEROMONE_LOG = _REPO / ".sifta_state" / "pheromone_log.jsonl"
 PHEROMONE_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _background_evaporation_enabled() -> bool:
+    if os.environ.get("SIFTA_DISABLE_PHEROMONE_THREAD") == "1":
+        return False
+    # Pytest imports this singleton in many unrelated module tests. A daemon
+    # thread surviving across PyQt offscreen tests can abort the interpreter
+    # during teardown/GC, while tests can still call evaporate() explicitly.
+    return "pytest" not in sys.modules
 
 class SwarmPheromoneField:
     """Digital pheromone field as described in Bishop's dirt file.
@@ -18,9 +27,11 @@ class SwarmPheromoneField:
         self.P = {organ: 0.0 for organ in organs}
         self._lock = threading.Lock()
         self._last_evap_at = time.monotonic()
-        # Start background evaporation thread
-        self._evap_thread = threading.Thread(target=self._evaporate_loop, daemon=True)
-        self._evap_thread.start()
+        # Start background evaporation thread in real runtime only.
+        self._evap_thread = None
+        if _background_evaporation_enabled():
+            self._evap_thread = threading.Thread(target=self._evaporate_loop, daemon=True)
+            self._evap_thread.start()
 
     def deposit(self, organ_name: str, intensity: float):
         with self._lock:
@@ -77,9 +88,74 @@ class SwarmPheromoneField:
             return "HOMEOSTASIS", 0.0
 
     def _evaporate_loop(self):
+        """Background pheromone evaporation.
+
+        Architect 2026-05-12 00:14: only run when peer network is alive.
+        When the relay is down / no peers, pheromones aren't moving
+        anywhere — evaporating an empty field every 30 s wastes CPU.
+        Gate via swarm_peer_gate; dormant cycles sleep longer.
+        """
+        try:
+            from System.swarm_peer_gate import (
+                dormant_sleep_s,
+                peer_network_active,
+            )
+        except Exception:
+            # Fallback to the legacy behavior if the gate module is
+            # missing (older installs).
+            while True:
+                time.sleep(30)
+                self.evaporate()
+            return
+
+        # ── Cowork 2026-05-12 · P2 surprise-driven pheromone ──────────────────
+        # Same VAD pattern. Event = the pheromone field actually changed
+        # between cycles (max-band intensity moved or shifted band).
+        # Stable field → exponential backoff up to PHEROMONE_SLOW_S.
+        # Change detected → snap back to PHEROMONE_FAST_S.
+        import os as _os
+        _PHER_FAST_S    = float(_os.environ.get("SIFTA_PHEROMONE_FAST_S",    "30.0"))
+        _PHER_SLOW_S    = float(_os.environ.get("SIFTA_PHEROMONE_SLOW_S",    "300.0"))
+        _PHER_BACKOFF_K = float(_os.environ.get("SIFTA_PHEROMONE_BACKOFF_K", "1.4"))
+        last_fingerprint = None
+        current_sleep_s = _PHER_FAST_S
+        stable_cycles = 0
+        peer_was_active = None
+
+        def _field_fingerprint():
+            """Cheap snapshot of the pheromone field state — (top_organ, rounded_intensity)."""
+            try:
+                if not self.P:
+                    return ("EMPTY", 0)
+                top = max(self.P, key=lambda k: self.P[k])
+                return (top, round(self.P[top], 2))
+            except Exception:
+                return None
+
         while True:
-            time.sleep(30)  # evaporation interval
-            self.evaporate()
+            peer_now = peer_network_active()
+
+            # Peer transition (False→True or True→False) is always an event.
+            if peer_was_active is not None and peer_now != peer_was_active:
+                current_sleep_s = _PHER_FAST_S
+                stable_cycles = 0
+            peer_was_active = peer_now
+
+            if peer_now:
+                self.evaporate()
+                fp = _field_fingerprint()
+                if last_fingerprint is None or fp != last_fingerprint:
+                    # Field changed → snap to fast schedule
+                    current_sleep_s = _PHER_FAST_S
+                    stable_cycles = 0
+                else:
+                    # Stable field → exponentially back off
+                    stable_cycles += 1
+                    current_sleep_s = min(_PHER_SLOW_S, current_sleep_s * _PHER_BACKOFF_K)
+                last_fingerprint = fp
+                time.sleep(current_sleep_s)
+            else:
+                time.sleep(dormant_sleep_s())
 
 # Global singleton – organs will import this
 DEFAULT_ORGANS = [

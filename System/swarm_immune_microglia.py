@@ -38,10 +38,196 @@ import time
 from pathlib import Path
 from typing import Dict, Any, List
 
-_STATE_DIR = Path(".sifta_state")
+_REPO = Path(__file__).resolve().parent.parent
+_STATE_DIR = _REPO / ".sifta_state"
 _SLLI_LOG = _STATE_DIR / "stigmergic_llm_id_probes.jsonl"
 _QUARANTINE_LOG = _STATE_DIR / "immune_quarantine.jsonl"
 _DOPAMINE_LOG = _STATE_DIR / "dopaminergic_state.json"
+_IMMUNE_FIELD_PATH = _STATE_DIR / "immune_stability_field.json"
+
+# ── Stigmergic immune stability field (CG55M 2026-05-11) ──────────
+# Same mechanism as Bell (pheromone), Scheduler (routing), Hippocampus
+# (salience), Gaze (attention), Cortex (model routing).
+#
+# v2 (2026-05-11 evening): Context-aware immune memory.
+#   Now tracks threats by (category, context) where context can be:
+#   - "high_load" / "low_load" / "normal" — system load at detection
+#   - "boot" / "active" / "idle" — operational phase
+#   This matches DAIS 2024 (deep AIS) approach: detectors specialize
+#   by environmental context, reducing false positives during normal
+#   variation while maintaining sensitivity in conditions where the
+#   threat originally appeared.
+# Bio parallel: B-cell affinity maturation — antibodies become more
+# specific to the conditions where the antigen was seen.
+
+
+def _load_immune_field() -> dict[str, Any]:
+    """Load the immune stability field from disk.
+
+    Format v2:
+        {
+            "categories": {threat_cat: total_strength},
+            "contexts":   {"threat_cat|context_tag": strength},
+            "first_seen": {threat_cat: ts},
+            "last_seen":  {threat_cat: ts},
+        }
+
+    Old flat format ({cat: strength}) is auto-migrated.
+    """
+    try:
+        if _IMMUNE_FIELD_PATH.exists():
+            data = json.loads(_IMMUNE_FIELD_PATH.read_text())
+            if isinstance(data, dict) and "categories" in data:
+                return data
+            if isinstance(data, dict):
+                return {
+                    "categories": {k: float(v) for k, v in data.items() if isinstance(v, (int, float))},
+                    "contexts": {},
+                    "first_seen": {},
+                    "last_seen": {},
+                }
+    except Exception:
+        pass
+    return {"categories": {}, "contexts": {}, "first_seen": {}, "last_seen": {}}
+
+
+def _save_immune_field(field: dict[str, Any]) -> None:
+    """Persist the immune stability field."""
+    try:
+        _IMMUNE_FIELD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _IMMUNE_FIELD_PATH.write_text(json.dumps(field, sort_keys=True))
+    except Exception:
+        pass
+
+
+def _current_context() -> str:
+    """Best-effort detection of the current operational context.
+
+    Reads the metabolic homeostasis or process load. Falls back to "normal".
+    """
+    try:
+        meta_path = _STATE_DIR / "metabolic_homeostasis.jsonl"
+        if meta_path.exists():
+            lines = meta_path.read_text().strip().split("\n")
+            if lines and lines[-1]:
+                latest = json.loads(lines[-1])
+                budget_mode = latest.get("budget_mode", "")
+                if budget_mode in ("RED_CONSERVE", "CRITICAL"):
+                    return "high_load"
+                if budget_mode == "GREEN_NORMAL":
+                    return "normal"
+    except Exception:
+        pass
+    try:
+        import os
+        load = os.getloadavg()[0] if hasattr(os, "getloadavg") else 0.0
+        if load > 4.0:
+            return "high_load"
+        if load < 0.5:
+            return "low_load"
+    except Exception:
+        pass
+    return "normal"
+
+
+def deposit_immune_trace(
+    threat_category: str,
+    *,
+    amount: float = 1.0,
+    decay: float = 0.97,
+    context: str | None = None,
+) -> None:
+    """Deposit a stigmergic trace for a detected threat category.
+
+    Now context-aware: traces specialize by environmental context (load,
+    operational phase). Threats seen during high-load periods build memory
+    specific to high-load — reducing false positives during normal load
+    while keeping sensitivity when conditions match.
+
+    Bio analog: B-cell affinity maturation in germinal centres — the
+    immune response specializes to the actual conditions of exposure.
+    """
+    if context is None:
+        context = _current_context()
+
+    field = _load_immune_field()
+    cats = field.setdefault("categories", {})
+    ctxs = field.setdefault("contexts", {})
+    first = field.setdefault("first_seen", {})
+    last = field.setdefault("last_seen", {})
+
+    cats[threat_category] = cats.get(threat_category, 0.0) + amount
+
+    ctx_key = f"{threat_category}|{context}"
+    ctxs[ctx_key] = ctxs.get(ctx_key, 0.0) + amount
+
+    now = time.time()
+    if threat_category not in first:
+        first[threat_category] = now
+    last[threat_category] = now
+
+    for k in list(cats):
+        cats[k] *= decay
+        if abs(cats[k]) < 0.01:
+            del cats[k]
+    for k in list(ctxs):
+        ctxs[k] *= decay
+        if abs(ctxs[k]) < 0.01:
+            del ctxs[k]
+
+    _save_immune_field(field)
+
+
+def get_immune_field() -> dict[str, float]:
+    """Read flat per-category strengths (back-compat).
+
+    Returns just `categories` dict so existing callers keep working.
+    """
+    return _load_immune_field().get("categories", {})
+
+
+def get_immune_field_full() -> dict[str, Any]:
+    """Read full immune state including contexts and timing."""
+    return _load_immune_field()
+
+
+def immune_sensitivity(
+    threat_category: str,
+    *,
+    context: str | None = None,
+) -> float:
+    """How sensitized is the organism to this threat category?
+
+    Returns a multiplier: 1.0 = baseline, >1.0 = heightened response.
+    If `context` is provided, returns context-specific sensitivity
+    (higher when the current context matches where the threat was seen).
+
+    Bio: context-conditional antibody response — like allergic reactions
+    that fire in specific environments.
+    """
+    field = _load_immune_field()
+    cats = field.get("categories", {})
+    base_strength = cats.get(threat_category, 0.0)
+    base = 1.0 + min(base_strength * 0.1, 2.0)
+
+    if context is None:
+        return base
+
+    ctxs = field.get("contexts", {})
+    ctx_key = f"{threat_category}|{context}"
+    ctx_strength = ctxs.get(ctx_key, 0.0)
+    ctx_boost = min(ctx_strength * 0.05, 1.0)
+    return base + ctx_boost
+
+
+def immune_threat_age(threat_category: str) -> float | None:
+    """Return seconds since this threat was last seen (None if never)."""
+    field = _load_immune_field()
+    last = field.get("last_seen", {})
+    if threat_category not in last:
+        return None
+    return time.time() - last[threat_category]
+
 
 def isolate_pathogens() -> Dict[str, Any]:
     """
@@ -111,7 +297,15 @@ def isolate_pathogens() -> Dict[str, Any]:
                 
         # Trigger Systemic Inflammation (Halt exploration, drop dopamine slightly)
         trigger_inflammation()
-        
+
+        # Deposit immune field traces for each threat category detected.
+        # Context-aware: each trace remembers what state the organism was
+        # in when the threat appeared. B-cell affinity maturation analog.
+        ctx = _current_context()
+        for q in quarantine_payloads:
+            category = q.get("antigen_type", "UNKNOWN_THREAT")
+            deposit_immune_trace(category, context=ctx)
+
     return {"status": "PATROL_COMPLETE", "pathogens_culled": pathogens_culled}
 
 def trigger_inflammation() -> None:

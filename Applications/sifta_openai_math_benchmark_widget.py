@@ -24,6 +24,7 @@ from __future__ import annotations
 import sys
 import time
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -34,6 +35,7 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QTableWidget, QTableWidgetItem,
     QTabWidget, QFrame, QTextBrowser, QHeaderView,
     QProgressBar, QGridLayout, QScrollArea, QSizePolicy,
+    QLineEdit,
 )
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -41,8 +43,21 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from System.swarm_app_focus import publish_focus
+from System.swarm_p_vs_np_millennium_gate import (
+    OFFICIAL_SOURCES as P_VS_NP_OFFICIAL_SOURCES,
+    assess_millennium_claim,
+    run_verification_vs_search_demo,
+)
 
 _APP_NAME = "SIFTA ∥ OpenAI — Math Benchmarks"
+_OFFSCREEN_RETAINED_WIDGETS: list[object] = []
+
+
+def _offscreen_test_mode() -> bool:
+    return (
+        "pytest" in sys.modules
+        or os.environ.get("QT_QPA_PLATFORM", "").strip().lower() == "offscreen"
+    )
 
 # ── Capability Markers ────────────────────────────────────────────────────
 # From the Bubeck & Ryu episode, mapped to SIFTA truth.
@@ -360,7 +375,7 @@ def _ollama_solve(question: str, timeout_s: float = 15.0) -> str:
         model = resolve_ollama_model(app_context="math_benchmark")
     except Exception:
         import os
-        model = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "sifta-gemma4-alice:latest")
+        model = os.environ.get("SIFTA_DEFAULT_OLLAMA_MODEL", "alice-m5-cortex-8b-6.3gb:latest")
 
     prompt = (
         f"Solve this math problem step by step. "
@@ -523,6 +538,7 @@ class MathBenchmarkWidget(QWidget):
         tabs.addTab(self._build_capability_tab(), "Capability Matrix")
         tabs.addTab(self._build_arena_tab(), "⚔ Arena")
         tabs.addTab(self._build_problems_tab(), "Problem Classes")
+        tabs.addTab(self._build_millennium_tab(), "🏛 P vs NP Gate")
         tabs.addTab(self._build_live_tab(), "Live Proofs")
         tabs.addTab(self._build_source_tab(), "Sources & Plan")
         tabs.currentChanged.connect(self._on_tab_changed)
@@ -578,6 +594,86 @@ class MathBenchmarkWidget(QWidget):
         lay.addStretch()
         scroll.setWidget(container)
         return scroll
+
+    # ── Tab: P vs NP / Clay Millennium Gate ───────────────────────────
+
+    def _build_millennium_tab(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+
+        container = QWidget()
+        lay = QVBoxLayout(container)
+        lay.setSpacing(10)
+        lay.setContentsMargins(8, 8, 8, 8)
+
+        lay.addWidget(_make_section_label("🏛 P vs NP — Millennium Proof Hygiene Gate"))
+
+        desc = QLabel(
+            "This panel is deliberately conservative. It can run SAT verification/search "
+            "demos and gate prize language. It cannot certify a Clay Mathematics "
+            "Institute solution."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet(f"color: {_AMBER}; font-size: 10px;")
+        lay.addWidget(desc)
+
+        source_lines = "\n".join(
+            f"{name}: {url}" for name, url in P_VS_NP_OFFICIAL_SOURCES.items()
+        )
+        src = QLabel(source_lines)
+        src.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        src.setWordWrap(True)
+        src.setStyleSheet(f"color: {_DIM}; font-size: 9px;")
+        lay.addWidget(_make_card("Official Clay Sources", src))
+
+        claim_row = QHBoxLayout()
+        self._pvsnp_claim = QLineEdit()
+        self._pvsnp_claim.setPlaceholderText("Type a claim to gate, e.g. 'we solved P vs NP'")
+        self._pvsnp_claim.setText("We solved P vs NP and won the million dollar prize.")
+        self._pvsnp_claim.setStyleSheet(
+            f"background: {_BG2}; color: #c8d2f0; border: 1px solid {_BORDER}; "
+            "border-radius: 6px; padding: 7px;"
+        )
+        claim_row.addWidget(self._pvsnp_claim, 1)
+
+        gate_btn = QPushButton("Gate Claim")
+        gate_btn.clicked.connect(self._pvsnp_gate_claim)
+        claim_row.addWidget(gate_btn)
+
+        demo_btn = QPushButton("Run SAT Demo")
+        demo_btn.clicked.connect(self._pvsnp_run_demo)
+        claim_row.addWidget(demo_btn)
+        lay.addLayout(claim_row)
+
+        self._pvsnp_output = QTextBrowser()
+        self._pvsnp_output.setStyleSheet(
+            f"QTextBrowser {{ background: {_BG2}; color: #c8d2f0; "
+            f"border: 1px solid {_BORDER}; border-radius: 6px; "
+            f"font-family: 'Menlo'; font-size: 10px; padding: 10px; }}"
+        )
+        self._pvsnp_output.setPlainText(
+            "Ready. Gate a claim or run the SAT demo.\n\n"
+            "Truth boundary: SAT demos are useful engineering evidence, not a Clay proof."
+        )
+        lay.addWidget(self._pvsnp_output, 1)
+
+        scroll.setWidget(container)
+        return scroll
+
+    def _pvsnp_gate_claim(self) -> None:
+        claim = self._pvsnp_claim.text().strip()
+        result = assess_millennium_claim(claim, write=True)
+        self._pvsnp_output.setPlainText(json.dumps(result, indent=2, ensure_ascii=False))
+        publish_focus(_APP_NAME, f"P vs NP claim gate: {result['verdict']}", tab="P vs NP Gate")
+
+    def _pvsnp_run_demo(self) -> None:
+        result = run_verification_vs_search_demo(write=True)
+        self._pvsnp_output.setPlainText(json.dumps(result, indent=2, ensure_ascii=False))
+        publish_focus(_APP_NAME, "P vs NP SAT verification/search demo receipt written", tab="P vs NP Gate")
 
     def _marker_card(self, m: dict) -> QFrame:
         card = QFrame()
@@ -1108,6 +1204,12 @@ class MathBenchmarkWidget(QWidget):
 
     def closeEvent(self, event) -> None:
         self._refresh_timer.stop()
+        if _offscreen_test_mode():
+            self.hide()
+            if self not in _OFFSCREEN_RETAINED_WIDGETS:
+                _OFFSCREEN_RETAINED_WIDGETS.append(self)
+            event.accept()
+            return
         super().closeEvent(event)
 
 

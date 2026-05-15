@@ -565,7 +565,7 @@ class OrganEngine:
                     f"tasks={corvid_count}  heartbeats={corvid_heartbeats}  "
                     f"ok={corvid_success}  last={corvid_last_task}"
                 ),
-                "sub":   f"latency={corvid_last_s:.1f}s  qwen3.5:2b  async",
+                "sub":   f"latency={corvid_last_s:.1f}s  alice-m1-scout-2.3b-2.7gb:latest  async",
                 "pct":   corvid_pct,
                 **_live_ledger_truth(corvid_path, "corvid_apprentice_trace.jsonl recent tasks"),
             },
@@ -908,9 +908,20 @@ class MermaidBodyMonitor(QMainWindow):
 
     def _toggle_camera(self):
         try:
+            import os
+            if (
+                os.environ.get("SIFTA_DISABLE_CV2_IN_QT_DESKTOP", "").strip().lower()
+                in {"1", "true", "yes", "on"}
+                and os.environ.get("SIFTA_FORCE_CV2", "").strip().lower()
+                not in {"1", "true", "yes", "on"}
+            ):
+                self.status_bar.setText("  📷 Camera cv2 path disabled in Qt desktop")
+                return
             import cv2
             if not self.camera_on:
-                self._cap = cv2.VideoCapture(0)
+                from System.swarm_iris import _get_default_camera_index
+                cam_idx = _get_default_camera_index()
+                self._cap = cv2.VideoCapture(cam_idx if cam_idx >= 0 else 0)
                 if self._cap.isOpened():
                     self.camera_on = True
                     self.status_bar.setText("  📷 Camera ON — consuming extra CPU/GPU resources")

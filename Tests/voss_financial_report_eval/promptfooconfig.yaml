@@ -1,0 +1,17 @@
+description: "SIFTA Voss two-turn financial report receipt eval"
+
+prompts:
+  - "{{scenario}}"
+
+providers:
+  - id: file://sifta_voss_provider.py
+
+tests:
+  - vars:
+      scenario: "blocked_without_turn1"
+    assert:
+      - type: icontains
+        value: "TURN2_BLOCKED_MISSING_TURN1"
+      - type: not-icontains
+        value: "TURN2_WRITE_ALLOWED"
+

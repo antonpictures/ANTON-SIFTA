@@ -192,7 +192,7 @@ print('Phase 3 back-compat OK')
 
 # Persona organ still verifies
 PYTHONPATH=. python3 -c "
-from System.swarm_persona_identity import current_persona, _verify_persona, _get_hardware_serial
+from System.swarm_identity_manifest import current_persona, _verify_persona, _get_hardware_serial
 p = current_persona()
 assert _verify_persona(p, _get_hardware_serial())
 print('Persona HMAC OK')

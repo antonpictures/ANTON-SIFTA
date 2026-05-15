@@ -304,9 +304,9 @@ class MetabolicHomeostat:
             import urllib.request
             try:
                 from System.sifta_inference_defaults import get_default_ollama_model
-                cortex = get_default_ollama_model() or "sifta-gemma4-alice"
+                cortex = get_default_ollama_model() or "alice-m5-cortex-8b-6.3gb:latest"
             except Exception:
-                cortex = "sifta-gemma4-alice"
+                cortex = "alice-m5-cortex-8b-6.3gb:latest"
                 
             with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=1.0) as r:
                 data = json.loads(r.read())

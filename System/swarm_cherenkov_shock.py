@@ -2,7 +2,7 @@
 """
 swarm_cherenkov_shock.py — Topological Zero-Day Physics 
 ═══════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Implements true Cherenkov Radiation trace detection on a Path-Graph Tree.
 When a Ghost Particle (Neutrino/0-Day anomaly) enters the system without 

@@ -2,7 +2,7 @@
 """
 System/swarm_entorhinal_grid.py — Volumetric Spatial Tracking
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The Entorhinal Cortex in biology provides Grid Cells—an internal map of physical
 space. This module translates the organism's flat holographic knowledge into

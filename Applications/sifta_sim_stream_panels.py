@@ -355,8 +355,13 @@ class CyborgPanelWidget(QWidget):
                         "DO NOT use quotes or explain yourself. Just continue.\n\n"
                         f"Text so far:\n{self.context[-1500:]}\n\nContinue:"
                     )
+                    try:
+                        from System.sifta_inference_defaults import resolve_ollama_model
+                        model = resolve_ollama_model(app_context="talk_to_alice")
+                    except Exception:
+                        model = "alice-m5-cortex-8b-6.3gb:latest"
                     data = json.dumps({
-                        "model": "sifta-gemma4-alice:latest",
+                        "model": model,
                         "prompt": prompt,
                         "stream": False,
                         "temperature": 0.5,

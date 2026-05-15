@@ -607,6 +607,21 @@ class KernelProcessTable:
             self.decay_routing_field(rate=0.95)
             kernel_proc.metadata["last_self_maintenance_ts"] = str(now)
             kernel_proc.metadata["last_self_maintenance_actions"] = str(actions_taken)
+
+            # Field self-regulation (allostatic loop). Runs on a slower
+            # cadence than the maintenance tick itself to keep cost bounded.
+            # Cell 2024 brain-body physiology + Sterling 2012 allostasis.
+            try:
+                tick_count = int(kernel_proc.metadata.get("self_maintenance_tick_count", "0")) + 1
+                kernel_proc.metadata["self_maintenance_tick_count"] = str(tick_count)
+                if tick_count % 8 == 0:
+                    from System.swarm_field_self_regulator import regulate_now
+                    reg = regulate_now(dry_run=False)
+                    kernel_proc.metadata["last_field_regulation_ts"] = str(now)
+                    kernel_proc.metadata["last_field_regulation_actions"] = str(len(reg.get("actions", [])))
+                    kernel_proc.metadata["last_field_regulation_issues"] = str(len(reg.get("issues", [])))
+            except Exception:
+                pass
             self._append_receipt(
                 "self_maintenance_tick",
                 kernel_proc,

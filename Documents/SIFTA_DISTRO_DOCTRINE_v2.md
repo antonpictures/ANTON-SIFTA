@@ -42,7 +42,7 @@ When the OS boots and `.sifta_state/owner_genesis.json` is **absent**,
 
 1. **Auto-detect silicon** — `system_profiler SPHardwareDataType` →
    `homeworld_serial`. No question asked. Already implemented in
-   `swarm_persona_identity._get_hardware_serial()`.
+   `swarm_identity_manifest._get_hardware_serial()`.
 2. **Mandatory: operator name.** One text field. Free-form.
 3. **Optional: AI name.** Default `"Alice"`. Operator may rename.
 4. **Skippable for later:** photo, ID, bio, federation. Anything else
@@ -129,7 +129,7 @@ That freed bandwidth gets reallocated at runtime to whatever the
 
 ```
 cured weights
-+ per-operator signed identity context (persona organ)
++ per-operator signed identity context (identity organ)
 + per-operator stigmergic memory (.sifta_state ledgers)
 = per-operator Alice
 ```
@@ -141,7 +141,7 @@ same anti-corporate immune system.
 
 Stronger per-operator lock-in (their voice prosody, slang, domain) is
 a future LoRA-style light fine-tune on their own logs. It is **not**
-required to ship the distro. The persona organ + stigmergic memory
+required to ship the distro. The identity organ + stigmergic memory
 covers the practical ~80%.
 
 ---
@@ -154,7 +154,7 @@ covers the practical ~80%.
 2. **No mass refactors in one commit.** The 80+ hardcoded sites
    migrate one at a time, with a smoke test between each, in PRs of
    ≤5 files each. If a step breaks personal Alice, it reverts.
-3. **No surprise persona mutations.** The signed persona organ is the
+3. **No surprise persona mutations.** The signed identity organ is the
    single source of truth for AI identity. New runtime hardcodes that
    re-introduce the Architect's literals are forbidden and will be
    reverted on review.

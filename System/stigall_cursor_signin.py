@@ -86,7 +86,7 @@ def sign_in(
         "payload": banner,
         "known_limits": claim.known_limits,
         "meta": {
-            "persona": persona,
+            "identity_label": persona,
             "stigauth_line": stigauth_line,
             "bridge": "CURSOR_M5",
             "router_visible": router_visible,

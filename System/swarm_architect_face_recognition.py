@@ -35,12 +35,12 @@ METHOD:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, Optional
 
-import cv2
 import numpy as np
 
 _REPO        = Path(__file__).resolve().parent.parent
@@ -56,14 +56,42 @@ _SIMILARITY_THRESHOLD = 0.70
 _MAX_LIVE_FRAME_AGE_S = 60.0
 _MAX_TRAINING_CAPTURE_AGE_S = 20.0
 
-# Haar cascade (always available with OpenCV)
-_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+_CV2 = None
+
+
+def _cv2_disabled_in_qt_desktop() -> bool:
+    disabled = os.environ.get("SIFTA_DISABLE_CV2_IN_QT_DESKTOP", "").strip().lower()
+    forced = os.environ.get("SIFTA_FORCE_CV2", "").strip().lower()
+    return disabled in {"1", "true", "yes", "on"} and forced not in {"1", "true", "yes", "on"}
+
+
+def _load_cv2():
+    """Import OpenCV only when an explicit recognition action needs it.
+
+    The PyQt desktop camera path uses AVFoundation through Qt. Importing cv2 in
+    the same process can load a second libavdevice copy and trigger macOS
+    Objective-C class collisions. Keep identity recognition available from CLI
+    or worker contexts, but keep the desktop import path cv2-free by default.
+    """
+    global _CV2
+    if _cv2_disabled_in_qt_desktop():
+        raise RuntimeError(
+            "cv2 disabled in Qt desktop process; run this recognition path in "
+            "the physical capture daemon or set SIFTA_FORCE_CV2=1 explicitly"
+        )
+    if _CV2 is None:
+        import cv2 as cv2_mod  # type: ignore
+
+        _CV2 = cv2_mod
+    return _CV2
 
 
 # ── Image utilities ───────────────────────────────────────────────────────────
 
-def _load_cascade() -> cv2.CascadeClassifier:
-    cc = cv2.CascadeClassifier(_CASCADE_PATH)
+def _load_cascade():
+    cv2 = _load_cv2()
+    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    cc = cv2.CascadeClassifier(cascade_path)
     if cc.empty():
         raise RuntimeError("Haar cascade not found in OpenCV data")
     return cc
@@ -74,6 +102,7 @@ def _extract_face_patch(img_bgr: np.ndarray, *, target_size: int = 64) -> Option
     Detect a face in img_bgr. Return normalised grayscale 64×64 patch, or None.
     Uses Haar cascade — runs on CPU, no external models, privacy-preserving.
     """
+    cv2 = _load_cv2()
     cascade = _load_cascade()
     gray    = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     # equalise for varied lighting — George's desk can be dark
@@ -127,6 +156,7 @@ def _frame_age_s(path: Path) -> float:
 
 
 def _load_frame(path: Path) -> Optional[np.ndarray]:
+    cv2 = _load_cv2()
     img = cv2.imread(str(path))
     return img  # may be None if imread fails
 
@@ -192,6 +222,7 @@ def train(source_image: Optional[str] = None) -> dict[str, Any]:
     capture_status = "explicit_source"
     if source_image:
         source_path = Path(source_image)
+        cv2 = _load_cv2()
         img = cv2.imread(source_image)
     else:
         img, source_path, frame_age, capture_status = _capture_fresh_frame(

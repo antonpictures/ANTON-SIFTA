@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-swarm_latent_world_model.py — DeepMind Latent World Model
+swarm_latent_world_model.py — Latent world model (Dreamer-style)
 ══════════════════════════════════════════════════════════
 SIFTA OS — Dreamer Protocol
 

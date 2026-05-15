@@ -816,12 +816,12 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "manifest_sha256",
         "parent_anchor",
     },
-    # Persona identity audit log — written by System/swarm_persona_identity.py
-    # Every mutation of the signed persona manifest appends one row here.
+    # Persona identity audit log — written by System/swarm_identity_manifest.py
+    # Every mutation of the signed identity manifest appends one row here.
     # The hmac_sha256 column lets any verifier replay the mutation history
     # and confirm the persona was signed by the hardware-bound key derived
     # from the homeworld_serial.
-    "persona_identity_log.jsonl": {
+    "identity_manifest_log.jsonl": {
         "ts",
         "action",
         "display_name",
@@ -837,8 +837,8 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
         "triggers",
         "raw_excerpt",
         "sanitized_reply",
-        "persona_name",
-        "persona_true_name",
+        "identity_name",
+        "identity_true_name",
         "homeworld_serial",
         "penalty_stgm",
         "action",
@@ -894,7 +894,7 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
     #   - One row per interoceptive tick (~every 30s, gated by heartbeat).
     #   - `field_signature` is HMAC-SHA256 over the canonical-key tuple, so
     #     the row is verifiable against the hardware serial just like the
-    #     persona organ.
+    #     identity organ.
     #   - All scalars are float in [0.0, 1.0] EXCEPT `arousal` and `valence`
     #     which are signed in [-1.0, 1.0] (arousal: calm↔activated;
     #     valence: aversive↔appetitive). Any consumer that reads outside

@@ -616,78 +616,255 @@ def list_swimmers() -> list[str]:
 # Self-test
 # ────────────────────────────────────────────────────────────────────
 
+def _run_hardened_tests() -> int:
+    """Hardened test suite: 20+ scenarios including STRICT mode, load, adversarial.
+
+    Returns the number of failed tests. Designed to be called both as __main__
+    and from external test harnesses. Uses a temporary state directory to avoid
+    polluting Alice's real reputation/chorum state.
+    """
+    import tempfile
+    import shutil
+    passed = 0
+    failed = 0
+
+    global _CHORUM_STATE, _CHORUM_LOG, _REPUTATION_FIELD
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="chorum_test_"))
+    orig_state = _CHORUM_STATE
+    orig_log = _CHORUM_LOG
+    orig_rep = _REPUTATION_FIELD
+    try:
+        _CHORUM_STATE = tmp_dir / "chorum_gate_state.json"
+        _CHORUM_LOG = tmp_dir / "chorum_gate_log.jsonl"
+        _REPUTATION_FIELD = tmp_dir / "swimmer_reputation_field.json"
+        _VERIFY_CACHE.clear()
+
+        def _assert(cond: bool, label: str):
+            nonlocal passed, failed
+            if cond:
+                passed += 1
+                print(f"  [PASS] {label}")
+            else:
+                failed += 1
+                print(f"  [FAIL] {label}")
+
+        print("=== SIFTA CHORUM GATE — HARDENED TEST SUITE ===\n")
+
+        # ── 1. Birth + idempotency ──────────────────────────────
+        print("── Birth + Idempotency ──")
+        ca = birth_swimmer("test_alpha", role="data_processor")
+        _assert(ca.swimmer_id == "test_alpha", "1. birth returns correct id")
+        _assert(len(ca.birth_signature) > 20, "2. birth signature is non-trivial")
+
+        ca2 = birth_swimmer("test_alpha", role="SHOULD_NOT_OVERWRITE")
+        _assert(ca2.role == "data_processor", "3. idempotent re-birth preserves original role")
+        _assert(ca2.birth_signature == ca.birth_signature, "4. idempotent re-birth preserves signature")
+
+        cb = birth_swimmer("test_beta", role="memory_keeper")
+        cc = birth_swimmer("test_gamma", role="actuator_driver")
+        cd = birth_swimmer("test_delta", role="scout")
+        _assert(len(list_swimmers()) == 4, "5. four swimmers registered")
+
+        # ── 2. Cert verification ────────────────────────────────
+        print("\n── Certificate Verification ──")
+        _assert(verify_swimmer_cert(ca), "6. alpha cert verifies")
+        _assert(verify_swimmer_cert(cb), "7. beta cert verifies")
+
+        forged = SwimmerCert(
+            swimmer_id="evil_intruder", role="hacker",
+            birth_ts=time.time(), homeworld_serial="GTH4921YP3",
+            birth_signature="deadbeef" * 16,
+        )
+        _assert(not verify_swimmer_cert(forged), "8. forged cert rejected")
+
+        tampered = SwimmerCert(
+            swimmer_id=ca.swimmer_id, role=ca.role,
+            birth_ts=ca.birth_ts, homeworld_serial=ca.homeworld_serial,
+            birth_signature=ca.birth_signature[:-4] + "ffff",
+        )
+        _VERIFY_CACHE.clear()
+        _assert(not verify_swimmer_cert(tampered), "9. tampered signature rejected")
+
+        wrong_serial = SwimmerCert(
+            swimmer_id="phantom", role="spy",
+            birth_ts=time.time(), homeworld_serial="FAKE_SERIAL_123",
+            birth_signature="0000" * 32,
+        )
+        _assert(not verify_swimmer_cert(wrong_serial), "10. wrong-serial cert rejected")
+
+        # ── 3. PASSIVE mode — everything passes with reasons ────
+        print("\n── PASSIVE Mode (default) ──")
+        set_enforcement_mode(ENFORCEMENT_PASSIVE)
+        v = request_action("test_alpha", "read:state", action_class=ACTION_LOW)
+        _assert(v.allowed, "11. LOW action allowed in PASSIVE")
+        _assert(len(v.receipt_id) > 10, "12. verdict carries receipt_id")
+
+        v = request_action("test_alpha", "send:whatsapp", action_class=ACTION_HIGH)
+        _assert(v.allowed, "13. HIGH action without quorum still allowed in PASSIVE")
+        _assert("insufficient_quorum" in " ".join(v.reasons), "14. quorum deficiency flagged")
+
+        v = request_action("ghost_nobody", "tool:bash", action_class=ACTION_MEDIUM)
+        _assert(v.allowed, "15. unregistered swimmer allowed in PASSIVE")
+        _assert("swimmer_not_registered" in v.reasons, "16. unregistered reason recorded")
+
+        # ── 4. ADVISORY mode — warns but passes ────────────────
+        print("\n── ADVISORY Mode ──")
+        set_enforcement_mode(ENFORCEMENT_ADVISORY)
+        v = request_action("ghost_nobody", "tool:bash", action_class=ACTION_MEDIUM)
+        _assert(v.allowed, "17. unregistered swimmer still allowed in ADVISORY")
+        state_check = _load_state()
+        _assert(state_check["stats"].get("advisory_warnings", 0) > 0, "18. advisory warning counter incremented")
+
+        # ── 5. STRICT mode — actually blocks ────────────────────
+        print("\n── STRICT Mode (blocks) ──")
+        set_enforcement_mode(ENFORCEMENT_STRICT)
+
+        v = request_action("ghost_nobody", "tool:bash", action_class=ACTION_MEDIUM)
+        _assert(not v.allowed, "19. unregistered swimmer BLOCKED in STRICT")
+
+        # Ensure verify cache is warm for test swimmers
+        _VERIFY_CACHE.clear()
+        state_check2 = _load_state()
+        for sid in ("test_alpha", "test_beta", "test_gamma", "test_delta"):
+            cd = state_check2.get("swimmers", {}).get(sid)
+            if cd:
+                verify_swimmer_cert(cd)
+
+        v = request_action("test_alpha", "tool:bash", action_class=ACTION_LOW)
+        if not v.allowed:
+            print(f"    DEBUG: reasons={v.reasons}")
+        _assert(v.allowed, "20. registered swimmer passes LOW action in STRICT")
+
+        v = request_action("test_alpha", "actuate:steering", action_class=ACTION_HIGH)
+        _assert(not v.allowed, "21. HIGH action without quorum BLOCKED in STRICT")
+
+        v_b = vouch_for("test_beta", "actuate:steering", payload=None)
+        v_c = vouch_for("test_gamma", "actuate:steering", payload=None)
+        _assert(v_b is not None, "22. beta can vouch")
+        _assert(v_c is not None, "23. gamma can vouch")
+
+        v = request_action("test_alpha", "actuate:steering", action_class=ACTION_HIGH,
+                           vouchers=[v_b, v_c])
+        _assert(v.allowed, "24. HIGH action with 2 vouchers passes STRICT")
+        _assert(v.vouchers_provided == 2, "25. voucher count correct")
+
+        # CRITICAL needs 3 vouchers
+        v_d = vouch_for("test_delta", "deploy:firmware", payload={"version": "1.2"})
+        v = request_action("test_alpha", "deploy:firmware",
+                           payload={"version": "1.2"}, action_class=ACTION_CRITICAL,
+                           vouchers=[v_b, v_c])
+        _assert(not v.allowed, "26. CRITICAL with 2/3 vouchers BLOCKED in STRICT")
+
+        v_b2 = vouch_for("test_beta", "deploy:firmware", payload={"version": "1.2"})
+        v_c2 = vouch_for("test_gamma", "deploy:firmware", payload={"version": "1.2"})
+        v = request_action("test_alpha", "deploy:firmware",
+                           payload={"version": "1.2"}, action_class=ACTION_CRITICAL,
+                           vouchers=[v_b2, v_c2, v_d])
+        _assert(v.allowed, "27. CRITICAL with 3/3 vouchers passes STRICT")
+
+        # ── 6. Duplicate voucher rejection ──────────────────────
+        print("\n── Duplicate / Replay Voucher Rejection ──")
+        dup_v = vouch_for("test_beta", "actuate:brake", payload=None)
+        v = request_action("test_alpha", "actuate:brake", action_class=ACTION_HIGH,
+                           vouchers=[dup_v, dup_v])
+        _assert(v.vouchers_provided == 1, "28. duplicate voucher counted only once")
+        _assert(not v.allowed, "29. duplicate vouchers don't reach quorum in STRICT")
+
+        # ── 7. Reputation-based blocking ────────────────────────
+        print("\n── Reputation-Based Gating ──")
+        for _ in range(20):
+            record_action_outcome("test_alpha", "tool:bash", success=False)
+        rep_score = _check_swimmer_reputation("test_alpha")
+        _assert(rep_score < -3.0, f"30. 20 failures → reputation deeply negative ({rep_score:.2f})")
+
+        v = request_action("test_alpha", "read:state", action_class=ACTION_LOW)
+        _assert(not v.allowed, "31. deeply-negative-reputation swimmer BLOCKED in STRICT")
+        _assert(any("reputation_too_low" in r for r in v.reasons), "32. reputation reason present")
+
+        # Rehabilitate
+        for _ in range(40):
+            record_action_outcome("test_alpha", "tool:bash", success=True)
+        rep_after = _check_swimmer_reputation("test_alpha")
+        _assert(rep_after > -3.0, f"33. rehabilitation restores reputation ({rep_after:.2f})")
+
+        # ── 8. Receipt uniqueness ───────────────────────────────
+        print("\n── Receipt Uniqueness ──")
+        receipt_ids = set()
+        for i in range(50):
+            v = request_action("test_alpha", f"action_{i}", action_class=ACTION_LOW)
+            receipt_ids.add(v.receipt_id)
+        _assert(len(receipt_ids) == 50, f"34. 50 verdicts → 50 unique receipt IDs ({len(receipt_ids)})")
+
+        # ── 9. Load benchmark ───────────────────────────────────
+        print("\n── Load Benchmark (1000 action requests) ──")
+        set_enforcement_mode(ENFORCEMENT_PASSIVE)
+        t0 = time.perf_counter()
+        for i in range(1000):
+            request_action("test_alpha", "tool:bash", action_class=ACTION_LOW)
+        elapsed = time.perf_counter() - t0
+        per_req_us = (elapsed / 1000) * 1_000_000
+        _assert(elapsed < 30.0, f"35. 1000 requests in {elapsed:.2f}s ({per_req_us:.0f}µs/req)")
+
+        t0 = time.perf_counter()
+        for i in range(200):
+            vb = vouch_for("test_beta", "actuate:x", payload={"i": i})
+            vc = vouch_for("test_gamma", "actuate:x", payload={"i": i})
+            request_action("test_alpha", "actuate:x", payload={"i": i},
+                           action_class=ACTION_HIGH, vouchers=[vb, vc])
+        elapsed_hq = time.perf_counter() - t0
+        per_hq_us = (elapsed_hq / 200) * 1_000_000
+        _assert(elapsed_hq < 30.0, f"36. 200 HIGH+quorum requests in {elapsed_hq:.2f}s ({per_hq_us:.0f}µs/req)")
+
+        # ── 10. Log integrity ───────────────────────────────────
+        print("\n── Log Integrity ──")
+        log_path = _CHORUM_LOG
+        if log_path.exists():
+            lines = log_path.read_text().strip().split("\n")
+            valid_json = 0
+            has_receipt = 0
+            for ln in lines:
+                try:
+                    row = json.loads(ln)
+                    valid_json += 1
+                    if "receipt_id" in row:
+                        has_receipt += 1
+                except Exception:
+                    pass
+            _assert(valid_json == len(lines), f"37. all {len(lines)} log rows are valid JSON")
+            _assert(has_receipt == valid_json, f"38. all log rows carry receipt_id")
+        else:
+            print("  [SKIP] no log file created")
+
+        # ── 11. Mode switching ──────────────────────────────────
+        print("\n── Mode Switching ──")
+        for mode in (ENFORCEMENT_PASSIVE, ENFORCEMENT_ADVISORY, ENFORCEMENT_STRICT, ENFORCEMENT_PASSIVE):
+            set_enforcement_mode(mode)
+            _assert(get_enforcement_mode() == mode, f"39. mode switches to {mode}")
+        try:
+            set_enforcement_mode("INVALID_MODE")
+            _assert(False, "40. invalid mode raises ValueError")
+        except ValueError:
+            _assert(True, "40. invalid mode raises ValueError")
+
+        # ── 12. Status snapshot ─────────────────────────────────
+        print("\n── Status Snapshot ──")
+        status = chorum_status()
+        _assert(status["swimmer_count"] == 4, "41. status shows 4 swimmers")
+        _assert("stats" in status, "42. status contains stats")
+
+    finally:
+        _CHORUM_STATE = orig_state
+        _CHORUM_LOG = orig_log
+        _REPUTATION_FIELD = orig_rep
+        _VERIFY_CACHE.clear()
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    print(f"\n{'='*50}")
+    print(f"  RESULTS: {passed} passed, {failed} failed")
+    print(f"{'='*50}")
+    return failed
+
+
 if __name__ == "__main__":
-    print("=== SIFTA CHORUM GATE — SELF TEST ===")
-    print()
-
-    # 1. Birth
-    print("1. Birthing swimmers...")
-    cert_a = birth_swimmer("worker_alpha", role="data_processor")
-    cert_b = birth_swimmer("worker_beta", role="memory_keeper")
-    cert_c = birth_swimmer("worker_gamma", role="actuator_driver")
-    print(f"   alpha:  {cert_a.swimmer_id} born on {cert_a.homeworld_serial}, sig={cert_a.birth_signature[:16]}...")
-    print(f"   beta:   {cert_b.swimmer_id}")
-    print(f"   gamma:  {cert_c.swimmer_id}")
-
-    # 2. Verify
-    print()
-    print("2. Verifying certs...")
-    print(f"   alpha valid: {verify_swimmer_cert(cert_a)}")
-    print(f"   beta valid:  {verify_swimmer_cert(cert_b)}")
-
-    # 3. Forged cert rejected
-    print()
-    print("3. Testing forged cert rejection...")
-    forged = SwimmerCert(
-        swimmer_id="evil_intruder",
-        role="hacker",
-        birth_ts=time.time(),
-        homeworld_serial="GTH4921YP3",
-        birth_signature="deadbeef" * 16,
-    )
-    print(f"   forged valid: {verify_swimmer_cert(forged)} (should be False)")
-
-    # 4. Action requests
-    print()
-    print("4. Routine LOW action request...")
-    v = request_action("worker_alpha", "read:state", payload={"key": "ambient"}, action_class=ACTION_LOW)
-    print(f"   allowed={v.allowed} reasons={v.reasons}")
-
-    print()
-    print("5. HIGH action without quorum (PASSIVE mode → still allowed but flagged)...")
-    v = request_action("worker_alpha", "send:whatsapp", payload={"to": "+1234"}, action_class=ACTION_HIGH)
-    print(f"   allowed={v.allowed} reasons={v.reasons} vouchers={v.vouchers_provided}/{v.vouchers_required}")
-
-    print()
-    print("6. HIGH action WITH quorum vouchers...")
-    voucher_b = vouch_for("worker_beta", "send:whatsapp", payload={"to": "+1234"})
-    voucher_c = vouch_for("worker_gamma", "send:whatsapp", payload={"to": "+1234"})
-    v = request_action(
-        "worker_alpha", "send:whatsapp",
-        payload={"to": "+1234"},
-        action_class=ACTION_HIGH,
-        vouchers=[voucher_b, voucher_c],
-    )
-    print(f"   allowed={v.allowed} reasons={v.reasons} vouchers={v.vouchers_provided}/{v.vouchers_required}")
-
-    print()
-    print("7. Recording reputation for alpha (5 successes, 1 failure)...")
-    for _ in range(5):
-        record_action_outcome("worker_alpha", "tool:bash", success=True)
-    record_action_outcome("worker_alpha", "tool:bash", success=False)
-    print(f"   alpha reputation: {_check_swimmer_reputation('worker_alpha'):.3f}")
-
-    print()
-    print("8. Switching to STRICT mode and retrying unregistered swimmer...")
-    set_enforcement_mode(ENFORCEMENT_STRICT)
-    v = request_action("ghost_swimmer", "tool:bash", action_class=ACTION_MEDIUM)
-    print(f"   allowed={v.allowed} reasons={v.reasons}  ← should be False")
-    set_enforcement_mode(ENFORCEMENT_PASSIVE)
-
-    print()
-    print("9. Final chorum status:")
-    s = chorum_status()
-    print(f"   {json.dumps(s, indent=2)}")
-
-    print()
-    print("=== ALL CHECKS COMPLETE ===")
+    raise SystemExit(_run_hardened_tests())

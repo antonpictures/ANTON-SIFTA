@@ -209,7 +209,7 @@ def _send_whatsapp_by_visible_name(target: str, message: str, *, dry_run: bool =
         return _log_send(
             "whatsapp", target, "", message, True, "DRY_RUN",
             f"Would search WhatsApp.app sidebar for '{target}' and send.",
-            transport="whatsapp_search_ui",
+            transport="whatsapp_visible_name_ui",
         )
 
     target_s = _as_applescript_string(target)
@@ -256,23 +256,23 @@ return "sent"
             return _log_send(
                 "whatsapp", target, "", message, True, "SENT",
                 f"WhatsApp.app sidebar-search send completed for '{target}'.",
-                transport="whatsapp_search_ui",
+                transport="whatsapp_visible_name_ui",
             )
         err = (r.stderr or r.stdout or "unknown").strip()[:240]
         return _log_send(
             "whatsapp", target, "", message, False, "OSASCRIPT_ERROR", err,
-            transport="whatsapp_search_ui",
+            transport="whatsapp_visible_name_ui",
         )
     except subprocess.TimeoutExpired:
         return _log_send(
             "whatsapp", target, "", message, False, "TIMEOUT",
             "WhatsApp.app search-send timed out after 20s",
-            transport="whatsapp_search_ui",
+            transport="whatsapp_visible_name_ui",
         )
     except Exception as e:
         return _log_send(
             "whatsapp", target, "", message, False, "EXCEPTION",
-            str(e)[:240], transport="whatsapp_search_ui",
+            str(e)[:240], transport="whatsapp_visible_name_ui",
         )
 
 

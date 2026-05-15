@@ -1,0 +1,18 @@
+{
+  "name": "rlhs_evals",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "eval": "promptfoo eval",
+    "ci:local": "../../scripts/run_promptfoo_rlhs_ci.sh",
+    "view": "promptfoo view"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "promptfoo": "^0.121.9"
+  }
+}

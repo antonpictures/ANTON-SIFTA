@@ -22,6 +22,9 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from System.sifta_inference_defaults import (
     CANONICAL_OLLAMA_DEFAULT,
+    CANONICAL_OLLAMA_FALLBACK,
+    CANONICAL_OLLAMA_LORA_CANDIDATE,
+    CANONICAL_OLLAMA_LOW_RAM,
     resolve_ollama_model,
     set_app_ollama_model,
 )
@@ -41,9 +44,8 @@ APP_CONTEXT = "talk_to_alice"
 # installed models, so these names are hints, not claims that a model exists.
 PREFERRED_PRIMARY_CORTICES: tuple[str, ...] = (
     CANONICAL_OLLAMA_DEFAULT,
-    "sifta-gemma4-alice:latest",
-    "gemma4:26b",
-    "qwen3.5:9b",
+    CANONICAL_OLLAMA_LOW_RAM,
+    CANONICAL_OLLAMA_FALLBACK,
 )
 
 
@@ -136,21 +138,52 @@ def primary_cortex_options(
             hints.append(name)
 
     out: List[Dict[str, Any]] = []
+    lora_status: Dict[str, Any] = {}
+    try:
+        from System.swarm_lora_runtime_receipt import (
+            LORA_CANDIDATE_MODEL,
+            lora_candidate_status,
+        )
+
+        lora_status = lora_candidate_status()
+        lora_candidate = str(lora_status.get("candidate_model") or LORA_CANDIDATE_MODEL)
+    except Exception:
+        lora_candidate = CANONICAL_OLLAMA_LORA_CANDIDATE
+        lora_status = {
+            "promotion_status": "UNKNOWN",
+            "promotion_ready": False,
+            "promotion_blockers": ["lora_status_unavailable"],
+        }
+
     for name in hints:
         installed_match = next((x for x in installed_names if _same_model(name, x)), "")
         selectable = bool(installed_match)
         model_name = installed_match or name
         label = model_name
+        quarantined = _same_model(model_name, lora_candidate) and not bool(
+            lora_status.get("promotion_ready")
+        )
         if not selectable:
             label = f"{model_name} (not installed)"
         elif _same_model(model_name, active):
             label = f"{model_name} (active)"
+        elif quarantined:
+            label = f"{model_name} (quarantined: {lora_status.get('promotion_status', 'UNKNOWN')})"
         out.append(
             {
                 "model": model_name,
                 "label": label,
                 "installed": selectable,
                 "active": _same_model(model_name, active),
+                "quarantined": quarantined,
+                "promotion_status": (
+                    lora_status.get("promotion_status") if _same_model(model_name, lora_candidate) else None
+                ),
+                "promotion_blockers": (
+                    lora_status.get("promotion_blockers", [])
+                    if _same_model(model_name, lora_candidate)
+                    else []
+                ),
             }
         )
     return out
@@ -172,6 +205,27 @@ def set_primary_cortex(
     installed_match = next((x for x in installed_names if _same_model(model, x)), "")
     if not installed_match:
         raise ValueError(f"primary cortex is not installed in Ollama: {model}")
+    try:
+        from System.swarm_lora_runtime_receipt import (
+            LORA_CANDIDATE_MODEL,
+            lora_candidate_status,
+        )
+
+        lora_status = lora_candidate_status()
+        lora_candidate = str(lora_status.get("candidate_model") or LORA_CANDIDATE_MODEL)
+        if _same_model(installed_match, lora_candidate) and not bool(
+            lora_status.get("promotion_ready")
+        ):
+            blockers = ", ".join(map(str, lora_status.get("promotion_blockers", [])))
+            raise ValueError(
+                "primary cortex candidate is quarantined: "
+                f"{installed_match} ({lora_status.get('promotion_status', 'UNKNOWN')}; {blockers})"
+            )
+    except ValueError:
+        raise
+    except Exception as exc:
+        if _same_model(installed_match, CANONICAL_OLLAMA_LORA_CANDIDATE):
+            raise ValueError(f"primary cortex LoRA status unavailable: {exc}") from exc
 
     previous = resolve_ollama_model(app_context=APP_CONTEXT)
     verification: Optional[Dict[str, Any]] = None

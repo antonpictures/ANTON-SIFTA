@@ -2,7 +2,7 @@
 """
 System/swarm_clipboard_hand.py — Manual Hand (Clipboard)
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The Manual Hand. Gives Alice the physics to read what the Architect is holding,
 and hand them items directly.

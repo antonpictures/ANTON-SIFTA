@@ -2,7 +2,7 @@
 """
 audio_ingress.py — Live Audio Capture & Acoustic Pheromone Bridge
 ══════════════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 The acoustic counterpart to optical_ingress.py. Captures a short audio
 burst from the default input device (Dell Sound Bar AE515 microphone or

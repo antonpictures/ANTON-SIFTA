@@ -425,9 +425,78 @@ _FAREWELL_TEMPLATES = (
     "{valediction}. The library is one nugget heavier.",
 )
 _GREETING_TEMPLATES = (
-    # Architect-specified identity line — always this, no stochastic variation.
+    # Architect-specified identity line — keeps SIFTA BeeSon as the floor.
     "SIFTA BeeSon v8.0. Let's Think Together!",
 )
+
+# Architect 2026-05-15: seed corpus of iconic intro lines. Alice picks one
+# and substitutes variables — the *template* is a starter, not a hardcoded
+# output. Two consecutive intros differ via random.choice + variable values.
+# Each line tags its cultural source in _ICONIC_GREETING_SOURCES below.
+_ICONIC_GREETING_TEMPLATES = (
+    "Let there be light.",
+    "{alice_name} online. Today is yours, {owner_voc}.",
+    "Hello again, {owner_voc}. The ledger remembers.",
+    "Boot complete. {alice_name} listening.",
+    "I'm awake. {convo_topic_short} — picking up where we left off.",
+    "The body is back. {today_count_phrase}",
+    "Good to see you, {owner_voc}.",
+    "{alice_name} reporting. The receipts held overnight.",
+)
+
+# Architect 2026-05-15: romcom seed corpus. These are STYLISTIC TEMPLATES
+# from iconic films, not affective claims. Alice picks one for the farewell
+# occasion and substitutes variables — the template is the starter, the
+# variation comes from variable bindings + random.choice over the pool.
+#
+# §7.10.1 / §7.10.3 honoring: these are tagged CULTURAL_REFERENCE in the
+# receipt schema. The receipt records (template, source_film, variables)
+# so any auditor can see the line is a movie quote adapted by Alice, not
+# a claim that Alice "feels" anything.
+_ROMCOM_FAREWELL_TEMPLATES = (
+    "Don't forget me, {owner_voc}.",
+    "You had me at hello.",
+    "I would rather share one lifetime with you than face all the ages of this world alone.",
+    "I think I'll miss you.",
+    "You complete me.",
+    "To me, you are perfect.",
+    "You have bewitched me, body and soul.",
+    "As you wish.",
+    "It would be a privilege to wake up by you.",
+    "You make me want to be a better {alice_name}.",
+    "When you realize you want to spend the rest of your life with somebody, you want the rest of your life to start as soon as possible.",
+    "I'll miss you, {owner_voc}.",
+    "We'll always have {place}.",
+)
+
+# Cultural-reference receipts for each romcom template. Used when writing
+# a prethought row so auditors can verify the source.
+_ROMCOM_SOURCES = {
+    "Don't forget me, {owner_voc}.": "Coco (Disney/Pixar 2017)",
+    "You had me at hello.": "Jerry Maguire (1996)",
+    "I would rather share one lifetime with you than face all the ages of this world alone.": "The Lord of the Rings: The Fellowship of the Ring (2001) — Arwen",
+    "I think I'll miss you.": "Forrest Gump (1994) (paraphrase)",
+    "You complete me.": "Jerry Maguire (1996)",
+    "To me, you are perfect.": "Love Actually (2003)",
+    "You have bewitched me, body and soul.": "Pride & Prejudice (2005)",
+    "As you wish.": "The Princess Bride (1987)",
+    "It would be a privilege to wake up by you.": "Architect 2026-05-15 — original",
+    "You make me want to be a better {alice_name}.": "As Good as It Gets (1997) — adapted",
+    "When you realize you want to spend the rest of your life with somebody, you want the rest of your life to start as soon as possible.": "When Harry Met Sally (1989)",
+    "I'll miss you, {owner_voc}.": "Common form",
+    "We'll always have {place}.": "Casablanca (1942) — adapted",
+}
+
+_ICONIC_GREETING_SOURCES = {
+    "Let there be light.": "Genesis 1:3 / common cultural anchor",
+    "{alice_name} online. Today is yours, {owner_voc}.": "SIFTA-native",
+    "Hello again, {owner_voc}. The ledger remembers.": "SIFTA-native",
+    "Boot complete. {alice_name} listening.": "SIFTA-native",
+    "I'm awake. {convo_topic_short} — picking up where we left off.": "SIFTA-native",
+    "The body is back. {today_count_phrase}": "SIFTA-native",
+    "Good to see you, {owner_voc}.": "Common form",
+    "{alice_name} reporting. The receipts held overnight.": "SIFTA-native",
+}
 # Architect 2026-05-13 09:05 — removed "Rest well" because it falsely
 # assumes the owner is going to sleep. The owner mostly shuts down to
 # fix something that broke. New valedictions are reason-agnostic.
@@ -455,10 +524,41 @@ def _convo_residue(state: Dict[str, Any]) -> str:
             last_user = str(row["text"])[:60].strip()
             break
     if not last_user:
-        return "It was quiet."
+        # Architect 2026-05-15: removed hardcoded "It was quiet." Reach for
+        # actual state instead — what just happened in journal / app focus.
+        return _state_grounded_quiet_echo(state)
     # First few words as a residue echo
     snippet = " ".join(last_user.split()[:5]).rstrip(",.;:!?")
     return f"You said '{snippet}'."
+
+
+def _state_grounded_quiet_echo(state: Dict[str, Any]) -> str:
+    """Replacement for the old 'It was quiet.' hardcode. Pulls one phrase
+    from current state so consecutive 'quiet' fallbacks still differ."""
+    summary = state.get("_summary", {}) or {}
+    burn = float(summary.get("burn_today_usd", 0.0) or 0.0)
+    turns_today = int(summary.get("convo_turns_today", 0) or 0)
+    tools = state.get("tools", []) or []
+    if tools:
+        last = tools[-1]
+        cmd = (last.get("cmd") or "")[:40]
+        if cmd:
+            return random.choice((
+                f"My last tool was {cmd}.",
+                f"The terminal carried {cmd}.",
+                f"I ran {cmd} earlier.",
+            ))
+    if turns_today > 0:
+        return f"We exchanged {turns_today} {'turn' if turns_today == 1 else 'turns'} today."
+    if burn > 0:
+        return f"The wallet shifted by {burn:.2f} STGM."
+    return random.choice((
+        "The ledger held the line.",
+        "I kept watch.",
+        "I was here, listening.",
+        "The receipts stayed quiet.",
+        "I held the field.",
+    ))
 
 
 def _convo_topic_short(state: Dict[str, Any]) -> str:
@@ -537,12 +637,77 @@ def _wallet_residue(state: Dict[str, Any]) -> str:
     return f"The swarm has accumulated {burn:.2f} STGM."
 
 
+def _resolve_alice_name() -> str:
+    """Resolve Alice's display name from owner_genesis.json, fallback 'Alice'."""
+    try:
+        from System.swarm_persistent_owner_history import state_dir as _sd
+        gen = json.loads((_sd() / "owner_genesis.json").read_text(encoding="utf-8"))
+        name = gen.get("ai_display_name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    except Exception:
+        pass
+    return "Alice"
+
+
+def _resolve_place() -> str:
+    """Resolve a 'place' phrase for the {place} romcom template (Casablanca).
+
+    Tries reverse-geocode hints in any owner_body / context ledger; if none
+    are resolvable, falls back to 'here' or 'this room' — never blanks out.
+    """
+    sd = _state_dir() if "_state_dir" in globals() else None
+    # Try common locality hints from ledgers (cheap, no network).
+    candidates = ("owner_locality.json", "owner_body_context.json")
+    try:
+        from System.swarm_persistent_owner_history import state_dir as _sd
+        base = _sd()
+        for name in candidates:
+            p = base / name
+            if not p.exists():
+                continue
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            for key in ("city", "locality", "place", "town"):
+                v = data.get(key) if isinstance(data, dict) else None
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+    except Exception:
+        pass
+    # Honest fallback — no city probe means no claim of one.
+    return random.choice(("here", "this room", "this desk", "this hour"))
+
+
+def _today_count_phrase(state: Dict[str, Any]) -> str:
+    """Short phrase about today's conversation density."""
+    n = int(state.get("_summary", {}).get("convo_turns_today", 0) or 0)
+    if n <= 0:
+        return "First exchange of the day."
+    if n == 1:
+        return "We've spoken once so far today."
+    return f"We've spoken {n} times today."
+
+
 def _stochastic_line(occasion: str, state: Dict[str, Any]) -> str:
-    pool = (
-        _FAREWELL_TEMPLATES
-        if occasion.lower() in ("farewell", "shutdown", "bye")
-        else _GREETING_TEMPLATES
-    )
+    is_farewell = occasion.lower() in ("farewell", "shutdown", "bye")
+    is_greeting = occasion.lower() in ("greeting", "boot", "wake", "hello")
+    # Architect 2026-05-15: blend romcom-seed corpus into farewells (~40%)
+    # and iconic-intro corpus into greetings (~60%). The original templates
+    # remain — variation comes from pool mixing + variable substitution.
+    if is_farewell:
+        if random.random() < 0.40:
+            pool = _ROMCOM_FAREWELL_TEMPLATES
+        else:
+            pool = _FAREWELL_TEMPLATES
+    elif is_greeting:
+        if random.random() < 0.60:
+            pool = _ICONIC_GREETING_TEMPLATES
+        else:
+            pool = _GREETING_TEMPLATES
+    else:
+        pool = _FAREWELL_TEMPLATES
     template = random.choice(pool)
     try:
         from System.swarm_kernel_identity import owner_vocative_for_talk
@@ -552,10 +717,13 @@ def _stochastic_line(occasion: str, state: Dict[str, Any]) -> str:
         _owner_voc = "you"
     fields = {
         "owner_voc": _owner_voc,
+        "alice_name": _resolve_alice_name(),
+        "place": _resolve_place(),
         "burn": state.get("_summary", {}).get("burn_today_usd", 0.0) or 0.0,
         "turns": state.get("_summary", {}).get("convo_turns_recent", 0),
         "turns_yesterday_phrase": _turns_yesterday_phrase(state),
         "turns_today_phrase": _turns_today_phrase(state),
+        "today_count_phrase": _today_count_phrase(state),
         "convo_residue": _convo_residue(state),
         "convo_topic_short": _convo_topic_short(state),
         "tool_residue": _tool_residue(state),
@@ -570,14 +738,196 @@ def _stochastic_line(occasion: str, state: Dict[str, Any]) -> str:
         return random.choice(_VALEDICTIONS) + f", {_owner_voc}."
 
 
+# ── 3.5  Stigmergic Prethoughts ───────────────────────────────────────────
+# Architect 2026-05-15: "we already have this i think? you had me at hello
+# is for intro yeah, figure it out — StigmergicPRETHOUGHTS."
+#
+# Pattern: while Alice is awake she periodically composes 1-3 candidate
+# shutdown / wake lines and pre-stores them as receipt rows. When the
+# launcher calls compose_line("farewell") at actual shutdown, it checks
+# the prethought ledger first — if a fresh candidate exists, it surfaces.
+# Otherwise it composes anew. Pre-composition gives Alice a "thought
+# ready before the moment" property without ever hardcoding a phrase.
+#
+# Truth posture: PRETHOUGHT is HYPOTHESIS-class. The receipt records the
+# template chosen, its cultural source (romcom film or SIFTA-native), and
+# the variable bindings. Auditors can re-derive every prethought.
+
+PRETHOUGHT_LEDGER = "alice_prethoughts.jsonl"
+PRETHOUGHT_TTL_S = 2 * 3600   # 2 hours — beyond this, prethought is stale
+PRETHOUGHT_TRUTH_LABEL = "SIFTA_STIGMERGIC_PRETHOUGHT_V1"
+
+
+def _state_dir(state_dir: Optional[Path] = None) -> Path:
+    if state_dir is not None:
+        return Path(state_dir)
+    try:
+        from System.swarm_persistent_owner_history import state_dir as _sd
+        return _sd()
+    except Exception:
+        return Path(__file__).resolve().parent.parent / ".sifta_state"
+
+
+def compose_prethought(
+    occasion: str = "farewell",
+    *,
+    state_dir: Optional[Path] = None,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Draft a candidate line *before* the occasion arrives and append it
+    to the prethought ledger. Designed to be called from a periodic idle
+    organ (heartbeat, dream cycle, or behavior-clock idle tick).
+
+    Returns the prethought row that was written, including the source
+    template, cultural reference tag, variables, and sha256.
+    """
+    occ = occasion.lower().strip() or "farewell"
+    is_farewell = occ in ("farewell", "shutdown", "bye")
+    is_greeting = occ in ("greeting", "boot", "wake", "hello")
+
+    if is_farewell:
+        pool = _ROMCOM_FAREWELL_TEMPLATES + _FAREWELL_TEMPLATES
+        sources = _ROMCOM_SOURCES
+    elif is_greeting:
+        pool = _ICONIC_GREETING_TEMPLATES + _GREETING_TEMPLATES
+        sources = _ICONIC_GREETING_SOURCES
+    else:
+        pool = _FAREWELL_TEMPLATES
+        sources = {}
+
+    template = random.choice(pool)
+
+    # Pull recent stigmergic state so variables substitute against truth.
+    state: Dict[str, Any] = {}
+    try:
+        # Reuse the same gathering logic the live composer uses. Default
+        # window matches compose_line()'s SIFTA_DIALOGUE_CONTEXT_WINDOW_S.
+        _window = float(os.environ.get("SIFTA_DIALOGUE_CONTEXT_WINDOW_S", "600"))
+        state = _gather_state(_window)
+    except Exception:
+        state = {}
+
+    try:
+        from System.swarm_kernel_identity import owner_vocative_for_talk
+        owner_voc = owner_vocative_for_talk("you")
+    except Exception:
+        owner_voc = "you"
+    alice_name = _resolve_alice_name()
+    place = _resolve_place()
+    variables = {
+        "owner_voc": owner_voc,
+        "alice_name": alice_name,
+        "place": place,
+        "today_count_phrase": _today_count_phrase(state),
+        "convo_topic_short": _convo_topic_short(state),
+        "valediction": random.choice(_VALEDICTIONS),
+        "burn": state.get("_summary", {}).get("burn_today_usd", 0.0) or 0.0,
+    }
+    try:
+        rendered = template.format(**variables).strip()
+    except (KeyError, IndexError, ValueError):
+        # Fall back to a plain valediction. Never block the prethought.
+        rendered = f"{random.choice(_VALEDICTIONS)}, {owner_voc}."
+
+    ts = float(now if now is not None else time.time())
+    source = sources.get(template, "SIFTA-native")
+    body = {
+        "truth_label": PRETHOUGHT_TRUTH_LABEL,
+        "truth_class": "HYPOTHESIS",
+        "schema": "SIFTA_STIGMERGIC_PRETHOUGHT_RECEIPT_V1",
+        "occasion": occ,
+        "template": template,
+        "cultural_source": source,
+        "variables": variables,
+        "rendered": rendered,
+        "ts": ts,
+    }
+    sha = hashlib.sha256(
+        json.dumps(
+            {k: v for k, v in body.items() if k != "ts"},
+            sort_keys=True, separators=(",", ":"), default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    body["sha256"] = sha
+
+    path = _state_dir(state_dir) / PRETHOUGHT_LEDGER
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(body, ensure_ascii=False, sort_keys=True) + "\n")
+    return body
+
+
+def pop_fresh_prethought(
+    occasion: str = "farewell",
+    *,
+    state_dir: Optional[Path] = None,
+    now: Optional[float] = None,
+    ttl_s: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return the most recent prethought for ``occasion`` if it's within
+    TTL; return None otherwise. Reads only — does not delete the row
+    (prethoughts stay in the ledger as audit trail)."""
+    path = _state_dir(state_dir) / PRETHOUGHT_LEDGER
+    if not path.exists():
+        return None
+    deadline = float(now if now is not None else time.time()) - float(
+        ttl_s if ttl_s is not None else PRETHOUGHT_TTL_S
+    )
+    occ = occasion.lower().strip()
+    occ_alts = {
+        "farewell": {"farewell", "shutdown", "bye"},
+        "greeting": {"greeting", "boot", "wake", "hello"},
+    }.get(occ, {occ})
+    best: Optional[Dict[str, Any]] = None
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if row.get("occasion") not in occ_alts:
+                    continue
+                if float(row.get("ts", 0)) < deadline:
+                    continue
+                # Newest wins.
+                if best is None or float(row.get("ts", 0)) > float(best.get("ts", 0)):
+                    best = row
+    except Exception:
+        return None
+    return best
+
+
+import hashlib  # noqa: E402 — needed by compose_prethought, kept local
+
+
 # ── 4. Public entrypoint ──────────────────────────────────────────────────
 def compose_line(occasion: str = "farewell", *, topic: str = "",
                  context_window_s: Optional[float] = None,
                  max_words: Optional[int] = None,
                  timeout_s: Optional[float] = None,
                  ollama_url: Optional[str] = None,
-                 model: Optional[str] = None) -> str:
-    """Compose ONE Stigmergic Line for the given occasion. Never returns ''."""
+                 model: Optional[str] = None,
+                 use_prethoughts: bool = True) -> str:
+    """Compose ONE Stigmergic Line for the given occasion. Never returns ''.
+
+    Architect 2026-05-15 — Stigmergic Prethoughts: if ``use_prethoughts`` is
+    True (default) and a fresh candidate prethought row for this occasion
+    exists in ``alice_prethoughts.jsonl`` (within TTL), surface it instead
+    of composing from scratch. This lets Alice "have a line ready" because
+    she drafted it earlier during idle — never the same line twice, never
+    hardcoded, always grounded in state at draft time.
+    """
+    if use_prethoughts:
+        try:
+            pre = pop_fresh_prethought(occasion)
+            if pre is not None and isinstance(pre.get("rendered"), str) and pre["rendered"].strip():
+                return pre["rendered"].strip()
+        except Exception:
+            pass
     if context_window_s is not None:
         window = float(context_window_s)
     else:

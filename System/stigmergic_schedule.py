@@ -26,7 +26,13 @@ _SCHEDULE_QUERY_RE = re.compile(
     r"what\s+is\s+(?:on\s+)?(?:my\s+)?(?:schedule|calendar)|"
     r"do\s+i\s+have\s+anything|"
     r"(?:read|check)\s+(?:my\s+)?(?:schedule|calendar)|"
-    r"(?:my\s+)?(?:schedule|calendar)\s+for\s+(?:today|tomorrow)"
+    r"(?:my\s+)?(?:schedule|calendar)\s+for\s+(?:today|tomorrow)|"
+    # Architect natural phrasings observed 2026-05-08 (Decide miss → LLM hallucinated calendar access).
+    r"how\s+(?:is|are|does|'?s)\s+(?:my\s+)?(?:schedule|calendar)(?:\s+look(?:s|ing)?)?|"
+    r"what\s+(?:does\s+)?(?:my\s+)?(?:schedule|calendar)\s+look(?:s|ing)?(?:\s+like)?|"
+    r"(?:show|tell|give)\s+me\s+(?:my\s+)?(?:schedule|calendar)|"
+    r"(?:show|tell)\s+me\s+(?:what['’]?s|what\s+is)\s+(?:on\s+)?(?:my\s+)?(?:schedule|calendar)|"
+    r"any(?:thing)?\s+(?:on\s+)?(?:my\s+)?(?:schedule|calendar)"
     r")\b",
     re.IGNORECASE,
 )
@@ -39,7 +45,9 @@ _TIME_RE = re.compile(
 _SCHEDULE_CAPABILITY_RE = re.compile(
     r"\b("
     r"do\s+you\s+have\s+(?:a\s+)?(?:schedule|calendar)(?:\s+(?:document|app|application|ledger))?|"
-    r"can\s+you\s+(?:keep|manage|write|remember|track)\s+(?:my\s+)?(?:schedule|calendar|appointments?|tasks?)|"
+    r"do\s+you\s+have\s+access\s+to\s+(?:my\s+)?(?:schedule|calendar|appointments?|tasks?)|"
+    r"can\s+you\s+(?:keep|manage|write|remember|track|see|read|access|view|open)\s+(?:my\s+)?(?:schedule|calendar|appointments?|tasks?)|"
+    r"do\s+you\s+(?:see|know\s+about)\s+(?:my\s+)?(?:schedule|calendar|appointments?|tasks?)|"
     r"(?:where|how)\s+can\s+(?:you|alice)\s+(?:write|keep|store)\s+(?:my\s+)?(?:schedule|calendar|appointments?)"
     r")\b",
     re.IGNORECASE,
@@ -467,16 +475,49 @@ def summary_for_alice(limit: int = 6, path: Path = _SCHEDULE) -> str:
     return "\n".join(lines)
 
 
+def _query_read_receipt(*, status: str, matched_count: int, path: Path,
+                        kind: str, query_time: Optional[tuple[int, int]],
+                        text: str) -> Dict[str, Any]:
+    """Decide → Execute → Receipt for *reads*. Returns the appended row."""
+    receipt: Dict[str, Any] = {
+        "ts": time.time(),
+        "operation": "query",
+        "ok": True,
+        "status": status,
+        "kind": kind,
+        "matched_count": int(matched_count),
+        "query_excerpt": (text or "")[:200],
+        "ledger_path": str(path),
+        "truth_note": (
+            "schedule effector read receipt; reply was built from this ledger, "
+            "not from the language model."
+        ),
+    }
+    if query_time is not None:
+        receipt["query_time"] = f"{query_time[0]:02d}:{query_time[1]:02d}"
+    receipt["receipt_hash"] = _stable_id(receipt)
+    _append_row(receipt, _SCHEDULE_RECEIPTS)
+    return receipt
+
+
 def answer_query_for_alice(text: str, *, limit: int = 4, path: Path = _SCHEDULE) -> str:
     """Answer a direct schedule question from the shared schedule ledger.
 
-    This is deliberately deterministic and runs before LLM/tool routing. A
-    local schedule question must never become a WhatsApp send just because the
-    model improvised an outbound action.
+    Decide → Execute → Receipt → Minimal grounded reply. Runs deterministically
+    before LLM / tool routing so a local schedule question never becomes a
+    hallucinated calendar narration or a WhatsApp send.
     """
     if _SCHEDULE_CAPABILITY_RE.search(text or ""):
         count = len(pending_tasks(limit=64, path=path))
         item_word = "item" if count == 1 else "items"
+        _query_read_receipt(
+            status="CAPABILITY_REPLY",
+            matched_count=count,
+            path=path,
+            kind="capability",
+            query_time=None,
+            text=text,
+        )
         return (
             "Yes. I have a local SIFTA schedule ledger at "
             ".sifta_state/stigmergic_schedule.jsonl. "
@@ -489,16 +530,28 @@ def answer_query_for_alice(text: str, *, limit: int = 4, path: Path = _SCHEDULE)
     if not _looks_like_schedule_query(text):
         return ""
 
+    from System.swarm_kernel_identity import owner_vocative_for_talk
+
+    voc = owner_vocative_for_talk()
+
     query_time = _query_time(text)
     tasks = [row for row in pending_tasks(limit=16, path=path) if _row_matches_time(row, query_time)]
     if not tasks:
+        _query_read_receipt(
+            status="NO_MATCH",
+            matched_count=0,
+            path=path,
+            kind="lookup",
+            query_time=query_time,
+            text=text,
+        )
         if query_time is not None:
             hour, minute = query_time
             return (
-                f"George, I checked the schedule ledger. I do not see a pending "
+                f"{voc}, I checked the schedule ledger. I do not see a pending "
                 f"entry at {hour:02d}:{minute:02d}."
             )
-        return "George, I checked the schedule ledger. I do not see a pending schedule entry."
+        return f"{voc}, I checked the schedule ledger. I do not see a pending schedule entry."
 
     visible = tasks[:limit]
     bits: List[str] = []
@@ -512,13 +565,29 @@ def answer_query_for_alice(text: str, *, limit: int = 4, path: Path = _SCHEDULE)
         else:
             bits.append(item)
     if not bits:
-        return "George, I checked the schedule ledger. I do not see a readable schedule entry."
+        _query_read_receipt(
+            status="NO_READABLE",
+            matched_count=len(tasks),
+            path=path,
+            kind="lookup",
+            query_time=query_time,
+            text=text,
+        )
+        return f"{voc}, I checked the schedule ledger. I do not see a readable schedule entry."
 
+    _query_read_receipt(
+        status="MATCH",
+        matched_count=len(visible),
+        path=path,
+        kind="lookup",
+        query_time=query_time,
+        text=text,
+    )
     if query_time is not None:
         hour, minute = query_time
         label = datetime(2000, 1, 1, hour, minute).strftime("%-I:%M%p").lower()
-        return f"George, at {label} you have: " + "; ".join(bits) + "."
-    return "George, your schedule says: " + "; ".join(bits) + "."
+        return f"{voc}, at {label} you have: " + "; ".join(bits) + "."
+    return f"{voc}, your schedule says: " + "; ".join(bits) + "."
 
 
 if __name__ == "__main__":

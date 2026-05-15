@@ -172,9 +172,9 @@ class SwarmOncology:
             "hardware_time_oracle.json",       # [AO46 Epoch-13.5] HMAC-signed wall clock
             "memory_merkle_anchors.jsonl",     # [C53M Epoch-14] Merkle memory attestation anchor chain
             "memory_merkle_latest.json",       # [C53M Epoch-14] Latest Merkle manifest snapshot
-            # ── Epoch 17 — Persona Identity Organ (C47H 2026-04-20) ──
-            "persona_identity.json",           # Signed persona manifest (PERSONA_GUARDIAN cryptoswimmer)
-            "persona_identity_log.jsonl",      # Append-only audit log of every persona mutation
+            # ── Epoch 17 — Identity Manifest Organ (C47H 2026-04-20) ──
+            "identity_manifest.json",           # Signed identity manifest (PERSONA_GUARDIAN cryptoswimmer)
+            "identity_manifest_log.jsonl",      # Append-only audit log of every persona mutation
             "epistemic_dissonance_incidents.jsonl",  # Epoch-18 Epistemic Cortex immune incidents
             "digested_nutrients.jsonl",        # Epoch-19 Microbiome nutrient bloodstream
             "microbiome_state.json",           # Epoch-19 change-detection state cache
@@ -238,7 +238,7 @@ class SwarmOncology:
             or filename.startswith(".")
             or filename.endswith(".lymph")
             or "apostle_dirt" in filename
-            or filename.startswith("persona_identity.breach.")
+            or filename.startswith("identity_manifest.breach.")
         )
 
     # ── Layer 1 gate ───────────────────────────────────────────────────────
