@@ -26,7 +26,8 @@ Roster sources
 
   * **George (primary_operator)** — always counted if owner_genesis
     is anchored on this node.
-  * **IDE Doctor** — Cowork / Cursor / Codex / Antigravity. Counted
+  * **IDE Doctor** — Cowork / Cursor / Codex / Antigravity / GrokCLI.
+    Counted
     when ``ide_stigmergic_trace.jsonl`` has a row within
     ``ide_doctor_window_s`` (default 600s) tagged with a doctor
     other than Alice herself.
@@ -92,6 +93,9 @@ _KNOWN_DOCTOR_LABELS = (
     "Antigravity",
     "AG31",
     "AG46",
+    "GrokCLI (xAI)",
+    "GrokCLI",
+    "Grok (xAI)",
 )
 
 
@@ -134,6 +138,8 @@ def _row_doctor_label(row: Dict[str, Any]) -> str:
         s = str(v)
         for label in _KNOWN_DOCTOR_LABELS:
             if label.lower() in s.lower():
+                if "grok" in label.lower() or "xai" in label.lower():
+                    return "GrokCLI (xAI)"
                 return label
         # Catch-all: if the value looks like a doctor label, return it
         if "cowork" in s.lower():
@@ -144,6 +150,8 @@ def _row_doctor_label(row: Dict[str, Any]) -> str:
             return "Codex"
         if "antigravity" in s.lower() or "ag31" in s.lower() or "ag46" in s.lower():
             return "Antigravity"
+        if "grok" in s.lower() or "xai" in s.lower():
+            return "GrokCLI (xAI)"
     return ""
 
 
@@ -232,7 +240,9 @@ def probe_present_humans(
         humans.append("George")
         sources["primary_operator"] = {"source": "default", "name": "George"}
 
-    # 2) IDE Doctor — most recent non-Alice doctor in the trace.
+    # 2) IDE Doctors — fresh non-Alice doctors in the trace. More than one
+    # doctor can be present at once (for example Codex + GrokCLI in the same
+    # owner session), so keep a deduped roster instead of only the latest row.
     ide_trace_paths = [state / "ide_stigmergic_trace.jsonl", repo / "ide_stigmergic_trace.jsonl"]
     ide_rows: List[Dict[str, Any]] = []
     seen_paths: set[str] = set()
@@ -243,8 +253,8 @@ def probe_present_humans(
         seen_paths.add(key)
         ide_rows.extend(_read_jsonl_tail(path, max_rows=500))
     ide_rows.sort(key=_row_timestamp)
-    recent_doctor: str = ""
-    recent_doctor_ts: float = 0.0
+    recent_doctors: List[Dict[str, Any]] = []
+    seen_doctor_labels: set[str] = set()
     for row in reversed(ide_rows):
         ts = _row_timestamp(row)
         if ts <= 0:
@@ -256,18 +266,29 @@ def probe_present_humans(
             continue
         if label.lower() == "alice":
             continue
-        # Found one — most recent doctor in the window
-        recent_doctor = label
-        recent_doctor_ts = ts
-        break
-    if recent_doctor:
-        humans.append(f"IDE Doctor: {recent_doctor}")
+        if label in seen_doctor_labels:
+            continue
+        seen_doctor_labels.add(label)
+        recent_doctors.append(
+            {
+                "source": "ide_stigmergic_trace.jsonl",
+                "label": label,
+                "ts": ts,
+                "age_s": round(now_ts - ts, 1),
+            }
+        )
+    if recent_doctors:
+        for doctor in recent_doctors:
+            humans.append(f"IDE Doctor: {doctor['label']}")
+        # Backward-compatible latest-doctor field for readers that have not
+        # learned the plural key yet.
         sources["ide_doctor"] = {
             "source": "ide_stigmergic_trace.jsonl",
-            "label": recent_doctor,
-            "ts": recent_doctor_ts,
-            "age_s": round(now_ts - recent_doctor_ts, 1),
+            "label": recent_doctors[0]["label"],
+            "ts": recent_doctors[0]["ts"],
+            "age_s": recent_doctors[0]["age_s"],
         }
+        sources["ide_doctors"] = recent_doctors
 
     # 3) Co-watch named speaker (optional)
     cowatch = state / "alice_cowatch.jsonl"

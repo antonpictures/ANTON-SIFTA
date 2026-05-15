@@ -105,6 +105,32 @@ def test_recent_codex_doctor_counts(tmp_path):
     assert any("Codex" in h for h in report.present_humans)
 
 
+def test_recent_grokcli_doctor_counts(tmp_path):
+    state = tmp_path / ".sifta_state"
+    _write_genesis(state)
+    _write_ide_row(state, "GrokCLI")
+    report = probe_present_humans(root=tmp_path, write=False)
+    assert report.present_count == 2
+    assert any("GrokCLI" in h for h in report.present_humans)
+    assert report.sources["ide_doctor"]["label"] == "GrokCLI (xAI)"
+
+
+def test_multiple_recent_ide_doctors_are_all_counted_once(tmp_path):
+    state = tmp_path / ".sifta_state"
+    _write_genesis(state)
+    _write_ide_row(state, "GrokCLI", ts_offset=-4.0)
+    _write_ide_row(state, "Codex Desktop", ts_offset=-3.0)
+    _write_ide_row(state, "Grok 4.3 (xAI)", ts_offset=-2.0)
+    report = probe_present_humans(root=tmp_path, write=False)
+    assert report.present_count == 3
+    assert any("Codex" in h for h in report.present_humans)
+    assert sum("GrokCLI" in h for h in report.present_humans) == 1
+    assert [d["label"] for d in report.sources["ide_doctors"]] == [
+        "GrokCLI (xAI)",
+        "Codex",
+    ]
+
+
 def test_root_ide_trace_with_iso_ts_counts_codex_doctor(tmp_path):
     state = tmp_path / ".sifta_state"
     _write_genesis(state)
