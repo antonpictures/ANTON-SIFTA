@@ -64,6 +64,15 @@ def test_short_extraction_task_selects_corvid_without_owner_naming_it() -> None:
     assert decision.timeout_s == 30
 
 
+def test_decision_prompt_carries_registry_organ_hints() -> None:
+    decision = agent_arm_decision_for_turn(
+        "Compare organ registry health scoring strategies for agent arms."
+    )
+
+    assert decision is not None
+    assert "Registry organ hints:" in decision.prompt
+
+
 def test_prepass_executes_router_tool(monkeypatch) -> None:
     from System import swarm_agent_arm_decision as decision_mod
 

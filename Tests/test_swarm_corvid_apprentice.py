@@ -58,6 +58,26 @@ def test_corvid_trace_is_structured_and_prompt_free(tmp_path, monkeypatch):
     assert "response" not in row
 
 
+def test_corvid_evidence_task_is_available(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_call(_self, prompt):
+        captured["prompt"] = prompt
+        return "bounded evidence", 0.02
+
+    monkeypatch.setattr(SwarmCorvidApprentice, "_call_ollama", fake_call)
+
+    ledger = tmp_path / "corvid.jsonl"
+    corvid = SwarmCorvidApprentice(ledger_path=ledger)
+    result = corvid.evidence("review the tool router")
+
+    assert result.success is True
+    assert result.task == CorvidTask.EVIDENCE
+    assert "Corvid Scout" in captured["prompt"]
+    row = json.loads(ledger.read_text(encoding="utf-8").strip())
+    assert row["task"] == "evidence"
+
+
 def test_corvid_ledger_participates_in_pheromone_scorer():
     names = {path.name for path in LEDGERS}
 

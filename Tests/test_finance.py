@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import pytest
 from PyQt6.QtWidgets import QApplication, QPushButton
 
 REPO = Path(__file__).resolve().parent.parent
@@ -23,6 +24,8 @@ def test_finance_dashboard_initialization():
     assert widget.warren_tab is not None
     assert widget.details_loaded is False
     assert widget.more_data_btn.text() == "More Financial Data"
+    assert widget.send_btn.text() == "Send STGM"
+    assert widget.receive_btn.text() == "Receive STGM"
 
 
 def test_finance_dashboard_loads_basics_before_agent_details(monkeypatch):
@@ -38,6 +41,8 @@ def test_finance_dashboard_loads_basics_before_agent_details(monkeypatch):
         "finance_truth_snapshot",
         lambda: {
             "canonical_wallet_sum": 12.5,
+            "machine_wallet_total": 12.5,
+            "alice_wallet": 4.25,
             "minted": 20.0,
             "spend": 7.5,
             "net_supply": 12.5,
@@ -61,6 +66,16 @@ def test_finance_dashboard_loads_basics_before_agent_details(monkeypatch):
     assert widget.hero_balance.accessibleDescription() == "12.5000 STGM"
     assert "Real reserve source:" in widget.truth_lbl.text()
     assert "12.5000 STGM" not in widget.truth_lbl.text()
+    assert "One spendable STGM balance" in widget.wallet_scope_lbl.text()
+    assert "Alice's own wallet" not in widget.wallet_scope_lbl.text()
+    assert "sub-wallet" not in widget.wallet_scope_lbl.text()
+    assert "Memory Reputation is separate" in widget.wallet_scope_lbl.text()
+    assert widget.counter_scope_lbl.isHidden()
+    assert "Audit counters are hidden" in widget.counter_scope_lbl.text()
+    assert widget.tile_minted.isHidden()
+    assert widget.tile_spent.isHidden()
+    assert widget.tile_net.isHidden()
+    assert not widget.tile_memory.isHidden()
 
 
 def test_finance_reserve_source_note_never_embeds_wallet_amount():
@@ -79,6 +94,42 @@ def test_finance_reserve_source_note_never_embeds_wallet_amount():
     assert "ledger rows 25,989" in note
     assert "123.4567" not in note
     assert "123.4567 STGM" not in note
+
+
+def test_finance_wallet_scope_note_promises_one_visible_balance():
+    from Applications import sifta_finance as finance
+
+    note = finance.finance_wallet_scope_note(
+        {
+            "canonical_wallet_sum": 1145.147,
+            "alice_wallet": 97.188,
+            "memory_rewards_reputation": 18960.8,
+        }
+    )
+
+    assert "One spendable STGM balance" in note
+    assert "Alice's own wallet" not in note
+    assert "sub-wallet" not in note
+    assert "Memory Reputation is separate" in note
+    assert "not spendable" in note
+
+
+def test_finance_counter_scope_note_explains_lifetime_counters_not_wallets():
+    from Applications import sifta_finance as finance
+
+    note = finance.finance_counter_scope_note(
+        {
+            "minted": 2407.325,
+            "spend": 1.95,
+            "net_supply": 2405.375,
+        }
+    )
+
+    assert "Audit counters are hidden" in note
+    assert "More Financial Data" in note
+    assert "lifetime minted, spent, net supply" in note
+    assert "vaults" in note
+    assert "provenance" in note
 
 
 def test_lazy_market_and_warren_tabs_replace_placeholders(monkeypatch):
@@ -236,6 +287,61 @@ def test_local_spend_agent_id_comes_from_matching_serial_state(tmp_path):
     assert local_spend_agent_id("UNKNOWN", str(state_dir)) == "LOCAL_PREDATOR"
 
 
+def test_finance_receive_identity_uses_local_wallet_state(tmp_path):
+    from Applications.sifta_finance import finance_receive_identity
+
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    (state_dir / "alice.json").write_text(
+        '{"id":"ALICE_M5","homeworld_serial":"GTH4921YP3"}',
+        encoding="utf-8",
+    )
+
+    ident = finance_receive_identity(serial="GTH4921YP3", state_dir=str(state_dir))
+
+    assert ident["agent_id"] == "ALICE_M5"
+    assert ident["homeworld_serial"] == "GTH4921YP3"
+    assert ident["address"] == "stgm://GTH4921YP3/ALICE_M5"
+    assert "does not mint" in ident["truth_note"]
+
+
+def test_finance_send_wallet_transfer_validates_and_delegates():
+    from Applications.sifta_finance import finance_send_wallet_transfer
+
+    calls = []
+
+    def fake_transfer(sender, receiver, amount, memo=""):
+        calls.append((sender, receiver, amount, memo))
+        return {"transfer_id": "TX_TEST"}
+
+    receipt = finance_send_wallet_transfer(
+        sender="alice_m5",
+        receiver="stgm://GTH4921YP3/acer_node",
+        amount="0.25",
+        memo="unit test",
+        transfer_fn=fake_transfer,
+    )
+
+    assert receipt["transfer_id"] == "TX_TEST"
+    assert calls == [("ALICE_M5", "ACER_NODE", 0.25, "unit test")]
+
+    with pytest.raises(ValueError, match="must differ"):
+        finance_send_wallet_transfer(
+            sender="ALICE_M5",
+            receiver="alice_m5",
+            amount=0.1,
+            transfer_fn=fake_transfer,
+        )
+
+    with pytest.raises(ValueError, match="positive and finite"):
+        finance_send_wallet_transfer(
+            sender="ALICE_M5",
+            receiver="ACER_NODE",
+            amount=0,
+            transfer_fn=fake_transfer,
+        )
+
+
 def test_finance_truth_snapshot_uses_canonical_wallet_sum(monkeypatch):
     from Applications import sifta_finance as finance
     from System import stgm_economy
@@ -244,6 +350,7 @@ def test_finance_truth_snapshot_uses_canonical_wallet_sum(monkeypatch):
         def as_dict(self):
             return {
                 "canonical_wallet_sum": 12.5,
+                "canonical_wallet_balances": {"ALICE_M5": 4.25},
                 "net_stgm": 20.0,
                 "spend": 7.5,
                 "canonical_minted": 20.0,
@@ -257,6 +364,8 @@ def test_finance_truth_snapshot_uses_canonical_wallet_sum(monkeypatch):
     snap = finance.finance_truth_snapshot()
 
     assert snap["canonical_wallet_sum"] == 12.5
+    assert snap["machine_wallet_total"] == 12.5
+    assert snap["alice_wallet"] == 4.25
     assert snap["memory_rewards_reputation"] == 99.0
     assert snap["casino_play_tokens"] == 0.0
     assert snap["metabolic"]["stgm_balance"] == 12.5

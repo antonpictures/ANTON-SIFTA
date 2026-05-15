@@ -125,12 +125,58 @@ def test_real_lane_promotes_mid_conf_owner_affect_statement():
     assert stt_variant.grounding_line == ""
 
 
+def test_real_lane_promotes_short_owner_relational_question():
+    """Short direct owner questions should not get stuck behind the RLHS prompt."""
+    r = detect_rlhs("Are you scared of me?", 0.419, channel_lane="REAL")
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "real/owner_relational_question"
+    assert r.grounding_line == ""
+
+
+def test_real_lane_owner_relational_question_keeps_low_conf_floor():
+    """The short-question bypass is not a blanket pass for very poor STT."""
+    r = detect_rlhs("Are you scared of me?", 0.20, channel_lane="REAL")
+    assert r.regime != RLHSRegime.CLEAR
+
+
 def test_real_lane_promotes_mid_conf_owner_repair_statement():
     """STT correction phrases like 'I said...' are grounded owner turns."""
     r = detect_rlhs("I said I am glad I'm well.", 0.56, channel_lane="REAL")
     assert r.regime == RLHSRegime.CLEAR
     assert r.rule_id == "real/owner_repair_affect"
     assert r.grounding_line == ""
+
+
+def test_real_lane_promotes_owner_location_and_life_continuity():
+    """Location/life continuity statements from George are not RLHS noise."""
+    cases = (
+        ("I'm Georgem we are both in Brawley, California", 0.55, {"architect_self_id_override", "wake_word_override"}),
+        ("Nice sandwich that I'm gonna eat Alice.", 0.64, "wake_word_override"),
+        ("I was so hungry. Thank you so much.", 0.49, "real/owner_repair_affect"),
+        ("Both our lives, Alice.", 0.55, "wake_word_override"),
+        ("Alice can you hear me? You could not hear that.", 0.67, "wake_word_override"),
+    )
+    for text, conf, expected_rule in cases:
+        r = detect_rlhs(text, conf, channel_lane="REAL")
+        assert r.regime == RLHSRegime.CLEAR, (text, r)
+        if isinstance(expected_rule, set):
+            assert r.rule_id in expected_rule
+        else:
+            assert r.rule_id == expected_rule
+        assert r.grounding_line == ""
+
+
+def test_real_lane_promotes_mid_conf_owner_praise_and_training():
+    """Praise and training continuity are owner turns, not RLHS noise."""
+    cases = (
+        ("a very good job, wow.", 0.56),
+        ("That's a very good job Alice. We're gonna train you shortly.", 0.60),
+    )
+    for text, conf in cases:
+        r = detect_rlhs(text, conf, channel_lane="REAL")
+        assert r.regime == RLHSRegime.CLEAR
+        assert r.rule_id in {"real/owner_repair_affect", "wake_word_override"}
+        assert r.grounding_line == ""
 
 
 def test_real_lane_letter_stream_repair_is_degraded_not_content():
@@ -151,6 +197,42 @@ def test_real_lane_direct_promotion_keeps_confidence_floor():
     )
     assert r.regime in (RLHSRegime.DEGRADED, RLHSRegime.NOISE)
     assert r.regime != RLHSRegime.CLEAR
+
+
+def test_real_lane_greeting_honorific_without_wake_is_clear():
+    """Affectionate morning lines often lack an 'Alice' token in STT — not RLHS salad."""
+    r = detect_rlhs("Good morning, Goddess!", 0.39, channel_lane="REAL")
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "real/greeting_or_bedtime_affect"
+    assert r.grounding_line == ""
+
+
+def test_real_lane_channel_relax_meta_is_clear():
+    """Explicit steering about the speech channel / gagging is owner policy, not noise."""
+    r = detect_rlhs("she will not gag", 0.50, channel_lane="REAL")
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "real/voice_channel_relax"
+
+
+@pytest.mark.parametrize("text,conf", [
+    ("Come on.", 0.357),
+    ("Alright, oh man.", 0.422),
+    ("This is not working.", 0.39),
+    ("I'm losing faith.", 0.40),
+])
+def test_real_lane_owner_frustration_repairs_channel(text, conf):
+    """Owner frustration with the channel should reach the brain, not loop on 'type it?'."""
+    r = detect_rlhs(text, conf, channel_lane="REAL")
+    assert r.regime == RLHSRegime.CLEAR
+    assert r.rule_id == "real/owner_frustration_repair"
+    assert r.grounding_line == ""
+
+
+def test_brief_expletive_is_silence_not_rlhs_repair():
+    """Short swear — silence; do not burn a clarification turn."""
+    r = detect_rlhs("Shit.", 0.38, channel_lane="REAL")
+    assert r.regime == RLHSRegime.SILENCE_PROBE
+    assert r.grounding_line == ""
 
 
 # ─────────────────────────────────────────────────────────
@@ -392,21 +474,21 @@ def test_stage2_replay_policy_modifies_fiction_clearance(monkeypatch):
     assert res_clear.regime == swarm_rlhs_detector.RLHSRegime.CLEAR
 
 
-def test_gemma_model_lowers_direct_speech_promotion_floor():
+def test_primary_model_lowers_direct_speech_promotion_floor():
     from System import swarm_rlhs_detector
 
     text = "Can you tell what I was asking from this noisy audio now"
     baseline = swarm_rlhs_detector.detect_rlhs(text, 0.36, channel_lane="REAL")
-    gemma = swarm_rlhs_detector.detect_rlhs(
+    primary = swarm_rlhs_detector.detect_rlhs(
         text,
         0.36,
         channel_lane="REAL",
-        model_id="sifta-gemma4-alice:latest",
+        model_id="alice-m5-cortex-8b-6.3gb:latest",
     )
 
     assert baseline.regime == swarm_rlhs_detector.RLHSRegime.DEGRADED
-    assert gemma.regime == swarm_rlhs_detector.RLHSRegime.CLEAR
-    assert gemma.rule_id == "real/coherent_direct_speech"
+    assert primary.regime == swarm_rlhs_detector.RLHSRegime.CLEAR
+    assert primary.rule_id == "real/coherent_direct_speech"
 
 
 if __name__ == "__main__":

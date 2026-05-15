@@ -48,3 +48,25 @@ def test_extract_whatsapp_intent_ignores_addressed_body_without_send_intent(monk
     )
 
     assert intent is None
+
+
+def test_extract_whatsapp_intent_rejects_what_as_contact(monkeypatch) -> None:
+    monkeypatch.setattr(invariants, "_trace", lambda _event: None)
+
+    intent = invariants.extract_whatsapp_intent(
+        "This is George speaking. Can you tell what I'm doing right now on a camera?"
+    )
+
+    assert intent is None
+
+
+def test_extract_whatsapp_intent_rejects_context_teaching_tell_you(monkeypatch) -> None:
+    monkeypatch.setattr(invariants, "_trace", lambda _event: None)
+
+    intent = invariants.extract_whatsapp_intent(
+        "OR MAYBE A PATTERN OF UNDERSTANDING CONTEXT , LIKE I CAN TELL YOU "
+        "HEY NOW PLAYING A YOUTUBE VIDEO ABOUT WHATEVER , AND YOU WRITE IN "
+        "YOUR JOIRNAL"
+    )
+
+    assert intent is None

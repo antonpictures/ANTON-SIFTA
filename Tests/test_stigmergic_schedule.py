@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 
 from System.stigmergic_schedule import (
@@ -121,6 +122,97 @@ def test_schedule_meta_question_is_not_misparsed_as_write():
     assert item == ""
     assert due_ts is None
     assert due == ""
+
+
+def test_natural_phrasing_how_is_my_schedule_hits_deterministic_path(tmp_path):
+    """Architect transcript 2026-05-08: 'How is my schedule looks like?' fell
+    through to the LLM and produced ungrounded narration. The Decide regex must
+    catch this shape so the deterministic loop runs."""
+    schedule = tmp_path / "schedule.jsonl"
+
+    reply_empty = answer_query_for_alice("How is my schedule looks like?", path=schedule)
+
+    assert reply_empty
+    assert "schedule ledger" in reply_empty
+    assert "I do not see" in reply_empty
+
+
+def test_natural_phrasing_what_does_my_schedule_look_like_hits_deterministic_path(tmp_path):
+    schedule = tmp_path / "schedule.jsonl"
+    due = datetime.now().replace(hour=14, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    add_task(
+        "review proposal with Daniel",
+        due_ts=due.timestamp(),
+        due="tomorrow at 2pm",
+        priority=1,
+        path=schedule,
+    )
+
+    reply = answer_query_for_alice("what does my schedule look like today", path=schedule)
+
+    assert "review proposal with Daniel" in reply
+
+
+def test_capability_query_do_you_have_access_to_my_schedule(tmp_path):
+    """Architect transcript 2026-05-08: 'Do you have access to my schedule?'
+    must be answered by the local capability path, not by an LLM that invents
+    'Yes I have access to your schedule data.'"""
+    schedule = tmp_path / "schedule.jsonl"
+
+    reply = answer_query_for_alice("Do you have access to my schedule?", path=schedule)
+
+    assert ".sifta_state/stigmergic_schedule.jsonl" in reply
+    assert "0 pending items" in reply
+
+
+def test_capability_query_can_you_see_my_calendar(tmp_path):
+    schedule = tmp_path / "schedule.jsonl"
+
+    reply = answer_query_for_alice("Can you see my calendar?", path=schedule)
+
+    assert ".sifta_state/stigmergic_schedule.jsonl" in reply
+
+
+def test_query_writes_read_receipt_to_receipts_ledger(tmp_path, monkeypatch):
+    """Decide → Execute → Receipt: a successful read must leave a receipt row
+    so Alice's reply is auditable, not just spoken."""
+    import System.stigmergic_schedule as schedule_mod
+
+    schedule = tmp_path / "schedule.jsonl"
+    receipts = tmp_path / "schedule_receipts.jsonl"
+    monkeypatch.setattr(schedule_mod, "_SCHEDULE_RECEIPTS", receipts)
+
+    reply = answer_query_for_alice("how is my schedule", path=schedule)
+    assert reply
+
+    assert receipts.exists(), "expected schedule read to leave a receipt row"
+    rows = [json.loads(line) for line in receipts.read_text("utf-8").splitlines() if line.strip()]
+    assert rows, "expected at least one receipt row written"
+    last = rows[-1]
+    assert last["operation"] == "query"
+    assert last["ok"] is True
+    assert last["status"] == "NO_MATCH"
+    assert last["kind"] == "lookup"
+    assert last["matched_count"] == 0
+    assert "schedule effector read receipt" in last["truth_note"]
+    assert last["query_excerpt"].startswith("how is my schedule")
+    assert "receipt_hash" in last
+
+
+def test_capability_query_writes_read_receipt(tmp_path, monkeypatch):
+    import System.stigmergic_schedule as schedule_mod
+
+    schedule = tmp_path / "schedule.jsonl"
+    receipts = tmp_path / "schedule_receipts.jsonl"
+    monkeypatch.setattr(schedule_mod, "_SCHEDULE_RECEIPTS", receipts)
+
+    reply = answer_query_for_alice("Do you have access to my schedule?", path=schedule)
+    assert reply
+
+    rows = [json.loads(line) for line in receipts.read_text("utf-8").splitlines() if line.strip()]
+    assert rows
+    assert rows[-1]["status"] == "CAPABILITY_REPLY"
+    assert rows[-1]["kind"] == "capability"
 
 
 def test_reschedule_first_matching_replaces_pending_entry(tmp_path):

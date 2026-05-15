@@ -105,6 +105,31 @@ def test_high_priority_existing_eye_lease_is_respected(tmp_path, monkeypatch):
     assert current["name"] == "MacBook Pro Camera"
 
 
+def test_owner_camera_lock_holds_against_face_policy(tmp_path, monkeypatch):
+    _patch_camera_target(monkeypatch, tmp_path)
+    now = time.time()
+    swarm_camera_target.write_target(
+        name="USB Camera VID:1133 PID:2081",
+        index=0,
+        writer="owner_camera_command",
+        priority=95,
+        lease_s=1800,
+    )
+    _append(
+        tmp_path / "face_detection_events.jsonl",
+        {"ts": now, "faces_detected": 1, "audience": "architect"},
+    )
+
+    world = collect_world_state(state_dir=tmp_path, now=now)
+    decision = decide_attention(world)
+    row = apply_attention_decision(decision, state_dir=tmp_path, write_hardware=True)
+
+    assert decision.target_role == "room_patrol_eye"
+    assert decision.reason == "owner_eye_lock_active"
+    assert row["camera_target"]["writer"] == "owner_camera_command"
+    assert row["camera_target"]["name"] == "USB Camera VID:1133 PID:2081"
+
+
 def test_attention_summary_surfaces_reason_and_evidence(tmp_path, monkeypatch):
     _patch_camera_target(monkeypatch, tmp_path)
     now = time.time()

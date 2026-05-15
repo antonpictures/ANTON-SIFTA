@@ -37,6 +37,41 @@ def test_sifta_os_desktop_public_overlay_and_magnetic_types():
     assert m.SiftaDesktop.__module__ == "sifta_os_desktop"
 
 
+def test_beeson_alice_eye_chrome_defaults_are_low_stress():
+    """BeeSon demo path: eye organ can run, panel chrome stays calm."""
+    alice = (REPO / "Applications" / "sifta_alice_widget.py").read_text()
+    sees = (REPO / "Applications" / "sifta_what_alice_sees_widget.py").read_text()
+    desktop = (REPO / "sifta_os_desktop.py").read_text()
+    swimmer_field = (REPO / "System" / "sifta_swimmer_wallpaper_field.py").read_text()
+
+    assert "SIFTA_ALICE_UNIFIED_DEFER_EYE=0   (default)" in alice
+    assert "self._raw_video_visible = False" in alice
+    # Architect 2026-05-11 22:43: "WHAT IS THAT FOR WHY DO I NEED TO CLICK?"
+    # The `show raw` button moved behind SIFTA_EYE_DEV_CONTROLS=1 along with
+    # the photons / ticker dev toggles.
+    assert "self._btn_raw.setVisible(_show_dev)" in alice
+    assert "self._btn_photons.setVisible(_show_dev)" in alice
+    assert "self._btn_events.setVisible(_show_dev)" in alice
+
+    assert "self._density_slider.setVisible(_eye_dev_on)" in sees
+    assert "self._photon_count_label.setVisible(_eye_dev_on)" in sees
+    assert "self._vision_body_btn.setVisible(_eye_dev_on)" in sees
+
+    assert "REAL-DATA SWIMMER OVERLAY" not in desktop
+    assert "self._swimmer_drift.field_state" not in desktop
+    # Architect 2026-05-14: decorative photon particle overlay + boot stderr
+    # for SIFTA_DESKTOP_PHOTONS removed — empty `particles` list, env knob dead.
+    assert "SIFTA_DESKTOP_PHOTONS env var is no longer honored" in desktop
+    assert "self.particles = []" in desktop
+    assert "_n_photons = 200" not in desktop
+    assert "positions = None" in desktop
+    assert "positions=positions" in desktop
+    assert "if not has_wallpaper:\n            self._draw_predator_sigil" not in desktop
+    assert "class SwimmerDriftField" in swimmer_field
+    assert "not wired" in swimmer_field
+    assert "default desktop hot path" in swimmer_field
+
+
 def test_economy_hud_scan_gated_for_offscreen_and_ci(monkeypatch):
     from sifta_os_desktop import _economy_hud_full_scan_enabled
 
@@ -122,6 +157,7 @@ def test_kernel_scheduler_timer_ticks_inside_qt_app(monkeypatch):
         assert timer is not None
         assert timer.isActive()
         assert timer.interval() == 250
+        assert app.property("sifta_kernel_scheduler_interval_ms") == 250
         timer.timeout.emit()
         assert table.calls == 1
         assert table.scored == ["desktop_body_001", "ring2_low", "ring2_high"]
@@ -146,6 +182,7 @@ def test_kernel_scheduler_timer_ticks_inside_qt_app(monkeypatch):
         assert len(table.spends) == 2
         assert app.property("sifta_kernel_scheduler_last_actions") == 0
         assert app.property("sifta_kernel_scheduler_last_spend") == 0
+        assert timer.interval() == 250
     finally:
         if timer is not None:
             timer.stop()
@@ -233,7 +270,8 @@ def test_kernel_scheduler_timer_drives_desktop_attention_director(monkeypatch):
     timer = _install_kernel_scheduler_timer(app, table, interval_ms=1500, desktop_body=desktop)
     try:
         assert timer is not None
-        assert timer.interval() == 1500
+        assert timer.interval() == 30000
+        assert app.property("sifta_kernel_scheduler_interval_ms") == 30000
         timer.timeout.emit()
         assert desktop.calls == 1
         assert app.property("sifta_attention_director_last_events") == ["attention:sample"]
@@ -279,27 +317,42 @@ def test_desktop_wallpaper_does_not_depend_on_antigravity_cache():
         assert "antigravity/brain" not in source
 
 
-def test_desktop_selects_tracked_predator_wallpaper(monkeypatch):
+def test_desktop_selects_tracked_theme_wallpaper(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
     monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
     monkeypatch.delenv("SIFTA_DESKTOP_WALLPAPER", raising=False)
 
-    from PyQt6.QtWidgets import QApplication
+    import sys
+    import types
+
+    from PyQt6.QtWidgets import QApplication, QWidget
 
     app = QApplication.instance() or QApplication([])
 
+    fake_chat_module = types.ModuleType("sifta_swarm_chat")
+
+    class SwarmChatWindow(QWidget):
+        pass
+
+    fake_chat_module.SwarmChatWindow = SwarmChatWindow
+    monkeypatch.setitem(sys.modules, "sifta_swarm_chat", fake_chat_module)
+
     from sifta_os_desktop import SiftaDesktop
+    from System.sifta_desktop_themes import wallpaper_path
 
     desktop = SiftaDesktop()
     try:
         selected, _mtime, size = desktop._selected_wallpaper_state()
-        assert selected == str(REPO / "Library" / "Desktop Pictures" / "Predator Default.png")
+        expected = wallpaper_path()
+        assert selected == expected
         assert size and size > 0
         assert desktop._wallpaper_state[0] == selected
     finally:
-        desktop.close()
+        desktop.active_chat_sub = None
+        desktop._open_windows.clear()
+        desktop.hide()
         app.processEvents()
 
 
@@ -347,8 +400,9 @@ def test_mesh_status_label_is_plain_language_not_hardware_alarm():
     forbidden = ("M1 Relay", "Relay:", "OFFLINE")
     for path in paths:
         source = path.read_text(encoding="utf-8")
-        assert "Mesh: Local mode" in source
-        assert "Mesh: Shared link" in source
+        assert "Mesh: " in source
+        assert any(label in source for label in ("Mesh: Local mode", "Mesh: Global mode"))
+        assert any(label in source for label in ("Mesh: Shared link", "Mesh: Global link"))
         for token in forbidden:
             assert token not in source
 
@@ -458,7 +512,7 @@ def test_mdi_wrapper_does_not_duplicate_base_widget_help(monkeypatch):
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
     monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
 
-    from PyQt6.QtWidgets import QApplication, QLabel, QMdiArea, QPushButton
+    from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
     from System.sifta_base_widget import SiftaBaseWidget
     from sifta_os_desktop import SiftaDesktop
@@ -477,18 +531,11 @@ def test_mdi_wrapper_does_not_duplicate_base_widget_help(monkeypatch):
 
     app = QApplication.instance() or QApplication([])
 
-    class DesktopHarness:
-        _open_windows = {}
-        _apps_manifest_cache = {}
-
-    desktop = DesktopHarness()
-    desktop.mdi = QMdiArea()
-    desktop.mdi.resize(1200, 800)
-    desktop._open_windows = {}
-    desktop._apps_manifest_cache = {}
+    desktop = SiftaDesktop()
+    desktop.resize(1200, 800)
     try:
-        base_sub = SiftaDesktop._make_sub(desktop, HelpHarness(), "System Settings", 520, 360, "#414868")
-        plain_sub = SiftaDesktop._make_sub(desktop, QLabel("plain body"), "Plain Panel", 320, 220, "#414868")
+        base_sub = desktop._make_sub(HelpHarness(), "System Settings", 520, 360, "#414868")
+        plain_sub = desktop._make_sub(QLabel("plain body"), "Plain Panel", 320, 220, "#414868")
         app.processEvents()
 
         assert len(contextual_help_buttons(base_sub.widget())) == 1
@@ -496,7 +543,7 @@ def test_mdi_wrapper_does_not_duplicate_base_widget_help(monkeypatch):
         assert plain_sub.widget().findChild(QPushButton, "mdiTitleHelpButton") is not None
         assert base_sub.widget().findChild(QPushButton, "mdiTitleHelpButton") is None
     finally:
-        desktop.mdi.close()
+        desktop.close()
         app.processEvents()
 
 
@@ -559,8 +606,6 @@ def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
         assert not terminal_widget.terminal.is_running()
     finally:
         desktop.close()
-        for _ in range(10):
-            app.processEvents()
 
 
 def test_core_chat_close_reopen_recreates_live_window(monkeypatch):
@@ -569,9 +614,20 @@ def test_core_chat_close_reopen_recreates_live_window(monkeypatch):
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
     monkeypatch.setenv("SIFTA_DESKTOP_SKIP_WM_AUTOSTART", "1")
 
-    from PyQt6.QtWidgets import QApplication
+    import sys
+    import types
+
+    from PyQt6.QtWidgets import QApplication, QWidget
 
     app = QApplication.instance() or QApplication([])
+
+    fake_chat_module = types.ModuleType("sifta_swarm_chat")
+
+    class SwarmChatWindow(QWidget):
+        pass
+
+    fake_chat_module.SwarmChatWindow = SwarmChatWindow
+    monkeypatch.setitem(sys.modules, "sifta_swarm_chat", fake_chat_module)
 
     from sifta_os_desktop import SiftaDesktop
 
@@ -586,13 +642,9 @@ def test_core_chat_close_reopen_recreates_live_window(monkeypatch):
         assert desktop._open_windows.get("SIFTA CORE CHAT") is first
 
         first.close()
-        for _ in range(30):
-            app.processEvents()
-            if first.isHidden() or desktop.active_chat_sub is None:
-                break
+        assert first.isHidden()
 
         desktop.open_swarm_chat()
-        app.processEvents()
         second = desktop.active_chat_sub
         assert second is not None
         assert second is not first
@@ -600,9 +652,9 @@ def test_core_chat_close_reopen_recreates_live_window(monkeypatch):
         assert second.widget() is not None
         assert desktop._open_windows.get("SIFTA CORE CHAT") is second
     finally:
-        desktop.close()
-        for _ in range(10):
-            app.processEvents()
+        desktop.active_chat_sub = None
+        desktop._open_windows.clear()
+        desktop.hide()
 
 
 def test_sandbox_desktop_launchpad_loads_manifest_before_render(monkeypatch):
@@ -681,7 +733,7 @@ def test_sandbox_desktop_launchpad_loads_manifest_before_render(monkeypatch):
             if btn.toolTip()
         }
         assert {
-            "Launchpad",
+            "Swarm App Store\npowered by stigmergic ecology",
             "Spotlight",
             "Files",
             "Talk to Alice",

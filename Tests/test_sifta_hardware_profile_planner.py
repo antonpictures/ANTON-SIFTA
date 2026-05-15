@@ -1,14 +1,16 @@
 from System.sifta_hardware_profile_planner import HardwareFacts, plan_for_hardware
 
 
-def test_m5_foundry_plan_keeps_gemma4_primary():
+def test_apple_silicon_24gb_plan_keeps_gemma4_primary():
     plan = plan_for_hardware(
         HardwareFacts(os_name="Darwin", machine="arm64", memory_gb=24, cpu_brand="Apple M5")
     )
 
-    assert plan.hardware_role == "M5_FOUNDRY"
-    assert any(slot.name == "sifta-gemma4-alice:latest" for slot in plan.local_models)
-    assert not any(slot.name == "sifta-gemma4-alice:latest" for slot in plan.skipped_models)
+    assert plan.hardware_role == "APPLE_SILICON_24GB_LOCAL_BODY"
+    assert "not a specific-chip requirement" in plan.summary
+    assert any(slot.name == "alice-m5-cortex-8b-6.3gb:latest" for slot in plan.local_models)
+    assert not any(slot.name == "alice-m1-scout-2.3b-2.7gb:latest" for slot in plan.local_models)
+    assert not any(slot.name == "alice-m5-cortex-8b-6.3gb:latest" for slot in plan.skipped_models)
 
 
 def test_mac_8gb_sentry_skips_gemma4():
@@ -17,8 +19,12 @@ def test_mac_8gb_sentry_skips_gemma4():
     )
 
     assert plan.hardware_role == "MAC_SENTRY"
-    assert any(slot.name == "qwen3.5:4b" for slot in plan.local_models)
-    assert any(slot.name == "sifta-gemma4-alice:latest" for slot in plan.skipped_models)
+    assert any(slot.name == "alice-m1-cortex-4.5b-3.4gb:latest" for slot in plan.local_models)
+    assert any(slot.name == "alice-m1-scout-2.3b-2.7gb:latest" for slot in plan.local_models)
+    assert any(slot.name == "alice-m5-cortex-8b-6.3gb:latest" for slot in plan.skipped_models)
+    assert any(slot.name == "sifta-classifier-c1-3.1b-6.2gb:latest" for slot in plan.skipped_models)
+    assert any("ollama pull alice-m1-cortex-4.5b-3.4gb:latest" == cmd for cmd in plan.install_commands)
+    assert any("ollama pull alice-m1-scout-2.3b-2.7gb:latest" == cmd for cmd in plan.install_commands)
 
 
 def test_pi5_edge_scout_uses_receipts_and_optional_gguf():

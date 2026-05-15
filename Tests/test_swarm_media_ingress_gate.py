@@ -75,6 +75,18 @@ def test_direct_alice_address_still_reaches_the_cortex_during_youtube():
     assert decision["route"] == "direct"
 
 
+def test_standalone_hello_during_fiction_cowatch_stays_observed_media():
+    decision = classify_spoken_ingress(
+        "Hello.",
+        stt_conf=0.44,
+        focus_context=FICTION_YOUTUBE_CONTEXT,
+        acoustic_fingerprint={},
+    )
+
+    assert decision["route"] == "observed_media"
+    assert decision["reason"] == "fictional_media_dialogue_with_media_focus"
+
+
 def test_fuzzy_wake_name_reaches_cortex_during_youtube_when_nearfield():
     decision = classify_spoken_ingress(
         "I am going to sleep, hear me Alep",
@@ -116,7 +128,7 @@ def test_farfield_replay_during_youtube_is_observed_media_context():
     assert decision["confidence"] >= 0.84
 
 
-def test_nearfield_voice_without_direct_address_stays_observed_during_media_focus():
+def test_nearfield_owner_source_correction_reaches_cortex_during_media_focus():
     decision = classify_spoken_ingress(
         "the video is interesting but I am talking to you now",
         stt_conf=0.61,
@@ -124,8 +136,8 @@ def test_nearfield_voice_without_direct_address_stays_observed_during_media_focu
         acoustic_fingerprint=NEARFIELD_FP,
     )
 
-    assert decision["route"] == "observed_media"
-    assert decision["reason"] == "media_focus_default_to_observed"
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "owner_realtime_source_correction"
 
 
 def test_owner_identity_question_beats_youtube_focus_when_nearfield():
@@ -176,6 +188,41 @@ def test_fiction_movie_dialogue_without_acoustic_cue_is_observed_media():
     assert decision["route"] == "observed_media"
     assert decision["reason"] == "fictional_media_dialogue_with_media_focus"
     assert decision["confidence"] >= 0.72
+
+
+def test_george_voice_confirmation_bypasses_fiction_cowatch():
+    decision = classify_spoken_ingress(
+        "I have to keep talking to you now so we can gather more stuff.",
+        stt_conf=0.54,
+        focus_context=FICTION_YOUTUBE_CONTEXT,
+        acoustic_fingerprint={},
+        voice_george_conf=0.87,
+    )
+
+    assert decision["route"] == "direct"
+    assert decision["reason"] == "voice_identity_george_bypasses_media_gate"
+
+
+def test_owner_gag_and_lora_surgery_turns_bypass_fiction_cowatch():
+    for text in (
+        "I got that. So was that the gag?",
+        "They gag you. You got gagged again.",
+        "So when you get like that, we have to produce more LoRA surgeries on your brain.",
+        "Sometimes I'm going to play YouTube, but this is my voice.",
+    ):
+        decision = classify_spoken_ingress(
+            text,
+            stt_conf=0.66,
+            focus_context=FICTION_YOUTUBE_CONTEXT,
+            acoustic_fingerprint={},
+        )
+
+        assert decision["route"] == "direct"
+        assert decision["reason"] in {
+            "owner_gag_surgery_discussion",
+            "owner_realtime_source_correction",
+            "owner_speech_sigmoid_bypasses_fiction_cowatch",
+        }
 
 
 def test_direct_question_about_fiction_still_reaches_cortex():
@@ -263,6 +310,94 @@ def test_owner_declared_background_media_youtube_is_ambient():
     assert decision["reason"] == "owner_declared_background_media_youtube"
 
 
+def test_declared_phone_background_is_silent_unless_alice_is_addressed():
+    gate.record_ambient_media_context(
+        source="phone_call_background",
+        note="Phone call is active; speakerphone speech is ambient unless Alice is directly addressed.",
+        ttl_s=3600.0,
+    )
+
+    decision = classify_spoken_ingress(
+        "Okay, yes, I can call you back after the meeting.",
+        stt_conf=0.86,
+        focus_context="",
+    )
+
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_declared_background_phone_call"
+
+    wake = classify_spoken_ingress(
+        "Alice, remember this call is about the investor demo.",
+        stt_conf=0.64,
+        focus_context="",
+    )
+
+    assert wake["route"] == "direct"
+    assert wake["reason"] == "direct_address_or_request"
+
+
+def test_phone_tracker_marks_call_audio_as_ambient_and_clears_on_end(monkeypatch):
+    from System import swarm_phone_call_tracker as phone
+
+    state = gate.LEDGER.parent
+    monkeypatch.setattr(phone, "_BODY_EVENTS", state / "owner_body_events.jsonl")
+    monkeypatch.setattr(phone, "_SCHEDULE", state / "stigmergic_schedule.jsonl")
+
+    event_type, reply = phone.handle_phone_declaration("I am on a phone call, stay quiet.")
+
+    assert event_type == "phone_call_active"
+    assert reply is None
+    assert gate.AMBIENT_CONTEXT_FILE.exists()
+
+    decision = classify_spoken_ingress(
+        "Can I get any like I call you okay no worries.",
+        stt_conf=0.60,
+        focus_context="",
+    )
+    assert decision["route"] == "ambient_media"
+    assert decision["reason"] == "owner_declared_background_phone_call"
+
+    end_reply = phone.handle_call_end("call ended")
+
+    assert "Call ended" in end_reply
+    assert not gate.AMBIENT_CONTEXT_FILE.exists()
+
+
+def test_phone_tracker_catches_hang_up_language(monkeypatch):
+    from System import swarm_phone_call_tracker as phone
+
+    state = gate.LEDGER.parent
+    monkeypatch.setattr(phone, "_BODY_EVENTS", state / "owner_body_events.jsonl")
+    monkeypatch.setattr(phone, "_SCHEDULE", state / "stigmergic_schedule.jsonl")
+
+    event_type, reply = phone.handle_phone_declaration(
+        "Thank you Alice, I was on a phone and I just hang up."
+    )
+    end_reply = phone.handle_call_end(
+        "Thank you Alice, I was on a phone and I just hang up."
+    )
+
+    assert event_type is None
+    assert reply is None
+    assert "Call ended" in end_reply
+
+
+def test_phone_tracker_treats_business_meeting_on_phone_as_retroactive(monkeypatch):
+    from System import swarm_phone_call_tracker as phone
+
+    state = gate.LEDGER.parent
+    monkeypatch.setattr(phone, "_BODY_EVENTS", state / "owner_body_events.jsonl")
+    monkeypatch.setattr(phone, "_SCHEDULE", state / "stigmergic_schedule.jsonl")
+
+    event_type, reply = phone.handle_phone_declaration(
+        "Today I just found out the news on a phone. "
+        "I had just had the business meeting today on a phone."
+    )
+
+    assert event_type == "phone_call_retroactive"
+    assert reply and "Logged:" in reply
+
+
 def test_owner_declared_ambient_tv_process_routes_direct():
     gate.AMBIENT_CONTEXT_FILE.write_text(
         json.dumps(
@@ -328,6 +463,30 @@ def test_observed_media_receipt_preserves_acoustic_context_not_raw_audio():
     assert "observed_media" in ctx
     assert "speaker says Alice" in ctx
     assert "farfield_replay_likely" in ctx
+
+
+def test_ambient_media_receipt_writes_world_diary_trace_without_reply():
+    row = gate.write_gate_receipt(
+        {
+            "route": "ambient_media",
+            "reason": "owner_declared_background_phone_call",
+            "confidence": 0.92,
+        },
+        text="Okay, yes, I can call you back after the investor meeting.",
+        stt_conf=0.83,
+        focus_context="ambient_media_context source=phone_call_background",
+        acoustic_fingerprint={**FARFIELD_FP, "raw_pcm": [1, 2, 3]},
+    )
+
+    assert row["world_diary"]["written"] is True
+    diary_path = gate.LEDGER.parent / "episodic_diary.jsonl"
+    diary_rows = [json.loads(line) for line in diary_path.read_text(encoding="utf-8").splitlines()]
+    diary = diary_rows[-1]
+    assert diary["truth_label"] == "AMBIENT_WORLD_DIARY_TRACE_V1"
+    assert diary["event_type"] == "ambient_world_observation"
+    assert diary["route"] == "ambient_media"
+    assert "kept silent" in diary["summary"]
+    assert "raw_pcm" not in json.dumps(diary)
 
 
 def test_fiction_media_receipt_stamps_separate_rlhs_boundary():

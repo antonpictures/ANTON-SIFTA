@@ -298,7 +298,7 @@ def test_day_memory_fallback_can_use_stigtime_receipts(tmp_path, monkeypatch):
         actor="alice_talk",
         previous="idle",
         new="thinking",
-        context="cortex=sifta-gemma4-alice",
+        context="cortex=alice-m5-cortex-8b-6.3gb",
     )
     ctx = OverRefusalContext(
         prior_user_text="Alice, what were you doing today?",

@@ -4,6 +4,7 @@ from System.canonical_schemas import BODY_SCHEMA, LEDGER_SCHEMAS
 from System.swarm_stigmergic_video_resolution import (
     LEDGER_NAME,
     SwarmStigmergicResolution,
+    cli_playbook_text,
     proof_of_property,
 )
 
@@ -104,3 +105,10 @@ def test_log_latest_visual_stigmergy_appends_summary(tmp_path):
 
 def test_proof_of_property_is_green():
     assert all(proof_of_property().values())
+
+
+def test_cli_playbook_mentions_docling_stack():
+    text = cli_playbook_text()
+    assert "docling" in text.casefold()
+    assert "yt-dlp" in text.casefold()
+    assert "ibm.biz/BdpSA8" in text

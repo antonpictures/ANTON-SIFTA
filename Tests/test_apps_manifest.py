@@ -8,6 +8,7 @@ DESKTOP = REPO / ".simulation_publicpush_sandbox" / "sifta_os_desktop.py"
 
 ALLOWED_CATEGORIES = {
     "Alice",
+    "Biology",
     "System Settings",
     "Utilities",
     "Network",
@@ -28,6 +29,8 @@ def test_apps_manifest_is_valid_and_points_to_existing_apps():
     apps = _manifest()
     assert apps, "apps_manifest.json should not be empty"
     for app_name, entry in apps.items():
+        if str(app_name).startswith("_"):
+            continue
         category = entry.get("category")
         assert category in ALLOWED_CATEGORIES, f"{app_name}: bad category {category!r}"
 
@@ -54,11 +57,30 @@ def test_body_and_settings_apps_live_in_macos_style_buckets():
         "Conversation History": "Network",
         "Stigmergic Library": "Utilities",
         "App Manager": "Utilities",
+        "Finance": "Economy",
+        "STGM Immune Economy": "Economy",
+        "Stigmerobotics": "Developer",
         "Pheromone Symphony (Generative Music)": "Creative",
         "Stigmergic Video Poker": "Games",
     }
     for app_name, category in expected.items():
         assert apps[app_name]["category"] == category
+
+
+def test_stigmerobotics_is_single_active_os_app():
+    apps = _manifest()
+    active = [
+        name
+        for name, entry in apps.items()
+        if "stigmerobotics" in (name + " " + json.dumps(entry)).lower()
+        and not entry.get("_retired")
+        and not entry.get("hidden")
+    ]
+    assert active == ["Stigmerobotics"]
+    assert apps["Stigmerobotics"]["entry_point"] == "Applications/sifta_stigmerobotics_widget.py"
+    assert apps["Stigmerobotics"]["widget_class"] == "StigmeroboticsWidget"
+    assert apps["SIFTA Tournament Briefing"].get("_retired") is True
+    assert apps["SIFTA Tournament Briefing"].get("hidden") is True
 
 
 def test_manifest_rejects_generic_macos_clone_shells():
@@ -97,6 +119,7 @@ def test_desktop_routes_all_manifest_categories_to_real_menus():
         "Creative ▶",
         "Simulations ▶",
         "Games ▶",
+        "Biology ▶",
         "Developer ▶",
         "Economy ▶",
     } == labels
@@ -108,6 +131,8 @@ def test_desktop_routes_all_manifest_categories_to_real_menus():
         "IDE Control Panel": "Developer",
         "Stigmergic Video Poker": "Games",
         "Network Control Center": "Network",
+        "Finance": "Economy",
+        "STGM Immune Economy": "Economy",
     }
     for app_name, menu_name in expected_routes.items():
         assert normalize_category(app_name, apps[app_name]) == menu_name

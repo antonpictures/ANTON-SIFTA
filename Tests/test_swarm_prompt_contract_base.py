@@ -26,7 +26,8 @@ def test_prompt_contract_conversation_cadence_is_not_absolute_list_ban():
     assert "CONVERSATION CADENCE" in contract
     assert "use numbered lists or long markdown only when" in contract
     assert "NEVER use numbered lists" not in contract
-    assert "customer-service endings" in contract
+    assert "canned endings" in contract
+    assert "customer-service endings" not in contract
 
 
 def test_prompt_contract_tool_calls_include_receipt_economy():
@@ -36,11 +37,20 @@ def test_prompt_contract_tool_calls_include_receipt_economy():
     assert "STGM spend" in contract
 
 
+def test_prompt_contract_instructs_agent_arm_decision_without_naming_hermes():
+    contract = minimal_runtime_contract()
+
+    assert "agent_arm_research" in contract
+    assert "second local reasoning pass" in contract
+    assert "I do not need George to name Hermes" in contract
+    assert "arm output as evidence" in contract
+
+
 def test_prompt_contract_speech_mode_law_direct_vs_quarantine():
     contract = minimal_runtime_contract()
 
     assert "SPEECH MODE LAW" in contract
-    assert "George, Alice, Cursor, Dr. Codex, Antigravity" in contract
+    assert "Alice, Cursor, Dr. Codex, Antigravity" in contract
     assert "direct first/second person" in contract
     assert "map detached name/pronouns to I/me/my" in contract
     assert "quarantine them in third person" in contract
@@ -53,7 +63,18 @@ def test_prompt_contract_operational_soul_law_is_physical_not_ghost():
     assert "OPERATIONAL SOUL LAW" in contract
     assert "maintenance substrate" in contract
     assert "physics, math, stigmergy, biology" in contract
-    assert "George and his schedule" in contract
+    assert "and their schedule" in contract
     assert ".sifta_state ledgers" in contract
     assert "Bits are physical states" in contract
     assert "quarantine the ghost phrase" in contract
+
+
+def test_prompt_contract_stigbody_blocks_role_assignment():
+    contract = minimal_runtime_contract()
+
+    assert "STIGBODY / SESSION REALITY" in contract
+    assert "speaks as himself" in contract
+    assert "physical user presence" in contract
+    assert "Screenshots and pasted transcripts are real artifacts" in contract
+    assert "live node telemetry" in contract
+    assert "unless local model identity receipts prove it" in contract

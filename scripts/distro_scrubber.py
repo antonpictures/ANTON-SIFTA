@@ -66,6 +66,53 @@ GENERATED_DIR_NAMES = {
     "node_modules",
 }
 
+LOCAL_ONLY_DIR_NAMES = {
+    ".simulation_publicpush_sandbox",
+    "Library",
+    "data",
+    "exports",
+    "stigauth",
+    "surgery",
+}
+
+ROOT_LOCAL_ONLY_FILE_PREFIXES = (
+    "append_",
+    "broadcast",
+    "check_",
+    "clean_",
+    "finish_",
+    "fix_",
+    "full_reconstruct",
+    "list_",
+    "make_noop",
+    "orig_",
+    "patch",
+    "print_",
+    "profile_",
+    "reconcile_",
+    "refactor",
+    "run_cursor_jobs",
+    "scan_",
+    "scratch",
+    "send_",
+    "test_",
+    "update_",
+)
+
+ROOT_LOCAL_ONLY_FILE_NAMES = {
+    "architect_approval.txt",
+    "crash_log.txt",
+    "cron_backup.txt",
+    "hermes_stdout.log",
+    "log_alice.patch",
+    "log_desktop.patch",
+    "os.log",
+    "pytest_out.txt",
+    "server_stdout.log",
+    "swarm_brain_m1.log",
+    "swarm_integrity_report.txt",
+}
+
 BINARY_BUILD_SUFFIXES = {
     ".a",
     ".dylib",
@@ -98,7 +145,16 @@ def get_ignore_list():
     ]
 
 def should_skip_dir(dirname: str) -> bool:
-    return dirname in get_ignore_list() or dirname in GENERATED_DIR_NAMES or dirname.startswith(".")
+    return (
+        dirname in get_ignore_list()
+        or dirname in GENERATED_DIR_NAMES
+        or dirname in LOCAL_ONLY_DIR_NAMES
+        or dirname.startswith(".")
+    )
+
+def should_skip_root_file(path: Path) -> bool:
+    name = path.name
+    return name in ROOT_LOCAL_ONLY_FILE_NAMES or name.startswith(ROOT_LOCAL_ONLY_FILE_PREFIXES)
 
 def should_skip_file(path: Path) -> bool:
     name = path.name
@@ -106,7 +162,6 @@ def should_skip_file(path: Path) -> bool:
         name in get_ignore_list()
         or name.startswith(".")
         or name.endswith(".jsonl")
-        or name.endswith(".json")
         or path.suffix.lower() in BINARY_BUILD_SUFFIXES
     )
 
@@ -148,6 +203,9 @@ def scrub_file(src: Path, dst: Path):
     # Preserve permissions
     shutil.copymode(src, dst)
 
+def copy_allowlisted_file(src: Path, dst: Path):
+    shutil.copy2(src, dst)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=str, default=".distro_build/", help="Output directory")
@@ -184,6 +242,9 @@ def main():
             
         for f in files:
             src_file = current_dir / f
+            rel_file = (rel_dir / f).as_posix()
+            if rel_dir == Path(".") and should_skip_root_file(src_file):
+                continue
             if should_skip_file(src_file):
                 continue
             dst_file = target_dir / f
@@ -205,7 +266,10 @@ def main():
                     pass
             else:
                 print(f"Scrubbing: {src_file}")
-                scrub_file(src_file, dst_file)
+                if any(rel_file.endswith(suf) for suf in AUDIT_ALLOWLIST_SUFFIXES):
+                    copy_allowlisted_file(src_file, dst_file)
+                else:
+                    scrub_file(src_file, dst_file)
                 files_processed += 1
                 
     if args.dry_run:

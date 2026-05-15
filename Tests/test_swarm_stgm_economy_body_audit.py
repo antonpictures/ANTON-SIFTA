@@ -95,3 +95,30 @@ def test_markdown_report_contains_grok_unknowns(tmp_path):
     assert "SIFTA STGM Economy Body Audit" in report
     assert "Grok Unknowns" in report
     assert "ALICE_M5" in report
+
+
+def test_audit_rolls_retired_alice_alias_into_m5_body(tmp_path):
+    repair_log = tmp_path / "repair_log.jsonl"
+    state_dir = tmp_path / ".sifta_state"
+    state_dir.mkdir()
+    _append(repair_log, {"tx_type": "STGM_MINT", "agent_id": "ALICE_M5", "amount": 2.0})
+    _append(
+        repair_log,
+        {
+            "event": "INFERENCE_BORROW",
+            "borrower_id": "alice",
+            "lender_ip": "EVENT_CLOCK",
+            "fee_stgm": 0.25,
+        },
+    )
+
+    audit = audit_stgm_economy(
+        repair_log=repair_log,
+        state_dir=state_dir,
+        memory_rewards=state_dir / "stgm_memory_rewards.jsonl",
+    )
+
+    alice = next(p for p in audit["positive_party_profitability"] if p["party"] == "ALICE_M5")
+    assert alice["net"] == 1.75
+    assert audit["unhealthy_negative_parties"] == []
+    assert "all_non_spend_only_parties_solvent_under_alias_map" in audit["warnings"]

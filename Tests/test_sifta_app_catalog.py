@@ -21,6 +21,8 @@ def test_manifest_projects_into_macos_style_categories():
     assert normalize_category("System Settings", manifest["System Settings"]) == "System Settings"
     assert normalize_category("Biological Dashboard", manifest["Biological Dashboard"]) == "System Settings"
     assert normalize_category("Network Control Center", manifest["Network Control Center"]) == "Network"
+    assert normalize_category("Finance", manifest["Finance"]) == "Economy"
+    assert normalize_category("STGM Immune Economy", manifest["STGM Immune Economy"]) == "Economy"
     assert normalize_category("SIFTA File Navigator", manifest["SIFTA File Navigator"]) == "Utilities"
 
     grouped = group_manifest(manifest)
@@ -44,4 +46,3 @@ def test_system_settings_snapshot_is_lightweight_and_structured():
     assert snap["apps_total"] >= 1
     assert snap["state_mb"] >= 0.0
     assert snap["iris_mb"] >= 0.0
-

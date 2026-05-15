@@ -77,7 +77,7 @@ def test_summary_for_alice_surfaces_recent_boundaries(tmp_path: Path, monkeypatc
         actor="alice_talk",
         previous="idle",
         new="thinking",
-        context="cortex=sifta-gemma4-alice",
+        context="cortex=alice-m5-cortex-8b-6.3gb",
     )
     assert row is not None
 
@@ -86,7 +86,7 @@ def test_summary_for_alice_surfaces_recent_boundaries(tmp_path: Path, monkeypatc
     assert "STIGTIME ACTION CONTINUITY" in summary
     assert "recent_boundaries=1" in summary
     assert "1m ago: alice_talk shifted idle -> thinking." in summary
-    assert "cortex=sifta-gemma4-alice" in summary
+    assert "cortex=alice-m5-cortex-8b-6.3gb" in summary
     assert "do not say you lack past-24h memory" in summary
 
 

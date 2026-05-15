@@ -42,7 +42,7 @@ def test_identity_life_packet_separates_three_lanes(tmp_path):
                 "ts": 1000.0,
                 "stigtime_out": "idle",
                 "stigtime_in": "thinking",
-                "context": "cortex=sifta-gemma4-alice",
+                "context": "cortex=alice-m5-cortex-8b-6.3gb",
             }
         ],
     )
@@ -54,7 +54,7 @@ def test_identity_life_packet_separates_three_lanes(tmp_path):
     packet = build_identity_life_packet(state_dir=tmp_path, now=1060.0)
 
     assert packet["truth_label"] == "IDENTITY_LIFE_GROUNDING_V1"
-    assert any("desk_work" in item for item in packet["life_lanes"]["george_life"])
+    assert any("desk_work" in item for item in packet["life_lanes"]["owner_life"])
     assert any("idle -> thinking" in item for item in packet["life_lanes"]["alice_life"])
     assert any("Colombia history" in item for item in packet["life_lanes"]["shared_agenda"])
 
@@ -62,7 +62,7 @@ def test_identity_life_packet_separates_three_lanes(tmp_path):
 def test_prompt_forbids_generic_owner_language(tmp_path):
     prompt = format_identity_life_grounding_for_prompt(state_dir=tmp_path)
 
-    assert "Use his name when answering him directly" in prompt
+    assert "prefer" in prompt and "direct second person" in prompt
     assert "stranger labels" in prompt
     assert "'an individual'" not in prompt
     assert "If asked 'who am I?', answer from owner genesis first" in prompt

@@ -14,7 +14,7 @@ from System.swarm_retention_policy import (
 def test_retention_classifies_protected_receipts_as_compliance() -> None:
     assert retention_class_for_ledger(".sifta_state/work_receipts.jsonl") == RETENTION_COMPLIANCE
     assert retention_class_for_ledger("owner_body_events.jsonl") == RETENTION_COMPLIANCE
-    assert compaction_allowed("persona_identity.json") is False
+    assert compaction_allowed("identity_manifest.json") is False
 
 
 def test_retention_classifies_field_rows_as_operational() -> None:

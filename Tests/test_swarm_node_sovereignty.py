@@ -50,13 +50,13 @@ def test_ollama_list_parser_keeps_tags_only():
     output = """
 NAME                                ID              SIZE      MODIFIED
 qwen3.5:0.8b                        abc123          800 MB    1 hour ago
-qwen3.5:2b                          def456          2.7 GB    1 hour ago
+alice-m1-scout-2.3b-2.7gb:latest                          def456          2.7 GB    1 hour ago
 huihui_ai/gemma-4-abliterated:latest 999999         9.6 GB    yesterday
 """
 
     assert parse_ollama_tags(output) == (
         "qwen3.5:0.8b",
-        "qwen3.5:2b",
+        "alice-m1-scout-2.3b-2.7gb:latest",
         "huihui_ai/gemma-4-abliterated:latest",
     )
 
@@ -64,7 +64,7 @@ huihui_ai/gemma-4-abliterated:latest 999999         9.6 GB    yesterday
 def test_m1_web_host_selects_tiny_model_and_blocks_gemma_override():
     profile = build_hardware_profile(
         system_profiler_output=M1_PROFILER,
-        installed_models=("huihui_ai/gemma-4-abliterated:latest", "qwen3.5:0.8b", "qwen3.5:2b"),
+        installed_models=("huihui_ai/gemma-4-abliterated:latest", "qwen3.5:0.8b", "alice-m1-scout-2.3b-2.7gb:latest"),
         node_role={"role": "web_host", "public_services": 5},
     )
 
@@ -87,7 +87,7 @@ def test_m1_web_host_selects_tiny_model_and_blocks_gemma_override():
 def test_m5_heavy_node_can_choose_deeper_installed_model_for_tournament():
     profile = build_hardware_profile(
         system_profiler_output=M5_PROFILER,
-        installed_models=("qwen3.5:2b", "huihui_ai/gemma-4-abliterated:latest"),
+        installed_models=("alice-m1-scout-2.3b-2.7gb:latest", "huihui_ai/gemma-4-abliterated:latest"),
         node_role={"role": "m5_heavy_inference", "public_services": 0},
     )
 

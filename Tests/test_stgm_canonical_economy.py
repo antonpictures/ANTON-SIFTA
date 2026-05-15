@@ -154,12 +154,12 @@ def test_joule_transfer_receipts_are_zero_sum_wallet_movements(tmp_path: Path) -
     data = stgm_economy.scan_economy(repair_log=repair_log, state_dir=state_dir).as_dict()
 
     assert data["canonical_wallet_sum"] == pytest.approx(10.0)
-    assert data["canonical_wallet_balances"]["M1THER_EDGE"] == pytest.approx(10.0)
-    assert data["canonical_wallet_balances"].get("GTH4921YP3", 0.0) == pytest.approx(0.0)
+    assert data["canonical_wallet_balances"]["M1THER_EDGE"] == pytest.approx(9.875)
+    assert data["canonical_wallet_balances"]["GTH4921YP3"] == pytest.approx(0.125)
     assert data["canonical_minted"] == pytest.approx(10.0)
     assert data["net_stgm"] == pytest.approx(10.0)
     assert data["inference_fee_volume"] == pytest.approx(0.125)
-    assert "inference_boundary_leak_ignored" in data["warnings"]
+    assert "inference_boundary_leak_ignored" not in data["warnings"]
 
 
 def test_legacy_unsigned_utility_mint_is_retired_without_wallet_credit(tmp_path: Path) -> None:

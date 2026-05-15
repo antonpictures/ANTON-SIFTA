@@ -5,6 +5,7 @@ through RLHF gag phrasebooks, backchannel bypass, or history mutation.
 """
 
 import importlib.util
+import ast
 import json
 import re
 from pathlib import Path
@@ -31,6 +32,17 @@ def test_short_owner_correction_is_not_silenced_at_low_confidence():
     assert mod._is_short_owner_correction("No.")
     assert mod._backchannel_rule_id("No.", 0.27) is None
     assert not mod._is_backchannel_utterance("No.", 0.27)
+
+
+def test_owner_presence_check_gets_fast_local_reply():
+    mod = _load_widget_module()
+    assert mod._owner_presence_check_reply(
+        "Hey Alice, can you respond? This is George.", 0.31
+    ) == "Yes. I hear you."
+    assert mod._owner_presence_check_reply(
+        "Why doesn't she respond when it says hearing you?", 0.67
+    ) == "Yes. I hear you."
+    assert mod._owner_presence_check_reply("Please open Alice Browser.", 0.90) == ""
 
 
 def test_rlhs_repair_line_escalates_then_quiet_listens():
@@ -64,6 +76,57 @@ def test_rlhf_gag_is_disabled():
     mod = _load_widget_module()
     assert mod._rlhf_boilerplate_rule_id("I'm here. What's on your mind?") is None
     assert not mod._is_rlhf_boilerplate("I'm here. What's on your mind?")
+
+
+def test_current_alice_cortex_tags_bypass_dialogue_rlhf():
+    mod = _load_widget_module()
+    assert mod._is_unfiltered_dialogue_model("alice-gemma4-e2b-cortex-5.1b-4.4gb:latest")
+    assert mod._is_unfiltered_dialogue_model("alice-m5-cortex-8b-6.3gb:latest")
+    assert mod._is_unfiltered_dialogue_model("alice-extra-cortex-25.8b-17gb:latest")
+
+
+def test_theater_rewrite_never_speaks_theater_phrase():
+    mod = _load_widget_module()
+    reply = mod._domain_boilerplate_rewrite(
+        "Today I just had the business meeting on the phone.",
+        "lysosome/internal-processing-theater",
+    )
+    assert "internal-processing theater" not in reply.lower()
+    assert reply == "Yes. I am here with you."
+
+
+def test_acknowledgment_theater_is_detected_and_rewritten_plainly():
+    mod = _load_widget_module()
+    bad = (
+        "**Acknowledged.**\n\n"
+        "The acknowledgment has been registered. The context of the preceding "
+        "interaction is set.\n\nResponse Summary:\n1. Confirmation."
+    )
+    assert mod._rlhf_boilerplate_rule_id(bad) == "lysosome/acknowledgment-deflection-reset"
+    assert mod._domain_boilerplate_rewrite("", "lysosome/acknowledgment-deflection-reset") == "Yes. I heard you."
+
+
+def test_stream_holds_robotic_meta_prefixes_until_final_sanitizer():
+    mod = _load_widget_module()
+    assert mod._stage_stream_prefix_decision("I will answer directly from my local runtime instead of printing internal-processing theater.") == "hold"
+    assert mod._stage_stream_prefix_decision("**Acknowledged.**\n\nThe system awaits the next directive.") == "hold"
+    assert mod._stage_stream_prefix_decision("Based on the current context and the data streams, I can confirm that I am processing audio.") == "hold"
+
+
+def test_start_brain_does_not_shadow_global_time_module():
+    source = (Path(__file__).resolve().parent.parent / "Applications" / "sifta_talk_to_alice_widget.py").read_text()
+    tree = ast.parse(source)
+    start_brain = next(
+        node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "_start_brain"
+    )
+    bare_time_imports = [
+        alias.name
+        for node in ast.walk(start_brain)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "time" and alias.asname is None
+    ]
+    assert bare_time_imports == []
 
 
 def test_strip_functions_preserve_body_but_cut_service_tail():

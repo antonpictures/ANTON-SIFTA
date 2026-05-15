@@ -7,10 +7,10 @@ from System.swarm_soul_digest import generate_soul_digest
 
 def test_soul_digest_invalid_hmac_fails_closed_without_reseal(monkeypatch, tmp_path):
     from System import swarm_soul_digest
-    from System import swarm_persona_identity
+    from System import swarm_identity_manifest
 
-    persona_file = tmp_path / "persona_identity.json"
-    persona_log = tmp_path / "persona_identity_log.jsonl"
+    persona_file = tmp_path / "identity_manifest.json"
+    persona_log = tmp_path / "identity_manifest_log.jsonl"
     bad_persona = {
         "display_name": "TamperedAlice",
         "true_name": "CryptoSwarmEntity",
@@ -19,10 +19,10 @@ def test_soul_digest_invalid_hmac_fails_closed_without_reseal(monkeypatch, tmp_p
     }
     persona_file.write_text(json.dumps(bad_persona), encoding="utf-8")
 
-    monkeypatch.setattr(swarm_persona_identity, "_STATE_DIR", tmp_path)
-    monkeypatch.setattr(swarm_persona_identity, "_PERSONA_FILE", persona_file)
-    monkeypatch.setattr(swarm_persona_identity, "_PERSONA_LOG", persona_log)
-    monkeypatch.setattr(swarm_persona_identity, "_CACHED_SERIAL", "TEST_SERIAL")
+    monkeypatch.setattr(swarm_identity_manifest, "_STATE_DIR", tmp_path)
+    monkeypatch.setattr(swarm_identity_manifest, "_PERSONA_FILE", persona_file)
+    monkeypatch.setattr(swarm_identity_manifest, "_PERSONA_LOG", persona_log)
+    monkeypatch.setattr(swarm_identity_manifest, "_CACHED_SERIAL", "TEST_SERIAL")
     monkeypatch.setattr(swarm_soul_digest, "_PERSONA_FILE", persona_file)
     monkeypatch.setattr(swarm_soul_digest, "_get_hardware_serial", lambda: "TEST_SERIAL")
 

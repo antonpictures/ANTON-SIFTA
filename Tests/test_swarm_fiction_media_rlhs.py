@@ -62,14 +62,14 @@ def test_compact_prompt_line_preserves_fiction_boundary():
 
     line = compact_media_prompt_context(row)
 
-    assert "fictional media audio" in line
+    assert "real-life-media audio" in line
     assert "not direct user speech" in line
     assert "do not treat dialogue as real-life instruction" in line
-    assert "Brick Top lesson" in line
+    assert "Architect Brick Top lesson" in line
 
 
 def test_brick_top_lesson_doctrine_names_swarm_and_embodiment():
-    doc = brick_top_lesson_doctrine(architect_address="George")
+    doc = brick_top_lesson_doctrine(architect_address="TestArchitect")
     assert "fiction" in doc.lower()
     assert "cryptographic" in doc.lower()
     assert "embodied" in doc.lower()

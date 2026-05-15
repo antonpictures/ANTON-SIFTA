@@ -27,7 +27,7 @@ def test_hermes_registry_is_disabled_by_default() -> None:
     assert registry_summary()["hermes_agent"]["enabled"] is False
     assert registry_summary()["codex_agent"]["enabled"] is False
     assert registry_summary()["corvid_scout"]["enabled"] is False
-    assert get_agent_arm("corvid_scout").model == "alice-m1-scout-2.3b-2.7gb:latest"
+    assert get_agent_arm("corvid_scout").model == "alice-Q-m1-scout-2.3b-2.7gb:latest"
 
 
 def test_launcher_blocks_live_call_without_env_gate(tmp_path: Path) -> None:
@@ -152,6 +152,8 @@ def test_corvid_scout_evidence_runs_internal_organ_with_receipts(tmp_path: Path,
             input_len=len(text),
             response_len=36,
             success=True,
+            tokens_per_sec=73.17,
+            used_mtp=True,
         )
 
     monkeypatch.setattr(SwarmCorvidApprentice, "evidence", fake_evidence)
@@ -171,6 +173,18 @@ def test_corvid_scout_evidence_runs_internal_organ_with_receipts(tmp_path: Path,
     assert rows[-1]["arm_id"] == "corvid_scout"
     assert rows[-1]["internal_arm"]["internal_runner"] == "SwarmCorvidApprentice.evidence"
     assert rows[-1]["internal_arm"]["corvid_ledger"] == "corvid_apprentice_trace.jsonl"
+    assert rows[-1]["internal_arm"]["tokens_per_sec"] == 73.17
+    assert rows[-1]["internal_arm"]["latency_ms"] == 123.0
+    assert rows[-1]["internal_arm"]["used_mtp"] is True
+    kernel = json.loads((tmp_path / "kernel_process_table.json").read_text(encoding="utf-8"))
+    proc = kernel["processes"]["agent_arm:corvid_scout"]
+    assert proc["ring"] == 2
+    assert proc["organ_id"] == "corvid_scout"
+    assert proc["stgm_balance"] > 0
+    assert proc["metadata"]["arm_status"] == "EVIDENCE_CAPTURED"
+    assert proc["metadata"]["tokens_per_sec"] == "73.17"
+    assert proc["metadata"]["latency_ms"] == "123.0"
+    assert proc["metadata"]["used_mtp"] == "True"
 
 
 def test_exact_codex_call_is_still_env_gated(tmp_path: Path) -> None:

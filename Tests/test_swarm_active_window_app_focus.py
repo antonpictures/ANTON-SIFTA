@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from System import swarm_active_window as aw
+from System import swarm_app_focus as app_focus
 
 
 def test_youtube_video_id_extraction_variants():
@@ -94,3 +95,25 @@ def test_write_snapshot_publishes_app_focus(monkeypatch, tmp_path):
     assert aw.LEDGER.exists()
     assert len(observations) == 1
     assert observations[0]["browser"]["youtube_video_id"] == "cHZl2naX1Xk"
+
+
+def test_app_focus_attention_field_reinforces_useful_context(monkeypatch, tmp_path):
+    monkeypatch.setattr(app_focus, "LEDGER", tmp_path / "app_focus.jsonl")
+    monkeypatch.setattr(app_focus, "_ATTENTION_FIELD_PATH", tmp_path / "attention_field.json")
+    monkeypatch.setattr(app_focus, "_ATTENTION_RECEIPTS", tmp_path / "attention_receipts.jsonl")
+
+    app_focus.publish_focus(
+        "Cursor",
+        "Editing SIFTA cortex router",
+        tab="Code",
+        metadata={"source": "test", "salience_score": 1.5},
+    )
+    app_focus.deposit_attention_trace("Cursor", tab="Code", success=True, amount=1.0, reason="test_success")
+    app_focus.publish_focus("YouTube", "Ambient video", tab="Safari")
+    app_focus.deposit_attention_trace("YouTube", tab="Safari", success=False, amount=3.0, reason="test_noise")
+
+    assert app_focus.focus_attention_score("Cursor", tab="Code") > 0
+    assert app_focus.focus_attention_score("YouTube", tab="Safari") < 0
+    ranked = app_focus.ranked_focus_history(n=2, max_age_s=60)
+    assert ranked[0]["app"] == "Cursor"
+    assert app_focus._ATTENTION_RECEIPTS.exists()

@@ -1,10 +1,12 @@
 import time
 import sys
+import pytest
+
 try:
     from Quartz.CoreGraphics import CGEventCreateKeyboardEvent, CGEventPost, kCGHIDEventTap
-except ImportError as e:
-    print(f"ImportError: {e}")
-    sys.exit(1)
+    _HAS_QUARTZ = True
+except ImportError:
+    _HAS_QUARTZ = False
 
 def _press_key(keycode, shift=False):
     # a basic keystroke poster
@@ -17,9 +19,7 @@ def _press_key(keycode, shift=False):
     time.sleep(0.01)
     CGEventPost(kCGHIDEventTap, up)
 
-print("Attempting to press 'a' (keycode 0)")
-try:
-    _press_key(0)
-    print("Done (but did it actually type something?)")
-except Exception as e:
-    print(f"Failed: {e}")
+@pytest.mark.skipif(not _HAS_QUARTZ, reason="Quartz.CoreGraphics unavailable")
+def test_press_key_smoke():
+    """Smoke-test that CGEvent keystroke API is callable (no assertion on effect)."""
+    _press_key(0)  # keycode 0 = 'a'

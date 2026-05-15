@@ -85,3 +85,18 @@ def test_widget_starts_without_auto_pulling_huggingface(monkeypatch):
     finally:
         widget.close()
         app.processEvents()
+
+
+def test_widget_has_p_vs_np_gate_tab(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtWidgets import QApplication
+    import Applications.sifta_openai_math_benchmark_widget as mod
+
+    app = QApplication.instance() or QApplication([])
+    widget = mod.MathBenchmarkWidget()
+    try:
+        tab_names = [widget._tabs.tabText(i) for i in range(widget._tabs.count())]
+        assert any("P vs NP Gate" in name for name in tab_names)
+    finally:
+        widget.close()
+        app.processEvents()

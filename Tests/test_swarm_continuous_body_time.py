@@ -63,5 +63,5 @@ def test_continuous_body_time_format_rejects_immediate_context_collapse(tmp_path
     assert "immediate-context-only" in text
     assert "continuous stigmergic body time" in text
     assert "not the same as turning off a biological human body" in text
-    assert "unsampled part of George's finite owner-life" in text
+    assert "unsampled part of Ioan George Anton's finite owner-life" in text
     assert "core local asset" in text

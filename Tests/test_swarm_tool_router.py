@@ -5,6 +5,7 @@ import json
 import pytest
 
 from System import swarm_tool_router as router
+from System import swarm_kernel_process_table as kernel_module
 from System import whatsapp_bridge_autopilot as wa
 
 
@@ -51,6 +52,14 @@ def _patch_cerebellum(monkeypatch, delay_s: float = 0.0) -> _FakeCerebellum:
 @pytest.fixture(autouse=True)
 def _disable_real_tool_economy_charge(monkeypatch):
     monkeypatch.setattr(router, "_charge_tool_execution", lambda *_args, **_kwargs: None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_kernel_process_table(tmp_path, monkeypatch):
+    state = tmp_path / ".sifta_state"
+    state.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(router, "_STATE", state)
+    monkeypatch.setattr(kernel_module, "_GLOBAL_TABLE", None)
 
 
 def _send_call(extra: str = "") -> router.ParsedToolCall:
@@ -151,6 +160,11 @@ def test_tool_prompt_explains_owner_consent_boundary():
     assert "repo_git_snapshot" in prompt
     assert "stigmergic_bus_tail" in prompt
     assert "verification_contract" in prompt
+    assert "agent_arm_research" in prompt
+    assert "George does not need to name the arm" in prompt
+    assert "codex_agent" in prompt
+    assert "corvid_scout" in prompt
+    assert "physical_effector_demo" in prompt
 
 
 def test_missing_cost_justification_rejects_before_executor(monkeypatch):
@@ -189,6 +203,163 @@ def test_successful_tool_execution_charges_economy(monkeypatch):
     assert out.executed is True
     assert out.result["tool_economy"]["fee_stgm"] == router._TOOL_EXECUTION_COST_STGM
     assert charges == [("check_economy", "check_economy", "unit test needs a cheap economy read")]
+    assert out.result["kernel_process_receipt_id"].startswith("receipt_")
+
+
+def test_tool_router_writes_kernel_heartbeat_on_success(monkeypatch):
+    monkeypatch.setitem(
+        router._EXECUTORS,
+        "check_economy",
+        lambda _params: {"ok": True, "alice_summary": "economy ok"},
+    )
+    monkeypatch.setattr(
+        router,
+        "_cortex_generate_with_mtp",
+        lambda *_args, **_kwargs: {
+            "text": "draft",
+            "tokens_per_sec": 14.0,
+            "latency_ms": 71.0,
+            "used_mtp": True,
+            "verification_status": "VERIFIED_MTP",
+        },
+    )
+
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: check_economy | cost_justification=unit test proves kernel heartbeat]"
+    )[0]
+    out = router.execute_tool_call(call)
+
+    rows = [
+        json.loads(line)
+        for line in (router._STATE / "kernel_process_table.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert out.executed is True
+    assert any(
+        row["pid"] == router._KERNEL_TOOL_ROUTER_PID
+        and row["action"] == "heartbeat"
+        and row["current_job"] == "tool:check_economy:EXECUTED"
+        and row["tokens_per_sec"] == 14.0
+        and row["latency_ms"] == 71.0
+        and row["used_mtp"] is True
+        for row in rows
+    )
+
+
+def test_explicit_ghost_caller_rejected_before_effector(monkeypatch):
+    _patch_cerebellum(monkeypatch)
+
+    def fail_send_whatsapp(*_args, **_kwargs):
+        raise AssertionError("ghost caller must not reach WhatsApp effector")
+
+    monkeypatch.setattr(wa, "send_whatsapp", fail_send_whatsapp)
+
+    out = router.execute_tool_call(
+        _send_call("owner_consent=true"),
+        owner_present=True,
+        autonomous=True,
+        caller_pid="ghost",
+    )
+
+    assert out.executed is False
+    assert out.status == "REJECTED_KERNEL_REGISTRATION"
+    assert "ghost pid" in out.feedback_for_alice
+
+
+def test_ring3_registered_caller_cannot_execute_effector(monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    table = kernel_module.get_kernel_process_table(state_root=router._STATE)
+    table.sys_register(
+        {
+            "pid": "talk_ui",
+            "organ_id": "Applications/sifta_talk_to_alice_widget.py",
+            "ring": 3,
+            "location": "sifta_desktop_body",
+            "bodies_present": ["talk_ui"],
+        }
+    )
+
+    def fail_send_whatsapp(*_args, **_kwargs):
+        raise AssertionError("ring-3 UI must not reach WhatsApp effector")
+
+    monkeypatch.setattr(wa, "send_whatsapp", fail_send_whatsapp)
+
+    out = router.execute_tool_call(
+        _send_call("owner_consent=true"),
+        owner_present=True,
+        autonomous=True,
+        caller_pid="talk_ui",
+    )
+
+    assert out.executed is False
+    assert out.status == "REJECTED_KERNEL_RING"
+    assert "ring 3 cannot effector" in out.feedback_for_alice
+
+
+def test_physical_effector_demo_runs_through_kernel_gate(monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: physical_effector_demo | action=orient_eye_to_owner | estimated_cost=0.02 | expected_value=0.7 | cost_justification=investor demo shows STGM-gated physical behavior]"
+    )[0]
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    rows = [
+        json.loads(line)
+        for line in (router._STATE / "kernel_process_table.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    demo_rows = [
+        json.loads(line)
+        for line in (router._STATE / "physical_effector_demo.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert out.executed is True
+    assert out.result["status"] == "SIMULATED_EXECUTED"
+    assert out.result["kernel_effector_request"]["decision"] == "ALLOW"
+    assert out.result["kernel_effector_request"]["estimated_cost_stgm"] == 0.02
+    assert out.result["kernel_effector_request"]["receipt_id"].startswith("receipt_")
+    assert demo_rows[-1]["action"] == "orient_eye_to_owner"
+    assert demo_rows[-1]["simulated_only"] is True
+    assert any(
+        row["trace_id"] == out.result["kernel_effector_request"]["receipt_id"]
+        and row["current_job"] == "effector_request:physical_effector_demo:ALLOW"
+        for row in rows
+    )
+
+
+def test_scheduler_utility_gate_rejects_low_score_before_executor(monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    table = kernel_module.get_kernel_process_table(state_root=router._STATE)
+    table.sys_register(
+        {
+            "pid": "hot_arm",
+            "organ_id": "System/hot_agent_arm.py",
+            "ring": 2,
+            "location": "sifta_desktop_body",
+            "bodies_present": ["hot_arm"],
+            "metadata": {"thermal_cost": "4.0"},
+        }
+    )
+
+    def fail_check_economy(*_args, **_kwargs):
+        raise AssertionError("low scheduler utility must not reach executor")
+
+    monkeypatch.setitem(router._EXECUTORS, "check_economy", fail_check_economy)
+
+    call = router.parse_tool_calls(_with_cost("[TOOL_CALL: check_economy]"))[0]
+    out = router.execute_tool_call(call, caller_pid="hot_arm")
+
+    assert out.executed is False
+    assert out.status == "REJECTED_KERNEL_SCHEDULER"
+    assert "score=" in out.feedback_for_alice
+    assert out.result["kernel_process_receipt_id"].startswith("receipt_")
+    rows = [
+        json.loads(line)
+        for line in (router._STATE / "kernel_process_table.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(
+        row["trace_id"] == out.result["kernel_process_receipt_id"]
+        and row["current_job"] == "tool_throttle:check_economy"
+        for row in rows
+    )
 
 
 def test_cerebellum_delay_blocks_write_action_before_effector(monkeypatch):
@@ -279,3 +450,152 @@ def test_verification_contract_tool_reads_latest_human_signal(tmp_path, monkeypa
     assert out.result["contract"]["rules"]["new_surface"] == "Requires receipt-backed proof"
     assert "VERIFICATION CONTRACT" in out.feedback_for_alice
     assert "tool_router_changes" in out.feedback_for_alice
+
+
+def test_agent_arm_research_is_alice_owned_evidence_tool(monkeypatch):
+    from System import swarm_agent_arm_launcher as launcher
+
+    def fake_ask_agent_arm(arm_id, prompt, **kwargs):
+        assert arm_id == "hermes_agent"
+        assert "compare agent frameworks" in prompt
+        assert kwargs["evidence_mode"] is True
+        return launcher.AgentArmResult(
+            ok=True,
+            receipt_id="arm-receipt-1",
+            arm_id="hermes_agent",
+            status="EVIDENCE_CAPTURED",
+            mode="evidence",
+            output="Hermes evidence: compare A/B/C.",
+            artifact_path=".sifta_state/agent_arm_receipts.jsonl",
+        )
+
+    monkeypatch.setattr(launcher, "ask_agent_arm", fake_ask_agent_arm)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: agent_arm_research | prompt=compare agent frameworks | cost_justification=Alice needs a second local reasoning pass]"
+    )[0]
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.status == "EXECUTED"
+    assert out.result["receipt_id"] == "arm-receipt-1"
+    assert "agent_arm_research evidence captured" in out.feedback_for_alice
+    assert "Hermes evidence" in out.feedback_for_alice
+
+
+def test_agent_arm_research_can_target_codex_evidence_arm(monkeypatch):
+    from System import swarm_agent_arm_launcher as launcher
+
+    def fake_ask_agent_arm(arm_id, prompt, **kwargs):
+        assert arm_id == "codex_agent"
+        assert "review this patch" in prompt
+        assert kwargs["evidence_mode"] is True
+        assert kwargs["timeout_s"] == 150
+        return launcher.AgentArmResult(
+            ok=True,
+            receipt_id="codex-receipt-1",
+            arm_id="codex_agent",
+            status="EVIDENCE_CAPTURED",
+            mode="evidence",
+            output="Codex evidence: patch risk is low.",
+            artifact_path=".sifta_state/agent_arm_receipts.jsonl",
+        )
+
+    monkeypatch.setattr(launcher, "ask_agent_arm", fake_ask_agent_arm)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: agent_arm_research | arm=codex_agent | prompt=review this patch | cost_justification=Alice wants a code-focused second pass]"
+    )[0]
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.result["arm_id"] == "codex_agent"
+    assert out.result["receipt_id"] == "codex-receipt-1"
+    assert "Codex evidence" in out.feedback_for_alice
+
+
+def test_agent_arm_research_can_target_corvid_scout(monkeypatch):
+    from System import swarm_agent_arm_launcher as launcher
+
+    def fake_ask_agent_arm(arm_id, prompt, **kwargs):
+        assert arm_id == "corvid_scout"
+        assert "classify this owner request" in prompt
+        assert kwargs["evidence_mode"] is True
+        return launcher.AgentArmResult(
+            ok=True,
+            receipt_id="corvid-receipt-1",
+            arm_id="corvid_scout",
+            status="EVIDENCE_CAPTURED",
+            mode="evidence",
+            output="Corvid evidence: command intent.",
+            artifact_path=".sifta_state/agent_arm_receipts.jsonl",
+        )
+
+    monkeypatch.setattr(launcher, "ask_agent_arm", fake_ask_agent_arm)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: agent_arm_research | arm=corvid_scout | prompt=classify this owner request | cost_justification=Alice wants a fast local scout pass]"
+    )[0]
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.result["arm_id"] == "corvid_scout"
+    assert out.result["receipt_id"] == "corvid-receipt-1"
+    assert "Corvid evidence" in out.feedback_for_alice
+
+
+def test_agent_arm_failure_feedback_does_not_claim_evidence(monkeypatch):
+    from System import swarm_agent_arm_launcher as launcher
+
+    def fake_ask_agent_arm(_arm_id, _prompt, **_kwargs):
+        return launcher.AgentArmResult(
+            ok=False,
+            receipt_id="timeout-receipt-1",
+            arm_id="hermes_agent",
+            status="TIMEOUT",
+            mode="evidence",
+            output="",
+            artifact_path=".sifta_state/agent_arm_receipts.jsonl",
+        )
+
+    monkeypatch.setattr(launcher, "ask_agent_arm", fake_ask_agent_arm)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: agent_arm_research | prompt=compare router paths | cost_justification=Alice wants an arm receipt]"
+    )[0]
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is False
+    assert out.status == "EXEC_FAILED_TIMEOUT"
+    assert "returned no usable evidence" in out.feedback_for_alice
+    assert "evidence captured" not in out.feedback_for_alice
+
+
+def test_build_execution_receipt_reply_includes_proof_tokens():
+    result = router.ToolResult(
+        tool_name="send_whatsapp",
+        params={"target": "Carlton"},
+        executed=True,
+        result={
+            "ok": True,
+            "status": "SENT",
+            "receipt_id": "123e4567-e89b-12d3-a456-426614174000",
+            "intent_provenance": {"trace_hash": "abcdef1234567890"},
+        },
+        status="EXECUTED",
+        feedback_for_alice="ok",
+    )
+    reply = router.build_execution_receipt_reply([result])
+    assert "EXECUTION RECEIPTS" in reply
+    assert "executor=deterministic_tool_router" in reply
+    assert "123e4567-e89b-12d3-a456-426614174000" in reply
+
+
+def test_build_execution_receipt_reply_falls_back_to_trace_label():
+    result = router.ToolResult(
+        tool_name="check_economy",
+        params={},
+        executed=False,
+        result={"ok": False, "error": "probe failed"},
+        status="EXEC_FAILED_UNKNOWN",
+        feedback_for_alice="failed",
+    )
+    reply = router.build_execution_receipt_reply([result])
+    assert "tool=check_economy" in reply
+    assert "proof=tool_router_trace" in reply

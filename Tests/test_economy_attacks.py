@@ -29,7 +29,7 @@ try:
         borrower_id=M5,
         lender_node_ip=M1_NODE_IP,
         fee_stgm=2.5,
-        model="qwen3.5:2b",
+        model="alice-m1-scout-2.3b-2.7gb:latest",
         tokens_used=150,
         file_repaired="synthetic_test.py"
     )

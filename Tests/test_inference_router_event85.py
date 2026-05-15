@@ -31,7 +31,7 @@ def test_event85_cost_vector_prefers_lowest_latency_plus_weight_penalty():
         },
         InferenceRouteCandidate(
             candidate_id="qwen_local",
-            model="qwen3.5:2b",
+            model="alice-m1-scout-2.3b-2.7gb:latest",
             latency_ms=300,
             file_weight_mb=2700,
             token_usage=0,
