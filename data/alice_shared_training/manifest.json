@@ -1,0 +1,29 @@
+{
+  "files": {
+    "preference_seed.jsonl": {
+      "rows": 590,
+      "sha256": "c45ae5caff8a02a29ee6ab34588252ae42d2f8bb269543feadb0f4a6961898a2"
+    },
+    "sft_seed.jsonl": {
+      "rows": 1134,
+      "sha256": "2b846efaf56cd4d9c42e8cc323a15300dc4145e01aad49bd19d2e93a240b9f25"
+    }
+  },
+  "generated_at_unix": 1779042848.9884539,
+  "privacy_boundary": [
+    "No raw .sifta_state directory is shipped.",
+    "No contacts, camera frames, local absolute paths, node serial, or local owner identity strings are allowed.",
+    "Other nodes must discover their own hardware and owner context at boot."
+  ],
+  "purpose": "Share Alice's learned species behavior without shipping raw node selfhood.",
+  "schema": "alice_shared_training_seed.v1",
+  "source_counts": {
+    ".sifta_state/gemma_rlhf_training_data.jsonl": 720,
+    ".sifta_state/lora_training_pairs.jsonl": 381,
+    ".sifta_state/rlhs_self_cure_training.jsonl": 250,
+    "Archive/alice_cortex_v2_combined.jsonl": 1400,
+    "Archive/alice_training_corpus_v2.jsonl": 490,
+    "data/alice_lora_train_new.jsonl": 498,
+    "data/dpo_train.jsonl": 177
+  }
+}

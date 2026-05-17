@@ -2257,6 +2257,9 @@ SIFTA_GEMMA4_BASE=<exact-gemma4-hf-repo-or-local-safetensors> \
   python3 scripts/execute_epigenetic_cycle.py
 ```
 
+The public repo also ships a **non-empty Alice seed package** at `data/alice_shared_training/`.
+It is the shareable training spine: supervised rows plus chosen/rejected preference rows distilled from the Architect's training work, with local paths, node serials, and owner-local identity redacted. Raw `.sifta_state/` remains private node selfhood; this seed is the species training food that prevents a fresh install from booting as an empty robot.
+
 The old non-Gemma test adapter recipe has been neutralized. No adapter is selectable for Alice until a Gemma 4 adapter trains, registers with pheromone evidence, and passes replay evaluation.
 
 SIFTA OS includes a read-only **Swarm Adapter Ecology** app under **System Settings** for watching this lane: pheromone strength, adapter registry rows, replay verdicts, and the current merge recipe.
