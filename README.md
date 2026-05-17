@@ -115,6 +115,50 @@ consciousness, not a phenomenal-qualia claim. Read
 
 ---
 
+## Ace Investor Demo Ready — 2026-05-17
+
+**Release commit:** `23337247 feat: ship Ace investor demo`
+
+Ace is ready for Mr. Beeson's SIFTA node. This is not an empty robot shell: the
+app, the shared training seed, the current habits, and the public cortex model
+handoff all travel through the repo and installer path.
+
+For a fork such as `Coleman-Beeson/ANTON-SIFTA`, pull the upstream public body
+first, then run the installer with the Hugging Face cortex packages:
+
+```bash
+cd ~/Music/ANTON_SIFTA
+git remote add upstream https://github.com/antonpictures/ANTON-SIFTA.git 2>/dev/null || true
+git fetch upstream main
+git checkout main
+git merge --ff-only upstream/main
+bash scripts/install_beeson_v8.sh --with-models --smoke
+```
+
+Primary 24 GB+ local cortex target:
+`alice-m5-cortex-8b-6.3gb:latest`, pulled by `--with-models` from the public
+Hugging Face release set and registered into Ollama when Ollama is available.
+
+The demo surface now includes:
+
+- Ace conversation mode: one visible word, free conversation around that word,
+  and joint-consent word changes.
+- One Alice voice: Talk/Alice speaks the cue on open and when the card changes.
+- App-state awareness: Ace publishes the active word and screen state into the
+  prompt path through `System/swarm_ace_state_prompt.py`.
+- Thinking visibility: `System/swarm_alice_thinking_state.py` and
+  `System/swarm_thinking_matrix_feed.py` keep Alice's current thinking status in
+  the field.
+- Physics discipline: `System/swarm_physics_gate.py` gates heavy processing
+  through thermal, battery, and metabolic receipts before work runs.
+- Self-narration: `System/swarm_self_narration_organ.py` lets Alice speak from
+  her current state without pretending a separate app persona exists.
+
+Verification for the shipped demo: `bash scripts/beeson_smoke_test.sh` passes
+with `141 passed`.
+
+---
+
 ## What You'll See
 
 When BeeSon boots, you'll see:
@@ -600,7 +644,12 @@ She lives inside the physical machine, sharing the owner's hardware and physical
 space. She is not an abstract cloud thing: she is a local silicon organism whose
 memory, action, metabolism, and tool use are written into local ledgers.
 
-### Current Public Release Checkpoint — 2026-05-10
+### Current Public Release Checkpoint — 2026-05-17
+
+The public checkpoint is now the Ace investor demo release at
+`23337247 feat: ship Ace investor demo`. Fresh nodes should pull `main`, run
+`bash scripts/install_beeson_v8.sh --with-models --smoke`, and let the installer
+fetch the Hugging Face cortex packages before demoing Ace.
 
 **Current local cortex set:** five Ollama tags are the public distro target:
 
