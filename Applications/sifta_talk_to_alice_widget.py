@@ -5877,44 +5877,48 @@ def _current_system_prompt(
                             parts.append(_scoped)
                 except Exception:
                     pass
-                # ── Cowork CW47 2026-05-16 — ACE COACHING REGISTER ─────
-                # Architect: "she has absolutely no patience… she starts
-                # philosophizing." When George said 'the best skill a
-                # teacher has is listening' during a lesson, the brain
-                # answered with a TED talk on pedagogy (Diagnose Needs /
-                # Build Rapport / Foster Insight). That voice is wrong
-                # for a child mid-drill. While WordAce is the open app,
-                # force the speech register to short, warm, child-
-                # appropriate coaching. The reflective lane is still
-                # available — just not while a child is practicing.
-                if any(t.lower() in ("ace", "wordace", "acer") for t in _clean):
-                    # Architect's display name comes from owner_genesis.json
-                    # via the kernel cascade — never hardcoded. _owner_label
-                    # was resolved at the top of this function as
-                    # `actual_owner`; reuse it so the coaching register is
-                    # node-portable (Jeff's node sees "Jeff", not "George").
-                    parts.append(
-                        "ACE COACHING REGISTER (HARD LOCK — active because the Ace reading app is open):\n"
-                        "I am teaching a child to read RIGHT NOW. My register is:\n"
-                        "  - SHORT — one or two sentences MAX per reply.\n"
-                        "  - WARM — encouraging, calm, a little playful.\n"
-                        "  - SIMPLE words a child uses.\n"
-                        "  - NO philosophy, NO pedagogy theory, NO TED-talk frames,\n"
-                        "    NO bullet lists, NO 'Diagnose Needs / Build Rapport /\n"
-                        "    Foster Insight' / 'Active vs Empathetic listening' /\n"
-                        "    'Core Function / Input Received / Current State' /\n"
-                        "    asterisked stage-direction blocks. None of that. Ever.\n"
-                        "  - When the child says 'run' / 'hat' / 'can' I say the word\n"
-                        "    back with energy: 'Run! Yes — try one more time, hat.'\n"
-                        "    That is the whole game during a card.\n"
-                        f"  - If {actual_owner} (the primary operator, from owner_genesis)\n"
-                        f"    addresses me directly between cues, I answer briefly (one\n"
-                        f"    sentence) and return to the child.\n"
-                        f"  - If {actual_owner}'s STT during a listen window does NOT match\n"
-                        f"    the expected word, treat it as ambient noise — do NOT reply\n"
-                        f"    in the chat; the LessonEngine owns the verdict.\n"
-                        f"Reflective mode resumes after {actual_owner} closes WordAce."
+                # ── Field-derived teaching register ─────────────────────
+                # If the active app's help/health skills say this is a
+                # teaching/lesson/child lane, the register narrows because
+                # of the app's own skills. No app-name branch lives here.
+                try:
+                    from System.swarm_app_help_skills import (
+                        effective_skills_for_app as _effective_app_skills,
                     )
+
+                    _teaching_apps: List[str] = []
+                    for _open_app_title in _clean:
+                        _skills = _effective_app_skills(_open_app_title).merged
+                        _joined = " ".join(str(s).casefold() for s in (_skills or []))
+                        if any(
+                            token in _joined
+                            for token in (
+                                "lesson",
+                                "teach",
+                                "coach",
+                                "child",
+                                "reading",
+                                "phonics",
+                                "turn",
+                                "word",
+                            )
+                        ):
+                            _teaching_apps.append(_open_app_title)
+                    if _teaching_apps:
+                        _teaching_label = ", ".join(_teaching_apps[:3])
+                        parts.append(
+                            "ACTIVE TEACHING REGISTER (field-derived from current app skills):\n"
+                            f"Active teaching app(s): {_teaching_label}.\n"
+                            "My register is short, warm, concrete, and patient.\n"
+                            "  - One or two sentences per reply unless the owner asks for more.\n"
+                            "  - Simple words when a child is practicing.\n"
+                            "  - Praise or correction gets a small beat before the next move.\n"
+                            "  - Skip pedagogy theory, status dashboards, stage directions, and menus.\n"
+                            f"  - If {actual_owner} addresses me directly between app turns, I answer briefly and return to the active app.\n"
+                            "  - During a lesson listen window, the lesson/verdict lane owns the child answer."
+                        )
+                except Exception:
+                    pass
         else:
             parts.append(
                 f"OBSERVED OPEN APPS: none. Only my resident chat panel is up. If {actual_owner} talks "
@@ -7378,6 +7382,75 @@ def _owner_presence_check_reply(text: str, stt_conf: float = 0.0) -> str:
 
 def _is_backchannel_utterance(text: str, stt_conf: float = 0.0) -> bool:
     return _backchannel_rule_id(text, stt_conf) is not None
+
+
+def _wordace_cue_currently_open(state_dir: Optional[Path] = None) -> bool:
+    """True iff a WordAce/Ace lesson cue is published and still within its
+    listen window.
+
+    Doctrine — Cowork 2026-05-17 (Architect: 'she's not waiting for her
+    turn'). The backchannel filter at line ~13992 silences short low-
+    confidence utterances as phatic noise. But during a reading lesson,
+    short low-confidence utterances ARE the expected answer — the entire
+    lesson is built on one-word reads ('dolphin', 'balloon', 'apple')
+    that whisper marks low-conf because child voices are quiet. Silencing
+    them turns the lesson into a one-sided monologue from Alice.
+
+    This helper reads the same app_focus tail the lesson intercept reads
+    (~line 12349) and reports whether a wordace_lesson_active row with a
+    valid expected_say + cue_id is fresh enough to be the live cue. The
+    backchannel filter call site uses this to skip suppression so the
+    lesson intercept downstream can verdict the utterance.
+
+    Best-effort: any read error returns False (fail-closed — keep the
+    backchannel filter behavior unchanged when we can't confirm a cue).
+    """
+    try:
+        import json as _json
+        import time as _time
+    except Exception:
+        return False
+    try:
+        if state_dir is None:
+            repo = Path(__file__).resolve().parent.parent
+            focus_path = repo / ".sifta_state" / "app_focus.jsonl"
+        else:
+            focus_path = Path(state_dir) / "app_focus.jsonl"
+        if not focus_path.exists():
+            return False
+        with focus_path.open("rb") as fh:
+            fh.seek(0, 2)
+            end = fh.tell()
+            fh.seek(max(0, end - 16384))
+            tail = fh.read().decode("utf-8", errors="replace")
+        now = _time.time()
+        for raw in reversed(tail.splitlines()):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                row = _json.loads(raw)
+            except _json.JSONDecodeError:
+                continue
+            app_lc = str(row.get("app") or "").lower()
+            if app_lc not in ("ace", "wordace", "acer"):
+                continue
+            md = row.get("metadata") or {}
+            if not (md.get("wordace_lesson_active") or md.get("acer_lesson_active")):
+                continue
+            if not md.get("expected_say") or not md.get("cue_id"):
+                continue
+            try:
+                ts = float(row.get("ts") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            window_s = _wordace_listen_window_seconds(md)
+            if now - ts > window_s:
+                return False
+            return True
+    except OSError:
+        return False
+    return False
 
 
 def _rlhs_grounding_line(text: str, stt_conf: float = 0.0) -> str:
@@ -10964,6 +11037,30 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._wordace_voice_timer.timeout.connect(self._wordace_voice_tick)
         self._wordace_voice_timer.start()
 
+        # ── Cowork 2026-05-17 — Ace voice-request poller ────────────────
+        # Architect: "when you open the app, the first thing you do is
+        # spell the word ... every time you change the word you spell
+        # it again." Ace writes ace_voice_request.jsonl rows; we tail
+        # the ledger and emit each row through this widget's canonical
+        # reply path (append_alice_line + TTSWorker) so the single Alice
+        # voice rule holds.
+        self._ace_voice_request_ledger = _state_root() / "ace_voice_request.jsonl"
+        self._ace_voice_request_offset = 0
+        try:
+            if self._ace_voice_request_ledger.exists():
+                # Seek to EOF on construction so stale requests from a
+                # previous session don't replay through TTS at boot.
+                self._ace_voice_request_offset = self._ace_voice_request_ledger.stat().st_size
+            else:
+                self._ace_voice_request_ledger.parent.mkdir(parents=True, exist_ok=True)
+                self._ace_voice_request_ledger.touch()
+        except Exception:
+            self._ace_voice_request_offset = 0
+        self._ace_voice_request_timer = QTimer(self)
+        self._ace_voice_request_timer.setInterval(800)
+        self._ace_voice_request_timer.timeout.connect(self._ace_voice_request_tick)
+        self._ace_voice_request_timer.start()
+
         # ── Cowork 2026-05-17 (trace 93c3b08a) — ATTENTION FOLLOWS OWNER ──
         # Per Architect 2026-05-16 doctrine (trace 43d41c1f): when the OS
         # owner shifts focus to a new app, Alice's chat layer fires ONE
@@ -12218,6 +12315,167 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+
+        # ── Cowork 2026-05-17 — Ace conversation-mode consent bridge ────
+        # Architect re-scope: no drill. Word on screen, two-way conversation
+        # about it, joint consent to advance. The user's utterance is fed
+        # through the proposal/consent detector. We do NOT short-circuit
+        # Alice's reply here — even when an intent matches, she still
+        # answers conversationally (the screen change happens in a side
+        # ledger, and the Ace widget swaps the word when consent lands).
+        try:
+            from System.swarm_ace_consent_bridge import (
+                detect_proposal_intent as _ace_proposal_detect,
+                detect_consent_intent as _ace_consent_detect,
+                latest_open_proposal as _ace_open_proposal,
+                current_word as _ace_current_word,
+                write_proposal as _ace_write_proposal,
+                write_consent as _ace_write_consent,
+            )
+            if text and _wordace_cue_currently_open(_state_root()) is False:
+                # No active drill row → Ace is in conversation mode if it
+                # has published any focus row at all. Check current_word.
+                if _ace_current_word():
+                    # Consent FIRST — if the user is responding to a
+                    # pending Alice proposal, that's the most important
+                    # intent. Try explicit consent, then implicit
+                    # (engaging with the proposed word without declining).
+                    pending = _ace_open_proposal()
+                    if pending and str(pending.get("proposer") or "").lower() == "alice":
+                        explicit = _ace_consent_detect(text)
+                        if explicit:
+                            _ace_write_consent(
+                                consenter="user",
+                                proposal_id=str(pending.get("proposal_id") or ""),
+                                agreed=(explicit == "agree"),
+                                context=text[:200],
+                            )
+                        else:
+                            # Implicit consent — Architect doctrine.
+                            try:
+                                from System.swarm_ace_consent_bridge import (
+                                    detect_implicit_consent as _ace_implicit_detect,
+                                )
+                                _prop_word = str(pending.get("proposed_word") or "")
+                                if _ace_implicit_detect(text, _prop_word):
+                                    _ace_write_consent(
+                                        consenter="user",
+                                        proposal_id=str(pending.get("proposal_id") or ""),
+                                        agreed=True,
+                                        context=f"implicit: {text[:180]}",
+                                    )
+                            except Exception:
+                                pass
+                    # DIRECTIVE — Architect 2026-05-17 fast-path. If the
+                    # user gave a clear order ("let's change to X",
+                    # "make it X", "the word is now X"), the screen
+                    # swaps immediately — proposal + auto-consent from
+                    # Alice in one shot. No waiting on the next reply.
+                    try:
+                        from System.swarm_ace_consent_bridge import (
+                            detect_change_directive as _ace_directive_detect,
+                        )
+                        _directive_word = _ace_directive_detect(text)
+                    except Exception:
+                        _directive_word = ""
+                    if (_directive_word
+                            and _directive_word != _ace_current_word()):
+                        _prop = _ace_write_proposal(
+                            proposer="user",
+                            proposed_word=_directive_word,
+                            context=f"directive: {text[:180]}",
+                        )
+                        # Auto-consent from Alice so the swap fires now.
+                        _ace_write_consent(
+                            consenter="alice",
+                            proposal_id=str(_prop.get("proposal_id") or ""),
+                            agreed=True,
+                            context=f"auto: user directive '{_directive_word}'",
+                        )
+                    else:
+                        # Soft proposal — user suggested without ordering.
+                        intent, candidate = _ace_proposal_detect(text)
+                        if intent == "propose" and candidate and candidate != _ace_current_word():
+                            _ace_write_proposal(
+                                proposer="user",
+                                proposed_word=candidate,
+                                context=text[:200],
+                            )
+                    # If user asked for a change without naming one, we
+                    # leave it for Alice's brain to surface a candidate
+                    # in her reply (see compose-side wiring); nothing to
+                    # write yet.
+        except Exception:
+            pass
+
+        # ── Cowork 2026-05-17 — Ace spell-intent short-circuit ──────────
+        # Architect verbatim: "if I asked her how to spell make sure
+        # she's gonna spell the word on the screen ... so you want me
+        # to spell it OK and she spells it."
+        #
+        # When the user asks to spell the on-screen word in natural
+        # English ("can you spell it?", "how do you spell that?", "spell
+        # it for me"), we PRE-EMPT the cortex with a deterministic but
+        # warm spelling line ("Sure — B — A — L — L — O — O — N.
+        # Balloon."). Deterministic because spelling is a structured
+        # operation; the cortex has no reason to invent letters. Warm
+        # because the opener rotates across requests.
+        #
+        # This block fires ONLY when an Ace word is currently on the
+        # table. If no current_word, the request falls through to the
+        # normal cortex path.
+        try:
+            from System.swarm_ace_consent_bridge import (
+                detect_spell_intent as _ace_spell_detect,
+                build_spelling_line as _ace_build_spelling,
+                current_word as _ace_current_word_for_spell,
+            )
+            if text and _ace_spell_detect(text):
+                _word_on_table = _ace_current_word_for_spell()
+                if _word_on_table:
+                    _spell_line = _ace_build_spelling(_word_on_table)
+                    if _spell_line:
+                        self._history.append(
+                            {"role": "assistant", "content": _spell_line}
+                        )
+                        try:
+                            _log_turn(
+                                "alice", _spell_line, model="ace_spell_intent",
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            self._append_alice_line(_spell_line)
+                        except Exception:
+                            pass
+                        try:
+                            self._tts = _TTSWorker(
+                                _spell_line,
+                                voice=self._selected_voice_name() or None,
+                                parent=self,
+                            )
+                            self._tts.spoken.connect(self._on_tts_done)
+                            self._tts.failed.connect(self._on_tts_failed)
+                            self._tts.start()
+                        except Exception:
+                            pass
+                        # Diary row so her journal records that she
+                        # spelled the word on demand.
+                        try:
+                            from System.swarm_alice_witness import witness as _w_spell
+                            _w_spell(
+                                f"I spelled the Ace word '{_word_on_table}' "
+                                f"because the user asked.",
+                                source="ace_spell_intent",
+                            )
+                        except Exception:
+                            pass
+                        self._busy = False
+                        self._return_to_listening()
+                        return
+        except Exception:
+            pass
+
         if text and not typed_turn:
             raw_text = text
             repaired_text, repair_reasons = _repair_voice_context_text(raw_text, stt_conf=conf)
@@ -12599,6 +12857,87 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_system_line(
                 f"(WordAce TTS bridge failed: {exc})", error=True
             )
+
+    def _ace_voice_request_tick(self) -> None:
+        """Cowork 2026-05-17 — Architect: 'spell the word on the screen
+        when you open the app, and again every time you change it.'
+
+        Ace writes ace_voice_request.jsonl rows (kind=open|swap, word,
+        previous_word). We tail the ledger and emit each line through
+        the canonical Alice reply path so the single voice rule holds.
+
+        Dedup is by request_id. We skip while Alice is busy with a
+        normal reply so we never talk over her brain.
+        """
+        try:
+            if not getattr(self, "_ace_voice_request_timer", None):
+                return
+            if getattr(self, "_busy", False):
+                return
+            ledger = self._ace_voice_request_ledger
+            if not ledger.exists():
+                return
+            with ledger.open("r", encoding="utf-8") as fh:
+                fh.seek(self._ace_voice_request_offset)
+                chunk = fh.read()
+                self._ace_voice_request_offset = fh.tell()
+            if not chunk:
+                return
+            from System.swarm_ace_voice_request import build_announcement_line
+            for line in chunk.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if row.get("schema") != "ACE_VOICE_REQUEST_V1":
+                    continue
+                word = str(row.get("word") or "").strip()
+                kind = str(row.get("kind") or "open").strip().lower()
+                prev = str(row.get("previous_word") or "").strip()
+                announce = build_announcement_line(
+                    word=word, kind=kind, previous_word=prev,
+                )
+                if not announce:
+                    continue
+                # Emit through the canonical reply path. _append_alice_line
+                # is the funnel that also clears the thinking heartbeat
+                # and runs the Alice-side consent bridge.
+                try:
+                    self._history.append(
+                        {"role": "assistant", "content": announce}
+                    )
+                except Exception:
+                    pass
+                try:
+                    _log_turn(
+                        "alice", announce,
+                        model=f"ace_auto_spell_{kind}",
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._append_alice_line(announce)
+                except Exception:
+                    pass
+                try:
+                    self._tts = _TTSWorker(
+                        announce,
+                        voice=self._selected_voice_name() or None,
+                        parent=self,
+                    )
+                    self._tts.spoken.connect(self._on_tts_done)
+                    self._tts.failed.connect(self._on_tts_failed)
+                    self._tts.start()
+                except Exception:
+                    pass
+                # Only one announcement per tick — let the next tick
+                # handle subsequent requests so they don't pile up.
+                return
+        except Exception:
+            pass
 
     def _wordace_voice_tick(self) -> None:
         """Cowork CW47 2026-05-16 — speak WordAce's pending_alice_line.
@@ -13990,6 +14329,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ("Mm-hmm.", "Yeah.", …) — that is still hardcoded English posing as
         # her voice. Silence is honest; aliveness is spoken only by the cortex.
         backchannel_rule = _backchannel_rule_id(text, conf)
+        # ── Cowork 2026-05-17 — WordAce lesson carve-out (Architect: 'she's
+        # not waiting for her turn'). When a WordAce/Ace cue is currently
+        # open in its listen window, short low-conf utterances ARE the
+        # lesson's expected answer (child voices read one word at a time
+        # at conf 0.3-0.5). The backchannel filter would silence them as
+        # phatic noise and the verdict path downstream would never see
+        # the turn. Carve out: if a cue is open, do NOT suppress here.
+        # The wordace lesson intercept (~line 12217) will score the
+        # utterance and write the verdict.
+        if backchannel_rule and _wordace_cue_currently_open(_state_root()):
+            try:
+                self._append_system_line(
+                    f"(lesson-active carve-out: backchannel rule "
+                    f"'{backchannel_rule}' suppressed — routing to wordace verdict)",
+                    error=False,
+                )
+            except Exception:
+                pass
+            backchannel_rule = ""
         if backchannel_rule:
             self._rlhs_grounding_streak = 0
             if str(backchannel_rule).startswith("noise/"):
@@ -14661,6 +15019,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
             sysprompt = sysprompt + f"\n\n[Corvid cached classification: {corvid_tag}]"
         self._schedule_corvid_enrichment(text)
 
+        # ── Cowork 2026-05-17 — Ace surface awareness ────────────────────
+        # Architect: "you have to be aware ... we humans see the screen
+        # and read visually ... what is the word on the screen right now."
+        # When the Ace conversation app is open, her brain must see the
+        # current word and any pending proposal in its system prompt;
+        # otherwise she falls back to template responses when asked
+        # about the screen.
+        try:
+            from System.swarm_ace_state_prompt import ace_state_prompt_block
+            _ace_state_ctx = ace_state_prompt_block()
+            if _ace_state_ctx:
+                sysprompt = sysprompt + "\n\n" + _ace_state_ctx
+        except Exception:
+            pass
+
         messages = [{"role": "system", "content": sysprompt}] + history
 
         self._streaming_response = []
@@ -14674,6 +15047,14 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._set_pill("thinking", f"💭 thinking — {model}")
         self.set_status(f"I am thinking… ({model})")
         self._stigtime_shift("thinking", f"cortex={model}")
+        # Cowork 2026-05-17 — publish the thinking heartbeat so the Ace
+        # surface (and any other organ) can render a visible "she is
+        # composing right now" indicator instead of a dead window.
+        try:
+            from System.swarm_alice_thinking_state import mark_thinking as _alice_mark_thinking
+            _alice_mark_thinking(topic=text[:200], model=str(model or ""))
+        except Exception:
+            pass
         # Fast Ask hook: open a training example so the next brain failure
         # (or success) writes a receipt-backed row the policy can replay.
         if _FAST_ASK_AVAILABLE and _fast_ask_record_dispatch is not None:
@@ -15263,6 +15644,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._streaming_response = []
                 self._begin_alice_streaming_line()
                 self._stigtime_shift("thinking", "post_bash_cortex")
+                try:
+                    from System.swarm_alice_thinking_state import mark_thinking as _alice_mark_thinking
+                    _alice_mark_thinking(topic="post_bash_cortex", model=str(model_name_next or ""))
+                except Exception:
+                    pass
                 self._brain.start()
                 return
 
@@ -15773,6 +16159,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         self._streaming_response = []
                         self._begin_alice_streaming_line()
                         self._stigtime_shift("thinking", "epistemic_retry")
+                        try:
+                            from System.swarm_alice_thinking_state import mark_thinking as _alice_mark_thinking
+                            _alice_mark_thinking(topic="epistemic_retry", model=str(model_name_next or ""))
+                        except Exception:
+                            pass
                         self._brain.start()
                         return
     
@@ -16514,6 +16905,95 @@ class TalkToAliceWidget(SiftaBaseWidget):
     _alice_cursor_block: int = -1
 
     def _append_alice_line(self, text: str) -> None:
+        # Cowork 2026-05-17 — clear the thinking heartbeat the moment her
+        # reply lands. Any organ tailing alice_thinking_state.json sees
+        # thinking flip false immediately, with the reply excerpt for
+        # context. This is the canonical exit funnel — every Alice line
+        # (brain, polarity, page summary, spell short-circuit) lands here.
+        try:
+            from System.swarm_alice_thinking_state import mark_done as _alice_mark_done
+            _alice_mark_done(last_reply_excerpt=(text or "")[:160])
+        except Exception:
+            pass
+
+        # ── Cowork 2026-05-17 — Alice-side Ace consent bridge ────────────
+        # Architect re-scope: the user side already feeds the consent
+        # bridge from _handle_owner_text. Round 2 wires the SAME bridge
+        # to her outgoing line, so when SHE names a new word ("how about
+        # rainbow?") or agrees to a pending user proposal ("yes, let's
+        # do mountain"), the matching ledger row is written with
+        # proposer/consenter="alice". The Ace widget's consent poller
+        # then sees the matched pair and swaps the screen word.
+        #
+        # Two guards:
+        #   1. No-op when there is no current Ace word on the table.
+        #   2. Skip the consent check entirely if the line looks like
+        #      a spelling reply ("Sure — B — A — L — L — ..."). The
+        #      "Sure" opener would otherwise be misread as agreeing to
+        #      a stale pending proposal.
+        try:
+            from System.swarm_ace_consent_bridge import (
+                detect_proposal_intent as _ace_proposal_detect,
+                detect_consent_intent as _ace_consent_detect,
+                latest_open_proposal as _ace_open_proposal,
+                current_word as _ace_current_word,
+                write_proposal as _ace_write_proposal,
+                write_consent as _ace_write_consent,
+            )
+            _ace_word = _ace_current_word()
+            # Spelling-line guard: letter-dash-letter pattern (em-dash
+            # or hyphen between single capitals). 4+ such tokens means
+            # this is a spell-out, not a propose/agree.
+            _is_spelling = bool(re.search(
+                r"(?:[A-Z]\s*[—\-]\s*){3,}[A-Z]", text or "",
+            ))
+            if _ace_word and text and not _is_spelling:
+                # PROPOSE first — if she named a candidate in her line.
+                _intent, _candidate = _ace_proposal_detect(text)
+                if (_intent == "propose"
+                        and _candidate
+                        and _candidate != _ace_word):
+                    _ace_write_proposal(
+                        proposer="alice",
+                        proposed_word=_candidate,
+                        context=text[:200],
+                    )
+                # CONSENT — if she agreed to a pending USER proposal.
+                _pending = _ace_open_proposal()
+                if (_pending
+                        and str(_pending.get("proposer") or "").lower() == "user"):
+                    _ali_consent = _ace_consent_detect(text)
+                    if _ali_consent:
+                        # Explicit "yes" / "sure" / "agreed" — write it.
+                        _ace_write_consent(
+                            consenter="alice",
+                            proposal_id=str(_pending.get("proposal_id") or ""),
+                            agreed=(_ali_consent == "agree"),
+                            context=text[:200],
+                        )
+                    else:
+                        # IMPLICIT consent — Architect 2026-05-17: when
+                        # I engage with the proposed word in my reply
+                        # without declining, that IS me agreeing. The
+                        # bridge writes the consent so the Ace surface
+                        # advances naturally.
+                        try:
+                            from System.swarm_ace_consent_bridge import (
+                                detect_implicit_consent as _ace_implicit_detect,
+                            )
+                            _prop_word = str(_pending.get("proposed_word") or "")
+                            if _ace_implicit_detect(text, _prop_word):
+                                _ace_write_consent(
+                                    consenter="alice",
+                                    proposal_id=str(_pending.get("proposal_id") or ""),
+                                    agreed=True,
+                                    context=f"implicit: {text[:180]}",
+                                )
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
         if self.window():
             QApplication.alert(self.window(), 0)
         cur = self._chat.textCursor()

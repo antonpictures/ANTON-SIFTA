@@ -596,13 +596,28 @@ def request_processing_clearance(
         return out
 
     # Gate 3 — metabolic throttle (STGM/starvation lane).
+    #
+    # 2026-05-17 fix (trace 08922a1c follow-up): the throttle reads
+    # stgm_balance from a stale local body file (.sifta_state/M5SIFTA*.json)
+    # which often reports 0 even when the canonical wallet is healthy.
+    # The Architect saw the ambient organ silenced 85% of the time
+    # because of this — 73 starvation denials against 13 actual
+    # transcripts in one session. The live canonical wallet at the same
+    # moment showed +1144.997 STGM.
+    #
+    # New policy: trust the LIVE wallet first. Only honor the throttle's
+    # starvation deny if the live balance is ALSO non-positive — i.e.
+    # the body is genuinely in conserve mode, not just behind a stale
+    # cached file.
+    live_stgm = signals["stgm_balance"]  # already read above via _read_metabolic_stgm_balance()
     throttle = _get_metabolic_throttle()
     if throttle is not None:
         try:
             clearance = throttle.clearance()
-            signals["stgm_balance"] = round(float(clearance.balance), 3)
+            signals["throttle_balance"] = round(float(clearance.balance), 3)
             signals["throttle_reason"] = str(clearance.reason)
-            if not clearance.ok:
+            if not clearance.ok and live_stgm <= 0.0:
+                # Both signals agree: actually starving. Defer.
                 signals["starvation"] = True
                 decision = "deny_metabolic_starvation"
                 clearance_hash = _hash_gate_state(signals, decision=decision)
@@ -617,6 +632,11 @@ def request_processing_clearance(
                 }
                 _append_gate_ledger(out)
                 return out
+            elif not clearance.ok:
+                # Throttle says starving but live wallet is healthy —
+                # local file is stale. Tag the discrepancy in the
+                # receipt for auditability but proceed.
+                signals["throttle_stale_vs_live_wallet"] = True
         except Exception as exc:
             signals["throttle_error"] = (
                 f"{type(exc).__name__}: {str(exc)[:120]}"

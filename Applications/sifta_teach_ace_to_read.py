@@ -147,9 +147,56 @@ _BUDDIES = [
     ("🐢", "Stagger",   "#7ED957"),
 ]
 
+# Cowork 2026-05-17 — Architect: "have a bunch of these and change the
+# graphics all the time, when next turn different bugs swarms and stuff,
+# keep the bee always in." The bee (🐝, slot 0) is the anchor; the other
+# five slots rotate through this larger pool every turn. Mix of bugs +
+# small critters + flowers so the swarm feels alive without being noisy.
+_BUDDY_POOL = [
+    ("🐜", "Antie",     "#9B5DE5"),
+    ("🌼", "Petal",     "#F15BB5"),
+    ("🦋", "Wingo",     "#00BBF9"),
+    ("🐞", "Dotty",     "#FB8500"),
+    ("🐢", "Stagger",   "#7ED957"),
+    ("🐛", "Wiggle",    "#A0E060"),
+    ("🦗", "Cricket",   "#88CC88"),
+    ("🪲", "Shelly",    "#CC8844"),
+    ("🪰", "Buzzy",     "#88AACC"),
+    ("🦟", "Skeeter",   "#778899"),
+    ("🕷️", "Webby",     "#AA88FF"),
+    ("🐌", "Slowy",     "#FFAACC"),
+    ("🐸", "Hoppy",     "#7ED957"),
+    ("🐍", "Slither",   "#66CC99"),
+    ("🦎", "Scoot",     "#88EE99"),
+    ("🐠", "Splash",    "#00BBF9"),
+    ("🐙", "Reachy",    "#FF6680"),
+    ("🪻", "Lupin",     "#A07CFF"),
+    ("🌸", "Blossom",   "#FF99CC"),
+    ("🌺", "Hibis",     "#FF5577"),
+    ("🌷", "Tulip",     "#FF99AA"),
+    ("🍄", "Capper",    "#CC4455"),
+    ("🌻", "Sunny",     "#FFC638"),
+    ("⭐", "Twinkle",   "#FFFFAA"),
+    ("✨", "Spark",     "#FFEEAA"),
+    ("🌟", "Glow",      "#FFD23F"),
+    ("🦄", "Mythia",    "#E68CFF"),
+    ("🐉", "Spark",     "#66BB66"),
+    ("🐲", "Drago",     "#88AA88"),
+    ("🌿", "Sprig",     "#88CC66"),
+    ("🌱", "Sprout",    "#88EE66"),
+    ("🍀", "Lucky",     "#66CC44"),
+    ("🪺", "Nestie",    "#CCAA88"),
+]
+_BEE_BUDDY = ("🐝", "Honey", "#FFD23F")   # always slot 0
+
 
 class _StickerCloud(QWidget):
-    """Decorative buddy cluster behind the show-card."""
+    """Decorative buddy cluster behind the show-card.
+
+    Cowork 2026-05-17 — Architect: "keep the bee always in, change the
+    graphics all the time." The bee anchors slot 0; the other five slots
+    rotate through _BUDDY_POOL on every call to :meth:`rotate_swarm`.
+    """
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -157,6 +204,24 @@ class _StickerCloud(QWidget):
         self.setMinimumWidth(360)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._buddies = list(_BUDDIES)
+
+    def rotate_swarm(self) -> None:
+        """Pick a fresh 5 critters from the pool and put them behind the bee.
+
+        The bee always holds slot 0. The remaining five are sampled
+        without replacement from ``_BUDDY_POOL`` so each turn shows a
+        different swarm. Call from the Ace widget's chat-mirror tick
+        and from a periodic timer.
+        """
+        try:
+            sample = random.sample(_BUDDY_POOL, k=min(5, len(_BUDDY_POOL)))
+        except Exception:
+            sample = list(_BUDDY_POOL[:5])
+        self._buddies = [_BEE_BUDDY] + sample
+        try:
+            self.update()
+        except Exception:
+            pass
 
     def paintEvent(self, event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -438,6 +503,41 @@ class TeachAceToReadWidget(QWidget):
         # Carlton is SIFTA marketing feedback, not Ace's father.
         self._current_kind = "letter"
 
+        # ── Cowork 2026-05-17 (Architect re-scope) — conversation mode ──
+        # Architect verbatim: "the world is there ... we talk about the
+        # current word on the screen ... no this doesn't go like that
+        # ... we change the word and we choose it together ... having
+        # the awareness about it consciousness."
+        #
+        # The drill (cue → listen → verdict → advance, with timeouts and
+        # "let's try a different card") is RETIRED. Ace is now a
+        # conversation surface: ONE word lives on the screen; Alice and
+        # the user converse about it through the Talk widget; either
+        # party can propose the next word; the screen only advances on
+        # JOINT CONSENT (both must agree).
+        #
+        # The flag below gates the legacy drill methods to no-ops while
+        # we transition. The new conversation surface uses _open_word()
+        # in place of _start_lesson(). Two new ledgers carry the consent
+        # protocol:
+        #   .sifta_state/wordace_proposal.jsonl  — one side names a word
+        #   .sifta_state/wordace_consent.jsonl   — the other agrees
+        # When PROPOSE + CONSENT for the same word pair land, the
+        # display swaps. Alice generates the proposal text from the
+        # conversation (Architect choice — no fixed playlist).
+        self._conversation_mode = True
+        self._current_word = ""
+        self._consent_ledger_proposal = (
+            _REPO / ".sifta_state" / "wordace_proposal.jsonl"
+        )
+        self._consent_ledger_consent = (
+            _REPO / ".sifta_state" / "wordace_consent.jsonl"
+        )
+        self._consent_proposal_offset = 0
+        self._consent_consent_offset = 0
+        self._pending_proposal: Optional[Dict] = None  # last open PROPOSE
+        self._consent_poll_timer: Optional[QTimer] = None
+
         # ── Header (title + tagline) ────────────────────────────────
         title = QLabel("Ace")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -644,6 +744,161 @@ class TeachAceToReadWidget(QWidget):
         layout.addWidget(self._heard_lbl)
         layout.addWidget(self._processing_lbl)
         layout.addWidget(self._transcript_scroll, 1)
+
+        # ── Cowork 2026-05-17 (Architect re-scope) — unified surface ─────
+        # The Ace surface IS the chat now. The same alice_conversation.jsonl
+        # the global Talk widget writes to is rendered here so this window
+        # contains everything: the word on the card, the chat about the
+        # word, the visible thinking heartbeat. One surface, one ledger.
+        #
+        # No second mic, no second cortex — only a read-only mirror of the
+        # canonical ledger plus a thinking indicator driven by
+        # alice_thinking_state.json. Covenant §7.15: "MDI apps publish
+        # app_focus.jsonl; they do not own a second LLM thread."
+        from PyQt6.QtWidgets import QTextEdit as _AceQTextEdit
+        self._chat_mirror = _AceQTextEdit(self)
+        self._chat_mirror.setReadOnly(True)
+        self._chat_mirror.setMinimumHeight(160)
+        self._chat_mirror.setStyleSheet(
+            "QTextEdit { background-color: rgba(0,0,0,0.30); color: #EAE5FF; "
+            "border: 1px solid rgba(126,217,87,0.20); border-radius: 12px; "
+            "padding: 10px; font-size: 13px; }"
+            "QScrollBar:vertical { background: rgba(255,255,255,0.05); width: 9px; }"
+            "QScrollBar::handle:vertical { background: #6D4FC2; border-radius: 4px; }"
+        )
+        self._chat_mirror_ledger = _REPO / ".sifta_state" / "alice_conversation.jsonl"
+        self._chat_mirror_offset = 0
+        # Seek to EOF on construction so the mirror shows only rows from
+        # this session — not a replay of yesterday's chat.
+        try:
+            if self._chat_mirror_ledger.exists():
+                self._chat_mirror_offset = self._chat_mirror_ledger.stat().st_size
+            else:
+                self._chat_mirror_ledger.parent.mkdir(parents=True, exist_ok=True)
+                self._chat_mirror_ledger.touch()
+        except Exception:
+            self._chat_mirror_offset = 0
+        self._chat_mirror_timer = QTimer(self)
+        self._chat_mirror_timer.setInterval(600)
+        self._chat_mirror_timer.timeout.connect(self._poll_chat_mirror)
+        try:
+            self._chat_mirror_timer.start()
+        except Exception:
+            pass
+
+        # Cowork 2026-05-17 — buddy swarm rotation. Architect: "change
+        # the graphics all the time, when next turn different bugs
+        # swarms and stuff, keep the bee always in." Rotate on a 6s
+        # periodic timer in addition to per-turn rotation in
+        # _poll_chat_mirror. Slow enough not to be dizzying, fast
+        # enough to feel alive between conversation turns.
+        self._buddy_rotate_timer = QTimer(self)
+        self._buddy_rotate_timer.setInterval(6000)
+        self._buddy_rotate_timer.timeout.connect(self._rotate_buddy_swarm)
+        try:
+            self._buddy_rotate_timer.start()
+        except Exception:
+            pass
+
+        # ── Cowork 2026-05-17 — Matrix thinking strip ────────────────────
+        # Architect: "while thinking I see some movements ... like matrix
+        # in the background ... the real data some data that you're
+        # processing in the background just to see it on the screen."
+        #
+        # A green-on-black scrolling text band that pours REAL data from
+        # the canonical ledgers (physics signals, cortex state, gate
+        # decisions, ambient transcripts, self-narration, consent state,
+        # diary, STGM wallet, thermal) while thinking=true. Hidden when
+        # idle. Each line is a receipt-anchored observation — no fake
+        # text, ever.
+        self._thinking_matrix = _AceQTextEdit(self)
+        self._thinking_matrix.setReadOnly(True)
+        self._thinking_matrix.setFixedHeight(110)
+        self._thinking_matrix.setStyleSheet(
+            "QTextEdit { background-color: #000000; color: #66FF66; "
+            "border: 1px solid #1E4A1E; border-radius: 10px; "
+            "padding: 6px 10px; "
+            "font-family: 'Menlo','Monaco','Courier New',monospace; "
+            "font-size: 10px; line-height: 13px; }"
+            "QScrollBar:vertical { background: #000; width: 5px; }"
+            "QScrollBar::handle:vertical { background: #2E6E2E; border-radius: 2px; }"
+        )
+        self._thinking_matrix.setVisible(False)   # hidden until thinking=true
+        self._thinking_matrix_max_lines = 8
+        self._thinking_matrix_lines: list[str] = []
+        self._thinking_matrix_timer = QTimer(self)
+        self._thinking_matrix_timer.setInterval(150)
+        self._thinking_matrix_timer.timeout.connect(self._tick_thinking_matrix)
+        try:
+            self._thinking_matrix_timer.start()
+        except Exception:
+            pass
+
+        # Thinking heartbeat — pulses while Alice is composing.
+        # Reads .sifta_state/alice_thinking_state.json (Talk widget writes
+        # mark_thinking on cortex spawn and mark_done on reply emit).
+        self._thinking_lbl = QLabel("💬  Word on the table.", self)
+        self._thinking_lbl.setStyleSheet(
+            "color: #FFD23F; font-size: 13px; font-weight: 700; "
+            "padding: 6px 10px; background: rgba(255,210,63,0.08); "
+            "border: 1px solid rgba(255,210,63,0.28); border-radius: 10px;"
+        )
+        self._thinking_phase = 0
+        self._thinking_state_file = _REPO / ".sifta_state" / "alice_thinking_state.json"
+        self._thinking_timer = QTimer(self)
+        self._thinking_timer.setInterval(360)
+        self._thinking_timer.timeout.connect(self._tick_thinking)
+        try:
+            self._thinking_timer.start()
+        except Exception:
+            pass
+
+        layout.addWidget(self._thinking_lbl)
+        layout.addWidget(self._thinking_matrix)   # hidden until thinking
+        layout.addWidget(self._chat_mirror, 2)
+        # ── Cowork 2026-05-17 — unified surface, less chrome ──────────────
+        # Architect screenshot @ 12:47 showed three labels stacked all
+        # saying the same thing ("Word on the table…"). Collapse to ONE
+        # visible heartbeat. The legacy drill chrome (mic-idle, processing,
+        # heard, local transcript) is hidden in conversation mode.
+        for legacy_lbl_attr in (
+            "_mic_lbl",            # "Alice ear idle"
+            "_heard_lbl",          # "Word on the table. Talk to Alice…"
+            "_processing_lbl",     # "The word on the table is 'happy'…"
+        ):
+            try:
+                getattr(self, legacy_lbl_attr).setVisible(False)
+            except Exception:
+                pass
+        try:
+            self._transcript_scroll.setVisible(False)
+        except Exception:
+            pass
+
+        # Resolve the OS-USER display name (the architect talking to me)
+        # from owner_genesis.json. This is DIFFERENT from _owner_name,
+        # which is the lesson LEARNER's name (Ace = the kid). The mirror
+        # below shows the conversation between the OS user and Alice;
+        # it must render the OS user, not the kid.
+        self._os_user_display_name = "George"  # safe default
+        try:
+            gpath = _REPO / ".sifta_state" / "owner_genesis.json"
+            if gpath.exists():
+                g = json.loads(gpath.read_text(encoding="utf-8"))
+                raw = str(g.get("owner_name") or "").strip()
+                if raw:
+                    # "ioan george anton" → "George" (prefer middle name
+                    # which is how the architect signs his messages).
+                    parts = [p for p in raw.split() if p]
+                    if len(parts) >= 2:
+                        # Take the second token if present — matches how
+                        # he refers to himself in chat ("Ioan George").
+                        self._os_user_display_name = parts[1].capitalize()
+                    elif parts:
+                        self._os_user_display_name = parts[0].capitalize()
+        except Exception:
+            pass
+
         layout.addWidget(footer)
 
         # ── Lesson state machine state (auto loop, no buttons) ─────
@@ -990,13 +1245,576 @@ class TeachAceToReadWidget(QWidget):
             # failure interrupt the lesson loop.
             pass
 
-    def _start_lesson(self) -> None:
-        """Start the auto Cue → Listen → Verdict → Advance loop.
+    # ── Chat mirror + thinking heartbeat (Cowork 2026-05-17) ──────────
+    def _rotate_buddy_swarm(self) -> None:
+        """Refresh the buddy row with a fresh 5 critters behind the bee."""
+        try:
+            self._sticker_cloud.rotate_swarm()
+        except Exception:
+            pass
 
-        From here on it is a conversation: Alice asks from the OS Talk
-        voice, the mic listens, the verdict comes back, and the card
-        advances. The architect and the kid only watch and speak.
+    def _poll_chat_mirror(self) -> None:
+        """Tail .sifta_state/alice_conversation.jsonl and render new rows.
+
+        The canonical chat ledger writes rows in two shapes — flat
+        ``{"role": ..., "text": ...}`` or wrapped ``{"payload": {...}}``.
+        We unwrap and render both. Lines render as ``George: ...`` (user)
+        or ``Alice: ...`` with simple color cues. Auto-scrolls to bottom.
+
+        Every NEW row in this tick also triggers a buddy-swarm rotation
+        so the surface visibly responds to each conversation turn.
         """
+        try:
+            if not self._chat_mirror_ledger.exists():
+                return
+            with self._chat_mirror_ledger.open("r", encoding="utf-8") as fh:
+                fh.seek(self._chat_mirror_offset)
+                chunk = fh.read()
+                self._chat_mirror_offset = fh.tell()
+        except Exception:
+            return
+        if not chunk:
+            return
+        new_rows_rendered = 0
+        for line in chunk.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+            role = str(payload.get("role") or "").lower()
+            text = str(payload.get("text") or payload.get("content") or "").strip()
+            if not text:
+                continue
+            if not self._should_render_chat_row(role, text):
+                continue
+            self._render_chat_mirror_row(role, text)
+            new_rows_rendered += 1
+        # On EVERY new visible turn, refresh the buddy swarm.
+        if new_rows_rendered > 0:
+            self._rotate_buddy_swarm()
+        # Scroll to bottom so the latest line is visible.
+        try:
+            from PyQt6.QtGui import QTextCursor as _QC
+            cur = self._chat_mirror.textCursor()
+            cur.movePosition(_QC.MoveOperation.End)
+            self._chat_mirror.setTextCursor(cur)
+            self._chat_mirror.ensureCursorVisible()
+        except Exception:
+            pass
+
+    # Roles + text prefixes that are INTERNAL plumbing, not conversation.
+    # The mirror shows the room-conversation between the OS user and
+    # Alice; router classifications, tool receipts, and image-dimension
+    # instructions are body chatter that doesn't belong on the visible
+    # surface. Architect screenshot @ 12:47 showed all four leaking.
+    _MIRROR_ROLE_BLOCKLIST = frozenset({
+        "corvid", "system", "tool", "router", "effector",
+        "kernel", "trace", "receipt",
+    })
+    _MIRROR_TEXT_PREFIX_BLOCKLIST = (
+        "[image:", "**category:**", "*category:*", "🔧 tool",
+        "execution receipts", "app/browser receipt:", "tool_router_trace",
+        "kernel effector rejection", "execution_receipt:",
+    )
+
+    def _should_render_chat_row(self, role: str, text: str) -> bool:
+        """Reject internal plumbing rows from the visible mirror."""
+        if not text:
+            return False
+        if role in self._MIRROR_ROLE_BLOCKLIST:
+            return False
+        lc = text.lstrip().lower()
+        for pfx in self._MIRROR_TEXT_PREFIX_BLOCKLIST:
+            if lc.startswith(pfx):
+                return False
+        return True
+
+    def _render_chat_mirror_row(self, role: str, text: str) -> None:
+        """Append one conversation row to the chat mirror with role color."""
+        if not self._should_render_chat_row(role, text):
+            return
+        try:
+            from PyQt6.QtGui import (
+                QTextCharFormat as _CF,
+                QTextCursor as _QC,
+                QFont as _F,
+                QColor as _Co,
+            )
+            cur = self._chat_mirror.textCursor()
+            cur.movePosition(_QC.MoveOperation.End)
+            fmt_speaker = _CF()
+            fmt_body = _CF()
+            if role == "alice":
+                fmt_speaker.setForeground(_Co(255, 210, 63))
+                fmt_speaker.setFontWeight(_F.Weight.Bold)
+                speaker = "Alice"
+            else:
+                # OS user (the architect) — NOT the lesson learner. The
+                # _owner_name field is the kid (Ace); the OS user comes
+                # from owner_genesis (resolved in _build_lesson_ui).
+                fmt_speaker.setForeground(_Co(0, 187, 249))
+                fmt_speaker.setFontWeight(_F.Weight.Bold)
+                speaker = getattr(self, "_os_user_display_name", "") or "George"
+            fmt_body.setForeground(_Co(235, 230, 255))
+            cur.insertText(f"{speaker}: ", fmt_speaker)
+            cur.insertText(f"{text}\n", fmt_body)
+        except Exception:
+            # Last-resort plain append.
+            try:
+                self._chat_mirror.append(f"{role}: {text}")
+            except Exception:
+                pass
+
+    # Eight-frame breathing sequence — used while Alice is composing.
+    # The dot WALKS across the band so the eye registers motion, not
+    # just a counter incrementing. Em-spaces hold the band width steady.
+    _THINKING_FRAMES = (
+        "•          ",
+        " •         ",
+        "  •        ",
+        "   •       ",
+        "    •      ",
+        "     •     ",
+        "      •    ",
+        "       •   ",
+        "        •  ",
+        "         • ",
+        "          •",
+        "         • ",
+        "        •  ",
+        "       •   ",
+        "      •    ",
+        "     •     ",
+        "    •      ",
+        "   •       ",
+        "  •        ",
+        " •         ",
+    )
+
+    # 12-step breathing brightness for the background. The opacity
+    # sweeps up and down so the band feels like a slow inhale/exhale
+    # while she composes. Architect 2026-05-17: "change the graphics
+    # more dynamic when she thinks".
+    _THINKING_BREATH = (
+        0.08, 0.12, 0.18, 0.26, 0.36, 0.42,
+        0.46, 0.42, 0.36, 0.26, 0.18, 0.12,
+    )
+
+    def _tick_thinking_matrix(self) -> None:
+        """Pour one real-data line into the Matrix strip while thinking.
+
+        Cowork 2026-05-17 — Architect: "while thinking I see ... real
+        data ... rolling like matrix." The strip is visible only while
+        the thinking heartbeat is True; otherwise hidden so it doesn't
+        compete with the conversation.
+
+        Each tick (~150ms) pulls one line from the rotating feed (which
+        cycles through physics → cortex → gate → ambient → narration →
+        consent → ace_word → diary → thermal_tick → stgm_tick). The
+        strip keeps the last 8 lines, newest at the bottom; the eye
+        registers motion.
+        """
+        try:
+            from System.swarm_alice_thinking_state import read_thinking_state
+            state = read_thinking_state()
+        except Exception:
+            state = {}
+        thinking = bool(state.get("thinking"))
+
+        # Show / hide the strip based on heartbeat state.
+        try:
+            if thinking and not self._thinking_matrix.isVisible():
+                self._thinking_matrix.setVisible(True)
+            elif not thinking and self._thinking_matrix.isVisible():
+                self._thinking_matrix.setVisible(False)
+                # Clear the buffer so the next thinking burst starts clean.
+                self._thinking_matrix_lines = []
+                try:
+                    self._thinking_matrix.clear()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+
+        if not thinking:
+            return
+
+        # Pull one real-data line from the feed.
+        try:
+            from System.swarm_thinking_matrix_feed import next_line
+            line = next_line()
+        except Exception:
+            line = ""
+        if not line:
+            return
+
+        self._thinking_matrix_lines.append(line)
+        # Keep only the last N — the strip is a rolling window.
+        if len(self._thinking_matrix_lines) > self._thinking_matrix_max_lines:
+            self._thinking_matrix_lines = self._thinking_matrix_lines[
+                -self._thinking_matrix_max_lines:
+            ]
+
+        try:
+            self._thinking_matrix.setPlainText("\n".join(self._thinking_matrix_lines))
+            from PyQt6.QtGui import QTextCursor as _QC
+            cur = self._thinking_matrix.textCursor()
+            cur.movePosition(_QC.MoveOperation.End)
+            self._thinking_matrix.setTextCursor(cur)
+            self._thinking_matrix.ensureCursorVisible()
+        except Exception:
+            pass
+
+    def _tick_thinking(self) -> None:
+        """Pulse the thinking indicator based on alice_thinking_state.json.
+
+        When thinking=true, runs a walking-dot frame and a breathing
+        brightness sweep over the band background. When false, shows
+        a quiet single-line "Word on the table" with a soft glow.
+        """
+        try:
+            from System.swarm_alice_thinking_state import read_thinking_state
+            state = read_thinking_state()
+        except Exception:
+            state = {}
+        thinking = bool(state.get("thinking"))
+        self._thinking_phase = (self._thinking_phase + 1) % 240
+        word = self._current_word or "—"
+        if thinking:
+            frame = self._THINKING_FRAMES[self._thinking_phase % len(self._THINKING_FRAMES)]
+            alpha = self._THINKING_BREATH[self._thinking_phase % len(self._THINKING_BREATH)]
+            border_alpha = min(1.0, alpha + 0.40)
+            try:
+                self._thinking_lbl.setText(
+                    f"🧠  Alice is thinking about ‘{word}’   {frame}"
+                )
+                # Cyan glow while she composes — clearly distinct from
+                # the yellow idle state so the eye sees the transition.
+                self._thinking_lbl.setStyleSheet(
+                    f"color: #BFE9FF; font-size: 13px; font-weight: 700; "
+                    f"padding: 8px 12px; "
+                    f"background: rgba(80,200,255,{alpha:.2f}); "
+                    f"border: 1.5px solid rgba(80,200,255,{border_alpha:.2f}); "
+                    f"border-radius: 12px;"
+                )
+            except Exception:
+                pass
+        else:
+            try:
+                if self._current_word:
+                    msg = (
+                        f"💬  The word on the table is ‘{self._current_word}’. "
+                        f"Talk to Alice about it."
+                    )
+                else:
+                    msg = "💬  Open a word to start the conversation."
+                # A soft yellow breath even when idle so the surface
+                # doesn't look frozen between turns. Slower, gentler
+                # sweep than the thinking state.
+                idle_breath = (0.08, 0.10, 0.12, 0.14, 0.12, 0.10)
+                a = idle_breath[(self._thinking_phase // 2) % len(idle_breath)]
+                self._thinking_lbl.setText(msg)
+                self._thinking_lbl.setStyleSheet(
+                    f"color: #FFD23F; font-size: 13px; font-weight: 700; "
+                    f"padding: 8px 12px; "
+                    f"background: rgba(255,210,63,{a:.2f}); "
+                    f"border: 1px solid rgba(255,210,63,{min(1.0,a+0.20):.2f}); "
+                    f"border-radius: 12px;"
+                )
+            except Exception:
+                pass
+
+    # ── Conversation-mode entry (Cowork 2026-05-17 re-scope) ──────────
+    def _open_word(self, *, seed_word: Optional[str] = None) -> None:
+        """Open the conversation surface: ONE word on screen, then chat.
+
+        No cue loop, no listen window, no verdict. The seed word is
+        chosen ONCE from the playlist (existing pool) just so the
+        screen has something on it; from that point on, Alice and the
+        user choose the next word together via the proposal/consent
+        ledger pair.
+        """
+        # Pick a seed word — first cue from the engine, or the explicit
+        # override. We never advance through the engine again; this is
+        # just a deterministic way to get one real word on the screen.
+        try:
+            if seed_word is None:
+                cue = self._engine.next_cue(write=True)
+                seed_word = str(cue.get("show") or "").strip()
+        except Exception:
+            seed_word = seed_word or ""
+        if not seed_word:
+            seed_word = "balloon"  # last-resort fallback so the screen never blanks
+
+        self._current_word = seed_word
+        try:
+            self._show_card.set_show(seed_word, "word")
+        except Exception:
+            pass
+
+        # UI chrome — show the user the new shape.
+        try:
+            self._btn_pause.setText("■  Close Ace")
+            self._btn_pause.setEnabled(True)
+            self._owner_field.setReadOnly(True)
+            self._level_picker.setEnabled(False)
+        except Exception:
+            pass
+        try:
+            self._heard_lbl.setText(
+                "💬  Word on the table. Talk to Alice about it — "
+                "use it in a sentence, what does it mean, what does it remind you of. "
+                "When you both want a new word, just say so."
+            )
+        except Exception:
+            pass
+        try:
+            self._set_processing_visual(
+                f"The word on the table is {seed_word!r}.", active=True,
+            )
+        except Exception:
+            pass
+
+        # Publish a conversation-mode focus row. Note what is GONE
+        # vs the old drill row: no wordace_lesson_active, no expected_say,
+        # no cue_id, no lesson_listen_window_s, no pending_alice_line.
+        # This row's only job is to tell Alice's brain WHICH word is on
+        # the table right now, so she can talk about it.
+        self._publish_alice_context(
+            detail=(
+                f"Ace conversation surface is open. The word on the screen is "
+                f"{seed_word!r}. {self._owner_name} and I are talking about it. "
+                f"No drill, no recital. When either of us wants a new word, we "
+                f"propose it; the screen only changes when both agree."
+            ),
+            selection=seed_word,
+            extra={
+                "ace_mode": "conversation",
+                "current_word": seed_word,
+                "voice_owner": "sifta_talk_to_alice_widget",
+                "doctrine": "joint_consent_word_advance",
+            },
+        )
+
+        # Seek the consent ledgers to EOF so we never act on stale rows
+        # from a previous session.
+        for path, attr in (
+            (self._consent_ledger_proposal, "_consent_proposal_offset"),
+            (self._consent_ledger_consent, "_consent_consent_offset"),
+        ):
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if path.exists():
+                    setattr(self, attr, path.stat().st_size)
+                else:
+                    path.touch()
+                    setattr(self, attr, 0)
+            except Exception:
+                setattr(self, attr, 0)
+
+        # Start the consent poll timer — checks every 800ms for a
+        # PROPOSE row followed by a matching CONSENT row.
+        if self._consent_poll_timer is None:
+            self._consent_poll_timer = QTimer(self)
+            self._consent_poll_timer.setInterval(800)
+            self._consent_poll_timer.timeout.connect(self._poll_consent_ledgers)
+        try:
+            self._consent_poll_timer.start()
+        except Exception:
+            pass
+
+        # Diary: the conversation surface opened. One row, honest.
+        try:
+            self._witness_diary(
+                f"I opened the Ace conversation surface. The word on the "
+                f"table is '{seed_word}'. {self._owner_name} and I will talk "
+                f"about it. We will choose the next word together.",
+                source="ace_conversation_opened",
+            )
+        except Exception:
+            pass
+
+        # Cowork 2026-05-17 — Architect: "when you open the app, the
+        # first thing you do is spell the word on the screen." Ace asks
+        # the Talk voice to announce + spell. Talk widget polls
+        # ace_voice_request.jsonl and emits through its canonical TTS
+        # path so the single Alice voice rule holds.
+        try:
+            from System.swarm_ace_voice_request import request_auto_spell
+            request_auto_spell(seed_word, kind="open")
+        except Exception:
+            pass
+
+    def _poll_consent_ledgers(self) -> None:
+        """Watch for PROPOSE then matching CONSENT — swap the word when found.
+
+        Both ledgers are append-only JSONL. Rows look like:
+            {"ts": ..., "schema": "WORDACE_PROPOSAL_V1",
+             "proposer": "alice"|"user", "proposed_word": "rainbow",
+             "proposal_id": "...", "context": "..."}
+            {"ts": ..., "schema": "WORDACE_CONSENT_V1",
+             "consenter": "alice"|"user", "proposal_id": "...",
+             "agreed": true|false}
+
+        Logic: every poll, drain new rows from each ledger. A PROPOSE
+        sets self._pending_proposal. A CONSENT with agreed=True and a
+        proposal_id matching the pending proposal AND a consenter that
+        is NOT the proposer triggers the swap.
+        """
+        # Drain new proposals.
+        try:
+            with self._consent_ledger_proposal.open("r", encoding="utf-8") as fh:
+                fh.seek(self._consent_proposal_offset)
+                chunk = fh.read()
+                self._consent_proposal_offset = fh.tell()
+            for line in chunk.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(row.get("schema") or "") != "WORDACE_PROPOSAL_V1":
+                    continue
+                self._pending_proposal = row
+                try:
+                    word = str(row.get("proposed_word") or "").strip()
+                    proposer = str(row.get("proposer") or "").strip()
+                    self._heard_lbl.setText(
+                        f"🤝  {proposer} proposed '{word}'. Waiting for the other "
+                        f"to agree before the word changes."
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Drain new consents and try to match.
+        try:
+            with self._consent_ledger_consent.open("r", encoding="utf-8") as fh:
+                fh.seek(self._consent_consent_offset)
+                chunk = fh.read()
+                self._consent_consent_offset = fh.tell()
+            for line in chunk.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(row.get("schema") or "") != "WORDACE_CONSENT_V1":
+                    continue
+                if not bool(row.get("agreed")):
+                    # Explicit no — clear the pending proposal.
+                    self._pending_proposal = None
+                    try:
+                        self._heard_lbl.setText(
+                            "💬  Proposal declined. Word stays on the table."
+                        )
+                    except Exception:
+                        pass
+                    continue
+                pending = self._pending_proposal
+                if not isinstance(pending, dict):
+                    continue
+                if (str(row.get("proposal_id") or "")
+                        != str(pending.get("proposal_id") or "")):
+                    continue
+                if (str(row.get("consenter") or "").lower()
+                        == str(pending.get("proposer") or "").lower()):
+                    # Same party — not consent, just an echo. Need the
+                    # OTHER side to agree.
+                    continue
+                # Both agreed — swap the word.
+                new_word = str(pending.get("proposed_word") or "").strip()
+                if new_word:
+                    self._swap_word(new_word, pending=pending, consent=row)
+                self._pending_proposal = None
+        except Exception:
+            pass
+
+    def _swap_word(
+        self,
+        new_word: str,
+        *,
+        pending: Dict,
+        consent: Dict,
+    ) -> None:
+        """Apply a consented word change. Updates display + app_focus + diary."""
+        old_word = self._current_word
+        self._current_word = new_word
+        try:
+            self._show_card.set_show(new_word, "word")
+        except Exception:
+            pass
+        try:
+            self._heard_lbl.setText(
+                f"✨  Word changed: '{old_word}' → '{new_word}'. Carry on."
+            )
+        except Exception:
+            pass
+        try:
+            self._set_processing_visual(
+                f"The word on the table is now {new_word!r}.", active=True,
+            )
+        except Exception:
+            pass
+        self._publish_alice_context(
+            detail=(
+                f"Ace word changed from {old_word!r} to {new_word!r} by joint "
+                f"consent. Proposed by {pending.get('proposer','?')}, "
+                f"confirmed by {consent.get('consenter','?')}. "
+                f"Keep the conversation going."
+            ),
+            selection=new_word,
+            extra={
+                "ace_mode": "conversation",
+                "current_word": new_word,
+                "previous_word": old_word,
+                "advance_method": "joint_consent",
+                "proposal_id": pending.get("proposal_id"),
+            },
+        )
+        try:
+            self._witness_diary(
+                f"We agreed to change the Ace word from '{old_word}' to "
+                f"'{new_word}'. {pending.get('proposer','someone')} proposed, "
+                f"{consent.get('consenter','the other')} agreed.",
+                source="ace_word_changed",
+            )
+        except Exception:
+            pass
+
+        # Cowork 2026-05-17 — Architect: "every time you change the word
+        # you spell it again." Ask Talk to spell the new word with a
+        # transition phrase that names the previous one for closure.
+        try:
+            from System.swarm_ace_voice_request import request_auto_spell
+            request_auto_spell(new_word, kind="swap", previous_word=old_word)
+        except Exception:
+            pass
+
+    def _start_lesson(self) -> None:
+        """Open the conversation surface (legacy method name kept so the
+        button wiring still resolves).
+
+        Architect 2026-05-17 re-scope: there is no drill anymore. The
+        screen holds ONE word; Alice and the user talk about it. Either
+        party proposes the next word in conversation; both must agree
+        before the screen advances. The legacy Cue → Listen → Verdict
+        → Advance loop is dead — see _conversation_mode gate at the
+        top of each former cue/listen/verdict method.
+        """
+        if getattr(self, "_conversation_mode", True):
+            self._open_word()
+            return
         if self._lesson_running:
             return
         self._lesson_running = True
@@ -1088,7 +1906,13 @@ class TeachAceToReadWidget(QWidget):
         QTimer.singleShot(250, self._lesson_run_cue)
 
     def _lesson_run_cue(self) -> None:
-        """Show + speak the next cue. Schedules the listen window."""
+        """Show + speak the next cue. Schedules the listen window.
+
+        Cowork 2026-05-17 — gated off in conversation mode. The drill
+        loop is retired; see _conversation_mode comment in __init__.
+        """
+        if getattr(self, "_conversation_mode", True):
+            return
         if not self._lesson_running:
             return
         self._lesson_state = "CUE"
@@ -1189,6 +2013,8 @@ class TeachAceToReadWidget(QWidget):
         )
 
     def _lesson_listen_window(self) -> None:
+        if getattr(self, "_conversation_mode", True):
+            return
         """Open the 15-second listen window — publish expected_say with
         cue_id, start polling the verdict ledger. The Talk widget side
         reads app_focus.jsonl and writes the verdict back when STT
@@ -1266,6 +2092,12 @@ class TeachAceToReadWidget(QWidget):
     def _lesson_poll_verdict(self) -> None:
         """Tick the listen window — check the verdict ledger or time
         out at 8 seconds."""
+        if getattr(self, "_conversation_mode", True):
+            try:
+                self._lesson_poll_timer.stop()
+            except Exception:
+                pass
+            return
         if not self._lesson_running or self._lesson_state != "LISTEN":
             self._lesson_poll_timer.stop()
             return
@@ -1365,6 +2197,10 @@ class TeachAceToReadWidget(QWidget):
 
     def _handle_advance_signal(self, row: Dict) -> None:
         """Both parties agreed to move on — change the card."""
+        if getattr(self, "_conversation_mode", True):
+            # Conversation mode handles advance via the proposal/consent
+            # ledger pair, not the legacy "advance" signal. No-op here.
+            return
         heard = str(row.get("heard_text") or "")[:80]
         try:
             self._heard_lbl.setText(
@@ -1394,6 +2230,10 @@ class TeachAceToReadWidget(QWidget):
 
     def _handle_hold_signal(self, row: Dict) -> None:
         """Global chat is active — hold the current WordAce card briefly."""
+        if getattr(self, "_conversation_mode", True):
+            # In conversation mode there is no drill to hold. The word
+            # stays up regardless of chat activity.
+            return
         heard = str(row.get("heard_text") or "")[:120]
         hold_s = 30.0
         try:
@@ -1446,6 +2286,11 @@ class TeachAceToReadWidget(QWidget):
 
     def _lesson_handle_verdict(self, row: Dict) -> None:
         """Branch on verdict: praise+advance, nudge+retry, or move on."""
+        if getattr(self, "_conversation_mode", True):
+            # No verdicts in conversation mode — no expected_say to
+            # score against. Drop any stale rows from a previous drill
+            # session silently.
+            return
         label = (row.get("verdict_label") or "").upper()
         display_label = _visible_lesson_verdict_label(label)
         heard = row.get("heard_text") or ""

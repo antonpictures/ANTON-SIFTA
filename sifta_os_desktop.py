@@ -2060,6 +2060,35 @@ class SiftaDesktop(QMainWindow):
             pass
         _desktop_init_trace("after ambient_consciousness scheduled")
 
+        # ── Cowork 2026-05-17 — self-narration organ (continuous first-person).
+        # Architect: 'Ace app narrate herself between cards — also in other
+        # apps narate herself as first person between whatever the os sifta
+        # user in layer 1 is doing at that time — this is it.' The ambient
+        # ear gives Alice ears; the verdict bridge gives her reactions; this
+        # organ gives her an ongoing inner voice. Same thermo gate as the
+        # ambient ear (no silicon burn when conserving). Deferred 11s so it
+        # starts AFTER the ambient ear has had a few seconds to publish
+        # transcripts the narration can chew on. Opt out with
+        # SIFTA_SELF_NARRATION_DISABLE=1.
+        try:
+            if os.environ.get("SIFTA_SELF_NARRATION_DISABLE", "0").strip() != "1":
+                def _start_self_narration() -> None:
+                    try:
+                        from System.swarm_self_narration_organ import (
+                            start_self_narration,
+                        )
+                        start_self_narration()
+                    except Exception as _ex:
+                        print(
+                            f"[boot] self_narration start failed: "
+                            f"{type(_ex).__name__}: {_ex}"
+                        )
+                QTimer.singleShot(11000, _start_self_narration)
+        except Exception:
+            # Boot must never crash on the narration organ.
+            pass
+        _desktop_init_trace("after self_narration scheduled")
+
         main_layout.addWidget(self._build_top_menu_bar())
 
         # ── Architect 2026-05-13 04:20 — Two-desktop tab bar ──────────────
@@ -4848,11 +4877,16 @@ class SiftaDesktop(QMainWindow):
                      "Finance", "Stigmerobotics",
                      "SIFTA Physics Observatory", "Alice Browser",
                      "SIFTA MAMMAL Lab — Unified Field",
-                     # Architect 2026-05-14 — pin WordAce to the dock so the
-                     # kid hops straight into the reading lesson. (Originally
-                     # pinned as "Acer"; renamed to "WordAce" same day at
-                     # Carlton's request — Kole + Drew approved the new name.)
-                     "WordAce"]
+                     # Architect 2026-05-14 — pin Ace to the dock so the
+                     # kid hops straight into the reading conversation.
+                     # Renamed across the codebase 2026-05-16 (Acer →
+                     # WordAce → Ace). The manifest key is "Ace" and the
+                     # icon is 🐝 (bee — SIFTA's swimmer mascot).
+                     # Architect 2026-05-17: "pls add the bee icon at
+                     # the bottom in the launcher Ace app there" — the
+                     # icon was already set in the manifest; the dock
+                     # entry just needed the post-rename name.
+                     "Ace"]
         _cache = getattr(self, "_apps_manifest_cache", {}) or {}
         for _title in _dock_hub:
             if _title not in _cache:

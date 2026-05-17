@@ -22,6 +22,7 @@ def _poll_fake(now: float):
     mic_visuals = []
     fake = SimpleNamespace(
         _lesson_running=True,
+        _conversation_mode=False,
         _lesson_state="LISTEN",
         _lesson_poll_timer=timer,
         _lesson_read_new_verdicts=lambda: [],
@@ -116,7 +117,9 @@ def test_ace_fresh_open_ignores_stale_app_control_rows(tmp_path, monkeypatch):
 
         assert widget.isVisible()
         assert not widget.isHidden()
-        assert widget._lesson_running is True
+        assert widget._conversation_mode is True
+        assert widget._lesson_running is False
+        assert widget._current_word
         assert widget._lesson_state != "CLOSE_SIGNAL"
     finally:
         widget.close()

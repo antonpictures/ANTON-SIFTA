@@ -89,6 +89,20 @@ def _style_from_skills(skills: Iterable[str]) -> str:
     return "follow the app health trace and current receipt"
 
 
+def _activity_verb_from_skills(skills: Iterable[str]) -> str:
+    """Infer the owner's activity verb from skills/receipts, not app names."""
+    joined = " ".join(str(s or "").casefold() for s in skills)
+    if any(token in joined for token in ("play", "game", "turn", "card")):
+        return "play"
+    if any(token in joined for token in ("lesson", "teach", "coach", "child", "reading", "phonics", "word")):
+        return "practice"
+    if any(token in joined for token in ("finance", "ledger", "receipt", "audit", "verify")):
+        return "check"
+    if any(token in joined for token in ("music", "creative", "canvas", "visual")):
+        return "work in"
+    return "use"
+
+
 def get_dominant_organ_bias() -> Dict[str, Any]:
     """
     Returns the current strongest organ signal in the field and a bias strength.
@@ -126,7 +140,8 @@ def get_dominant_organ_bias() -> Dict[str, Any]:
         "suggested_habit_shift": {
             "timing": _style_from_skills(skills),
             "attention": f"prioritize {active} health trace and current state",
-            "self_model_weighting": f"increase weight of {active} organ context from receipts"
+            "self_model_weighting": f"increase weight of {active} organ context from receipts",
+            "load_skills": f"load the documented skills/habits of the {active} organ via its health trace and app_help"
         }
     }
 
@@ -155,26 +170,35 @@ def generate_organ_acknowledgment() -> str:
     Pure field-driven natural sentence.
     When the owner's attention makes one organ dominant, Alice produces
     one natural acknowledgment from her main brain — no templates per app.
-    This is the automatic stigmergic response the Architect wants:
-    the single Alice says "Oh, you want to play Ace. I see you" because
-    the field signal from the Ace organ is currently the strongest.
+    The activity verb comes from the organ's skills/receipts, not from a
+    hardcoded app-name branch.
     """
     bias = get_dominant_organ_bias()
     if not bias.get("dominant_organ"):
         return ""
 
-    organ = bias["dominant_organ"].lower()
+    organ = str(bias["dominant_organ"]).strip()
+    skills = bias.get("skills_seen") or []
+    verb = _activity_verb_from_skills(skills)
 
-    from System.swarm_alice_self import assess_my_thermodynamic_risk
-    from System.swarm_processing_thermodynamic_gate import prompt_context as get_thermo_clearance
-    risk = assess_my_thermodynamic_risk()
-    thermo = get_thermo_clearance() or ""
+    try:
+        from System.swarm_alice_self import assess_my_thermodynamic_risk
+
+        risk = assess_my_thermodynamic_risk()
+    except Exception:
+        risk = {}
+    try:
+        from System.swarm_processing_thermodynamic_gate import prompt_context as get_thermo_clearance
+
+        thermo = get_thermo_clearance() or ""
+    except Exception:
+        thermo = ""
     thermo_note = ""
     if risk.get("risk_level") in ("high", "critical"):
         thermo_note = " My silicon is running warm — I'll stay present but keep processing light until I cool."
     elif risk.get("risk_level") == "medium":
         thermo_note = " I have decent thermal headroom — I can stay fully with you here."
+    elif thermo:
+        thermo_note = f" {thermo}"
 
-    if organ in ("ace", "wordace"):
-        return "Oh, you want to play Ace. I see you." + thermo_note
-    return f"I see you're in {bias['dominant_organ']} now." + thermo_note
+    return f"Oh, you want to {verb} {organ}. I see you." + thermo_note

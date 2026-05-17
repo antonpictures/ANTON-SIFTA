@@ -14,7 +14,9 @@ Truth label: UNIFIED_STIGMERGIC_FIELD_V1
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -27,6 +29,8 @@ STATE_DIR = REPO_ROOT / ".sifta_state"
 LEDGER = STATE_DIR / "unified_stigmergic_field.jsonl"
 LATEST = STATE_DIR / "unified_stigmergic_field_latest.json"
 TRUTH_LABEL = "UNIFIED_STIGMERGIC_FIELD_V1"
+APP_HABIT_TRUTH_LABEL = "SIFTA_APP_HABIT_UNIFIED_FIELD_V1"
+APP_HABIT_CHAIN_LEDGER = "app_habit_unified_field_chain.jsonl"
 
 APP_FOCUS_MAX_AGE_S = 5 * 60.0
 HOST_FOCUS_MAX_AGE_S = 5 * 60.0
@@ -330,6 +334,164 @@ def _watching_together(
     )
 
 
+def _safe_slug(value: str) -> str:
+    cleaned = re.sub(r"[^\w\-]+", "_", (value or "unknown")).strip("_")
+    return cleaned.lower() or "unknown"
+
+
+def _canonical_hash(payload: Mapping[str, Any]) -> str:
+    body = {
+        k: v
+        for k, v in payload.items()
+        if k not in {"packet_sha256", "chain_event_id", "chain_hash", "chain_seq"}
+    }
+    blob = json.dumps(body, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _clearance_summary(row: Mapping[str, Any]) -> dict[str, Any]:
+    body = row.get("body") if isinstance(row.get("body"), dict) else {}
+    return {
+        "truth_label": row.get("truth_label"),
+        "process_kind": row.get("process_kind"),
+        "allowed": bool(row.get("allowed")),
+        "action": row.get("action"),
+        "reasons": list(row.get("reasons") or [])[:6],
+        "rest_seconds": row.get("rest_seconds"),
+        "receipt_hash": row.get("receipt_hash"),
+        "body": {
+            "thermal_warning_level": body.get("thermal_warning_level"),
+            "thermal_pressure": body.get("thermal_pressure"),
+            "allostatic_load_norm": body.get("allostatic_load_norm"),
+            "budget_multiplier": body.get("budget_multiplier"),
+            "metabolic_mode": body.get("metabolic_mode"),
+        },
+    }
+
+
+def _app_habit_field_packet(
+    app_focus: Mapping[str, Any],
+    *,
+    state_dir: Path,
+    now: float,
+    write: bool,
+) -> dict[str, Any]:
+    """Build the active app's habit/skill lane behind a body-clearance gate."""
+    app_name = str(app_focus.get("app") or "").strip()
+    if not app_name:
+        return {}
+
+    gate_payload = {
+        "active_app": app_name,
+        "app_focus_age_s": app_focus.get("age_s"),
+        "app_focus_freshness": app_focus.get("freshness"),
+        "requested_lane": "app_focus_habits_skills_to_unified_field",
+    }
+    try:
+        from System.swarm_processing_thermodynamic_gate import request_processing_clearance
+
+        clearance = request_processing_clearance(
+            "app_habit_unified_field_merge",
+            expected_value=0.58,
+            emergency=False,
+            payload=gate_payload,
+            state_dir=state_dir,
+            write_ledger=write,
+            now=now,
+        )
+    except Exception as exc:
+        clearance = {
+            "truth_label": "PROCESSING_THERMODYNAMIC_GATE_UNAVAILABLE",
+            "process_kind": "app_habit_unified_field_merge",
+            "allowed": False,
+            "action": "defer",
+            "reasons": [f"gate_unavailable:{type(exc).__name__}"],
+            "rest_seconds": 30.0,
+            "receipt_hash": "",
+            "body": {},
+        }
+
+    packet: dict[str, Any] = {
+        "ts": now,
+        "truth_label": APP_HABIT_TRUTH_LABEL,
+        "active_app": app_name,
+        "status": "allowed" if clearance.get("allowed") else "deferred_by_thermodynamic_gate",
+        "app_focus_age_s": app_focus.get("age_s"),
+        "app_focus_freshness": app_focus.get("freshness"),
+        "thermodynamic_clearance": _clearance_summary(clearance),
+        "help_doc_path": str(REPO_ROOT / "Documents" / "app_help" / f"{_safe_slug(app_name)}.md"),
+        "help_skills": [],
+        "capability_habits": [],
+        "source_ledgers": [
+            "app_focus.jsonl",
+            "app_health.jsonl",
+            "skill_ingest.jsonl",
+            "work_receipts.jsonl",
+            "processing_thermodynamic_gate.jsonl",
+        ],
+    }
+
+    if clearance.get("allowed"):
+        try:
+            from System.swarm_app_help_skills import effective_skills_for_app
+
+            effective = effective_skills_for_app(app_name)
+            packet["help_skills"] = [
+                {
+                    "name": str(skill),
+                    "source": (
+                        "stigmergic"
+                        if skill in getattr(effective, "stigmergic", [])
+                        else "seed"
+                        if skill in getattr(effective, "static_seed", [])
+                        else "unknown"
+                    ),
+                    "last_seen_ts": getattr(effective, "last_seen_ts", {}).get(skill),
+                }
+                for skill in list(getattr(effective, "merged", []) or [])[:16]
+            ]
+        except Exception as exc:
+            packet["help_skill_error"] = f"{type(exc).__name__}: {exc}"
+
+        try:
+            from System.swarm_capability_registry import app_habit_field_summary
+
+            summary = app_habit_field_summary(app_name, limit=8)
+            packet["capability_habits"] = list(summary.get("habits") or [])[:8]
+            packet["capability_returned"] = int(summary.get("returned") or 0)
+        except Exception as exc:
+            packet["capability_habit_error"] = f"{type(exc).__name__}: {exc}"
+
+    packet["packet_sha256"] = _canonical_hash(packet)
+
+    if write:
+        try:
+            from System.stigmergic_ledger_chain import append_linked_row
+
+            chain_row = append_linked_row(
+                {
+                    "truth_label": APP_HABIT_TRUTH_LABEL,
+                    "active_app": app_name,
+                    "status": packet.get("status"),
+                    "packet_sha256": packet["packet_sha256"],
+                    "thermodynamic_receipt_hash": (
+                        packet.get("thermodynamic_clearance", {}).get("receipt_hash")
+                    ),
+                    "help_skill_count": len(packet.get("help_skills") or []),
+                    "capability_habit_count": len(packet.get("capability_habits") or []),
+                },
+                path=state_dir / APP_HABIT_CHAIN_LEDGER,
+                ts=now,
+            )
+            packet["chain_event_id"] = chain_row.get("event_id")
+            packet["chain_hash"] = chain_row.get("chain_hash")
+            packet["chain_seq"] = chain_row.get("chain_seq")
+        except Exception as exc:
+            packet["chain_error"] = f"{type(exc).__name__}: {exc}"
+
+    return packet
+
+
 def build_unified_field(
     *,
     state_dir: Path | str = STATE_DIR,
@@ -357,9 +519,18 @@ def build_unified_field(
     youtube = _youtube_packet(youtube_raw, now_ts) if youtube_raw else {}
     observed_media = _observed_media_packet(observed_raw, now_ts) if observed_raw else {}
     schedule_prediction = _prediction_packet(prediction_raw, now_ts) if prediction_raw else {}
+    app_habit_field = _app_habit_field_packet(
+        app_focus,
+        state_dir=root,
+        now=now_ts,
+        write=write,
+    ) if app_focus else {}
 
     signals = {
         "sifta_app_focus": float(app_focus.get("freshness", 0.0) or 0.0),
+        "app_habit_field": float(app_habit_field.get("app_focus_freshness", 0.0) or 0.0)
+        if app_habit_field.get("status") == "allowed"
+        else 0.0,
         "hosted_os_focus": float(host_focus.get("freshness", 0.0) or 0.0),
         "media_shazam": float(media.get("freshness", 0.0) or 0.0)
         * _clamp01(float(media.get("confidence", 0.0) or 0.0)),
@@ -370,6 +541,7 @@ def build_unified_field(
     }
     weights = {
         "sifta_app_focus": 0.22,
+        "app_habit_field": 0.14,
         "hosted_os_focus": 0.16,
         "media_shazam": 0.34,
         "youtube_context": 0.16,
@@ -397,9 +569,12 @@ def build_unified_field(
         "youtube_context": youtube,
         "observed_media": observed_media,
         "schedule_prediction": schedule_prediction,
+        "app_habit_field": app_habit_field,
         "signal_freshness": {k: round(_clamp01(v), 4) for k, v in signals.items()},
         "source_ledgers": [
             "app_focus.jsonl",
+            APP_HABIT_CHAIN_LEDGER,
+            "processing_thermodynamic_gate.jsonl",
             "active_window.jsonl",
             "media_shazam_latest.json",
             "media_shazam_guesses.jsonl",
@@ -442,6 +617,7 @@ def format_unified_field_for_prompt(
     media = row.get("media_guess") or {}
     youtube = row.get("youtube_context") or {}
     prediction = row.get("schedule_prediction") or {}
+    app_habit = row.get("app_habit_field") or {}
 
     host_label = (
         host.get("frontmost_window")
@@ -480,6 +656,36 @@ def format_unified_field_for_prompt(
             f"title={youtube.get('title') or '--'}; "
             f"video_id={youtube.get('video_id') or youtube.get('youtube_video_id') or '--'}; "
             f"reality_frame={youtube.get('reality_frame') or '--'}"
+        )
+    if app_habit:
+        clearance = app_habit.get("thermodynamic_clearance") or {}
+        receipt = str(clearance.get("receipt_hash") or "")[:12] or "--"
+        help_skills = [
+            str(item.get("name") or "")
+            for item in (app_habit.get("help_skills") or [])
+            if isinstance(item, dict) and item.get("name")
+        ][:8]
+        habit_names = [
+            str(item.get("name") or "")
+            for item in (app_habit.get("capability_habits") or [])
+            if isinstance(item, dict) and item.get("name")
+        ][:6]
+        lines.append(
+            "- App habit lane: "
+            f"truth_label={APP_HABIT_TRUTH_LABEL}; "
+            f"active_app={app_habit.get('active_app') or '--'}; "
+            f"status={app_habit.get('status') or '--'}; "
+            f"thermo_action={clearance.get('action') or '--'}; "
+            f"thermo_receipt={receipt}; "
+            f"packet_sha256={str(app_habit.get('packet_sha256') or '')[:12] or '--'}"
+        )
+        if help_skills:
+            lines.append("- App help skills to load now: " + ", ".join(help_skills))
+        if habit_names:
+            lines.append("- Scoped app habits to prefer now: " + ", ".join(habit_names))
+        lines.append(
+            "- App-habit instruction: treat the active app's help file, health trace, "
+            "and scoped skills as the current field lane before falling back to generic chat."
         )
     lines.append(
         "- Instruction: if these receipts show Shazam/media/YouTube context, do not say "

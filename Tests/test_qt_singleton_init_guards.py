@@ -39,7 +39,8 @@ def test_acer_widget_constructs_before_singleton_reentry(monkeypatch):
     w = ace.TeachAceToReadWidget()
     assert w.windowTitle() == "Ace — Reading Coach"
     assert w._current_kind == "word"
-    assert w._engine.current_level_id == "L2_cvc_short_a"
+    assert w._engine.current_level_id == "L2_demo_distinct"
+    assert w._conversation_mode is True
     button_texts = [button.text() for button in w.findChildren(QtWidgets.QPushButton)]
     assert any("Stop lesson" in text for text in button_texts)
     assert all(button.isHidden() for button in w.findChildren(QtWidgets.QPushButton))
