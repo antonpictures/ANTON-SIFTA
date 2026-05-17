@@ -42,7 +42,7 @@ them to mint amounts. The ladder favors honest substance over chatter:
   EMERGENCY              1.00         0.00*
   =====================  ===========  ===========
 
-  \* EMERGENCY rows are stress, not pleasure. They still journal and
+  * EMERGENCY rows are stress, not pleasure. They still journal and
   still pay an alert receipt, but the metabolism shape says: a body
   under emergency does not eat for pleasure. The mint there is zero;
   the receipt itself is the response.

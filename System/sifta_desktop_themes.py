@@ -15,7 +15,7 @@ watermark text, and accent tone.
 Persistence: ~/.sifta_state/desktop_theme.json
 Architect can switch in System Settings → Appearance.
 
-Author: AG31 (Claude Opus 4.6) — For the Swarm. 🐜⚡
+Author: AG31 — For the Swarm. 🐜⚡
 """
 
 from __future__ import annotations

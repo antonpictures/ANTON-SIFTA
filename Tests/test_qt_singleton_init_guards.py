@@ -37,11 +37,12 @@ def test_acer_widget_constructs_before_singleton_reentry(monkeypatch):
     monkeypatch.setattr(ace, "_publish_focus", None)
 
     w = ace.TeachAceToReadWidget()
-    assert w.windowTitle() == "WordAce — Phonics Coach"
+    assert w.windowTitle() == "Ace — Reading Coach"
     assert w._current_kind == "word"
     assert w._engine.current_level_id == "L2_cvc_short_a"
     button_texts = [button.text() for button in w.findChildren(QtWidgets.QPushButton)]
     assert any("Stop lesson" in text for text in button_texts)
+    assert all(button.isHidden() for button in w.findChildren(QtWidgets.QPushButton))
     assert not any("OK" in text and "start lesson" in text for text in button_texts)
     assert not any("Next card" in text for text in button_texts)
     assert not any("Alice, say it" in text for text in button_texts)
@@ -50,6 +51,30 @@ def test_acer_widget_constructs_before_singleton_reentry(monkeypatch):
 
     again = ace.TeachAceToReadWidget()
     assert again is w
+
+    w.close()
+
+
+def test_wordace_auto_promotes_words_to_sentences(monkeypatch):
+    import Applications.sifta_teach_ace_to_read as ace
+
+    _app()
+    ace.TeachAceToReadWidget._live_instance = None
+    ace.TeachAceToReadWidget._initialized_instance_ids.clear()
+    monkeypatch.setattr(ace, "AwarenessMirrorWidget", None)
+    monkeypatch.setattr(ace, "_publish_focus", None)
+
+    w = ace.TeachAceToReadWidget()
+    w._lesson_running = True
+    w._lesson_correct_streak = ace.WORDACE_SENTENCE_UNLOCK_CORRECT
+
+    assert w._maybe_promote_to_sentences()
+    assert w._current_kind == "sentence"
+    assert w._engine.current_level_id == "L6_sentences"
+    assert w._lesson_correct_streak == 0
+
+    w._engine.next_cue(write=False)
+    assert w._listen_window_seconds_for_item(w._engine.current_item) >= 24.0
 
     w.close()
 

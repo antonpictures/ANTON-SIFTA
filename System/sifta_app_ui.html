@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SIFTA</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #fafaf7;
+  --paper: #ffffff;
+  --ink: #0b0b0c;
+  --muted: #6b6b70;
+  --line: #ececea;
+  --accent: #0a66c2;
+  --good: #1f7a4a;
+  --warn: #b9700f;
+  --bad: #b42318;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column;
+}
+
+/* ===== Header ===== */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.title .light { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.owner-chip {
+  font-size: 11px; color: var(--muted);
+  padding: 2px 8px; border-radius: 999px;
+  background: #f1efe9;
+}
+
+/* ===== Main split ===== */
+.main {
+  flex: 1; min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 330px;
+  gap: 10px;
+  padding: 10px;
+}
+.col { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; }
+.col h2 { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.col h2 .badge { color: var(--ink); font-weight: 500; font-size: 11px; text-transform: none; letter-spacing: 0; }
+
+/* ===== Chat column ===== */
+.chat-input {
+  display: flex; gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+}
+.chat-input input {
+  flex: 1;
+  font: inherit; font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: #fff;
+}
+.chat-input input:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+.chat-input button {
+  font: inherit; font-size: 13px; font-weight: 500;
+  padding: 6px 14px; border-radius: 6px;
+  background: var(--accent); color: #fff; border: 0;
+  cursor: pointer;
+}
+.chat-log { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.chat-row { font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; line-height: 1.55; padding: 4px 0; border-bottom: 1px dashed #f0eee7; }
+.chat-row .label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 6px; }
+.chat-row.user { color: var(--accent); }
+.chat-row.error { color: var(--bad); }
+
+.tools-row {
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.tools-row .pill {
+  font-size: 10.5px; font-family: ui-monospace, monospace;
+  padding: 3px 8px; border-radius: 999px;
+  background: #f1efe9; color: var(--muted);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.tools-row .pill:hover { background: #e7e4dc; color: var(--ink); }
+
+/* ===== Receipts column ===== */
+.receipts { flex: 1; overflow-y: auto; padding: 4px 0; }
+.receipt {
+  display: grid;
+  grid-template-columns: 60px 110px 1fr 70px;
+  gap: 8px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 11px;
+  padding: 3px 12px;
+  border-bottom: 1px solid #f5f3ee;
+}
+.receipt:nth-child(odd) { background: #fafaf7; }
+.receipt .ts { color: var(--muted); }
+.receipt .organ { color: var(--accent); font-weight: 500; }
+.receipt .summary { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.receipt .hash { color: var(--muted); text-align: right; }
+.receipt.refused .summary { color: var(--bad); }
+.receipt.refused .organ { color: var(--bad); }
+
+/* ===== Skills column ===== */
+.skill-body { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.skill-form { display: grid; gap: 7px; }
+.skill-form input {
+  width: 100%;
+  font: inherit; font-size: 12px;
+  padding: 7px 9px;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: #fff;
+}
+.skill-form input:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+.skill-actions { display: flex; gap: 6px; align-items: center; }
+.skill-actions button {
+  font: inherit; font-size: 12px; font-weight: 500;
+  padding: 6px 10px; border-radius: 6px;
+  background: var(--accent); color: #fff; border: 0;
+  cursor: pointer;
+}
+.skill-actions label { font-size: 11px; color: var(--muted); display: flex; gap: 4px; align-items: center; }
+.skill-log { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.skill-row {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 11px; line-height: 1.45;
+  padding: 5px 0; border-bottom: 1px dashed #f0eee7;
+  color: var(--muted);
+}
+.skill-row b { color: var(--ink); font-weight: 600; }
+.skill-row.good { color: var(--good); }
+.skill-row.bad { color: var(--bad); }
+
+@media (max-width: 980px) {
+  .main { grid-template-columns: 1fr; overflow-y: auto; }
+  html, body { overflow: auto; }
+}
+
+/* ===== Status bar ===== */
+.status {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 16px;
+  background: var(--paper);
+  border-top: 1px solid var(--line);
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.status b { color: var(--ink); font-weight: 500; }
+.status .verify-btn {
+  font: inherit; font-size: 11px; font-family: inherit;
+  padding: 3px 10px; border-radius: 5px;
+  background: #fff; border: 1px solid var(--line);
+  color: var(--ink); cursor: pointer;
+}
+
+/* ===== OOBE ===== */
+.oobe {
+  position: fixed; inset: 0; z-index: 10;
+  background: rgba(250, 250, 247, 0.97);
+  display: flex; align-items: center; justify-content: center;
+}
+.oobe-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 32px;
+  width: 460px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+}
+.oobe-card h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: -0.02em; }
+.oobe-card p { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 18px; }
+.oobe-card input { width: 100%; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.oobe-card input:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+.oobe-card button { margin-top: 14px; width: 100%; font: inherit; font-size: 14px; font-weight: 500; padding: 10px; border-radius: 6px; background: var(--accent); color: #fff; border: 0; cursor: pointer; }
+.oobe-error { color: var(--bad); font-size: 12px; margin-top: 8px; }
+.oobe-hint { color: var(--muted); font-size: 11px; margin-top: 16px; line-height: 1.5; }
+
+/* ===== Loading ===== */
+.loading {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 13px;
+  background: var(--bg);
+}
+</style>
+</head>
+<body>
+
+<div id="loading" class="loading">Loading SIFTA…</div>
+
+<div id="oobe" class="oobe" style="display:none">
+  <div class="oobe-card">
+    <h1>No owner_genesis found</h1>
+    <p>This window will not create a new owner identity. One genesis per hardware — that's the covenant. Create the genesis through your existing SIFTA genesis widget, then relaunch this window.</p>
+    <p style="font-size:11px;color:var(--muted);margin:14px 0 4px;">Paths I checked:</p>
+    <pre id="oobePaths" style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);background:#f5f3ee;padding:8px 10px;border-radius:4px;margin:0;white-space:pre-wrap;line-height:1.5"></pre>
+    <button id="oobeBtn" style="background:#6b6b70;cursor:default" disabled>Awaiting existing genesis</button>
+    <div class="oobe-hint">Once an <code>owner_genesis.json</code> exists at one of those paths, restart this app. No write will happen from here.</div>
+  </div>
+</div>
+
+<div id="app" style="display:none; flex-direction:column; height:100%;">
+  <div class="header">
+    <div class="title">SIFTA <span class="light">— v0.1 desktop</span></div>
+    <div id="ownerChip" class="owner-chip">owner: —</div>
+  </div>
+
+  <div class="main">
+    <div class="col" id="chatCol">
+      <h2>Talk
+        <span class="badge"><em>type <code>help</code> for vocab</em></span>
+      </h2>
+      <div id="chatLog" class="chat-log"></div>
+      <div class="tools-row" id="toolsRow"></div>
+      <div class="chat-input">
+        <input id="chatInput" type="text" placeholder='try: list .  ·  read README.md  ·  search "anthropic claude"'>
+        <button id="chatSend">Send</button>
+      </div>
+    </div>
+
+    <div class="col" id="receiptsCol">
+      <h2>Receipts <span class="badge" id="receiptCount">0 rows</span></h2>
+      <div id="receipts" class="receipts"></div>
+    </div>
+
+    <div class="col" id="skillsCol">
+      <h2>Skills <span class="badge" id="skillsCount">—</span></h2>
+      <div class="skill-body">
+        <div class="skill-form">
+          <input id="skillSource" type="text" placeholder="https://…/SKILL.md or local path">
+          <input id="skillMarketplace" type="text" placeholder="marketplace JSON path or URL">
+          <input id="skillId" type="text" placeholder="skill id (optional)">
+          <input id="skillContext" type="text" placeholder="life context">
+          <div class="skill-actions">
+            <button id="skillPullBtn">Pull</button>
+            <button id="skillScanBtn">Scan</button>
+            <label><input id="skillForce" type="checkbox"> force</label>
+            <label><input id="skillAutoPull" type="checkbox"> auto</label>
+          </div>
+          <input id="traceFile" type="text" value="tool_router_trace.jsonl">
+          <input id="traceId" type="text" placeholder="trace id (blank = latest success)">
+          <input id="skillName" type="text" placeholder="new skill name">
+          <div class="skill-actions">
+            <button id="skillExtractBtn">Extract</button>
+          </div>
+        </div>
+        <div id="skillLog" class="skill-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status">
+    <span>chain head <b id="chainHead">—</b></span>
+    <span>STGM <b id="stgmBal">—</b></span>
+    <span>tools <b id="toolsCount">—</b></span>
+    <button class="verify-btn" id="verifyBtn">Verify all chains</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Tiny app shell. All real work is in Python via pywebview's
+// window.pywebview.api.<method>(...) bridge.
+// ============================================================
+const api = () => window.pywebview && window.pywebview.api;
+
+function el(id) { return document.getElementById(id); }
+function show(id) { el(id).style.display = ""; }
+function hide(id) { el(id).style.display = "none"; }
+function flexShow(id) { el(id).style.display = "flex"; }
+
+async function ready() {
+  while (!api()) { await new Promise(r => setTimeout(r, 30)); }
+}
+
+let lastSeenTs = 0;
+
+async function refreshOwner() {
+  const s = await api().owner_state();
+  if (!s.signed_in) {
+    hide("loading"); flexShow("oobe");
+    const paths = s.candidates_searched || [];
+    el("oobePaths").textContent = paths.join("\n") || "(none configured)";
+    return false;
+  }
+  el("ownerChip").textContent = "owner: " + (s.owner_name || "?")
+    + (s.source ? "  ·  " + s.source.split("/").slice(-2).join("/") : "");
+  return true;
+}
+
+async function refreshStatus() {
+  const s = await api().status();
+  el("stgmBal").textContent = s.stgm_balance == null ? "—" : Number(s.stgm_balance).toFixed(3);
+  el("toolsCount").textContent = s.tools_count || 0;
+  el("chainHead").textContent = (s.router_head || "—").slice(0, 8) + "…";
+}
+
+async function refreshTools() {
+  const tools = await api().list_tools();
+  const row = el("toolsRow");
+  row.innerHTML = "";
+  for (const t of tools) {
+    const pill = document.createElement("span");
+    pill.className = "pill";
+    pill.textContent = t;
+    pill.title = "click to insert: " + t.replace(/_/g, " ");
+    pill.onclick = () => { el("chatInput").value = quickStub(t); el("chatInput").focus(); };
+    row.appendChild(pill);
+  }
+}
+
+function quickStub(toolName) {
+  switch (toolName) {
+    case "run_terminal":       return "run echo hello";
+    case "run_terminal_shell": return "run echo hello | wc -c";
+    case "read_file":          return "read README.md";
+    case "write_file":         return "write /tmp/sifta_demo.txt hello from SIFTA";
+    case "edit_file":          return ""; // requires three args, leave blank
+    case "list_dir":           return "list .";
+    case "fetch_url":          return "fetch https://example.com";
+    case "search_web":         return "search Anthropic Claude";
+    default:                   return toolName + " ";
+  }
+}
+
+async function pollReceipts() {
+  try {
+    const rows = await api().recent_receipts(lastSeenTs);
+    if (rows && rows.length) {
+      const container = el("receipts");
+      for (const r of rows) {
+        if (r.ts > lastSeenTs) lastSeenTs = r.ts;
+        const div = document.createElement("div");
+        div.className = "receipt" + (r.refused ? " refused" : "");
+        div.innerHTML =
+          '<span class="ts">' + r.ts_iso + '</span>' +
+          '<span class="organ">' + r.organ + '</span>' +
+          '<span class="summary"></span>' +
+          '<span class="hash">' + (r.hash || "") + '</span>';
+        div.querySelector(".summary").textContent = r.summary;
+        container.appendChild(div);
+      }
+      el("receiptCount").textContent = container.children.length + " rows";
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch (e) {
+    // ignore — UI keeps polling
+  }
+}
+
+function appendChat(label, body, klass) {
+  const div = document.createElement("div");
+  div.className = "chat-row " + (klass || "");
+  div.innerHTML = '<span class="label"></span>';
+  div.querySelector(".label").textContent = label;
+  div.appendChild(document.createTextNode(body));
+  const log = el("chatLog");
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function appendSkill(body, klass) {
+  const div = document.createElement("div");
+  div.className = "skill-row " + (klass || "");
+  div.innerHTML = body;
+  const log = el("skillLog");
+  log.prepend(div);
+}
+
+function skillSummary(r) {
+  if (!r) return "no response";
+  const status = r.status || (r.ok ? "OK" : "UNKNOWN");
+  const name = r.skill_name || (r.marketplace_choice && (r.marketplace_choice.id || r.marketplace_choice.name)) || r.reason || r.error || "";
+  const fit = r.life_fit || (r.conversion && r.conversion.life_fit) || (r.marketplace_choice && r.marketplace_choice._life_fit);
+  const score = fit && fit.score != null ? " · fit " + fit.score : "";
+  return status + (name ? " · " + name : "") + score;
+}
+
+function proposalSummary(p) {
+  if (!p) return "proposal";
+  const kind = p.proposal_type || p.receipt_status || "PROPOSAL";
+  const title = p.title || p.reason || "field proposal";
+  const conf = p.confidence != null ? " · " + Number(p.confidence).toFixed(2) : "";
+  return kind + " · " + title + conf;
+}
+
+async function refreshSkills() {
+  try {
+    const s = await api().skill_status(6);
+    if (!s || !s.ok) {
+      el("skillsCount").textContent = "error";
+      return;
+    }
+    el("skillsCount").textContent = s.skills_count + " skills";
+    const log = el("skillLog");
+    if (!log.dataset.seeded) {
+      log.dataset.seeded = "1";
+      for (const r of (s.recent_receipts || []).slice().reverse()) {
+        appendSkill("<b>" + (r.status || r.truth_label || "receipt") + "</b> " + (r.skill_name || r.reason || ""), r.status === "INSTALLED" ? "good" : "");
+      }
+      const proposals = await api().skill_autoproposals(5);
+      for (const p of (proposals || []).slice().reverse()) {
+        appendSkill("<b>" + proposalSummary(p) + "</b>", p.auto_executed ? "good" : "");
+      }
+    }
+  } catch (e) {
+    el("skillsCount").textContent = "error";
+  }
+}
+
+async function scanSkills(silent) {
+  el("skillScanBtn").textContent = "scanning…";
+  try {
+    const r = await api().scan_field_for_skills(
+      el("skillMarketplace").value,
+      el("skillAutoPull").checked,
+      3
+    );
+    if (!silent) {
+      appendSkill(
+        "<b>" + (r.status || "scan") + "</b> " +
+        (r.proposal_count || 0) + " proposals, " + (r.action_count || 0) + " actions",
+        r && r.ok ? "good" : "bad"
+      );
+    }
+    const proposals = await api().skill_autoproposals(5);
+    for (const p of (proposals || []).slice().reverse()) {
+      appendSkill("<b>" + proposalSummary(p) + "</b>", p.auto_executed ? "good" : "");
+    }
+    await refreshStatus();
+  } catch (e) {
+    if (!silent) appendSkill("<b>scan error</b> " + String(e), "bad");
+  }
+  el("skillScanBtn").textContent = "Scan";
+}
+
+async function pullSkill() {
+  el("skillPullBtn").textContent = "pulling…";
+  try {
+    const r = await api().pull_skill(
+      el("skillSource").value,
+      el("skillContext").value,
+      el("skillMarketplace").value,
+      el("skillId").value,
+      el("skillForce").checked,
+      false
+    );
+    appendSkill("<b>" + skillSummary(r) + "</b>", r && (r.status === "INSTALLED" || r.ok) ? "good" : "bad");
+    await refreshSkills();
+    await refreshStatus();
+  } catch (e) {
+    appendSkill("<b>error</b> " + String(e), "bad");
+  }
+  el("skillPullBtn").textContent = "Pull";
+}
+
+async function extractSkill() {
+  el("skillExtractBtn").textContent = "extracting…";
+  try {
+    const r = await api().extract_skill_from_trace(
+      el("traceFile").value,
+      el("traceId").value,
+      el("skillName").value,
+      el("skillContext").value,
+      false
+    );
+    appendSkill("<b>" + skillSummary(r) + "</b>", r && (r.status === "INSTALLED" || r.ok) ? "good" : "bad");
+    await refreshSkills();
+    await refreshStatus();
+  } catch (e) {
+    appendSkill("<b>error</b> " + String(e), "bad");
+  }
+  el("skillExtractBtn").textContent = "Extract";
+}
+
+async function send() {
+  const input = el("chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+  appendChat("you", text, "user");
+  input.value = "";
+  try {
+    const r = await api().chat(text);
+    if (r && r.error) appendChat("err", r.error, "error");
+    else if (r && r.help) for (const line of r.help) appendChat("help", line);
+    else if (r && r.type) appendChat("alice", `${r.type} ${r.hash ? "(" + r.hash.slice(0,8) + "…)" : ""}`);
+    else appendChat("alice", JSON.stringify(r).slice(0, 200));
+  } catch (e) {
+    appendChat("err", String(e), "error");
+  }
+  refreshStatus();
+}
+
+async function init() {
+  await ready();
+  hide("loading");
+  const ok = await refreshOwner();
+  if (!ok) return;
+  show("app");
+  el("app").style.display = "flex";
+  await refreshStatus();
+  await refreshTools();
+  await refreshSkills();
+  await scanSkills(true);
+  pollReceipts();
+  setInterval(pollReceipts, 1500);
+  setInterval(refreshStatus, 4000);
+  setInterval(refreshSkills, 6000);
+}
+
+// OOBE button is disabled — this window never writes owner_genesis.
+// Re-check owner state every 2 seconds in case a genesis is created
+// by SIFTA's own genesis widget while this window is open; then we
+// auto-advance without restart.
+setInterval(async () => {
+  if (el("oobe").style.display !== "none") {
+    const ok = await refreshOwner();
+    if (ok) {
+      hide("oobe");
+      el("app").style.display = "flex";
+      await refreshStatus();
+      await refreshTools();
+      await refreshSkills();
+      await scanSkills(true);
+      pollReceipts();
+      setInterval(pollReceipts, 1500);
+      setInterval(refreshStatus, 4000);
+      setInterval(refreshSkills, 6000);
+    }
+  }
+}, 2000);
+
+// Chat send
+el("chatSend").addEventListener("click", send);
+el("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+el("skillPullBtn").addEventListener("click", pullSkill);
+el("skillScanBtn").addEventListener("click", () => scanSkills(false));
+el("skillExtractBtn").addEventListener("click", extractSkill);
+
+// Verify
+el("verifyBtn").addEventListener("click", async () => {
+  el("verifyBtn").textContent = "verifying…";
+  const out = await api().verify_all();
+  let okCount = 0, badCount = 0, total = 0;
+  for (const k of Object.keys(out)) {
+    total++;
+    if (out[k] && out[k].ok) okCount++; else badCount++;
+  }
+  appendChat("verify", `${okCount}/${total} chains ok` + (badCount ? ` (${badCount} broken)` : ""));
+  appendChat("verify", JSON.stringify(out).slice(0, 400));
+  el("verifyBtn").textContent = "Verify all chains";
+});
+
+init();
+</script>
+</body>
+</html>

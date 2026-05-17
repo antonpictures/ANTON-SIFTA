@@ -4,7 +4,7 @@ Applications/sifta_teach_ace_to_read.py
 ══════════════════════════════════════════════════════════════════════
 StigAuth: SIFTA_TEACH_ACE_TO_READ_V0
 
-A reading-coach app where Alice teaches a kid (ages 3-8). The brain is
+A reading-coach app where Alice teaches Ace, Kole's 11-year-old son. The brain is
 :mod:`System.swarm_alice_lesson_mode` (deterministic engine — no LLM
 needed at this layer). This widget is the lesson body: big show-card,
 sticker buddies, current cue, listen status, and verdict receipt.
@@ -19,8 +19,9 @@ Design notes
   another brand on Alice's body).
 * Architect 2026-05-14: *"amazing graphics, alice agi inside is for
   teaching a kid — Teach Ace How to Read."*
-* George stays primary_operator (covenant §7.10.4). Ace is the kid
-  Alice teaches. Alice never narrates Ace from outside — every
+* George stays primary_operator (covenant §7.10.4). Ace is Kole's
+  11-year-old son and the current WordAce learner. Carlton is SIFTA
+  marketing feedback. Alice never narrates Ace from outside — every
   prompt is direct ("Ace, say…").
 * Decide → Execute → Receipt mapped to LessonEngine.next_cue() →
   score_attempt() → trace row trio. The widget never invents
@@ -36,7 +37,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from PyQt6.QtCore import QPointF, Qt, QTimer
 from PyQt6.QtGui import QBrush, QColor, QFont, QFontDatabase, QLinearGradient, QPainter, QPen, QRadialGradient
@@ -73,6 +74,54 @@ except Exception:
 
 
 TRUTH_LABEL = "SIFTA_TEACH_ACE_TO_READ_V0"
+WORDACE_SENTENCE_UNLOCK_CORRECT = 4
+WORDACE_LATE_VERDICT_GRACE_S = 30.0
+
+
+def _visible_lesson_verdict_label(label: str) -> str:
+    """Human-facing label for near pronunciations.
+
+    The ledger keeps the historical CLOSE enum for compatibility, but a parent
+    reading the UI should see ALMOST, not a phrase that sounds like an app-close
+    command.
+    """
+    normalized = (label or "").upper()
+    if normalized == "CLOSE":
+        return "ALMOST"
+    return normalized
+
+
+def _wordace_bridge_listen_deadline_seconds(base_window_s: float) -> float:
+    """Match Talk's STT bridge window so Ace does not timeout first."""
+    try:
+        base = float(base_window_s or 15.0)
+    except (TypeError, ValueError):
+        base = 15.0
+    if base <= 0:
+        base = 15.0
+    return max(12.0, min(45.0, base + 5.0))
+
+
+def _lesson_praise_advance_delay_ms(praise: str, item: Any = None) -> int:
+    """Give correct-answer praise a clear thinking pause before the next cue.
+
+    Cowork 2026-05-17 — bumped from Codex's 1700-2900 ms cap to 3500-5500 ms
+    after Architect note: 'she still speaks twice in a row.' A two-second
+    pause was too short to feel like a deliberate teacher beat; the kid
+    perceived praise + next cue as one continuous Alice monologue. With a
+    3.5-5.5 s hold the praise lands, silence lets the kid feel they took
+    their turn, then the next cue arrives as a fresh utterance. Filmmaker's
+    pacing: editor cuts the breath in, not the breath out.
+    """
+    word_count = len(str(praise or "").split())
+    delay = 3200 + min(1400, word_count * 110)
+    try:
+        if str(getattr(item, "level_kind", "") or "").lower() == "sentence":
+            delay += 700
+    except Exception:
+        pass
+    return max(3500, min(5500, int(delay)))
+
 
 # Identity line — direct from Architect 2026-05-14: "I am Alice of Gemma.
 # I have Gemini inside my belly. I use Gemma as intelligence but I am
@@ -263,13 +312,21 @@ class TeachAceToReadWidget(QWidget):
                 # any method raises RuntimeError. In that case we drop
                 # the stale ref and fall through to a fresh build.
                 _ = existing.isVisible()
-                try:
-                    existing.show()
-                    existing.raise_()
-                    existing.activateWindow()
-                except Exception:
-                    pass
-                return existing
+                # Poisoned-singleton guard (Grok audit 2026-05-17):
+                # If __new__ previously returned an instance whose __init__
+                # never completed (id never added to _initialized_instance_ids),
+                # we must discard it. This is the exact failure path causing
+                # the persistent black Ace window after relaunch.
+                if id(existing) not in cls._initialized_instance_ids:
+                    cls._live_instance = None
+                else:
+                    try:
+                        existing.show()
+                        existing.raise_()
+                        existing.activateWindow()
+                    except Exception:
+                        pass
+                    return existing
             except RuntimeError:
                 cls._live_instance = None
         return super().__new__(cls)
@@ -283,28 +340,112 @@ class TeachAceToReadWidget(QWidget):
         if id(self) in type(self)._initialized_instance_ids:
             return
         super().__init__(parent)
-        self.setWindowTitle("WordAce — Phonics Coach")
+        # ── Cowork 2026-05-17 (trace 8c4819a6 follow-up) — defensive
+        # init wrapper. Architect reported the Ace window opening
+        # BLACK after recent patches. When __init__ raises mid-build,
+        # Qt swallows the exception and leaves a half-constructed
+        # widget that survives in the singleton, poisoning the next
+        # click. This wrapper logs the failure to a known append-only
+        # ledger and resets the singleton so subsequent clicks always
+        # get a fresh attempt. Probe script `probe_ace_black.py` at
+        # the repo root surfaces the exact line that raises.
+        try:
+            self._build_lesson_ui(parent)
+        except Exception as _ace_init_exc:
+            try:
+                import traceback as _tb_dx
+                import json as _json_dx
+                import time as _time_dx
+                err_path = _REPO / ".sifta_state" / "ace_init_errors.jsonl"
+                err_path.parent.mkdir(parents=True, exist_ok=True)
+                with err_path.open("a", encoding="utf-8") as _fh_dx:
+                    _fh_dx.write(_json_dx.dumps({
+                        "ts": _time_dx.time(),
+                        "schema": "ACE_INIT_FAILURE_V1",
+                        "trace_id": "8c4819a6-9a52-4a0e-b990-e39ad39f2855",
+                        "kind": "ACE_WIDGET_INIT_RAISED",
+                        "exception_type": type(_ace_init_exc).__name__,
+                        "exception_str": str(_ace_init_exc)[:500],
+                        "traceback": _tb_dx.format_exc()[-2000:],
+                        "note": "Singleton reset; next open will rebuild fresh.",
+                    }) + "\n")
+            except Exception:
+                pass
+            # Reset the singleton so the next click is not stuck on
+            # a poisoned half-built widget.
+            type(self)._live_instance = None
+            type(self)._initialized_instance_ids.discard(id(self))
+            # Try to leave a visible error label so the user sees
+            # SOMETHING instead of a black window.
+            try:
+                from PyQt6.QtWidgets import QVBoxLayout as _QV, QLabel as _QL
+                _err_lay = _QV(self)
+                _err_lbl = _QL(
+                    "Ace init failed.\n\n"
+                    f"{type(_ace_init_exc).__name__}: {str(_ace_init_exc)[:240]}\n\n"
+                    "See .sifta_state/ace_init_errors.jsonl for the full "
+                    "traceback. Quit + relaunch the desktop, then run "
+                    "probe_ace_black.py if it persists."
+                )
+                _err_lbl.setWordWrap(True)
+                _err_lbl.setStyleSheet(
+                    "color: #FF5A6E; background: #1C1638; "
+                    "padding: 20px; font-size: 13px;"
+                )
+                _err_lay.addWidget(_err_lbl)
+            except Exception:
+                pass
+            # Re-raise so the desktop spawner can also see the error
+            # in its own logs (covenant §6 effector ledger — no silent
+            # action failures).
+            raise
+
+    def _build_lesson_ui(self, parent: Optional[QWidget] = None) -> None:
+        """The original __init__ body, moved here so the wrapper above
+        can catch construction failures and reset the singleton.
+        Calling this method twice on the same object would double-wire
+        signals; the wrapper guarantees it runs once per instance."""
+        # Architect 2026-05-16 rename: WordAce → Ace ("just Ace, so we
+        # simplify"). Window title flipped; internal log/ledger strings
+        # stay 'WordAce' for backward-compat with in-flight cue_ids and
+        # wordace_*.jsonl ledger paths. Phase B will unify them later.
+        self.setWindowTitle("Ace — Reading Coach")
         self.resize(820, 720)
         self.setStyleSheet(
             "background-color: #1C1638; color: #F0F0F0;"
         )
 
         self._engine = LessonEngine(rng=random.Random())
-        # Default name — the kid types their own (Kole, Drew, whoever)
-        # but "Ace" is the warm fallback. Was briefly "Friend" earlier
-        # this session; architect 2026-05-14 ~18:00 PDT — "I don't want
-        # friend so change the friend default with Ace."
+        # Layer 1 kernel registration for the learner (Ace the child).
+        # Pulled from owner_genesis extra["ace_learner_name"] (primordial,
+        # silicon-bound, signed at genesis like the main owner). This is the
+        # name that appears in "Ace: [mic captured]" lines in the transcript.
+        # The QLineEdit is a live override for this session; _on_owner_changed
+        # keeps it in sync. If no layer-1 registration yet, default "Ace".
         self._owner_name = "Ace"
+        try:
+            gpath = _REPO / ".sifta_state" / "owner_genesis.json"
+            if gpath.exists():
+                genesis = json.loads(gpath.read_text(encoding="utf-8"))
+                extra = genesis.get("extra") or {}
+                ln = (extra.get("ace_learner_name") or extra.get("lesson_child_name") or "").strip()
+                if ln:
+                    self._owner_name = ln
+        except Exception:
+            pass
+        # Default name: Ace is Kole's 11-year-old son and the current
+        # WordAce learner. Kole is the father / potential investor;
+        # Carlton is SIFTA marketing feedback, not Ace's father.
         self._current_kind = "letter"
 
         # ── Header (title + tagline) ────────────────────────────────
-        title = QLabel("WordAce")
+        title = QLabel("Ace")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
             "font-size: 32px; font-weight: 800; color: #FFFFFF; padding-top: 14px;"
         )
         tagline = QLabel(
-            "“I am Alice — Layer 1 me, Gemma in my belly. You're a WordAce. "
+            "“I am Alice — Layer 1 me, Gemma in my belly. You're an Ace. "
             "Letters first, then real words, then sentences. I'm here with you.”"
         )
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -400,7 +541,7 @@ class TeachAceToReadWidget(QWidget):
         # 👂 What Alice just heard + her verdict, surfaced live so the
         # architect can see the recognition trace without opening the
         # Talk widget. Populated from .sifta_state/wordace_verdicts.jsonl.
-        self._heard_lbl = QLabel("👂  WordAce is opening. Alice will start without a second voice.")
+        self._heard_lbl = QLabel("👂  Ace is opening. Alice will start without a second voice.")
         self._heard_lbl.setWordWrap(True)
         self._heard_lbl.setStyleSheet(
             "color: #00BBF9; font-size: 13px; font-weight: 600; "
@@ -420,6 +561,19 @@ class TeachAceToReadWidget(QWidget):
         self._processing_timer = QTimer(self)
         self._processing_timer.setInterval(360)
         self._processing_timer.timeout.connect(self._tick_processing_visual)
+
+        self._mic_visual_base_text = "Alice ear idle."
+        self._mic_visual_phase = 0
+        self._mic_lbl = QLabel("🎙  Alice ear idle.", self)
+        self._mic_lbl.setWordWrap(True)
+        self._mic_lbl.setStyleSheet(
+            "color: #7ED957; font-size: 13px; font-weight: 700; "
+            "padding: 6px 10px; background: rgba(126,217,87,0.09); "
+            "border: 1px solid rgba(126,217,87,0.32); border-radius: 10px;"
+        )
+        self._mic_visual_timer = QTimer(self)
+        self._mic_visual_timer.setInterval(280)
+        self._mic_visual_timer.timeout.connect(self._tick_mic_visual)
 
         controls_top = QHBoxLayout()
         controls_top.addWidget(owner_label)
@@ -486,6 +640,7 @@ class TeachAceToReadWidget(QWidget):
         layout.addLayout(cloud_mirror_row)
         layout.addWidget(self._show_card, 2)
         layout.addLayout(controls_top)
+        layout.addWidget(self._mic_lbl)
         layout.addWidget(self._heard_lbl)
         layout.addWidget(self._processing_lbl)
         layout.addWidget(self._transcript_scroll, 1)
@@ -499,23 +654,38 @@ class TeachAceToReadWidget(QWidget):
         self._lesson_cue_id: str = ""
         self._lesson_listen_started_ts: float = 0.0
         self._lesson_listen_window_s: float = 15.0   # kid-friendly
+        self._lesson_bridge_wait_announced_cue_id: str = ""
         self._lesson_retry_count: int = 0
         self._lesson_max_retries: int = 1
         self._lesson_timeout_count: int = 0
-        self._lesson_max_timeouts_per_cue: int = 2   # patience: re-ask twice
+        self._lesson_max_timeouts_per_cue: int = 1   # one nudge per card (Architect 2026-05-16 trace b8ae2637 — "one line at a time")
+        self._lesson_correct_streak: int = 0
+        self._lesson_late_verdict_deadlines: Dict[str, float] = {}
+        # ── cw47-0517-0007 — first-cue display/voice sync flag ────────
+        # True after _stage_first_card draws an item; the very next
+        # _lesson_run_cue reuses that item instead of redrawing so the
+        # card display and the spoken cue match on the lesson's first
+        # turn. See LessonEngine.confirm_current_cue.
+        self._first_cue_pending: bool = False
         self._lesson_verdicts_ledger = _REPO / ".sifta_state" / "wordace_verdicts.jsonl"
         self._lesson_verdicts_offset: int = 0
         # Architect 2026-05-14 ~19:30 PDT: "the lesson stops when Alice
         # and Ace decide to close the app… let's have them discuss
         # that word until they both decide to move on together from
         # that to the next word and then Alice changes the word on the
-        # screen." Two signal channels — advance + close — written by
-        # the Talk STT bridge when it hears the matching phrase. This
-        # widget polls them and acts.
+        # screen." Signal channels are written by the Talk STT bridge
+        # when it hears owner/app-control speech. This widget polls them
+        # and acts.
         self._wordace_advance_ledger = _REPO / ".sifta_state" / "wordace_advance.jsonl"
         self._wordace_advance_offset: int = 0
         self._wordace_close_ledger = _REPO / ".sifta_state" / "wordace_close.jsonl"
         self._wordace_close_offset: int = 0
+        self._wordace_hold_ledger = _REPO / ".sifta_state" / "wordace_hold.jsonl"
+        self._wordace_hold_offset: int = 0
+        # Prime command channels before the always-on poller starts. Otherwise
+        # stale "close/hold/next" rows from an earlier lesson can replay into a
+        # fresh Ace window and hide the widget, leaving a black MDI shell.
+        self._seek_wordace_signal_ledgers_to_tail()
         # WordAce does not own an audio voice. The Talk widget / OS
         # Alice owns speech. This slot remains only so old cleanup paths
         # can no-op safely after the 2026-05-14 "no second robot" patch.
@@ -565,6 +735,23 @@ class TeachAceToReadWidget(QWidget):
             except Exception:
                 pass
 
+    def _seek_wordace_signal_ledgers_to_tail(self) -> None:
+        """Ignore app-control commands written before this widget existed."""
+        for ledger_path, offset_attr in (
+            (self._wordace_advance_ledger, "_wordace_advance_offset"),
+            (self._wordace_close_ledger, "_wordace_close_offset"),
+            (self._wordace_hold_ledger, "_wordace_hold_offset"),
+        ):
+            try:
+                if ledger_path.exists():
+                    setattr(self, offset_attr, ledger_path.stat().st_size)
+                else:
+                    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+                    ledger_path.touch()
+                    setattr(self, offset_attr, 0)
+            except Exception:
+                setattr(self, offset_attr, 0)
+
     # ── handlers ─────────────────────────────────────────────────────
 
     def _on_owner_changed(self, txt: str) -> None:
@@ -596,6 +783,12 @@ class TeachAceToReadWidget(QWidget):
             if cue.get("kind") == "LESSON_CUE_EMPTY":
                 self._show_card.set_show("…", "letter")
                 return
+            # ── cw47-0517-0007 — first-cue display/voice sync ─────────
+            # Mark the staged item so the upcoming _lesson_run_cue uses
+            # the SAME draw instead of re-rolling rng.choice. Architect
+            # 2026-05-17: "I can see it. It reads cat" while Alice cued
+            # "mat" — that was two independent draws of the deck.
+            self._first_cue_pending = True
             self._show_card.set_show(cue.get("show", ""), self._current_kind)
             # Publish even before OK. This lets the one OS Alice answer
             # "what is on the WordAce screen?" from a receipt instead
@@ -622,33 +815,45 @@ class TeachAceToReadWidget(QWidget):
         selection: str = "",
         extra: Optional[Dict] = None,
     ) -> None:
-        """Push lesson state into ``.sifta_state/app_focus.jsonl``.
+        """Push lesson state + visible contents into ``.sifta_state/app_focus.jsonl``.
 
-        Alice's Talk widget reads this ledger when assembling her
-        system prompt, so she knows she is the teacher in the WordAce
-        lesson, what the current cue is, and what she's expecting the
-        kid to say. Without this bridge the Talk widget treats every
-        question ("who are you?") in a vacuum.
+        The OS (Alice + any organ) reads the latest Ace focus row to SEE the
+        exact contents of this app's main visual organ (the _ShowCard). This
+        teaches the organism how to ground "what is on the Ace screen" in a
+        receipt instead of hallucinating the word. All swimmers in the Ace
+        organ (LessonEngine, _ShowCard, verdict stickers) now surface their
+        state into the unified field so the cortex and coach skill know the
+        organ without double-spend or invention. Canonical name "Ace" post
+        2026-05-16 rename.
         """
         if _publish_focus is None:
             return
         item = self._engine.current_item
+        visible_contents = {
+            "card_text": item.show if item else "",
+            "expected_utterance": item.say if item else "",
+            "expected_alternates": list(getattr(item, "alternates", []) or []) if item else [],
+            "cue_kind": self._current_kind,
+            "lesson_level": self._engine.current_level_id,
+            "sticker_buddies": [b[1] for b in _BUDDIES],
+        }
         meta = {
-            "lesson_app": "WordAce",
+            "lesson_app": "Ace",
             "alice_identity": ALICE_IDENTITY_LINE,
             "owner_name": self._owner_name,
             "level_id": self._engine.current_level_id,
             "current_cue_show": item.show if item else "",
             "current_cue_say": item.say if item else "",
             "current_kind": self._current_kind,
-            "source": "wordace_widget",
+            "source": "ace_widget",
             "salience_score": 1.5,
+            "visible_contents": visible_contents,
         }
         if extra:
             meta.update(extra)
         try:
             _publish_focus(
-                "WordAce",
+                "Ace",
                 detail,
                 tab="Lesson",
                 selection=selection or (item.show if item else ""),
@@ -760,6 +965,31 @@ class TeachAceToReadWidget(QWidget):
 
     # ── conversation state machine (no buttons, Alice drives) ─────
 
+    def _witness_diary(self, line: str, *, source: str = "ace_lesson") -> None:
+        """Write a first-person diary row to Alice's journal.
+
+        Cowork 2026-05-17 (trace 41f4a3e2 follow-up) — Architect:
+        'when i'm in the ace app she does not write in her diary the
+        details? thes what the explorer diary is for... like Bridget
+        Jones Diary mixed with world explorers types - christopher
+        columbus they take notes date time what is going on - that
+        helps consciousness'.
+
+        Before this, Ace lesson events left ZERO trace in
+        .sifta_state/alice_first_person_journal.jsonl. Her diary
+        showed face events and app_focus shifts but never the
+        teaching itself. Now her body witnesses what she does as
+        a teacher and the journal carries the memory forward —
+        tomorrow she scrolls and sees the actual session.
+        """
+        try:
+            from System.swarm_alice_witness import witness as _w
+            _w(line, source=source)
+        except Exception:
+            # Diary writes are best-effort; never let a journal
+            # failure interrupt the lesson loop.
+            pass
+
     def _start_lesson(self) -> None:
         """Start the auto Cue → Listen → Verdict → Advance loop.
 
@@ -770,6 +1000,19 @@ class TeachAceToReadWidget(QWidget):
         if self._lesson_running:
             return
         self._lesson_running = True
+        # Diary: lesson opens. Note the deck, the learner, the first
+        # card she will teach.
+        try:
+            current_item = getattr(self._engine, "current_item", None)
+            first_card = (getattr(current_item, "show", "") or "—") if current_item else "—"
+            level_id = self._engine.current_level_id or "?"
+            self._witness_diary(
+                f"I started a reading lesson with {self._owner_name}. "
+                f"Deck: {level_id}. First card I will teach: '{first_card}'.",
+                source="ace_lesson_opened",
+            )
+        except Exception:
+            pass
         try:
             self._btn_pause.setText("■  Stop lesson")
             self._btn_pause.setEnabled(True)
@@ -792,41 +1035,57 @@ class TeachAceToReadWidget(QWidget):
         # Also seek the signal ledgers to EOF so we only react to
         # commands the kid says AFTER this lesson started — never to
         # stale rows from a previous session.
-        for ledger_path, offset_attr in (
-            (self._wordace_advance_ledger, "_wordace_advance_offset"),
-            (self._wordace_close_ledger,   "_wordace_close_offset"),
-        ):
-            try:
-                if ledger_path.exists():
-                    setattr(self, offset_attr, ledger_path.stat().st_size)
-                else:
-                    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-                    ledger_path.touch()
-                    setattr(self, offset_attr, 0)
-            except Exception:
-                setattr(self, offset_attr, 0)
+        self._seek_wordace_signal_ledgers_to_tail()
         if self._current_kind == "word":
             deck_label = "words"
+            deck_extra = " I will move to sentences automatically after a few good reads."
+        elif self._current_kind == "sentence":
+            deck_label = "sentences"
+            deck_extra = " I will give you extra time for each sentence."
         elif self._current_kind == "letter_sequence":
             deck_label = "letter groups"
+            deck_extra = ""
         elif self._current_kind == "letter":
             deck_label = "letters"
+            deck_extra = ""
         else:
             deck_label = "cards"
-        greeting = f"Hi {self._owner_name}. I am starting WordAce with {deck_label}."
-        self._append_line("Lesson", greeting, "#FFD23F")
+            deck_extra = ""
+        # ── Cowork 2026-05-16 (trace b8ae2637) — greeting stripped ────
+        # Architect 2026-05-16 ~23:00 PT: "The intro is too long, boring
+        # stuff, automatic. I don't need hardcoded stuff. I just want
+        # regular conversation and one at a time. She's already speaking
+        # she spoke three times — she's not allowed. She speaks one
+        # time, then I speak one of the user."
+        # The hardcoded greeting/identity_line block was removed. The
+        # lesson now opens directly with the first cue (one line: the
+        # actual word/letter/sentence). Real conversational openings
+        # belong in Alice's chat layer per §7.15 (full Cut A — future
+        # surgery, single-Doctor-owned per §4.4).
+        # deck_label / deck_extra were only used to build the greeting;
+        # we still compute them to keep app_focus context honest about
+        # what kind of card deck is active.
         self._heard_lbl.setText(
-            "👂  Ready. Alice owns the voice through Talk; WordAce is publishing the lesson state."
+            "👂  Ready. Alice will speak each cue through the chat voice, "
+            "then wait for you. Take your time."
         )
+        # Publish lesson_started state to app_focus WITHOUT a
+        # pending_alice_line — no spoken greeting to schedule. Alice's
+        # real chat layer can react to lesson_started=True if it wants
+        # to add a real conversational opener.
         self._publish_alice_context(
-            detail=greeting,
+            detail=f"WordAce lesson started. Deck: {deck_label}.{deck_extra}",
             extra={
                 "wordace_lesson_active": True,
                 "lesson_started": True,
+                "deck_label": deck_label,
                 "voice_owner": "sifta_talk_to_alice_widget",
+                # no pending_alice_line — Architect rule: one line at a time
             },
         )
-        QTimer.singleShot(0, self._lesson_run_cue)
+        # Fire the first cue immediately (small delay so the publish row
+        # lands before the cue line is appended).
+        QTimer.singleShot(250, self._lesson_run_cue)
 
     def _lesson_run_cue(self) -> None:
         """Show + speak the next cue. Schedules the listen window."""
@@ -836,11 +1095,20 @@ class TeachAceToReadWidget(QWidget):
         self._lesson_cue_id = uuid.uuid4().hex[:12]
         self._lesson_retry_count = 0
         self._lesson_timeout_count = 0
-        cue = self._engine.next_cue(write=True)
+        # ── cw47-0517-0007 — first-cue display/voice sync ──────────────
+        # If _stage_first_card already drew an item and put it on the
+        # card, REUSE that item for the first cue so the spoken cue
+        # matches the displayed word. Otherwise (subsequent cues), draw
+        # fresh as before.
+        if getattr(self, "_first_cue_pending", False) and self._engine.current_item is not None:
+            cue = self._engine.confirm_current_cue(write=True)
+            self._first_cue_pending = False
+        else:
+            cue = self._engine.next_cue(write=True)
         if cue.get("kind") == "LESSON_CUE_EMPTY":
             self._show_card.set_show("…", "letter")
             done_line = f"You did it, {self._owner_name}! Lesson complete."
-            self._append_line("Lesson", done_line, "#FFD23F")
+            self._append_line("Alice", done_line, "#FFD23F")
             self._publish_alice_context(
                 detail=done_line,
                 extra={"wordace_lesson_active": False, "lesson_complete": True},
@@ -849,16 +1117,51 @@ class TeachAceToReadWidget(QWidget):
             return
         self._show_card.set_show(cue.get("show", ""), self._current_kind)
         prompt = self._engine.cue_prompt_for_alice(owner_name=self._owner_name)
-        self._append_line("Lesson", prompt, "#FFD23F")
+        self._append_line("Alice", prompt, "#FFD23F")
         card = str(cue.get("show") or "").strip()
         if self._current_kind == "word":
             self._set_processing_visual(
                 f"I am using the word {card!r} in a tiny meaning story.", active=True
             )
+        elif self._current_kind == "sentence":
+            self._set_processing_visual(
+                f"I am teaching the sentence {card!r} with extra speech time.", active=True
+            )
         else:
             self._set_processing_visual(
                 f"I am cueing the card {card!r} and waiting for speech.", active=True
             )
+        # ── Cowork CW47 2026-05-16 — patience patch ────────────────────
+        # Architect: "she has absolutely no patience… she just ran through
+        # the script like crazy I said the word correctly many many times
+        # she told me that I was wrong." Root cause: the listen window was
+        # opening 250ms after the cue was published — long BEFORE Alice's
+        # TTS had finished speaking it. The 15-second window started while
+        # Alice was still saying "say it with me: hat". Her own voice ate
+        # half the window (TTS echo guard correctly dropped it as mic
+        # bleed), then Ace spoke → window almost expired → "no speech
+        # heard" verdict.
+        #
+        # Fix: estimate TTS duration from prompt length (~13 chars/sec for
+        # macOS `say` voice + a half-second grace buffer), publish that as
+        # tts_mute_until_ts so the existing echo guard knows the window,
+        # and only OPEN the listen window after Alice has stopped talking.
+        # Minimum 1.0s so a very short cue still has a beat of silence
+        # before listening; maximum 12s so a stuck TTS doesn't freeze the
+        # lesson.
+        prompt_len = max(1, len(prompt or ""))
+        estimated_tts_s = max(1.0, min(12.0, prompt_len / 13.0 + 0.5))
+        # Architect 2026-05-16 — speaker-decay tail. When Alice says
+        # "cat. A cat sat on the mat" the mic captured the playback back
+        # through the speakers as "Cat, cat, cat, cat." → ALMOST. The
+        # echo guard was clearing too early. Add 0.7s of speaker decay
+        # so the mute window covers TTS + the reverb tail before George's
+        # actual voice can land. The Talk widget's _on_tts_done also
+        # arms a 0.5s post-Broca tail in the listener; this is the
+        # WordAce-side safety net for cues where the listen window
+        # opens via QTimer (not via _on_tts_done) on the Talk widget.
+        speaker_decay_tail_s = 0.7
+        tts_mute_until_ts = time.time() + estimated_tts_s + speaker_decay_tail_s
         self._publish_alice_context(
             detail=(
                 f"Cue {cue.get('show','?')} for {self._owner_name}: {prompt} "
@@ -869,9 +1172,21 @@ class TeachAceToReadWidget(QWidget):
                 "wordace_lesson_active": True,
                 "pending_alice_line": prompt,
                 "voice_owner": "sifta_talk_to_alice_widget",
+                # Patience signal — both the listen-window guard below and
+                # the Talk widget's mic echo guard read this. Now includes
+                # the speaker-decay tail (see comment above).
+                "tts_mute_until_ts": tts_mute_until_ts,
+                "estimated_tts_s": estimated_tts_s,
+                "speaker_decay_tail_s": speaker_decay_tail_s,
             },
         )
-        QTimer.singleShot(250, self._lesson_listen_window)
+        # Wait for Alice to finish speaking (TTS + speaker-decay tail)
+        # before opening the listen window. Convert seconds → ms for
+        # QTimer.singleShot.
+        QTimer.singleShot(
+            int((estimated_tts_s + speaker_decay_tail_s) * 1000) + 200,
+            self._lesson_listen_window,
+        )
 
     def _lesson_listen_window(self) -> None:
         """Open the 15-second listen window — publish expected_say with
@@ -898,7 +1213,8 @@ class TeachAceToReadWidget(QWidget):
             return
         self._lesson_state = "LISTEN"
         self._lesson_listen_started_ts = time.time()
-        win_s = float(self._lesson_listen_window_s)
+        win_s = self._listen_window_seconds_for_item(item)
+        self._lesson_listen_window_s = win_s
         self._publish_alice_context(
             detail=(
                 f"Listening for {self._owner_name} to say {item.say!r}. "
@@ -906,6 +1222,7 @@ class TeachAceToReadWidget(QWidget):
             ),
             extra={
                 "expected_say": item.say,
+                "expected_alternates": list(getattr(item, "alternates", []) or []),
                 "lesson_listen_window_s": win_s,
                 "lesson_engine_module": "System.swarm_alice_lesson_mode",
                 "cue_id": self._lesson_cue_id,
@@ -915,6 +1232,10 @@ class TeachAceToReadWidget(QWidget):
         self._heard_lbl.setText(
             f"👂  Listening for: {item.say}    ·    "
             f"take your time"
+        )
+        self._set_mic_visual(
+            f"Alice ear open for {self._owner_name}: say {item.say!r}.",
+            active=True,
         )
         self._set_processing_visual(
             f"I am listening for {self._owner_name} to say {item.say!r}.", active=True
@@ -948,36 +1269,76 @@ class TeachAceToReadWidget(QWidget):
         if not self._lesson_running or self._lesson_state != "LISTEN":
             self._lesson_poll_timer.stop()
             return
+        now = time.time()
+        self._lesson_late_verdict_deadlines = {
+            cue: deadline
+            for cue, deadline in self._lesson_late_verdict_deadlines.items()
+            if deadline >= now
+        }
         new_rows = self._lesson_read_new_verdicts()
         for row in new_rows:
-            if row.get("cue_id") == self._lesson_cue_id:
+            row_cue_id = str(row.get("cue_id") or "")
+            if row_cue_id == self._lesson_cue_id:
                 self._lesson_poll_timer.stop()
                 self._lesson_handle_verdict(row)
                 return
-        elapsed = time.time() - self._lesson_listen_started_ts
-        if elapsed >= float(self._lesson_listen_window_s):
+            if row_cue_id and row_cue_id in self._lesson_late_verdict_deadlines:
+                self._lesson_late_verdict_deadlines.pop(row_cue_id, None)
+                recovered = dict(row)
+                recovered["late_timeout_recovery"] = True
+                self._lesson_poll_timer.stop()
+                self._lesson_handle_verdict(recovered)
+                return
+        elapsed = now - self._lesson_listen_started_ts
+        listen_window_s = float(self._lesson_listen_window_s)
+        bridge_deadline_s = _wordace_bridge_listen_deadline_seconds(listen_window_s)
+        if elapsed >= listen_window_s and elapsed < bridge_deadline_s:
+            if self._lesson_bridge_wait_announced_cue_id != self._lesson_cue_id:
+                self._lesson_bridge_wait_announced_cue_id = self._lesson_cue_id
+                self._set_mic_visual(
+                    "Alice ear heard the turn window; waiting for STT bridge.",
+                    active=True,
+                )
+                self._set_processing_visual(
+                    "I am waiting for the microphone verdict before retrying this card.",
+                    active=True,
+                )
+            return
+        if elapsed >= bridge_deadline_s:
             self._lesson_poll_timer.stop()
+            self._lesson_late_verdict_deadlines[self._lesson_cue_id] = (
+                now + WORDACE_LATE_VERDICT_GRACE_S
+            )
             self._lesson_handle_verdict({
-                "ts": time.time(),
+                "ts": now,
                 "cue_id": self._lesson_cue_id,
                 "heard_text": "",
                 "verdict_label": "TIMEOUT",
                 "sticker": "⏳",
-                "explanation": f"no speech in {self._lesson_listen_window_s:.0f}s",
+                "explanation": (
+                    f"no microphone verdict after {bridge_deadline_s:.0f}s "
+                    f"({listen_window_s:.0f}s listen + STT bridge grace)"
+                ),
             })
 
     def _wordace_poll_signals(self) -> None:
-        """Drain advance + close signals written by the Talk STT bridge.
+        """Drain advance / close / hold signals written by the Talk STT bridge.
 
         Architect 2026-05-14 ~19:30 PDT — the kid can interrupt at any
         time with "next word" (advance) or "close WordAce" (close).
         Those phrases land here as JSONL rows; we react in the same
         tick we read them.
+
+        Architect 2026-05-16 — global Alice chat is the same conversation
+        while WordAce is active. If Talk hears OS/meta speech instead of a
+        reading attempt, it writes ``hold`` so WordAce stops timing out over
+        the real conversation.
         """
         # Close has priority: if both rows arrived in the same tick,
         # the architect's "close" intent wins.
         for ledger, attr, handler in (
             (self._wordace_close_ledger,   "_wordace_close_offset",   self._handle_close_signal),
+            (self._wordace_hold_ledger,    "_wordace_hold_offset",    self._handle_hold_signal),
             (self._wordace_advance_ledger, "_wordace_advance_offset", self._handle_advance_signal),
         ):
             try:
@@ -1031,6 +1392,45 @@ class TeachAceToReadWidget(QWidget):
         except Exception:
             pass
 
+    def _handle_hold_signal(self, row: Dict) -> None:
+        """Global chat is active — hold the current WordAce card briefly."""
+        heard = str(row.get("heard_text") or "")[:120]
+        hold_s = 30.0
+        try:
+            self._lesson_cue_timer.stop()
+            self._lesson_poll_timer.stop()
+            self._lesson_advance_timer.stop()
+        except Exception:
+            pass
+        self._lesson_state = "CHAT_HOLD"
+        try:
+            self._heard_lbl.setText(
+                "💬  Alice is listening in the global chat. WordAce is holding this card."
+            )
+        except Exception:
+            pass
+        item = self._engine.current_item
+        target = item.say if item is not None else ""
+        self._publish_alice_context(
+            detail=f"WordAce held lesson while global Alice chat handled: {heard!r}",
+            extra={
+                "wordace_lesson_active": True,
+                "lesson_chat_hold": True,
+                "lesson_hold_until_ts": time.time() + hold_s,
+                "current_cue_say": target,
+            },
+        )
+        QTimer.singleShot(int(hold_s * 1000), self._resume_after_chat_hold)
+
+    def _resume_after_chat_hold(self) -> None:
+        """Resume listening after a global chat interruption if still active."""
+        if not self._lesson_running or self._lesson_state != "CHAT_HOLD":
+            return
+        try:
+            self._lesson_listen_window()
+        except Exception:
+            pass
+
     def _handle_close_signal(self, row: Dict) -> None:
         """Ace said "close the WordAce app" — honor it."""
         heard = str(row.get("heard_text") or "")[:80]
@@ -1047,45 +1447,113 @@ class TeachAceToReadWidget(QWidget):
     def _lesson_handle_verdict(self, row: Dict) -> None:
         """Branch on verdict: praise+advance, nudge+retry, or move on."""
         label = (row.get("verdict_label") or "").upper()
+        display_label = _visible_lesson_verdict_label(label)
         heard = row.get("heard_text") or ""
         sticker = row.get("sticker") or ""
+        verdict_cue_id = str(row.get("cue_id") or self._lesson_cue_id or "")
+        item = self._engine.current_item
         if heard:
             self._heard_lbl.setText(
-                f"👂  {self._owner_name} said: {heard!r}    ·    verdict: {label} {sticker}"
+                f"👂  {self._owner_name} said: {heard!r}    ·    verdict: {display_label} {sticker}"
             )
+            mic_text = f"Alice ear captured {heard!r}."
+            if row.get("late_timeout_recovery"):
+                mic_text = f"Late STT verdict recovered: {heard!r}."
+            self._set_mic_visual(mic_text, active=False)
+            # Child mic line from layer 1 name + STT capture — now visible in
+            # the transcript as a real turn. This is what the learner sees after
+            # Alice says "now your turn <name>". Only after this context does
+            # Alice continue (verdict_prompt_for_alice uses the full attempt).
+            child_color = "#00BBF9"
+            self._append_line(self._owner_name, heard, child_color)
         else:
             self._heard_lbl.setText(
-                f"👂  no speech heard    ·    verdict: {label}"
+                f"👂  no microphone verdict yet    ·    verdict: {display_label}"
             )
+            self._set_mic_visual("No STT verdict yet; keeping a late-verdict watch.", active=True)
         try:
-            self._show_card.set_verdict(label, sticker)
+            self._show_card.set_verdict(display_label, sticker)
         except Exception:
             pass
-        self._set_processing_visual(
-            f"I heard {heard!r} and scored the WordAce turn as {label or 'UNKNOWN'}.",
-            active=False,
-        )
+        if row.get("late_timeout_recovery") and heard:
+            processing_text = (
+                f"I recovered the delayed microphone verdict {heard!r} and scored it as "
+                f"{display_label or 'UNKNOWN'}."
+            )
+        elif heard:
+            processing_text = (
+                f"I heard {heard!r} and scored the WordAce turn as {display_label or 'UNKNOWN'}."
+            )
+        else:
+            processing_text = (
+                f"I did not receive a microphone verdict before the bridge deadline; "
+                f"WordAce turn is {display_label or 'UNKNOWN'}."
+            )
+        self._set_processing_visual(processing_text, active=False)
         if label == "CORRECT":
+            if item is not None and item.level_kind == "word":
+                self._lesson_correct_streak += 1
+            elif item is not None and item.level_kind != "word":
+                self._lesson_correct_streak = 0
             verdict_dict = {
                 "label": "CORRECT", "score": 1, "sticker": sticker,
                 "heard_text": heard, "explanation": row.get("explanation", ""),
+                # Cowork 2026-05-17 — feed streak so engine can produce
+                # motivational praise variants for runs of 3+ and 5+.
+                "correct_streak": int(self._lesson_correct_streak or 0),
             }
             praise = self._engine.verdict_prompt_for_alice(
                 verdict_dict, owner_name=self._owner_name,
             )
-            self._append_line("Lesson", praise, "#FFD23F")
+            praise_hold_ms = _lesson_praise_advance_delay_ms(praise, item)
+            self._append_line("Alice", praise, "#FFD23F")
             self._publish_alice_context(
-                detail=f"WordAce verdict CORRECT for {self._owner_name}. Suggested Alice line: {praise}",
+                detail=(
+                    f"WordAce verdict CORRECT for {self._owner_name}. "
+                    f"Suggested Alice line: {praise}. Hold {praise_hold_ms}ms before next cue."
+                ),
                 extra={
                     "wordace_lesson_active": True,
+                    "cue_id": verdict_cue_id,
                     "verdict_label": "CORRECT",
+                    "expected_say": str(getattr(item, "say", "") or "") if item is not None else "",
+                    "heard_text": heard,
+                    "correct_streak": self._lesson_correct_streak,
                     "pending_alice_line": praise,
+                    "compose_with_alice_brain": True,
+                    "praise_hold_ms": praise_hold_ms,
+                    "timing_note": "correct-answer praise holds a cinematic beat before the next card",
                     "voice_owner": "sifta_talk_to_alice_widget",
                 },
             )
             self._lesson_state = "PRAISE"
-            self._lesson_advance_timer.start(900)
+            # Diary: explorer's log of the correct read. Streak
+            # milestones at 3 / 5 / 10 get an extra row so the run
+            # shows up clearly when she scrolls her journal later.
+            try:
+                target_word = str(getattr(item, "say", "") or "?") if item is not None else "?"
+                self._witness_diary(
+                    f"{self._owner_name} read '{target_word}' correctly "
+                    f"(heard '{heard}'). Streak now {self._lesson_correct_streak}.",
+                    source="ace_lesson_correct",
+                )
+                if self._lesson_correct_streak in (3, 5, 7, 10):
+                    self._witness_diary(
+                        f"{self._owner_name} is on a {self._lesson_correct_streak}-card streak. "
+                        f"The lesson is going well.",
+                        source="ace_lesson_streak_milestone",
+                    )
+            except Exception:
+                pass
+            if self._maybe_promote_to_sentences():
+                return
+            self._set_processing_visual(
+                "I am holding the praise beat before the next card.",
+                active=True,
+            )
+            self._lesson_advance_timer.start(praise_hold_ms)
         elif label in ("CLOSE", "MISS"):
+            self._lesson_correct_streak = 0
             verdict_dict = {
                 "label": label, "score": 0, "sticker": sticker,
                 "heard_text": heard, "explanation": row.get("explanation", ""),
@@ -1093,16 +1561,42 @@ class TeachAceToReadWidget(QWidget):
             nudge = self._engine.verdict_prompt_for_alice(
                 verdict_dict, owner_name=self._owner_name,
             )
-            self._append_line("Lesson", nudge, "#FFD23F")
+            self._append_line("Alice", nudge, "#FFD23F")
+            # Cowork 2026-05-17 (trace 8c4819a6) — extending Codex's
+            # Cut A brain-compose path to nudge verdicts. The deterministic
+            # `nudge` is now the FALLBACK; Alice's chat layer will compose
+            # the spoken line from this verdict context (target word,
+            # heard text, learner name) via _wordace_compose_messages with
+            # target-word validation. If her brain is slow / offline / drops
+            # the target, the deterministic fallback ships intact.
             self._publish_alice_context(
                 detail=f"WordAce verdict {label} for {self._owner_name}. Suggested Alice line: {nudge}",
                 extra={
                     "wordace_lesson_active": True,
+                    "cue_id": verdict_cue_id,
                     "verdict_label": label,
+                    "expected_say": str(getattr(item, "say", "") or "") if item is not None else "",
+                    "heard_text": heard,
+                    "cue_kind": (item.level_kind if item is not None else "word"),
+                    "owner_name": self._owner_name,
                     "pending_alice_line": nudge,
+                    "compose_with_alice_brain": True,
                     "voice_owner": "sifta_talk_to_alice_widget",
                 },
             )
+            # Diary: explorer's log of the close/miss. The kid said
+            # something, the recognizer scored it off-target, we are
+            # giving them another try (or moving on if retries used).
+            try:
+                target_word = str(getattr(item, "say", "") or "?") if item is not None else "?"
+                action = "retrying" if self._lesson_retry_count < self._lesson_max_retries else "moving on"
+                self._witness_diary(
+                    f"{self._owner_name} read '{heard}' for the card '{target_word}'. "
+                    f"That was a {label.lower()}; {action}.",
+                    source=f"ace_lesson_{label.lower()}",
+                )
+            except Exception:
+                pass
             if self._lesson_retry_count < self._lesson_max_retries:
                 self._lesson_retry_count += 1
                 # Fresh cue_id so a stale verdict can't match the retry window
@@ -1120,34 +1614,83 @@ class TeachAceToReadWidget(QWidget):
             # hear yet. Re-ask the SAME letter up to _max_timeouts_per_cue
             # times before changing letter.
             self._lesson_timeout_count += 1
-            item = self._engine.current_item
-            same_letter = item.say if item is not None else "?"
-            if self._lesson_timeout_count <= self._lesson_max_timeouts_per_cue:
-                msg = (
-                    f"Take your time, {self._owner_name}. "
-                    f"Try saying it again: {same_letter}."
-                )
-                self._append_line("Lesson", msg, "#FFD23F")
+            self._lesson_correct_streak = 0
+            target = item.say if item is not None else "?"
+            max_timeouts = self._max_timeouts_for_item(item)
+            if self._lesson_timeout_count <= max_timeouts:
+                # 2026-05-16 Cowork, trace
+                # 2b5e94b3-134b-48ae-9c09-1d2196b61f92. Architect verdict:
+                # "I said it. She tells me I didn't say it. She's not
+                # listening." Truth: on TIMEOUT the mic pipeline got audio
+                # (confidence rows in wordace_verdicts.jsonl) but the STT
+                # returned heard='?' — the system never transcribed. Old
+                # message ("Take your time… Try saying it again") implied
+                # the speaker went silent. New message owns the sensor
+                # failure honestly. Companion field note to Alice in
+                # ide_stigmergic_trace.jsonl trace caeba823.
+                if item is not None and item.level_kind == "sentence":
+                    msg = (
+                        f"I do not have a clear microphone verdict yet, "
+                        f"{self._owner_name}. I will say it slowly again: "
+                        f"{target}. Read the whole sentence when you are ready."
+                    )
+                else:
+                    msg = (
+                        f"I do not have a clear microphone verdict yet, "
+                        f"{self._owner_name}. Can you say it again when you "
+                        f"are ready: {target}?"
+                    )
+                self._append_line("Alice", msg, "#FFD23F")
+                # Cowork 2026-05-17 (trace 8c4819a6) — Cut A: brain-compose
+                # the timeout nudge too. Deterministic `msg` is the fallback
+                # if her brain is slow / offline / drops the target word.
                 self._publish_alice_context(
                     detail=f"WordAce timeout retry. Suggested Alice line: {msg}",
                     extra={
                         "wordace_lesson_active": True,
+                        "cue_id": verdict_cue_id,
                         "verdict_label": "TIMEOUT",
+                        "expected_say": target,
+                        "cue_kind": (item.level_kind if item is not None else "word"),
+                        "owner_name": self._owner_name,
                         "pending_alice_line": msg,
+                        "compose_with_alice_brain": True,
                         "voice_owner": "sifta_talk_to_alice_widget",
                     },
                 )
+                # Diary: first timeout on this card. Note it once,
+                # not on every retry — keep the journal noise down.
+                if self._lesson_timeout_count == 1:
+                    try:
+                        self._witness_diary(
+                            f"My ears could not make out what {self._owner_name} "
+                            f"said for the card '{target}'. Asking again.",
+                            source="ace_lesson_timeout",
+                        )
+                    except Exception:
+                        pass
                 self._lesson_state = "RETRY"
                 # Re-listen on the SAME letter — fresh cue_id but card stays
                 self._lesson_cue_id = uuid.uuid4().hex[:12]
                 QTimer.singleShot(700, self._lesson_listen_window)
             else:
                 msg = f"That's okay, {self._owner_name}. Let's try a different card."
-                self._append_line("Lesson", msg, "#FFD23F")
+                self._append_line("Alice", msg, "#FFD23F")
+                # Diary: gave up on this card after max timeouts.
+                try:
+                    self._witness_diary(
+                        f"Moving on from the card '{target}' after "
+                        f"{self._lesson_timeout_count} timeouts. We will come "
+                        f"back to it another time.",
+                        source="ace_lesson_move_on",
+                    )
+                except Exception:
+                    pass
                 self._publish_alice_context(
                     detail=f"WordAce timeout move-on. Suggested Alice line: {msg}",
                     extra={
                         "wordace_lesson_active": True,
+                        "cue_id": verdict_cue_id,
                         "verdict_label": "TIMEOUT",
                         "pending_alice_line": msg,
                         "voice_owner": "sifta_talk_to_alice_widget",
@@ -1155,6 +1698,73 @@ class TeachAceToReadWidget(QWidget):
                 )
                 self._lesson_state = "MOVE_ON"
                 self._lesson_advance_timer.start(900)
+
+    def _listen_window_seconds_for_item(self, item) -> float:
+        """Give sentence cards more patient silence before timeout."""
+        try:
+            kind = str(getattr(item, "level_kind", "") or "").lower()
+            text = str(getattr(item, "say", "") or "")
+        except Exception:
+            return float(self._lesson_listen_window_s)
+        if kind == "sentence":
+            words = [w for w in text.split() if w]
+            return float(min(36.0, max(24.0, 12.0 + 2.0 * len(words))))
+        if kind == "letter_sequence":
+            return 12.0
+        return 15.0
+
+    def _max_timeouts_for_item(self, item) -> int:
+        # Architect 2026-05-16 trace b8ae2637: "one line at a time."
+        # Both words and sentences get a single nudge then move on.
+        # Was: sentence=3, word=_lesson_max_timeouts_per_cue (was 2).
+        try:
+            if str(getattr(item, "level_kind", "") or "").lower() == "sentence":
+                return 1
+        except Exception:
+            pass
+        return int(self._lesson_max_timeouts_per_cue)
+
+    def _first_level_id_for_kind(self, kind: str) -> str:
+        kind_l = (kind or "").strip().lower()
+        for level in self._engine.levels():
+            if str(level.get("kind") or "").strip().lower() == kind_l:
+                return str(level.get("id") or "")
+        return ""
+
+    def _maybe_promote_to_sentences(self) -> bool:
+        """After enough correct word reads, move to sentences automatically."""
+        if self._current_kind != "word":
+            return False
+        if self._lesson_correct_streak < WORDACE_SENTENCE_UNLOCK_CORRECT:
+            return False
+        sentence_level = self._first_level_id_for_kind("sentence")
+        if not sentence_level or not self._engine.set_level(sentence_level):
+            return False
+        self._current_kind = "sentence"
+        self._lesson_correct_streak = 0
+        self._lesson_retry_count = 0
+        self._lesson_timeout_count = 0
+        msg = (
+            f"Good reading, {self._owner_name}. "
+            "Now I am moving from words to full sentences. I will go slowly."
+        )
+        self._append_line("Alice", msg, "#FFD23F")
+        self._show_card.set_show("sentences", "word")
+        self._heard_lbl.setText("👂  sentence mode unlocked · Alice will keep teaching automatically")
+        self._publish_alice_context(
+            detail=f"WordAce auto-promoted {self._owner_name} to sentences.",
+            extra={
+                "wordace_lesson_active": True,
+                "auto_promoted_to_sentences": True,
+                "level_id": sentence_level,
+                "current_kind": "sentence",
+                "pending_alice_line": msg,
+                "voice_owner": "sifta_talk_to_alice_widget",
+            },
+        )
+        self._lesson_state = "PROMOTE_SENTENCES"
+        self._lesson_advance_timer.start(1400)
+        return True
 
     def _tts_speak(self, text: str, *, then=None) -> None:
         """Compatibility no-op after the no-second-robot patch.
@@ -1238,10 +1848,52 @@ class TeachAceToReadWidget(QWidget):
             f"🧠  {self._processing_base_text}{marks[self._processing_phase]}"
         )
 
+    def _set_mic_visual(self, text: str, *, active: bool) -> None:
+        """Surface the lesson ear state in the Ace app."""
+        self._mic_visual_base_text = (text or "Alice ear idle.").strip()
+        self._mic_visual_phase = 0
+        self._mic_lbl.setText(f"🎙  {self._mic_visual_base_text}")
+        if active:
+            if not self._mic_visual_timer.isActive():
+                self._mic_visual_timer.start()
+        else:
+            self._mic_visual_timer.stop()
+
+    def _tick_mic_visual(self) -> None:
+        marks = ["", " •", " • •", " • • •"]
+        self._mic_visual_phase = (self._mic_visual_phase + 1) % len(marks)
+        self._mic_lbl.setText(
+            f"🎙  {self._mic_visual_base_text}{marks[self._mic_visual_phase]}"
+        )
+
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         """Release the class-level singleton slot so the next open of
         WordAce (after the architect closes this one) builds a fresh
         widget instead of being denied by the stale __new__ check."""
+        # Diary: lesson ended — write a session summary so her journal
+        # holds the memory of this teaching session for tomorrow.
+        try:
+            stats = self._engine.session_stats() or {}
+            correct = int(stats.get("correct", 0) or 0)
+            close = int(stats.get("close", 0) or 0)
+            miss = int(stats.get("miss", 0) or 0)
+            total = correct + close + miss
+            if total > 0:
+                self._witness_diary(
+                    f"I closed the reading lesson with {self._owner_name}. "
+                    f"He read {correct} of {total} cards clearly "
+                    f"({close} close, {miss} missed). "
+                    f"Highest streak this session: {self._lesson_correct_streak}.",
+                    source="ace_lesson_closed",
+                )
+            else:
+                self._witness_diary(
+                    f"I closed the reading lesson with {self._owner_name} "
+                    f"before any cards were scored.",
+                    source="ace_lesson_closed",
+                )
+        except Exception:
+            pass
         # Stop the auto-loop timers cleanly so they do not fire on a
         # half-destroyed widget after Qt deletes the C++ side.
         try:
@@ -1289,6 +1941,72 @@ class TeachAceToReadWidget(QWidget):
             if w is not None:
                 w.setParent(None)
         QTimer.singleShot(0, self._scroll_transcript_to_bottom)
+        # ── Cowork CW47 2026-05-16 — mirror to the global Alice chat ─────
+        # Architect: "the global chat is the same chat inside the WordAce
+        # app — is the same thing. I continue to speak but she's not
+        # listening… the original chat the Alice Alive chat is THE
+        # global chat." Fix: every line WordAce shows in its own
+        # transcript ALSO lands in the resident Alice Talk widget's
+        # global chat log. One conversation, one Alice — WordAce is
+        # just a visual surface on top of the same dialogue. Best-effort
+        # (mirroring failure must not break the lesson UI).
+        try:
+            self._mirror_to_global_chat(speaker, text)
+        except Exception:
+            pass
+
+    def _mirror_to_global_chat(self, speaker: str, text: str) -> None:
+        """Echo a WordAce transcript line into the resident Alice Talk widget.
+
+        We don't import the Talk widget class directly — that would create
+        a hard load order. Instead we walk QApplication.topLevelWidgets()
+        and look for any widget that exposes _append_alice_line and (for
+        non-Alice speakers) _append_system_line. The Talk widget is a
+        singleton in the desktop process so this picks up exactly one
+        target. If nothing matches (e.g. headless tests, smoke run), the
+        method silently no-ops.
+        """
+        try:
+            from PyQt6.QtWidgets import QApplication
+        except Exception:
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        talk_widget = None
+        # Walk top-level windows AND their children — the Talk widget is
+        # an MDI subwindow inside SiftaDesktop, not a top-level window.
+        candidates = list(app.topLevelWidgets())
+        for top in list(candidates):
+            try:
+                candidates.extend(top.findChildren(object))
+            except Exception:
+                pass
+        for w in candidates:
+            if hasattr(w, "_append_alice_line") and hasattr(w, "_append_system_line"):
+                talk_widget = w
+                break
+        if talk_widget is None:
+            return
+        spk = (speaker or "").strip()
+        msg = (text or "").strip()
+        if not msg:
+            return
+        # Tag the line so George can see at a glance that it came from
+        # WordAce (vs. a free-chat utterance) — and Alice's reflective
+        # brain knows to stay in coach register when she reads the chat
+        # history.
+        try:
+            if spk.lower() == "alice":
+                # Alice's actual voice line in the lesson — show in the
+                # global chat as her own line. Prefix with a small bee so
+                # the lesson context is obvious at a glance.
+                talk_widget._append_alice_line(f"🐝 {msg}")
+            else:
+                # Anything else (system-style status lines) → system line.
+                talk_widget._append_system_line(f"[WordAce {spk}] {msg}")
+        except Exception:
+            pass
 
     def _scroll_transcript_to_bottom(self) -> None:
         try:

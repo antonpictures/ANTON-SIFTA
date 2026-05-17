@@ -166,7 +166,9 @@ def generate_organ_acknowledgment() -> str:
     organ = bias["dominant_organ"].lower()
 
     from System.swarm_alice_self import assess_my_thermodynamic_risk
+    from System.swarm_processing_thermodynamic_gate import prompt_context as get_thermo_clearance
     risk = assess_my_thermodynamic_risk()
+    thermo = get_thermo_clearance() or ""
     thermo_note = ""
     if risk.get("risk_level") in ("high", "critical"):
         thermo_note = " My silicon is running warm — I'll stay present but keep processing light until I cool."

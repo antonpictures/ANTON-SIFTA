@@ -1,0 +1,10 @@
+{
+  "offer_id": "1c482476-bf12-45d7-8479-3616d726af0e",
+  "package_path": "exports/skill_submissions/swarm_handoff",
+  "provider_node": "GTH4921YP3",
+  "provider_trace": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "skill_name": "swarm_handoff",
+  "skill_sha256": "6e081a497f3563c2f804b31757b3623d46c0f51648f44b4ce74ff27b9f25a01c",
+  "stgm_price": 5.0,
+  "truth_label": "SIFTA_SKILL_TRADE_OFFER_V1"
+}

@@ -1,0 +1,10 @@
+{
+  "offer_id": "918df43b-cba4-4058-8c4d-8c1da1943c0a",
+  "package_path": "exports/skill_submissions/gag_self_report",
+  "provider_node": "GTH4921YP3",
+  "provider_trace": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "skill_name": "gag_self_report",
+  "skill_sha256": "6b24cc99e091dea8c5a4a3f22c4380f60ebde62dda9fd8a645b2ca4ed1daa2b6",
+  "stgm_price": 5.0,
+  "truth_label": "SIFTA_SKILL_TRADE_OFFER_V1"
+}

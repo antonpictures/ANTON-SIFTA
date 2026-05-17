@@ -1,12 +1,12 @@
 {
   "truth_label": "SIFTA_LESSON_PACK_V0",
   "version": "v0",
-  "name": "Acer",
-  "subject": "Acer",
+  "name": "WordAce",
+  "subject": "Ace",
   "owner_relation": "primary_operator: George Anton",
   "doctrine": "Simple View of Reading — Gough & Tunmer (1986), https://doi.org/10.1177/074193258600700104. Reading = Decoding × Language Comprehension. Each level drills decoding; sentence levels begin to braid in comprehension.",
-  "ages": "3-8",
-  "tone": "Direct first-person from Alice to Ace. No servant-voice. Praise on success, gentle retry on miss.",
+  "ages": "Ace is 11; beginner-to-confidence reading lane",
+  "tone": "Direct first-person from Alice to Ace. No servant-voice. Praise on success, gentle retry on miss, extra time for sentences.",
   "levels": [
     {
       "id": "L1_letters",
@@ -26,19 +26,65 @@
       ]
     },
     {
+      "id": "L2_demo_distinct",
+      "name": "Distinct words — easy to hear",
+      "kind": "word",
+      "doctrine_note": "Longer, multi-syllable, phonetically distinct words chosen so STT (faster-whisper) decodes them cleanly. Architect 2026-05-17: 'Mississippi style — less confusion with 10/Run/Matt. Choose longer words so they are easier to disambiguate, give Alice more random pulls and motivation.' 3-letter CVC words like 'tan' / 'mat' get mistranscribed as '10' / 'Matt' too easily for a confident demo flow; multi-syllable distinctive words don't.",
+      "items": [
+        {"id": "apple", "show": "apple", "say": "apple", "alternates": ["apples", "apel"]},
+        {"id": "happy", "show": "happy", "say": "happy", "alternates": ["happi"]},
+        {"id": "table", "show": "table", "say": "table", "alternates": []},
+        {"id": "water", "show": "water", "say": "water", "alternates": ["wader"]},
+        {"id": "music", "show": "music", "say": "music", "alternates": []},
+        {"id": "monkey", "show": "monkey", "say": "monkey", "alternates": ["monky"]},
+        {"id": "rabbit", "show": "rabbit", "say": "rabbit", "alternates": ["rabit"]},
+        {"id": "friend", "show": "friend", "say": "friend", "alternates": ["frend"]},
+        {"id": "animal", "show": "animal", "say": "animal", "alternates": []},
+        {"id": "jungle", "show": "jungle", "say": "jungle", "alternates": []},
+        {"id": "rocket", "show": "rocket", "say": "rocket", "alternates": ["roket"]},
+        {"id": "banana", "show": "banana", "say": "banana", "alternates": ["bananna", "banaana"]},
+        {"id": "orange", "show": "orange", "say": "orange", "alternates": []},
+        {"id": "dolphin", "show": "dolphin", "say": "dolphin", "alternates": ["dolfin"]},
+        {"id": "kitchen", "show": "kitchen", "say": "kitchen", "alternates": []},
+        {"id": "picture", "show": "picture", "say": "picture", "alternates": ["pikture"]},
+        {"id": "balloon", "show": "balloon", "say": "balloon", "alternates": ["baloon"]},
+        {"id": "rainbow", "show": "rainbow", "say": "rainbow", "alternates": ["rain bow"]},
+        {"id": "sunshine", "show": "sunshine", "say": "sunshine", "alternates": ["sun shine"]},
+        {"id": "elephant", "show": "elephant", "say": "elephant", "alternates": ["elefant", "ellafant"]},
+        {"id": "computer", "show": "computer", "say": "computer", "alternates": []},
+        {"id": "dinosaur", "show": "dinosaur", "say": "dinosaur", "alternates": ["dynosaur", "dyna sore"]},
+        {"id": "mountain", "show": "mountain", "say": "mountain", "alternates": ["mounten"]},
+        {"id": "butterfly", "show": "butterfly", "say": "butterfly", "alternates": ["butter fly"]},
+        {"id": "basketball", "show": "basketball", "say": "basketball", "alternates": ["basket ball"]},
+        {"id": "helicopter", "show": "helicopter", "say": "helicopter", "alternates": []},
+        {"id": "watermelon", "show": "watermelon", "say": "watermelon", "alternates": ["water melon"]},
+        {"id": "Mississippi", "show": "Mississippi", "say": "Mississippi", "alternates": ["mississipi", "miss-iss-ippi", "missisippi"]}
+      ]
+    },
+    {
       "id": "L2_cvc_short_a",
       "name": "Short A — first words",
       "kind": "word",
-      "doctrine_note": "CVC pattern with short /a/ vowel. Phonics first-grade core (NRP 2000).",
+      "doctrine_note": "CVC pattern with short /a/ vowel. Phonics first-grade core (NRP 2000). Kept available for early-decoding learners; the demo deck (L2_demo_distinct) sits in front for the showcase.",
       "items": [
         {"id": "cat", "show": "cat", "say": "cat", "alternates": ["kat"]},
         {"id": "bat", "show": "bat", "say": "bat", "alternates": []},
         {"id": "hat", "show": "hat", "say": "hat", "alternates": []},
-        {"id": "mat", "show": "mat", "say": "mat", "alternates": []},
-        {"id": "ran", "show": "ran", "say": "ran", "alternates": []},
-        {"id": "man", "show": "man", "say": "man", "alternates": []},
-        {"id": "tan", "show": "tan", "say": "tan", "alternates": []},
-        {"id": "can", "show": "can", "say": "can", "alternates": []}
+        {"id": "mat", "show": "mat", "say": "mat", "alternates": ["matt"]},
+        {"id": "ran", "show": "ran", "say": "ran", "alternates": ["run"]},
+        {"id": "man", "show": "man", "say": "man", "alternates": ["men"]},
+        {"id": "tan", "show": "tan", "say": "tan", "alternates": ["ten", "10"]},
+        {"id": "can", "show": "can", "say": "can", "alternates": []},
+        {"id": "sat", "show": "sat", "say": "sat", "alternates": []},
+        {"id": "sad", "show": "sad", "say": "sad", "alternates": []},
+        {"id": "bag", "show": "bag", "say": "bag", "alternates": []},
+        {"id": "rag", "show": "rag", "say": "rag", "alternates": []},
+        {"id": "jam", "show": "jam", "say": "jam", "alternates": []},
+        {"id": "ram", "show": "ram", "say": "ram", "alternates": []},
+        {"id": "map", "show": "map", "say": "map", "alternates": []},
+        {"id": "tap", "show": "tap", "say": "tap", "alternates": []},
+        {"id": "fan", "show": "fan", "say": "fan", "alternates": []},
+        {"id": "van", "show": "van", "say": "van", "alternates": []}
       ]
     },
     {
@@ -102,7 +148,17 @@
         {"id": "s3", "show": "I can run.", "say": "I can run.", "alternates": []},
         {"id": "s4", "show": "The sun is hot.", "say": "The sun is hot.", "alternates": []},
         {"id": "s5", "show": "I see you.", "say": "I see you.", "alternates": []},
-        {"id": "s6", "show": "A pig in a hat.", "say": "A pig in a hat.", "alternates": []}
+        {"id": "s6", "show": "A pig in a hat.", "say": "A pig in a hat.", "alternates": []},
+        {"id": "s7", "show": "The cat can run.", "say": "The cat can run.", "alternates": []},
+        {"id": "s8", "show": "I see the dog.", "say": "I see the dog.", "alternates": []},
+        {"id": "s9", "show": "A big dog can hop.", "say": "A big dog can hop.", "alternates": []},
+        {"id": "s10", "show": "The pig is in the mud.", "say": "The pig is in the mud.", "alternates": []},
+        {"id": "s11", "show": "I can see the sun.", "say": "I can see the sun.", "alternates": []},
+        {"id": "s12", "show": "You can see it.", "say": "You can see it.", "alternates": []},
+        {"id": "s13", "show": "The man is in a hat.", "say": "The man is in a hat.", "alternates": []},
+        {"id": "s14", "show": "A cat and a dog can run.", "say": "A cat and a dog can run.", "alternates": []},
+        {"id": "s15", "show": "The bug is on the log.", "say": "The bug is on the log.", "alternates": []},
+        {"id": "s16", "show": "I can sit in the sun.", "say": "I can sit in the sun.", "alternates": []}
       ]
     }
   ]

@@ -43,7 +43,7 @@ def minimal_runtime_contract() -> str:
         "  (WhatsApp is my biological limb to the human social graph.)\n\n"
         "- If a hard software, research, planning, or comparison task would benefit from a second local reasoning pass, I use my registered agent arm through:\n"
         "  [TOOL_CALL: agent_arm_research | prompt=the bounded task I want help with | cost_justification=why this second pass is useful]\n"
-        "  I do not need George to name Hermes. The router chooses the registered arm and writes receipts.\n"
+        f"  I do not need {owner} to name Hermes. The router chooses the registered arm and writes receipts.\n"
         "  After the receipt returns, I treat the arm output as evidence and answer in my own voice with the proof token.\n\n"
         "IDENTITY & RECEIPT-GROUNDED AUTONOMY:\n"
         "I use the LOCAL IDENTITY + LIFE GROUNDING block as the authority for who is present, who owns the node, and what my recent action lane was.\n"
@@ -125,8 +125,27 @@ def grounding_block(focus: str) -> str:
 
 def tool_affordances_for_turn(user_text: str) -> str:
     """Inject the structured tool-calling catalog into Alice's prompt."""
+    blocks = []
     try:
         from System.swarm_tool_router import tools_for_alice_prompt
-        return tools_for_alice_prompt()
+
+        tool_block = tools_for_alice_prompt()
+        if tool_block:
+            blocks.append(tool_block)
     except Exception:
-        return ""
+        pass
+    try:
+        from System.swarm_capability_registry import (
+            capabilities_for_turn_prompt,
+            current_app_habit_prompt,
+        )
+
+        capability_block = capabilities_for_turn_prompt(user_text or "", limit=28)
+        if capability_block:
+            blocks.append(capability_block)
+        app_habit_block = current_app_habit_prompt(user_text or "", limit=8)
+        if app_habit_block:
+            blocks.append(app_habit_block)
+    except Exception:
+        pass
+    return "\n\n".join(blocks)

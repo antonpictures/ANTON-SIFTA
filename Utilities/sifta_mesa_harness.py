@@ -2,7 +2,7 @@
 """
 sifta_mesa_harness.py — Mesa 3.x Stigmergic Swarm Benchmark
 ═════════════════════════════════════════════════════════════
-SIFTA OS — DeepMind Cognitive Suite
+SIFTA OS — stigmergic cognitive suite
 
 Mesa-validated N-agent scaling benchmark for cryptographically-provenanced
 software stigmergy. Measures throughput and verified-trace integrity under

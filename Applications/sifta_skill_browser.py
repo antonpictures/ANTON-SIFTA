@@ -136,6 +136,10 @@ class SkillBrowserApp(QWidget):
         make_btn("▶ Run Tests", self._run_tests)
         btn_row.addStretch()
         make_btn("🔄 Refresh", self._refresh)
+
+        # New triple-IDE / Hermes parity actions (we code together)
+        make_btn("🌍 Ingest from URL (Hermes OK)", self._ingest_from_url)
+        make_btn("🧬 Extract from Recent Trace", self._extract_from_recent_trace)
         
         main_layout.addLayout(btn_row)
 
@@ -149,7 +153,7 @@ class SkillBrowserApp(QWidget):
         """)
         main_layout.addWidget(self.tabs)
 
-        # Tab 1 — Skills
+        # Tab 1 — Skills (existing index)
         skills_w = QWidget()
         skills_layout = QVBoxLayout(skills_w)
         skills_layout.setContentsMargins(8, 8, 8, 8)
@@ -174,6 +178,28 @@ class SkillBrowserApp(QWidget):
         self._dpo_text.setStyleSheet("background: #161b22; border: none; padding: 8px; font-size: 13px;")
         dpo_layout.addWidget(self._dpo_text)
         self.tabs.addTab(dpo_w, "DPO Dataset")
+
+        # Tab 4 — Proposed Skills (from trace extraction — stigmergic life-based)
+        proposed_w = QWidget()
+        proposed_layout = QVBoxLayout(proposed_w)
+        proposed_layout.setContentsMargins(8, 8, 8, 8)
+
+        self._proposed_list = QTreeWidget()
+        self._proposed_list.setHeaderLabels(["Skill Name", "Extracted From", "Status"])
+        self._proposed_list.setColumnWidth(0, 280)
+        proposed_layout.addWidget(self._proposed_list)
+
+        btn_row2 = QHBoxLayout()
+        install_btn = QPushButton("Install Selected Proposed Skill")
+        install_btn.clicked.connect(self._install_proposed_skill)
+        btn_row2.addWidget(install_btn)
+        btn_row2.addStretch()
+        refresh_prop = QPushButton("Refresh Proposals")
+        refresh_prop.clicked.connect(self._load_proposed_skills)
+        btn_row2.addWidget(refresh_prop)
+        proposed_layout.addLayout(btn_row2)
+
+        self.tabs.addTab(proposed_w, "Proposed Skills (from Traces)")
 
         # Status bar
         self._status = QLabel("Ready")
@@ -357,6 +383,62 @@ class SkillBrowserApp(QWidget):
         webbrowser.open(GITHUB_URL)
         self._status.setText(f"Opened {GITHUB_URL}")
 
+    # ------------------------------------------------------------------
+    # New actions for Hermes parity + stigmergic skill ingestion (we code together)
+    # ------------------------------------------------------------------
+    def _ingest_from_url(self):
+        from PyQt6.QtWidgets import QInputDialog
+        url, ok = QInputDialog.getText(self, "Ingest Skill from URL", "Enter SKILL.md or Hermes skill URL:")
+        if not ok or not url.strip():
+            return
+
+        self._status.setText(f"Fetching + converting {url} ...")
+        try:
+            import swarm_skill_library as lib
+            result = lib.fetch_and_convert_skill_from_url(url, auto_install=True, installed_by="sifta_skill_browser")
+            if result.get("status") in ("FETCHED", "CONVERTED"):
+                name = result.get("converted_name") or "unknown"
+                self._status.setText(f"✓ Ingested {name} (format: {result.get('detected_format', 'sifta')})")
+                self._load_skills()
+            else:
+                self._status.setText(f"Failed: {result.get('reason') or result.get('error')}")
+        except Exception as e:
+            self._status.setText(f"Error: {e}")
+
+    def _extract_from_recent_trace(self):
+        """Extract a skill from the most recent successful tool calls (stigmergic life-based extraction)."""
+        self._status.setText("Scanning recent successful traces for extractable skills...")
+        try:
+            import json
+            from pathlib import Path
+            trace_path = Path(".sifta_state/tool_router_trace.jsonl")
+            if not trace_path.exists():
+                self._status.setText("No tool_router_trace.jsonl found yet.")
+                return
+
+            successful = []
+            with trace_path.open() as f:
+                for line in f:
+                    try:
+                        row = json.loads(line)
+                        if row.get("status") == "EXECUTED" and row.get("ok"):
+                            successful.append(row)
+                    except:
+                        pass
+
+            if not successful:
+                self._status.setText("No successful tool executions found in recent traces.")
+                return
+
+            # Take the last successful one as example (real UI would let user choose)
+            last = successful[-1]
+            import swarm_skill_library as lib
+            result = lib.extract_skill_from_successful_trace(last, author="sifta_skill_browser")
+            self._status.setText(f"✓ Skill proposed: {result['skill']['name']} → .sifta_state/skill_proposals/")
+            # In real UI we would refresh a "Proposed Skills" tab
+        except Exception as e:
+            self._status.setText(f"Extraction error: {e}")
+
     def _run_tests(self):
         self._status.setText("Running test_sifta_superset.py...")
         self.tabs.setCurrentIndex(0) # focus main tab
@@ -387,6 +469,54 @@ class SkillBrowserApp(QWidget):
     def _refresh(self):
         self._load_skills()
         self._load_affect()
+        self._load_proposed_skills()
+
+    def _load_proposed_skills(self):
+        """Load extracted/proposed skills from .sifta_state/skill_proposals/ + live visibility"""
+        self._proposed_list.clear()
+        proposals_dir = _REPO / ".sifta_state" / "skill_proposals"
+        if proposals_dir.exists():
+            for md_file in sorted(proposals_dir.glob("*.md")):
+                try:
+                    content = md_file.read_text(encoding="utf-8")
+                    name = md_file.stem
+                    if content.startswith("---"):
+                        for line in content.split("\n")[1:]:
+                            if line.strip().startswith("name:"):
+                                name = line.split(":", 1)[1].strip()
+                                break
+                    item = QTreeWidgetItem([name, "trace extraction", "PROPOSED"])
+                    item.setData(0, Qt.ItemDataRole.UserRole, str(md_file))
+                    self._proposed_list.addTopLevelItem(item)
+                except Exception:
+                    pass
+
+        # Also pull live visibility snapshot from the new module
+        try:
+            from System import swarm_visibility as vis
+            snapshot = vis.full_snapshot()
+            # Could populate a second tree or status here in a real polish pass
+        except Exception:
+            pass
+
+    def _install_proposed_skill(self):
+        item = self._proposed_list.currentItem()
+        if not item:
+            self._status.setText("Select a proposed skill first.")
+            return
+
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if not path:
+            return
+
+        try:
+            import swarm_skill_library as lib
+            result = lib.install_skill(path, allow_overwrite=True, installed_by="sifta_skill_browser_proposed")
+            self._status.setText(f"Installed: {result.get('name', 'unknown')}")
+            self._load_skills()
+            self._load_proposed_skills()
+        except Exception as e:
+            self._status.setText(f"Install failed: {e}")
         self._load_dpo()
         self._status.setText("Refreshed")
 

@@ -3,7 +3,7 @@ System/swarm_ide_cost_ledger.py
 
 Canonical writer for `.sifta_state/ide_cost_ledger.jsonl`.
 
-Authored: c47h (claude-opus-4-7-thinking-high, Cursor seat, M5)
+Authored: c47h (Cursor seat, M5)
 Per:      C55M / Dr. Codex drop
           Archive/c47h_drops_pending_review/
               C55M_drop_TRIPLE_IDE_STIGAUTH_CREDIT_STATUS_v1.dirt
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     sample = IDECostSample(
         surface="cursor",
         agent_id="C47H",
-        model_label="claude-opus-4-7-thinking-high",
+        model_label="c47h-thinking-high",
         plan_name="Ultra $200/mo",
         source_unit="percent_quota",
         observed_quantity=31.0,

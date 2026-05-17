@@ -582,6 +582,7 @@ class SwarmPhysiology:
         _core_self_event_type: Optional[str] = None
         _core_self_event_summary = ""
         _core_self_event_salience = 0.0
+        tab_consciousness_update: Optional[Dict[str, Any]] = None
         try:
             from System.swarm_organizational_identity import rehydrate_identity
             _identity_receipt = rehydrate_identity(
@@ -639,6 +640,19 @@ class SwarmPhysiology:
                 orienting_row = write_orienting_reflex(state_dir=_STATE_DIR)
             except Exception:
                 logger.exception("Orienting reflex skipped (non-fatal)")
+
+        # Opt-in Safari tab sense. This is inert unless George has activated
+        # Tab Consciousness; when active it writes its own receipt and exposes
+        # only receipt IDs/counts into body memory.
+        try:
+            from System import swarm_tab_consciousness as tab_consciousness
+
+            tab_consciousness_update = tab_consciousness.write_current_state(
+                reason="body_brain_tick",
+                state_dir=_STATE_DIR,
+            )
+        except Exception:
+            logger.debug("Tab Consciousness sampling skipped (non-fatal)")
 
         danger = _apply_novelty_metabolic_gate(self.homeostat, danger, novelty_frame)
 
@@ -823,6 +837,13 @@ class SwarmPhysiology:
                 "orienting_attention_gain": command.get("attention_gain"),
                 "orienting_memory_encode_bias": command.get("memory_encode_bias"),
                 "orienting_explore_bias": command.get("explore_bias"),
+            })
+        if tab_consciousness_update:
+            memory_extra.update({
+                "tab_consciousness_trace_id": tab_consciousness_update.get("trace_id"),
+                "tab_consciousness_status": tab_consciousness_update.get("status"),
+                "tab_consciousness_tab_count": tab_consciousness_update.get("tab_count", 0),
+                "tab_consciousness_collect_urls": bool(tab_consciousness_update.get("collect_urls", False)),
             })
 
         mem_row = self._write_memory(
@@ -1390,6 +1411,7 @@ class SwarmPhysiology:
             "reset_recovery":     reset_recovery,
             "novelty_gate":       novelty_frame.as_dict() if novelty_frame else None,
             "orienting_reflex":    orienting_row,
+            "tab_consciousness":   tab_consciousness_update,
             "stability_clamp":     _clamp_receipt,
             "causal_probe":        _causal_probe_receipt,
             "viability":           _viability_receipt,

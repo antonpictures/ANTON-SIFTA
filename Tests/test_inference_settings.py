@@ -44,17 +44,29 @@ def test_inference_defaults_persist_global_and_app_models(tmp_path, monkeypatch)
 
 def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
     from System import sifta_inference_defaults as defaults
+    import json as _json
 
     monkeypatch.setattr(defaults, "_STATE", tmp_path)
     monkeypatch.setattr(defaults, "_ASSIGNMENTS", tmp_path / "swimmer_ollama_assignments.json")
     monkeypatch.setattr(defaults, "_CORTEX_FIELD_PATH", tmp_path / "cortex_route_field.json")
     monkeypatch.setattr(defaults, "_CORTEX_ROUTING_LEDGER", tmp_path / "cortex_route_receipts.jsonl")
 
-    model = defaults.resolve_ollama_model(
+    # Architect 2026-05-15: resolve_ollama_model honors per_app pins BEFORE the
+    # stigmergic router (so the cortex picker UI is not overridden). To exercise
+    # the stigmergic router itself, clear the talk_to_alice pin from the
+    # template assignments so the router has to decide.
+    defaults.persist_default_assignments_template()
+    raw = _json.loads(defaults._ASSIGNMENTS.read_text(encoding="utf-8"))
+    raw.setdefault("per_app", {}).pop("talk_to_alice", None)
+    defaults._ASSIGNMENTS.write_text(_json.dumps(raw), encoding="utf-8")
+
+    # For code/debug queries the router prefers CANONICAL_OLLAMA_EXTRA (25.8B
+    # research cortex) per `_candidate_models_for_bucket("research_code")`.
+    initial_pick = defaults.resolve_ollama_model(
         app_context="talk_to_alice",
         query_text="debug the kernel router and run pytest",
     )
-    assert model == defaults.CANONICAL_OLLAMA_EXTRA
+    assert initial_pick == defaults.CANONICAL_OLLAMA_EXTRA
 
     bucket = defaults.classify_inference_query_bucket(
         "debug the kernel router and run pytest",
@@ -62,9 +74,9 @@ def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
     )
     defaults.deposit_cortex_route_trace(
         bucket,
-        defaults.CANONICAL_OLLAMA_EXTRA,
+        initial_pick,
         success=False,
-        amount=2.0,
+        amount=20.0,
         reason="test_regression",
     )
     after_failure = defaults.resolve_ollama_model(
@@ -72,7 +84,7 @@ def test_inference_stigmergic_router_selects_and_learns(tmp_path, monkeypatch):
         query_text="debug the kernel router and run pytest",
     )
 
-    assert after_failure != defaults.CANONICAL_OLLAMA_EXTRA
+    assert after_failure != initial_pick
     assert defaults._CORTEX_ROUTING_LEDGER.exists()
 
 

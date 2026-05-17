@@ -1117,7 +1117,7 @@ class InstallAgentDialog(QDialog):
             QMessageBox.warning(self, "Exists", f"{agent_id} already installed.")
             return
 
-        # Claude Audit Fix 1: Baptism Gate / ARCHITECT_SEAL (safe serial read)
+        # Audit Fix 1: Baptism Gate / ARCHITECT_SEAL (safe serial read)
         try:
             _sysd = os.path.join(REPO_ROOT, "System")
             if _sysd not in sys.path:

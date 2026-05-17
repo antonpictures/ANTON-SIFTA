@@ -46,7 +46,7 @@ CHAT_LOGS.mkdir(parents=True, exist_ok=True)
 SESSIONS = {}
 
 # 0.8b first — faster on M1 8GB, more reliable. 2b as fallback for deeper questions.
-MODELS = ["qwen3.5:0.8b", "qwen3.5:2b"]
+MODELS = ["qwen3.5:0.8b", "alice-m1-scout-2.3b-2.7gb:latest"]
 
 import re as _re
 
@@ -144,7 +144,7 @@ If someone asks for technical data, give them REAL details:
 
 GitHub: github.com/antonpictures/ANTON-SIFTA
 Sites: stigmergicode.com | stigmergicoin.com
-Install a sister swarm: git clone https://github.com/antonpictures/ANTON-SIFTA && cd ANTON-SIFTA && chmod +x install_sifta.sh && ./install_sifta.sh — then install Ollama + pull qwen3.5:2b. Requires Python 3.9+, macOS preferred.
+Install a sister swarm: git clone https://github.com/antonpictures/ANTON-SIFTA && cd ANTON-SIFTA && chmod +x install_sifta.sh && ./install_sifta.sh — then install Ollama + pull alice-m1-scout-2.3b-2.7gb:latest. Requires Python 3.9+, macOS preferred.
 Archivist: Ioan George Anton (The Architect)
 
 

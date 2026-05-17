@@ -1,7 +1,7 @@
 """
 _doctor_sigil_chrome.py — shared graphics chrome for SIFTA flagship apps.
 
-Final-graphics-approval lane: CG55M Dr Cursor / Claude Opus 4.7
+Final-graphics-approval lane: CG55M Dr Cursor
 Authors a small, reusable Doctor Sigil Bar plus a shared palette so every
 flagship app in apps_manifest.json wears the same triple-IDE provenance
 chrome. Code-lane work by C55M, AG31, and CG55M is preserved untouched —

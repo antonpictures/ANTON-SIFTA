@@ -162,5 +162,5 @@ def test_latest_ambient_media_receipt_answers_what_was_noisy(monkeypatch, tmp_pa
 
     assert "last_input_routing route=ambient_media" in ctx
     assert "owner_declared_background_media_youtube" in ctx
-    assert "suppressed as environmental media, not George speaking" in ctx
+    assert "routed as environmental media, not George speaking" in ctx
     assert "OpenAI will revamp Codex" in ctx

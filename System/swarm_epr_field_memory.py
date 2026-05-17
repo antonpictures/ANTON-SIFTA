@@ -38,7 +38,7 @@ Truth labels (§7.11)
 Sandbox-safe: pure stdlib, no matplotlib import at module level
 (matplotlib data is just numeric lists; the caller plots them).
 
-Author : Cowork (Claude Opus 4.7).
+Author : Cowork.
 """
 
 from __future__ import annotations

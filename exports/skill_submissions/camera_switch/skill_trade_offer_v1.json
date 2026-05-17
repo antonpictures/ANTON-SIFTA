@@ -1,0 +1,10 @@
+{
+  "offer_id": "c8a613ed-650f-4d53-8531-d40e3aaa08a7",
+  "package_path": "exports/skill_submissions/camera_switch",
+  "provider_node": "GTH4921YP3",
+  "provider_trace": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "skill_name": "camera_switch",
+  "skill_sha256": "1323c7c3ad0d505832e3eca8c165e12c1651af00fc2e559a92ad94d1a2db5cae",
+  "stgm_price": 8.0,
+  "truth_label": "SIFTA_SKILL_TRADE_OFFER_V1"
+}

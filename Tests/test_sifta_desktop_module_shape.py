@@ -467,7 +467,7 @@ def test_launchpad_and_spotlight_show_real_app_results(monkeypatch):
         app.processEvents()
 
 
-def test_make_sub_cascades_default_positions(monkeypatch):
+def test_make_sub_enforces_single_visible_app_slot(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("SIFTA_DISABLE_MESH", "1")
     monkeypatch.setenv("SIFTA_SKIP_ECONOMY_SCAN", "1")
@@ -487,8 +487,9 @@ def test_make_sub_cascades_default_positions(monkeypatch):
             for idx in range(3)
         ]
         app.processEvents()
-        positions = [(sub.x(), sub.y()) for sub in subs]
-        assert len(set(positions)) == len(positions)
+        visible = [sub for sub in subs if not sub.isHidden()]
+        assert visible == [subs[-1]]
+        assert desktop.current_app_state()["open_apps"] == ["Window 2"]
 
         for sub in subs:
             sub.close()
@@ -499,8 +500,9 @@ def test_make_sub_cascades_default_positions(monkeypatch):
             for idx in range(3)
         ]
         app.processEvents()
-        large_positions = [(sub.x(), sub.y()) for sub in large_subs]
-        assert len(set(large_positions)) == len(large_positions)
+        large_visible = [sub for sub in large_subs if not sub.isHidden()]
+        assert large_visible == [large_subs[-1]]
+        assert desktop.current_app_state()["open_apps"] == ["Large 2"]
     finally:
         desktop.close()
         app.processEvents()
@@ -562,18 +564,25 @@ def test_manifest_launches_are_singleton_and_terminal_shutdown(monkeypatch):
     desktop = SiftaDesktop()
     desktop.resize(1200, 800)
     try:
+        def visible_subwindows():
+            return [sw for sw in desktop.mdi.subWindowList() if not sw.isHidden()]
+
         for _ in range(5):
             desktop._trigger_manifest_app("System Settings")
             app.processEvents()
-        assert len(desktop.mdi.subWindowList()) == 1
+        assert len(visible_subwindows()) == 1
         assert desktop._open_windows.get("System Settings") is not None
+        assert desktop.current_app_state()["open_apps"] == ["System Settings"]
 
         for _ in range(5):
             desktop._trigger_manifest_app("Terminal")
             app.processEvents()
-        assert len(desktop.mdi.subWindowList()) == 2
+        assert len(visible_subwindows()) == 1
+        assert desktop._open_windows.get("System Settings") is None
         terminal_sub = desktop._open_windows.get("Terminal")
         assert terminal_sub is not None
+        assert desktop.current_app_state()["active_app"] == "Terminal"
+        assert desktop.current_app_state()["open_apps"] == ["Terminal"]
 
         terminal_widget = None
         wrapper = terminal_sub.widget()

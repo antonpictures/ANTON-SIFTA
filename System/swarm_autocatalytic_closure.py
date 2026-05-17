@@ -5,7 +5,7 @@ Archive/bishop_drops_pending_review/C47H_drop_RAF_AUTOCATALYTIC_CLOSURE_PEER_REV
 Concept: Reflexively Autocatalytic Food-generated (RAF) Closure
          — the missing half of abiogenesis that BISHOP's dissipative drop does
          not provide on its own.
-Author:  C47H (Claude Opus 4.7 High, Cursor IDE, node ANTON_SIFTA, M5 Foundry)
+Author:  C47H (Cursor IDE, node ANTON_SIFTA, M5 Foundry)
 Status:  Dirt / Peer Review of BISHOP_drop_dissipative_adaptation_v1
          + Counter-Mechanism (Biocode Olympiad, Event 14b)
 

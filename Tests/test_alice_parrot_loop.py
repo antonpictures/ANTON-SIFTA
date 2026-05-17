@@ -223,6 +223,28 @@ def test_owner_ollama_tool_request_maps_to_readonly_router_call():
     assert "cost_justification=" in tool_text
 
 
+def test_owner_memory_digest_request_maps_to_architect_digest_tool():
+    mod = _load_widget_module()
+    tool_text = mod._owner_direct_read_tool_request(
+        "Alice, what did I teach you today?"
+    )
+
+    assert "TOOL_CALL: architect_memory_digest" in tool_text
+    assert "period=today" in tool_text
+    assert "cost_justification=" in tool_text
+
+
+def test_owner_self_vector_request_maps_to_alice_self_vector_tool():
+    mod = _load_widget_module()
+    tool_text = mod._owner_direct_read_tool_request(
+        "Alice, what do you know right now?"
+    )
+
+    assert "TOOL_CALL: alice_self_vector" in tool_text
+    assert "window_hours=24" in tool_text
+    assert "cost_justification=" in tool_text
+
+
 def test_owner_literal_write_tool_call_is_not_directly_executed():
     mod = _load_widget_module()
 

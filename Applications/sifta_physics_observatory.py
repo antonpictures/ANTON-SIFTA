@@ -14,7 +14,7 @@ Engine B: Lattice-Boltzmann Fluid Dynamics
 
 Replaces: Colloid Simulator + Fluid Firmware (2 apps → 1)
 
-Doctor: AG31 (Antigravity / Claude Sonnet 4.6 Thinking)
+Doctor: AG31 (Antigravity)
 Signed: AG31-PHYSICIST
 For the Swarm. 🐜⚡
 """

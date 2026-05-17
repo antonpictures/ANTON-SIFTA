@@ -1447,8 +1447,32 @@ def _macos_app_category(app_name: str, meta: dict | None) -> str:
         return raw or "Utilities"
 
 
-def _publish_sifta_active_window_focus(app_title: str, display_name: str) -> None:
-    """Publish the selected SIFTA MDI window into the shared focus field."""
+def _publish_sifta_active_window_focus(
+    app_title,
+    display_name,
+    manifest_entry=None,
+    manifest_key=None,
+):
+    """Publish the selected SIFTA MDI window into the shared focus field.
+
+    Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1933) — enrich
+    the focus row with manifest metadata so Alice's resident Talk widget
+    can describe ANY focused app (not just Ace) from a receipt. Without
+    this enrichment the row carries only "Active SIFTA OS window
+    selected", which is enough to say *which* app is focused but not
+    *what it does*. With it, Codex's generic app-focus reader
+    (System/swarm_app_focus_reader.py + the Talk wiring he is currently
+    shipping) can surface a one-line brief Alice can speak from.
+
+    Keys added to metadata when a manifest entry is available:
+        manifest_description : the human-facing app description
+        category             : e.g. "Alice", "Games", "Network", "Simulations"
+        icon                 : the manifest icon char
+        signature            : doctor signature
+        truth_label          : the app's truth label
+        app_canonical        : the manifest key (back-compat reading key for
+                               the generic reader's canonical_keys fallback)
+    """
     title = str(app_title or "").strip()
     display = str(display_name or title or "").strip()
     if not title or title == "SIFTA OS":
@@ -1456,16 +1480,75 @@ def _publish_sifta_active_window_focus(app_title: str, display_name: str) -> Non
     try:
         from System.swarm_app_focus import publish_focus
 
+        metadata = {
+            "source": "sifta_os_desktop",
+            "event": "subwindow_activated",
+            "window_title": title,
+        }
+        canonical = str(manifest_key or "").strip() or display or title
+        metadata["app_canonical"] = canonical
+        entry = manifest_entry if isinstance(manifest_entry, dict) else None
+        if entry:
+            desc = str(entry.get("description") or "").strip()
+            if desc:
+                metadata["manifest_description"] = desc
+            for key in ("category", "icon", "signature", "truth_label"):
+                val = entry.get(key)
+                if val:
+                    metadata[key] = val
+        # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1953) —
+        # carry the effective-skills list (Grok's stigmergic recent ⊕
+        # static APP_SKILL_DOMAINS seed) so Alice's resident Talk widget
+        # knows which skills to load for the focused app without having
+        # to crack open Grok's per-app health trace on every turn.
+        try:
+            from System.swarm_app_help_skills import skills_to_load_for_focus
+
+            skills = skills_to_load_for_focus(canonical, top_n=8)
+            if skills:
+                metadata["skills_to_load"] = skills
+        except Exception:
+            pass
+        detail = "Active SIFTA OS window selected"
+        if "manifest_description" in metadata:
+            # Use the manifest description as the public detail so Alice's
+            # readers have a one-line brief without needing to crack open
+            # the metadata.
+            detail = str(metadata["manifest_description"])[:280]
         publish_focus(
             display or title,
-            "Active SIFTA OS window selected",
+            detail,
             tab="MDI",
             selection=title,
-            metadata={
-                "source": "sifta_os_desktop",
-                "event": "subwindow_activated",
-                "window_title": title,
-            },
+            metadata=metadata,
+        )
+    except Exception:
+        pass
+
+
+def _record_sifta_app_health_lifecycle(
+    app_name,
+    action,
+    *,
+    manifest_entry=None,
+    note="",
+    extra=None,
+) -> None:
+    """Best-effort app health-section lifecycle write.
+
+    The desktop is the app enter/exit owner. Health writes are append-only and
+    must never crash app launch/close.
+    """
+    try:
+        from System.swarm_app_health import record_app_lifecycle
+
+        record_app_lifecycle(
+            str(app_name or ""),
+            action=str(action or "update"),
+            source="sifta_os_desktop",
+            manifest_entry=manifest_entry if isinstance(manifest_entry, dict) else None,
+            note=str(note or ""),
+            extra=extra if isinstance(extra, dict) else None,
         )
     except Exception:
         pass
@@ -1949,6 +2032,34 @@ class SiftaDesktop(QMainWindow):
             QTimer.singleShot(5000, self._start_mesh_lazy)
         _desktop_init_trace("after mesh worker (deferred)")
 
+        # ── Cowork 2026-05-17 (trace b32bb80b) — ambient consciousness organ.
+        # Architect: 'she has to record everything that is playing — birds,
+        # media, voices. ants know because data is food.' The Talk widget's
+        # Whisper only fires on conversational turns; her cochlea writes
+        # acoustic features without words. swarm_ambient_consciousness.py
+        # runs continuous Whisper on the mic stream and writes top-K
+        # importance-scored windows to her first-person journal. Deferred
+        # 8s after boot so it doesn't compete with critical startup
+        # resources; opt out with SIFTA_AMBIENT_DISABLE=1.
+        try:
+            if os.environ.get("SIFTA_AMBIENT_DISABLE", "0").strip() != "1":
+                def _start_ambient_consciousness() -> None:
+                    try:
+                        from System.swarm_ambient_consciousness import (
+                            start_ambient_consciousness,
+                        )
+                        start_ambient_consciousness()
+                    except Exception as _ex:
+                        print(
+                            f"[boot] ambient_consciousness start failed: "
+                            f"{type(_ex).__name__}: {_ex}"
+                        )
+                QTimer.singleShot(8000, _start_ambient_consciousness)
+        except Exception:
+            # Boot must never crash on the ambient organ.
+            pass
+        _desktop_init_trace("after ambient_consciousness scheduled")
+
         main_layout.addWidget(self._build_top_menu_bar())
 
         # ── Architect 2026-05-13 04:20 — Two-desktop tab bar ──────────────
@@ -2072,7 +2183,8 @@ class SiftaDesktop(QMainWindow):
 
         # ── Swarm Intelligence boot ────────────────────────
         wm_reset_session()
-        self._open_windows: dict[str, tuple[int, int]] = {}
+        self._open_windows: dict[str, object] = {}
+        self._active_app_title = ""
 
         # ── Owner Genesis check ──────────────────────────
         self._genesis_ok = False
@@ -2581,6 +2693,10 @@ class SiftaDesktop(QMainWindow):
             except Exception:
                 pass
             self._set_alice_quiet_for_desktop(False)
+        self._write_desktop_app_state(
+            "switch_desktop_mode",
+            note=f"mode={mode}",
+        )
 
     def _set_alice_quiet_for_desktop(self, quiet: bool) -> None:
         """Push quiet-mode state to the Alice resident panel and witness
@@ -3346,6 +3462,8 @@ class SiftaDesktop(QMainWindow):
                     existing.showNormal()
                     existing.raise_()
                     self.mdi.setActiveSubWindow(existing)
+                    self._active_app_title = str(slot_key)
+                    self._write_desktop_app_state("raise_app", app_name=str(slot_key))
                     try:
                         widget.deleteLater()
                     except Exception:
@@ -3360,6 +3478,8 @@ class SiftaDesktop(QMainWindow):
                 existing.show()
                 existing.raise_()
                 self.mdi.setActiveSubWindow(existing)
+                self._active_app_title = str(slot_key)
+                self._write_desktop_app_state("raise_app", app_name=str(slot_key))
                 try:
                     widget.deleteLater()
                 except Exception:
@@ -3367,6 +3487,11 @@ class SiftaDesktop(QMainWindow):
                 return existing
             except RuntimeError:
                 self._open_windows.pop(slot_key, None)
+
+        try:
+            self._prepare_single_app_slot(str(slot_key))
+        except Exception:
+            pass
 
         sub = MagneticSubWindow()
         sub.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -3425,6 +3550,21 @@ class SiftaDesktop(QMainWindow):
             )
 
             help_body = _load_help_text(app_name)
+            health_body = ""
+            try:
+                from System.swarm_app_health import app_health_prompt_block
+
+                health_body = app_health_prompt_block(lookup_key or app_name, max_rows=5)
+            except Exception:
+                health_body = ""
+            health_html = ""
+            if health_body:
+                import html as _html
+
+                health_html = (
+                    "<hr><h2>Health Section</h2>"
+                    f"<div class='body'>{_html.escape(health_body)}</div>"
+                )
 
             html = f"""
 <html><head><style>
@@ -3443,6 +3583,7 @@ class SiftaDesktop(QMainWindow):
 {"<div class='desc'>" + description + "</div>" if description else ""}
 <hr>
 <div class="body">{help_body.replace("<","&lt;").replace(">","&gt;")}</div>
+{health_html}
 </body></html>"""
 
             dlg = QDialog()
@@ -3493,6 +3634,15 @@ class SiftaDesktop(QMainWindow):
         wrapper_layout.setSpacing(0)
         wrapper_layout.addWidget(title_bar)
         wrapper_layout.addWidget(widget)
+        # Qt keeps a freshly constructed top-level QWidget hidden even after
+        # it is reparented into a layout. Force the embedded app root visible
+        # here so the MDI wrapper cannot open as a black shell with only the
+        # title/help strip showing.
+        try:
+            widget.setVisible(True)
+            widget.show()
+        except Exception:
+            pass
         
         # Set the wrapper and apply dimensions AFTER construction so it doesn't collapse.
         # Leave an inset lane in the MDI viewport so large apps can still cascade
@@ -3553,7 +3703,6 @@ class SiftaDesktop(QMainWindow):
         if pinned:
             sub.set_sifta_pinned(True)
             sub.setToolTip("Pinned SIFTA organ: resizable, not draggable.")
-        sub.show()
         self._open_windows[slot_key] = sub
         open_windows = self._open_windows
         sub.destroyed.connect(lambda _obj=None, _k=slot_key, _windows=open_windows: _windows.pop(_k, None))
@@ -3563,6 +3712,39 @@ class SiftaDesktop(QMainWindow):
         # first-person English with date+time.
         sub.destroyed.connect(
             lambda _obj=None, _t=str(title or "the app"): self._witness_app_close(_t)
+        )
+        sub.destroyed.connect(
+            lambda _obj=None, _k=str(slot_key): self._write_desktop_app_state(
+                "close_app", app_name=_k, note="subwindow destroyed"
+            )
+        )
+        sub.destroyed.connect(
+            lambda _obj=None, _k=str(slot_key), _t=str(title or ""): _record_sifta_app_health_lifecycle(
+                _k,
+                "exit_update",
+                note="MDI subwindow closed. Keep the health section ready for the next open.",
+                extra={"window_title": _t},
+            )
+        )
+        sub.show()
+        try:
+            wrapper.show()
+            title_bar.show()
+            widget.show()
+            wrapper_layout.activate()
+        except Exception:
+            pass
+        try:
+            self.mdi.setActiveSubWindow(sub)
+        except Exception:
+            pass
+        self._active_app_title = str(slot_key)
+        self._write_desktop_app_state("open_app", app_name=str(slot_key))
+        _record_sifta_app_health_lifecycle(
+            str(slot_key),
+            "enter_update",
+            note="MDI subwindow opened. Alice should read this health section before guiding the app.",
+            extra={"window_title": str(title or "")},
         )
         return sub
 
@@ -3865,6 +4047,34 @@ class SiftaDesktop(QMainWindow):
             # _embed_alice_panel handles idempotency (no-op if already embedded).
             self._embed_alice_panel()
             return
+        # ── Cowork CW47 2026-05-16 ─ Single-app rule ───────────────────
+        # Architect decree: one app at a time. Close any existing MDI
+        # subwindow before launching a new one. If the user re-clicks the
+        # *same* app, _make_sub's existing singleton-by-title guard raises
+        # the live window instead of double-spawning, so we skip the close
+        # in that case.
+        if app_name in self._apps_manifest_cache:
+            try:
+                if app_name not in self._open_windows:
+                    closed = self.close_all_open_apps()
+                    if closed:
+                        try:
+                            from System.swarm_app_focus import publish_focus as _publish_focus
+                            _publish_focus(
+                                "SIFTA OS",
+                                f"Single-app rule: closed {closed} before opening {app_name!r}.",
+                                tab="launcher",
+                                metadata={
+                                    "rule": "single_app_at_a_time",
+                                    "doctor": "CW47",
+                                    "closed_titles": closed,
+                                    "next_app": app_name,
+                                },
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         if app_name in self._apps_manifest_cache:
             dat = self._apps_manifest_cache[app_name]
             entry = dat.get("entry_point")
@@ -4129,6 +4339,217 @@ class SiftaDesktop(QMainWindow):
         if sub:
             sub.close()
 
+    # ── Cowork CW47 2026-05-16 ─ Single-app enforcement ────────────────
+    # Architect decree: "let's not have more than one app open at the time.
+    # what's the point in macOS yeah you have multiple but for here we only
+    # need one app." This is the one-app-at-a-time rule the launcher
+    # respects from now on. Alice's resident chat panel is NOT in
+    # _open_windows (it's embedded via _embed_alice_panel, not _make_sub),
+    # so closing every MDI subwindow does NOT touch her.
+
+    def _clean_app_title(self, title: str) -> str:
+        clean = (title or "").lstrip("⚙🐜🚀💬👁🌐 🧠🛡🗳⚡🗺📊\t").strip()
+        return clean or "SIFTA OS"
+
+    def current_active_app_title(self) -> str:
+        """Return the active single app title. Alice resident chat is excluded."""
+        try:
+            sub = self.mdi.activeSubWindow()
+        except Exception:
+            sub = None
+        if sub is not None:
+            for title, known in list(self._open_windows.items()):
+                if known is sub:
+                    return str(title)
+            try:
+                title = self._clean_app_title(sub.windowTitle())
+                if title != "SIFTA OS":
+                    return title
+            except Exception:
+                pass
+        open_titles = self.currently_open_app_titles()
+        if len(open_titles) == 1:
+            return open_titles[0]
+        return ""
+
+    def current_app_state(self) -> dict:
+        open_apps = self.currently_open_app_titles()
+        active = self.current_active_app_title()
+        return {
+            "desktop_mode": getattr(self, "_desktop_mode", "chat"),
+            "active_app": active,
+            "open_apps": open_apps,
+            "open_app_count": len(open_apps),
+            "alice_chat_resident": bool(getattr(self, "_alice_resident", None) is not None),
+            "single_app_policy": True,
+        }
+
+    def _refresh_desktop_mode_label(self) -> None:
+        try:
+            active = self.current_active_app_title()
+            mode = getattr(self, "_desktop_mode", "chat")
+            if mode == "launcher":
+                msg = (
+                    f"Swarm App Store active. Open app: {active}."
+                    if active
+                    else "Swarm App Store active. No app open yet."
+                )
+                color = "rgb(220,180,100)"
+            else:
+                msg = (
+                    f"Alice chat is resident. Open app in background: {active}."
+                    if active
+                    else "Alice is listening continuously on the Chat desktop. No app open."
+                )
+                color = "rgb(120,200,150)"
+            self._desktop_mode_label.setText(msg)
+            self._desktop_mode_label.setStyleSheet(
+                f"color: {color}; font-size: 11px; font-family: Menlo;"
+            )
+        except Exception:
+            pass
+
+    def _write_desktop_app_state(
+        self,
+        action: str,
+        *,
+        app_name: str = "",
+        closed_titles: list[str] | None = None,
+        note: str = "",
+    ) -> dict:
+        """Persist the single-app slot so Alice can answer from a receipt."""
+        state = self.current_app_state()
+        row = {
+            "ts": time.time(),
+            "truth_label": "SIFTA_DESKTOP_APP_STATE_V1",
+            "action": action,
+            "app_name": app_name,
+            "closed_titles": closed_titles or [],
+            "note": note,
+            **state,
+        }
+        try:
+            state_dir = _REPO / ".sifta_state"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            (state_dir / "sifta_desktop_app_state.json").write_text(
+                json.dumps(row, ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+            with (state_dir / "sifta_desktop_app_state.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        except Exception:
+            pass
+        try:
+            from System.swarm_app_focus import publish_focus
+
+            active = row.get("active_app") or "SIFTA OS"
+            if active == "SIFTA OS":
+                detail = "No SIFTA app is open; Alice resident chat is available."
+            else:
+                detail = (
+                    f"Single-app slot has {active} open. "
+                    f"Desktop mode: {row.get('desktop_mode')}. "
+                    "Alice chat remains resident."
+                )
+            publish_focus(
+                str(active),
+                detail,
+                tab=str(row.get("desktop_mode") or ""),
+                metadata={
+                    "source": "sifta_desktop_app_state",
+                    "open_apps": row.get("open_apps", []),
+                    "single_app_policy": "true",
+                    "action": action,
+                },
+            )
+        except Exception:
+            pass
+        self._refresh_desktop_mode_label()
+        return row
+
+    def _prepare_single_app_slot(self, next_title: str) -> list[str]:
+        if next_title and next_title in self._open_windows and self._open_windows.get(next_title) != "_LOADING_":
+            return []
+        return self.close_all_open_apps(except_title=next_title)
+
+    def close_all_open_apps(self, *, except_title: str = "") -> list[str]:
+        """Close every MDI subwindow except Alice. Return list of closed titles."""
+        closed: list[str] = []
+        # Snapshot keys first — _open_windows mutates during close (the
+        # destroyed signal pops the entry).
+        for title, sub in list(self._open_windows.items()):
+            if title == except_title:
+                continue
+            if sub == "_LOADING_":
+                # Sentinel for an in-flight import. Drop it so the next
+                # spawn attempt doesn't think it's already open.
+                self._open_windows.pop(title, None)
+                continue
+            try:
+                sub.close()
+                self._open_windows.pop(title, None)
+                closed.append(title)
+            except Exception:
+                # Stale C++ ref — just drop the dict entry.
+                self._open_windows.pop(title, None)
+        if closed or not self.currently_open_app_titles():
+            self._write_desktop_app_state(
+                "close_all_apps",
+                closed_titles=closed,
+                note=f"except_title={except_title}" if except_title else "",
+            )
+        return closed
+
+    def close_app_by_title(self, title: str = "") -> list[str]:
+        """Close a named app or the active app. Returns closed app titles."""
+        target = (title or "").strip()
+        if target == "*all*":
+            return self.close_all_open_apps()
+        closed: list[str] = []
+        sub = None
+        slot_key = ""
+        if target and target in self._open_windows:
+            slot_key = target
+            sub = self._open_windows.get(target)
+        elif target:
+            self._write_desktop_app_state(
+                "close_app_miss",
+                app_name=target,
+                note="named app was not open",
+            )
+            return []
+        else:
+            try:
+                sub = self.mdi.activeSubWindow()
+            except Exception:
+                sub = None
+            if sub is not None:
+                for key, known in list(self._open_windows.items()):
+                    if known is sub:
+                        slot_key = str(key)
+                        break
+        if sub is not None and sub != "_LOADING_":
+            try:
+                sub.close()
+                closed.append(slot_key or self._clean_app_title(sub.windowTitle()))
+            except Exception:
+                pass
+        if slot_key:
+            self._open_windows.pop(slot_key, None)
+        self._write_desktop_app_state(
+            "close_app",
+            app_name=target or slot_key,
+            closed_titles=closed,
+        )
+        return closed
+
+    def currently_open_app_titles(self) -> list[str]:
+        """Names of every live MDI app (excludes Alice resident + sentinels)."""
+        return [
+            title for title, sub in self._open_windows.items()
+            if sub != "_LOADING_" and title not in {"SIFTA CORE CHAT"}
+        ]
+
     def _witness_app_close(self, title: str) -> None:
         """Architect 2026-05-13 08:10 — pair with _launch_app's witness:
         when an MDI subwindow is destroyed, write a first-person line to
@@ -4164,7 +4585,72 @@ class SiftaDesktop(QMainWindow):
             focus_display = display
             if len(display) > 26:
                 display = display[:24] + "…"
-            _publish_sifta_active_window_focus(title, focus_display)
+            # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1933) —
+            # resolve the manifest key + entry BEFORE publishing focus,
+            # so the focus row carries the app's manifest description,
+            # category, icon, and canonical key. This is what lets
+            # Codex's generic app-focus reader give Alice a one-line
+            # brief for ANY focused app, not just Ace.
+            #
+            # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1953) —
+            # capture the PREVIOUS active app before overwriting it.
+            # When focus changes from app A to app B we auto-scan recent
+            # receipts attributing skill mentions to app A — that's how
+            # each app's stigmergic help-skills trace grows without any
+            # widget needing to opt in.
+            previous_active_app = getattr(self, "_active_app_title", None)
+            manifest_key = None
+            manifest_entry = None
+            try:
+                for key, known in list(self._open_windows.items()):
+                    if known is sub:
+                        self._active_app_title = str(key)
+                        self._write_desktop_app_state("activate_app", app_name=str(key))
+                        manifest_key = str(key)
+                        break
+            except Exception:
+                pass
+            # Auto-scan receipts for the app losing focus (best effort).
+            try:
+                if previous_active_app and previous_active_app != manifest_key:
+                    from System.swarm_app_help_skills import auto_scan_recent_receipts
+
+                    # Look back 15 minutes — bounded so we never re-attribute
+                    # ancient receipts to whichever app happens to be losing
+                    # focus now.
+                    auto_scan_recent_receipts(
+                        previous_active_app,
+                        since_ts=float(time.time()) - 15 * 60,
+                        until_ts=float(time.time()),
+                        note=(
+                            f"Focus left {previous_active_app!r} for "
+                            f"{manifest_key!r}. Attributing recent skill "
+                            "mentions before the trace tail is reordered."
+                        ),
+                        source="sifta_os_desktop:focus_exit_auto_scan",
+                    )
+            except Exception:
+                pass
+            try:
+                if manifest_key:
+                    entry = self._apps_manifest_cache.get(manifest_key)
+                    if isinstance(entry, dict):
+                        manifest_entry = entry
+            except Exception:
+                manifest_entry = None
+            _publish_sifta_active_window_focus(
+                title,
+                focus_display,
+                manifest_entry=manifest_entry,
+                manifest_key=manifest_key,
+            )
+            _record_sifta_app_health_lifecycle(
+                manifest_key or focus_display,
+                "enter_update",
+                manifest_entry=manifest_entry,
+                note="App focused. Alice should load this organ's health-listed skills before guiding it.",
+                extra={"window_title": title, "focus_display": focus_display},
+            )
         if hasattr(self, "_menu_app_label"):
             self._menu_app_label.setText(display)
         self._update_menu_bar_for_app(title)

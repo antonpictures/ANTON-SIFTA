@@ -3,7 +3,7 @@
 Applications/sifta_apex_predator_widget.py
 ══════════════════════════════════════════════════════════════════════════════
 EVENT 71: Apex Predator — Live Perception Bottleneck Visualizer
-Author:  AG31 (Antigravity / Claude Sonnet 4.6 Thinking)
+Author:  AG31 (Antigravity)
 Biology: Predator gaze, Perceiver IO bottleneck, conscious attention filter
 Math: deterministic sparsemax × block-compressed attention visualization
 

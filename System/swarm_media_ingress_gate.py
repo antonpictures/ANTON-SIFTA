@@ -983,6 +983,29 @@ def write_gate_receipt(
     world_diary = _write_world_diary_trace(row)
     if world_diary:
         row["world_diary"] = world_diary
+    try:
+        from System.swarm_ambient_transcript_memory import digest_once, ingest_transcript
+
+        ambient_row = ingest_transcript(
+            text,
+            stt_confidence=stt_conf,
+            source="media_ingress_gate",
+            route_hint=route,
+            state_dir=LEDGER.parent,
+            metadata={
+                "gate_reason": row.get("reason", ""),
+                "gate_confidence": row.get("confidence", 0.0),
+            },
+        )
+        if ambient_row:
+            row["ambient_transcript_memory"] = {
+                "transcript_id": ambient_row.get("transcript_id"),
+                "importance": ambient_row.get("importance", {}),
+                "raw_audio_stored": False,
+            }
+            digest_once(state_dir=LEDGER.parent, max_rows=32)
+    except Exception:
+        pass
     _append_jsonl(LEDGER, row)
     return row
 
@@ -1016,7 +1039,7 @@ def get_latest_observed_media_context(max_age_s: float = 900.0, *, max_chars: in
         stt = latest.get("stt_confidence", "")
         preview = " ".join(str(latest.get("text_preview") or "").split())[:max_chars]
         if route == "ambient_media":
-            interpretation = "suppressed as environmental media, not George speaking"
+            interpretation = "routed as environmental media, not George speaking"
         elif route == "observed_media":
             interpretation = "kept as co-watch/environmental context, not a direct prompt"
         else:

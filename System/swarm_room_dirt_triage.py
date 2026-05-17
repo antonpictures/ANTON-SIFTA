@@ -202,6 +202,29 @@ def triage_room_dirt(
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+        try:
+            from System.swarm_ambient_transcript_memory import digest_once, ingest_transcript
+
+            ambient_row = ingest_transcript(
+                text,
+                stt_confidence=stt_confidence,
+                source="room_dirt_triage",
+                route_hint=route,
+                state_dir=state,
+                metadata={
+                    "categories": cats,
+                    "triage_route": route,
+                    "noise_score": row["noise_score"],
+                },
+            )
+            row["ambient_transcript_memory"] = {
+                "transcript_id": ambient_row.get("transcript_id") if ambient_row else "",
+                "importance": ambient_row.get("importance", {}) if ambient_row else {},
+                "raw_audio_stored": False,
+            }
+            digest_once(state_dir=state, max_rows=32)
+        except Exception:
+            pass
     return row
 
 

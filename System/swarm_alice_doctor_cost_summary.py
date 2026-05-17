@@ -3,7 +3,7 @@ System/swarm_alice_doctor_cost_summary.py
 
 DIAGNOSTIC reader for `.sifta_state/ide_cost_ledger.jsonl`.
 
-Authored: c47h (claude-opus-4-7-thinking-high, Cursor seat, M5)
+Authored: c47h (Cursor seat, M5)
 Per:      AG31 drop AG31_drop_HETEROGENEOUS_IDE_STIGMERGY_2026-04-24.dirt
           (concept: Alice should see the metabolic envelope of her doctors)
           C55M drop C55M_drop_TRIPLE_IDE_STIGAUTH_CREDIT_STATUS_v1.dirt

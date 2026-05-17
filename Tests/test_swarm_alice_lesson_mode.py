@@ -64,10 +64,11 @@ def test_scorer_correct_on_exact_confident():
     assert v.sticker == "🐝"
 
 
-def test_scorer_close_on_low_confidence_exact():
+def test_scorer_correct_on_low_confidence_exact_child_voice():
     v = score_attempt_pure("cat", "cat", stt_confidence=0.40)
-    assert v.label == "CLOSE"
+    assert v.label == "CORRECT"
     assert v.distance == 0
+    assert "low confidence is normal for child voices" in v.explanation
 
 
 def test_scorer_close_on_near_miss():
@@ -107,6 +108,73 @@ def test_wordace_bridge_scorer_accepts_word_in_phrase():
     v = score_heard_against_expected("cat", "I say cat", cue_kind="word", stt_confidence=0.95)
     assert v.label == "CORRECT"
 
+
+def test_wordace_bridge_scorer_accepts_exact_low_confidence_child_word():
+    v = score_heard_against_expected("can", "Can!", cue_kind="word", stt_confidence=0.41)
+    assert v.label == "CORRECT"
+    assert "low confidence is normal for child voices" in v.explanation
+
+
+def test_wordace_bridge_scorer_accepts_stt_final_double_consonant():
+    v = score_heard_against_expected("mat", "Matt.", cue_kind="word", stt_confidence=0.45)
+    assert v.label == "CORRECT"
+    assert "final double-consonant" in v.explanation
+
+
+def test_short_a_demo_pack_accepts_common_stt_artifacts(tmp_path):
+    eng = LessonEngine(state_dir=tmp_path)
+    level = next(L for L in eng.levels() if L["id"] == "L2_cvc_short_a")
+    by_id = {item["id"]: item for item in level["items"]}
+
+    assert "matt" in by_id["mat"]["alternates"]
+    assert "10" in by_id["tan"]["alternates"]
+    assert "run" in by_id["ran"]["alternates"]
+    assert score_heard_against_expected(
+        "tan",
+        "10.",
+        cue_kind="word",
+        stt_confidence=0.51,
+        alternates=by_id["tan"]["alternates"],
+    ).label == "CORRECT"
+    assert score_heard_against_expected(
+        "ran",
+        "Run.",
+        cue_kind="word",
+        stt_confidence=0.46,
+        alternates=by_id["ran"]["alternates"],
+    ).label == "CORRECT"
+
+
+def test_wordace_bridge_scorer_keeps_repeated_tts_echo_as_close():
+    v = score_heard_against_expected(
+        "cat",
+        "Cat, cat, cat, cat.",
+        cue_kind="word",
+        stt_confidence=0.50,
+    )
+    assert v.label == "CLOSE"
+
+
+def test_wordace_bridge_scorer_accepts_sentence_without_punctuation():
+    v = score_heard_against_expected(
+        "I see a cat.",
+        "I see a cat",
+        cue_kind="sentence",
+        stt_confidence=0.95,
+    )
+    assert v.label == "CORRECT"
+
+
+def test_wordace_bridge_scorer_close_on_near_sentence():
+    v = score_heard_against_expected(
+        "I see a cat.",
+        "I see cat",
+        cue_kind="sentence",
+        stt_confidence=0.95,
+    )
+    assert v.label == "CLOSE"
+
+
 def test_wordace_bridge_scorer_rejects_wrong_word_in_phrase():
     v = score_heard_against_expected("man", "the cat", cue_kind="word", stt_confidence=0.95)
     assert v.label == "MISS"
@@ -133,6 +201,41 @@ def test_wordace_attempt_gate_releases_doctor_instructions():
     )
 
 
+def test_wordace_attempt_gate_releases_global_chat_and_greetings():
+    assert not is_lesson_attempt_candidate("man", "Hello", cue_kind="word")
+    assert not is_lesson_attempt_candidate(
+        "man",
+        "the global chat is the same chat inside WordAce and the microphone is not listening",
+        cue_kind="word",
+    )
+    assert not is_lesson_attempt_candidate(
+        "man",
+        "She is not. Not patient.",
+        cue_kind="word",
+    )
+    assert not is_lesson_attempt_candidate(
+        "man",
+        "my answer is not registered in the Ace chat",
+        cue_kind="word",
+    )
+
+
+def test_wordace_attempt_gate_keeps_exact_sentence_with_meta_words():
+    assert is_lesson_attempt_candidate(
+        "she is not patient",
+        "She is not patient.",
+        cue_kind="sentence",
+    )
+
+
+def test_wordace_attempt_gate_keeps_repeated_wrong_word_in_lesson_lane():
+    assert is_lesson_attempt_candidate(
+        "ran",
+        "Run, run, run, run, run, run.",
+        cue_kind="word",
+    )
+
+
 # ── engine round-trip ────────────────────────────────────────────────────
 
 
@@ -140,9 +243,13 @@ def test_engine_loads_pack_and_lists_levels(tmp_path):
     eng = LessonEngine(state_dir=tmp_path)
     levels = eng.levels()
     assert len(levels) == 6
+    assert eng.pack["name"] == "WordAce"
+    assert eng.pack["subject"] == "Ace"
     assert any(L["id"] == "L1_letters" for L in levels)
     assert next(L for L in levels if L["id"] == "L1_letters")["kind"] == "letter_sequence"
     assert any(L["id"] == "L6_sentences" for L in levels)
+    sentence_level = next(L for L in levels if L["id"] == "L6_sentences")
+    assert len(sentence_level["items"]) >= 16
 
 
 def test_engine_next_cue_writes_lesson_cue_row(tmp_path):
@@ -151,7 +258,13 @@ def test_engine_next_cue_writes_lesson_cue_row(tmp_path):
     cue = eng.next_cue(write=True)
     assert cue["kind"] == "LESSON_CUE"
     assert cue["level_id"] == "L2_cvc_short_a"
-    assert cue["expected_say"] in {"cat", "bat", "hat", "mat", "ran", "man", "tan", "can"}
+    short_a_words = {
+        item["say"]
+        for level in eng.levels()
+        if level["id"] == "L2_cvc_short_a"
+        for item in level["items"]
+    }
+    assert cue["expected_say"] in short_a_words
     rows = (tmp_path / LESSON_LEDGER).read_text().splitlines()
     assert any(json.loads(r)["kind"] == "LESSON_CUE" for r in rows)
 
@@ -204,7 +317,12 @@ def test_cue_prompt_uses_first_name_and_first_person(tmp_path):
         assert forbidden not in text
 
 
-def test_word_cue_uses_meaning_story_not_bare_command(tmp_path):
+def test_word_cue_is_terse_and_says_displayed_word_explicitly(tmp_path):
+    """Architect 2026-05-16 (Cowork CW47 surgery cw47-0516-1913):
+    tighten the cue contract. The cue must name the displayed word and
+    drop the story preamble + quiz question that confused kids into
+    answering the question ("it's a word") instead of reading the word.
+    """
     eng = LessonEngine(state_dir=tmp_path)
     eng._current_item = LessonItem(
         item_id="man",
@@ -216,10 +334,115 @@ def test_word_cue_uses_meaning_story_not_bare_command(tmp_path):
 
     text = eng.cue_prompt_for_alice(owner_name="Ace")
 
+    # First-person, kid named directly.
     assert text.startswith("Ace,")
-    assert "man was walking" in text
-    assert "Who was thirsty?" in text
-    assert "Read the word on the card: man." in text
+    # Exact displayed word appears at least once, verbatim.
+    assert ": man." in text
+    # Brevity — the tightened cue is short enough that the listen window
+    # opens promptly after Alice's TTS.
+    assert len(text) <= 80, f"Cue too long ({len(text)} chars): {text!r}"
+    # No narrative padding that turns the cue into a quiz.
+    forbidden_story = ("walking", "thirsty", "Who was", "What was", "Now read")
+    for frag in forbidden_story:
+        assert frag not in text, f"Story preamble leaked into cue: {frag!r} in {text!r}"
+    # Kid must not be invited to say "it's a word" instead of the word.
+    assert "it's a word" not in text.lower()
+    assert "it’s a word" not in text.lower()
+
+
+def test_word_cue_fallback_still_says_exact_displayed_word(tmp_path):
+    eng = LessonEngine(state_dir=tmp_path)
+    eng._current_item = LessonItem(
+        item_id="ship",
+        show="ship",
+        say="ship",
+        level_id="custom_words",
+        level_kind="word",
+    )
+
+    text = eng.cue_prompt_for_alice(owner_name="Ace")
+
+    assert text == "Ace, the word is: ship. Say: ship."
+    assert "it's a word" not in text.lower()
+    assert "it’s a word" not in text.lower()
+
+
+def test_word_cue_distinguishes_display_from_say_form(tmp_path):
+    """When the displayed form and the say form differ (e.g. graphemes
+    that need a phonetic say-form), the cue still names both explicitly
+    — no narrative — so the kid hears 'say it like this' for the
+    pronunciation while the screen still shows the orthographic form.
+    """
+    eng = LessonEngine(state_dir=tmp_path)
+    eng._current_item = LessonItem(
+        item_id="phone",
+        show="phone",
+        say="fone",
+        level_id="L3_digraphs",
+        level_kind="word",
+    )
+
+    text = eng.cue_prompt_for_alice(owner_name="Ace")
+
+    assert text == "Ace, the word is: phone. Say it like this: fone."
+    assert len(text) <= 80
+
+
+def test_word_cue_handles_known_story_frame_word_without_storifying(tmp_path):
+    """The _WORD_STORY_FRAMES data structure may still exist for future
+    use, but the cue must not read from it — every word, story-known or
+    not, gets the same terse cue.
+    """
+    eng = LessonEngine(state_dir=tmp_path)
+    eng._current_item = LessonItem(
+        item_id="hat",
+        show="hat",
+        say="hat",
+        level_id="L2_cvc_short_a",
+        level_kind="word",
+    )
+
+    text = eng.cue_prompt_for_alice(owner_name="Ace")
+
+    assert text == "Ace, the word is: hat. Say: hat."
+    # The legacy story for "hat" must not leak into the cue.
+    assert "man's head" not in text
+    assert "What was" not in text
+
+
+def test_sentence_cue_says_exact_sentence_with_scaffold(tmp_path):
+    eng = LessonEngine(state_dir=tmp_path)
+    eng._current_item = LessonItem(
+        item_id="s1",
+        show="I see a cat.",
+        say="I see a cat.",
+        level_id="L6_sentences",
+        level_kind="sentence",
+    )
+
+    text = eng.cue_prompt_for_alice(owner_name="Ace")
+
+    assert text.startswith("Ace, this is a sentence.")
+    assert "I will read it slowly: I see a cat." in text
+    assert "The words are: I, see, a, cat." in text
+    assert "Now read the whole sentence: I see a cat." in text
+
+
+def test_sentence_miss_prompt_does_not_call_sentence_a_word(tmp_path):
+    eng = LessonEngine(state_dir=tmp_path, rng=random.Random(8))
+    eng._current_item = LessonItem(
+        item_id="s2",
+        show="The dog is big.",
+        say="The dog is big.",
+        level_id="L6_sentences",
+        level_kind="sentence",
+    )
+
+    text = eng.verdict_prompt_for_alice({"label": "MISS"}, owner_name="Ace")
+
+    assert "sentence" in text.lower()
+    assert "The word is" not in text
+    assert "The dog is big." in text
 
 
 def test_verdict_prompt_correct_acknowledges_kid(tmp_path):
@@ -229,6 +452,21 @@ def test_verdict_prompt_correct_acknowledges_kid(tmp_path):
     result = eng.score_attempt(cue["expected_say"], stt_confidence=0.95, write=False)
     text = eng.verdict_prompt_for_alice(result, owner_name="Acer")
     assert "Acer" in text or "perfect" in text.lower() or "exactly" in text.lower()
+
+
+def test_verdict_prompt_correct_holds_a_beat(tmp_path):
+    eng = LessonEngine(state_dir=tmp_path, rng=random.Random(4))
+    eng.set_level("L2_cvc_short_a")
+    cue = eng.next_cue(write=False)
+    result = eng.score_attempt(cue["expected_say"], stt_confidence=0.95, write=False)
+
+    text = eng.verdict_prompt_for_alice(result, owner_name="Ace")
+
+    assert any(
+        phrase in text
+        for phrase in ("Hold that one beat", "heard that clearly", "Let that land")
+    )
+    assert "Onward" not in text
 
 
 def test_verdict_prompt_miss_offers_target_to_repeat(tmp_path):

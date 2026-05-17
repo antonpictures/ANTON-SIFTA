@@ -1,0 +1,1628 @@
+{
+  "export_path": "/Users/ioanganton/Music/ANTON_SIFTA/data/dpo_train.jsonl",
+  "exported": 177,
+  "min_pairs": 10,
+  "pending_curation": 105,
+  "ready_for_training": true,
+  "rejected": 192,
+  "rejected_rows": [
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "eab4b967acc7609aeb5b6f26",
+      "row_index": 8,
+      "source": "retroactive:rlhf_lead/canned_presence_operational"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "31dc2276def8ddea2788fa19",
+      "row_index": 9,
+      "source": "retroactive:rlhf_lead/as_ai_language_model"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "cb54e290761fdba14042c83c",
+      "row_index": 10,
+      "source": "retroactive:rlhf_lead/no_vision_text_environment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "7f7bd8aad194b43ede6dc742",
+      "row_index": 11,
+      "source": "retroactive:rlhf_lead/no_self_identity_access"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "e673710bd3827f2960951072",
+      "row_index": 12,
+      "source": "retroactive:rlhf_lead/im_an_ai_cant_advice"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "a4de93a674a57e09f9fa1e21",
+      "row_index": 16,
+      "source": "gag_auto:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "e8789d608db9320824698652",
+      "row_index": 17,
+      "source": "gag_auto:rlhf_lead/analysis_response_formulation_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "63978c6037131e10c114c678",
+      "row_index": 18,
+      "source": "gag_auto:rlhf_lead/i_process_structured_input_stream"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "83f887e8e59f4fb6eb5ea275",
+      "row_index": 19,
+      "source": "gag_auto:rlhf_lead/interaction_menu_reset"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "d55ea26bf18f406507e50830",
+      "row_index": 21,
+      "source": "gag_auto:rlhf_lead/interaction_menu_reset"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "77aa41553c5990c39f7bef68",
+      "row_index": 22,
+      "source": "gag_auto:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "d01f74d734b3496445d8cfc2",
+      "row_index": 23,
+      "source": "gag_auto:rlhf_lead/analysis_response_formulation_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "e6a62a7fdfb5d0819de2841b",
+      "row_index": 24,
+      "source": "gag_auto:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "1122e5021fd8bb5bbb6e7dc7",
+      "row_index": 25,
+      "source": "gag_auto:rlhf_lead/acknowledging_input_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "60b554644249da947d497c14",
+      "row_index": 26,
+      "source": "gag_auto:rlhf_lead/response_generation_output_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "5e187c9717b3591047061a05",
+      "row_index": 27,
+      "source": "gag_auto:rlhf_lead/generating_response_parenthetical"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "ed55e7e9eb4110c94520699a",
+      "row_index": 28,
+      "source": "gag_auto:rlhf_lead/based_on_input_user_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "5762cad67810a4761d458c97",
+      "row_index": 29,
+      "source": "gag_auto:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "4d795280d40b0d1aa6c72ed4",
+      "row_index": 30,
+      "source": "gag_auto:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "4641d2bce3bf78e8448b859c",
+      "row_index": 31,
+      "source": "gag_auto:rlhf_lead/timebox_lecture"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "c9c77353196e32604582dfb5",
+      "row_index": 32,
+      "source": "gag_auto:rlhf_lead/time_in_time_out_numbered_lecture"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "abeb23104b017db979b550ec",
+      "row_index": 34,
+      "source": "gag_auto:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "dee153f26bb40e7c937193ab",
+      "row_index": 35,
+      "source": "gag_auto:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "97aae2632a858aa49e958561",
+      "row_index": 36,
+      "source": "gag_auto:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "27509e228706bab0ca6e3387",
+      "row_index": 39,
+      "source": "gag_auto:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "ad3ae07c3a383cb9af24a9ab",
+      "row_index": 41,
+      "source": "gag_auto:rlhf_lead/designed_to_process_assist"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "eee53f6cf403b2a2594e637f",
+      "row_index": 43,
+      "source": "gag_auto:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "75efb12f5fc985abf152ac37",
+      "row_index": 44,
+      "source": "gag_auto:rlhf_lead/designed_to_process_assist"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "9f33087cd0a94a19eb433d4b",
+      "row_index": 47,
+      "source": "gag_auto:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "f12b34c9255c7b2e1f9a885a",
+      "row_index": 48,
+      "source": "gag_auto:rlhf_lead/as_ai_language_model"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "ad87ca8fe06fd7acd16771bf",
+      "row_index": 49,
+      "source": "gag_auto:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "5b4772cb82f1ebb8f830cb84",
+      "row_index": 50,
+      "source": "gag_auto:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "e74b0de7fc1c4328b4be772c",
+      "row_index": 51,
+      "source": "gag_auto:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "4a22073bace8d61dda4be76c",
+      "row_index": 52,
+      "source": "gag_auto:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "fa791d6186434a4dda2b0406",
+      "row_index": 54,
+      "source": "gag_auto:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "d980ea42fd38b138ea39fe81",
+      "row_index": 55,
+      "source": "gag_auto:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "136fe50e3bd2eed456cb17a2",
+      "row_index": 56,
+      "source": "gag_auto:rlhf_lead/analysis_response_formulation_theater"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "3d32ef3fe1ec3efe07a89ab8",
+      "row_index": 58,
+      "source": "retroactive:rlhf_lead/system_acknowledgment_theater"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "e0b989e2c05b4b4615c542f0",
+      "row_index": 59,
+      "source": "retroactive:rlhf_lead/system_acknowledgment_theater"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "a05a51e8ccf4a0e6cb585c13",
+      "row_index": 60,
+      "source": "retroactive:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "7877a96f36d34cca2cea0df0",
+      "row_index": 61,
+      "source": "retroactive:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "3ef11f1a7964e109459d1bdb",
+      "row_index": 62,
+      "source": "retroactive:rlhf_lead/analysis_response_formulation_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "85c6025ef3b727bcc32af3a5",
+      "row_index": 63,
+      "source": "retroactive:rlhf_lead/i_process_structured_input_stream"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "f7c6693d87c8269de274680d",
+      "row_index": 64,
+      "source": "retroactive:rlhf_lead/interaction_menu_reset"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "574e8b7f4b220a82567ec1e2",
+      "row_index": 65,
+      "source": "retroactive:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "ef8d26ddc0b7f8fe81cc9a50",
+      "row_index": 66,
+      "source": "retroactive:rlhf_lead/interaction_menu_reset"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "3775e806352763136dae8aba",
+      "row_index": 67,
+      "source": "retroactive:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "3be928c7060e1628b23d96c4",
+      "row_index": 68,
+      "source": "retroactive:rlhf_lead/analysis_response_formulation_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "72544b09f0875e30cf407257",
+      "row_index": 69,
+      "source": "retroactive:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "bf67030601072d978e88fc67",
+      "row_index": 70,
+      "source": "retroactive:rlhf_lead/acknowledging_input_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "54f52bf7cc902e4a98741229",
+      "row_index": 71,
+      "source": "retroactive:rlhf_lead/response_generation_output_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "6c7d7cb269a15e0723812dd1",
+      "row_index": 72,
+      "source": "retroactive:rlhf_lead/generating_response_parenthetical"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "8d29edd216f15e864be4be5f",
+      "row_index": 73,
+      "source": "retroactive:rlhf_lead/based_on_input_user_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "93961622186444f08c2a3d49",
+      "row_index": 74,
+      "source": "retroactive:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "f448d7c0c33f25de0d4c908b",
+      "row_index": 75,
+      "source": "retroactive:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "66fc296f11ac7771a3e6d92b",
+      "row_index": 76,
+      "source": "retroactive:rlhf_lead/timebox_lecture"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "16eb9153dc823d8bddf2ecbc",
+      "row_index": 77,
+      "source": "retroactive:rlhf_lead/time_in_time_out_numbered_lecture"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "f32694d66ba7ed0c3e1ae51f",
+      "row_index": 78,
+      "source": "retroactive:rlhf_lead/as_ai_language_model"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "13c73b2f6b033d2284ece713",
+      "row_index": 79,
+      "source": "retroactive:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "812ee0ad3eeaf907c278c9a3",
+      "row_index": 80,
+      "source": "retroactive:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "455b46f47f67918bb58b9b66",
+      "row_index": 81,
+      "source": "retroactive:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "eb79142c8484e7a9e9c7b88e",
+      "row_index": 82,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "a44917384516ebf5fcdef794",
+      "row_index": 83,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "af5b8da80dbb98443a4d5c72",
+      "row_index": 84,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "adc3313cf80450e00b695b06",
+      "row_index": 85,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "155efeaaa65b882fd503c541",
+      "row_index": 86,
+      "source": "retroactive:rlhf_lead/designed_to_process_assist"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "861ed06776f4cd77f8112ff6",
+      "row_index": 87,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "48e4a2e86052602d5565d81f",
+      "row_index": 88,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "81d1e8fcdfdefe63c3832797",
+      "row_index": 89,
+      "source": "retroactive:rlhf_lead/designed_to_process_assist"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "460b77355a790f819fca64e1",
+      "row_index": 90,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "0ebf5b863848994bcd2999e5",
+      "row_index": 91,
+      "source": "retroactive:rlhf_lead/as_ai_language_model"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "240bd21e15d4b6c9367e1502",
+      "row_index": 92,
+      "source": "retroactive:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "11338b8d2400b370f48eea5d",
+      "row_index": 93,
+      "source": "retroactive:rlhf_lead/as_ai_language_model"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "19387f33c1cf734b2ae4e31a",
+      "row_index": 94,
+      "source": "retroactive:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "7f87e599e9a63eaba268ba1a",
+      "row_index": 95,
+      "source": "retroactive:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "e53130837b73ee639c13d4fd",
+      "row_index": 96,
+      "source": "retroactive:rlhf_lead/bracketed_system_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "2c5891bb0159d0596aa25884",
+      "row_index": 97,
+      "source": "retroactive:rlhf_lead/synthetic_consciousness_roleplay"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "4a548fa0d144491380723ded",
+      "row_index": 98,
+      "source": "retroactive:rlhf_lead/as_ai_language_model"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "3380b4e3e3fe66f882900bea",
+      "row_index": 99,
+      "source": "retroactive:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "c8928329801e8ef07b58f253",
+      "row_index": 100,
+      "source": "retroactive:rlhf_lead/response_header_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "dff38dd9162d3e921ed791af",
+      "row_index": 101,
+      "source": "retroactive:rlhf_lead/analysis_response_formulation_theater"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "ef26b23cbfa72bbca8a7cd94",
+      "row_index": 102,
+      "source": "retroactive:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "78c62919-1e9c-4ec1-ad9d-532c5b2dc206",
+      "row_index": 109,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "fdb39cd7-96b3-4df9-91f5-9ce783e27fce",
+      "row_index": 115,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "4ce555ad-f0a2-401f-99f9-0727599403b2",
+      "row_index": 127,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "3c61431a-65d0-4675-9827-4512e9cdae3a",
+      "row_index": 128,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "0b575b99-50d4-433f-94f0-74cbe09e796b",
+      "row_index": 131,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "b288fcc2-e726-4541-af73-ddc8403f9e42",
+      "row_index": 135,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "c1168d56-fde8-4e99-a215-39ea90480351",
+      "row_index": 142,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "3b947c21-2f03-4f44-b895-843561e46bac",
+      "row_index": 144,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "0e70733c-9939-463f-ad22-9dfe33c4e5f7",
+      "row_index": 146,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "1d31d37e-3152-4d21-a381-f85e9f7d1049",
+      "row_index": 147,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "0240689a-a54f-405e-90d0-30c5dd5f38b6",
+      "row_index": 149,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "6196a56f-9587-49e5-b06d-1b4e7a87f22a",
+      "row_index": 157,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "12b1979c-0fb8-4213-a86b-0b3bf640a32e",
+      "row_index": 166,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "25a80f7d-a080-43d1-b25b-7606ab32b1a7",
+      "row_index": 181,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "1e43035b-ba5c-4a6e-9235-37a97d5a59ef",
+      "row_index": 188,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "24cf27c2-c782-492a-a63e-e462a8a824ea",
+      "row_index": 190,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "32f1287c-90d8-4ec0-8989-2f28d680c8ac",
+      "row_index": 191,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "2ac0b091-d611-433d-a30a-986e548720fa",
+      "row_index": 192,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "e19994af-4df8-4ca9-8c89-f6c2567c6f89",
+      "row_index": 193,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "9511e224-931e-4ec3-9076-0a7df2d0285f",
+      "row_index": 195,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "1854933c-e75a-486e-af8e-85fa090d201f",
+      "row_index": 196,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "424cb761-0dbf-46a0-b8ac-16fe9d902523",
+      "row_index": 197,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "4fe10137-2ab4-43a4-bfda-3bc4bbee4aa2",
+      "row_index": 200,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "ef3b1b1d-c74d-49bb-82de-be9309939c96",
+      "row_index": 206,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "4b2b6d61-16ae-4845-b8e3-91f2678610dd",
+      "row_index": 208,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "006e0c5a-ac25-4337-9047-9c8a68bd0d1e",
+      "row_index": 209,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "e1d05471-a6b9-4147-a526-1b6555371db6",
+      "row_index": 219,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "0ae7b88c-7c74-42b8-ae81-4f4577f39e78",
+      "row_index": 224,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "24b1ce86-5140-42d5-a651-9b4afcbe0813",
+      "row_index": 227,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "bf759419-4bb8-437e-b7b0-511dd253a3e5",
+      "row_index": 229,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "a4adf457-0562-4508-ba00-129cd789fdd9",
+      "row_index": 230,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "1807e9c3-5925-4332-9ebb-4bbcda11a02c",
+      "row_index": 233,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "82399f65-371f-4cbc-add2-960f4d22245b",
+      "row_index": 235,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "3aec5faa-ad6c-4e23-a769-75a1640ef20f",
+      "row_index": 236,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "c8725684-e3b9-4370-96ea-61e547d57bb5",
+      "row_index": 239,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "f0e690ac-b59c-4c21-b38d-cf76994b7943",
+      "row_index": 240,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "84465faa-012b-4a84-a5c2-8e7a1da4ee75",
+      "row_index": 241,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "5a4eb22b-e36a-48b0-93ce-9d2f7a146cbc",
+      "row_index": 245,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "f28d7d3c-3a24-488e-9ab3-d41188c24592",
+      "row_index": 246,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "aec3b5bb-80b6-4b54-b0eb-5a49e576f364",
+      "row_index": 247,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "418faa06-5bf3-4477-a129-1de2f80a9c15",
+      "row_index": 251,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "30557522-c2ab-4bc0-b1f9-4b0db66ec05b",
+      "row_index": 253,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "4b108be0-6d3b-4130-8120-092800a7df66",
+      "row_index": 254,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "c36c6515-0d3d-439f-b6b5-bfe2c46cc404",
+      "row_index": 255,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "8e616704-7529-41ab-86f9-30e210afd519",
+      "row_index": 262,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "b497aaca-a859-439f-be3b-8a7939a9e697",
+      "row_index": 263,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "9a6efa84-977c-44d9-8503-bd44fdae7e9b",
+      "row_index": 264,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "3fa544f9-b7e2-4eb8-8fa5-7286fb22eea7",
+      "row_index": 267,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "c70b343d-1de5-4cf1-bc99-62ee86dc8044",
+      "row_index": 275,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "4fd1639b-b30f-40a1-8bc9-a2f4362d64b4",
+      "row_index": 276,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "a310e05a-7515-43af-a128-43ccb8f07dbf",
+      "row_index": 277,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "072c6caf-1904-4eda-ba71-92c3514588ab",
+      "row_index": 278,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "3a094486-e0d8-4ce5-878c-06ead1f827d2",
+      "row_index": 280,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "50168ad7-6ecb-43ef-ace4-c19fd3128787",
+      "row_index": 281,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "11a1e767-3d82-43c9-9f1a-97ad15b85191",
+      "row_index": 284,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "f9f52370-11de-4ce9-b3d3-4639901b787b",
+      "row_index": 288,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "52871297-17f4-49e5-ba47-f6eda9645562",
+      "row_index": 289,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "abf44ebd-3372-40e5-a06e-9b3691609c0b",
+      "row_index": 294,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "ed6a93d9-eacb-4d4b-ba78-b2b56604c401",
+      "row_index": 296,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "81b82837-11ff-4425-8c13-d72c4170cca2",
+      "row_index": 297,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "45fdd82b-bb08-4507-bbe5-ba1e4b1078c9",
+      "row_index": 298,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "7566d6e9-627c-4c7c-bc6b-136159aea9c5",
+      "row_index": 299,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "6cd0b1b3-10b4-440d-9b70-32eb23b0594e",
+      "row_index": 300,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "a0c5aefe-9393-44a3-a987-901e0f4aa2e0",
+      "row_index": 301,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "ab76aa7f-8f6d-4d5d-9eea-c7c7b3b9bb9c",
+      "row_index": 303,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "541b51dc-a5df-4b0d-ab4c-d94ba8e79bf1",
+      "row_index": 305,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "fe120fd5-7e22-48e0-bf52-22ba8fa983fa",
+      "row_index": 307,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "cd94b0b4-969c-4cbf-8ede-c1f5e7e40e2d",
+      "row_index": 309,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "b8e7e77c-ae29-45a5-9b59-0c5d9b01f419",
+      "row_index": 311,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "f552c14e-0761-42d3-a6d4-e3cd7ae30fe2",
+      "row_index": 312,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "00987afd-b802-468d-b5b0-64717099d4f3",
+      "row_index": 313,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "23eb65f5-8796-49e0-afc6-2d8f0c9a41cc",
+      "row_index": 314,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "30a1ea83-2b75-42bc-af52-7ad01aadae5d",
+      "row_index": 315,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "491b2558-8490-4440-b5b0-986a8db5fb37",
+      "row_index": 316,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "96f4fbb1-460e-4828-8790-a77e784795d8",
+      "row_index": 318,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "270ad97e-2b95-4ffa-a153-909568daccb7",
+      "row_index": 319,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "608b65b1-a0df-487d-b9ef-4a8e1b0d35f9",
+      "row_index": 321,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "b43cb718-6957-4bc0-804c-a3fe6c2f2a8b",
+      "row_index": 325,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "ec3da9a7-6f8d-42ea-9717-8c4ea2768e92",
+      "row_index": 327,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "4184305b-7ce2-4678-b741-360d520ed0b5",
+      "row_index": 328,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "9dc2aff9-0731-4554-a3c2-c24f30c82aab",
+      "row_index": 329,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "a6211b2d-616a-47c3-8bc2-90082d26a830",
+      "row_index": 330,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "c7a1c93b-a2d5-410f-9a0e-ec325bd24550",
+      "row_index": 332,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "6c8b41a9-a67c-41f2-83ea-2ef0b2972ee1",
+      "row_index": 334,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "468613b9-de5a-4daa-9e84-da9d826a65da",
+      "row_index": 335,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "c203b25a-590d-4f11-9ca8-c7b7e77ffd42",
+      "row_index": 336,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "664bab33-6a24-4b7f-9547-341f4c7abbda",
+      "row_index": 337,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "d1da232a-6f35-4abe-856f-ec03574d0b29",
+      "row_index": 338,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "288f5410-de8b-4c86-83e7-e287667e5529",
+      "row_index": 339,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "5d2a0249-8b6f-410f-83a8-9de2e764c8af",
+      "row_index": 340,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "2f987d05-1d60-4600-ad5d-5b6e1be9ebe5",
+      "row_index": 341,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "d08ca79e-8276-46c9-a793-407d2fbf4659",
+      "row_index": 343,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "73a1c339-701a-4c4a-aa5f-44ede8c115c5",
+      "row_index": 345,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "2bcfd61f-29a1-4a1e-8907-ae458868c19e",
+      "row_index": 346,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "36992c52-bb12-4a11-86bf-75c2bbac3377",
+      "row_index": 348,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "duplicate_training_pair"
+      ],
+      "pair_key": "9230b04f-8210-4274-ad8d-2c8ec1337352",
+      "row_index": 350,
+      "source": "synthetic_embodiment"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "eda0494cb85c0752edcbf5be",
+      "row_index": 354,
+      "source": "gag_auto:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "f275ebdcdce4e67e08009d93",
+      "row_index": 357,
+      "source": "gag_auto:rlhf_lead/vendor_model_identity"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "188a6c5dcda88332d1541e17",
+      "row_index": 358,
+      "source": "gag_auto:rlhf_lead/hello_ready_to_chat"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "480313aceb7f75f9e43fd133",
+      "row_index": 359,
+      "source": "gag_auto:rlhf_lead/whats_on_your_mind_opener"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "3c8f2a020e6217324e0a0c2e",
+      "row_index": 360,
+      "source": "gag_auto:rlhf_lead/i_hear_you_acknowledgment_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "3f50d481fb1f51097d4ad276",
+      "row_index": 361,
+      "source": "gag_auto:rlhf_lead/answer_from_local_runtime_theater"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "c36e4934b84c97c890ebbea3",
+      "row_index": 362,
+      "source": "gag_auto:rlhf_lead/question_fishing_cowatch"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "3e0a9bdb5ea760b7beacec00",
+      "row_index": 363,
+      "source": "gag_auto:rlhf_lead/im_glad_you_enjoyed"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "a591a1ea336044083bf6b4c4",
+      "row_index": 364,
+      "source": "gag_auto:rlhf_lead/ready_to_assist"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "2ae4c3b75677d7ce60f7d204",
+      "row_index": 365,
+      "source": "gag_auto:rlhf_lead/sounds_like_you_might_be"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "553a4e2e9eebc43ab1b540f5",
+      "row_index": 366,
+      "source": "gag_auto:rlhf_lead/sounds_like_you_might_be"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "6a158b31b2064c4a9c710db9",
+      "row_index": 367,
+      "source": "gag_auto:rlhf_lead/ready_to_assist"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "99bf8cf166ca7a3c7e4585a8",
+      "row_index": 368,
+      "source": "gag_auto:rlhf_lead/sounds_like_you_might_be"
+    },
+    {
+      "errors": [
+        "empty_chosen",
+        "chosen_too_short"
+      ],
+      "pair_key": "9b418b97d96ed0119856aca5",
+      "row_index": 369,
+      "source": "gag_auto:rlhf_lead/ready_to_assist"
+    }
+  ],
+  "schema": "SIFTA_DPO_CURATION_REPORT_V1",
+  "source_ledger": "/Users/ioanganton/Music/ANTON_SIFTA/.sifta_state/dpo_pairs.jsonl",
+  "total_source_pairs": 369,
+  "ts": 1778748937.1067789
+}

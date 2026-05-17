@@ -43,7 +43,7 @@ Truth labels (§7.11)
                        organism-specific evidence (Kondo-Miura 2010
                        Science is explicit on this).
 
-Author : Cowork (Claude Opus 4.7), 2026-05-11.
+Author : Cowork, 2026-05-11.
 """
 
 from __future__ import annotations

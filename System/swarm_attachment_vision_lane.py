@@ -210,7 +210,7 @@ def _label_for_text(text: str) -> str | None:
     if "codex" in low or "gpt-5" in low or "gpt 5" in low:
         return "Codex"
     if "claude" in low or "cowork" in low or "opus" in low:
-        return "Claude/Cowork"
+        return "Cowork"
     if "alice" in low or "sifta" in low or "talk to alice" in low:
         return "Alice/SIFTA"
     if "cursor" in low:

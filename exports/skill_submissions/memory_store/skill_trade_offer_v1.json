@@ -1,0 +1,10 @@
+{
+  "offer_id": "b7bb7b66-9ddd-45a8-b002-c843b9939ad4",
+  "package_path": "exports/skill_submissions/memory_store",
+  "provider_node": "GTH4921YP3",
+  "provider_trace": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "skill_name": "memory_store",
+  "skill_sha256": "a0c8057f0e48bff2a50513939fcd605cb2bf85337fc27d8846b8f3a234fb85cb",
+  "stgm_price": 15.0,
+  "truth_label": "SIFTA_SKILL_TRADE_OFFER_V1"
+}

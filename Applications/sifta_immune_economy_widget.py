@@ -17,7 +17,7 @@ A standalone macOS-native-style PyQt6 window showing:
 
 Manifest entry: "STGM Immune Economy" in apps_manifest.json
 Truth label: IMMUNE_ECONOMY_V1
-Doctor: Antigravity (Claude Sonnet 4.6 Thinking)
+Doctor: Antigravity
 Protocol: v4_PREDATOR_GATE
 """
 from __future__ import annotations

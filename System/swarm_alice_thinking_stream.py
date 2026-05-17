@@ -70,8 +70,35 @@ TRUTH_BOUNDARY = (
     "invent reasoning. The receipt records the literal thinking "
     "string, model name, char count, chunk count, and sha256 so any "
     "auditor can replay. Visible thinking lets the architect read "
-    "along while the LLM works."
+    "along while the LLM works. When a cortex emits no thinking stream, "
+    "the UI may show observable processing receipts, but those are "
+    "recorded separately from literal thinking chunks."
 )
+
+
+def observable_processing_notice(
+    *,
+    model: str,
+    pipeline_id: str = "talk_to_alice_widget",
+    reason: str = "empty_thinking_channel",
+) -> str:
+    """Return a bounded panel notice when the model emits no thinking.
+
+    This is not synthetic reasoning. It is a user-visible receipt line for
+    the background work that can be observed: which cortex is running, which
+    pipeline is active, and why the panel is falling back to receipts.
+    """
+    clean_model = str(model or "unknown")
+    clean_pipeline = str(pipeline_id or "unknown")
+    clean_reason = str(reason or "empty_thinking_channel")
+    return (
+        "[observable-processing]\n"
+        "I have not received a hidden thinking stream from this cortex so far on this turn.\n"
+        "I will show observable processing receipts instead of inventing thoughts.\n"
+        f"model={clean_model}\n"
+        f"pipeline={clean_pipeline}\n"
+        f"reason={clean_reason}\n\n"
+    )
 
 
 # ── request body helper ──────────────────────────────────────────────────
@@ -237,6 +264,7 @@ class ThinkingTraceRecorder:
     pipeline_id: str = ""
     state_dir: Optional[Path] = None
     chunks: List[str] = field(default_factory=list)
+    observable_chunks: List[str] = field(default_factory=list)
     content_chunks: List[str] = field(default_factory=list)
     started_at: float = field(default_factory=lambda: time.time())
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -244,6 +272,10 @@ class ThinkingTraceRecorder:
     def append_thinking(self, piece: str) -> None:
         if isinstance(piece, str) and piece:
             self.chunks.append(piece)
+
+    def append_observable(self, piece: str) -> None:
+        if isinstance(piece, str) and piece:
+            self.observable_chunks.append(piece)
 
     def append_content(self, piece: str) -> None:
         if isinstance(piece, str) and piece:
@@ -254,11 +286,16 @@ class ThinkingTraceRecorder:
         return "".join(self.chunks)
 
     @property
+    def observable_text(self) -> str:
+        return "".join(self.observable_chunks)
+
+    @property
     def content_text(self) -> str:
         return "".join(self.content_chunks)
 
     def close(self, *, write: bool = True) -> Dict[str, Any]:
         thinking = self.thinking_text
+        observable = self.observable_text
         content = self.content_text
         finished_at = time.time()
         duration_s = max(0.0, finished_at - self.started_at)
@@ -272,12 +309,17 @@ class ThinkingTraceRecorder:
             "turn_input_preview": self.turn_input_preview[:200],
             "thinking_chars": len(thinking),
             "thinking_chunks": len(self.chunks),
+            "observable_chars": len(observable),
+            "observable_chunks": len(self.observable_chunks),
+            "panel_chars": len(thinking) + len(observable),
             "content_chars": len(content),
             "duration_s": round(duration_s, 3),
             "started_at": self.started_at,
             "finished_at": finished_at,
             "thinking_preview": thinking[:600],
             "thinking_sha256": hashlib.sha256(thinking.encode("utf-8")).hexdigest(),
+            "observable_preview": observable[:600],
+            "observable_sha256": hashlib.sha256(observable.encode("utf-8")).hexdigest(),
             "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         }
         payload = json.dumps(receipt, sort_keys=True, separators=(",", ":"), default=str)

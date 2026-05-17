@@ -784,22 +784,6 @@
     "nppl": "online_to_real_upgrade_path",
     "icon": "🌠"
   },
-  "Cognitive Loop": {
-    "category": "Developer",
-    "entry_point": "Applications/sifta_cosmos_loop_widget.py",
-    "widget_class": "CosmosLoopWidget",
-    "window_width": 1200,
-    "window_height": 720,
-    "emoji": "🔁",
-    "signature": "AG31_COGLOOP_2026-04-28",
-    "doctor": "AG31",
-    "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "End-to-end cognitive loop: camera frame → Cosmos vision inference → TD Q-learning decision → reward signal → Q-table update. Three-stage pipeline view. Run the full Gecko+Bat+Cosmos+Rat loop in one click.",
-    "autostart": false,
-    "_retired": false,
-    "nppl": "cognitive_loop",
-    "icon": "🔁"
-  },
   "WhatsApp Organ": {
     "category": "Network",
     "entry_point": "Applications/sifta_whatsapp_organ.py",
@@ -990,6 +974,20 @@
     "doctor_protocol_version": "v4_PREDATOR_GATE",
     "description": "Monte Carlo simulation connecting David Kipping's Contact Inequality and Eschatian Hypothesis to SIFTA's stigmergic ledger reliability. All numbers computed locally. Tweet-ready output.",
     "icon": "🛸"
+  },
+  "SIFTA Home": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_consumer_home.py",
+    "widget_class": "SiftaHomeWidget",
+    "window_width": 980,
+    "window_height": 700,
+    "signature": "CODEX_CONSUMER_SURFACE_V1",
+    "doctor": "Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Normal-human home surface over the SIFTA field: first-boot checklist, multi-organ manager, skill browser index, registry-level Talk tools, public distro blockers, and receipt actions. Uses a dropdown page selector instead of cramped tab buttons.",
+    "truth_label": "SIFTA_CONSUMER_SURFACE_V1",
+    "autostart": false,
+    "icon": "🏠"
   },
   "SIFTA Skill Browser": {
     "category": "Developer",
@@ -1239,20 +1237,63 @@
     "doctor": "Cowork (claude-opus-4-7)",
     "doctor_protocol_version": "v4_PREDATOR_GATE"
   },
-  "WordAce": {
+  "Ace": {
     "category": "Alice",
     "entry_point": "Applications/sifta_teach_ace_to_read.py",
     "widget_class": "TeachAceToReadWidget",
     "window_width": 820,
     "window_height": 720,
-    "signature": "COWORK_OPUS47_WORDACE_V0",
+    "signature": "COWORK_OPUS47_ACE_V0",
     "doctor": "Cowork (Anthropic) Claude Opus 4.7",
     "doctor_protocol_version": "v4_PREDATOR_GATE",
-    "description": "Alice coaches the kid on phonics + sight words + simple sentences. Ages 3-8. Uses Simple View of Reading (Gough & Tunmer 1986). Decide→Execute→Receipt mapped to CUE/ATTEMPT/VERDICT rows in alice_lesson_trace.jsonl. No buttons — auto Cue→Listen→Verdict→Advance loop. Architect 2026-05-14: renamed from Acer to WordAce per Kole's father Carlton and Kole's friend Drew. SIFTA-native bee+swimmer sticker buddies.",
-    "truth_label": "SIFTA_TEACH_ACE_TO_READ_V0",
-    "co_doctors": [
-      "Cursor (CG55M)"
+    "voice_open_narration": "I'm opening the reading game because you asked. It shows one word at a time and waits for you to read it. I'll greet you when it's ready, then we'll start together. Tell me to stop any time.",
+    "expected_open_signals": [
+      {
+        "name": "lesson_auto_started",
+        "deadline_s": 12.0,
+        "description": "Ace lesson auto-start fires (lesson_started=true in metadata).",
+        "matcher": {
+          "app": "Ace",
+          "metadata_eq": {"lesson_started": true}
+        }
+      },
+      {
+        "name": "first_cue_published",
+        "deadline_s": 30.0,
+        "description": "Ace publishes a cue with cue_id and matching show/say (cw47-0517-0007 sync).",
+        "matcher": {
+          "app": "Ace",
+          "metadata_present": ["cue_id", "current_cue_show", "current_cue_say"],
+          "metadata_invariant": "current_cue_show_equals_current_cue_say"
+        }
+      }
     ],
+    "description": "Ace — Alice teaches a child to read. Phonics, sight words, and full sentences delivered through a deterministic Cue → Listen → Verdict → Advance loop. Every word and sentence cue speaks the exact displayed text; no narrative padding, no quiz framing. Child name is read from owner_genesis (defaults to 'Ace'). Uses Simple View of Reading (Gough & Tunmer 1986). Decide → Execute → Receipt maps to CUE/ATTEMPT/VERDICT rows in alice_lesson_trace.jsonl. No buttons — automatic promotion from words to sentences after correct reads. SIFTA-native bee + swimmer sticker buddies.",
+    "truth_label": "SIFTA_TEACH_ACE_TO_READ_V0",
+    "legacy_names": ["WordAce", "Acer"],
+    "has_health_section": true,
+    "ace_name_note": "Ace here is simply the name of the app and the default nickname used for the player inside it.",
+    "health_trace_path": ".sifta_state/app_health/ace/health_trace.jsonl",
+    "health_section_purpose": "Living stigmergic trace. Alice reads on open to know exactly which skills to pre-load for this organ (child_mic_turn_visibility, tight_cue_language, lesson_engine, etc.). Apps and Alice append updates on every enter/exit and discovery. This is how the Ace organ teaches Alice what it needs and keeps itself healthy across sessions.",
+    "co_doctors": [
+      "Cursor (CG55M)",
+      "Codex (GPT-5.5)",
+      "GrokCLI (Grok 4.3 xAI)"
+    ],
+    "icon": "🐝"
+  },
+  "Swarm Field": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_swarm_visibility_widget.py",
+    "widget_class": "SwarmFieldWidget",
+    "window_width": 1040,
+    "window_height": 720,
+    "signature": "CODEX_SWARM_FIELD_QT_V1",
+    "doctor": "Codex",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "BeeSon-native Swarm visibility surface: organ ledger health, recent stigmergic field rows, STGM flow, and active IDE swimmers in one Qt widget. Publishes app_focus so Alice can talk about the field. Replaces the detached white app idea without creating a second chat.",
+    "truth_label": "SIFTA_SWARM_FIELD_QT_V1",
+    "autostart": false,
     "icon": "🐝"
   },
   "Organism Doctor": {
@@ -1282,7 +1323,7 @@
     "icon": "🗺️"
   },
   "LTO Cold Archive (demo)": {
-    "category": "System",
+    "category": "Utilities",
     "entry_point": "Applications/sifta_lto_archive_demo_widget.py",
     "widget_class": "LtoArchiveDemoWidget",
     "window_width": 920,
@@ -1293,5 +1334,19 @@
     "description": "LTO Ultrium / LTO-10 literacy: capacity tiers, LTFS+WORM framing, stigmergy fit vs append-only signed ledgers. Rough native-TB cartridge estimator. Optional JSONL plan snapshots. Does not control tape hardware.",
     "truth_label": "SIFTA_LTO_ARCHIVE_DEMO_V1",
     "icon": "🗄️"
+  },
+  "SIFTA Hermes Parity": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_hermes_parity_widget.py",
+    "widget_class": "SiftaHermesParityWidget",
+    "window_width": 1100,
+    "window_height": 760,
+    "signature": "CW47-COWORK-OPUS47-HERMES-PARITY-V1",
+    "doctor": "Cowork (Anthropic) Claude Opus 4.7",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Pure-Python conversion of the pywebview white window into a single Qt MDI widget. Receipts-true tool surface inside BeeSon: tools row (all TOOL_REGISTRY entries as clickable pills), receipts column (live tail of every organ jsonl), skills card (pull from URL/marketplace + extract from trace), status bar (chain head, STGM, tools, owner), Verify all chains button. Keyword fast-path only — natural language publishes app_focus.jsonl so Alice's resident Talk widget hears it (§7.6 item 2 — no second LLM chat). Same physics as System/sifta_app.py, zero HTML.",
+    "truth_label": "SIFTA_HERMES_PARITY_V1",
+    "autostart": false,
+    "icon": "🐜"
   }
 }

@@ -418,6 +418,14 @@ def resolve_ollama_model(
         per = data.get("per_swimmer") or {}
         if isinstance(per, dict) and sid in per and per[sid]:
             return str(per[sid])
+    # Architect 2026-05-15: the picker UI in System Settings writes the user's
+    # explicit cortex choice to per_app[app_context]. That choice MUST beat the
+    # stigmergic auto-router, otherwise the dropdown lies. Stigmergic routing
+    # is the fallback when no explicit pin exists, not the override.
+    if app_context:
+        per_app = data.get("per_app") or {}
+        if isinstance(per_app, dict) and app_context in per_app and per_app[app_context]:
+            return str(per_app[app_context])
     if use_stigmergic and query_text:
         try:
             decision = choose_stigmergic_ollama_model(
@@ -430,10 +438,6 @@ def resolve_ollama_model(
                 return str(selected)
         except Exception:
             pass
-    if app_context:
-        per_app = data.get("per_app") or {}
-        if isinstance(per_app, dict) and app_context in per_app and per_app[app_context]:
-            return str(per_app[app_context])
     return str(data.get("default_ollama_model") or DEFAULT_OLLAMA_MODEL)
 
 

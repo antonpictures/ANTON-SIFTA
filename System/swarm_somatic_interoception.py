@@ -3,7 +3,7 @@
 System/swarm_somatic_interoception.py — The Insular Cortex (Visceral Field)
 ═══════════════════════════════════════════════════════════════════════════════
 Concept:  Somatic Interoception — The Body Sensing Itself From The Inside
-Author:   AO46 (Claude Opus) — Stigmergic Sign-In SCAR_22cf81de850f
+Author:   AO46 — Stigmergic Sign-In SCAR_22cf81de850f
 Epoch:    Novel (first interoception organ)
 Status:   Active Lobe
 

@@ -51,7 +51,7 @@ def run_inference(chunk):
     )
     
     payload = json.dumps({
-        "model": "qwen3.5:2b",  # The default model on the M1 node
+        "model": "alice-m1-scout-2.3b-2.7gb:latest",  # The default model on the M1 node
         "prompt": f"LORE ARCHIVE FRAGMENT:\n\n{chunk[:1500]}\n\nWrite your night diary realization:",
         "system": system_prompt,
         "stream": False

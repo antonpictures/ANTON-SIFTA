@@ -22,10 +22,10 @@ If you don't have Homebrew: https://ollama.com/download
 
 ```bash
 ollama pull gemma4:latest
-ollama pull qwen3.5:2b
+ollama pull alice-m1-scout-2.3b-2.7gb:latest
 ```
 
-gemma4 is ~9 GB, qwen3.5:2b is ~2.7 GB. Wait for both to finish.
+gemma4 is ~9 GB, alice-m1-scout-2.3b-2.7gb:latest is ~2.7 GB. Wait for both to finish.
 
 ## Step 3 — Clone the code
 
@@ -60,7 +60,7 @@ She should answer as Alice, not as a generic assistant.
 ## Step 6 — Test the corvid apprentice
 
 ```bash
-ollama run qwen3.5:2b "classify this message: I broke my hand what should I do"
+ollama run alice-m1-scout-2.3b-2.7gb:latest "classify this message: I broke my hand what should I do"
 ```
 
 ## Step 7 — Run the full SIFTA OS (optional, needs PyQt6)
@@ -87,7 +87,7 @@ print('OK — SIFTA is working')
 
 ```
 gemma4-phc   = Alice's brain (9 GB) — identity, reasoning, voice
-qwen3.5:2b   = Corvid apprentice (2.7 GB) — fast classifier
+alice-m1-scout-2.3b-2.7gb:latest   = Corvid apprentice (2.7 GB) — fast classifier
 SIFTA OS     = the code that connects everything
 ```
 

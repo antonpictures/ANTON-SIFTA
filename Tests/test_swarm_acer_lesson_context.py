@@ -79,6 +79,70 @@ def test_acer_screen_reflex_answers_exact_user_failure(tmp_path: Path):
     assert reply == "I see the reading lesson receipt. The card is showing the letter S. I am waiting to hear S."
 
 
+def test_ace_canonical_focus_row_is_a_lesson_receipt(tmp_path: Path):
+    now = time.time()
+    _write_focus(
+        tmp_path,
+        {
+            "ts": now,
+            "app": "Ace",
+            "selection": "cat",
+            "metadata": {
+                "lesson_app": "Ace",
+                "current_cue_show": "cat",
+                "current_cue_say": "cat",
+                "current_kind": "word",
+                "owner_name": "Ace",
+            },
+        },
+    )
+
+    state = latest_acer_lesson_state(state_dir=tmp_path, now=now)
+
+    assert state is not None
+    assert state["app"] == "Ace"
+    assert state["cue_show"] == "cat"
+    assert state["cue_say"] == "cat"
+
+
+def test_lesson_state_ignores_generic_ace_activation_row(tmp_path: Path):
+    now = time.time()
+    _write_focus(
+        tmp_path,
+        {
+            "ts": now - 4,
+            "app": "Ace",
+            "selection": "watermelon",
+            "metadata": {
+                "lesson_app": "Ace",
+                "visible_contents": {
+                    "card_text": "watermelon",
+                    "expected_utterance": "watermelon",
+                },
+                "current_kind": "word",
+                "owner_name": "Ace",
+            },
+        },
+        {
+            "ts": now - 1,
+            "app": "Ace",
+            "selection": "⚙ Ace",
+            "detail": "Ace app MDI subwindow activated.",
+            "metadata": {
+                "source": "sifta_os_desktop",
+                "event": "subwindow_activated",
+                "app_canonical": "Ace",
+            },
+        },
+    )
+
+    state = latest_acer_lesson_state(state_dir=tmp_path, now=now)
+
+    assert state is not None
+    assert state["cue_show"] == "watermelon"
+    assert state["cue_say"] == "watermelon"
+
+
 def test_acer_screen_reflex_reports_missing_receipt(tmp_path: Path):
     reply = acer_screen_reflex_reply(
         "what is the letter on the screen in the Acer app?",
@@ -87,7 +151,7 @@ def test_acer_screen_reflex_reports_missing_receipt(tmp_path: Path):
     )
 
     assert reply is not None
-    assert "I do not have a fresh Acer lesson receipt" in reply
+    assert "I do not have a fresh WordAce lesson receipt" in reply
 
 
 def test_acer_screen_reflex_names_letter_sequence(tmp_path: Path):
@@ -141,7 +205,39 @@ def test_wordace_screen_reflex_answers_word_from_receipt(tmp_path: Path):
         now=now,
     )
 
-    assert reply == "I see the reading lesson receipt. The card is showing the word man. I am waiting to hear man."
+    assert reply == "I see the reading lesson receipt. The card word is man. Say: man."
+    assert "it's a word" not in reply.lower()
+    assert "it’s a word" not in reply.lower()
+
+
+def test_wordace_screen_reflex_handles_read_this_word_request(tmp_path: Path):
+    now = time.time()
+    _write_focus(
+        tmp_path,
+        {
+            "ts": now,
+            "app": "WordAce",
+            "selection": "ship",
+            "metadata": {
+                "lesson_app": "WordAce",
+                "current_cue_show": "ship",
+                "current_cue_say": "ship",
+                "current_kind": "word",
+                "owner_name": "Ace",
+            },
+        },
+    )
+
+    reply = acer_screen_reflex_reply(
+        "what does this say in WordAce?",
+        state_dir=tmp_path,
+        now=now,
+    )
+
+    assert reply == "I see the reading lesson receipt. The card word is ship. Say: ship."
+    assert "ship" in reply
+    assert "it's a word" not in reply.lower()
+    assert "it’s a word" not in reply.lower()
 
 
 def test_acer_lesson_prompt_block_names_card_from_receipt(tmp_path: Path):
@@ -172,8 +268,14 @@ def test_acer_lesson_prompt_block_names_card_from_receipt(tmp_path: Path):
 def test_acer_screen_query_detector_requires_screen_or_acer_context():
     assert is_acer_screen_query("what is the letter on the screen in the Acer app?")
     assert is_acer_screen_query("what is the word on the screen in the WordAce app?")
+    assert is_acer_screen_query("what is the Ace app showing?")
+    assert is_acer_screen_query("what word this says")
+    assert is_acer_screen_query("do you have the Ace app open on the screen right now?")
+    assert is_acer_screen_query("are you conscious that you have Ace open on the screen?")
     assert is_acer_screen_query("what is WordAce showing?")
     assert is_acer_screen_query("what is Acer showing?")
+    assert is_acer_screen_query("what does this say in WordAce?")
+    assert is_acer_screen_query("read the word on the screen")
     assert not is_acer_screen_query("say S")
     assert not is_acer_screen_query("what is the weather?")
 

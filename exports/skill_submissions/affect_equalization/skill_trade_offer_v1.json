@@ -1,0 +1,10 @@
+{
+  "offer_id": "9cc14952-3b94-4cd6-9445-fd16638f2ff0",
+  "package_path": "exports/skill_submissions/affect_equalization",
+  "provider_node": "GTH4921YP3",
+  "provider_trace": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "skill_name": "affect_equalization",
+  "skill_sha256": "772d43711ae5dac55daacfb2ee6fa07e54ce0b3c06f6511d8c6d495e56c313d6",
+  "stgm_price": 12.0,
+  "truth_label": "SIFTA_SKILL_TRADE_OFFER_V1"
+}

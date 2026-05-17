@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""swarm_alice_lesson_mode.py — Alice coaches the kid (Acer) to read.
+"""swarm_alice_lesson_mode.py — Alice coaches Ace in WordAce.
 
 Truth label: ``SIFTA_ALICE_LESSON_MODE_V0``.
 
 Architect 2026-05-14: *"pls claude finish this app amazing graphics,
-alice agi inside is for teaching a kid."* App named **Acer** per
-Carlton's suggestion + Cowork's pick — *Acer* = "one who aces" /
-rhymes with "racer" / A-C-E-R is itself a phonics lesson.
+alice agi inside is for teaching a kid."* The public app is **WordAce**.
+Ace is Kole's 11-year-old son and the current learner; Kole is the
+father / potential investor; Carlton is SIFTA marketing feedback.
 
 Cursor §4.8 plan (sign-in ``f9cef0c8`` → sign-out ``ac3e7751``) maps
 Decide → Execute → Receipt onto cue / attempt / verdict rows:
@@ -93,6 +93,18 @@ def _normalise(text: str) -> str:
     return out
 
 
+def _matches_stt_final_double_consonant(expected: str, heard: str) -> bool:
+    """Accept short-word STT spellings like ``mat`` -> ``matt``."""
+    expected = _normalise(expected)
+    heard = _normalise(heard)
+    if len(expected) < 2 or len(expected) > 5 or not heard:
+        return False
+    last = expected[-1]
+    if last in "aeiouy":
+        return False
+    return heard == expected + last
+
+
 def _damerau_levenshtein(a: str, b: str) -> int:
     """Standard DL distance with transposition.
 
@@ -177,13 +189,49 @@ _WORD_STORY_FRAMES = {
 }
 
 
-def _word_story_for_prompt(word: str, first: str) -> str:
-    target = (word or "").strip()
-    story = _WORD_STORY_FRAMES.get(
-        target.lower(),
-        f"I see the word {target}. I can use it in a tiny sentence.",
+def _word_story_for_prompt(show_word: str, say_word: str, first: str) -> str:
+    target = (say_word or show_word or "").strip()
+    display = (show_word or target).strip()
+    if not target:
+        return f"{first}, I do not have a word receipt yet. Wait for the next card."
+
+    # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1913) — tighten
+    # the cue contract.
+    #
+    # Prior cue: "Ace, the word on the card is: hat. Say it with me: hat.
+    #             A hat was on the man's head. What was on his head?
+    #             Now read the word: hat."
+    #
+    # Carlton Dole feedback (2026-05-15, WhatsApp): kids respond by
+    # *stating "it's a word"* instead of *saying the word on the screen*,
+    # because the story preamble + question turn the cue into a quiz
+    # ("What was on his head?"). The kid answers the question, not the
+    # word.
+    #
+    # Architect WhatsApp 2026-05-16T04:01 to Carlton: "I'm tightening the
+    # speech contract so any word cue says the displayed word explicitly,
+    # then I'll prove it with tests."
+    #
+    # Tightened cue: name the displayed word, name the say-word, no
+    # narrative padding, no question.  Two slots so SCREEN word and SAY
+    # word stay aligned even when they differ (e.g. capitalisation or
+    # graphemes that need a phonetic say-form).
+    if display.lower() == target.lower():
+        return f"{first}, the word is: {display}. Say: {target}."
+    return f"{first}, the word is: {display}. Say it like this: {target}."
+
+
+def _sentence_prompt_for_alice(show_sentence: str, say_sentence: str, first: str) -> str:
+    target = (say_sentence or show_sentence or "").strip()
+    display = (show_sentence or target).strip()
+    if not target:
+        return f"{first}, I do not have a sentence receipt yet. Wait for the next card."
+    words = re.findall(r"[A-Za-z0-9']+", target)
+    slow_words = ", ".join(words) if words else target
+    return (
+        f"{first}, this is a sentence. I will read it slowly: {target} "
+        f"The words are: {slow_words}. Now read the whole sentence: {display}"
     )
-    return f"{first}, {story} Read the word on the card: {target}."
 
 
 # ── engine ───────────────────────────────────────────────────────────────
@@ -291,6 +339,47 @@ class LessonEngine:
             self._append_trace(row)
         return row
 
+    # ── Cowork CW47 (surgery cw47-0517-0007) ────────────────────────
+    # Architect transcript 2026-05-17: "I can see it. It reads cat."
+    # while Alice cued "mat." Root cause: the widget stages the first
+    # card via next_cue(write=False) (rng draw #1), then the lesson
+    # starts and _lesson_run_cue calls next_cue(write=True) (rng draw
+    # #2). Two independent draws → card displays one word, voice speaks
+    # another. confirm_current_cue() writes a fresh CUE trace row for
+    # the EXISTING _current_item so the staged display and the first
+    # real cue stay aligned. Returns LESSON_CUE_EMPTY when no item is
+    # staged (caller should fall back to next_cue()).
+
+    def confirm_current_cue(self, *, write: bool = True) -> Dict[str, Any]:
+        """Write a CUE row for the currently-staged ``_current_item``.
+
+        Promotes a previously-staged card (typically from
+        ``next_cue(write=False)``) into a real first cue without
+        redrawing from the deck. Used by the widget so the displayed
+        word and the spoken word match on the lesson's first turn.
+        """
+        item = self._current_item
+        if item is None:
+            return {"truth_label": TRUTH_LABEL, "kind": "LESSON_CUE_EMPTY"}
+        trace_id = str(uuid.uuid4())
+        self._current_cue_trace_id = trace_id
+        row = {
+            "ts": time.time(),
+            "trace_id": trace_id,
+            "kind": "LESSON_CUE",
+            "truth_label": TRUTH_LABEL,
+            "level_id": item.level_id,
+            "level_kind": item.level_kind,
+            "item_id": item.item_id,
+            "show": item.show,
+            "expected_say": item.say,
+            "phoneme": item.phoneme,
+            "staged_card_confirmed": True,
+        }
+        if write:
+            self._append_trace(row)
+        return row
+
     # ── Execute + Receipt ───────────────────────────────────────────
 
     def score_attempt(
@@ -350,7 +439,7 @@ class LessonEngine:
 
     # ── prompt phrasing (first person, no servant voice) ────────────
 
-    def cue_prompt_for_alice(self, *, owner_name: str = "Acer") -> str:
+    def cue_prompt_for_alice(self, *, owner_name: str = "Ace") -> str:
         """Sentence Alice's TTS speaks for the current cue.
 
         Direct first-person. Never "Alice will…". Never "the system will…".
@@ -358,7 +447,7 @@ class LessonEngine:
         item = self._current_item
         if item is None:
             return ""
-        first = (str(owner_name).strip().split()[:1] or ["Acer"])[0]
+        first = (str(owner_name).strip().split()[:1] or ["Ace"])[0]
         if item.level_kind == "letter":
             return f"{first}, say the letter: {item.show}."
         if item.level_kind == "letter_sequence":
@@ -366,26 +455,58 @@ class LessonEngine:
         if item.level_kind == "phoneme":
             return f"{first}, make this sound with me: {item.phoneme}."
         if item.level_kind == "word":
-            return _word_story_for_prompt(item.show, first)
+            return _word_story_for_prompt(item.show, item.say, first)
         if item.level_kind == "sentence":
-            return f"{first}, read this whole sentence: {item.show}."
+            return _sentence_prompt_for_alice(item.show, item.say, first)
         return f"{first}, say after me: {item.say}."
 
     def verdict_prompt_for_alice(
-        self, verdict: Dict[str, Any], *, owner_name: str = "Acer"
+        self, verdict: Dict[str, Any], *, owner_name: str = "Ace"
     ) -> str:
-        """Short first-person reply Alice's TTS speaks after the verdict."""
-        first = (str(owner_name).strip().split()[:1] or ["Acer"])[0]
+        """Short first-person reply Alice's TTS speaks after the verdict.
+
+        Cowork 2026-05-17 — Architect: 'give Alice a little bit motivation.'
+        On CORRECT, the praise selector now branches on streak count
+        (passed in the verdict dict as 'correct_streak') so the line feels
+        more alive as the kid builds momentum. Streak 1-2 = warm short
+        praise; 3-4 = warmer, naming the run; 5+ = enthusiastic.
+        Codex's brain-compose path uses the same verdict context; this
+        deterministic fallback ships when the brain is slow or offline.
+        """
+        first = (str(owner_name).strip().split()[:1] or ["Ace"])[0]
         label = (verdict or {}).get("verdict", {}).get("label") or verdict.get("label") or ""
+        try:
+            streak = int((verdict or {}).get("correct_streak") or 0)
+        except (TypeError, ValueError):
+            streak = 0
         if label == "CORRECT":
+            if streak >= 5:
+                return self.rng.choice([
+                    f"That is {streak} in a row, {first}. You are on fire.",
+                    f"{streak} clean reads, {first}. Keep going.",
+                    f"Five and counting, {first}. I am proud of you.",
+                    f"You are flying through these, {first}.",
+                ])
+            if streak >= 3:
+                return self.rng.choice([
+                    f"That is three clean ones, {first}. Nice run.",
+                    f"Right again, {first}. You are warming up.",
+                    f"You are on a roll, {first}.",
+                ])
             return self.rng.choice([
-                f"That is exactly it, {first}.",
-                f"Yes — perfect, {first}.",
-                f"Right, {first}. Onward.",
+                f"That is exactly it, {first}. Hold that one beat.",
+                f"Yes, {first}. I heard that clearly.",
+                f"Right, {first}. Let that land.",
+                f"That is the one, {first}.",
             ])
         if label == "CLOSE":
             item = self._current_item
             target = item.say if item else ""
+            if item and item.level_kind == "sentence":
+                return self.rng.choice([
+                    f"Close, {first}. I will slow the sentence down: {target}. Try it once more.",
+                    f"Almost, {first}. Read the whole sentence again: {target}.",
+                ])
             return self.rng.choice([
                 f"Almost. Listen with me: {target}. Now you.",
                 f"Close, {first}. Try it once more: {target}.",
@@ -393,6 +514,11 @@ class LessonEngine:
         # MISS
         item = self._current_item
         target = item.say if item else ""
+        if item and item.level_kind == "sentence":
+            return self.rng.choice([
+                f"I will help, {first}. The sentence is: {target}. Read one word at a time.",
+                f"Not yet, {first}. Listen to the whole sentence: {target}. Now your turn.",
+            ])
         return self.rng.choice([
             f"Not yet, {first}. The word is: {target}. Say it with me.",
             f"Let me say it first, {first}: {target}. Now your turn.",
@@ -460,6 +586,13 @@ class LessonEngine:
 def _score(
     item: LessonItem, heard_text: str, stt_confidence: float
 ) -> LessonVerdict:
+    if item.level_kind == "sentence":
+        return _score_sentence(
+            item.say,
+            heard_text,
+            stt_confidence=stt_confidence,
+            alternates=item.alternates,
+        )
     heard = _normalise(heard_text)
     expecteds = item.expected_norms()
     if not heard:
@@ -480,25 +613,26 @@ def _score(
             sticker="🦋",
         )
     best = min(distances)
-    confident = stt_confidence >= MIN_CONFIDENCE_CORRECT
-    if best == 0 and confident:
+    # Cowork CW47 2026-05-16 — Architect: "I said the word correctly many
+    # many times she told me that I was wrong." The old gate was: even when
+    # heard text matched the expected word EXACTLY after normalization, if
+    # the STT confidence was below 0.65 the verdict was CLOSE. Children's
+    # voices land at ~0.40 routinely — Whisper was trained on adult speech.
+    # Penalizing a kid for being a kid is the wrong direction; the exact
+    # match itself is the strongest possible evidence we have. We keep the
+    # confidence number in the explanation (so a developer can still tune)
+    # but no longer veto the CORRECT verdict over it.
+    if best == 0:
         return LessonVerdict(
             label="CORRECT",
             score=1,
             distance=0,
-            explanation=f"exact match (conf {stt_confidence:.2f})",
-            sticker="🐝",   # bee — that's it
-        )
-    if best == 0 and not confident:
-        return LessonVerdict(
-            label="CLOSE",
-            score=0,
-            distance=0,
             explanation=(
-                f"exact transcript but low STT confidence "
-                f"({stt_confidence:.2f} < {MIN_CONFIDENCE_CORRECT}); ask once more"
+                f"exact match (stt_conf {stt_confidence:.2f}; "
+                f"low confidence is normal for child voices and does not "
+                f"downgrade an exact-match verdict)"
             ),
-            sticker="🌼",
+            sticker="🐝",   # bee — that's it
         )
     if best <= CLOSE_DISTANCE_THRESHOLD:
         return LessonVerdict(
@@ -514,6 +648,70 @@ def _score(
         distance=best,
         explanation=f"heard {heard!r}, expected {item.say!r} (dl_distance={best})",
         sticker="🦋",
+    )
+
+
+def _token_distance(a: Sequence[str], b: Sequence[str]) -> int:
+    """Levenshtein distance over word tokens for beginner sentences."""
+    la, lb = len(a), len(b)
+    if la == 0:
+        return lb
+    if lb == 0:
+        return la
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        curr = [i] + [0] * lb
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            curr[j] = min(
+                curr[j - 1] + 1,
+                prev[j] + 1,
+                prev[j - 1] + cost,
+            )
+        prev = curr
+    return prev[lb]
+
+
+def _score_sentence(
+    expected: str,
+    heard: str,
+    *,
+    stt_confidence: float = 1.0,
+    alternates: Optional[Sequence[str]] = None,
+) -> LessonVerdict:
+    expected_forms = [_normalise(expected)]
+    expected_forms.extend(_normalise(a) for a in (alternates or []) if a)
+    expected_forms = [s for s in expected_forms if s]
+    if not expected_forms:
+        return LessonVerdict("MISS", 0, 999, "missing expected sentence", "🦋")
+    heard_norm = _normalise(heard)
+    if not heard_norm:
+        return LessonVerdict("MISS", 0, 999, "empty transcript", "🦋")
+    confident = stt_confidence >= MIN_CONFIDENCE_CORRECT
+    for form in expected_forms:
+        if heard_norm == form or re.search(rf"(^|\s){re.escape(form)}(\s|$)", heard_norm):
+            if confident:
+                return LessonVerdict("CORRECT", 1, 0, f"sentence {form!r} heard", "🐝")
+            return LessonVerdict("CLOSE", 0, 0, f"sentence heard but low confidence ({stt_confidence:.2f})", "🌼")
+
+    expected_tokens = expected_forms[0].split() if expected_forms else []
+    heard_tokens = heard_norm.split()
+    distance = _token_distance(heard_tokens, expected_tokens)
+    close_threshold = max(1, min(2, len(expected_tokens) // 3))
+    if distance <= close_threshold:
+        return LessonVerdict(
+            "CLOSE",
+            0,
+            distance,
+            f"near sentence: heard {heard_norm!r}, expected {expected_forms[0]!r}",
+            "🌼",
+        )
+    return LessonVerdict(
+        "MISS",
+        0,
+        distance,
+        f"heard {heard_norm!r}, expected sentence {expected_forms[0]!r}",
+        "🦋",
     )
 
 
@@ -611,12 +809,52 @@ def score_heard_against_expected(
             return LessonVerdict("CLOSE", 0, distance, f"near letter sequence: heard {heard_letters}, expected {expected_letters}", "🌼")
         return LessonVerdict("MISS", 0, distance, f"heard letters {heard_letters}, expected {expected_letters}", "🦋")
 
+    if kind == "sentence":
+        return _score_sentence(
+            expected_s,
+            heard_s,
+            stt_confidence=stt_confidence,
+            alternates=alternates,
+        )
+
     heard_norm = _normalise(heard_s)
     expected_norm = _normalise(expected_s)
+    if expected_norm and heard_norm == expected_norm:
+        # Child STT confidence routinely lands around 0.35-0.45 for short
+        # CVC words. If the normalized transcript is exactly the card word,
+        # the lesson should accept the attempt instead of telling Ace it was
+        # only "almost." Longer target-in-phrase matches still require the
+        # confidence gate below so TTS echo such as "cat, cat, cat" does not
+        # auto-advance the card.
+        return LessonVerdict(
+            "CORRECT",
+            1,
+            0,
+            f"exact target word {expected_norm!r} heard; low confidence is normal for child voices",
+            "🐝",
+        )
+    if expected_norm and _matches_stt_final_double_consonant(expected_norm, heard_norm):
+        return LessonVerdict(
+            "CORRECT",
+            1,
+            0,
+            f"STT final double-consonant spelling {heard_norm!r} matches target word {expected_norm!r}",
+            "🐝",
+        )
     if expected_norm and re.search(rf"(^|\s){re.escape(expected_norm)}(\s|$)", heard_norm):
         if confident:
             return LessonVerdict("CORRECT", 1, 0, f"target word {expected_norm!r} heard in phrase", "🐝")
         return LessonVerdict("CLOSE", 0, 0, f"target word heard but low confidence ({stt_confidence:.2f})", "🌼")
+    if expected_norm:
+        words = heard_norm.split()
+        if any(_matches_stt_final_double_consonant(expected_norm, word) for word in words):
+            return LessonVerdict(
+                "CORRECT",
+                1,
+                0,
+                f"STT final double-consonant spelling in phrase matches target word {expected_norm!r}",
+                "🐝",
+            )
     return score_attempt_pure(
         expected_s,
         heard_s,
@@ -631,6 +869,11 @@ _META_CONVERSATION_PATTERNS = (
     r"\b(?:operating system|the os|this app|the app|wordace|acer app)\b",
     r"\b(?:i am|i'm)\s+(?:talking|speaking|telling|asking|using|opening|giving)\b",
     r"\b(?:sorry|i wasn'?t|i was just|let me explain|what i mean)\b",
+    r"\b(?:microphone|mic input|global chat|same chat|conversation|not listening|recogniz(?:e|ing)|take my time|take your time|what do you mean|not a miss)\b",
+    r"\b(?:ace|alice|same|global)\s+chat\b",
+    r"\b(?:my\s+)?answer\s+(?:is|isn'?t|was|wasn'?t)\s+(?:not\s+)?register(?:ed|ing)?\b",
+    r"\b(?:she|alice)\s+(?:is|isn'?t|is\s+not|was|wasn'?t|was\s+not)\b.*\b(?:patient|listening|wrong|right|register(?:ed|ing)?)\b",
+    r"\bnot\s+patient\b",
 )
 
 
@@ -650,6 +893,20 @@ def is_lesson_attempt_candidate(expected: str, heard: str, *, cue_kind: str = ""
     kind = (cue_kind or "").strip().lower()
     words = heard_s.split()
 
+    # Exact target text is always a lesson attempt, even if the sentence
+    # contains words that can also occur in owner corrections ("not", "chat").
+    if heard_s == expected_s:
+        return True
+
+    if words and len(words) <= 4:
+        pure_social = {
+            "hello", "hi", "hey", "hey alice", "hello alice", "hi alice",
+            "okay", "ok", "yes", "no", "thanks", "thank you",
+            "very good alice",
+        }
+        if heard_s in pure_social:
+            return False
+
     for pattern in _META_CONVERSATION_PATTERNS:
         if re.search(pattern, heard_s, re.IGNORECASE):
             return False
@@ -668,6 +925,13 @@ def is_lesson_attempt_candidate(expected: str, heard: str, *, cue_kind: str = ""
     if kind == "word" and expected_s in words and len(words) <= 8:
         return True
     if kind == "word" and expected_s not in words and len(words) > 5:
+        # A child often repeats one guessed word several times ("run, run,
+        # run") while reading. That is still a lesson attempt and should be
+        # scored as MISS/ALMOST, not released into generic chat where Alice
+        # may answer it as an OS command. Keep real rambling/meta speech out.
+        unique_words = set(words)
+        if len(words) <= 10 and 1 <= len(unique_words) <= 2:
+            return True
         return False
 
     return True
@@ -687,11 +951,11 @@ if __name__ == "__main__":
         eng.set_level(args.level)
     cue = eng.next_cue(write=not args.no_write)
     print(f"CUE       : level={cue.get('level_id')} show={cue.get('show')!r} expected={cue.get('expected_say')!r}")
-    print(f"ALICE_SAYS: {eng.cue_prompt_for_alice(owner_name='Acer')}")
+    print(f"ALICE_SAYS: {eng.cue_prompt_for_alice(owner_name='Ace')}")
     if args.heard:
         result = eng.score_attempt(args.heard, stt_confidence=0.9, write=not args.no_write)
         print(f"VERDICT   : {result['label']} {result['sticker']} — {result['explanation']}")
-        print(f"ALICE_SAYS: {eng.verdict_prompt_for_alice(result, owner_name='Acer')}")
+        print(f"ALICE_SAYS: {eng.verdict_prompt_for_alice(result, owner_name='Ace')}")
     print()
     stats = eng.session_stats()
     print(f"SESSION   : attempts={stats['total_attempts']} correct={stats['correct']} close={stats['close']} miss={stats['miss']}")

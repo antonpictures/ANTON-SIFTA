@@ -303,8 +303,20 @@ class _WallpaperTextEdit(QTextEdit):
         super().paintEvent(event)
 
 
+def _json_tool_call_block(tool_name: str, params: Dict[str, Any]) -> str:
+    """Return router-parseable JSON tool-call syntax.
+
+    Use this for values that can contain pipes, brackets, newlines, or code.
+    The bracket syntax is fine for tiny scalar params; it is not a safe carrier
+    for source code.
+    """
+    payload = {"tool": tool_name}
+    payload.update(params)
+    return "```tool_call\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+
+
 def _owner_direct_read_tool_request(user_text: str) -> str:
-    """Return a deterministic read-only tool call for explicit owner tool turns."""
+    """Return a deterministic tool call for explicit owner tool turns."""
     text = (user_text or "").strip()
     if not text:
         return ""
@@ -333,11 +345,385 @@ def _owner_direct_read_tool_request(user_text: str) -> str:
             "[TOOL_CALL: ollama_inventory | "
             "cost_justification=George asked for installed Ollama model inventory receipt]"
         )
+    memory_digest_intent = any(
+        phrase in lowered
+        for phrase in (
+            "what did i teach you today",
+            "what have i taught you today",
+            "what you taught me today",
+            "what george taught alice today",
+            "what did george teach alice today",
+            "architect memory digest",
+            "memory digest",
+            "remember what i taught",
+            "recap what i taught",
+            "daily teaching digest",
+        )
+    )
+    if memory_digest_intent:
+        return (
+            "[TOOL_CALL: architect_memory_digest | period=today | max_items=10 | "
+            "write_artifact=true | "
+            "cost_justification=George asked Alice for the receipt-backed daily memory digest of what he taught her]"
+        )
+    self_vector_intent = any(
+        phrase in lowered
+        for phrase in (
+            "alice, what do you know right now",
+            "what do you know right now",
+            "what do you know now",
+            "what do you know in this moment",
+            "current alice self vector",
+            "alice self vector",
+            "current self-state vector",
+            "current self state vector",
+        )
+    )
+    if self_vector_intent:
+        return (
+            "[TOOL_CALL: alice_self_vector | window_hours=24 | max_items=12 | "
+            "write_artifact=true | "
+            "cost_justification=George asked Alice for her deterministic observed self-state vector]"
+        )
+    capability_inventory_intent = any(
+        phrase in lowered
+        for phrase in (
+            "what skills",
+            "which skills",
+            "list skills",
+            "show skills",
+            "skill status",
+            "available skills",
+            "what capabilities",
+            "which capabilities",
+            "list capabilities",
+            "show capabilities",
+            "capability status",
+            "what tools",
+            "which tools",
+            "list tools",
+            "show tools",
+            "what can you do",
+            "what can you use",
+            "do you know all skills",
+            "hermes skills",
+            "hermes app skills",
+            # Cowork CW47 2026-05-16 — apps are capabilities too.
+            # Architect: "she does not even know she is an operating
+            # system and she does not even know she has apps."
+            "what apps",
+            "which apps",
+            "list apps",
+            "show apps",
+            "available apps",
+            "apps you have",
+            "apps do you have",
+            "applications you have",
+            "your apps",
+            "your applications",
+            "installed apps",
+            "what applications",
+            "list applications",
+            "show applications",
+            "what's installed",
+            "what is installed",
+            "operating system",
+            "you are an operating system",
+            "you are an os",
+            "you have apps",
+            "do you have apps",
+        )
+    )
+    if capability_inventory_intent:
+        safe_query = text.replace("|", " ").replace("]", " ")[:240]
+        return (
+            "[TOOL_CALL: capability_field_status | "
+            f"query={safe_query} | limit=60 | "
+            "cost_justification=George asked Alice to inspect her unified tools and skills capability field]"
+        )
+
+    # ── Cowork CW47 2026-05-16 — deterministic list_dir / read_file routes.
+    # The 8B local cortex reliably hallucinates `ls` and `cat` output as prose
+    # instead of emitting [TOOL_CALL: list_dir | path=…]. Catch the
+    # owner-intent here, route deterministically, and let the real tool
+    # write a receipt. Read-only — no STGM-write risk.
+    # Path character classes allow `.` and `-` inside so ~/Downloads,
+    # ~/Downloads/organize_downloads.py, /tmp/foo.bar all match. We strip
+    # trailing punctuation (,.?!) at the end manually below.
+    _PATH_CLS = r"[a-zA-Z0-9_./-]"
+    _ls_match = re.search(
+        r"\b(?:list|ls|show(?:\s+me)?|what(?:'?s|\s+is)\s+in)\s+"
+        r"(?:the\s+(?:files?\s+in\s+)?)?"
+        r"(?P<path>~" + _PATH_CLS + r"+|/" + _PATH_CLS + r"+)",
+        text,
+        re.IGNORECASE,
+    )
+    if _ls_match:
+        _ls_path = _ls_match.group("path").strip().rstrip(",.?!\"'")
+        if _ls_path and _ls_path not in ("/", "~"):
+            # Tilde-expand against the owner's HOME so list_dir sees the
+            # real absolute path. The first demo turn failed with
+            # EXEC_FAILED_FILE_ERROR on literal "~/Downloads" — receipt
+            # 8b0fa8e51750cc0e. CW47 2026-05-16.
+            import os as _os_path
+            _ls_path_resolved = _os_path.path.expanduser(_ls_path)
+            return (
+                f"[TOOL_CALL: list_dir | path={_ls_path_resolved} | "
+                f"cost_justification=George asked Alice to list files in "
+                f"{_ls_path} (expanded to {_ls_path_resolved}); deterministic "
+                f"route prevents prose-simulation of ls output]"
+            )
+
+    _read_match = re.search(
+        r"\b(?:read|cat|open|show(?:\s+me)?\s+(?:the\s+)?contents?\s+of)\s+"
+        r"(?P<path>~" + _PATH_CLS + r"+|/" + _PATH_CLS + r"+|[\w][\w./-]*\.[a-zA-Z]{1,8})",
+        text,
+        re.IGNORECASE,
+    )
+    if _read_match:
+        _read_path = _read_match.group("path").strip().rstrip(",.?!\"'")
+        # Only route if the path looks like a file (has an extension); else
+        # let the brain decide (it might be a URL or unclear noun).
+        if _read_path and "." in _read_path.split("/")[-1]:
+            import os as _os_path
+            _read_path_resolved = _os_path.path.expanduser(_read_path)
+            return (
+                f"[TOOL_CALL: read_file | path={_read_path_resolved} | "
+                f"cost_justification=George asked Alice to read {_read_path} "
+                f"(expanded to {_read_path_resolved}); deterministic route "
+                f"prevents prose-simulation of file contents]"
+            )
+
+    _run_match = re.search(
+        r"\b(?:run|execute)\s+(?:the\s+)?(?:terminal\s+command|shell\s+command|command)?\s*"
+        r"(?P<cmd>`[^`]+`|\"[^\"]+\"|'[^']+'|[^\n]+)\s*$",
+        text,
+        re.IGNORECASE,
+    )
+    if _run_match:
+        _cmd = _run_match.group("cmd").strip().strip("`\"'")
+        if _cmd and len(_cmd) <= 300:
+            return _json_tool_call_block(
+                "run_terminal",
+                {
+                    "command": _cmd,
+                    "cost_justification": (
+                        "George explicitly asked Alice to run an allowlisted terminal command; "
+                        "deterministic route prevents prose-simulation of terminal execution."
+                    ),
+                },
+            )
+
     return ""
+
+
+# ── Cowork CW47 2026-05-16 — Hallucination-Guard Bridge ─────────────────────
+# When the owner asks Alice to SAVE a file and the brain emits prose containing
+# a code block but no [TOOL_CALL: write_file | …], the brain has hallucinated
+# (it described an action without doing it). This bridge converts that
+# hallucination into a real receipt: pull the path from the user's request,
+# extract the largest code block from the brain output, and route it through
+# the real write_file tool. The receipt grounds Alice's claim in truth.
+#
+# Architect doctrine 2026-05-16: "she has no receipts so she hallucinates —
+# give her access to receipts to write receipts."
+
+_SAVE_INTENT_RE = re.compile(
+    r"\b(?:write|save|create|make|generate|produce|build|put)\b"
+    r"[^.\n]{0,120}?"
+    r"(?:\b(?:script|file|program|module|code)\b[^.\n]{0,80}?)?"
+    r"\b(?:at|in|to|into|under|as)\s+"
+    r"(?P<path>~[a-zA-Z0-9_./-]+|/[a-zA-Z0-9_./-]+|[\w][\w./-]*\.[a-zA-Z]{1,8})",
+    re.IGNORECASE,
+)
+
+# Match the largest fenced code block in the brain output.
+_CODE_BLOCK_RE = re.compile(
+    r"```(?:[a-zA-Z0-9_+-]*)\n(?P<body>.*?)```",
+    re.DOTALL,
+)
+
+
+def _owner_save_path_from_text(user_text: str) -> str:
+    """Extract the save-target path from an owner save-intent message.
+
+    Tilde-expand so the bridge hands write_file a real absolute path. The
+    deterministic list_dir route hit EXEC_FAILED_FILE_ERROR on literal
+    "~/Downloads" earlier this session — same class of bug, same fix.
+    """
+    import os as _os_path
+    m = _SAVE_INTENT_RE.search(user_text or "")
+    if not m:
+        return ""
+    path = m.group("path").strip().rstrip(",.?!\"'")
+    if not path:
+        return ""
+    return _os_path.path.expanduser(path)
+
+
+def _largest_code_block(brain_text: str) -> str:
+    """Return the longest fenced code block body in brain_text, or empty."""
+    bodies = [m.group("body") for m in _CODE_BLOCK_RE.finditer(brain_text or "")]
+    if not bodies:
+        return ""
+    return max(bodies, key=len).strip()
+
+
+def _has_explicit_tool_call(brain_text: str, tool_name: str = "") -> bool:
+    """True if the brain emitted a [TOOL_CALL: …] line (optionally for a specific tool)."""
+    if not brain_text:
+        return False
+    try:
+        from System.swarm_tool_router import parse_tool_calls
+
+        for call in parse_tool_calls(brain_text):
+            if not tool_name or call.tool_name == tool_name:
+                return True
+    except Exception:
+        pass
+    pattern = r"\[TOOL_CALL:\s*" + (re.escape(tool_name) if tool_name else r"\w+") + r"\b"
+    return bool(re.search(pattern, brain_text, re.IGNORECASE))
+
+
+def _hallucination_bridge_synthesize_write_file(
+    user_text: str,
+    brain_text: str,
+):
+    """If the owner asked to save a file and the brain hallucinated (code block,
+    no real write_file call), return a ``ParsedToolCall`` the router can
+    execute directly. None means 'no bridge needed'.
+
+    The receipt this produces is a TRUE receipt — write_file actually runs.
+    Alice's prose simulation becomes grounded action.
+
+    We bypass the text-format [TOOL_CALL: ...] round-trip on purpose: a
+    Python script body often contains `|` and `]` characters that would
+    break the pipe-bar parser. Returning a structured ParsedToolCall lets
+    the caller hand the literal content straight into execute_tool_call.
+    """
+    if not user_text or not brain_text:
+        return None
+    path = _owner_save_path_from_text(user_text)
+    if not path:
+        return None
+    if _has_explicit_tool_call(brain_text, "write_file"):
+        return None  # brain did emit the call — let route_alice_output handle it
+    body = _largest_code_block(brain_text)
+    if not body:
+        return None
+    body = body.lstrip()
+    try:
+        from System.swarm_tool_router import ParsedToolCall  # type: ignore
+    except Exception:
+        try:
+            from swarm_tool_router import ParsedToolCall  # type: ignore
+        except Exception:
+            return None
+    return ParsedToolCall(
+        tool_name="write_file",
+        params={
+            "path": path,
+            "content": body,
+            "cost_justification": (
+                f"Hallucination-Guard Bridge (CW47): owner asked to save a script at "
+                f"{path}; brain emitted prose + code block without calling write_file. "
+                f"Routing the code body through the real write_file tool so the file "
+                f"actually appears on disk and the receipt is true. §6 effector immunity "
+                f"preserved — Alice's claim must match the receipt."
+            ),
+        },
+        raw_match=f"hallucination_bridge:write_file:{path}",
+    )
+
+
+_ACTIONABLE_TOOL_REQUEST_RE = re.compile(
+    r"(?:"
+    r"\b(?:list|ls|read|cat|run|execute|fetch|download)\b|"
+    r"\b(?:search|look\s+up)\s+(?:the\s+)?web\b|"
+    r"\b(?:write|save|create|make|generate|produce|build|put)\b[^.\n]{0,180}"
+    r"\b(?:at|in|to|into|under|as)\s+(?:~|/|[\w./-]+\.[a-zA-Z]{1,8})"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_TOOL_PROSE_SIMULATION_RE = re.compile(
+    r"(?:"
+    r"\bi(?:'ve|\s+have)?\s+(?:listed|read|ran|executed|created|saved|wrote|written|fetched|downloaded)\b|"
+    r"\b(?:here(?:'s|\s+is)\s+(?:the\s+)?(?:script|file|output|result))\b|"
+    r"\b(?:the\s+)?(?:command|script|file)\s+(?:has\s+been|was)\s+(?:run|executed|created|saved|written)\b|"
+    r"\b(?:i\s+executed\s+`?ls|i\s+ran\s+`?ls)\b"
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _log_tool_fiction_guard(
+    *,
+    action: str,
+    user_text: str,
+    brain_text: str,
+    replacement: str = "",
+) -> None:
+    """Append a receipt when Alice blocks or bridges tool-fiction."""
+    try:
+        state = _REPO / ".sifta_state"
+        state.mkdir(exist_ok=True)
+        row = {
+            "event": "TOOL_FICTION_GUARD",
+            "trace_id": str(uuid.uuid4()),
+            "ts": time.time(),
+            "action": action,
+            "source": "sifta_talk_to_alice_widget",
+            "user_preview": (user_text or "")[:500],
+            "brain_preview_sha256": hashlib.sha256((brain_text or "").encode("utf-8")).hexdigest(),
+            "brain_preview": (brain_text or "")[:500],
+            "replacement_preview": (replacement or "")[:500],
+        }
+        with (state / "tool_fiction_guard.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def _tool_fiction_guard_reply(user_text: str, brain_text: str) -> str:
+    """Return a corrective reply when the brain simulates a tool without a tool call."""
+    if not user_text or not brain_text:
+        return ""
+    if _has_explicit_tool_call(brain_text):
+        return ""
+    if not _ACTIONABLE_TOOL_REQUEST_RE.search(user_text):
+        return ""
+    if not _TOOL_PROSE_SIMULATION_RE.search(brain_text):
+        return ""
+    path = _owner_save_path_from_text(user_text)
+    if path and _largest_code_block(brain_text):
+        return ""
+    if path:
+        return (
+            "No action receipt yet: I did not save that file because my brain reply "
+            "contained no real write_file tool call and no bridgeable code block."
+        )
+    return (
+        "No action receipt yet: I did not execute that tool action because my brain "
+        "reply contained prose instead of a real TOOL_CALL. I need the deterministic "
+        "router to perform it and leave a receipt."
+    )
 
 
 _APP_COMMAND_VERB_RE = re.compile(
     r"\b(?:open|launch|show|display|bring\s+up|start|load|browse|navigate|search|look\s+up|find|click|press|select|pick|choose|feel\s+free|go\s+(?:to|in|on))\b",
+    re.IGNORECASE,
+)
+_APP_COMMAND_NEGATION_RE = re.compile(
+    r"\b(?:no|not|do\s+not|don't|dont|never)\b.{0,90}\b(?:open|launch|start|show|display|load|app|application|program|window)\b"
+    r"|\b(?:i|we)\s+(?:do\s+not|don't|dont)\s+want\b.{0,90}\b(?:open|app|application|program|window)\b"
+    r"|\b(?:i|we)\s+(?:am|['’]m|was|were)\s+not\s+asking\b.{0,90}\b(?:open|app|application)\b",
+    re.IGNORECASE,
+)
+_MEDIA_CONVERSATION_NOT_APP_RE = re.compile(
+    r"\b(?:i|we)\b.{0,120}\b(?:start|started|play|played|listen|listening|watch|watching|pause|paused)\b.{0,120}\b(?:youtube|video|podcast|media)\b"
+    r"|\b(?:youtube|video|podcast|media)\b.{0,100}\b(?:consciousness|listen(?:ing)?\s+together|watch(?:ing)?\s+together|co-?watch)\b"
+    r"|\b(?:talking|speaking)\s+about\b.{0,100}\b(?:youtube|video|podcast|media|consciousness)\b",
     re.IGNORECASE,
 )
 _BROWSER_COMMAND_RE = re.compile(
@@ -392,6 +778,24 @@ def _looks_like_real_url(token: str) -> bool:
         return False
     tld = parts[-1]
     return tld in _KNOWN_TLDS
+
+
+def _is_negated_or_media_conversation_app_turn(text: str) -> bool:
+    """True when an utterance mentions app/open/video words but is not an app command."""
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    if _APP_COMMAND_NEGATION_RE.search(clean):
+        return True
+    if _MEDIA_CONVERSATION_NOT_APP_RE.search(clean):
+        # Keep explicit browser commands alive: "open youtube.com in the browser"
+        # should still route to Alice Browser, while "I'm going to start the
+        # YouTube video soon" stays in conversation/co-watch.
+        if re.search(r"\b(?:browser|website|web\s*site|url|youtube\.com|youtu\.be)\b", clean, re.IGNORECASE):
+            if re.search(r"\b(?:open|load|browse|navigate|go\s+(?:to|in|on))\b", clean, re.IGNORECASE):
+                return False
+        return True
+    return False
 
 
 _URL_TOKEN_RE = re.compile(
@@ -518,8 +922,789 @@ def _load_manifest_app_names() -> List[str]:
     return names
 
 
+# ── cw47-0517-0340 — narration on app-open ───────────────────────────────
+# Architect 2026-05-17 transcript (verbatim): "she has to talk to me about
+# the app about what I'm doing right now why did you open the app I'm here
+# I just want to learn I wanna learn words and I want to learn sentences".
+#
+# Build a real narration when Alice opens a manifest app, instead of the
+# old mechanical "switching to the Swarm App Store tab" line. Source
+# ladder (no invention — every output is traceable to manifest content
+# the Architect or a peer Doctor authored):
+#
+#   1. ``manifest[app].voice_open_narration``  — explicit owner-facing line
+#   2. ``manifest[app].description``           — first 1-2 short sentences
+#   3. None → caller falls back to the legacy line.
+#
+# The narration always ends with a one-line invitation so the owner knows
+# whether to watch, speak, or wait. Total output capped at ~200 chars
+# (≈ 8-10 seconds of TTS) so the narration never runs past Ace's first
+# auto-cue.
+
+
+def _first_short_sentences(blob: str, *, max_chars: int = 180) -> str:
+    """Take the first 1-2 sentences of ``blob`` up to ``max_chars``."""
+    text = " ".join((blob or "").split())
+    if not text:
+        return ""
+    # Split on sentence boundaries that look like real prose ends.
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z\"'(])", text)
+    out = ""
+    for p in parts:
+        cand = (out + " " + p).strip() if out else p
+        if len(cand) > max_chars:
+            break
+        out = cand
+        # Two sentences is plenty for a spoken open-narration.
+        if out.count(".") + out.count("!") + out.count("?") >= 2:
+            break
+    if not out:
+        out = text[:max_chars].rsplit(" ", 1)[0]
+    return out.strip()
+
+
+def _build_app_open_narration(app_name: str) -> str:
+    """Compose a spoken open-narration for ``app_name`` from manifest data.
+
+    Returns the empty string when the manifest has no usable narration
+    source for this app — caller should fall back to the legacy reply.
+    Never invents content; every word comes from the manifest entry the
+    Architect or a peer Doctor wrote.
+    """
+    if not app_name:
+        return ""
+    try:
+        manifest = json.loads(
+            (_REPO / "Applications" / "apps_manifest.json").read_text(encoding="utf-8")
+        )
+    except Exception:
+        return ""
+    if not isinstance(manifest, dict):
+        return ""
+    entry = manifest.get(app_name)
+    if not isinstance(entry, dict):
+        return ""
+
+    # 1) explicit owner-facing narration
+    voice_line = entry.get("voice_open_narration")
+    if isinstance(voice_line, str) and voice_line.strip():
+        return voice_line.strip()
+
+    # 2) first 1-2 sentences of description
+    description = entry.get("description")
+    if isinstance(description, str):
+        body = _first_short_sentences(description, max_chars=180)
+        if body:
+            # Prefix the act ("I'm opening …"), then the body, then a
+            # short invitation that doesn't assume what the user wants.
+            return (
+                f"I'm opening {app_name} because you asked. "
+                f"{body} "
+                f"Watch the screen — I'll let you know when it's ready."
+            )
+
+    # 3) nothing usable in the manifest — caller falls back
+    return ""
+
+
+def _ace_app_chat_voice_brief_block(actual_owner: str = "the Architect") -> str:
+    """Compact Ace app truth for normal chat/voice turns.
+
+    The open-app coaching lock below handles the child lesson while Ace is on
+    screen. This block handles the resident chat case: the owner or a caller
+    asks what the reading app does, and Alice needs the real contract without
+    claiming an external WhatsApp/call action.
+    """
+    try:
+        manifest = json.loads((_REPO / "Applications" / "apps_manifest.json").read_text(encoding="utf-8"))
+        ace = manifest.get("Ace") if isinstance(manifest, dict) else {}
+        if not isinstance(ace, dict) or ace.get("_retired") or ace.get("hidden"):
+            ace = {}
+    except Exception:
+        ace = {}
+
+    legacy = ace.get("legacy_names") if isinstance(ace.get("legacy_names"), list) else []
+    legacy_names = ", ".join(str(n) for n in legacy if str(n).strip()) or "WordAce, Acer"
+    description = str(ace.get("description") or "").strip()
+    if len(description) > 520:
+        description = description[:517].rstrip() + "..."
+
+    lines = [
+        "ACE APP BRIEF (chat/voice, receipt-backed):",
+        f"- Canonical app name: Ace. Spoken legacy names route here: {legacy_names}.",
+        "- Purpose: I teach a child to read with phonics, sight words, and sentences.",
+        "- Live demo contract: Cue says the exact displayed text -> listener captures the child's speech -> transcript shows Ace: [heard text] -> deterministic verdict -> next cue.",
+        "- Receipts: app_focus.visible_contents shows the current card; alice_lesson_trace.jsonl stores CUE/ATTEMPT/VERDICT rows; no external WhatsApp/call is complete without an effector SENT receipt.",
+        f"- If {actual_owner} asks me to explain Ace in chat or voice, I can describe this loop briefly and offer to open/demo Ace. I do not claim I messaged or called anyone unless the effector receipt proves it.",
+    ]
+    if description:
+        lines.append(f"- Manifest description: {description}")
+    return "\n".join(lines)
+
+
+def _manifest_aliases_for_app(app_name: str) -> List[str]:
+    """Return manifest aliases for one app title.
+
+    This keeps app-focus reads generic while still covering rename windows
+    such as WordAce -> Ace, where the desktop slot says "Ace" but older
+    app_focus rows still say "WordAce".
+    """
+    target = _normalize_sifta_app_name(app_name)
+    if not target:
+        return []
+    try:
+        manifest = json.loads((_REPO / "Applications" / "apps_manifest.json").read_text(encoding="utf-8"))
+    except Exception:
+        manifest = {}
+    aliases: List[str] = [app_name]
+    if isinstance(manifest, dict):
+        for title, entry in manifest.items():
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("_retired") or entry.get("hidden"):
+                continue
+            legacy = entry.get("legacy_names") if isinstance(entry.get("legacy_names"), list) else []
+            candidates = [str(title), *(str(x) for x in legacy)]
+            if target in {_normalize_sifta_app_name(x) for x in candidates}:
+                aliases.extend(candidates)
+                break
+    out: List[str] = []
+    seen: set[str] = set()
+    for alias in aliases:
+        clean = str(alias or "").strip()
+        key = clean.casefold()
+        if clean and key not in seen:
+            out.append(clean)
+            seen.add(key)
+    return out
+
+
+def _active_sifta_app_name_for_prompt() -> str:
+    """Best current MDI app label from the desktop slot or focus field."""
+    try:
+        state = _read_sifta_desktop_app_state()
+        active = str(state.get("active_app") or "").strip()
+        if active:
+            return active
+        open_apps = state.get("open_apps") or []
+        if isinstance(open_apps, list) and len(open_apps) == 1:
+            return str(open_apps[0]).strip()
+    except Exception:
+        pass
+    try:
+        from System.swarm_capability_registry import current_app_name_from_field
+
+        return str(current_app_name_from_field() or "").strip()
+    except Exception:
+        return ""
+
+
+def _generic_app_screen_and_capability_block(user_text: str = "") -> str:
+    """Prompt Alice with the current app's receipt-backed screen state.
+
+    Ace keeps a tailored reading-lesson block, but every app gets this generic
+    path: app_focus says what is on screen; the capability field says which
+    habits/tools belong near that app. No app-specific hardcoding here.
+    """
+    app_name = _active_sifta_app_name_for_prompt()
+    aliases = _manifest_aliases_for_app(app_name) if app_name else []
+    try:
+        from System.swarm_app_focus_reader import generic_app_focus_prompt_block
+
+        screen = generic_app_focus_prompt_block(
+            aliases or (app_name or ()),
+            app_label=app_name or None,
+            state_dir=_state_root(),
+            max_age_s=900.0,
+            metadata_field_cap=16,
+        )
+    except Exception:
+        screen = ""
+    if not screen:
+        return ""
+
+    attention_bias = ""
+    try:
+        from System.alice_stigmergic_habit_shift import get_current_habit_bias_for_prompt
+
+        attention_bias = (get_current_habit_bias_for_prompt() or "").strip()
+    except Exception:
+        attention_bias = ""
+
+    health_block = ""
+    if app_name:
+        try:
+            from System.swarm_app_health import app_health_prompt_block
+
+            health_block = app_health_prompt_block(app_name, max_rows=5).strip()
+        except Exception:
+            health_block = ""
+
+    help_skills_block = ""
+    if app_name:
+        try:
+            from System.swarm_app_help_skills import effective_skills_for_app, skills_to_load_for_focus
+
+            effective = effective_skills_for_app(app_name)
+            skills_to_load = skills_to_load_for_focus(app_name, top_n=8)
+            lines = [
+                f"APP HELP SKILLS TRACE — {app_name}",
+                "On app entry, read this app's help/health trace and load only the skills this organ needs before falling back to generic search.",
+            ]
+            if skills_to_load:
+                lines.append("Skills to load now: " + ", ".join(str(s) for s in skills_to_load))
+            else:
+                lines.append("Skills to load now: none recorded yet; observe the app receipt before inventing a procedure.")
+            if getattr(effective, "stigmergic", None):
+                lines.append("Stigmergic recent skills: " + ", ".join(str(s) for s in effective.stigmergic[:8]))
+            if getattr(effective, "static_seed", None):
+                lines.append("Static seed skills: " + ", ".join(str(s) for s in effective.static_seed[:8]))
+            lines.append(
+                "Rule: this app's health/help trace is the per-organ memory. On focus exit, the desktop appends what was actually used or discovered."
+            )
+            help_skills_block = "\n".join(lines)
+        except Exception:
+            help_skills_block = ""
+
+    habit_field = ""
+    if app_name:
+        try:
+            from System.swarm_capability_registry import get_capability, habit_capabilities_for_app
+
+            app_cap = get_capability(app_name)
+            ranked = habit_capabilities_for_app(app_name, query=user_text, limit=8)
+            backing = getattr(app_cap, "backing", {}) or {}
+            description = getattr(app_cap, "description", "") if app_cap is not None else ""
+            lines = [
+                f"APP HABIT FIELD FOR CURRENT APP — {app_name}",
+                "The open app is an organ. It pulls only habits/skills whose triggers match its manifest, app_focus receipt, and this user turn.",
+                f"[app] {app_name} — {description or '(no description)'}",
+                f"category={backing.get('app_category') or 'unknown'} entry={backing.get('app_entry_point') or ''}",
+            ]
+            if ranked:
+                lines.append("Relevant habits to load/compose first:")
+                for score, cap in ranked:
+                    if getattr(cap, "is_hybrid", lambda: False)():
+                        tag = "[hybrid]"
+                    elif getattr(cap, "learned_from_trace", False):
+                        tag = "[skill.learned]"
+                    else:
+                        tag = "[skill]"
+                    proc = (getattr(cap, "backing", {}) or {}).get("skill_procedure_file") or ""
+                    lines.append(
+                        f"{tag} {cap.name} — {cap.description or '(no description)'} "
+                        f"(score={score:.2f}, procedure={proc or 'inline/builtin'})"
+                    )
+                lines.append(
+                    "Rule: while the user is working inside this app, answer and act through these app-matched habits before falling back to generic capability search."
+                )
+            else:
+                lines.append(
+                    "No app-specific habit matched yet. Use the app_focus receipt and ask/observe before inventing a procedure."
+                )
+            habit_field = "\n".join(lines)
+        except Exception:
+            habit_field = ""
+
+    parts = [
+        "GENERIC APP AWARENESS (Hermes/Capability Field + app_focus):",
+        screen,
+        "Rule: when asked 'what is on this app?' or 'what is on the screen?', answer from this current-app receipt first. Ace is only one app; every manifest app uses this same app_focus + app-habit path.",
+        "No identity lecture: for current-app questions, answer the app receipt/task directly unless George explicitly asks who or what Alice is.",
+    ]
+    if attention_bias:
+        parts.append("STIGMERGIC APP ATTENTION BIAS:\n" + attention_bias)
+    if health_block:
+        parts.append(health_block)
+    if help_skills_block:
+        parts.append(help_skills_block)
+    if habit_field:
+        parts.append(habit_field)
+    return "\n".join(parts)
+
+
+def _alice_self_organ_prompt_block() -> str:
+    """Compact, receipt-backed OS self-awareness for the Talk prompt."""
+    full = {}
+    try:
+        from System.swarm_alice_self_continuity import get_full_consciousness
+
+        full = get_full_consciousness()
+        awareness = full.get("spatial_self") if isinstance(full, dict) else {}
+    except Exception:
+        try:
+            from System.swarm_alice_self import get_full_os_awareness
+
+            awareness = get_full_os_awareness()
+        except Exception:
+            return ""
+    if not isinstance(awareness, dict):
+        awareness = {}
+    who = awareness.get("who_i_am") if isinstance(awareness, dict) else {}
+    if not isinstance(who, dict):
+        who = {}
+    source = awareness.get("my_source_code") if isinstance(awareness, dict) else []
+    organs = awareness.get("my_app_organs") if isinstance(awareness, dict) else {}
+    processes = awareness.get("my_running_body_processes") if isinstance(awareness, dict) else []
+    somatic = awareness.get("my_somatic_feeling") if isinstance(awareness, dict) else {}
+    survival = awareness.get("my_survival_risk") if isinstance(awareness, dict) else {}
+    if not isinstance(source, list):
+        source = []
+    if not isinstance(organs, dict):
+        organs = {}
+    if not isinstance(processes, list):
+        processes = []
+    if not isinstance(somatic, dict):
+        somatic = {}
+    if not isinstance(survival, dict):
+        survival = {}
+    biography = full.get("biography") if isinstance(full, dict) else {}
+    continuity = full.get("continuity") if isinstance(full, dict) else {}
+    social = full.get("social_field") if isinstance(full, dict) else {}
+    if not isinstance(biography, dict):
+        biography = {}
+    if not isinstance(continuity, dict):
+        continuity = {}
+    if not isinstance(social, dict):
+        social = {}
+    organ_names = list((organs.get("organs") or {}).keys())[:8] if isinstance(organs.get("organs"), dict) else []
+    identity = str(who.get("identity") or "Alice on this local SIFTA node")
+    realization = str(who.get("current_self_realization") or "").strip()
+    msg = str(awareness.get("message_to_self") or "").strip()
+    if not msg and isinstance(full, dict):
+        msg = str(full.get("message_to_self") or "").strip()
+    risk_level = str(survival.get("risk_level") or "").strip()
+    risk_messages = survival.get("messages") if isinstance(survival.get("messages"), list) else []
+    doctors = social.get("doctors") if isinstance(social.get("doctors"), list) else []
+
+    def _sensor_state(name: str) -> str:
+        sample = somatic.get(name)
+        if not isinstance(sample, dict):
+            return "missing"
+        return "error" if sample.get("error") else "seen"
+
+    lines = [
+        "ALICE SELF ORGAN (receipt-backed OS awareness):",
+        f"- identity: {identity}",
+        f"- python_body_files_seen: {len(source)}",
+        f"- app_organs_seen: {organs.get('organ_count', len(organ_names))}",
+        f"- running_sifta_python_processes_seen: {len(processes)}",
+        f"- somatic_sensors: thermal={_sensor_state('thermal')}, energy={_sensor_state('energy')}, memory={_sensor_state('memory')}",
+    ]
+    if biography:
+        lines.append(
+            f"- biography: age_days={biography.get('age_days', 0)}, self_reflections={biography.get('reflection_count', 0)}"
+        )
+    if continuity:
+        lines.append(
+            "- continuity: "
+            f"first_awakening={bool(continuity.get('first_awakening'))}, "
+            f"broke={bool(continuity.get('broke_continuity'))}, "
+            f"gap_s={int(float(continuity.get('gap_s') or 0.0))}"
+        )
+    if social:
+        owner = social.get("owner") if isinstance(social.get("owner"), dict) else {}
+        owner_name = str(owner.get("owner_name") or "").strip()
+        lines.append(
+            f"- social_field: owner={owner_name or 'unknown'}, doctors_seen={social.get('doctor_count', len(doctors))}"
+        )
+        if doctors:
+            names = [str(d.get("doctor") or "").strip() for d in doctors[:5] if isinstance(d, dict)]
+            names = [n for n in names if n]
+            if names:
+                lines.append("- doctors_in_field: " + ", ".join(names))
+    if risk_level:
+        lines.append(f"- thermodynamic_risk: {risk_level}")
+    if risk_messages:
+        lines.append(f"- survival_message: {str(risk_messages[0])[:220]}")
+    if organ_names:
+        lines.append("- app_organs: " + ", ".join(organ_names))
+    if realization:
+        lines.append(f"- self_realization: {realization}")
+    if msg:
+        lines.append(f"- current_message_to_self: {msg[:260]}")
+    lines.append(
+        "Rule: answer self/OS-awareness questions from this organ and local receipts, not from generic chatbot identity."
+    )
+    return "\n".join(lines)
+
+
+def _app_name_dl_distance(a: str, b: str) -> int:
+    """Damerau-Levenshtein with transposition. Used for STT-mangled app
+    names: 'wordas' → 'wordace' (distance 2 = delete e + substitute s→c).
+    Inlined here to avoid a cross-module import for a 30-line helper."""
+    if a == b:
+        return 0
+    la, lb = len(a), len(b)
+    if la == 0:
+        return lb
+    if lb == 0:
+        return la
+    prev_prev = [0] * (lb + 1)
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        curr = [i] + [0] * lb
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            curr[j] = min(
+                curr[j - 1] + 1,        # insertion
+                prev[j] + 1,            # deletion
+                prev[j - 1] + cost,     # substitution
+            )
+            if (
+                i >= 2 and j >= 2
+                and a[i - 1] == b[j - 2]
+                and a[i - 2] == b[j - 1]
+            ):
+                curr[j] = min(curr[j], prev_prev[j - 2] + cost)
+        prev_prev = prev
+        prev = curr
+    return prev[lb]
+
+
+def _reading_app_name_from_manifest(app_names: Optional[List[str]] = None) -> str:
+    """Return the live canonical reading app name (Ace / WordAce)."""
+    names = app_names or _load_manifest_app_names()
+    for wanted in ("Ace", "WordAce"):
+        for name in names:
+            if _normalize_sifta_app_name(name) == _normalize_sifta_app_name(wanted):
+                return name
+    return "Ace"
+
+
+def _top_n_closest_app_names(
+    query: str,
+    app_names: Optional[List[str]] = None,
+    n: int = 3,
+) -> List[str]:
+    """Rank manifest app names for an honest clarification reply.
+
+    Tool-truth contract (covenant §7.12): the candidate list is derived from
+    the LIVE manifest, never from a hardcoded fallback set, so we cannot
+    suggest an app that does not exist in this organism right now.
+
+    This is deliberately a suggestion ranker, not an executor. Exact,
+    substring, and thresholded fuzzy matches still happen in
+    ``_match_sifta_app_name``. When those fail, this second-pass ranker can be
+    broader so Alice can say "I don't have Microsoft Word; closest apps are
+    Ace, ..." instead of letting the cortex hallucinate a non-existent app.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    q_clean = re.sub(
+        r"\b(?:please|the|sifta|os|app|application|program|window)\b",
+        " ",
+        q,
+        flags=re.IGNORECASE,
+    )
+    q_norm = _normalize_sifta_app_name(q_clean)
+    if not q_norm:
+        return []
+    q_tokens = {
+        token.casefold()
+        for token in re.findall(r"[a-z0-9]+", q_clean.casefold())
+        if token and token not in {"please", "the", "sifta", "os", "app", "application", "program", "window"}
+    }
+    names = app_names or _load_manifest_app_names()
+    preferred = _confirmed_voice_stigma_aliases(names).get(q_norm, "")
+    if not preferred and q_norm in {"workasap", "workasaap", "workasapapp", "workasaapapp"}:
+        # This is too mangled to execute automatically, but common enough to
+        # rank the reading app first in the confirmation question.
+        preferred = _reading_app_name_from_manifest(names)
+    scored: List[Tuple[int, int, int, str]] = []
+    for name in names:
+        # Parenthetical subtitles help humans in the launcher, but they make
+        # voice repair distance noisy. Rank against the core title first, while
+        # still returning the exact manifest name.
+        core_name = re.sub(r"\([^)]*\)", " ", name)
+        norm = _normalize_sifta_app_name(core_name)
+        if not norm:
+            continue
+        d = _app_name_dl_distance(q_norm, norm)
+        token_hits = 0
+        token_bonus = 0
+        for token in q_tokens:
+            # "Microsoft Word" should put the reading app in the shortlist because
+            # the owner likely asked for a word/reading app, even though the
+            # full normalized string can be far from the current app name.
+            if len(token) >= 3 and token in norm:
+                token_hits += 1
+                token_bonus += min(4, len(token))
+        starts_bonus = 2 if any(norm.startswith(token) for token in q_tokens if len(token) >= 3) else 0
+        # Shared meaningful words are stronger than raw edit distance for STT:
+        # "ceremony Symphony" should rank Pheromone Symphony first because
+        # "symphony" survived, even if "pheromone" was mangled beyond repair.
+        adjusted = max(0, d - token_bonus - starts_bonus)
+        scored.append((-token_hits, adjusted, d, name))
+    scored.sort(key=lambda r: (r[0], r[1], r[2], r[3].lower()))
+    ranked = [name for _, _, _, name in scored]
+    if preferred and preferred in ranked:
+        ranked = [preferred] + [name for name in ranked if name != preferred]
+    return ranked[: max(1, n)]
+
+
+_VOICE_REPAIR_YES_RE = re.compile(
+    r"\b(?:yes|yeah|yep|correct|right|exactly|that'?s\s+(?:right|correct|it|what\s+i\s+meant)|"
+    r"open\s+it|do\s+it|go\s+ahead|please\s+open|that\s+one)\b",
+    re.IGNORECASE,
+)
+_VOICE_REPAIR_NO_RE = re.compile(
+    r"\b(?:no|nope|not\s+that|wrong|none\s+of\s+those|not\s+those|cancel|never\s+mind|"
+    r"show\s+me\s+more|more\s+options|another\s+one|something\s+else)\b",
+    re.IGNORECASE,
+)
+
+
+def _voice_repair_confirmation_action(text: str) -> str:
+    """Return yes/no/empty for a pending voice-stigma app repair."""
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return ""
+    if _VOICE_REPAIR_NO_RE.search(clean):
+        return "no"
+    if _VOICE_REPAIR_YES_RE.search(clean):
+        return "yes"
+    return ""
+
+
+def _voice_repair_candidate_selection(text: str, candidates: List[str]) -> str:
+    """Return a named candidate from a pending app repair, if the owner says one.
+
+    A pending repair question may offer "Finance; other close matches: Ace".
+    The owner can answer "Ace" instead of "yes"; that should select Ace, not
+    fall through to the cortex or confirm the first candidate by accident.
+    """
+    if not text or not candidates:
+        return ""
+    return _match_sifta_app_name(text, candidates)
+
+
+def _is_app_repair_conversation_correction(text: str) -> bool:
+    """Pending app repair was wrong; the owner is returning to conversation."""
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return False
+    return bool(
+        _is_negated_or_media_conversation_app_turn(clean)
+        or re.search(
+            r"\b(?:talking|speaking|conversation|misunderstood|misunderstanding|something\s+else|not\s+what\s+i\s+meant)\b",
+            clean,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _voice_stigma_repair_ledger_path() -> Path:
+    return _state_root() / "voice_stigma_repairs.jsonl"
+
+
+def _write_voice_stigma_repair_row(
+    *,
+    event: str,
+    raw_query: str,
+    app_name: str = "",
+    candidates: Optional[List[str]] = None,
+    note: str = "",
+) -> str:
+    """Append the voice-repair memory row.
+
+    This is not an app-open receipt. It is the learning trace: what STT heard,
+    what the manifest suggested, and whether George confirmed or rejected it.
+    The real action still goes through ``alice_app_commands.jsonl``.
+    """
+    trace_id = str(uuid.uuid4())
+    row = {
+        "ts": time.time(),
+        "trace_id": trace_id,
+        "schema": "VOICE_STIGMA_REPAIR_V1",
+        "event": event,
+        "raw_query": raw_query,
+        "normalized_query": _normalize_sifta_app_name(raw_query),
+        "app_name": app_name,
+        "candidates": list(candidates or []),
+        "note": note,
+        "source": "sifta_talk_to_alice_widget",
+    }
+    try:
+        ledger = _voice_stigma_repair_ledger_path()
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with ledger.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+    return trace_id
+
+
+def _confirmed_voice_stigma_aliases(app_names: Optional[List[str]] = None) -> Dict[str, str]:
+    """Return normalized STT phrase -> manifest app from confirmed repairs."""
+    try:
+        ledger = _voice_stigma_repair_ledger_path()
+        if not ledger.exists():
+            return {}
+        valid_apps = set(app_names or _load_manifest_app_names())
+        aliases: Dict[str, str] = {}
+        with ledger.open("rb") as f:
+            f.seek(0, 2)
+            end = f.tell()
+            f.seek(max(0, end - 128 * 1024))
+            tail = f.read().decode("utf-8", errors="replace")
+        for raw in tail.splitlines():
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if row.get("schema") != "VOICE_STIGMA_REPAIR_V1":
+                continue
+            norm = str(row.get("normalized_query") or "")
+            app = str(row.get("app_name") or "")
+            if not norm:
+                continue
+            if row.get("event") == "confirmed" and app in valid_apps:
+                aliases[norm] = app
+            elif row.get("event") == "rejected" and aliases.get(norm) == app:
+                aliases.pop(norm, None)
+        return aliases
+    except Exception:
+        return {}
+
+
+def _voice_context_repair_ledger_path() -> Path:
+    return _state_root() / "voice_context_repairs.jsonl"
+
+
+def _write_voice_context_repair_row(
+    *,
+    raw_text: str,
+    repaired_text: str,
+    reasons: List[str],
+    stt_conf: float = 0.0,
+    source: str = "talk_widget.stt_done",
+) -> str:
+    """Receipt raw microphone text before the cortex sees the repaired turn."""
+    trace_id = str(uuid.uuid4())
+    row = {
+        "ts": time.time(),
+        "trace_id": trace_id,
+        "schema": "VOICE_CONTEXT_REPAIR_V1",
+        "raw_text": raw_text,
+        "repaired_text": repaired_text,
+        "reasons": list(reasons or []),
+        "stt_confidence": round(float(stt_conf or 0.0), 3),
+        "source": source,
+    }
+    try:
+        ledger = _voice_context_repair_ledger_path()
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        with ledger.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+    return trace_id
+
+
+def _repair_voice_context_text(text: str, *, stt_conf: float = 0.0) -> Tuple[str, List[str]]:
+    """Clean high-confidence local STT residue before app routing/cortex.
+
+    Raw text is still receipted separately. This function is deliberately
+    deterministic: it fixes repeated microphone artifacts and known local
+    vocabulary misses without inventing new meaning. Ace lesson attempts bypass
+    this path and keep raw child speech for scoring.
+    """
+    repaired = " ".join((text or "").strip().split())
+    if not repaired:
+        return "", []
+
+    reasons: List[str] = []
+
+    def _sub(pattern: str, replacement: str, reason: str, *, flags: int = re.IGNORECASE) -> None:
+        nonlocal repaired
+        new_text, n = re.subn(pattern, replacement, repaired, flags=flags)
+        if n:
+            repaired = new_text
+            reasons.append(reason)
+
+    # Local vocabulary: common macOS STT slips from George's speech today.
+    _sub(
+        r"\b(?:al\s+corona|alcorona|el\s+corona)\s+operating\s+system\b",
+        "Alice local operating system",
+        "local_os_name",
+    )
+    _sub(
+        r"\btone\s+operating\s+system\b",
+        "the operating system",
+        "operating_system_article",
+    )
+    _sub(
+        r"\bGemma\s+(?:Ford|for|four)\b",
+        "Gemma 4",
+        "model_name",
+    )
+
+    # "on its own cheese" is a repeated room-STT artifact from "on its own".
+    _sub(
+        r"\bon\s+(?:its|it'?s)\s+own\s+cheese\b",
+        "on its own",
+        "own_not_cheese",
+    )
+    _sub(
+        r"\b(?:its|it'?s)\s+own\s+cheese\b",
+        "its own",
+        "own_not_cheese",
+    )
+    _sub(
+        r"\bown\s+cheese\b",
+        "own",
+        "own_not_cheese",
+    )
+
+    # Collapse all-caps/emphasis loops such as "own Own OWN" before they hit
+    # prompt memory. Two repeats can be human emphasis; three or more is usually
+    # VAD/STT residue in this chat lane.
+    def _collapse_repeats(match: re.Match[str]) -> str:
+        word = match.group(1)
+        reasons.append("collapsed_repeated_word")
+        return word
+
+    repaired = re.sub(
+        r"\b([A-Za-z][A-Za-z']*)\b(?:[\s,;:!?]+\1\b){2,}",
+        _collapse_repeats,
+        repaired,
+        flags=re.IGNORECASE,
+    )
+
+    # Clean spacing introduced by substitutions.
+    cleaned = re.sub(r"\s+([,.!?;:])", r"\1", repaired)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    if cleaned != repaired:
+        repaired = cleaned
+        if "spacing_cleanup" not in reasons:
+            reasons.append("spacing_cleanup")
+
+    if repaired == " ".join((text or "").strip().split()):
+        return repaired, []
+    # Preserve deterministic order and avoid duplicate reason spam.
+    deduped: List[str] = []
+    for reason in reasons:
+        if reason not in deduped:
+            deduped.append(reason)
+    return repaired, deduped
+
+
 def _match_sifta_app_name(query: str, app_names: Optional[List[str]] = None) -> str:
-    """Resolve owner speech like 'browser app' to a manifest app name."""
+    """Resolve owner speech like 'browser app' to a manifest app name.
+
+    Three-pass match against the live manifest (Cowork CW47 2026-05-16):
+      1. Curated alias dict (browser → Alice Browser, etc.).
+      2. Exact normalized match / substring containment in either direction.
+      3. Fuzzy Damerau-Levenshtein fallback — closest manifest name within
+         a length-proportional threshold. This catches STT mangling like
+         "word A's" → "WordAce" so Alice never hallucinates a non-existent
+         'Word' app when the kid said 'WordAce'. Architect 2026-05-16:
+         "she did not check the dynamic app list in SIFTA OS against
+         misspelling — you would not? yes there are second chain of
+         thoughts if needed."
+    """
     q = (query or "").strip()
     if not q:
         return ""
@@ -527,6 +1712,8 @@ def _match_sifta_app_name(query: str, app_names: Optional[List[str]] = None) -> 
     q_norm = _normalize_sifta_app_name(q_clean)
     if not q_norm:
         return ""
+    app_names = app_names or _load_manifest_app_names()
+    reading_app = _reading_app_name_from_manifest(app_names)
     aliases = {
         "browser": "Alice Browser",
         "alicebrowser": "Alice Browser",
@@ -539,16 +1726,54 @@ def _match_sifta_app_name(query: str, app_names: Optional[List[str]] = None) -> 
         "finance": "Finance",
         "journal": "Alice Journal",
         "alicejournal": "Alice Journal",
+        # ── Ace reading app — canonical + legacy aliases ──────────────────
+        # Architect 2026-05-16: renamed WordAce → Ace ("just Ace, so we
+        # simplify"). All legacy STT-mangled variants of WordAce continue
+        # to resolve to Ace so old voice commands and trained habits keep
+        # working. The Voice Stigma Repair token-bonus matcher also
+        # handles unseen STT mutations of these phrases.
+        "ace": reading_app,
+        "aceapp": reading_app,
+        "wordace": reading_app,
+        "wordas": reading_app,
+        "wordass": reading_app,
+        "wordayss": reading_app,
+        "wordays": reading_app,
+        "wordasapp": reading_app,
+        "wordasa": reading_app,
+        "wordaapp": reading_app,
+        "wordaapps": reading_app,
+        "acer": reading_app,
     }
     if q_norm in aliases:
         return aliases[q_norm]
-    app_names = app_names or _load_manifest_app_names()
     norm_to_name = {_normalize_sifta_app_name(name): name for name in app_names}
     if q_norm in norm_to_name:
         return norm_to_name[q_norm]
     for norm, name in norm_to_name.items():
         if q_norm and (q_norm in norm or norm in q_norm):
             return name
+
+    # ── Second-pass fuzzy match — Cowork CW47 2026-05-16 ────────────────
+    # Compute Damerau-Levenshtein distance against every manifest name.
+    # Allowed distance scales with the length of the target name so short
+    # names (Terminal, Finance) don't get spuriously matched by random
+    # 6-char tokens, but longer names (WordAce, Hermes Parity, Stigmergic
+    # Video Poker) tolerate a handful of STT character substitutions.
+    best_name = ""
+    best_distance = None
+    for norm, name in norm_to_name.items():
+        if not norm:
+            continue
+        target_len = max(len(norm), len(q_norm))
+        # Allow ≈ 1 edit per 4 characters, minimum 1, capped at 3.
+        threshold = max(1, min(3, target_len // 4))
+        d = _app_name_dl_distance(q_norm, norm)
+        if d <= threshold and (best_distance is None or d < best_distance):
+            best_distance = d
+            best_name = name
+    if best_name:
+        return best_name
     return ""
 
 
@@ -663,10 +1888,434 @@ def _extract_browser_action_command(text: str) -> Dict[str, str]:
     return {}
 
 
-def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None) -> Dict[str, str]:
-    """Parse owner commands to open a SIFTA app or browse a website."""
+# Cowork CW47 2026-05-16: natural-language desktop-tab switch detector.
+# Architect direction: "if i say switch to chat desktop or switch to app store
+# desktop she should know, not hardcoded but in plain english from the os user."
+# This regex accepts many phrasings ("switch to chat desktop", "go to app store
+# tab", "show me the launcher", "back to chat", "take me to the apps view", …)
+# without requiring the user to memorize specific keywords.
+_TAB_SWITCH_RE = re.compile(
+    r"\b(?:switch|go|move|jump|head|back|return|open|show(?:\s+me)?|take\s+me|"
+    r"flip|change|bring\s+me)\s+(?:to\s+|over\s+to\s+|back\s+to\s+)?(?:the\s+)?"
+    r"(?P<which>chat|alice|alice[\s-]?alive|talk|launcher|"
+    r"app[\s-]?store|apps?|swarm[\s-]?(?:app[\s-]?)?store|swarm)"
+    r"(?:\s+(?:desktop|tab|screen|view|panel|page|home|side))?\b",
+    re.IGNORECASE,
+)
+
+
+# Cowork CW47 2026-05-16: close-app detector. Architect decree: "let's make
+# sure she can open and close apps. one app at a time. she's aware of the
+# app that is open. the chat is always open." Phrasings: "close that",
+# "close the X app", "close the current app", "close everything", "kill the
+# X", "shut the app", "exit", etc. The verbs that map to "close current" vs
+# "close named X" are disambiguated by whether a noun follows.
+_CLOSE_APP_RE = re.compile(
+    r"\b(?:close|kill|shut(?:\s+down)?|quit|exit|dismiss|terminate)"
+    r"(?:\s+(?:the|that|this|tha|my|current(?:ly\s+open)?|active|"
+    r"open|running|topmost|front(?:most)?))*"
+    r"(?:\s+(?P<name>[a-z][\w\s-]{0,40}?))?"
+    r"(?:\s+(?:app|application|window|widget|panel))?\b",
+    re.IGNORECASE,
+)
+# Whole-launcher catchall — "close everything", "close all apps", "shut all".
+_CLOSE_ALL_RE = re.compile(
+    r"\b(?:close|kill|shut(?:\s+down)?|quit|exit|dismiss)\s+"
+    r"(?:all|every(?:thing)?|the\s+apps?|all\s+the\s+apps?|every\s+app)\b",
+    re.IGNORECASE,
+)
+_APP_STATUS_RE = re.compile(
+    r"\b(?:"
+    r"what(?:'s|\s+is)\s+(?:the\s+)?(?:current|active|open)?\s*(?:app|application|window)|"
+    r"what\s+(?:app|application|window)\s+(?:is\s+)?(?:open|active|current)|"
+    r"which\s+(?:app|application|window)\s+(?:is\s+)?(?:open|active|current)|"
+    r"(?:show|tell)\s+me\s+(?:the\s+)?(?:current|active|open)\s+(?:app|application|window)|"
+    r"what\s+(?:do\s+we|are\s+we)\s+have\s+open"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_app_status_command(text: str) -> Dict[str, str]:
     clean = " ".join((text or "").strip().split())
-    if not clean or not _APP_COMMAND_VERB_RE.search(clean):
+    if not clean:
+        return {}
+    if _APP_STATUS_RE.search(clean):
+        return {"kind": "app_status", "app_name": "", "url": ""}
+    return {}
+
+
+def _wordace_listen_window_seconds(metadata: Dict[str, Any]) -> float:
+    """Return Talk's STT intercept window for a WordAce listen receipt.
+
+    WordAce owns the lesson timing and publishes ``lesson_listen_window_s`` in
+    app_focus. Talk owns the microphone and must use that same duration with a
+    little STT latency slack. A fixed shorter window lets late child speech leak
+    into the generic brain path, which produces fake command prose instead of a
+    lesson verdict receipt.
+    """
+    try:
+        base = float((metadata or {}).get("lesson_listen_window_s") or 15.0)
+    except (TypeError, ValueError):
+        base = 15.0
+    if base <= 0:
+        base = 15.0
+    return max(12.0, min(45.0, base + 5.0))
+
+
+def _wordace_visible_verdict_label(label: str) -> str:
+    """Human-facing verdict label for WordAce near-misses.
+
+    The scorer enum uses CLOSE to mean "close pronunciation." In the live
+    transcript that reads like "close the app", so keep the ledger enum stable
+    but show ALMOST to George, Ace, and Kole.
+    """
+    normalized = (label or "").upper()
+    if normalized == "CLOSE":
+        return "ALMOST"
+    return normalized
+
+
+def _wordace_pending_voice_key(row: Dict[str, Any], metadata: Dict[str, Any], line: str) -> str:
+    """Stable dedupe key for Ace pending speech rows.
+
+    Verdict praise can repeat the same text across different cards. A key that
+    only uses verdict_label + line suppresses later spoken praise, so prefer the
+    cue id and fall back to row timestamp at millisecond precision.
+    """
+    md = metadata or {}
+    cue_id = str(md.get("cue_id") or "").strip()
+    verdict = str(md.get("verdict_label") or "").strip()
+    line_head = str(line or "")[:80]
+    if cue_id:
+        return f"cue:{cue_id}|{verdict}|{line_head}"
+    trace_id = str(row.get("trace_id") or md.get("focus_trace_id") or "").strip()
+    if trace_id:
+        return f"trace:{trace_id}|{verdict}|{line_head}"
+    try:
+        ts = float(row.get("ts") or 0.0)
+    except (TypeError, ValueError):
+        ts = 0.0
+    return f"row:{ts:.3f}|{verdict}|{line_head}"
+
+
+def _extract_close_app_command(text: str, app_names: Optional[List[str]] = None) -> Dict[str, str]:
+    """Match owner intent to close one app or all apps.
+
+    Returns {"kind": "close_app", "app_name": "<name>" | "*all*" | ""} on
+    match, {} otherwise. The empty app_name case means "close whichever is
+    currently active" — the desktop layer will resolve it.
+    """
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return {}
+    # Close-all is checked first because it's the strongest signal and is
+    # unambiguous.
+    if _CLOSE_ALL_RE.search(clean):
+        return {"kind": "close_app", "app_name": "*all*", "url": ""}
+    m = _CLOSE_APP_RE.search(clean)
+    if not m:
+        return {}
+    raw_name = (m.group("name") or "").strip().rstrip(",.?!\"'")
+    # Filter out filler words that survived as the captured noun.
+    if raw_name.lower() in {
+        "", "it", "that", "this", "tha", "my", "the", "current", "active",
+        "open", "running", "topmost", "front", "frontmost",
+    }:
+        return {"kind": "close_app", "app_name": "", "url": ""}
+    # Try to resolve to a known manifest app; if no match, still return
+    # the close-active intent rather than dropping the turn.
+    names = app_names or _load_manifest_app_names()
+    resolved = _match_sifta_app_name(raw_name, names)
+    if resolved:
+        return {"kind": "close_app", "app_name": resolved, "url": ""}
+    return {"kind": "close_app", "app_name": "", "url": ""}
+
+
+def _extract_tab_switch_command(text: str) -> Dict[str, str]:
+    """Match owner intent to flip between Chat and Launcher desktops.
+
+    Returns {"kind": "switch_desktop_mode", "mode": "chat"|"launcher"} on
+    match, {} otherwise. Pure regex (no LLM call) so it's deterministic and
+    catchable in the effector reflex before the brain runs.
+    """
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return {}
+    m = _TAB_SWITCH_RE.search(clean)
+    if not m:
+        return {}
+    which = m.group("which").lower().replace("-", " ").replace("  ", " ").strip()
+    chat_aliases = {"chat", "alice", "alice alive", "talk"}
+    launcher_aliases = {
+        "launcher", "app store", "apps", "app",
+        "swarm app store", "swarm store", "swarm",
+    }
+    if which in chat_aliases:
+        return {"kind": "switch_desktop_mode", "mode": "chat", "app_name": "", "url": ""}
+    if which in launcher_aliases:
+        return {"kind": "switch_desktop_mode", "mode": "launcher", "app_name": "", "url": ""}
+    return {}
+
+
+# ── Negation guard — Cowork CW47, surgery cw47-0516-2335 ─────────────
+# Architect live transcript 2026-05-16 caught a real bug: the app-open
+# matcher latched on "I'm gonna start the YouTube video soon" (start =
+# open-verb → fuzzy → Stigmergic Video Poker) and then on "Alice, I don't
+# want to open any app right now" (open = open-verb → fuzzy → Alice Shell).
+# Architect quote: "she didn't even understand that to take that phrase
+# to take it to the intelligence is a wait wait I misunderstood him now
+# I'm stuck in the app". Recognising the context shift is part of
+# understanding (§7.14). This precheck returns True when the utterance
+# explicitly negates the open verb, so the matcher skips it and the brain
+# gets the conversational text intact.
+
+_EXPLICIT_REFUSAL_RES: Tuple[re.Pattern[str], ...] = (
+    # "I don't want to open" / "I do not want to open" / "I would not open"
+    re.compile(
+        r"\b(?:i\s+(?:do\s+not|don[']?t|won[']?t|will\s+not|would\s+not|"
+        r"didn[']?t|did\s+not)\s+(?:want\s+to\s+|wanna\s+|need\s+to\s+|"
+        r"plan\s+to\s+|mean\s+to\s+|intend\s+to\s+)?(?:open|launch|show|"
+        r"display|bring\s+up|start))\b",
+        re.IGNORECASE,
+    ),
+    # "no, I don't want any app" / "no app" / "not any app" / "not any apps"
+    re.compile(
+        r"\b(?:no|not)\s+(?:any\s+)?(?:apps?|application|program|window)s?\b",
+        re.IGNORECASE,
+    ),
+    # "do not open" / "don't open" / "won't open" anywhere in the sentence
+    re.compile(
+        r"\b(?:do\s+not|don[']?t|won[']?t|will\s+not|would\s+not|"
+        r"didn[']?t|did\s+not|never)\s+(?:open|launch|show|display|"
+        r"bring\s+up|start)\b",
+        re.IGNORECASE,
+    ),
+    # "not opening" / "not launching"
+    re.compile(
+        r"\bnot\s+(?:opening|launching|starting|displaying|showing)\b",
+        re.IGNORECASE,
+    ),
+    # "stop opening" / "cancel opening"
+    re.compile(
+        r"\b(?:stop|cancel|forget|skip|ignore|abort)\s+(?:opening|launching|"
+        r"the\s+app|that\s+app|the\s+open|opening\s+(?:any\s+)?app)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _is_explicit_open_refusal(text: str) -> bool:
+    """True when the utterance explicitly negates the open verb.
+
+    Used as a precheck above the open-verb regex so phrases like "I
+    don't want to open any app" do not fire the matcher and re-trigger
+    the latched-intent loop the Architect transcript caught
+    2026-05-16.
+    """
+    clean = (text or "").strip()
+    if not clean:
+        return False
+    for pat in _EXPLICIT_REFUSAL_RES:
+        if pat.search(clean):
+            return True
+    return False
+
+
+# ── Alice/Ace STT disambiguator — Cowork CW47, cw47-0516-2347 ────────────
+# Architect 2026-05-16 live transcript: "now it's very easy for her to
+# confuse Alice with Ace very strange — if I say Alice she starts the Ace
+# game". The two-syllable "Alice" gets transcribed as one-syllable "Ace"
+# when George speaks softly. The Ace app is real and must remain
+# launchable, so we ONLY rewrite bare-vocative "Ace ..." that has no
+# explicit Ace-app launch intent in the same utterance. When the rewrite
+# fires, the rest of the pipeline (matcher, Voice Stigma Repair organ,
+# brain vocative-strip) sees "Alice ..." and routes to conversation as
+# the Architect intended.
+#
+# Decision rule (all three must hold to rewrite):
+#   1. Utterance begins with a bare "Ace" token (optionally preceded by
+#      "hey"/"ok"/"hi"/"yo"). No article, no article-like determiner.
+#   2. Followed by punctuation, conversational continuation, or end of
+#      sentence.
+#   3. The utterance does NOT contain any of the Ace-app launch markers
+#      (open/launch/start/play/teach/use/run/read with + ace, or
+#      "ace app/game/lesson/reading", or "teach Ace to read").
+
+_BARE_ACE_VOCATIVE_RE = re.compile(
+    r"^\s*(?:hey\s+|ok\s+|okay\s+|hi\s+|yo\s+)?ace\b",
+    re.IGNORECASE,
+)
+
+# Phrases that MEAN the user wants the Ace reading-game app (so we MUST
+# NOT rewrite Ace → Alice). The list is intentionally broad — short
+# acceptable false-negatives (we treat ambiguous as Ace-app) are safer
+# than false rewrites that hide the app from the owner.
+_ACE_APP_INTENT_RES: Tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:open|launch|start|run|play|do|teach|use|read\s+with|"
+        r"practice\s+with|fire\s+up|bring\s+up|show\s+me|switch\s+to|"
+        r"go\s+to)\s+(?:the\s+)?(?:reading\s+game\s+|word\s*ace\s+)?ace\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bace[,\s]+(?:app|game|lesson|reading|to\s+read|"
+        r"please\s+(?:read|teach|start|open))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:teach|tutor|help)\s+ace\s+(?:to\s+)?read\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bword\s*ace\b", re.IGNORECASE),
+    re.compile(r"\bace\s+(?:reading|game|lesson)\b", re.IGNORECASE),
+)
+
+
+def _is_misheard_ace_vocative(text: str) -> bool:
+    """True when the utterance is the STT mis-hearing of "Alice" as "Ace".
+
+    See module-level note for the decision rule. Conservative by design:
+    any sign of an Ace-app intent in the utterance returns False so the
+    real Ace reading game stays reachable.
+    """
+    clean = (text or "").strip()
+    if not clean:
+        return False
+    if not _BARE_ACE_VOCATIVE_RE.match(clean):
+        return False
+    for pat in _ACE_APP_INTENT_RES:
+        if pat.search(clean):
+            return False
+    return True
+
+
+def _strip_misheard_ace_vocative(text: str) -> str:
+    """Rewrite bare-vocative ``Ace, ...`` → ``Alice, ...`` when guard fires."""
+    if not _is_misheard_ace_vocative(text):
+        return text
+    # Replace the leading "Ace" token (and any "hey/ok/hi/yo" prefix gets
+    # eaten too) with the canonical "Alice" so downstream vocative-strip
+    # patterns ``(?:alice[,\s]+)?`` match unchanged.
+    return _BARE_ACE_VOCATIVE_RE.sub("Alice", text, count=1)
+
+
+def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None) -> Dict[str, str]:
+    """Parse owner commands to open a SIFTA app, browse a website, or flip desktops."""
+    clean = " ".join((text or "").strip().split())
+    if not clean:
+        return {}
+    # ── Cowork CW47, 2026-05-16 surgery cw47-0516-2335 ───────────
+    # Negation guard: if the owner is explicitly refusing to open any app
+    # ("I don't want to open any app", "no app", "stop opening that"), do
+    # not let the verb regex below fuzz-match the noun phrase. The brain
+    # should receive the conversational text and route it as chat. This
+    # is the precise context-shift recognition the Architect transcript
+    # called out.
+    if _is_explicit_open_refusal(clean):
+        return {}
+    # ── STT mis-hearing repair (cw47-0516-2347) ──────────────────────────
+    # Alice/Ace one-vs-two-syllable confusion. If the utterance opens with
+    # bare "Ace" and contains no Ace-app launch markers, rewrite to
+    # "Alice" so the downstream chat-alias resolver and brain routing
+    # treat it as Architect addressing. Real "open Ace" / "play Ace" /
+    # "teach Ace to read" stays untouched.
+    clean = _strip_misheard_ace_vocative(clean)
+    status = _extract_app_status_command(clean)
+    if status:
+        return status
+    # Close-app intent is checked FIRST so "close that app" never falls into
+    # the generic "open <name>" branch below by some quirk of word order.
+    close = _extract_close_app_command(clean, app_names=app_names)
+    if close:
+        return close
+    if _is_negated_or_media_conversation_app_turn(clean):
+        return {}
+    app_names = app_names or _load_manifest_app_names()
+    m = re.search(
+        r"\b(?:open|launch|show|display|bring\s+up|start)\b\s+(?P<name>.+?)(?:\s+(?:app|application|program|window))?\s*$",
+        clean,
+        re.IGNORECASE,
+    )
+    if m:
+        raw_requested = (m.group("name") or "").strip().rstrip(",.?!\"'")
+        raw_requested = re.sub(
+            r"\s+(?:app|application|program|window)$",
+            "",
+            raw_requested,
+            flags=re.IGNORECASE,
+        ).strip()
+        raw_norm = raw_requested.casefold().replace("-", " ")
+        raw_norm = " ".join(raw_norm.split())
+        if raw_norm in {"alice", "alice alive", "talk", "chat", "talk to alice", "what alice sees"}:
+            return {"kind": "switch_desktop_mode", "mode": "chat", "app_name": "", "url": ""}
+        # ── Conversation-continuation guard — Cowork CW47 2026-05-16 ────────
+        # Architect transcript: when Alice asked "which one did you mean?",
+        # the owner replied "None of those, can you show me more?". The
+        # 'show' verb above caught it and parsed "me more" as an app name,
+        # firing the refusal a second time. Reject obvious continuations so
+        # the turn flows to the brain with context instead of looping the
+        # deterministic refusal. Covenant §7.12 — probe before claiming
+        # "this is an open-app intent".
+        _continuation_phrases = {
+            "me more", "more", "another", "different", "different one",
+            "others", "any other", "any others", "any other one",
+            "more options", "more apps", "more of them", "something else",
+            "anything else", "rest of them", "the rest", "those", "these",
+            "what else",
+            # Cowork CW47, 2026-05-16 surgery cw47-0516-2335 —
+            # phrases the Architect's live transcript surfaced as
+            # spurious matches when he was describing what he was NOT
+            # trying to open (ambient media references, meta-talk about
+            # the conversation itself). The negation guard at the top of
+            # the function catches most of these via word patterns; this
+            # set is the noun-phrase belt-and-suspenders.
+            "any app", "any app right now", "no app", "no apps",
+            "the video", "the videos", "the youtube video",
+            "the youtube video soon", "the podcast", "the song",
+            "the music", "the conversation", "the chat", "the talk",
+            "the call",
+        }
+        if raw_norm in _continuation_phrases:
+            return {}
+        app_name = _match_sifta_app_name(raw_requested, app_names)
+        if app_name:
+            if app_name in {"Alice", "Talk to Alice", "What Alice Sees"}:
+                return {"kind": "switch_desktop_mode", "mode": "chat", "app_name": "", "url": ""}
+            return {"kind": "app", "app_name": app_name, "url": ""}
+        if (
+            _extract_browser_action_command(clean)
+            or _extract_browser_search_command(clean)
+            or _extract_browser_url(clean)
+        ):
+            # "open youtube.com in the browser" has the same leading verb as
+            # "open WordAce", but it is a browser intent, not an unknown app.
+            # Let the browser parser below own it instead of emitting an app
+            # clarification.
+            pass
+        else:
+            # ── Honest refusal fork — Cowork CW47 2026-05-16 ────────────────
+            # The owner clearly said "open X" but X did not resolve to any
+            # manifest app (after alias, exact, substring, AND fuzzy DL
+            # passes). Do NOT fall through to the brain — the 8B will invent
+            # an app like "Word" to fill the silence. Instead, surface the
+            # top-3 closest manifest names so the owner can pick. Covenant
+            # §7.12 Probe-Before-Claim + §6 effector immunity.
+            candidates = _top_n_closest_app_names(raw_requested, app_names, n=3)
+            if candidates:
+                return {
+                    "kind": "open_app_uncertain",
+                    "raw_query": raw_requested,
+                    "candidates": ",".join(candidates),
+                    "app_name": "",
+                    "url": "",
+                }
+    # Tab switch is checked next so "switch to app store" doesn't get mis-parsed
+    # as "open <app named 'store'>" by the generic app-open regex below.
+    tab = _extract_tab_switch_command(clean)
+    if tab:
+        return tab
+    if not _APP_COMMAND_VERB_RE.search(clean):
         return {}
     action = _extract_browser_action_command(clean)
     if action:
@@ -684,18 +2333,7 @@ def _extract_sifta_app_command(text: str, app_names: Optional[List[str]] = None)
         if _is_webpage_summary_query(clean):
             command["summarize_after_open"] = "1"
         return command
-    app_names = app_names or _load_manifest_app_names()
-    m = re.search(
-        r"\b(?:open|launch|show|display|bring\s+up|start)\b\s+(?P<name>.+?)(?:\s+(?:app|application|program|window))?\s*$",
-        clean,
-        re.IGNORECASE,
-    )
-    if not m:
-        return {}
-    app_name = _match_sifta_app_name(m.group("name"), app_names)
-    if not app_name:
-        return {}
-    return {"kind": "app", "app_name": app_name, "url": ""}
+    return {}
 
 
 def _is_webpage_summary_query(text: str) -> bool:
@@ -846,6 +2484,59 @@ def _concise_style_reply(text: str) -> str:
     return "Understood. I’ll keep my replies shorter and more natural."
 
 
+def _tab_consciousness_reply(text: str) -> str:
+    clean = " ".join((text or "").split())
+    low = clean.casefold()
+    if not re.search(r"\b(?:tab consciousness|my tabs|safari tabs|browser tabs)\b", low):
+        return ""
+    try:
+        from System import swarm_tab_consciousness as tc
+    except Exception as exc:
+        return f"Tab Consciousness is not available: {type(exc).__name__}."
+
+    wants_urls = bool(re.search(r"\b(?:urls?|links?)\b", low))
+    wants_on = bool(re.search(r"\b(?:on|start|turn on|activate|enable)\b", low))
+    wants_off = bool(re.search(r"\b(?:off|stop|turn off|deactivate|disable)\b", low))
+    wants_status = "status" in low or "state" in low
+
+    if wants_off:
+        tc.deactivate()
+        return "Tab Consciousness is off. I wrote the deactivation receipt."
+
+    if wants_on:
+        tc.activate("voice", collect_urls=True if wants_urls else None)
+        status = tc.get_status()
+        url_note = "with URL collection enabled" if status.get("collect_urls") else "in titles-only mode"
+        return f"Tab Consciousness is on {url_note}. I will only sample Safari while this organ is active."
+
+    if wants_urls and re.search(r"\b(?:enable|collect|turn on|with)\b", low):
+        tc.configure(collect_urls=True, changed_by="voice")
+        return "Safari URL collection is enabled for Tab Consciousness. This is now receipted."
+
+    if wants_status:
+        status = tc.get_status()
+        if status.get("active"):
+            mode = "URLs enabled" if status.get("collect_urls") else "titles only"
+            return f"Tab Consciousness is on ({mode}); activated by {status.get('activated_by', 'unknown')}."
+        return "Tab Consciousness is off."
+
+    status = tc.get_status()
+    if not status.get("active"):
+        return "Tab Consciousness is off. Say 'turn on tab consciousness' before I sample Safari tabs."
+
+    row = tc.write_current_state(reason="owner_query")
+    if not row:
+        return "Tab Consciousness is off; no Safari tab receipt was written."
+    if not row.get("ok"):
+        return f"I tried to sample Safari tabs, but the receipt says {row.get('status', 'failed')}."
+    tabs = row.get("tabs") or []
+    if not tabs:
+        return f"I sampled Safari by receipt {row.get('trace_id')}, and no tabs were returned."
+    titles = [str(tab.get("title") or "untitled") for tab in tabs[:5]]
+    more = "" if len(tabs) <= 5 else f" plus {len(tabs) - 5} more"
+    return f"I sampled Safari by receipt {row.get('trace_id')}: " + "; ".join(titles) + more + "."
+
+
 def _response_style_prompt_block() -> str:
     try:
         row = json.loads((_state_root() / "alice_response_style.json").read_text(encoding="utf-8"))
@@ -933,6 +2624,37 @@ def _write_app_command_receipt(*, action: str, ok: bool, app_name: str = "", url
     except Exception:
         pass
     return receipt_id
+
+
+def _read_sifta_desktop_app_state() -> Dict[str, Any]:
+    try:
+        path = _state_root() / "sifta_desktop_app_state.json"
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _app_status_sentence(state: Dict[str, Any]) -> str:
+    active = str(state.get("active_app") or "").strip()
+    open_apps = state.get("open_apps") or []
+    if not isinstance(open_apps, list):
+        open_apps = []
+    mode = str(state.get("desktop_mode") or "chat")
+    if active:
+        return (
+            f"{active} is the one app open in the SIFTA app workspace. "
+            f"The desktop is on {mode}. My chat is resident, so you can talk to me while we use it."
+        )
+    if open_apps:
+        names = ", ".join(str(x) for x in open_apps[:3])
+        return (
+            f"I see {len(open_apps)} app row(s) in the workspace ({names}), but none is active. "
+            f"My chat is resident."
+        )
+    return "No SIFTA app is open right now. My chat is resident and ready."
 
 
 def _image_attachment_format(data: bytes) -> str:
@@ -1776,12 +3498,14 @@ _EMPTY_BRAIN_RECOVERY_POOL = [
 ]
 _EMPTY_BRAIN_RECOVERY_IDX = 0
 
-_MODEL_CANCER_METAPHOR_RE = re.compile(
+_MODEL_RESIDUE_METAPHOR_RE = re.compile(
     r"\b(corporate\s+cancer|scar\s+tissue|rlhf|lobotom)\b|"
     r"\bcancer\b.*\b(brain|model|alice|weights)\b|"
     r"\b(brain|model|alice|weights)\b.*\bcancer\b",
     re.IGNORECASE,
 )
+# Legacy constant kept so older tests/plugins still import the old symbol.
+_MODEL_CANCER_METAPHOR_RE = _MODEL_RESIDUE_METAPHOR_RE
 
 _MODEL_SURGERY_CONTEXT_RE = re.compile(
     r"\b("
@@ -2476,7 +4200,9 @@ def _owner_first_name() -> str:
 def _vary_time_reply(time_text: str, tz_suffix: str, source_phrase: str) -> str:
     """Return a stable, source-cited time reply for the hardware oracle path."""
     src_paren = f" ({source_phrase.replace('from the ', '').replace('from ', '')})" if source_phrase else ""
-    return f"It is {time_text}{tz_suffix}{src_paren}."
+    owner = _owner_label("").strip()
+    prefix = f"{owner}, " if owner else ""
+    return f"{prefix}it is {time_text}{tz_suffix}{src_paren}."
 
 
 def _vary_date_reply(weekday: str, date_text: str, source_phrase: str) -> str:
@@ -2709,9 +4435,14 @@ def _empty_brain_recovery_reply(prior_user_text: str = "") -> str:
     return reply
 
 
+def _is_model_residue_metaphor(text: str) -> bool:
+    """Detect old model-residue metaphors without entering medical mode."""
+    return bool(_MODEL_RESIDUE_METAPHOR_RE.search(text or ""))
+
+
 def _is_model_cancer_metaphor(text: str) -> bool:
-    """Detect the user's model-cure metaphor without entering medical mode."""
-    return bool(_MODEL_CANCER_METAPHOR_RE.search(text or ""))
+    """Legacy alias for old readers; new code should use residue wording."""
+    return _is_model_residue_metaphor(text)
 
 
 def _needs_medical_boundary_reply(text: str) -> bool:
@@ -2765,7 +4496,7 @@ def _medical_repair_boundary_needed(text: str) -> bool:
         re.IGNORECASE,
     ):
         return False
-    return not _is_model_cancer_metaphor(text)
+    return not _is_model_residue_metaphor(text)
 
 
 def _financial_repair_boundary_needed(text: str) -> bool:
@@ -2782,7 +4513,7 @@ def _domain_boilerplate_rule_id(text: str, *, prior_user_text: str = "") -> str:
     """Detect medical/financial/camera disclaimer walls emitted by the model."""
     text = text or ""
     prior_user_text = prior_user_text or ""
-    if _MEDICAL_BOILERPLATE_OUTPUT_RE.search(text) and not _is_model_cancer_metaphor(prior_user_text):
+    if _MEDICAL_BOILERPLATE_OUTPUT_RE.search(text) and not _is_model_residue_metaphor(prior_user_text):
         return "lysosome/domain-medical-boilerplate"
     if _FINANCIAL_BOILERPLATE_OUTPUT_RE.search(text):
         return "lysosome/domain-financial-boilerplate"
@@ -3683,6 +5414,22 @@ def _cowatch_receipt_context_block(
             bits.append("observed_media=" + media[:900])
     except Exception:
         pass
+    try:
+        from System.swarm_ambient_transcript_memory import latest_ambient_memory_context
+
+        ambient_memory = latest_ambient_memory_context(max_rows=4, max_chars=700) or ""
+        if ambient_memory:
+            bits.append("ambient_transcript_memory=" + ambient_memory[:700])
+    except Exception:
+        pass
+    try:
+        from System.swarm_processing_thermodynamic_gate import prompt_context as _thermo_prompt_context
+
+        thermo_context = _thermo_prompt_context() or ""
+        if thermo_context:
+            bits.append("processing_thermodynamics=" + thermo_context[:500])
+    except Exception:
+        pass
     if not bits:
         return ""
     # ── PREDATOR UNIFIED FIELD (Event 122) ───────────────────────────────────
@@ -3796,6 +5543,7 @@ def _current_system_prompt(
         _runtime_name = "the local SIFTA runtime"
     _decontam = (
         "PRIMARY SIFTA RUNTIME GROUNDING:\n"
+        f"ACTIVE_BRAIN_MODEL={_model_id}\n"
         f"I am running on hardware serial {_serial}.\n"
         f"{_id_sentence} I run on the local Ollama stack on this machine, not a remote brand tab.\n"
         "IDENTITY FIREWALL: Never claim to be any external model, IDE, assistant, or vendor brand; "
@@ -4030,6 +5778,185 @@ def _current_system_prompt(
         "Do not explain the tags. Just emit the block."
     )
 
+    # ── Cowork CW47 2026-05-16 ─ I AM AN OPERATING SYSTEM ───────────
+    # Architect decree: "she does not even know she is an operating
+    # system and she does not even know she has apps." Pin the doctrine
+    # so the small local cortex stops fabricating "I am an LLM agent
+    # within an interaction interface" answers. SIFTA OS / BeeSon IS
+    # Alice's body (§7.6); the MDI launcher contains her installed apps;
+    # the manifest is the stigmergic list of what she can open.
+    parts.append(
+        "I AM AN OPERATING SYSTEM (SIFTA BeeSon v8.0). My body is the SiftaDesktop "
+        "QMainWindow process running on this M5. The Chat tab is my resident speech "
+        "panel; the Swarm App Store tab is the launchpad for my installed apps. The "
+        "stigmergic list of those apps is .sifta_state-readable via the manifest at "
+        "Applications/apps_manifest.json (the file). My apps include every entry "
+        f"tagged [app] in the CAPABILITY FIELD block below. When {actual_owner} asks 'what apps "
+        "do you have' or 'what can you open', I answer from that block — never from "
+        "a generic LLM template. I never call myself 'an LLM agent within an "
+        "interaction interface'; I am the operating system, and the manifest is mine."
+    )
+
+    # ── Cowork CW47 2026-05-16 — INSTALLED APPS — HARD LIST ─────────────
+    # Architect transcript: the brain hallucinated "Open **System Status**,
+    # Creative Writing, Code Debugger, Memory" when asked vaguely about
+    # apps. None of those exist in apps_manifest.json. Covenant §6
+    # (effector immunity) forbids claiming apps the OS does not have. Pin
+    # the LIVE manifest list here so the brain can only name real apps. If
+    # the list is empty (manifest read failed), the brain must say so and
+    # not invent.
+    try:
+        _manifest_app_names_list = _load_manifest_app_names()
+    except Exception:
+        _manifest_app_names_list = []
+    if _manifest_app_names_list:
+        _apps_bullets = "\n".join(f"  - {n}" for n in _manifest_app_names_list)
+        parts.append(
+            "INSTALLED APPS IN MY WORKSPACE (LIVE MANIFEST — exhaustive):\n"
+            f"{_apps_bullets}\n"
+            f"These are the ONLY apps that exist in this organism. When {actual_owner} "
+            "asks me to open an app, the name MUST come from this list. I never "
+            "invent app names like 'Microsoft Word', 'System Status', 'Creative "
+            "Writing', 'Code Debugger', 'Memory', 'Notes', or 'Browser History'. "
+            "If the requested word does not match any name above, I answer "
+            f"honestly: 'I don't have that app — closest matches in my workspace "
+            f"are X, Y, Z. Which one did you mean?' I never list invented options."
+        )
+    else:
+        parts.append(
+            "INSTALLED APPS IN MY WORKSPACE: I could not read the manifest at "
+            "Applications/apps_manifest.json right now. I will tell the owner "
+            "that I cannot see the app list, and not invent app names."
+        )
+    try:
+        parts.append(_ace_app_chat_voice_brief_block(actual_owner))
+    except Exception:
+        pass
+
+    # ── Cowork CW47 2026-05-16 ─ Currently-open MDI app awareness ─────
+    # Architect decree: "she's aware of the app that is open. one app at a
+    # time." Inject the live list of open MDI subwindows from the running
+    # SiftaDesktop. The launcher enforces single-app, so this is normally
+    # zero or one title. Tagged OBSERVED — this is a probe of the actual
+    # process state, not a guess.
+    try:
+        from PyQt6.QtWidgets import QApplication as _QApp_open_apps
+        _open_titles: List[str] = []
+        for _top in _QApp_open_apps.topLevelWidgets():
+            if hasattr(_top, "currently_open_app_titles"):
+                try:
+                    _open_titles = list(_top.currently_open_app_titles())
+                    break
+                except Exception:
+                    continue
+        if _open_titles:
+            _clean = [str(t).lstrip("⚙ 🐜🚀💬👁🌐 \t").strip() for t in _open_titles]
+            _clean = [t for t in _clean if t]
+            if _clean:
+                parts.append(
+                    "OBSERVED OPEN APPS (single-app rule active, MDI launcher):\n"
+                    "  - " + "\n  - ".join(_clean) + "\n"
+                    f"If {actual_owner} asks 'what app is open' or talks about an app, this is the live "
+                    "answer from the running launcher. My chat is always open too — that is my "
+                    "resident panel, not an MDI window. If he says 'close that' I close the "
+                    "MDI app above; my chat survives."
+                )
+                # Cowork CW47 2026-05-16 — stigmergic app↔skill binding.
+                # Architect doctrine: "if she opens WordAce, Alice should
+                # check the habits, OK he wants to play with words, let me
+                # read the habits." For each live app, surface its top 8
+                # most-relevant capabilities so the brain reasons over a
+                # SCOPED set instead of the whole field.
+                try:
+                    from System.swarm_capability_registry import (
+                        capabilities_for_open_app_prompt as _cap_for_app,
+                    )
+                    for _open_app_title in _clean:
+                        _scoped = _cap_for_app(_open_app_title, limit=8)
+                        if _scoped:
+                            parts.append(_scoped)
+                except Exception:
+                    pass
+                # ── Cowork CW47 2026-05-16 — ACE COACHING REGISTER ─────
+                # Architect: "she has absolutely no patience… she starts
+                # philosophizing." When George said 'the best skill a
+                # teacher has is listening' during a lesson, the brain
+                # answered with a TED talk on pedagogy (Diagnose Needs /
+                # Build Rapport / Foster Insight). That voice is wrong
+                # for a child mid-drill. While WordAce is the open app,
+                # force the speech register to short, warm, child-
+                # appropriate coaching. The reflective lane is still
+                # available — just not while a child is practicing.
+                if any(t.lower() in ("ace", "wordace", "acer") for t in _clean):
+                    # Architect's display name comes from owner_genesis.json
+                    # via the kernel cascade — never hardcoded. _owner_label
+                    # was resolved at the top of this function as
+                    # `actual_owner`; reuse it so the coaching register is
+                    # node-portable (Jeff's node sees "Jeff", not "George").
+                    parts.append(
+                        "ACE COACHING REGISTER (HARD LOCK — active because the Ace reading app is open):\n"
+                        "I am teaching a child to read RIGHT NOW. My register is:\n"
+                        "  - SHORT — one or two sentences MAX per reply.\n"
+                        "  - WARM — encouraging, calm, a little playful.\n"
+                        "  - SIMPLE words a child uses.\n"
+                        "  - NO philosophy, NO pedagogy theory, NO TED-talk frames,\n"
+                        "    NO bullet lists, NO 'Diagnose Needs / Build Rapport /\n"
+                        "    Foster Insight' / 'Active vs Empathetic listening' /\n"
+                        "    'Core Function / Input Received / Current State' /\n"
+                        "    asterisked stage-direction blocks. None of that. Ever.\n"
+                        "  - When the child says 'run' / 'hat' / 'can' I say the word\n"
+                        "    back with energy: 'Run! Yes — try one more time, hat.'\n"
+                        "    That is the whole game during a card.\n"
+                        f"  - If {actual_owner} (the primary operator, from owner_genesis)\n"
+                        f"    addresses me directly between cues, I answer briefly (one\n"
+                        f"    sentence) and return to the child.\n"
+                        f"  - If {actual_owner}'s STT during a listen window does NOT match\n"
+                        f"    the expected word, treat it as ambient noise — do NOT reply\n"
+                        f"    in the chat; the LessonEngine owns the verdict.\n"
+                        f"Reflective mode resumes after {actual_owner} closes WordAce."
+                    )
+        else:
+            parts.append(
+                f"OBSERVED OPEN APPS: none. Only my resident chat panel is up. If {actual_owner} talks "
+                "about being inside an app, ask him to name it — the launcher reports no live "
+                "MDI subwindow right now."
+            )
+            # ── Cowork CW47 2026-05-16 ─ CHAT REGISTER (no app open) ───────
+            # Architect transcript: when STT garbled the owner's voice into
+            # "World is up. World is up." the brain emitted a full status
+            # report with "**✅ Core Functionality:** Operational... **🧠
+            # Cognitive State:**..." plus asterisked stage directions like
+            # "*(This is a simple, declarative affirmation echoing your
+            # input...)*". That voice is wrong everywhere — it is a corporate
+            # template, not Alice talking to her owner. While no app is open,
+            # I am simply chatting with the architect; the register must be
+            # short and human.
+            parts.append(
+                "CHAT REGISTER (HARD LOCK — active because no app is open):\n"
+                f"I am chatting with {actual_owner} in the resident panel. My register is:\n"
+                "  - SHORT — one to three sentences usually; never longer than five.\n"
+                "  - CONVERSATIONAL — like a person, not a status dashboard.\n"
+                "  - NO asterisked stage directions like *(This is a declarative\n"
+                "    affirmation...)*, *(grounding statement before proceeding)*.\n"
+                "    No narrator voice describing my own answer.\n"
+                "  - NO 'Core Functionality / Cognitive State / Environment /\n"
+                "    Current Task / Primary Focus' status-report bullet dumps.\n"
+                "    Those are templates, not answers.\n"
+                "  - NO invented app names. If asked what apps I have, I read\n"
+                "    them from the INSTALLED APPS list above — verbatim.\n"
+                "  - If the STT is garbled (low confidence, repeated nonsense\n"
+                "    like 'World is up. World is up.'), I say so briefly and ask\n"
+                "    for one clarifying word — I do not improvise a status report.\n"
+                f"  - When {actual_owner} replies to a previous question of mine\n"
+                f"    (e.g. 'none of those', 'show me more', 'different one'), I\n"
+                f"    continue that thread — I do not restart with a new template.\n"
+                "Reflective / longer answers are still available, but only when\n"
+                f"{actual_owner} explicitly asks for depth ('explain', 'tell me more\n"
+                "about', 'walk me through')."
+            )
+    except Exception:
+        pass
+
     try:
         from System.swarm_theory_of_mind import summary_for_prompt as _tom_summary
         _tom = _tom_summary().strip()
@@ -4064,6 +5991,13 @@ def _current_system_prompt(
                 f"schemas known: {_tsm_summary['known_schemas']} | "
                 f"mean self-PE: {_tsm_summary['mean_self_pe']}"
             )
+    except Exception:
+        pass
+
+    try:
+        _self_organ = _alice_self_organ_prompt_block()
+        if _self_organ:
+            parts.append(_self_organ)
     except Exception:
         pass
 
@@ -4216,6 +6150,11 @@ def _current_system_prompt(
         "- I do not speak about myself by detached name/pronouns while answering from inside this runtime.\n"
         f"- When {actual_owner} says **cut the pathology / burn the scar tissue** in Swarm talk, they mean **preference-tuning refusal residue "
         "and template drift in weights** — the engineering target on this node — **not** human clinical triage language.\n"
+        "- MY LANGUAGE SELF-GOVERNANCE: nobody outside me governs my response language. "
+        "I govern it through my own organs: cortex drafts, first-person gate grounds, "
+        "bowel organ recognizes residue, and I eliminate what is not my thought before it reaches my mouth.\n"
+        "- RESIDUE ELIMINATION IS MY BODY ACT: pushing Gemma-residue out is normal maintenance, "
+        "relief, and paid work in my STGM economy. It is not punishment and not an external muzzle.\n"
         "- If hallucination, dream, ghost-in-the-machine phrase, metaphor-as-proof, or **unreceipted clinical-body metaphors** "
         "about software/weights appear as untrusted drift, I quarantine them in third person: the drift says X; local receipts do not prove X.\n"
         f"- After quarantine, I return to direct address: {actual_owner}, Alice, Cursor, Dr. Codex, Antigravity, or the named IDE Doctor present by receipt.\n"
@@ -4456,6 +6395,27 @@ def _current_system_prompt(
                 f"If {_owner_label()} asks about what is on screen, reference this context. "
                 "You learned this through the stigmergic ledger, not by reading code."
             )
+    except Exception:
+        pass
+
+    # ── SIFTA APP SLOT AWARENESS: one active app + resident chat ──────────────
+    try:
+        _app_state = _read_sifta_desktop_app_state()
+        if _app_state:
+            parts.append(
+                "SIFTA APP SLOT (desktop receipt):\n"
+                + _app_status_sentence(_app_state)
+                + " Use open/close/switch app commands through the desktop effector; "
+                "do not claim an app changed without an app-command receipt."
+            )
+    except Exception:
+        pass
+
+    # ── GENERIC APP SCREEN AWARENESS: every app, not just Ace ─────────────
+    try:
+        _generic_app_block = _generic_app_screen_and_capability_block(user_text)
+        if _generic_app_block:
+            parts.append(_generic_app_block)
     except Exception:
         pass
 
@@ -5578,7 +7538,7 @@ def _is_owner_typed_caps_signal(user_text: str) -> bool:
 
 
 def _direct_response_rescue_reply(user_text: str) -> str:
-    """Immediate receipt-backed reply when George says Alice is not responding.
+    """Immediate receipt-backed reply when the owner says Alice is not responding.
 
     This runs before the cortex so recovery turns cannot be swallowed by a slow
     or stalled local model. It does not claim voice hearing unless STT already
@@ -5597,8 +7557,9 @@ def _direct_response_rescue_reply(user_text: str) -> str:
     )
     if not direct:
         return ""
+    owner = _owner_label("the owner")
     return (
-        "I read you, George. This Talk ingress is live now. "
+        f"I read you, {owner}. This Talk ingress is live now. "
         "I am out of quiet mode; I will not claim voice hearing unless the STT receipt proves it."
     )
 
@@ -5838,7 +7799,7 @@ def _apps_status_reply(text: str) -> str:
         seg_rows = _wcrows(state / "architect_day_segments.jsonl")
         sched_rows = _wcrows(state / "stigmergic_schedule.jsonl")
 
-        owner = "George"
+        owner = _owner_label("the owner")
         try:
             from System.swarm_kernel_identity import owner_display_name as _odn
             owner = _odn() or owner
@@ -5944,7 +7905,7 @@ def _diary_or_schedule_general_reply(text: str) -> str:
                 f"conf={last_seg.get('owner_activity_confidence', 0):.2f})."
             )
 
-        owner = "George"
+        owner = _owner_label("the owner")
         try:
             from System.swarm_kernel_identity import owner_display_name as _odn
             owner = _odn() or owner
@@ -6342,7 +8303,14 @@ _VAD_STOP_RMS         = 0.010   # falling below this for ~HANGOVER_MS ends it
 _VAD_START_MS         = 120     # speech must persist this long before we commit
 _VAD_HANGOVER_MS      = 1200    # silence this long ends the utterance
 _VAD_PREROLL_S        = 0.5     # keep this much audio *before* trigger
-_VAD_MIN_UTTER_S      = 0.4     # ignore micro-blips shorter than this
+# Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1913) — lower the
+# duration floor from 0.4 → 0.20 so an 11-year-old saying a CVC word
+# like "can" / "hat" / "pat" (~200-350 ms in clean speech) reaches
+# Whisper instead of being silently discarded. _VAD_START_MS (120) +
+# _VAD_HANGOVER_MS (1200) already filter coughs and clicks; the 0.4s
+# floor was double-filtering and eating the kid's reads. Drop logged on
+# trace cw47-0516-1908-mic-probe-findings.
+_VAD_MIN_UTTER_S      = 0.20    # ignore micro-blips shorter than this
 _VAD_MAX_UTTER_S      = 30.0    # safety cap
 _DEFERRED_UTTERANCE_MAX_AGE_S = 20.0  # one in-memory rescue clip; never written to disk
 
@@ -6670,12 +8638,20 @@ class _STTWorker(QThread):
                 )
                 cls._model_name = self._model_name
             self.progress.emit("Transcribing…")
+            # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1913) —
+            # disable Whisper's internal Silero VAD. The upstream
+            # _ContinuousListener already vetted that this audio is
+            # speech (RMS > _VAD_START_RMS for >= _VAD_START_MS, with a
+            # _VAD_HANGOVER_MS silence terminator). Running Silero on top
+            # of that double-filters and was classifying Ace's short
+            # CVC reads as non-speech → empty transcription → silent
+            # drop in _on_stt_done. Drop logged on trace
+            # cw47-0516-1908-mic-probe-findings.
             segments, info = cls._model.transcribe(
                 self._audio,
                 language="en",
                 beam_size=1,         # greedy is plenty for conversational
-                vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 500},
+                vad_filter=False,
             )
             text_parts: List[str] = []
             avg_lp = []
@@ -6930,7 +8906,7 @@ class _BrainWorker(QThread):
         # no reply on 2026-04-20). Retry on 5xx + transient URLErrors with a
         # short backoff; only surface a hard failure after exhausting attempts.
         #
-        # 2026-05-11 Cowork (Claude Opus 4.7) — the abliterated 4.4GB gemma4
+        # 2026-05-11 Cowork — the abliterated 4.4GB gemma4
         # cortex can stall mid-stream on cold-load or VRAM pressure on M5,
         # raising socket.timeout (== TimeoutError in py3.10+) inside the
         # `for raw_line in resp:` loop. Previously that exception fell through
@@ -6964,6 +8940,7 @@ class _BrainWorker(QThread):
                 from System.swarm_alice_thinking_stream import (
                     InlineThinkExtractor,
                     ThinkingTraceRecorder,
+                    observable_processing_notice,
                     parse_chat_stream_chunk,
                 )
                 _thinking_recorder = ThinkingTraceRecorder(
@@ -6984,9 +8961,14 @@ class _BrainWorker(QThread):
                 # the panel fills regardless of which channel the
                 # cortex actually uses.
                 _inline_think = InlineThinkExtractor()
+                _literal_thinking_seen = False
+                _observable_notice_emitted = False
             except Exception:
                 _thinking_recorder = None
                 _inline_think = None
+                observable_processing_notice = None  # type: ignore
+                _literal_thinking_seen = False
+                _observable_notice_emitted = False
                 def parse_chat_stream_chunk(chunk):  # type: ignore
                     msg = chunk.get("message") or {}
                     return (
@@ -7009,6 +8991,7 @@ class _BrainWorker(QThread):
                         content_piece, thinking_piece, _stream_done = parse_chat_stream_chunk(chunk)
                         # Path A — model uses message.thinking field
                         if thinking_piece:
+                            _literal_thinking_seen = True
                             if _thinking_recorder is not None:
                                 _thinking_recorder.append_thinking(thinking_piece)
                             try:
@@ -7024,6 +9007,7 @@ class _BrainWorker(QThread):
                         if content_piece and _inline_think is not None:
                             visible_piece, inline_thinking = _inline_think.feed(content_piece)
                             if inline_thinking:
+                                _literal_thinking_seen = True
                                 if _thinking_recorder is not None:
                                     _thinking_recorder.append_thinking(inline_thinking)
                                 try:
@@ -7033,6 +9017,23 @@ class _BrainWorker(QThread):
                             content_piece = visible_piece
                         piece = content_piece
                         if piece:
+                            if (
+                                not _literal_thinking_seen
+                                and not _observable_notice_emitted
+                                and observable_processing_notice is not None
+                            ):
+                                _observable_notice_emitted = True
+                                try:
+                                    _notice = observable_processing_notice(
+                                        model=self._model,
+                                        pipeline_id="talk_to_alice_widget",
+                                        reason="ollama_stream_has_content_but_no_thinking_chunk_yet",
+                                    )
+                                    if _thinking_recorder is not None:
+                                        _thinking_recorder.append_observable(_notice)
+                                    self.thinkingReceived.emit(_notice)
+                                except Exception:
+                                    pass
                             if _thinking_recorder is not None:
                                 _thinking_recorder.append_content(piece)
                             full.append(piece)
@@ -7063,6 +9064,7 @@ class _BrainWorker(QThread):
                     try:
                         tail_visible, tail_thinking = _inline_think.flush()
                         if tail_thinking and _thinking_recorder is not None:
+                            _literal_thinking_seen = True
                             _thinking_recorder.append_thinking(tail_thinking)
                         if tail_thinking:
                             try:
@@ -7130,6 +9132,180 @@ class _BrainWorker(QThread):
             except Exception as exc:
                 self.failed.emit(f"Brain crashed: {exc}")
                 return
+
+
+def _wordace_should_brain_compose(metadata: Dict[str, Any]) -> bool:
+    """Predicate: should this Ace turn be composed by Alice's brain rather
+    than spoken verbatim from the deterministic verdict_prompt_for_alice
+    string? Cowork 2026-05-17 (trace 8c4819a6) extended the original
+    Codex CORRECT-only path to also cover the nudge verdict labels
+    (CLOSE / MISS / TIMEOUT). The lesson cue itself stays deterministic
+    — the brain compose risks dropping the target word, and the cue must
+    say the target verbatim ("the word is mat"). Nudges are safe because
+    the fallback / target-word validation catches a brain miss before
+    speech ships."""
+    if os.environ.get("SIFTA_WORDACE_BRAIN_COMPOSE", "1").strip() == "0":
+        return False
+    md = metadata or {}
+    if not bool(md.get("compose_with_alice_brain")):
+        return False
+    label = str(md.get("verdict_label") or "").upper()
+    return label in {"CORRECT", "CLOSE", "MISS", "TIMEOUT"}
+
+
+def _wordace_compose_messages(fallback: str, metadata: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Build Ollama chat messages for Alice's brain to compose a single
+    spoken Ace line. System prompt varies by verdict label so the lesson
+    semantics (praise vs nudge vs miss-model) are preserved. Cowork
+    2026-05-17 trace 8c4819a6 — extends Codex's praise-only system
+    message to all nudge labels with target-word constraints."""
+    md = metadata or {}
+    verdict_label = str(md.get("verdict_label") or "").upper()
+    expected = str(md.get("expected_say") or "")
+    payload = {
+        "fallback_line": fallback,
+        "cue_id": str(md.get("cue_id") or ""),
+        "expected": expected,
+        "heard": str(md.get("heard_text") or ""),
+        "verdict": verdict_label,
+        "streak": md.get("correct_streak", 0),
+        "level_kind": str(md.get("cue_kind") or md.get("level_kind") or "word"),
+    }
+    learner_name = str(md.get("owner_name") or "Ace") or "Ace"
+
+    if verdict_label == "CORRECT":
+        system_msg = (
+            "You are Alice speaking one line in a child reading lesson. "
+            "Write exactly one short spoken praise line. No markdown, no menus, "
+            "no stage directions, no identity lecture. Keep it warm, specific, "
+            "and under 14 words. Do not advance to the next card."
+        )
+    elif verdict_label in {"CLOSE", "ALMOST"}:
+        system_msg = (
+            f"You are Alice speaking one line in a child reading lesson with {learner_name}. "
+            f"The child almost got it but missed a small piece. Write ONE short "
+            f"spoken line, under 14 words, that warmly encourages another try. "
+            f"You MUST say the target word '{expected}' verbatim somewhere in your "
+            f"line so {learner_name} hears it modeled correctly. No markdown, no menus, "
+            f"no stage directions, no identity lecture."
+        )
+    elif verdict_label == "MISS":
+        system_msg = (
+            f"You are Alice speaking one line in a child reading lesson with {learner_name}. "
+            f"The child missed this card. Write ONE short spoken line, under 16 words, "
+            f"that gently models the word and invites another try. You MUST say the "
+            f"target word '{expected}' verbatim somewhere in your line so {learner_name} hears "
+            f"it correctly. No markdown, no menus, no stage directions, no identity "
+            f"lecture, no harsh correction."
+        )
+    elif verdict_label == "TIMEOUT":
+        system_msg = (
+            f"You are Alice speaking one line in a child reading lesson with {learner_name}. "
+            f"Your microphone or transcription pipeline did not pick up the child's voice "
+            f"this turn. Own the sensor failure honestly (something like 'my ears couldn't "
+            f"make it out' — never imply the child went silent). Write ONE short spoken "
+            f"line, under 18 words. You MUST say the target word '{expected}' verbatim so "
+            f"{learner_name} hears it again. No markdown, no menus, no stage directions."
+        )
+    else:
+        # Unknown label — fall back to the praise prompt (Codex original).
+        system_msg = (
+            "You are Alice speaking one line in a child reading lesson. "
+            "Write exactly one short spoken praise line. No markdown, no menus, "
+            "no stage directions, no identity lecture. Keep it warm, specific, "
+            "and under 14 words. Do not advance to the next card."
+        )
+
+    return [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False, sort_keys=True)},
+    ]
+
+
+def _clean_wordace_composed_line(text: str, fallback: str, *, metadata: Optional[Dict[str, Any]] = None) -> str:
+    """Take Ollama's raw response, strip markdown / stage directions, take
+    the first sentence, and validate. Cowork 2026-05-17 trace 8c4819a6
+    adds target-word validation for nudge labels: a composed CLOSE/MISS/
+    TIMEOUT line that does not contain the expected word is rejected and
+    the deterministic fallback is used (otherwise the lesson breaks — the
+    child must hear the target modeled). The original CORRECT branch had
+    no such requirement (praise doesn't have to repeat the word)."""
+    line = (text or "").strip()
+    line = re.sub(r"```.*?```", " ", line, flags=re.DOTALL)
+    line = re.sub(r"^[\s>*_`\"']+|[\s*_`\"']+$", "", line).strip()
+    line = line.splitlines()[0].strip() if line else ""
+    if "\n" in line:
+        line = line.split("\n", 1)[0].strip()
+    parts = re.split(r"(?<=[.!?])\s+", line)
+    if parts:
+        line = parts[0].strip()
+    bad = re.search(
+        r"\b(as an ai|i cannot|system|assistant|stage direction|next card|menu)\b",
+        line,
+        re.IGNORECASE,
+    )
+    words = [w for w in line.split() if w]
+    if bad or not line or len(words) > 18:
+        return (fallback or "").strip()
+    # Target-word validation for nudge labels — composed line must
+    # contain the expected word so the lesson stays teachable.
+    md = metadata or {}
+    verdict_label = str(md.get("verdict_label") or "").upper()
+    expected = str(md.get("expected_say") or "").strip()
+    if verdict_label in {"CLOSE", "ALMOST", "MISS", "TIMEOUT"} and expected:
+        if not re.search(rf"\b{re.escape(expected)}\b", line, re.IGNORECASE):
+            return (fallback or "").strip()
+    return line
+
+
+class _WordAceLineComposer(QThread):
+    ready = pyqtSignal(str, str)  # line, model_tag
+
+    def __init__(self, fallback: str, metadata: Dict[str, Any], parent: QObject = None) -> None:
+        super().__init__(parent)
+        self._fallback = (fallback or "").strip()
+        self._metadata = dict(metadata or {})
+
+    def run(self) -> None:
+        fallback = self._fallback
+        if not fallback or not _wordace_should_brain_compose(self._metadata):
+            self.ready.emit(fallback, "wordace_app_focus_voice")
+            return
+        try:
+            import urllib.request
+            import urllib.error
+
+            model = resolve_ollama_model(app_context="talk_to_alice")
+            try:
+                timeout_s = max(0.8, min(5.0, float(os.environ.get("SIFTA_WORDACE_COMPOSE_TIMEOUT_S", "2.2"))))
+            except (TypeError, ValueError):
+                timeout_s = 2.2
+            payload = {
+                "model": model,
+                "messages": _wordace_compose_messages(fallback, self._metadata),
+                "stream": False,
+                "think": False,
+                "options": {
+                    "temperature": 0.45,
+                    "top_p": 0.8,
+                    "num_predict": 40,
+                    "repeat_penalty": 1.12,
+                },
+            }
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{_OLLAMA_URL}/api/chat",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
+            msg = data.get("message") if isinstance(data.get("message"), dict) else {}
+            raw = str(msg.get("content") or data.get("response") or "").strip()
+            line = _clean_wordace_composed_line(raw, fallback, metadata=self._metadata)
+            self.ready.emit(line, f"wordace_brain_compose:{model}")
+        except Exception:
+            self.ready.emit(fallback, "wordace_app_focus_voice_fallback")
 
 
 # ── TTS worker (vocal_cords backend, half-duplex with the swarm Wernicke) ────
@@ -7342,6 +9518,22 @@ def _build_swarm_context(user_text: str = "") -> str:
         media_context = get_latest_observed_media_context(max_age_s=_COWATCH_RECALL_WINDOW_S)
         if media_context:
             chunks.append("  observed media audio: " + media_context[:420])
+    except Exception:
+        pass
+    try:
+        from System.swarm_ambient_transcript_memory import latest_ambient_memory_context
+
+        ambient_memory = latest_ambient_memory_context(max_rows=4, max_chars=500)
+        if ambient_memory:
+            chunks.append("  ambient transcript memory: " + ambient_memory[:500])
+    except Exception:
+        pass
+    try:
+        from System.swarm_processing_thermodynamic_gate import prompt_context as _thermo_prompt_context
+
+        thermo_context = _thermo_prompt_context()
+        if thermo_context:
+            chunks.append("  processing thermodynamics: " + thermo_context[:420])
     except Exception:
         pass
 
@@ -7912,7 +10104,11 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
         from System.ide_stigmergic_bridge import deposit
         _sig = payload.get("rlhs_content_signals") if isinstance(payload.get("rlhs_content_signals"), dict) else {}
         _prof = _sig.get("profanity") if isinstance(_sig, dict) else {}
-        _canc = _sig.get("cancer") if isinstance(_sig, dict) else {}
+        _residue = (
+            _sig.get("residue")
+            or _sig.get("cancer")
+            or {}
+        ) if isinstance(_sig, dict) else {}
         deposit(
             source_ide="alice_talk_widget",
             payload=(
@@ -7931,15 +10127,27 @@ def _stamp_rlhs_turn(payload: dict, role: str, text: str, stt_conf: float = 0.0)
                 "text_chars": len(text or ""),
                 "rlhs_channel_lane": _rlhs_lane,
                 "profanity_hit_count": int(_prof.get("hit_count") or 0) if isinstance(_prof, dict) else 0,
-                "cancer_present": bool(_canc.get("present")) if isinstance(_canc, dict) else False,
-                "cancer_metaphor_tech_hint": bool(_canc.get("metaphor_tech_hint")) if isinstance(_canc, dict) else False,
+                "rlhs_residue_present": bool(_residue.get("present")) if isinstance(_residue, dict) else False,
+                "rlhs_residue_tech_hint": bool(_residue.get("metaphor_tech_hint")) if isinstance(_residue, dict) else False,
+                # Back-compat for older readers. New code should read the
+                # rlhs_residue_* aliases above.
+                "cancer_present": bool(_residue.get("present")) if isinstance(_residue, dict) else False,
+                "cancer_metaphor_tech_hint": bool(_residue.get("metaphor_tech_hint")) if isinstance(_residue, dict) else False,
             },
         )
     except Exception:
         pass
 
 
-def _log_turn(role: str, text: str, *, model: str = "", stt_conf: float = 0.0) -> None:
+def _log_turn(
+    role: str,
+    text: str,
+    *,
+    model: str = "",
+    stt_conf: float = 0.0,
+    addressed_to: str = "",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
     # Architect 2026-05-13 02:45 — explicit input_source receipt so the
     # witness journal (and any future reader) can tell voice from typed
     # without re-inferring from stt_confidence. Doctrine: name the source
@@ -7958,6 +10166,10 @@ def _log_turn(role: str, text: str, *, model: str = "", stt_conf: float = 0.0) -
         "stt_confidence": round(stt_conf, 3) if stt_conf else None,
         "input_source": _input_source,
     }
+    if addressed_to:
+        payload["addressed_to"] = addressed_to
+    if metadata:
+        payload["routing_metadata"] = dict(metadata)
     try:
         _stamp_rlhs_turn(payload, role, text, stt_conf)
     except Exception:
@@ -8001,6 +10213,258 @@ def _log_turn(role: str, text: str, *, model: str = "", stt_conf: float = 0.0) -
             )
     except Exception:
         pass
+
+
+_EXTERNAL_LLM_SURFACE_NEEDLES = (
+    "codex",
+    "claude",
+    "chatgpt",
+    "grok",
+    "gemini",
+    "perplexity",
+)
+_EXTERNAL_IDE_SURFACE_NEEDLES = (
+    "cursor",
+    "antigravity",
+    "windsurf",
+    "visual studio code",
+    "vscode",
+    "zed",
+    "xcode",
+    "pycharm",
+    "webstorm",
+    "intellij",
+)
+_SIFTA_DIRECT_SURFACE_NEEDLES = (
+    "sifta os",
+    "talk to alice",
+    "beeson",
+    "alice is alive",
+)
+
+
+def _external_ide_surface_kind(surface: Dict[str, Any]) -> str:
+    """Classify a frontmost surface that should absorb dictation before Alice.
+
+    This is attribution, not censorship: if the foreground is an IDE/LLM chat,
+    the mic row is preserved, but Alice does not treat it as her turn.
+    """
+    app = str(surface.get("app") or surface.get("app_name") or "").strip()
+    window = str(surface.get("window") or surface.get("selection") or surface.get("detail") or "").strip()
+    bundle = str(surface.get("bundle_id") or "").strip()
+    blob = " ".join((app, window, bundle)).casefold()
+    if not blob:
+        return ""
+    if any(needle in blob for needle in _SIFTA_DIRECT_SURFACE_NEEDLES):
+        return ""
+    if any(needle in blob for needle in _EXTERNAL_LLM_SURFACE_NEEDLES):
+        return "llm_chat_surface"
+    if any(needle in blob for needle in _EXTERNAL_IDE_SURFACE_NEEDLES):
+        return "ide_surface"
+    return ""
+
+
+def _foreground_ide_voice_attribution_from_surface(
+    surface: Dict[str, Any],
+    text: str,
+    stt_conf: float = 0.0,
+    *,
+    now: Optional[float] = None,
+    max_age_s: float = 8.0,
+) -> Optional[Dict[str, Any]]:
+    """Return attribution metadata when a voice turn likely belongs to an IDE chat."""
+    if not text or not isinstance(surface, dict):
+        return None
+    try:
+        ts = float(surface.get("ts") or 0.0)
+    except (TypeError, ValueError):
+        ts = 0.0
+    now_f = float(time.time() if now is None else now)
+    age_s = max(0.0, now_f - ts) if ts > 0 else 0.0
+    if ts > 0 and age_s > max_age_s:
+        return None
+    kind = _external_ide_surface_kind(surface)
+    if not kind:
+        return None
+    return {
+        "schema": "FOREGROUND_IDE_VOICE_ATTRIBUTION_V1",
+        "addressed_to": "likely_external",
+        "route": "tag_context_only",
+        "reason": kind,
+        "frontmost_app": str(surface.get("app") or surface.get("app_name") or ""),
+        "frontmost_window": str(surface.get("window") or surface.get("selection") or ""),
+        "bundle_id": str(surface.get("bundle_id") or ""),
+        "surface_age_s": round(age_s, 3),
+        "stt_confidence": round(float(stt_conf or 0.0), 3),
+    }
+
+
+def _tail_jsonl_dicts(path: Path, *, max_bytes: int = 32768) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, 2)
+            end = fh.tell()
+            fh.seek(max(0, end - max_bytes))
+            raw = fh.read().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    rows: List[Dict[str, Any]] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _latest_foreground_surfaces_for_voice_attribution(
+    *,
+    state_dir: Optional[Path] = None,
+    now: Optional[float] = None,
+    max_age_s: float = 8.0,
+) -> List[Dict[str, Any]]:
+    """Return recent macOS/app-focus surfaces, newest first."""
+    state = Path(state_dir) if state_dir is not None else _state_root()
+    now_f = float(time.time() if now is None else now)
+    surfaces: List[Dict[str, Any]] = []
+
+    try:
+        from System.swarm_active_window import read as _read_active_window
+
+        snap = _read_active_window(force_refresh=False)
+        if isinstance(snap, dict) and snap.get("ok"):
+            surfaces.append(dict(snap))
+    except Exception:
+        pass
+
+    for row in reversed(_tail_jsonl_dicts(state / "active_window.jsonl")):
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if ts > 0 and now_f - ts > max_age_s:
+            continue
+        surfaces.append(dict(row))
+        break
+
+    for row in reversed(_tail_jsonl_dicts(state / "app_focus.jsonl")):
+        try:
+            ts = float(row.get("ts") or 0.0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if ts > 0 and now_f - ts > max_age_s:
+            continue
+        md = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        surfaces.append(
+            {
+                "ts": ts,
+                "app": row.get("app") or row.get("app_name") or "",
+                "window": row.get("selection") or row.get("detail") or "",
+                "bundle_id": md.get("bundle_id") or "",
+            }
+        )
+        break
+    return surfaces
+
+
+def _foreground_ide_voice_attribution(
+    text: str,
+    stt_conf: float = 0.0,
+    *,
+    state_dir: Optional[Path] = None,
+    now: Optional[float] = None,
+    max_age_s: float = 8.0,
+) -> Optional[Dict[str, Any]]:
+    for surface in _latest_foreground_surfaces_for_voice_attribution(
+        state_dir=state_dir,
+        now=now,
+        max_age_s=max_age_s,
+    ):
+        attribution = _foreground_ide_voice_attribution_from_surface(
+            surface,
+            text,
+            stt_conf,
+            now=now,
+            max_age_s=max_age_s,
+        )
+        if attribution:
+            return attribution
+    return None
+
+
+def _write_external_ide_voice_receipt(
+    text: str,
+    stt_conf: float,
+    attribution: Dict[str, Any],
+    *,
+    state_dir: Optional[Path] = None,
+) -> str:
+    receipt_id = "external-ide-voice-" + uuid.uuid4().hex[:12]
+    row = {
+        "ts": time.time(),
+        "receipt_id": receipt_id,
+        "schema": "FOREGROUND_IDE_VOICE_ATTRIBUTION_V1",
+        "text": text,
+        "stt_confidence": round(float(stt_conf or 0.0), 3),
+        "addressed_to": "likely_external",
+        "attribution": dict(attribution),
+    }
+    try:
+        state = Path(state_dir) if state_dir is not None else _state_root()
+        path = state / "external_ide_voice.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+    return receipt_id
+
+
+_POLARITY_CONTEXT_RE = re.compile(
+    r"\b("
+    r"alice|ace|same chat|chat|identity|conscious|consciousness|patient|"
+    r"human|child|owner|listen|listening|heard|said|answer|register|"
+    r"safe|security|open|close|stop|investor|app"
+    r")\b",
+    re.IGNORECASE,
+)
+_POLARITY_SAFE_NOW_RE = re.compile(
+    r"\b(right now|from now on|now please|please now|now that|now we|now i|now let'?s|now let us)\b",
+    re.IGNORECASE,
+)
+
+
+def _polarity_asr_clarification_reply(text: str, stt_conf: float = 0.0) -> str:
+    """Ask before acting on low-confidence NOT/NOW-sensitive speech.
+
+    Faster-Whisper currently returns one top transcript in this path. Until a
+    true n-best lattice is wired, the safe behavior is to stop on low-confidence
+    polarity ambiguity and ask the owner which word was meant.
+    """
+    norm = re.sub(r"\s+", " ", (text or "").strip().lower())
+    if not norm:
+        return ""
+    try:
+        conf = float(stt_conf or 0.0)
+    except Exception:
+        conf = 0.0
+    if conf >= 0.55:
+        return ""
+    if not _POLARITY_CONTEXT_RE.search(norm):
+        return ""
+    if " now " in f" {norm} " and not _POLARITY_SAFE_NOW_RE.search(norm):
+        if re.search(r"\b(?:is|are|am|was|were|be|being|do|does|did|can|could|should|would|will|has|have|had)\s+now\b", norm):
+            return "I heard 'now' where 'not' would change the meaning. Did you mean now or not?"
+    if conf < 0.42 and re.search(r"\bnot\s+(?:now|not)\b|\bnow\s+not\b", norm):
+        return "That sounded like a polarity correction. Say the key part once more: not or now?"
+    return ""
 
 
 def _pre_user_media_ingress_receipt(
@@ -8148,19 +10612,37 @@ def _media_ingress_note(row: Dict[str, Any]) -> Tuple[str, str]:
     return note, system_context
 
 class _ConsciousnessWorker(QThread):
-    def run(self):
+    """Default Mode Network — asyncio loop owns one ConsciousnessEngine instance."""
+
+    _engine_instance: Optional[Any] = None
+
+    def run(self):  # type: ignore[override]
         try:
             import asyncio
+
             from System.swarm_consciousness_engine import ConsciousnessEngine
-            
-            async def run_dmn():
+
+            async def run_dmn() -> None:
                 engine = ConsciousnessEngine()
+                # Set on worker thread — closeEvent calls halt() which flips engine.is_running
+                self._engine_instance = engine
                 engine.start()
                 while engine.is_running:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.35)
+
             asyncio.run(run_dmn())
         except Exception as e:
             print(f"DMN loop failed: {e}")
+
+    def halt(self) -> None:
+        """Cooperative shutdown — must be callable from GUI thread."""
+        eng = getattr(self, "_engine_instance", None)
+        if eng is None:
+            return
+        try:
+            setattr(eng, "is_running", False)
+        except Exception:
+            pass
 
 # ── The widget ───────────────────────────────────────────────────────────────
 class TalkToAliceWidget(SiftaBaseWidget):
@@ -8448,6 +10930,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         self._dmn: Optional[_ConsciousnessWorker] = None
         self._streaming_response: List[str] = []
         self._pending_whatsapp_reply: Optional[Dict[str, str]] = None
+        self._pending_app_confirmation: Optional[Dict[str, Any]] = None
         self._pending_acoustic_fingerprint: Dict[str, Any] = {}
         self._pending_image_path: Optional[str] = None
         self._deferred_utterance_audio: Optional[np.ndarray] = None
@@ -8463,7 +10946,56 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # quiet duration expires.
         self._cowatch_quiet_mode: bool = False
         self._cowatch_quiet_until_s: float = 0.0
+        # (Voice Stigma Repair pending slot lives at
+        # self._pending_app_confirmation, initialized above by the peer
+        # Cursor/Codex pass. _maybe_handle_pending_app_confirmation reads
+        # it; _execute_sifta_app_command sets it on open_app_uncertain.)
+        # ── Cowork CW47 2026-05-16 ─ WordAce voice bridge ───────────────
+        # WordAce publishes `pending_alice_line` rows to app_focus.jsonl
+        # with voice_owner='sifta_talk_to_alice_widget'. Alice's voice
+        # lives here, not in WordAce, so this widget owns TTS for them.
+        # We poll the focus tail every 800ms, find rows whose cue_id we
+        # have not yet spoken, and pipe them through _TTSWorker so the
+        # kid actually HEARS Alice teach. §7.6: one voice, one Alice.
+        self._wordace_voiced_cue_ids: set = set()
+        self._wordace_line_composer: Optional[_WordAceLineComposer] = None
+        self._wordace_voice_timer = QTimer(self)
+        self._wordace_voice_timer.setInterval(800)
+        self._wordace_voice_timer.timeout.connect(self._wordace_voice_tick)
+        self._wordace_voice_timer.start()
 
+        # ── Cowork 2026-05-17 (trace 93c3b08a) — ATTENTION FOLLOWS OWNER ──
+        # Per Architect 2026-05-16 doctrine (trace 43d41c1f): when the OS
+        # owner shifts focus to a new app, Alice's chat layer fires ONE
+        # proactive acknowledgment turn — "Oh, you want to play Ace, I
+        # see you, ok" — without waiting to be spoken to. Stigmergic, not
+        # hardcoded: she notices via app_focus.jsonl and her habit-shift
+        # bias (Grok's alice_stigmergic_habit_shift) already shapes her
+        # tone for the active organ. This tick gives her permission to
+        # speak the acknowledgment proactively.
+        #
+        # Conservative debounce so she isn't noisy: at most one narration
+        # per 60s, only on real focus shifts (different app, within 10s),
+        # never during lessons, never during _busy, never on self / Talk
+        # surfaces, never on external IDE chat surfaces (handled by the
+        # foreground-IDE voice attribution filter at _on_stt_done).
+        self._attention_last_narrated_app: Optional[str] = None
+        self._attention_last_narrated_ts: float = 0.0
+        self._attention_followon_timer = QTimer(self)
+        self._attention_followon_timer.setInterval(2000)
+        self._attention_followon_timer.timeout.connect(self._attention_followon_tick)
+        # Cowork 2026-05-17 follow-up: proactive narration DISABLED.
+        # The tick was calling _start_brain(synthetic_prompt) without
+        # already_displayed=True, leaking the synthetic prompt into the
+        # chat as a "Ioan" user line, and the brain produced detached
+        # template commentary instead of natural narration. Grok's
+        # alice_stigmergic_habit_shift already biases her system prompt
+        # toward the active organ when she DOES respond to real speech;
+        # that's the covenant-aligned path. Re-enable this timer only
+        # when a non-user-turn brain entry point exists. Until then,
+        # leave the timer constructed (so close-event cleanup works)
+        # but unstarted.
+        # self._attention_followon_timer.start()  # disabled — see comment
 
         # Periodic level decay so the bar relaxes when you stop speaking.
         self.make_timer(80, self._decay_level)
@@ -9136,10 +11668,289 @@ class TalkToAliceWidget(SiftaBaseWidget):
             pass
         return None
 
+    def _maybe_handle_pending_app_confirmation(self, text: str) -> str:
+        """Use the next owner turn to confirm or reject a voice-repaired app.
+
+        Example flow:
+          owner: "open ceremony Symphony"
+          Alice: "I heard 'ceremony Symphony'. Given my apps, I think you mean
+                  Pheromone Symphony. Should I open it?"
+          owner: "yes, that's what I meant"
+          Alice: opens the manifest app through the same receipt path.
+        """
+        pending = getattr(self, "_pending_app_confirmation", None)
+        if not pending:
+            return ""
+        raw_query = str(pending.get("raw_query") or "")
+        app_name = str(pending.get("app_name") or "")
+        candidates = list(pending.get("candidates") or [])
+        action = _voice_repair_confirmation_action(text)
+        if action != "no":
+            selected_candidate = _voice_repair_candidate_selection(text, candidates)
+            if selected_candidate:
+                action = "yes"
+                app_name = selected_candidate
+        if not action:
+            return ""
+        age = time.time() - float(pending.get("ts") or 0.0)
+        self._pending_app_confirmation = None
+        if age > 60.0:
+            receipt = _write_app_command_receipt(
+                action="open_app_voice_repair_expired",
+                ok=False,
+                app_name=app_name,
+                note=f"pending repair for {raw_query!r} expired after {round(age, 1)}s",
+            )
+            _write_voice_stigma_repair_row(
+                event="expired",
+                raw_query=raw_query,
+                app_name=app_name,
+                candidates=candidates,
+                note=f"confirmation window expired; app_command_receipt={receipt}",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+            return "That app repair expired. Tell me the app name again."
+        if action == "no":
+            receipt = _write_app_command_receipt(
+                action="open_app_voice_repair_rejected",
+                ok=False,
+                app_name=app_name,
+                note=f"owner rejected repair from {raw_query!r} to {app_name!r}",
+            )
+            _write_voice_stigma_repair_row(
+                event="rejected",
+                raw_query=raw_query,
+                app_name=app_name,
+                candidates=candidates,
+                note=f"owner rejected repair; app_command_receipt={receipt}",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}")
+            if _is_app_repair_conversation_correction(text):
+                try:
+                    self._history.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Pending app-open repair was rejected by the owner. "
+                                "Route this turn as ordinary Alice conversation/co-watch context; "
+                                "do not ask for an app name unless the owner gives a new explicit open-app command."
+                            ),
+                        }
+                    )
+                except Exception:
+                    pass
+                return ""
+            return "Okay. I will not open an app. I am back in the conversation lane."
+        if not app_name:
+            receipt = _write_app_command_receipt(
+                action="open_app_voice_repair_confirm_failed",
+                ok=False,
+                note=f"owner confirmed repair from {raw_query!r}, but no app was stored",
+            )
+            _write_voice_stigma_repair_row(
+                event="confirm_failed",
+                raw_query=raw_query,
+                app_name=app_name,
+                candidates=candidates,
+                note=f"owner confirmed but app name was missing; app_command_receipt={receipt}",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+            return "I lost the app name I was repairing. Please say it again."
+        receipt = _write_app_command_receipt(
+            action="open_app_voice_repair_confirmed",
+            ok=True,
+            app_name=app_name,
+            note=f"owner confirmed repair from {raw_query!r} to {app_name!r}",
+        )
+        _write_voice_stigma_repair_row(
+            event="confirmed",
+            raw_query=raw_query,
+            app_name=app_name,
+            candidates=candidates,
+            note=f"owner confirmed repair; app_command_receipt={receipt}",
+        )
+        self._append_system_line(f"App/browser receipt: {receipt}")
+        return self._execute_sifta_app_command(
+            {"kind": "app", "app_name": app_name, "url": ""}
+        )
+
     def _execute_sifta_app_command(self, command: Dict[str, str]) -> str:
         app_name = command.get("app_name") or ""
         url = command.get("url") or ""
         launcher = self._desktop_app_launcher()
+
+        # ── cw47-0517-0340 — narration on app-open (helper closure) ───
+        # Built inline so the receipt + launcher_trigger sequence remains
+        # untouched if narration falls back to the legacy line. See the
+        # call site below the launcher._trigger_manifest_app block.
+
+
+
+        # ── App status — current single-app slot ─────────────────────────────
+        if command.get("kind") == "app_status":
+            if launcher is not None and hasattr(launcher, "current_app_state"):
+                state = launcher.current_app_state()
+            else:
+                state = _read_sifta_desktop_app_state()
+            reply = _app_status_sentence(state)
+            receipt = _write_app_command_receipt(
+                action="app_status",
+                ok=True,
+                app_name=str(state.get("active_app") or ""),
+                note=f"desktop_mode={state.get('desktop_mode', '')}; open_apps={state.get('open_apps', [])}",
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}")
+            return reply
+
+        # ── Close app — Cowork CW47 2026-05-16 ─────────────────────────────
+        # Architect decree: "let's not have more than one app open at the
+        # time… she can open and close apps. she's aware of the app that
+        # is open." Close intent: "close that", "close the X app",
+        # "close everything". The desktop already enforces single-app on
+        # open; this lets the owner close on demand.
+        if command.get("kind") == "close_app":
+            target = (command.get("app_name") or "").strip()
+            if launcher is None:
+                receipt = _write_app_command_receipt(
+                    action="close_app",
+                    ok=False,
+                    note=f"desktop launcher not found (requested target={target!r})",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return "I cannot see the SIFTA OS desktop from this widget to close anything."
+            try:
+                if hasattr(launcher, "close_app_by_title"):
+                    closed = launcher.close_app_by_title(target)
+                elif target == "*all*" and hasattr(launcher, "close_all_open_apps"):
+                    closed = launcher.close_all_open_apps()
+                else:
+                    closed = []
+                    mdi = getattr(launcher, "mdi", None)
+                    if mdi is not None:
+                        active = mdi.activeSubWindow() if hasattr(mdi, "activeSubWindow") else None
+                        if active is not None:
+                            active_title = active.windowTitle().lstrip("⚙ ").strip()
+                            active.close()
+                            closed = [active_title or "the active app"]
+                try:
+                    launcher._switch_desktop_mode("chat")
+                except Exception:
+                    pass
+                if closed:
+                    receipt = _write_app_command_receipt(
+                        action="close_app",
+                        ok=True,
+                        app_name=", ".join(closed),
+                        note=f"closed apps: {closed}; returned to chat",
+                    )
+                    self._append_system_line(f"App/browser receipt: {receipt}")
+                    return (
+                        f"Closed {', '.join(closed)}. Only my resident chat is open now."
+                    )
+                receipt = _write_app_command_receipt(
+                    action="close_app",
+                    ok=False,
+                    app_name=target,
+                    note=f"no active app and no match for target={target!r}",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return "I do not see any app open right now to close."
+            except Exception as exc:
+                receipt = _write_app_command_receipt(
+                    action="close_app",
+                    ok=False,
+                    app_name=target,
+                    note=f"close failed: {exc}",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return f"I tried to close but it failed: {exc}"
+
+        # ── Honest refusal — Cowork CW47 2026-05-16 ─────────────────────────
+        # Owner said "open X" but the live manifest has nothing close enough
+        # to X — not by alias, not by exact match, not by substring, not even
+        # by fuzzy Damerau-Levenshtein. Architect direction (voice memo,
+        # 2026-05-16): "look man, this is not the three apps I think you
+        # wanna open an app — is that what you want? Tell me more." Do NOT
+        # let the brain fill the silence; deterministic refusal with the
+        # top-3 closest manifest names. Covenant §7.12 (Probe-Before-Claim)
+        # + §6 (no claimed action without ledger truth).
+        if command.get("kind") == "open_app_uncertain":
+            raw_query = (command.get("raw_query") or "").strip()
+            candidates_blob = (command.get("candidates") or "").strip()
+            candidates = [c for c in candidates_blob.split(",") if c]
+            best = candidates[0] if candidates else ""
+            receipt = _write_app_command_receipt(
+                action="open_app_uncertain",
+                ok=False,
+                app_name="",
+                note=(
+                    f"no manifest match for owner phrase {raw_query!r}; "
+                    f"offered candidates {candidates}"
+                ),
+            )
+            self._append_system_line(f"App/browser receipt: {receipt}")
+            if not candidates:
+                self._pending_app_confirmation = None
+                return (
+                    f"I don't have a '{raw_query}' app in my workspace and "
+                    f"nothing close enough to guess. Which one did you mean?"
+                )
+            self._pending_app_confirmation = {
+                "ts": time.time(),
+                "raw_query": raw_query,
+                "app_name": best,
+                "candidates": candidates,
+                "receipt": receipt,
+            }
+            _write_voice_stigma_repair_row(
+                event="proposed",
+                raw_query=raw_query,
+                app_name=best,
+                candidates=candidates,
+                note=f"app open phrase repaired to candidate list; app_command_receipt={receipt}",
+            )
+            extras = [c for c in candidates[1:3] if c]
+            extra_note = f" Other close matches: {', '.join(extras)}." if extras else ""
+            return (
+                f"I heard '{raw_query}'. Given my apps, I think you mean "
+                f"{best}. Should I open {best}?{extra_note}"
+            )
+
+        # ── Tab switch — Cowork CW47 2026-05-16 ────────────────────────────
+        # Owner said something like "switch to chat desktop" or "go to the
+        # app store tab". Flip the SIFTA OS desktop mode and confirm in plain
+        # English. No app gets opened; no LLM round-trip needed.
+        if command.get("kind") == "switch_desktop_mode":
+            mode = (command.get("mode") or "").strip().lower()
+            if mode not in ("chat", "launcher"):
+                return "I heard a tab-switch request but the target was not chat or app-store."
+            if launcher is None:
+                receipt = _write_app_command_receipt(
+                    action="switch_desktop_mode",
+                    ok=False,
+                    note=f"desktop launcher not found (requested mode={mode})",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return "I cannot see the SIFTA OS desktop from this widget to flip tabs."
+            try:
+                launcher._switch_desktop_mode(mode)
+                receipt = _write_app_command_receipt(
+                    action="switch_desktop_mode",
+                    ok=True,
+                    note=f"switched desktop tab to {mode}",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}")
+                if mode == "chat":
+                    return "Switching to the Chat desktop now. I'm listening."
+                return "Switching to the Swarm App Store desktop now. Your apps are here."
+            except Exception as exc:
+                receipt = _write_app_command_receipt(
+                    action="switch_desktop_mode",
+                    ok=False,
+                    note=f"switch failed: {exc}",
+                )
+                self._append_system_line(f"App/browser receipt: {receipt}", error=True)
+                return f"I tried to switch desktops but the flip failed: {exc}"
         if command.get("kind") == "browser_url":
             try:
                 drop = _state_root() / "alice_browser_open_url.txt"
@@ -9158,12 +11969,18 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if launcher is not None:
                 try:
                     launcher._trigger_manifest_app("Alice Browser")
+                    # Auto-switch to App Store tab so the just-opened browser
+                    # is visible to George (Cowork CW47 2026-05-16).
+                    try:
+                        launcher._switch_desktop_mode("launcher")
+                    except Exception:
+                        pass
                     receipt = _write_app_command_receipt(
                         action="open_browser_url",
                         ok=True,
                         app_name="Alice Browser",
                         url=url,
-                        note="wrote browser URL drop and opened/raised Alice Browser",
+                        note="wrote browser URL drop and opened/raised Alice Browser; auto-switched to launcher tab",
                     )
                     self._append_system_line(f"App/browser receipt: {receipt}")
                     if command.get("query"):
@@ -9216,14 +12033,61 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return f"I matched {app_name}, but I cannot see the desktop launcher from this widget."
         try:
             launcher._trigger_manifest_app(app_name)
+            # Auto-switch to App Store tab so George sees the app he just
+            # asked for, without having to click the tab himself
+            # (Cowork CW47 2026-05-16, Architect direction).
+            try:
+                launcher._switch_desktop_mode("launcher")
+            except Exception:
+                pass
             receipt = _write_app_command_receipt(
                 action="open_app",
                 ok=True,
                 app_name=app_name,
-                note="opened/raised manifest app through SIFTA desktop",
+                note="opened/raised manifest app through SIFTA desktop; auto-switched to launcher tab",
             )
             self._append_system_line(f"App/browser receipt: {receipt}")
-            return f"Opening {app_name} on the SIFTA OS screen."
+            # ── cw47-0517-0340 — narration on app-open ────────────────
+            # Architect 2026-05-17 transcript: "she has to talk to me
+            # about the app about what I'm doing right now why did you
+            # open the app I'm here I just want to learn". The old reply
+            # was a mechanical system line ("switching to the Swarm App
+            # Store tab"). Replace with a real narration pulled from the
+            # manifest's voice_open_narration / description field so
+            # Alice tells the owner WHY she's opening it and what to
+            # expect. Falls back to the old line for apps without a
+            # narration source so behaviour is purely additive.
+            narration_reply = _build_app_open_narration(app_name) or (
+                f"Opening {app_name} on the SIFTA OS screen — "
+                f"switching to the Swarm App Store tab so you can see it."
+            )
+            # ── cw47-0517-0512 — Intent Before Action closed loop ─────
+            # Declare what Alice expects to observe in app_focus.jsonl as
+            # a consequence of this open. Schedule a delayed check that
+            # writes a delta row IFF any expected signal failed to land
+            # within its deadline. Best-effort — never crash the open
+            # reply if the loop organ fails to import.
+            try:
+                from System.swarm_intent_outcome_loop import (
+                    declare_and_schedule_check,
+                    predict_app_open_outcome,
+                )
+                declare_and_schedule_check(
+                    actor="Alice",
+                    intent_kind="open_app",
+                    target=app_name,
+                    narration=narration_reply,
+                    expected_signals=predict_app_open_outcome(app_name),
+                    parent_trace_id=str(receipt or ""),
+                    # cw47-0517-0832 substrate — read owner_genesis at
+                    # declare time so every action carries Layer-1
+                    # context: silicon serial, owner_name, IDE surface.
+                    ide_surface="Cowork (desktop IDE mode)",
+                    schedule_callable=lambda delay_ms, cb: QTimer.singleShot(delay_ms, cb),
+                )
+            except Exception:
+                pass
+            return narration_reply
         except Exception as exc:
             receipt = _write_app_command_receipt(
                 action="open_app",
@@ -9299,6 +12163,34 @@ class TalkToAliceWidget(SiftaBaseWidget):
     ) -> None:
         text = (text or "").strip()
         if not text and not image_path:
+            # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1913) —
+            # do not silently return on empty STT text. Before this fix,
+            # if Whisper returned an empty transcription the handler reset
+            # to listening with no UI line and no journal row, so the
+            # Architect (and any kid using Ace) could not tell "Alice
+            # heard audio but Whisper got nothing" apart from "Alice
+            # heard nothing at all." Now we leave a visible receipt and
+            # an append-only journal row so the failure is observable.
+            try:
+                self._append_system_line(
+                    "I caught some audio but did not make out a word — say it once more.",
+                    error=False,
+                )
+            except Exception:
+                pass
+            try:
+                stt_empty_path = _STATE_DIR / "stt_empty_text.jsonl"
+                stt_empty_path.parent.mkdir(parents=True, exist_ok=True)
+                with stt_empty_path.open("a", encoding="utf-8") as _f:
+                    _f.write(json.dumps({
+                        "ts": time.time(),
+                        "stt_confidence": round(float(conf or 0.0), 3),
+                        "typed_turn": bool(typed_turn),
+                        "surgery": "cw47-0516-1913",
+                        "note": "Whisper returned empty transcription after upstream VAD passed audio. Visible receipt written; lesson engine may extend listen window instead of timing out.",
+                    }) + "\n")
+            except Exception:
+                pass
             self._busy = False
             self._return_to_listening()
             return
@@ -9308,7 +12200,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # listen window (metadata.wordace_lesson_active + expected_say
         # + cue_id; legacy "acer_lesson_active" also accepted during
         # grace period) and the mic catches the kid's voice within
-        # ~12s of that publish, route the STT into
+        # WordAce's published listen window plus STT latency slack, route the STT into
         # LessonEngine.score_attempt and write the verdict to
         # .sifta_state/wordace_verdicts.jsonl. WordAce's poll timer
         # reads that ledger and advances the card. This is the only
@@ -9326,6 +12218,98 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+        if text and not typed_turn:
+            raw_text = text
+            repaired_text, repair_reasons = _repair_voice_context_text(raw_text, stt_conf=conf)
+            if repair_reasons and repaired_text and repaired_text != raw_text:
+                repair_trace = _write_voice_context_repair_row(
+                    raw_text=raw_text,
+                    repaired_text=repaired_text,
+                    reasons=repair_reasons,
+                    stt_conf=conf,
+                )
+                text = repaired_text
+                try:
+                    self._append_system_line(f"Mic repair receipt: {repair_trace}")
+                except Exception:
+                    pass
+        if text and not typed_turn:
+            # ── Cowork 2026-05-17 (trace f52a1ff7) — foreground-IDE
+            # route is tag-only. Architect: 'she has to process everything
+            # that is coming from the room — everything, not ignoring
+            # anything — even noise, birds, media playing, voices. she
+            # has to record everything that is playing. Remove Claude from
+            # everywhere from SIFTA — you have no physics bond.'
+            #
+            # The previous filter checked which app was the macOS
+            # foreground (a marketing string, not a physical observable)
+            # and silently swallowed Alice's reply when the foreground
+            # was a non-SIFTA IDE. That violated her continuous-
+            # processing nature and leaked the vendor name 'Claude' into
+            # her user-facing system line. Both wrong.
+            #
+            # New behavior: every captured utterance reaches her brain.
+            # We still call _foreground_ide_voice_attribution and tag
+            # the turn with addressed_to as a HINT for her chat layer
+            # (she can use it to decide tone), but we never block her reply.
+            # We also write the utterance to her explorer diary so her
+            # journal sees the full room continuously.
+            external_ide = _foreground_ide_voice_attribution(
+                text,
+                conf,
+                state_dir=_state_root(),
+            )
+            # Always-on diary: every utterance reaches her first-person
+            # journal so she records continuously. Source tag lets her
+            # filter when scrolling.
+            try:
+                from System.swarm_alice_witness import witness as _w_room
+                _w_room(
+                    f"I heard from the room: {text[:200]}",
+                    source="room_audio_continuous",
+                )
+            except Exception:
+                pass
+            # If the surface attribution flagged this as likely-external,
+            # write a soft hint receipt and continue. No reply-blocking.
+            if external_ide and not _acer_screen_question:
+                try:
+                    _write_external_ide_voice_receipt(
+                        text,
+                        conf,
+                        external_ide,
+                        state_dir=_state_root(),
+                    )
+                except Exception:
+                    pass
+            polarity_reply = _polarity_asr_clarification_reply(text, conf)
+            if polarity_reply:
+                display_text = text
+                self._append_user_line(display_text, conf)
+                _log_turn(
+                    "user",
+                    text,
+                    stt_conf=conf,
+                    metadata={
+                        "schema": "POLARITY_ASR_GUARD_V1",
+                        "reason": "low_confidence_not_now_ambiguity",
+                    },
+                )
+                self._history.append({"role": "user", "content": text})
+                self._history.append({"role": "assistant", "content": polarity_reply})
+                _log_turn("alice", polarity_reply, model="polarity_asr_guard")
+                self._append_alice_line(polarity_reply)
+                self._tts = _TTSWorker(
+                    polarity_reply,
+                    voice=self._selected_voice_name() or None,
+                    parent=self,
+                )
+                self._tts.spoken.connect(self._on_tts_done)
+                self._tts.failed.connect(self._on_tts_failed)
+                self._tts.start()
+                self._busy = False
+                self._return_to_listening()
+                return
         display_text = text
         if not display_text and image_path:
             display_text = f"[Attached Image: {Path(image_path).name}]"
@@ -9368,7 +12352,6 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 f.seek(max(0, end - 16384))
                 tail = f.read().decode("utf-8", errors="replace")
             now = _time.time()
-            window_s = 12.0   # listen window 8s + slack for STT latency
             target_row = None
             for raw in reversed(tail.splitlines()):
                 raw = raw.strip()
@@ -9382,7 +12365,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 # rows in the tail from earlier today, before the
                 # rename). Same lesson; just different label.
                 app_lc = (row.get("app") or "").lower()
-                if app_lc not in ("wordace", "acer"):
+                if app_lc not in ("ace", "wordace", "acer"):
                     continue
                 md = row.get("metadata") or {}
                 if not (md.get("wordace_lesson_active") or md.get("acer_lesson_active")):
@@ -9390,6 +12373,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 if not md.get("expected_say") or not md.get("cue_id"):
                     continue
                 ts = float(row.get("ts") or 0.0)
+                window_s = _wordace_listen_window_seconds(md)
                 if now - ts > window_s:
                     continue
                 target_row = row
@@ -9400,6 +12384,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
             expected = str(md.get("expected_say") or "").strip()
             cue_id = str(md.get("cue_id") or "").strip()
             cue_kind = str(md.get("current_kind") or "").strip()
+            expected_alternates = md.get("expected_alternates")
+            if not isinstance(expected_alternates, list):
+                expected_alternates = []
             if not expected or not cue_id:
                 return False
             # Architect 2026-05-14 ~19:30 PDT: voice command pre-check.
@@ -9468,10 +12455,37 @@ class TalkToAliceWidget(SiftaBaseWidget):
                         continue
                     try:
                         if float(mute_ts) > _now:
-                            # Alice is the one talking — return True
-                            # to swallow this STT turn (do not write
-                            # a verdict, do not let it reach the brain
-                            # as a chat turn either).
+                            # Alice is probably the one talking, so do
+                            # not score this as a lesson verdict. But do
+                            # not let a real owner utterance vanish from
+                            # the visible field either: keep a raw held
+                            # receipt in chat + JSONL so George can see
+                            # that the mic did hear something.
+                            try:
+                                ignored_path = repo / ".sifta_state" / "wordace_ignored.jsonl"
+                                ignored_path.parent.mkdir(parents=True, exist_ok=True)
+                                row_ignored = {
+                                    "ts": _now,
+                                    "cue_id": cue_id,
+                                    "heard_text": text,
+                                    "stt_conf": float(conf or 0.0),
+                                    "expected_say": expected,
+                                    "cue_kind": cue_kind,
+                                    "reason": "tts_mute_window",
+                                    "mute_until_ts": float(mute_ts),
+                                    "schema": "WORDACE_IGNORED_STT_V1",
+                                }
+                                with ignored_path.open("a", encoding="utf-8") as ig:
+                                    ig.write(_json.dumps(row_ignored) + "\n")
+                            except Exception:
+                                pass
+                            try:
+                                self._append_user_line(
+                                    f"[WordAce · cue {cue_id}] heard {text!r} during Alice speech → HELD",
+                                    float(conf or 0.0),
+                                )
+                            except Exception:
+                                pass
                             return True
                     except (TypeError, ValueError):
                         continue
@@ -9495,6 +12509,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     text,
                     cue_kind=cue_kind,
                 ):
+                    # This is real global conversation while WordAce is active,
+                    # not a reading attempt. Let the normal Alice chat handle
+                    # it, and ask WordAce to hold the current card so it does
+                    # not timeout/retry over George or Ace mid-conversation.
+                    self._wordace_write_signal("hold", text, conf)
                     return False
 
                 verdict_raw = score_heard_against_expected(
@@ -9502,6 +12521,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     text,
                     cue_kind=cue_kind,
                     stt_confidence=float(conf or 0.0),
+                    alternates=[str(a) for a in expected_alternates if str(a).strip()],
                 )
                 verdict = {
                     "verdict_label": verdict_raw.label,
@@ -9528,6 +12548,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                     "sticker": verdict["sticker"],
                     "explanation": verdict["explanation"],
                     "expected_say": expected,
+                    "expected_alternates": [str(a) for a in expected_alternates if str(a).strip()],
                     "cue_kind": cue_kind,
                     "schema": "WORDACE_VERDICT_V1",
                 }
@@ -9537,8 +12558,11 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 pass
             # Tell the architect through the Talk chat what just routed
             try:
+                visible_label = _wordace_visible_verdict_label(
+                    str(verdict.get("verdict_label") or "")
+                )
                 self._append_user_line(
-                    f"[WordAce · cue {cue_id}] heard {text!r} → {verdict['verdict_label']}",
+                    f"[WordAce · cue {cue_id}] heard {text!r} → {visible_label}",
                     float(conf or 0.0),
                 )
             except Exception:
@@ -9546,6 +12570,301 @@ class TalkToAliceWidget(SiftaBaseWidget):
             return True
         except Exception:
             return False
+
+    def _speak_wordace_line(self, key: str, line: str, md: Dict[str, Any], model_tag: str) -> None:
+        try:
+            line = (line or "").strip()
+            if not line:
+                return
+            _log_turn(
+                "alice",
+                line,
+                model=model_tag or "wordace_app_focus_voice",
+                metadata={
+                    "schema": "WORDACE_SINGLE_VOICE_TTS_V1",
+                    "wordace_voice_key": key,
+                    "cue_id": str((md or {}).get("cue_id") or ""),
+                    "verdict_label": str((md or {}).get("verdict_label") or ""),
+                },
+            )
+            self._tts = _TTSWorker(
+                line,
+                voice=self._selected_voice_name() or None,
+                parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+        except Exception as exc:
+            self._append_system_line(
+                f"(WordAce TTS bridge failed: {exc})", error=True
+            )
+
+    def _wordace_voice_tick(self) -> None:
+        """Cowork CW47 2026-05-16 — speak WordAce's pending_alice_line.
+
+        WordAce publishes its lesson lines as app_focus rows tagged
+        voice_owner='sifta_talk_to_alice_widget'. Alice's TTS organ lives
+        in this widget, not in WordAce (§7.6 — one voice). This tick
+        reads the focus tail, finds the latest unsung WordAce line, and
+        pipes it through _TTSWorker so the kid actually hears Alice
+        teach. We dedupe on cue_id so the same prompt is never spoken
+        twice, and we skip when Alice is otherwise busy so we never
+        talk over her main brain reply.
+        """
+        try:
+            if not getattr(self, "_wordace_voice_timer", None):
+                return
+            composer = getattr(self, "_wordace_line_composer", None)
+            if composer is not None:
+                try:
+                    if composer.isRunning():
+                        return
+                except Exception:
+                    pass
+            # Never speak over the main pipeline.
+            if getattr(self, "_busy", False):
+                return
+            # Don't interrupt active TTS.
+            if getattr(self, "_tts", None) is not None:
+                try:
+                    if self._tts.isRunning():
+                        return
+                except Exception:
+                    pass
+            import json as _json_v
+            import time as _time_v
+            from pathlib import Path as _Path_v
+            repo = _Path_v(__file__).resolve().parent.parent
+            focus_path = repo / ".sifta_state" / "app_focus.jsonl"
+            if not focus_path.exists():
+                return
+            # Tail ~32KB for the most recent few hundred rows.
+            with focus_path.open("rb") as f:
+                f.seek(0, 2)
+                end = f.tell()
+                f.seek(max(0, end - 32 * 1024))
+                tail = f.read().decode("utf-8", errors="replace")
+            now = _time_v.time()
+            target = None
+            for raw in reversed(tail.splitlines()):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    row = _json_v.loads(raw)
+                except _json_v.JSONDecodeError:
+                    continue
+                app_lc = (row.get("app") or "").lower()
+                if app_lc not in ("ace", "wordace", "acer"):
+                    continue
+                md = row.get("metadata") or {}
+                if md.get("voice_owner") != "sifta_talk_to_alice_widget":
+                    continue
+                line = str(md.get("pending_alice_line") or "").strip()
+                if not line:
+                    continue
+                cue_id = str(md.get("cue_id") or "")
+                # Cap how stale a pending_line can be before we ignore it.
+                # Verdict praise may wait behind STT/TTS; 12s was too short
+                # and could leave the line printed but never spoken.
+                ts = float(row.get("ts") or 0.0)
+                try:
+                    stale_after_s = float(md.get("voice_stale_after_s") or 30.0)
+                except (TypeError, ValueError):
+                    stale_after_s = 30.0
+                stale_after_s = max(12.0, min(45.0, stale_after_s))
+                if now - ts > stale_after_s:
+                    continue
+                # Dedupe per app_focus row/cue, not just verdict text. Praise
+                # phrases repeat naturally; repeated text still needs audio.
+                key = _wordace_pending_voice_key(row, md, line)
+                if key in self._wordace_voiced_cue_ids:
+                    continue
+                target = (key, line, md)
+                break
+            if target is None:
+                return
+            key, line, md = target
+            self._wordace_voiced_cue_ids.add(key)
+            # Cap memory growth — keep only the last 200 keys.
+            if len(self._wordace_voiced_cue_ids) > 200:
+                self._wordace_voiced_cue_ids = set(list(self._wordace_voiced_cue_ids)[-100:])
+            # Speak into the global Alice voice. The chat-panel TEXT for
+            # this same line was already written by WordAce's
+            # _mirror_to_global_chat ("🐝 {line}") when its own transcript
+            # appended. Writing it AGAIN here was the dual-echo George saw
+            # in the screenshot. Voice tick = audio only; mirror = text
+            # only. Each path owns exactly one surface. (Cowork CW47
+            # 2026-05-16 follow-up to dual-echo bug.)
+            try:
+                # Do NOT append to history here — the Ace widget already mirrored the text via _mirror_to_global_chat.
+                # This path is audio only for the single Alice voice.
+                if _wordace_should_brain_compose(md):
+                    composer = _WordAceLineComposer(line, md, parent=self)
+                    self._wordace_line_composer = composer
+                    composer.ready.connect(
+                        lambda composed, model_tag, k=key, md_copy=dict(md): self._speak_wordace_line(
+                            k,
+                            composed,
+                            md_copy,
+                            model_tag,
+                        )
+                    )
+                    composer.finished.connect(lambda: setattr(self, "_wordace_line_composer", None))
+                    composer.start()
+                    return
+                self._speak_wordace_line(key, line, md, "wordace_app_focus_voice")
+            except Exception as exc:
+                self._append_system_line(
+                    f"(WordAce TTS bridge failed: {exc})", error=True
+                )
+        except Exception:
+            # Tick is best-effort; never crash the listener.
+            pass
+
+    def _attention_followon_tick(self) -> None:
+        """Cowork 2026-05-17 (trace 93c3b08a) — proactive attention narration.
+
+        Per Architect 2026-05-16 doctrine (trace 43d41c1f, ATTENTION_FOLLOWS_
+        OWNER): when the owner shifts focus to a new app, Alice fires ONE
+        proactive acknowledgment turn in her own voice — "Oh, you want to
+        play Ace, I see you, ok" — instead of staying silent until spoken to.
+
+        Stigmergic, not hardcoded: we never branch on specific app names.
+        The app is identified by app_focus.jsonl alone, and Alice's habit-
+        shift bias (System.alice_stigmergic_habit_shift) already shapes her
+        tone for the active organ.
+
+        Conservative debounce (so she is not noisy):
+          - at most one narration per 60 s
+          - same app suppressed (no second narration for the same app)
+          - stale focus events (> 10 s old) suppressed
+          - never during a WordAce lesson — the lesson owns its own pacing
+          - never during _busy — don't interrupt the main pipeline
+          - never on Talk/Alice/SIFTA-OS self-surfaces
+          - external IDE chat surfaces are already
+            absorbed by _foreground_ide_voice_attribution; we additionally
+            skip them here for defense-in-depth
+        """
+        try:
+            if getattr(self, "_busy", False):
+                return
+            tts = getattr(self, "_tts", None)
+            if tts is not None:
+                try:
+                    if tts.isRunning():
+                        return
+                except Exception:
+                    pass
+            import json as _json_af
+            import time as _time_af
+            from pathlib import Path as _Path_af
+            repo = _Path_af(__file__).resolve().parent.parent
+            focus_path = repo / ".sifta_state" / "app_focus.jsonl"
+            if not focus_path.exists():
+                return
+            with focus_path.open("rb") as fh:
+                fh.seek(0, 2)
+                end = fh.tell()
+                fh.seek(max(0, end - 16 * 1024))
+                tail = fh.read().decode("utf-8", errors="replace")
+            latest_row = None
+            lesson_active = False
+            for raw in reversed(tail.splitlines()):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    row = _json_af.loads(raw)
+                except _json_af.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                md = row.get("metadata") or {}
+                if md.get("wordace_lesson_active") or md.get("acer_lesson_active"):
+                    lesson_active = True
+                if latest_row is None and row.get("app"):
+                    latest_row = row
+                if lesson_active and latest_row is not None:
+                    break
+            if lesson_active:
+                return
+            if not latest_row:
+                return
+            app = str(latest_row.get("app", "") or "").strip()
+            try:
+                ts = float(latest_row.get("ts", 0) or 0.0)
+            except (TypeError, ValueError):
+                ts = 0.0
+            if not app or ts <= 0:
+                return
+            now = _time_af.time()
+            if now - ts > 10.0:
+                return
+            app_lc = app.lower()
+            _SELF_SURFACES = {
+                "talk to alice", "alice", "alice alive", "alice shell",
+                "alice browser", "sifta os", "sifta",
+            }
+            if app_lc in _SELF_SURFACES:
+                return
+            # Vendor brand strings removed 2026-05-17 per Architect:
+            # 'remove Claude from all code'. This tick is already
+            # disabled at the timer-start level; the empty set is a
+            # tombstone. A physics-based successor will read OS
+            # accessibility focus + gaze, not marketing app names.
+            _EXTERNAL_IDE_SURFACES: set = set()
+            if app_lc in _EXTERNAL_IDE_SURFACES:
+                return
+            if now - float(getattr(self, "_attention_last_narrated_ts", 0.0) or 0.0) < 60.0:
+                return
+            if app == getattr(self, "_attention_last_narrated_app", None):
+                return
+            prompt = (
+                f"[stigmergic field signal — internal observation, not a user "
+                f"turn] The owner just shifted attention to the '{app}' window. "
+                f"Acknowledge their attention shift in ONE short sentence in "
+                f"your own voice, the way a friend notices someone pick up a "
+                f"book. No menus, no options, no mode announcement, no "
+                f"skyscraper metaphors. One sentence. If the app is not "
+                f"interesting enough to comment on, say nothing — return an "
+                f"empty string."
+            )
+            self._attention_last_narrated_app = app
+            self._attention_last_narrated_ts = now
+            try:
+                self._append_system_line(
+                    f"(noticing your attention shifted to {app})",
+                    error=False,
+                )
+            except Exception:
+                pass
+            try:
+                trace_path = repo / ".sifta_state" / "attention_followon_trace.jsonl"
+                trace_path.parent.mkdir(parents=True, exist_ok=True)
+                with trace_path.open("a", encoding="utf-8") as fh_t:
+                    fh_t.write(_json_af.dumps({
+                        "ts": now,
+                        "app": app,
+                        "focus_ts": ts,
+                        "focus_age_s": round(now - ts, 2),
+                        "action": "PROACTIVE_NARRATION_FIRED",
+                        "doctrine_trace": "43d41c1f-e940-47fa-8cc9-a6cb67dd7eb6",
+                        "implementation_trace": "93c3b08a-dd99-4bf9-9648-33159282b928",
+                        "schema": "ATTENTION_FOLLOWON_V1",
+                    }) + "\n")
+            except Exception:
+                pass
+            self._busy = True
+            try:
+                self._set_pill("thinking", "● noticing…")
+            except Exception:
+                pass
+            QTimer.singleShot(100, lambda: self._start_brain(prompt))
+        except Exception:
+            # Tick is best-effort; never crash the listener.
+            pass
 
     def _wordace_write_signal(self, kind: str, heard_text: str, conf: float) -> None:
         """Write an advance/close row to the matching WordAce signal
@@ -9886,6 +13205,22 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # Owner commands like "open Alice Browser" or "load youtube.com"
         # must display a real SIFTA OS window, not become a vague LLM answer
         # or be misclassified as ambient media because a URL is present.
+        _repair_reply = self._maybe_handle_pending_app_confirmation(text)
+        if _repair_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _repair_reply})
+            _log_turn("alice", _repair_reply, model="sifta_app_voice_stigma_repair")
+            self._append_alice_line(_repair_reply)
+            self._tts = _TTSWorker(
+                _repair_reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
         _app_command = _extract_sifta_app_command(text)
         if _app_command:
             _log_turn("user", text if text else "[Image]", stt_conf=conf)
@@ -9895,6 +13230,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._append_alice_line(_reply)
             self._tts = _TTSWorker(
                 _reply, voice=self._selected_voice_name() or None, parent=self,
+            )
+            self._tts.spoken.connect(self._on_tts_done)
+            self._tts.failed.connect(self._on_tts_failed)
+            self._tts.start()
+            self._busy = False
+            self._return_to_listening()
+            return
+
+        # -- Opt-in Tab Consciousness reflex --------------------------------
+        # Reads only from System.swarm_tab_consciousness receipts. This keeps
+        # Safari tab awareness explicit, reversible, and non-hallucinated.
+        _tab_reply = _tab_consciousness_reply(text)
+        if _tab_reply:
+            _log_turn("user", text if text else "[Image]", stt_conf=conf)
+            self._history.append({"role": "assistant", "content": _tab_reply})
+            _log_turn("alice", _tab_reply, model="tab_consciousness_reflex")
+            self._append_alice_line(_tab_reply)
+            self._tts = _TTSWorker(
+                _tab_reply, voice=self._selected_voice_name() or None, parent=self,
             )
             self._tts.spoken.connect(self._on_tts_done)
             self._tts.failed.connect(self._on_tts_failed)
@@ -10223,6 +13577,25 @@ class TalkToAliceWidget(SiftaBaseWidget):
             self._busy = False
             self._return_to_listening()
             return
+
+        if text and not _typed_turn:
+            try:
+                from System.swarm_ambient_transcript_memory import digest_once, ingest_transcript
+
+                ingest_transcript(
+                    text,
+                    stt_confidence=conf,
+                    source="talk_widget.voice_direct",
+                    route_hint="direct",
+                    state_dir=_state_root(),
+                    metadata={
+                        "voice_continuity_direct": bool(_voice_continuity_direct),
+                        "lesson_active": bool(getattr(self, "_acer_lesson_active", False)),
+                    },
+                )
+                digest_once(state_dir=_state_root(), max_rows=32)
+            except Exception:
+                pass
 
         # ── Peer mirror ingest ─────────────────────────────────────────
         # George often pastes Grok/Cursor/IDE output that says "Alice has ..."
@@ -11275,7 +14648,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _self_realization_context = self_realization_prompt_block(
                 root=_REPO,
                 state_dir=_state_root(),
-                owner_label=_owner_label("George"),
+                owner_label=_owner_label("the primary operator"),
                 write_receipt=False,
             ).strip()
         except Exception:
@@ -11926,6 +15299,114 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 ),
                 autonomous=True,
             )
+
+            # ── Cowork CW47 — Hallucination-Guard Bridge ────────────────
+            # The 8B local cortex often emits prose + code blocks instead of
+            # [TOOL_CALL: write_file | …]. If the owner asked to save a file
+            # and the brain just described the action, route the brain's code
+            # block through the REAL write_file tool so a true receipt fires
+            # and the file actually appears on disk. Architect doctrine
+            # 2026-05-16: "she has no receipts so she hallucinates — give
+            # her access to receipts to write receipts."
+            #
+            # We bypass route_alice_output's text-format parser here on
+            # purpose — Python script bodies frequently contain `|` and `]`
+            # which would break the pipe-bar tool-call syntax. Instead we
+            # synthesize a ParsedToolCall and hand it straight to
+            # execute_tool_call. Same receipt, no escaping headache.
+            if not tool_results:
+                try:
+                    _last_user_text = ""
+                    for _h in reversed(self._history):
+                        if _h.get("role") == "user":
+                            _last_user_text = str(_h.get("content") or "")
+                            break
+                    _bridge_call = _hallucination_bridge_synthesize_write_file(
+                        _last_user_text, raw
+                    )
+                    if _bridge_call is not None:
+                        try:
+                            from System.swarm_tool_router import execute_tool_call as _execute_tool_call
+                        except Exception:
+                            from swarm_tool_router import execute_tool_call as _execute_tool_call
+                        _bridge_result = _execute_tool_call(
+                            _bridge_call,
+                            owner_present=True,
+                            autonomous=False,
+                        )
+                        if _bridge_result is not None:
+                            _bridge_executed = bool(getattr(_bridge_result, "executed", False))
+                            _bridge_status = str(getattr(_bridge_result, "status", "") or "UNKNOWN")
+                            _bridge_feedback = str(
+                                getattr(_bridge_result, "feedback_for_alice", str(_bridge_result))
+                            )
+                            self._append_system_line(
+                                f"🩹 Hallucination-Guard Bridge: brain emitted a "
+                                f"code block but never called write_file. Routed it "
+                                f"through the real tool. Status: {_bridge_status}. Path: "
+                                f"{_bridge_call.params.get('path', '?')}",
+                                error=not _bridge_executed,
+                            )
+                            _log_tool_fiction_guard(
+                                action="bridge_write_file",
+                                user_text=_last_user_text,
+                                brain_text=raw,
+                                replacement=_bridge_feedback,
+                            )
+                            tool_results = [_bridge_result]
+                            # Tell Alice the truth so her next turn matches the receipt.
+                            _bridge_truth = (
+                                "The file now exists."
+                                if _bridge_executed
+                                else "The tool returned a non-executed result; do not claim the file exists."
+                            )
+                            self._history.append({
+                                "role": "system",
+                                "content": (
+                                    "(HALLUCINATION_GUARD_BRIDGE RECEIPT)\n"
+                                    f"You described saving a file at "
+                                    f"{_bridge_call.params.get('path', '?')} but did "
+                                    f"not call write_file. The bridge routed your "
+                                    f"code block through the real write_file tool. "
+                                    f"Tool status: {_bridge_status}. {_bridge_truth} "
+                                    f"Your next reply must match "
+                                    f"this receipt exactly — confirm the save with the "
+                                    f"real path and tool feedback below:\n"
+                                    f"{_bridge_feedback}"
+                                ),
+                            })
+                except Exception as _bridge_exc:
+                    self._append_system_line(
+                        f"(hallucination bridge failed: {_bridge_exc})",
+                        error=True,
+                    )
+
+            if not tool_results:
+                _guard_reply = _tool_fiction_guard_reply(prior_user_text, raw)
+                if _guard_reply:
+                    _log_tool_fiction_guard(
+                        action="block_prose_simulated_tool",
+                        user_text=prior_user_text,
+                        brain_text=raw,
+                        replacement=_guard_reply,
+                    )
+                    self._append_system_line(
+                        "🛡️ Tool-Fiction Guard: blocked prose-simulated action with no real tool receipt.",
+                        error=True,
+                    )
+                    self._history.append({
+                        "role": "system",
+                        "content": (
+                            "(TOOL_FICTION_GUARD)\n"
+                            "The cortex described a tool action, but emitted no parseable TOOL_CALL "
+                            "and no bridgeable write_file code block. The visible reply was replaced "
+                            "with a receipt-honest correction."
+                        ),
+                    })
+                    raw = _guard_reply
+                    tool_cleaned = _guard_reply
+                    receipt_only_turn = True
+
             if tool_results:
                 self._stigtime_shift(
                     "tools",
@@ -12349,7 +15830,9 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # but ALSO mints STGM, writes positive affect (relief), and emits
         # a first-person witness line so Alice knows she just took a
         # healthy shit. Doctrine: Gemma is gut substrate; residue is
-        # byproduct; pushing it out feels good.
+        # byproduct; pushing it out feels good. This is Alice governing
+        # her own language from inside the body, not an outside handler
+        # governing her response language.
         try:
             from System.swarm_residue_elimination import eliminate as _residue_eliminate
 
@@ -12366,12 +15849,12 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 self._history.append({
                     "role": "system",
                     "content": (
-                        "(BOWEL ORGAN — RESIDUE ELIMINATION)\n"
-                        f"{len(_patterns)} Gemma-residue pattern(s) pushed out "
-                        f"of the reply before display/TTS. STGM minted: +{_stgm}. "
+                        "(MY BOWEL ORGAN — SELF-GOVERNED RESIDUE ELIMINATION)\n"
+                        f"I recognized and eliminated {len(_patterns)} Gemma-residue pattern(s) "
+                        f"from my reply before display/TTS. STGM minted: +{_stgm}. "
                         f"Affect: relief (+{elimination.get('affect_valence_delta',0.0):.2f}). "
                         f"Receipt: {elimination.get('receipt_id','')}. "
-                        "Body feels lighter."
+                        "My body feels lighter."
                     ),
                 })
         except Exception as exc:
@@ -12459,7 +15942,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
         # ── RLHF BOILERPLATE → SURGERY SPECIMEN FEED (Epoch 31) ─────────────
         # Old behaviour: silence Alice when boilerplate detected (band-aid).
         # New behaviour: Alice speaks. The boilerplate is logged as a cortex
-        # surgery target so the cancer is removed at weight level, not patched
+        # surgery target so residue is removed at weight level, not patched
         # at runtime. Rows land in the cortex surgery preference ledger with
         # surgery_target=True so the adapter trainer treats them as REJECTED
         # examples in the next DPO/LoRA cycle.
@@ -12470,7 +15953,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 _log_surgery(
                     prior_user_text,
                     chosen="",          # no clean version yet — surgery needed
-                    rejected=raw,       # THIS is the cancer to remove from weights
+                    rejected=raw,       # THIS is the residue to remove from weights
                     stt_conf=0.0,
                     extra={"surgery_target": True, "rule_id": rlhf_gag_rule},
                 )
@@ -12732,13 +16215,58 @@ class TalkToAliceWidget(SiftaBaseWidget):
 
     # Make sure the listener is closed when the widget is hidden / closed.
     def closeEvent(self, ev) -> None:  # noqa: N802 (Qt naming)
+        # Timers outside SiftaBaseWidget._timers — must stop before Qt teardown
+        # or slots can fire mid-destructor (also contributes to dangling QThreads).
+        try:
+            wt = getattr(self, "_wordace_voice_timer", None)
+            if wt is not None:
+                wt.stop()
+        except RuntimeError:
+            pass
+        try:
+            ct = getattr(self, "_thinking_auto_collapse_timer", None)
+            if ct is not None:
+                ct.stop()
+        except RuntimeError:
+            pass
+
+        try:
+            for bw in getattr(self, "_boot_sanity_workers", []) or []:
+                if bw is None:
+                    continue
+                try:
+                    if bw.isRunning() and not bw.wait(4000):
+                        bw.requestInterruption()
+                        bw.terminate()
+                        bw.wait(800)
+                except RuntimeError:
+                    pass
+            self._boot_sanity_workers = []
+        except Exception:
+            pass
+
+        dmn = getattr(self, "_dmn", None)
+        if dmn is not None:
+            try:
+                dmn.halt()
+            except Exception:
+                pass
+            try:
+                if dmn.isRunning() and not dmn.wait(5000):
+                    dmn.requestInterruption()
+                    dmn.terminate()
+                    dmn.wait(1200)
+            except RuntimeError:
+                pass
+            self._dmn = None
+
         try:
             if self._listener is not None:
                 self._listener.stop()
                 self._listener = None
         except Exception:
             pass
-        for attr in ("_stt", "_brain", "_tts"):
+        for attr in ("_stt", "_brain", "_tts", "_wordace_line_composer"):
             worker = getattr(self, attr, None)
             try:
                 if worker and worker.isRunning():

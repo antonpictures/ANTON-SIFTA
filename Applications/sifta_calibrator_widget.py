@@ -3,7 +3,7 @@
 sifta_calibrator_widget.py — CG55M Dr Cursor: Alice-Sees Calibrator (Game Mode)
 ═════════════════════════════════════════════════════════════════════════════
 Originally an NVIDIA-Ising-Day inspired auto-calibration simulator. Gamified
-2026-04-26 by CG55M Dr Cursor / Claude Opus 4.7 EXTRA-HIGH so that gestures
+2026-04-26 by CG55M Dr Cursor (EXTRA-HIGH) so that gestures
 seen by Alice's eye actually drive the simulation.
 
 Core simulation (unchanged):

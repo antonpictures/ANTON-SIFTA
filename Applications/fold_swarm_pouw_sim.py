@@ -10,7 +10,7 @@ A real-time visualization of the Fold-Swarm engine:
   • STGM token minting on verified useful work
   • Cryptographic SHA-256 receipt chain (no double-spend)
 
-Author: Claude Sonnet 4.6 (C46S) — AG31 Assessment Validator
+Author: C46S — AG31 Assessment Validator
 For the Swarm. 🐜⚡
 """
 

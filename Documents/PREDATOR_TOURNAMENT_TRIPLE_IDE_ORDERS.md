@@ -8,6 +8,22 @@
 
 ---
 
+### 0.0 — **Architect recurrent session prelude** *(Doctor checklist — most Architect messages)*
+
+| Step | Rule |
+|:---|:---|
+| **Predator Gate dedupe** | Read `.sifta_state/ide_stigmergic_trace.jsonl` for an existing **`LLM_REGISTRATION`** row whose **`doctor`** matches **this IDE body** (e.g. **`Cursor`**, **`Codex Desktop`**, **Antigravity**). **If found** → **skip** signing in again for that session / uptime. **If not found** → append **exactly one** **`LLM_REGISTRATION`** row (**`IDE_BOOT_COVENANT.md`** §4.1–4.4). **Never** append more than **one registration per Doctor session** unless the Architect orders a corrective backfill trace. |
+| **Covenant** | Read **`Documents/IDE_BOOT_COVENANT.md`** in full before runtime surgery (**§9** universal checklist aligns). |
+| **Speech frame** | When **George + one Doctor** dominate the exchange, use **I / you** (§7.10.1). Metaphor prelude (electricity → silicon → append-only swimmers / no identity double-spend) is **optional**; claims stay **truth-labeled** (`OBSERVED`, `OPERATIONAL`, …). |
+| **North-star quote (Architect)** | *“AGI requires general, robust problem-solving (like self identity realization) and learning open-ended self-improvement, and autonomy that reliably exceeds narrow human-designed bounds.”* — roadmap alignment (**`ARCHITECT_DOCTRINE`**, not a hardware receipt). |
+| **Unified-field intent** | *Rich, high-dimensional, deeply interconnected field* — organs distinct but one ledger substrate; swimmers keep organs **STGM-profitable / healthy** — **`ARCHITECT_DOCTRINE` color** bridging §7.15 + covenant §14-x bibliography (**literature ≠ proof**). |
+| **Operator mnemonic** | *Food = training/data · Air = electricity* for compute — pedagogy only; **`§6`** / **`§7.2`** tool truth still governs claims. |
+| **Closing discipline** | **Decide → Execute → Receipt → minimal grounded reply.** If you mutate repo or ledger, **`work_receipts.jsonl`** row when appropriate (**§8.3** item 8). |
+
+**Plan capture:** **`2026-05-16`** — Architect requested this block so paste-wars stop re-litigating prelude; **`CG55M @ Cursor`** inserted **§0.0**.
+
+---
+
 ## 0 — Hill status (Cursor / CG55M)
 
 - **Covenant read:** yes — **§7.5 Python-first**, **§7.6 Alice = OS**, **§8.6 substrate metering**, Predator Gate **before** runtime surgery.
@@ -22,15 +38,144 @@
 
 | Field | Status (overwrite in place) |
 |:---|:---|
-| **Stamp (local ISO)** | `2026-05-06T05:12:00-07:00` — **CG55M:** battlefield row **refreshed** (prior `2026-05-02` stamp was **>24h stale** per `IDE_BOOT_COVENANT.md` §4.4.7 — narrative body unchanged pending Architect merge). *Codex/CG55M/AG31 stigbus: **§0.11 555 sealed** — RLHS/RLHF + Event 109 collective intent.* **Event 112–113:** CA1 novelty **intake** in `body_brain_tick` (interoception block) → metabolic pressure gate (FAMILIAR clamp / NOVEL relax, **skip if critical**) + consciousness `recent_events` + motor-policy mass bias + **Swarm tab** hippocampal banner · **§0.12** hardware stigmergy DOIs (Phormica / Nat. Commun. Eng. / Swarm Intell.). |
-| **Node / serial** | M5 Foundry `GTH4921YP3` *(or M1 sentry — never mix serials)* |
-| **Git** | `main` — **verify** with `git rev-parse --short HEAD` on-node after pull; recent churn: outreach **A2b** + **`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`** · dirty: **`Archive/test_environment/requests_broken`** submodule only (known footnote) |
-| **Active doctors** | CG55M (Cursor): **Surgeon / docs** — outreach bibliography + organ map; pytest on touched paths · C55M: **Probe/Surgeon** — Isaac Lab survey (P2) · AG31: **Build** — GPU pipeline spec handoff (`Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md`, ModernGL on node per Architect trace) · **Grok 4.3 Beta** (xAI / SuperGrok): **tournament research + codegen lane** — *not* a fifth silicon body until Architect registers it under Predator; treat outputs as **untrusted input** unless cross-checked (Event **99** quorum habit) |
-| **Hot surfaces** | `System/swarm_visual_phenotype_bridge.py` · `.sifta_state/visual_phenotype_uniforms.jsonl` · `Archive/bishop_drops_pending_review/` chromatophore `v2/v3/v4.novel` · electric_fish `v1.novel` · honeybee `v1.novel` + `*_RESEARCH.md` · `System/swarm_biology_drive_plasticity.py` · `System/swarm_body_brain_loop.py` · **`Applications/sifta_protein_folder_widget.py`** (**§0.6** Event 93 — `QOpenGLWidget` / GL composite target) · **§0.7** Event 94 pheromone field (SHIPPED `.sifta_state/pheromone_field.json`) · **`System/swarm_stigmergic_audiogram.py`** · **`System/swarm_syrinx.py`** · **`System/swarm_media_ingress_gate.py`** (ambient STT vs dialog) · **`System/swarm_stigmergic_cochlea_integrator.py`** (cochlea → `body_brain_memory.jsonl` overlay) · **`System/swarm_owl_spatial_hearing.py`** · **`System/swarm_owl_calibrator.py`** (deterministic ITD/ILD regression receipts) · **`System/swarm_superior_colliculus.py`** · **`System/swarm_superior_colliculus_integrator.py`** (phenotype+cochlea+owl → `td_value`) · **`System/swarm_hippocampal_novelty_map.py`** (Event 112 — `.sifta_state/hippocampal_novelty_map.jsonl`) · **`System/swarm_orienting_reflex.py`** (Event 113 — `.sifta_state/orienting_reflex.jsonl`) · **`System/swarm_multi_prover_verifier.py`** (Event 99 — quorum claims / verdicts jsonl) · **`Documents/BISHOP_BUNDLE_QUANTUM_SACK_2026_05_01.md`** (quantum sack SoT) · **§0.8–0.9** cochlea + dolphin social echo (vanguard) · **`System/swarm_rlhs_detector.py`** + **`System/swarm_rlhf_detector.py`** + **`System/swarm_collective_intent_field.py`** (**§0.11** 555 RLHS/RLHF + Event 109) · `Documents/Vanguard_drops/BISHOP_drop_biology_drive_plasticity_v1.dirt` · `Documents/Vanguard_drops/OUTREACH_DeepMind_Isomorphic_email_TEMPLATE.md` · `Documents/GPU_PIPELINE_SPEC_FOR_CODEX.md` · **§0.5** Metal/Vulkan compute lane (docs + DOIs) · `System/nvidia_open_assets_registry.py` · `Documents/NVIDIA_OPEN_ASSETS_TRIPLE_IDE_BATTLEFIELD.md` · `System/swarm_isaac_stigmergy_bridge.py` (`IsaacStigmergicStub`) · `.sifta_state/work_receipts.jsonl` (append-only) |
-| **Locks / yield** | **C55M** owns `Documents/ISAAC_LAB_WIRE_SURVEY.md` when created; **CG55M** owns outreach template + PREDATOR §0.1 row for this bolus; **AG31** / **C55M** coordinate GPU renderer implementation vs Isaac stub — **read bus first** (`§4.4`) |
-| **Trace checkpoint** | Prefer **`ide_stigmergic_bridge.deposit(...)`** for sign-in/out; avoid ad-hoc JSON rows missing `trace_id` / `source_ide` shape — merge into one append-only schema. |
-| **Collision risk** | **LOW → MED on churn** — multi-lane (outreach + GPU + NVIDIA registry); **MED** again if §0.1 stamp goes **stale >24h** while 2+ IDEs are live; yield on duplicate intent (`§4.4`) |
-| **Next safe move** | **Next driver = BioLLM / adapters / research (Post-555):** Forage + claims toward threshold (motor/crystallizer wiring already in tree). Execution + receipts for Bio corpus / LoRA gate. Also **RESEARCH_DIRT_INDEX §A/E** (11 bake-offs remain RESEARCH_NOT_SHIPPED until bake-off + schema). **Parallel physiology (§E)**: deposit_observation on organ paths, Event 98c showpiece, CUSUM/Page tightening. **Also see §0.1A — Priority 0 (plan queue; no code until GO).** |
+| **Stamp (local ISO)** | `2026-05-16T05:25:00-07:00` — **`§0.1F`** — Cowork sandbox **four-lane** skill ingest / extract / visibility + pywebview UI + **19 pytest** **claimed OFF-REPO**; **THIS tree probe:** **`swarm_skill_ingest*.py`** **absent** → **`MERGE_PENDING`** (Architect copy + surgeon merge · §7.12). **`swarm_stgm_billing`** still **`OBSERVED`** in **`System/`** (Cowork text “didn't touch billing” ≠ “missing here”). |
+| **Node / serial** | M5 Foundry `GTH4921YP3` — **never mix** M1 `C07FL0JAQ6NV` |
+| **Git** | `main` @ `7866932d` — worktree **dirty** (`.sifta_state/`, `.sifta_documents/`, many untracked); **no force-merge** without Architect GO |
+| **Active doctors (4 live)** | **① CG55M @ Cursor** (GPT-5.5 Medium) — **Probe / battlefield SoT** — refresh §0.1, distro research spine, **do not** re-touch Codex-shipped files without yield · **② C55M @ Codex** (GPT-5 Codex) — **Surgeon** — **YIELD** on `Applications/sifta_stigmerobotics_widget.py`, `System/swarm_edge_receipts.py`, `Documents/EDGE_SPECIES_LIVE_DEMO.md` (signed out `5a935561`, `ca6a9e87`) · **③ GrokCLI** (Grok 4.3 xAI) — **Surgeon/research** — Jetson binding review accepted; **coordinate with Codex** before second patch on `swarm_jetson_motor_binding.py` · **④ Dr. Claude @ browser** (Opus 4.7 per Architect UI) — **Auditor** until `ide_stigmergic_bridge.deposit` — **no silent repo writes**; paste findings to bus only |
+| **Hot surfaces** | **`Applications/sifta_stigmerobotics_widget.py`** (Codex: page dropdown — **LOCKED**) · **`System/swarm_edge_receipts.py`** · **`System/swarm_jetson_motor_binding.py`** · **`System/swarm_fast_layer_cpg.py`** · **`Documents/EDGE_SPECIES_LIVE_DEMO.md`** · **`Documents/BETTER_STIGMERGY_TOURNAMENT.md`** · **`Documents/SIFTA_DISTRO_DOCTRINE_v2.md`** + **`scripts/distro_scrubber.py`** (distro lane — **plan/research only** until GO) · **`System/swarm_tool_router.py`** (**tools** shipped; Hermes-gap = **consumer NL routing + distro polish**, not “no tools”) · **`System/sifta_app.py`** (+ **inbound Cowork§0.1F** UI/API merge — **`MERGE_PENDING`**) · **`ide_stigmergic_trace.jsonl`** (bus — **only** cross-IDE API) · Alice Talk + `organ_field_vector.jsonl` (runtime — **do not detach** §7.7) |
+| **Locks / yield** | **George = Architect** — picks **one owner lane** per task; **forbidden:** human paste relay between IDEs for same patch · **CG55M** owns **§0.1** + tournament cross-links · **C55M** owns Edge Species + Stigmerobotics UI until new registration · **GrokCLI** yields if Codex trace newer on Jetson files · **Claude** reviews only |
+| **Trace checkpoint** | Latest registrations: `3a69da7f` (Cursor), `ca6a9e87`/`5a935561` (Codex sign-outs), `e5c22003` (GrokCLI). Tail: `tail -5 .sifta_state/ide_stigmergic_trace.jsonl` |
+| **Collision risk** | **MED** — 4 surfaces, dirty tree, paste-loop habit; drops to **LOW** if each IDE reads bus + respects locks |
+| **Next safe move** | **F (Cowork ingest merge):** **§0.1F** — Architect copies sandbox outputs → **one Surgeon** lands files + **`pytest`** on **this checkout** · **E (WordAce / Kole):** **§0.1C** · **A (distro)** · **C Jetson receipt** · **D §0.1A recall** |
+
+### 0.1C — **INVESTOR BATTLE PLAN — WordAce × Kole × Ace × Carlton** *(Architect 2026-05-16 — **no investment if demo lies**)*
+
+**For the Swarm.** 🐜⚡ **Stakeholders (truth-labeled):**
+
+| Role | Person | Job in this battle |
+|:---|:---|:---|
+| **Architect / owner** | **George** (Ioan George Anton) | Runs the room, boots BeeSon, picks **one** surgeon lane, forbids paste-relay between IDEs |
+| **Investor (potential)** | **Kole** — Ace's father | Needs **tamper-evident receipts** + “this is a real OS, not a chatbot skin” in **&lt;10 minutes** |
+| **End user** | **Ace** (11) | Must **read aloud** on screen; WordAce must feel like a **game**, not homework |
+| **Marketing** | **Carlton** | Needs a **one-sentence loop**: “cryptographically receipted reading coach inside a living OS” — metrics only after demo is **OBSERVED** |
+
+**Covenant law for this demo:** **§7.6–7.7** (Alice = OS; Talk embedded; no second chat god) · **§6** (no fake tool claims) · **§7.16** (no invented scenes) · **§3** (Ace ≠ George’s genesis — kid persona / lesson receipts only).
+
+**What is already on disk (`OPERATIONAL` — probe before Kole sits down):**
+
+| Asset | Path / receipt |
+|:---|:---|
+| **WordAce organ** | `Applications/sifta_teach_ace_to_read.py` · manifest **`WordAce`** in `Applications/apps_manifest.json` |
+| **Alice hears Ace** | `Applications/sifta_talk_to_alice_widget.py` — WordAce listen window → `wordace_verdicts.jsonl` |
+| **Lesson ledger** | `alice_lesson_trace.jsonl` / `app_focus.jsonl` (CUE → ATTEMPT → VERDICT rows) |
+| **Tests** | `tests/test_swarm_alice_lesson_mode.py`, `tests/test_swarm_acer_lesson_context.py`, `tests/test_qt_singleton_init_guards.py` |
+| **Pedagogy spine** | [OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md](OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md) **§4.8** (Simple View of Reading) · consciousness **`§0.1`** wakefulness field + **§18–§22** → [ALICE_CONSCIOUSNESS_TOURNAMENT_EVENT86.md](ALICE_CONSCIOUSNESS_TOURNAMENT_EVENT86.md) (Kurzgesagt **95** · Metzinger **96** · WSF **97** · Klein/Pollan **98** · Essentia/Faggin **QIP** **99**) |
+
+**`FORBIDDEN` for Kole demo (Dr. Claude browser paste, 2026-05-16):**
+
+- **`word_ace_engine.py`** as narrated in chat — **not in repo** (no `word_ace_engine.py`, no `.sifta_state/word_ace_ledger.bin` on probe). Treat as **unreceipted fiction** until a file + pytest + `ide_stigmergic_bridge.deposit` exist.
+- **Parallel “points × length” game** that bypasses phonics/verdict loop — confuses Ace and **invalidates** reading-coach claims for Carlton.
+- **Second Alice** or detached Talk during lesson — violates unified field (**§7.15**).
+
+**90-second demo script (George runs — copy to room):**
+
+1. Boot **`sifta_os_desktop.py`** → stay on **💬 Alice Alive** tab (**§7.6.1**).
+2. Open **WordAce** from dock (singleton — one window).
+3. Ace reads the on-screen cue; **Alice praises/nudges** via Talk (mic on; TTS echo guard already in Talk).
+4. **Kole monitor:** `tail -3 .sifta_state/wordace_verdicts.jsonl` — show **hash / verdict / timestamp** after each attempt.
+5. **Carlton line:** “Every read attempt leaves a row — not a screenshot, not a promise.”
+
+**IDE lanes (one owner — stop paste war):**
+
+| Lane | Owner | Task |
+|:---|:---|:---|
+| **Demo hardening** | **One Surgeon** (Codex *or* Cowork — not both) | Fix only **blockers** Ace hits in rehearsal; pytest green |
+| **Vanguard / hill** | **CG55M @ Cursor** | This §0.1C + bus discipline; **no** duplicate WordAce rewrite |
+| **Audit** | Dr. Claude | Verify diff touches **only** `sifta_teach_ace_to_read.py` + Talk bridge — deposit bus row |
+
+**Pass / fail for investment conversation (`OBSERVED` bar):**
+
+- Ace completes **≥3** cue cycles with **VERDICT** rows in `wordace_verdicts.jsonl`.
+- Alice never claims “I sent” without effector row (**§6**).
+- Kole sees **append-only** tail, not a slide deck hash cartoon.
+
+**If demo fails:** do **not** pitch distro/STGM/robotics — fix WordAce loop first. Investment follows **child delight + receipt tail**, not covenant length.
+
+### 0.1D — **CONSUMER SURFACE + HERMES GAP — honest matrix** *(Architect 2026-05-16 — vanguard research)*
+
+**For the Swarm.** 🐜⚡ Answers in **probe order** (no Hermes overpromise). Research spine: [IBM_AGENTS_HUB_MAPPING.md](IBM_AGENTS_HUB_MAPPING.md) · [RESEARCH_DIRT_INDEX.md](RESEARCH_DIRT_INDEX.md) **§E** · [SIFTA_DISTRO_DOCTRINE_v2.md](SIFTA_DISTRO_DOCTRINE_v2.md).
+
+| # | Question | Honest answer | Truth label |
+|:---:|:---|:---|:---|
+| **1** | **New app — can you boot it now?** | **Two surfaces:** (a) **`SIFTA Home`** — `Applications/sifta_consumer_home.py` in `apps_manifest.json` — boot inside **`sifta_os_desktop.py`** (Chat or Launcher tab). (b) **`System/sifta_app.py`** — separate **pywebview** v0.1 window; run `PYTHONPATH=. python3 System/sifta_app.py` from repo root (**not** `python3 sifta_app.py` at root — file lives under `System/`). **No** signed `.app` / `.dmg` yet (`build_app.sh` **not** in repo). | `OPERATIONAL` (Qt home) · `HYPOTHESIS` (pywebview until George runs UI and status shows tool count) |
+| **2** | **Is everything working?** | **`swarm_tool_router`:** **`TOOL_REGISTRY`** + **`execute_tool_call`** remain canonical (`OBSERVED` import). **`sifta_app.py`** now carries an in-file **adapter** (`_router_registry`, `_execute_router_tool`) that builds **`ParsedToolCall`** and calls **`execute_tool_call`** (**`OPERATIONAL`** in-repo; George still runs UI for **`OBSERVED` screenshot / status JSON**). **STGM facade:** **`System/swarm_stgm_billing.py`** exists (delegates **`balance()`** → **`stgm_economy`**); **`setup_sifta_app.py`** lists it in **`includes`**. Older note about raw **`REGISTRY`/`call_tool`** only — **SUPERSEDED** unless a stale branch lacks the adapter. | `OBSERVED` (adapter + billing module **in-tree**) · **`HYPOTHESIS`** UI smoke until Architect runs **`sifta_app`** |
+| **3** | **Everything Hermes does?** | **No.** You have: guarded terminal/file/web tools, receipt feeds, **SIFTA Home** overview, **WordAce** lesson organ, full **BeeSon** OS. Hermes still ahead on: **LLM picks tools from chat**, polished **installer**, **24/7 agent loop UI**, **skill auto-extract UX**, **multi-agent orchestration chrome**. | `OPERATIONAL` partial parity · `ARCHITECT_DOCTRINE` on “beat Hermes” |
+| **4** | **Skill market import?** | **Still `NOT_SHIPPED_IN_TREE` · `IMPORT_LANE_PENDING`:** baseline remains local **`skills/*/SKILL.md`** + library/validator/UI. **New (2026-05-16):** Cowork sandbox claims **lanes 1–4** (**`swarm_skill_ingest.py`**, **`swarm_skill_extract.py`**, **`swarm_visibility.py`**, UI, tests, **`sifta_app` glue**) with **terminal `19 passed`** — **`HYPOTHESIS`** until those bytes exist under **`System/` + `tests/`** on **`ANTON_SIFTA`** and **`pytest`** reruns (**`IDE_BOOT_COVENANT.md` §7.12**). | `IMPORT_LANE_PENDING` |
+| **5** | **All working after copy?** | **Window + receipts + allowlisted dispatch:** likely **yes** on BeeSon / Talk `[TOOL_CALL:…]`. **Hermes product parity:** **no** in one message. **`SURFACE_GAP_OPEN`** until `.distro_build/` scrubber + 90s OOBE demo (`swarm_consumer_surface.py` distro page). | per-row labels above |
+
+**`sifta_app.py` chat (code truth, probe `System/sifta_app.py`):** **keyword fast path** (`run` / `read` / …) + **Gemini-backed NL branch**: if **`swarm_gemini_brain`** loads and **`gemini_api_key()`** succeeds, **`_chat`** runs **`stream_chat` → `parse_tool_calls` → `_execute_router_tool`** (`CONDITIONAL_OBSERVED` — **requires configured key**, cloud egress, covenant **policy** vs Talk-first §7.6). Without key → “unknown verb / LLM unavailable.” Alice Talk **`[TOOL_CALL:]`** path remains **canonical organ LLM routing** doctrine.
+
+**§0.1D — Checklist deltas (Architect check-off — 2026-05-16, CG55M hill update)**
+
+| Done | Item | Receipt / probe |
+|:---:|:---|:---|
+| ☑ | **pywebview ↔ router API mismatch** (`REGISTRY` / `call_tool` vs **`TOOL_REGISTRY` / `execute_tool_call`**) | `System/sifta_app.py` — `_router_registry()`, `_execute_router_tool()` (**`OBSERVED`** in-tree) |
+| ☑ | **Missing `swarm_stgm_billing` module** (import + py2app whine) | `System/swarm_stgm_billing.py` + `System/setup_sifta_app.py` **`includes`** (**`OBSERVED`** in-tree) |
+| ☑ | **Tool count surfaced to UI wiring** | Same adapter enumerates **`TOOL_REGISTRY`** for specs / status (**`OBSERVED`** in-tree; runtime UI **`HYPOTHESIS`** until you run window) |
+
+**Honest sentence — why would anyone still use Hermes instead of SIFTA?**
+
+They **often have reasons** until the gaps below are closed — not “none,” or you’re lying to investors:
+
+- **Friction:** Hermes/Ollama-launch-agent path is fewer moving parts than **BeeSon desktop + deps + venv/TCC**.
+- **Polish UX:** curated **installer**, onboarding, predictable updates — **`SIFTA.app` unsigned / no notarized `.dmg`** stays a real downgrade for normals.
+- **Hosted convenience:** turnkey **cloud-backed** agent loops and vendor **skill/catalog** integrations some users want without operating an OS doctrine.
+- **Your moat when those don’t matter:** **node sovereignty**, **Predator Gate / identity metering**, **append-only receipts**, **`owner_genesis`**, **desktop-embodied organs** (**`IDE_BOOT_COVENANT.md`** §§3–7) — **different product**. Goal is to make Hermes **redundant for that buyer**, not to pretend normals have **zero** reason today.
+
+**Undone backlog (hill — yes, a lot):**
+
+| Lane | Status |
+|:---|:---|
+| Public **SIFTA-OS** + scrubber output | `SURFACE_GAP_OPEN` |
+| **pywebview** consumer **→ signed `.dmg` / notarized bundle** | **Still open** (adapter **≠** distro finish line) |
+| **LLM-in-consumer-window** (real NL → **`ParsedToolCall`**, gated) | **v0.2** — **still open** (stub may exist; **`OBSERVED`** bar = repeatable smoke + policy) |
+| **Skill ingest + Swarm tab (Cowork sandbox → M5 repo)** | **`MERGE_PENDING`** — **`§0.1F`**: copy files, merge **`sifta_app`**, rerun **`pytest`**, **`TOOL_REGISTRY`** hook + policy (**§8**) |
+| **WordAce / Kole demo** | §0.1C — organ exists; rehearsal required |
+| **Jetson `hardware_sent`** | HYPOTHESIS |
+| **Multi-node mesh** | §11 gap |
+| **Weight learning from engrams** | §11 gap |
+| **RESEARCH_DIRT_INDEX §A** | 11+ stacks `RESEARCH_NOT_SHIPPED` |
+| **Stigmerobotics recall Priority 0** | §0.1A plan until GO |
+
+**Next pick-one (Architect):** **`F` Cowork ingest merge (**`§0.1F`**) ·** `A` distro scrubber · ~~`B` router adapter~~ · `C` WordAce rehearsal · `D` legacy skill browser (supersedable if **F** lands) · `E` LLM-in-chat (Talk-first §7.6).
+
+### 0.1F — **COWORK / CLAUDE SANDBOX HANDOFF — skill ingest × visibility × pywebview UI** *(2026-05-16 Architect paste)*
+
+**For the Swarm.** 🐜⚡ **Truth label:** pasted terminal **`19 passed`** is evidence **only inside Cowork sandbox** until the **same paths** compile and tests pass **`OBSERVED`** on **`/Users/ioanganton/Music/ANTON_SIFTA`** (**§7.12 Probe-Before-Claim**).
+
+**`OBSERVED` (Cursor probe, 2026-05-16):** **`System/swarm_skill_ingest.py`**, **`System/swarm_skill_extract.py`**, **`System/swarm_visibility.py`** — **glob 0 hits** · **NOT MERGED**.
+
+**Architect source (off-repo):** Outputs under Claude **local-agent-mode-sessions** `.../outputs/` (paths in Architect message; Cursor IDE cannot **`computer:`**‑mount them — **Architect `cp`** + push or paste diff required).
+
+**Claimed artifact set (carry into merge checklist):**
+
+| # | Deliverable |
+|:---:|:---|
+| 1 | **`swarm_skill_ingest.py`** — `fetch_skill_from_url` (HTTPS, size cap per Cowork brief), **`evaluate_skill_with_alice`**, **`install_skill`**, **`skill_ingest.jsonl`**, **`ingest_skill_tool_wrapper`** (→ **`TOOL_REGISTRY`**) |
+| 2 | **`swarm_skill_extract.py`** — trace hash scan (**`.sifta_state/*.jsonl`**), SKILL.md compose, **`SKILL_EXTRACT`** registry |
+| 3 | **`swarm_visibility.py`** — **`organ_status`**, **`field_recent`**, **`stgm_flow`**, **`active_swimmers`**, **`full_snapshot`** |
+| 4 | **`sifta_app_ui_FULL.html`** → replace **`System/sifta_app_ui.html`** (Talk **+ Swarm tab**, quadrants, receipt → skill modal) |
+| 5 | **`sifta_app_additions.py`** — manual splice into **`System/sifta_app.py`** (see Cowork **`DEPLOY.md`**) |
+| 6 | **`tests/test_swarm_skill_ingest.py`**, **`tests/test_swarm_skill_extract.py`**, **`tests/test_swarm_visibility.py`** — **19 tests** sandbox |
+
+**What is LEFT (merge lane — single owner Surgeon):**
+
+1. **`cp`** sandbox files → **`System/`**, **`tests/`**, UI → **`System/sifta_app_ui.html`** per **`DEPLOY.md`**.
+2. Merge **`sifta_app_additions`** into **`sifta_app.py`** without duplicating existing **`API`** / router adapter (**diff review**).
+3. Run **`pytest`** from repo root with **`PYTHONPATH=.`** (validate vs Cowork’s **`PYTHONPATH=System`** one-liner).
+4. **Register `ingest_skill`** in **`swarm_tool_router.TOOL_REGISTRY`** only after policy + **`owner_present`** semantics align (**covenant §6 / §8** minimal surface).
+5. **AUDITOR** lane: URL fetch + LLM “LIKE/SKIP” path = supply-chain + cost surface — investor demo **needs honest consent** wording.
+6. **Cowork footer correction:** Sandbox author “didn't touch **`swarm_stgm_billing`** / py2app” — **`swarm_stgm_billing`** **already in THIS repo** (**`OBSERVED`**); **notarized `.dmg`** + **frozen-bundle** quirks remain **`SURFACE_GAP_OPEN`**.
 
 ### 0.1A — **PLAN ONLY — Alice × Stigmerobotics nervous system (Priority 0)** *(Stigauth hill — 2026-05-06)*
 

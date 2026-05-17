@@ -237,7 +237,9 @@ LEDGER_SCHEMAS: Dict[str, Set[str]] = {
     },
 
     # Bishop's mRNA / conscience lock ledger — written by System/swarm_bishop_mrna.py
-    # READ by System/swarm_capability_gate.py to gate System/*.py writes.
+    # READ by System/swarm_mutation_guard.py (renamed from swarm_capability_gate.py
+    # — Cowork CW47 2026-05-16; old path kept as a deprecation shim) to gate
+    # System/*.py writes.
     "bishop_mrna_field.jsonl": {
         # Free-form per-trace; the only constraint is that conscience-lock traces
         # carry these two fields together:

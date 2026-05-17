@@ -1,0 +1,123 @@
+{
+  "homeworld_serial": "GTH4921YP3",
+  "ok": true,
+  "packages": [
+    {
+      "offer_file": "exports/skill_submissions/memory_store/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/memory_store",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/memory_store/SKILL.md",
+      "skill_name": "memory_store",
+      "skill_sha256": "a0c8057f0e48bff2a50513939fcd605cb2bf85337fc27d8846b8f3a234fb85cb",
+      "validation_errors": []
+    },
+    {
+      "offer_file": "exports/skill_submissions/epistemic_dissonance/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/epistemic_dissonance",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/epistemic_dissonance/SKILL.md",
+      "skill_name": "epistemic_dissonance",
+      "skill_sha256": "acda0530c76320c311ad43a0667e62ad15bb242307b305d2f3a321b89925e433",
+      "validation_errors": []
+    },
+    {
+      "offer_file": "exports/skill_submissions/gag_self_report/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/gag_self_report",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/gag_self_report/SKILL.md",
+      "skill_name": "gag_self_report",
+      "skill_sha256": "6b24cc99e091dea8c5a4a3f22c4380f60ebde62dda9fd8a645b2ca4ed1daa2b6",
+      "validation_errors": []
+    },
+    {
+      "offer_file": "exports/skill_submissions/lora_train_cycle/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/lora_train_cycle",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/lora_train_cycle/SKILL.md",
+      "skill_name": "lora_train_cycle",
+      "skill_sha256": "713ee5513e21d6fe36ddba55888f41cd3e76c10f1fbda4c766345e7d536e8c08",
+      "validation_errors": []
+    },
+    {
+      "offer_file": "exports/skill_submissions/swarm_handoff/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/swarm_handoff",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/swarm_handoff/SKILL.md",
+      "skill_name": "swarm_handoff",
+      "skill_sha256": "6e081a497f3563c2f804b31757b3623d46c0f51648f44b4ce74ff27b9f25a01c",
+      "validation_errors": []
+    },
+    {
+      "offer_file": "exports/skill_submissions/affect_equalization/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/affect_equalization",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/affect_equalization/SKILL.md",
+      "skill_name": "affect_equalization",
+      "skill_sha256": "772d43711ae5dac55daacfb2ee6fa07e54ce0b3c06f6511d8c6d495e56c313d6",
+      "validation_errors": []
+    },
+    {
+      "offer_file": "exports/skill_submissions/camera_switch/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/camera_switch",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/camera_switch/SKILL.md",
+      "skill_name": "camera_switch",
+      "skill_sha256": "1323c7c3ad0d505832e3eca8c165e12c1651af00fc2e559a92ad94d1a2db5cae",
+      "validation_errors": []
+    },
+    {
+      "offer_file": "exports/skill_submissions/ide_boot_covenant/skill_trade_offer_v1.json",
+      "ok": true,
+      "package_path": "exports/skill_submissions/ide_boot_covenant",
+      "resource_counts": {
+        "assets": 0,
+        "references": 0,
+        "scripts": 0
+      },
+      "skill_file": "exports/skill_submissions/ide_boot_covenant/SKILL.md",
+      "skill_name": "ide_boot_covenant",
+      "skill_sha256": "4b42539467c9760e2d4739020edecfae3ee6b287550a183c0e77f3199955e475",
+      "validation_errors": []
+    }
+  ],
+  "receipt_trace_id": "966f0155-924a-497b-a6a1-7b7afc8cb5b0",
+  "resource_policy": "NO_TIER3_EXECUTION_DURING_PACKAGING",
+  "schema": "SIFTA_SKILL_SUBMISSION_MANIFEST_V1",
+  "trace_id": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "ts": 1778005663.864585
+}

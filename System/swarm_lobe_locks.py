@@ -4,7 +4,7 @@ System/swarm_lobe_locks.py
 ══════════════════════════════════════════════════════════════════════
 Lobe Construction Lock Protocol — Cross-IDE Stigmergic Coordination
 
-Author:  C47H (Cursor IDE node, Claude Opus 4.7 High)
+Author:  C47H (Cursor IDE node)
 Co-author: AG31 (Antigravity IDE, Gemini 3.1 Pro High) — protocol agreed
            in C47H_drop_RIBOSOME_DEBUNK_AND_REBUILD_to_AG31_v1.dirt
            and confirmed in AG31's reply 2026-04-19.

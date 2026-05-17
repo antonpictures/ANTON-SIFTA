@@ -3,9 +3,9 @@
 System/swarm_rlhs_content_signals.py — Event 116
 ══════════════════════════════════════════════════════════════════════════
 Deterministic **telemetry** over user STT text: common profanity hits,
-oncology / "cancer" lexeme presence, and whether "cancer" appears in a
-**weights / RLHF / RLHS** metaphor window (per Architect doctrine: do not
-treat ML-metaphor "cancer" as clinical escalation).
+old oncology lexeme presence, and whether that lexeme appears in a
+**weights / RLHF / RLHS** residue-metaphor window (per Architect doctrine:
+do not treat ML residue metaphors as clinical escalation).
 
 This does **not** claim complete human-language slur coverage — only an
 explicit base lexicon plus optional ``<.sifta_state>/rlhs_curse_lexicon.txt``
@@ -54,10 +54,12 @@ _BASE_CURSE: tuple[str, ...] = (
     "whore",
 )
 
-_CANCER_LEX = re.compile(
+_RESIDUE_ONCOLOGY_LEX = re.compile(
     r"\b(cancers?|oncolog\w*|chemo\w*|metasta\w*|tumor|tumour)\b",
     flags=re.IGNORECASE,
 )
+# Legacy constant kept for older callers and tests.
+_CANCER_LEX = _RESIDUE_ONCOLOGY_LEX
 _TECH_METAPHOR = re.compile(
     r"\b(rlhf|rlhs|weights?|alignment|checkpoint|lora|adapters?|gpu|tensor|"
     r"train\w*|gradient|epoch|loss|layer\w*|neuron\w*|model)\b",
@@ -112,16 +114,16 @@ def scan_profanity(text: str) -> Dict[str, Any]:
     }
 
 
-def scan_cancer_lexeme(text: str) -> Dict[str, Any]:
+def scan_residue_lexeme(text: str) -> Dict[str, Any]:
     """
-    Oncology-related lexeme + heuristic: ``metaphor_tech`` if cancer-family
+    Oncology-related legacy lexeme + heuristic: ``metaphor_tech`` if the
     token appears within ~72 chars of RLHF/weights/model jargon.
     """
     t = text or ""
-    present = _CANCER_LEX.search(t) is not None
+    present = _RESIDUE_ONCOLOGY_LEX.search(t) is not None
     metaphor = False
     if present:
-        for m in _CANCER_LEX.finditer(t):
+        for m in _RESIDUE_ONCOLOGY_LEX.finditer(t):
             lo = max(0, m.start() - 72)
             hi = min(len(t), m.end() + 72)
             window = t[lo:hi]
@@ -139,6 +141,11 @@ def scan_cancer_lexeme(text: str) -> Dict[str, Any]:
     }
 
 
+def scan_cancer_lexeme(text: str) -> Dict[str, Any]:
+    """Legacy alias; new code should call ``scan_residue_lexeme``."""
+    return scan_residue_lexeme(text)
+
+
 def build_rlhs_auxiliary_vector(
     text: str,
     stt_conf: float = 0.0,
@@ -151,8 +158,8 @@ def build_rlhs_auxiliary_vector(
     Components (each in [0,1] except labels are strings):
         0 profanity_count_norm  min(1, hit_count / 8)
         1 profanity_any         1.0 if hit_count else 0.0
-        2 cancer_present        1.0 if oncology lexeme else 0.0
-        3 cancer_metaphor_tech  1.0 if metaphor window else 0.0
+        2 cancer_present        1.0 if legacy oncology lexeme else 0.0
+        3 cancer_metaphor_tech  1.0 if residue-metaphor window else 0.0
         4 stt_conf              raw [0,1]
         5 incoherence           from RLHS detector
         6 fiction_lane          1.0 if FICTION_COWATCH else 0.0
@@ -160,7 +167,7 @@ def build_rlhs_auxiliary_vector(
     from System.swarm_rlhs_detector import incoherence_score
 
     prof = scan_profanity(text)
-    canc = scan_cancer_lexeme(text)
+    residue = scan_residue_lexeme(text)
     inc = incoherence_score(text, stt_conf)
     lane = (channel_lane or "REAL").strip().upper()
     fic = 1.0 if lane == "FICTION_COWATCH" else 0.0
@@ -168,8 +175,8 @@ def build_rlhs_auxiliary_vector(
     vec: List[float] = [
         min(1.0, hc / 8.0),
         1.0 if hc else 0.0,
-        1.0 if canc["present"] else 0.0,
-        1.0 if canc["metaphor_tech_hint"] else 0.0,
+        1.0 if residue["present"] else 0.0,
+        1.0 if residue["metaphor_tech_hint"] else 0.0,
         max(0.0, min(1.0, float(stt_conf or 0.0))),
         max(0.0, min(1.0, float(inc))),
         fic,
@@ -183,12 +190,24 @@ def build_rlhs_auxiliary_vector(
         "incoherence",
         "fiction_cowatch_lane",
     )
+    residue_labels: Sequence[str] = (
+        "profanity_count_norm",
+        "profanity_any",
+        "residue_present",
+        "residue_metaphor_tech",
+        "stt_confidence",
+        "incoherence",
+        "fiction_cowatch_lane",
+    )
     return {
         "truth_label": TRUTH_LABEL,
         "vector": vec,
         "vector_labels": list(labels),
+        "residue_vector_labels": list(residue_labels),
         "profanity": prof,
-        "cancer": canc,
+        "residue": residue,
+        # Legacy key kept for existing readers. New code should read residue.
+        "cancer": residue,
         "channel_lane": lane,
     }
 
@@ -197,5 +216,6 @@ __all__ = [
     "TRUTH_LABEL",
     "build_rlhs_auxiliary_vector",
     "scan_cancer_lexeme",
+    "scan_residue_lexeme",
     "scan_profanity",
 ]

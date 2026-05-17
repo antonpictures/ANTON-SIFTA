@@ -1,0 +1,10 @@
+{
+  "offer_id": "f9fda45e-72d7-4e5f-9e17-2b983e8bae8b",
+  "package_path": "exports/skill_submissions/lora_train_cycle",
+  "provider_node": "GTH4921YP3",
+  "provider_trace": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "skill_name": "lora_train_cycle",
+  "skill_sha256": "713ee5513e21d6fe36ddba55888f41cd3e76c10f1fbda4c766345e7d536e8c08",
+  "stgm_price": 50.0,
+  "truth_label": "SIFTA_SKILL_TRADE_OFFER_V1"
+}

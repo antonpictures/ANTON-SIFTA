@@ -231,7 +231,7 @@ class SettingsWindow(QWidget):
         lbl.setObjectName("section")
         lay.addWidget(lbl)
 
-        hint = QLabel("OpenRouter gives access to Llama 4, Claude, Gemini, DeepSeek and more via one API key.")
+        hint = QLabel("OpenRouter gives access to Llama 4, Gemini, DeepSeek and more via one API key.")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         lay.addWidget(hint)
@@ -285,7 +285,7 @@ class SettingsWindow(QWidget):
         lay.addWidget(hint)
 
         self.engine_combo = QComboBox()
-        self.engine_combo.addItems(["ollama  —  Local silicon (sovereign, offline)", "openrouter  —  Cloud models (Llama 4, Claude, etc.)"])
+        self.engine_combo.addItems(["ollama  —  Local silicon (sovereign, offline)", "openrouter  —  Cloud models (Llama 4, Gemini, etc.)"])
         current_engine = self.settings.get("active_engine", "ollama")
         self.engine_combo.setCurrentIndex(0 if current_engine == "ollama" else 1)
         lay.addWidget(self.engine_combo)

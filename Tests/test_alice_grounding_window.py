@@ -5,6 +5,8 @@ while avoiding hardcoded behavior lawbooks.
 """
 
 import importlib.util
+import json
+import time
 from pathlib import Path
 
 
@@ -55,6 +57,21 @@ def test_system_prompt_still_contains_multimodal_identity_data():
     assert "COMPOSITE IDENTITY (live, multi-organ):" in prompt
     assert "- self:" in prompt
     assert "- body:" in prompt or "- endocrine:" in prompt or "- sensory:" in prompt
+
+
+def test_system_prompt_includes_alice_self_organ_receipts():
+    mod = _load_widget_module()
+    prompt = mod._current_system_prompt(user_active=True)
+    assert "ALICE SELF ORGAN (receipt-backed OS awareness):" in prompt
+    assert "python_body_files_seen:" in prompt
+    assert "app_organs_seen:" in prompt
+    assert "running_sifta_python_processes_seen:" in prompt
+    assert "somatic_sensors:" in prompt
+    assert "biography:" in prompt
+    assert "continuity:" in prompt
+    assert "social_field:" in prompt
+    assert "thermodynamic_risk:" in prompt
+    assert "answer self/OS-awareness questions from this organ" in prompt
 
 
 def test_system_prompt_keeps_architect_and_whatsapp_identity_separate():
@@ -157,13 +174,110 @@ def test_date_questions_use_oracle_context_and_repair_wrong_day():
 
 def test_sifta_app_commands_resolve_manifest_apps_and_browser_urls():
     mod = _load_widget_module()
-    app_names = ["Alice Browser", "Finance", "System Settings", "WhatsApp Organ"]
+    # Architect 2026-05-16 rename: WordAce → Ace. The manifest stub now
+    # uses "Ace" as the canonical name; all legacy STT-mangled WordAce
+    # phrases ("word A's", "word ass", "word ace") still resolve to it
+    # via the alias dict, but the returned name is the new canonical.
+    app_names = [
+        "Alice Browser",
+        "Finance",
+        "System Settings",
+        "WhatsApp Organ",
+        "Ace",
+        "Pheromone Symphony (Generative Music)",
+        "Stigmergic Video Poker",
+    ]
 
     assert mod._match_sifta_app_name("Alice Browser app", app_names) == "Alice Browser"
     assert mod._match_sifta_app_name("finance", app_names) == "Finance"
+    assert mod._match_sifta_app_name("word A's", app_names) == "Ace"
+    assert mod._match_sifta_app_name("word ass", app_names) == "Ace"
+    assert mod._match_sifta_app_name("word ace", app_names) == "Ace"
+    assert mod._match_sifta_app_name("ace", app_names) == "Ace"
+    assert mod._match_sifta_app_name("Ace app", app_names) == "Ace"
 
     app_cmd = mod._extract_sifta_app_command("Alice, open Alice Browser app", app_names)
     assert app_cmd == {"kind": "app", "app_name": "Alice Browser", "url": ""}
+
+    wordace_cmd = mod._extract_sifta_app_command("Alice, open word A's app", app_names)
+    assert wordace_cmd == {"kind": "app", "app_name": "Ace", "url": ""}
+
+    wordace_stt_cmd = mod._extract_sifta_app_command("Alice, open word ass app", app_names)
+    assert wordace_stt_cmd == {"kind": "app", "app_name": "Ace", "url": ""}
+
+    microsoft_word_cmd = mod._extract_sifta_app_command("Alice, open Microsoft Word app", app_names)
+    assert microsoft_word_cmd["kind"] == "open_app_uncertain"
+    assert microsoft_word_cmd["raw_query"] == "Microsoft Word"
+    assert microsoft_word_cmd["app_name"] == ""
+    assert microsoft_word_cmd["url"] == ""
+    # After the WordAce → Ace rename, "Microsoft Word" no longer has a clean
+    # token-overlap with the reading app name ('ace' is too short to share a
+    # 4+ char token with 'word'/'microsoft'). The honest refusal still fires
+    # with three real manifest names so the brain cannot invent "Microsoft Word".
+    assert len(microsoft_word_cmd["candidates"].split(",")) == 3
+
+    photoshop_cmd = mod._extract_sifta_app_command("Alice, open Photoshop app", app_names)
+    assert photoshop_cmd["kind"] == "open_app_uncertain"
+    assert photoshop_cmd["raw_query"] == "Photoshop"
+    assert photoshop_cmd["app_name"] == ""
+    assert len(photoshop_cmd["candidates"].split(",")) == 3
+
+    pheromone_stt_cmd = mod._extract_sifta_app_command("Alice, open ceremony Symphony app", app_names)
+    assert pheromone_stt_cmd["kind"] == "open_app_uncertain"
+    assert pheromone_stt_cmd["raw_query"] == "ceremony Symphony"
+    assert pheromone_stt_cmd["candidates"].split(",")[0] == "Pheromone Symphony (Generative Music)"
+
+    # "work ASAP" is too mangled to open automatically. Voice Stigma Repair
+    # ranks the reading app first and asks one confirmation before execution.
+    wordace_stt_phrase_cmd = mod._extract_sifta_app_command("Alice, open work ASAP app", app_names)
+    assert wordace_stt_phrase_cmd["kind"] == "open_app_uncertain"
+    assert wordace_stt_phrase_cmd["raw_query"] == "work ASAP"
+    assert wordace_stt_phrase_cmd["candidates"].split(",")[0] == "Ace"
+
+    youtube_soon = mod._extract_sifta_app_command(
+        "This is George, I'm sitting by the computer waiting for your answer "
+        "to process and I'm gonna start the YouTube video soon.",
+        app_names,
+    )
+    assert youtube_soon == {}
+
+    no_app = mod._extract_sifta_app_command(
+        "Alice, I don't want to open any app right now.",
+        app_names,
+    )
+    assert no_app == {}
+
+    youtube_conversation = mod._extract_sifta_app_command(
+        "No, I was talking about the YouTube video on consciousness that we are gonna be listening together",
+        app_names,
+    )
+    assert youtube_conversation == {}
+
+    real_video_app = mod._extract_sifta_app_command(
+        "Alice, open Stigmergic Video Poker app",
+        app_names,
+    )
+    assert real_video_app == {"kind": "app", "app_name": "Stigmergic Video Poker", "url": ""}
+
+    assert mod._voice_repair_confirmation_action("yes, that's what I meant") == "yes"
+    assert mod._voice_repair_confirmation_action("no, none of those") == "no"
+    assert mod._voice_repair_confirmation_action("Ace.") == ""
+    assert mod._voice_repair_candidate_selection(
+        "Ace.",
+        ["Finance", "Ace", "NVIDIA × SIFTA"],
+    ) == "Ace"
+
+    chat_cmd = mod._extract_sifta_app_command("open Alice", app_names)
+    assert chat_cmd == {"kind": "switch_desktop_mode", "mode": "chat", "app_name": "", "url": ""}
+
+    status_cmd = mod._extract_sifta_app_command("what app is open", app_names)
+    assert status_cmd == {"kind": "app_status", "app_name": "", "url": ""}
+
+    close_current_cmd = mod._extract_sifta_app_command("close current app", app_names)
+    assert close_current_cmd == {"kind": "close_app", "app_name": "", "url": ""}
+
+    close_named_cmd = mod._extract_sifta_app_command("close System Settings app", app_names)
+    assert close_named_cmd == {"kind": "close_app", "app_name": "System Settings", "url": ""}
 
     browser_cmd = mod._extract_sifta_app_command("Alice, open youtube.com in the browser", app_names)
     assert browser_cmd == {
@@ -193,6 +307,95 @@ def test_sifta_app_commands_resolve_manifest_apps_and_browser_urls():
         "url": "https://en.wikipedia.org",
     }
 
+
+def test_pending_app_repair_rejection_returns_to_conversation_lane(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+
+    class Dummy:
+        def __init__(self):
+            self._pending_app_confirmation = {
+                "ts": time.time(),
+                "raw_query": "the YouTube video soon",
+                "app_name": "Stigmergic Video Poker",
+                "candidates": ["Stigmergic Video Poker", "Cognitive Loop", "Crucible Simulator"],
+            }
+            self._history = []
+            self.system_lines = []
+
+        def _append_system_line(self, msg, error=False):
+            self.system_lines.append((msg, error))
+
+    dummy = Dummy()
+    reply = mod.TalkToAliceWidget._maybe_handle_pending_app_confirmation(
+        dummy,
+        "No, I was talking about the YouTube video on consciousness that we are gonna be listening together",
+    )
+
+    assert reply == ""
+    assert dummy._pending_app_confirmation is None
+    assert any("App/browser receipt:" in msg for msg, _error in dummy.system_lines)
+    assert any(
+        "ordinary Alice conversation/co-watch context" in turn.get("content", "")
+        for turn in dummy._history
+    )
+
+
+def test_pending_app_repair_plain_no_does_not_ask_for_app_name(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+
+    class Dummy:
+        def __init__(self):
+            self._pending_app_confirmation = {
+                "ts": time.time(),
+                "raw_query": "any app right now",
+                "app_name": "Alice Shell",
+                "candidates": ["Alice Shell", "Finance", "SIFTA NLE"],
+            }
+            self._history = []
+            self.system_lines = []
+
+        def _append_system_line(self, msg, error=False):
+            self.system_lines.append((msg, error))
+
+    dummy = Dummy()
+    reply = mod.TalkToAliceWidget._maybe_handle_pending_app_confirmation(dummy, "No.")
+
+    assert reply == "Okay. I will not open an app. I am back in the conversation lane."
+    assert "Say the app name again" not in reply
+    assert dummy._pending_app_confirmation is None
+
+
+def test_voice_context_repair_cleans_microphone_residue_before_cortex():
+    mod = _load_widget_module()
+
+    raw = (
+        "we are teaching the Al Corona operating system and it is on its own "
+        "cheese own Own OWN and Gemma Ford should digest it"
+    )
+    repaired, reasons = mod._repair_voice_context_text(raw, stt_conf=0.58)
+
+    assert "Alice local operating system" in repaired
+    assert "Gemma 4" in repaired
+    assert "cheese" not in repaired.casefold()
+    assert "own Own OWN" not in repaired
+    assert "local_os_name" in reasons
+    assert "model_name" in reasons
+    assert "own_not_cheese" in reasons
+    assert "collapsed_repeated_word" in reasons
+
+
+def test_voice_context_repair_leaves_clean_text_unchanged():
+    mod = _load_widget_module()
+
+    raw = "Alice, I am talking to the operating system and I want you to listen."
+    repaired, reasons = mod._repair_voice_context_text(raw, stt_conf=0.82)
+
+    assert repaired == raw
+    assert reasons == []
+
+    app_names = ["Alice Browser", "Finance", "System Settings", "WhatsApp Organ", "Ace"]
     wiki_search = mod._extract_sifta_app_command("Can you search on Wikipedia for Lions?", app_names)
     assert wiki_search == {
         "kind": "browser_url",
@@ -765,6 +968,99 @@ def test_system_prompt_includes_effector_manifest_without_action_claims():
     assert "stdout/stderr/returncode receipt" in prompt
     assert "SENT receipt" in prompt
     assert "I do not claim completed actions until the effector receipt proves them" in prompt
+
+
+def test_system_prompt_includes_ace_chat_voice_brief_from_manifest():
+    mod = _load_widget_module()
+    prompt = mod._current_system_prompt(
+        user_active=True,
+        user_text="tell Carlton about the Ace reading app",
+    )
+    assert "ACE APP BRIEF (chat/voice, receipt-backed):" in prompt
+    assert "Canonical app name: Ace" in prompt
+    assert "WordAce" in prompt and "Acer" in prompt
+    assert "Cue says the exact displayed text" in prompt
+    assert "transcript shows Ace: [heard text]" in prompt
+    assert "alice_lesson_trace.jsonl stores CUE/ATTEMPT/VERDICT rows" in prompt
+    assert "no external WhatsApp/call is complete without an effector SENT receipt" in prompt
+
+
+def test_system_prompt_includes_generic_app_focus_for_non_ace_app(tmp_path, monkeypatch):
+    mod = _load_widget_module()
+    monkeypatch.setattr(mod, "_state_root", lambda: tmp_path)
+    from System import swarm_app_health as app_health
+    from System import alice_stigmergic_habit_shift as habit_shift
+
+    monkeypatch.setattr(app_health, "_HEALTH_ROOT", tmp_path / "app_health")
+    monkeypatch.setattr(
+        habit_shift,
+        "get_current_habit_bias_for_prompt",
+        lambda: (
+            "Current app-attention field bias: Pheromone Symphony (Generative Music) is strongest "
+            "(strength=0.75). Load that app's focus receipt, health trace, and required skills first. "
+            "Adapt timing/style as: interactive app-local guidance. "
+            "This is a field-derived bias, not a hardcoded app mode."
+        ),
+    )
+    app_health.append_health_update(
+        "Pheromone Symphony (Generative Music)",
+        action="enter_update",
+        skills=["music_guidance", "pheromone_field"],
+        note="Load only the music and pheromone-field habits for this app.",
+        source="test",
+    )
+    (tmp_path / "sifta_desktop_app_state.json").write_text(
+        json.dumps(
+            {
+                "truth_label": "SIFTA_DESKTOP_APP_STATE_V1",
+                "active_app": "Pheromone Symphony (Generative Music)",
+                "open_apps": ["Pheromone Symphony (Generative Music)"],
+                "desktop_mode": "launcher",
+                "single_app_policy": True,
+                "ts": time.time(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "app_focus.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "app": "Pheromone Symphony (Generative Music)",
+                "detail": "Playhead scanning column 42 of 256.",
+                "tab": "Score",
+                "selection": "Taxol",
+                "metadata": {"swimmer_count": 300},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    prompt = mod._current_system_prompt(
+        user_active=True,
+        user_text="what's on this app?",
+    )
+
+    assert "GENERIC APP AWARENESS (Hermes/Capability Field + app_focus):" in prompt
+    assert "APP SCREEN STATE (Pheromone Symphony (Generative Music))" in prompt
+    assert "Detail: Playhead scanning column 42 of 256." in prompt
+    assert "Selection: Taxol" in prompt
+    assert "swimmer_count=300" in prompt
+    assert "every manifest app uses this same app_focus + app-habit path" in prompt
+    assert "No identity lecture: for current-app questions" in prompt
+    assert "STIGMERGIC APP ATTENTION BIAS:" in prompt
+    assert "field-derived bias, not a hardcoded app mode" in prompt
+    assert "APP HEALTH SECTION FOR Pheromone Symphony (Generative Music)" in prompt
+    assert "Required skills from health trace: music_guidance, pheromone_field" in prompt
+    assert "APP HELP SKILLS TRACE — Pheromone Symphony (Generative Music)" in prompt
+    assert "Skills to load now: music_guidance, pheromone_field" in prompt
+    assert "APP HABIT FIELD FOR CURRENT APP — Pheromone Symphony (Generative Music)" in prompt
+    assert "pulls only habits/skills whose triggers match its manifest" in prompt
+    assert (
+        "Relevant habits to load/compose first:" in prompt
+        or "No app-specific habit matched yet" in prompt
+    )
 
 
 def test_local_reality_relapse_rewrites_cipi_identity_whatsapp_denial():

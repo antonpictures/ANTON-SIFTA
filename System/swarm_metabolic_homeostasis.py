@@ -298,6 +298,18 @@ class MetabolicHomeostat:
             stgm = float(report.get("canonical_wallet_sum", 0.0) or 0.0)
         except Exception:
             stgm = 0.0
+
+        # Opt-in Tab Consciousness carries a live STGM pressure while active.
+        # The organ returns only the cost delta since the last sample, so this
+        # hook does not double-charge the same elapsed time.
+        try:
+            from System import swarm_tab_consciousness as tab_consciousness
+
+            tab_cost = float(tab_consciousness.burn_active_cost() or 0.0)
+            local += tab_cost
+            recent_burn += tab_cost
+        except Exception:
+            pass
             
         # EVENT 86: Probe physical mass from active hardware via Ollama
         try:

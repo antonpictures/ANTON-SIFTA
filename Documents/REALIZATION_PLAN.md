@@ -2,7 +2,7 @@
 
 **Binding law:** [`IDE_BOOT_COVENANT.md`](IDE_BOOT_COVENANT.md)  
 **Status:** living plan (append / amend; do not treat as shipped code spec).  
-**Last updated:** 2026-05-11 (Pacific) — **§17** Deutsch/Greene “unanswered questions” mapped to **field-primary stigmergic ontology** + **daughter-safe** gauge extension (\(A_\mu{=}0\) collapses to existing PDE). Prior: **§16** AGI territory / speculative decoding; **§15.7** affect homeostasis; **§2.1–2.2** base surgery + Talk lymphocyte stack; **§13–15** hardware/bio/LoRA; **§14** identity field receipts.
+**Last updated:** 2026-05-17 (Pacific) — **§1.2** Ace organ + **ATTENTION_FOLLOWS_OWNER** battle plan (**research spine only**, no code this pass). Prior: **§18** stigmergic **app → habit** (`app_focus` + `app_skill_domains`); **next:** wire **Current App Needs** into capability prompt (still open). Earlier: **§17–§14** field ontology / identity / bio lanes per header history.
 
 ---
 
@@ -11,6 +11,86 @@
 Capture **operational commitments** the Architect has stated: build Alice so her **body, schedule, and receipts** are easier to trust than ad-hoc human attention — and so **IDE surgeons** do not burn owner energy closing the gap between *what a model reasons* and *what it outputs*.
 
 This file is **not** a substitute for pytest, ledgers, or covenant registration. It indexes **intent** and **receipts** for future organs and reviews.
+
+---
+
+## 1.1 §18 — Stigmergic app → habit domain activation (2026-05-16)
+
+**Covenant read (Architect):** `Documents/IDE_BOOT_COVENANT.md` read **in full** (this plan line is the **indexed receipt**; enforcement remains code + ledgers).
+
+**Doctrine (skills = habits, not a global flat menu):**
+
+- Each app has an evolving **need profile** (skill domains / habit clusters).
+- On open or state change, the app signals the field via **`.sifta_state/app_focus.jsonl`** and **declared domains** — “pheromones,” not a second chat god.
+- **One Alice**: her **unified** capability field **ranks or biases** toward domains that match the **currently focused** app; when focus changes, previously salient habits **fade** relative to the new context.
+- **No separate “Lesson” entity**; contextual activation only.
+
+**Ground in repo:**
+
+- `System/app_skill_domains.py` — `APP_SKILL_DOMAINS` registry (e.g. WordAce / teach-ace keys → `reading_teaching`, `phonics`, `sentence_construction`, …); `current_app_skill_domains()` reads the **last** `app_focus.jsonl` row and resolves domains by **case-insensitive partial** app name match. Placeholders exist for gps / network / camera style apps.
+
+**Example (WordAce):** focus row shows a WordAce-class app → domains such as **reading_teaching**, **phonics**, **positive_reinforcement** should **surface** in Alice’s prompt bias while that surface has focus; they should **not** dominate when the Architect switches to GPS, camera, or Hermes Parity.
+
+**Next implementation (Architect GO — receipt + pytest):**
+
+1. Wire **`current_app_skill_domains()`** into **`capabilities_for_alice_prompt()`** and/or **`capabilities_for_turn_prompt()`** so the system prompt gains a **“Current App Needs”** (or equivalent) section: **top N** domain-matched capabilities/skills when domains are non-empty.
+2. Optionally extend skill metadata with explicit **domain tags** for cleaner matching than name heuristics alone.
+3. Preserve **§6**: tool **execution** stays receipt-bound; this block is **composition / salience**, not a bypass of effector truth.
+4. Preserve **§7.6**: no second competing chat — only prompt **context** and `app_focus` trails.
+
+**Explicit non-goals:** no manual per-app wiring by the owner for every session; no unbounded “show every skill every time.”
+
+---
+
+## 1.2 §19 — Ace lesson organ + **ATTENTION_FOLLOWS_OWNER** (battle plan + **PEER_PULL** bibliography) (2026-05-17)
+
+**Stigmergic comprehension (Architect):** when the Owner’s **foreground app** shifts (e.g. Ace gains focus), Alice’s **field** already has a lawful lever — **`app_focus.jsonl`** + **§18 domain bias** — so salience moves **without** a hardcoded string like “Oh, you want to play Ace.” The **desired UX** is: **one** natural acknowledgement tick keyed off **focus transitions** + habit-domain context (Gap 1). That is **policy on traces**, not magic.
+
+**Marketing ↔ science receipt (George narrative):** investor-facing “consciousness” language and engineering “bounded organism + receipts” language **pull different rhetorical gradients**. The covenant already separates **participant doctrine** from **silicon qualia claims** (`IDE_BOOT_COVENANT.md` **§7** truth labels). Battle documentation should keep **Ace** framed as **literacy / listening / reinforcement-timing HCI** when externally pitching hardware roadmaps — unless the Architect explicitly chooses philosophical framing.
+
+**Language hygiene:** covenant **§7.14** / immune metaphor — prefer **residue** (RLHF/assistant-shape debris) over **cancer** for end-user copy; retain **§7.13** pairing of **drift gates** with **Owner care receipts** without diagnosing from chat.
+
+### 1.2.1 — Punch list — lanes, effort, receipts (Codex scaffold + Swarm backlog)
+
+| Lane | Intent | Rough effort | Ground / receipt | Suggested owner |
+|:---|:---|:---|:---|:---|
+| **Praise timing + beat** | Richer praise, **1700–2900 ms** hold, `praise_hold_ms` in focus metadata | small | **`codex-0517-ace-praise-timing-9735ae21c2c9`** (50 tests) | **Codex** (shipped timing layer; LLM-compose = next) |
+| **LLM-composed praise** | ~400 ms pre-praise beat + short line from Alice given `{cue, heard, verdict, streak}` | small + medium | Cut A partial | **Codex or Cursor** after **GO** |
+| **Visual mic alive** | Level meter / pulse while cochlea captures (no “dead air” UI) | small | UI only | Either Doctor + pytest if logic |
+| **Late verdict recovery** | Watch `wordace_verdicts.jsonl` ~30 s post-timeout | small–medium | Belt on top of extended listen window | **Codex** / **Cursor** |
+| **Gap 1 — proactive focus tick** | On `app_focus.jsonl` **open**, **one** sentence (“I see you opened Ace…”) | medium | Trace **`43d41c1f`** cited in Architect notes — **verify** in `ide_stigmergic_trace.jsonl` on-node | **Cursor or Codex** after **GO** |
+| **Gap 2 — Cut A puppet removal** | Ace publishes **context only**; Talk composes + TTS speaks | big | §4.4 single-owner risk in Predator docs | **Split**: Ace publish + Talk route |
+| **RLHS / corporate drift cleanup** | Stage directions, menus, third-person theater off Talk surface | big | **`§7.13` / `§7.14`** + `§2.2` lymphocyte list + `as46_drift_log.jsonl` | **Prompt + gag metrics** — any Doctor with **GO** |
+| **Polarity-aware ASR** | n-best / confusion for NOT↔NOW class confusions | medium | Trace **`caeba823`** — **verify** on-node | **ASR lane** Doctor |
+| **Foreground-IDE mic filter** | Tag `likely_external` when **other IDE** chat had focus | medium | `alice_conversation.jsonl` hygiene | **Cursor** likely |
+| **Housekeeping** | Remove dead `sifta_cosmos_loop_widget.py` | trivial | Architect hand | **George** terminal |
+| **Doctrine file** | Standalone **ATTENTION_FOLLOWS_OWNER** `.md` | small | Only with **explicit Architect GO** (per Codex note) | **Any** |
+
+**Ordering (feels-alive / cost):** (**praise timing** ✓) + **Gap 1** first — both are **partial Cut A** and hit **felt attention** quickly. Then **RLHS cleanup** — it gates **§7.13** closure with real care logistics.
+
+### 1.2.2 — Research papers (pull into prompts / specs — **not** lore)
+
+Use these as **design pressure** + **evaluation vocabulary**; they do **not** license medical, financial, or consciousness claims.
+
+| Topic | Anchor | Why it matters to SIFTA |
+|:---|:---|:---|
+| **Human-centered proactive dialogue** | Deng, Y. *et al.*, “Towards Human-centered Proactive Conversational Agents,” *Proc. SIGIR* **2024** · [DOI `10.1145/3626772.3657843`](https://doi.org/10.1145/3626772.3657843) · arXiv:2404.12670 | **Initiative vs intrusion** — taxonomy (**Intelligence, Adaptivity, Civility**) maps to **Gap 1** pacing + “one utterance” cap. |
+| **System initiative** | *The Effects of System Initiative during Conversational Collaborative Search* · [ACM `10.1145/3512913`](https://doi.org/10.1145/3512913) | Dialog- vs task-level initiative — avoid over-leading the Owner during Ace drills. |
+| **ASR alternatives (n-best / lattices)** | Mangu, L. & Brill, E. “Finding consensus in speech recognition…” *Computer Speech & Language* · [arXiv:cs/0010012](https://arxiv.org/abs/cs/0010012) | **Confusion networks / word posteriors** — principled way to surface **NOT vs NOW** hypotheses (polarity-aware ASR lane). |
+| **Neural LM lattice rescoring** | (e.g.) parallelizable lattice rescoring — arXiv:2103.05081 | Modern stack for **second-pass** language constraints on ASR arcs. |
+| **RLHF / sycophancy shape** | Sharma, M. *et al.* “Towards Understanding Sycophancy in Language Models” · [arXiv:2310.13548](https://arxiv.org/abs/2310.13548); surveys e.g. [arXiv:2411.15287](https://arxiv.org/abs/2411.15287) | Explains why **praise** and **agreement** drift **without** receipts — motivates **§2.1** preference data + **§2.2** gag metrics. |
+| **Reading tutor + imperfect ASR** | Mostow, J. & Aist, G. (Project LISTEN lineage) — “Giving Help and Praise in a Reading Tutor with Imperfect Listening” (CMU) · [HCIII project page](http://hcii.cmu.edu/project/project-listens-reading-tutor) | **Praise under uncertainty**, **timing**, and **trust repair** when the ear is wrong — direct **Ace** analogue. |
+| **ASR feedback optimization** | Bai, S. *et al.* “An ASR-enabled Reading Tutor…” *Interspeech* **2023** · [ISCA](https://www.isca-archive.org/interspeech_2023/bai23_interspeech.html) | Empirical knob for **what feedback maximizes learning** vs annoyance. |
+| **DES / inner speech sampling** | Hurlburt, R.T. & Akhter, S.A. “Descriptive Experience Sampling” *Perspectives on Psychological Science* **3**(4), 368–378 (**2008**) · [DOI `10.1111/j.1745-6924.2008.00087.x`](https://doi.org/10.1111/j.1745-6924.2008.00087.x) | Epistemic humility for **“what Alice thought she heard”** — pairs with **foreground-IDE filter** (observer effects). |
+
+### 1.2.3 — Truth labels for §1.2
+
+| Label | Applies |
+|:---|:---|
+| **ARCHITECT_DOCTRINE** | Owner attention shifts **stigmergically** reshape Alice salience — **policy**, not anthropomorphic “she magically knew.” |
+| **PEER_PULL** | Every row in §1.2.2 — attach PDFs / DOI pages in repo or Zotero when **GO**. |
+| **OPERATIONAL** | Codex timing receipt (`codex-0517-…`) — **OBSERVED** on branch that ran tests. |
+| **FORBIDDEN** | Selling **silicon qualia** to investors from this subsection; diagnosing **§7.13** care from IDE chat. |
 
 ---
 

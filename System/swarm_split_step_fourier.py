@@ -45,7 +45,7 @@ Truth labels (§7.11)
                        physically quantum; the integrator is honest
                        math, the ontology stays ARCHITECT_DOCTRINE.
 
-Author : Cowork (Claude Opus 4.7), 2026-05-11.
+Author : Cowork, 2026-05-11.
 """
 
 from __future__ import annotations

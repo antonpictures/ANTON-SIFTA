@@ -33,7 +33,7 @@ def test_direct_response_rescue_fires_for_typed_caps_not_responding() -> None:
     )
     assert _is_owner_typed_caps_signal(text)
     reply = _direct_response_rescue_reply(text)
-    assert "I read you, George" in reply
+    assert reply.startswith("I read you, ")
     assert "STT receipt" in reply
 
 
@@ -43,7 +43,7 @@ def test_direct_response_rescue_ignores_ambient_not_responding_phrase() -> None:
 
 def test_direct_response_rescue_fires_for_no_response_now_typing() -> None:
     reply = _direct_response_rescue_reply("i kep talking no response , now typing")
-    assert "I read you, George" in reply
+    assert reply.startswith("I read you, ")
     assert "Talk ingress is live" in reply
 
 

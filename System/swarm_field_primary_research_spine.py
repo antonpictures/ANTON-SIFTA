@@ -36,7 +36,7 @@ Speculative-but-attractive sources (Penrose-Hameroff Orch-OR, Tononi
 IIT as a consciousness proof, panpsychism) are explicitly quarantined
 below with the reason for non-acceptance.
 
-Author : Cowork (Claude Opus 4.7), 2026-05-11.
+Author : Cowork, 2026-05-11.
 """
 
 from __future__ import annotations

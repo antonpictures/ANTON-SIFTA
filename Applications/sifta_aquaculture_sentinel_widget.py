@@ -211,7 +211,7 @@ class AquacultureFieldSentinelWidget(SiftaBaseWidget):
         # ── Footer: receipt of who designed this ───────────────────────
         footer = QLabel(
             "Designed by: Codex (GPT-5 via Codex Desktop) — receipt 856986578723ee9a · "
-            "Synthetic engine by: Codex Desktop · Scaffold by: Cowork (claude-opus-4-7) · "
+            "Synthetic engine by: Codex Desktop · Scaffold by: Cowork · "
             "Doctrine source: Documents/OS_OPTIMIZATION_SURPRISE_SAMPLING_TOURNAMENT_2026-05-12.md"
         )
         footer.setWordWrap(True)

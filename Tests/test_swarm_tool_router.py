@@ -165,6 +165,10 @@ def test_tool_prompt_explains_owner_consent_boundary():
     assert "codex_agent" in prompt
     assert "corvid_scout" in prompt
     assert "physical_effector_demo" in prompt
+    assert "run_local_command" in prompt
+    assert "web_research" in prompt
+    assert "repo_patch" in prompt
+    assert "allowlisted argv execution" in prompt
 
 
 def test_missing_cost_justification_rejects_before_executor(monkeypatch):
@@ -420,6 +424,139 @@ def test_repo_git_snapshot_on_tmp_repo(tmp_path, monkeypatch):
     out = router.execute_tool_call(call)
     assert out.executed
     assert "git status" in out.feedback_for_alice.lower()
+
+
+def test_run_local_command_allows_small_argv_command(tmp_path, monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    monkeypatch.setattr(router, "_REPO", tmp_path)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: run_local_command | command=pwd | cost_justification=owner asked Alice to run a bounded terminal probe]"
+    )[0]
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.result["status"] == "COMMAND_OK"
+    assert out.result["argv"] == ["pwd"]
+    assert str(tmp_path) in out.result["stdout"]
+    assert (router._STATE / "hermes_tool_surface.jsonl").exists()
+
+
+def test_run_local_command_rejects_unallowlisted_shell_command(tmp_path, monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    monkeypatch.setattr(router, "_REPO", tmp_path)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: run_local_command | command=rm -rf / | cost_justification=unit test proves shell guard]"
+    )[0]
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is False
+    assert out.result["status"] == "COMMAND_REJECTED"
+    assert "not allowlisted" in out.feedback_for_alice
+
+
+def test_run_local_command_rejects_external_paths(tmp_path, monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    monkeypatch.setattr(router, "_REPO", tmp_path)
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: run_local_command | command=ls / | cost_justification=unit test proves repo path confinement]"
+    )[0]
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is False
+    assert out.result["status"] == "COMMAND_REJECTED"
+    assert "inside the repository" in out.feedback_for_alice
+
+
+def test_web_research_query_records_receipt_without_search_backend(monkeypatch):
+    call = router.parse_tool_calls(
+        "[TOOL_CALL: web_research | query=Hermes agent terminal file editing | cost_justification=compare local tool surface gap]"
+    )[0]
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.result["status"] == "QUERY_RECORDED"
+    assert "no search provider configured" in out.feedback_for_alice
+    assert (router._STATE / "hermes_tool_surface.jsonl").exists()
+
+
+def test_repo_patch_dry_run_does_not_write(tmp_path, monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    monkeypatch.setattr(router, "_REPO", tmp_path)
+    target = tmp_path / "example.txt"
+    target.write_text("alpha\n", encoding="utf-8")
+    call = router.ParsedToolCall(
+        tool_name="repo_patch",
+        params={
+            "path": "example.txt",
+            "old_text": "alpha\n",
+            "new_text": "beta\n",
+            "cost_justification": "owner asked Alice to preview a bounded file edit",
+        },
+        raw_match="[unit-test repo_patch dry-run]",
+    )
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.result["status"] == "DRY_RUN"
+    assert out.result["applied"] is False
+    assert target.read_text(encoding="utf-8") == "alpha\n"
+    assert "-alpha" in out.result["diff"]
+    assert "+beta" in out.result["diff"]
+
+
+def test_repo_patch_apply_requires_owner_consent(tmp_path, monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    monkeypatch.setattr(router, "_REPO", tmp_path)
+    target = tmp_path / "example.txt"
+    target.write_text("alpha\n", encoding="utf-8")
+    call = router.ParsedToolCall(
+        tool_name="repo_patch",
+        params={
+            "path": "example.txt",
+            "old_text": "alpha\n",
+            "new_text": "beta\n",
+            "apply": "true",
+            "cost_justification": "unit test proves repo_patch owner gate",
+        },
+        raw_match="[unit-test repo_patch no consent]",
+    )
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is False
+    assert out.result["status"] == "OWNER_CONSENT_REQUIRED"
+    assert target.read_text(encoding="utf-8") == "alpha\n"
+
+
+def test_repo_patch_apply_with_owner_consent_writes_file(tmp_path, monkeypatch):
+    _patch_cerebellum(monkeypatch)
+    monkeypatch.setattr(router, "_REPO", tmp_path)
+    target = tmp_path / "example.txt"
+    target.write_text("alpha\n", encoding="utf-8")
+    call = router.ParsedToolCall(
+        tool_name="repo_patch",
+        params={
+            "path": "example.txt",
+            "old_text": "alpha\n",
+            "new_text": "beta\n",
+            "apply": "true",
+            "owner_consent": "true",
+            "cost_justification": "owner explicitly approved this single-file edit",
+        },
+        raw_match="[unit-test repo_patch apply]",
+    )
+
+    out = router.execute_tool_call(call, owner_present=True, autonomous=True)
+
+    assert out.executed is True
+    assert out.result["status"] == "PATCH_APPLIED"
+    assert out.result["applied"] is True
+    assert target.read_text(encoding="utf-8") == "beta\n"
 
 
 def test_verification_contract_tool_reads_latest_human_signal(tmp_path, monkeypatch):

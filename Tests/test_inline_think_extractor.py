@@ -22,7 +22,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from System.swarm_alice_thinking_stream import InlineThinkExtractor  # noqa: E402
+from System.swarm_alice_thinking_stream import (  # noqa: E402
+    InlineThinkExtractor,
+    ThinkingTraceRecorder,
+    observable_processing_notice,
+)
 
 
 def _drain(ext: InlineThinkExtractor, pieces):
@@ -158,5 +162,36 @@ def test_flush_is_idempotent():
     # (no tag was opened, so thinking must stay empty).
     assert isinstance(a, tuple) and len(a) == 2
     assert a[1] == ""
+
+
+def test_observable_processing_notice_is_not_synthetic_thinking():
+    notice = observable_processing_notice(
+        model="alice-extra-cortex-25.8b-17gb:latest",
+        pipeline_id="talk_to_alice_widget",
+        reason="unit_test",
+    )
+    assert "[observable-processing]" in notice
+    assert "instead of inventing thoughts" in notice
+    assert "model=alice-extra-cortex-25.8b-17gb:latest" in notice
+    assert "pipeline=talk_to_alice_widget" in notice
+    assert "reason=unit_test" in notice
+
+
+def test_recorder_keeps_observable_panel_text_separate_from_literal_thinking(tmp_path):
+    rec = ThinkingTraceRecorder(
+        model="alice-extra-cortex-25.8b-17gb:latest",
+        pipeline_id="talk_to_alice_widget",
+        state_dir=tmp_path,
+    )
+    rec.append_observable("[observable-processing]\nmodel=alice-extra\n")
+    rec.append_content("I am answering from observable receipts.")
+    receipt = rec.close(write=True)
+
+    assert receipt["thinking_chars"] == 0
+    assert receipt["thinking_chunks"] == 0
+    assert receipt["observable_chars"] > 0
+    assert receipt["observable_chunks"] == 1
+    assert receipt["panel_chars"] == receipt["observable_chars"]
+    assert receipt["content_chars"] == len("I am answering from observable receipts.")
     b = ext.flush()
     assert b == ("", "")

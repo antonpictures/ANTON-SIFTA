@@ -1,0 +1,10 @@
+{
+  "offer_id": "049d144f-b766-4cc2-b306-326b0f69c6e0",
+  "package_path": "exports/skill_submissions/epistemic_dissonance",
+  "provider_node": "GTH4921YP3",
+  "provider_trace": "15f05940-ac68-4300-947b-2d8e076f8cf5",
+  "skill_name": "epistemic_dissonance",
+  "skill_sha256": "acda0530c76320c311ad43a0667e62ad15bb242307b305d2f3a321b89925e433",
+  "stgm_price": 15.0,
+  "truth_label": "SIFTA_SKILL_TRADE_OFFER_V1"
+}

@@ -1,29 +1,233 @@
-# SIFTA-specific simulation & personal noise (not part of the organism's clean body)
-.sifta_state/owner_body_vision_frames/
-.sifta_state/youtube_watch_notes/
-.sifta_state/owner_body_vision_frames/
-.sifta_state/REM_Sleep_Engrams/
-simulation_publicpush_sandbox/
-Archive/REM_Sleep_Engrams/
-*.png
-*.jpg
-*.jpeg
-*.heic
-*.mp4
-*.mov
-*.log
+# ═══════════════════════════════════════════════════════════════════════
+# SIFTA / Alice  —  ANTON_SIFTA repository .gitignore
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Steve-Jobs-grade clean: only the living organism body is tracked.
+# Runtime state, vision frames, simulation residue, personal notes, and
+# build artifacts are NOT tracked.  The body's macOS-style skeleton
+# stays:
+#
+#     Applications/  System/  Documents/  Kernel/  Library/  Network/
+#     Organs/  Security/  Simulations/  Utilities/  Vendor/
+#     assets/  bin/  data/  distro/  exports/  launchd/  schemas/
+#     scripts/  skills/  static/  tests/  tools/
+#
+# Plus the root files defined by the SIFTA distro spec:
+#
+#     README.md  README.ro.md  LICENSE
+#     .gitignore  .gitattributes
+#     pytest.ini  requirements.txt  config.json
+#     integrity_manifest.json  node_registry.json
+#     sifta_os_desktop.py  siftactl.py  sifta_mcp_server.py
+#     sifta-skills.sh  SIFTA OS.command  !RunPhysarumContradictionLab.command
+#
+# Everything else asks itself: am I (a) reproducible from the canonical
+# code, (b) personal to this hardware, or (c) regenerable at boot? If
+# any of those are yes, it should NOT be tracked here.
+# ═══════════════════════════════════════════════════════════════════════
+
+
+# ── macOS debris ────────────────────────────────────────────────────────
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+*.icloud
 
-# Keep real state that matters
-!.sifta_state/ide_stigmergic_trace.jsonl
-!.sifta_state/work_receipts.jsonl
-!.sifta_state/app_focus.jsonl
-!.sifta_state/sifta_desktop_app_state.json
-!.sifta_state/alice_*.jsonl
-!.sifta_state/*.json
 
-# Python
+# ── Python build / cache / venv ─────────────────────────────────────────
 __pycache__/
-*.pyc
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+*.eggs/
 .venv/
+.venv-*/
 venv/
+env/
+.matplotlib_cache/
+build/
+node_modules/
+**/node_modules/
+# dist/ holds the .app bundle binary — track only manifest text, not blobs
+/dist/SIFTA.app/
+/dist/**/*.dylib
+/dist/**/*.so
+
+
+# ── SIFTA runtime state — NEVER track (the body's nervous system) ──────
+# These directories hold continuous append-only ledgers, embeddings,
+# audio frames, vision frames, voice transcripts, hardware probes —
+# all hardware-bound, personal, and regenerable. The species DNA
+# (code + doctrine) lives in the tracked tree; the individual organism
+# lives in these directories on this M5 silicon.
+.sifta_state/
+.sifta_trash/
+.sifta_directives/
+.sifta_documents/
+.sifta_quarantine/
+.sifta_reputation/
+.sifta_votes/
+.sifta/
+**/.sifta_state/
+
+
+# ── simulation sandboxes (huge duplicate trees of the main repo) ───────
+.simulation_publicpush_sandbox/
+simulation_publicpush_sandbox/
+**/simulation_publicpush_sandbox/
+.distro_build/
+
+
+# ── personal / IDE config bleed ─────────────────────────────────────────
+.personal/
+.cursor/
+.cursor_identity
+.clinerules
+.cursorrules
+.vscode/
+.idea/
+.env
+.env.*
+
+
+# ── large logs / dumps at repo root (move to .sifta_state/ if needed) ──
+/repair_log*.jsonl
+/nppl_gate_log.jsonl
+/swarm_brain_m1.log
+/os.log
+/*_stdout.log
+/server_stdout.log
+/hermes_stdout.log
+/crash_log.txt
+/cron_backup.txt
+/pytest_out.txt
+/swarm_integrity_report.txt
+/architect_approval.txt
+/bishop_identity_response.txt
+/stigauth.txt
+/lora_samples.jsonl
+/basal_ganglia_selections.jsonl
+/m1queen_dead_drop.jsonl
+/m5queen_dead_drop.jsonl
+/ide_stigmergic_trace.jsonl
+/implementation_plan.md
+
+
+# ── media / audio / binary that shouldn't be in source ─────────────────
+/*.jpg
+/*.jpeg
+/*.png
+/*.gif
+*.gguf
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.heic
+*.mov
+*.avi
+*.mkv
+*.mp4
+*.webm
+*.wav
+*.opus
+*.flac
+*.m4a
+
+
+# ── vision frames / camera output (huge, personal, regenerable) ────────
+**/owner_body_vision_frames/
+**/face_detect_frames/
+**/sifta_face_detect/
+
+
+# ── YouTube / media consumption logs (personal research) ───────────────
+**/youtube_watch_notes/
+SwarmEntityWatchingYouTube/
+
+
+# ── REM / engram / dream simulation artifacts ──────────────────────────
+**/REM_Sleep_Engrams/
+
+
+# ── Archive cold storage / local model weight residue ──────────────────
+/Archive/
+/Archive/**/*.dirt
+/Archive/**/*.gguf
+/Archive/**/*.safetensors
+/Archive/**/*.log
+/Archive/CEMETERY/
+/Archive/COLD_STORAGE/
+/Archive/State_Archives/
+/Archive/architect_drops/
+/Archive/bishop_drops_pending_review/
+/Archive/c47h_drops_pending_review/
+/Archive/ollama_validation/
+/Archive/alice_cortex_v2_fused/
+
+
+# ── local app/session caches that are not source ───────────────────────
+/Library/Desktop Pictures/
+/Library/llama.cpp/
+/Network/whatsapp_bridge/whatsapp_session*/
+/State/
+/System/dist/
+
+
+# ── scratch / surgery experiment trees ─────────────────────────────────
+/scratch/
+/surgery/
+/patch_*.py
+/fix*.py
+/finish_*.py
+/append_*.py
+/scratch*.py
+/orig_*.py
+/test_*.py
+/clean_ast.py
+/full_reconstruct.py
+/refactor.py
+/scan_blobs.py
+/run_cursor_jobs.py
+/profile_finance.py
+/make_noop.py
+/old_alice.py
+/signin.py
+/update_*.py
+/v2_evaluator.py
+
+
+# ── runtime ledger files that grow without bound ───────────────────────
+*.jsonl.gz
+*.jsonl.bak
+*.bak
+*.bak_*
+
+
+# ── grow-unbounded archives (kept locally, never pushed) ───────────────
+/stigauth/
+/pheromone_archive/
+
+
+# ── compiled / generated binaries ──────────────────────────────────────
+*.so
+*.dylib
+*.dll
+*.exe
+
+
+# ── personal-only marker pattern ───────────────────────────────────────
+*.local
+*.personal
+*~backup*
+
+
+# ── Cowork's session-local diagnostic (move to scripts/ or delete) ─────
+/probe_ace_black.py

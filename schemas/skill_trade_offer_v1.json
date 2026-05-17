@@ -1,0 +1,41 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SIFTA Skill Trade Offer",
+    "description": "Thin schema appended to the stigmergic field to index a community skill offer.",
+    "type": "object",
+    "properties": {
+        "offer_id": {
+            "type": "string",
+            "description": "UUID of the trade offer"
+        },
+        "skill_name": {
+            "type": "string",
+            "description": "Name of the skill being offered"
+        },
+        "skill_sha256": {
+            "type": "string",
+            "description": "Cryptographic hash of the skill procedure body"
+        },
+        "stgm_price": {
+            "type": "number",
+            "description": "Cost in STGM tokens to pull this skill"
+        },
+        "provider_node": {
+            "type": "string",
+            "description": "Homeworld serial of the node offering the skill"
+        },
+        "provider_trace": {
+            "type": "string",
+            "description": "Trace ID of the doctor who verified the skill"
+        },
+        "package_path": {
+            "type": "string",
+            "description": "Repo-relative package directory containing SKILL.md"
+        },
+        "truth_label": {
+            "type": "string",
+            "description": "Receipt truth label for the offer row"
+        }
+    },
+    "required": ["offer_id", "skill_name", "skill_sha256", "stgm_price", "provider_node", "provider_trace", "truth_label"]
+}

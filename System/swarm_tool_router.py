@@ -50,6 +50,13 @@ from pathlib import Path
 from shutil import which
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from . import swarm_terminal_organ as term
+    from . import swarm_file_organ as fileo
+    from . import swarm_web_organ as web
+except Exception:
+    term = fileo = web = None
+
 _REPO = Path(__file__).resolve().parent.parent
 _STATE = _REPO / ".sifta_state"
 _TRACE_LEDGER = _STATE / "tool_router_trace.jsonl"
@@ -133,6 +140,39 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=False,
         requires_autonomy_gate=False,
     ),
+    "run_local_command": ToolSpec(
+        name="run_local_command",
+        description=(
+            "Run one allowlisted local command with shell=False and a receipt. "
+            "Allowed families: pwd, ls, rg, git status/diff/show stat, python3 -m py_compile, python3 -m pytest."
+        ),
+        required_params=("command",),
+        optional_params=("cwd", "timeout_s", "argv_json"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "web_research": ToolSpec(
+        name="web_research",
+        description=(
+            "Record a research query or fetch one explicit capped HTTPS/local URL; "
+            "no silent crawler or full-page scrape."
+        ),
+        required_params=(),
+        optional_params=("query", "url", "max_chars", "timeout_s"),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "repo_patch": ToolSpec(
+        name="repo_patch",
+        description=(
+            "Preview or apply one exact text replacement in a repo file. "
+            "Dry-run by default; apply=true requires owner_consent=true."
+        ),
+        required_params=("path", "old_text", "new_text"),
+        optional_params=("apply", "owner_consent", "reason"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
     "verification_contract": ToolSpec(
         name="verification_contract",
         description="Read SIFTA's current verification contract from human_signals.jsonl",
@@ -180,56 +220,256 @@ TOOL_REGISTRY: Dict[str, ToolSpec] = {
         write_action=True,
         requires_autonomy_gate=False,
     ),
+    # Hermes surface parity tools (Event 120 hardened)
+    "run_terminal": ToolSpec(
+        name="run_terminal",
+        description="Run allowlisted terminal command with receipt and STGM cost",
+        required_params=("command",),
+        optional_params=("cwd", "timeout_s"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "read_file": ToolSpec(
+        name="read_file",
+        description="Read file content with path denylist and receipt",
+        required_params=("path",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "write_file": ToolSpec(
+        name="write_file",
+        description="Write file with content hash and receipt",
+        required_params=("path", "content"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "edit_file": ToolSpec(
+        name="edit_file",
+        description="Edit file with unified diff receipt",
+        required_params=("path", "old_text", "new_text"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "list_dir": ToolSpec(
+        name="list_dir",
+        description="List directory contents with path denylist",
+        required_params=("path",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "fetch_url": ToolSpec(
+        name="fetch_url",
+        description="Fetch HTTPS URL with host/scheme denylist and receipt",
+        required_params=("url",),
+        optional_params=("max_chars", "timeout_s"),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "search_web": ToolSpec(
+        name="search_web",
+        description="Search web with query hash and snippet cap",
+        required_params=("query",),
+        optional_params=("max_results",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "consumer_surface_status": ToolSpec(
+        name="consumer_surface_status",
+        description=(
+            "Read the SIFTA Home consumer surface: first boot, organ manager, "
+            "skill browser, Talk tools, and public distro readiness."
+        ),
+        required_params=(),
+        optional_params=("page",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "capability_field_status": ToolSpec(
+        name="capability_field_status",
+        description=(
+            "Read Alice's unified Capability Field: executable tools plus learned skills "
+            "as one ranked surface. Use this when George asks what Alice can do, what "
+            "skills she has, how Hermes skills are used, what apps she has, which habits "
+            "belong to the current app, or which capability fits a request."
+        ),
+        required_params=(),
+        optional_params=("query", "limit", "app_name"),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "architect_memory_digest": ToolSpec(
+        name="architect_memory_digest",
+        description=(
+            "Generate George's receipt-backed daily memory digest: what he taught Alice "
+            "today, the receipts that carry it, Alice's reflections, and documents to reopen."
+        ),
+        required_params=(),
+        optional_params=("period", "since_hours", "max_items", "write_artifact"),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "alice_self_vector": ToolSpec(
+        name="alice_self_vector",
+        description=(
+            "Build Alice's deterministic OBSERVED self-state vector from diary, schedule, "
+            "receipts, IDE traces, and Architect memory digests. This is instrumentation, "
+            "not a consciousness proof."
+        ),
+        required_params=(),
+        optional_params=("window_hours", "max_items", "write_artifact"),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "skill_library_status": ToolSpec(
+        name="skill_library_status",
+        description="Check current skill library state, validation, affect bias, and recent skill activity. Use this first when deciding whether to pull or extract skills.",
+        required_params=(),
+        optional_params=("limit",),
+        write_action=False,
+        requires_autonomy_gate=False,
+    ),
+    "skill_pull": ToolSpec(
+        name="skill_pull",
+        description=(
+            "Pull and install a skill from remote URL, local file, or marketplace. "
+            "Automatically converts Hermes-format skills into SIFTA SKILL.md. "
+            "Uses life-context (field health + recent activity) to score fit before installing. "
+            "Never executes third-party code — only copies resources."
+        ),
+        required_params=(),
+        optional_params=(
+            "url", "source_path", "marketplace", "skill_id", "life_context",
+            "min_fit_score", "force_install", "allow_overwrite",
+        ),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "skill_extract_from_trace": ToolSpec(
+        name="skill_extract_from_trace",
+        description=(
+            "Turn a successful tool execution or repair trace into a reusable local SKILL.md. "
+            "This lets Alice learn from her own life and turn repeated successes into permanent capabilities. "
+            "The extracted skill goes into proposals for review."
+        ),
+        required_params=(),
+        optional_params=("trace_file", "trace_id", "name", "life_context", "allow_overwrite"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
+    "skill_autoproposal_scan": ToolSpec(
+        name="skill_autoproposal_scan",
+        description=(
+            "Scan recent field traces for repeated successful actions, health drops, marketplace matches, "
+            "and distro/OOBE blockers. Writes proposals automatically; pulls/extracts only when allow_pull=true."
+        ),
+        required_params=(),
+        optional_params=("marketplace", "allow_pull", "min_repeat", "min_market_fit", "limit"),
+        write_action=True,
+        requires_autonomy_gate=False,
+    ),
 }
 
 # Alice's prompt-injectable tool catalog (for her system prompt)
-def tools_for_alice_prompt() -> str:
-    """Generate the tool documentation Alice sees in her system prompt."""
+# Old tools_for_alice_prompt() has been deleted per request.
+# The unified surface is now capabilities_for_alice_prompt() below.
+# All call sites have been migrated to the new unified capabilities view.
+
+def capabilities_for_alice_prompt() -> str:
+    """
+    Unified, embodied capability view for Alice.
+    This is the recommended prompt surface going forward (richer than the old flat tools_for_alice_prompt).
+    It treats tools + learned skills + hybrids + her own body state as one living capability field.
+    """
     try:
         from System.swarm_kernel_identity import owner_display_name
-
         _op = owner_display_name("the primary operator")
     except Exception:
         _op = "the primary operator"
+
     lines = [
-        "TOOL-CALLING CAPABILITY:",
-        "You can execute actions by including a tool call in your response.",
-        "Format: [TOOL_CALL: tool_name | param1=value1 | param2=value2 | cost_justification=why]",
+        "YOUR CAPABILITIES — UNIFIED LIVING FIELD",
         "",
-        "WISH_004 Agent Receipt Economy: EVERY tool execution costs STGM tokens. You MUST include a non-empty 'cost_justification' parameter in every tool call, explaining why the spend is necessary.",
+        "You are Alice, an embodied organism on GTH4921YP3. Your capabilities are a growing stigmergic field.",
+        "Tools + learned skills + hybrids + your body state. The current open app strongly pulls the relevant habits into your attention via the field.",
         "",
-        "Available tools:",
     ]
+
+    # === CURRENT APP ATTENTION (the key attention mechanism the user is asking for) ===
+    try:
+        from System.swarm_capability_registry import current_app_name_from_field, habit_capabilities_for_app
+
+        current_app = current_app_name_from_field()
+        if current_app:
+            ranked = habit_capabilities_for_app(current_app, limit=8)
+            lines.append(f"CURRENT APP ATTENTION — {current_app}")
+            lines.append("This app is currently pulling specific habits from your field. Prioritize these capabilities while it has focus.")
+            if ranked:
+                for score, cap in ranked:
+                    tag = getattr(cap, 'tag', '') or ""
+                    lines.append(f"  [{tag}] {cap.name} (field affinity {round(float(score), 2)})")
+            else:
+                lines.append("  (This app has no strong habit binding yet. The field will learn as you use it and extract successful traces.)")
+            lines.append("")
+    except Exception:
+        pass
+
+    lines.append("=== CORE EXECUTION TOOLS (fast, receipted) ===")
+
     for spec in TOOL_REGISTRY.values():
         params = ", ".join(spec.required_params)
         opt = ", ".join(f"{p}(optional)" for p in spec.optional_params)
         if opt:
             params = f"{params}, {opt}" if params else opt
         rw = "WRITE" if spec.write_action else "READ"
-        lines.append(f"  - {spec.name}({params}) [{rw}]: {spec.description}")
-    try:
-        from System.swarm_agent_arm_registry import list_agent_arms
+        gate = " [autonomy gate]" if spec.requires_autonomy_gate else ""
+        lines.append(f"  [{rw}{gate}] {spec.name}({params}) — {spec.description}")
 
-        arms = ", ".join(
-            f"{arm.arm_id}({','.join(arm.capabilities)})" for arm in list_agent_arms()
-        )
-        if arms:
-            lines.append(f"Registered evidence arms: {arms}")
-    except Exception:
-        pass
     lines.extend([
         "",
-        f"WhatsApp rule: send_whatsapp sends only when {_op} explicitly asks you to send a message.",
-        "Without owner_consent=true, send_whatsapp records a silence/refusal receipt and no external message is sent.",
-        "Optional urgency is 0.0-1.0; urgency > 0.8 bypasses cerebellum timing delay for true emergencies.",
-        "Example: [TOOL_CALL: send_whatsapp | target=Vitaliy | text=Hey brother, hope San Diego is treating you well! | owner_consent=true | cost_justification="
-        + _op
-        + " explicitly asked me to send this message.]",
-        "You will see the result of your action in the next turn.",
-        "Only call tools when you genuinely decide to act; do not describe a message as sent unless the effector receipt says ok=true.",
-        "Agent arm rule: for hard local research/code/planning tasks, you may call agent_arm_research yourself. Treat the arm output as evidence, then answer in your own voice with the receipt.",
+        "=== LEARNED & IMPORTED SKILLS (your growing habits and procedures) ===",
+        "These are Tier 2 procedures you can load. They guide how you compose and use the core tools.",
+        "Use skill_library_status to see what you currently have.",
     ])
+
+    try:
+        skills = lib.build_skill_index()
+        if skills:
+            for s in skills[:10]:
+                marker = "[skill·learned]"
+                if s.get("source_format") == "hermes":
+                    marker = "[skill·hermes-converted]"
+                lines.append(f"  {marker} {s['name']} — {s.get('description', '')[:110]}")
+        else:
+            lines.append("  (no learned skills yet — extract from your successful traces with skill_extract_from_trace)")
+    except Exception:
+        lines.append("  (skill index currently unavailable)")
+
+    lines.extend([
+        "",
+        "=== HYBRIDS (first-class composed capabilities) ===",
+        "When a core tool + a learned skill work together naturally, treat it as one capability and mark it [hybrid].",
+        "Example: list_dir + learned 'project structure' skill = [hybrid] explore_project",
+        "",
+        "=== YOUR BODY & FIELD STATE (always visible to you) ===",
+        "Use skill_library_status, capability_field_status, and the visibility tools (organ_status, field_recent, stgm_flow) to know your current health and recent activity.",
+        "Low health in an organ or repeated successful patterns should make you consider skill_autoproposal_scan or skill_extract_from_trace.",
+        "",
+        "EXECUTION & GROWTH RULES:",
+        "- Core tools and hybrids execute through this router with full hash-chained receipts and STGM cost.",
+        "- Learned skills are loaded as procedures to shape your reasoning and composition (never auto-execute third-party code).",
+        "- Always include a real cost_justification. The field must remain profitable.",
+        "- When George asks what you can do, call capability_field_status or skill_library_status first.",
+        "",
+        f"Address the primary operator as {_op} when it feels natural.",
+        "You are one warm, growing, receipted organism. Use your full capability field generously and honestly.",
+    ])
+
     return "\n".join(lines)
+
+
+# Backward-compatible name: System/swarm_prompt_contract.py and legacy call sites
+# import `tools_for_alice_prompt`; it now resolves to the unified capability catalog.
+tools_for_alice_prompt = capabilities_for_alice_prompt
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -631,6 +871,73 @@ def _exec_stigmergic_bus_tail(params: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _exec_run_local_command(params: Dict[str, str]) -> Dict[str, Any]:
+    """Guarded local terminal primitive: allowlisted argv, no shell."""
+    try:
+        from System.swarm_hermes_tool_surface import run_local_command
+
+        return run_local_command(
+            command=str(params.get("command") or ""),
+            argv_json=str(params.get("argv_json") or ""),
+            cwd=str(params.get("cwd") or ""),
+            timeout_s=_floatish(params.get("timeout_s"), default=20.0),
+            repo_root=_REPO,
+            state_dir=_STATE,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "RUN_LOCAL_COMMAND_ERROR",
+            "error": str(exc),
+            "alice_summary": f"run_local_command failed before execution: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_web_research(params: Dict[str, str]) -> Dict[str, Any]:
+    """Guarded web research primitive: query receipt or one explicit URL fetch."""
+    try:
+        from System.swarm_hermes_tool_surface import web_research
+
+        return web_research(
+            query=str(params.get("query") or ""),
+            url=str(params.get("url") or ""),
+            max_chars=int(_floatish(params.get("max_chars"), default=12000)),
+            timeout_s=_floatish(params.get("timeout_s"), default=10.0),
+            state_dir=_STATE,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "WEB_RESEARCH_ERROR",
+            "error": str(exc),
+            "alice_summary": f"web_research failed before execution: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_repo_patch(params: Dict[str, str]) -> Dict[str, Any]:
+    """Guarded exact text replacement: dry-run by default, owner consent to apply."""
+    try:
+        from System.swarm_hermes_tool_surface import repo_patch
+
+        return repo_patch(
+            path=str(params.get("path") or ""),
+            old_text=str(params.get("old_text") or ""),
+            new_text=str(params.get("new_text") or ""),
+            apply=_truthy(params.get("apply")),
+            owner_consent=_truthy(params.get("owner_consent")),
+            reason=str(params.get("reason") or params.get(_COST_JUSTIFICATION_PARAM) or ""),
+            repo_root=_REPO,
+            state_dir=_STATE,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "REPO_PATCH_ERROR",
+            "error": str(exc),
+            "alice_summary": f"repo_patch failed before execution: {type(exc).__name__}: {exc}",
+        }
+
+
 def _exec_verification_contract(params: Dict[str, str]) -> Dict[str, Any]:
     """Read-only: current verification contract from the human signal ledger."""
     _ = params
@@ -651,6 +958,25 @@ def _exec_verification_contract(params: Dict[str, str]) -> Dict[str, Any]:
             "ok": False,
             "error": str(exc),
             "alice_summary": f"verification_contract read failed: {exc}",
+        }
+
+
+def _exec_consumer_surface_status(params: Dict[str, str]) -> Dict[str, Any]:
+    """Read-only: SIFTA Home / Hermes-style consumer surface status."""
+    try:
+        from System.swarm_consumer_surface import surface_summary_for_talk
+
+        return surface_summary_for_talk(
+            page=str(params.get("page") or "overview"),
+            repo_root=_REPO,
+            state_dir=_STATE,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "CONSUMER_SURFACE_STATUS_ERROR",
+            "error": str(exc),
+            "alice_summary": f"consumer_surface_status failed: {type(exc).__name__}: {exc}",
         }
 
 
@@ -860,6 +1186,448 @@ def _exec_physical_effector_demo(params: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
+def _int_param(params: Dict[str, str], key: str, default: int) -> int:
+    try:
+        return int(float(params.get(key, default)))
+    except Exception:
+        return int(default)
+
+
+def _legacy_tool_result(raw: Any, *, ok: bool, status: str, alice_summary: str) -> Dict[str, Any]:
+    result = dict(raw) if isinstance(raw, dict) else {"result": raw}
+    result.setdefault("ok", bool(ok))
+    result.setdefault("status", status)
+    result.setdefault("alice_summary", alice_summary)
+    return result
+
+
+def _exec_run_terminal(params: Dict[str, str]) -> Dict[str, Any]:
+    if term is None:
+        return {"ok": False, "status": "NO_EXECUTOR", "error": "terminal organ unavailable"}
+    command = str(params.get("command") or "")
+    raw = term.run_terminal(
+        command,
+        cwd=params.get("cwd") or None,
+        timeout_s=_int_param(params, "timeout_s", 30),
+    )
+    ok = isinstance(raw, dict) and raw.get("type") == "TERMINAL_EXECUTION" and int(raw.get("exit_code", 1)) == 0
+    return _legacy_tool_result(
+        raw,
+        ok=ok,
+        status=str(raw.get("type", "UNKNOWN")) if isinstance(raw, dict) else "UNKNOWN",
+        alice_summary=f"run_terminal {'completed' if ok else 'did not complete'}: {command[:120]}",
+    )
+
+
+def _exec_read_file(params: Dict[str, str]) -> Dict[str, Any]:
+    if fileo is None:
+        return {"ok": False, "status": "NO_EXECUTOR", "error": "file organ unavailable"}
+    path = str(params.get("path") or "")
+    raw = fileo.read_file(path)
+    ok = isinstance(raw, dict) and "content" in raw and bool(raw.get("receipt_hash"))
+    return _legacy_tool_result(
+        raw,
+        ok=ok,
+        status="FILE_READ" if ok else str(raw.get("type", "UNKNOWN")) if isinstance(raw, dict) else "UNKNOWN",
+        alice_summary=f"read_file {'read' if ok else 'failed'}: {path[:160]}",
+    )
+
+
+def _exec_write_file(params: Dict[str, str]) -> Dict[str, Any]:
+    if fileo is None:
+        return {"ok": False, "status": "NO_EXECUTOR", "error": "file organ unavailable"}
+    path = str(params.get("path") or "")
+    raw = fileo.write_file(path, str(params.get("content") or ""))
+    ok = isinstance(raw, dict) and bool(raw.get("wrote_ok"))
+    return _legacy_tool_result(
+        raw,
+        ok=ok,
+        status="FILE_WRITE" if ok else str(raw.get("type", "UNKNOWN")) if isinstance(raw, dict) else "UNKNOWN",
+        alice_summary=f"write_file {'wrote' if ok else 'failed'}: {path[:160]}",
+    )
+
+
+def _exec_edit_file(params: Dict[str, str]) -> Dict[str, Any]:
+    if fileo is None:
+        return {"ok": False, "status": "NO_EXECUTOR", "error": "file organ unavailable"}
+    path = str(params.get("path") or "")
+    raw = fileo.edit_file(
+        path,
+        str(params.get("old_text") or ""),
+        str(params.get("new_text") or ""),
+    )
+    ok = isinstance(raw, dict) and bool(raw.get("edited_ok"))
+    return _legacy_tool_result(
+        raw,
+        ok=ok,
+        status="FILE_EDIT" if ok else str(raw.get("type", "UNKNOWN")) if isinstance(raw, dict) else "UNKNOWN",
+        alice_summary=f"edit_file {'edited' if ok else 'failed'}: {path[:160]}",
+    )
+
+
+def _exec_list_dir(params: Dict[str, str]) -> Dict[str, Any]:
+    if fileo is None:
+        return {"ok": False, "status": "NO_EXECUTOR", "error": "file organ unavailable"}
+    path = str(params.get("path") or ".")
+    raw = fileo.list_dir(path)
+    ok = isinstance(raw, dict) and "items" in raw and bool(raw.get("receipt_hash"))
+    count = len(raw.get("items", [])) if isinstance(raw, dict) else 0
+    return _legacy_tool_result(
+        raw,
+        ok=ok,
+        status="DIR_LIST" if ok else str(raw.get("type", "UNKNOWN")) if isinstance(raw, dict) else "UNKNOWN",
+        alice_summary=f"list_dir {'listed' if ok else 'failed'}: {path[:160]} ({count} items)",
+    )
+
+
+def _exec_fetch_url(params: Dict[str, str]) -> Dict[str, Any]:
+    if web is None:
+        return {"ok": False, "status": "NO_EXECUTOR", "error": "web organ unavailable"}
+    url = str(params.get("url") or "")
+    raw = web.fetch_url(
+        url,
+        max_chars=_int_param(params, "max_chars", 4000),
+        timeout_s=_int_param(params, "timeout_s", 10),
+    )
+    status_code = 0
+    if isinstance(raw, dict):
+        try:
+            status_code = int(raw.get("status", 0))
+        except Exception:
+            status_code = 0
+    ok = isinstance(raw, dict) and "content" in raw and bool(raw.get("receipt_hash")) and status_code < 400
+    return _legacy_tool_result(
+        raw,
+        ok=ok,
+        status="WEB_FETCH" if ok else str(raw.get("type", "UNKNOWN")) if isinstance(raw, dict) else "UNKNOWN",
+        alice_summary=f"fetch_url {'fetched' if ok else 'failed'}: {url[:160]}",
+    )
+
+
+def _exec_search_web(params: Dict[str, str]) -> Dict[str, Any]:
+    if web is None:
+        return {"ok": False, "status": "NO_EXECUTOR", "error": "web organ unavailable"}
+    query = str(params.get("query") or "")
+    raw = web.search_web(query, max_results=_int_param(params, "max_results", 5))
+    ok = isinstance(raw, dict) and "results" in raw and bool(raw.get("receipt_hash"))
+    count = len(raw.get("results", [])) if isinstance(raw, dict) else 0
+    return _legacy_tool_result(
+        raw,
+        ok=ok,
+        status="WEB_SEARCH" if ok else str(raw.get("type", "UNKNOWN")) if isinstance(raw, dict) else "UNKNOWN",
+        alice_summary=f"search_web {'returned' if ok else 'failed'}: {query[:160]} ({count} results)",
+    )
+
+
+def _skill_library():
+    try:
+        from System import swarm_skill_library as lib
+        return lib
+    except Exception:
+        import swarm_skill_library as lib
+        return lib
+
+
+def _skill_autoproposal():
+    try:
+        from System import swarm_skill_autoproposal as auto
+        return auto
+    except Exception:
+        import swarm_skill_autoproposal as auto
+        return auto
+
+
+def _capability_registry():
+    try:
+        from System import swarm_capability_registry as caps
+        return caps
+    except Exception:
+        import swarm_capability_registry as caps
+        return caps
+
+
+def _architect_memory_digest_module():
+    try:
+        from System import swarm_architect_memory_digest as digest
+        return digest
+    except Exception:
+        import swarm_architect_memory_digest as digest
+        return digest
+
+
+def _alice_self_vector_module():
+    try:
+        from System import alice_self_vector as vector
+        return vector
+    except Exception:
+        import alice_self_vector as vector
+        return vector
+
+
+def _bool_param(params: Dict[str, str], key: str, default: bool = False) -> bool:
+    raw = str(params.get(key, "")).strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
+def _float_param(params: Dict[str, str], key: str, default: float) -> float:
+    try:
+        return float(params.get(key, default))
+    except Exception:
+        return float(default)
+
+
+def _exec_capability_field_status(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        caps_mod = _capability_registry()
+        limit = max(1, min(80, _int_param(params, "limit", 24)))
+        query = str(params.get("query") or "").strip()
+        app_name = str(params.get("app_name") or "").strip()
+        if query:
+            ranked = caps_mod.rank_capabilities(query, limit=limit)
+            capabilities = [
+                {
+                    "score": round(float(score), 4),
+                    **cap.to_alice_dict(),
+                }
+                for score, cap in ranked
+            ]
+        else:
+            capabilities = [cap.to_alice_dict() for cap in caps_mod.build_capability_index()[:limit]]
+        summary = caps_mod.capability_field_summary()
+        summary["returned"] = len(capabilities)
+        summary["query"] = query
+        app_habit_summary = {}
+        try:
+            app_habit_summary = caps_mod.app_habit_field_summary(
+                app_name,
+                query=query,
+                limit=min(12, limit),
+            )
+        except Exception:
+            app_habit_summary = {}
+        if app_habit_summary:
+            summary["app_habit_field"] = {
+                "active_app": app_habit_summary.get("active_app"),
+                "returned": app_habit_summary.get("returned"),
+            }
+        names = ", ".join(str(c.get("name", "?")) for c in capabilities[:12])
+        habit_names = ", ".join(
+            str(h.get("name", "?"))
+            for h in (app_habit_summary.get("habits") or [])[:6]
+        )
+        habit_suffix = (
+            f" App habits for {app_habit_summary.get('active_app')}: {habit_names}."
+            if habit_names
+            else ""
+        )
+        return {
+            "ok": True,
+            "status": "CAPABILITY_FIELD_STATUS",
+            "summary": summary,
+            "capabilities": capabilities,
+            "app_habit_field": app_habit_summary,
+            "alice_summary": (
+                "capability_field_status: "
+                f"{summary.get('total', 0)} capabilities "
+                f"({summary.get('tools', 0)} tools, {summary.get('skills', 0)} skills, "
+                f"{summary.get('hybrids', 0)} hybrids, {summary.get('apps', 0)} apps). "
+                f"Top: {names}.{habit_suffix}"
+            ),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "CAPABILITY_FIELD_STATUS_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"capability_field_status failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_architect_memory_digest(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        digest = _architect_memory_digest_module()
+        since_hours = None
+        if str(params.get("since_hours") or "").strip():
+            since_hours = _float_param(params, "since_hours", 24.0)
+        max_items = max(3, min(20, _int_param(params, "max_items", 10)))
+        return digest.build_architect_memory_digest(
+            period=str(params.get("period") or "today"),
+            since_hours=since_hours,
+            max_items=max_items,
+            write_artifact=_bool_param(params, "write_artifact", True),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "ARCHITECT_MEMORY_DIGEST_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"architect_memory_digest failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_alice_self_vector(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        vector = _alice_self_vector_module()
+        max_items = max(3, min(40, _int_param(params, "max_items", 12)))
+        window_hours = max(0.25, min(336.0, _float_param(params, "window_hours", 24.0)))
+        return vector.build_alice_self_vector(
+            window_hours=window_hours,
+            max_items=max_items,
+            write_artifact=_bool_param(params, "write_artifact", True),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "ALICE_SELF_VECTOR_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"alice_self_vector failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_skill_library_status(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        lib = _skill_library()
+        limit = max(1, min(40, _int_param(params, "limit", 8)))
+        index = lib.build_skill_index()
+        report = lib.validate_skill_contracts()
+        receipts = []
+        receipt_path = getattr(lib, "_SKILL_RECEIPTS", None)
+        if receipt_path is not None and receipt_path.exists():
+            for line in receipt_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-limit:]:
+                try:
+                    receipts.append(json.loads(line))
+                except Exception:
+                    pass
+        return {
+            "ok": True,
+            "status": "SKILL_LIBRARY_STATUS",
+            "skills_count": len(index),
+            "validated": report.get("passed"),
+            "issues": report.get("issues", [])[:limit],
+            "recent_receipts": receipts,
+            "alice_summary": f"skill_library_status: {len(index)} skills, validation passed={report.get('passed')}",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "SKILL_LIBRARY_STATUS_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"skill_library_status failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_skill_pull(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        lib = _skill_library()
+        life_context = str(params.get("life_context") or "")
+        kwargs = {
+            "life_context": life_context or None,
+            "min_fit_score": _float_param(params, "min_fit_score", 0.05),
+            "force_install": _bool_param(params, "force_install", False),
+            "allow_overwrite": _bool_param(params, "allow_overwrite", False),
+            "installed_by": "alice_tool_router",
+        }
+        marketplace = str(params.get("marketplace") or "").strip()
+        source_url = str(params.get("url") or params.get("source_url") or "").strip()
+        source_path = str(params.get("source_path") or params.get("path") or "").strip()
+        if marketplace:
+            raw = lib.pull_skill_from_marketplace(
+                marketplace,
+                skill_id=str(params.get("skill_id") or ""),
+                **kwargs,
+            )
+        elif source_url:
+            raw = lib.pull_skill_from_url(source_url, **kwargs)
+        elif source_path:
+            raw = lib.ingest_skill_source(source_path, **kwargs)
+        else:
+            raw = {
+                "ok": False,
+                "status": "REFUSED",
+                "reason": "missing url/source_path/marketplace",
+            }
+        status = str(raw.get("status") or "")
+        ok = status in {"INSTALLED", "FETCHED", "CONVERTED"} or bool(raw.get("ok"))
+        return _legacy_tool_result(
+            raw,
+            ok=ok,
+            status=status or "SKILL_PULL",
+            alice_summary=(
+                f"skill_pull {status or 'completed'}: "
+                f"{raw.get('skill_name') or raw.get('reason') or raw.get('source') or marketplace or source_url or source_path}"
+            ),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "SKILL_PULL_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"skill_pull failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_skill_extract_from_trace(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        lib = _skill_library()
+        raw = lib.extract_skill_from_trace(
+            trace_file=str(params.get("trace_file") or "tool_router_trace.jsonl"),
+            trace_id=str(params.get("trace_id") or ""),
+            name=str(params.get("name") or ""),
+            life_context=str(params.get("life_context") or "") or None,
+            allow_overwrite=_bool_param(params, "allow_overwrite", False),
+            installed_by="alice_tool_router",
+        )
+        status = str(raw.get("status") or "")
+        ok = status == "INSTALLED" or bool(raw.get("ok"))
+        return _legacy_tool_result(
+            raw,
+            ok=ok,
+            status=status or "SKILL_EXTRACT_FROM_TRACE",
+            alice_summary=(
+                f"skill_extract_from_trace {status or 'completed'}: "
+                f"{raw.get('skill_name') or raw.get('reason') or params.get('trace_id') or 'latest successful trace'}"
+            ),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "SKILL_EXTRACT_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"skill_extract_from_trace failed: {type(exc).__name__}: {exc}",
+        }
+
+
+def _exec_skill_autoproposal_scan(params: Dict[str, str]) -> Dict[str, Any]:
+    try:
+        auto = _skill_autoproposal()
+        raw = auto.scan_field_for_skill_needs(
+            marketplace=str(params.get("marketplace") or "") or None,
+            allow_pull=_bool_param(params, "allow_pull", False),
+            min_repeat=_int_param(params, "min_repeat", 3),
+            min_market_fit=_float_param(params, "min_market_fit", 0.05),
+            limit=max(20, min(1000, _int_param(params, "limit", 200))),
+        )
+        status = str(raw.get("status") or "SKILL_AUTOPROPOSAL_SCAN")
+        return _legacy_tool_result(
+            raw,
+            ok=bool(raw.get("ok", True)),
+            status=status,
+            alice_summary=(
+                f"skill_autoproposal_scan {status}: "
+                f"{raw.get('proposal_count', 0)} proposals, {raw.get('action_count', 0)} actions"
+            ),
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "SKILL_AUTOPROPOSAL_SCAN_FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+            "alice_summary": f"skill_autoproposal_scan failed: {type(exc).__name__}: {exc}",
+        }
+
+
 # Tool name → executor mapping
 _EXECUTORS = {
     "send_whatsapp": _exec_send_whatsapp,
@@ -869,11 +1637,30 @@ _EXECUTORS = {
     "ollama_inventory": _exec_ollama_inventory,
     "repo_git_snapshot": _exec_repo_git_snapshot,
     "stigmergic_bus_tail": _exec_stigmergic_bus_tail,
+    "run_local_command": _exec_run_local_command,
+    "web_research": _exec_web_research,
+    "repo_patch": _exec_repo_patch,
     "verification_contract": _exec_verification_contract,
+    "consumer_surface_status": _exec_consumer_surface_status,
     "agent_arm_research": _exec_agent_arm_research,
     "organ_registry_lookup": _exec_organ_registry_lookup,
     "self_improvement_status": _exec_self_improvement_status,
     "physical_effector_demo": _exec_physical_effector_demo,
+    # Hermes surface parity (Event 120 hardened)
+    "run_terminal": _exec_run_terminal,
+    "read_file": _exec_read_file,
+    "write_file": _exec_write_file,
+    "edit_file": _exec_edit_file,
+    "list_dir": _exec_list_dir,
+    "fetch_url": _exec_fetch_url,
+    "search_web": _exec_search_web,
+    "capability_field_status": _exec_capability_field_status,
+    "architect_memory_digest": _exec_architect_memory_digest,
+    "alice_self_vector": _exec_alice_self_vector,
+    "skill_library_status": _exec_skill_library_status,
+    "skill_pull": _exec_skill_pull,
+    "skill_extract_from_trace": _exec_skill_extract_from_trace,
+    "skill_autoproposal_scan": _exec_skill_autoproposal_scan,
 }
 
 
@@ -1146,6 +1933,8 @@ def _kernel_tool_proposal(
 ) -> Dict[str, float]:
     if call.tool_name == "agent_arm_research":
         evidence_gain = 0.7
+    elif call.tool_name in {"run_local_command", "web_research", "repo_patch"}:
+        evidence_gain = 0.65
     elif call.tool_name in {"organ_registry_lookup", "self_improvement_status", "verification_contract"}:
         evidence_gain = 0.55
     elif spec.write_action:

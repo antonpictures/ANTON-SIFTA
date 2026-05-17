@@ -14,7 +14,7 @@ about co-writing with Alice, especially Stigmergic Writer:
 Normal apps receive a non-visual compatibility bridge from SiftaBaseWidget
 instead of this panel.
 
-Claude mapped the architecture. Gemini built it. The Architect owns it.
+Cowork mapped the architecture. Gemini built it. The Architect owns it.
 """
 from __future__ import annotations
 

@@ -1,0 +1,8 @@
+{"action": "boot", "status": "ALIVE", "source": "/Users/ioanganton/Music/media_claw/newspaper/ARTICLES/M1ther_\u2014_Mac_Mini_M1/04-04-26_George_Anton_Antons_SIFTA.txt", "ts": "2026-04-04T23:12:05.803448+00:00"}
+{"action": "swim_attempt", "node": "m1ther_local", "url": "http://192.168.1.71:3003/api/articles", "article_id": "sifta_1775344325", "ts": "2026-04-04T23:12:05.804073+00:00"}
+{"action": "swim_success", "node": "m1ther_local", "http_status": 201, "article_id": "sifta_1775344325", "status": "DELIVERED", "ts": "2026-04-04T23:12:06.023961+00:00"}
+{"action": "swim_complete", "status": "SUCCESS", "ts": "2026-04-04T23:12:06.024184+00:00"}
+{"action": "boot", "status": "ALIVE", "source": "/Users/ioanganton/Music/media_claw/newspaper/ARTICLES/M1ther_\u2014_Mac_Mini_M1/04-04-26_George_Anton_Antons_SIFTA.txt", "ts": "2026-04-04T23:24:39.102682+00:00"}
+{"event": "depart", "agent_id": "ANTIALICE-SIFTA", "ascii_body": "<///[O_O]///::ID[ANTIALICE-SIFTA]::FROM[M5-ANTIGRAVITY]::TO[M1THER]::SEQ[001]::H[27b994d8847d55e282e6e622bb97700b]::T[1775345079]>", "from": "M5-ANTIGRAVITY", "to": "M1THER", "node": "m1ther_local", "hash": "27b994d8847d55e2", "status": "DEPARTING", "ts": "2026-04-04T23:24:39.103132+00:00"}
+{"event": "arrive", "agent_id": "ANTIALICE-SIFTA", "ascii_body": "<///[O_O]///::ID[ANTIALICE-SIFTA]::FROM[M5-ANTIGRAVITY]::TO[M1THER]::SEQ[001]::H[27b994d8847d55e282e6e622bb97700b]::T[1775345079]>", "to": "M1THER", "node": "m1ther_local", "http_status": 201, "status": "ARRIVED", "ts": "2026-04-04T23:24:39.408981+00:00"}
+{"action": "swim_complete", "status": "SUCCESS", "ts": "2026-04-04T23:24:39.409805+00:00"}

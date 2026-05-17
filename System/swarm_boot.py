@@ -32,18 +32,25 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# ── Bostrom Capability Gate (ARCHITECT-CONTROLLED) ──────────────────────────
+# ── Bostrom Mutation Guard (ARCHITECT-CONTROLLED) ───────────────────────────
 # Set env var SIFTA_BOSTROM_GATE=1 to arm OS-level System/*.py write protection.
 # When armed, any module in this process that attempts to write System/*.py
 # while the MRNA conscience lock is engaged will receive a fatal PermissionError.
 # Default: OFF. Activate explicitly: SIFTA_BOSTROM_GATE=1 python3 System/swarm_boot.py
+#
+# Cowork CW47 2026-05-16: renamed import from swarm_capability_gate to
+# swarm_mutation_guard. The word "capability" now belongs to the unified
+# Capability Registry (tools + skills + apps Alice reasons over); this guard
+# is a security organ — a different concept that no longer shares the word.
+# The legacy import path still resolves through a deprecation shim so a stale
+# caller keeps working until the consolidation sweep retires it.
 if os.environ.get("SIFTA_BOSTROM_GATE") == "1":
     try:
-        from System.swarm_capability_gate import SwarmCapabilityGate as _Gate
-        _capability_gate = _Gate()
-        _capability_gate.arm_capability_gate()
+        from System.swarm_mutation_guard import SwarmMutationGuard as _Guard
+        _mutation_guard = _Guard()
+        _mutation_guard.arm_mutation_guard()
     except Exception as _gate_exc:
-        print(f"[BOOT] Capability gate failed to arm: {_gate_exc}. Continuing unguarded.")
+        print(f"[BOOT] Mutation guard failed to arm: {_gate_exc}. Continuing unguarded.")
 
 # ── Single-instance lockfile (C47H 2026-04-18) ──────────────────────────────
 # Without this, double-launching swarm_boot doubles the audio-capture rate,

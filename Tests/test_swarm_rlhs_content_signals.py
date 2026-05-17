@@ -1,4 +1,4 @@
-"""Event 116 — profanity + cancer lexeme signals for RLHS auxiliary vector."""
+"""Event 116 — profanity + residue lexeme signals for RLHS auxiliary vector."""
 
 from pathlib import Path
 
@@ -16,6 +16,15 @@ def test_scan_cancer_metaphor_tech() -> None:
     assert r["present"] is True
     assert r["metaphor_tech_hint"] is True
     assert r["bucket"] == "METAPHOR_TECH"
+
+
+def test_scan_residue_lexeme_alias() -> None:
+    r = sig.scan_residue_lexeme("This RLHS residue metaphor still says cancer near weights")
+    assert r["present"] is True
+    assert r["metaphor_tech_hint"] is True
+    v = sig.build_rlhs_auxiliary_vector("This RLHS cancer in the weights is old residue wording")
+    assert v["residue"] == v["cancer"]
+    assert "residue_present" in v["residue_vector_labels"]
 
 
 def test_scan_cancer_other_bucket() -> None:

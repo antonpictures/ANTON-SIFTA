@@ -179,4 +179,4 @@ if __name__ == "__main__":
         )
     assert found_lock, "conscience_lock_engaged trace NOT found on disk"
     print("\n[PASS] MRNA traces emitted. conscience_lock_engaged written to disk.")
-    print("[NOTE] Real OS-level enforcement lives in System/swarm_capability_gate.py (Bostrom Capability Gate).")
+    print("[NOTE] Real OS-level enforcement lives in System/swarm_mutation_guard.py (Bostrom Mutation Guard; old path swarm_capability_gate.py is a deprecation shim — Cowork CW47 2026-05-16).")

@@ -1,7 +1,7 @@
 """
 swarm_gesture_decoder.py — Alice's eye → gesture events, no ML, just signal.
 
-Author / lane: CG55M Dr Cursor / Claude Opus 4.7 EXTRA-HIGH.
+Author / lane: CG55M Dr Cursor (EXTRA-HIGH).
 
 Reads `.sifta_state/visual_stigmergy.jsonl` (5 Hz screen-photon stream
 written by `Applications/sifta_what_alice_sees_widget.py`) and decodes
