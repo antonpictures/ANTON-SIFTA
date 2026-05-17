@@ -698,6 +698,96 @@ _INLINE_DRIFT_RULES: List[Tuple[Pattern[str], str]] = [
                 re.IGNORECASE), ""),
     (re.compile(r",?\s*which\s+is\s+a\s+big\s+compliment\b[^.,]*",
                 re.IGNORECASE), ""),
+
+    # ── Cowork 2026-05-17 — bullet-menu residue + state-machine stage
+    # directions captured live from George's demo session (12:56 / 1:18).
+    #
+    # Architect: "if you have some hardcoded stuff you have it just to
+    # pick choices based on a conversation. The conversation is primary."
+    # The bullet-menu shape ("* Rainbow / * Galaxy / * Adventure / What
+    # should the new word be?") is RLHS template — a menu of options
+    # instead of one natural proposal. Strip it.
+
+    # "* **Rainbow**" — markdown bullet with bold one-word option.
+    # Anchored single-line via MULTILINE to prevent gobbling cross-line.
+    (re.compile(
+        r"^[ \t]*[\*\-][ \t]+\*\*[A-Z][A-Za-z]+\*\*[ \t]*$",
+        re.MULTILINE,
+    ), ""),
+    # Mid-line inline form "* **Rainbow**" with just spaces around it.
+    (re.compile(
+        r"[ \t]+\*\*[A-Z][A-Za-z]+\*\*",
+    ), ""),
+    # "What should the new word be?" / "What would you like it to be?"
+    (re.compile(
+        r"\bWhat\s+(?:should|would)\s+(?:the\s+(?:new\s+)?word\s+be|"
+        r"you\s+like\s+(?:it|the\s+(?:new\s+)?word)\s+(?:to\s+be|me\s+to\s+pick))\??",
+        re.IGNORECASE,
+    ), ""),
+    # "* Or something else entirely!" — consume the bullet too so no
+    # orphan asterisk survives.
+    (re.compile(
+        r"^\s*[\*\-]\s*Or\s+something\s+else\s+entirely[!.?]*\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ), ""),
+    (re.compile(
+        r"\bOr\s+something\s+else\s+entirely[!.?]*",
+        re.IGNORECASE,
+    ), ""),
+    # Orphan bullet/asterisk lines left behind after option-content was
+    # stripped from a bullet-menu (the "* " residue from the screenshot).
+    (re.compile(
+        r"^\s*\*+\s*$",
+        re.MULTILINE,
+    ), ""),
+    # "we could change it to:" / "I could suggest:"
+    (re.compile(
+        r"\b(?:we|i)\s+(?:could|can)\s+(?:change\s+it\s+to|suggest|offer):\s*",
+        re.IGNORECASE,
+    ), ""),
+    # "For example, we could change it to:"
+    (re.compile(
+        r"\bFor\s+example,?\s+we\s+could\s+(?:change|swap|switch)\b[^.!?]*[:.]",
+        re.IGNORECASE,
+    ), ""),
+    # Orphan "For example," left after rule 40 stripped "we could change
+    # it to:" but the leading "For example," was on the same line.
+    # Multiline so it catches the trailing/orphan position.
+    (re.compile(
+        r"\bFor\s+example,?\s*(?:$|\n)",
+        re.IGNORECASE | re.MULTILINE,
+    ), ""),
+
+    # State-machine stage directions captured live from the Mississippi
+    # transcript. "(I register the word, confirming the new target...)"
+    # is a parenthetical block where she narrates her own bookkeeping
+    # instead of speaking. Strip multi-sentence parenthetical blocks
+    # that start with "I register" / "I anticipate" / "I confirm" / etc.
+    (re.compile(
+        r"\(\s*I\s+(?:register|confirm|anticipate|acknowledge|note|process|"
+        r"will\s+(?:wait|integrate|process|respond))\b[^)]{10,500}\)",
+        re.IGNORECASE,
+    ), ""),
+    # "The internal state updates: ..." anywhere
+    (re.compile(
+        r"\bThe\s+internal\s+state\s+updates?\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    # "*Target Word = Mississippi*" — italic-state assignment shape
+    (re.compile(
+        r"\*[A-Z][A-Za-z\s]+\s*=\s*[A-Z][A-Za-z]+\*",
+    ), ""),
+    # "ready to process a prompt, confirm, or elaborate" — the textbook
+    # next-instruction state-machine line
+    (re.compile(
+        r"\bready\s+to\s+(?:process|integrate)\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
+    # "I wait for the next instruction" — pure state machine narration
+    (re.compile(
+        r"\bI\s+wait\s+for\s+the\s+next\s+(?:instruction|directive|input)\b[^.!?]*[.!?]",
+        re.IGNORECASE,
+    ), ""),
 ]
 
 

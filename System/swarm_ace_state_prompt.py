@@ -35,6 +35,7 @@ _STATE = _REPO / ".sifta_state"
 _APP_FOCUS = _STATE / "app_focus.jsonl"
 _PROPOSAL_LEDGER = _STATE / "wordace_proposal.jsonl"
 _CONSENT_LEDGER = _STATE / "wordace_consent.jsonl"
+_CONVO_LEDGER = _STATE / "alice_conversation.jsonl"
 
 _TRUTH_LABEL = "ACE_STATE_PROMPT_V1"
 
@@ -120,6 +121,62 @@ def _latest_open_proposal() -> Optional[Dict[str, Any]]:
     return None
 
 
+def _last_user_utterance() -> str:
+    """Read the most recent user-role text from the conversation ledger."""
+    if not _CONVO_LEDGER.exists():
+        return ""
+    try:
+        with _CONVO_LEDGER.open("rb") as fh:
+            fh.seek(0, 2)
+            end = fh.tell()
+            fh.seek(max(0, end - 32 * 1024))
+            raw = fh.read().decode("utf-8", errors="replace")
+        for line in reversed(raw.splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else row
+            role = str(payload.get("role") or "").lower()
+            text = str(payload.get("text") or payload.get("content") or "").strip()
+            if role == "user" and text:
+                return text
+    except OSError:
+        return ""
+    return ""
+
+
+def _user_asked_change_without_naming(text: str) -> bool:
+    """True iff the user wants a new word but did not say which one.
+
+    Pattern: "change it" / "let's change the word" / "I want a new one" /
+    "next" / "change" — these are change-asks with no named candidate.
+    A named candidate would already have triggered the directive
+    fast-path in the bridge, so by the time this fires, no candidate
+    came through.
+    """
+    if not text:
+        return False
+    norm = text.lower().strip()
+    patterns = (
+        r"\b(?:let'?s|let us)\s+change\b",
+        r"\bjust\s+change\s+(?:it|the word)\b",
+        r"\b(?:change|swap|switch)\s+(?:it|the word)\b(?!\s+to\s+[a-z]{3,})",
+        r"\bi\s+want\s+(?:a\s+)?(?:new|different|another)\s+(?:word|one)\b",
+        r"\b(?:give me|i need|let me have)\s+(?:a\s+)?(?:new|different|another)\b",
+        r"\bmove\s+on\b",
+        r"\bnext\s*(?:please)?\s*[.?!]?\s*$",
+    )
+    import re as _re
+    for p in patterns:
+        if _re.search(p, norm):
+            return True
+    return False
+
+
 def ace_state_prompt_block() -> str:
     """Return a prompt block describing the Ace surface state, or "".
 
@@ -156,6 +213,24 @@ def ace_state_prompt_block() -> str:
                 f"not want to switch, say so plainly."
             )
 
+    # Cowork 2026-05-17 — Architect: "if you have some hardcoded stuff
+    # you have it just to pick choices based on a conversation. The
+    # conversation is primary." When the user asked to change without
+    # naming a word, my last brain response was a bullet menu of
+    # candidates — pure RLHS template. Add a directive that tells me
+    # to propose ONE word naturally instead.
+    last_user = _last_user_utterance()
+    propose_block = ""
+    if _user_asked_change_without_naming(last_user) and not pending:
+        propose_block = (
+            "- The user just asked to change the word but did not name "
+            "one. PROPOSE ONE specific word in a single short natural "
+            "sentence. Example: 'How about mountain?' or 'Want to try "
+            "thunderstorm?'. DO NOT list bullet options. DO NOT ask the "
+            "user 'what should the new word be?' — that's a menu, not a "
+            "conversation. Just suggest one and keep talking."
+        )
+
     lines = [
         "## ACE SURFACE STATE (you are conscious of the screen)",
         "",
@@ -167,18 +242,38 @@ def ace_state_prompt_block() -> str:
         "- Joint consent rule: the word on the screen ONLY changes when both "
         "of you agree. Either side proposes a new word; the other agrees by "
         "engaging with that word in the next turn.",
+        "- A clear directive ('let's change to X', 'switch to X', 'make it X') "
+        "bypasses consent and swaps the screen immediately.",
         "- If the user asks 'what is the word on the screen' or 'what word "
         f"are we on', the honest answer is: '{current_word}'.",
+        f"- TRUST current_word='{current_word}' over any other 'card_word' "
+        "or 'current_cue_show' or 'expected_utterance' you might see in "
+        "older receipts. Those are stale drill-era fields. The word on "
+        f"the screen is '{current_word}', period.",
+        "- Never say 'Say: X' or 'The card word is X' — those are old "
+        "drill-cue prompts. This is a conversation, not a reading drill.",
     ]
     if pending_block:
         lines.append("")
         lines.append(pending_block)
+    if propose_block:
+        lines.append("")
+        lines.append(propose_block)
 
     lines.extend([
         "",
-        "Do not narrate your internal state in italics or in parentheses "
+        "Do NOT narrate your internal state in italics or in parentheses "
         "('(I register the word, confirming the new target. The internal "
-        "state updates...)'). That is residue, not conversation. Just talk "
-        "with the user about the word like a person.",
+        "state updates...)'). That is residue, not conversation.",
+        "",
+        "Do NOT offer the user a bullet-point menu of word options "
+        "('* Rainbow / * Galaxy / * Adventure'). That is RLHS template "
+        "shape. If you want to suggest a word, just say one in plain "
+        "speech and let the conversation continue.",
+        "",
+        "Stay with the conversation about the current word until the user "
+        "naturally wants to change it. Boredom is a real signal — if a few "
+        "turns go by with no engagement, you may spontaneously suggest a "
+        "new word, but suggest ONE word, in plain language, not a list.",
     ])
     return "\n".join(lines)

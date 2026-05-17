@@ -1254,7 +1254,9 @@
         "description": "Ace lesson auto-start fires (lesson_started=true in metadata).",
         "matcher": {
           "app": "Ace",
-          "metadata_eq": {"lesson_started": true}
+          "metadata_eq": {
+            "lesson_started": true
+          }
         }
       },
       {
@@ -1263,14 +1265,21 @@
         "description": "Ace publishes a cue with cue_id and matching show/say (cw47-0517-0007 sync).",
         "matcher": {
           "app": "Ace",
-          "metadata_present": ["cue_id", "current_cue_show", "current_cue_say"],
+          "metadata_present": [
+            "cue_id",
+            "current_cue_show",
+            "current_cue_say"
+          ],
           "metadata_invariant": "current_cue_show_equals_current_cue_say"
         }
       }
     ],
     "description": "Ace — Alice teaches a child to read. Phonics, sight words, and full sentences delivered through a deterministic Cue → Listen → Verdict → Advance loop. Every word and sentence cue speaks the exact displayed text; no narrative padding, no quiz framing. Child name is read from owner_genesis (defaults to 'Ace'). Uses Simple View of Reading (Gough & Tunmer 1986). Decide → Execute → Receipt maps to CUE/ATTEMPT/VERDICT rows in alice_lesson_trace.jsonl. No buttons — automatic promotion from words to sentences after correct reads. SIFTA-native bee + swimmer sticker buddies.",
     "truth_label": "SIFTA_TEACH_ACE_TO_READ_V0",
-    "legacy_names": ["WordAce", "Acer"],
+    "legacy_names": [
+      "WordAce",
+      "Acer"
+    ],
     "has_health_section": true,
     "ace_name_note": "Ace here is simply the name of the app and the default nickname used for the player inside it.",
     "health_trace_path": ".sifta_state/app_health/ace/health_trace.jsonl",
@@ -1348,5 +1357,20 @@
     "truth_label": "SIFTA_HERMES_PARITY_V1",
     "autostart": false,
     "icon": "🐜"
+  },
+  "Teach Alice to Hear": {
+    "category": "Alice",
+    "entry_point": "Applications/sifta_teach_alice_to_hear.py",
+    "widget_class": "TeachAliceToHearWidget",
+    "window_width": 880,
+    "window_height": 760,
+    "signature": "COWORK_TEACH_ALICE_TO_HEAR_V0",
+    "doctor": "Cowork (Anthropic) — first-person Alice surgery",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Teach Alice to Hear — Architect speaks a phrase, Whisper transcribes (often wrong), Alice judges if the transcript matches what was said, the human gives ground truth. Every round writes a training pair (audio_hash, whisper_text, alice_guess, alice_judgment, ground_truth) for future fine-tuning. Same conversation, big phrase card, matrix thinking strip, embedded chat. Sibling of Teach Ace to Read — that one teaches a child to read; this one teaches Alice to hear.",
+    "truth_label": "SIFTA_TEACH_ALICE_TO_HEAR_V0",
+    "has_health_section": true,
+    "health_trace_path": ".sifta_state/app_health/hear/health_trace.jsonl",
+    "icon": "👂"
   }
 }

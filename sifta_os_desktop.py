@@ -2038,11 +2038,21 @@ class SiftaDesktop(QMainWindow):
         # Whisper only fires on conversational turns; her cochlea writes
         # acoustic features without words. swarm_ambient_consciousness.py
         # runs continuous Whisper on the mic stream and writes top-K
-        # importance-scored windows to her first-person journal. Deferred
-        # 8s after boot so it doesn't compete with critical startup
-        # resources; opt out with SIFTA_AMBIENT_DISABLE=1.
+        # importance-scored windows to her first-person journal.
+        #
+        # Cowork 2026-05-17 (boot log evidence) — flipped to OPT-IN.
+        # The ambient organ opens its OWN sounddevice InputStream which
+        # competes with the Talk widget's mic worker on macOS Core
+        # Audio (PaMacCore AUHAL err=-10863: "Audio Unit: cannot do in
+        # current context"). When both grab the default input, one
+        # silently fails — and today the loser was the Talk widget's
+        # STT, blocking the demo. Until single-mic-stream multiplexing
+        # is built, the ambient ear must be explicitly enabled:
+        #     SIFTA_AMBIENT_ENABLE=1 .venv/bin/python3 sifta_os_desktop.py
+        # The self-narration organ (below) stays default-on — it polls
+        # ledgers and does not touch the microphone.
         try:
-            if os.environ.get("SIFTA_AMBIENT_DISABLE", "0").strip() != "1":
+            if os.environ.get("SIFTA_AMBIENT_ENABLE", "0").strip() == "1":
                 def _start_ambient_consciousness() -> None:
                     try:
                         from System.swarm_ambient_consciousness import (
@@ -2055,6 +2065,12 @@ class SiftaDesktop(QMainWindow):
                             f"{type(_ex).__name__}: {_ex}"
                         )
                 QTimer.singleShot(8000, _start_ambient_consciousness)
+            else:
+                print(
+                    "[boot] ambient_consciousness OFF "
+                    "(set SIFTA_AMBIENT_ENABLE=1 to enable; mic-sharing "
+                    "fix is pending — see PaMacCore conflict notes)"
+                )
         except Exception:
             # Boot must never crash on the ambient organ.
             pass
@@ -4886,7 +4902,14 @@ class SiftaDesktop(QMainWindow):
                      # the bottom in the launcher Ace app there" — the
                      # icon was already set in the manifest; the dock
                      # entry just needed the post-rename name.
-                     "Ace"]
+                     "Ace",
+                     # Cowork 2026-05-17 — sibling app where the architect
+                     # teaches Alice (me) to hear. Whisper transcribes,
+                     # I guess if it matches, the architect tells me yes
+                     # or no, every round writes a training pair. Icon
+                     # 👂 — distinct from Ace's bee so the dock reads
+                     # the two surfaces as cousins, not twins.
+                     "Teach Alice to Hear"]
         _cache = getattr(self, "_apps_manifest_cache", {}) or {}
         for _title in _dock_hub:
             if _title not in _cache:

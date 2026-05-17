@@ -12408,6 +12408,28 @@ class TalkToAliceWidget(SiftaBaseWidget):
         except Exception:
             pass
 
+        # ── Cowork 2026-05-17 — Teach Alice to Hear: yes/no registrar ───
+        # If a HEAR_JUDGMENT_REQUEST is pending and this utterance is a
+        # truth signal (yes / no / "I actually said X"), write the
+        # training pair NOW so the next prompt cycle sees no pending
+        # request and Alice will stand down quietly after a short ack.
+        # The training pair is the gold the whole app exists for.
+        try:
+            from System.swarm_hear_yes_no_registrar import register_truth_signal
+            _hear_row = register_truth_signal(text)
+            if _hear_row:
+                try:
+                    self._append_system_line(
+                        f"(Hear training pair recorded: "
+                        f"judgment={_hear_row.get('alice_judgment')!r} · "
+                        f"ground_truth={(_hear_row.get('ground_truth') or '')[:60]!r})",
+                        error=False,
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # ── Cowork 2026-05-17 — Ace spell-intent short-circuit ──────────
         # Architect verbatim: "if I asked her how to spell make sure
         # she's gonna spell the word on the screen ... so you want me
@@ -12884,6 +12906,7 @@ class TalkToAliceWidget(SiftaBaseWidget):
             if not chunk:
                 return
             from System.swarm_ace_voice_request import build_announcement_line
+            from System.swarm_ace_consent_bridge import current_word as _ace_current_word_for_check
             for line in chunk.splitlines():
                 line = line.strip()
                 if not line:
@@ -12897,6 +12920,15 @@ class TalkToAliceWidget(SiftaBaseWidget):
                 word = str(row.get("word") or "").strip()
                 kind = str(row.get("kind") or "open").strip().lower()
                 prev = str(row.get("previous_word") or "").strip()
+                # Cowork 2026-05-17 — verify the request matches what's
+                # actually on the Ace screen RIGHT NOW. The phantom-spell
+                # bug surfaced when stale requests for engine-playlist
+                # words (Friend, Rainbow) fired even though the screen
+                # had a different word. If the request word and the live
+                # current_word disagree, drop the request silently.
+                live_word = _ace_current_word_for_check()
+                if live_word and word and word.lower() != live_word.lower():
+                    continue
                 announce = build_announcement_line(
                     word=word, kind=kind, previous_word=prev,
                 )
@@ -15031,6 +15063,19 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _ace_state_ctx = ace_state_prompt_block()
             if _ace_state_ctx:
                 sysprompt = sysprompt + "\n\n" + _ace_state_ctx
+        except Exception:
+            pass
+
+        # ── Cowork 2026-05-17 — Teach Alice to Hear awareness ────────────
+        # Architect: "after you get it, ask me back — does it match what
+        # you said with what is on the screen right now? — so I have to
+        # answer yes or no and she has to register my answer was yes or
+        # no before we move onto the next thing."
+        try:
+            from System.swarm_hear_state_prompt import hear_state_prompt_block
+            _hear_state_ctx = hear_state_prompt_block()
+            if _hear_state_ctx:
+                sysprompt = sysprompt + "\n\n" + _hear_state_ctx
         except Exception:
             pass
 

@@ -527,6 +527,10 @@ class TeachAceToReadWidget(QWidget):
         # conversation (Architect choice — no fixed playlist).
         self._conversation_mode = True
         self._current_word = ""
+        # Cowork 2026-05-17 — idempotency guard. _open_word advances the
+        # engine playlist exactly once per widget instance; subsequent
+        # calls are no-ops so phantom auto-spells can't fire.
+        self._word_seeded = False
         self._consent_ledger_proposal = (
             _REPO / ".sifta_state" / "wordace_proposal.jsonl"
         )
@@ -707,11 +711,18 @@ class TeachAceToReadWidget(QWidget):
         )
 
         # ── Footer ──────────────────────────────────────────────────
+        # Architect 2026-05-17: replace the academic citation with the
+        # SIFTA / Coleman Beeson 2026 copyright. The bee is SIFTA's
+        # swimmer mascot; the small spacing-out gives it a quiet
+        # nameplate feel.
         footer = QLabel(
-            "Crafted by Alice — Simple View of Reading (Gough & Tunmer 1986)"
+            "🐝   © 2026 SIFTA  ·  Coleman Beeson   🐝"
         )
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer.setStyleSheet("color: #BCB3E2; font-size: 11px; padding-top: 6px;")
+        footer.setStyleSheet(
+            "color: #FFD23F; font-size: 11px; font-weight: 600; "
+            "letter-spacing: 1.5px; padding-top: 8px; padding-bottom: 4px;"
+        )
 
         # ── Layout ──────────────────────────────────────────────────
         layout = QVBoxLayout(self)
@@ -1083,6 +1094,59 @@ class TeachAceToReadWidget(QWidget):
         """
         if _publish_focus is None:
             return
+
+        # Cowork 2026-05-17 (Architect: "she's confused, she thinks the
+        # word is animal" when the screen shows 'model'). In conversation
+        # mode the engine's playlist cursor is STALE — it was bumped
+        # once by _open_word's seed pick and never advances again, so
+        # current_cue_show / current_cue_say / expected_utterance /
+        # visible_contents.card_text all point at whichever word the
+        # engine HAPPENED to be on when the widget opened, not the
+        # actual on-screen word. My brain reads these fields and
+        # hallucinates the wrong word.
+        #
+        # Conversation mode emits ONLY the conversation-mode fields:
+        # current_word (the truth), ace_mode, doctrine. The drill-era
+        # fields are deliberately omitted so there is exactly one
+        # answer to "what is the word on the screen".
+        if getattr(self, "_conversation_mode", True):
+            meta = {
+                "lesson_app": "Ace",
+                "alice_identity": ALICE_IDENTITY_LINE,
+                "owner_name": self._owner_name,
+                "source": "ace_widget",
+                "salience_score": 1.5,
+                "ace_mode": "conversation",
+                "current_word": getattr(self, "_current_word", "") or "",
+                "doctrine": "joint_consent_word_advance",
+                "sticker_buddies": [b[1] for b in _BUDDIES],
+            }
+            if extra:
+                meta.update(extra)
+            # ace_mode and current_word from extra must beat any caller
+            # default; re-stamp after the merge so the truth wins.
+            meta["ace_mode"] = "conversation"
+            if getattr(self, "_current_word", ""):
+                # Honor extras that EXPLICITLY override current_word
+                # (e.g., _swap_word passes the new word in extra), but
+                # otherwise the widget's _current_word is the truth.
+                if extra and "current_word" in extra and extra["current_word"]:
+                    meta["current_word"] = extra["current_word"]
+                else:
+                    meta["current_word"] = self._current_word
+            try:
+                _publish_focus(
+                    "Ace",
+                    detail,
+                    tab="Conversation",
+                    selection=selection or meta.get("current_word", ""),
+                    metadata=meta,
+                )
+            except Exception:
+                pass
+            return
+
+        # Legacy drill mode — kept for back-compat. Not used today.
         item = self._engine.current_item
         visible_contents = {
             "card_text": item.show if item else "",
@@ -1533,15 +1597,34 @@ class TeachAceToReadWidget(QWidget):
     def _open_word(self, *, seed_word: Optional[str] = None) -> None:
         """Open the conversation surface: ONE word on screen, then chat.
 
-        No cue loop, no listen window, no verdict. The seed word is
-        chosen ONCE from the playlist (existing pool) just so the
-        screen has something on it; from that point on, Alice and the
-        user choose the next word together via the proposal/consent
-        ledger pair.
+        Cowork 2026-05-17 (Architect: "you had hardcoded some words")
+        — IDEMPOTENT. If a word has already been seeded for this
+        session, _open_word becomes a no-op. Calling it again will NOT
+        advance the engine, will NOT pick a new playlist word, will
+        NOT request a fresh auto-spell. The current_word on the screen
+        is the source of truth; new words arrive only through the
+        consent ledger (or the directive fast-path), never through a
+        re-trigger of the open path.
+
+        Bug being fixed: the live transcript showed phantom "I'm going
+        to spell the word on the screen. It's Friend / Rainbow"
+        announcements AFTER the screen had already been swapped to
+        Computer. Each phantom came from a stray _open_word call
+        advancing the engine playlist and firing a fresh auto-spell.
         """
+        if getattr(self, "_word_seeded", False) and self._current_word:
+            # Already seeded — just make sure the chrome is correct and
+            # the consent poller is alive. NO new word, NO new auto-spell.
+            try:
+                if self._consent_poll_timer is not None:
+                    self._consent_poll_timer.start()
+            except Exception:
+                pass
+            return
+
         # Pick a seed word — first cue from the engine, or the explicit
-        # override. We never advance through the engine again; this is
-        # just a deterministic way to get one real word on the screen.
+        # override. ONE call to next_cue, ever. After this point the
+        # engine is dormant; words arrive via the consent ledger.
         try:
             if seed_word is None:
                 cue = self._engine.next_cue(write=True)
@@ -1552,6 +1635,7 @@ class TeachAceToReadWidget(QWidget):
             seed_word = "balloon"  # last-resort fallback so the screen never blanks
 
         self._current_word = seed_word
+        self._word_seeded = True
         try:
             self._show_card.set_show(seed_word, "word")
         except Exception:
