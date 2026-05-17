@@ -1,238 +1,29 @@
-# ── Python ────────────────────────────────────────────────────────────────────
-*.pyc
-*.pyo
-__pycache__/
-*.egg-info/
-dist/
-build/
-.venv/
-venv/
-
-# ── macOS ─────────────────────────────────────────────────────────────────────
+# SIFTA-specific simulation & personal noise (not part of the organism's clean body)
+.sifta_state/owner_body_vision_frames/
+.sifta_state/youtube_watch_notes/
+.sifta_state/owner_body_vision_frames/
+.sifta_state/REM_Sleep_Engrams/
+simulation_publicpush_sandbox/
+Archive/REM_Sleep_Engrams/
+*.png
+*.jpg
+*.jpeg
+*.heic
+*.mp4
+*.mov
+*.log
 .DS_Store
 
-# ── IDE ───────────────────────────────────────────────────────────────────────
-.cursor_identity
-.cursorrules
-.vscode/
+# Keep real state that matters
+!.sifta_state/ide_stigmergic_trace.jsonl
+!.sifta_state/work_receipts.jsonl
+!.sifta_state/app_focus.jsonl
+!.sifta_state/sifta_desktop_app_state.json
+!.sifta_state/alice_*.jsonl
+!.sifta_state/*.json
 
-# ── SIFTA Runtime State (never version swarm runtime) ────────────────────────
-# Agent JSON state is managed by the swarm; commit only intentional snapshots.
-# Committed state (node_pki_registry.json, genesis_log.jsonl) tracked explicitly.
-.sifta_state/*.json
-.sifta_state/*.jsonl
-!.sifta_state/node_pki_registry.json
-!.sifta_state/genesis_log.jsonl
-# Ledger files — single-writer truth, not versioned per-machine
-repair_log.jsonl
-STGM_TX_LOG.jsonl
-hermes_stdout.log
-m5queen_dead_drop.jsonl
-
-# Session / trace logs
-decision_trace.log
-watcher_metrics.jsonl
-sifta_session_log/
-*.log
-
-# Locked / process files
-*.lock
-.sifta_state/*.lock
-.sifta_state/*.pid
-.sifta_state/*.bak
-.sifta_state/*.bak.*
-
-# Compiled native helpers (build per platform; never commit binary)
-.sifta_state/sifta_face_detect
-
-# Scratch / large archives
-scratch.py
-*.zip
-*.gguf
-Archive/Ledger_Rotation/
-Archive/State_Archives/
-Archive/COLD_STORAGE/
-Archive/ollama_validation/
-Archive/architect_drops/
-Archive/bishop_drops_pending_review/
-Archive/c47h_drops_pending_review/
-Archive/*_drop_*.dirt
-Archive/*_AUDIT_*.dirt
-Archive/*.Modelfile
-Archive/alice_probe_results.md
-Archive/gemma4_modelfile.txt
-Archive/test_hypercycle.py
-.sifta_state/*.jsonl.*
-.sifta_state/*.txt
-.sifta_state/*.conf
-.sifta_state/*.pre_smoke_cleanup_backup
-.sifta_state/iris_frames/
-.sifta_state/acoustic_fields/
-.sifta_state/archive/
-.sifta_state/castle/
-.sifta_state/cleanup_manifests/
-.sifta_state/m1_recovered/
-.sifta_state/release_gates/
-.sifta_state/quarantine/
-.sifta_state/_ssp_smoke/
-.sifta_state/wallet_attic/
-.sifta_state/warp9_spool/
-.sifta_state/warp9_sync.err
-.sifta_state/sifta_gps_sensor
-.sifta_state/gps_src.swift
-
-# Migration artifacts
-.sifta_state/*_MIGRATED.json
-.sifta_state/migration_log.jsonl
-
-# Binary / DB
-*.db
-*.sqlite
-
-# ── Cryptographic Key Material (NEVER commit private keys) ───────────────────
-~/.sifta/
-~/.sifta_keys/
-*.pem
-*.key
-!*.pub.pem
-
-# ── Owner Genesis (photo NEVER in git — only hash in ledger) ─────────────────
-# The photo lives at ~/.sifta_keys/owner_genesis/ (covered above)
-# The genesis scar hash is in .sifta_state/owner_genesis.json (tracked)
-!.sifta_state/owner_genesis.json
-!.sifta_state/chorus_consent.json
-
-# ── Dead storage ──────────────────────────────────────────────────────────────
-.sifta/
-.sifta_cemetery/
-.sifta_reputation/
-.sifta_votes/
-bureau_of_identity/
-pheromone_archive/
-scripts/legacy/
-
-# ── Docs noise (internal working docs, not architecture) ─────────────────────
-docs/imperial_daily/
-docs/ALICE_PHASE*
-docs/M1THER_*
-docs/MAC_MINI_*
-docs/PHASE_5_*
-docs/TOMORROW_*
-docs/WALLET_*
-docs/LIVE_DIRECTOR_*
-docs/00_ALICE_*
-docs/selling_*
-docs/veo3_*
-docs/wormhole_*
-
-# ── Dev/test noise ────────────────────────────────────────────────────────────
-test_environment/benchmark_100/
-test_environment/requests_broken/
-Archive/test_environment/requests_broken/
-benchmark_results.py
-cron_backup.txt
-static/
-
-# ── WhatsApp Bridge runtime ───────────────────────────────────────────────────
-whatsapp_bridge/whatsapp_session/
-Network/whatsapp_bridge/whatsapp_session/
-Network/whatsapp_bridge/whatsapp_session.bad_prekey.*/
-whatsapp_bridge/node_modules/
-wormhole.log
-
-# ── Node ──────────────────────────────────────────────────────────────────────
-node_modules/
-npm-debug.log*
-CEMETERY/
-logs/
-
-# ── SIFTA OS Distro Noise ────────────────────────────────────────────────────
-.sifta_directives/
-.sifta_bounties/
-.pytest_cache/
-Logs/
-crash_log.txt
-server_stdout.log
-swarm_brain_m1.log
-swarm_telemetry.log
-os.log
-tournament_report.json
-payload.json
-.env
-
-# ── Architect-local stigauth bundle (screenshots / dirt photos / MANIFESTs) ──
-# 285 MB+ of HEIC/PNG screenshots that live next to the repo as inbound
-# evidence; never push to GitHub. The textual stigauth.txt is bundle index.
-stigauth/
-stigauth.txt
-
-# ── Root-level scratch / dev cruft (do NOT commit; not part of the OS) ───────
-scratch
-scratch_*.py
-old_*.py
-AG31VANGUARD.jpg
-append_*.py
-clean_ast.py
-finish_*.py
-fix_*.py
-full_reconstruct.py
-make_noop.py
-orig_*.py
-patch_*.py
-refactor.py
-run_cursor_jobs.py
-v2_evaluator.py
-*.patch
-log_alice.patch
-log_desktop.patch
-test_ui_events.py
-swarm_integrity_report.txt
-implementation_plan.md
-surgery/qwen_test/
-surgery/qwen35_experiments/adapters/
-surgery/qwen35_experiments/merged/
-surgery/alice_phc_cure/receipts/
-surgery/alice_phc_cure/adapters/
-surgery/alice_phc_cure/merged/
-surgery/alice_phc_cure/Modelfile.*-test
-
-# ── Other agent-IDE rules (mirror of .cursorrules treatment) ─────────────────
-.clinerules
-.distro_build/
-# Bundled desktop pictures: ignore local Architect drops except shipped BeeSon set.
-Library/Desktop Pictures/*
-!Library/Desktop Pictures/BeeSon Default.jpg
-!Library/Desktop Pictures/BeeSon Default.svg
-!Library/Desktop Pictures/BeeSon Alt *.jpg
-!Library/Desktop Pictures/BeeSon Alt *.jpeg
-Library/llama.cpp/
-proposals/
-fix.py
-patch*.py
-
-# Personal Sandbox
-.personal/
-
-Vendor/ProteinMPNN
-
-# Runtime state (generated by daemons, not code)
-.sifta_state/cortex/
-.sifta_state/hippocampus/
-.sifta_state/protein_folds/
-.sifta_state/protein_viewer.html
-.sifta_state/quarantined_launchagents/
-.sifta_state/cortex_tournament/round_*/
-
-# Scratch scripts at root (not part of the OS)
-profile_finance.py
-scan_blobs.py
-test_click.py
-test_embed.py
-test_physarum.py
-test_report.py
-
-# Nested clones
-ANTON-SIFTA/
-*.safetensors
-Archive/alice_cortex_v2_fused/
-Archive/REM_Sleep_Engrams/pruned_visual_stigmergy*
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
