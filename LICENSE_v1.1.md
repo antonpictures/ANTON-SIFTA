@@ -36,8 +36,8 @@ A **Free-Tier Licensee** is any of the following:
     revenue-generating service deployment of the Software.
   - **e)** A for-profit organization that, in the immediately preceding
     twelve (12) months, had **all** of the following:
-    - gross worldwide revenue of less than US $1,000,000;
-    - fewer than fifty (50) full-time-equivalent employees, contractors, or
+    - gross worldwide revenue of less than US $250,000;
+    - five (5) or fewer full-time-equivalent employees, contractors, or
       paid affiliates;
     - no paid product, hosted service, or consulting offering that incorporates
       the Software or any derivative of it.
@@ -52,7 +52,7 @@ a separate paid **Commercial License** issued in writing by Anton Pictures.
 Commercial-Tier uses include but are not limited to:
 
   - **a)** A for-profit organization with twelve-month gross worldwide revenue
-    of US $1,000,000 or greater, OR with fifty (50) or more FTE personnel.
+    of US $250,000 or greater, OR with more than five (5) FTE personnel.
   - **b)** Embedding the Software, any part of it, or any derivative work
     into a product, service, or system that is sold, licensed, or hosted
     for paying third-party customers.

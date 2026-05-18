@@ -3,7 +3,7 @@
 The Software (SIFTA) is offered under the **SIFTA Non-Proliferation Public
 License v1.1** (see `LICENSE_v1.1.md`). Personal users, students, accredited
 educational institutions, non-profit research labs, museums, and for-profit
-organizations below US $1M revenue / 50 employees use SIFTA at no cost
+organizations below US $250K revenue / 5 employees use SIFTA at no cost
 under the Free Tier.
 
 This document describes how to obtain a paid **Commercial License** if you
@@ -16,8 +16,8 @@ hosted service, or branded offering.
 
 You need a Commercial License if any of the following applies:
 
-- Your organization has gross worldwide revenue ≥ **US $1,000,000** in the
-  trailing 12 months, OR has ≥ **50** FTE personnel.
+- Your organization has gross worldwide revenue ≥ **US $250,000** in the
+  trailing 12 months, OR has more than **5** FTE personnel.
 - You embed SIFTA (or any derivative) into a product, service, or system
   sold or licensed to paying third-party customers.
 - You offer SIFTA (or any substantially-similar derivative) as a managed,
@@ -36,9 +36,10 @@ and negotiation. All pricing is per-organization, per-annum unless noted.
 
 | Tier | Annual fee | Includes |
 |---|---|---|
-| **Startup** (US $1M–$10M revenue, <100 FTE) | $5,000 – $15,000 | Production use of canonical SIFTA, email support, named contact, security advisories. Not embedded in paid products. |
-| **Growth** (US $10M–$100M revenue, or 100–500 FTE) | $25,000 – $75,000 | Embedded use in paid products / hosted services. Quarterly architectural review. Roadmap input. |
-| **Enterprise** (>$100M revenue, or >500 FTE) | $100,000 – $500,000+ | Site-wide deployment, custom-substrate engineering hours, dedicated Architect liaison, executive briefings, co-development on bespoke organs. |
+| **Micro** (US $250K–$1M revenue, 6–15 FTE) | $1,500 – $4,500 | Production use of canonical SIFTA, community support channel, security advisories. Not embedded in paid products. |
+| **Startup** (US $1M–$10M revenue, 16–100 FTE) | $7,500 – $20,000 | Production use, email support, named contact, security advisories. Not embedded in paid products. |
+| **Growth** (US $10M–$100M revenue, or 100–500 FTE) | $30,000 – $90,000 | Embedded use in paid products / hosted services. Quarterly architectural review. Roadmap input. |
+| **Enterprise** (>$100M revenue, or >500 FTE) | $125,000 – $500,000+ | Site-wide deployment, custom-substrate engineering hours, dedicated Architect liaison, executive briefings, co-development on bespoke organs. |
 | **Education / Museum Installation** (one-time) | $10,000 – $25,000 | Permanent installation at one institutional site, signed commemorative certificate, attribution plaque, lifetime updates for that installation. |
 | **OEM / Bundle** (per partner) | Custom | Revenue-share or per-seat royalty; minimum guarantees apply. |
 | **Trademark-only license** (e.g., reseller using SIFTA brand without code) | $25,000 / yr | Use of marks; no source rights. |
@@ -51,7 +52,7 @@ The Non-Proliferation Doctrine (License §3.1) and Do No Harm clause
 
 ## How to inquire
 
-Email: **george@antonpictures.com** *(replace with your canonical channel)*
+Email: **iantongeorge@gmail.com**
 
 Please include:
 
