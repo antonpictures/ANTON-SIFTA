@@ -1373,6 +1373,36 @@
     "health_trace_path": ".sifta_state/app_health/hear/health_trace.jsonl",
     "icon": "\ud83d\udc42"
   },
+  "SIFTA Seed Deal Evidence Crucible": {
+    "category": "Economy",
+    "entry_point": "Applications/sifta_seed_deal_evidence_crucible.py",
+    "widget_class": "SeedDealEvidenceCrucible",
+    "window_width": 1100,
+    "window_height": 780,
+    "signature": "CG55H_SEED_DEAL_CRUCIBLE_V1",
+    "doctor": "Codex Desktop GPT-5.5 high",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Receipt-true capital grounding surface for the 2026-05-18 SIFTA seed event. Shows capital, equity, commitments, physical grounding, and live milestone swimmers that scan local append-only receipts for on-track / at-risk / complete posterior status.",
+    "truth_label": "SIFTA_SEED_CRUCIBLE_V1",
+    "has_health_section": true,
+    "health_trace_path": ".sifta_state/app_health/seed_deal_crucible/health_trace.jsonl",
+    "icon": "💎"
+  },
+  "SIFTA FieldSight": {
+    "category": "Science",
+    "entry_point": "Applications/sifta_fieldsight_widget.py",
+    "widget_class": "SiftaFieldSightWidget",
+    "window_width": 1120,
+    "window_height": 780,
+    "signature": "CG55H_FIELDSIGHT_WIDGET_V0",
+    "doctor": "Codex Desktop GPT-5.5 high",
+    "doctor_protocol_version": "v4_PREDATOR_GATE",
+    "description": "Lawful atmospheric-optics + SAR triage demo. Runs real turbulence swimmers and generic shape triage swimmers on synthetic rescue targets, renders the r0 pheromone posterior and target-presence flag, and writes local demo receipts. No biometric identity head.",
+    "truth_label": "SIFTA_FIELDSIGHT_WIDGET_V0",
+    "has_health_section": true,
+    "health_trace_path": ".sifta_state/app_health/fieldsight/health_trace.jsonl",
+    "icon": "🛰️"
+  },
   "Stigmergic Fractals": {
     "category": "Science",
     "entry_point": "Applications/sifta_stigmergic_fractals_widget.py",

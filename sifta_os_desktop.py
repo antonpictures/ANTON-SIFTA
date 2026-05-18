@@ -4910,6 +4910,11 @@ class SiftaDesktop(QMainWindow):
                      # 👂 — distinct from Ace's bee so the dock reads
                      # the two surfaces as cousins, not twins.
                      "Teach Alice to Hear",
+                     # Codex 2026-05-18 — investor/capital grounding and
+                     # lawful long-range sensing demos. Both render real
+                     # receipt/swimmer outputs instead of marketing mockups.
+                     "SIFTA Seed Deal Evidence Crucible",
+                     "SIFTA FieldSight",
                      # Cowork 2026-05-18 — live Sierpinski gasket with
                      # stigmergic swimmers. Reproduces the closed-form
                      # walk dimension d_w = log(5)/log(2) ≈ 2.322 within
