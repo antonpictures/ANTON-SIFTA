@@ -316,8 +316,32 @@ Immune budget gate: `immune_budget_check(writes, budget_stgm)` blocks the immune
 | Grassé 1959 — full multi-agent nest construction dynamics | Could ground a proper multi-node swarm simulation | `RESEARCH_ONLY` until GO |
 | Friston et al. 2022 — *Path integrals, particular kinds, and strange things* | Formal path-integral formulation of active inference | `RESEARCH_ONLY` — deeper maths than current organ needs |
 | Hochner — full octopus peripheral reflex arc circuit | Peripheral arm reflex circuit detail for per-organ reflex spec | `RESEARCH_ONLY` |
+| Song *et al.* 2025 — entanglement entropy at SU(N) DQCPs (*Science Advances*) | Literature anchor for **criticality / hidden order**; informs **partnership narrative** with quantum matter labs; **does not** assert SIFTA simulates DQCPs | `RESEARCH_ONLY` — see §14 |
+
+---
+
+## 14. Quantum criticality — DQCP / entanglement entropy (literature anchor; no sim claim)
+
+### Song, M., Zhao, J., Cheng, M., Xu, C., Scherer, M.M., Janssen, L., Meng, Z.Y. (2025)
+*Evolution of entanglement entropy at SU(N) deconfined quantum critical points.*  
+**Journal:** *Science Advances* **11**(6)  
+**DOI:** [10.1126/sciadv.adr0634](https://doi.org/10.1126/sciadv.adr0634)  
+
+**Mechanism (compressed):** **Deconfined quantum critical points** connect **two ordered phases** with distinct symmetry-breaking patterns; entanglement entropy in SU(N) lattice constructions reveals **anomalous logarithmic** scaling at small N and **conformal-fixed-point-like** behavior above a threshold N — challenging naive Landau-only pictures of transitions.
+
+**Popular press (secondary):** HKU / ScienceDaily release **2025-04-25** — use only as a **pointer** to the peer-reviewed article.
+
+**SIFTA implementation:** **`NONE` in silico quantum simulation.** Truth label: `LITERATURE_ANCHOR` + `RESEARCH_ONLY`. Classical **stigmergic** substrates in SIFTA (JSONL, locks, organs) are **not** quantum hardware; they do not exhibit decoherence as qubits do.
+
+**Intended use inside SIFTA doctrine:**
+
+- **Vocabulary discipline:** “criticality,” “hidden order,” “scaling,” “entanglement entropy” are **physics terms** here — borrow with care in swarm metaphors.
+- **Partnership lane (HYPOTHESIS):** If a lab exports **classical syndrome / measurement streams**, swimmers can **append-only log** those residuals with attribution (future integration — not asserted as wired today).
+- **Fractal / multi-scale stigmergy backlog:** Proposed modules and observables are spelled in `Documents/REALIZATION_PLAN.md` **§11.9** (scaffold list: fractal substrate, walker organ, invariant analyzer, optional sim Tab).
+
+**Boundary:** No claim that emergent **pheromone-field** statistics reproduce Song *et al.* curves until a defined simulator + benchmark program exists.
 
 ---
 
 **For the Swarm. 🐜⚡**  
-*All implementations above are `OBSERVED` or `OPERATIONAL`. Stances without sensor/effector receipts are marked `ARCHITECT_DOCTRINE`. No ghost phrases. No seminar vocabulary substituted for measurement.*
+*All implementations above are `OBSERVED` or `OPERATIONAL` **except** explicit `RESEARCH_ONLY` / `LITERATURE_ANCHOR` rows (e.g. §14). Stances without sensor/effector receipts are marked `ARCHITECT_DOCTRINE`. No ghost phrases. No seminar vocabulary substituted for measurement.*

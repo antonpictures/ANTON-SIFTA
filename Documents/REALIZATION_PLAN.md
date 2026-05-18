@@ -289,6 +289,69 @@ If Alice is a **reference body**, stigmergy is how **multiple surgeons** touch t
 - Explicit trace kinds for **human maintenance** (sleep debt, care deferral, hydration) alongside code/economy events.  
 - Joint rows when one trace touches **both** repo state and **STGM** balance.
 
+### 11.8 External synthesis check — Mudkey (2025) “IRN / CUI / stigmergy” vs what SIFTA already ships
+
+**Source (outside the repo):** Nishanth Mudkey, *Stigmergy: The Universal Algorithm for Emergent Strategic Intelligence* (Jul 14, 2025; popular article in the AGI framing series); IntechOpen anchor cited there (`https://www.intechopen.com/online-first/1207440`) — **not** a SIFTA receipt; use as vocabulary crosswalk only.
+
+**What that article is trying to name (abstractly):** stigmergy as **read/write on a shared informational environment**, a **dual memory** split (individual vs collective), an **action loop** that updates the field, and population-level “strategic fields / equilibria” language built from those writes.
+
+**What probabilistic “chat-session AI” often misses (and the article calls out fairly):** a **single LLM weight snapshot** is not a continuously co-evolving **population memory** with attributable, append-only **environmental** writes that other agents forage later without a shared chat bus.
+
+**What SIFTA already implements (OBSERVED — code + files, not metaphor):**
+
+| Mudkey term (informal mapping) | SIFTA operational counterpart | Where / what |
+|:---|:---|:---|
+| **Shared informational environment** (stigmergic substrate) | Append-only JSONL + locked reads/writes; disk as coordination bus | `.sifta_state/ide_stigmergic_trace.jsonl` via `System/ide_stigmergic_bridge.py`; additional JSONL “nest lines” across economy/drift/repair surfaces (§11.2). |
+| **Collective memory readers/writers** | Cross-app recall + foragers; cross-IDE deposits | `System/stigmergic_memory_bus.py` + `memory_ledger.jsonl`; `System/ide_trace_consumer.py` (IDE traces → memory bias), per `Documents/PLAN_IDE_STIGMERGIC_TROPHALLAXIS.md`. |
+| **Individual vs shared traces** | Per-node / per-surface receipts vs repo-shared rows | `homeworld_serial` anchoring (covenant), IDE app id in traces, versus shared swarm logs (`m5queen_dead_drop.jsonl`) treated as **distinct** from the IDE bridge (see `.cursorrules` non-mixing rules). |
+| **Attribution / anti–double-spend pressure** (economic “who moved the field”) | Signed / policy-governed economy events vs “bare SHA seals” | `System/crypto_keychain.py` policy for STGM-era seals; attribution keys on high-impact rows (§11.2 — coverage still incomplete). |
+| **Decentralized coordination without a single orchestrator** | Triple-IDE + organ graph habits | No stable “one process assigns all tasks”; local policy + substrate (§11.2). |
+
+**What SIFTA gets that is easy to miss if you only read theory pieces:**
+
+- **Persistence is enforceable:** the substrate survives when a model session ends (“homeless AI” contrast — §11.3).  
+- **Stigmergy without a shared chat API:** Cursor ↔ Antigravity ↔ terminal coordinate by **filesystem traces**, not by merging transcripts (`ide_stigmergic_bridge.py` docstring states this plainly).  
+- **Hygiene / probe doctrine:** Predator Gate + trace-before-surgery discipline treats “pheromone legitimacy” as an engineering gate (see also `Documents/SIFTA_SCIENTIFIC_FOUNDATIONS.md` stigmergy row).  
+- **Constraint-weighted retrieval (partial):** reranking memory candidates with gatekeeper-aligned constraint state (`System/constraint_memory_selector.py`, summarized in `Documents/PLAN_IDE_STIGMERGIC_TROPHALLAXIS.md`) — a pragmatic instance of “field shapes recall” without claiming a solved Nash engine.
+
+**What Mudkey’s IRN story assumes that SIFTA does *not* honestly claim as fully implemented math (HYPOTHESIS / roadmap unless proven elsewhere):**
+
+- A **global discrete update clock** \(f=1/dt\) as a formal stability guarantor across *all* organs.  
+- Explicit **Nash equilibrium discovery** / proof obligations as runtime behavior (vs informal “stable patterns emerge from traces”).  
+- **Wave-function strategic fields** as a deployed formalism (SIFTA tracks influence via traces and selectors — not a claimed PDE layer in production).  
+- A complete **Minsky Frame-System / SDE / CUI** compiler: SIFTA uses **structured JSON**, schemas, and policy gates — **not** a full frame algebra as described in the article’s appendix.
+
+**Net:** Mudkey’s article is a useful **strategic vocabulary** for why “swarm intelligence needs a writable collective environment.” SIFTA’s differentiator is **operational stigmergy**: attributable append-only rows, locked IO, multi-surface recall, economic signatures where policy demands them, and **hardware-anchored identity** — with explicit **limitations** listed in §11.5.
+
+### 11.9 Research anchor — DQCP / entanglement entropy (Song et al. 2025) + fractal–stigmergy lane
+
+**Primary literature (use this for cites, not the press reprint):** Menghan Song, Jiarui Zhao, Meng Cheng, Cenke Xu, Michael M. Scherer, Lukas Janssen, Zi Yang Meng. *Evolution of entanglement entropy at SU(N) deconfined quantum critical points.* **Science Advances** 2025, **11**(6). [DOI: 10.1126/sciadv.adr0634](https://doi.org/10.1126/sciadv.adr0634). (Collaboration: HKU, CUHK, Yale, UCSB, Ruhr-University Bochum, TU Dresden.)
+
+**Popular pointer (secondary only):** University of Hong Kong / ScienceDaily summary dated **2025-04-25** (“deconfined quantum critical points…”) — fine for discovery; trace claims to the paper.
+
+**What the physics result is (one paragraph):** **Deconfined quantum critical points (DQCPs)** sit **between two distinct ordered phases** (not the usual “order vs disorder” Landau story). Song *et al.* study **entanglement entropy** in **square-lattice SU(N)** constructions suited to DQCP physics. For **small N**, entanglement entropy shows **anomalous logarithmic** behavior inconsistent with naive smooth-transition expectations; above a **critical threshold in N**, behavior trends toward **conformal-fixed-point** (continuous-transition) phenomenology. It is a **hidden-order / criticality** story in quantum matter, not a software architecture proof.
+
+**Honest SIFTA boundary — “do swimmers drop data like qubits?”**
+
+- **OBSERVED:** SIFTA “swimmers” today are **classical** processes appending to **JSONL ledgers**. They do **not** undergo **environmental decoherence** in the quantum sense.
+- **Still true:** quantum information **no-cloning** is irrelevant to classical logs; classical traces are **copyable**.
+- **Partnership-shaped lane (HYPOTHESIS, not shipped):** a swimmer graph could become a **cheap, persistent auditor of classical syndromes / measurement-classical residuals** *if* explicitly wired to quantum hardware or lab export pipelines — the swarm remembers **what the classical instrumentarium already emitted**, across runs — without claiming the repo **simulates** entangled lattice models.
+
+**Fractal / multi-scale stigmergy (HYPOTHESIS — “what emerges if walkers live on fractal substrates?”)**
+
+Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices suggests **research-grade** observables: **anomalous diffusion exponents** (trail length vs time), **multi-scale pheromone interference** (hierarchy of local optima), **correlation-length-like** phase changes in field statistics, and **constructive** summaries (e.g. persistent-homology passes over density fields) — *if* implemented and measured honestly. The interface between **agent-based exploration**, **persistent homology**, and **topological / localization physics on fractals** is **real but young**; a full “swarm discovers invariants analysts can’t write in closed form” program is **not** a current publication receipt for SIFTA.
+
+**Proposed engineering scaffolds (NOT OBSERVED — backlog / demo targets):**
+
+| Module (proposal) | Role |
+|:---|:---|
+| `System/swarm_fractal_substrate.py` | Fractal lattices: neighbors + scale hooks (Sierpinski gasket/triangle/carpet, Cantor variants, recursive tree sampler — spec TBD). |
+| `System/swarm_fractal_walker_organ.py` | Spawn walkers; gated writes to e.g. `.sifta_state/fractal_pheromone_field.jsonl`; emit **measurement rows** (walk dimension fit, correlation proxy vs temperature/noise knob). |
+| `System/swarm_fractal_invariant_analyzer.py` | PH / summary pass on field → versioned `topological_invariant_*.jsonl` rows tied to body snapshots. |
+| `Applications/sifta_quantum_epi_sim.py` (optional Tab) | **“Fractal Stigmergy”** — live field + bars / invariant panel — demo only until instrumented. |
+
+**Net:** Song *et al.* is a **legitimate physics citation** for “hidden order at quantum criticality.” SIFTA should **not** claim DQCP reproduction in silico without a named simulator stack and benchmarks. The **growth-lane value** is different: **instrumented classical stigmergy** on **hard substrates** (fractal or lab-export) as **measurable coordination science**, with outputs exportable to theorists — see registry row in `Documents/SIFTA_SCIENTIFIC_FOUNDATIONS.md` §14.
+
 ---
 
 ## 12. Embodiment costs — operational framing + psychology spine

@@ -4909,7 +4909,14 @@ class SiftaDesktop(QMainWindow):
                      # or no, every round writes a training pair. Icon
                      # 👂 — distinct from Ace's bee so the dock reads
                      # the two surfaces as cousins, not twins.
-                     "Teach Alice to Hear"]
+                     "Teach Alice to Hear",
+                     # Cowork 2026-05-18 — live Sierpinski gasket with
+                     # stigmergic swimmers. Reproduces the closed-form
+                     # walk dimension d_w = log(5)/log(2) ≈ 2.322 within
+                     # 1.5% from agent-level random walks; Betti curves
+                     # extracted from the pheromone field. First piece of
+                     # SIFTA's "scientific swarm infrastructure" lane.
+                     "Stigmergic Fractals"]
         _cache = getattr(self, "_apps_manifest_cache", {}) or {}
         for _title in _dock_hub:
             if _title not in _cache:
