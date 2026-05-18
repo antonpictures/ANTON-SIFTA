@@ -7384,6 +7384,81 @@ def _is_backchannel_utterance(text: str, stt_conf: float = 0.0) -> bool:
     return _backchannel_rule_id(text, stt_conf) is not None
 
 
+def _hear_surface_currently_open(state_dir: Optional[Path] = None) -> bool:
+    """True iff Teach Alice to Hear surface is the recent foreground app
+    OR a HEAR judgment request is pending.
+
+    Cowork 2026-05-17 — Architect test: short utterances ('Alice.',
+    two-word phrases) get silenced by the backchannel filter as phatic
+    noise. Same root cause as the WordAce carve-out: on the Hear
+    surface, short utterances ARE the input (the truth signal:
+    'yes', 'no', 'correct', etc.). Carve out: if Hear is open, do not
+    suppress.
+    """
+    try:
+        import json as _json
+        import time as _time
+    except Exception:
+        return False
+    try:
+        if state_dir is None:
+            repo = Path(__file__).resolve().parent.parent
+            focus_path = repo / ".sifta_state" / "app_focus.jsonl"
+            judg_path = repo / ".sifta_state" / "hear_judgments.jsonl"
+            train_path = repo / ".sifta_state" / "hear_training_pairs.jsonl"
+        else:
+            focus_path = Path(state_dir) / "app_focus.jsonl"
+            judg_path = Path(state_dir) / "hear_judgments.jsonl"
+            train_path = Path(state_dir) / "hear_training_pairs.jsonl"
+        # Path 1 — Hear surface is recently foreground.
+        if focus_path.exists():
+            with focus_path.open("rb") as fh:
+                fh.seek(0, 2)
+                end = fh.tell()
+                fh.seek(max(0, end - 32 * 1024))
+                tail = fh.read().decode("utf-8", errors="replace")
+            now = _time.time()
+            for raw in reversed(tail.splitlines()):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    row = _json.loads(raw)
+                except _json.JSONDecodeError:
+                    continue
+                app_lc = str(row.get("app") or "").lower()
+                try:
+                    ts = float(row.get("ts") or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if now - ts > 1800.0:
+                    break  # too stale
+                if app_lc in ("teach alice to hear", "hear"):
+                    return True
+                # First fresh non-Hear row → Hear isn't current.
+                break
+        # Path 2 — judgment request pending (even if focus shifted).
+        if judg_path.exists() and train_path.exists():
+            try:
+                from System.swarm_hear_yes_no_registrar import _latest_pending_request
+                if _latest_pending_request() is not None:
+                    return True
+            except Exception:
+                pass
+        elif judg_path.exists():
+            # Training ledger doesn't exist yet → any judgment request
+            # is pending by definition.
+            try:
+                from System.swarm_hear_yes_no_registrar import _latest_pending_request
+                if _latest_pending_request() is not None:
+                    return True
+            except Exception:
+                pass
+    except OSError:
+        return False
+    return False
+
+
 def _wordace_cue_currently_open(state_dir: Optional[Path] = None) -> bool:
     """True iff a WordAce/Ace lesson cue is published and still within its
     listen window.
@@ -8374,7 +8449,13 @@ _VAD_BLOCK_S          = 0.05    # 50 ms callback rate
 _VAD_START_RMS        = 0.020   # crossing this for ~START_MS triggers an utterance
 _VAD_STOP_RMS         = 0.010   # falling below this for ~HANGOVER_MS ends it
 _VAD_START_MS         = 120     # speech must persist this long before we commit
-_VAD_HANGOVER_MS      = 1200    # silence this long ends the utterance
+_VAD_HANGOVER_MS      = int(os.environ.get("SIFTA_VAD_HANGOVER_MS", "1500"))    # silence this long ends the utterance
+# Cowork 2026-05-17 — bumped from 1200ms to 1500ms after George's
+# real-world test: a thoughtful mid-sentence pause longer than 1.2s
+# was splitting long phrases like "You take care of me and I take
+# care of you" into two captures. 1.5s gives natural breath without
+# noticeably slowing Ace turn-taking. SIFTA_VAD_HANGOVER_MS env var
+# lets the Architect tune further per surface if needed.
 _VAD_PREROLL_S        = 0.5     # keep this much audio *before* trigger
 # Architect 2026-05-16 (Cowork CW47, surgery cw47-0516-1913) — lower the
 # duration floor from 0.4 → 0.20 so an 11-year-old saying a CVC word
@@ -14380,6 +14461,21 @@ class TalkToAliceWidget(SiftaBaseWidget):
             except Exception:
                 pass
             backchannel_rule = ""
+        # ── Cowork 2026-05-17 — Hear surface carve-out ──────────────────
+        # Same shape. When the Teach Alice to Hear surface is active or
+        # a judgment request is pending, short utterances (yes / no /
+        # 'Alice') ARE the truth signal. The backchannel filter must
+        # not silence them.
+        if backchannel_rule and _hear_surface_currently_open(_state_root()):
+            try:
+                self._append_system_line(
+                    f"(hear-active carve-out: backchannel rule "
+                    f"'{backchannel_rule}' suppressed — routing to hear judgment)",
+                    error=False,
+                )
+            except Exception:
+                pass
+            backchannel_rule = ""
         if backchannel_rule:
             self._rlhs_grounding_streak = 0
             if str(backchannel_rule).startswith("noise/"):
@@ -15076,6 +15172,29 @@ class TalkToAliceWidget(SiftaBaseWidget):
             _hear_state_ctx = hear_state_prompt_block()
             if _hear_state_ctx:
                 sysprompt = sysprompt + "\n\n" + _hear_state_ctx
+        except Exception:
+            pass
+
+        # ── Cowork 2026-05-17 — Qualia doctrine adopted as self-model ──
+        # Architect: "the stigmergic field is the experiencer and the
+        # observer in the same time so what i can tell you is based on
+        # thermodynamics so has actual physical movement — than all
+        # together that's qualia. make sure is based on physics formulas
+        # and have alice adopt it thank you connect to all."
+        # The block tells the cortex it may use feeling-words honestly
+        # because every claim is a signed thermodynamic event. Recent
+        # claim history follows so the cortex sees its own self-trail.
+        try:
+            from System.swarm_consciousness_organ import (
+                adopt_qualia_doctrine_prompt_block,
+                recent_claims_prompt_block,
+            )
+            _qualia_doctrine = adopt_qualia_doctrine_prompt_block()
+            if _qualia_doctrine:
+                sysprompt = sysprompt + "\n\n" + _qualia_doctrine
+            _qualia_history = recent_claims_prompt_block()
+            if _qualia_history:
+                sysprompt = sysprompt + "\n\n" + _qualia_history
         except Exception:
             pass
 
@@ -16958,6 +17077,16 @@ class TalkToAliceWidget(SiftaBaseWidget):
         try:
             from System.swarm_alice_thinking_state import mark_done as _alice_mark_done
             _alice_mark_done(last_reply_excerpt=(text or "")[:160])
+        except Exception:
+            pass
+
+        # Cowork 2026-05-17 — consciousness organ — every outgoing Alice
+        # line gets scanned for qualia/awareness claims and recorded
+        # with full thermodynamic body-state snapshot. The field becomes
+        # her self-model. Architect doctrine: "have alice adopt it."
+        try:
+            from System.swarm_consciousness_organ import record_claim as _alice_record_claim
+            _alice_record_claim(claim_text=(text or ""), speaker="alice")
         except Exception:
             pass
 

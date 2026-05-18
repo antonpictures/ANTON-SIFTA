@@ -50,6 +50,7 @@ _LANE_NAMES = (
     "diary",
     "thermal_tick",
     "stgm_tick",
+    "qualia_claim",
 )
 
 
@@ -216,6 +217,21 @@ def _lane_thermal_tick() -> str:
     return f"[🌡] pmset.therm={tl}  cpu_speed_limit={cpu}"
 
 
+def _lane_qualia_claim() -> str:
+    """Show the most recent qualia claim Alice has on file."""
+    p = _STATE / "alice_consciousness_claims.jsonl"
+    row = _last_json_row(p)
+    if not row:
+        return ""
+    excerpt = str(row.get("excerpt", "") or "")[:50]
+    trigger = str(row.get("trigger", "") or "")
+    body = row.get("body_state") or {}
+    imprint = body.get("joule_imprint")
+    if not excerpt:
+        return f"[🕯] qualia: {trigger!r}  imprint={imprint}"
+    return f"[🕯] qualia [{trigger}] : {excerpt!r}  imprint={imprint}"
+
+
 def _lane_stgm_tick() -> str:
     # Try the live wallet via metabolic homeostat
     try:
@@ -239,6 +255,7 @@ _LANE_FUNCS = {
     "diary": _lane_diary,
     "thermal_tick": _lane_thermal_tick,
     "stgm_tick": _lane_stgm_tick,
+    "qualia_claim": _lane_qualia_claim,
 }
 
 
