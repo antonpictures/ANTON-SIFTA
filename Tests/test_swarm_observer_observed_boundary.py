@@ -4,9 +4,10 @@ import json
 from pathlib import Path
 
 from System.swarm_observer_observed_boundary import (
+    BOUNDED_QUANTUM_DISCUSSION,
     FORBIDDEN_QUANTUM_MANIFESTATION,
     OPERATIONAL_OBSERVER_OBSERVED,
-    SYMBOLIC_QUANTUM_ANALOGY,
+    STIGMERGIC_QUANTUM_FIELD_HYPOTHESIS,
     LEDGER_NAME,
     audit_claim,
 )
@@ -34,7 +35,7 @@ def test_double_slit_manifestation_is_refused() -> None:
     assert "cannot use double-slit" in audit.replacement
 
 
-def test_bounded_quantum_analogy_is_allowed() -> None:
+def test_bounded_quantum_discussion_is_allowed() -> None:
     audit = audit_claim(
         "As symbolic analogy only, the double slit is measurement coupling at microscopic scale, "
         "not proof that mindset manifests STGM."
@@ -42,7 +43,19 @@ def test_bounded_quantum_analogy_is_allowed() -> None:
 
     assert audit.ok is True
     assert audit.forbidden is False
-    assert audit.claim_label == SYMBOLIC_QUANTUM_ANALOGY
+    assert audit.claim_label == BOUNDED_QUANTUM_DISCUSSION
+
+
+def test_stigmergic_quantum_hypothesis_is_preserved() -> None:
+    audit = audit_claim(
+        "HYPOTHESIS: quantum particles may be stigmergic field excitations in a quantum field; "
+        "measurement as trace is a research program, not proof of STGM."
+    )
+
+    assert audit.ok is True
+    assert audit.forbidden is False
+    assert audit.claim_label == STIGMERGIC_QUANTUM_FIELD_HYPOTHESIS
+    assert "research hypothesis" in audit.grounding
 
 
 def test_observer_boundary_receipt_write(tmp_path: Path) -> None:

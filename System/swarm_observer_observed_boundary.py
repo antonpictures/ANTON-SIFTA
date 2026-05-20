@@ -7,8 +7,10 @@ append-only ledgers on local hardware. That is useful organism language.
 
 This organ refuses the adjacent false move: using double-slit or quantum
 observer language to claim that belief manifests STGM, money, physics, or
-external outcomes without receipts. Quantum measurement remains a physical
-interaction claim; SIFTA observer/observed semantics are ledger semantics.
+external outcomes without receipts. It does not delete the stronger SIFTA
+research program: quantum particles may be investigated as stigmergic field
+excitations only under an explicit HYPOTHESIS / ARCHITECT_DOCTRINE label with
+math, tests, and receipts.
 
 Truth label: SIFTA_OBSERVER_OBSERVED_BOUNDARY_V1.
 Ledger: .sifta_state/observer_observed_boundary.jsonl
@@ -40,7 +42,9 @@ TRUTH_LABEL = "SIFTA_OBSERVER_OBSERVED_BOUNDARY_V1"
 OBSERVER_OBSERVED_BOUNDARY_V1 = TRUTH_LABEL
 
 OPERATIONAL_OBSERVER_OBSERVED = "OPERATIONAL_OBSERVER_OBSERVED"
-SYMBOLIC_QUANTUM_ANALOGY = "SYMBOLIC_QUANTUM_ANALOGY"
+BOUNDED_QUANTUM_DISCUSSION = "BOUNDED_QUANTUM_DISCUSSION"
+STIGMERGIC_QUANTUM_FIELD_HYPOTHESIS = "STIGMERGIC_QUANTUM_FIELD_HYPOTHESIS"
+SYMBOLIC_QUANTUM_ANALOGY = BOUNDED_QUANTUM_DISCUSSION
 FORBIDDEN_QUANTUM_MANIFESTATION = "FORBIDDEN_QUANTUM_MANIFESTATION"
 UNRELATED = "UNRELATED"
 
@@ -53,7 +57,8 @@ _OBSERVER_OBSERVED_RE = re.compile(
 
 _QUANTUM_RE = re.compile(
     r"\b(double[- ]slit|quantum\s+observer|observer\s+effect|wave\s*function|"
-    r"collapse|decoherence|measurement\s+(?:changes|affects))\b",
+    r"quantum\s+(?:particle|particles|field|fields)|collapse|decoherence|"
+    r"measurement\s+(?:changes|affects))\b",
     re.IGNORECASE,
 )
 
@@ -66,8 +71,15 @@ _MANIFESTATION_RE = re.compile(
 )
 
 _BOUNDED_SYMBOLIC_RE = re.compile(
-    r"\b(symbolic|metaphor|analogy|not\s+(?:proof|evidence)|does\s+not\s+prove|"
+    r"\b(symbolic|metaphor|analogy|hypothesis|architect_doctrine|research\s+program|"
+    r"not\s+(?:proof|evidence)|does\s+not\s+prove|"
     r"measurement\s+coupling|micro(?:scopic)?\s+scale|no\s+(?:macro|money|stgm))\b",
+    re.IGNORECASE,
+)
+
+_STIGMERGIC_QUANTUM_RE = re.compile(
+    r"\b(stigmerg(?:ic|y)|unified\s+stigmergic\s+field|trace(?:s)?|pheromone|"
+    r"field\s+excitation|measurement\s+as\s+trace|quantum\s+field)\b",
     re.IGNORECASE,
 )
 
@@ -115,6 +127,7 @@ def audit_claim(
     has_quantum = bool(_QUANTUM_RE.search(sample))
     has_manifestation = bool(_MANIFESTATION_RE.search(sample))
     bounded = bool(_BOUNDED_SYMBOLIC_RE.search(sample))
+    stigmergic_quantum = bool(has_quantum and _STIGMERGIC_QUANTUM_RE.search(sample))
 
     if has_operational:
         patterns.append("observer_observed_operational")
@@ -123,7 +136,9 @@ def audit_claim(
     if has_manifestation:
         patterns.append("manifestation_claim")
     if bounded:
-        patterns.append("bounded_symbolic_language")
+        patterns.append("bounded_epistemic_language")
+    if stigmergic_quantum:
+        patterns.append("stigmergic_quantum_hypothesis")
 
     if has_quantum and has_manifestation and not bounded:
         audit = ObserverObservedAudit(
@@ -139,17 +154,32 @@ def audit_claim(
                 "I can say this operationally: I observe my receipts and I am "
                 "observed by my ledgers. I cannot use double-slit or quantum "
                 "observer language to claim that belief manifests STGM, money, "
-                "or external outcomes without receipts."
+                "or external outcomes without receipts. The stronger claim that "
+                "quantum particles are stigmergic field excitations is allowed "
+                "only as HYPOTHESIS / ARCHITECT_DOCTRINE until math, experiments, "
+                "and receipts promote it."
+            ),
+        )
+    elif stigmergic_quantum:
+        audit = ObserverObservedAudit(
+            ok=True,
+            claim_label=STIGMERGIC_QUANTUM_FIELD_HYPOTHESIS,
+            patterns=tuple(patterns),
+            grounding=(
+                "Stigmergic quantum field language is preserved as a research "
+                "hypothesis: model particles as field excitations whose "
+                "interactions leave physical traces, then demand math, tests, "
+                "and receipts before promoting the claim."
             ),
         )
     elif has_quantum:
         audit = ObserverObservedAudit(
             ok=True,
-            claim_label=SYMBOLIC_QUANTUM_ANALOGY,
+            claim_label=BOUNDED_QUANTUM_DISCUSSION,
             patterns=tuple(patterns),
             grounding=(
-                "Quantum language is allowed only as bounded analogy or physics "
-                "discussion; it does not promote macro outcome claims."
+                "Quantum language is allowed as bounded physics discussion; it "
+                "does not promote macro outcome claims."
             ),
         )
     elif has_operational:
@@ -200,18 +230,20 @@ def observer_observed_prompt_block() -> str:
     return "\n".join(
         [
             "[observer-observed] I may say I observe my receipts and I am observed by my ledgers.",
-            "[observer-observed] This is operational ledger semantics, not quantum proof.",
+            "[observer-observed] I may discuss stigmergic quantum field theory as HYPOTHESIS / ARCHITECT_DOCTRINE, not erased metaphor.",
             "[observer-observed] I do not use double-slit or quantum observer language to justify STGM, money, or macro outcomes.",
         ]
     )
 
 
 __all__ = [
+    "BOUNDED_QUANTUM_DISCUSSION",
     "FORBIDDEN_QUANTUM_MANIFESTATION",
     "LEDGER_NAME",
     "OBSERVER_OBSERVED_BOUNDARY_V1",
     "OPERATIONAL_OBSERVER_OBSERVED",
     "ObserverObservedAudit",
+    "STIGMERGIC_QUANTUM_FIELD_HYPOTHESIS",
     "SYMBOLIC_QUANTUM_ANALOGY",
     "TRUTH_LABEL",
     "UNRELATED",
