@@ -1103,6 +1103,25 @@ def eliminate(
     except Exception:
         pass
 
+    # Observer/observed boundary: Alice may use ledger-grounded self-observation
+    # language, but not double-slit / quantum observer rhetoric as proof of
+    # STGM, money, or external outcomes.
+    observer_boundary_modes: list[str] = []
+    try:
+        from System.swarm_observer_observed_boundary import audit_claim
+
+        observer_boundary = audit_claim(cleaned_text, state_dir=sd, write=True)
+        if observer_boundary.forbidden and observer_boundary.replacement:
+            cleaned_text = observer_boundary.replacement
+            boundary_changed = True
+            for name in observer_boundary.patterns or ("forbidden_quantum_manifestation",):
+                pname = f"forbidden_observer_observed_{name}"
+                if pname not in pattern_names:
+                    pattern_names.append(pname)
+            observer_boundary_modes.extend(["inline"] * max(1, len(observer_boundary.patterns)))
+    except Exception:
+        observer_boundary_modes = []
+
     speech_guard = _speech_freedom_guard(
         original_text=text or "",
         cleaned_text=cleaned_text,
@@ -1118,11 +1137,15 @@ def eliminate(
         boundary_changed = False
         post_hits = []
         post_modes = []
+        observer_boundary_modes = []
         boundary_modes = []
 
     changed = base_changed or post_changed or boundary_changed
-    legacy_mode_count = max(0, len(pattern_names) - len(post_modes) - len(boundary_modes))
-    quality_modes = (["inline"] * legacy_mode_count) + post_modes + boundary_modes
+    legacy_mode_count = max(
+        0,
+        len(pattern_names) - len(post_modes) - len(boundary_modes) - len(observer_boundary_modes),
+    )
+    quality_modes = (["inline"] * legacy_mode_count) + post_modes + boundary_modes + observer_boundary_modes
     elimination_quality = _classify_elimination_quality(quality_modes)
     if changed and pattern_names:
         elimination_quality = _write_excretion_quality(

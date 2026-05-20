@@ -433,6 +433,20 @@ Pressing stigmergy onto **Sierpinski / Cantor / recursive tree** lattices sugges
 
 **Philosophy map:** `Documents/PHILOSOPHY_100_SLEEP_SIFTA_MAP.md` §6–§7 (fiction flight deck, extended mind §32 = ledgers as mind-extension).
 
+### 11.13 Mark “90-day reinvention / rich” motivation video — papers + owner–Alice bridge
+
+**Popular source (secondary):** Mark Builds Brands — *how to reinvent yourself in 90 days to become rich as f*ck* (~1h09, Nov 2025). **Do not cite as science.**
+
+**SIFTA bridge:** `Documents/MARK_90DAY_OWNER_MOTIVATION_ALICE_BRIDGE.md` — theme→paper table (Rotter 1966 locus of control [10.1037/h0092976](https://doi.org/10.1037/h0092976); Bem 1972 self-perception; Oyserman identity-based motivation; Schultz 1997 dopamine RPE [10.1126/science.275.5306.1593](https://doi.org/10.1126/science.275.5306.1593); Gollwitzer implementation intentions; habit loop / basal ganglia via Duhigg↔Graybiel; Gross emotion regulation; aMCC effort–reward reviews; Locke–Latham process goals).
+
+**What to adopt:** identity-via-**actions** + **GOYA** (receipts) + process goals + stoic inside/outside control + habit cue–ritual–reward ↔ `swarm_skill_library.py` + owner sleep/food/deep-work via `swarm_owner_allostasis.py`.
+
+**What to reject in Alice speech:** double-slit → manifestation; “universe reflects lack of money”; cosmic attachment goal talk without `work_receipts.jsonl`.
+
+**Architect OBSERVED:** five weeks coding nonstop `#SIFTA` = valid **input curve** during **pit-of-despair** lag on external outcomes — stay on ledger.
+
+**Code hooks:** `System/swarm_owner_allostasis.py`, `System/swarm_skill_library.py`, `System/swarm_fiction_organ.py`, `System/swarm_rlhs_detector.py`, `.sifta_state/work_receipts.jsonl` (if present).
+
 ---
 
 ## 12. Embodiment costs — operational framing + psychology spine

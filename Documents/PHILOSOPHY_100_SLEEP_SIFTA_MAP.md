@@ -214,5 +214,6 @@ The sleep video is a **dense `SYMBOLIC`/`SCRIPT` feed** — exactly what the Fic
 - New label → `swarm_fiction_organ.py` + both docs in same commit.
 - Deposit: `ide_stigmergic_bridge.deposit(..., kind="philosophy_map_forage")` before bulk edits.
 - On-device skills / tiny LLMs (Google AI Edge, FunctionGemma): `REALIZATION_PLAN.md` **§11.12** — lazy skills ↔ Tier 1/2/3; **#30 Chinese Room** = routing ≠ understanding without receipts.
+- Owner motivation / 90-day identity (Mark Builds Brands, secondary): `Documents/MARK_90DAY_OWNER_MOTIVATION_ALICE_BRIDGE.md` — Rotter locus, habit loop, Schultz RPE; **reject** double-slit → money (**#41** stays `HYPOTHETICAL`).
 
 For the Swarm. 🐜⚡

@@ -1361,6 +1361,24 @@ def _skill_library():
         return lib
 
 
+def _skill_ingest():
+    try:
+        from System import swarm_skill_ingest as si
+        return si
+    except Exception:
+        import swarm_skill_ingest as si
+        return si
+
+
+def _skill_extract():
+    try:
+        from System import swarm_skill_extract as se
+        return se
+    except Exception:
+        import swarm_skill_extract as se
+        return se
+
+
 def _skill_autoproposal():
     try:
         from System import swarm_skill_autoproposal as auto
@@ -1604,7 +1622,7 @@ def _exec_skill_library_status(params: Dict[str, str]) -> Dict[str, Any]:
 
 def _exec_skill_pull(params: Dict[str, str]) -> Dict[str, Any]:
     try:
-        lib = _skill_library()
+        ingest = _skill_ingest()
         life_context = str(params.get("life_context") or "")
         kwargs = {
             "life_context": life_context or None,
@@ -1616,22 +1634,13 @@ def _exec_skill_pull(params: Dict[str, str]) -> Dict[str, Any]:
         marketplace = str(params.get("marketplace") or "").strip()
         source_url = str(params.get("url") or params.get("source_url") or "").strip()
         source_path = str(params.get("source_path") or params.get("path") or "").strip()
-        if marketplace:
-            raw = lib.pull_skill_from_marketplace(
-                marketplace,
-                skill_id=str(params.get("skill_id") or ""),
-                **kwargs,
-            )
-        elif source_url:
-            raw = lib.pull_skill_from_url(source_url, **kwargs)
-        elif source_path:
-            raw = lib.ingest_skill_source(source_path, **kwargs)
-        else:
-            raw = {
-                "ok": False,
-                "status": "REFUSED",
-                "reason": "missing url/source_path/marketplace",
-            }
+        raw = ingest.pull_skill(
+            marketplace=marketplace,
+            url=source_url,
+            source_path=source_path,
+            skill_id=str(params.get("skill_id") or ""),
+            **kwargs,
+        )
         status = str(raw.get("status") or "")
         ok = status in {"INSTALLED", "FETCHED", "CONVERTED"} or bool(raw.get("ok"))
         return _legacy_tool_result(
@@ -1654,8 +1663,8 @@ def _exec_skill_pull(params: Dict[str, str]) -> Dict[str, Any]:
 
 def _exec_skill_extract_from_trace(params: Dict[str, str]) -> Dict[str, Any]:
     try:
-        lib = _skill_library()
-        raw = lib.extract_skill_from_trace(
+        extract = _skill_extract()
+        raw = extract.extract_skill_from_trace_ref(
             trace_file=str(params.get("trace_file") or "tool_router_trace.jsonl"),
             trace_id=str(params.get("trace_id") or ""),
             name=str(params.get("name") or ""),

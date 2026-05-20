@@ -213,13 +213,16 @@ def test_tool_router_skill_pull_executor(monkeypatch) -> None:
 
     captured = {}
 
-    def fake_pull(url, **kwargs):
+    def fake_pull(marketplace="", url="", source_path="", skill_id="", **kwargs):
         captured["url"] = url
+        captured["marketplace"] = marketplace
+        captured["source_path"] = source_path
+        captured["skill_id"] = skill_id
         captured["kwargs"] = kwargs
         return {"status": "INSTALLED", "skill_name": "reader", "ok": True}
 
-    fake_lib = SimpleNamespace(pull_skill_from_url=fake_pull)
-    monkeypatch.setattr(router, "_skill_library", lambda: fake_lib)
+    fake_ingest = SimpleNamespace(pull_skill=fake_pull)
+    monkeypatch.setattr(router, "_skill_ingest", lambda: fake_ingest)
     monkeypatch.setattr(router, "_charge_tool_execution", lambda *args, **kwargs: {"receipt_hash": "test"})
     monkeypatch.setattr(router, "_kernel_tool_preflight", lambda *args, **kwargs: (None, None))
     monkeypatch.setattr(router, "_cerebellum_preflight", lambda *args, **kwargs: {"delay_s": 0.0})
@@ -244,8 +247,8 @@ def test_tool_router_skill_extract_executor(monkeypatch) -> None:
         captured.update(kwargs)
         return {"status": "INSTALLED", "skill_name": "trace_reader", "ok": True}
 
-    fake_lib = SimpleNamespace(extract_skill_from_trace=fake_extract)
-    monkeypatch.setattr(router, "_skill_library", lambda: fake_lib)
+    fake_extract_module = SimpleNamespace(extract_skill_from_trace_ref=fake_extract)
+    monkeypatch.setattr(router, "_skill_extract", lambda: fake_extract_module)
     monkeypatch.setattr(router, "_charge_tool_execution", lambda *args, **kwargs: {"receipt_hash": "test"})
     monkeypatch.setattr(router, "_kernel_tool_preflight", lambda *args, **kwargs: (None, None))
     monkeypatch.setattr(router, "_cerebellum_preflight", lambda *args, **kwargs: {"delay_s": 0.0})
