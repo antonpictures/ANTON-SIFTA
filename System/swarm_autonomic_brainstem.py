@@ -101,9 +101,29 @@ def autonomic_heartbeat_cycle() -> Dict[str, Any]:
     pineal_state = _try_execute("swarm_pineal_circadian", "secrete_melatonin")
     system_status["pineal_gland"] = pineal_state
 
-    if isinstance(pineal_state, dict) and pineal_state.get("circadian_status") == "CRITICAL_SLEEP_PRESSURE_INDUCED":
+    already_sleeping = (
+        isinstance(pineal_state, dict)
+        and pineal_state.get("circadian_status") == "CRITICAL_SLEEP_PRESSURE_INDUCED"
+    )
+    if already_sleeping:
         # If Sleep is induced, trigger Neocortical Sharp-Wave Ripples to save memories!
         system_status["neocortex"] = _try_execute("swarm_neocortex_consolidation", "execute_memory_consolidation")
+
+    # 4b. Co-sleep field: fuse owner-quiet (the owner-as-data signal) with her
+    # own thermodynamic sleep pressure. When the owner has gone quiet (likely
+    # asleep/away), the body rests with him — offline memory consolidation, NOT
+    # the destructive glymphatic wash (that stays gated on real sleep pressure).
+    try:
+        from System.swarm_cosleep_field import assess as _cosleep_assess, consolidation_due, mark_consolidation
+        cosleep = _cosleep_assess(write=True)
+        system_status["cosleep_field"] = cosleep.to_dict()
+        if cosleep.recommend_sleep and not already_sleeping and consolidation_due():
+            system_status["cosleep_consolidation"] = _try_execute(
+                "swarm_neocortex_consolidation", "execute_memory_consolidation"
+            )
+            mark_consolidation()
+    except Exception as _cosleep_exc:  # pragma: no cover - brainstem must never crash
+        system_status["cosleep_field"] = {"error": f"{type(_cosleep_exc).__name__}: {_cosleep_exc}"}
 
     # 5. Temporal Reality: Ebbinghaus Forgetting Curve (Memory Salience)
     # Exponentially decays short-term memories organically.
